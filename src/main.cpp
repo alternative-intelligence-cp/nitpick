@@ -52,6 +52,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Bitcode/BitcodeReader.h"  // v0.8.2: Incremental compilation cache
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -91,9 +92,9 @@ extern "C" {
 
 // Version information
 #define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 7
-#define ARIA_VERSION_PATCH 4
-#define ARIA_VERSION "0.7.4"
+#define ARIA_VERSION_MINOR 8
+#define ARIA_VERSION_PATCH 2
+#define ARIA_VERSION "0.8.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -146,7 +147,15 @@ struct CompilerOptions {
     bool guard_pages = false;         // --guard-pages: Enable guard pages around wild allocations
     bool wildx_audit = false;         // --wildx-audit: Log WildX alloc/seal/exec/free events
     bool wildx_guard_pages = false;   // --wildx-guard-pages: Guard pages around exec regions
+    bool gc_stats = false;            // --gc-stats: Print GC statistics at program exit
+    size_t gc_nursery_size = 0;       // --gc-nursery-size=N: Nursery size in bytes (0=default 4MB)
+    size_t gc_threshold = 0;          // --gc-threshold=N: Major GC trigger threshold (0=default 64MB)
+    size_t gc_max_heap = 0;           // --gc-max-heap=N: Maximum heap size in bytes (0=unlimited)
     int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
+    
+    // v0.8.2: Incremental compilation
+    bool incremental = false;         // --incremental: Cache per-module IR, only recompile changed files
+    std::string cache_dir = ".aria-cache";  // --cache-dir=<path>: IR cache directory
 };
 
 /**
@@ -219,7 +228,14 @@ void print_help() {
     std::cout << "  --wild-stats      Print wild memory statistics at program exit\n";
     std::cout << "  --guard-pages     Enable guard pages around wild allocations (debug)\n";
     std::cout << "  --wildx-audit     Log WildX alloc/seal/exec/free events to stderr\n";
-    std::cout << "  --wildx-guard-pages Enable guard pages around executable regions\n\n";
+    std::cout << "  --wildx-guard-pages Enable guard pages around executable regions\n";
+    std::cout << "  --gc-stats        Print GC statistics at program exit\n";
+    std::cout << "  --gc-nursery-size=N Nursery size in bytes (default: 4MB, suffixes: K/M/G)\n";
+    std::cout << "  --gc-threshold=N  Major GC trigger threshold (default: 64MB)\n";
+    std::cout << "  --gc-max-heap=N   Maximum total heap size (default: unlimited)\n\n";
+    std::cout << "Build Performance (v0.8.2):\n";
+    std::cout << "  --incremental     Cache per-module IR, skip unchanged files on rebuild\n";
+    std::cout << "  --cache-dir=<dir> IR cache directory (default: .aria-cache)\n\n";
     std::cout << "GPU Target Options (NVIDIA CUDA/PTX):\n";
     std::cout << "  --emit-ptx        Emit PTX assembly for GPU execution\n";
     std::cout << "  --target=<arch>   Target architecture (cpu, gpu, gpu+cpu)\n";
@@ -382,9 +398,46 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.wildx_audit = true;
         } else if (arg == "--wildx-guard-pages") {
             opts.wildx_guard_pages = true;
+        } else if (arg == "--gc-stats") {
+            opts.gc_stats = true;
+        } else if (arg.substr(0, 18) == "--gc-nursery-size=") {
+            std::string val = arg.substr(18);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_nursery_size = std::stoull(val) * multiplier;
+        } else if (arg.substr(0, 15) == "--gc-threshold=") {
+            std::string val = arg.substr(15);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_threshold = std::stoull(val) * multiplier;
+        } else if (arg.substr(0, 14) == "--gc-max-heap=") {
+            std::string val = arg.substr(14);
+            size_t multiplier = 1;
+            if (!val.empty()) {
+                char suffix = val.back();
+                if (suffix == 'K' || suffix == 'k') { multiplier = 1024; val.pop_back(); }
+                else if (suffix == 'M' || suffix == 'm') { multiplier = 1024*1024; val.pop_back(); }
+                else if (suffix == 'G' || suffix == 'g') { multiplier = 1024ULL*1024*1024; val.pop_back(); }
+            }
+            opts.gc_max_heap = std::stoull(val) * multiplier;
         } else if (arg.substr(0, 14) == "--smt-timeout=") {
             opts.smt_timeout = std::stoi(arg.substr(14));
             if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
+        } else if (arg == "--incremental") {
+            opts.incremental = true;
+        } else if (arg.substr(0, 12) == "--cache-dir=") {
+            opts.cache_dir = arg.substr(12);
+            opts.incremental = true;  // Implies --incremental
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
         } else if (arg == "--tokens") {
@@ -608,6 +661,90 @@ bool emit_dependencies(
     return true;
 }
 
+// ============================================================================
+// v0.8.2: Incremental Compilation — IR Cache
+// ============================================================================
+// Caches LLVM bitcode per source file. On recompilation, if the source hash
+// matches the cached entry, the bitcode is loaded directly (skipping parse,
+// sema, and codegen). Cache is stored in .aria-cache/<hex-hash>.bc alongside
+// a .meta file recording the source path and hash.
+
+#include <fstream>
+#include <iomanip>
+
+/// Compute a fast, collision-resistant hash of a string (FNV-1a 64-bit).
+static uint64_t fnv1a_hash(const std::string& data) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (unsigned char c : data) {
+        hash ^= c;
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
+
+/// Get cache path for a given source hash.
+static std::string get_cache_path(const std::string& cache_dir, uint64_t hash) {
+    std::ostringstream oss;
+    oss << cache_dir << "/" << std::hex << std::setfill('0') << std::setw(16) << hash << ".bc";
+    return oss.str();
+}
+
+/// Try to load cached IR for a source file. Returns nullptr on miss.
+static std::unique_ptr<llvm::Module> load_cached_ir(
+    const std::string& cache_dir, const std::string& source,
+    llvm::LLVMContext& context, bool verbose
+) {
+    uint64_t hash = fnv1a_hash(source);
+    std::string bc_path = get_cache_path(cache_dir, hash);
+    
+    // Check if cache file exists
+    if (!std::filesystem::exists(bc_path)) {
+        if (verbose) std::cerr << "[cache] MISS: " << bc_path << "\n";
+        return nullptr;
+    }
+    
+    // Load the bitcode
+    auto buf_or_err = llvm::MemoryBuffer::getFile(bc_path);
+    if (!buf_or_err) {
+        if (verbose) std::cerr << "[cache] read error: " << bc_path << "\n";
+        return nullptr;
+    }
+    
+    auto mod_or_err = llvm::parseBitcodeFile(buf_or_err->get()->getMemBufferRef(), context);
+    if (!mod_or_err) {
+        if (verbose) std::cerr << "[cache] parse error: " << bc_path << "\n";
+        llvm::consumeError(mod_or_err.takeError());
+        return nullptr;
+    }
+    
+    if (verbose) std::cerr << "[cache] HIT: " << bc_path << "\n";
+    return std::move(*mod_or_err);
+}
+
+/// Save compiled IR to cache.
+static void save_ir_to_cache(
+    const std::string& cache_dir, const std::string& source,
+    llvm::Module* module, bool verbose
+) {
+    // Create cache directory if needed
+    std::error_code ec;
+    std::filesystem::create_directories(cache_dir, ec);
+    if (ec) return;
+    
+    uint64_t hash = fnv1a_hash(source);
+    std::string bc_path = get_cache_path(cache_dir, hash);
+    
+    std::error_code write_ec;
+    llvm::raw_fd_ostream out(bc_path, write_ec);
+    if (write_ec) {
+        if (verbose) std::cerr << "[cache] write error: " << bc_path << "\n";
+        return;
+    }
+    
+    llvm::WriteBitcodeToFile(*module, out);
+    if (verbose) std::cerr << "[cache] SAVED: " << bc_path << "\n";
+}
+
 /**
  * Compile source to LLVM Module
  * Note: Returns raw pointer - the IRGenerator must be kept alive!
@@ -816,6 +953,31 @@ llvm::Module* compile_to_module(
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
+    
+    // v0.8.4: Inject derive-generated synthetic nodes into the AST for IR codegen
+    // Must be inserted BEFORE function declarations so impl methods are
+    // generated before function bodies that call them.
+    const auto& syntheticNodes = type_checker.getSyntheticNodes();
+    if (!syntheticNodes.empty()) {
+        if (module_node->type == aria::ASTNode::NodeType::PROGRAM) {
+            auto* program = static_cast<aria::ProgramNode*>(module_node.get());
+            // Find the first FUNC_DECL and insert before it
+            auto it = program->declarations.begin();
+            for (; it != program->declarations.end(); ++it) {
+                if (*it && (*it)->type == aria::ASTNode::NodeType::FUNC_DECL) break;
+            }
+            program->declarations.insert(it, syntheticNodes.begin(), syntheticNodes.end());
+            if (opts.verbose) {
+                std::cout << "  Injected " << syntheticNodes.size()
+                         << " synthetic derive node(s) into AST\n";
+            }
+        } else if (module_node->type == aria::ASTNode::NodeType::BLOCK) {
+            auto* block = static_cast<aria::BlockStmt*>(module_node.get());
+            for (const auto& node : syntheticNodes) {
+                block->statements.push_back(node);
+            }
+        }
+    }
     
     if (type_checker.hasErrors()) {
         for (const auto& err : type_checker.getErrors()) {
@@ -4661,8 +4823,12 @@ llvm::Module* compile_to_module(
     }
 
     // v0.7.0+: Inject wild/wildx memory flags into main() entry block
+    // v0.8.0+: Inject GC configuration flags
     llvm::Module* mod = ir_gen.getModule();
-    if (mod && (opts.wild_stats || opts.guard_pages || opts.wildx_audit || opts.wildx_guard_pages)) {
+    bool has_runtime_flags = opts.wild_stats || opts.guard_pages || opts.wildx_audit || 
+                             opts.wildx_guard_pages || opts.gc_stats ||
+                             opts.gc_nursery_size || opts.gc_threshold || opts.gc_max_heap;
+    if (mod && has_runtime_flags) {
         llvm::Function* main_func = mod->getFunction("main");
         if (main_func && !main_func->empty()) {
             llvm::BasicBlock& entry = main_func->getEntryBlock();
@@ -4720,6 +4886,48 @@ llvm::Module* compile_to_module(
                 llvm::FunctionCallee enable_wildx_guards = mod->getOrInsertFunction(
                     "aria_wildx_enable_guard_pages", void_bool_ty);
                 inject_builder.CreateCall(enable_wildx_guards, {inject_builder.getInt8(1)});
+            }
+            
+            // v0.8.0: GC configuration injection
+            if (opts.gc_nursery_size || opts.gc_threshold) {
+                // Replace default aria_gc_init with custom parameters
+                // Find and update the existing aria_gc_init call
+                for (auto& inst : entry) {
+                    if (auto* call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
+                        llvm::Function* callee = call->getCalledFunction();
+                        if (callee && callee->getName() == "aria_gc_init") {
+                            // Replace operands with user-specified values
+                            if (opts.gc_nursery_size) {
+                                call->setArgOperand(0, llvm::ConstantInt::get(
+                                    llvm::Type::getInt64Ty(ctx), opts.gc_nursery_size));
+                            }
+                            if (opts.gc_threshold) {
+                                call->setArgOperand(1, llvm::ConstantInt::get(
+                                    llvm::Type::getInt64Ty(ctx), opts.gc_threshold));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (opts.gc_max_heap) {
+                llvm::FunctionType* void_i64_ty = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(ctx),
+                    {llvm::Type::getInt64Ty(ctx)},
+                    false
+                );
+                llvm::FunctionCallee set_max_heap = mod->getOrInsertFunction(
+                    "aria_gc_set_max_heap", void_i64_ty);
+                inject_builder.CreateCall(set_max_heap, {
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), opts.gc_max_heap)
+                });
+            }
+            
+            if (opts.gc_stats) {
+                llvm::FunctionCallee enable_gc_stats = mod->getOrInsertFunction(
+                    "aria_gc_enable_stats_at_exit", void_bool_ty);
+                inject_builder.CreateCall(enable_gc_stats, {inject_builder.getInt8(1)});
             }
         }
     }
@@ -5623,6 +5831,9 @@ int main(int argc, char** argv) {
     // Compile each input file into a separate module
     std::vector<std::unique_ptr<aria::IRGenerator>> ir_generators;
     std::vector<llvm::Module*> modules;
+    // v0.8.2: Incremental compilation — owned contexts for cache-loaded modules
+    std::vector<std::unique_ptr<llvm::LLVMContext>> cached_contexts;
+    std::vector<std::unique_ptr<llvm::Module>> cached_modules;
     
     for (size_t i = 0; i < opts.input_files.size(); i++) {
         const auto& input_file = opts.input_files[i];
@@ -5638,6 +5849,19 @@ int main(int argc, char** argv) {
             return 1;
         }
         
+        // v0.8.2: Try incremental cache before full compilation
+        if (opts.incremental) {
+            auto cache_ctx = std::make_unique<llvm::LLVMContext>();
+            auto cached = load_cached_ir(opts.cache_dir, source, *cache_ctx, opts.verbose);
+            if (cached) {
+                llvm::Module* mod_ptr = cached.get();
+                cached_contexts.push_back(std::move(cache_ctx));
+                cached_modules.push_back(std::move(cached));
+                modules.push_back(mod_ptr);
+                continue;
+            }
+        }
+        
         // Create IR generator (must stay alive)
         ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file, opts.debug_info));
         
@@ -5648,6 +5872,10 @@ int main(int argc, char** argv) {
             return 1;
         }
         
+        // v0.8.2: Save to cache for next build
+        if (opts.incremental) {
+            save_ir_to_cache(opts.cache_dir, source, module, opts.verbose);
+        }
 
         
         modules.push_back(module);

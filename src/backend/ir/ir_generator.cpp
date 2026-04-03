@@ -2034,7 +2034,7 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     if (node->type == ASTNode::NodeType::PROGRAM) {
         ProgramNode* program = static_cast<ProgramNode*>(node);
         
-        // Process all declarations recursively (handles nested modules)
+// Process all declarations recursively (handles nested modules)
         processModuleDeclarations(program->declarations, "");
     }
     
@@ -2629,7 +2629,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
     // -------------------------------------------------------------------------
     // MAIN PASS: Generate full function bodies (declarations already exist)
     // -------------------------------------------------------------------------
-
     for (const auto& decl : declarations) {
         if (!decl) continue;
         
@@ -4668,6 +4667,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             builder.SetInsertPoint(bodyBB);
             codegenStatement(whileStmt->body.get());
             if (!builder.GetInsertBlock()->getTerminator()) {
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);  // Loop back to condition
             }
             
@@ -4782,6 +4790,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     "forrange.next"
                 );
                 builder.CreateStore(nextVal, iteratorVar);
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);
                 
                 // Pop loop context
@@ -4921,6 +4938,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 std::cout << "[FOR DEBUG] Update expression complete\n" << std::flush;
             } else {
                 std::cout << "[FOR DEBUG] NO UPDATE EXPRESSION!\n" << std::flush;
+            }
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
             }
             builder.CreateBr(condBB);  // Loop back
             
@@ -5737,6 +5763,15 @@ skip_comparison:
             llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
             llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
             counterPhi->addIncoming(nextVal, incBB);
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
+            }
             builder.CreateBr(condBB);
             
             // Pop loop context
@@ -5830,6 +5865,15 @@ skip_comparison:
             llvm::Value* currentVal = builder.CreateLoad(counterType, dollarAlloca, "$");
             llvm::Value* nextVal = builder.CreateAdd(currentVal, stepVal, "$.next");
             counterPhi->addIncoming(nextVal, incBB);
+            // v0.8.1: GC safepoint at loop back-edge
+            {
+                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                if (!safepoint_fn) {
+                    llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                }
+                builder.CreateCall(safepoint_fn);
+            }
             builder.CreateBr(condBB);
             
             // Pop loop context
@@ -5898,6 +5942,15 @@ skip_comparison:
             if (!builder.GetInsertBlock()->getTerminator()) {
                 // Mark body ran at least once before looping
                 builder.CreateStore(builder.getInt1(true), completedFlag);
+                // v0.8.1: GC safepoint at loop back-edge
+                {
+                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    if (!safepoint_fn) {
+                        llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    }
+                    builder.CreateCall(safepoint_fn);
+                }
                 builder.CreateBr(condBB);
             }
             
@@ -6271,6 +6324,12 @@ skip_comparison:
             // Comptime block: all evaluation was done at compile time.
             // Nothing to emit at IR level — side effects (const definitions)
             // have already been processed by the type checker.
+            return nullptr;
+        }
+
+        case ASTNode::NodeType::MACRO_DECL: {
+            // Macro declarations are processed at the type-checker level.
+            // No IR emission needed.
             return nullptr;
         }
 
@@ -11349,6 +11408,43 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 if (!llvmType) llvmType = builder.getInt64Ty();
                 return llvm::ConstantInt::get(llvmType, comptimeExpr->intResult, /*isSigned=*/true);
             }
+        }
+
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            // Macro invocations are expanded during type checking.
+            // The expandedAST field contains the expansion result — codegen that.
+            MacroInvocationExpr* macroExpr = static_cast<MacroInvocationExpr*>(expr);
+            if (macroExpr->expandedAST) {
+                ASTNode* expanded = macroExpr->expandedAST.get();
+                
+                if (expanded->isExpression()) {
+                    return codegenExpression(expanded);
+                }
+                
+                // If it's a block, codegen all statements and return the value
+                // of the last expression statement
+                if (expanded->type == ASTNode::NodeType::BLOCK) {
+                    BlockStmt* block = static_cast<BlockStmt*>(expanded);
+                    llvm::Value* lastVal = nullptr;
+                    for (const auto& s : block->statements) {
+                        if (s->isExpression()) {
+                            lastVal = codegenExpression(s.get());
+                        } else if (s->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                            ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(s.get());
+                            lastVal = codegenExpression(exprStmt->expression.get());
+                        } else {
+                            codegenStatement(s.get());
+                        }
+                    }
+                    return lastVal;
+                }
+                
+                codegenStatement(expanded);
+                return nullptr;
+            }
+            std::cerr << "[ERROR] Macro invocation '" << macroExpr->macroName 
+                      << "' was not expanded during type checking" << std::endl;
+            return nullptr;
         }
 
         default:

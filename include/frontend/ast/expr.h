@@ -533,6 +533,28 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * AST-level macro invocation expression (v0.8.3)
+ * Represents: name!(arg1, arg2, ...)
+ * Arguments are AST nodes (expressions or blocks) that get substituted
+ * into the macro body template.
+ */
+class MacroInvocationExpr : public ASTNode {
+public:
+    std::string macroName;
+    std::vector<ASTNodePtr> arguments;  // Expression arguments to substitute
+    
+    // Set after macro expansion by type checker
+    ASTNodePtr expandedAST;             // The expanded AST after substitution
+    
+    MacroInvocationExpr(const std::string& name, const std::vector<ASTNodePtr>& args,
+                        int line = 0, int column = 0)
+        : ASTNode(NodeType::MACRO_INVOCATION, line, column),
+          macroName(name), arguments(args) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H

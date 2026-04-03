@@ -92,6 +92,10 @@ public:
         COMPTIME_BLOCK,       // comptime { ... } — compile-time evaluated block
         COMPTIME_EXPR,        // comptime(expr) — compile-time evaluated expression
 
+        // === MACRO SYSTEM (v0.8.3) ===
+        MACRO_DECL,           // macro:name = (params) { body }; — AST-level macro declaration
+        MACRO_INVOCATION,     // name!(args) — AST-level macro invocation
+
         // === SPECIAL ===
         ASSIGNMENT,           // Assignment: =, +=, -=, etc.
         PARAMETER,            // Function parameter

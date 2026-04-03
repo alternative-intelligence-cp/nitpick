@@ -111,6 +111,8 @@ enum class TokenType {
     TOKEN_KW_COMPTIME,  // comptime - compile-time evaluation
     TOKEN_KW_INLINE,    // inline - inline hint for functions
     TOKEN_KW_NOINLINE,  // noinline - prevent inlining
+    TOKEN_KW_MACRO,     // macro - AST-level macro declaration
+    TOKEN_KW_DERIVE,    // derive - derive macro attribute argument
     
     // ========================================================================
     // Keywords - Design by Contract (P1-4 Formal Verification)

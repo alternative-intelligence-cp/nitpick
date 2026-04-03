@@ -226,4 +226,15 @@ std::string ComptimeExpr::toString() const {
     return "comptime(" + expr->toString() + ")";
 }
 
+std::string MacroInvocationExpr::toString() const {
+    std::ostringstream oss;
+    oss << macroName << "!(";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << (arguments[i] ? arguments[i]->toString() : "null");
+    }
+    oss << ")";
+    return oss.str();
+}
+
 } // namespace aria

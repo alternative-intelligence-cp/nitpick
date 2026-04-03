@@ -1,10 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.7.3 LANGUAGES C CXX)
+project(aria VERSION 0.9.1 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ============================================================================
+# ccache — Accelerate rebuilds (v0.8.2)
+# ============================================================================
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    message(STATUS "ccache found: ${CCACHE_PROGRAM} — compiler caching enabled")
+else()
+    message(STATUS "ccache not found — install with: sudo apt install ccache")
+endif()
 
 # liburing configuration
 set(LIBURING_ROOT ${CMAKE_SOURCE_DIR}/third_party/liburing-master/install)
@@ -32,6 +44,22 @@ option(USE_COVERAGE "Enable code coverage" OFF)
 if(USE_COVERAGE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+endif()
+
+# ============================================================================
+# Build Time Profiling (v0.8.2) — -DUSE_TIME_TRACE=ON
+# ============================================================================
+# Generates per-TU Chrome trace JSON files (-ftime-trace) for analysis.
+# Open the .json files in chrome://tracing or https://ui.perfetto.dev
+option(USE_TIME_TRACE "Enable -ftime-trace for build profiling" OFF)
+if(USE_TIME_TRACE)
+    check_cxx_compiler_flag("-ftime-trace" HAS_FTIME_TRACE)
+    if(HAS_FTIME_TRACE)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftime-trace")
+        message(STATUS "Build time profiling enabled (-ftime-trace)")
+    else()
+        message(STATUS "Build time profiling unavailable — compiler does not support -ftime-trace")
+    endif()
 endif()
 
 # ============================================================================
@@ -209,6 +237,9 @@ set(SEMA_SOURCES
     src/frontend/sema/module_table.cpp
     src/frontend/sema/module_loader.cpp
     src/frontend/sema/type_checker.cpp
+    src/frontend/sema/type_checker_call.cpp
+    src/frontend/sema/type_checker_expr.cpp
+    src/frontend/sema/type_checker_stmts.cpp
     src/frontend/sema/exhaustiveness.cpp
     src/frontend/sema/definite_assignment.cpp
     src/frontend/sema/borrow_checker.cpp
@@ -237,6 +268,9 @@ set(IR_SOURCES
     src/backend/ir/tbb_codegen.cpp
     src/backend/ir/ternary_codegen.cpp
     src/backend/ir/codegen_expr.cpp
+    src/backend/ir/codegen_expr_binary.cpp
+    src/backend/ir/codegen_expr_call.cpp
+    src/backend/ir/codegen_expr_compound.cpp
     src/backend/ir/codegen_stmt.cpp
     # src/backend/ir/type_mapper.cpp
     # src/backend/ir/memory_codegen.cpp
@@ -503,6 +537,37 @@ if(Z3_FOUND)
 else()
     target_link_libraries(ariac_testing ${llvm_libs} uring atomic)
 endif()
+
+# ============================================================================
+# Precompiled Headers (v0.8.2) — Cut build time by pre-parsing LLVM headers
+# ============================================================================
+# LLVM headers are large and included in many translation units. PCH avoids
+# re-parsing them for each .cpp file, significantly reducing compile time.
+
+set(ARIA_PCH_HEADER ${CMAKE_SOURCE_DIR}/include/aria_pch.h)
+
+# Separate C++ sources that benefit from PCH (exclude .c files)
+# PCH with LLVM headers only makes sense for C++ translation units
+set_source_files_properties(
+    ${PREPROCESSOR_SOURCES} ${LEXER_SOURCES} ${AST_SOURCES} ${PARSER_SOURCES}
+    ${DIAGNOSTICS_SOURCES} ${SEMA_SOURCES} ${VERIFY_SOURCES} ${IR_SOURCES}
+    ${TOOLS_SOURCES} src/main.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS OFF
+)
+target_precompile_headers(ariac PRIVATE ${ARIA_PCH_HEADER})
+# C source files must not use the C++ PCH
+set_source_files_properties(
+    src/runtime/allocators/mem_primitives.c
+    src/runtime/args/args.c
+    src/runtime/exotic_types.c
+    src/runtime/os/os_shim.c
+    src/runtime/os/aifs_shim.c
+    src/runtime/os/hexstream_shim.c
+    src/runtime/thread/lockfree_shim.c
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
+target_precompile_headers(ariac_testing REUSE_FROM ariac)
+message(STATUS "Precompiled headers enabled for ariac (LLVM + stdlib, CXX only)")
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 

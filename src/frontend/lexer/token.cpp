@@ -430,6 +430,13 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_COMMENT: return "COMMENT";
         case TokenType::TOKEN_WHITESPACE: return "WHITESPACE";
         
+        // Macro system (v0.8.3)
+        case TokenType::TOKEN_KW_MACRO: return "MACRO";
+        case TokenType::TOKEN_KW_DERIVE: return "DERIVE";
+        case TokenType::TOKEN_KW_COMPTIME: return "COMPTIME";
+        case TokenType::TOKEN_KW_INLINE: return "INLINE";
+        case TokenType::TOKEN_KW_NOINLINE: return "NOINLINE";
+        
         default: return "UNKNOWN";
     }
 }

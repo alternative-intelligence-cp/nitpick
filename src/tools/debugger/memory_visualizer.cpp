@@ -209,15 +209,16 @@ ObjHeader MemoryVisualizer::unpackHeader(uint64_t raw_header) {
     ObjHeader header;
     
     // Bit layout (64-bit):
-    // Bits 0-7: Flags (mark_bit, pinned_bit, forwarded_bit, is_nursery, reserved)
+    // Bits 0-1: Color (tri-color: WHITE/GRAY/BLACK)
+    // Bits 2-7: Flags (pinned_bit, forwarded_bit, is_nursery, reserved)
     // Bits 8-31: Size class (24 bits)
     // Bits 32-63: Type ID (32 bits)
     
     uint8_t flags = raw_header & 0xFF;
-    header.mark_bit = (flags & 0x01) != 0;
-    header.pinned_bit = (flags & 0x02) != 0;
-    header.forwarded_bit = (flags & 0x04) != 0;
-    header.is_nursery = (flags & 0x08) != 0;
+    header.color = flags & 0x03;  // 2-bit color field
+    header.pinned_bit = (flags & 0x04) != 0;
+    header.forwarded_bit = (flags & 0x08) != 0;
+    header.is_nursery = (flags & 0x10) != 0;
     
     header.size_class = (raw_header >> 8) & 0xFFFFFF;
     header.type_id = (raw_header >> 32) & 0xFFFFFFFF;

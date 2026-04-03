@@ -284,6 +284,29 @@ llvm::Function* StmtCodegen::getOrDeclareGCFree() {
 }
 
 /**
+ * Get or declare aria_gc_safepoint runtime function (v0.8.1)
+ * Signature: void aria_gc_safepoint(void)
+ * Inserted at loop back-edges for GC safepoint polling.
+ */
+llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
+    llvm::Function* func = module->getFunction("aria_gc_safepoint");
+    if (!func) {
+        llvm::FunctionType* func_type = llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),  // void return
+            {},                               // no params
+            false
+        );
+        func = llvm::Function::Create(
+            func_type,
+            llvm::Function::ExternalLinkage,
+            "aria_gc_safepoint",
+            module
+        );
+    }
+    return func;
+}
+
+/**
  * Get or declare aria.alloc runtime function (wild memory)
  * Signature: void* aria_alloc(i64 size)
  */
@@ -1445,6 +1468,8 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
     // Execute defers and loop back to condition check (if no terminator already present)
     if (!builder.GetInsertBlock()->getTerminator()) {
         executeScopeDefers();
+        // v0.8.1: GC safepoint at loop back-edge
+        builder.CreateCall(getOrDeclareGCSafepoint());
         builder.CreateBr(cond_block);
     }
     
@@ -1457,7 +1482,7 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
     // Set insertion point to end block for continuation
     end_block->insertInto(func);
     builder.SetInsertPoint(end_block);
-}
+}  // end codegenWhile
 
 /**
  * Generate code for for loop
@@ -1663,6 +1688,9 @@ void StmtCodegen::codegenFor(ForStmt* stmt) {
         expr_codegen->codegenExpressionNode(stmt->update.get(), expr_codegen);
     }
     
+    // v0.8.1: GC safepoint at loop back-edge
+    builder.CreateCall(getOrDeclareGCSafepoint());
+    
     // Loop back to condition
     builder.CreateBr(cond_block);
     
@@ -1807,6 +1835,9 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
     // Add incoming value to PHI node
     counter_phi->addIncoming(next_counter, inc_block);
     
+    // v0.8.1: GC safepoint at loop back-edge
+    builder.CreateCall(getOrDeclareGCSafepoint());
+    
     // Loop back to condition
     builder.CreateBr(cond_block);
     
@@ -1939,6 +1970,9 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
     // Add incoming value to PHI node
     counter_phi->addIncoming(next_counter, inc_block);
     
+    // v0.8.1: GC safepoint at loop back-edge
+    builder.CreateCall(getOrDeclareGCSafepoint());
+    
     // Loop back to condition
     builder.CreateBr(cond_block);
     
@@ -2053,6 +2087,8 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
     
     // After body, loop back to condition (if no terminator)
     if (!builder.GetInsertBlock()->getTerminator()) {
+        // v0.8.1: GC safepoint at loop back-edge
+        builder.CreateCall(getOrDeclareGCSafepoint());
         builder.CreateBr(cond_block);
     }
     

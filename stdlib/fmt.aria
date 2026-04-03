@@ -1,0 +1,240 @@
+// stdlib/fmt.aria
+// String Formatting Module — Pure Aria Implementation (v0.9.1)
+//
+// Format strings using {} placeholders (similar to Python/Rust format strings).
+// No extern calls — uses only compiler builtins.
+//
+// Usage:
+//   use "stdlib/fmt.aria".*;
+//
+// API:
+//   fmt(template, arg1)              → string   single substitution
+//   fmt2(template, a1, a2)           → string   two substitutions
+//   fmt3(template, a1, a2, a3)       → string   three substitutions
+//   fmt4(template, a1, a2, a3, a4)   → string   four substitutions
+//   fmt_int(n)                       → string   integer to string
+//   fmt_float(x, decimals)           → string   float to string with precision
+//   fmt_bool(b)                      → string   bool to "true" / "false"
+//   fmt_pad_left(s, width, pad)      → string   left-pad to minimum width
+//   fmt_pad_right(s, width, pad)     → string   right-pad to minimum width
+//   fmt_repeat(s, n)                 → string   repeat string n times
+//   fmt_hex(n)                       → string   integer to hex string
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_int — convert int64 to string (uses builtin string_from_int)
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_int = string(int64:n) {
+    string:r = string_from_int(n);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_bool — convert bool to "true" or "false"
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_bool = string(bool:b) {
+    if (b == true) { pass "true"; }
+    pass "false";
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_repeat — repeat a string n times
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_repeat = string(string:s, int64:n) {
+    if (n <= 0i64) { pass ""; }
+    string:r = string_repeat(s, n);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_pad_left — pad string on left to minimum width
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_pad_left = string(string:s, int64:width, string:pad) {
+    int64:len = string_length(s);
+    if (len >= width) { pass s; }
+    int64:need = width - len;
+    string:padding = string_repeat(pad, need);
+    int64:pad_len = string_length(padding);
+    if (pad_len > need) {
+        padding = string_substring(padding, 0i64, need);
+    }
+    string:result = string_concat(padding, s);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_pad_right — pad string on right to minimum width
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_pad_right = string(string:s, int64:width, string:pad) {
+    int64:len = string_length(s);
+    if (len >= width) { pass s; }
+    int64:need = width - len;
+    string:padding = string_repeat(pad, need);
+    int64:pad_len = string_length(padding);
+    if (pad_len > need) {
+        padding = string_substring(padding, 0i64, need);
+    }
+    string:result = string_concat(s, padding);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_hex — convert int64 to hexadecimal string (lowercase)
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_hex = string(int64:n) {
+    if (n == 0i64) { pass "0"; }
+
+    bool:neg = false;
+    int64:val = n;
+    if (val < 0i64) {
+        neg = true;
+        val = 0i64 - val;
+    }
+
+    // Build hex digits in reverse
+    string:result = "";
+    while (val > 0i64) {
+        int64:digit = val - (val / 16i64) * 16i64;
+        string:ch = "";
+        if (digit == 0i64) { ch = "0"; }
+        if (digit == 1i64) { ch = "1"; }
+        if (digit == 2i64) { ch = "2"; }
+        if (digit == 3i64) { ch = "3"; }
+        if (digit == 4i64) { ch = "4"; }
+        if (digit == 5i64) { ch = "5"; }
+        if (digit == 6i64) { ch = "6"; }
+        if (digit == 7i64) { ch = "7"; }
+        if (digit == 8i64) { ch = "8"; }
+        if (digit == 9i64) { ch = "9"; }
+        if (digit == 10i64) { ch = "a"; }
+        if (digit == 11i64) { ch = "b"; }
+        if (digit == 12i64) { ch = "c"; }
+        if (digit == 13i64) { ch = "d"; }
+        if (digit == 14i64) { ch = "e"; }
+        if (digit == 15i64) { ch = "f"; }
+        result = string_concat(ch, result);
+        val = val / 16i64;
+    }
+
+    if (neg == true) {
+        result = string_concat("-", result);
+    }
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt_float — convert float to string with specified decimal places
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt_float = string(flt64:x, int64:decimals) {
+    if (decimals < 0i64) { decimals = 0i64; }
+    if (decimals > 15i64) { decimals = 15i64; }
+
+    bool:neg = false;
+    flt64:val = x;
+    if (val < 0.0) {
+        neg = true;
+        val = 0.0 - val;
+    }
+
+    // Compute multiplier: 10^decimals
+    flt64:mult = 1.0;
+    int64:di = 0i64;
+    while (di < decimals) {
+        mult = mult * 10.0;
+        di = di + 1i64;
+    }
+
+    // Round and split
+    flt64:rounded = val * mult + 0.5;
+    int64:total_i = @cast<int64>(rounded);
+    int64:int_part = total_i;
+    int64:frac_part = total_i;
+
+    // Integer division to separate parts
+    int64:divisor = @cast<int64>(mult);
+    if (divisor > 0i64) {
+        int_part = total_i / divisor;
+        frac_part = total_i - int_part * divisor;
+    }
+
+    string:int_str = string_from_int(int_part);
+    if (neg == true) {
+        int_str = string_concat("-", int_str);
+    }
+
+    if (decimals == 0i64) {
+        pass int_str;
+    }
+
+    // Build fractional part with leading zeros
+    string:frac_str = string_from_int(frac_part);
+    int64:frac_len = string_length(frac_str);
+    while (frac_len < decimals) {
+        frac_str = string_concat("0", frac_str);
+        frac_len = frac_len + 1i64;
+    }
+
+    string:result = string_concat(int_str, ".");
+    result = string_concat(result, frac_str);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: find next {} placeholder and replace with value
+// ═══════════════════════════════════════════════════════════════════════
+func:fmt_replace_first_placeholder = string(string:tmpl, string:val) {
+    int64:idx = string_index_of(tmpl, "{}");
+    if (idx < 0i64) { pass tmpl; }
+
+    int64:tmpl_len = string_length(tmpl);
+    string:before = "";
+    if (idx > 0i64) {
+        before = string_substring(tmpl, 0i64, idx);
+    }
+    string:after = "";
+    int64:after_start = idx + 2i64;
+    if (after_start < tmpl_len) {
+        after = string_substring(tmpl, after_start, tmpl_len);
+    }
+
+    string:result = string_concat(before, val);
+    result = string_concat(result, after);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt — format string with 1 substitution
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt = string(string:tmpl, string:a1) {
+    string:r = raw fmt_replace_first_placeholder(tmpl, a1);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt2 — format string with 2 substitutions
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt2 = string(string:tmpl, string:a1, string:a2) {
+    string:r = raw fmt_replace_first_placeholder(tmpl, a1);
+    r = raw fmt_replace_first_placeholder(r, a2);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt3 — format string with 3 substitutions
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt3 = string(string:tmpl, string:a1, string:a2, string:a3) {
+    string:r = raw fmt_replace_first_placeholder(tmpl, a1);
+    r = raw fmt_replace_first_placeholder(r, a2);
+    r = raw fmt_replace_first_placeholder(r, a3);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// fmt4 — format string with 4 substitutions
+// ═══════════════════════════════════════════════════════════════════════
+pub func:fmt4 = string(string:tmpl, string:a1, string:a2, string:a3, string:a4) {
+    string:r = raw fmt_replace_first_placeholder(tmpl, a1);
+    r = raw fmt_replace_first_placeholder(r, a2);
+    r = raw fmt_replace_first_placeholder(r, a3);
+    r = raw fmt_replace_first_placeholder(r, a4);
+    pass r;
+};

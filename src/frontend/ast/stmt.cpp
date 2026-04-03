@@ -439,6 +439,17 @@ std::string ComptimeBlockStmt::toString() const {
     return "comptime " + (body ? body->toString() : "{}");
 }
 
+std::string MacroDeclStmt::toString() const {
+    std::ostringstream oss;
+    oss << "MacroDecl(" << macroName << "(";
+    for (size_t i = 0; i < paramNames.size(); ++i) {
+        if (i > 0) oss << ", ";
+        oss << paramNames[i];
+    }
+    oss << ") " << (body ? body->toString() : "{}") << ")";
+    return oss.str();
+}
+
 std::string ProgramNode::toString() const {
     std::ostringstream oss;
     oss << "Program([";

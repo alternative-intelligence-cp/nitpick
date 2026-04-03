@@ -64,7 +64,7 @@ struct MemoryRegion {
  * Bits 32-63: Type ID (32 bits)
  */
 struct ObjHeader {
-    bool mark_bit;                   // GC mark phase flag
+    uint8_t color;                   // Tri-color: 0=WHITE, 1=GRAY, 2=BLACK
     bool pinned_bit;                 // Object pinned (non-movable)
     bool forwarded_bit;              // Object was moved during GC
     bool is_nursery;                 // Object in nursery generation

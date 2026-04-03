@@ -8,6 +8,21 @@
 namespace aria {
 
 /**
+ * Attribute — represents #[name(arg1, arg2, ...)] on a declaration
+ * Used for derive macros, built-in attributes, and custom attribute macros.
+ */
+struct Attribute {
+    std::string name;                    // e.g., "derive", "align", "inline", "gpu_kernel"
+    std::vector<std::string> args;       // e.g., ["ToString", "Eq", "Hash"] for #[derive(ToString, Eq, Hash)]
+    int line = 0;
+    int column = 0;
+    
+    Attribute() = default;
+    Attribute(const std::string& n, const std::vector<std::string>& a, int l = 0, int c = 0)
+        : name(n), args(a), line(l), column(c) {}
+};
+
+/**
  * Variable declaration statement node
  * Represents: type:name = value;
  */
@@ -100,6 +115,9 @@ public:
     bool isComptime = false;   // comptime func: - evaluated at compile time when all args known
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
+    // v0.8.3: Attributes — #[inline], #[noinline], #[gpu_kernel], etc.
+    std::vector<Attribute> attributes;
+    
     // P1-4: Design by Contract - Formal verification support
     std::vector<ASTNodePtr> preconditions;   // requires clauses (checked on entry)
     std::vector<ASTNodePtr> postconditions;  // ensures clauses (checked on exit)
@@ -125,6 +143,9 @@ public:
     std::vector<ASTNodePtr> fields;  // VarDeclStmt instances (field declarations)
     std::vector<GenericParamInfo> genericParams;  // For generics: struct<T, U>
     
+    // v0.8.3: Attributes — #[derive(ToString, Eq)], #[align(64)], etc.
+    std::vector<Attribute> attributes;
+    
     // P0: Alignment attribute support - #[align(N)] for entire struct
     // Ensures all instances of this struct are aligned to N bytes
     uint64_t alignment = 0;    // 0 = natural alignment, >0 = explicit alignment in bytes
@@ -145,6 +166,9 @@ class EnumDeclStmt : public ASTNode {
 public:
     std::string enumName;
     std::map<std::string, int64_t> variants;  // variant name -> integer value
+    
+    // v0.8.3: Attributes — #[derive(ToString)], etc.
+    std::vector<Attribute> attributes;
     
     EnumDeclStmt(const std::string& name, const std::map<std::string, int64_t>& variantMap,
                  int line = 0, int column = 0)
@@ -715,6 +739,28 @@ public:
     ComptimeBlockStmt(ASTNodePtr block, int line = 0, int column = 0)
         : ASTNode(NodeType::COMPTIME_BLOCK, line, column),
           body(std::move(block)) {}
+    
+    std::string toString() const override;
+};
+
+/**
+ * AST-level macro declaration (v0.8.3)
+ * Represents: macro:name = (params) { body };
+ * The body is a template AST that gets cloned and parameter-substituted on invocation.
+ * Parameters are identifier placeholders replaced in the AST.
+ */
+class MacroDeclStmt : public ASTNode {
+public:
+    std::string macroName;
+    std::vector<std::string> paramNames;  // Parameter placeholder names
+    ASTNodePtr body;                      // Template AST (BlockStmt or single expression)
+    bool isExpression;                    // true = expression macro, false = statement macro
+    
+    MacroDeclStmt(const std::string& name, const std::vector<std::string>& params,
+                  ASTNodePtr bodyNode, bool exprMacro = false, int line = 0, int column = 0)
+        : ASTNode(NodeType::MACRO_DECL, line, column),
+          macroName(name), paramNames(params), body(std::move(bodyNode)),
+          isExpression(exprMacro) {}
     
     std::string toString() const override;
 };

@@ -21,7 +21,12 @@
 #include "runtime/gc.h"
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <mutex>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
+#include <chrono>
 
 namespace aria {
 namespace runtime {
@@ -224,13 +229,33 @@ public:
     // Write barrier
     void write_barrier(void* obj, void* ref);
     
+    // Configuration
+    void set_max_heap(size_t max_bytes);
+    
+    // Finalizers
+    void register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
+    
+    // Type layout registration (for reference tracing)
+    void register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
+    
+    // v0.8.1: Concurrent collection
+    void enable_concurrent(bool enable);
+    void safepoint();  // Mutator safepoint poll
+    
+    // v0.8.4: JIT root tracking
+    void register_jit_root(void** root_addr);
+    void unregister_jit_root(void** root_addr);
+    
     // Queries
     bool is_heap_pointer(void* ptr) const;
     ObjHeader* get_header(void* ptr) const;
     void get_stats(GCStats* stats) const;
     
 private:
-    GCState() : initialized(false), collecting(false) {}
+    GCState() : initialized(false), collecting(false), max_heap(0),
+                concurrent_enabled(false), concurrent_marking(false),
+                safepoint_requested(false), sweep_in_progress(false),
+                sweep_cursor(0) {}
     ~GCState() { shutdown(); }
     
     // No copy/move
@@ -239,6 +264,7 @@ private:
     
     bool initialized;
     bool collecting;  // GC in progress flag
+    size_t max_heap;  // Maximum heap size (0 = unlimited)
     
     Nursery* nursery;
     OldGeneration* old_gen;
@@ -247,18 +273,64 @@ private:
     // Thread-local shadow stacks (for now, single-threaded)
     ShadowStack shadow_stack;
     
+    // Finalizer registry: type_id → finalizer function
+    std::unordered_map<uint16_t, AriaFinalizer> finalizers;
+    
+    // Type layout registry: type_id → list of byte offsets containing GC references
+    // Used by mark_object to trace through object fields
+    std::unordered_map<uint16_t, std::vector<size_t>> type_ref_offsets;
+    
     // Statistics
     GCStats stats;
     
     // Synchronization
     mutable std::mutex gc_mutex;
     
+    // =========================================================================
+    // v0.8.1: Concurrent & Incremental Collection
+    // =========================================================================
+    
+    // Concurrent mark state
+    bool concurrent_enabled;                // User opted into concurrent GC
+    std::atomic<bool> concurrent_marking;   // Mark phase currently in progress
+    std::vector<void*> gray_worklist;       // Tri-color gray objects to trace
+    std::vector<void*> satb_buffer;         // SATB snapshot buffer
+    std::mutex gray_mutex;                  // Protects gray_worklist + satb_buffer
+    std::thread* mark_thread = nullptr;     // Background mark thread
+    
+    // Safepoint synchronization
+    std::atomic<bool> safepoint_requested;  // GC wants mutators to pause
+    std::mutex safepoint_mutex;
+    std::condition_variable safepoint_cv;   // Mutators wait here
+    std::condition_variable safepoint_ack;  // GC waits for mutators here
+    std::atomic<int> mutators_stopped{0};   // Count of stopped mutators
+    
+    // Incremental sweep state
+    bool sweep_in_progress;                 // Incremental sweep active
+    size_t sweep_cursor;                    // Current position in old_gen.objects
+    size_t sweep_bytes_freed;               // Bytes freed in current sweep cycle
+    
+    // v0.8.4: JIT root tracking
+    std::vector<void**> jit_roots;          // Roots from JIT-compiled code
+    std::mutex jit_roots_mutex;             // Protects jit_roots
+    
+    // Pause time tracking
+    std::chrono::high_resolution_clock::time_point pause_start;
+    
     // Collection helpers
     void mark_object(void* ptr);
+    void mark_object_concurrent(void* ptr);  // Push to gray worklist
+    void process_gray_worklist();            // Drain gray→black
+    void drain_satb_buffer();                // Process SATB entries
     void sweep_old_gen();
+    void sweep_incremental(size_t steps);    // Sweep N objects
     void evacuate_nursery();
-    void* evacuate_object(void* ptr);  // Copy to old gen
+    void* evacuate_object(void* ptr);        // Copy to old gen
     void scan_roots();
+    void concurrent_mark_phase();            // Background mark thread entry
+    void start_stw_pause();                  // Request safepoint pause
+    void end_stw_pause();                    // Release mutators
+    void record_pause(std::chrono::high_resolution_clock::time_point start);
 };
 
 } // namespace runtime
