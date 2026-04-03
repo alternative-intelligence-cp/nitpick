@@ -2728,6 +2728,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     else if (typeName == "int64") baseType = builder.getInt64Ty();
                     else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
                     else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else if (typeName == "bool") baseType = builder.getInt1Ty();
                     else {
                         // Unknown type (opaque) - treat as ptr
                         return builder.getPtrTy();
@@ -5082,6 +5083,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     else if (typeName == "int64") baseType = builder.getInt64Ty();
                     else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
                     else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else if (typeName == "bool") baseType = builder.getInt1Ty();
                     else {
                         // Unknown type - treat as opaque (ptr)
                         return builder.getPtrTy();
