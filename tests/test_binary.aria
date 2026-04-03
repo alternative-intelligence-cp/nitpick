@@ -1,4 +1,3 @@
-// test_binary.aria — Binary reader/writer tests
 use "../stdlib/binary.aria".*;
 
 func:failsafe = int32(tbb32:err_code) {
@@ -6,8 +5,7 @@ func:failsafe = int32(tbb32:err_code) {
     exit(1);
 };
 
-func:main = int32() {
-    // Test 1: int8/int16/int32 roundtrip
+func:test_int_types = int32() {
     int64:buf = raw bin_new();
     drop raw bin_write_int8(buf, 42i32);
     drop raw bin_write_int16(buf, 100i32);
@@ -16,20 +14,99 @@ func:main = int32() {
     int32:v8 = raw bin_read_int8(buf);
     int32:v16 = raw bin_read_int16(buf);
     int32:v32 = raw bin_read_int32(buf);
-    if (v8 != 42i32) { println("FAIL: int8"); exit(1); }
-    if (v16 != 100i32) { println("FAIL: int16"); exit(1); }
-    if (v32 != 9999i32) { println("FAIL: int32"); exit(1); }
-    println("OK: int8/int16/int32");
+    if (v8 != 42i32) { println("FAIL: T01 int8"); pass 1i32; }
+    if (v16 != 100i32) { println("FAIL: T02 int16"); pass 1i32; }
+    if (v32 != 9999i32) { println("FAIL: T03 int32"); pass 1i32; }
+    println("OK: T01 int8");
+    println("OK: T02 int16");
+    println("OK: T03 int32");
+    drop raw bin_free(buf);
+    pass 0i32;
+};
 
-    // File roundtrip
+func:test_bool = int32() {
+    int64:buf = raw bin_new();
+    drop raw bin_write_bool(buf, 1i32);
+    drop raw bin_write_bool(buf, 0i32);
+    drop raw bin_seek(buf, 0i64);
+    int32:bt = raw bin_read_bool(buf);
+    int32:bf = raw bin_read_bool(buf);
+    if (bt != 1i32) { println("FAIL: T04 bool true"); pass 1i32; }
+    if (bf != 0i32) { println("FAIL: T05 bool false"); pass 1i32; }
+    println("OK: T04 bool true");
+    println("OK: T05 bool false");
+    drop raw bin_free(buf);
+    pass 0i32;
+};
+
+func:test_string = int32() {
+    int64:buf = raw bin_new();
+    drop raw bin_write_str(buf, "hello");
+    drop raw bin_seek(buf, 0i64);
+    string:vs = raw bin_read_str(buf);
+    println("OK: T06 string roundtrip");
+    drop raw bin_free(buf);
+    pass 0i32;
+};
+
+func:test_size_pos = int32() {
+    int64:buf = raw bin_new();
+    drop raw bin_write_int8(buf, 1i32);
+    drop raw bin_write_int16(buf, 2i32);
+    int64:sz = raw bin_size(buf);
+    if (sz != 3i64) { println("FAIL: T07 size"); pass 1i32; }
+    println("OK: T07 size");
+
+    drop raw bin_seek(buf, 1i64);
+    int64:rem = raw bin_remaining(buf);
+    if (rem != 2i64) { println("FAIL: T08 remaining"); pass 1i32; }
+    println("OK: T08 remaining");
+    drop raw bin_free(buf);
+    pass 0i32;
+};
+
+func:test_file = int32() {
+    int64:buf = raw bin_new();
+    if (buf == 0i64) { println("FAIL: T09 null handle"); pass 1i32; }
+    println("OK: T09 valid handle");
+    drop raw bin_write_int8(buf, 42i32);
+    drop raw bin_write_int16(buf, 100i32);
+    drop raw bin_write_int32(buf, 9999i32);
+
     int32:wf = raw bin_to_file(buf, "/tmp/aria_bin_test.bin");
     int64:buf2 = raw bin_from_file("/tmp/aria_bin_test.bin");
     int64:fsz = raw bin_size(buf2);
-    if (fsz != 7i64) { println("FAIL: file size"); exit(1); }
-    println("OK: file roundtrip");
+    if (fsz != 7i64) { println("FAIL: T10 file size"); pass 1i32; }
+    println("OK: T10 file roundtrip");
+
+    drop raw bin_seek(buf2, 0i64);
+    int32:fv8 = raw bin_read_int8(buf2);
+    if (fv8 != 42i32) { println("FAIL: T11 file int8"); pass 1i32; }
+    int32:fv16 = raw bin_read_int16(buf2);
+    if (fv16 != 100i32) { println("FAIL: T11 file int16"); pass 1i32; }
+    println("OK: T11 file values preserved");
+
+    drop raw bin_write_int64(buf, 42i64);
+    int64:sz2 = raw bin_size(buf);
+    if (sz2 != 15i64) { println("FAIL: T12 size after int64"); pass 1i32; }
+    println("OK: T12 int64 write size");
 
     drop raw bin_free(buf);
     drop raw bin_free(buf2);
-    println("PASS: all binary tests passed");
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_int_types();
+    if (r1 != 0i32) { exit(1); }
+    int32:r2 = raw test_bool();
+    if (r2 != 0i32) { exit(1); }
+    int32:r3 = raw test_string();
+    if (r3 != 0i32) { exit(1); }
+    int32:r4 = raw test_size_pos();
+    if (r4 != 0i32) { exit(1); }
+    int32:r5 = raw test_file();
+    if (r5 != 0i32) { exit(1); }
+    println("PASS: all 12 binary tests passed");
     exit(0);
 };
