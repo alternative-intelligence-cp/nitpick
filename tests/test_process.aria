@@ -1,0 +1,44 @@
+// test_process.aria — Test process module (v0.10.0 port)
+use "process.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
+
+func:main = int32() {
+    // Test getpid — should be > 0
+    int64:pid = raw Process.getpid();
+    if (pid <= 0i64) {
+        println("FAIL: getpid returned <= 0");
+        exit(1);
+    }
+    println("OK: getpid");
+
+    // Test getppid — should be > 0
+    int64:ppid = raw Process.getppid();
+    if (ppid <= 0i64) {
+        println("FAIL: getppid returned <= 0");
+        exit(1);
+    }
+    println("OK: getppid");
+
+    // Test getenv — PATH should exist
+    string:path_val = raw Process.getenv("PATH");
+    if (string_length(path_val) == 0i64) {
+        println("FAIL: getenv PATH is empty");
+        exit(1);
+    }
+    println("OK: getenv");
+
+    // Test system — echo should return 0
+    int32:rc = raw Process.system("true");
+    if (rc != 0i32) {
+        println("FAIL: system() returned non-zero");
+        exit(1);
+    }
+    println("OK: system");
+
+    println("PASS: all process tests passed");
+    exit(0);
+};

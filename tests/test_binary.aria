@@ -1,0 +1,35 @@
+// test_binary.aria — Binary reader/writer tests
+use "../stdlib/binary.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE");
+    exit(1);
+};
+
+func:main = int32() {
+    // Test 1: int8/int16/int32 roundtrip
+    int64:buf = raw bin_new();
+    drop raw bin_write_int8(buf, 42i32);
+    drop raw bin_write_int16(buf, 100i32);
+    drop raw bin_write_int32(buf, 9999i32);
+    drop raw bin_seek(buf, 0i64);
+    int32:v8 = raw bin_read_int8(buf);
+    int32:v16 = raw bin_read_int16(buf);
+    int32:v32 = raw bin_read_int32(buf);
+    if (v8 != 42i32) { println("FAIL: int8"); exit(1); }
+    if (v16 != 100i32) { println("FAIL: int16"); exit(1); }
+    if (v32 != 9999i32) { println("FAIL: int32"); exit(1); }
+    println("OK: int8/int16/int32");
+
+    // File roundtrip
+    int32:wf = raw bin_to_file(buf, "/tmp/aria_bin_test.bin");
+    int64:buf2 = raw bin_from_file("/tmp/aria_bin_test.bin");
+    int64:fsz = raw bin_size(buf2);
+    if (fsz != 7i64) { println("FAIL: file size"); exit(1); }
+    println("OK: file roundtrip");
+
+    drop raw bin_free(buf);
+    drop raw bin_free(buf2);
+    println("PASS: all binary tests passed");
+    exit(0);
+};

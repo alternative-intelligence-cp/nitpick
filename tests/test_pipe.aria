@@ -1,20 +1,42 @@
+// test_pipe.aria — Test pipe module (v0.10.0 port)
 use "pipe.aria".*;
 
-func:failsafe = int32(tbb32:err) { exit 1; };
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
 
 func:main = int32() {
-    println("=== Pipe Tests ===");
+    // Create a pipe
+    int64:read_fd = raw Pipe.create();
+    if (read_fd < 0i64) {
+        println("FAIL: pipe create returned < 0");
+        exit(1);
+    }
+    int64:wfd = raw Pipe.write_fd();
+    println("OK: pipe create");
 
-    int64:pp = raw Pipe.create();
-    if (pp >= 0i64) { println(" [PASS] pipe create"); }
-    if (pp < 0i64) { println(" [FAIL] pipe create"); }
+    // Write int64 to pipe
+    int32:wr = raw Pipe.write_int64(wfd, 42i64);
+    if (wr != 0i32) {
+        println("FAIL: pipe write_int64 failed");
+        exit(1);
+    }
+    println("OK: write_int64");
 
-    raw Pipe.write_int64(pp, 777i64);
-    int64:pread = raw Pipe.read_int64(pp);
-    if (pread == 777i64) { println(" [PASS] pipe write/read int64"); }
-    if (pread != 777i64) { println(" [FAIL] pipe write/read int64"); }
+    // Read int64 from pipe
+    int64:val = raw Pipe.read_int64(read_fd);
+    if (val != 42i64) {
+        println("FAIL: pipe read_int64 got wrong value");
+        exit(1);
+    }
+    println("OK: read_int64");
 
-    raw Pipe.destroy(pp);
-    println("=== Pipe Tests Done ===");
-    exit 0;
+    // Close both ends
+    int32:cw = raw Pipe.close_write(wfd);
+    int32:cr = raw Pipe.close_read(read_fd);
+    println("OK: close");
+
+    println("PASS: all pipe tests passed");
+    exit(0);
 };

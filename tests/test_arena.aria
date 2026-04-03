@@ -1,0 +1,66 @@
+// test_arena.aria — Test arena allocator (v0.10.0 port)
+use "arena.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
+
+func:main = int32() {
+    // Create arena with 1024 bytes
+    int64:arena = raw Arena.create(1024i64);
+    if (arena == 0i64) {
+        println("FAIL: arena create returned 0");
+        exit(1);
+    }
+    println("OK: create");
+
+    // Check remaining = 1024
+    int64:rem = raw Arena.remaining(arena);
+    if (rem != 1024i64) {
+        println("FAIL: remaining != 1024");
+        exit(1);
+    }
+    println("OK: remaining");
+
+    // Alloc 64 bytes
+    int64:off = raw Arena.alloc(arena, 64i64);
+    if (off != 0i64) {
+        println("FAIL: first alloc offset != 0");
+        exit(1);
+    }
+    println("OK: alloc");
+
+    // Check used = 64
+    int64:u = raw Arena.used(arena);
+    if (u != 64i64) {
+        println("FAIL: used != 64");
+        exit(1);
+    }
+    println("OK: used");
+
+    // Write and read int64
+    int32:wr = raw Arena.write_int64(arena, 0i64, 12345i64);
+    int64:val = raw Arena.read_int64(arena, 0i64);
+    if (val != 12345i64) {
+        println("FAIL: read_int64 != 12345");
+        exit(1);
+    }
+    println("OK: write/read_int64");
+
+    // Reset
+    int32:rr = raw Arena.reset(arena);
+    int64:u2 = raw Arena.used(arena);
+    if (u2 != 0i64) {
+        println("FAIL: used after reset != 0");
+        exit(1);
+    }
+    println("OK: reset");
+
+    // Destroy
+    int32:dr = raw Arena.destroy(arena);
+    println("OK: destroy");
+
+    println("PASS: all arena tests passed");
+    exit(0);
+};
