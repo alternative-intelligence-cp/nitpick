@@ -1,4 +1,3 @@
-// test_signal.aria — Test signal module (v0.10.0 port)
 use "signal.aria".*;
 
 func:failsafe = int32(tbb32:err_code) {
@@ -6,39 +5,77 @@ func:failsafe = int32(tbb32:err_code) {
     exit(1);
 };
 
-func:main = int32() {
-    // Test register — register SIGUSR1 handler
+func:test_register = int32() {
     int32:r1 = raw Signal.register(SIGUSR1);
-    if (r1 != 0i32) {
-        println("FAIL: signal register returned non-zero");
-        exit(1);
-    }
-    println("OK: register");
+    if (r1 != 0i32) { println("FAIL: T01 register SIGUSR1"); pass 1i32; }
+    println("OK: T01 register SIGUSR1");
 
-    // Test pending — nothing pending yet
+    int32:r2 = raw Signal.register(SIGUSR2);
+    if (r2 != 0i32) { println("FAIL: T02 register SIGUSR2"); pass 1i32; }
+    println("OK: T02 register SIGUSR2");
+
+    int32:r3 = raw Signal.register(SIGQUIT);
+    if (r3 != 0i32) { println("FAIL: T03 register SIGQUIT"); pass 1i32; }
+    println("OK: T03 register SIGQUIT");
+    pass 0i32;
+};
+
+func:test_pending = int32() {
     int32:p1 = raw Signal.pending(SIGUSR1);
-    if (p1 != 0i32) {
-        println("FAIL: signal pending returned non-zero before raise");
-        exit(1);
-    }
-    println("OK: pending (no signal)");
+    if (p1 != 0i32) { println("FAIL: T04 pending SIGUSR1"); pass 1i32; }
+    println("OK: T04 pending SIGUSR1 = 0");
 
-    // Test ignore
-    int32:r2 = raw Signal.ignore(SIGTERM);
-    if (r2 != 0i32) {
-        println("FAIL: signal ignore returned non-zero");
-        exit(1);
-    }
-    println("OK: ignore");
+    int32:p2 = raw Signal.pending(SIGUSR2);
+    if (p2 != 0i32) { println("FAIL: T05 pending SIGUSR2"); pass 1i32; }
+    println("OK: T05 pending SIGUSR2 = 0");
 
-    // Test restore
-    int32:r3 = raw Signal.restore(SIGTERM);
-    if (r3 != 0i32) {
-        println("FAIL: signal restore returned non-zero");
-        exit(1);
-    }
-    println("OK: restore");
+    int32:p3 = raw Signal.pending(SIGQUIT);
+    if (p3 != 0i32) { println("FAIL: T06 pending SIGQUIT"); pass 1i32; }
+    println("OK: T06 pending SIGQUIT = 0");
+    pass 0i32;
+};
 
-    println("PASS: all signal tests passed");
+func:test_ignore_restore = int32() {
+    int32:i1 = raw Signal.ignore(SIGTERM);
+    if (i1 != 0i32) { println("FAIL: T07 ignore SIGTERM"); pass 1i32; }
+    println("OK: T07 ignore SIGTERM");
+
+    int32:r1 = raw Signal.restore(SIGTERM);
+    if (r1 != 0i32) { println("FAIL: T08 restore SIGTERM"); pass 1i32; }
+    println("OK: T08 restore SIGTERM");
+
+    int32:i2 = raw Signal.ignore(SIGUSR1);
+    if (i2 != 0i32) { println("FAIL: T09 ignore SIGUSR1"); pass 1i32; }
+    println("OK: T09 ignore SIGUSR1");
+
+    int32:r2 = raw Signal.restore(SIGUSR1);
+    if (r2 != 0i32) { println("FAIL: T10 restore SIGUSR1"); pass 1i32; }
+    println("OK: T10 restore SIGUSR1");
+    pass 0i32;
+};
+
+func:test_reregister = int32() {
+    int32:r1 = raw Signal.register(SIGUSR1);
+    if (r1 != 0i32) { println("FAIL: T11 re-register"); pass 1i32; }
+    println("OK: T11 re-register SIGUSR1");
+
+    int32:i1 = raw Signal.ignore(SIGUSR2);
+    int32:r2 = raw Signal.restore(SIGUSR2);
+    int32:r3 = raw Signal.register(SIGUSR2);
+    if (r3 != 0i32) { println("FAIL: T12 register after restore"); pass 1i32; }
+    println("OK: T12 register after restore");
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_register();
+    if (r1 != 0i32) { exit(1); }
+    int32:r2 = raw test_pending();
+    if (r2 != 0i32) { exit(1); }
+    int32:r3 = raw test_ignore_restore();
+    if (r3 != 0i32) { exit(1); }
+    int32:r4 = raw test_reregister();
+    if (r4 != 0i32) { exit(1); }
+    println("PASS: all 12 signal tests passed");
     exit(0);
 };

@@ -1,4 +1,3 @@
-// test_net.aria — Network module tests (no remote connections needed)
 use "../stdlib/net.aria".*;
 
 func:failsafe = int32(tbb32:err_code) {
@@ -6,53 +5,86 @@ func:failsafe = int32(tbb32:err_code) {
     exit(1);
 };
 
-func:main = int32() {
-    // resolve localhost
+func:test_resolve = int32() {
     string:ip = raw net_resolve("localhost");
-    println("OK: resolve");
+    println("OK: T01 resolve localhost");
 
-    // listen on ephemeral port
-    int64:srv = raw net_listen(19876i32, 1i32);
-    if (srv < 0i64) {
-        println("FAIL: listen");
-        exit(1);
-    }
-    println("OK: listen");
+    string:ip2 = raw net_resolve("127.0.0.1");
+    println("OK: T02 resolve IP passthrough");
+    pass 0i32;
+};
 
-    // connect to the server
-    int64:cli = raw net_connect("127.0.0.1", 19876i32);
-    if (cli < 0i64) {
-        println("FAIL: connect");
-        exit(1);
-    }
-    println("OK: connect");
+func:test_listen_connect = int32() {
+    int64:srv = raw net_listen(19877i32, 1i32);
+    if (srv < 0i64) { println("FAIL: T03 listen"); pass 1i32; }
+    println("OK: T03 listen");
 
-    // accept the connection
+    int64:cli = raw net_connect("127.0.0.1", 19877i32);
+    if (cli < 0i64) { println("FAIL: T04 connect"); pass 1i32; }
+    println("OK: T04 connect");
+
     int64:acc = raw net_accept(srv);
-    if (acc < 0i64) {
-        println("FAIL: accept");
-        exit(1);
-    }
-    println("OK: accept");
+    if (acc < 0i64) { println("FAIL: T05 accept"); pass 1i32; }
+    println("OK: T05 accept");
 
-    // send from client
-    int64:sent = raw net_send(cli, "hello aria net");
-    if (sent < 1i64) {
-        println("FAIL: send");
-        exit(1);
-    }
-    println("OK: send");
-
-    // recv on accepted socket
-    string:msg = raw net_recv(acc, 256i64);
-    println("OK: recv");
-
-    // close all
     drop raw net_close(cli);
     drop raw net_close(acc);
     drop raw net_server_close(srv);
-    println("OK: close");
+    pass 0i32;
+};
 
-    println("PASS: all net tests passed");
+func:test_send_recv = int32() {
+    int64:srv = raw net_listen(19878i32, 1i32);
+    int64:cli = raw net_connect("127.0.0.1", 19878i32);
+    int64:acc = raw net_accept(srv);
+
+    int64:sent = raw net_send(cli, "hello aria net");
+    if (sent < 1i64) { println("FAIL: T06 send"); pass 1i32; }
+    println("OK: T06 send");
+
+    string:msg = raw net_recv(acc, 256i64);
+    println("OK: T07 recv");
+
+    int64:sent2 = raw net_send(acc, "reply back");
+    if (sent2 < 1i64) { println("FAIL: T08 send back"); pass 1i32; }
+    println("OK: T08 send back");
+
+    string:reply = raw net_recv(cli, 256i64);
+    println("OK: T09 recv reply");
+
+    drop raw net_close(cli);
+    drop raw net_close(acc);
+    drop raw net_server_close(srv);
+    pass 0i32;
+};
+
+func:test_close_reuse = int32() {
+    int64:srv = raw net_listen(19879i32, 1i32);
+    drop raw net_server_close(srv);
+    println("OK: T10 server close");
+
+    int64:srv2 = raw net_listen(19880i32, 1i32);
+    if (srv2 < 0i64) { println("FAIL: T11 relisten"); pass 1i32; }
+    println("OK: T11 listen after close");
+
+    int64:cli = raw net_connect("127.0.0.1", 19880i32);
+    int64:acc = raw net_accept(srv2);
+    drop raw net_close(cli);
+    drop raw net_close(acc);
+    drop raw net_server_close(srv2);
+    println("OK: T12 full cycle");
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_resolve();
+    if (r1 != 0i32) { exit(1); }
+    int32:r2 = raw test_listen_connect();
+    if (r2 != 0i32) { exit(1); }
+    int32:r3 = raw test_send_recv();
+    if (r3 != 0i32) { exit(1); }
+    int32:r4 = raw test_close_reuse();
+    if (r4 != 0i32) { exit(1); }
+    println("PASS: all 12 net tests passed");
     exit(0);
 };

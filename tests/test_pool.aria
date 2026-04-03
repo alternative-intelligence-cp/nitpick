@@ -1,4 +1,3 @@
-// test_pool.aria — Pool allocator tests
 use "pool_alloc.aria".*;
 
 func:failsafe = int32(tbb32:err_code) {
@@ -6,82 +5,100 @@ func:failsafe = int32(tbb32:err_code) {
     exit(1);
 };
 
-func:main = int32() {
-    // create pool: 64-byte blocks, 4 blocks
+func:test_create = int32() {
+    int64:pool = raw PoolAlloc.create(64i64, 4i64);
+    if (pool == 0i64) { println("FAIL: T01 create"); pass 1i32; }
+    println("OK: T01 create");
+
+    int64:avail = raw PoolAlloc.available(pool);
+    if (avail != 4i64) { println("FAIL: T02 available != 4"); pass 1i32; }
+    println("OK: T02 available = 4");
+
+    drop raw PoolAlloc.destroy(pool);
+    pass 0i32;
+};
+
+func:test_get_put = int32() {
     int64:pool = raw PoolAlloc.create(64i64, 4i64);
 
-    if (pool == 0i64) {
-        println("FAIL: create returned null");
-        exit(1);
-    }
-    println("OK: create");
-
-    // available should be 4
-    int64:avail = raw PoolAlloc.available(pool);
-    if (avail != 4i64) {
-        println("FAIL: available != 4");
-        exit(1);
-    }
-    println("OK: available");
-
-    // get a block
     int64:b0 = raw PoolAlloc.get(pool);
-    if (b0 < 0i64) {
-        println("FAIL: get returned -1");
-        exit(1);
-    }
-    println("OK: get");
+    if (b0 < 0i64) { println("FAIL: T03 get"); pass 1i32; }
+    println("OK: T03 get block");
 
-    // available should be 3
+    int64:avail = raw PoolAlloc.available(pool);
+    if (avail != 3i64) { println("FAIL: T04 available != 3"); pass 1i32; }
+    println("OK: T04 available = 3 after get");
+
+    drop raw PoolAlloc.put(pool, b0);
     int64:avail2 = raw PoolAlloc.available(pool);
-    if (avail2 != 3i64) {
-        println("FAIL: available != 3 after get");
-        exit(1);
-    }
-    println("OK: available after get");
+    if (avail2 != 4i64) { println("FAIL: T05 available != 4 after put"); pass 1i32; }
+    println("OK: T05 put restores available");
 
-    // write/read int64 in block
+    drop raw PoolAlloc.destroy(pool);
+    pass 0i32;
+};
+
+func:test_readwrite = int32() {
+    int64:pool = raw PoolAlloc.create(64i64, 4i64);
+    int64:b0 = raw PoolAlloc.get(pool);
+
     drop raw PoolAlloc.write_int64(pool, b0, 0i64, 42i64);
     int64:val = raw PoolAlloc.read_int64(pool, b0, 0i64);
-    if (val != 42i64) {
-        println("FAIL: write/read_int64 mismatch");
-        exit(1);
-    }
-    println("OK: write/read_int64");
+    if (val != 42i64) { println("FAIL: T06 read/write mismatch"); pass 1i32; }
+    println("OK: T06 write/read_int64");
 
-    // put block back
+    drop raw PoolAlloc.write_int64(pool, b0, 8i64, 999i64);
+    int64:val2 = raw PoolAlloc.read_int64(pool, b0, 8i64);
+    if (val2 != 999i64) { println("FAIL: T07 offset 8"); pass 1i32; }
+    println("OK: T07 write/read at offset 8");
+
     drop raw PoolAlloc.put(pool, b0);
-    int64:avail3 = raw PoolAlloc.available(pool);
-    if (avail3 != 4i64) {
-        println("FAIL: available != 4 after put");
-        exit(1);
-    }
-    println("OK: put");
+    drop raw PoolAlloc.destroy(pool);
+    pass 0i32;
+};
 
-    // exhaust all 4 blocks
+func:test_exhaust = int32() {
+    int64:pool = raw PoolAlloc.create(64i64, 4i64);
     int64:a0 = raw PoolAlloc.get(pool);
     int64:a1 = raw PoolAlloc.get(pool);
     int64:a2 = raw PoolAlloc.get(pool);
     int64:a3 = raw PoolAlloc.get(pool);
-    int64:avail4 = raw PoolAlloc.available(pool);
-    if (avail4 != 0i64) {
-        println("FAIL: available != 0 after exhaust");
-        exit(1);
-    }
-    println("OK: exhaust");
 
-    // next get should return -1
+    int64:avail = raw PoolAlloc.available(pool);
+    if (avail != 0i64) { println("FAIL: T08 not exhausted"); pass 1i32; }
+    println("OK: T08 exhaust all blocks");
+
     int64:overflow = raw PoolAlloc.get(pool);
-    if (overflow != 0i64 - 1i64) {
-        println("FAIL: get after exhaust != -1");
-        exit(1);
-    }
-    println("OK: overflow returns -1");
+    if (overflow != 0i64 - 1i64) { println("FAIL: T09 overflow != -1"); pass 1i32; }
+    println("OK: T09 overflow returns -1");
 
-    // destroy
+    drop raw PoolAlloc.put(pool, a0);
+    int64:avail2 = raw PoolAlloc.available(pool);
+    if (avail2 != 1i64) { println("FAIL: T10 put after exhaust"); pass 1i32; }
+    println("OK: T10 put after exhaust");
+
+    int64:b = raw PoolAlloc.get(pool);
+    if (b < 0i64) { println("FAIL: T11 reget after put"); pass 1i32; }
+    println("OK: T11 reget after put");
+
+    drop raw PoolAlloc.put(pool, b);
+    drop raw PoolAlloc.put(pool, a1);
+    drop raw PoolAlloc.put(pool, a2);
+    drop raw PoolAlloc.put(pool, a3);
     drop raw PoolAlloc.destroy(pool);
-    println("OK: destroy");
+    println("OK: T12 destroy");
+    pass 0i32;
+};
 
-    println("PASS: all pool tests passed");
+func:main = int32() {
+    int32:r1 = raw test_create();
+    if (r1 != 0i32) { exit(1); }
+    int32:r2 = raw test_get_put();
+    if (r2 != 0i32) { exit(1); }
+    int32:r3 = raw test_readwrite();
+    if (r3 != 0i32) { exit(1); }
+    int32:r4 = raw test_exhaust();
+    if (r4 != 0i32) { exit(1); }
+    println("PASS: all 12 pool tests passed");
     exit(0);
 };
