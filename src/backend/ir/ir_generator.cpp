@@ -2057,8 +2057,11 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
         }
     }
     
-    // Create a module init function (or main if module name suggests it's the main file)
-    bool is_main_module = (module_name.find("main") != std::string::npos || 
+    // Create a module init function (or main if module name suggests it's the main file).
+    // Imported modules (current_module_name is set) must NEVER be treated as main —
+    // they always get __modulename_init. Only the top-level compilation target may be main.
+    bool is_main_module = current_module_name.empty() &&
+                          (module_name.find("main") != std::string::npos || 
                            module_name == "hello" ||
                            module_name.find("generics") != std::string::npos ||
                            module_name.find("_test") != std::string::npos);
@@ -2499,6 +2502,58 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 } else if (std::holds_alternative<double>(lit->value) && varType->isFloatingPointTy()) {
                     double val = -std::get<double>(lit->value);
                     initVal = llvm::ConstantFP::get(varType, val);
+                }
+            }
+        } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::BINARY_OP) {
+            // BUG-09 fix: constant-fold binary expressions on literal operands for fixed globals.
+            // Handles e.g. `fixed int64:X = 2i64 * 3i64;` or `fixed int64:NEG = 0i64 - 5i64;`
+            BinaryExpr* binExpr = static_cast<BinaryExpr*>(varDecl->initializer.get());
+            if (binExpr->left && binExpr->left->type == ASTNode::NodeType::LITERAL &&
+                binExpr->right && binExpr->right->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* litL = static_cast<LiteralExpr*>(binExpr->left.get());
+                LiteralExpr* litR = static_cast<LiteralExpr*>(binExpr->right.get());
+
+                // Integer constant folding
+                if (std::holds_alternative<int64_t>(litL->value) &&
+                    std::holds_alternative<int64_t>(litR->value) && varType->isIntegerTy()) {
+                    int64_t lv = std::get<int64_t>(litL->value);
+                    int64_t rv = std::get<int64_t>(litR->value);
+                    int64_t result = 0;
+                    bool folded = true;
+                    switch (binExpr->op.type) {
+                        case TokenType::TOKEN_PLUS:        result = lv + rv; break;
+                        case TokenType::TOKEN_MINUS:       result = lv - rv; break;
+                        case TokenType::TOKEN_STAR:        result = lv * rv; break;
+                        case TokenType::TOKEN_SLASH:       result = (rv != 0) ? lv / rv : 0; break;
+                        case TokenType::TOKEN_PERCENT:     result = (rv != 0) ? lv % rv : 0; break;
+                        case TokenType::TOKEN_SHIFT_LEFT:  result = lv << rv; break;
+                        case TokenType::TOKEN_SHIFT_RIGHT: result = lv >> rv; break;
+                        case TokenType::TOKEN_AMPERSAND:   result = lv & rv; break;
+                        case TokenType::TOKEN_PIPE:        result = lv | rv; break;
+                        case TokenType::TOKEN_CARET:       result = lv ^ rv; break;
+                        default: folded = false; break;
+                    }
+                    if (folded) {
+                        initVal = llvm::ConstantInt::get(varType, (uint64_t)result, true);
+                    }
+                }
+                // Float constant folding
+                else if (std::holds_alternative<double>(litL->value) &&
+                         std::holds_alternative<double>(litR->value) && varType->isFloatingPointTy()) {
+                    double lv = std::get<double>(litL->value);
+                    double rv = std::get<double>(litR->value);
+                    double result = 0.0;
+                    bool folded = true;
+                    switch (binExpr->op.type) {
+                        case TokenType::TOKEN_PLUS:    result = lv + rv; break;
+                        case TokenType::TOKEN_MINUS:   result = lv - rv; break;
+                        case TokenType::TOKEN_STAR:    result = lv * rv; break;
+                        case TokenType::TOKEN_SLASH:   result = rv != 0.0 ? lv / rv : 0.0; break;
+                        default: folded = false; break;
+                    }
+                    if (folded) {
+                        initVal = llvm::ConstantFP::get(varType, result);
+                    }
                 }
             }
         }

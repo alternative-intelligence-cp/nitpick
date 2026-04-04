@@ -1,0 +1,52 @@
+// test_nonpub_helper.aria — Regression test for BUG-01 (v0.13.0)
+// Non-pub helper functions must be callable from pub functions.
+// Previously caused codegen segfault.
+
+func:_add_ten = int64(int64:n) {
+    pass n + 10i64;
+};
+
+func:_stoi = int64(string:s) {
+    int64:result = 0i64;
+    int64:slen = string_length(s);
+    int64:i = 0i64;
+    while (i < slen) {
+        string:d = string_substring(s, i, i + 1i64);
+        result = result * 10i64;
+        if (d == "0") { result = result + 0i64; }
+        if (d == "1") { result = result + 1i64; }
+        if (d == "2") { result = result + 2i64; }
+        if (d == "3") { result = result + 3i64; }
+        if (d == "4") { result = result + 4i64; }
+        if (d == "5") { result = result + 5i64; }
+        if (d == "6") { result = result + 6i64; }
+        if (d == "7") { result = result + 7i64; }
+        if (d == "8") { result = result + 8i64; }
+        if (d == "9") { result = result + 9i64; }
+        i = i + 1i64;
+    }
+    pass result;
+};
+
+pub func:get_value = int64(int64:base) {
+    int64:result = raw _add_ten(base);
+    pass result;
+};
+
+pub func:parse_and_add = int64(string:num_str) {
+    int64:parsed = raw _stoi(num_str);
+    int64:result = raw _add_ten(parsed);
+    pass result;
+};
+
+func:main = int32() {
+    int64:v1 = raw get_value(5i64);
+    if (v1 != 15i64) { exit 1; }
+
+    int64:v2 = raw parse_and_add("32");
+    if (v2 != 42i64) { exit 1; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
