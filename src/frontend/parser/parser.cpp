@@ -500,7 +500,9 @@ ASTNodePtr Parser::parsePrimary() {
         token.type == TokenType::TOKEN_FLOAT_F128 ||
         token.type == TokenType::TOKEN_FLOAT_F256 ||
         token.type == TokenType::TOKEN_FLOAT_F512 ||
-        token.type == TokenType::TOKEN_FLOAT_FIX256) {
+        token.type == TokenType::TOKEN_FLOAT_FIX256 ||
+        token.type == TokenType::TOKEN_FLOAT_TFP32 ||
+        token.type == TokenType::TOKEN_FLOAT_TFP64) {
         
         std::string type_str = tokenTypeToTypeString(token.type);
         std::string raw_text = token.raw_literal_text;
@@ -995,6 +997,43 @@ ASTNodePtr Parser::parsePrimary() {
 
 ASTNodePtr Parser::parseUnary() {
     Token token = peek();
+    
+    // Check for @sizeof(type_or_expr) — must come before general @ handling
+    if (token.type == TokenType::TOKEN_AT) {
+        Token next = peekNext();
+        if (next.type == TokenType::TOKEN_IDENTIFIER && next.lexeme == "sizeof") {
+            int line = token.line;
+            int col = token.column;
+            advance(); // consume '@'
+            advance(); // consume 'sizeof'
+            
+            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after @sizeof");
+            
+            // The argument can be a type keyword (int64, uint32, etc.) or an expression
+            ASTNodePtr arg;
+            Token argToken = peek();
+            if (isTypeKeyword(argToken.type)) {
+                // Type keyword — convert to identifier with type name
+                std::string typeName = argToken.lexeme;
+                advance(); // consume the type keyword
+                arg = std::make_shared<IdentifierExpr>(typeName, argToken.line, argToken.column);
+            } else {
+                arg = parseExpression();
+            }
+            if (!arg) {
+                error("Expected type or expression in @sizeof()");
+                return nullptr;
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after @sizeof argument");
+            
+            // Build as CallExpr with callee "@sizeof" so type checker and codegen recognize it
+            std::vector<ASTNodePtr> args;
+            args.push_back(arg);
+            auto identExpr = std::make_shared<IdentifierExpr>("@sizeof", line, col);
+            return std::make_shared<CallExpr>(identExpr, args, line, col);
+        }
+    }
     
     // Check for await expression: await <expression>
     if (token.type == TokenType::TOKEN_KW_AWAIT) {
@@ -2128,6 +2167,8 @@ std::string Parser::tokenTypeToTypeString(frontend::TokenType type) const {
     if (type == TokenType::TOKEN_FLOAT_F256) return "f256";
     if (type == TokenType::TOKEN_FLOAT_F512) return "f512";
     if (type == TokenType::TOKEN_FLOAT_FIX256) return "fix256";
+    if (type == TokenType::TOKEN_FLOAT_TFP32) return "tfp32";
+    if (type == TokenType::TOKEN_FLOAT_TFP64) return "tfp64";
     
     // Should not reach here if called with proper typed literal token
     return "";

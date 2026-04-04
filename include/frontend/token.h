@@ -404,9 +404,9 @@ enum class TokenType {
     // Fixed-point literal (deterministic physics)
     TOKEN_FLOAT_FIX256,     // 1.5fix256 (Q128.128 format from Report 7)
     
-    // TFP (Twisted Floating Point) literals - FUTURE
-    // TOKEN_FLOAT_TFP32,   // ...tfp32
-    // TOKEN_FLOAT_TFP64,   // ...tfp64
+    // TFP (Twisted Floating Point) literals
+    TOKEN_FLOAT_TFP32,      // ...tfp32
+    TOKEN_FLOAT_TFP64,      // ...tfp64
     
     // ========================================================================
     // Other Literals

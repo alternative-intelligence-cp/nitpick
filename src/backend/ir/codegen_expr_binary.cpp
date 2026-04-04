@@ -118,9 +118,13 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
 
     if (!leftNumericType.empty() && !rightNumericType.empty() && leftNumericType == rightNumericType) {
         // Both operands are the same numeric type - use runtime functions
-        // Only for arithmetic operations: +, -, *, /
+        // For arithmetic operations: +, -, *, /
+        // And comparison operations: ==, !=, <, <=, >, >=
         if (op == TokenType::TOKEN_PLUS || op == TokenType::TOKEN_MINUS ||
-            op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH) {
+            op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
+            op == TokenType::TOKEN_EQUAL_EQUAL || op == TokenType::TOKEN_BANG_EQUAL ||
+            op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
+            op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL) {
 
             std::cerr << "[NUMERIC] Lowering " << leftNumericType << " arithmetic (runtime)" << std::endl;
 
@@ -378,28 +382,12 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         }
     }
     
-    if (op == TokenType::TOKEN_SLASH) {
-        if (isFloat) {
-            return builder.CreateFDiv(left, right, "divtmp");
-        } else {
-            // For integers, use signed division
-            return builder.CreateSDiv(left, right, "divtmp");
-        }
-    }
-    
-    if (op == TokenType::TOKEN_PERCENT) {
-        if (isFloat) {
-            return builder.CreateFRem(left, right, "modtmp");
-        } else {
-            return builder.CreateSRem(left, right, "modtmp");
-        }
-    }
-    
-    // COMPARISON OPERATORS
-    // Detect unsigned types so ordered comparisons use ICmpU* not ICmpS*
+    // Detect unsigned types for division, modulo, and comparison operators
     bool isUnsigned = false;
     auto isUnsignedTypeName = [](const std::string& n) {
-        return n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64"
+        return n == "uint1" || n == "uint2" || n == "uint4"
+            || n == "uint8" || n == "uint16" || n == "uint32" || n == "uint64"
+            || n == "uint128" || n == "uint256" || n == "uint512"
             || n == "u8" || n == "u16" || n == "u32" || n == "u64";
     };
     if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
@@ -414,6 +402,28 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     if (!isUnsigned && leftLiteral && isUnsignedTypeName(leftLiteral->explicit_type)) isUnsigned = true;
     if (!isUnsigned && rightLiteral && isUnsignedTypeName(rightLiteral->explicit_type)) isUnsigned = true;
+
+    if (op == TokenType::TOKEN_SLASH) {
+        if (isFloat) {
+            return builder.CreateFDiv(left, right, "divtmp");
+        } else if (isUnsigned) {
+            return builder.CreateUDiv(left, right, "divtmp");
+        } else {
+            return builder.CreateSDiv(left, right, "divtmp");
+        }
+    }
+    
+    if (op == TokenType::TOKEN_PERCENT) {
+        if (isFloat) {
+            return builder.CreateFRem(left, right, "modtmp");
+        } else if (isUnsigned) {
+            return builder.CreateURem(left, right, "modtmp");
+        } else {
+            return builder.CreateSRem(left, right, "modtmp");
+        }
+    }
+    
+    // COMPARISON OPERATORS
 
     // Detect string types for comparison operators
     bool isString = false;
@@ -833,50 +843,20 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     // PIPELINE FORWARD OPERATOR (|>)
-    // Pattern: value |> function becomes function(value)
+    // The parser should rewrite all pipeline expressions into CallExpr nodes.
+    // If a BinaryExpr with |> reaches codegen, something went wrong in parsing.
     if (op == TokenType::TOKEN_PIPE_RIGHT) {
-        // Right side should be a function or callable
-        // Left side is the value to pass as first argument
-        
-        // For now, assume right is a function pointer or callable
-        // We need to call it with left as the argument
-        
-        if (right->getType()->isPointerTy()) {
-            // Right is likely a function pointer
-            // Create call with left as argument
-            llvm::FunctionType* funcType = llvm::FunctionType::get(
-                left->getType(),  // Return type (assumed same as input for now)
-                {left->getType()}, // Parameter types
-                false  // Not variadic
-            );
-            
-            return builder.CreateCall(funcType, right, {left}, "pipe.result");
-        } else {
-            // For non-function types, just return the right side
-            // TODO: Full implementation needs function type analysis
-            return right;
-        }
+        throw std::runtime_error(
+            "Pipeline operator |> reached binary codegen — should have been "
+            "rewritten to CallExpr by parser. This is an internal compiler bug.");
     }
     
     // PIPELINE BACKWARD OPERATOR (<|)
-    // Pattern: function <| value becomes function(value)  
+    // Same as above — parser should rewrite these.
     if (op == TokenType::TOKEN_PIPE_LEFT) {
-        // Left side should be a function or callable
-        // Right side is the value to pass as first argument
-        
-        if (left->getType()->isPointerTy()) {
-            // Left is likely a function pointer
-            llvm::FunctionType* funcType = llvm::FunctionType::get(
-                right->getType(),  // Return type
-                {right->getType()}, // Parameter types
-                false  // Not variadic
-            );
-            
-            return builder.CreateCall(funcType, left, {right}, "pipe.result");
-        } else {
-            // For non-function types, just return the left side
-            return left;
-        }
+        throw std::runtime_error(
+            "Pipeline operator <| reached binary codegen — should have been "
+            "rewritten to CallExpr by parser. This is an internal compiler bug.");
     }
     
     // Unknown operator

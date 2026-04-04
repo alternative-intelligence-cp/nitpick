@@ -685,8 +685,15 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         // Create anonymous struct type for environment
         env_struct_type = llvm::StructType::create(context, env_field_types, "lambda_env");
         
-        // Allocate environment on stack
-        env_alloca = builder.CreateAlloca(env_struct_type, nullptr, "env");
+        // Heap-allocate environment via GC so it survives the enclosing scope
+        const llvm::DataLayout& dl = module->getDataLayout();
+        uint64_t env_size = dl.getTypeAllocSize(env_struct_type);
+        llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+        llvm::Type* i64Ty = llvm::Type::getInt64Ty(context);
+        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+            llvm::FunctionType::get(ptrTy, {i64Ty}, false));
+        env_alloca = builder.CreateCall(gcAlloc,
+            {llvm::ConstantInt::get(i64Ty, env_size)}, "env");
         
         // Populate environment with captured values
         for (size_t i = 0; i < expr->capturedVars.size(); ++i) {
@@ -724,8 +731,17 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
                 llvm::Value* ptr_as_i64 = builder.CreatePtrToInt(captured_value, llvm::Type::getInt64Ty(context));
                 builder.CreateStore(ptr_as_i64, env_field_ptr);
             } else {
-                // BY_MOVE: Transfer ownership (for now, treat like BY_VALUE)
-                throw std::runtime_error("BY_MOVE capture not yet implemented");
+                // BY_MOVE: Transfer ownership — for value types, same as BY_VALUE
+                if (llvm::isa<llvm::AllocaInst>(captured_value)) {
+                    llvm::AllocaInst* alloca = llvm::cast<llvm::AllocaInst>(captured_value);
+                    llvm::Type* allocated_type = alloca->getAllocatedType();
+                    llvm::Value* loaded_val = builder.CreateLoad(allocated_type, captured_value, captured.name + "_move");
+                    llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
+                    builder.CreateStore(loaded_val, env_field_ptr);
+                } else {
+                    llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
+                    builder.CreateStore(captured_value, env_field_ptr);
+                }
             }
         }
     }
@@ -874,8 +890,12 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
                 named_values[captured.name] = original_ptr;
                 
             } else {
-                // BY_MOVE: Not yet implemented
-                throw std::runtime_error("BY_MOVE capture mode not yet implemented in lambda body");
+                // BY_MOVE: Treat like BY_VALUE (ownership transferred)
+                llvm::Type* field_type = env_struct_type->getElementType(i);
+                llvm::Value* captured_value = builder.CreateLoad(field_type, field_ptr, captured.name);
+                llvm::AllocaInst* capture_alloca = builder.CreateAlloca(field_type, nullptr, captured.name);
+                builder.CreateStore(captured_value, capture_alloca);
+                named_values[captured.name] = capture_alloca;
             }
         }
     }
@@ -1163,14 +1183,27 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
  * Uses cached types to avoid recreation
  */
 llvm::StructType* ExprCodegen::getOptionalType(llvm::Type* wrappedType) {
+    // Generate a stable name for the optional type
+    std::string name;
+    if (wrappedType->isStructTy() && llvm::cast<llvm::StructType>(wrappedType)->hasName()) {
+        name = "optional." + std::string(llvm::cast<llvm::StructType>(wrappedType)->getName());
+    } else {
+        // For primitive types (i64, double, etc.), use the LLVM type string
+        std::string typeName;
+        llvm::raw_string_ostream rso(typeName);
+        wrappedType->print(rso);
+        name = "optional." + rso.str();
+    }
+    
+    // Check cache — avoid creating duplicate struct types
+    if (auto* existing = llvm::StructType::getTypeByName(context, name))
+        return existing;
+    
     // Create struct type: { i1 hasValue, T value }
     std::vector<llvm::Type*> fields = {
         llvm::Type::getInt1Ty(context),  // hasValue flag
         wrappedType                       // the wrapped value
     };
-    
-    // Create named struct for debugging
-    std::string name = "optional." + std::string(wrappedType->getStructName());
     return llvm::StructType::create(context, fields, name);
 }
 

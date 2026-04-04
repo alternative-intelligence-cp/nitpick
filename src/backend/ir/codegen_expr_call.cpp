@@ -3182,7 +3182,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
                 func_name, module);
         }
-        return builder.CreateCall(func, {handle}, "uhash_keys");
+        return builder.CreateCall(func, {handle}, "uhash_count");
     }
 
     // ahsize(handle) — return bytes used by stored values
@@ -6973,6 +6973,54 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     if (callee_ident->name == "@unreachable" || callee_ident->name == "unreachable") {
         builder.CreateUnreachable();
         return llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+    }
+    
+    // @sizeof(type_or_expr) - Returns size of type in bytes as int64
+    if (callee_ident->name == "@sizeof" || callee_ident->name == "sizeof") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("@sizeof() requires exactly one argument");
+        }
+        
+        llvm::Type* target_type = nullptr;
+        
+        // Check if the argument is an identifier (type name or variable)
+        if (expr->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* id = static_cast<IdentifierExpr*>(expr->arguments[0].get());
+            
+            // First try as a type name
+            target_type = getLLVMTypeFromString(id->name);
+            
+            // If not a type name, try as a variable — get its stored type
+            if (!target_type) {
+                auto it = named_values.find(id->name);
+                if (it != named_values.end()) {
+                    llvm::Value* val = it->second;
+                    // If it's an alloca, get the allocated type
+                    if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+                        target_type = alloca->getAllocatedType();
+                    } else {
+                        target_type = val->getType();
+                    }
+                }
+            }
+        }
+        
+        if (!target_type) {
+            // Last resort: codegen the expression and use its type
+            llvm::Value* val = codegenExpressionNode(expr->arguments[0].get(), this);
+            if (val) {
+                target_type = val->getType();
+            }
+        }
+        
+        if (!target_type) {
+            throw std::runtime_error("@sizeof: cannot determine type of argument");
+        }
+        
+        // Use DataLayout to compute size in bytes
+        const llvm::DataLayout& dl = module->getDataLayout();
+        uint64_t size = dl.getTypeAllocSize(target_type);
+        return llvm::ConstantInt::get(builder.getInt64Ty(), size);
     }
     
     // ====================================================================

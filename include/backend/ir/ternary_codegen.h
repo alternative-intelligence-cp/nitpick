@@ -156,6 +156,7 @@ private:
     llvm::Function* fn_trit_not = nullptr;
     llvm::Function* fn_nit_and = nullptr;
     llvm::Function* fn_nit_or = nullptr;
+    llvm::Function* fn_nit_not = nullptr;
 
     /**
      * @brief Check if type is a composite ternary type (tryte/nyte)
