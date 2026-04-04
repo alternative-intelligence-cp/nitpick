@@ -246,7 +246,7 @@ func:main = int32() {
     println("── Split / Join ────────────────────────────────────────");
 
     // T36: str_split basic
-    wild int64->:sp1 = raw str_split("a,b,c", ",");
+    int64:sp1 = raw str_split("a,b,c", ",");
     int64:sp1_n = raw str_split_count(sp1);
     if (sp1_n == 3i64) { drop check(true, "T36 str_split count == 3"); passed = passed + 1i32;
     } else { drop check(false, "T36 str_split count"); failed = failed + 1i32; }
@@ -279,7 +279,7 @@ func:main = int32() {
     drop str_split_free(sp1);
 
     // T40: str_split — multi-char delimiter
-    wild int64->:sp2 = raw str_split("one::two::three", "::");
+    int64:sp2 = raw str_split("one::two::three", "::");
     int64:sp2_n = raw str_split_count(sp2);
     if (sp2_n == 3i64) { drop check(true, "T40 str_split multi-char delim count"); passed = passed + 1i32;
     } else { drop check(false, "T40 str_split multi-char delim"); failed = failed + 1i32; }
@@ -296,7 +296,7 @@ func:main = int32() {
     drop str_split_free(sp2);
 
     // T42: str_split — single element (no delimiter found)
-    wild int64->:sp3 = raw str_split("hello", ",");
+    int64:sp3 = raw str_split("hello", ",");
     int64:sp3_n = raw str_split_count(sp3);
     if (sp3_n == 1i64) { drop check(true, "T42 str_split no delim found == 1"); passed = passed + 1i32;
     } else { drop check(false, "T42 str_split no delim"); failed = failed + 1i32; }
@@ -308,14 +308,14 @@ func:main = int32() {
     drop str_split_free(sp3);
 
     // T44: str_split — empty string
-    wild int64->:sp4 = raw str_split("", ",");
+    int64:sp4 = raw str_split("", ",");
     int64:sp4_n = raw str_split_count(sp4);
     if (sp4_n == 0i64) { drop check(true, "T44 str_split empty == 0 parts"); passed = passed + 1i32;
     } else { drop check(false, "T44 str_split empty"); failed = failed + 1i32; }
     drop str_split_free(sp4);
 
     // T45: str_split + str_join roundtrip
-    wild int64->:sp5 = raw str_split("x-y-z", "-");
+    int64:sp5 = raw str_split("x-y-z", "-");
     string:rt = raw str_join(sp5, "-");
     if (string_equals(rt, "x-y-z")) { drop check(true, "T45 split/join roundtrip"); passed = passed + 1i32;
     } else { drop check(false, "T45 split/join roundtrip"); failed = failed + 1i32; }

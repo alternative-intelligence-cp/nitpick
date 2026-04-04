@@ -1,22 +1,36 @@
-// Expected: Unknown trait 'Numeric' (trait system not yet fully implemented)
-/**
- * Quick test: Turbofish syntax with complex numbers
- */
-
-use stdlib.complex.*;
+// Test turbofish syntax with Numeric trait constraint
+// Verifies that ::<T> instantiation works with trait-bounded generics
 
 func:failsafe = int32(tbb32:err) { exit 1; };
 
-func:main = int32() {
-    // Test turbofish syntax ::<Type>
-    int64:r1 = 3;
-    int64:i1 = 4;
+// Generic function with Numeric trait bound
+func<T: Numeric>:add_pair = *T(*T:a, *T:b) {
+    *T:result = a + b;
+    pass result;
+};
+
+func<T: Numeric>:mul_pair = *T(*T:a, *T:b) {
+    *T:result = a * b;
+    pass result;
+};
+
+pub func:main = int32() {
+    // Turbofish with int64
+    int64:x = 10;
+    int64:y = 20;
+    int64:sum = raw add_pair::<int64>(x, y);
     
-    complex<int64>:z1 = raw complex_new::<int64>(r1, i1);
-    complex<int64>:z2 = raw complex_new::<int64>(1, 2);
+    // Turbofish with int32
+    int32:a = 5i32;
+    int32:b = 6i32;
+    int32:prod = raw mul_pair::<int32>(a, b);
     
-    // Test addition
-    complex<int64>:sum = raw complex_add::<int64>(z1, z2);
-    
-    exit 0;
+    // sum = 30, prod = 30
+    // Verify both are 30
+    if (sum == 30) {
+        if (prod == 30i32) {
+            exit 0;
+        }
+    }
+    exit 1;
 };

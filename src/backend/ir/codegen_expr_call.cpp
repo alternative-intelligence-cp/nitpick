@@ -7637,6 +7637,18 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                         arg_value = builder.CreateTrunc(arg_value, param_type, "arg_trunc");
                 }
 
+                // Floating-point type coercion: widen/narrow float args to match function signature
+                // Handles float→double, double→fp128, float→fp128, and reverse narrowing
+                if (arg_value->getType() != param_type &&
+                    arg_value->getType()->isFloatingPointTy() && param_type->isFloatingPointTy()) {
+                    unsigned argBits = arg_value->getType()->getPrimitiveSizeInBits();
+                    unsigned paramBits = param_type->getPrimitiveSizeInBits();
+                    if (argBits < paramBits)
+                        arg_value = builder.CreateFPExt(arg_value, param_type, "arg_fpext");
+                    else if (argBits > paramBits)
+                        arg_value = builder.CreateFPTrunc(arg_value, param_type, "arg_fptrunc");
+                }
+
                 // v0.2.36: dyn Trait coercion — package concrete value into fat pointer
                 // When a concrete typed value (e.g., int32) is passed to a dyn Trait
                 // parameter, construct { ptr_to_data, ptr_to_vtable }.

@@ -26,7 +26,7 @@ func:unsafe_worker = int64(int64:arg) {
 };
 
 func:test_data_race_detected = NIL() {
-    int64:t1 = aria_libc_thread_spawn(unsafe_worker, 0i64);
+    int64:t1 = aria_libc_thread_spawn(@unsafe_worker, 0i64);
     // Main thread also accesses shared_counter
     shared_counter = shared_counter + 1i32;
     drop aria_libc_thread_join(t1);
@@ -48,7 +48,7 @@ func:test_no_race_with_mutex = NIL() {
     drop aria_libc_mutex_lock(global_mtx);
     shared_counter = 0i32;
     drop aria_libc_mutex_unlock(global_mtx);
-    int64:t1 = aria_libc_thread_spawn(safe_worker, 0i64);
+    int64:t1 = aria_libc_thread_spawn(@safe_worker, 0i64);
     drop aria_libc_mutex_lock(global_mtx);
     shared_counter = shared_counter + 1i32;
     drop aria_libc_mutex_unlock(global_mtx);
