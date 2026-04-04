@@ -555,6 +555,22 @@ public:
     std::string toString() const override;
 };
 
+/**
+ * Spread expression node
+ * Represents: ..^expr — expands a collection into individual arguments
+ * Used in call argument positions to fan out an array/collection
+ */
+class SpreadExpr : public ASTNode {
+public:
+    ASTNodePtr operand;  // The expression being spread
+    
+    SpreadExpr(ASTNodePtr operand, int line = 0, int column = 0)
+        : ASTNode(NodeType::SPREAD, line, column),
+          operand(std::move(operand)) {}
+    
+    std::string toString() const override;
+};
+
 } // namespace aria
 
 #endif // ARIA_EXPR_H

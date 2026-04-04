@@ -33,6 +33,7 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::AWAIT: return "AWAIT";
         case NodeType::MOVE: return "MOVE";
         case NodeType::CAST: return "CAST";
+        case NodeType::SPREAD: return "SPREAD";
         
         // Statements
         case NodeType::VAR_DECL: return "VAR_DECL";
@@ -90,7 +91,7 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
 }
 
 bool ASTNode::isExpression() const {
-    return (type >= NodeType::LITERAL && type <= NodeType::CAST) ||
+    return (type >= NodeType::LITERAL && type <= NodeType::SPREAD) ||
            type == NodeType::COMPTIME_EXPR ||
            type == NodeType::MACRO_INVOCATION;
 }

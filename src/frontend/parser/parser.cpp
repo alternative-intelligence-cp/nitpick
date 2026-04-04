@@ -1403,6 +1403,66 @@ ASTNodePtr Parser::parseUnary() {
         auto identExpr = std::make_shared<IdentifierExpr>("ahtype", token.line, token.column);
         return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
     }
+
+    // ahdelete(handle, key) — delete key from hash table, returns int32 (0=ok, -1=not found)
+    if (token.type == TokenType::TOKEN_KW_AHDELETE) {
+        advance(); // consume 'ahdelete'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahdelete'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahdelete()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahdelete()");
+        ASTNodePtr key = parseExpression();
+        if (!key) { error("Expected key in ahdelete()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahdelete arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(key);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahdelete", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+
+    // ahhas(handle, key) — check if key exists, returns int32 (1=exists, 0=not)
+    if (token.type == TokenType::TOKEN_KW_AHHAS) {
+        advance(); // consume 'ahhas'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahhas'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahhas()"); return nullptr; }
+        consume(TokenType::TOKEN_COMMA, "Expected ',' after handle in ahhas()");
+        ASTNodePtr key = parseExpression();
+        if (!key) { error("Expected key in ahhas()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahhas arguments");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        args.push_back(key);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahhas", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+
+    // ahclear(handle) — clear all entries, returns void
+    if (token.type == TokenType::TOKEN_KW_AHCLEAR) {
+        advance(); // consume 'ahclear'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahclear'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahclear()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahclear argument");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahclear", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
+
+    // ahkeys(handle) — get all keys, returns wild int8@ (pointer to char** array)
+    if (token.type == TokenType::TOKEN_KW_AHKEYS) {
+        advance(); // consume 'ahkeys'
+        consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'ahkeys'");
+        ASTNodePtr handle = parseExpression();
+        if (!handle) { error("Expected handle in ahkeys()"); return nullptr; }
+        consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after ahkeys argument");
+        std::vector<ASTNodePtr> args;
+        args.push_back(handle);
+        auto identExpr = std::make_shared<IdentifierExpr>("ahkeys", token.line, token.column);
+        return std::make_shared<CallExpr>(identExpr, args, token.line, token.column);
+    }
     
     // Check for failsafe call: !!! <expression>
     if (token.type == TokenType::TOKEN_BANG_BANG_BANG) {
@@ -1682,9 +1742,20 @@ ASTNodePtr Parser::parseCallExpression(ASTNodePtr callee) {
     
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
-            ASTNodePtr arg = parseExpression();
-            if (arg) {
-                arguments.push_back(arg);
+            // Check for spread operator: ..^expr
+            if (check(TokenType::TOKEN_SPREAD)) {
+                Token spreadToken = advance();  // consume ..^
+                ASTNodePtr operand = parseExpression();
+                if (!operand) {
+                    error("Expected expression after '..^' spread operator");
+                    return callee;
+                }
+                arguments.push_back(std::make_shared<SpreadExpr>(operand, spreadToken.line, spreadToken.column));
+            } else {
+                ASTNodePtr arg = parseExpression();
+                if (arg) {
+                    arguments.push_back(arg);
+                }
             }
         } while (match(TokenType::TOKEN_COMMA));
     }
@@ -3027,8 +3098,37 @@ ASTNodePtr Parser::parseFuncDecl() {
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after return type");
     
     std::vector<ASTNodePtr> parameters;
+    bool isVariadicFunc = false;
     if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
         do {
+            // Check for variadic/rest marker: ..?
+            if (check(TokenType::TOKEN_VARIADIC)) {
+                Token variadicToken = advance();  // consume ..?
+                isVariadicFunc = true;
+                
+                // Bare ..? before ) → extern-style variadic marker (no rest param)
+                if (check(TokenType::TOKEN_RIGHT_PAREN)) {
+                    break;
+                }
+                
+                // ..?Type:name → rest parameter (collects remaining args)
+                ASTNodePtr restTypeNode = parseType();
+                if (!restTypeNode) {
+                    error("Expected type after '..?' for rest parameter");
+                    return nullptr;
+                }
+                consume(TokenType::TOKEN_COLON, "Expected ':' after rest parameter type");
+                Token restNameToken = consumeName("rest parameter");
+                
+                auto restParam = std::make_shared<ParameterNode>(
+                    restTypeNode, restNameToken.lexeme, nullptr,
+                    variadicToken.line, variadicToken.column
+                );
+                restParam->isRest = true;
+                parameters.push_back(restParam);
+                break;  // Rest param must be last
+            }
+            
             // Handle parameter qualifiers (wild, wildx, const, stack, gc, $$i, $$m)
             bool isWild = false;
             bool isWildx = false;
@@ -3152,6 +3252,7 @@ ASTNodePtr Parser::parseFuncDecl() {
     
     // Mark as extern if it's a declaration without body
     funcDecl->isExtern = isExternDecl;
+    funcDecl->isVariadic = isVariadicFunc;
     
     // Set wild qualifier flag for FFI return type
     funcDecl->returnIsWild = returnIsWild;
@@ -4523,8 +4624,16 @@ ASTNodePtr Parser::parseExternStatement() {
             consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after return type");
             
             std::vector<ASTNodePtr> parameters;
+            bool isVariadicExtern = false;
             if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
                 do {
+                    // Check for variadic marker: ..?
+                    if (check(TokenType::TOKEN_VARIADIC)) {
+                        advance();  // consume ..?
+                        isVariadicExtern = true;
+                        break;  // ..? must be last in param list
+                    }
+                    
                     // Parse parameter qualifiers (wild, wildx, const, etc.)
                     while (peek().type == TokenType::TOKEN_KW_WILD ||
                            peek().type == TokenType::TOKEN_KW_WILDX ||
@@ -4588,6 +4697,7 @@ ASTNodePtr Parser::parseExternStatement() {
             // Set visibility and extern flags
             funcDecl->isPublic = isPublic;
             funcDecl->isExtern = true;
+            funcDecl->isVariadic = isVariadicExtern;
             
             externStmt->declarations.push_back(funcDecl);
         }

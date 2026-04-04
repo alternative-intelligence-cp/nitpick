@@ -57,7 +57,7 @@ bool Token::isKeyword() const {
 }
 
 bool Token::isOperator() const {
-    return (type >= TokenType::TOKEN_PLUS && type <= TokenType::TOKEN_DOT_DOT_DOT) ||
+    return (type >= TokenType::TOKEN_PLUS && type <= TokenType::TOKEN_SPREAD) ||
            (type >= TokenType::TOKEN_AMPERSAND && type <= TokenType::TOKEN_SHIFT_RIGHT);
 }
 
@@ -354,6 +354,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_PIPE_LEFT: return "PIPE_LEFT";
         case TokenType::TOKEN_DOT_DOT: return "DOT_DOT";
         case TokenType::TOKEN_DOT_DOT_DOT: return "DOT_DOT_DOT";
+        case TokenType::TOKEN_VARIADIC: return "VARIADIC";
+        case TokenType::TOKEN_SPREAD: return "SPREAD";
         
         // Template literals
         case TokenType::TOKEN_BACKTICK: return "BACKTICK";

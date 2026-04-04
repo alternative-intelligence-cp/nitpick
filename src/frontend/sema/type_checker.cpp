@@ -237,7 +237,7 @@ void TypeChecker::check(ASTNode* module) {
                 retType = new ResultType(valueType);
             }
 
-            Type* funcType = new FunctionType(paramTypes, retType, fd->isAsync, false);
+            Type* funcType = new FunctionType(paramTypes, retType, fd->isAsync, fd->isVariadic);
             Symbol* sym = symbolTable->defineSymbol(fd->funcName, SymbolKind::FUNCTION,
                                                      funcType, fd->line, fd->column);
             if (sym) sym->setFuncDecl(fd);

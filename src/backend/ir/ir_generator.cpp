@@ -2678,7 +2678,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             pre_params.push_back(builder.getPtrTy());    // argv (char**)
         }
 
-        llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, false);
+        llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, fd->isVariadic);
         llvm::Function::Create(pre_ft, llvm::Function::ExternalLinkage, pre_name, module.get());
     }
     // -------------------------------------------------------------------------
@@ -2829,15 +2829,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         }
                     }
 
-                    // Create function type
-                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+                    // Create function type (isVarArg from ..? variadic syntax)
+                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, funcDecl->isVariadic);
 
                     // Create or update function declaration
                     llvm::Function* func = module->getFunction(funcDecl->funcName);
                     if (!func) {
                         // Create new extern function
                         std::cerr << "[DEBUG EXTERN] Creating NEW extern function: " 
-                                  << funcDecl->funcName << " with External linkage" << std::endl;
+                                  << funcDecl->funcName << " with External linkage"
+                                  << (funcDecl->isVariadic ? " (variadic)" : "") << std::endl;
                         llvm::Function::Create(
                             funcType,
                             llvm::Function::ExternalLinkage,
@@ -3046,7 +3047,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 actual_param_types.push_back(builder.getPtrTy());    // argv (char**)
             }
 
-            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, false);
+            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, funcDecl->isVariadic);
             
             // Determine function name (qualified if in a module)
             std::string func_name = modulePrefix.empty() 

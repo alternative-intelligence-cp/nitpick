@@ -56,6 +56,10 @@ static uint64_t fnv1a(const char* key) {
 #define UHASH_LOAD_FACTOR_NUM 3  /* Grow when entry_count * 4 >= bucket_count * 3 */
 #define UHASH_LOAD_FACTOR_DEN 4  /* i.e., 75% */
 
+/* Tombstone marker — invalid pointer (0x1) marks deleted buckets.
+ * uhash_find skips tombstones during probing; insert reuses them. */
+#define UHASH_TOMBSTONE ((char*)1)
+
 /* ═══════════════════════════════════════════════════════════════════════
  * Regular (type-checked) implementation
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -69,9 +73,9 @@ static void uhash_grow(AriaUHash* ht) {
         exit(1);
     }
 
-    /* Rehash all live entries */
+    /* Rehash all live entries (skip tombstones) */
     for (int64_t i = 0; i < ht->bucket_count; ++i) {
-        if (ht->buckets[i].key) {
+        if (ht->buckets[i].key && ht->buckets[i].key != UHASH_TOMBSTONE) {
             uint64_t h = fnv1a(ht->buckets[i].key);
             int64_t idx = static_cast<int64_t>(h % static_cast<uint64_t>(new_count));
             while (new_buckets[idx].key) {
@@ -92,7 +96,8 @@ static int64_t uhash_find(AriaUHash* ht, const char* key) {
     int64_t start = idx;
     do {
         if (!ht->buckets[idx].key) return -1; /* Empty — not found */
-        if (strcmp(ht->buckets[idx].key, key) == 0) return idx;
+        if (ht->buckets[idx].key != UHASH_TOMBSTONE &&
+            strcmp(ht->buckets[idx].key, key) == 0) return idx;
         idx = (idx + 1) % ht->bucket_count;
     } while (idx != start);
     return -1; /* Full table, not found */
@@ -121,7 +126,7 @@ extern "C" void aria_uhash_destroy(int64_t handle) {
     if (handle == 0) return;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     for (int64_t i = 0; i < ht->bucket_count; ++i) {
-        if (ht->buckets[i].key) {
+        if (ht->buckets[i].key && ht->buckets[i].key != UHASH_TOMBSTONE) {
             free(ht->buckets[i].key);
         }
     }
@@ -165,10 +170,10 @@ extern "C" int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value
         uhash_grow(ht);
     }
 
-    /* Find empty bucket */
+    /* Find empty bucket or tombstone slot */
     uint64_t h = fnv1a(key);
     int64_t idx = static_cast<int64_t>(h % static_cast<uint64_t>(ht->bucket_count));
-    while (ht->buckets[idx].key) {
+    while (ht->buckets[idx].key && ht->buckets[idx].key != UHASH_TOMBSTONE) {
         idx = (idx + 1) % ht->bucket_count;
     }
 
@@ -243,7 +248,7 @@ extern "C" void* aria_uhash_keys(int64_t handle, int64_t* out_count) {
 
     int64_t n = 0;
     for (int64_t i = 0; i < ht->bucket_count && n < ht->entry_count; ++i) {
-        if (ht->buckets[i].key) {
+        if (ht->buckets[i].key && ht->buckets[i].key != UHASH_TOMBSTONE) {
             size_t len = strlen(ht->buckets[i].key);
             char* copy = static_cast<char*>(malloc(len + 1));
             if (!copy) {
@@ -286,6 +291,50 @@ extern "C" int64_t aria_uhash_count(int64_t handle) {
     if (handle == 0) return 0;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     return ht->entry_count;
+}
+
+extern "C" int32_t aria_uhash_delete(int64_t handle, const char* key) {
+    if (handle == 0) return -1;
+    AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
+    int64_t idx = uhash_find(ht, key);
+    if (idx < 0) return -1; /* Key not found */
+
+    /* Free the key string and mark as tombstone */
+    int64_t freed_size = ht->buckets[idx].value_size;
+    free(ht->buckets[idx].key);
+    ht->buckets[idx].key        = UHASH_TOMBSTONE;
+    ht->buckets[idx].value      = 0;
+    ht->buckets[idx].type_tag   = 0;
+    ht->buckets[idx].value_size = 0;
+
+    ht->entry_count--;
+    ht->used_bytes -= freed_size;
+    return 0; /* Success */
+}
+
+extern "C" int32_t aria_uhash_has(int64_t handle, const char* key) {
+    if (handle == 0) return 0;
+    AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
+    return (uhash_find(ht, key) >= 0) ? 1 : 0;
+}
+
+extern "C" void aria_uhash_clear(int64_t handle) {
+    if (handle == 0) return;
+    AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
+
+    /* Free all live keys (skip tombstones and empty) */
+    for (int64_t i = 0; i < ht->bucket_count; ++i) {
+        if (ht->buckets[i].key && ht->buckets[i].key != UHASH_TOMBSTONE) {
+            free(ht->buckets[i].key);
+        }
+        ht->buckets[i].key        = nullptr;
+        ht->buckets[i].value      = 0;
+        ht->buckets[i].type_tag   = 0;
+        ht->buckets[i].value_size = 0;
+    }
+
+    ht->entry_count = 0;
+    ht->used_bytes  = 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -332,4 +381,16 @@ extern "C" int64_t aria_uhash_fits_fast(int64_t handle, int64_t value_size) {
 
 extern "C" int64_t aria_uhash_count_fast(int64_t handle) {
     return aria_uhash_count(handle);
+}
+
+extern "C" int32_t aria_uhash_delete_fast(int64_t handle, const char* key) {
+    return aria_uhash_delete(handle, key);
+}
+
+extern "C" int32_t aria_uhash_has_fast(int64_t handle, const char* key) {
+    return aria_uhash_has(handle, key);
+}
+
+extern "C" void aria_uhash_clear_fast(int64_t handle) {
+    aria_uhash_clear(handle);
 }

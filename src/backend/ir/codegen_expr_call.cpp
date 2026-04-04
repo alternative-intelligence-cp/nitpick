@@ -3278,6 +3278,140 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateSExt(result, builder.getInt64Ty(), "uhash_type_i64");
     }
 
+    // ahdelete(handle, key) — delete key from table (0=ok, -1=not found)
+    if (callee_ident->name == "ahdelete") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("ahdelete() requires exactly 2 arguments (handle, key)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* key = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (key->getType()->isPointerTy()) {
+            llvm::StructType* ast = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ast) {
+                ast = llvm::StructType::create(context, {
+                    builder.getPtrTy(), builder.getInt64Ty()
+                }, "struct.AriaString");
+            }
+            llvm::Value* ss = builder.CreateLoad(ast, key, "uhash_key_struct");
+            key = builder.CreateExtractValue(ss, 0, "uhash_key_data");
+        } else if (key->getType()->isStructTy()) {
+            key = builder.CreateExtractValue(key, 0, "uhash_key_data");
+        } else {
+            throw std::runtime_error("ahdelete() key argument must be a string");
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_delete_fast" : "aria_uhash_delete";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getInt64Ty(), builder.getPtrTy()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle, key}, "uhash_delete");
+    }
+
+    // ahhas(handle, key) — check if key exists (1=yes, 0=no)
+    if (callee_ident->name == "ahhas") {
+        if (expr->arguments.size() != 2) {
+            throw std::runtime_error("ahhas() requires exactly 2 arguments (handle, key)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        llvm::Value* key = codegenExpressionNode(expr->arguments[1].get(), this);
+        if (key->getType()->isPointerTy()) {
+            llvm::StructType* ast = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            if (!ast) {
+                ast = llvm::StructType::create(context, {
+                    builder.getPtrTy(), builder.getInt64Ty()
+                }, "struct.AriaString");
+            }
+            llvm::Value* ss = builder.CreateLoad(ast, key, "uhash_key_struct");
+            key = builder.CreateExtractValue(ss, 0, "uhash_key_data");
+        } else if (key->getType()->isStructTy()) {
+            key = builder.CreateExtractValue(key, 0, "uhash_key_data");
+        } else {
+            throw std::runtime_error("ahhas() key argument must be a string");
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_has_fast" : "aria_uhash_has";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getInt64Ty(), builder.getPtrTy()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        llvm::Value* result = builder.CreateCall(func, {handle, key}, "uhash_has");
+        return builder.CreateTrunc(result, builder.getInt1Ty(), "uhash_has_bool");
+    }
+
+    // ahclear(handle) — clear all entries from table
+    if (callee_ident->name == "ahclear") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ahclear() requires exactly 1 argument (handle)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_clear_fast" : "aria_uhash_clear";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getVoidTy(),
+                {builder.getInt64Ty()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        return builder.CreateCall(func, {handle});
+    }
+
+    // ahkeys(handle) — get array of all keys (returns pointer to char** array)
+    if (callee_ident->name == "ahkeys") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("ahkeys() requires exactly 1 argument (handle)");
+        }
+
+        llvm::Value* handle = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!handle->getType()->isIntegerTy(64)) {
+            handle = builder.CreateSExtOrTrunc(handle, builder.getInt64Ty());
+        }
+
+        // Allocate stack space for the out_count parameter
+        llvm::Value* countPtr = builder.CreateAlloca(builder.getInt64Ty(), nullptr, "ahkeys_count");
+
+        const char* func_name = uhash_fast_mode ? "aria_uhash_keys_fast" : "aria_uhash_keys";
+        llvm::Function* func = module->getFunction(func_name);
+        if (!func) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getPtrTy(),
+                {builder.getInt64Ty(), builder.getPtrTy()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                func_name, module);
+        }
+        llvm::Value* keysPtr = builder.CreateCall(func, {handle, countPtr}, "uhash_keys");
+        // Return the pointer as int64 (handle-style)
+        return builder.CreatePtrToInt(keysPtr, builder.getInt64Ty(), "uhash_keys_i64");
+    }
+
     // ====================================================================
     // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
     // ====================================================================

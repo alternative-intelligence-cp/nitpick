@@ -237,4 +237,8 @@ std::string MacroInvocationExpr::toString() const {
     return oss.str();
 }
 
+std::string SpreadExpr::toString() const {
+    return "..^" + (operand ? operand->toString() : "null");
+}
+
 } // namespace aria

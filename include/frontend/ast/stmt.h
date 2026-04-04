@@ -113,6 +113,7 @@ public:
     bool isInline = false;     // inline func: - hint to inline at call sites
     bool isNoInline = false;   // noinline func: - prevent inlining
     bool isComptime = false;   // comptime func: - evaluated at compile time when all args known
+    bool isVariadic = false;   // true if function has ..? variadic marker (extern) or rest param (native)
     std::vector<GenericParamInfo> genericParams;  // For generics: func<T: Trait, U>
     
     // v0.8.3: Attributes — #[inline], #[noinline], #[gpu_kernel], etc.
@@ -250,6 +251,7 @@ public:
     bool isWildx = false;     // true if 'wildx' qualifier present (wild + executable)
     bool isBorrowImm = false; // true if '$$i' qualifier present (immutable borrow)
     bool isBorrowMut = false; // true if '$$m' qualifier present (mutable borrow)
+    bool isRest = false;      // true if '..?' rest parameter (collects remaining variadic args)
     
     ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)

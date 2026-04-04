@@ -103,6 +103,31 @@ int32_t aria_uhash_type(int64_t handle, const char* key);
 int64_t aria_uhash_count(int64_t handle);
 
 /**
+ * Delete a key from the table (tombstone-based deletion).
+ *
+ * @param handle  Table handle
+ * @param key     Null-terminated string key to delete
+ * @return 0 on success, -1 if key not found
+ */
+int32_t aria_uhash_delete(int64_t handle, const char* key);
+
+/**
+ * Check if a key exists in the table.
+ *
+ * @param handle  Table handle
+ * @param key     Null-terminated string key
+ * @return 1 if key exists, 0 if not (or handle is null)
+ */
+int32_t aria_uhash_has(int64_t handle, const char* key);
+
+/**
+ * Remove all entries from the table without destroying it.
+ *
+ * @param handle  Table handle
+ */
+void aria_uhash_clear(int64_t handle);
+
+/**
  * Fast-path variants (SMT-proven type-homogeneous tables).
  * Skip type tag storage and checking.
  */
@@ -115,6 +140,9 @@ void*   aria_uhash_keys_fast(int64_t handle, int64_t* out_count);
 int64_t aria_uhash_size_fast(int64_t handle);
 int64_t aria_uhash_fits_fast(int64_t handle, int64_t value_size);
 int64_t aria_uhash_count_fast(int64_t handle);
+int32_t aria_uhash_delete_fast(int64_t handle, const char* key);
+int32_t aria_uhash_has_fast(int64_t handle, const char* key);
+void    aria_uhash_clear_fast(int64_t handle);
 
 #ifdef __cplusplus
 }
