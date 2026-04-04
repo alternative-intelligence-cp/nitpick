@@ -1,4 +1,4 @@
-// test_actor.aria — Tests for the actor system
+// test_actor.aria — Tests for the actor system (v0.11.0 — uses aria-libc)
 // Tests: actor spawn, send, is_alive, stop, destroy, mailbox access
 
 use "actor.aria".*;
@@ -6,17 +6,13 @@ use "channel.aria".*;
 use "thread.aria".*;
 use "string_convert.aria".*;
 
-extern func:aria_shim_actor_spawn = int64(wild ?*:behavior_func);
-extern func:aria_shim_actor_send = int32(int64:actor_handle, int64:message);
-extern func:aria_shim_actor_stop = int32(int64:actor_handle);
-extern func:aria_shim_actor_destroy = int32(int64:actor_handle);
-extern func:aria_shim_actor_is_alive = int32(int64:actor_handle);
-extern func:aria_shim_actor_mailbox = int64(int64:actor_handle);
-extern func:aria_shim_actor_pending = int32(int64:actor_handle);
-extern func:aria_shim_set_reply_channel = void(int64:ch);
-extern func:aria_shim_get_reply_channel = int64();
-extern func:aria_shim_reply = int32(int64:value);
-extern func:aria_shim_channel_send = int32(int64:handle, int64:value);
+// Reply channel helpers (extern — accessible from lambdas)
+extern func:aria_libc_set_reply_channel = void(int64:ch);
+extern func:aria_libc_get_reply_channel = int64();
+extern func:aria_libc_reply = int32(int64:value);
+
+// Global ack channel for actor replies
+int64:ack_ch = 0i64;
 
 func:failsafe = int32(tbb32:err) {
     drop println("FAILSAFE triggered");
@@ -27,18 +23,18 @@ func:main = int32() {
     int32:passed = 0i32;
     int32:failed = 0i32;
 
-    // Setup ack channel and register it as the global reply channel
-    int64:ack_ch = raw Channel.create(64i32);
-    aria_shim_set_reply_channel(ack_ch);
+    // Setup ack channel for actor replies
+    ack_ch = raw Channel.create(64i32);
+    aria_libc_set_reply_channel(ack_ch);
 
-    // Actor handler: echo each message to global reply channel
+    // Actor handler: echo each message to reply channel
     (int64)(int64):echo_handler = int64(int64:msg) {
-        aria_shim_reply(msg);
-        exit 0i64;
+        aria_libc_reply(msg);
+        pass 0i64;
     };
 
     // ========== Test 1: Actor spawn ==========
-    int64:actor1 = aria_shim_actor_spawn(echo_handler);
+    int64:actor1 = raw Actor.spawn(echo_handler);
     if (actor1 >= 0i64) {
         drop println("PASS: actor spawned");
         passed += 1i32;
@@ -51,7 +47,7 @@ func:main = int32() {
     raw Thread.sleep_ms(20i64);
 
     // ========== Test 2: Actor is alive ==========
-    int32:alive = aria_shim_actor_is_alive(actor1);
+    int32:alive = raw Actor.is_alive(actor1);
     if (alive == 1i32) {
         drop println("PASS: actor is alive");
         passed += 1i32;
@@ -61,7 +57,7 @@ func:main = int32() {
     }
 
     // ========== Test 3: Actor send + receive ack ==========
-    aria_shim_actor_send(actor1, 42i64);
+    raw Actor.send(actor1, 42i64);
     raw Thread.sleep_ms(20i64);
     int64:ack1 = raw Channel.recv(ack_ch);
     if (ack1 == 42i64) {
@@ -73,9 +69,9 @@ func:main = int32() {
     }
 
     // ========== Test 4: Multiple messages ==========
-    aria_shim_actor_send(actor1, 10i64);
-    aria_shim_actor_send(actor1, 20i64);
-    aria_shim_actor_send(actor1, 30i64);
+    raw Actor.send(actor1, 10i64);
+    raw Actor.send(actor1, 20i64);
+    raw Actor.send(actor1, 30i64);
     raw Thread.sleep_ms(30i64);
     int64:a1 = raw Channel.recv(ack_ch);
     int64:a2 = raw Channel.recv(ack_ch);
@@ -90,7 +86,7 @@ func:main = int32() {
     }
 
     // ========== Test 5: Actor mailbox handle ==========
-    int64:mbox = aria_shim_actor_mailbox(actor1);
+    int64:mbox = raw Actor.mailbox(actor1);
     if (mbox >= 0i64) {
         drop println("PASS: mailbox handle accessible");
         passed += 1i32;
@@ -112,7 +108,7 @@ func:main = int32() {
     }
 
     // ========== Test 6: Actor stop ==========
-    int32:stop_result = aria_shim_actor_stop(actor1);
+    int32:stop_result = raw Actor.stop(actor1);
     if (stop_result == 0i32) {
         drop println("PASS: actor stopped");
         passed += 1i32;
@@ -122,7 +118,7 @@ func:main = int32() {
     }
 
     // ========== Test 7: Actor not alive after stop ==========
-    int32:alive2 = aria_shim_actor_is_alive(actor1);
+    int32:alive2 = raw Actor.is_alive(actor1);
     if (alive2 == 0i32) {
         drop println("PASS: actor not alive after stop");
         passed += 1i32;
@@ -132,7 +128,7 @@ func:main = int32() {
     }
 
     // ========== Test 8: Actor destroy ==========
-    int32:destr = aria_shim_actor_destroy(actor1);
+    int32:destr = raw Actor.destroy(actor1);
     if (destr == 0i32) {
         drop println("PASS: actor destroyed");
         passed += 1i32;
@@ -142,7 +138,7 @@ func:main = int32() {
     }
 
     // ========== Test 9: Second actor ==========
-    int64:actor2 = aria_shim_actor_spawn(echo_handler);
+    int64:actor2 = raw Actor.spawn(echo_handler);
     if (actor2 >= 0i64) {
         drop println("PASS: second actor spawned");
         passed += 1i32;
@@ -150,7 +146,7 @@ func:main = int32() {
         drop println("FAIL: second actor spawn");
         failed += 1i32;
     }
-    aria_shim_actor_send(actor2, 99i64);
+    raw Actor.send(actor2, 99i64);
     raw Thread.sleep_ms(20i64);
     int64:ack99 = raw Channel.recv(ack_ch);
     if (ack99 == 99i64) {
@@ -160,8 +156,8 @@ func:main = int32() {
         drop println(string_concat("FAIL: second actor ack = ", int64_toString(ack99)));
         failed += 1i32;
     }
-    aria_shim_actor_stop(actor2);
-    aria_shim_actor_destroy(actor2);
+    raw Actor.stop(actor2);
+    raw Actor.destroy(actor2);
 
     raw Channel.destroy(ack_ch);
 

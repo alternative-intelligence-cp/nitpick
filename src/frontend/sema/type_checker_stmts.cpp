@@ -1667,7 +1667,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
             placeholderParams.push_back(typeSystem->getUnknownType());
         }
         Type* placeholderReturn = typeSystem->getUnknownType();
-        Type* funcType = new FunctionType(placeholderParams, placeholderReturn, stmt->isAsync, false);
+        Type* funcType = new FunctionType(placeholderParams, placeholderReturn, stmt->isAsync, stmt->isVariadic);
         
         Symbol* funcSymbol = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
                                                         funcType, stmt->line, stmt->column);
@@ -1795,7 +1795,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
             }
         }
         Type* earlyFuncType = new FunctionType(earlyParamTypes, actualReturnType,
-                                               stmt->isAsync, false);
+                                               stmt->isAsync, stmt->isVariadic);
         Symbol* earlySym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
                                                       earlyFuncType,
                                                       stmt->line, stmt->column);
@@ -3901,7 +3901,7 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     Type* valueType = resolveTypeNode(fd->returnType.get());
                     if (!valueType) valueType = typeSystem->getPrimitiveType("void");
                     Type* retType = fd->body ? new ResultType(valueType) : valueType;
-                    Type* ft = new FunctionType(pts, retType, fd->isAsync, false);
+                    Type* ft = new FunctionType(pts, retType, fd->isAsync, fd->isVariadic);
                     // Only define if not already in symbol table
                     if (!symbolTable->lookupSymbol(fd->funcName)) {
                         Symbol* sym = symbolTable->defineSymbol(fd->funcName,
@@ -3973,7 +3973,7 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     }
                     
                     // Create the function type
-                    Type* funcType = new FunctionType(paramTypes, returnType, funcDecl->isAsync, false);
+                    Type* funcType = new FunctionType(paramTypes, returnType, funcDecl->isAsync, funcDecl->isVariadic);
                     
                     // Create a new symbol for export
                     Symbol* funcSym = new Symbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType, nullptr, funcDecl->line, funcDecl->column);
@@ -4282,8 +4282,8 @@ void TypeChecker::checkExternStmt(ExternStmt* stmt) {
                 }
             }
             
-            // Create function type (extern functions are never async or generic)
-            Type* funcType = new FunctionType(paramTypes, returnType, false, false);
+            // Create function type (extern functions are never async, but may be variadic)
+            Type* funcType = new FunctionType(paramTypes, returnType, false, funcDecl->isVariadic);
             
             // Register in symbol table
             symbolTable->defineSymbol(funcDecl->funcName, SymbolKind::FUNCTION, funcType);

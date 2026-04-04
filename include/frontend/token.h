@@ -79,6 +79,10 @@ enum class TokenType {
     TOKEN_KW_AHSIZE,    // ahsize(handle) - return current payload bytes used
     TOKEN_KW_AHFITS,    // ahfits(handle, val) - check if value fits in capacity
     TOKEN_KW_AHTYPE,    // ahtype(handle, key) - return type tag of value at key
+    TOKEN_KW_AHDELETE,  // ahdelete(handle, key) - delete key (tombstone-based)
+    TOKEN_KW_AHHAS,     // ahhas(handle, key) - check if key exists (returns bool)
+    TOKEN_KW_AHCLEAR,   // ahclear(handle) - remove all entries without destroying
+    TOKEN_KW_AHKEYS,    // ahkeys(handle) - return array of all keys
     
     // ========================================================================
     // Keywords - Async/Await
@@ -323,6 +327,8 @@ enum class TokenType {
     TOKEN_PIPE_LEFT,    // <| - pipeline backward
     TOKEN_DOT_DOT,      // .. - inclusive range
     TOKEN_DOT_DOT_DOT,  // ... - exclusive range
+    TOKEN_VARIADIC,     // ..? - variadic/rest parameter marker
+    TOKEN_SPREAD,       // ..^ - spread operator (expand collection)
     
     // ========================================================================
     // Template Literals
@@ -404,9 +410,9 @@ enum class TokenType {
     // Fixed-point literal (deterministic physics)
     TOKEN_FLOAT_FIX256,     // 1.5fix256 (Q128.128 format from Report 7)
     
-    // TFP (Twisted Floating Point) literals - FUTURE
-    // TOKEN_FLOAT_TFP32,   // ...tfp32
-    // TOKEN_FLOAT_TFP64,   // ...tfp64
+    // TFP (Twisted Floating Point) literals
+    TOKEN_FLOAT_TFP32,      // ...tfp32
+    TOKEN_FLOAT_TFP64,      // ...tfp64
     
     // ========================================================================
     // Other Literals

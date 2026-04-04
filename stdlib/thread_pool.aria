@@ -1,47 +1,51 @@
-// DEPRECATED: This module uses direct extern FFI calls.
-// Future versions will migrate to aria-libc shims for ABI safety.
-// See: docs/STDLIB.md for migration status.
-
-// stdlib/thread_pool.aria
+// stdlib/thread_pool.aria — Fixed-size thread pool (v0.11.0 — ported to aria-libc)
+//
 // Fixed-size thread pool with task submission queue
-// Uses handle-based shim (thread_pool_shim.cpp)
+// Import with: use "thread_pool.aria".*;
+//
+// v0.11.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_thread.so
 
-extern func:aria_shim_pool_create = int64(int32:num_workers);
-extern func:aria_shim_pool_shutdown = int32(int64:handle);
-extern func:aria_shim_pool_submit = int32(int64:handle, wild ?*:func, int64:arg);
-extern func:aria_shim_pool_active_tasks = int64(int64:handle);
-extern func:aria_shim_pool_pending_tasks = int64(int64:handle);
-extern func:aria_shim_pool_worker_count = int32(int64:handle);
-extern func:aria_shim_pool_wait_idle = int32(int64:handle);
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern func:aria_libc_pool_submit = int32(int64:handle, wild ?*:func, int64:arg);
+
+extern "aria_libc_thread" {
+    func:aria_libc_pool_create        = int64(int32:num_workers);
+    func:aria_libc_pool_shutdown      = int32(int64:handle);
+    func:aria_libc_pool_active_tasks  = int64(int64:handle);
+    func:aria_libc_pool_pending_tasks = int64(int64:handle);
+    func:aria_libc_pool_worker_count  = int32(int64:handle);
+    func:aria_libc_pool_wait_idle     = int32(int64:handle);
+}
 
 Type:ThreadPool = {
     func:create = int64(int32:num_workers) {
-        int64:h = aria_shim_pool_create(num_workers);
+        int64:h = aria_libc_pool_create(num_workers);
         pass h;
     };
 
     func:submit = int32(int64:pool, ?->:func, int64:arg) {
-        pass aria_shim_pool_submit(pool, func, arg);
+        pass aria_libc_pool_submit(pool, func, arg);
     };
 
     func:shutdown = int32(int64:pool) {
-        pass aria_shim_pool_shutdown(pool);
+        pass aria_libc_pool_shutdown(pool);
     };
 
     func:wait_idle = int32(int64:pool) {
-        pass aria_shim_pool_wait_idle(pool);
+        pass aria_libc_pool_wait_idle(pool);
     };
 
     func:active_tasks = int64(int64:pool) {
-        pass aria_shim_pool_active_tasks(pool);
+        pass aria_libc_pool_active_tasks(pool);
     };
 
     func:pending_tasks = int64(int64:pool) {
-        pass aria_shim_pool_pending_tasks(pool);
+        pass aria_libc_pool_pending_tasks(pool);
     };
 
     func:worker_count = int32(int64:pool) {
-        pass aria_shim_pool_worker_count(pool);
+        pass aria_libc_pool_worker_count(pool);
     };
 
     struct:interface = {

@@ -1,0 +1,28 @@
+// Regression test: BUG-09 — fixed constants with arithmetic imported via use
+// Previously, computed constants (e.g. 0i64 - 5i64) were zeroed when imported.
+// The global pre-pass only handled literal initializers, not binary expressions.
+// Fixed in v0.13.0: constant folder for binary expressions in global pre-pass.
+//
+// Requires companion: test_bug09_const_module.aria
+
+use "tests/test_bug09_const_module.aria".*;
+
+pub func:main = int32() {
+    // NEG_FIVE = 0 - 5 = -5
+    int64:r1 = NEG_FIVE + 105i64;
+    if (r1 != 100i64) { exit 1i32; }
+
+    // POS_SIX = 2 * 3 = 6
+    int64:r2 = POS_SIX + 94i64;
+    if (r2 != 100i64) { exit 2i32; }
+
+    // SHIFTED = 1 << 8 = 256
+    if (SHIFTED != 256i64) { exit 3i32; }
+
+    // LITERAL_SEVEN = 7 (plain literal, always worked)
+    if (LITERAL_SEVEN != 7i64) { exit 4i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99; };

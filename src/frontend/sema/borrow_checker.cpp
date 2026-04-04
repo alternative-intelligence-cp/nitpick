@@ -560,9 +560,9 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         } else if (p->isBorrowMut) {
             ownership = ParamOwnership::BORROW_MUT;
         } else if (p->isWild && !func->isExtern) {
-            // Wild pointer passed by value = ownership transfer (move)
-            // But NOT for extern functions — C functions don't take Aria ownership
-            ownership = ParamOwnership::MOVE;
+            // Wild pointer passed by value = copy (raw pointers are copyable)
+            // Lifecycle tracking (alloc/free) still handled via wild_states
+            ownership = ParamOwnership::COPY;
         }
         
         summary.param_ownership.push_back(ownership);

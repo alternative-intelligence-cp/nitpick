@@ -1,0 +1,20 @@
+// Regression test: BUG-06 — importing module with "_test" in filename
+// Previously caused segfault because the _test heuristic made the compiler
+// treat imported modules as main, creating a "main" function collision.
+// Fixed in v0.13.0: imported modules never treated as main module.
+//
+// This file imports a module whose filename contains "_test" and calls
+// a pub function from it. If the bug regresses, compilation will segfault.
+//
+// NOTE: This test requires the companion file test_bug06_helper_test.aria
+// to exist in the same directory. The helper exports pub func:bug06_value.
+
+use "tests/test_bug06_helper_test.aria".*;
+
+pub func:main = int32() {
+    int32:v = raw bug06_value();
+    if (v != 42i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99; };

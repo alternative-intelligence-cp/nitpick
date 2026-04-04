@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <pthread.h>
 #include <atomic>
+#include <setjmp.h>
+#include "runtime/async/future.h"
 
 namespace aria {
 namespace panic {
@@ -68,22 +70,94 @@ static void log_panic(const char* reason, const char* location) {
     write(STDERR_FILENO, footer, strlen(footer));
 }
 
-// Execute defer blocks for current thread
-// NOTE: This is a stub - requires defer infrastructure to be implemented
-// The defer mechanism needs to maintain a thread-local stack of cleanup functions
+// Thread-local defer stack for panic-time cleanup
+// Each entry is a void(*)(void) function pointer registered by codegen
+typedef void (*DeferFn)(void);
+
+struct DeferStack {
+    static constexpr size_t MAX_DEFERS = 256;
+    DeferFn entries[MAX_DEFERS];
+    size_t count = 0;
+};
+
+static thread_local DeferStack tl_defer_stack;
+
+// Register a defer cleanup function (called by compiler-generated code)
+extern "C" void aria_defer_push(DeferFn fn) {
+    if (tl_defer_stack.count < DeferStack::MAX_DEFERS && fn) {
+        tl_defer_stack.entries[tl_defer_stack.count++] = fn;
+    }
+}
+
+// Unregister the most recent defer (called on normal scope exit)
+extern "C" void aria_defer_pop() {
+    if (tl_defer_stack.count > 0) {
+        tl_defer_stack.count--;
+    }
+}
+
+// Execute defer blocks for current thread in LIFO order
+// Used during panic to ensure cleanup functions run before shutdown
 static void execute_defer_blocks() {
-    // TODO: Walk thread-local defer stack and execute all registered cleanup functions
-    // For now, this is a placeholder to document the requirement
-    //
-    // Defer infrastructure should:
-    // 1. Maintain per-thread stack of cleanup functions
-    // 2. Execute in LIFO order (last registered, first executed)
-    // 3. Handle nested panics (if defer itself panics, abort immediately)
-    // 4. Use async-signal-safe primitives only
-    
-    // Placeholder: Log that defer execution would happen here
-    const char* msg = "[DEFER STUB] Would execute defer blocks here\n";
-    write(STDERR_FILENO, msg, strlen(msg));
+    // Execute in reverse (LIFO) order — last registered, first executed
+    while (tl_defer_stack.count > 0) {
+        tl_defer_stack.count--;
+        DeferFn fn = tl_defer_stack.entries[tl_defer_stack.count];
+        if (fn) {
+            fn();
+        }
+    }
+}
+
+// Thread-local async task context for panic task isolation
+// When running inside an async task, a panic kills only the faulting task
+// (by marking its Future as ERROR and longjmp-ing back to the executor)
+// instead of terminating the entire process.
+struct AsyncTaskContext {
+    bool active;                          // Are we in an async task?
+    jmp_buf recovery_point;               // longjmp target for task-local panic
+    aria::runtime::Future* task_future;   // The task's result Future
+};
+
+static thread_local AsyncTaskContext tl_async_ctx = {false, {}, nullptr};
+
+// Enter async task context (called by executor/thread pool before running a task)
+extern "C" void aria_async_task_enter(void* future_ptr) {
+    tl_async_ctx.active = true;
+    tl_async_ctx.task_future = static_cast<aria::runtime::Future*>(future_ptr);
+}
+
+// Get pointer to recovery jmp_buf (caller uses setjmp on the returned buffer)
+extern "C" void* aria_async_task_get_jmpbuf() {
+    return &tl_async_ctx.recovery_point;
+}
+
+// Leave async task context (called after task completes normally)
+extern "C" void aria_async_task_leave() {
+    tl_async_ctx.active = false;
+    tl_async_ctx.task_future = nullptr;
+}
+
+// Attempt task-local panic isolation.
+// If we're inside an async task: mark the task's Future as error,
+// reset panic state, and longjmp back to the executor. Does NOT return.
+// If we're NOT in an async task: returns normally (caller proceeds to _exit).
+static void try_task_isolation() {
+    if (tl_async_ctx.active && tl_async_ctx.task_future) {
+        const char* msg = "[TASK ISOLATION] Panic contained to async task\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+
+        tl_async_ctx.task_future->setError(true);
+        tl_async_ctx.active = false;
+        tl_async_ctx.task_future = nullptr;
+
+        // Reset panic flag so other tasks can still panic independently
+        g_panic_in_progress.store(false, std::memory_order_release);
+
+        fsync(STDERR_FILENO);
+        longjmp(tl_async_ctx.recovery_point, 1);
+        // Does not return
+    }
 }
 
 // Main panic handler
@@ -117,18 +191,11 @@ extern "C" void aria_runtime_panic_unwrap(const char* reason) {
         write(STDERR_FILENO, msg, strlen(msg));
     }
     
-    // TODO: For async tasks, implement task isolation
-    // - Determine if we're in an async task context
-    // - If yes: kill only the faulting task, not entire process
-    // - If no: proceed with process shutdown
-    //
-    // For now, we always shut down the entire process
+    // Task isolation: if in async task context, kill only this task
+    try_task_isolation();
     
-    // Flush stderr before exit
+    // Not in async context — shut down entire process
     fsync(STDERR_FILENO);
-    
-    // Exit with non-zero status
-    // Use _exit instead of exit() to skip atexit handlers that might panic
     _exit(1);
 }
 
@@ -150,6 +217,7 @@ extern "C" void aria_runtime_panic(const char* reason) {
         safety_cb(reason);
     }
     
+    try_task_isolation();
     fsync(STDERR_FILENO);
     _exit(1);
 }
@@ -177,6 +245,7 @@ extern "C" void aria_runtime_assert_failed(const char* expr, const char* file, i
         safety_cb(reason);
     }
     
+    try_task_isolation();
     fsync(STDERR_FILENO);
     _exit(1);
 }
@@ -199,6 +268,30 @@ extern "C" void aria_panic_oom(const char* message) {
         safety_cb(message ? message : "OOM");
     }
     
+    try_task_isolation();
+    fsync(STDERR_FILENO);
+    _exit(1);
+}
+
+// Overflow panic handler
+// Called when a checked @cast detects value overflow during narrowing
+extern "C" void aria_panic_overflow(const char* message) {
+    bool expected = false;
+    if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
+        const char* msg = "RECURSIVE PANIC DETECTED - ABORTING\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+        _exit(99);
+    }
+    
+    log_panic(message ? message : "Integer overflow in cast", "checked cast");
+    execute_defer_blocks();
+    
+    HardwareSafetyCallback safety_cb = g_hardware_safety_callback.load(std::memory_order_acquire);
+    if (safety_cb) {
+        safety_cb(message ? message : "overflow");
+    }
+    
+    try_task_isolation();
     fsync(STDERR_FILENO);
     _exit(1);
 }

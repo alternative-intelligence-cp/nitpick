@@ -99,6 +99,59 @@ void TypeChecker::check(ASTNode* module) {
     }
 
     // -------------------------------------------------------------------------
+    // BUILTIN TRAIT REGISTRATION: Register fundamental traits that are always
+    // available (Numeric, Sized) before any user code is processed.  Cross-
+    // module trait import isn't wired up yet, so stdlib traits declared in
+    // separate .aria files won't reach the main symbol table.  Registering
+    // them here fixes "Unknown trait 'Numeric'" for every compilation unit.
+    // Skip if the user's own code already declares a trait named "Numeric".
+    // -------------------------------------------------------------------------
+    {
+        // Check if user code defines trait:Numeric — if so, let theirs take priority
+        bool userDefinesNumeric = false;
+        const std::vector<std::shared_ptr<ASTNode>>* stmtList = nullptr;
+        if (module->type == ASTNode::NodeType::PROGRAM) {
+            stmtList = &static_cast<ProgramNode*>(module)->declarations;
+        } else if (module->type == ASTNode::NodeType::BLOCK) {
+            stmtList = &static_cast<BlockStmt*>(module)->statements;
+        }
+        if (stmtList) {
+            for (const auto& s : *stmtList) {
+                if (s && s->type == ASTNode::NodeType::TRAIT_DECL) {
+                    if (static_cast<TraitDeclStmt*>(s.get())->traitName == "Numeric") {
+                        userDefinesNumeric = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Numeric — satisfied by all arithmetic primitive types
+        if (!userDefinesNumeric && !symbolTable->lookupSymbol("Numeric")) {
+            auto numericTrait = std::make_shared<TraitDeclStmt>(
+                "Numeric", std::vector<TraitMethod>{}, 0, 0);
+            syntheticNodes.push_back(numericTrait);
+            checkTraitDecl(static_cast<TraitDeclStmt*>(numericTrait.get()));
+
+            static const std::vector<std::string> numericTypes = {
+                "int8", "int16", "int32", "int64",
+                "uint8", "uint16", "uint32", "uint64",
+                "tbb8", "tbb16", "tbb32", "tbb64",
+                "frac8", "frac16", "frac32", "frac64",
+                "tfp32", "tfp64", "fix256",
+                "flt32", "flt64"
+            };
+            for (const auto& typeName : numericTypes) {
+                auto implDecl = std::make_shared<ImplDeclStmt>(
+                    "Numeric", typeName,
+                    std::vector<std::shared_ptr<ASTNode>>{}, 0, 0);
+                syntheticNodes.push_back(implDecl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(implDecl.get()));
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // PRE-PASS: Forward-declare all non-generic module-level functions so that
     // mutual recursion (funcA calls funcB, funcB calls funcA) resolves cleanly.
     // Without this, calling a function declared later in the file raises
@@ -184,7 +237,7 @@ void TypeChecker::check(ASTNode* module) {
                 retType = new ResultType(valueType);
             }
 
-            Type* funcType = new FunctionType(paramTypes, retType, fd->isAsync, false);
+            Type* funcType = new FunctionType(paramTypes, retType, fd->isAsync, fd->isVariadic);
             Symbol* sym = symbolTable->defineSymbol(fd->funcName, SymbolKind::FUNCTION,
                                                      funcType, fd->line, fd->column);
             if (sym) sym->setFuncDecl(fd);

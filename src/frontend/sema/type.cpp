@@ -995,9 +995,13 @@ PrimitiveType* TypeSystem::getPrimitiveType(const std::string& name) {
 }
 
 PointerType* TypeSystem::getPointerType(Type* pointeeType, bool isMutable, bool isWild) {
-    // TODO: Implement caching for pointer types
+    std::string key = (pointeeType ? pointeeType->toString() : "void") +
+                      (isMutable ? "_mut" : "") + (isWild ? "_wild" : "");
+    auto it = pointerCache.find(key);
+    if (it != pointerCache.end()) return it->second;
     auto type = std::make_unique<PointerType>(pointeeType, isMutable, isWild, /*isErased=*/false);
     PointerType* ptr = type.get();
+    pointerCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
@@ -1012,17 +1016,23 @@ PointerType* TypeSystem::getErasedPointerType(bool isMutable, bool isWild) {
 }
 
 ArrayType* TypeSystem::getArrayType(Type* elementType, int size) {
-    // TODO: Implement caching for array types
+    std::string key = (elementType ? elementType->toString() : "void") + "[" + std::to_string(size) + "]";
+    auto it = arrayCache.find(key);
+    if (it != arrayCache.end()) return it->second;
     auto type = std::make_unique<ArrayType>(elementType, size);
     ArrayType* ptr = type.get();
+    arrayCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 VectorType* TypeSystem::getVectorType(Type* componentType, int dimension) {
-    // TODO: Implement caching for vector types
+    std::string key = (componentType ? componentType->toString() : "void") + "_v" + std::to_string(dimension);
+    auto it = vectorCache.find(key);
+    if (it != vectorCache.end()) return it->second;
     auto type = std::make_unique<VectorType>(componentType, dimension);
     VectorType* ptr = type.get();
+    vectorCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
@@ -1037,51 +1047,71 @@ FunctionType* TypeSystem::getFunctionType(const std::vector<Type*>& paramTypes, 
         actualReturnType = getFutureType(returnType);
     }
     
-    // TODO: Implement caching for function types
+    std::string key;
+    for (auto* pt : paramTypes) key += (pt ? pt->toString() : "void") + ",";
+    key += "->" + (actualReturnType ? actualReturnType->toString() : "void");
+    if (isAsync) key += "_async";
+    if (isVariadic) key += "_va";
+    auto it = functionCache.find(key);
+    if (it != functionCache.end()) return it->second;
     auto type = std::make_unique<FunctionType>(paramTypes, actualReturnType, isAsync, isVariadic);
     FunctionType* ptr = type.get();
+    functionCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 OptionalType* TypeSystem::getOptionalType(Type* wrappedType) {
-    // TODO: Implement caching for optional types
-    // For now, create a new one each time
+    std::string key = wrappedType ? wrappedType->toString() : "void";
+    auto it = optionalCache.find(key);
+    if (it != optionalCache.end()) return it->second;
     auto type = std::make_unique<OptionalType>(wrappedType);
     OptionalType* ptr = type.get();
+    optionalCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 ResultType* TypeSystem::getResultType(Type* valueType) {
-    // TODO: Implement caching for result types
+    std::string key = valueType ? valueType->toString() : "void";
+    auto it = resultCache.find(key);
+    if (it != resultCache.end()) return it->second;
     auto type = std::make_unique<ResultType>(valueType);
     ResultType* ptr = type.get();
+    resultCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 FutureType* TypeSystem::getFutureType(Type* outputType) {
-    // TODO: Implement caching for future types
+    std::string key = outputType ? outputType->toString() : "void";
+    auto it = futureCache.find(key);
+    if (it != futureCache.end()) return it->second;
     auto type = std::make_unique<FutureType>(outputType);
     FutureType* ptr = type.get();
+    futureCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 HandleType* TypeSystem::getHandleType(Type* pointeeType) {
-    // TODO: Implement caching for handle types (P1-3)
+    std::string key = pointeeType ? pointeeType->toString() : "void";
+    auto it = handleCache.find(key);
+    if (it != handleCache.end()) return it->second;
     auto type = std::make_unique<HandleType>(pointeeType);
     HandleType* ptr = type.get();
+    handleCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }
 
 SimdType* TypeSystem::getSimdType(Type* elementType, size_t laneCount) {
-    // TODO: Implement caching for SIMD types (P1-2)
-    // Validate lane count is power of 2 (future work)
+    std::string key = (elementType ? elementType->toString() : "void") + "x" + std::to_string(laneCount);
+    auto it = simdCache.find(key);
+    if (it != simdCache.end()) return it->second;
     auto type = std::make_unique<SimdType>(elementType, laneCount);
     SimdType* ptr = type.get();
+    simdCache[key] = ptr;
     types.push_back(std::move(type));
     return ptr;
 }

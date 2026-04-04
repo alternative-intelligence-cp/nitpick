@@ -68,6 +68,10 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"ahsize", TokenType::TOKEN_KW_AHSIZE},
     {"ahfits", TokenType::TOKEN_KW_AHFITS},
     {"ahtype", TokenType::TOKEN_KW_AHTYPE},
+    {"ahdelete", TokenType::TOKEN_KW_AHDELETE},
+    {"ahhas", TokenType::TOKEN_KW_AHHAS},
+    {"ahclear", TokenType::TOKEN_KW_AHCLEAR},
+    {"ahkeys", TokenType::TOKEN_KW_AHKEYS},
     
     // Async
     {"async", TokenType::TOKEN_KW_ASYNC},
@@ -545,6 +549,10 @@ void Lexer::scanToken() {
             if (match('.')) {
                 if (match('.')) {
                     addToken(TokenType::TOKEN_DOT_DOT_DOT);
+                } else if (match('?')) {
+                    addToken(TokenType::TOKEN_VARIADIC);
+                } else if (match('^')) {
+                    addToken(TokenType::TOKEN_SPREAD);
                 } else {
                     addToken(TokenType::TOKEN_DOT_DOT);
                 }

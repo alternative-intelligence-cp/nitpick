@@ -515,10 +515,10 @@ llvm::Value* TernaryCodegen::generateNot(llvm::Value* operand, Type* type) {
         }
         notFn = fn_trit_not;
     } else if (typeName == "nit") {
-        // For nit, NOT is just negation (symmetric range)
-        // There's no separate aria_nit_not, so use inline negation
-        llvm::Value* result = builder.CreateNeg(operand, "not_tmp");
-        return clampToRange(result, type);
+        if (!fn_nit_not) {
+            fn_nit_not = getOrDeclareIntrinsic("aria_nit_not", false, true);
+        }
+        notFn = fn_nit_not;
     }
 
     if (notFn) {

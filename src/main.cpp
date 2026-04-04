@@ -6037,6 +6037,103 @@ int main(int argc, char** argv) {
             return 1;
         }
         
+        // Auto-detect aria-libc libraries needed by scanning module for
+        // undefined aria_libc_* symbols and adding corresponding -L/-l flags
+        {
+            // Map: symbol prefix → library name
+            static const std::pair<std::string, std::string> lib_map[] = {
+                {"aria_libc_mem_",     "aria_libc_mem"},
+                {"aria_libc_io_",      "aria_libc_io"},
+                {"aria_libc_math_",    "aria_libc_math"},
+                {"aria_libc_string_",  "aria_libc_string"},
+                {"aria_libc_time_",    "aria_libc_time"},
+                {"aria_libc_fs_",      "aria_libc_fs"},
+                {"aria_libc_net_",     "aria_libc_net"},
+                {"aria_libc_process_", "aria_libc_process"},
+                {"aria_libc_posix_",   "aria_libc_posix"},
+                {"aria_libc_thread_",  "aria_libc_thread"},
+                {"aria_libc_mutex_",   "aria_libc_mutex"},
+                {"aria_libc_channel_", "aria_libc_channel"},
+                {"aria_libc_hexstream_", "aria_libc_hexstream"},
+                {"aria_libc_pool_",    "aria_libc_pool"},
+                {"aria_libc_actor_",   "aria_libc_actor"},
+                {"aria_libc_shm_",     "aria_libc_shm"},
+                {"aria_libc_reply",    "aria_libc_actor"},
+                {"aria_libc_get_reply_channel", "aria_libc_actor"},
+                {"aria_libc_set_reply_channel", "aria_libc_actor"},
+            };
+
+            std::set<std::string> needed_libs;
+            for (const auto& func : *final_module) {
+                if (func.isDeclaration() && !func.isIntrinsic()) {
+                    std::string name = func.getName().str();
+                    for (const auto& [prefix, lib] : lib_map) {
+                        if (name.compare(0, prefix.size(), prefix) == 0) {
+                            needed_libs.insert(lib);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!needed_libs.empty()) {
+                // Resolve compiler exe directory for relative shim path search
+                std::string al_exe_dir;
+                {
+                    char al_buf[4096];
+                    ssize_t al_len = readlink("/proc/self/exe", al_buf, sizeof(al_buf) - 1);
+                    if (al_len > 0) {
+                        al_buf[al_len] = '\0';
+                        std::string al_full(al_buf);
+                        size_t al_slash = al_full.find_last_of('/');
+                        if (al_slash != std::string::npos)
+                            al_exe_dir = al_full.substr(0, al_slash);
+                    }
+                }
+                // Search relative to compiler exe, then fallback to known paths
+                std::string shim_dir;
+                std::vector<std::string> shim_search = {
+                    al_exe_dir + "/../aria-libc/shim",
+                    al_exe_dir + "/../../aria-libc/shim",
+                    std::string(getenv("HOME") ? getenv("HOME") : "") + "/Workspace/REPOS/aria-libc/shim",
+                    "/usr/local/lib",
+                    "/usr/lib",
+                };
+                for (const auto& dir : shim_search) {
+                    if (!dir.empty() && access(dir.c_str(), F_OK) == 0) {
+                        shim_dir = dir;
+                        break;
+                    }
+                }
+
+                if (!shim_dir.empty()) {
+                    opts.link_args_ordered.push_back("-L" + shim_dir);
+                    for (const auto& lib : needed_libs) {
+                        // Only add if the library file actually exists
+                        std::string lib_path = shim_dir + "/lib" + lib + ".a";
+                        std::string lib_so = shim_dir + "/lib" + lib + ".so";
+                        if (access(lib_path.c_str(), F_OK) == 0 || access(lib_so.c_str(), F_OK) == 0) {
+                            opts.link_args_ordered.push_back("-l" + lib);
+                            if (opts.verbose) {
+                                std::cerr << "[AUTO-LINK] " << lib << "\n";
+                            }
+                        }
+                    }
+                    // Add -lpthread if any threading-related libs were linked
+                    static const std::set<std::string> pthread_libs = {
+                        "aria_libc_thread", "aria_libc_mutex", "aria_libc_channel",
+                        "aria_libc_pool", "aria_libc_actor"
+                    };
+                    for (const auto& lib : needed_libs) {
+                        if (pthread_libs.count(lib)) {
+                            opts.link_args_ordered.push_back("-lpthread");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         if (!link_executable(asm_file, opts.output_file, opts)) {
             diags.printAll();
             return 1;

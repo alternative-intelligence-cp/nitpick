@@ -40,6 +40,7 @@ public:
         MOVE,                 // Move expression: move(x) - ownership transfer
         VECTOR_CONSTRUCTOR,   // Vector constructor: vec2(x, y), vec3(x, y, z), vec9(...)
         CAST,                 // Type cast: @cast<TargetType>(expr), @cast_unchecked<T>(expr)
+        SPREAD,               // Spread expression: ..^expr (expand collection into args)
         
         // === STATEMENTS ===
         VAR_DECL,             // Variable declaration: type:name = value;

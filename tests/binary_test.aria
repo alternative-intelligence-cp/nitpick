@@ -30,7 +30,7 @@ func:main = int32() {
     println("── Write/Read Round-trips ─────────────────────────────");
 
     // T01: int8 round-trip
-    wild int64->:b1 = raw bin_new();
+    int64:b1 = raw bin_new();
     drop bin_write_int8(b1, 42i32);
     drop bin_seek(b1, 0i64);
     int32:v1 = raw bin_read_int8(b1);
@@ -39,7 +39,7 @@ func:main = int32() {
     drop bin_free(b1);
 
     // T02: int16 round-trip
-    wild int64->:b2 = raw bin_new();
+    int64:b2 = raw bin_new();
     drop bin_write_int16(b2, 1234i32);
     drop bin_seek(b2, 0i64);
     int32:v2 = raw bin_read_int16(b2);
@@ -48,7 +48,7 @@ func:main = int32() {
     drop bin_free(b2);
 
     // T03: int32 round-trip
-    wild int64->:b3 = raw bin_new();
+    int64:b3 = raw bin_new();
     drop bin_write_int32(b3, 70000i32);
     drop bin_seek(b3, 0i64);
     int32:v3 = raw bin_read_int32(b3);
@@ -57,7 +57,7 @@ func:main = int32() {
     drop bin_free(b3);
 
     // T04: int64 round-trip
-    wild int64->:b4 = raw bin_new();
+    int64:b4 = raw bin_new();
     drop bin_write_int64(b4, 123456789i64);
     drop bin_seek(b4, 0i64);
     int64:v4 = raw bin_read_int64(b4);
@@ -66,7 +66,7 @@ func:main = int32() {
     drop bin_free(b4);
 
     // T05: flt64 round-trip
-    wild int64->:b5 = raw bin_new();
+    int64:b5 = raw bin_new();
     drop bin_write_flt64(b5, 3.14159);
     drop bin_seek(b5, 0i64);
     flt64:v5 = raw bin_read_flt64(b5);
@@ -77,7 +77,7 @@ func:main = int32() {
     drop bin_free(b5);
 
     // T06: flt32 round-trip (lossy)
-    wild int64->:b6 = raw bin_new();
+    int64:b6 = raw bin_new();
     drop bin_write_flt32(b6, 2.5);
     drop bin_seek(b6, 0i64);
     flt64:v6 = raw bin_read_flt32(b6);
@@ -88,7 +88,7 @@ func:main = int32() {
     drop bin_free(b6);
 
     // T07: bool round-trip true
-    wild int64->:b7 = raw bin_new();
+    int64:b7 = raw bin_new();
     drop bin_write_bool(b7, 1i32);
     drop bin_seek(b7, 0i64);
     int32:v7 = raw bin_read_bool(b7);
@@ -97,7 +97,7 @@ func:main = int32() {
     drop bin_free(b7);
 
     // T08: bool round-trip false
-    wild int64->:b8 = raw bin_new();
+    int64:b8 = raw bin_new();
     drop bin_write_bool(b8, 0i32);
     drop bin_seek(b8, 0i64);
     int32:v8 = raw bin_read_bool(b8);
@@ -106,7 +106,7 @@ func:main = int32() {
     drop bin_free(b8);
 
     // T09: string round-trip
-    wild int64->:b9 = raw bin_new();
+    int64:b9 = raw bin_new();
     drop bin_write_str(b9, "Hello Aria!");
     drop bin_seek(b9, 0i64);
     string:v9 = raw bin_read_str(b9);
@@ -115,7 +115,7 @@ func:main = int32() {
     drop bin_free(b9);
 
     // T10: empty string round-trip
-    wild int64->:b10 = raw bin_new();
+    int64:b10 = raw bin_new();
     drop bin_write_str(b10, "");
     drop bin_seek(b10, 0i64);
     string:v10 = raw bin_read_str(b10);
@@ -131,7 +131,7 @@ func:main = int32() {
     println("── Buffer Metadata ─────────────────────────────────────");
 
     // T11: size after writes
-    wild int64->:b11 = raw bin_new();
+    int64:b11 = raw bin_new();
     int64:s11a = raw bin_size(b11);
     drop bin_write_int32(b11, 1i32);
     int64:s11b = raw bin_size(b11);
@@ -146,7 +146,7 @@ func:main = int32() {
     drop bin_free(b11);
 
     // T12: pos after reads
-    wild int64->:b12 = raw bin_new();
+    int64:b12 = raw bin_new();
     drop bin_write_int8(b12, 1i32);
     drop bin_write_int32(b12, 2i32);
     drop bin_seek(b12, 0i64);
@@ -164,7 +164,7 @@ func:main = int32() {
     drop bin_free(b12);
 
     // T13: seek
-    wild int64->:b13 = raw bin_new();
+    int64:b13 = raw bin_new();
     drop bin_write_int32(b13, 100i32);
     drop bin_write_int32(b13, 200i32);
     drop bin_seek(b13, 4i64);
@@ -174,7 +174,7 @@ func:main = int32() {
     drop bin_free(b13);
 
     // T14: remaining
-    wild int64->:b14 = raw bin_new();
+    int64:b14 = raw bin_new();
     drop bin_write_int32(b14, 1i32);
     drop bin_write_int32(b14, 2i32);
     drop bin_seek(b14, 0i64);
@@ -195,7 +195,7 @@ func:main = int32() {
     println("── Sequential Multi-type ──────────────────────────────");
 
     // T15: Write multiple types, read them back in order
-    wild int64->:b15 = raw bin_new();
+    int64:b15 = raw bin_new();
     drop bin_write_int8(b15, 7i32);
     drop bin_write_int16(b15, 256i32);
     drop bin_write_int32(b15, 65536i32);
@@ -230,7 +230,7 @@ func:main = int32() {
     drop bin_free(b15);
 
     // T16: Re-read with seek
-    wild int64->:b16 = raw bin_new();
+    int64:b16 = raw bin_new();
     drop bin_write_int32(b16, 111i32);
     drop bin_write_int32(b16, 222i32);
     drop bin_write_int32(b16, 333i32);
@@ -255,7 +255,7 @@ func:main = int32() {
     println("── Negative Values ─────────────────────────────────────");
 
     // T17: Negative int8
-    wild int64->:b17 = raw bin_new();
+    int64:b17 = raw bin_new();
     drop bin_write_int8(b17, -5i32);
     drop bin_seek(b17, 0i64);
     int32:v17 = raw bin_read_int8(b17);
@@ -264,7 +264,7 @@ func:main = int32() {
     drop bin_free(b17);
 
     // T18: Negative int16
-    wild int64->:b18 = raw bin_new();
+    int64:b18 = raw bin_new();
     drop bin_write_int16(b18, -1000i32);
     drop bin_seek(b18, 0i64);
     int32:v18 = raw bin_read_int16(b18);
@@ -273,7 +273,7 @@ func:main = int32() {
     drop bin_free(b18);
 
     // T19: Negative int64
-    wild int64->:b19 = raw bin_new();
+    int64:b19 = raw bin_new();
     drop bin_write_int64(b19, -999999i64);
     drop bin_seek(b19, 0i64);
     int64:v19 = raw bin_read_int64(b19);
@@ -282,7 +282,7 @@ func:main = int32() {
     drop bin_free(b19);
 
     // T20: Negative float
-    wild int64->:b20 = raw bin_new();
+    int64:b20 = raw bin_new();
     drop bin_write_flt64(b20, -1.5);
     drop bin_seek(b20, 0i64);
     flt64:v20 = raw bin_read_flt64(b20);
@@ -300,7 +300,7 @@ func:main = int32() {
     println("── File I/O ────────────────────────────────────────────");
 
     // T21: Write to file and read back
-    wild int64->:b21 = raw bin_new();
+    int64:b21 = raw bin_new();
     drop bin_write_int32(b21, 42i32);
     drop bin_write_str(b21, "file-test");
     drop bin_write_flt64(b21, 6.28);
@@ -310,7 +310,7 @@ func:main = int32() {
     drop bin_free(b21);
 
     // T22: Read from file
-    wild int64->:b22 = raw bin_from_file("/tmp/aria_bin_test.bin");
+    int64:b22 = raw bin_from_file("/tmp/aria_bin_test.bin");
     int32:v22a = raw bin_read_int32(b22);
     string:v22b = raw bin_read_str(b22);
     flt64:v22c = raw bin_read_flt64(b22);
@@ -330,7 +330,7 @@ func:main = int32() {
     println("── Practical: Struct Serialization ─────────────────────");
 
     // T23: Serialize a "Player" record
-    wild int64->:b23 = raw bin_new();
+    int64:b23 = raw bin_new();
     drop bin_write_str(b23, "Alice");
     drop bin_write_int32(b23, 100i32);
     drop bin_write_flt64(b23, 45.5);
@@ -357,7 +357,7 @@ func:main = int32() {
     drop bin_free(b23);
 
     // T24: Multiple records
-    wild int64->:b24 = raw bin_new();
+    int64:b24 = raw bin_new();
     drop bin_write_int32(b24, 3i32);
     drop bin_write_str(b24, "A");
     drop bin_write_int32(b24, 10i32);
@@ -386,7 +386,7 @@ func:main = int32() {
     drop bin_free(b24);
 
     // T25: File round-trip with multiple records
-    wild int64->:b25w = raw bin_new();
+    int64:b25w = raw bin_new();
     drop bin_write_int32(b25w, 2i32);
     drop bin_write_str(b25w, "Record1");
     drop bin_write_flt64(b25w, 1.11);
@@ -395,7 +395,7 @@ func:main = int32() {
     int32:ok25 = raw bin_to_file(b25w, "/tmp/aria_bin_records.bin");
     drop bin_free(b25w);
 
-    wild int64->:b25r = raw bin_from_file("/tmp/aria_bin_records.bin");
+    int64:b25r = raw bin_from_file("/tmp/aria_bin_records.bin");
     int32:cnt25 = raw bin_read_int32(b25r);
     string:r25a = raw bin_read_str(b25r);
     flt64:rv25a = raw bin_read_flt64(b25r);

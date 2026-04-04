@@ -862,6 +862,7 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
                                                    llvm::Value* right) {
     // Map operator to function suffix
     std::string opSuffix;
+    bool isComparison = false;
     if (op == frontend::TokenType::TOKEN_PLUS) {
         opSuffix = "_add";
     } else if (op == frontend::TokenType::TOKEN_MINUS) {
@@ -870,15 +871,62 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
         opSuffix = "_mul";
     } else if (op == frontend::TokenType::TOKEN_SLASH) {
         opSuffix = "_div";
+    } else if (op == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+               op == frontend::TokenType::TOKEN_BANG_EQUAL ||
+               op == frontend::TokenType::TOKEN_LESS ||
+               op == frontend::TokenType::TOKEN_LESS_EQUAL ||
+               op == frontend::TokenType::TOKEN_GREATER ||
+               op == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+        opSuffix = "_cmp";
+        isComparison = true;
     } else {
         return nullptr;  // Unsupported operation
     }
     
     // For frac types: use sret/pointer ABI matching the C runtime
     // Runtime: void aria_frac32_add(Frac32* result, const Frac32* a, const Frac32* b)
+    // Comparison: int32_t aria_frac32_cmp(const Frac32* a, const Frac32* b) → -1/0/1
     if (numericType.find("frac") == 0) {
         std::string runtimeFunc = "aria_" + numericType + opSuffix;
         llvm::StructType* fracType = llvm::cast<llvm::StructType>(left->getType());
+        
+        if (isComparison) {
+            // Comparison: int32_t aria_fracN_cmp(const FracN* a, const FracN* b)
+            llvm::Function* cmp_func = module->getFunction(runtimeFunc);
+            if (!cmp_func) {
+                llvm::Type* ptrType = llvm::PointerType::get(fracType, 0);
+                llvm::FunctionType* funcType = llvm::FunctionType::get(
+                    builder.getInt32Ty(),
+                    {ptrType, ptrType},
+                    false
+                );
+                cmp_func = llvm::Function::Create(funcType,
+                    llvm::Function::ExternalLinkage, runtimeFunc, module);
+            }
+            
+            llvm::Value* a_alloca = builder.CreateAlloca(fracType, nullptr, "frac_cmp_a");
+            llvm::Value* b_alloca = builder.CreateAlloca(fracType, nullptr, "frac_cmp_b");
+            builder.CreateStore(left, a_alloca);
+            builder.CreateStore(right, b_alloca);
+            
+            llvm::Value* cmp_result = builder.CreateCall(cmp_func, {a_alloca, b_alloca}, "frac_cmp");
+            
+            // Convert three-way compare to boolean based on operator
+            llvm::Value* zero = llvm::ConstantInt::get(builder.getInt32Ty(), 0);
+            if (op == frontend::TokenType::TOKEN_EQUAL_EQUAL) {
+                return builder.CreateICmpEQ(cmp_result, zero, "frac_eq");
+            } else if (op == frontend::TokenType::TOKEN_BANG_EQUAL) {
+                return builder.CreateICmpNE(cmp_result, zero, "frac_ne");
+            } else if (op == frontend::TokenType::TOKEN_LESS) {
+                return builder.CreateICmpSLT(cmp_result, zero, "frac_lt");
+            } else if (op == frontend::TokenType::TOKEN_LESS_EQUAL) {
+                return builder.CreateICmpSLE(cmp_result, zero, "frac_le");
+            } else if (op == frontend::TokenType::TOKEN_GREATER) {
+                return builder.CreateICmpSGT(cmp_result, zero, "frac_gt");
+            } else if (op == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+                return builder.CreateICmpSGE(cmp_result, zero, "frac_ge");
+            }
+        }
         
         llvm::Function* c_func = module->getFunction(runtimeFunc);
         if (!c_func) {

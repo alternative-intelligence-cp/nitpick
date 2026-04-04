@@ -378,6 +378,8 @@ static int32_t suffix_to_flt(const char* suffix) {
     if (strcmp(suffix, "f256")   == 0) return static_cast<int32_t>(TokenType::TOKEN_FLOAT_F256);
     if (strcmp(suffix, "f512")   == 0) return static_cast<int32_t>(TokenType::TOKEN_FLOAT_F512);
     if (strcmp(suffix, "fix256") == 0) return static_cast<int32_t>(TokenType::TOKEN_FLOAT_FIX256);
+    if (strcmp(suffix, "tfp32")  == 0) return static_cast<int32_t>(TokenType::TOKEN_FLOAT_TFP32);
+    if (strcmp(suffix, "tfp64")  == 0) return static_cast<int32_t>(TokenType::TOKEN_FLOAT_TFP64);
     return -1;
 }
 

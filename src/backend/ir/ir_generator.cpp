@@ -2057,8 +2057,11 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
         }
     }
     
-    // Create a module init function (or main if module name suggests it's the main file)
-    bool is_main_module = (module_name.find("main") != std::string::npos || 
+    // Create a module init function (or main if module name suggests it's the main file).
+    // Imported modules (current_module_name is set) must NEVER be treated as main —
+    // they always get __modulename_init. Only the top-level compilation target may be main.
+    bool is_main_module = current_module_name.empty() &&
+                          (module_name.find("main") != std::string::npos || 
                            module_name == "hello" ||
                            module_name.find("generics") != std::string::npos ||
                            module_name.find("_test") != std::string::npos);
@@ -2501,6 +2504,58 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     initVal = llvm::ConstantFP::get(varType, val);
                 }
             }
+        } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::BINARY_OP) {
+            // BUG-09 fix: constant-fold binary expressions on literal operands for fixed globals.
+            // Handles e.g. `fixed int64:X = 2i64 * 3i64;` or `fixed int64:NEG = 0i64 - 5i64;`
+            BinaryExpr* binExpr = static_cast<BinaryExpr*>(varDecl->initializer.get());
+            if (binExpr->left && binExpr->left->type == ASTNode::NodeType::LITERAL &&
+                binExpr->right && binExpr->right->type == ASTNode::NodeType::LITERAL) {
+                LiteralExpr* litL = static_cast<LiteralExpr*>(binExpr->left.get());
+                LiteralExpr* litR = static_cast<LiteralExpr*>(binExpr->right.get());
+
+                // Integer constant folding
+                if (std::holds_alternative<int64_t>(litL->value) &&
+                    std::holds_alternative<int64_t>(litR->value) && varType->isIntegerTy()) {
+                    int64_t lv = std::get<int64_t>(litL->value);
+                    int64_t rv = std::get<int64_t>(litR->value);
+                    int64_t result = 0;
+                    bool folded = true;
+                    switch (binExpr->op.type) {
+                        case TokenType::TOKEN_PLUS:        result = lv + rv; break;
+                        case TokenType::TOKEN_MINUS:       result = lv - rv; break;
+                        case TokenType::TOKEN_STAR:        result = lv * rv; break;
+                        case TokenType::TOKEN_SLASH:       result = (rv != 0) ? lv / rv : 0; break;
+                        case TokenType::TOKEN_PERCENT:     result = (rv != 0) ? lv % rv : 0; break;
+                        case TokenType::TOKEN_SHIFT_LEFT:  result = lv << rv; break;
+                        case TokenType::TOKEN_SHIFT_RIGHT: result = lv >> rv; break;
+                        case TokenType::TOKEN_AMPERSAND:   result = lv & rv; break;
+                        case TokenType::TOKEN_PIPE:        result = lv | rv; break;
+                        case TokenType::TOKEN_CARET:       result = lv ^ rv; break;
+                        default: folded = false; break;
+                    }
+                    if (folded) {
+                        initVal = llvm::ConstantInt::get(varType, (uint64_t)result, true);
+                    }
+                }
+                // Float constant folding
+                else if (std::holds_alternative<double>(litL->value) &&
+                         std::holds_alternative<double>(litR->value) && varType->isFloatingPointTy()) {
+                    double lv = std::get<double>(litL->value);
+                    double rv = std::get<double>(litR->value);
+                    double result = 0.0;
+                    bool folded = true;
+                    switch (binExpr->op.type) {
+                        case TokenType::TOKEN_PLUS:    result = lv + rv; break;
+                        case TokenType::TOKEN_MINUS:   result = lv - rv; break;
+                        case TokenType::TOKEN_STAR:    result = lv * rv; break;
+                        case TokenType::TOKEN_SLASH:   result = rv != 0.0 ? lv / rv : 0.0; break;
+                        default: folded = false; break;
+                    }
+                    if (folded) {
+                        initVal = llvm::ConstantFP::get(varType, result);
+                    }
+                }
+            }
         }
         // Build LBIM struct constant for global int128/int256/etc. variables
         if (!initVal && varType->isStructTy()) {
@@ -2623,7 +2678,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             pre_params.push_back(builder.getPtrTy());    // argv (char**)
         }
 
-        llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, false);
+        llvm::FunctionType* pre_ft = llvm::FunctionType::get(pre_ret, pre_params, fd->isVariadic);
         llvm::Function::Create(pre_ft, llvm::Function::ExternalLinkage, pre_name, module.get());
     }
     // -------------------------------------------------------------------------
@@ -2728,6 +2783,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     else if (typeName == "int64") baseType = builder.getInt64Ty();
                     else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
                     else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else if (typeName == "bool") baseType = builder.getInt1Ty();
                     else {
                         // Unknown type (opaque) - treat as ptr
                         return builder.getPtrTy();
@@ -2773,15 +2829,16 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         }
                     }
 
-                    // Create function type
-                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+                    // Create function type (isVarArg from ..? variadic syntax)
+                    llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, funcDecl->isVariadic);
 
                     // Create or update function declaration
                     llvm::Function* func = module->getFunction(funcDecl->funcName);
                     if (!func) {
                         // Create new extern function
                         std::cerr << "[DEBUG EXTERN] Creating NEW extern function: " 
-                                  << funcDecl->funcName << " with External linkage" << std::endl;
+                                  << funcDecl->funcName << " with External linkage"
+                                  << (funcDecl->isVariadic ? " (variadic)" : "") << std::endl;
                         llvm::Function::Create(
                             funcType,
                             llvm::Function::ExternalLinkage,
@@ -2990,7 +3047,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 actual_param_types.push_back(builder.getPtrTy());    // argv (char**)
             }
 
-            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, false);
+            llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, funcDecl->isVariadic);
             
             // Determine function name (qualified if in a module)
             std::string func_name = modulePrefix.empty() 
@@ -4110,6 +4167,83 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     named_values[varDecl->varName] = fpAlloca;
                     var_aria_types[varDecl->varName] = "func_ptr:" + retTypeStr;
                 }
+
+                // Handle @func_name or bare func_name — get pointer to named function
+                if (varDecl->initializer &&
+                    varDecl->initializer->type != ASTNode::NodeType::LAMBDA) {
+                    // Extract function name from @func_name (UnaryExpr with TOKEN_AT)
+                    // or bare func_name (IdentifierExpr)
+                    std::string funcName;
+                    if (varDecl->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                        UnaryExpr* unary = static_cast<UnaryExpr*>(varDecl->initializer.get());
+                        if (unary->op.type == frontend::TokenType::TOKEN_AT &&
+                            unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                            IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                            funcName = ident->name;
+                        }
+                    } else if (varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* ident = static_cast<IdentifierExpr*>(varDecl->initializer.get());
+                        funcName = ident->name;
+                    }
+
+                    if (!funcName.empty()) {
+                        llvm::Function* targetFunc = module->getFunction(funcName);
+                        if (!targetFunc) {
+                            throw std::runtime_error("Function '" + funcName + "' not found for function pointer assignment");
+                        }
+
+                        // Generate a trampoline wrapper that matches the closure calling
+                        // convention: (env_ptr, args...) -> Result<T>
+                        // Named functions don't take env_ptr, so the trampoline ignores it
+                        // and forwards the remaining args to the real function.
+                        static int trampoline_counter = 0;
+                        std::string trampName = "_trampoline_" + funcName + "_" + std::to_string(trampoline_counter++);
+
+                        // Build trampoline param types: env_ptr + same params as target
+                        std::vector<llvm::Type*> trampParams;
+                        trampParams.push_back(llvm::PointerType::get(context, 0)); // hidden env ptr
+                        for (auto& arg : targetFunc->args()) {
+                            trampParams.push_back(arg.getType());
+                        }
+
+                        llvm::FunctionType* trampFT = llvm::FunctionType::get(
+                            targetFunc->getReturnType(), trampParams, targetFunc->isVarArg());
+                        llvm::Function* trampFunc = llvm::Function::Create(
+                            trampFT, llvm::Function::InternalLinkage, trampName, module.get());
+
+                        // Generate trampoline body: skip env, forward args to target
+                        auto savedIP = builder.saveIP();
+                        llvm::BasicBlock* trampEntry = llvm::BasicBlock::Create(context, "entry", trampFunc);
+                        builder.SetInsertPoint(trampEntry);
+
+                        auto trampArgIt = trampFunc->arg_begin();
+                        trampArgIt->setName("env"); // ignored
+                        ++trampArgIt;
+
+                        std::vector<llvm::Value*> forwardArgs;
+                        for (; trampArgIt != trampFunc->arg_end(); ++trampArgIt) {
+                            forwardArgs.push_back(&*trampArgIt);
+                        }
+
+                        llvm::Value* result = builder.CreateCall(targetFunc, forwardArgs, "fwd");
+                        if (targetFunc->getReturnType()->isVoidTy()) {
+                            builder.CreateRetVoid();
+                        } else {
+                            builder.CreateRet(result);
+                        }
+
+                        builder.restoreIP(savedIP);
+
+                        // Store {trampoline_ptr, null_env} into the fat pointer alloca
+                        llvm::Value* funcAsPtr = builder.CreateBitCast(trampFunc, ptrTy);
+                        llvm::Value* nullEnv = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
+                        builder.CreateStore(funcAsPtr,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 0, "method_field"));
+                        builder.CreateStore(nullEnv,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+                    }
+                }
+
                 // FUNCTION_TYPE handled — fall to return below
                 return nullptr;
             }
@@ -5082,6 +5216,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     else if (typeName == "int64") baseType = builder.getInt64Ty();
                     else if (typeName == "float32" || typeName == "flt32") baseType = builder.getFloatTy();
                     else if (typeName == "float64" || typeName == "flt64") baseType = builder.getDoubleTy();
+                    else if (typeName == "bool") baseType = builder.getInt1Ty();
                     else {
                         // Unknown type - treat as opaque (ptr)
                         return builder.getPtrTy();
@@ -6004,7 +6139,12 @@ skip_comparison:
 
         case ASTNode::NodeType::TRAIT_DECL: {
             // Register trait method info and generate vtable struct type
+            // Skip if already registered by top-level declaration loop
             TraitDeclStmt* traitDecl = static_cast<TraitDeclStmt*>(stmt);
+            if (trait_info_map.count(traitDecl->traitName)) {
+                return nullptr;
+            }
+
             TraitInfo info;
             info.traitName = traitDecl->traitName;
 
@@ -6057,6 +6197,12 @@ skip_comparison:
                 // Mangle: TypeName_methodName for UFCS
                 func->funcName = impl->typeName + "_" + originalName;
 
+                // Skip if already generated by top-level declaration loop
+                if (module->getFunction(func->funcName)) {
+                    func->funcName = originalName;
+                    continue;
+                }
+
                 // Generate the function (inline codegen here since we don't have separate method)
                 // Build parameter types
                 std::vector<llvm::Type*> paramTypes;
@@ -6066,9 +6212,23 @@ skip_comparison:
                     paramTypes.push_back(mapTypeFromName(paramTypeStr));
                 }
 
-                // Get return type
+                // Get return type — wrap in Result<T> like Path 1
                 std::string returnTypeStr = func->returnType ? func->returnType->toString() : "void";
-                llvm::Type* returnType = mapTypeFromName(returnTypeStr);
+                llvm::Type* inner_return_type = mapTypeFromName(returnTypeStr);
+
+                llvm::Type* returnType;
+                llvm::StructType* result_struct_type = nullptr;
+                if (inner_return_type->isVoidTy()) {
+                    returnType = inner_return_type;
+                } else {
+                    std::vector<llvm::Type*> result_fields = {
+                        inner_return_type,
+                        llvm::PointerType::get(context, 0),
+                        builder.getInt8Ty()
+                    };
+                    result_struct_type = llvm::StructType::get(context, result_fields);
+                    returnType = result_struct_type;
+                }
 
                 // Create function type and function
                 llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
@@ -6096,6 +6256,15 @@ skip_comparison:
                     llvm::AllocaInst* alloca = builder.CreateAlloca(paramType, nullptr, paramNode->paramName);
                     builder.CreateStore(&arg, alloca);
                     named_values[paramNode->paramName] = alloca;
+                    var_aria_types[paramNode->paramName] = paramTypeStr;
+
+                    if (type_system) {
+                        Type* ariaParamType = type_system->getStructType(paramTypeStr);
+                        if (!ariaParamType) ariaParamType = type_system->getPrimitiveType(paramTypeStr);
+                        if (ariaParamType) {
+                            value_types[alloca] = ariaParamType;
+                        }
+                    }
                     idx++;
                 }
 
@@ -6108,6 +6277,16 @@ skip_comparison:
                 if (!builder.GetInsertBlock()->getTerminator()) {
                     if (returnType->isVoidTy()) {
                         builder.CreateRetVoid();
+                    } else if (result_struct_type) {
+                        // Return default success Result{zero, null, 0}
+                        llvm::Value* defaultResult = llvm::UndefValue::get(result_struct_type);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            llvm::Constant::getNullValue(inner_return_type), 0);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            llvm::Constant::getNullValue(llvm::PointerType::get(context, 0)), 1);
+                        defaultResult = builder.CreateInsertValue(defaultResult,
+                            builder.getInt8(0), 2);
+                        builder.CreateRet(defaultResult);
                     } else {
                         builder.CreateRet(llvm::Constant::getNullValue(returnType));
                     }
@@ -6116,16 +6295,18 @@ skip_comparison:
                 // Restore original name
                 func->funcName = originalName;
 
-                // Clear named_values for next function
+                // Clear named_values and var_aria_types for next function
                 for (const auto& param : func->parameters) {
                     ParameterNode* paramNode = static_cast<ParameterNode*>(param.get());
                     named_values.erase(paramNode->paramName);
+                    var_aria_types.erase(paramNode->paramName);
                 }
             }
 
             // v0.2.36: Generate vtable constant if this trait is registered for dyn dispatch
+            std::string vtableKey = impl->traitName + ":" + impl->typeName;
             auto traitIt = trait_info_map.find(impl->traitName);
-            if (traitIt != trait_info_map.end()) {
+            if (traitIt != trait_info_map.end() && !vtable_constants.count(vtableKey)) {
                 const TraitInfo& traitInfo = traitIt->second;
                 std::vector<llvm::Constant*> vtableEntries;
 
@@ -6149,7 +6330,6 @@ skip_comparison:
                     *module, traitInfo.vtableType, true,
                     llvm::GlobalValue::InternalLinkage, vtableInit, vtableConstName);
 
-                std::string vtableKey = impl->traitName + ":" + impl->typeName;
                 vtable_constants[vtableKey] = vtableGV;
 
                 std::cerr << "[DYN] Generated vtable constant: @" << vtableConstName

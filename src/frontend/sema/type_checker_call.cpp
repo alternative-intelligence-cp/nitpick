@@ -1912,6 +1912,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // ahsize(h)              → int64  (bytes used by stored values)
         // ahfits(h, size)        → bool   (capacity check)
         // ahtype(h, key)         → int64  (type tag of value, -1 if missing)
+        // ahdelete(h, key)       → int32  (delete key, 0=ok, -1=not found)
+        // ahhas(h, key)          → bool   (key existence check)
+        // ahclear(h)             → void   (clear all entries)
+        // ahkeys(h)              → int64  (pointer to char** array of keys)
 
         // Builtin: ahash(capacity_bytes) -> int64 (handle)
         if (idExpr->name == "ahash") {
@@ -2008,6 +2012,62 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 if (argType->getKind() == TypeKind::ERROR) {
                     return typeSystem->getErrorType();
                 }
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+
+        // Builtin: ahdelete(handle, key) -> int32 (0=success, -1=not found)
+        if (idExpr->name == "ahdelete") {
+            if (expr->arguments.size() != 2) {
+                addError("ahdelete() requires exactly 2 arguments (handle, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // Builtin: ahhas(handle, key) -> bool (1=exists, 0=not)
+        if (idExpr->name == "ahhas") {
+            if (expr->arguments.size() != 2) {
+                addError("ahhas() requires exactly 2 arguments (handle, key)", expr);
+                return typeSystem->getErrorType();
+            }
+            for (auto& arg : expr->arguments) {
+                Type* argType = inferType(arg.get());
+                if (argType->getKind() == TypeKind::ERROR) {
+                    return typeSystem->getErrorType();
+                }
+            }
+            return typeSystem->getPrimitiveType("bool");
+        }
+
+        // Builtin: ahclear(handle) -> void
+        if (idExpr->name == "ahclear") {
+            if (expr->arguments.size() != 1) {
+                addError("ahclear() requires exactly 1 argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("void");
+        }
+
+        // Builtin: ahkeys(handle) -> int64 (pointer to char** array)
+        if (idExpr->name == "ahkeys") {
+            if (expr->arguments.size() != 1) {
+                addError("ahkeys() requires exactly 1 argument (handle)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("int64");
         }

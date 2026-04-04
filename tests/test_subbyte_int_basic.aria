@@ -1,0 +1,24 @@
+// Test: Sub-byte integer types — declaration and basic initialization
+// Verifies int1, int2, int4 and uint1, uint2, uint4 can be declared and initialized
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:test_signed_subbyte = tbb32() {
+    int1:a = 0 => int1;
+    int2:b = 1 => int2;
+    int4:c = 7 => int4;
+    pass 0;
+};
+
+func:test_unsigned_subbyte = tbb32() {
+    uint1:a = 1 => uint1;
+    uint2:b = 3 => uint2;
+    uint4:c = 15 => uint4;
+    pass 0;
+};
+
+func:main = int32() {
+    tbb32:r1 = raw test_signed_subbyte();
+    tbb32:r2 = raw test_unsigned_subbyte();
+    exit 0;
+};
