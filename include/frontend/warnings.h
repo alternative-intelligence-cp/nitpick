@@ -99,9 +99,9 @@ private:
     // Helper: Track variable usage
     struct VariableUsage {
         std::string name;
-        SourceLocation declaration_loc;
-        bool is_used;
-        bool is_parameter;
+        SourceLocation declaration_loc{"" , 0, 0};
+        bool is_used = false;
+        bool is_parameter = false;
     };
     
     // Helper: Build usage map for scope (stub)

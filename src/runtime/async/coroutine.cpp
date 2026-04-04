@@ -7,26 +7,38 @@
 namespace aria {
 namespace runtime {
 
-// Stub implementations of LLVM intrinsics
-// In production, these are provided by LLVM's coroutine lowering pass
-// For testing, we provide minimal stubs
+// LLVM coroutine frame ABI: the first two words of a coroutine frame are
+// function pointers for resume and destroy. This matches the layout produced
+// by LLVM's CoroSplit pass. When a coroutine reaches its final suspend point,
+// LLVM sets the resume pointer to nullptr, signaling completion.
+struct AriaCoroFrame {
+    void (*resumeFn)(void*);   // Resume continuation (nullptr when done)
+    void (*destroyFn)(void*);  // Cleanup and frame deallocation function
+    // Coroutine-specific state, locals, and spills follow...
+};
+
 extern "C" {
     void __aria_coro_resume(void* handle) {
-        // LLVM intrinsic stub
-        // Real implementation transfers control to coroutine
+        if (!handle) return;
+        auto* frame = reinterpret_cast<AriaCoroFrame*>(handle);
+        if (frame->resumeFn) {
+            frame->resumeFn(handle);
+        }
     }
     
     void __aria_coro_destroy(void* handle) {
-        // LLVM intrinsic stub
-        // Real implementation destroys coroutine frame
+        if (!handle) return;
+        auto* frame = reinterpret_cast<AriaCoroFrame*>(handle);
+        if (frame->destroyFn) {
+            frame->destroyFn(handle);
+        }
     }
     
     bool __aria_coro_done(void* handle) {
-        // LLVM intrinsic stub
-        // Real implementation checks coroutine completion
-        // For testing with dummy handles, treat them as immediately done
-        // Real LLVM coroutines will have proper state
-        return true;  // Test mode: assume completed after resume
+        if (!handle) return true;
+        auto* frame = reinterpret_cast<AriaCoroFrame*>(handle);
+        // LLVM convention: coroutine is done when resume pointer is null
+        return frame->resumeFn == nullptr;
     }
 }
 

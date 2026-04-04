@@ -1,5 +1,5 @@
 // Async I/O implementation
-// Non-blocking file operations and timers
+// Non-blocking file operations and timers using thread pool
 
 #include "runtime/async/async_io.h"
 #include "runtime/async/executor.h"
@@ -7,8 +7,76 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <functional>
+#include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// Thread pool for dispatching async I/O operations
+namespace {
+
+class IOThreadPool {
+    static constexpr size_t POOL_SIZE = 4;
+    std::thread workers[POOL_SIZE];
+    std::queue<std::function<void()>> tasks;
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool stopped = false;
+
+public:
+    IOThreadPool() {
+        for (size_t i = 0; i < POOL_SIZE; i++) {
+            workers[i] = std::thread([this] { worker_loop(); });
+        }
+    }
+
+    ~IOThreadPool() {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            stopped = true;
+        }
+        cv.notify_all();
+        for (size_t i = 0; i < POOL_SIZE; i++) {
+            if (workers[i].joinable()) workers[i].join();
+        }
+    }
+
+    IOThreadPool(const IOThreadPool&) = delete;
+    IOThreadPool& operator=(const IOThreadPool&) = delete;
+
+    void submit(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            tasks.push(std::move(task));
+        }
+        cv.notify_one();
+    }
+
+private:
+    void worker_loop() {
+        while (true) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lock(mtx);
+                cv.wait(lock, [this] { return stopped || !tasks.empty(); });
+                if (stopped && tasks.empty()) return;
+                task = std::move(tasks.front());
+                tasks.pop();
+            }
+            task();
+        }
+    }
+};
+
+static IOThreadPool& io_pool() {
+    static IOThreadPool pool;
+    return pool;
+}
+
+} // anonymous namespace
 
 namespace aria {
 namespace runtime {
@@ -17,88 +85,97 @@ namespace async_io {
 /**
  * File I/O Operations
  * 
- * Note: These are currently implemented as synchronous operations
- * wrapped in futures. True async I/O would use epoll/io_uring on Linux
- * or kqueue on macOS. This is a starting point for the API.
+ * All operations dispatch to the I/O thread pool and return
+ * a pending Future immediately. The Future is completed when
+ * the background I/O thread finishes the operation.
  */
 
 Future* read_file_async(const std::string& path) {
-    // Create future for string result
-    // For now, we do synchronous I/O
-    // TODO: Use thread pool or io_uring for true async
+    Future* future = new Future(0);
+    std::string path_copy = path;
     
-    Future* future = new Future(0);  // Dynamic size for string
-    
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
-        future->setError(true);
-        return future;
-    }
-    
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string content = buffer.str();
-    
-    // For string, we need to allocate and copy
-    // This is simplified - real implementation would use proper string handling
-    future->setValue(content.c_str(), content.size() + 1);
+    io_pool().submit([future, path_copy]() {
+        std::ifstream file(path_copy, std::ios::binary);
+        if (!file.is_open()) {
+            future->setError(true);
+            return;
+        }
+        
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string content = buffer.str();
+        
+        future->setValue(content.c_str(), content.size() + 1);
+    });
     
     return future;
 }
 
 Future* write_file_async(const std::string& path, const std::string& content) {
     Future* future = new Future(sizeof(bool));
+    std::string path_copy = path;
+    std::string content_copy = content;
     
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) {
-        future->setError(true);
-        return future;
-    }
-    
-    file << content;
-    file.close();
-    
-    bool success = true;
-    future->setValue(&success, sizeof(success));
+    io_pool().submit([future, path_copy, content_copy]() {
+        std::ofstream file(path_copy, std::ios::binary | std::ios::trunc);
+        if (!file.is_open()) {
+            future->setError(true);
+            return;
+        }
+        
+        file << content_copy;
+        file.close();
+        
+        bool success = true;
+        future->setValue(&success, sizeof(success));
+    });
     
     return future;
 }
 
 Future* append_file_async(const std::string& path, const std::string& content) {
     Future* future = new Future(sizeof(bool));
+    std::string path_copy = path;
+    std::string content_copy = content;
     
-    std::ofstream file(path, std::ios::binary | std::ios::app);
-    if (!file.is_open()) {
-        future->setError(true);
-        return future;
-    }
-    
-    file << content;
-    file.close();
-    
-    bool success = true;
-    future->setValue(&success, sizeof(success));
+    io_pool().submit([future, path_copy, content_copy]() {
+        std::ofstream file(path_copy, std::ios::binary | std::ios::app);
+        if (!file.is_open()) {
+            future->setError(true);
+            return;
+        }
+        
+        file << content_copy;
+        file.close();
+        
+        bool success = true;
+        future->setValue(&success, sizeof(success));
+    });
     
     return future;
 }
 
 Future* file_exists_async(const std::string& path) {
     Future* future = new Future(sizeof(bool));
+    std::string path_copy = path;
     
-    struct stat buffer;
-    bool exists = (stat(path.c_str(), &buffer) == 0);
-    
-    future->setValue(&exists, sizeof(exists));
+    io_pool().submit([future, path_copy]() {
+        struct stat buffer;
+        bool exists = (stat(path_copy.c_str(), &buffer) == 0);
+        future->setValue(&exists, sizeof(exists));
+    });
     
     return future;
 }
 
 Future* delete_file_async(const std::string& path) {
     Future* future = new Future(sizeof(bool));
+    std::string path_copy = path;
     
-    bool success = (unlink(path.c_str()) == 0);
-    
-    future->setValue(&success, sizeof(success));
+    io_pool().submit([future, path_copy]() {
+        bool success = (unlink(path_copy.c_str()) == 0);
+        future->setValue(&success, sizeof(success));
+    });
     
     return future;
 }
@@ -108,28 +185,22 @@ Future* delete_file_async(const std::string& path) {
  */
 
 Future* sleep_async(uint64_t milliseconds) {
-    // Create a future that completes after delay
-    // This is a simplified implementation
-    // Real async I/O would integrate with event loop
+    Future* future = new Future(0);
     
-    Future* future = new Future(0);  // void return
-    
-    // For now, just complete immediately
-    // TODO: Integrate with event loop/timer system
-    uint8_t dummy = 0;
-    future->setValue(&dummy, sizeof(dummy));
+    io_pool().submit([future, milliseconds]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+        uint8_t dummy = 0;
+        future->setValue(&dummy, sizeof(dummy));
+    });
     
     return future;
 }
 
 void schedule_callback(uint64_t milliseconds, std::function<void()> callback) {
-    // Spawn a thread to wait and call back
-    // This is NOT efficient - real implementation would use timer wheel
-    
-    std::thread([milliseconds, callback]() {
+    io_pool().submit([milliseconds, callback]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
         callback();
-    }).detach();
+    });
 }
 
 /**
@@ -137,55 +208,82 @@ void schedule_callback(uint64_t milliseconds, std::function<void()> callback) {
  */
 
 Future* join_all(Future** futures, size_t count) {
-    // Returns a future that completes when ALL input futures complete
-    // For now, just poll all and return when done
+    Future* result = new Future(0);
     
-    Future* result = new Future(0);  // void return
+    std::vector<Future*> futs(futures, futures + count);
     
-    bool all_ready = true;
-    for (size_t i = 0; i < count; i++) {
-        if (!futures[i]->isReady()) {
-            all_ready = false;
-            break;
+    io_pool().submit([result, futs]() {
+        // Poll until all input futures are ready
+        while (true) {
+            bool all_ready = true;
+            for (auto* f : futs) {
+                if (!f->isReady()) {
+                    all_ready = false;
+                    break;
+                }
+            }
+            if (all_ready) break;
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
         }
-    }
-    
-    if (all_ready) {
         uint8_t dummy = 0;
         result->setValue(&dummy, sizeof(dummy));
-    }
+    });
     
     return result;
 }
 
 Future* race(Future** futures, size_t count) {
-    // Returns the index of the first future to complete
     Future* result = new Future(sizeof(size_t));
     
-    for (size_t i = 0; i < count; i++) {
-        if (futures[i]->isReady()) {
-            result->setValue(&i, sizeof(i));
-            return result;
-        }
-    }
+    std::vector<Future*> futs(futures, futures + count);
     
-    // None ready - would need event loop integration to wait
-    result->setError(true);
+    io_pool().submit([result, futs]() {
+        // Poll until any input future is ready
+        while (true) {
+            for (size_t i = 0; i < futs.size(); i++) {
+                if (futs[i]->isReady()) {
+                    result->setValue(&i, sizeof(i));
+                    return;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    });
+    
     return result;
 }
 
 Future* with_timeout(Future* future, uint64_t milliseconds) {
-    // Wraps a future with timeout
-    // Returns error if doesn't complete in time
+    Future* result = new Future(0);
     
-    // This is simplified - real implementation needs timer integration
-    if (future->isReady()) {
-        return future;
-    }
+    io_pool().submit([result, future, milliseconds]() {
+        auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(milliseconds);
+        
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (future->isReady()) {
+                if (future->hasErrorFlag()) {
+                    result->setError(true);
+                } else {
+                    void* val = future->getValue();
+                    size_t sz = future->getValueSize();
+                    if (val && sz > 0) {
+                        result->setValue(val, sz);
+                    } else {
+                        uint8_t dummy = 0;
+                        result->setValue(&dummy, sizeof(dummy));
+                    }
+                }
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        
+        // Timeout expired
+        result->setError(true);
+    });
     
-    Future* timeout_future = new Future(0);
-    timeout_future->setError(true);  // Timeout occurred
-    return timeout_future;
+    return result;
 }
 
 } // namespace async_io

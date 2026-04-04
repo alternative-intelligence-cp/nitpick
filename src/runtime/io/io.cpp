@@ -469,19 +469,244 @@ AriaResult* aria_read_json(const char* path) {
 }
 
 AriaResult* aria_parse_json(const char* json_str) {
-    // Stub implementation - returns empty object
-    // In production, would use a proper JSON parser
-    (void)json_str;
-    
-    AriaJsonValue* value = (AriaJsonValue*)malloc(sizeof(AriaJsonValue));
-    if (!value) {
-        return aria_result_err("Out of memory");
+    if (!json_str) {
+        return aria_result_err("NULL JSON input");
     }
     
-    value->type = ARIA_JSON_OBJECT;
-    value->data.object_val.keys = NULL;
-    value->data.object_val.values = NULL;
-    value->data.object_val.count = 0;
+    // Simple recursive descent parser state
+    struct JsonParser {
+        const char* src;
+        size_t pos;
+        size_t len;
+        
+        void skip_ws() {
+            while (pos < len && (src[pos] == ' ' || src[pos] == '\t' || 
+                                  src[pos] == '\n' || src[pos] == '\r'))
+                pos++;
+        }
+        
+        char peek() { return pos < len ? src[pos] : '\0'; }
+        char advance() { return pos < len ? src[pos++] : '\0'; }
+        
+        bool match(const char* s) {
+            size_t slen = strlen(s);
+            if (pos + slen > len) return false;
+            if (memcmp(src + pos, s, slen) == 0) { pos += slen; return true; }
+            return false;
+        }
+        
+        AriaJsonValue* parse_value() {
+            skip_ws();
+            char c = peek();
+            if (c == '"') return parse_string_value();
+            if (c == '{') return parse_object();
+            if (c == '[') return parse_array();
+            if (c == 't' || c == 'f') return parse_bool();
+            if (c == 'n') return parse_null();
+            if (c == '-' || (c >= '0' && c <= '9')) return parse_number();
+            return nullptr;
+        }
+        
+        AriaJsonValue* parse_string_value() {
+            char* s = parse_string_raw();
+            if (!s) return nullptr;
+            AriaJsonValue* v = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+            if (!v) { free(s); return nullptr; }
+            v->type = ARIA_JSON_STRING;
+            v->data.string_val = s;
+            return v;
+        }
+        
+        char* parse_string_raw() {
+            if (advance() != '"') return nullptr; // consume opening "
+            size_t start = pos;
+            size_t cap = 64;
+            char* buf = (char*)malloc(cap);
+            if (!buf) return nullptr;
+            size_t blen = 0;
+            
+            while (pos < len && src[pos] != '"') {
+                char c = src[pos++];
+                if (c == '\\' && pos < len) {
+                    char e = src[pos++];
+                    switch (e) {
+                        case '"': c = '"'; break;
+                        case '\\': c = '\\'; break;
+                        case '/': c = '/'; break;
+                        case 'b': c = '\b'; break;
+                        case 'f': c = '\f'; break;
+                        case 'n': c = '\n'; break;
+                        case 'r': c = '\r'; break;
+                        case 't': c = '\t'; break;
+                        default: c = e; break; // skip \uXXXX for now
+                    }
+                }
+                if (blen + 1 >= cap) {
+                    cap *= 2;
+                    char* nb = (char*)realloc(buf, cap);
+                    if (!nb) { free(buf); return nullptr; }
+                    buf = nb;
+                }
+                buf[blen++] = c;
+            }
+            if (pos < len) pos++; // consume closing "
+            buf[blen] = '\0';
+            return buf;
+        }
+        
+        AriaJsonValue* parse_number() {
+            size_t start = pos;
+            if (peek() == '-') pos++;
+            while (pos < len && src[pos] >= '0' && src[pos] <= '9') pos++;
+            if (pos < len && src[pos] == '.') {
+                pos++;
+                while (pos < len && src[pos] >= '0' && src[pos] <= '9') pos++;
+            }
+            if (pos < len && (src[pos] == 'e' || src[pos] == 'E')) {
+                pos++;
+                if (pos < len && (src[pos] == '+' || src[pos] == '-')) pos++;
+                while (pos < len && src[pos] >= '0' && src[pos] <= '9') pos++;
+            }
+            
+            char tmp[64];
+            size_t nlen = pos - start;
+            if (nlen >= sizeof(tmp)) nlen = sizeof(tmp) - 1;
+            memcpy(tmp, src + start, nlen);
+            tmp[nlen] = '\0';
+            
+            AriaJsonValue* v = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+            if (!v) return nullptr;
+            v->type = ARIA_JSON_NUMBER;
+            v->data.number_val = strtod(tmp, nullptr);
+            return v;
+        }
+        
+        AriaJsonValue* parse_bool() {
+            AriaJsonValue* v = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+            if (!v) return nullptr;
+            v->type = ARIA_JSON_BOOL;
+            if (match("true")) { v->data.bool_val = true; return v; }
+            if (match("false")) { v->data.bool_val = false; return v; }
+            free(v);
+            return nullptr;
+        }
+        
+        AriaJsonValue* parse_null() {
+            if (match("null")) {
+                AriaJsonValue* v = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+                if (!v) return nullptr;
+                v->type = ARIA_JSON_NULL;
+                return v;
+            }
+            return nullptr;
+        }
+        
+        AriaJsonValue* parse_array() {
+            pos++; // consume '['
+            skip_ws();
+            
+            AriaJsonValue* arr = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+            if (!arr) return nullptr;
+            arr->type = ARIA_JSON_ARRAY;
+            arr->data.array_val.items = nullptr;
+            arr->data.array_val.count = 0;
+            
+            if (peek() == ']') { pos++; return arr; }
+            
+            size_t cap = 8;
+            arr->data.array_val.items = (AriaJsonValue**)malloc(cap * sizeof(AriaJsonValue*));
+            if (!arr->data.array_val.items) { free(arr); return nullptr; }
+            
+            while (true) {
+                AriaJsonValue* item = parse_value();
+                if (!item) break;
+                
+                if (arr->data.array_val.count >= cap) {
+                    cap *= 2;
+                    AriaJsonValue** ni = (AriaJsonValue**)realloc(arr->data.array_val.items, cap * sizeof(AriaJsonValue*));
+                    if (!ni) break;
+                    arr->data.array_val.items = ni;
+                }
+                arr->data.array_val.items[arr->data.array_val.count++] = item;
+                
+                skip_ws();
+                if (peek() == ',') { pos++; skip_ws(); }
+                else break;
+            }
+            
+            skip_ws();
+            if (peek() == ']') pos++;
+            return arr;
+        }
+        
+        AriaJsonValue* parse_object() {
+            pos++; // consume '{'
+            skip_ws();
+            
+            AriaJsonValue* obj = (AriaJsonValue*)calloc(1, sizeof(AriaJsonValue));
+            if (!obj) return nullptr;
+            obj->type = ARIA_JSON_OBJECT;
+            obj->data.object_val.keys = nullptr;
+            obj->data.object_val.values = nullptr;
+            obj->data.object_val.count = 0;
+            
+            if (peek() == '}') { pos++; return obj; }
+            
+            size_t cap = 8;
+            obj->data.object_val.keys = (char**)malloc(cap * sizeof(char*));
+            obj->data.object_val.values = (AriaJsonValue**)malloc(cap * sizeof(AriaJsonValue*));
+            if (!obj->data.object_val.keys || !obj->data.object_val.values) {
+                free(obj->data.object_val.keys);
+                free(obj->data.object_val.values);
+                free(obj);
+                return nullptr;
+            }
+            
+            while (true) {
+                skip_ws();
+                if (peek() != '"') break;
+                
+                char* key = parse_string_raw();
+                if (!key) break;
+                
+                skip_ws();
+                if (peek() == ':') pos++;
+                
+                AriaJsonValue* val = parse_value();
+                if (!val) { free(key); break; }
+                
+                if (obj->data.object_val.count >= cap) {
+                    cap *= 2;
+                    char** nk = (char**)realloc(obj->data.object_val.keys, cap * sizeof(char*));
+                    AriaJsonValue** nv = (AriaJsonValue**)realloc(obj->data.object_val.values, cap * sizeof(AriaJsonValue*));
+                    if (!nk || !nv) { free(key); break; }
+                    obj->data.object_val.keys = nk;
+                    obj->data.object_val.values = nv;
+                }
+                obj->data.object_val.keys[obj->data.object_val.count] = key;
+                obj->data.object_val.values[obj->data.object_val.count] = val;
+                obj->data.object_val.count++;
+                
+                skip_ws();
+                if (peek() == ',') { pos++; }
+                else break;
+            }
+            
+            skip_ws();
+            if (peek() == '}') pos++;
+            return obj;
+        }
+    };
+    
+    JsonParser parser;
+    parser.src = json_str;
+    parser.pos = 0;
+    parser.len = strlen(json_str);
+    
+    AriaJsonValue* value = parser.parse_value();
+    if (!value) {
+        return aria_result_err("Failed to parse JSON");
+    }
     
     return aria_result_ok(value, sizeof(AriaJsonValue));
 }

@@ -667,6 +667,15 @@ private:
     std::unordered_map<std::string, UnionType*> unionCache;
     std::unordered_map<std::string, EnumType*> enumCache;        // v0.2.39: Enum type cache
     std::unordered_map<std::string, DimensionalType*> dimensionalCache;  // P1-5
+    std::unordered_map<std::string, PointerType*> pointerCache;
+    std::unordered_map<std::string, ArrayType*> arrayCache;
+    std::unordered_map<std::string, VectorType*> vectorCache;
+    std::unordered_map<std::string, FunctionType*> functionCache;
+    std::unordered_map<std::string, OptionalType*> optionalCache;
+    std::unordered_map<std::string, ResultType*> resultCache;
+    std::unordered_map<std::string, FutureType*> futureCache;
+    std::unordered_map<std::string, HandleType*> handleCache;
+    std::unordered_map<std::string, SimdType*> simdCache;
     
     // Standard dimension name registry (P1-5)
     std::unordered_map<std::string, Dimension> dimensionRegistry;

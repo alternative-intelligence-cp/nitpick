@@ -4,6 +4,9 @@
  */
 
 #include "frontend/warnings.h"
+#include "frontend/ast/ast_node.h"
+#include "frontend/ast/expr.h"
+#include "frontend/ast/stmt.h"
 #include <algorithm>
 #include <unordered_map>
 
@@ -109,53 +112,276 @@ void WarningAnalyzer::analyze(const ASTNode* ast) {
     }
 }
 
+// Helper: collect all identifier names referenced in an AST subtree
+static void collectIdentifiers(const ASTNode* node, std::unordered_set<std::string>& names) {
+    if (!node) return;
+    switch (node->type) {
+        case ASTNode::NodeType::IDENTIFIER: {
+            auto* id = static_cast<const IdentifierExpr*>(node);
+            names.insert(id->name);
+            break;
+        }
+        case ASTNode::NodeType::BLOCK: {
+            auto* blk = static_cast<const BlockStmt*>(node);
+            for (const auto& s : blk->statements) collectIdentifiers(s.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::BINARY_OP: {
+            auto* bin = static_cast<const BinaryExpr*>(node);
+            collectIdentifiers(bin->left.get(), names);
+            collectIdentifiers(bin->right.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::UNARY_OP: {
+            auto* unary = static_cast<const UnaryExpr*>(node);
+            collectIdentifiers(unary->operand.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::CALL: {
+            auto* call = static_cast<const CallExpr*>(node);
+            collectIdentifiers(call->callee.get(), names);
+            for (const auto& arg : call->arguments) collectIdentifiers(arg.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::VAR_DECL: {
+            auto* var = static_cast<const VarDeclStmt*>(node);
+            if (var->initializer) collectIdentifiers(var->initializer.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::RETURN: {
+            auto* ret = static_cast<const ReturnStmt*>(node);
+            if (ret->value) collectIdentifiers(ret->value.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::IF: {
+            auto* ifs = static_cast<const IfStmt*>(node);
+            collectIdentifiers(ifs->condition.get(), names);
+            collectIdentifiers(ifs->thenBranch.get(), names);
+            if (ifs->elseBranch) collectIdentifiers(ifs->elseBranch.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::LOOP: {
+            auto* loop = static_cast<const LoopStmt*>(node);
+            collectIdentifiers(loop->start.get(), names);
+            collectIdentifiers(loop->limit.get(), names);
+            if (loop->step) collectIdentifiers(loop->step.get(), names);
+            collectIdentifiers(loop->body.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::FUNC_DECL: {
+            auto* fn = static_cast<const FuncDeclStmt*>(node);
+            if (fn->body) collectIdentifiers(fn->body.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::EXPRESSION_STMT: {
+            auto* expr = static_cast<const ExpressionStmt*>(node);
+            collectIdentifiers(expr->expression.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::ASSIGNMENT: {
+            auto* assign = static_cast<const AssignmentExpr*>(node);
+            collectIdentifiers(assign->target.get(), names);
+            collectIdentifiers(assign->value.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            auto* ma = static_cast<const MemberAccessExpr*>(node);
+            collectIdentifiers(ma->object.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::INDEX: {
+            auto* idx = static_cast<const IndexExpr*>(node);
+            collectIdentifiers(idx->array.get(), names);
+            collectIdentifiers(idx->index.get(), names);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void WarningAnalyzer::analyzeUnusedVariables(const ASTNode* ast) {
-    (void)ast; // Suppress unused parameter warning
-    // Stub: Full implementation will walk AST to find unused variables
-    // Will be implemented when we add comprehensive semantic analysis
+    if (!ast) return;
+    
+    switch (ast->type) {
+        case ASTNode::NodeType::PROGRAM:
+        case ASTNode::NodeType::BLOCK: {
+            auto* blk = static_cast<const BlockStmt*>(ast);
+            // Build usage map for this scope
+            auto usage_map = buildUsageMap(blk);
+            
+            // Collect all referenced identifiers in the block
+            std::unordered_set<std::string> referenced;
+            collectIdentifiers(ast, referenced);
+            
+            // Mark used variables
+            for (auto& [name, usage] : usage_map) {
+                // A variable is "used" if it appears as an identifier anywhere
+                // beyond its own initializer
+                if (referenced.count(name)) {
+                    usage.is_used = true;
+                }
+            }
+            
+            // Emit warnings for unused variables
+            for (const auto& [name, usage] : usage_map) {
+                if (!usage.is_used && !name.empty() && name[0] != '_') {
+                    emitWarning(WarningType::UNUSED_VARIABLE, usage.declaration_loc,
+                               "variable '" + name + "' is declared but never used");
+                }
+            }
+            
+            // Recurse into nested functions
+            for (const auto& stmt : blk->statements) {
+                if (stmt && stmt->type == ASTNode::NodeType::FUNC_DECL) {
+                    auto* fn = static_cast<const FuncDeclStmt*>(stmt.get());
+                    analyzeUnusedParameters(fn);
+                    if (fn->body) analyzeUnusedVariables(fn->body.get());
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
 }
 
 void WarningAnalyzer::analyzeUnusedParameters(const FuncDeclStmt* func) {
-    (void)func; // Suppress unused parameter warning
-    if (!config_.isEnabled(WarningType::UNUSED_PARAMETER)) {
+    if (!func || !config_.isEnabled(WarningType::UNUSED_PARAMETER)) {
         return;
     }
+    if (!func->body) return;  // extern functions have no body
     
-    // Stub: Would analyze function body to see if parameters are used
+    // Collect all identifiers used in the function body
+    std::unordered_set<std::string> referenced;
+    collectIdentifiers(func->body.get(), referenced);
+    
+    // Check each parameter
+    for (const auto& param : func->parameters) {
+        if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
+        auto* p = static_cast<const ParameterNode*>(param.get());
+        if (!p->paramName.empty() && p->paramName[0] != '_' && !referenced.count(p->paramName)) {
+            SourceLocation loc("", p->line, p->column);
+            emitWarning(WarningType::UNUSED_PARAMETER, loc,
+                       "parameter '" + p->paramName + "' is unused in function '" + func->funcName + "'");
+        }
+    }
 }
 
 void WarningAnalyzer::analyzeDeadCode(const BlockStmt* block) {
-    (void)block; // Suppress unused parameter warning
-    if (!config_.isEnabled(WarningType::DEAD_CODE)) {
+    if (!block || !config_.isEnabled(WarningType::DEAD_CODE)) {
         return;
     }
     
-    // Stub: Would look for statements after terminal statements
+    // Look for statements after terminal statements (return/pass/fail/break/continue)
+    bool found_terminal = false;
+    for (const auto& stmt : block->statements) {
+        if (!stmt) continue;
+        if (found_terminal) {
+            SourceLocation loc("", stmt->line, stmt->column);
+            emitWarning(WarningType::DEAD_CODE, loc,
+                       "code after terminal statement will never be executed");
+            break;  // Only warn once per block
+        }
+        if (isTerminalStatement(stmt.get())) {
+            found_terminal = true;
+        }
+        // Recurse into nested blocks
+        if (stmt->type == ASTNode::NodeType::BLOCK) {
+            analyzeDeadCode(static_cast<const BlockStmt*>(stmt.get()));
+        } else if (stmt->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* fn = static_cast<const FuncDeclStmt*>(stmt.get());
+            if (fn->body && fn->body->type == ASTNode::NodeType::BLOCK) {
+                analyzeDeadCode(static_cast<const BlockStmt*>(fn->body.get()));
+            }
+        } else if (stmt->type == ASTNode::NodeType::IF) {
+            auto* ifs = static_cast<const IfStmt*>(stmt.get());
+            if (ifs->thenBranch && ifs->thenBranch->type == ASTNode::NodeType::BLOCK)
+                analyzeDeadCode(static_cast<const BlockStmt*>(ifs->thenBranch.get()));
+            if (ifs->elseBranch && ifs->elseBranch->type == ASTNode::NodeType::BLOCK)
+                analyzeDeadCode(static_cast<const BlockStmt*>(ifs->elseBranch.get()));
+        }
+    }
 }
 
 void WarningAnalyzer::analyzeUnreachableCode(const ASTNode* ast) {
-    (void)ast; // Suppress unused parameter warning
-    if (!config_.isEnabled(WarningType::UNREACHABLE_CODE)) {
+    if (!ast || !config_.isEnabled(WarningType::UNREACHABLE_CODE)) {
         return;
     }
     
-    // Stub: Would check for code after returns, infinite loops, etc.
+    // Delegate to dead code analysis for blocks
+    if (ast->type == ASTNode::NodeType::BLOCK || ast->type == ASTNode::NodeType::PROGRAM) {
+        analyzeDeadCode(static_cast<const BlockStmt*>(ast));
+    }
+    
+    // Check for constant-false conditions in if statements
+    if (ast->type == ASTNode::NodeType::IF) {
+        auto* ifs = static_cast<const IfStmt*>(ast);
+        if (ifs->condition && ifs->condition->type == ASTNode::NodeType::LITERAL) {
+            auto* lit = static_cast<const LiteralExpr*>(ifs->condition.get());
+            if (std::holds_alternative<bool>(lit->value)) {
+                bool val = std::get<bool>(lit->value);
+                if (!val && ifs->thenBranch) {
+                    SourceLocation loc("", ifs->thenBranch->line, ifs->thenBranch->column);
+                    emitWarning(WarningType::UNREACHABLE_CODE, loc,
+                               "then-branch is unreachable (condition is always false)");
+                }
+                if (val && ifs->elseBranch) {
+                    SourceLocation loc("", ifs->elseBranch->line, ifs->elseBranch->column);
+                    emitWarning(WarningType::UNREACHABLE_CODE, loc,
+                               "else-branch is unreachable (condition is always true)");
+                }
+                // Also emit constant-condition warning
+                if (config_.isEnabled(WarningType::CONSTANT_CONDITION)) {
+                    SourceLocation cloc("", ifs->condition->line, ifs->condition->column);
+                    emitWarning(WarningType::CONSTANT_CONDITION, cloc,
+                               "condition is always " + std::string(val ? "true" : "false"));
+                }
+            }
+        }
+        // Recurse into branches
+        if (ifs->thenBranch) analyzeUnreachableCode(ifs->thenBranch.get());
+        if (ifs->elseBranch) analyzeUnreachableCode(ifs->elseBranch.get());
+    }
+    
+    // Recurse into blocks and functions
+    if (ast->type == ASTNode::NodeType::BLOCK || ast->type == ASTNode::NodeType::PROGRAM) {
+        auto* blk = static_cast<const BlockStmt*>(ast);
+        for (const auto& stmt : blk->statements) {
+            if (stmt) analyzeUnreachableCode(stmt.get());
+        }
+    } else if (ast->type == ASTNode::NodeType::FUNC_DECL) {
+        auto* fn = static_cast<const FuncDeclStmt*>(ast);
+        if (fn->body) analyzeUnreachableCode(fn->body.get());
+    }
 }
 
 void WarningAnalyzer::analyzeImplicitConversions(const ASTNode* ast) {
-    (void)ast; // Suppress unused parameter warning
-    if (!config_.isEnabled(WarningType::IMPLICIT_CONVERSION)) {
+    if (!ast || !config_.isEnabled(WarningType::IMPLICIT_CONVERSION)) {
         return;
     }
     
-    // Stub: Would check for implicit type conversions that may lose precision
+    // Aria follows Zero Implicit Conversion Policy — all conversions must be explicit.
+    // This pass is a safety net: if any implicit conversions slip through sema,
+    // they would be caught here. Currently a no-op since sema enforces this.
+    // Future: walk binary expressions and assignments to verify type consistency.
 }
 
 std::unordered_map<std::string, WarningAnalyzer::VariableUsage> 
 WarningAnalyzer::buildUsageMap(const BlockStmt* block) {
-    (void)block; // Suppress unused parameter warning
     std::unordered_map<std::string, VariableUsage> usage_map;
-    // Stub: Would walk block to build usage map
+    if (!block) return usage_map;
+    for (const auto& stmt : block->statements) {
+        if (stmt && stmt->type == ASTNode::NodeType::VAR_DECL) {
+            auto* var = static_cast<const VarDeclStmt*>(stmt.get());
+            VariableUsage usage;
+            usage.name = var->varName;
+            usage.declaration_loc = SourceLocation("", var->line, var->column);
+            usage.is_used = false;
+            usage.is_parameter = false;
+            usage_map[var->varName] = usage;
+        }
+    }
     return usage_map;
 }
 
@@ -169,9 +395,17 @@ void WarningAnalyzer::markUsed(
 }
 
 bool WarningAnalyzer::isTerminalStatement(const ASTNode* stmt) {
-    (void)stmt; // Suppress unused parameter warning
-    // Stub: Would check if statement is return, break, continue, or fail
-    return false;
+    if (!stmt) return false;
+    switch (stmt->type) {
+        case ASTNode::NodeType::RETURN:
+        case ASTNode::NodeType::PASS:
+        case ASTNode::NodeType::FAIL:
+        case ASTNode::NodeType::BREAK:
+        case ASTNode::NodeType::CONTINUE:
+            return true;
+        default:
+            return false;
+    }
 }
 
 void WarningAnalyzer::emitWarning(WarningType type, const SourceLocation& loc,

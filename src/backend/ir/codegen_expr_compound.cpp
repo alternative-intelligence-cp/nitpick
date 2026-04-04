@@ -539,23 +539,57 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                 }
                 
                 // Try to get field index based on struct layout
-                // Most structs have fields in declaration order (0, 1, 2, ...)
-                // We need the struct definition to know the field index
-                // For testing, let's use field index 0 for first field
+                // Fallback: use LLVM struct name (if available) for type system lookup
+                if (type_system && !structName.empty()) {
+                    // LLVM struct names are usually "struct.AriaTypeName" — strip the prefix
+                    std::string lookupName = structName;
+                    if (lookupName.rfind("struct.", 0) == 0) {
+                        lookupName = lookupName.substr(7);
+                    }
+                    Type* fallbackType = type_system->getStructType(lookupName);
+                    if (fallbackType && fallbackType->getKind() == TypeKind::STRUCT) {
+                        StructType* sType = static_cast<StructType*>(fallbackType);
+                        int fidx = sType->getFieldIndex(expr->member);
+                        if (fidx >= 0) {
+                            std::cerr << "[DEBUG codegenMemberAccess] Fallback lookup found field '"
+                                     << expr->member << "' at index " << fidx << std::endl;
+                            return builder.CreateExtractValue(objectVal, fidx, expr->member);
+                        }
+                    }
+                }
                 
-                // TEMPORARY HACK: Assume single-field structs for now
+                // Last resort: single-field struct extraction
                 if (structType->getNumElements() == 1) {
                     std::cerr << "[DEBUG codegenMemberAccess] Single-field struct, extracting field 0" << std::endl;
                     return builder.CreateExtractValue(objectVal, 0, expr->member);
                 }
                 
-                // For multi-field structs, we need proper field index lookup
-                // This requires integration with the semantic analyzer's type system
-                throw std::runtime_error("Multi-field struct member access requires type system integration (field: " + expr->member + ")");
+                // For multi-field structs without type info, try index-based lookup
+                // using LLVM struct element count
+                throw std::runtime_error("Struct member access requires type system registration (field: " + expr->member + ", struct: " + structName + ")");
             }
         }
         
-        // Fallback: try to extract value at index 0
+        // Fallback for non-identifier objects or untrack types:
+        // Try LLVM struct name → type system lookup
+        if (type_system && !structName.empty()) {
+            std::string lookupName = structName;
+            if (lookupName.rfind("struct.", 0) == 0) {
+                lookupName = lookupName.substr(7);
+            }
+            Type* fallbackType = type_system->getStructType(lookupName);
+            if (fallbackType && fallbackType->getKind() == TypeKind::STRUCT) {
+                StructType* sType = static_cast<StructType*>(fallbackType);
+                int fidx = sType->getFieldIndex(expr->member);
+                if (fidx >= 0) {
+                    std::cerr << "[DEBUG codegenMemberAccess] Outer fallback found field '"
+                             << expr->member << "' at index " << fidx << std::endl;
+                    return builder.CreateExtractValue(objectVal, fidx, expr->member);
+                }
+            }
+        }
+        
+        // Last resort: try to extract value at index 0 for single-field structs
         std::cerr << "[DEBUG codegenMemberAccess] Unknown struct type, attempting index 0" << std::endl;
         if (structType->getNumElements() > 0) {
             return builder.CreateExtractValue(objectVal, 0, expr->member);
@@ -1317,10 +1351,57 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 // @cast_unchecked: just truncate
                 return builder.CreateTrunc(sourceValue, targetLLVMType, "cast.trunc");
             } else {
-                // @cast: checked narrowing - add runtime overflow check
-                // For now, just truncate (TODO: add runtime check and panic)
-                // TODO: Implement overflow detection and call panic function
-                return builder.CreateTrunc(sourceValue, targetLLVMType, "cast.checked_trunc");
+                // @cast: checked narrowing — truncate then round-trip back to detect overflow
+                llvm::Value* truncated = builder.CreateTrunc(sourceValue, targetLLVMType, "cast.checked_trunc");
+                
+                // Determine signedness of target type
+                bool targetSigned = (expr->targetType.find("int") == 0 ||
+                                    expr->targetType.find("i8") == 0 ||
+                                    expr->targetType.find("i16") == 0 ||
+                                    expr->targetType.find("i32") == 0 ||
+                                    expr->targetType.find("i64") == 0);
+                
+                // Round-trip: extend back to source width
+                llvm::Value* roundTrip;
+                if (targetSigned) {
+                    roundTrip = builder.CreateSExt(truncated, sourceLLVMType, "cast.rt_sext");
+                } else {
+                    roundTrip = builder.CreateZExt(truncated, sourceLLVMType, "cast.rt_zext");
+                }
+                
+                // Compare: if round-trip != original, overflow occurred
+                llvm::Value* overflowed = builder.CreateICmpNE(sourceValue, roundTrip, "cast.overflow");
+                
+                llvm::Function* func = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* overflowBB = llvm::BasicBlock::Create(context, "cast.overflow_panic", func);
+                llvm::BasicBlock* okBB = llvm::BasicBlock::Create(context, "cast.ok", func);
+                
+                builder.CreateCondBr(overflowed, overflowBB, okBB);
+                
+                // Overflow path: panic
+                builder.SetInsertPoint(overflowBB);
+                llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+                if (!panicFn) {
+                    llvm::FunctionType* panicType = llvm::FunctionType::get(
+                        llvm::Type::getVoidTy(context),
+                        { llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0) },
+                        false
+                    );
+                    panicFn = llvm::Function::Create(
+                        panicType, llvm::Function::ExternalLinkage,
+                        "aria_panic_overflow", module
+                    );
+                }
+                llvm::Value* panicMsg = builder.CreateGlobalString(
+                    "Integer overflow in checked cast to " + expr->targetType,
+                    "cast_overflow_msg"
+                );
+                builder.CreateCall(panicFn, { panicMsg });
+                builder.CreateUnreachable();
+                
+                // OK path: use truncated value
+                builder.SetInsertPoint(okBB);
+                return truncated;
             }
         }
     }
@@ -1339,9 +1420,68 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 // @cast_unchecked: just truncate
                 return builder.CreateFPTrunc(sourceValue, targetLLVMType, "cast.fptrunc");
             } else {
-                // @cast: checked narrowing
-                // TODO: Add range check for overflow/underflow
-                return builder.CreateFPTrunc(sourceValue, targetLLVMType, "cast.checked_fptrunc");
+                // @cast: checked narrowing — truncate and check for infinity overflow
+                llvm::Value* truncated = builder.CreateFPTrunc(sourceValue, targetLLVMType, "cast.checked_fptrunc");
+                
+                // Check if result became infinity when source wasn't
+                llvm::Value* srcIsInf = builder.CreateFCmpOEQ(
+                    sourceValue,
+                    llvm::ConstantFP::getInfinity(sourceLLVMType),
+                    "cast.src_is_posinf"
+                );
+                llvm::Value* srcIsNegInf = builder.CreateFCmpOEQ(
+                    sourceValue,
+                    llvm::ConstantFP::getInfinity(sourceLLVMType, true),
+                    "cast.src_is_neginf"
+                );
+                llvm::Value* srcWasInf = builder.CreateOr(srcIsInf, srcIsNegInf, "cast.src_was_inf");
+                
+                llvm::Value* dstIsInf = builder.CreateFCmpOEQ(
+                    truncated,
+                    llvm::ConstantFP::getInfinity(targetLLVMType),
+                    "cast.dst_is_posinf"
+                );
+                llvm::Value* dstIsNegInf = builder.CreateFCmpOEQ(
+                    truncated,
+                    llvm::ConstantFP::getInfinity(targetLLVMType, true),
+                    "cast.dst_is_neginf"
+                );
+                llvm::Value* dstBecameInf = builder.CreateOr(dstIsInf, dstIsNegInf, "cast.dst_became_inf");
+                
+                // Overflow if dst is inf but src was not inf
+                llvm::Value* srcNotInf = builder.CreateNot(srcWasInf, "cast.src_not_inf");
+                llvm::Value* overflowed = builder.CreateAnd(dstBecameInf, srcNotInf, "cast.fp_overflow");
+                
+                llvm::Function* func = builder.GetInsertBlock()->getParent();
+                llvm::BasicBlock* overflowBB = llvm::BasicBlock::Create(context, "cast.fp_overflow_panic", func);
+                llvm::BasicBlock* okBB = llvm::BasicBlock::Create(context, "cast.fp_ok", func);
+                
+                builder.CreateCondBr(overflowed, overflowBB, okBB);
+                
+                // Overflow path: panic
+                builder.SetInsertPoint(overflowBB);
+                llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+                if (!panicFn) {
+                    llvm::FunctionType* panicType = llvm::FunctionType::get(
+                        llvm::Type::getVoidTy(context),
+                        { llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0) },
+                        false
+                    );
+                    panicFn = llvm::Function::Create(
+                        panicType, llvm::Function::ExternalLinkage,
+                        "aria_panic_overflow", module
+                    );
+                }
+                llvm::Value* panicMsg = builder.CreateGlobalString(
+                    "Float overflow in checked cast to " + expr->targetType,
+                    "cast_fp_overflow_msg"
+                );
+                builder.CreateCall(panicFn, { panicMsg });
+                builder.CreateUnreachable();
+                
+                // OK path: use truncated value
+                builder.SetInsertPoint(okBB);
+                return truncated;
             }
         }
     }
