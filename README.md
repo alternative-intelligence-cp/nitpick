@@ -1,4 +1,4 @@
-# Aria Programming Language v0.7.4
+# Aria Programming Language v0.13.7
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,31 +10,30 @@
 
 ---
 
-## Current Status (April 1, 2026)
+## Current Status (April 4, 2026)
 
-**v0.7.4 — JIT Optimization & Multi-Architecture (v0.7.x series complete)**
+**v0.13.7 — Final Audit, Cleanup & Release (v0.13.x series complete)**
 
-The v0.7.x series transformed Aria's JIT from a basic 12-instruction encoder into a production-grade runtime code generator with **45+ x86-64 instructions**, a **linear scan register allocator**, **peephole optimizer**, **instruction selection**, WildX security hardening, and multi-architecture abstraction. JIT-generated code benchmarks at **0.66x native C -O2** for integer workloads.
+The v0.13.x series delivered **traits, enums, generics, deferred language features, and final hardening**. v0.13.7 is the "close the books" release — full audit, fuzzer validation, and the 234-page Aria Programming Manual.
 
-**v0.7.x highlights:**
-- **v0.7.4** — Peephole optimizer (7 patterns + strength reduction), instruction selection (MOV narrowing, TEST, INC/DEC, imm8 forms), AArch64 backend stub, perf profiling hooks, architecture abstraction
-- **v0.7.3** — Linear scan register allocator: 12 GPR + 14 XMM allocatable, automatic spill/reload, auto prologue/epilogue, mixed physical+virtual registers
-- **v0.7.2** — JIT instruction expansion: 12→45+ instructions, FP/SSE2, SIMD/SSE, memory ops, CALL, stack frames, extended jumps
-- **v0.7.1** — WildX security: ASLR for JIT pages, guard pages, FNV-1a code signing, 64MB quota, audit logging
-- **v0.7.0** — Wild memory improvements: per-allocation size tracking, guard pages, statistics dashboard
+**959 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **60 stdlib modules**
 
-**v0.5.x highlights:**
-- **v0.5.5** — Benchmark suite, configurable `--smt-timeout`, `--prove-report`, documentation, specialist corpus v7
-- **v0.5.4** — Concurrency verification (`--verify-concurrency`: data race + deadlock) and memory safety (`--verify-memory`: use-after-free)
-- **v0.5.3** — Refinement type integration: Rules narrowing/transitivity, pick exhaustiveness, null interaction, return bounds inference
-- **v0.5.2** — Function contracts: cross-function propagation, `ensures` postconditions, loop invariants
-- **v0.5.1** — User-facing `prove(expr)` and `assert_static(expr)` builtins
-- **v0.5.0** — Compiler-internal SMT optimizations: overflow elimination, null check elimination, loop hoisting, defaults elimination, Rules propagation
+**v0.13.x highlights:**
+- **v0.13.7** — Final audit: 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup, 234-page PDF manual
+- **v0.13.6** — `@func_name` function pointer syntax fix with trampoline generation
+- **v0.13.5** — Deferred language features: raw strings, pipeline operator, extended escape sequences
+- **v0.13.4** — Documentation & specifications completeness
+- **v0.13.3** — Generic containers: type-parameterized structs/functions, monomorphization
+- **v0.13.2** — Enum types: tagged unions, pattern matching, exhaustiveness checking
+- **v0.13.1** — Trait method dispatch: vtable codegen, interface compliance checks
+- **v0.13.0** — Trait system foundation: trait definitions, `impl` blocks, `$i`/`$m` borrow semantics
 
-**v0.3.x–v0.4.x highlights:**
-- **103 ecosystem packages**, all passing — utility, graphics/game, server, database, AI/ML tiers
-- Z3 Phase 1–3: Rules/limit, contracts, overflow proofs
-- AriaX kernel mods, Ubuntu integration, Docker/VM images
+**Previous series highlights:**
+- **v0.12.x** — Networking & middleware: HTTP, DNS, socket, server, URL, cookie, CORS, body-parser, session, static, rate-limit, FTP, SMTP, WebSocket, display, input, LRU, glob, retry
+- **v0.11.x** — Threading & concurrency: thread pool, atomics, lock-free structures, channels, mutex/rwlock/barrier, arena/pool/slab allocators, shared memory, IPC, signal handling, AIFS, AriaX kernel mods
+- **v0.7.x** — JIT: 45+ x86-64 instructions, linear scan register allocator, peephole optimizer, WildX security, 0.66x native C -O2
+- **v0.5.x** — Z3 SMT formal verification: contracts, overflow proofs, concurrency/memory safety verification
+- **v0.3.x–v0.4.x** — Ecosystem packages, Z3 Phase 1–3, AriaX kernel mods
 
 ---
 
@@ -43,20 +42,21 @@ The v0.7.x series transformed Aria's JIT from a basic 12-instruction encoder int
 | Tool | Status | Description |
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
-| `aria-ls` | ✅ Improved | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Wired | Package manager — install, search, pack, 103 packages verified |
-| `aria-doc` | ✅ Fixed | Documentation generator — 435 unique HTML pages from ecosystem |
-| `aria-mcp` | ✅ Improved | MCP server — compile, safety audit, docs search, format, specialist model |
-| `aria-safety` | ✅ Improved | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
+| `aria-ls` | ✅ Stable | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
+| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 102 packages verified |
+| `aria-doc` | ✅ Stable | Documentation generator — 435 unique HTML pages from ecosystem |
+| `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
+| `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| `aria-dap` | ✅ Working | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
-| `aria_make` | ✅ Working | Build system — project manifest, dependency resolution, test runner |
+| `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
+| `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
 | Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
 | Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 103 packages (utility, graphics/game, server, database, AI/ML tiers), all passing |
+| `aria_packages` | ✅ Active | 102 packages (17 pure, 17 libc, 68 FFI), all passing |
+| PDF Manual | ✅ v1 | [234-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7) — specs, guide, safety walkthrough, reference |
 
 ---
 
@@ -421,9 +421,13 @@ EOF
 
 📚 **[aria-docs](https://github.com/alternative-intelligence-cp/aria-docs)** — Package reference, language guides, and tutorials (separate repo).
 
+📖 **[Aria Programming Manual v1 (PDF)](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)** — 234-page offline manual: specs cheat sheet, full programming guide, safety walkthrough, and reference appendix.
+
 **Quick links in aria-docs:**
-- `guide/from_gml_to_native.md` — GML → Native walkthrough
-- `packages/` — API reference for all game/graphics packages
+- `guide/` — Full programming guide (12 sections)
+- `reference/` — Language reference (20+ documents)
+- `safety-walkthrough/` — Safety system walkthrough
+- `packages/` — API reference for all packages
 
 **Man pages:** Install with `./install.sh` — then `man aria-control-flow-for`, `man aria-types-int32`, etc.  
 **Language spec:** [`.internal/aria_specs.txt`](.internal/aria_specs.txt)  
@@ -469,8 +473,8 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 102 library packages
-- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs and guides
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 102 library packages (17 pure, 17 libc, 68 FFI)
+- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs, guides, and [234-page PDF manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
 - [`aria-make`](https://github.com/alternative-intelligence-cp/aria-make) — build system
@@ -809,11 +813,45 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **`--verify-report` flag** — Emit detailed proof results (proven/unproven/skipped per function)
 - ✅ **Regression fix** — `test_nested_struct_array` updated: `pass()` → `exit()` in main
 
-### v0.3.5+ — Planned
+### v0.4.x–v0.10.x — Released
+
+- ✅ **v0.4.x** — Z3 Phase 1 (Rules/limit), ecosystem to 103 packages
+- ✅ **v0.5.x** — Z3 Phase 2–3 (contracts, overflow, concurrency, memory verification), `prove`/`assert_static`, `--smt-opt`
+- ✅ **v0.6.x** — TFP types, compiler hardening
+- ✅ **v0.7.x** — JIT: 45+ instructions, register allocator, peephole optimizer, WildX security
+- ✅ **v0.8.x–v0.9.x** — Runtime improvements, GC tuning
+- ✅ **v0.10.x** — 8 stdlib modules ported to aria-libc, 12 pure Aria packages, tests/docs/audit
+
+### v0.11.x — Released
+
+- ✅ **Threading & concurrency** — Thread pool, atomics, lock-free structures (MPMC queue, Treiber stack, SPSC ring buffer)
+- ✅ **Synchronization** — Mutex, RWLock, Barrier, CondVar
+- ✅ **OS components** — Arena/pool/slab allocators, shared memory, IPC, signal handling, process management
+- ✅ **AI-native filesystem (AIFS)** — FUSE-based filesystem for AI workloads
+- ✅ **AriaX kernel mods** — Hexstream FD 3-5 patches
+
+### v0.12.x — Released
+
+- ✅ **Networking** — HTTP client, DNS, socket, server, URL parsing
+- ✅ **Middleware** — Cookie, CORS, body-parser, session, static file serving, rate limiting
+- ✅ **Protocols & terminal** — FTP, SMTP, WebSocket, ANSI display, raw keyboard input
+- ✅ **Utilities** — LRU cache, glob matching, retry with backoff
+
+### v0.13.x — Released (current)
+
+- ✅ **Trait system** — Definitions, `impl` blocks, `$i`/`$m` borrows, vtable dispatch, trait bounds on generics
+- ✅ **Enum types** — Tagged unions, pattern matching, exhaustiveness checking
+- ✅ **Generic containers** — Type-parameterized structs/functions, monomorphization
+- ✅ **Deferred features** — Raw strings, pipeline operator, extended escape sequences
+- ✅ **@ function pointers** — Trampoline generation for `@func_name` references
+- ✅ **Documentation** — specs_list.txt, full reference docs, 234-page PDF manual
+- ✅ **Final audit** — 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup
+
+### v0.14.x — Planned
 
 - AriaX Linux distribution packaging
 - Nikola integration
-- Specialist model retraining with v0.3.x corpus
+- Specialist model retraining with current corpus
 
 ### Long Term
 
