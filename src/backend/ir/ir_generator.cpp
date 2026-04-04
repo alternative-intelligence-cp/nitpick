@@ -4167,6 +4167,83 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     named_values[varDecl->varName] = fpAlloca;
                     var_aria_types[varDecl->varName] = "func_ptr:" + retTypeStr;
                 }
+
+                // Handle @func_name or bare func_name — get pointer to named function
+                if (varDecl->initializer &&
+                    varDecl->initializer->type != ASTNode::NodeType::LAMBDA) {
+                    // Extract function name from @func_name (UnaryExpr with TOKEN_AT)
+                    // or bare func_name (IdentifierExpr)
+                    std::string funcName;
+                    if (varDecl->initializer->type == ASTNode::NodeType::UNARY_OP) {
+                        UnaryExpr* unary = static_cast<UnaryExpr*>(varDecl->initializer.get());
+                        if (unary->op.type == frontend::TokenType::TOKEN_AT &&
+                            unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                            IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                            funcName = ident->name;
+                        }
+                    } else if (varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* ident = static_cast<IdentifierExpr*>(varDecl->initializer.get());
+                        funcName = ident->name;
+                    }
+
+                    if (!funcName.empty()) {
+                        llvm::Function* targetFunc = module->getFunction(funcName);
+                        if (!targetFunc) {
+                            throw std::runtime_error("Function '" + funcName + "' not found for function pointer assignment");
+                        }
+
+                        // Generate a trampoline wrapper that matches the closure calling
+                        // convention: (env_ptr, args...) -> Result<T>
+                        // Named functions don't take env_ptr, so the trampoline ignores it
+                        // and forwards the remaining args to the real function.
+                        static int trampoline_counter = 0;
+                        std::string trampName = "_trampoline_" + funcName + "_" + std::to_string(trampoline_counter++);
+
+                        // Build trampoline param types: env_ptr + same params as target
+                        std::vector<llvm::Type*> trampParams;
+                        trampParams.push_back(llvm::PointerType::get(context, 0)); // hidden env ptr
+                        for (auto& arg : targetFunc->args()) {
+                            trampParams.push_back(arg.getType());
+                        }
+
+                        llvm::FunctionType* trampFT = llvm::FunctionType::get(
+                            targetFunc->getReturnType(), trampParams, targetFunc->isVarArg());
+                        llvm::Function* trampFunc = llvm::Function::Create(
+                            trampFT, llvm::Function::InternalLinkage, trampName, module.get());
+
+                        // Generate trampoline body: skip env, forward args to target
+                        auto savedIP = builder.saveIP();
+                        llvm::BasicBlock* trampEntry = llvm::BasicBlock::Create(context, "entry", trampFunc);
+                        builder.SetInsertPoint(trampEntry);
+
+                        auto trampArgIt = trampFunc->arg_begin();
+                        trampArgIt->setName("env"); // ignored
+                        ++trampArgIt;
+
+                        std::vector<llvm::Value*> forwardArgs;
+                        for (; trampArgIt != trampFunc->arg_end(); ++trampArgIt) {
+                            forwardArgs.push_back(&*trampArgIt);
+                        }
+
+                        llvm::Value* result = builder.CreateCall(targetFunc, forwardArgs, "fwd");
+                        if (targetFunc->getReturnType()->isVoidTy()) {
+                            builder.CreateRetVoid();
+                        } else {
+                            builder.CreateRet(result);
+                        }
+
+                        builder.restoreIP(savedIP);
+
+                        // Store {trampoline_ptr, null_env} into the fat pointer alloca
+                        llvm::Value* funcAsPtr = builder.CreateBitCast(trampFunc, ptrTy);
+                        llvm::Value* nullEnv = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
+                        builder.CreateStore(funcAsPtr,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 0, "method_field"));
+                        builder.CreateStore(nullEnv,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+                    }
+                }
+
                 // FUNCTION_TYPE handled — fall to return below
                 return nullptr;
             }
