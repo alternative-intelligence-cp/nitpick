@@ -11,6 +11,12 @@
 #include <cstdint>
 #include <atomic>  // ARIA-AUDIT-2026: For atomic task state
 
+// Forward declarations for cleanup functions
+extern "C" {
+    void aria_coro_destroy(void* handle);
+    void aria_gc_free(void* ptr);
+}
+
 namespace aria {
 namespace runtime {
 
@@ -61,20 +67,14 @@ public:
           resultStorage(nullptr), hasError(false) {}
     
     ~Task() {
-        // BUG-04 FIX: Properly destroy coroutine handle and free result storage
         if (handle) {
-            // Destroy coroutine frame via LLVM intrinsic (called via runtime)
-            // Note: This assumes aria_coro_destroy is declared elsewhere
-            // In actual implementation, this would call llvm.coro.destroy
-            handle = nullptr;  // TODO: Call actual destroy function when runtime ready
+            aria_coro_destroy(handle);
+            handle = nullptr;
         }
         
-        // Cleanup result storage if allocated
         if (resultStorage) {
-            // BUG-04 FIX: Free result storage
-            // Note: In production, this should use aria_gc_free
-            // For now, mark as cleaned up
-            resultStorage = nullptr;  // TODO: Use GC-aware free when runtime ready
+            aria_gc_free(resultStorage);
+            resultStorage = nullptr;
         }
     }
     

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <functional>
+#include <memory>
 #include "runtime/async/future.h"
 
 namespace aria {
@@ -15,27 +16,24 @@ namespace async_io {
 
 /**
  * Async file operations
- * 
- * TODO BUG-08: Convert to std::shared_ptr<Future> for safer ownership
- * (Requires updating all implementation files first)
  */
 
 // Read entire file asynchronously
 // Returns Future<string> with file contents
-Future* read_file_async(const std::string& path);
+std::shared_ptr<Future> read_file_async(const std::string& path);
 
 // Write file asynchronously
 // Returns Future<bool> - true on success
-Future* write_file_async(const std::string& path, const std::string& content);
+std::shared_ptr<Future> write_file_async(const std::string& path, const std::string& content);
 
 // Append to file asynchronously
-Future* append_file_async(const std::string& path, const std::string& content);
+std::shared_ptr<Future> append_file_async(const std::string& path, const std::string& content);
 
 // Check if file exists asynchronously
-Future* file_exists_async(const std::string& path);
+std::shared_ptr<Future> file_exists_async(const std::string& path);
 
 // Delete file asynchronously
-Future* delete_file_async(const std::string& path);
+std::shared_ptr<Future> delete_file_async(const std::string& path);
 
 /**
  * Async network operations (future work)
@@ -53,7 +51,7 @@ Future* delete_file_async(const std::string& path);
 
 // Sleep for specified milliseconds
 // Returns Future<void> that completes after delay
-Future* sleep_async(uint64_t milliseconds);
+std::shared_ptr<Future> sleep_async(uint64_t milliseconds);
 
 // Schedule callback after delay
 void schedule_callback(uint64_t milliseconds, std::function<void()> callback);
@@ -64,15 +62,15 @@ void schedule_callback(uint64_t milliseconds, std::function<void()> callback);
 
 // Join multiple futures - completes when ALL complete
 // Returns Future<void>
-Future* join_all(Future** futures, size_t count);
+std::shared_ptr<Future> join_all(std::shared_ptr<Future>* futures, size_t count);
 
 // Race multiple futures - completes when FIRST completes
 // Returns Future<size_t> with index of completed future
-Future* race(Future** futures, size_t count);
+std::shared_ptr<Future> race(std::shared_ptr<Future>* futures, size_t count);
 
 // Timeout wrapper - completes with error if future doesn't complete in time
 // Returns Future<T> that errors after timeout
-Future* with_timeout(Future* future, uint64_t milliseconds);
+std::shared_ptr<Future> with_timeout(std::shared_ptr<Future> future, uint64_t milliseconds);
 
 } // namespace async_io
 } // namespace runtime

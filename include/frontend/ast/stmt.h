@@ -778,6 +778,9 @@ public:
     ProgramNode(const std::vector<ASTNodePtr>& decls, int line = 0, int column = 0)
         : ASTNode(NodeType::PROGRAM, line, column), declarations(decls) {}
     
+    ProgramNode(std::vector<ASTNodePtr>&& decls, int line = 0, int column = 0)
+        : ASTNode(NodeType::PROGRAM, line, column), declarations(std::move(decls)) {}
+    
     ProgramNode(int line = 0, int column = 0)
         : ASTNode(NodeType::PROGRAM, line, column) {}
     

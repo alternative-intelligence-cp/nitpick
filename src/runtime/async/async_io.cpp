@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <queue>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -90,8 +91,8 @@ namespace async_io {
  * the background I/O thread finishes the operation.
  */
 
-Future* read_file_async(const std::string& path) {
-    Future* future = new Future(0);
+std::shared_ptr<Future> read_file_async(const std::string& path) {
+    auto future = std::make_shared<Future>(0);
     std::string path_copy = path;
     
     io_pool().submit([future, path_copy]() {
@@ -111,8 +112,8 @@ Future* read_file_async(const std::string& path) {
     return future;
 }
 
-Future* write_file_async(const std::string& path, const std::string& content) {
-    Future* future = new Future(sizeof(bool));
+std::shared_ptr<Future> write_file_async(const std::string& path, const std::string& content) {
+    auto future = std::make_shared<Future>(sizeof(bool));
     std::string path_copy = path;
     std::string content_copy = content;
     
@@ -133,8 +134,8 @@ Future* write_file_async(const std::string& path, const std::string& content) {
     return future;
 }
 
-Future* append_file_async(const std::string& path, const std::string& content) {
-    Future* future = new Future(sizeof(bool));
+std::shared_ptr<Future> append_file_async(const std::string& path, const std::string& content) {
+    auto future = std::make_shared<Future>(sizeof(bool));
     std::string path_copy = path;
     std::string content_copy = content;
     
@@ -155,8 +156,8 @@ Future* append_file_async(const std::string& path, const std::string& content) {
     return future;
 }
 
-Future* file_exists_async(const std::string& path) {
-    Future* future = new Future(sizeof(bool));
+std::shared_ptr<Future> file_exists_async(const std::string& path) {
+    auto future = std::make_shared<Future>(sizeof(bool));
     std::string path_copy = path;
     
     io_pool().submit([future, path_copy]() {
@@ -168,8 +169,8 @@ Future* file_exists_async(const std::string& path) {
     return future;
 }
 
-Future* delete_file_async(const std::string& path) {
-    Future* future = new Future(sizeof(bool));
+std::shared_ptr<Future> delete_file_async(const std::string& path) {
+    auto future = std::make_shared<Future>(sizeof(bool));
     std::string path_copy = path;
     
     io_pool().submit([future, path_copy]() {
@@ -184,8 +185,8 @@ Future* delete_file_async(const std::string& path) {
  * Timer Operations
  */
 
-Future* sleep_async(uint64_t milliseconds) {
-    Future* future = new Future(0);
+std::shared_ptr<Future> sleep_async(uint64_t milliseconds) {
+    auto future = std::make_shared<Future>(0);
     
     io_pool().submit([future, milliseconds]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
@@ -207,16 +208,16 @@ void schedule_callback(uint64_t milliseconds, std::function<void()> callback) {
  * Combinators
  */
 
-Future* join_all(Future** futures, size_t count) {
-    Future* result = new Future(0);
+std::shared_ptr<Future> join_all(std::shared_ptr<Future>* futures, size_t count) {
+    auto result = std::make_shared<Future>(0);
     
-    std::vector<Future*> futs(futures, futures + count);
+    std::vector<std::shared_ptr<Future>> futs(futures, futures + count);
     
     io_pool().submit([result, futs]() {
         // Poll until all input futures are ready
         while (true) {
             bool all_ready = true;
-            for (auto* f : futs) {
+            for (auto& f : futs) {
                 if (!f->isReady()) {
                     all_ready = false;
                     break;
@@ -232,10 +233,10 @@ Future* join_all(Future** futures, size_t count) {
     return result;
 }
 
-Future* race(Future** futures, size_t count) {
-    Future* result = new Future(sizeof(size_t));
+std::shared_ptr<Future> race(std::shared_ptr<Future>* futures, size_t count) {
+    auto result = std::make_shared<Future>(sizeof(size_t));
     
-    std::vector<Future*> futs(futures, futures + count);
+    std::vector<std::shared_ptr<Future>> futs(futures, futures + count);
     
     io_pool().submit([result, futs]() {
         // Poll until any input future is ready
@@ -253,8 +254,8 @@ Future* race(Future** futures, size_t count) {
     return result;
 }
 
-Future* with_timeout(Future* future, uint64_t milliseconds) {
-    Future* result = new Future(0);
+std::shared_ptr<Future> with_timeout(std::shared_ptr<Future> future, uint64_t milliseconds) {
+    auto result = std::make_shared<Future>(0);
     
     io_pool().submit([result, future, milliseconds]() {
         auto deadline = std::chrono::steady_clock::now() +

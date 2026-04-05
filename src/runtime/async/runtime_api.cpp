@@ -66,9 +66,18 @@ AriaFutureHandle aria_future_create(size_t type_size) {
     return static_cast<AriaFutureHandle>(new Future(type_size));
 }
 
+// Defined in async_io_api.cpp — releases registry entry for shared_ptr-managed futures.
+// Returns true if the handle was found and released, false otherwise.
+extern "C" bool aria_future_release_check(void* handle);
+
 void aria_future_destroy(AriaFutureHandle future) {
     if (future) {
-        delete static_cast<Future*>(future);
+        // Try the shared_ptr registry first (async_io API futures).
+        // If found, the shared_ptr handles deletion.
+        if (!aria_future_release_check(future)) {
+            // Not in registry — raw-allocated via aria_future_create.
+            delete static_cast<Future*>(future);
+        }
     }
 }
 
