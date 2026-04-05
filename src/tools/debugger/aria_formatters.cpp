@@ -125,10 +125,107 @@ std::pair<int64_t, int64_t> TBBTypeSummaryProvider::getSymmetricRange(int bit_wi
 }
 
 // ============================================================================
-// GC Pointer Synthetic Provider
+// GC Pointer Synthetic Provider — Python-based (LLDB 20+)
 // ============================================================================
-// TODO(LLDB 20): Port to Python-based synthetic provider.
-// Previous C++ implementation removed — see git history (commit before v0.3.3).
+// Ported from C++ SBSyntheticValueProvider (removed in LLDB 20) to Python.
+// Script is executed via LLDB's script interpreter during formatter registration.
+
+static const char* kGCPointerPythonScript = R"PYTHON(
+import lldb
+
+class GCPointerSyntheticProvider:
+    """Synthetic children for gc_ptr<T> — exposes dereferenced value and GC header metadata."""
+
+    # Object header layout (64-bit at ptr - 8):
+    #   bits [0:1]   color          (2 bits: WHITE=0, GRAY=1, BLACK=2)
+    #   bit  [2]     pinned_bit     (1 bit)
+    #   bit  [3]     forwarded_bit  (1 bit)
+    #   bit  [4]     is_nursery     (1 bit)
+    #   bits [5:12]  size_class     (8 bits)
+    #   bits [13:44] type_id        (32 bits)
+
+    COLOR_NAMES = {0: "WHITE", 1: "GRAY", 2: "BLACK"}
+
+    def __init__(self, valobj, internal_dict):
+        self.valobj = valobj
+        self.children = []
+
+    def num_children(self):
+        return len(self.children)
+
+    def get_child_index(self, name):
+        for i, (n, _v) in enumerate(self.children):
+            if n == name:
+                return i
+        return -1
+
+    def get_child_at_index(self, index):
+        if index < 0 or index >= len(self.children):
+            return None
+        name, val = self.children[index]
+        return val
+
+    def update(self):
+        self.children = []
+        if not self.valobj.IsValid():
+            return
+
+        # Expose the dereferenced pointer value
+        deref = self.valobj.Dereference()
+        if deref.IsValid():
+            self.children.append(("*value", deref))
+
+        # Read GC object header at (ptr - 8)
+        ptr_val = self.valobj.GetValueAsUnsigned(0)
+        if ptr_val == 0:
+            return
+
+        header_addr = ptr_val - 8
+        process = self.valobj.GetProcess()
+        if not process.IsValid():
+            return
+
+        error = lldb.SBError()
+        header = process.ReadUnsignedFromMemory(header_addr, 8, error)
+        if error.Fail():
+            return
+
+        color = header & 0x3
+        pinned = (header >> 2) & 0x1
+        forwarded = (header >> 3) & 0x1
+        nursery = (header >> 4) & 0x1
+        size_class = (header >> 5) & 0xFF
+        type_id = (header >> 13) & 0xFFFFFFFF
+
+        # Create synthetic children from header fields
+        target = self.valobj.GetTarget()
+        data = lldb.SBData.CreateDataFromUInt64Array(
+            target.GetByteOrder(), target.GetAddressByteSize(), [color])
+        color_name = self.COLOR_NAMES.get(color, str(color))
+        # Use CreateValueFromData for synthetic children
+        uint8_ty = target.FindFirstType("unsigned char")
+        uint32_ty = target.FindFirstType("unsigned int")
+        if uint8_ty.IsValid() and uint32_ty.IsValid():
+            d8 = lambda v: lldb.SBData.CreateDataFromUInt64Array(
+                target.GetByteOrder(), target.GetAddressByteSize(), [v])
+            d32 = lambda v: lldb.SBData.CreateDataFromUInt64Array(
+                target.GetByteOrder(), target.GetAddressByteSize(), [v])
+            self.children.append(("[header.color]",
+                self.valobj.CreateValueFromData("[header.color]", d8(color), uint8_ty)))
+            self.children.append(("[header.pinned]",
+                self.valobj.CreateValueFromData("[header.pinned]", d8(pinned), uint8_ty)))
+            self.children.append(("[header.forwarded]",
+                self.valobj.CreateValueFromData("[header.forwarded]", d8(forwarded), uint8_ty)))
+            self.children.append(("[header.is_nursery]",
+                self.valobj.CreateValueFromData("[header.is_nursery]", d8(nursery), uint8_ty)))
+            self.children.append(("[header.size_class]",
+                self.valobj.CreateValueFromData("[header.size_class]", d8(size_class), uint8_ty)))
+            self.children.append(("[header.type_id]",
+                self.valobj.CreateValueFromData("[header.type_id]", d32(type_id), uint32_ty)))
+
+    def has_children(self):
+        return True
+)PYTHON";
 
 // ============================================================================
 // Result<T> Type Summary Provider Implementation
@@ -220,9 +317,24 @@ bool RegisterAriaFormatters(lldb::SBDebugger& debugger) {
         );
     }
 
-    // GC pointer synthetic children
-    // Note: SBSyntheticValueProvider registration requires additional steps
-    // This will be implemented when the full debugger framework is in place
+    // GC pointer synthetic children — Python-based provider (LLDB 20+)
+    // Execute the Python script to define the class, then register it
+    lldb::SBCommandInterpreter interp = debugger.GetCommandInterpreter();
+    lldb::SBCommandReturnObject ret;
+    std::string script_cmd = std::string("script exec(\"\"\"") + kGCPointerPythonScript + "\"\"\")";
+    interp.HandleCommand(script_cmd.c_str(), ret);
+    
+    if (ret.Succeeded()) {
+        lldb::SBTypeSynthetic gc_synth = lldb::SBTypeSynthetic::CreateWithClassName(
+            "GCPointerSyntheticProvider"
+        );
+        if (gc_synth.IsValid()) {
+            category.AddTypeSynthetic(
+                lldb::SBTypeNameSpecifier("^gc_ptr<.+>$", true),  // regex = true
+                gc_synth
+            );
+        }
+    }
     
     // Enable the category
     category.SetEnabled(true);

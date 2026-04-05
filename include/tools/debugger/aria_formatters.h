@@ -72,12 +72,11 @@ private:
 };
 
 /**
- * GC Pointer Synthetic Children Provider
+ * GC Pointer Synthetic Children Provider (Python-based, LLDB 20+)
  * 
- * TODO(LLDB 20): The C++ SBSyntheticValueProvider API was removed in LLDB 20.
- * Synthetic providers now require Python scripts. This needs to be ported to:
- * - Python-based synthetic provider script
- * - Registered via CreateWithScriptCode() or CreateWithClassName()
+ * Ported from C++ SBSyntheticValueProvider (removed in LLDB 20) to a Python
+ * synthetic provider script embedded in aria_formatters.cpp. Registered via
+ * SBTypeSynthetic::CreateWithClassName("GCPointerSyntheticProvider").
  * 
  * Provides synthetic children for gc_ptr<T> to expose:
  * - The actual value (dereferenced pointer)
@@ -90,44 +89,8 @@ private:
  *   - type_id: Runtime type identifier
  * 
  * Reference: research_002 (GC object headers)
+ * Previous C++ impl: see git history (commit before v0.3.3)
  */
-#if 0 // Disabled until ported to Python-based synthetic provider
-class GCPointerSyntheticProvider : public lldb::SBSyntheticValueProvider {
-public:
-    GCPointerSyntheticProvider(lldb::SBValue valobj);
-    
-    virtual ~GCPointerSyntheticProvider() = default;
-
-    virtual size_t GetNumChildren() override;
-    
-    virtual lldb::SBValue GetChildAtIndex(size_t idx) override;
-    
-    virtual size_t GetIndexOfChildWithName(const lldb::ConstString& name) override;
-    
-    virtual bool Update() override;
-    
-    virtual bool MightHaveChildren() override;
-
-private:
-    lldb::SBValue m_valobj;
-    lldb::SBValue m_header_value;
-    bool m_valid_header;
-    
-    /**
-     * Read and decode the 64-bit object header
-     * @return True if header was successfully read
-     */
-    bool readObjectHeader();
-    
-    /**
-     * Extract bit field from header
-     * @param bit_offset Offset in bits (0-63)
-     * @param bit_count Number of bits to extract
-     * @return Extracted value
-     */
-    uint64_t extractBitField(uint64_t header, int bit_offset, int bit_count);
-};
-#endif
 
 /**
  * Result<T> Type Summary Provider

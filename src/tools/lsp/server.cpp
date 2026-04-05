@@ -1,6 +1,9 @@
 #include "tools/lsp/server.h"
 #include <iostream>
 #include <sstream>
+#include "frontend/sema/type.h"
+#include "frontend/sema/symbol_table.h"
+#include "frontend/sema/type_checker.h"
 
 namespace aria {
 namespace lsp {
@@ -462,8 +465,60 @@ void Server::publish_diagnostics(const std::string& uri) {
                 }
             }
             
-            // TODO: Semantic analysis would go here (Phase 7.3.5+)
-            // TypeChecker, BorrowChecker, etc.
+            // Semantic analysis — lightweight type checking (no resolver/monomorphizer/loader)
+            try {
+                aria::sema::TypeSystem typeSystem;
+                aria::sema::SymbolTable symbolTable;
+                aria::sema::TypeChecker checker(&typeSystem, &symbolTable);
+                checker.check(ast.get());
+                
+                for (const auto& error : checker.getErrors()) {
+                    size_t line_pos = error.find("line ");
+                    size_t col_pos = error.find(", column ");
+                    if (line_pos == std::string::npos) col_pos = std::string::npos;
+                    
+                    if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                        int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
+                        int col = std::stoi(error.substr(col_pos + 9));
+                        aria::SourceLocation loc(uri, line, col, 1);
+                        
+                        size_t msg_start = error.find(": ", col_pos);
+                        if (msg_start != std::string::npos) {
+                            diag_engine.error(loc, error.substr(msg_start + 2));
+                        } else {
+                            diag_engine.error(loc, error);
+                        }
+                    } else {
+                        // No location info — report at file start
+                        aria::SourceLocation loc(uri, 1, 1, 1);
+                        diag_engine.error(loc, error);
+                    }
+                }
+                
+                for (const auto& warning : checker.getWarnings()) {
+                    size_t line_pos = warning.find("line ");
+                    size_t col_pos = warning.find(", column ");
+                    if (line_pos == std::string::npos) col_pos = std::string::npos;
+                    
+                    if (line_pos != std::string::npos && col_pos != std::string::npos) {
+                        int line = std::stoi(warning.substr(line_pos + 5, col_pos - line_pos - 5));
+                        int col = std::stoi(warning.substr(col_pos + 9));
+                        aria::SourceLocation loc(uri, line, col, 1);
+                        
+                        size_t msg_start = warning.find(": ", col_pos);
+                        if (msg_start != std::string::npos) {
+                            diag_engine.warning(loc, warning.substr(msg_start + 2));
+                        } else {
+                            diag_engine.warning(loc, warning);
+                        }
+                    } else {
+                        aria::SourceLocation loc(uri, 1, 1, 1);
+                        diag_engine.warning(loc, warning);
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Semantic analysis error: " << e.what() << std::endl;
+            }
             
         } catch (const std::exception& e) {
             // Parser threw exception - create diagnostic
