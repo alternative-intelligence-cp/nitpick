@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <cstdio>
 
 // ============================================================================
 // Internal Structures
@@ -365,21 +366,100 @@ size_t aria_code_cache_get_max_memory(const AriaCodeCache* cache) {
 }
 
 // ============================================================================
-// Persistence (Stub Implementation)
+// Persistence
 // ============================================================================
 
+// Binary format: [magic 4B][version 4B][entry_count 8B][entries...]
+// Each entry:    [hash 8B][code_size 8B][backend_type 4B][opt_level 4B][code_data...]
+static const uint32_t CACHE_MAGIC   = 0x41524343; // "ARCC"
+static const uint32_t CACHE_VERSION = 1;
+
 int aria_code_cache_save(const AriaCodeCache* cache, const char* path) {
-    // TODO: Implement serialization
-    // For now, return success (no-op)
-    (void)cache;
-    (void)path;
+    if (!cache || !path) return -1;
+
+    FILE* fp = fopen(path, "wb");
+    if (!fp) return -1;
+
+    uint64_t count = cache->entries.size();
+    fwrite(&CACHE_MAGIC, sizeof(uint32_t), 1, fp);
+    fwrite(&CACHE_VERSION, sizeof(uint32_t), 1, fp);
+    fwrite(&count, sizeof(uint64_t), 1, fp);
+
+    for (auto& pair : cache->entries) {
+        const AriaCachedFunction& fn = pair.second.function;
+        fwrite(&fn.hash, sizeof(uint64_t), 1, fp);
+        fwrite(&fn.code_size, sizeof(size_t), 1, fp);
+        fwrite(&fn.backend_type, sizeof(int), 1, fp);
+        fwrite(&fn.optimization_level, sizeof(int), 1, fp);
+        if (fn.code_size > 0 && fn.function_ptr) {
+            fwrite(fn.function_ptr, 1, fn.code_size, fp);
+        }
+    }
+
+    fclose(fp);
     return 0;
 }
 
 int aria_code_cache_load(AriaCodeCache* cache, const char* path) {
-    // TODO: Implement deserialization
-    // For now, return success (no-op)
-    (void)cache;
-    (void)path;
+    if (!cache || !path) return -1;
+
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return -1;
+
+    uint32_t magic, version;
+    uint64_t count;
+    if (fread(&magic, sizeof(uint32_t), 1, fp) != 1 ||
+        fread(&version, sizeof(uint32_t), 1, fp) != 1 ||
+        fread(&count, sizeof(uint64_t), 1, fp) != 1) {
+        fclose(fp);
+        return -1;
+    }
+
+    if (magic != CACHE_MAGIC || version != CACHE_VERSION) {
+        fclose(fp);
+        return -1;
+    }
+
+    for (uint64_t i = 0; i < count; i++) {
+        uint64_t hash;
+        size_t code_size;
+        int backend_type, opt_level;
+
+        if (fread(&hash, sizeof(uint64_t), 1, fp) != 1 ||
+            fread(&code_size, sizeof(size_t), 1, fp) != 1 ||
+            fread(&backend_type, sizeof(int), 1, fp) != 1 ||
+            fread(&opt_level, sizeof(int), 1, fp) != 1) {
+            fclose(fp);
+            return -1;
+        }
+
+        void* code_data = nullptr;
+        if (code_size > 0) {
+            code_data = malloc(code_size);
+            if (!code_data || fread(code_data, 1, code_size, fp) != code_size) {
+                free(code_data);
+                fclose(fp);
+                return -1;
+            }
+        }
+
+        AriaCachedFunction fn;
+        fn.function_ptr = code_data;
+        fn.hash = hash;
+        fn.code_size = code_size;
+        fn.access_count = 0;
+        fn.last_access_time = cache->time_counter++;
+        fn.backend_type = backend_type;
+        fn.optimization_level = opt_level;
+
+        // Insert into cache (respecting limits)
+        aria_code_cache_insert(cache, hash, code_data, code_size,
+                               backend_type, opt_level);
+
+        // Note: aria_code_cache_insert stores the pointer directly,
+        // so do NOT free code_data here — ownership transferred.
+    }
+
+    fclose(fp);
     return 0;
 }

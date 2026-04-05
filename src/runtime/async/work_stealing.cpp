@@ -251,10 +251,12 @@ uint64_t WorkStealingExecutor::submit(Task* task) {
 }
 
 void WorkStealingExecutor::wait_all() {
-    // Simple busy-wait for now
-    // TODO: Better synchronization
+    // Condition-variable wait with periodic polling fallback
     while (get_tasks_completed() < total_tasks_submitted.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait_for(lock, std::chrono::milliseconds(1), [this]() {
+            return get_tasks_completed() >= total_tasks_submitted.load();
+        });
     }
 }
 
@@ -288,10 +290,20 @@ void WorkStealingExecutor::set_cpu_affinity(bool enable) {
 #ifdef __linux__
     if (!enable) return;
     
-    // Set CPU affinity for each worker
+    unsigned int num_cpus = std::thread::hardware_concurrency();
+    if (num_cpus == 0) num_cpus = 1;
+    
+    // Set CPU affinity for each worker — pin worker i to CPU i % num_cpus
     for (size_t i = 0; i < workers.size(); i++) {
-        // This would need to be done in the worker thread
-        // For now, just a placeholder
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(i % num_cpus, &cpuset);
+        
+        // WorkerThread::thread is std::thread — get native handle
+        auto native = workers[i]->get_thread_native_handle();
+        if (native) {
+            pthread_setaffinity_np(native, sizeof(cpu_set_t), &cpuset);
+        }
     }
 #endif
 }

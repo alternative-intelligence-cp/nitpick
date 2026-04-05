@@ -184,9 +184,32 @@ public:
         Future* source_future = source->next();
         Future* result_future = new Future(sizeof(StreamItem<U>));
         
-        // Chain: get source item -> map -> return
-        // TODO: Proper async chaining
-        // For now, simplified synchronous version
+        // Poll source future for item, apply mapper, produce result
+        if (source_future->isReady()) {
+            StreamItem<T>* src_item = static_cast<StreamItem<T>*>(source_future->getValue());
+            if (src_item && !src_item->is_end) {
+                StreamItem<U> mapped(mapper(src_item->value));
+                result_future->setValue(&mapped, sizeof(mapped));
+            } else {
+                StreamItem<U> end = StreamItem<U>::end();
+                result_future->setValue(&end, sizeof(end));
+            }
+            delete source_future;
+        } else {
+            // Source not ready yet — poll until ready
+            while (!source_future->isReady()) {
+                source_future->poll();
+            }
+            StreamItem<T>* src_item = static_cast<StreamItem<T>*>(source_future->getValue());
+            if (src_item && !src_item->is_end) {
+                StreamItem<U> mapped(mapper(src_item->value));
+                result_future->setValue(&mapped, sizeof(mapped));
+            } else {
+                StreamItem<U> end = StreamItem<U>::end();
+                result_future->setValue(&end, sizeof(end));
+            }
+            delete source_future;
+        }
         
         return result_future;
     }
@@ -213,8 +236,28 @@ public:
     
     Future* next() override {
         // Keep fetching until we find a matching item or reach end
-        // TODO: Proper async implementation
-        return source->next();
+        while (true) {
+            Future* source_future = source->next();
+            
+            // Poll until ready
+            while (!source_future->isReady()) {
+                source_future->poll();
+            }
+            
+            StreamItem<T>* src_item = static_cast<StreamItem<T>*>(source_future->getValue());
+            if (!src_item || src_item->is_end) {
+                // End of stream — pass through
+                return source_future;
+            }
+            
+            if (predicate(src_item->value)) {
+                // Item matches filter — return it
+                return source_future;
+            }
+            
+            // Item doesn't match — discard and try next
+            delete source_future;
+        }
     }
     
     void close() override {
@@ -265,8 +308,22 @@ Future* collect_stream(AsyncStream<T>* stream) {
     Future* future = new Future(sizeof(std::vector<T>));
     std::vector<T> result;
     
-    // TODO: Async collection
-    // For now, simplified
+    // Drain stream into vector
+    while (true) {
+        Future* item_future = stream->next();
+        while (!item_future->isReady()) {
+            item_future->poll();
+        }
+        
+        StreamItem<T>* item = static_cast<StreamItem<T>*>(item_future->getValue());
+        if (!item || item->is_end) {
+            delete item_future;
+            break;
+        }
+        
+        result.push_back(item->value);
+        delete item_future;
+    }
     
     future->setValue(&result, sizeof(result));
     return future;
@@ -277,7 +334,22 @@ template<typename T>
 Future* for_each_stream(AsyncStream<T>* stream, std::function<void(const T&)> fn) {
     Future* future = new Future(sizeof(bool));
     
-    // TODO: Async iteration
+    // Iterate stream and call fn for each item
+    while (true) {
+        Future* item_future = stream->next();
+        while (!item_future->isReady()) {
+            item_future->poll();
+        }
+        
+        StreamItem<T>* item = static_cast<StreamItem<T>*>(item_future->getValue());
+        if (!item || item->is_end) {
+            delete item_future;
+            break;
+        }
+        
+        fn(item->value);
+        delete item_future;
+    }
     
     bool success = true;
     future->setValue(&success, sizeof(success));
@@ -289,9 +361,25 @@ template<typename T, typename U>
 Future* fold_stream(AsyncStream<T>* stream, U initial, std::function<U(U, const T&)> fn) {
     Future* future = new Future(sizeof(U));
     
-    // TODO: Async reduction
+    // Reduce stream to single value
+    U accumulator = initial;
+    while (true) {
+        Future* item_future = stream->next();
+        while (!item_future->isReady()) {
+            item_future->poll();
+        }
+        
+        StreamItem<T>* item = static_cast<StreamItem<T>*>(item_future->getValue());
+        if (!item || item->is_end) {
+            delete item_future;
+            break;
+        }
+        
+        accumulator = fn(accumulator, item->value);
+        delete item_future;
+    }
     
-    future->setValue(&initial, sizeof(initial));
+    future->setValue(&accumulator, sizeof(accumulator));
     return future;
 }
 

@@ -498,15 +498,120 @@ Future* AsyncHttpClient::request(
         // Send request
         Future* write_future = socket->write(request_data.data(), request_data.size());
         
-        // TODO: Read response (simplified - just return empty response for now)
+        // Wait for write to complete
+        while (!write_future->isReady()) {
+            write_future->poll();
+        }
+        delete write_future;
+        
+        // Read HTTP response
         HttpResponse* response = new HttpResponse();
-        response->status_code = 200;
-        response->status_text = "OK";
+        
+        // Read response data in chunks
+        std::vector<uint8_t> raw_response;
+        const size_t read_buf_size = 4096;
+        uint8_t read_buf[4096];
+        
+        while (true) {
+            Future* read_future = socket->read(read_buf, read_buf_size);
+            while (!read_future->isReady()) {
+                read_future->poll();
+            }
+            
+            int64_t bytes_read = *(int64_t*)read_future->getValue();
+            delete read_future;
+            
+            if (bytes_read <= 0) {
+                break;  // Connection closed or error
+            }
+            
+            raw_response.insert(raw_response.end(), read_buf, read_buf + bytes_read);
+            
+            // Check if we have complete headers (look for \r\n\r\n)
+            // and if Content-Length body is fully received
+            std::string resp_str(raw_response.begin(), raw_response.end());
+            size_t header_end = resp_str.find("\r\n\r\n");
+            if (header_end != std::string::npos) {
+                // Parse Content-Length to see if body is complete
+                size_t body_start = header_end + 4;
+                std::string header_section = resp_str.substr(0, header_end);
+                
+                // Check for Content-Length
+                size_t cl_pos = header_section.find("Content-Length: ");
+                if (cl_pos == std::string::npos) {
+                    cl_pos = header_section.find("content-length: ");
+                }
+                
+                if (cl_pos != std::string::npos) {
+                    size_t cl_end = header_section.find("\r\n", cl_pos);
+                    std::string cl_val = header_section.substr(cl_pos + 16, cl_end - cl_pos - 16);
+                    size_t content_length = std::stoull(cl_val);
+                    
+                    if (raw_response.size() >= body_start + content_length) {
+                        break;  // Full response received
+                    }
+                } else {
+                    // No Content-Length — for HTTP/1.1, read until connection close
+                    // For simplicity, if we got headers and some data, check for
+                    // Transfer-Encoding: chunked or just break on small reads
+                    if (static_cast<size_t>(bytes_read) < read_buf_size) {
+                        break;  // Partial read suggests end of data
+                    }
+                }
+            }
+        }
+        
+        // Parse the HTTP response
+        std::string resp_str(raw_response.begin(), raw_response.end());
+        size_t header_end = resp_str.find("\r\n\r\n");
+        
+        if (header_end != std::string::npos) {
+            // Parse status line: "HTTP/1.1 200 OK\r\n"
+            size_t first_line_end = resp_str.find("\r\n");
+            if (first_line_end != std::string::npos) {
+                std::string status_line = resp_str.substr(0, first_line_end);
+                size_t sp1 = status_line.find(' ');
+                if (sp1 != std::string::npos) {
+                    size_t sp2 = status_line.find(' ', sp1 + 1);
+                    if (sp2 != std::string::npos) {
+                        response->status_code = std::stoi(status_line.substr(sp1 + 1, sp2 - sp1 - 1));
+                        response->status_text = status_line.substr(sp2 + 1);
+                    }
+                }
+            }
+            
+            // Parse headers
+            size_t pos = first_line_end + 2;
+            while (pos < header_end) {
+                size_t line_end = resp_str.find("\r\n", pos);
+                if (line_end == std::string::npos || line_end > header_end) break;
+                
+                std::string header_line = resp_str.substr(pos, line_end - pos);
+                size_t colon = header_line.find(": ");
+                if (colon != std::string::npos) {
+                    response->headers[header_line.substr(0, colon)] = header_line.substr(colon + 2);
+                }
+                pos = line_end + 2;
+            }
+            
+            // Extract body
+            size_t body_start = header_end + 4;
+            if (body_start < raw_response.size()) {
+                response->body.assign(raw_response.begin() + body_start, raw_response.end());
+            }
+        } else if (!raw_response.empty()) {
+            // Couldn't parse headers — store raw data as body
+            response->status_code = 0;
+            response->status_text = "Malformed Response";
+            response->body = raw_response;
+        } else {
+            response->status_code = 0;
+            response->status_text = "Empty Response";
+        }
         
         future->setValue(&response, sizeof(HttpResponse*));
         
         delete socket;
-        delete write_future;
     });
     
     return future;
