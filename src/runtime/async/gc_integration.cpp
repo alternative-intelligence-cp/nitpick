@@ -1,6 +1,7 @@
 // GC integration implementation
 
 #include "runtime/async/gc_integration.h"
+#include "runtime/gc.h"
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
@@ -148,12 +149,25 @@ void GCCoroAllocator::scan_frames(std::function<void(void*)> mark_fn) {
 }
 
 void GCCoroAllocator::init_gc() {
-    // TODO: Initialize GC integration
-    // For now, just a placeholder
+    // Initialize GC subsystem if not already running
+    // (aria_gc_init is idempotent)
+    aria_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
+    
+    // Store a self-pointer as the gc_handle so we can identify
+    // this allocator instance from C callbacks if needed
+    gc_handle = static_cast<void*>(this);
 }
 
 void GCCoroAllocator::shutdown_gc() {
-    // TODO: Shutdown GC integration
+    // Unregister any JIT roots held by active coroutine frames
+    for (auto& pair : frame_metadata) {
+        CoroFrameMetadata* metadata = pair.second;
+        for (void** root : metadata->gc_roots) {
+            aria_gc_unregister_jit_root(root);
+        }
+    }
+    
+    gc_handle = nullptr;
 }
 
 } // namespace runtime
