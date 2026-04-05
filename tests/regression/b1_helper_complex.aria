@@ -1,0 +1,16 @@
+// B1 complex helper module - non-pub helpers with multiple interactions
+func:compute_offset = int64(int64:base) {
+    int64:shifted = base + 10;
+    pass shifted;
+};
+
+func:compute_scale = int64(int64:val) {
+    int64:scaled = val + val;
+    pass scaled;
+};
+
+pub func:transform = int64(int64:input) {
+    int64:offset = raw compute_offset(input);
+    int64:result = raw compute_scale(offset);
+    pass result;
+};
