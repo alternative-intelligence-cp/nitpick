@@ -1365,6 +1365,100 @@ llvm::Value* IRGenerator::generateLBIMXor(llvm::Value* L, llvm::Value* R, unsign
     return result;
 }
 
+llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
+    // LBIM left shift via runtime call: aria_lbim_shlN(struct, uint32_t)
+    llvm::Type* structType = L->getType();
+    llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
+    llvm::Type* voidType = builder.getVoidTy();
+    llvm::Type* i32Type = builder.getInt32Ty();
+    bool usePointers = (numLimbs > 16);
+
+    unsigned bits = numLimbs * 64;
+    std::string funcName = "aria_lbim_shl" + std::to_string(bits);
+
+    // ABI: void func(ptr sret, ptr a, i32 shift)
+    llvm::FunctionType* funcType = llvm::FunctionType::get(
+        voidType, {ptrType, ptrType, i32Type}, false);
+
+    llvm::Function* shlFunc = module->getFunction(funcName);
+    if (!shlFunc) {
+        shlFunc = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        shlFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+        shlFunc->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        if (!usePointers) {
+            shlFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            shlFunc->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        }
+    }
+
+    llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "shl_result");
+    llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "shl_arg");
+    builder.CreateStore(L, allocaL);
+
+    // Truncate shift amount to i32
+    llvm::Value* shiftI32 = R;
+    if (R->getType() != i32Type) {
+        shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
+    }
+
+    llvm::CallInst* call = builder.CreateCall(shlFunc, {resultAlloca, allocaL, shiftI32});
+    call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+    call->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    if (!usePointers) {
+        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    }
+
+    return builder.CreateLoad(structType, resultAlloca, "shl_val");
+}
+
+llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsigned numLimbs, bool isArithmetic) {
+    // LBIM right shift via runtime call: aria_lbim_lshrN or aria_lbim_ashrN
+    llvm::Type* structType = L->getType();
+    llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
+    llvm::Type* voidType = builder.getVoidTy();
+    llvm::Type* i32Type = builder.getInt32Ty();
+    bool usePointers = (numLimbs > 16);
+
+    unsigned bits = numLimbs * 64;
+    std::string funcName = (isArithmetic ? "aria_lbim_ashr" : "aria_lbim_lshr") + std::to_string(bits);
+
+    llvm::FunctionType* funcType = llvm::FunctionType::get(
+        voidType, {ptrType, ptrType, i32Type}, false);
+
+    llvm::Function* shrFunc = module->getFunction(funcName);
+    if (!shrFunc) {
+        shrFunc = llvm::Function::Create(
+            funcType, llvm::Function::ExternalLinkage, funcName, module.get());
+        shrFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+        shrFunc->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        if (!usePointers) {
+            shrFunc->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+            shrFunc->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+        }
+    }
+
+    llvm::Value* resultAlloca = builder.CreateAlloca(structType, nullptr, "shr_result");
+    llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "shr_arg");
+    builder.CreateStore(L, allocaL);
+
+    llvm::Value* shiftI32 = R;
+    if (R->getType() != i32Type) {
+        shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
+    }
+
+    llvm::CallInst* call = builder.CreateCall(shrFunc, {resultAlloca, allocaL, shiftI32});
+    call->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, structType));
+    call->addParamAttr(0, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    if (!usePointers) {
+        call->addParamAttr(1, llvm::Attribute::getWithByValType(context, structType));
+        call->addParamAttr(1, llvm::Attribute::getWithAlignment(context, llvm::Align(8)));
+    }
+
+    return builder.CreateLoad(structType, resultAlloca, "shr_val");
+}
+
 // ============================================================================
 // Unknown-Safe Arithmetic (Layer 1 Safety)
 // Prevents undefined behavior by returning Unknown sentinel values
@@ -4774,9 +4868,11 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 ARIA_DBG_STREAM << "[DEBUG] Generated unknown sentinel for type: ";
                                 varType->print(llvm::errs());
                                 std::cerr << std::endl;
+                            } else if (varType->isFloatingPointTy()) {
+                                // Float unknown sentinel: quiet NaN
+                                initVal = llvm::ConstantFP::getQNaN(varType);
                             } else {
-                                // For non-integer types, generate zero for now
-                                // TODO: Handle float/string unknown
+                                // Pointer/string/other: null is the unknown sentinel
                                 initVal = llvm::Constant::getNullValue(varType);
                             }
                         }
@@ -5297,9 +5393,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             (void)breakStmt;
             
             if (loop_stack.empty()) {
-                // Error: break outside of loop
-                // TODO: Emit proper error message
-                return nullptr;
+                throw std::runtime_error("'break' statement outside of loop");
             }
             
             // Jump to the break target (loop exit)
@@ -5320,9 +5414,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             (void)continueStmt;
             
             if (loop_stack.empty()) {
-                // Error: continue outside of loop
-                // TODO: Emit proper error message
-                return nullptr;
+                throw std::runtime_error("'continue' statement outside of loop");
             }
             
             // Jump to the continue target (loop condition/update)
@@ -5342,9 +5434,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             DeferStmt* deferStmt = static_cast<DeferStmt*>(stmt);
             
             if (defer_stack.empty()) {
-                // Error: defer outside of scope
-                // TODO: Emit proper error message
-                return nullptr;
+                throw std::runtime_error("'defer' statement outside of scope");
             }
             
             // Get the defer block and add to current scope
@@ -5925,14 +6015,13 @@ skip_comparison:
                     // Build Result object: {zero_value, error_ptr, true}
                     llvm::Value* result = llvm::UndefValue::get(resultStruct);
                     
-                    // Field 0: value = zero/default (TODO: proper nil value for non-integer types)
+                    // Field 0: value = zero/default (getNullValue gives 0 for int, 0.0 for float, null for ptr)
                     llvm::Type* valueFieldType = resultStruct->getElementType(0);
                     llvm::Value* zeroValue = llvm::Constant::getNullValue(valueFieldType);
                     result = builder.CreateInsertValue(result, zeroValue, 0, "result.val");
                     
                     // Field 1: error = cast error_code to void*
-                    // For now, store error code as inttoptr
-                    // TODO: Proper TBB error type system
+                    // Store error code as inttoptr (TBB error codes are integer sentinels cast to void*)
                     llvm::Value* errorPtr;
                     if (errorCode->getType()->isIntegerTy()) {
                         errorPtr = builder.CreateIntToPtr(errorCode, 
@@ -7830,8 +7919,41 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     Type* aria_type = type_it->second;
                     
                     // Only handle struct types for now
+                    if (aria_type->getKind() == TypeKind::VECTOR) {
+                        // Vector component assignment (.x, .y, .z, .w)
+                        VectorType* vec_type = static_cast<VectorType*>(aria_type);
+                        int dimension = vec_type->getDimension();
+
+                        int component_index = -1;
+                        if (member->member == "x") component_index = 0;
+                        else if (member->member == "y") component_index = 1;
+                        else if (member->member == "z") component_index = 2;
+                        else if (member->member == "w") component_index = 3;
+
+                        if (component_index < 0 || component_index >= dimension) {
+                            throw std::runtime_error("Invalid vector component '" + member->member + "' for vec" + std::to_string(dimension));
+                        }
+
+                        llvm::Value* rhs = codegenExpression(binop->right.get());
+                        if (!rhs) return nullptr;
+
+                        llvm::Type* vec_llvm_type = mapType(vec_type);
+                        llvm::Value* vec_val = builder.CreateLoad(vec_llvm_type, object_ptr, "vec");
+
+                        if (dimension == 9) {
+                            llvm::Value* updated = builder.CreateInsertValue(vec_val, rhs,
+                                {static_cast<unsigned>(component_index)}, "vec9.insert");
+                            builder.CreateStore(updated, object_ptr);
+                        } else {
+                            llvm::Value* updated = builder.CreateInsertElement(vec_val, rhs,
+                                builder.getInt32(component_index), "vec.insert");
+                            builder.CreateStore(updated, object_ptr);
+                        }
+                        return rhs;
+                    }
+                    
                     if (aria_type->getKind() != TypeKind::STRUCT) {
-                        return nullptr;  // TODO: Support vector component assignment (.x = ...)
+                        return nullptr;
                     }
                     
                     StructType* struct_type = static_cast<StructType*>(aria_type);
@@ -10160,16 +10282,23 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     return builder.CreateXor(L, R, "xortmp");
                 case frontend::TokenType::TOKEN_SHIFT_LEFT:
-                    if (isLBIMType(L->getType())) {
-                        // TODO: Implement LBIM shift via runtime function
-                        // For now, return L unchanged to avoid LLVM verification failure
-                        return L;
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        return generateLBIMShl(L, R, numLimbs);
                     }
                     return builder.CreateShl(L, R, "shltmp");
                 case frontend::TokenType::TOKEN_SHIFT_RIGHT: {
-                    if (isLBIMType(L->getType())) {
-                        // TODO: Implement LBIM shift via runtime function
-                        return L;
+                    if (unsigned numLimbs = isLBIMType(L->getType())) {
+                        // Determine signedness for arithmetic vs logical shift
+                        bool shiftSigned = false;
+                        if (binop->left && binop->left->type == ASTNode::NodeType::IDENTIFIER) {
+                            auto* ident = static_cast<IdentifierExpr*>(binop->left.get());
+                            auto it = var_aria_types.find(ident->name);
+                            if (it != var_aria_types.end()) {
+                                const std::string& tn = it->second;
+                                shiftSigned = (tn.find("int") == 0 || tn == "nit");
+                            }
+                        }
+                        return generateLBIMShr(L, R, numLimbs, shiftSigned);
                     }
                     // BUG-3 fix: signed types now reach codegen, need arithmetic shift.
                     // Determine signedness from Aria type to pick AShr vs LShr.
@@ -10598,16 +10727,26 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     continue;  // Skip this field on error
                 }
                 
-                // For now, assume fields are in order (index i corresponds to struct field i)
-                // TODO: Implement proper field name lookup to get correct indices
+                // Determine the actual field index by name from the type system
+                size_t field_idx = i; // default: positional
+                if (type_system) {
+                    Type* ariaType = type_system->getStructType(objLit->type_name);
+                    if (ariaType && ariaType->getKind() == TypeKind::STRUCT) {
+                        StructType* st = static_cast<StructType*>(ariaType);
+                        int idx = st->getFieldIndex(field.name);
+                        if (idx >= 0) {
+                            field_idx = static_cast<size_t>(idx);
+                        }
+                    }
+                }
                 
                 // Create GEP to access the field
-                llvm::Value* field_ptr = builder.CreateStructGEP(struct_type, struct_alloca, i, 
+                llvm::Value* field_ptr = builder.CreateStructGEP(struct_type, struct_alloca, field_idx, 
                                                                 field.name + ".ptr");
                 
                 // Get the LLVM type of this struct field
                 llvm::StructType* st = llvm::cast<llvm::StructType>(struct_type);
-                llvm::Type* field_llvm_type = st->getElementType(i);
+                llvm::Type* field_llvm_type = st->getElementType(field_idx);
                 
                 // If the field is an array type but the value is a pointer (from ARRAY_LITERAL),
                 // we need to copy the array contents element-by-element instead of storing a pointer.

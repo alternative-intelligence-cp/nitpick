@@ -166,6 +166,65 @@ bool is_negative(const uint64_t* limbs) {
     return (limbs[N-1] >> 63) & 1;
 }
 
+// Logical left shift by arbitrary amount
+template<int N>
+void shift_left(uint64_t* result, const uint64_t* a, uint32_t shift) {
+    memset(result, 0, N * sizeof(uint64_t));
+    if (shift >= (uint32_t)(N * 64)) return;
+    uint32_t limb_shift = shift / 64;
+    uint32_t bit_shift = shift % 64;
+    if (bit_shift == 0) {
+        for (int i = N - 1; i >= (int)limb_shift; --i)
+            result[i] = a[i - limb_shift];
+    } else {
+        for (int i = N - 1; i >= (int)limb_shift; --i) {
+            result[i] = a[i - limb_shift] << bit_shift;
+            if (i > (int)limb_shift)
+                result[i] |= a[i - limb_shift - 1] >> (64 - bit_shift);
+        }
+    }
+}
+
+// Logical right shift by arbitrary amount
+template<int N>
+void shift_right_logical(uint64_t* result, const uint64_t* a, uint32_t shift) {
+    memset(result, 0, N * sizeof(uint64_t));
+    if (shift >= (uint32_t)(N * 64)) return;
+    uint32_t limb_shift = shift / 64;
+    uint32_t bit_shift = shift % 64;
+    if (bit_shift == 0) {
+        for (int i = 0; i < N - (int)limb_shift; ++i)
+            result[i] = a[i + limb_shift];
+    } else {
+        for (int i = 0; i < N - (int)limb_shift; ++i) {
+            result[i] = a[i + limb_shift] >> bit_shift;
+            if (i + (int)limb_shift + 1 < N)
+                result[i] |= a[i + limb_shift + 1] << (64 - bit_shift);
+        }
+    }
+}
+
+// Arithmetic right shift by arbitrary amount (sign-extends)
+template<int N>
+void shift_right_arithmetic(uint64_t* result, const uint64_t* a, uint32_t shift) {
+    bool neg = is_negative<N>(a);
+    if (shift >= (uint32_t)(N * 64)) {
+        memset(result, neg ? 0xFF : 0, N * sizeof(uint64_t));
+        return;
+    }
+    shift_right_logical<N>(result, a, shift);
+    if (neg) {
+        uint32_t limb_shift = shift / 64;
+        uint32_t bit_shift = shift % 64;
+        if (bit_shift != 0 && (int)limb_shift < N) {
+            uint64_t mask = ~((1ULL << (64 - bit_shift)) - 1);
+            result[N - limb_shift - 1] |= mask;
+        }
+        for (int i = N - (int)limb_shift; i < N; ++i)
+            result[i] = ~0ULL;
+    }
+}
+
 // Check if ERR sentinel (minimum signed value: 0x8000...0000)
 template<int N>
 bool is_err_sentinel(const uint64_t* limbs) {
@@ -647,3 +706,30 @@ extern "C" aria_int1024_t aria_lbim_not1024(aria_int1024_t a) {
     for (int i = 0; i < 16; ++i) r.limbs[i] = ~a.limbs[i];
     return r;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Shift Operations (int128/256/512/1024)
+// Left shift (shl), logical right shift (lshr), arithmetic right shift (ashr)
+// ERR sentinel is preserved through shifts.
+// ═══════════════════════════════════════════════════════════════════════
+
+#define LBIM_SHIFT_IMPL(BITS, LIMBS) \
+extern "C" aria_int##BITS##_t aria_lbim_shl##BITS(aria_int##BITS##_t a, uint32_t s) { \
+    if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
+    aria_int##BITS##_t r; shift_left<LIMBS>(r.limbs, a.limbs, s); return r; \
+} \
+extern "C" aria_int##BITS##_t aria_lbim_lshr##BITS(aria_int##BITS##_t a, uint32_t s) { \
+    if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
+    aria_int##BITS##_t r; shift_right_logical<LIMBS>(r.limbs, a.limbs, s); return r; \
+} \
+extern "C" aria_int##BITS##_t aria_lbim_ashr##BITS(aria_int##BITS##_t a, uint32_t s) { \
+    if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
+    aria_int##BITS##_t r; shift_right_arithmetic<LIMBS>(r.limbs, a.limbs, s); return r; \
+}
+
+LBIM_SHIFT_IMPL(128,  2)
+LBIM_SHIFT_IMPL(256,  4)
+LBIM_SHIFT_IMPL(512,  8)
+LBIM_SHIFT_IMPL(1024, 16)
+
+#undef LBIM_SHIFT_IMPL
