@@ -1,0 +1,55 @@
+// Test: Division-by-Zero Check Elimination (v0.14.4)
+// Compile: ariac --verify --smt-opt -v test_fastpath_divzero.aria -o test_fastpath_divzero
+// Expected: Division-by-zero checks eliminated where divisor is Rules-constrained
+// to never be zero. Safe division with zero-check select for unconstrained divisors.
+
+Rules:NonZero = { $ >= 1, $ <= 1000 };
+
+Rules:SmallNonZero = { $ >= 1, $ <= 50 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Division by Rules-constrained non-zero divisor → check eliminated
+func:test_div_safe = int32() {
+    limit<NonZero> int32:a = 100;
+    limit<NonZero> int32:b = 5;
+    int32:result = a / b;
+    pass result;
+};
+
+// Test 2: Modulo by Rules-constrained non-zero divisor → check eliminated
+func:test_mod_safe = int32() {
+    limit<NonZero> int32:x = 42;
+    limit<SmallNonZero> int32:y = 7;
+    int32:remainder = x % y;
+    pass remainder;
+};
+
+// Test 3: Division by literal non-zero → check should be eliminated via range inference
+func:test_div_literal = int32() {
+    int32:a = 100i32;
+    int32:b = 5i32;
+    int32:result = a / b;
+    pass result;
+};
+
+// Test 4: Multiple divisions in one function
+func:test_multi_div = int32() {
+    limit<NonZero> int32:a = 200;
+    limit<NonZero> int32:b = 10;
+    limit<SmallNonZero> int32:c = 4;
+    int32:d1 = a / b;
+    int32:d2 = a / c;
+    int32:d3 = a % b;
+    pass d1;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_div_safe();
+    int32:r2 = raw test_mod_safe();
+    int32:r3 = raw test_div_literal();
+    int32:r4 = raw test_multi_div();
+    exit 0;
+};

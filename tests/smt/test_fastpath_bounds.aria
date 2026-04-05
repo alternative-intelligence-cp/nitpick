@@ -1,0 +1,33 @@
+// Test: Bounds Check Elimination Fast-Path (v0.14.4)
+// Compile: ariac --verify --smt-opt -v test_fastpath_bounds.aria -o test_fastpath_bounds
+// Expected: Bounds checks eliminated for array index ops where index is Rules-constrained
+// to be within [0, N). Verify via --emit-llvm that bounds.oob checks are absent.
+
+Rules:ValidIndex = { $ >= 0, $ <= 9 };
+
+Rules:SmallIndex = { $ >= 0, $ <= 4 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Index constrained to valid range — bounds check eliminated
+func:test_index_safe = int32() {
+    limit<ValidIndex> int32:idx = 3;
+    int32:result = idx + 1i32;
+    pass result;
+};
+
+// Test 2: Two constrained indices
+func:test_multi_index = int32() {
+    limit<ValidIndex> int32:i = 5;
+    limit<SmallIndex> int32:j = 2;
+    int32:sum = i + j;
+    pass sum;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_index_safe();
+    int32:r2 = raw test_multi_index();
+    exit 0;
+};

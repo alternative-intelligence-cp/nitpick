@@ -257,9 +257,12 @@ set(SEMA_SOURCES
 if(Z3_FOUND)
     set(VERIFY_SOURCES
         src/analysis/z3_verifier.cpp
+        src/analysis/range_analysis.cpp
     )
 else()
-    set(VERIFY_SOURCES "")
+    set(VERIFY_SOURCES
+        src/analysis/range_analysis.cpp
+    )
 endif()
 
 # Phase 4: IR Generation

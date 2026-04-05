@@ -187,6 +187,11 @@ private:
     // under Rules constraints. Codegen uses plain add/sub/mul instead of safe variants.
     std::set<ASTNode*> overflow_check_safe;  // Arithmetic cannot overflow
 
+    // v0.14.4: Division-by-zero check elimination — BINARY_OP nodes (/ and %) where
+    // the divisor is proven non-zero via Rules/range inference. Codegen uses plain
+    // sdiv/srem instead of the safe variant with zero-check select.
+    std::set<ASTNode*> div_check_safe;  // Divisor is never zero
+
     // v0.5.0: Null check elimination — UNWRAP/NULL_COALESCE nodes proven non-null
     // under Rules constraints. Codegen skips the null/None branch entirely.
     std::set<ASTNode*> null_check_safe;  // Expression is never null/zero
@@ -237,6 +242,10 @@ public:
     /// Register BINARY_OP nodes with provably no overflow (use plain arithmetic)
     void setOverflowCheckSafe(const std::set<ASTNode*>& nodes) {
         overflow_check_safe = nodes;
+    }
+    /// Register BINARY_OP (/ %) nodes with provably non-zero divisor (skip zero check)
+    void setDivCheckSafe(const std::set<ASTNode*>& nodes) {
+        div_check_safe = nodes;
     }
     /// Register UNWRAP/NULL_COALESCE nodes with provably non-null expression (skip null check)
     void setNullCheckSafe(const std::set<ASTNode*>& nodes) {

@@ -1,0 +1,49 @@
+// Test: Verify-Level Gating (v0.14.3)
+// Tests that --verify-level correctly gates verification phases.
+//
+// Level 1 (fast):     Rules consistency only, user assertions still run
+// Level 2 (standard): + contracts + overflow + elimination passes
+// Level 3 (thorough): + concurrency + memory + progress reporting
+//
+// Compile at each level:
+//   ariac --verify-level=1 -v test_verify_level.aria -o test_verify_level
+//   ariac --verify-level=2 -v test_verify_level.aria -o test_verify_level
+//   ariac --verify-level=3 -v test_verify_level.aria -o test_verify_level
+//
+// Expected:
+//   Level 1: Phase 3.25 runs, Phases 2/3/4+ skipped, Phase 6 runs (prove passes)
+//   Level 2: All standard phases run, overflow checks eliminated
+//   Level 3: Same as 2 but with per-function progress output
+
+Rules:Bounded = { $ >= 1, $ <= 1000 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:safe_add = int32(int32:a, int32:b) {
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:literal_no_overflow = int32() {
+    int32:x = 100i32;
+    int32:y = 200i32;
+    int32:z = x + y;
+    pass z;
+};
+
+func:bounded_multiply = int32() {
+    limit<Bounded> int32:x = 10;
+    int32:result = x * 2i32;
+    pass result;
+};
+
+prove(1i32 + 1i32 == 2i32);
+
+func:main = int32() {
+    int32:r1 = raw safe_add(100i32, 200i32);
+    int32:r2 = raw literal_no_overflow();
+    int32:r3 = raw bounded_multiply();
+    exit 0;
+};

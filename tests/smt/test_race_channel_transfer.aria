@@ -1,0 +1,44 @@
+// test_race_channel_transfer.aria — v0.14.2 Channel Synchronization
+// Compile with: ariac --verify-concurrency --verify-report -v test_race_channel_transfer.aria
+//
+// Tests that channel operations are recognized as synchronization points.
+// Variables used as channel handles should not trigger race warnings.
+
+extern func:puts = int32(string:s);
+extern func:aria_libc_thread_spawn = int64(wild ?*:func, int64:arg);
+extern func:aria_libc_thread_join = int32(int64:handle);
+extern func:aria_shim_channel_create = int64(int64:capacity);
+extern func:aria_shim_channel_send = int32(int64:handle, int64:data);
+extern func:aria_shim_channel_recv = int64(int64:handle);
+extern func:aria_shim_channel_destroy = NIL(int64:handle);
+
+// Shared channel
+int64:ch = 0i64;
+
+// Worker: sends data through channel
+func:channel_worker = int64(int64:arg) {
+    drop aria_shim_channel_send(ch, 42i64);
+    pass 0i64;
+};
+
+// Spawner: receives data from channel
+// Expected: PROVEN race-free (channel provides synchronization)
+func:test_channel_transfer = NIL() {
+    ch = aria_shim_channel_create(1i64);
+    int64:t1 = aria_libc_thread_spawn(@channel_worker, 0i64);
+    int64:val = aria_shim_channel_recv(ch);
+    drop aria_libc_thread_join(t1);
+    drop aria_shim_channel_destroy(ch);
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE");
+    exit 1;
+};
+
+func:main = int32() {
+    drop puts("=== Channel Transfer Test ===");
+    drop test_channel_transfer();
+    drop puts("=== Done ===");
+    exit 0;
+};

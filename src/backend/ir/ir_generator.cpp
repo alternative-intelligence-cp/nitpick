@@ -7836,6 +7836,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 result = generateLBIMDiv(currentVal, rhs, numLimbs);
                             } else if (isFP) {
                                 result = builder.CreateFDiv(currentVal, rhs, "fdivtmp");
+                            } else if (div_check_safe.count(binop)) {
+                                // v0.14.4: Divisor proven non-zero
+                                std::cerr << "[SMT-OPT] Div-zero check eliminated for /= at line "
+                                          << binop->line << std::endl;
+                                result = builder.CreateSDiv(currentVal, rhs, "divtmp");
                             } else {
                                 // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
                                 result = generateSafeSDiv(currentVal, rhs, "divtmp");
@@ -7846,6 +7851,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 result = generateLBIMMod(currentVal, rhs, numLimbs);
                             } else if (isFP) {
                                 result = builder.CreateFRem(currentVal, rhs, "fremtmp");
+                            } else if (div_check_safe.count(binop)) {
+                                // v0.14.4: Divisor proven non-zero
+                                std::cerr << "[SMT-OPT] Div-zero check eliminated for %%= at line "
+                                          << binop->line << std::endl;
+                                result = builder.CreateSRem(currentVal, rhs, "modtmp");
                             } else {
                                 // Layer 1 Safety: Safe modulo returns Unknown on divide-by-zero
                                 result = generateSafeSRem(currentVal, rhs, "modtmp");
@@ -9043,6 +9053,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                         return builder.CreateFDiv(L, R, "fdivtmp");
                     }
+                    // v0.14.4: Division-by-zero check elimination
+                    if (div_check_safe.count(expr)) {
+                        std::cerr << "[SMT-OPT] Div-zero check eliminated for division at line "
+                                  << expr->line << std::endl;
+                        return builder.CreateSDiv(L, R, "divtmp");
+                    }
                     // Layer 1 Safety: Safe division returns Unknown on divide-by-zero
                     return generateSafeSDiv(L, R, "divtmp");
                 case frontend::TokenType::TOKEN_PERCENT:
@@ -9085,6 +9101,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // ARIA-024: LBIM modulo for large integers (int128/256/512)
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         return generateLBIMMod(L, R, numLimbs);
+                    }
+                    // v0.14.4: Division-by-zero check elimination
+                    if (div_check_safe.count(expr)) {
+                        std::cerr << "[SMT-OPT] Div-zero check eliminated for modulo at line "
+                                  << expr->line << std::endl;
+                        return builder.CreateSRem(L, R, "modtmp");
                     }
                     // Layer 1 Safety: Safe modulo returns Unknown on divide-by-zero
                     return generateSafeSRem(L, R, "modtmp");
