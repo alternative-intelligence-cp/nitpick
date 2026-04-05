@@ -184,8 +184,10 @@ static FracT normalize(FracT f) {
     }
     
     // Sign handling: If whole != 0, move sign to whole
+    // Borrow 1 from whole so num becomes positive: w + (-n/d) = (w-1) + (d-n)/d
     if (f.whole != 0 && f.num < 0) {
-        f.num = -f.num;
+        f.whole = tbb_sub(f.whole, (T)1);
+        f.num = f.denom + f.num;  // num is negative, so denom + num = denom - |num|
     }
     
     return f;

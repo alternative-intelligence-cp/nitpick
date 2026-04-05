@@ -344,7 +344,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         throw std::runtime_error("Null member access expression");
     }
     
-    std::cerr << "[DEBUG codegenMemberAccess] member: " << expr->member << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] member: " << expr->member << std::endl;
     
     // Generate code for the object
     llvm::Value* objectVal = codegenExpressionNode(expr->object.get(), this);
@@ -352,9 +352,11 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         throw std::runtime_error("Failed to generate code for member access object");
     }
     
+#ifdef ARIA_DEBUG_CODEGEN
     std::cerr << "[DEBUG codegenMemberAccess] objectVal type: ";
     objectVal->getType()->print(llvm::errs());
     std::cerr << std::endl;
+#endif
     
     // Handle pointer member access (ptr->member)
     // This is equivalent to (*ptr).member - dereference then access
@@ -376,43 +378,51 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
     // Reference: include/runtime/result.h - layout is { T value, void* error, bool is_error }
     // The type checker has already validated that this is a Result type with valid members
     if (objectType->isStructTy() && objectType->getStructNumElements() == 3) {
+#ifdef ARIA_DEBUG_CODEGEN
         std::cerr << "[DEBUG_RESULT_ACCESS] Accessing member '" << expr->member << "' on 3-field struct" << std::endl;
         std::cerr << "[DEBUG_RESULT_ACCESS] objectVal is instruction: " << llvm::isa<llvm::Instruction>(objectVal) << std::endl;
         std::cerr << "[DEBUG_RESULT_ACCESS] objectVal is argument: " << llvm::isa<llvm::Argument>(objectVal) << std::endl;
         std::cerr << "[DEBUG_RESULT_ACCESS] objectVal type: ";
         objectVal->getType()->print(llvm::errs());
         std::cerr << std::endl;
+#endif
         
         // Check if this looks like a Result struct based on member names
         // (The type checker already validated this is a Result type)
         if (expr->member == "is_error") {
             // Field 2: is_error (bool)
-            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting is_error (field 2)" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG_RESULT_ACCESS] Extracting is_error (field 2)" << std::endl;
             llvm::Value* result = builder.CreateExtractValue(objectVal, 2, "is_error");
+#ifdef ARIA_DEBUG_CODEGEN
             std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
             result->getType()->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             return result;
         }
         else if (expr->member == "value") {
             // Field 0: value (T)
-            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting value (field 0)" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG_RESULT_ACCESS] Extracting value (field 0)" << std::endl;
             llvm::Value* result = builder.CreateExtractValue(objectVal, 0, "value");
+#ifdef ARIA_DEBUG_CODEGEN
             std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
             result->getType()->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             return result;
         }
         else if (expr->member == "error") {
             // Field 1: error (stored as void* via inttoptr in fail())
             // Convert back to int32 error code (matches failsafe tbb32 convention)
-            std::cerr << "[DEBUG_RESULT_ACCESS] Extracting error (field 1)" << std::endl;
+            ARIA_DBG_STREAM << "[DEBUG_RESULT_ACCESS] Extracting error (field 1)" << std::endl;
             llvm::Value* errorPtr = builder.CreateExtractValue(objectVal, 1, "error_ptr");
             // Convert ptr directly to int32 error code
             llvm::Value* result = builder.CreatePtrToInt(errorPtr, builder.getInt32Ty(), "error_code");
+#ifdef ARIA_DEBUG_CODEGEN
             std::cerr << "[DEBUG_RESULT_ACCESS] Extracted value type: ";
             result->getType()->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             return result;
         }
     }
@@ -537,7 +547,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         llvm::StructType* structType = llvm::cast<llvm::StructType>(objectType);
         std::string structName = structType->hasName() ? structType->getName().str() : "";
         
-        std::cerr << "[DEBUG codegenMemberAccess] Struct type: " << structName 
+        ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Struct type: " << structName 
                   << ", num elements: " << structType->getNumElements() << std::endl;
         
         // Get the struct type info from type system to find field index
@@ -552,7 +562,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
             auto typeIt = var_aria_types.find(objIdent->name);
             if (typeIt != var_aria_types.end()) {
                 std::string ariaTypeName = typeIt->second;
-                std::cerr << "[DEBUG codegenMemberAccess] Variable " << objIdent->name 
+                ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Variable " << objIdent->name 
                           << " has Aria type: " << ariaTypeName << std::endl;
                 
                 // Try to get field index from type system
@@ -562,7 +572,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                         StructType* structType = static_cast<StructType*>(ariaType);
                         int fieldIndex = structType->getFieldIndex(expr->member);
                         if (fieldIndex >= 0) {
-                            std::cerr << "[DEBUG codegenMemberAccess] Found field '" << expr->member 
+                            ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Found field '" << expr->member 
                                      << "' at index " << fieldIndex << std::endl;
                             return builder.CreateExtractValue(objectVal, fieldIndex, expr->member);
                         } else {
@@ -584,7 +594,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                         StructType* sType = static_cast<StructType*>(fallbackType);
                         int fidx = sType->getFieldIndex(expr->member);
                         if (fidx >= 0) {
-                            std::cerr << "[DEBUG codegenMemberAccess] Fallback lookup found field '"
+                            ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Fallback lookup found field '"
                                      << expr->member << "' at index " << fidx << std::endl;
                             return builder.CreateExtractValue(objectVal, fidx, expr->member);
                         }
@@ -593,7 +603,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                 
                 // Last resort: single-field struct extraction
                 if (structType->getNumElements() == 1) {
-                    std::cerr << "[DEBUG codegenMemberAccess] Single-field struct, extracting field 0" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Single-field struct, extracting field 0" << std::endl;
                     return builder.CreateExtractValue(objectVal, 0, expr->member);
                 }
                 
@@ -615,7 +625,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                 StructType* sType = static_cast<StructType*>(fallbackType);
                 int fidx = sType->getFieldIndex(expr->member);
                 if (fidx >= 0) {
-                    std::cerr << "[DEBUG codegenMemberAccess] Outer fallback found field '"
+                    ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Outer fallback found field '"
                              << expr->member << "' at index " << fidx << std::endl;
                     return builder.CreateExtractValue(objectVal, fidx, expr->member);
                 }
@@ -623,7 +633,7 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         }
         
         // Last resort: try to extract value at index 0 for single-field structs
-        std::cerr << "[DEBUG codegenMemberAccess] Unknown struct type, attempting index 0" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG codegenMemberAccess] Unknown struct type, attempting index 0" << std::endl;
         if (structType->getNumElements() > 0) {
             return builder.CreateExtractValue(objectVal, 0, expr->member);
         }
@@ -1099,7 +1109,7 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
 llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     AwaitExpr* expr = static_cast<AwaitExpr*>(node);
     
-    std::cerr << "[DEBUG AWAIT] Entering codegenAwait" << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG AWAIT] Entering codegenAwait" << std::endl;
     
     // Check that we're in an async function context
     llvm::Function* current_func = builder.GetInsertBlock()->getParent();
@@ -1111,15 +1121,15 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     // Async functions have special metadata or naming convention
     // For now, check if function name contains "async" or has async attribute
     std::string func_name = std::string(current_func->getName());
-    std::cerr << "[DEBUG AWAIT] Function name: " << func_name << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG AWAIT] Function name: " << func_name << std::endl;
     bool is_async = func_name.find("async") != std::string::npos;
     
-    std::cerr << "[DEBUG AWAIT] is_async (from name): " << is_async << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG AWAIT] is_async (from name): " << is_async << std::endl;
     
     // Also check function metadata for async marker (if set by frontend)
     if (!is_async && current_func->hasMetadata("aria.async")) {
         is_async = true;
-        std::cerr << "[DEBUG AWAIT] is_async (from metadata): true" << std::endl;
+        ARIA_DBG_STREAM << "[DEBUG AWAIT] is_async (from metadata): true" << std::endl;
     }
     
     if (!is_async) {
@@ -1134,7 +1144,7 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
         return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
     }
     
-    std::cerr << "[DEBUG AWAIT] Async check passed, continuing..." << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG AWAIT] Async check passed, continuing..." << std::endl;
     
     // Step 1: Evaluate the operand (should return a coroutine handle ptr)
     llvm::Value* coro_handle = codegenExpressionNode(expr->operand.get(), this);
@@ -1820,7 +1830,7 @@ llvm::Value* ExprCodegen::codegenObjectLiteral(ObjectLiteralExpr* expr) {
  */
 llvm::Value* ExprCodegen::codegenGPUIntrinsic(const std::string& intrinsic_name,
                                                CallExpr* call_expr) {
-    std::cerr << "[GPU] Generating intrinsic: gpu." << intrinsic_name << std::endl;
+    ARIA_DBG_STREAM << "[GPU] Generating intrinsic: gpu." << intrinsic_name << std::endl;
     
     // Helper lambda to get or declare NVVM intrinsic
     auto getOrDeclareNVVMIntrinsic = [this](const std::string& name, llvm::Type* returnType) -> llvm::Function* {

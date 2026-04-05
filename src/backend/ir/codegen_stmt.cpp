@@ -564,21 +564,8 @@ void StmtCodegen::addNVVMKernelMetadata(llvm::Function* func) {
  * Reference: research_021 (GC), research_022 (Wild/WildX)
  */
 void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
-    // TEMP DEBUG for fix256 investigation
-    printf("[CODEGEN VARDECL] Variable '%s' typeName='%s'\n", 
-           stmt->varName.c_str(), stmt->typeName.c_str());
-    fflush(stdout);
-    
     // Get LLVM type from type string
     llvm::Type* var_type = getLLVMTypeFromString(stmt->typeName);
-    
-    // DEBUG: Show what type was returned
-    std::string type_desc;
-    llvm::raw_string_ostream rso(type_desc);
-    var_type->print(rso);
-    printf("[CODEGEN VARDECL] After getLLVMTypeFromString('%s'): type=%s\n",
-           stmt->typeName.c_str(), rso.str().c_str());
-    fflush(stdout);
     
     // Get the current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
@@ -1522,11 +1509,11 @@ void StmtCodegen::codegenWhile(WhileStmt* stmt) {
  *   ; continue execution
  */
 void StmtCodegen::codegenFor(ForStmt* stmt) {
-    std::cout << "[FOR DEBUG] ======== codegenFor CALLED ========\n" << std::flush;
-    std::cout << "[FOR DEBUG] Has initializer: " << (stmt->initializer != nullptr) << "\n" << std::flush;
-    std::cout << "[FOR DEBUG] Has condition: " << (stmt->condition != nullptr) << "\n" << std::flush;
-    std::cout << "[FOR DEBUG] Has update: " << (stmt->update != nullptr) << "\n" << std::flush;
-    std::cout << "[FOR DEBUG] Is range-based: " << stmt->isRangeBased << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[FOR DEBUG] ======== codegenFor CALLED ========\n" << std::flush;
+    ARIA_DBG_STREAM << "[FOR DEBUG] Has initializer: " << (stmt->initializer != nullptr) << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[FOR DEBUG] Has condition: " << (stmt->condition != nullptr) << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[FOR DEBUG] Has update: " << (stmt->update != nullptr) << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[FOR DEBUG] Is range-based: " << stmt->isRangeBased << "\n" << std::flush;
     
     // Get current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
@@ -2210,7 +2197,7 @@ void StmtCodegen::codegenWhen(WhenStmt* stmt) {
  */
 void StmtCodegen::codegenPick(PickStmt* stmt) {
     std::cerr << "[DEBUG PICK] codegenPick called with " << stmt->cases.size() << " cases" <<  std::endl << std::flush;
-    std::cout << "[DEBUG PICK] codegenPick called with " << stmt->cases.size() << " cases" << std::endl << std::flush;
+    ARIA_DBG_STREAM << "[DEBUG PICK] codegenPick called with " << stmt->cases.size() << " cases" << std::endl << std::flush;
     
     // Get current function
     llvm::Function* func = builder.GetInsertBlock()->getParent();
@@ -3005,7 +2992,7 @@ void StmtCodegen::codegenStatement(ASTNode* stmt) {
         ~DepthGuard() { --depth; }
     } guard(codegen_depth_);
 
-    std::cout << "[STMT DEBUG] codegenStatement called, node type = " << static_cast<int>(stmt->type) << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[STMT DEBUG] codegenStatement called, node type = " << static_cast<int>(stmt->type) << "\n" << std::flush;
 
     switch (stmt->type) {
         case ASTNode::NodeType::VAR_DECL:

@@ -179,12 +179,6 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
 // Helper: Get LLVM type from Aria type name string
 // Complete mapping for all Aria primitive types from specs
 llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
-    // TEMP DEBUG for fix256 investigation
-    if (typeName == "fix256" || typeName.find("fix") != std::string::npos) {
-        printf("[GET_LLVM_TYPE DEBUG] Called with typeName='%s'\n", typeName.c_str());
-        fflush(stdout);
-    }
-    
     // Integer types
     if (typeName == "int1") return llvm::Type::getInt1Ty(context);
     if (typeName == "int2") return llvm::Type::getInt8Ty(context);   // Smallest LLVM int
@@ -479,16 +473,16 @@ std::string ExprCodegen::getExprTBBTypeName(ASTNode* expr) {
 // Helper: Get exotic type name from an expression (returns empty string if not exotic)
 std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
     if (!expr) {
-        std::cerr << "[EXOTIC_CHECK] expr is null" << std::endl;
+        ARIA_DBG_STREAM << "[EXOTIC_CHECK] expr is null" << std::endl;
         return "";
     }
 
-    std::cerr << "[EXOTIC_CHECK] expr type = " << static_cast<int>(expr->type) << std::endl;
+    ARIA_DBG_STREAM << "[EXOTIC_CHECK] expr type = " << static_cast<int>(expr->type) << std::endl;
 
     // For identifiers, look up in var_aria_types
     if (expr->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
-        std::cerr << "[EXOTIC_CHECK] identifier name = " << ident->name << std::endl;
+        ARIA_DBG_STREAM << "[EXOTIC_CHECK] identifier name = " << ident->name << std::endl;
         auto it = var_aria_types.find(ident->name);
         if (it != var_aria_types.end()) {
             const std::string& typeName = it->second;
@@ -498,7 +492,7 @@ std::string ExprCodegen::getExprExoticTypeName(ASTNode* expr) {
                 return typeName;
             }
         } else {
-            std::cerr << "[EXOTIC_CHECK] identifier '" << ident->name << "' NOT in var_aria_types!" << std::endl;
+            ARIA_DBG_STREAM << "[EXOTIC_CHECK] identifier '" << ident->name << "' NOT in var_aria_types!" << std::endl;
         }
     }
 
@@ -1263,7 +1257,7 @@ llvm::Value* ExprCodegen::promoteLiteralToLBIM(llvm::Value* literal, llvm::Type*
         return literal;
     }
     
-    std::cerr << "[LBIM_PROMOTE] Promoting literal to " << structName << " (" << numLimbs << " limbs)" << std::endl;
+    ARIA_DBG_STREAM << "[LBIM_PROMOTE] Promoting literal to " << structName << " (" << numLimbs << " limbs)" << std::endl;
 
     // Wide-path: for i128+ inputs, split into 64-bit limbs via shift+trunc
     if (literal->getType()->getIntegerBitWidth() > 64) {
@@ -1451,8 +1445,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             if (apfloat_opt) {
                 llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
+#ifdef ARIA_DEBUG_CODEGEN
                 result->getType()->print(llvm::errs());
                 std::cerr << std::endl;
+#endif
                 return result;
             }
             // Fall through to variant handling on conversion failure
@@ -1472,8 +1468,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             if (apint_opt) {
                 llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";
+#ifdef ARIA_DEBUG_CODEGEN
                 result->getType()->print(llvm::errs());
                 std::cerr << std::endl;
+#endif
                 return result;
             }
             // Fall through to variant handling on conversion failure
@@ -1517,8 +1515,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         double val = std::get<double>(expr->value);
         llvm::Value* result = llvm::ConstantFP::get(context, llvm::APFloat(val));
         ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: float " << val << " -> type: ";
+#ifdef ARIA_DEBUG_CODEGEN
         result->getType()->print(llvm::errs());
         std::cerr << std::endl;
+#endif
         return result;
     }
     
@@ -1534,8 +1534,10 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             // For now, default to int32 (will be handled better with type inference)
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
             ARIA_DBG_STREAM << "[DEBUG] ERR literal - generating sentinel for type: ";
+#ifdef ARIA_DEBUG_CODEGEN
             target_type->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             return getTBBSentinel(target_type);
         }
         
@@ -1543,12 +1545,16 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             // unknown sentinel - similar to ERR but uses max value instead of min
             llvm::Type* target_type = llvm::Type::getInt32Ty(context);
             ARIA_DBG_STREAM << "[DEBUG] unknown literal - generating sentinel for type: ";
+#ifdef ARIA_DEBUG_CODEGEN
             target_type->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             llvm::Value* sentinel = getUnknownSentinel(target_type);
             ARIA_DBG_STREAM << "[DEBUG] unknown sentinel generated, result type: ";
+#ifdef ARIA_DEBUG_CODEGEN
             sentinel->getType()->print(llvm::errs());
             std::cerr << std::endl;
+#endif
             return sentinel;
         }
         
@@ -1559,7 +1565,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         if (pool_it != string_pool_.end()) {
             // Reuse existing string global
             str_gv = pool_it->second;
-            std::cerr << "[STRING POOL] Reusing pooled string: \"" << str << "\"" << std::endl;
+            ARIA_DBG_STREAM << "[STRING POOL] Reusing pooled string: \"" << str << "\"" << std::endl;
         } else {
             // Create new string global and add to pool
             llvm::Constant* str_data = llvm::ConstantDataArray::getString(context, str, true);
@@ -1572,7 +1578,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
                 ".str.data"
             );
             string_pool_[str] = str_gv;
-            std::cerr << "[STRING POOL] Created new pooled string: \"" << str << "\"" << std::endl;
+            ARIA_DBG_STREAM << "[STRING POOL] Created new pooled string: \"" << str << "\"" << std::endl;
         }
         
         // Get or create AriaString struct type
@@ -1667,8 +1673,10 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
         // Create a load instruction
         llvm::Value* loaded = builder.CreateLoad(loadType, var_ptr, expr->name);
         ARIA_DBG_STREAM << "[DEBUG] codegenIdentifier: " << expr->name << " -> type: ";
+#ifdef ARIA_DEBUG_CODEGEN
         loaded->getType()->print(llvm::errs());
         std::cerr << std::endl;
+#endif
         return loaded;
     }
     
@@ -2372,7 +2380,7 @@ llvm::Value* ExprCodegen::codegenExpressionNode(ASTNode* node, ExprCodegen* code
     } guard(codegen->expr_depth_);
     
     // Dispatch based on node type
-    std::cerr << "[DEBUG codegenExpressionNode] NodeType: " << static_cast<int>(node->type) << std::endl;
+    ARIA_DBG_STREAM << "[DEBUG codegenExpressionNode] NodeType: " << static_cast<int>(node->type) << std::endl;
     
     switch (node->type) {
         case ASTNode::NodeType::LITERAL:
