@@ -151,6 +151,9 @@ public:
     // Ensures all instances of this struct are aligned to N bytes
     uint64_t alignment = 0;    // 0 = natural alignment, >0 = explicit alignment in bytes
     
+    // v0.16.0-8: Visibility — pub struct: exports publicly, default is private
+    bool isPublic = false;
+    
     StructDeclStmt(const std::string& name, const std::vector<ASTNodePtr>& fieldList,
                    int line = 0, int column = 0)
         : ASTNode(NodeType::STRUCT_DECL, line, column),

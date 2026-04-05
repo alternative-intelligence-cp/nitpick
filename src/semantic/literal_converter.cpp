@@ -229,9 +229,14 @@ const llvm::fltSemantics& LiteralConverter::getFloatSemantics(FloatPrecision pre
             return llvm::APFloat::IEEEquad();    // 128-bit quadruple precision
         
         case FloatPrecision::FLT256:
+            // FLT256: Use PPCDoubleDouble (106-bit mantissa via double-double pair).
+            // True 256-bit IEEE requires MPFR; PPCDoubleDouble is the highest
+            // precision available in LLVM's APFloat beyond quad.
+            return llvm::APFloat::PPCDoubleDouble();
+        
         case FloatPrecision::FLT512:
-            // TODO: These require MPFR library integration (Phase 4)
-            // For now, use quadruple precision as fallback
+            // FLT512: No LLVM APFloat semantics above 128-bit IEEE.
+            // Use IEEEquad as ceiling until MPFR soft-float integration (Phase 4).
             return llvm::APFloat::IEEEquad();
         
         default:

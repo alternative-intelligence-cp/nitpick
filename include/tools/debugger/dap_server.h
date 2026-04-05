@@ -19,6 +19,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <functional>
 #include <thread>
@@ -151,6 +152,10 @@ private:
     int m_next_breakpoint_id;
     bool m_initialized;
     bool m_shutdown;
+    
+    // Variable reference tracking for expandable types (structs/arrays/pointers)
+    int m_next_var_ref = 100000;  // Start above scope encoding range (frame*1000+scope)
+    std::unordered_map<int, lldb::SBValue> m_var_refs;
     
     // Threading
     std::unique_ptr<std::thread> m_event_thread;

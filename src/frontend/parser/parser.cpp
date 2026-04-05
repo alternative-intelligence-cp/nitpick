@@ -2295,7 +2295,17 @@ ASTNodePtr Parser::parseStatement() {
             return funcStmt;
         }
         
-        // Not pub mod or pub func, restore position and continue
+        // Check for pub struct
+        if (match(TokenType::TOKEN_KW_STRUCT)) {
+            auto structStmt = parseStructDecl();
+            if (structStmt && structStmt->type == ASTNode::NodeType::STRUCT_DECL) {
+                auto sd = std::static_pointer_cast<StructDeclStmt>(structStmt);
+                sd->isPublic = true;
+            }
+            return structStmt;
+        }
+        
+        // Not pub mod or pub func or pub struct, restore position and continue
         current = saved;
     }
     
@@ -3265,9 +3275,10 @@ ASTNodePtr Parser::parseFuncDecl() {
     funcDecl->preconditions = preconditions;
     funcDecl->postconditions = postconditions;
     
-    // GPU/PTX Backend - Phase 3: Temporary gpu_ prefix detection
-    // TODO(Phase 3): Replace with proper #[gpu_kernel] attribute parsing
-    if (nameToken.lexeme.find("gpu_") == 0) {
+    // GPU/PTX Backend: GPU kernel detection via #[gpu_kernel] attribute
+    // Attribute path handles this at parseStatement() (line ~2820).
+    // Legacy gpu_ prefix fallback for backward compatibility with existing code:
+    if (nameToken.lexeme.find("gpu_") == 0 && !funcDecl->isGPUKernel) {
         funcDecl->isGPUKernel = true;
     }
     

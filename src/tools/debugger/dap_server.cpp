@@ -742,6 +742,10 @@ void DAPServer::handleContinue(const DAPMessage& request, DAPMessage& response) 
     
     std::cerr << "[DAP] Continue\n";
     
+    // Clear variable references — they become invalid when execution resumes
+    m_var_refs.clear();
+    m_next_var_ref = 100000;
+    
     if (!m_process.IsValid()) {
         response.success = false;
         response.message = "No process";
@@ -765,6 +769,8 @@ void DAPServer::handleNext(const DAPMessage& request, DAPMessage& response) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     std::cerr << "[DAP] Next (step over)\n";
+    m_var_refs.clear();
+    m_next_var_ref = 100000;
     
     if (!request.body || !(*request.body).contains("threadId")) {
         response.success = false;
@@ -789,6 +795,8 @@ void DAPServer::handleStepIn(const DAPMessage& request, DAPMessage& response) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     std::cerr << "[DAP] Step in\n";
+    m_var_refs.clear();
+    m_next_var_ref = 100000;
     
     if (!request.body || !(*request.body).contains("threadId")) {
         response.success = false;
@@ -813,6 +821,8 @@ void DAPServer::handleStepOut(const DAPMessage& request, DAPMessage& response) {
     std::lock_guard<std::mutex> lock(m_mutex);
     
     std::cerr << "[DAP] Step out\n";
+    m_var_refs.clear();
+    m_next_var_ref = 100000;
     
     if (!request.body || !(*request.body).contains("threadId")) {
         response.success = false;
@@ -1035,7 +1045,48 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
     
     int var_ref = (*request.body)["variablesReference"];
     
-    // Decode reference (frame_id * 1000 + scope)
+    nlohmann::json variables = nlohmann::json::array();
+    
+    // Child variable lookup — references >= 100000 are tracked expandable values
+    if (var_ref >= 100000) {
+        auto it = m_var_refs.find(var_ref);
+        if (it == m_var_refs.end()) {
+            response.success = false;
+            response.message = "Unknown variable reference";
+            return;
+        }
+        
+        lldb::SBValue parent = it->second;
+        uint32_t num_children = parent.GetNumChildren();
+        for (uint32_t i = 0; i < num_children; ++i) {
+            lldb::SBValue child = parent.GetChildAtIndex(i);
+            if (!child.IsValid()) continue;
+            
+            nlohmann::json var_json;
+            var_json["name"] = child.GetName() ? child.GetName() : "<unnamed>";
+            var_json["value"] = child.GetValue() ? child.GetValue() : 
+                               (child.GetSummary() ? child.GetSummary() : "<no value>");
+            var_json["type"] = child.GetTypeName() ? child.GetTypeName() : "<unknown>";
+            
+            // Recursively allow expansion of nested composites
+            if (child.GetNumChildren() > 0) {
+                int child_ref = m_next_var_ref++;
+                m_var_refs[child_ref] = child;
+                var_json["variablesReference"] = child_ref;
+            } else {
+                var_json["variablesReference"] = 0;
+            }
+            
+            variables.push_back(var_json);
+        }
+        
+        nlohmann::json body;
+        body["variables"] = variables;
+        response.body = new nlohmann::json(body);
+        return;
+    }
+    
+    // Decode scope reference (frame_id * 1000 + scope)
     int frame_id = var_ref / 1000;
     int scope = var_ref % 1000;
     
@@ -1053,8 +1104,6 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
         return;
     }
     
-    nlohmann::json variables = nlohmann::json::array();
-    
     if (scope == 1) {
         // Locals — get all local variables and arguments
         lldb::SBValueList locals = frame.GetVariables(true, true, false, true);
@@ -1069,7 +1118,14 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
                 var_json["name"] = value.GetName() ? value.GetName() : "<unnamed>";
                 var_json["value"] = value.GetValue() ? value.GetValue() : "<no value>";
                 var_json["type"] = value.GetTypeName() ? value.GetTypeName() : "<unknown>";
-                var_json["variablesReference"] = 0;  // TODO: Handle children
+                
+                if (value.GetNumChildren() > 0) {
+                    int ref = m_next_var_ref++;
+                    m_var_refs[ref] = value;
+                    var_json["variablesReference"] = ref;
+                } else {
+                    var_json["variablesReference"] = 0;
+                }
                 
                 variables.push_back(var_json);
             }
@@ -1085,7 +1141,14 @@ void DAPServer::handleVariables(const DAPMessage& request, DAPMessage& response)
                 var_json["name"] = value.GetName() ? value.GetName() : "<unnamed>";
                 var_json["value"] = value.GetValue() ? value.GetValue() : "<no value>";
                 var_json["type"] = value.GetTypeName() ? value.GetTypeName() : "<unknown>";
-                var_json["variablesReference"] = 0;
+                
+                if (value.GetNumChildren() > 0) {
+                    int ref = m_next_var_ref++;
+                    m_var_refs[ref] = value;
+                    var_json["variablesReference"] = ref;
+                } else {
+                    var_json["variablesReference"] = 0;
+                }
                 
                 variables.push_back(var_json);
             }

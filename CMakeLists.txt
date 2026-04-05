@@ -591,8 +591,10 @@ add_executable(aria-ls src/tools/lsp/aria-ls.cpp
     ${LEXER_SOURCES}
     ${PARSER_SOURCES}
     ${AST_SOURCES}
+    ${SEMA_SOURCES}
 )
-# LSP server needs lexer, parser, diagnostics for real-time error checking
+# LSP server needs lexer, parser, diagnostics, and sema for type checking
+target_link_libraries(aria-ls ${llvm_libs})
 
 # DAP server executable (Phase 7.4.3)
 if(LLDB_FOUND)

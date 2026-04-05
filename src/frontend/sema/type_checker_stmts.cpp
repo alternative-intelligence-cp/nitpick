@@ -4081,11 +4081,10 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     
                     Symbol* structSym = new Symbol(structDecl->structName, SymbolKind::TYPE, structType, nullptr, structDecl->line, structDecl->column);
                     
-                    // Export the struct as PUBLIC.
-                    // Note: StructDeclStmt currently lacks an isPublic field.
-                    // All module structs are exported as public. When the parser
-                    // adds `pub struct:` syntax, filter here like FuncDeclStmt does.
-                    module->moduleInfo->exportSymbol(structDecl->structName, structSym, Visibility::PUBLIC);
+                    // Export the struct based on its visibility.
+                    // pub struct: → PUBLIC, plain struct: → PRIVATE
+                    Visibility vis = structDecl->isPublic ? Visibility::PUBLIC : Visibility::PRIVATE;
+                    module->moduleInfo->exportSymbol(structDecl->structName, structSym, vis);
                 }
                 else if (decl->type == ASTNode::NodeType::TYPE_DECL) {
                     TypeDeclStmt* typeDecl = static_cast<TypeDeclStmt*>(decl.get());
