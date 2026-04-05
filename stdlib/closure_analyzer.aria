@@ -1,0 +1,70 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Self-hosted Closure Analyzer — v0.15.1
+// ═══════════════════════════════════════════════════════════════════════
+// Lambda capture detection and classification logic.
+// Walks lambda scope to identify captured variables and determine
+// capture mode (BY_VALUE, BY_REFERENCE, BY_MOVE).
+// ═══════════════════════════════════════════════════════════════════════
+
+use "std/io.aria".*;
+
+// ─── Constants ───────────────────────────────────────────────────────
+const int32:CAP_BY_VALUE     = 0i32;
+const int32:CAP_BY_REFERENCE = 1i32;
+const int32:CAP_BY_MOVE      = 2i32;
+
+// ─── C shim externs ──────────────────────────────────────────────────
+extern func:cla_new = wild int8*();
+extern func:cla_free = int32(wild int8*:state);
+extern func:cla_null_ptr = wild int8*();
+extern func:cla_release = int32(wild int8*:p);
+extern func:cla_add_param = int32(wild int8*:state, string:name);
+extern func:cla_add_local = int32(wild int8*:state, string:name);
+extern func:cla_is_param = int32(wild int8*:state, string:name);
+extern func:cla_is_local = int32(wild int8*:state, string:name);
+extern func:cla_record_capture = int32(wild int8*:state, string:name);
+extern func:cla_mark_mutated = int32(wild int8*:state, string:name);
+extern func:cla_mark_addr_taken = int32(wild int8*:state, string:name);
+extern func:cla_capture_count = int32(wild int8*:state);
+extern func:cla_capture_name = string(wild int8*:state, int32:index);
+extern func:cla_capture_is_mutated = int32(wild int8*:state, string:name);
+extern func:cla_capture_is_addr_taken = int32(wild int8*:state, string:name);
+extern func:cla_capture_usage = int32(wild int8*:state, string:name);
+extern func:cla_set_capture_mode = int32(wild int8*:state, string:name, int32:cap_mode);
+extern func:cla_get_capture_mode = int32(wild int8*:state, string:name);
+extern func:cla_determine_mode = int32(wild int8*:state, string:name, int32:type_is_primitive);
+extern func:cla_reset = int32(wild int8*:state);
+extern func:cla_add_error = int32(wild int8*:state, string:msg);
+extern func:cla_error_count = int32(wild int8*:state);
+extern func:cla_get_error = string(wild int8*:state, int32:index);
+extern func:cla_clear_errors = int32(wild int8*:state);
+
+// ═══ High-level analysis helpers ═════════════════════════════════════
+
+// Process a variable reference found in a lambda body.
+// Returns 1 if it's a capture, 0 if it's param/local (skip).
+pub func:cla_check_identifier = int32(wild int8*:state, string:name) {
+    // Skip parameters — they're not captures
+    int32:ip = cla_is_param(state, name);
+    if (ip == 1i32) { pass 0i32; }
+    // Skip locals — they're not captures
+    int32:il = cla_is_local(state, name);
+    if (il == 1i32) { pass 0i32; }
+    // It's from outer scope — record as capture
+    _ = cla_record_capture(state, name);
+    pass 1i32;
+};
+
+// After all captures collected, determine modes for each.
+pub func:cla_finalize_modes = int32(wild int8*:state) {
+    int32:count = cla_capture_count(state);
+    int32:idx = 0i32;
+    loop(0i32, count, 1i32) {
+        string:cname = cla_capture_name(state, idx);
+        // For simplicity, assume non-primitive (0) — caller can override
+        int32:determined = cla_determine_mode(state, cname, 0i32);
+        _ = cla_set_capture_mode(state, cname, determined);
+        idx = idx + 1i32;
+    };
+    pass 0i32;
+};

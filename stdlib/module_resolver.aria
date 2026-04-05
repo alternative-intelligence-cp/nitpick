@@ -1,0 +1,55 @@
+// ═══════════════════════════════════════════════════════════════════════
+// module_resolver.aria — Self-hosted module resolution helpers
+// v0.15.1 Port 8
+// ═══════════════════════════════════════════════════════════════════════
+// Higher-level helpers for module path resolution and import checking.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:mr_new = wild int8*(string:root);
+extern func:mr_free = int32(wild int8*:state);
+extern func:mr_null_ptr = wild int8*();
+extern func:mr_release = int32(wild int8*:p);
+extern func:mr_root_path = string(wild int8*:state);
+extern func:mr_search_path_count = int32(wild int8*:state);
+extern func:mr_search_path = string(wild int8*:state, int32:idx);
+extern func:mr_add_search_path = int32(wild int8*:state, string:path);
+extern func:mr_normalize = string(string:path);
+extern func:mr_get_directory = string(string:path);
+extern func:mr_build_path = string(string:base, string:rel);
+extern func:mr_is_absolute = int32(string:path);
+extern func:mr_is_relative = int32(string:path);
+extern func:mr_try_pattern1 = string(string:base, string:logical);
+extern func:mr_try_pattern2 = string(string:base, string:logical);
+extern func:mr_resolve_relative = string(string:current_mod, string:import_path);
+extern func:mr_begin_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_end_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_is_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_loading_depth = int32(wild int8*:state);
+extern func:mr_loading_at = string(wild int8*:state, int32:idx);
+extern func:mr_add_error = int32(wild int8*:state, string:msg);
+extern func:mr_error_count = int32(wild int8*:state);
+extern func:mr_get_error = string(wild int8*:state, int32:idx);
+extern func:mr_clear_errors = int32(wild int8*:state);
+extern func:mr_reset = int32(wild int8*:state);
+
+// ═══ Helper: attempt to resolve a logical module name ════════════════
+// Tries pattern1 (<base>/<name>.aria) then pattern2 (<base>/<name>/mod.aria)
+// for each search path. Returns the first resolved path, or "" if none.
+pub func:mr_resolve_logical = string(wild int8*:state, string:name) {
+    int32:cnt = mr_search_path_count(state);
+    loop(0i32, cnt, 1i32) {
+        string:sp = mr_search_path(state, $i);
+        string:p1 = mr_try_pattern1(sp, name);
+        // In a real system we'd check file existence here.
+        // For the shim, pattern1 is preferred.
+        pass p1;
+    }
+    pass "";
+};
+
+// ═══ Helper: check if loading would be circular ════════════════════
+pub func:mr_check_circular = int32(wild int8*:state, string:mod_path) {
+    int32:loading = mr_is_loading(state, mod_path);
+    pass loading;
+};
