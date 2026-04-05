@@ -36,13 +36,33 @@ run_test() {
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
+    # Check if this is a negative test (expects compiler error)
+    local first_line=$(head -1 "$test_file")
+    local is_negative=false
+    if echo "$first_line" | grep -q "Expected: COMPILER ERROR"; then
+        is_negative=true
+    fi
+    
     echo -e "${YELLOW}Running: $test_name${NC}"
     
     # Compile the test file
     if ! $ARIAC "$test_file" -o "/tmp/${test_name}" 2>/tmp/ariac_error.log; then
+        if $is_negative; then
+            echo -e "${GREEN}✓ PASS: $test_name (correctly rejected)${NC}"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+            return 0
+        fi
         echo -e "${RED}✗ FAIL: Compilation failed${NC}"
         cat /tmp/ariac_error.log
         FAILED_TESTS=$((FAILED_TESTS + 1))
+        return 1
+    fi
+    
+    # If negative test compiled successfully, that's a failure
+    if $is_negative; then
+        echo -e "${RED}✗ FAIL: $test_name (wrongly accepted — expected compiler error)${NC}"
+        FAILED_TESTS=$((FAILED_TESTS + 1))
+        rm -f "/tmp/${test_name}"
         return 1
     fi
     
