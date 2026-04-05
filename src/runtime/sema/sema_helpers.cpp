@@ -10,6 +10,13 @@
 #include <unordered_map>
 #include <algorithm>
 
+// Gate TC_DEBUG output behind ARIA_DEBUG_CODEGEN
+#ifdef ARIA_DEBUG_CODEGEN
+  #define TC_DEBUG(...) fprintf(stderr, __VA_ARGS__)
+#else
+  #define TC_DEBUG(...) ((void)0)
+#endif
+
 // ============================================================================
 // Type Representation
 // ============================================================================
@@ -268,15 +275,18 @@ extern "C" {
 
 // --- Debug helper ---
 void tc_debug_msg(const char* msg) {
-    fprintf(stderr, "[TC_DEBUG] %s\n", msg);
+    TC_DEBUG("[TC_DEBUG] %s\n", msg);
+    (void)msg;
 }
 
 void tc_debug_int(const char* label, int32_t val) {
-    fprintf(stderr, "[TC_DEBUG] %s = %d\n", label, val);
+    TC_DEBUG("[TC_DEBUG] %s = %d\n", label, val);
+    (void)label; (void)val;
 }
 
 void tc_debug_ptr(const char* label, void* ptr) {
-    fprintf(stderr, "[TC_DEBUG] %s = %p\n", label, ptr);
+    TC_DEBUG("[TC_DEBUG] %s = %p\n", label, ptr);
+    (void)label; (void)ptr;
 }
 
 // --- TypeChecker lifecycle ---
@@ -437,7 +447,7 @@ void* tc_make_func_type(void* state, int32_t /*param_count*/) {
 
 void tc_func_type_add_param(void* func_type, void* param_type) {
     auto* ft = (SemaType*)func_type;
-    fprintf(stderr, "[TC_DEBUG] add_param: ptr=%p\n", param_type);
+    TC_DEBUG("[TC_DEBUG] add_param: ptr=%p\n", param_type);
     ft->param_types.push_back((SemaType*)param_type);
 }
 
@@ -451,12 +461,12 @@ void tc_func_type_set_return(void* func_type, void* ret_type) {
         if (!ft->param_types[i]) {
             name += "<null>";
         } else {
-            fprintf(stderr, "[TC_DEBUG] param[%zu] ptr=%p name_ptr=%p\n", i, (void*)ft->param_types[i], (void*)ft->param_types[i]->name.c_str());
+            TC_DEBUG("[TC_DEBUG] param[%zu] ptr=%p name_ptr=%p\n", i, (void*)ft->param_types[i], (void*)ft->param_types[i]->name.c_str());
             try {
                 name += ft->param_types[i]->name;
             } catch (...) {
                 name += "<corrupt>";
-                fprintf(stderr, "[TC_DEBUG] param[%zu] name is CORRUPT\n", i);
+                TC_DEBUG("[TC_DEBUG] param[%zu] name is CORRUPT\n", i);
             }
         }
     }
@@ -464,12 +474,12 @@ void tc_func_type_set_return(void* func_type, void* ret_type) {
     if (!ft->return_type) {
         name += "<null>";
     } else {
-        fprintf(stderr, "[TC_DEBUG] ret_type ptr=%p\n", (void*)ft->return_type);
+        TC_DEBUG("[TC_DEBUG] ret_type ptr=%p\n", (void*)ft->return_type);
         try {
             name += ft->return_type->name;
         } catch (...) {
             name += "<corrupt>";
-            fprintf(stderr, "[TC_DEBUG] ret_type name is CORRUPT\n");
+            TC_DEBUG("[TC_DEBUG] ret_type name is CORRUPT\n");
         }
     }
     ft->name = name;
@@ -1106,27 +1116,27 @@ void* tc_lookup_type(void* state, const char* name) {
 // Resolve a type name, wrap in Result if has_body, and store both
 // value_type and actual_ret in the state. Returns actual_ret.
 void* tc_resolve_func_ret(void* state, const char* type_name, int32_t has_body) {
-    fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: type_name='%s' has_body=%d\n", type_name ? type_name : "NULL", has_body);
+    TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: type_name='%s' has_body=%d\n", type_name ? type_name : "NULL", has_body);
     auto* tc = (TypeCheckerState*)state;
     SemaType* value_type = nullptr;
     auto it = tc->primitive_cache.find(type_name);
     if (it != tc->primitive_cache.end()) {
         value_type = it->second;
-        fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: found type '%s'\n", value_type->name.c_str());
+        TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: found type '%s'\n", value_type->name.c_str());
     } else {
-        fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: type not found, using void\n");
+        TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: type not found, using void\n");
         auto vit = tc->primitive_cache.find("void");
         value_type = (vit != tc->primitive_cache.end()) ? vit->second : nullptr;
     }
     tc->current_func_value_type = value_type;
     if (has_body && value_type) {
-        fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: making result type\n");
+        TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: making result type\n");
         auto* result_t = (SemaType*)tc_make_result_type(state, value_type);
-        fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: done, returning result_t=%p\n", result_t);
+        TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: done, returning result_t=%p\n", result_t);
         tc->current_func_return_type = result_t;
         return result_t;
     }
-    fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret: returning value_type=%p\n", (void*)value_type);
+    TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret: returning value_type=%p\n", (void*)value_type);
     tc->current_func_return_type = value_type;
     return value_type;
 }
@@ -1157,7 +1167,7 @@ void* tc_resolve_func_ret_node(void* state, void* ast_node, int32_t has_body) {
     };
     auto* node = (ASTNodeCompat*)ast_node;
     const char* type_name = (node && node->str_val) ? node->str_val : "void";
-    fprintf(stderr, "[TC_DEBUG] tc_resolve_func_ret_node: type_name='%s' has_body=%d\n", type_name, has_body);
+    TC_DEBUG("[TC_DEBUG] tc_resolve_func_ret_node: type_name='%s' has_body=%d\n", type_name, has_body);
     return tc_resolve_func_ret(state, type_name, has_body);
 }
 

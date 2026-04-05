@@ -2984,11 +2984,10 @@ void StmtCodegen::codegenExpressionStmt(ExpressionStmt* stmt) {
 // ============================================================================
 
 void StmtCodegen::codegenStatement(ASTNode* stmt) {
-    std::cerr << "[TRACE] codegenStatement entry, stmt ptr = " << stmt << "\n" << std::flush;
-    std::cout << "[TRACE] codegenStatement entry, stmt ptr = " << stmt << "\n" << std::flush;
+    ARIA_DBG_STREAM << "[DEBUG] codegenStatement entry, stmt ptr = " << stmt << "\n";
     
     if (!stmt) {
-        std::cerr << "[TRACE] stmt is nullptr, returning\n" << std::flush;
+        ARIA_DBG_STREAM << "[DEBUG] stmt is nullptr, returning\n";
         return;
     }
 
