@@ -93,7 +93,6 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
     col = 1;
     
     std::stringstream output;
-    std::vector<std::string> current_macro_args;  // For tracking macro expansion context
     bool in_quotes = false;  // Track whether we're inside a string literal
     
     while (peek() != 0) {

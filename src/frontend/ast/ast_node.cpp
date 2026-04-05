@@ -28,10 +28,12 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::NULL_COALESCE: return "NULL_COALESCE";
         case NodeType::PIPELINE: return "PIPELINE";
         case NodeType::UNWRAP: return "UNWRAP";
+        case NodeType::DEFAULTS: return "DEFAULTS";
         case NodeType::ARRAY_LITERAL: return "ARRAY_LITERAL";
         case NodeType::OBJECT_LITERAL: return "OBJECT_LITERAL";
         case NodeType::AWAIT: return "AWAIT";
         case NodeType::MOVE: return "MOVE";
+        case NodeType::VECTOR_CONSTRUCTOR: return "VECTOR_CONSTRUCTOR";
         case NodeType::CAST: return "CAST";
         case NodeType::SPREAD: return "SPREAD";
         
@@ -40,10 +42,16 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::FUNC_DECL: return "FUNC_DECL";
         case NodeType::STRUCT_DECL: return "STRUCT_DECL";
         case NodeType::ENUM_DECL: return "ENUM_DECL";
+        case NodeType::RULES_DECL: return "RULES_DECL";
         case NodeType::TYPE_DECL: return "TYPE_DECL";
+        case NodeType::OPAQUE_STRUCT: return "OPAQUE_STRUCT";
+        case NodeType::TRAIT_DECL: return "TRAIT_DECL";
+        case NodeType::IMPL_DECL: return "IMPL_DECL";
         case NodeType::RETURN: return "RETURN";
         case NodeType::PASS: return "PASS";
         case NodeType::FAIL: return "FAIL";
+        case NodeType::PROVE: return "PROVE";
+        case NodeType::ASSERT_STATIC: return "ASSERT_STATIC";
         case NodeType::BREAK: return "BREAK";
         case NodeType::CONTINUE: return "CONTINUE";
         case NodeType::DEFER: return "DEFER";
@@ -59,12 +67,15 @@ std::string ASTNode::nodeTypeToString(NodeType type) {
         case NodeType::WHEN: return "WHEN";
         case NodeType::PICK: return "PICK";
         case NodeType::PICK_CASE: return "PICK_CASE";
+        case NodeType::FALL: return "FALL";
         
         // Types
         case NodeType::TYPE_ANNOTATION: return "TYPE_ANNOTATION";
         case NodeType::GENERIC_TYPE: return "GENERIC_TYPE";
         case NodeType::ARRAY_TYPE: return "ARRAY_TYPE";
         case NodeType::POINTER_TYPE: return "POINTER_TYPE";
+        case NodeType::SAFE_REF_TYPE: return "SAFE_REF_TYPE";
+        case NodeType::OPTIONAL_TYPE: return "OPTIONAL_TYPE";
         case NodeType::FUNCTION_TYPE: return "FUNCTION_TYPE";
         
         // Modules

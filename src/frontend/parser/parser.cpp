@@ -4044,6 +4044,7 @@ ASTNodePtr Parser::parseBlock() {
     if (currentNestingDepth >= MAX_NESTING_DEPTH) {
         error("Maximum nesting depth exceeded (" + std::to_string(MAX_NESTING_DEPTH) +
               " levels). Consider refactoring deeply nested code.");
+        // Do not increment — return immediately
         return nullptr;
     }
     currentNestingDepth++;

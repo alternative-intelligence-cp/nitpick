@@ -1240,7 +1240,7 @@ void Lexer::scanTemplateLiteral() {
             // Emit TOKEN_INTERP_START
             tokens.push_back(Token(TokenType::TOKEN_INTERP_START, "&{", interpLine, interpCol, ""));
 
-            // Tokenize the interpolation expression by recursively scanning tokens
+            // Tokenize the interpolation expression by iteratively scanning tokens
             // until we hit the closing } at depth 0
             int braceDepth = 1;
             while (!isAtEnd() && braceDepth > 0) {
