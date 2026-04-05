@@ -1,0 +1,72 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Async Semantic Analyzer — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// Validates async/await semantics:
+//   - await must appear only inside async functions/blocks
+//   - Generates E_ASYNC_OUTSIDE_CONTEXT errors for violations
+//
+// Ported from src/frontend/sema/async_analyzer.cpp (204 lines C++).
+// The C++ version walks the AST and tracks async context.
+// This Aria version provides the validation/error logic — the C++ AST
+// walker calls into these functions at each await expression.
+//
+// Error Codes:
+//   E_ASYNC_OUTSIDE_CONTEXT — await used outside async function
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── C Shim Externs (async_shim.cpp) ──────────────────────────────────
+
+// State management
+extern func:aa_new = wild int8*();
+extern func:aa_free = int32(wild int8*:state);
+
+// Error collection
+extern func:aa_add_error = int32(wild int8*:state, string:msg);
+extern func:aa_error_count = int32(wild int8*:state);
+extern func:aa_get_error = string(wild int8*:state, int32:index);
+extern func:aa_clear_errors = int32(wild int8*:state);
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_await — validate a single await expression
+// ═══════════════════════════════════════════════════════════════════════
+// Called by the C++ AST walker when an await expression is encountered.
+//
+// Parameters:
+//   state      — opaque AsyncAnalyzerState handle
+//   in_async   — 1 if currently in async function, 0 if not
+//   func_name  — name of the enclosing function (for error messages)
+//   line_num   — source line number of the await expression
+//
+// Returns: 1 if await is valid, 0 if error was added.
+
+pub func:aa_check_await = int32(wild int8->:state, int32:in_async,
+                                 string:func_name, int32:line_num) {
+    // Await inside async function/block is always valid
+    if (in_async == 1i32) {
+        pass 1i32;
+    }
+
+    // Not in async context — generate error
+    string:msg = "E_ASYNC_OUTSIDE_CONTEXT: 'await' can only be used inside async functions or async blocks";
+
+    if (func_name != "") {
+        msg = msg + " (found in non-async function '" + func_name + "')";
+    }
+
+    _ = aa_add_error(state, msg);
+    pass 0i32;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// has_errors — check if any async errors were recorded
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:aa_has_errors = int32(wild int8->:state) {
+    int32:count = aa_error_count(state);
+    if (count > 0i32) {
+        pass 1i32;
+    }
+    pass 0i32;
+};

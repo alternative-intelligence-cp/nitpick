@@ -352,6 +352,11 @@ set(STDLIB_SOURCES
     src/runtime/ast/ast_helpers.cpp
     src/runtime/sema/sema_helpers.cpp
     src/runtime/sema/pass_helpers.cpp
+    src/runtime/sema/visibility_shim.cpp
+    src/runtime/sema/async_shim.cpp
+    src/runtime/sema/diagnostics_shim.cpp
+    src/runtime/sema/module_table_shim.cpp
+    src/runtime/sema/definite_assignment_shim.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp

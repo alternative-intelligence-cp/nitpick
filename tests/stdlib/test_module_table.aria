@@ -1,0 +1,285 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Module Table — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria module table logic.
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:VIS_PRIVATE  = 0i32;
+const int32:VIS_PUBLIC   = 1i32;
+const int32:VIS_PACKAGE  = 2i32;
+const int32:VIS_SUPER    = 3i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:mt_new = wild int8*();
+extern func:mt_free = int32(wild int8*:state);
+extern func:mt_create_module = wild int8*(wild int8*:state, string:name,
+                                           string:path_str, wild int8*:parent);
+extern func:mt_register = int32(wild int8*:state, string:full_path, wild int8*:mp);
+extern func:mt_get_module = wild int8*(wild int8*:state, string:full_path);
+extern func:mt_get_root = wild int8*(wild int8*:state);
+extern func:mt_null_ptr = wild int8*();
+extern func:mt_mod_release = int32(wild int8*:mp);
+extern func:mt_mod_get_name = string(wild int8*:mp);
+extern func:mt_mod_get_path = string(wild int8*:mp);
+extern func:mt_mod_get_parent = wild int8*(wild int8*:mp);
+extern func:mt_mod_is_null = int32(wild int8*:mp);
+extern func:mt_mod_get_submodule = wild int8*(wild int8*:mp, string:name);
+extern func:mt_mod_submodule_count = int32(wild int8*:mp);
+extern func:mt_mod_export = int32(wild int8*:mp, string:name, int32:vis);
+extern func:mt_mod_is_exported = int32(wild int8*:mp, string:name);
+extern func:mt_mod_get_export_vis = int32(wild int8*:mp, string:name);
+extern func:mt_mod_add_import = int32(wild int8*:mp, string:import_path);
+extern func:mt_mod_import_count = int32(wild int8*:mp);
+extern func:mt_mod_get_import = string(wild int8*:mp, int32:index);
+extern func:mt_mod_is_resolved = int32(wild int8*:mp);
+extern func:mt_mod_mark_resolved = int32(wild int8*:mp);
+extern func:mt_path_segment_count = int32(string:path_str);
+extern func:mt_path_segment = string(string:path_str, int32:index);
+extern func:mt_add_error = int32(wild int8*:state, string:msg);
+extern func:mt_error_count = int32(wild int8*:state);
+extern func:mt_get_error = string(wild int8*:state, int32:index);
+extern func:mt_clear_errors = int32(wild int8*:state);
+
+
+// ═══ Test 1: Create module and get name ═════════════════════════════
+pub func:test_create_module = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "io", "/src/io.aria", mt_null_ptr());
+    string:name = mt_mod_get_name(mp);
+    int32:result = 1i32;
+    if (name == "io") {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Module path extraction ═════════════════════════════════
+pub func:test_module_path = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "net", "/src/net.aria", mt_null_ptr());
+    string:pth = mt_mod_get_path(mp);
+    int32:result = 1i32;
+    if (pth == "/src/net.aria") {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Parent-child relationship ══════════════════════════════
+pub func:test_parent_child = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:std_mod = mt_create_module(state, "std", "/std", mt_null_ptr());
+    wild int8->:io_mod = mt_create_module(state, "io", "/std/io.aria", std_mod);
+    wild int8->:parent = mt_mod_get_parent(io_mod);
+    string:parent_name = mt_mod_get_name(parent);
+    int32:result = 1i32;
+    if (parent_name == "std") {
+        result = 0i32;
+    }
+    _ = mt_mod_release(parent);
+    _ = mt_mod_release(io_mod);
+    _ = mt_mod_release(std_mod);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 4: Submodule lookup ═══════════════════════════════════════
+pub func:test_submodule_lookup = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:std_mod = mt_create_module(state, "std", "/std", mt_null_ptr());
+    wild int8->:io_mod = mt_create_module(state, "io", "/std/io.aria", std_mod);
+    wild int8->:found = mt_mod_get_submodule(std_mod, "io");
+    int32:found_null = mt_mod_is_null(found);
+    int32:result = 1i32;
+    if (found_null == 0i32) {
+        string:found_name = mt_mod_get_name(found);
+        if (found_name == "io") {
+            result = 0i32;
+        }
+    }
+    _ = mt_mod_release(found);
+    _ = mt_mod_release(io_mod);
+    _ = mt_mod_release(std_mod);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 5: Export and check visibility ═════════════════════════════
+pub func:test_export_public = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "math", "/src/math.aria", mt_null_ptr());
+    _ = mt_mod_export(mp, "sqrt", VIS_PUBLIC);
+    int32:exported = mt_mod_is_exported(mp, "sqrt");
+    int32:vis = mt_mod_get_export_vis(mp, "sqrt");
+    int32:result = 1i32;
+    if (exported == 1i32 && vis == VIS_PUBLIC) {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Non-exported symbol not visible ════════════════════════
+pub func:test_not_exported = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "util", "/src/util.aria", mt_null_ptr());
+    int32:exported = mt_mod_is_exported(mp, "helper");
+    int32:result = 1i32;
+    if (exported == 0i32) {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Import management ══════════════════════════════════════
+pub func:test_imports = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "app", "/src/app.aria", mt_null_ptr());
+    _ = mt_mod_add_import(mp, "std.io");
+    _ = mt_mod_add_import(mp, "std.net");
+    int32:ic = mt_mod_import_count(mp);
+    string:imp0 = mt_mod_get_import(mp, 0i32);
+    string:imp1 = mt_mod_get_import(mp, 1i32);
+    int32:result = 1i32;
+    if (ic == 2i32 && imp0 == "std.io" && imp1 == "std.net") {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 8: Path segment utilities ═════════════════════════════════
+pub func:test_path_segments = int32() {
+    int32:count = mt_path_segment_count("std.io.file");
+    string:s0 = mt_path_segment("std.io.file", 0i32);
+    string:s1 = mt_path_segment("std.io.file", 1i32);
+    string:s2 = mt_path_segment("std.io.file", 2i32);
+    int32:result = 1i32;
+    if (count == 3i32 && s0 == "std" && s1 == "io" && s2 == "file") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 9: Module resolved state ══════════════════════════════════
+pub func:test_resolved = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "m", "/m.aria", mt_null_ptr());
+    int32:before = mt_mod_is_resolved(mp);
+    _ = mt_mod_mark_resolved(mp);
+    int32:after = mt_mod_is_resolved(mp);
+    int32:result = 1i32;
+    if (before == 0i32 && after == 1i32) {
+        result = 0i32;
+    }
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Registry lookup ═══════════════════════════════════════
+pub func:test_registry = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:mp = mt_create_module(state, "db", "/src/db.aria", mt_null_ptr());
+    _ = mt_register(state, "root.db", mp);
+    wild int8->:found = mt_get_module(state, "root.db");
+    int32:found_null = mt_mod_is_null(found);
+    int32:result = 1i32;
+    if (found_null == 0i32) {
+        string:found_name = mt_mod_get_name(found);
+        if (found_name == "db") {
+            result = 0i32;
+        }
+    }
+    _ = mt_mod_release(found);
+    _ = mt_mod_release(mp);
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Error management ══════════════════════════════════════
+pub func:test_errors = int32() {
+    wild int8->:state = mt_new();
+    _ = mt_add_error(state, "module not found");
+    _ = mt_add_error(state, "circular dependency");
+    int32:ec = mt_error_count(state);
+    string:e0 = mt_get_error(state, 0i32);
+    string:e1 = mt_get_error(state, 1i32);
+    _ = mt_clear_errors(state);
+    int32:ec2 = mt_error_count(state);
+    int32:result = 1i32;
+    if (ec == 2i32 && e0 == "module not found" && e1 == "circular dependency" && ec2 == 0i32) {
+        result = 0i32;
+    }
+    _ = mt_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Root module exists ════════════════════════════════════
+pub func:test_root = int32() {
+    wild int8->:state = mt_new();
+    wild int8->:rt = mt_get_root(state);
+    int32:rt_null = mt_mod_is_null(rt);
+    string:rt_name = mt_mod_get_name(rt);
+    int32:result = 1i32;
+    if (rt_null == 0i32 && rt_name == "root") {
+        result = 0i32;
+    }
+    _ = mt_mod_release(rt);
+    _ = mt_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_create_module();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_module_path();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_parent_child();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_submodule_lookup();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_export_public();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_not_exported();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_imports();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_path_segments();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_resolved();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_registry();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_errors();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_root();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

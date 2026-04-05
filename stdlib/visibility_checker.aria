@@ -1,0 +1,201 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Visibility Checker — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// Enforces access control rules for symbol visibility across modules.
+// Ported from src/frontend/sema/visibility_checker.cpp (150 lines C++).
+//
+// Uses opaque C handles for Symbol* and Module* via visibility_shim.cpp.
+// All logic (access checks, error generation) is in Aria.
+//
+// Visibility Levels:
+//   0 = PRIVATE  — only within defining module (default)
+//   1 = PUBLIC   — any module that imports (pub)
+//   2 = PACKAGE  — within same compilation unit (pub(package))
+//   3 = SUPER    — parent module only (pub(super))
+// ═══════════════════════════════════════════════════════════════════════
+
+// Visibility level constants (match C++ VisibilityLevel enum)
+const int32:VIS_PRIVATE  = 0i32;
+const int32:VIS_PUBLIC   = 1i32;
+const int32:VIS_PACKAGE  = 2i32;
+const int32:VIS_SUPER    = 3i32;
+
+// ─── C Shim Externs (visibility_shim.cpp) ─────────────────────────────
+
+// State management
+extern func:vc_new = wild int8*(wild int8*:module_table);
+extern func:vc_free = int32(wild int8*:state);
+
+// Symbol data extraction
+extern func:vc_symbol_is_public = int32(wild int8*:sym);
+extern func:vc_symbol_get_name = string(wild int8*:sym);
+
+// Module data extraction
+extern func:vc_module_get_path = string(wild int8*:mp);
+extern func:vc_modules_same = int32(wild int8*:m1, wild int8*:m2);
+extern func:vc_module_get_parent = wild int8*(wild int8*:mp);
+extern func:vc_module_is_null = int32(wild int8*:mp);
+
+// Error collection
+extern func:vc_add_error = int32(wild int8*:state, string:msg);
+extern func:vc_error_count = int32(wild int8*:state);
+extern func:vc_get_error = string(wild int8*:state, int32:index);
+extern func:vc_clear_errors = int32(wild int8*:state);
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// get_visibility — determine visibility level of a symbol
+// ═══════════════════════════════════════════════════════════════════════
+// Maps Symbol.isPublic to VIS_PUBLIC (1) or VIS_PRIVATE (0).
+// Future: parse pub(package), pub(super) from AST.
+
+pub func:vc_get_visibility = int32(wild int8->:symbol_ptr) {
+    int32:is_pub = vc_symbol_is_public(symbol_ptr);
+    if (is_pub == 1i32) {
+        pass VIS_PUBLIC;
+    }
+    pass VIS_PRIVATE;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// is_access_allowed — check if access is permitted
+// ═══════════════════════════════════════════════════════════════════════
+// Pure logic: given visibility level + module pointers, returns 1/0.
+
+pub func:vc_is_access_allowed = int32(int32:visibility, wild int8->:sym_mod, wild int8->:cur_mod) {
+    // PUBLIC: accessible from anywhere
+    if (visibility == VIS_PUBLIC) {
+        pass 1i32;
+    }
+
+    // PRIVATE: same module only
+    if (visibility == VIS_PRIVATE) {
+        int32:same = vc_modules_same(sym_mod, cur_mod);
+        pass same;
+    }
+
+    // PACKAGE: same compilation unit (currently all modules = same package)
+    if (visibility == VIS_PACKAGE) {
+        pass 1i32;
+    }
+
+    // SUPER: parent module relationship
+    if (visibility == VIS_SUPER) {
+        int32:is_parent = vc_is_parent_module(cur_mod, sym_mod);
+        pass is_parent;
+    }
+
+    // Unknown visibility level
+    pass 0i32;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// is_parent_module — walk parent chain to check ancestry
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:vc_is_parent_module = int32(wild int8->:child, wild int8->:parent) {
+    wild int8->:current = vc_module_get_parent(child);
+
+    // Walk up the parent chain (max 32 levels to avoid infinite loops)
+    loop(0i64, 32i64, 1i64) {
+        int32:is_null = vc_module_is_null(current);
+        if (is_null == 1i32) {
+            pass 0i32;
+        }
+        int32:found = vc_modules_same(current, parent);
+        if (found == 1i32) {
+            pass 1i32;
+        }
+        current = vc_module_get_parent(current);
+    }
+
+    pass 0i32;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// report_access_error — generate E002 error message
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:vc_report_access_error = int32(wild int8->:state, wild int8->:symbol_ptr,
+                                         wild int8->:sym_mod, wild int8->:cur_mod,
+                                         int32:line_num, int32:col_num) {
+    string:sym_name = vc_symbol_get_name(symbol_ptr);
+    string:sym_path = vc_module_get_path(sym_mod);
+    string:cur_path = vc_module_get_path(cur_mod);
+
+    string:msg = "Error E002 at line " + sym_name +
+                 ":\n  Cannot access private symbol '" + sym_name +
+                 "'\n  Symbol is defined in module: " + sym_path +
+                 "\n  Current module: " + cur_path +
+                 "\n  \n  Help: Symbol '" + sym_name +
+                 "' is not public.\n        To make it accessible, add 'pub' modifier:\n" +
+                 "        pub func:" + sym_name + " = ...\n" +
+                 "        pub " + sym_name + ":type = ...";
+
+    _ = vc_add_error(state, msg);
+    pass 0i32;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// check_access — main entry point (combines all the above)
+// ═══════════════════════════════════════════════════════════════════════
+// Returns 1 if access allowed, 0 if denied (and adds error to state).
+
+pub func:vc_check_access_aria = int32(wild int8->:state, wild int8->:symbol_ptr,
+                                       wild int8->:sym_mod, wild int8->:cur_mod,
+                                       int32:line_num, int32:col_num) {
+    // Null checks
+    int32:sym_null = vc_module_is_null(symbol_ptr);
+    int32:sm_null = vc_module_is_null(sym_mod);
+    int32:cm_null = vc_module_is_null(cur_mod);
+
+    if (sym_null == 1i32) {
+        _ = vc_add_error(state, "Internal error: null symbol in visibility check");
+        pass 0i32;
+    }
+    if (sm_null == 1i32) {
+        _ = vc_add_error(state, "Internal error: null symbol module in visibility check");
+        pass 0i32;
+    }
+    if (cm_null == 1i32) {
+        _ = vc_add_error(state, "Internal error: null current module in visibility check");
+        pass 0i32;
+    }
+
+    // Get visibility level
+    int32:vis = vc_get_visibility(symbol_ptr);
+
+    // Check access
+    int32:allowed = vc_is_access_allowed(vis, sym_mod, cur_mod);
+
+    if (allowed == 0i32) {
+        _ = vc_report_access_error(state, symbol_ptr, sym_mod, cur_mod, line_num, col_num);
+    }
+
+    pass allowed;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// visibility_to_string — convert level to human-readable name
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:vc_visibility_to_string = string(int32:level) {
+    if (level == VIS_PRIVATE) {
+        pass "private";
+    };
+    if (level == VIS_PUBLIC) {
+        pass "public";
+    };
+    if (level == VIS_PACKAGE) {
+        pass "pub(package)";
+    };
+    if (level == VIS_SUPER) {
+        pass "pub(super)";
+    };
+    pass "unknown";
+};
