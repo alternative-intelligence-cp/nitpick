@@ -86,7 +86,12 @@ std::vector<ValueRange> CoverageSet::getMissingRanges(const TypeDomain& domain) 
                 missing.push_back(ValueRange(current, coverStart - 1));
             }
             
-            current = std::max(current, covered.max + 1);
+            // Guard against overflow when covered.max == INT64_MAX
+            if (covered.max < INT64_MAX) {
+                current = std::max(current, covered.max + 1);
+            } else {
+                current = INT64_MAX;
+            }
         }
         
         // Check if anything remains uncovered at the end
