@@ -904,6 +904,85 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         }
     }
 
+    // B11 FIX: Handle @ (address-of / function reference) BEFORE generic operand
+    // codegen, since @func_name references a module function, not a named_values variable.
+    if (op == TokenType::TOKEN_AT) {
+        if (expr->operand->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->operand.get());
+
+            // First check named_values (local variables)
+            auto it = named_values.find(ident->name);
+            if (it != named_values.end()) {
+                llvm::Value* address = it->second;
+                if (!llvm::isa<llvm::AllocaInst>(address)) {
+                    llvm::AllocaInst* tmp = builder.CreateAlloca(
+                        address->getType(), nullptr, ident->name + ".addr");
+                    builder.CreateStore(address, tmp);
+                    return tmp;
+                }
+                return address;
+            }
+
+            // Then check module-level functions — @func_name returns fat pointer {funcptr, null}
+            // Generate a thunk that matches closure calling convention (env_ptr, args...)
+            llvm::Function* func = module->getFunction(ident->name);
+            if (func) {
+                // Create thunk: (ptr env, original_params...) → call original(params...)
+                std::string thunkName = "__thunk_" + ident->name;
+                llvm::Function* thunk = module->getFunction(thunkName);
+                if (!thunk) {
+                    // Build thunk param types: env_ptr (ptr) + original params
+                    std::vector<llvm::Type*> thunkParams;
+                    thunkParams.push_back(llvm::PointerType::get(context, 0)); // env
+                    for (auto& arg : func->args()) {
+                        thunkParams.push_back(arg.getType());
+                    }
+                    llvm::FunctionType* thunkFT = llvm::FunctionType::get(
+                        func->getReturnType(), thunkParams, false);
+                    thunk = llvm::Function::Create(thunkFT, llvm::Function::InternalLinkage,
+                        thunkName, module);
+
+                    // Generate thunk body: forward args (skip env) to original function
+                    llvm::BasicBlock* savedBB = builder.GetInsertBlock();
+                    llvm::BasicBlock* thunkEntry = llvm::BasicBlock::Create(context, "entry", thunk);
+                    builder.SetInsertPoint(thunkEntry);
+
+                    std::vector<llvm::Value*> fwdArgs;
+                    auto targ = thunk->arg_begin();
+                    targ->setName("env");
+                    ++targ; // skip env
+                    for (; targ != thunk->arg_end(); ++targ) {
+                        fwdArgs.push_back(&*targ);
+                    }
+                    llvm::Value* result = builder.CreateCall(func, fwdArgs, "fwd");
+                    builder.CreateRet(result);
+
+                    builder.SetInsertPoint(savedBB);
+                }
+
+                // Build fat pointer {thunk, null_env}
+                llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
+                llvm::StructType* fatPtrTy = llvm::StructType::get(context, {ptrTy, ptrTy});
+                llvm::Value* thunkAsPtr = builder.CreateBitCast(thunk, ptrTy);
+                llvm::Value* nullEnv = llvm::ConstantPointerNull::get(
+                    llvm::cast<llvm::PointerType>(ptrTy));
+                llvm::Value* fat = llvm::UndefValue::get(fatPtrTy);
+                fat = builder.CreateInsertValue(fat, thunkAsPtr, 0, "fp_method");
+                fat = builder.CreateInsertValue(fat, nullEnv, 1, "fp_env");
+                return fat;
+            }
+
+            throw std::runtime_error("Variable or function '" + ident->name + "' not found for address-of (@)");
+        }
+
+        // For non-identifier operands, codegen normally then take address
+        llvm::Value* operand = codegenExpressionNode(expr->operand.get(), this);
+        if (!operand) {
+            throw std::runtime_error("Failed to generate code for @ operand");
+        }
+        throw std::runtime_error("Address-of operator (@) requires lvalue - only variables supported currently");
+    }
+
     // Generate code for the operand recursively
     llvm::Value* operand = codegenExpressionNode(expr->operand.get(), this);
     if (!operand) {
@@ -963,41 +1042,8 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         return builder.CreateNot(operand, "bnottmp");
     }
     
-    // Address-of operator: @x
-    if (op == TokenType::TOKEN_AT) {
-        // Address-of: @variable
-        // Operand must be an lvalue (identifier, array element, or struct field)
-        
-        // Case 1: Simple variable - @x
-        if (expr->operand->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->operand.get());
-            auto it = named_values.find(ident->name);
-            if (it == named_values.end()) {
-                throw std::runtime_error("Variable '" + ident->name + "' not found for address-of (@)");
-            }
-            
-            // Return the alloca pointer itself (the ADDRESS), not the loaded value
-            llvm::Value* address = it->second;
-            
-            // If the value is NOT an alloca (e.g., a function parameter stored as
-            // a raw SSA value), spill it to a temporary alloca so we have a valid
-            // memory address to return.
-            if (!llvm::isa<llvm::AllocaInst>(address)) {
-                llvm::AllocaInst* tmp = builder.CreateAlloca(
-                    address->getType(), nullptr, ident->name + ".addr");
-                builder.CreateStore(address, tmp);
-                return tmp;
-            }
-            
-            return address;
-        }
-        
-        // Case 2: Array element - @arr[i]
-        // Case 3: Struct field - @obj.field
-        // TODO Phase 4.3+: Implement @ for array elements and struct fields
-        
-        throw std::runtime_error("Address-of operator (@) requires lvalue - only variables supported currently");
-    }
+    // Address-of operator: @x (already handled above before operand codegen)
+    // This path is unreachable for TOKEN_AT since it's handled early.
     
     // Dereference operator (blueprint style): value <- ptr
     // Arrow points FROM pointer TO value (showing data flow direction)

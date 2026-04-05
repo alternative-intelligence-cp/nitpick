@@ -1,0 +1,41 @@
+// Type mismatch audit: testing what the compiler accepts/rejects
+// Each test is a separate function to isolate failures
+
+// Target function: expects int64
+func:expect_i64 = int64(int64:x) { pass x; };
+
+// Target function: expects int32
+func:expect_i32 = int32(int32:x) { pass x; };
+
+// Target function: expects int16
+func:expect_i16 = int16(int16:x) { pass x; };
+
+// Target function: expects int8
+func:expect_i8 = int8(int8:x) { pass x; };
+
+func:main = int32() {
+    // Test 1: SAFE widening — int32 literal → int64 param (should warn, allow)
+    int64:r1 = raw expect_i64(42);
+    print("T1 int32_lit->i64: ok");
+
+    // Test 2: DANGEROUS narrowing — int64 var → int32 param
+    int64:big = 999999999;
+    int32:r2 = raw expect_i32(big);
+    print("T2 i64_var->i32: ok (DANGEROUS if allowed)");
+
+    // Test 3: int64 var → int16 param (truncation risk)
+    int16:r3 = raw expect_i16(big);
+    print("T3 i64_var->i16: ok (DANGEROUS if allowed)");
+
+    // Test 4: int64 var → int8 param (extreme truncation)
+    int8:r4 = raw expect_i8(big);
+    print("T4 i64_var->i8: ok (DANGEROUS if allowed)");
+
+    // Test 5: int32 var → int64 param (safe widening)
+    int32:small = 42i32;
+    int64:r5 = raw expect_i64(small);
+    print("T5 i32_var->i64: ok (safe widening)");
+
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };

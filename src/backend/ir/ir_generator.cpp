@@ -16,6 +16,8 @@
 #include <iostream>  // For debug output
 #include <sstream>   // For istringstream (generic name mangling)
 #include <cassert>
+#include <functional>      // B6 fix: std::function for AST walker
+#include <unordered_set>   // B6 fix: std::unordered_set for identifier collection
 #include "debug_log.h"
 
 namespace aria {
@@ -4080,6 +4082,174 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     static int fp_counter = 0;
                     std::string fnName = "_funcptr_" + varDecl->varName + "_" + std::to_string(fp_counter++);
 
+                    // ==============================================================
+                    // B6 FIX: Capture analysis — find outer variables used in lambda
+                    // ==============================================================
+                    struct CaptureEntry {
+                        std::string name;
+                        llvm::Value* outerAlloca;
+                        llvm::Type* llvmType;
+                        std::string ariaType;
+                    };
+                    std::vector<CaptureEntry> capturedVars;
+
+                    // Collect parameter names (these are NOT captures)
+                    std::unordered_set<std::string> lambdaParamNames;
+                    for (const auto& paramNode : lambda->parameters) {
+                        ParameterNode* pn = static_cast<ParameterNode*>(paramNode.get());
+                        lambdaParamNames.insert(pn->paramName);
+                    }
+
+                    // Walk lambda body AST to collect all identifier references
+                    std::unordered_set<std::string> bodyIdentifiers;
+                    std::function<void(ASTNode*)> collectIds = [&](ASTNode* node) {
+                        if (!node) return;
+                        switch (node->type) {
+                            case ASTNode::NodeType::IDENTIFIER: {
+                                auto* ident = static_cast<IdentifierExpr*>(node);
+                                bodyIdentifiers.insert(ident->name);
+                                break;
+                            }
+                            case ASTNode::NodeType::BINARY_OP: {
+                                auto* bin = static_cast<BinaryExpr*>(node);
+                                collectIds(bin->left.get());
+                                collectIds(bin->right.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::CALL: {
+                                auto* call = static_cast<CallExpr*>(node);
+                                // Don't collect the callee name as a capture —
+                                // function names are in the module, not named_values
+                                for (auto& arg : call->arguments) collectIds(arg.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::BLOCK: {
+                                auto* block = static_cast<BlockStmt*>(node);
+                                for (auto& s : block->statements) collectIds(s.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::RETURN: {
+                                auto* ret = static_cast<ReturnStmt*>(node);
+                                if (ret->value) collectIds(ret->value.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::EXPRESSION_STMT: {
+                                auto* es = static_cast<ExpressionStmt*>(node);
+                                collectIds(es->expression.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::VAR_DECL: {
+                                auto* vd = static_cast<VarDeclStmt*>(node);
+                                if (vd->initializer) collectIds(vd->initializer.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::IF: {
+                                auto* ifs = static_cast<IfStmt*>(node);
+                                collectIds(ifs->condition.get());
+                                collectIds(ifs->thenBranch.get());
+                                if (ifs->elseBranch) collectIds(ifs->elseBranch.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::UNARY_OP: {
+                                auto* un = static_cast<UnaryExpr*>(node);
+                                collectIds(un->operand.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::ASSIGNMENT: {
+                                auto* asgn = static_cast<AssignmentExpr*>(node);
+                                collectIds(asgn->target.get());
+                                collectIds(asgn->value.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::PASS: {
+                                auto* ps = static_cast<PassStmt*>(node);
+                                if (ps->value) collectIds(ps->value.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::FAIL: {
+                                auto* fs = static_cast<FailStmt*>(node);
+                                if (fs->errorCode) collectIds(fs->errorCode.get());
+                                break;
+                            }
+                            case ASTNode::NodeType::LOOP: {
+                                auto* loop = static_cast<LoopStmt*>(node);
+                                collectIds(loop->start.get());
+                                collectIds(loop->limit.get());
+                                collectIds(loop->step.get());
+                                collectIds(loop->body.get());
+                                break;
+                            }
+                            default: break;
+                        }
+                    };
+                    collectIds(lambda->body.get());
+
+                    // Remove lambda parameters — they're not captures
+                    for (const auto& pname : lambdaParamNames) {
+                        bodyIdentifiers.erase(pname);
+                    }
+
+                    // Match remaining identifiers against outer named_values
+                    for (const auto& id : bodyIdentifiers) {
+                        if (id == varDecl->varName) continue; // skip self
+                        auto it = named_values.find(id);
+                        if (it != named_values.end()) {
+                            llvm::Value* outerVal = it->second;
+                            llvm::Type* allocatedType = nullptr;
+                            if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(outerVal)) {
+                                allocatedType = alloca->getAllocatedType();
+                            } else {
+                                allocatedType = outerVal->getType();
+                            }
+                            std::string ariaT;
+                            auto typeIt = var_aria_types.find(id);
+                            if (typeIt != var_aria_types.end()) ariaT = typeIt->second;
+                            capturedVars.push_back({id, outerVal, allocatedType, ariaT});
+                        }
+                    }
+
+                    // ==============================================================
+                    // B6 FIX: Build environment struct and populate from outer scope
+                    // ==============================================================
+                    llvm::StructType* envStructType = nullptr;
+                    llvm::Value* envAllocVal = nullptr;
+
+                    if (!capturedVars.empty()) {
+                        std::vector<llvm::Type*> envFieldTypes;
+                        for (const auto& cap : capturedVars) {
+                            envFieldTypes.push_back(cap.llvmType);
+                        }
+                        envStructType = llvm::StructType::create(context, envFieldTypes,
+                            "_env_" + varDecl->varName);
+
+                        // Heap-allocate env via aria_gc_alloc so it survives scope
+                        const llvm::DataLayout& dl = module->getDataLayout();
+                        uint64_t envSize = dl.getTypeAllocSize(envStructType);
+                        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+                            llvm::FunctionType::get(
+                                llvm::PointerType::get(context, 0),
+                                {llvm::Type::getInt64Ty(context)},
+                                false));
+                        envAllocVal = builder.CreateCall(gcAlloc,
+                            {llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), envSize)},
+                            "env_alloc");
+
+                        // Store captured values into env struct fields
+                        for (size_t i = 0; i < capturedVars.size(); ++i) {
+                            llvm::Value* fieldPtr = builder.CreateStructGEP(envStructType,
+                                envAllocVal, i, "env_" + capturedVars[i].name);
+                            llvm::Value* outerVal = capturedVars[i].outerAlloca;
+                            if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(outerVal)) {
+                                llvm::Value* loaded = builder.CreateLoad(
+                                    alloca->getAllocatedType(), outerVal,
+                                    capturedVars[i].name + "_cap");
+                                builder.CreateStore(loaded, fieldPtr);
+                            } else {
+                                builder.CreateStore(outerVal, fieldPtr);
+                            }
+                        }
+                    }
+
                     auto savedIP = builder.saveIP();
                     auto outer_named = named_values;
                     auto outer_types = var_aria_types;
@@ -4136,6 +4306,26 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         }
                     }
 
+                    // ==============================================================
+                    // B6 FIX: Extract captured variables from env inside lambda body
+                    // ==============================================================
+                    if (!capturedVars.empty() && envStructType) {
+                        llvm::Argument* envArg = &(*fn->arg_begin());
+                        for (size_t i = 0; i < capturedVars.size(); ++i) {
+                            llvm::Value* fieldPtr = builder.CreateStructGEP(envStructType,
+                                envArg, i, capturedVars[i].name + "_env_ptr");
+                            llvm::Value* loaded = builder.CreateLoad(capturedVars[i].llvmType,
+                                fieldPtr, capturedVars[i].name + "_env_val");
+                            llvm::AllocaInst* localAlloca = builder.CreateAlloca(
+                                capturedVars[i].llvmType, nullptr, capturedVars[i].name);
+                            builder.CreateStore(loaded, localAlloca);
+                            named_values[capturedVars[i].name] = localAlloca;
+                            if (!capturedVars[i].ariaType.empty()) {
+                                var_aria_types[capturedVars[i].name] = capturedVars[i].ariaType;
+                            }
+                        }
+                    }
+
                     // Generate body using IRGenerator::codegenStatement (handles PASS/FAIL)
                     if (lambda->body) {
                         codegenStatement(lambda->body.get());
@@ -4157,11 +4347,19 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
 
                     // Build fat pointer and store into alloca
                     llvm::Value* funcAsPtr = builder.CreateBitCast(fn, ptrTy);
-                    llvm::Value* nullEnv = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
                     builder.CreateStore(funcAsPtr,
                         builder.CreateStructGEP(fatPtrTy, fpAlloca, 0, "method_field"));
-                    builder.CreateStore(nullEnv,
-                        builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+
+                    // B6 FIX: Store actual env pointer (or null if no captures)
+                    if (envAllocVal) {
+                        builder.CreateStore(envAllocVal,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+                    } else {
+                        llvm::Value* nullEnv = llvm::ConstantPointerNull::get(
+                            llvm::cast<llvm::PointerType>(ptrTy));
+                        builder.CreateStore(nullEnv,
+                            builder.CreateStructGEP(fatPtrTy, fpAlloca, 1, "env_field"));
+                    }
 
                     // Restore fat pointer alloca mapping (cleared above)
                     named_values[varDecl->varName] = fpAlloca;
