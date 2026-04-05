@@ -265,7 +265,7 @@ void aria_atomic_int32_store(AriaAtomicInt32* atomic, int32_t value, AriaMemoryO
 }
 
 int32_t aria_atomic_int32_exchange(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order) {
-    return atomic->value.exchange(aria_to_cpp_order(order));
+    return atomic->value.exchange(value, aria_to_cpp_order(order));
 }
 
 bool aria_atomic_int32_compare_exchange_strong(AriaAtomicInt32* atomic, int32_t* expected,

@@ -548,6 +548,7 @@ void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value) 
 // =============================================================================
 
 void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2) {
+    if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_TEST_RR, (int32_t)r1, (int32_t)r2); return; }
     int r1_reg = (int)r1;
     int r2_reg = (int)r2;
     // TEST r64, r64: REX.W + 85 /r
@@ -557,6 +558,7 @@ void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2) {
 }
 
 void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg) {
+    if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_INC_R64, (int32_t)reg, 0); return; }
     int r = (int)reg;
     // INC r64: REX.W + FF /0
     emit_rex(asm_ctx->buffer, true, 0, r);
@@ -565,6 +567,7 @@ void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg) {
 }
 
 void aria_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg) {
+    if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_DEC_R64, (int32_t)reg, 0); return; }
     int r = (int)reg;
     // DEC r64: REX.W + FF /1
     emit_rex(asm_ctx->buffer, true, 0, r);
@@ -1378,13 +1381,14 @@ static void compute_liveness(RegAllocState* ra) {
 
             // Immediate arithmetic: def+use dst
             case JIT_OP_ADD_IMM32: case JIT_OP_SUB_IMM32:
+            case JIT_OP_INC_R64: case JIT_OP_DEC_R64:
                 MARK_PHYS_REG(insn->dst);
                 update_range_def(ra, insn->dst, i);
                 update_range_use(ra, insn->dst, i);
                 break;
 
             // Compare: use both, no def
-            case JIT_OP_CMP_RR: case JIT_OP_UCOMISD:
+            case JIT_OP_CMP_RR: case JIT_OP_UCOMISD: case JIT_OP_TEST_RR:
                 MARK_PHYS_REG(insn->dst);
                 MARK_PHYS_REG(insn->src1);
                 update_range_use(ra, insn->dst, i);
@@ -1815,6 +1819,24 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
                 int32_t l = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t r = resolve_reg2(asm_ctx, insn->src1, false);
                 aria_asm_cmp_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
+                break;
+            }
+            case JIT_OP_TEST_RR: {
+                int32_t l = resolve_reg(asm_ctx, insn->dst, false);
+                int32_t r = resolve_reg2(asm_ctx, insn->src1, false);
+                aria_asm_test_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
+                break;
+            }
+            case JIT_OP_INC_R64: {
+                int32_t d = resolve_reg(asm_ctx, insn->dst, true);
+                aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                spill_if_needed(asm_ctx, insn->dst, d);
+                break;
+            }
+            case JIT_OP_DEC_R64: {
+                int32_t d = resolve_reg(asm_ctx, insn->dst, true);
+                aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOV_LOAD: {
