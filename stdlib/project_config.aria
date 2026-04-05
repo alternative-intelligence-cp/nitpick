@@ -1,0 +1,92 @@
+// ═══════════════════════════════════════════════════════════════════════
+// project_config.aria — Self-hosted Project Config module
+// v0.15.2 Port 12
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── Target type constants ───────────────────────────────────────────
+const int32:TARGET_EXECUTABLE = 0i32;
+const int32:TARGET_LIBRARY    = 1i32;
+const int32:TARGET_STATIC     = 2i32;
+const int32:TARGET_SHARED     = 3i32;
+
+// ─── Optimization constants ──────────────────────────────────────────
+const int32:OPT_DEBUG   = 0i32;
+const int32:OPT_RELEASE = 1i32;
+const int32:OPT_SIZE    = 2i32;
+
+// ─── Extern declarations (C bridge) ──────────────────────────────────
+
+extern func:projcfg_parse_file    = int64(string:path);
+extern func:projcfg_parse_string  = int64(string:content, string:base_path);
+extern func:projcfg_free          = int32(int64:handle);
+
+extern func:projcfg_pkg_name      = string(int64:handle);
+extern func:projcfg_pkg_version   = string(int64:handle);
+extern func:projcfg_pkg_edition   = string(int64:handle);
+extern func:projcfg_pkg_license   = string(int64:handle);
+extern func:projcfg_pkg_description = string(int64:handle);
+extern func:projcfg_pkg_author_count = int32(int64:handle);
+extern func:projcfg_pkg_author    = string(int64:handle, int32:idx);
+extern func:projcfg_pkg_publish   = int32(int64:handle);
+extern func:projcfg_pkg_keyword_count = int32(int64:handle);
+extern func:projcfg_pkg_keyword   = string(int64:handle, int32:idx);
+
+extern func:projcfg_build_target  = int32(int64:handle);
+extern func:projcfg_build_optimization = int32(int64:handle);
+extern func:projcfg_build_output  = string(int64:handle);
+extern func:projcfg_build_main    = string(int64:handle);
+
+extern func:projcfg_dep_count     = int32(int64:handle);
+extern func:projcfg_dev_dep_count = int32(int64:handle);
+extern func:projcfg_dep_names_refresh = int32(int64:handle);
+extern func:projcfg_dep_name      = string(int32:idx);
+extern func:projcfg_dep_version_by_name = string(int64:handle, string:name);
+
+extern func:projcfg_feature_count = int32(int64:handle);
+extern func:projcfg_has_feature   = int32(int64:handle, string:name);
+
+extern func:projcfg_validate_name    = int32(string:name);
+extern func:projcfg_validate_version = int32(string:version);
+extern func:projcfg_is_reserved_name = int32(string:name);
+
+extern func:projcfg_workspace_member_count = int32(int64:handle);
+extern func:projcfg_has_lib       = int32(int64:handle);
+extern func:projcfg_bin_count     = int32(int64:handle);
+
+// ─── Helper functions ────────────────────────────────────────────────
+
+pub func:is_executable = int32(int64:handle) {
+    int32:t = projcfg_build_target(handle);
+    int32:result = 0i32;
+    if (t == TARGET_EXECUTABLE) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+pub func:is_library_target = int32(int64:handle) {
+    int32:t = projcfg_build_target(handle);
+    int32:result = 0i32;
+    if (t == TARGET_LIBRARY) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+pub func:is_release_build = int32(int64:handle) {
+    int32:opt = projcfg_build_optimization(handle);
+    int32:result = 0i32;
+    if (opt == OPT_RELEASE) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+pub func:has_dependencies = int32(int64:handle) {
+    int32:count = projcfg_dep_count(handle);
+    int32:result = 0i32;
+    if (count > 0i32) {
+        result = 1i32;
+    }
+    pass result;
+};
