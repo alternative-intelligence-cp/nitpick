@@ -1,0 +1,16 @@
+// B1: Non-pub helper that accesses struct fields - more likely to crash
+func:make_pair = int64(int64:a, int64:b) {
+    int64:sum = a + b;
+    pass sum;
+};
+
+func:double_it = int64(int64:x) {
+    int64:result = raw make_pair(x, x);
+    pass result;
+};
+
+pub func:process = int64(int64:input) {
+    int64:step1 = raw double_it(input);
+    int64:step2 = raw make_pair(step1, input);
+    pass step2;
+};

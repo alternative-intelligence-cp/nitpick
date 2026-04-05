@@ -1,0 +1,17 @@
+// B4 Regression Test: ahget on missing key should not segfault
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:ht = ahash(4096);
+    ahset(ht, "exists", 100i64);
+
+    // Get existing key - should work
+    int64:found = ahget(ht, "exists");
+
+    // Get NON-EXISTING key - this is the bug (segfault on missing key)
+    int64:missing = ahget(ht, "nonexistent");
+
+    exit 0;
+};

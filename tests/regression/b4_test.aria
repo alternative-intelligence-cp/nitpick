@@ -1,0 +1,8 @@
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int64:ht = ahash(4096);
+    ahset(ht, "exists", 100i64);
+    int64:found = ahget(ht, "exists");
+    int64:missing = ahget(ht, "nonexistent");
+    exit 0;
+};

@@ -5155,7 +5155,23 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 }
             }
 
-            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion) {
+            // B11 FIX: Allow function reference (@func_name) to match function pointer
+            // parameter. resolveTypeNode returns uint64 placeholder for FUNCTION_TYPE
+            // params, but @func_name has type PointerType(FunctionType) or FunctionType.
+            bool funcPtrCoercion = false;
+            if (paramTypes[i]->getKind() == TypeKind::PRIMITIVE) {
+                std::string paramName = paramTypes[i]->toString();
+                if (paramName == "uint64" || paramName == "int64") {
+                    TypeKind argKind = effectiveArgType->getKind();
+                    if (argKind == TypeKind::FUNCTION ||
+                        (argKind == TypeKind::POINTER &&
+                         static_cast<PointerType*>(effectiveArgType)->getPointeeType()->getKind() == TypeKind::FUNCTION)) {
+                        funcPtrCoercion = true;
+                    }
+                }
+            }
+
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());

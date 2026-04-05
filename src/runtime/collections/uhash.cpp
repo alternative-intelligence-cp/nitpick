@@ -150,7 +150,11 @@ extern "C" int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value
         if (ht->capacity_bytes > 0) {
             int64_t delta = value_size - old_size;
             if (delta > 0 && ht->used_bytes + delta > ht->capacity_bytes) {
-                return -1; /* Would exceed capacity */
+                /* B7 FIX: Auto-grow capacity instead of failing */
+                int64_t needed = ht->used_bytes + delta;
+                while (ht->capacity_bytes < needed) {
+                    ht->capacity_bytes = (ht->capacity_bytes < 64) ? 64 : ht->capacity_bytes * 2;
+                }
             }
             ht->used_bytes += delta;
         }
@@ -160,9 +164,12 @@ extern "C" int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value
         return 0;
     }
 
-    /* New entry — check capacity */
+    /* New entry — check capacity, auto-grow if needed (B7 FIX) */
     if (ht->capacity_bytes > 0 && ht->used_bytes + value_size > ht->capacity_bytes) {
-        return -1; /* Would exceed capacity */
+        int64_t needed = ht->used_bytes + value_size;
+        while (ht->capacity_bytes < needed) {
+            ht->capacity_bytes = (ht->capacity_bytes < 64) ? 64 : ht->capacity_bytes * 2;
+        }
     }
 
     /* Grow if needed (check load factor before insert) */

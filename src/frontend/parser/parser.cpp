@@ -1149,14 +1149,12 @@ ASTNodePtr Parser::parseUnary() {
     if (token.type == TokenType::TOKEN_UNDERSCORE_BANG) {
         advance(); // consume '_!'
         
-        ASTNodePtr operand = parseUnary();
+        // B9 FIX: Parse at pipeline precedence so _! captures pipe chains
+        ASTNodePtr operand = parseExpression(14);
         if (!operand) {
             error("Expected expression after '_!'");
             return nullptr;
         }
-        
-        // Apply postfix operators so _! myFunc().field works correctly
-        operand = parsePostfix(operand);
         
         // Desugar to raw(operand)
         std::vector<ASTNodePtr> args;
@@ -1168,12 +1166,12 @@ ASTNodePtr Parser::parseUnary() {
     // raw expr — keyword form (same as _! shorthand)
     if (token.type == TokenType::TOKEN_KW_RAW) {
         advance(); // consume 'raw'
-        ASTNodePtr operand = parseUnary();
+        // B9 FIX: Parse at pipeline precedence so raw captures pipe chains
+        ASTNodePtr operand = parseExpression(14);
         if (!operand) {
             error("Expected expression after 'raw'");
             return nullptr;
         }
-        operand = parsePostfix(operand);
         std::vector<ASTNodePtr> args;
         args.push_back(operand);
         auto identExpr = std::make_shared<IdentifierExpr>("raw", token.line, token.column);
