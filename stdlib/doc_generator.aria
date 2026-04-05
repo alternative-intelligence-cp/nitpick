@@ -1,0 +1,109 @@
+// ═══════════════════════════════════════════════════════════════════════
+// doc_generator.aria — Self-hosted documentation generator helpers
+// v0.15.2 Port 10
+// ═══════════════════════════════════════════════════════════════════════
+// Higher-level helpers for parsing Aria source files, extracting doc
+// comments, generating HTML documentation pages.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── Item kind constants (must match shim) ────────────────────────────
+const int32:KIND_MODULE     = 0i32;
+const int32:KIND_FUNCTION   = 1i32;
+const int32:KIND_STRUCT     = 2i32;
+const int32:KIND_ENUM       = 3i32;
+const int32:KIND_TRAIT       = 4i32;
+const int32:KIND_IMPL       = 5i32;
+const int32:KIND_TYPE_ALIAS = 6i32;
+const int32:KIND_CONST      = 7i32;
+const int32:KIND_VARIABLE   = 8i32;
+
+// ─── Visibility constants ─────────────────────────────────────────────
+const int32:VIS_PUBLIC   = 0i32;
+const int32:VIS_PRIVATE  = 1i32;
+const int32:VIS_INTERNAL = 2i32;
+
+// ─── Annotation tag constants ─────────────────────────────────────────
+const int32:TAG_PARAM      = 0i32;
+const int32:TAG_RETURN     = 1i32;
+const int32:TAG_THROWS     = 2i32;
+const int32:TAG_EXAMPLE    = 3i32;
+const int32:TAG_DEPRECATED = 4i32;
+const int32:TAG_SEE        = 5i32;
+const int32:TAG_SINCE      = 6i32;
+const int32:TAG_NOTE       = 7i32;
+const int32:TAG_WARNING    = 8i32;
+const int32:TAG_TYPE       = 9i32;
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:doc_parse_file = int64(string:path);
+extern func:doc_free_module = int32(int64:handle);
+extern func:doc_module_name = string(int64:handle);
+extern func:doc_module_path = string(int64:handle);
+extern func:doc_module_summary = string(int64:handle);
+extern func:doc_item_count = int32(int64:handle);
+extern func:doc_item_name = string(int64:handle, int32:idx);
+extern func:doc_item_kind = int32(int64:handle, int32:idx);
+extern func:doc_item_visibility = int32(int64:handle, int32:idx);
+extern func:doc_item_signature = string(int64:handle, int32:idx);
+extern func:doc_item_summary = string(int64:handle, int32:idx);
+extern func:doc_item_description = string(int64:handle, int32:idx);
+extern func:doc_item_is_deprecated = int32(int64:handle, int32:idx);
+extern func:doc_item_line = int32(int64:handle, int32:idx);
+extern func:doc_item_annotation_count = int32(int64:handle, int32:idx);
+extern func:doc_item_annotation_tag = int32(int64:handle, int32:item_idx, int32:ann_idx);
+extern func:doc_item_annotation_name = string(int64:handle, int32:item_idx, int32:ann_idx);
+extern func:doc_count_by_kind = int32(int64:handle, int32:kind);
+extern func:doc_count_public = int32(int64:handle);
+extern func:doc_generate_html = int32(int64:handle, string:output_dir);
+extern func:doc_index_exists = int32(string:output_dir);
+extern func:doc_item_page_exists = int32(string:output_dir, string:item_name);
+extern func:doc_kind_label = string(int32:kind);
+extern func:doc_visibility_label = string(int32:vis);
+
+// ─── Helper: count functions in module ────────────────────────────────
+pub func:count_functions = int32(int64:handle) {
+    int32:result = doc_count_by_kind(handle, KIND_FUNCTION);
+    pass result;
+};
+
+// ─── Helper: count structs in module ──────────────────────────────────
+pub func:count_structs = int32(int64:handle) {
+    int32:result = doc_count_by_kind(handle, KIND_STRUCT);
+    pass result;
+};
+
+// ─── Helper: count enums in module ────────────────────────────────────
+pub func:count_enums = int32(int64:handle) {
+    int32:result = doc_count_by_kind(handle, KIND_ENUM);
+    pass result;
+};
+
+// ─── Helper: check if item is public ──────────────────────────────────
+pub func:is_public = int32(int64:handle, int32:idx) {
+    int32:vis = doc_item_visibility(handle, idx);
+    int32:result = 0i32;
+    if (vis == VIS_PUBLIC) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+// ─── Helper: check if item is a function ──────────────────────────────
+pub func:is_function = int32(int64:handle, int32:idx) {
+    int32:kind = doc_item_kind(handle, idx);
+    int32:result = 0i32;
+    if (kind == KIND_FUNCTION) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+// ─── Helper: has doc comments ─────────────────────────────────────────
+pub func:has_docs = int32(int64:handle, int32:idx) {
+    string:s = doc_item_summary(handle, idx);
+    int32:result = 0i32;
+    if (s != "") {
+        result = 1i32;
+    }
+    pass result;
+};

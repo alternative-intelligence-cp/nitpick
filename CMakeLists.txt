@@ -361,6 +361,9 @@ set(STDLIB_SOURCES
     src/runtime/sema/warnings_shim.cpp
     src/runtime/sema/module_resolver_shim.cpp
     src/runtime/sema/usage_stats_shim.cpp
+    src/runtime/sema/doc_generator_shim.cpp
+    src/runtime/sema/pkg_manager_shim.cpp
+    src/runtime/sema/project_config_shim.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp
