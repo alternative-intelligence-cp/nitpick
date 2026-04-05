@@ -1,6 +1,7 @@
 #include "frontend/sema/module_table.h"
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
 
 namespace aria {
 namespace sema {
@@ -165,9 +166,35 @@ Module* ModuleTable::resolveImport(const std::string& importPath, Module* fromMo
     
     // Handle relative imports (starting with ./ or ../)
     if (importPath.find("./") == 0 || importPath.find("../") == 0) {
-        // TODO: In Phase 3.2, implement file-based resolution
-        // For now, just error
-        error("Relative imports not yet implemented: " + importPath);
+        // Resolve relative to the importing module's file path
+        if (!fromModule) {
+            error("Relative import requires a source module context: " + importPath);
+            return nullptr;
+        }
+        
+        namespace fs = std::filesystem;
+        fs::path modulePath(fromModule->getPath());
+        fs::path moduleDir = modulePath.parent_path();
+        fs::path resolved = (moduleDir / importPath).lexically_normal();
+        
+        // Check if the resolved path is already registered
+        std::string resolvedStr = resolved.string();
+        Module* existing = getModule(resolvedStr);
+        if (existing) {
+            return existing;
+        }
+        
+        // Also try with .aria extension
+        if (resolved.extension().empty()) {
+            fs::path withExt = resolved;
+            withExt.replace_extension(".aria");
+            existing = getModule(withExt.string());
+            if (existing) {
+                return existing;
+            }
+        }
+        
+        error("Module not found at resolved path: " + resolvedStr);
         return nullptr;
     }
     
@@ -284,9 +311,21 @@ bool ModuleTable::canAccess(Symbol* symbol, Module* fromModule) const {
             return owningModule == fromModule;
             
         case Visibility::PACKAGE:
-            // TODO: In Phase 3.2, implement package-level access
-            // For now, treat as public
-            return true;
+            // Package-level access: modules sharing the same top-level path
+            // component are considered in the same package.
+            // e.g., "std.io" and "std.net" share package "std"
+            {
+                std::string ownerFull = owningModule->getFullPath();
+                std::string accessorFull = fromModule->getFullPath();
+                // Extract top-level package name (before first '.')
+                auto ownerDot = ownerFull.find('.');
+                auto accessorDot = accessorFull.find('.');
+                std::string ownerPkg = (ownerDot != std::string::npos) 
+                    ? ownerFull.substr(0, ownerDot) : ownerFull;
+                std::string accessorPkg = (accessorDot != std::string::npos) 
+                    ? accessorFull.substr(0, accessorDot) : accessorFull;
+                return ownerPkg == accessorPkg;
+            }
             
         case Visibility::SUPER:
             // Accessible from parent module

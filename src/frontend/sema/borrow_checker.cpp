@@ -2127,22 +2127,9 @@ void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* conte
 // ============================================================================
 
 bool BorrowChecker::proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2) {
-    if (!z3_verifier || !idx1 || !idx2) return false;
+    if (!idx1 || !idx2) return false;
 
-    // If both indices are identifiers, check if they're different variables
-    // with known distinct values (quick check before Z3)
-    if (idx1->type == ASTNode::NodeType::IDENTIFIER &&
-        idx2->type == ASTNode::NodeType::IDENTIFIER) {
-        auto* id1 = static_cast<IdentifierExpr*>(idx1);
-        auto* id2 = static_cast<IdentifierExpr*>(idx2);
-        if (id1->name != id2->name) {
-            // Different variable names don't guarantee disjointness
-            // but if they're loop counters with different names, likely disjoint
-            // For now, return false — need Z3 for real proof
-        }
-    }
-
-    // If both are literals, trivially check
+    // Fast path: literal comparison
     if (idx1->type == ASTNode::NodeType::LITERAL &&
         idx2->type == ASTNode::NodeType::LITERAL) {
         auto* lit1 = static_cast<LiteralExpr*>(idx1);
@@ -2153,10 +2140,56 @@ bool BorrowChecker::proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2) {
         }
     }
 
-    // Z3 proof: assert idx1 == idx2 and check if UNSAT
-    // If UNSAT, they're provably disjoint
-    // TODO: Full Z3 integration when borrow checker has access to Rules constraints
-    // For now, we use the literal fast-path above and return false for symbolic indices
+    // Identifier comparison: if both are identifiers referring to different
+    // variables, check if they have disjoint known ranges from Rules constraints
+    if (idx1->type == ASTNode::NodeType::IDENTIFIER &&
+        idx2->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id1 = static_cast<IdentifierExpr*>(idx1);
+        auto* id2 = static_cast<IdentifierExpr*>(idx2);
+        
+        // Same variable name → cannot prove disjoint
+        if (id1->name == id2->name) {
+            return false;
+        }
+        
+        // If Z3 verifier is available, attempt range-based disjointness proof.
+        // Look up both variables' Rules constraints; if their ranges are
+        // non-overlapping, they're provably disjoint.
+        if (z3_verifier) {
+            // Check if both variables have limit<Rules> constraints that
+            // define non-overlapping integer ranges. The Z3 verifier's
+            // verifyLimitRange can determine if a value in [lo1, hi1]
+            // can equal a value in [lo2, hi2] — if the ranges don't
+            // overlap, indices are provably different.
+            // This requires Rules constraint lookup from the enclosing scope,
+            // which is not yet wired in. When Rules constraints are available
+            // on BorrowChecker's context, this path activates.
+        }
+    }
+
+    // Binary expression with literal offset: arr[i+1] vs arr[i] are disjoint
+    // when the offset difference is non-zero
+    if (idx1->type == ASTNode::NodeType::BINARY_OP &&
+        idx2->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* binop = static_cast<BinaryExpr*>(idx1);
+        if (binop->left && binop->left->type == ASTNode::NodeType::IDENTIFIER &&
+            binop->right && binop->right->type == ASTNode::NodeType::LITERAL) {
+            auto* base = static_cast<IdentifierExpr*>(binop->left.get());
+            auto* id2 = static_cast<IdentifierExpr*>(idx2);
+            auto* offset = static_cast<LiteralExpr*>(binop->right.get());
+            if (base->name == id2->name &&
+                std::holds_alternative<int64_t>(offset->value) &&
+                std::get<int64_t>(offset->value) != 0) {
+                return true;  // i+K vs i are disjoint when K != 0
+            }
+        }
+    }
+    // Symmetric case: idx1 is identifier, idx2 is binary
+    if (idx2->type == ASTNode::NodeType::BINARY_OP &&
+        idx1->type == ASTNode::NodeType::IDENTIFIER) {
+        return proveIndexDisjoint(idx2, idx1);
+    }
+
     return false;
 }
 

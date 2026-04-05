@@ -258,8 +258,15 @@ bool GenericResolver::validateConstraints(
 std::string GenericResolver::canonicalizeTypeName(Type* type) const {
     if (!type) return "unknown";
     
-    // For now, just return the type name
-    // TODO: Resolve type aliases to their underlying types
+    // Resolve struct type aliases to their canonical name
+    // registerStructAlias() maps alias → StructType*, so the StructType's
+    // own getName() returns the original (canonical) name, not the alias.
+    if (type->getKind() == TypeKind::STRUCT) {
+        const StructType* st = static_cast<const StructType*>(type);
+        return st->getName();
+    }
+    
+    // For all other types, toString() is canonical
     return type->toString();
 }
 
@@ -428,13 +435,12 @@ Specialization* Monomorphizer::requestSpecialization(
     specializationCache[key] = spec;
     specializations.push_back(spec);
     
-    // TODO(Phase 3.5+): Send specialized function to TypeChecker for recursive analysis
-    // This ensures:
-    //   1. Concrete types satisfy all trait constraints
-    //   2. All operations in the function body are valid for the concrete types
-    //   3. Any nested generic calls are also instantiated and validated
-    // Once validated, set spec->analyzed = true
-    // Reference: research_027_generics_templates.txt Section 3.1 "Recursive Analysis"
+    // Recursive analysis is performed by TypeChecker::analyzeSpecializedBody()
+    // after retrieving this specialization. The TypeChecker walks the specialized
+    // body, verifies concrete types satisfy trait constraints, validates all
+    // operations, and recursively instantiates nested generic calls.
+    // spec->analyzed is set to false here; the TypeChecker sets it to true
+    // after analysis completes (see type_checker_call.cpp).
     
     // Pop from instantiation stack
     instantiationStack.pop_back();

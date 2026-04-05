@@ -351,9 +351,45 @@ bool FunctionType::isAssignableTo(const Type* target) const {
         }
     }
     
-    // Function types must match exactly for now
-    // TODO Phase 3.4: Implement contravariance for parameters, covariance for return
-    return equals(target);
+    // Function types must match exactly, or satisfy variance rules:
+    // - Parameters are contravariant (target params assignable to source params)
+    // - Return type is covariant (source return assignable to target return)
+    if (target->getKind() != TypeKind::FUNCTION) {
+        return false;
+    }
+    
+    const FunctionType* targetFunc = static_cast<const FunctionType*>(target);
+    
+    // Exact match is always fine
+    if (equals(target)) {
+        return true;
+    }
+    
+    // Async and variadic flags must match
+    if (isAsync != targetFunc->isAsync || isVariadic != targetFunc->isVariadic) {
+        return false;
+    }
+    
+    // Parameter count must match
+    if (paramTypes.size() != targetFunc->paramTypes.size()) {
+        return false;
+    }
+    
+    // Parameters are contravariant: target's param types must be assignable
+    // to source's param types (reversed direction)
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (!targetFunc->paramTypes[i]->isAssignableTo(paramTypes[i])) {
+            return false;
+        }
+    }
+    
+    // Return type is covariant: source's return type must be assignable
+    // to target's return type
+    if (!returnType->isAssignableTo(targetFunc->returnType)) {
+        return false;
+    }
+    
+    return true;
 }
 
 std::string FunctionType::toString() const {

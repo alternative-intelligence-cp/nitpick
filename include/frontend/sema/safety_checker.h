@@ -67,9 +67,18 @@ public:
     /**
      * Check entire AST for safety issues
      * @param root Root AST node
+     * @param sourceFile Path to the source file being checked
      * @return True if safe or warnings only, false if errors
      */
-    bool check(ASTNode* root);
+    bool check(ASTNode* root, const std::string& sourceFile = "");
+    
+    /**
+     * Parse SAFETY acknowledgment comments from source text
+     * Scans for lines matching "// SAFETY: <reason>" and records them
+     * for acknowledgment matching.
+     * @param source The raw source text of the file
+     */
+    void parseSafetyComments(const std::string& source);
     
     /**
      * Get all safety issues found
@@ -93,6 +102,7 @@ public:
     
 private:
     SafetyLevel safety_level;
+    std::string sourceFile;  // Source file path for diagnostics
     std::vector<SafetyIssue> issues;
     std::map<int, std::string> safety_acknowledgments; // line -> comment
     

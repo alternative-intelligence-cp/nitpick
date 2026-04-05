@@ -789,8 +789,37 @@ ComptimeValue ConstEvaluator::getTypeInfo(const std::string& typeName) {
         typeInfo["bit_width"] = ComptimeValue::makeInteger(0, "int64", 64);  // Unknown without layout
         typeInfo["alignment"] = ComptimeValue::makeInteger(8, "int64", 64);  // Default alignment
 
-        // TODO: If symbolTable is available, look up struct fields and add them
-        // For now, just mark as struct type
+        // Look up struct definition via symbol table to populate field info
+        if (symbolTable) {
+            Symbol* sym = symbolTable->resolveSymbol(typeName);
+            if (sym && sym->kind == SymbolKind::TYPE && sym->type &&
+                sym->type->getKind() == TypeKind::STRUCT) {
+                const StructType* st = static_cast<const StructType*>(sym->type);
+                
+                // Add field count
+                const auto& fields = st->getFields();
+                typeInfo["field_count"] = ComptimeValue::makeInteger(
+                    static_cast<int64_t>(fields.size()), "int64", 64);
+                
+                // Add field names as a comma-separated string
+                std::string fieldNames;
+                for (size_t i = 0; i < fields.size(); i++) {
+                    if (i > 0) fieldNames += ",";
+                    fieldNames += fields[i].name;
+                }
+                typeInfo["field_names"] = ComptimeValue::makeString(fieldNames);
+                
+                // Use struct's actual size and alignment if available
+                if (st->getSize() > 0) {
+                    typeInfo["bit_width"] = ComptimeValue::makeInteger(
+                        st->getSize() * 8, "int64", 64);
+                }
+                if (st->getAlignment() > 0) {
+                    typeInfo["alignment"] = ComptimeValue::makeInteger(
+                        st->getAlignment(), "int64", 64);
+                }
+            }
+        }
     }
 
     return ComptimeValue::makeStruct(typeInfo, "TypeInfo");
