@@ -457,6 +457,8 @@ private:
     llvm::Value* generateLBIMAnd(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
     llvm::Value* generateLBIMOr(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
     llvm::Value* generateLBIMXor(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+    llvm::Value* generateLBIMShl(llvm::Value* L, llvm::Value* R, unsigned numLimbs);
+    llvm::Value* generateLBIMShr(llvm::Value* L, llvm::Value* R, unsigned numLimbs, bool isArithmetic);
 
     // ========================================================================
     // Unknown-Safe Arithmetic (Layer 1 Safety)

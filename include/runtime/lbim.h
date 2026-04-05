@@ -182,6 +182,28 @@ aria_int256_t  aria_lbim_pow256 (aria_int256_t  base, uint64_t exp);
 aria_int512_t  aria_lbim_pow512 (aria_int512_t  base, uint64_t exp);
 aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp);
 
+// ═══════════════════════════════════════════════════════════════════════
+// Shift Operations (int128/256/512/1024)
+// Left shift, logical right shift, arithmetic right shift.
+// ERR sentinel is preserved through shifts.
+// ═══════════════════════════════════════════════════════════════════════
+
+aria_int128_t  aria_lbim_shl128  (aria_int128_t  a, uint32_t shift);
+aria_int128_t  aria_lbim_lshr128 (aria_int128_t  a, uint32_t shift);
+aria_int128_t  aria_lbim_ashr128 (aria_int128_t  a, uint32_t shift);
+
+aria_int256_t  aria_lbim_shl256  (aria_int256_t  a, uint32_t shift);
+aria_int256_t  aria_lbim_lshr256 (aria_int256_t  a, uint32_t shift);
+aria_int256_t  aria_lbim_ashr256 (aria_int256_t  a, uint32_t shift);
+
+aria_int512_t  aria_lbim_shl512  (aria_int512_t  a, uint32_t shift);
+aria_int512_t  aria_lbim_lshr512 (aria_int512_t  a, uint32_t shift);
+aria_int512_t  aria_lbim_ashr512 (aria_int512_t  a, uint32_t shift);
+
+aria_int1024_t aria_lbim_shl1024 (aria_int1024_t a, uint32_t shift);
+aria_int1024_t aria_lbim_lshr1024(aria_int1024_t a, uint32_t shift);
+aria_int1024_t aria_lbim_ashr1024(aria_int1024_t a, uint32_t shift);
+
 #ifdef __cplusplus
 }
 #endif

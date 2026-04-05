@@ -7633,8 +7633,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     
                     arg_value = scalar_i128;
                 }
-                // TODO: Add scalarization for int256, int512, int1024, int2048, int4096 if needed
-                // These would require platform-specific handling or rejection at semantic analysis
+                // Check for larger LBIM types: pass by pointer for FFI (no native LLVM type)
+                else if (struct_name.find("struct.int") == 0 || struct_name.find("struct.uint") == 0) {
+                    // int256, int512, int1024, int2048, int4096 — alloca + store, pass pointer
+                    llvm::AllocaInst* tmp = builder.CreateAlloca(arg_value->getType(), nullptr, "lbim_ffi_tmp");
+                    builder.CreateStore(arg_value, tmp);
+                    arg_value = tmp;
+                }
             }
             
             // CRITICAL FIX 2: AriaString* pointer → char* for FFI (opaque pointer mode)

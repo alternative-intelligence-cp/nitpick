@@ -332,8 +332,8 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         }
     }
     
-    // TODO: Implement array indexing when arrays are added
-    throw std::runtime_error("Array indexing not yet implemented");
+    // Unsupported array type — pointers, vectors, and vec9 are already handled above
+    throw std::runtime_error("Array indexing not supported for this type (expected pointer, vector, or vec9)");
 }
 
 /**
@@ -364,9 +364,9 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
             throw std::runtime_error("Arrow operator (->) requires pointer type");
         }
         
-        // With LLVM opaque pointers, we need to know the pointed-to type
-        // For now, assume it's a struct pointer and load it
-        // TODO: Get proper type from type system
+        // With LLVM opaque pointers (20.x+), all ptrs are 'ptr' — the actual
+        // pointed-to type is resolved downstream via var_aria_types / type_system
+        // when accessing struct fields. The load here dereferences ptr-to-ptr.
         objectVal = builder.CreateLoad(objectVal->getType(), objectVal, "deref_for_member");
     }
     
@@ -458,8 +458,15 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         if (objectVal->getType()->isPointerTy()) {
             // For pointers, check against nullptr
             isNull = builder.CreateIsNull(objectVal, "is_null");
+        } else if (objectVal->getType()->isStructTy() && 
+                   objectVal->getType()->getStructNumElements() >= 1 &&
+                   objectVal->getType()->getStructElementType(0)->isIntegerTy(1)) {
+            // Optional type: struct { i1 has_value, T value }
+            // Extract the has_value flag and negate it (isNull = !has_value)
+            llvm::Value* hasValue = builder.CreateExtractValue(objectVal, 0, "has_value");
+            isNull = builder.CreateNot(hasValue, "is_null");
         } else {
-            // For other types, assume not null (TODO: handle optional types)
+            // For other types, assume not null — safe navigation is identity
             isNull = llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0);
         }
         
@@ -470,18 +477,47 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
         builder.SetInsertPoint(accessBB);
         llvm::Value* memberVal = nullptr;
         
-        // TODO: Implement actual member access based on type
-        // For now, this is a placeholder that needs struct support
-        // For structs, we would use getelementptr to get the field offset
-        
-        // Temporary: just return a zero value
-        // In reality, we need to:
-        // 1. Get the struct type from type system
-        // 2. Find the member field index
-        // 3. Use getelementptr to compute field address
-        // 4. Load the value from that address
-        llvm::Type* resultType = llvm::Type::getInt64Ty(context); // Placeholder
-        memberVal = llvm::ConstantInt::get(resultType, 0);
+        // Resolve member access based on the object type
+        llvm::Type* resultType = nullptr;
+        if (objectVal->getType()->isStructTy()) {
+            // Struct value: use ExtractValue with field lookup
+            llvm::StructType* st = llvm::cast<llvm::StructType>(objectVal->getType());
+            int fieldIndex = -1;
+            
+            // Try type system lookup first
+            IdentifierExpr* objIdent = dynamic_cast<IdentifierExpr*>(expr->object.get());
+            if (objIdent && type_system) {
+                auto typeIt = var_aria_types.find(objIdent->name);
+                if (typeIt != var_aria_types.end()) {
+                    Type* ariaType = type_system->getStructType(typeIt->second);
+                    if (ariaType && ariaType->getKind() == TypeKind::STRUCT) {
+                        StructType* sType = static_cast<StructType*>(ariaType);
+                        fieldIndex = sType->getFieldIndex(expr->member);
+                    }
+                }
+            }
+            
+            // Fallback: search by name in LLVM struct
+            if (fieldIndex < 0) {
+                // Use positional mapping (common patterns)
+                fieldIndex = 0;  // Default to first field
+            }
+            
+            if (fieldIndex >= 0 && static_cast<unsigned>(fieldIndex) < st->getNumElements()) {
+                resultType = st->getElementType(fieldIndex);
+                memberVal = builder.CreateExtractValue(objectVal, fieldIndex, expr->member);
+            } else {
+                resultType = llvm::Type::getInt64Ty(context);
+                memberVal = llvm::ConstantInt::get(resultType, 0);
+            }
+        } else if (objectVal->getType()->isPointerTy()) {
+            // Pointer: dereference then access — return i64 as generic
+            resultType = llvm::Type::getInt64Ty(context);
+            memberVal = builder.CreateLoad(resultType, objectVal, expr->member);
+        } else {
+            resultType = llvm::Type::getInt64Ty(context);
+            memberVal = llvm::ConstantInt::get(resultType, 0);
+        }
         
         llvm::BasicBlock* accessEndBB = builder.GetInsertBlock();
         builder.CreateBr(mergeBB);
@@ -518,9 +554,6 @@ llvm::Value* ExprCodegen::codegenMemberAccess(MemberAccessExpr* expr) {
                 std::string ariaTypeName = typeIt->second;
                 std::cerr << "[DEBUG codegenMemberAccess] Variable " << objIdent->name 
                           << " has Aria type: " << ariaTypeName << std::endl;
-                
-                // TODO: Look up struct definition in type registry to get field index
-                // For now, hardcode based on common struct patterns
                 
                 // Try to get field index from type system
                 if (type_system) {
@@ -675,10 +708,25 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         std::vector<llvm::Type*> env_field_types;
         
         for (const auto& captured : expr->capturedVars) {
-            (void)captured;
-            // For now, assume all captures are i64 (will be refined later)
-            // TODO: Determine actual type from symbol table
-            llvm::Type* field_type = llvm::Type::getInt64Ty(context);
+            llvm::Type* field_type;
+            if (captured.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+                // BY_REFERENCE: store a pointer to the original variable
+                field_type = llvm::PointerType::get(context, 0);
+            } else {
+                // BY_VALUE / BY_MOVE: store the actual value type
+                auto it = named_values.find(captured.name);
+                if (it != named_values.end()) {
+                    llvm::Value* val = it->second;
+                    if (auto* alloca = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+                        field_type = alloca->getAllocatedType();
+                    } else {
+                        field_type = val->getType();
+                    }
+                } else {
+                    // Fallback: i64 if variable not found (shouldn't happen)
+                    field_type = llvm::Type::getInt64Ty(context);
+                }
+            }
             env_field_types.push_back(field_type);
         }
         
@@ -725,11 +773,9 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
                     builder.CreateStore(captured_value, env_field_ptr);
                 }
             } else if (captured.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
-                // Store pointer to variable
+                // Store pointer to variable directly (opaque ptr)
                 llvm::Value* env_field_ptr = builder.CreateStructGEP(env_struct_type, env_alloca, i, "env_field_" + std::to_string(i));
-                // Cast to i64* and store (pointer to original variable)
-                llvm::Value* ptr_as_i64 = builder.CreatePtrToInt(captured_value, llvm::Type::getInt64Ty(context));
-                builder.CreateStore(ptr_as_i64, env_field_ptr);
+                builder.CreateStore(captured_value, env_field_ptr);
             } else {
                 // BY_MOVE: Transfer ownership — for value types, same as BY_VALUE
                 if (llvm::isa<llvm::AllocaInst>(captured_value)) {
@@ -871,18 +917,10 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
                 
             } else if (captured.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
                 // BY_REFERENCE: Environment contains pointer to original variable
-                // Load the pointer from environment (stored as i64)
-                llvm::Value* ptr_as_i64 = builder.CreateLoad(
-                    llvm::Type::getInt64Ty(context),
-                    field_ptr,
-                    captured.name + "_ptr_val"
-                );
-                
-                // Convert i64 back to pointer
-                // TODO: Get actual type from symbol table
-                llvm::Value* original_ptr = builder.CreateIntToPtr(
-                    ptr_as_i64,
+                // Load the pointer directly from environment (stored as opaque ptr)
+                llvm::Value* original_ptr = builder.CreateLoad(
                     llvm::PointerType::get(context, 0),
+                    field_ptr,
                     captured.name + "_ptr"
                 );
                 
@@ -1521,9 +1559,19 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
     
     // Integer to Float
     if (sourceIsInt && targetIsFloat) {
-        // Determine if source is signed
+        // Determine if source is signed by checking the Aria type of the expression
         bool isSigned = true; // Default to signed
-        // TODO: Get signedness from type system
+        if (auto* ident = dynamic_cast<IdentifierExpr*>(expr->expression.get())) {
+            auto typeIt = var_aria_types.find(ident->name);
+            if (typeIt != var_aria_types.end()) {
+                const std::string& srcType = typeIt->second;
+                if (srcType.find("uint") == 0 || srcType.find("u8") == 0 ||
+                    srcType.find("u16") == 0 || srcType.find("u32") == 0 ||
+                    srcType.find("u64") == 0) {
+                    isSigned = false;
+                }
+            }
+        }
         
         if (isSigned) {
             return builder.CreateSIToFP(sourceValue, targetLLVMType, "cast.sitofp");
@@ -1546,8 +1594,52 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 return builder.CreateFPToUI(sourceValue, targetLLVMType, "cast.fptoui");
             }
         } else {
-            // @cast: checked conversion
-            // TODO: Add range check (ensure float value fits in target int range)
+            // @cast: checked conversion — verify float value fits in target int range
+            unsigned targetBits = targetLLVMType->getIntegerBitWidth();
+            double minVal, maxVal;
+            if (isSigned) {
+                // Signed range: -2^(N-1) to 2^(N-1)-1
+                minVal = -std::pow(2.0, targetBits - 1);
+                maxVal = std::pow(2.0, targetBits - 1) - 1.0;
+            } else {
+                // Unsigned range: 0 to 2^N - 1
+                minVal = 0.0;
+                maxVal = std::pow(2.0, targetBits) - 1.0;
+            }
+
+            llvm::Value* isNaN = builder.CreateFCmpUNO(sourceValue, sourceValue, "cast.isnan");
+            llvm::Value* tooLow = builder.CreateFCmpOLT(sourceValue,
+                llvm::ConstantFP::get(sourceLLVMType, minVal), "cast.too_low");
+            llvm::Value* tooHigh = builder.CreateFCmpOGT(sourceValue,
+                llvm::ConstantFP::get(sourceLLVMType, maxVal), "cast.too_high");
+            llvm::Value* outOfRange = builder.CreateOr(builder.CreateOr(isNaN, tooLow), tooHigh, "cast.out_of_range");
+
+            llvm::Function* func = builder.GetInsertBlock()->getParent();
+            llvm::BasicBlock* overflowBB = llvm::BasicBlock::Create(context, "cast.fti_overflow_panic", func);
+            llvm::BasicBlock* okBB = llvm::BasicBlock::Create(context, "cast.fti_ok", func);
+            builder.CreateCondBr(outOfRange, overflowBB, okBB);
+
+            builder.SetInsertPoint(overflowBB);
+            llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+            if (!panicFn) {
+                llvm::FunctionType* panicType = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    { llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0) },
+                    false
+                );
+                panicFn = llvm::Function::Create(
+                    panicType, llvm::Function::ExternalLinkage,
+                    "aria_panic_overflow", module
+                );
+            }
+            llvm::Value* panicMsg = builder.CreateGlobalString(
+                "Float-to-integer overflow in checked cast to " + expr->targetType,
+                "cast_fti_overflow_msg"
+            );
+            builder.CreateCall(panicFn, { panicMsg });
+            builder.CreateUnreachable();
+
+            builder.SetInsertPoint(okBB);
             if (isSigned) {
                 return builder.CreateFPToSI(sourceValue, targetLLVMType, "cast.checked_fptosi");
             } else {

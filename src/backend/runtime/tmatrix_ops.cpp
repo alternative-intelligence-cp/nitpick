@@ -352,39 +352,46 @@ tmatrix_tbb32 aria_tmatrix_tbb32_mul(const tmatrix_tbb32* a, const tmatrix_tbb32
     int32_t* b_data = (int32_t*)b->data;
     int32_t* c_data = (int32_t*)result.data;
     
-    // Naive GEMM: C[i,j] = sum_k A[i,k] * B[k,j]
-    // TODO: Optimize with blocking, SIMD, etc.
-    for (int32_t i = 0; i < m; i++) {
-        for (int32_t j = 0; j < p; j++) {
-            int32_t sum = 0;
-            bool tainted = false;
-            
-            for (int32_t k = 0; k < n; k++) {
-                int32_t a_elem = a_data[i * n + k];
-                int32_t b_elem = b_data[k * p + j];
-                
-                // Sentinel check
-                if (is_err_tbb32(a_elem) || is_err_tbb32(b_elem)) {
-                    tainted = true;
-                    break;
-                }
-                
-                // Multiply
-                int32_t prod = tbb32_mul(a_elem, b_elem);
-                if (is_err_tbb32(prod)) {
-                    tainted = true;
-                    break;
-                }
-                
-                // Accumulate
-                sum = tbb32_add(sum, prod);
-                if (is_err_tbb32(sum)) {
-                    tainted = true;
-                    break;
+    // Cache-friendly tiled GEMM: C[i,j] += A[i,k] * B[k,j]
+    // Uses ikj loop order with blocking for L1/L2 cache locality.
+    // TBB sentinel checking is preserved for safety.
+    static constexpr int32_t TILE = 32;
+
+    for (int32_t ii = 0; ii < m; ii += TILE) {
+        int32_t i_end = (ii + TILE < m) ? ii + TILE : m;
+        for (int32_t kk = 0; kk < n; kk += TILE) {
+            int32_t k_end = (kk + TILE < n) ? kk + TILE : n;
+            for (int32_t jj = 0; jj < p; jj += TILE) {
+                int32_t j_end = (jj + TILE < p) ? jj + TILE : p;
+
+                // Micro-tile: i-k-j order
+                for (int32_t i = ii; i < i_end; i++) {
+                    for (int32_t k = kk; k < k_end; k++) {
+                        int32_t a_elem = a_data[i * n + k];
+                        if (is_err_tbb32(a_elem)) {
+                            // Taint entire row slice
+                            for (int32_t j = jj; j < j_end; j++)
+                                c_data[i * p + j] = TBB32_ERR;
+                            continue;
+                        }
+                        for (int32_t j = jj; j < j_end; j++) {
+                            if (is_err_tbb32(c_data[i * p + j])) continue;
+                            int32_t b_elem = b_data[k * p + j];
+                            if (is_err_tbb32(b_elem)) {
+                                c_data[i * p + j] = TBB32_ERR;
+                                continue;
+                            }
+                            int32_t prod = tbb32_mul(a_elem, b_elem);
+                            if (is_err_tbb32(prod)) {
+                                c_data[i * p + j] = TBB32_ERR;
+                                continue;
+                            }
+                            int32_t sum = tbb32_add(c_data[i * p + j], prod);
+                            c_data[i * p + j] = is_err_tbb32(sum) ? TBB32_ERR : sum;
+                        }
+                    }
                 }
             }
-            
-            c_data[i * p + j] = tainted ? TBB32_ERR : sum;
         }
     }
     
