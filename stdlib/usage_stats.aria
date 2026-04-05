@@ -1,0 +1,57 @@
+// ═══════════════════════════════════════════════════════════════════════
+// usage_stats.aria — Self-hosted usage statistics helpers
+// v0.15.1 Port 9
+// ═══════════════════════════════════════════════════════════════════════
+// Higher-level helpers for telemetry recording and counter aggregation.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Type-kind constants for us_record_type
+const int32:TYPE_INT128 = 0i32;
+const int32:TYPE_FIX256 = 1i32;
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:us_new = wild int8*();
+extern func:us_free = int32(wild int8*:state);
+extern func:us_null_ptr = wild int8*();
+extern func:us_release = int32(wild int8*:p);
+extern func:us_session_id = int64(wild int8*:state);
+extern func:us_set_enabled = int32(wild int8*:state, int32:flag);
+extern func:us_is_enabled = int32(wild int8*:state);
+extern func:us_record_compilation = int32(wild int8*:state);
+extern func:us_record_ffi = int32(wild int8*:state);
+extern func:us_record_type = int32(wild int8*:state, int32:type_kind);
+extern func:us_record_async = int32(wild int8*:state);
+extern func:us_record_alloc = int32(wild int8*:state);
+extern func:us_record_panic = int32(wild int8*:state);
+extern func:us_record_feature = int32(wild int8*:state, string:feature);
+extern func:us_feature_count = int32(wild int8*:state);
+extern func:us_get_feature = string(wild int8*:state, int32:idx);
+extern func:us_get_compilations = int64(wild int8*:state);
+extern func:us_get_ffi_calls = int64(wild int8*:state);
+extern func:us_get_int128_usage = int64(wild int8*:state);
+extern func:us_get_fix256_usage = int64(wild int8*:state);
+extern func:us_get_async_tasks = int64(wild int8*:state);
+extern func:us_get_memory_allocs = int64(wild int8*:state);
+extern func:us_get_panics = int64(wild int8*:state);
+extern func:us_os_name = string(wild int8*:state);
+extern func:us_cpu_arch = string(wild int8*:state);
+extern func:us_compiler_version = string(wild int8*:state);
+extern func:us_total_memory_mb = int32(wild int8*:state);
+extern func:us_cpu_cores = int32(wild int8*:state);
+extern func:us_flush = int32(wild int8*:state);
+extern func:us_flush_count = int32(wild int8*:state);
+extern func:us_reset = int32(wild int8*:state);
+
+// ═══ Helper: record compilation + FFI together ═══════════════════════
+pub func:us_record_compile_ffi = int32(wild int8*:state) {
+    _ = us_record_compilation(state);
+    _ = us_record_ffi(state);
+    pass 0i32;
+};
+
+// ═══ Helper: get total event count (compilations + ffi) ══════════════
+pub func:us_total_events = int64(wild int8*:state) {
+    int64:c = us_get_compilations(state);
+    int64:f = us_get_ffi_calls(state);
+    pass c + f;
+};

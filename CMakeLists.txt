@@ -357,6 +357,10 @@ set(STDLIB_SOURCES
     src/runtime/sema/diagnostics_shim.cpp
     src/runtime/sema/module_table_shim.cpp
     src/runtime/sema/definite_assignment_shim.cpp
+    src/runtime/sema/closure_analyzer_shim.cpp
+    src/runtime/sema/warnings_shim.cpp
+    src/runtime/sema/module_resolver_shim.cpp
+    src/runtime/sema/usage_stats_shim.cpp
     src/runtime/net/net.cpp
     src/runtime/math/math.cpp
     src/runtime/math/lbim.cpp

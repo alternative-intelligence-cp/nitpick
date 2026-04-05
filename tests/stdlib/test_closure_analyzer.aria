@@ -1,0 +1,271 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Closure Analyzer — v0.15.1
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria closure analysis logic.
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:CAP_BY_VALUE     = 0i32;
+const int32:CAP_BY_REFERENCE = 1i32;
+const int32:CAP_BY_MOVE      = 2i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:cla_new = wild int8*();
+extern func:cla_free = int32(wild int8*:state);
+extern func:cla_null_ptr = wild int8*();
+extern func:cla_release = int32(wild int8*:p);
+extern func:cla_add_param = int32(wild int8*:state, string:name);
+extern func:cla_add_local = int32(wild int8*:state, string:name);
+extern func:cla_is_param = int32(wild int8*:state, string:name);
+extern func:cla_is_local = int32(wild int8*:state, string:name);
+extern func:cla_record_capture = int32(wild int8*:state, string:name);
+extern func:cla_mark_mutated = int32(wild int8*:state, string:name);
+extern func:cla_mark_addr_taken = int32(wild int8*:state, string:name);
+extern func:cla_capture_count = int32(wild int8*:state);
+extern func:cla_capture_name = string(wild int8*:state, int32:index);
+extern func:cla_capture_is_mutated = int32(wild int8*:state, string:name);
+extern func:cla_capture_is_addr_taken = int32(wild int8*:state, string:name);
+extern func:cla_capture_usage = int32(wild int8*:state, string:name);
+extern func:cla_set_capture_mode = int32(wild int8*:state, string:name, int32:cap_mode);
+extern func:cla_get_capture_mode = int32(wild int8*:state, string:name);
+extern func:cla_determine_mode = int32(wild int8*:state, string:name, int32:type_is_primitive);
+extern func:cla_reset = int32(wild int8*:state);
+extern func:cla_add_error = int32(wild int8*:state, string:msg);
+extern func:cla_error_count = int32(wild int8*:state);
+extern func:cla_get_error = string(wild int8*:state, int32:index);
+extern func:cla_clear_errors = int32(wild int8*:state);
+
+
+// ═══ Test 1: Parameter not captured ═════════════════════════════════
+pub func:test_param_not_captured = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_add_param(state, "x");
+    int32:ip = cla_is_param(state, "x");
+    int32:cc = cla_capture_count(state);
+    int32:result = 1i32;
+    if (ip == 1i32 && cc == 0i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Local not captured ═════════════════════════════════════
+pub func:test_local_not_captured = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_add_local(state, "tmp");
+    int32:il = cla_is_local(state, "tmp");
+    int32:cc = cla_capture_count(state);
+    int32:result = 1i32;
+    if (il == 1i32 && cc == 0i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Outer variable captured ════════════════════════════════
+pub func:test_outer_captured = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "counter");
+    int32:cc = cla_capture_count(state);
+    string:cn = cla_capture_name(state, 0i32);
+    int32:result = 1i32;
+    if (cc == 1i32 && cn == "counter") {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 4: Mutated capture → BY_REFERENCE ═════════════════════════
+pub func:test_mutated_by_ref = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "val");
+    _ = cla_mark_mutated(state, "val");
+    int32:determined = cla_determine_mode(state, "val", 1i32);
+    int32:result = 1i32;
+    if (determined == CAP_BY_REFERENCE) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 5: Address-taken capture → BY_REFERENCE ═══════════════════
+pub func:test_addr_taken_by_ref = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "buf");
+    _ = cla_mark_addr_taken(state, "buf");
+    int32:determined = cla_determine_mode(state, "buf", 0i32);
+    int32:result = 1i32;
+    if (determined == CAP_BY_REFERENCE) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Primitive immutable → BY_VALUE ═════════════════════════
+pub func:test_primitive_by_value = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "count");
+    int32:determined = cla_determine_mode(state, "count", 1i32);
+    int32:result = 1i32;
+    if (determined == CAP_BY_VALUE) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Usage count increments ═════════════════════════════════
+pub func:test_usage_count = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "data");
+    _ = cla_record_capture(state, "data");
+    _ = cla_record_capture(state, "data");
+    int32:usage = cla_capture_usage(state, "data");
+    int32:cc = cla_capture_count(state);
+    int32:result = 1i32;
+    if (usage == 3i32 && cc == 1i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 8: Multiple captures tracked independently ════════════════
+pub func:test_multiple_captures = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "a");
+    _ = cla_record_capture(state, "b");
+    _ = cla_mark_mutated(state, "a");
+    int32:cc = cla_capture_count(state);
+    int32:a_mut = cla_capture_is_mutated(state, "a");
+    int32:b_mut = cla_capture_is_mutated(state, "b");
+    int32:result = 1i32;
+    if (cc == 2i32 && a_mut == 1i32 && b_mut == 0i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 9: Reset clears everything ════════════════════════════════
+pub func:test_reset = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_add_param(state, "x");
+    _ = cla_add_local(state, "tmp");
+    _ = cla_record_capture(state, "outer");
+    _ = cla_reset(state);
+    int32:ip = cla_is_param(state, "x");
+    int32:il = cla_is_local(state, "tmp");
+    int32:cc = cla_capture_count(state);
+    int32:result = 1i32;
+    if (ip == 0i32 && il == 0i32 && cc == 0i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Set capture mode explicitly ═══════════════════════════
+pub func:test_set_mode = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_record_capture(state, "ptr");
+    _ = cla_set_capture_mode(state, "ptr", CAP_BY_MOVE);
+    int32:cap_mode = cla_get_capture_mode(state, "ptr");
+    int32:result = 1i32;
+    if (cap_mode == CAP_BY_MOVE) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Error management ══════════════════════════════════════
+pub func:test_error_mgmt = int32() {
+    wild int8->:state = cla_new();
+    _ = cla_add_error(state, "capture escapes scope");
+    _ = cla_add_error(state, "stack closure returned");
+    int32:ec = cla_error_count(state);
+    string:e0 = cla_get_error(state, 0i32);
+    string:e1 = cla_get_error(state, 1i32);
+    _ = cla_clear_errors(state);
+    int32:ec2 = cla_error_count(state);
+    int32:result = 1i32;
+    if (ec == 2i32 && e0 == "capture escapes scope" && e1 == "stack closure returned" && ec2 == 0i32) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Full lambda analysis flow ═════════════════════════════
+pub func:test_full_flow = int32() {
+    wild int8->:state = cla_new();
+    // Simulate: |x, y| { let tmp = x + outer; outer = tmp; }
+    _ = cla_add_param(state, "x");
+    _ = cla_add_param(state, "y");
+    _ = cla_add_local(state, "tmp");
+    // "outer" is from enclosing scope
+    _ = cla_record_capture(state, "outer");
+    _ = cla_record_capture(state, "outer");
+    _ = cla_mark_mutated(state, "outer");
+    // Check results
+    int32:cc = cla_capture_count(state);
+    int32:usage = cla_capture_usage(state, "outer");
+    int32:determined = cla_determine_mode(state, "outer", 1i32);
+    int32:result = 1i32;
+    if (cc == 1i32 && usage == 2i32 && determined == CAP_BY_REFERENCE) {
+        result = 0i32;
+    }
+    _ = cla_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_param_not_captured();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_local_not_captured();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_outer_captured();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_mutated_by_ref();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_addr_taken_by_ref();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_primitive_by_value();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_usage_count();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_multiple_captures();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_reset();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_set_mode();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_error_mgmt();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_full_flow();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

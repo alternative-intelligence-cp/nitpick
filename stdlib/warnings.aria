@@ -1,0 +1,62 @@
+// ═══════════════════════════════════════════════════════════════════════
+// warnings.aria — Self-hosted warning analysis helpers
+// v0.15.1 Port 7
+// ═══════════════════════════════════════════════════════════════════════
+// Higher-level helpers built on the C shim for flag batch-parsing and
+// unused-variable style analysis logic.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── Warning type constants (must match shim) ─────────────────────────
+const int32:WARN_UNUSED_VARIABLE     = 0i32;
+const int32:WARN_UNUSED_PARAMETER    = 1i32;
+const int32:WARN_UNUSED_FUNCTION     = 2i32;
+const int32:WARN_DEAD_CODE           = 3i32;
+const int32:WARN_UNREACHABLE_CODE    = 4i32;
+const int32:WARN_IMPLICIT_CONVERSION = 5i32;
+const int32:WARN_EMPTY_BLOCK         = 6i32;
+const int32:WARN_CONSTANT_CONDITION  = 7i32;
+const int32:WARN_SHADOWING           = 8i32;
+const int32:WARN_TYPE_COUNT          = 9i32;
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:warn_new = wild int8*();
+extern func:warn_free = int32(wild int8*:state);
+extern func:warn_null_ptr = wild int8*();
+extern func:warn_release = int32(wild int8*:p);
+extern func:warn_enable = int32(wild int8*:state, int32:wtype);
+extern func:warn_disable = int32(wild int8*:state, int32:wtype);
+extern func:warn_enable_all = int32(wild int8*:state);
+extern func:warn_disable_all = int32(wild int8*:state);
+extern func:warn_is_enabled = int32(wild int8*:state, int32:wtype);
+extern func:warn_set_as_errors = int32(wild int8*:state, int32:flag);
+extern func:warn_as_errors = int32(wild int8*:state);
+extern func:warn_type_to_string = string(int32:wtype);
+extern func:warn_string_to_type = int32(string:name);
+extern func:warn_parse_flag = int32(wild int8*:state, string:flag);
+extern func:warn_emit = int32(wild int8*:state, int32:wtype, string:msg);
+extern func:warn_count = int32(wild int8*:state);
+extern func:warn_entry_count = int32(wild int8*:state);
+extern func:warn_get_message = string(wild int8*:state, int32:idx);
+extern func:warn_get_type = int32(wild int8*:state, int32:idx);
+extern func:warn_clear = int32(wild int8*:state);
+extern func:warn_is_terminal = int32(int32:stmt_kind);
+extern func:warn_supported_flag_count = int32();
+extern func:warn_supported_flag = string(int32:idx);
+
+// ═══ Helper: check if a given warning category is active ═════════════
+pub func:warn_category_active = int32(wild int8*:state, int32:wtype) {
+    int32:en = warn_is_enabled(state, wtype);
+    pass en;
+};
+
+// ═══ Helper: emit unused-variable style warning ═════════════════════
+pub func:warn_unused_var = int32(wild int8*:state, string:name) {
+    int32:rc = warn_emit(state, WARN_UNUSED_VARIABLE, name);
+    pass rc;
+};
+
+// ═══ Helper: emit unused-parameter style warning ════════════════════
+pub func:warn_unused_param = int32(wild int8*:state, string:name) {
+    int32:rc = warn_emit(state, WARN_UNUSED_PARAMETER, name);
+    pass rc;
+};

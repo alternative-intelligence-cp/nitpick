@@ -1,0 +1,235 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Module Resolver — v0.15.1
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for search paths, path utilities, circular dependency
+// detection, and module resolution patterns.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:mr_new = wild int8*(string:root);
+extern func:mr_free = int32(wild int8*:state);
+extern func:mr_null_ptr = wild int8*();
+extern func:mr_release = int32(wild int8*:p);
+extern func:mr_root_path = string(wild int8*:state);
+extern func:mr_search_path_count = int32(wild int8*:state);
+extern func:mr_search_path = string(wild int8*:state, int32:idx);
+extern func:mr_add_search_path = int32(wild int8*:state, string:path);
+extern func:mr_normalize = string(string:path);
+extern func:mr_get_directory = string(string:path);
+extern func:mr_build_path = string(string:base, string:rel);
+extern func:mr_is_absolute = int32(string:path);
+extern func:mr_is_relative = int32(string:path);
+extern func:mr_try_pattern1 = string(string:base, string:logical);
+extern func:mr_try_pattern2 = string(string:base, string:logical);
+extern func:mr_resolve_relative = string(string:current_mod, string:import_path);
+extern func:mr_begin_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_end_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_is_loading = int32(wild int8*:state, string:mod_path);
+extern func:mr_loading_depth = int32(wild int8*:state);
+extern func:mr_loading_at = string(wild int8*:state, int32:idx);
+extern func:mr_add_error = int32(wild int8*:state, string:msg);
+extern func:mr_error_count = int32(wild int8*:state);
+extern func:mr_get_error = string(wild int8*:state, int32:idx);
+extern func:mr_clear_errors = int32(wild int8*:state);
+extern func:mr_reset = int32(wild int8*:state);
+
+
+// ═══ Test 1: Default search paths include stdlib ════════════════════
+pub func:test_default_search_paths = int32() {
+    wild int8->:state = mr_new("/project");
+    string:rp = mr_root_path(state);
+    int32:cnt = mr_search_path_count(state);
+    string:first = mr_search_path(state, 0i32);
+    int32:result = 1i32;
+    // Should have at least 3 (stdlib, /usr/lib/aria, /usr/local/lib/aria)
+    if (rp == "/project" && cnt >= 3i32 && first == "/project/stdlib") {
+        result = 0i32;
+    }
+    _ = mr_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Add custom search path ═════════════════════════════════
+pub func:test_add_search_path = int32() {
+    wild int8->:state = mr_new("/project");
+    int32:before = mr_search_path_count(state);
+    _ = mr_add_search_path(state, "/opt/aria/lib");
+    int32:after = mr_search_path_count(state);
+    int32:result = 1i32;
+    if (after == before + 1i32) {
+        result = 0i32;
+    }
+    _ = mr_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Path normalize removes ../. ════════════════════════════
+pub func:test_normalize = int32() {
+    string:p = mr_normalize("/a/b/../c/./d");
+    int32:result = 1i32;
+    if (p == "/a/c/d") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 4: Get directory ══════════════════════════════════════════
+pub func:test_get_directory = int32() {
+    string:dir = mr_get_directory("/usr/lib/aria/math.aria");
+    int32:result = 1i32;
+    if (dir == "/usr/lib/aria") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 5: Build path joins correctly ═════════════════════════════
+pub func:test_build_path = int32() {
+    string:joined = mr_build_path("/home/user", "src/main.aria");
+    int32:result = 1i32;
+    if (joined == "/home/user/src/main.aria") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 6: Absolute / relative detection ══════════════════════════
+pub func:test_abs_rel = int32() {
+    int32:a1 = mr_is_absolute("/usr/lib");
+    int32:a2 = mr_is_absolute("src/mod.aria");
+    int32:r1 = mr_is_relative("src/mod.aria");
+    int32:r2 = mr_is_relative("/absolute");
+    int32:result = 1i32;
+    if (a1 == 1i32 && a2 == 0i32 && r1 == 1i32 && r2 == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 7: Pattern 1 — logical.aria ═══════════════════════════════
+pub func:test_pattern1 = int32() {
+    string:resolved = mr_try_pattern1("/usr/lib/aria", "math");
+    int32:result = 1i32;
+    if (resolved == "/usr/lib/aria/math.aria") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 8: Pattern 2 — logical/mod.aria ═══════════════════════════
+pub func:test_pattern2 = int32() {
+    string:resolved = mr_try_pattern2("/usr/lib/aria", "collections");
+    int32:result = 1i32;
+    if (resolved == "/usr/lib/aria/collections/mod.aria") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 9: Resolve relative to current module ═════════════════════
+pub func:test_resolve_relative = int32() {
+    string:resolved = mr_resolve_relative("/project/src/main.aria", "utils.aria");
+    int32:result = 1i32;
+    if (resolved == "/project/src/utils.aria") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 10: Circular dependency detection ═════════════════════════
+pub func:test_circular_detect = int32() {
+    wild int8->:state = mr_new("/project");
+    int32:rc1 = mr_begin_loading(state, "/project/a.aria");
+    int32:rc2 = mr_begin_loading(state, "/project/b.aria");
+    // Try to begin loading a.aria again → circular!
+    int32:rc3 = mr_begin_loading(state, "/project/a.aria");
+    int32:loading = mr_is_loading(state, "/project/a.aria");
+    int32:depth = mr_loading_depth(state);
+    int32:result = 1i32;
+    if (rc1 == 0i32 && rc2 == 0i32 && rc3 == -1i32 && loading == 1i32 && depth == 2i32) {
+        result = 0i32;
+    }
+    _ = mr_free(state);
+    pass result;
+};
+
+// ═══ Test 11: End loading removes from stack ════════════════════════
+pub func:test_end_loading = int32() {
+    wild int8->:state = mr_new("/project");
+    _ = mr_begin_loading(state, "/project/a.aria");
+    _ = mr_begin_loading(state, "/project/b.aria");
+    _ = mr_end_loading(state, "/project/b.aria");
+    int32:depth = mr_loading_depth(state);
+    int32:still = mr_is_loading(state, "/project/a.aria");
+    int32:gone = mr_is_loading(state, "/project/b.aria");
+    int32:result = 1i32;
+    if (depth == 1i32 && still == 1i32 && gone == 0i32) {
+        result = 0i32;
+    }
+    _ = mr_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Error management + reset ══════════════════════════════
+pub func:test_errors_and_reset = int32() {
+    wild int8->:state = mr_new("/project");
+    _ = mr_add_error(state, "module not found: foo");
+    _ = mr_begin_loading(state, "/project/x.aria");
+    int32:ec = mr_error_count(state);
+    string:emsg = mr_get_error(state, 0i32);
+    _ = mr_reset(state);
+    int32:ec2 = mr_error_count(state);
+    int32:depth2 = mr_loading_depth(state);
+    int32:result = 1i32;
+    if (ec == 1i32 && emsg == "module not found: foo" && ec2 == 0i32 && depth2 == 0i32) {
+        result = 0i32;
+    }
+    _ = mr_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_default_search_paths();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_add_search_path();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_normalize();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_get_directory();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_build_path();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_abs_rel();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_pattern1();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_pattern2();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_resolve_relative();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_circular_detect();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_end_loading();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_errors_and_reset();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
