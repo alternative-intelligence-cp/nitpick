@@ -172,19 +172,15 @@ std::unique_ptr<ProgramNode> ModuleLoader::parseFile(const std::string& filePath
             return nullptr;
         }
         
-        // Parser returns shared_ptr, but we need unique_ptr
-        // We'll transfer ownership by releasing from a unique_ptr wrapper
-        // SAFETY: Parser creates new objects, so we can safely take unique ownership
+        // Parser returns shared_ptr<ASTNode>, we need unique_ptr<ProgramNode>.
+        // Extract the ProgramNode and move its declarations to avoid copies.
         ProgramNode* rawPtr = dynamic_cast<ProgramNode*>(programAst.get());
         if (!rawPtr) {
             addError("Parse result is not a ProgramNode for " + filePath);
             return nullptr;
         }
         
-        // Create a deep copy to avoid shared ownership issues
-        // For now, we'll just use the shared_ptr's raw pointer
-        // TODO: This is a potential memory leak - need to fix ownership model
-        return std::unique_ptr<ProgramNode>(new ProgramNode(rawPtr->declarations));
+        return std::unique_ptr<ProgramNode>(new ProgramNode(std::move(rawPtr->declarations)));
     } catch (const std::exception& e) {
         addError("Exception parsing " + filePath + ": " + e.what());
         return nullptr;
