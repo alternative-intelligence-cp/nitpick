@@ -34,12 +34,15 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
     const PrimitiveType* targetPrim = static_cast<const PrimitiveType*>(target);
 
     // ========================================================================
-    // Aria Type Coercion Rules (Strict Type Safety)
+    // Aria Type Coercion Rules (Safe Implicit Widening)
     // ========================================================================
-    // Aria enforces STRICT type safety:
-    // - No implicit widening (int32 → int64 requires explicit cast)
+    // Aria enforces type safety with safe implicit widening:
+    // - Integer widening within same signedness family IS allowed
+    //   (int8 → int16 → int32 → int64, uint8 → uint16 → uint32 → uint64)
+    // - No cross-signedness coercion (int32 → uint64 NOT allowed)
+    // - No narrowing (int64 → int32 requires explicit cast)
     // - No cross-family coercion (int ↔ tbb ↔ balanced NOT allowed)
-    // - TBB types only coerce within TBB family (tbb8 → tbb16 allowed)
+    // - TBB types only match exact same type (sentinel semantics)
     // - Balanced types only coerce within Balanced sub-family
     // - Float widening IS allowed (flt32 → flt64)
     // - Literals are handled specially in TypeChecker (range-checked)
@@ -110,10 +113,17 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
     // REJECT: Float to integer
 
     // ========================================================================
-    // Standard Integer Coercion (STRICT - no widening)
+    // Standard Integer Widening (safe, same signedness family only)
     // ========================================================================
-    // REJECT: int32 → int64 (requires explicit cast)
-    // Only exact matches are allowed, which was handled at the top
+    // Allow implicit widening within the same signedness family:
+    //   int8 → int16 → int32 → int64   (signed)
+    //   uint8 → uint16 → uint32 → uint64 (unsigned)
+    // REJECT: cross-signedness (int32 → uint64), narrowing (int64 → int32)
+    if (!isFloating && !targetPrim->isFloatingType()) {
+        if (isSigned == targetPrim->isSignedType()) {
+            return bitWidth <= targetPrim->getBitWidth();
+        }
+    }
 
     return false;
 }

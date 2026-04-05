@@ -345,9 +345,11 @@ Type* TypeChecker::inferType(ASTNode* expr) {
             AwaitExpr* awaitExpr = static_cast<AwaitExpr*>(expr);
             Type* operandType = inferType(awaitExpr->operand.get());
             
-            // TODO: When we have Future<T> trait system, unwrap the Future
-            // For now, async functions compile to i8* but semantically return T
-            // So we just return the operand's semantic type
+            // Async functions return i8* at the IR level but their semantic return
+            // type is already the inner T (set by checkFuncDecl). When Future<T> is
+            // added to the trait system, unwrap it here:
+            //   if (operandType->getKind() == TypeKind::FUTURE)
+            //       return static_cast<FutureType*>(operandType)->getInnerType();
             return operandType;
         }
         
@@ -522,11 +524,16 @@ Type* TypeChecker::inferTemplateLiteral(TemplateLiteralExpr* expr) {
         // Infer the type of each interpolated expression
         Type* interpType = inferType(interpolation.get());
         
-        // For now, we'll allow any type in interpolations
-        // The IR generator will handle converting to string
-        // TODO: Add implicit toString() conversion or require convertible-to-string types
-        
-        (void)interpType; // Suppress unused variable warning
+        // Validate that the interpolated type can be converted to string.
+        // Primitive types (int, uint, float, bool, string, TBB, balanced) have
+        // implicit toString in the IR codegen. Struct/object types require an
+        // explicit toString() method (checked when Trait system is complete).
+        if (interpType->getKind() != TypeKind::PRIMITIVE &&
+            interpType->getKind() != TypeKind::ERROR &&
+            interpType->getKind() != TypeKind::UNKNOWN) {
+            addError("Cannot interpolate value of type '" + interpType->toString() +
+                    "' into template literal (only primitive types supported)", interpolation.get());
+        }
     }
     
     // Template literals always produce strings
@@ -801,10 +808,10 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // This catches unknown at compile-time type checking level
         if (leftType->getKind() == TypeKind::UNKNOWN || 
             rightType->getKind() == TypeKind::UNKNOWN) {
-            // Result is unknown, but we need to type it appropriately
-            // For now, return int32 as the concrete type (sentinel will be unknown at runtime)
-            // TODO: In full implementation, might want to track "tainted" types
-            return typeSystem->getPrimitiveType("int32");
+            // Propagate unknown type — the result is "tainted" by the unknown operand.
+            // At runtime, the unknown sentinel value will propagate through arithmetic
+            // just like NaN propagation in IEEE 754 floats.
+            return typeSystem->getUnknownType();
         }
         
         // ====================================================================
@@ -1461,9 +1468,14 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
     // Unwrap: ?
     // ========================================================================
     if (op == TokenType::TOKEN_QUESTION) {
-        // Unwrap result type
-        // TODO: Check that operand is result<T> type, return T
-        addError("Unwrap operator (?) not yet implemented in type system", sourceNode);
+        // Unwrap result type: Result<T>? → T
+        // Operand must be Result<T>; returns the inner value type
+        if (operandType->getKind() == TypeKind::RESULT) {
+            ResultType* resultType = static_cast<ResultType*>(operandType);
+            return resultType->getValueType();
+        }
+        addError("Unwrap operator (?) requires Result<T> type, got '" +
+                operandType->toString() + "'", sourceNode);
         return typeSystem->getErrorType();
     }
     
