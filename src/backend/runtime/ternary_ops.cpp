@@ -14,7 +14,7 @@
 
 #include "backend/runtime/ternary_ops.h"
 #include <cstdint>
-#include <cstdio>   // for fprintf (debug)
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 

@@ -779,7 +779,7 @@ llvm::Module* compile_to_module(
     aria::IRGenerator& ir_gen,
     aria::DiagnosticEngine& diags
 ) {
-    // Phase 0: Preprocessing (NASM-style macros)
+    // Phase 0: Preprocessing (Aria macros)
     std::string preprocessed_source = source;
     
     if (opts.verbose) {

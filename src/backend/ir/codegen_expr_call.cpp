@@ -474,7 +474,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 // just like normal function calls that go through Result unwrapping.
                 llvm::Value* unwrapped = builder.CreateExtractValue(result, 0, "dyn_result_val");
 
-                std::cerr << "[DYN] Dispatched " << traitName << "::" << methodName
+                ARIA_DBG_STREAM << "[DYN] Dispatched " << traitName << "::" << methodName
                           << " via vtable (index " << methodIndex << ")\n";
                 return unwrapped;
             }
@@ -4098,7 +4098,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
 
     // aria_write_file_simple(path: int8*, content: int8*) -> int64
     if (callee_ident->name == "aria_write_file_simple") {
-        std::cerr << "[FS DEBUG] aria_write_file_simple codegen called" << std::endl;
+        ARIA_DBG_STREAM << "[FS DEBUG] aria_write_file_simple codegen called" << std::endl;
         
         if (expr->arguments.size() != 2) {
             throw std::runtime_error("aria_write_file_simple() requires two arguments");
@@ -4115,18 +4115,18 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         llvm::Value* path = codegenExpressionNode(expr->arguments[0].get(), this);
         llvm::Value* content = codegenExpressionNode(expr->arguments[1].get(), this);
         
-        std::cerr << "[FS DEBUG] path type: " << path->getValueName()->getKey().str() << std::endl;
+        ARIA_DBG_STREAM << "[FS DEBUG] path type: " << path->getValueName()->getKey().str() << std::endl;
         
         // Convert AriaString to char* - for global constants, extract the data field
         if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(path)) {
-            std::cerr << "[FS DEBUG] path is GlobalVariable" << std::endl;
+            ARIA_DBG_STREAM << "[FS DEBUG] path is GlobalVariable" << std::endl;
             if (auto* init = gv->getInitializer()) {
-                std::cerr << "[FS DEBUG] has initializer" << std::endl;
+                ARIA_DBG_STREAM << "[FS DEBUG] has initializer" << std::endl;
                 if (auto* cs = llvm::dyn_cast<llvm::ConstantStruct>(init)) {
-                    std::cerr << "[FS DEBUG] is ConstantStruct, extracting field 0" << std::endl;
+                    ARIA_DBG_STREAM << "[FS DEBUG] is ConstantStruct, extracting field 0" << std::endl;
                     // Extract the first field (data pointer) from the struct constant
                     path = cs->getOperand(0);
-                    std::cerr << "[FS DEBUG] extracted path" << std::endl;
+                    ARIA_DBG_STREAM << "[FS DEBUG] extracted path" << std::endl;
                 }
             }
         }
@@ -4139,7 +4139,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             }
         }
         
-        std::cerr << "[FS DEBUG] calling with extracted values" << std::endl;
+        ARIA_DBG_STREAM << "[FS DEBUG] calling with extracted values" << std::endl;
         return builder.CreateCall(func, {path, content}, "write_result");
     }
 
@@ -7839,7 +7839,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                                     fat = builder.CreateInsertValue(fat, vtableGV, 1, "dyn_fat.vtable");
                                     arg_value = fat;
 
-                                    std::cerr << "[DYN] Coerced " << concreteType
+                                    ARIA_DBG_STREAM << "[DYN] Coerced " << concreteType
                                               << " to dyn " << traitName
                                               << " fat ptr (vtable: @" << vtableGVName << ")\n";
                                 }

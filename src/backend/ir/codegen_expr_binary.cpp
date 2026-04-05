@@ -53,7 +53,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
             op == TokenType::TOKEN_PERCENT) {
 
-            std::cerr << "[TBB] Lowering " << leftTBBType << " arithmetic (intrinsic)" << std::endl;
+            ARIA_DBG_STREAM << "[TBB] Lowering " << leftTBBType << " arithmetic (intrinsic)" << std::endl;
 
             // Generate code for operands
             llvm::Value* left = codegenExpressionNode(expr->left.get(), this);
@@ -88,7 +88,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_STAR || op == TokenType::TOKEN_SLASH ||
             op == TokenType::TOKEN_PERCENT) {
 
-            std::cerr << "[EXOTIC] Lowering " << leftExoticType << " arithmetic (runtime)" << std::endl;
+            ARIA_DBG_STREAM << "[EXOTIC] Lowering " << leftExoticType << " arithmetic (runtime)" << std::endl;
 
             // Generate code for operands
             llvm::Value* left = codegenExpressionNode(expr->left.get(), this);
@@ -126,7 +126,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_LESS || op == TokenType::TOKEN_LESS_EQUAL ||
             op == TokenType::TOKEN_GREATER || op == TokenType::TOKEN_GREATER_EQUAL) {
 
-            std::cerr << "[NUMERIC] Lowering " << leftNumericType << " arithmetic (runtime)" << std::endl;
+            ARIA_DBG_STREAM << "[NUMERIC] Lowering " << leftNumericType << " arithmetic (runtime)" << std::endl;
 
             // Generate code for operands
             llvm::Value* left = codegenExpressionNode(expr->left.get(), this);
@@ -170,7 +170,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             op == TokenType::TOKEN_PIPE ||
             op == TokenType::TOKEN_CARET) {
 
-            std::cerr << "[LBIM] Lowering " << leftLBIMType << " operation (runtime)" << std::endl;
+            ARIA_DBG_STREAM << "[LBIM] Lowering " << leftLBIMType << " operation (runtime)" << std::endl;
 
             // Generate code for operands
             llvm::Value* left = codegenExpressionNode(expr->left.get(), this);
@@ -254,36 +254,36 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     bool isVector = leftIsVector || rightIsVector;
     (void)isVector;
     
-    std::cerr << "[BROADCAST DEBUG] leftIsVector=" << leftIsVector 
+    ARIA_DBG_STREAM << "[BROADCAST DEBUG] leftIsVector=" << leftIsVector 
               << ", rightIsVector=" << rightIsVector << std::endl;
     
     // For vector-scalar operations, broadcast scalar to vector
     if (leftIsVector && !rightIsVector) {
-        std::cerr << "[BROADCAST] Broadcasting right scalar to vector" << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] Broadcasting right scalar to vector" << std::endl;
         // Right is scalar, left is vector - broadcast right
         llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(left->getType());
         llvm::Value* vec = llvm::UndefValue::get(vecType);
         unsigned numElements = vecType->getElementCount().getKnownMinValue();
-        std::cerr << "[BROADCAST] numElements=" << numElements << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] numElements=" << numElements << std::endl;
         for (unsigned i = 0; i < numElements; ++i) {
             vec = builder.CreateInsertElement(vec, right, i);
         }
         right = vec;
         rightIsVector = true;
-        std::cerr << "[BROADCAST] Broadcast complete" << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] Broadcast complete" << std::endl;
     } else if (!leftIsVector && rightIsVector) {
-        std::cerr << "[BROADCAST] Broadcasting left scalar to vector" << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] Broadcasting left scalar to vector" << std::endl;
         // Left is scalar, right is vector - broadcast left
         llvm::VectorType* vecType = llvm::cast<llvm::VectorType>(right->getType());
         llvm::Value* vec = llvm::UndefValue::get(vecType);
         unsigned numElements = vecType->getElementCount().getKnownMinValue();
-        std::cerr << "[BROADCAST] numElements=" << numElements << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] numElements=" << numElements << std::endl;
         for (unsigned i = 0; i < numElements; ++i) {
             vec = builder.CreateInsertElement(vec, left, i);
         }
         left = vec;
         leftIsVector = true;
-        std::cerr << "[BROADCAST] Broadcast complete" << std::endl;
+        ARIA_DBG_STREAM << "[BROADCAST] Broadcast complete" << std::endl;
     }
     
     // Auto-unwrap Result<T> structs in binary expressions.
@@ -318,11 +318,13 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     }
     
     // DEBUG: Print types
+#ifdef ARIA_DEBUG_CODEGEN
     std::cerr << "Binary op: left type = ";
     left->getType()->print(llvm::errs());
     std::cerr << ", right type = ";
     right->getType()->print(llvm::errs());
     std::cerr << ", isFloat = " << isFloat << std::endl;
+#endif
     
     // Coerce integer operands to matching types
     // Integer literals default to i64 but variables may be i8/i16/i32
@@ -332,11 +334,11 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         unsigned leftBits = left->getType()->getIntegerBitWidth();
         unsigned rightBits = right->getType()->getIntegerBitWidth();
         if (leftBits < rightBits) {
-            // Widen left to match right (preserves literal precision)
-            right = builder.CreateTrunc(right, left->getType(), "trunc_rhs");
+            // Widen left to match right (preserves precision)
+            left = builder.CreateSExt(left, right->getType(), "sext_lhs");
         } else {
             // Widen right to match left
-            left = builder.CreateTrunc(left, right->getType(), "trunc_lhs");
+            right = builder.CreateSExt(right, left->getType(), "sext_rhs");
         }
     }
     
@@ -494,11 +496,13 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             return stringEqualsCall();
         }
         // Debug: Check type compatibility
+#ifdef ARIA_DEBUG_CODEGEN
         std::cerr << "[DEBUG COMPARISON] Left type: ";
         left->getType()->print(llvm::errs());
         std::cerr << ", Right type: ";
         right->getType()->print(llvm::errs());
         std::cerr << std::endl;
+#endif
         
         if (isFloat) {
             return builder.CreateFCmpOEQ(left, right, "eqtmp");
@@ -552,6 +556,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
             llvm::Value* cmp = stringCompareCall();
             return builder.CreateICmpSGT(cmp, builder.getInt32(0), "str.gt");
         }
+#ifdef ARIA_DEBUG_CODEGEN
         std::cerr << "[COMPARISON >] About to create ICmp/FCmp" << std::endl;
         std::cerr << "[COMPARISON >] isFloat=" << isFloat << std::endl;
         std::cerr << "[COMPARISON >] Left LLVM type: ";
@@ -560,6 +565,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         std::cerr << "[COMPARISON >] Right LLVM type: ";
         right->getType()->print(llvm::errs());
         std::cerr << std::endl;
+#endif
         
         if (isFloat) {
             return builder.CreateFCmpOGT(left, right, "gttmp");
@@ -883,7 +889,7 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
     if (op == TokenType::TOKEN_MINUS) {
         std::string operandTBBType = getExprTBBTypeName(expr->operand.get());
         if (!operandTBBType.empty()) {
-            std::cerr << "[TBB] Lowering " << operandTBBType << " negation (intrinsic)" << std::endl;
+            ARIA_DBG_STREAM << "[TBB] Lowering " << operandTBBType << " negation (intrinsic)" << std::endl;
 
             llvm::Value* operand = codegenExpressionNode(expr->operand.get(), this);
             if (!operand) {
@@ -996,7 +1002,7 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         // ARIA SAFETY FIX: Check for exotic types first (runtime negation)
         std::string exoticType = getExprExoticTypeName(expr->operand.get());
         if (!exoticType.empty()) {
-            std::cerr << "[EXOTIC] Generating negation for " << exoticType << " type" << std::endl;
+            ARIA_DBG_STREAM << "[EXOTIC] Generating negation for " << exoticType << " type" << std::endl;
             sema::PrimitiveType tempType(exoticType);
             return ternary_codegen.generateNeg(operand, &tempType);
         }
@@ -1013,7 +1019,7 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         // ARIA SAFETY FIX: Check for exotic types first (Kleene logic NOT)
         std::string exoticType = getExprExoticTypeName(expr->operand.get());
         if (!exoticType.empty()) {
-            std::cerr << "[EXOTIC] Generating NOT for " << exoticType << " type" << std::endl;
+            ARIA_DBG_STREAM << "[EXOTIC] Generating NOT for " << exoticType << " type" << std::endl;
             sema::PrimitiveType tempType(exoticType);
             return ternary_codegen.generateNot(operand, &tempType);
         }
