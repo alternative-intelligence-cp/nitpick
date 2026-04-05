@@ -2,8 +2,8 @@
 // Functions callable from LLVM-generated Aria code
 // These provide the bridge between generated coroutines and the executor
 
-#ifndef ARIA_RUNTIME_ASYNC_API_H
-#define ARIA_RUNTIME_ASYNC_API_H
+#ifndef ARIA_RUNTIME_ASYNC_RUNTIME_API_H
+#define ARIA_RUNTIME_ASYNC_RUNTIME_API_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -152,4 +152,4 @@ void* aria_await_sync(AriaCoroutineHandle coro_handle);
 }
 #endif
 
-#endif // ARIA_RUNTIME_ASYNC_API_H
+#endif // ARIA_RUNTIME_ASYNC_RUNTIME_API_H

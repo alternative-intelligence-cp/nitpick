@@ -251,6 +251,11 @@ typedef enum {
     JIT_OP_ADDPS,
     JIT_OP_MULPS,
 
+    // v0.16.4: test/inc/dec
+    JIT_OP_TEST_RR,
+    JIT_OP_INC_R64,
+    JIT_OP_DEC_R64,
+
     // Pseudo-ops
     JIT_OP_NOP,           // eliminated instruction (peephole)
 } JitOpcode;
