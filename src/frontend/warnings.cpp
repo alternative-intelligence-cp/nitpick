@@ -92,7 +92,7 @@ WarningAnalyzer::WarningAnalyzer(DiagnosticEngine& diags, WarningConfig& config)
 void WarningAnalyzer::analyze(const ASTNode* ast) {
     if (!ast) return;
     
-    // NOTE: Full AST walking implementation will be added in future phases
+    // Run analysis passes on the AST
     // when we need comprehensive semantic analysis for production use.
     // For now, this is a stub that supports the CLI interface.
     

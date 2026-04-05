@@ -144,6 +144,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_STACK: return "STACK";
         case TokenType::TOKEN_KW_GC: return "GC";
         case TokenType::TOKEN_KW_DEFER: return "DEFER";
+        case TokenType::TOKEN_KW_MOVE: return "MOVE";
         
         // Memory ordering
         case TokenType::TOKEN_KW_RELAXED: return "RELAXED";
@@ -169,6 +170,30 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_RETURN: return "RETURN";
         case TokenType::TOKEN_KW_PASS: return "PASS";
         case TokenType::TOKEN_KW_FAIL: return "FAIL";
+        case TokenType::TOKEN_KW_EXIT: return "EXIT";
+        case TokenType::TOKEN_KW_RAW: return "RAW";
+        case TokenType::TOKEN_KW_DROP: return "DROP";
+        case TokenType::TOKEN_KW_OK: return "OK";
+        case TokenType::TOKEN_KW_DEFAULTS: return "DEFAULTS";
+        case TokenType::TOKEN_KW_APOP: return "APOP";
+        case TokenType::TOKEN_KW_APUSH: return "APUSH";
+        case TokenType::TOKEN_KW_APEEK: return "APEEK";
+        case TokenType::TOKEN_KW_ASTACK: return "ASTACK";
+        case TokenType::TOKEN_KW_ACAP: return "ACAP";
+        case TokenType::TOKEN_KW_ASIZE: return "ASIZE";
+        case TokenType::TOKEN_KW_AFITS: return "AFITS";
+        case TokenType::TOKEN_KW_ATYPE: return "ATYPE";
+        case TokenType::TOKEN_KW_AHASH: return "AHASH";
+        case TokenType::TOKEN_KW_AHSET: return "AHSET";
+        case TokenType::TOKEN_KW_AHGET: return "AHGET";
+        case TokenType::TOKEN_KW_AHCOUNT: return "AHCOUNT";
+        case TokenType::TOKEN_KW_AHSIZE: return "AHSIZE";
+        case TokenType::TOKEN_KW_AHFITS: return "AHFITS";
+        case TokenType::TOKEN_KW_AHTYPE: return "AHTYPE";
+        case TokenType::TOKEN_KW_AHDELETE: return "AHDELETE";
+        case TokenType::TOKEN_KW_AHHAS: return "AHHAS";
+        case TokenType::TOKEN_KW_AHCLEAR: return "AHCLEAR";
+        case TokenType::TOKEN_KW_AHKEYS: return "AHKEYS";
         case TokenType::TOKEN_KW_PROVE: return "PROVE";
         case TokenType::TOKEN_KW_ASSERT_STATIC: return "ASSERT_STATIC";
         
@@ -193,6 +218,12 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_CONST: return "CONST";
         case TokenType::TOKEN_KW_FIXED: return "FIXED";
         case TokenType::TOKEN_KW_CFG: return "CFG";
+        case TokenType::TOKEN_KW_RULES: return "RULES";
+        case TokenType::TOKEN_KW_LIMIT: return "LIMIT";
+        case TokenType::TOKEN_KW_AS: return "AS";
+        case TokenType::TOKEN_KW_REQUIRES: return "REQUIRES";
+        case TokenType::TOKEN_KW_ENSURES: return "ENSURES";
+        case TokenType::TOKEN_KW_INVARIANT: return "INVARIANT";
         
         // Integer types
         case TokenType::TOKEN_KW_INT1: return "INT1";
@@ -246,6 +277,7 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_KW_FLT128: return "FLT128";
         case TokenType::TOKEN_KW_FLT256: return "FLT256";
         case TokenType::TOKEN_KW_FLT512: return "FLT512";
+        case TokenType::TOKEN_KW_FIX256: return "FIX256";
         
         // Special types
         case TokenType::TOKEN_KW_BOOL: return "BOOL";
@@ -418,6 +450,8 @@ std::string tokenTypeToString(TokenType type) {
         case TokenType::TOKEN_FLOAT_F256: return "FLOAT_F256";
         case TokenType::TOKEN_FLOAT_F512: return "FLOAT_F512";
         case TokenType::TOKEN_FLOAT_FIX256: return "FLOAT_FIX256";
+        case TokenType::TOKEN_FLOAT_TFP32: return "FLOAT_TFP32";
+        case TokenType::TOKEN_FLOAT_TFP64: return "FLOAT_TFP64";
         
         // Other literals
         case TokenType::TOKEN_STRING: return "STRING";
