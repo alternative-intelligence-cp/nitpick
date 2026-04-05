@@ -441,8 +441,21 @@ public:
     /// Reset state for a new compilation unit
     void reset();
 
+    // ================================================================
+    // v0.14.0: Symbolic Body Analysis for Contract Proof
+    // ================================================================
+
+    /// A single return path through a function body.
+    /// pathCondition is nullptr for unconditional paths,
+    /// or a Z3 boolean expr for conditional (if/else) paths.
+    struct ReturnPath {
+        Z3_ast pathCondition;  // nullptr = unconditional
+        Z3_ast returnValue;    // Z3 expression for the return value
+    };
+
 private:
     Z3_context ctx;
+    Z3_solver persistentSolver;   // v0.14.3: reused across queries with push/pop
     sema::TypeSystem* type_system = nullptr;
     bool verbose = false;
 
@@ -464,6 +477,18 @@ private:
     Z3_ast translateExprWithEnv(ASTNode* node,
                                 const std::map<std::string, Z3_ast>& env,
                                 Z3_sort defaultSort);
+
+    // v0.14.0: Symbolic body walker — collects all return paths through a
+    // function body as (pathCondition, returnValue) pairs for contract proofs.
+    std::vector<ReturnPath> walkBodySymbolic(
+        ASTNode* node,
+        std::map<std::string, Z3_ast>& env,
+        Z3_sort defaultSort,
+        Z3_ast currentPathCondition);
+
+    // v0.14.0: Extract counterexample variable values from a SAT model
+    std::string extractCounterexample(Z3_solver solver,
+                                       const std::map<std::string, Z3_ast>& env);
 
     // Get the Z3 sort for an Aria integer type width
     Z3_sort getIntSort(int bitWidth);

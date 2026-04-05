@@ -24,6 +24,7 @@
 #include <set>
 #include <map>
 #include <cstdlib>
+#include <chrono>   // For verification timing (v0.14.3)
 #include <cerrno>   // For errno
 #include <cstring>  // For strerror
 #include <climits>  // For PATH_MAX
@@ -46,6 +47,7 @@
 #include "backend/ir/ir_generator.h"
 #ifdef ARIA_HAS_Z3
 #include "analysis/z3_verifier.h"
+#include "analysis/range_analysis.h"
 #endif
 
 // LLVM
@@ -152,6 +154,7 @@ struct CompilerOptions {
     size_t gc_threshold = 0;          // --gc-threshold=N: Major GC trigger threshold (0=default 64MB)
     size_t gc_max_heap = 0;           // --gc-max-heap=N: Maximum heap size in bytes (0=unlimited)
     int smt_timeout = 5000;           // --smt-timeout=N: Per-query Z3 solver timeout in ms (default: 5000)
+    int verify_level = -1;            // --verify-level=N: 0=none, 1=fast, 2=standard, 3=thorough (-1=unset)
     
     // v0.8.2: Incremental compilation
     bool incremental = false;         // --incremental: Cache per-module IR, only recompile changed files
@@ -222,6 +225,7 @@ void print_help() {
     std::cout << "  --verify-memory   Verify use-after-free & recursion bounds\n";
     std::cout << "  --smt-opt         Enable SMT-guided optimizations (eliminates proven-safe checks)\n";
     std::cout << "  --smt-timeout=N   Per-query Z3 solver timeout in ms (default: 5000)\n";
+    std::cout << "  --verify-level=N  Verification depth: 0=none, 1=fast, 2=standard, 3=thorough\n";
     std::cout << "  --prove-report    Emit report of prove/assert_static outcomes (implies --verify)\n";
     std::cout << "  --borrow-debug    Emit borrow checker debug diagnostics to stderr\n";
     std::cout << "  --borrow-dump     Dump borrow state visualization after analysis\n";
@@ -433,6 +437,25 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
         } else if (arg.substr(0, 14) == "--smt-timeout=") {
             opts.smt_timeout = std::stoi(arg.substr(14));
             if (opts.smt_timeout < 0) opts.smt_timeout = 5000;
+        } else if (arg.substr(0, 15) == "--verify-level=") {
+            opts.verify_level = std::stoi(arg.substr(15));
+            if (opts.verify_level < 0 || opts.verify_level > 3) {
+                std::cerr << "Error: --verify-level must be 0, 1, 2, or 3\n";
+                return 1;
+            }
+            // Level > 0 implies verification enabled
+            if (opts.verify_level > 0) {
+                opts.verify = true;
+                if (opts.verify_level >= 2) {
+                    opts.smt_opt = true;
+                    opts.verify_overflow = true;
+                    opts.verify_contracts = true;
+                }
+                if (opts.verify_level >= 3) {
+                    opts.verify_concurrency = true;
+                    opts.verify_memory = true;
+                }
+            }
         } else if (arg == "--incremental") {
             opts.incremental = true;
         } else if (arg.substr(0, 12) == "--cache-dir=") {
@@ -1062,6 +1085,9 @@ llvm::Module* compile_to_module(
     // Null check elimination set — declared outside #ifdef so it's available to codegen
     std::set<aria::ASTNode*> null_check_safe_set;
 
+    // Division-by-zero elimination set — declared outside #ifdef so it's available to codegen (v0.14.4)
+    std::set<aria::ASTNode*> div_safe_set;
+
     // Loop invariant hoisting map — declared outside #ifdef so it's available to codegen
     std::map<aria::ASTNode*, std::vector<aria::ASTNode*>> loop_hoist_map;
 
@@ -1073,11 +1099,19 @@ llvm::Module* compile_to_module(
 
 #ifdef ARIA_HAS_Z3
     // Phase 3.25: Z3 SMT Verification (static contract verification)
+    // v0.14.3: --verify-level gating: 0=none, 1=fast, 2=standard, 3=thorough
     std::set<std::string> ustack_opt_funcs;  // Functions eligible for SMT-optimized user stack
     std::set<std::string> uhash_opt_funcs;   // Functions eligible for SMT-optimized user hash
-    if (opts.verify) {
+    if (opts.verify && opts.verify_level != 0) {
+        auto verify_start = std::chrono::steady_clock::now();
         if (opts.verbose) {
             std::cout << "Phase 3.25: Z3 SMT verification...\n";
+            if (opts.verify_level >= 0) {
+                std::cout << "  Verify level: " << opts.verify_level
+                          << (opts.verify_level == 1 ? " (fast)" :
+                              opts.verify_level == 2 ? " (standard)" : " (thorough)")
+                          << "\n";
+            }
         }
         
         aria::Z3Verifier z3v(opts.smt_timeout);
@@ -1206,7 +1240,8 @@ llvm::Module* compile_to_module(
         }
         
         // Phase 2: Verify requires/ensures contracts (v0.3.4)
-        if (opts.verify_contracts && program) {
+        // v0.14.3: requires verify-level >= 2 (standard)
+        if (opts.verify_contracts && program && opts.verify_level != 1) {
             if (opts.verbose) {
                 std::cout << "  Phase 2: Verifying function contracts...\n";
             }
@@ -1266,7 +1301,8 @@ llvm::Module* compile_to_module(
         // that call-site arguments satisfy the callee's requires clauses,
         // using the caller's own constraints as assumptions.
         // Also verify Rules narrowing at call sites and pick exhaustiveness.
-        if (opts.verify_contracts && program) {
+        // v0.14.3: requires verify-level >= 2 (standard)
+        if (opts.verify_contracts && program && opts.verify_level != 1) {
             // Build lookup tables
             std::map<std::string, aria::FuncDeclStmt*> contract_funcs;  // has requires
             std::map<std::string, aria::FuncDeclStmt*> ensures_funcs;   // has ensures
@@ -1612,7 +1648,8 @@ llvm::Module* compile_to_module(
         // Phase 2c: Automatic Rules widening/narrowing (v0.5.3)
         // For functions with Rules-constrained parameters that return integer types,
         // infer the tightest return value bounds using Z3 optimization.
-        if (opts.verify_contracts && program && !rules_table.empty()) {
+        // v0.14.3: requires verify-level >= 2 (standard)
+        if (opts.verify_contracts && program && !rules_table.empty() && opts.verify_level != 1) {
             if (opts.verbose) {
                 std::cout << "  Phase 2c: Automatic return bounds inference...\n";
             }
@@ -1726,11 +1763,18 @@ llvm::Module* compile_to_module(
                         if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
                             auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
                             if ((ident->name == "aria_thread_create" ||
-                                 ident->name == "aria_shim_thread_spawn") &&
+                                 ident->name == "aria_shim_thread_spawn" ||
+                                 ident->name == "aria_libc_thread_spawn") &&
                                 !call->arguments.empty()) {
-                                // First argument is the thread function
-                                if (call->arguments[0]->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                    auto* tfIdent = static_cast<aria::IdentifierExpr*>(call->arguments[0].get());
+                                // First argument is the thread function (may be @func or bare func)
+                                aria::ASTNode* arg0 = call->arguments[0].get();
+                                // Unwrap address-of operator (@func)
+                                if (arg0->type == aria::ASTNode::NodeType::UNARY_OP) {
+                                    auto* unary = static_cast<aria::UnaryExpr*>(arg0);
+                                    if (unary->operand) arg0 = unary->operand.get();
+                                }
+                                if (arg0->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                                    auto* tfIdent = static_cast<aria::IdentifierExpr*>(arg0);
                                     auto tfIt = all_funcs_2d.find(tfIdent->name);
                                     if (tfIt != all_funcs_2d.end()) {
                                         threadFuncs.push_back(tfIt->second);
@@ -1933,7 +1977,8 @@ llvm::Module* compile_to_module(
         }
 
         // Phase 3: Verify integer arithmetic overflow (v0.3.4)
-        if (opts.verify_overflow && program) {
+        // v0.14.3: requires verify-level >= 2 (standard)
+        if (opts.verify_overflow && program && opts.verify_level != 1) {
             if (opts.verbose) {
                 std::cout << "  Phase 3: Verifying integer overflow safety...\n";
             }
@@ -2458,8 +2503,11 @@ llvm::Module* compile_to_module(
                     }
                 }
 
-                if (!all_rules.empty()) {
+                if (!all_rules.empty() || opts.smt_opt) {
                     using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
+                    aria::RangeAnalyzer* currentRA = nullptr;
 
                     // Recursive walker: collect constrained var decls, probe IF conditions
                     std::function<void(aria::ASTNode*, VarRulesMap&)> walkForDeadBranches;
@@ -2482,10 +2530,16 @@ llvm::Module* compile_to_module(
 
                             case NT::IF: {
                                 auto* ifStmt = static_cast<aria::IfStmt*>(node);
-                                if (!varRules.empty() && ifStmt->condition) {
+                                // v0.14.1: Merge explicit Rules + inferred ranges
+                                VarRulesMap mergedRules = varRules;
+                                if (currentRA) {
+                                    const auto* inferred = currentRA->getRangesAt(ifStmt);
+                                    if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                }
+                                if (!mergedRules.empty() && ifStmt->condition) {
                                     std::vector<aria::VerifyOutcome> outcomes;
                                     auto result = z3v.proveDeadBranch(
-                                        ifStmt->condition.get(), varRules, outcomes,
+                                        ifStmt->condition.get(), mergedRules, outcomes,
                                         ifStmt->line, ifStmt->column);
                                     if (result == aria::VerifyResult::PROVEN) {
                                         dead_branch_true_set.insert(ifStmt);
@@ -2582,9 +2636,15 @@ llvm::Module* compile_to_module(
                         auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
+                        // v0.14.1: Run range analysis for flow-sensitive inference
+                        aria::RangeAnalyzer ra;
+                        ra.analyzeFunction(func);
+                        currentRA = &ra;
+
                         VarRulesMap varRules;
                         walkForDeadBranches(func->body.get(), varRules);
                     }
+                    currentRA = nullptr;
 
                     int total_dead = dead_branch_true_set.size() + dead_branch_false_set.size();
                     if (opts.verbose && total_dead > 0) {
@@ -2621,11 +2681,14 @@ llvm::Module* compile_to_module(
                     }
                 }
 
-                if (!all_rules.empty()) {
+                if (!all_rules.empty() || opts.smt_opt) {
                     using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
 
                     // Map variable names to their array sizes (for fixed-size arrays)
                     using ArraySizeMap = std::map<std::string, int64_t>;
+
+                    // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
+                    aria::RangeAnalyzer* currentRA = nullptr;
 
                     // Recursive walker: collect constrained vars + array decls, probe INDEX exprs
                     std::function<void(aria::ASTNode*, VarRulesMap&, ArraySizeMap&)> walkForBoundsCheck;
@@ -2666,18 +2729,26 @@ llvm::Module* compile_to_module(
 
                             case NT::INDEX: {
                                 auto* indexExpr = static_cast<aria::IndexExpr*>(node);
-                                // Check if array is known fixed-size and index involves Rules vars
-                                if (indexExpr->array->type == NT::IDENTIFIER && !varRules.empty()) {
+                                // Check if array is known fixed-size
+                                if (indexExpr->array->type == NT::IDENTIFIER) {
                                     auto* ident = static_cast<aria::IdentifierExpr*>(indexExpr->array.get());
                                     auto sizeIt = arraySizes.find(ident->name);
                                     if (sizeIt != arraySizes.end()) {
-                                        std::vector<aria::VerifyOutcome> outcomes;
-                                        auto result = z3v.proveBoundsInRange(
-                                            indexExpr->index.get(), sizeIt->second,
-                                            varRules, outcomes,
-                                            indexExpr->line, indexExpr->column);
-                                        if (result == aria::VerifyResult::PROVEN) {
-                                            bounds_safe_set.insert(indexExpr);
+                                        // v0.14.1: Merge explicit Rules + inferred ranges
+                                        VarRulesMap mergedRules = varRules;
+                                        if (currentRA) {
+                                            const auto* inferred = currentRA->getRangesAt(indexExpr);
+                                            if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                        }
+                                        if (!mergedRules.empty()) {
+                                            std::vector<aria::VerifyOutcome> outcomes;
+                                            auto result = z3v.proveBoundsInRange(
+                                                indexExpr->index.get(), sizeIt->second,
+                                                mergedRules, outcomes,
+                                                indexExpr->line, indexExpr->column);
+                                            if (result == aria::VerifyResult::PROVEN) {
+                                                bounds_safe_set.insert(indexExpr);
+                                            }
                                         }
                                     }
                                 }
@@ -2777,10 +2848,16 @@ llvm::Module* compile_to_module(
                         auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
+                        // v0.14.1: Run range analysis for flow-sensitive inference
+                        aria::RangeAnalyzer ra;
+                        ra.analyzeFunction(func);
+                        currentRA = &ra;
+
                         VarRulesMap varRules;
                         ArraySizeMap arraySizes;
                         walkForBoundsCheck(func->body.get(), varRules, arraySizes);
                     }
+                    currentRA = nullptr;
 
                     if (opts.verbose && !bounds_safe_set.empty()) {
                         std::cout << "  Bounds check elimination: " << bounds_safe_set.size()
@@ -2810,8 +2887,11 @@ llvm::Module* compile_to_module(
                     }
                 }
 
-                if (!all_rules.empty()) {
+                if (!all_rules.empty() || opts.smt_opt) {
                     using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
+                    aria::RangeAnalyzer* currentRA = nullptr;
 
                     std::function<void(aria::ASTNode*, VarRulesMap&)> walkForOverflowCheck;
                     walkForOverflowCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
@@ -2840,14 +2920,22 @@ llvm::Module* compile_to_module(
                                     case aria::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
                                     default: break;
                                 }
-                                if (op != 0 && !varRules.empty()) {
-                                    std::vector<aria::VerifyOutcome> outcomes;
-                                    auto result = z3v.proveNoOverflowFromRules(
-                                        op, binary->left.get(), binary->right.get(),
-                                        varRules, outcomes,
-                                        binary->line, binary->column);
-                                    if (result == aria::VerifyResult::PROVEN) {
-                                        overflow_safe_set.insert(binary);
+                                if (op != 0) {
+                                    // v0.14.1: Merge explicit Rules + inferred ranges
+                                    VarRulesMap mergedRules = varRules;
+                                    if (currentRA) {
+                                        const auto* inferred = currentRA->getRangesAt(binary);
+                                        if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                    }
+                                    if (!mergedRules.empty()) {
+                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        auto result = z3v.proveNoOverflowFromRules(
+                                            op, binary->left.get(), binary->right.get(),
+                                            mergedRules, outcomes,
+                                            binary->line, binary->column);
+                                        if (result == aria::VerifyResult::PROVEN) {
+                                            overflow_safe_set.insert(binary);
+                                        }
                                     }
                                 }
                                 walkForOverflowCheck(binary->left.get(), varRules);
@@ -2958,13 +3046,211 @@ llvm::Module* compile_to_module(
                         auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
+                        // v0.14.1: Run range analysis for flow-sensitive inference
+                        aria::RangeAnalyzer ra;
+                        ra.analyzeFunction(func);
+                        currentRA = &ra;
+
                         VarRulesMap varRules;
                         walkForOverflowCheck(func->body.get(), varRules);
                     }
+                    currentRA = nullptr;
 
                     if (opts.verbose && !overflow_safe_set.empty()) {
                         std::cout << "  Overflow check elimination: " << overflow_safe_set.size()
                                   << " arithmetic op(s) proven overflow-free\n";
+                    }
+                }
+            }
+        }
+
+        // Phase 4.85: Division-by-Zero Check Elimination (v0.14.4)
+        // For each integer division (/) or modulo (%) operation where the divisor
+        // is a Rules-constrained or range-inferred variable, prove the divisor
+        // is never zero. If PROVEN, codegen can emit plain sdiv/srem instead of
+        // the safe variant with the zero-check select.
+        // Reuses proveNonNullFromRules (which proves expr != 0).
+        if (opts.smt_opt) {
+            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            if (program) {
+                if (opts.verbose) {
+                    std::cout << "Phase 4.85: Division-by-zero check elimination analysis...\n";
+                }
+
+                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                for (const auto& decl : program->declarations) {
+                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                        all_rules[rules->rulesName] = rules;
+                    }
+                }
+
+                if (!all_rules.empty() || opts.smt_opt) {
+                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                    aria::RangeAnalyzer* currentRA = nullptr;
+
+                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForDivCheck;
+                    walkForDivCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                        if (!node) return;
+                        using NT = aria::ASTNode::NodeType;
+
+                        switch (node->type) {
+                            case NT::VAR_DECL: {
+                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                if (!var->limitRulesName.empty()) {
+                                    auto it = all_rules.find(var->limitRulesName);
+                                    if (it != all_rules.end()) {
+                                        varRules[var->varName] = {it->second, var->typeName};
+                                    }
+                                }
+                                walkForDivCheck(var->initializer.get(), varRules);
+                                break;
+                            }
+
+                            case NT::BINARY_OP: {
+                                auto* binary = static_cast<aria::BinaryExpr*>(node);
+                                bool isDiv = binary->op.type == aria::frontend::TokenType::TOKEN_SLASH;
+                                bool isMod = binary->op.type == aria::frontend::TokenType::TOKEN_PERCENT;
+                                bool isDivEq = binary->op.type == aria::frontend::TokenType::TOKEN_SLASH_EQUAL;
+                                bool isModEq = binary->op.type == aria::frontend::TokenType::TOKEN_PERCENT_EQUAL;
+                                if (isDiv || isMod || isDivEq || isModEq) {
+                                    // Prove the right operand (divisor) is never zero
+                                    VarRulesMap mergedRules = varRules;
+                                    if (currentRA) {
+                                        const auto* inferred = currentRA->getRangesAt(binary);
+                                        if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                    }
+                                    if (!mergedRules.empty()) {
+                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        auto result = z3v.proveNonNullFromRules(
+                                            binary->right.get(), mergedRules, outcomes,
+                                            binary->line, binary->column);
+                                        if (result == aria::VerifyResult::PROVEN) {
+                                            div_safe_set.insert(binary);
+                                        }
+                                    }
+                                }
+                                walkForDivCheck(binary->left.get(), varRules);
+                                walkForDivCheck(binary->right.get(), varRules);
+                                break;
+                            }
+
+                            case NT::IF: {
+                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                walkForDivCheck(ifStmt->condition.get(), varRules);
+                                walkForDivCheck(ifStmt->thenBranch.get(), varRules);
+                                walkForDivCheck(ifStmt->elseBranch.get(), varRules);
+                                break;
+                            }
+
+                            case NT::BLOCK: {
+                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                for (auto& stmt : block->statements)
+                                    walkForDivCheck(stmt.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHILE: {
+                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                walkForDivCheck(s->condition.get(), varRules);
+                                walkForDivCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::FOR: {
+                                auto* s = static_cast<aria::ForStmt*>(node);
+                                walkForDivCheck(s->initializer.get(), varRules);
+                                walkForDivCheck(s->condition.get(), varRules);
+                                walkForDivCheck(s->update.get(), varRules);
+                                walkForDivCheck(s->body.get(), varRules);
+                                walkForDivCheck(s->rangeExpr.get(), varRules);
+                                break;
+                            }
+
+                            case NT::LOOP: {
+                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                walkForDivCheck(s->start.get(), varRules);
+                                walkForDivCheck(s->limit.get(), varRules);
+                                walkForDivCheck(s->step.get(), varRules);
+                                walkForDivCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::TILL: {
+                                auto* s = static_cast<aria::TillStmt*>(node);
+                                walkForDivCheck(s->limit.get(), varRules);
+                                walkForDivCheck(s->step.get(), varRules);
+                                walkForDivCheck(s->body.get(), varRules);
+                                break;
+                            }
+
+                            case NT::WHEN: {
+                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                walkForDivCheck(s->condition.get(), varRules);
+                                walkForDivCheck(s->body.get(), varRules);
+                                walkForDivCheck(s->then_block.get(), varRules);
+                                walkForDivCheck(s->end_block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::PICK: {
+                                auto* s = static_cast<aria::PickStmt*>(node);
+                                walkForDivCheck(s->selector.get(), varRules);
+                                for (auto& c : s->cases) {
+                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    walkForDivCheck(pc->pattern.get(), varRules);
+                                    walkForDivCheck(pc->body.get(), varRules);
+                                }
+                                break;
+                            }
+
+                            case NT::DEFER: {
+                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                walkForDivCheck(s->block.get(), varRules);
+                                break;
+                            }
+
+                            case NT::EXPRESSION_STMT: {
+                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                walkForDivCheck(s->expression.get(), varRules);
+                                break;
+                            }
+
+                            case NT::RETURN: {
+                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                walkForDivCheck(s->value.get(), varRules);
+                                break;
+                            }
+
+                            case NT::PASS: {
+                                auto* s = static_cast<aria::PassStmt*>(node);
+                                walkForDivCheck(s->value.get(), varRules);
+                                break;
+                            }
+
+                            default:
+                                break;
+                        }
+                    };
+
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (!func->body) continue;
+
+                        aria::RangeAnalyzer ra;
+                        ra.analyzeFunction(func);
+                        currentRA = &ra;
+
+                        VarRulesMap varRules;
+                        walkForDivCheck(func->body.get(), varRules);
+                    }
+                    currentRA = nullptr;
+
+                    if (opts.verbose && !div_safe_set.empty()) {
+                        std::cout << "  Division-by-zero check elimination: " << div_safe_set.size()
+                                  << " division op(s) proven safe\n";
                     }
                 }
             }
@@ -2994,6 +3280,9 @@ llvm::Module* compile_to_module(
                 }
 
                 using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+
+                // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
+                aria::RangeAnalyzer* currentRA = nullptr;
 
                 // Track variables provably non-null via dataflow
                 // (initialized from non-NIL literal, address-of, or Rules-constrained source)
@@ -3096,14 +3385,22 @@ llvm::Module* compile_to_module(
                             }
 
                             // Z3 proof: if source expression involves Rules-constrained variables
-                            if (unwrap->result && !varRules.empty()) {
-                                std::vector<aria::VerifyOutcome> outcomes;
-                                auto result = z3v.proveNonNullFromRules(
-                                    unwrap->result.get(),
-                                    varRules, outcomes,
-                                    unwrap->line, unwrap->column);
-                                if (result == aria::VerifyResult::PROVEN) {
-                                    null_check_safe_set.insert(node);
+                            if (unwrap->result) {
+                                // v0.14.1: Merge explicit Rules + inferred ranges
+                                VarRulesMap mergedRules = varRules;
+                                if (currentRA) {
+                                    const auto* inferred = currentRA->getRangesAt(node);
+                                    if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                }
+                                if (!mergedRules.empty()) {
+                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    auto result = z3v.proveNonNullFromRules(
+                                        unwrap->result.get(),
+                                        mergedRules, outcomes,
+                                        unwrap->line, unwrap->column);
+                                    if (result == aria::VerifyResult::PROVEN) {
+                                        null_check_safe_set.insert(node);
+                                    }
                                 }
                             }
                             walkForNullCheck(unwrap->result.get(), varRules);
@@ -3129,15 +3426,22 @@ llvm::Module* compile_to_module(
                                         null_check_safe_set.insert(node);
                                     }
                                 }
-                                // Z3 proof
-                                else if (!varRules.empty()) {
-                                    std::vector<aria::VerifyOutcome> outcomes;
-                                    auto result = z3v.proveNonNullFromRules(
-                                        binary->left.get(),
-                                        varRules, outcomes,
-                                        binary->line, binary->column);
-                                    if (result == aria::VerifyResult::PROVEN) {
-                                        null_check_safe_set.insert(node);
+                                // Z3 proof (v0.14.1: with inferred ranges)
+                                else {
+                                    VarRulesMap mergedRules = varRules;
+                                    if (currentRA) {
+                                        const auto* inferred = currentRA->getRangesAt(node);
+                                        if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
+                                    }
+                                    if (!mergedRules.empty()) {
+                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        auto result = z3v.proveNonNullFromRules(
+                                            binary->left.get(),
+                                            mergedRules, outcomes,
+                                            binary->line, binary->column);
+                                        if (result == aria::VerifyResult::PROVEN) {
+                                            null_check_safe_set.insert(node);
+                                        }
                                     }
                                 }
                             }
@@ -3249,10 +3553,16 @@ llvm::Module* compile_to_module(
                     auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
                     if (!func->body) continue;
 
+                    // v0.14.1: Run range analysis for flow-sensitive inference
+                    aria::RangeAnalyzer ra;
+                    ra.analyzeFunction(func);
+                    currentRA = &ra;
+
                     VarRulesMap varRules;
                     non_null_vars.clear();  // Reset per function
                     walkForNullCheck(func->body.get(), varRules);
                 }
+                currentRA = nullptr;
 
                 if (opts.verbose && !null_check_safe_set.empty()) {
                     std::cout << "  Null check elimination: " << null_check_safe_set.size()
@@ -3831,12 +4141,31 @@ llvm::Module* compile_to_module(
                 int prove_count = 0;
                 int assert_static_count = 0;
 
+                // v0.14.3: Count eligible functions for progress reporting
+                int verify_func_total = 0;
+                int verify_func_current = 0;
+                if (opts.verbose) {
+                    for (const auto& decl : program->declarations) {
+                        if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
+                            auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                            if (func->body) verify_func_total++;
+                        }
+                    }
+                }
+
                 // For each function, collect Rules-constrained variables from parameters
                 // and local VarDecls, then check proves within the function body.
                 for (const auto& decl : program->declarations) {
                     if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
                     auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
                     if (!func->body) continue;
+
+                    // v0.14.3: Progress reporting
+                    verify_func_current++;
+                    if (opts.verbose && verify_func_total > 1) {
+                        std::cout << "  [" << verify_func_current << "/" << verify_func_total
+                                  << "] Verifying " << func->funcName << "()...\n";
+                    }
 
                     // Build varRules map: variable name → (RulesDeclStmt*, typeName)
                     std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> varRules;
@@ -4059,6 +4388,13 @@ llvm::Module* compile_to_module(
         // (assert_static disproven are soft warnings, not hard failures)
         if ((sum.disproven - assert_static_soft_disproven) > 0) {
             return nullptr;
+        }
+        
+        // v0.14.3: Report verification timing
+        if (opts.verbose) {
+            auto verify_end = std::chrono::steady_clock::now();
+            auto verify_ms = std::chrono::duration_cast<std::chrono::milliseconds>(verify_end - verify_start).count();
+            std::cout << "Verification completed in " << verify_ms << "ms\n";
         }
     }
 #endif // ARIA_HAS_Z3
@@ -4690,6 +5026,11 @@ llvm::Module* compile_to_module(
     // Pass overflow-safe set to IR generator (Z3-proven overflow-free arithmetic)
     if (!overflow_safe_set.empty()) {
         ir_gen.setOverflowCheckSafe(overflow_safe_set);
+    }
+
+    // Pass div-safe set to IR generator (Z3-proven non-zero divisors) (v0.14.4)
+    if (!div_safe_set.empty()) {
+        ir_gen.setDivCheckSafe(div_safe_set);
     }
 
     // Pass null-check-safe set to IR generator (Z3-proven non-null expressions)

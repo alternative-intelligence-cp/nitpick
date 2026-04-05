@@ -1,0 +1,44 @@
+// Test: Range Inference — Conditional Narrowing (v0.14.1)
+// Compile: ariac --smt-opt -v test_range_conditional.aria -o test_range_conditional
+// Expected: Inside if-branches, variable ranges are narrowed by the condition.
+// Overflow checks eliminated without explicit Rules, using flow-sensitive analysis.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Simple comparison narrowing
+// Inside if (x > 0 && x < 100), x ∈ [1, 99], so x + 50 ∈ [51, 149] — no overflow.
+func:test_if_narrowing = int32(int32:x) {
+    if (x > 0i32 && x < 100i32) {
+        int32:y = x + 50i32;
+        pass y;
+    }
+    pass 0i32;
+};
+
+// Test 2: Narrowing with >=  and <=
+// Inside if (x >= 10 && x <= 20), x ∈ [10, 20], so x * x ∈ [100, 400] — no overflow.
+func:test_ge_le_narrowing = int32(int32:x) {
+    if (x >= 10i32 && x <= 20i32) {
+        int32:sq = x * x;
+        pass sq;
+    }
+    pass 0i32;
+};
+
+// Test 3: Narrowing in else branch
+// if (x < 5) → else branch: x ∈ [5, INT32_MAX]
+// We can't prove much in the else without an upper bound, but this tests the mechanism
+func:test_else_narrowing = int32(int32:x) {
+    if (x >= 0i32 && x < 10i32) {
+        // x ∈ [0, 9], so x + 1 ∈ [1, 10] — no overflow
+        int32:y = x + 1i32;
+        pass y;
+    }
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};

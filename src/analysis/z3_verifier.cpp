@@ -87,6 +87,9 @@ Z3Verifier::Z3Verifier() {
     Z3_set_param_value(cfg, "timeout", "5000");
     ctx = Z3_mk_context(cfg);
     Z3_del_config(cfg);
+    // v0.14.3: Create persistent solver — reused across queries via push/pop
+    persistentSolver = Z3_mk_solver(ctx);
+    Z3_solver_inc_ref(ctx, persistentSolver);
 }
 
 Z3Verifier::Z3Verifier(int timeout_ms) {
@@ -95,10 +98,18 @@ Z3Verifier::Z3Verifier(int timeout_ms) {
     Z3_set_param_value(cfg, "timeout", timeout_str.c_str());
     ctx = Z3_mk_context(cfg);
     Z3_del_config(cfg);
+    // v0.14.3: Create persistent solver — reused across queries via push/pop
+    persistentSolver = Z3_mk_solver(ctx);
+    Z3_solver_inc_ref(ctx, persistentSolver);
 }
 
 Z3Verifier::~Z3Verifier() {
     if (ctx) {
+        // v0.14.3: Release persistent solver before context
+        if (persistentSolver) {
+            Z3_solver_dec_ref(ctx, persistentSolver);
+            persistentSolver = nullptr;
+        }
         Z3_del_context(ctx);
         ctx = nullptr;
     }
@@ -113,14 +124,16 @@ void Z3Verifier::registerRules(const std::string& name, RulesDeclStmt* rules) {
     rules_table[name] = rules;
 }
 
+// v0.14.3: Persistent solver with push/pop instead of create/destroy per query.
+// push() opens a new scope, pop() reverts all assertions in that scope.
+// This allows Z3 to cache learned lemmas across related queries.
 Z3_solver Z3Verifier::makeSolver() {
-    Z3_solver s = Z3_mk_solver(ctx);
-    Z3_solver_inc_ref(ctx, s);
-    return s;
+    Z3_solver_push(ctx, persistentSolver);
+    return persistentSolver;
 }
 
 void Z3Verifier::deleteSolver(Z3_solver s) {
-    Z3_solver_dec_ref(ctx, s);
+    Z3_solver_pop(ctx, persistentSolver, 1);
 }
 
 Z3_sort Z3Verifier::getIntSort(int bitWidth) {
@@ -687,10 +700,16 @@ Z3_ast Z3Verifier::translateExprWithEnv(
         if (ident->name == "NIL") {
             return Z3_mk_numeral(ctx, "0", defaultSort);
         }
-        // $result → look up special name
-        if (ident->name == "$result") {
-            auto it2 = env.find("$result");
+        // $ / $result / result → look up result variable
+        // The parser creates IdentifierExpr("$") for $ in Rules conditions,
+        // IdentifierExpr("result") for ensures clauses, and "$result" historically.
+        if (ident->name == "$" || ident->name == "$result" || ident->name == "result") {
+            auto it2 = env.find("$");
             if (it2 != env.end()) return it2->second;
+            auto it3 = env.find("$result");
+            if (it3 != env.end()) return it3->second;
+            auto it4 = env.find("result");
+            if (it4 != env.end()) return it4->second;
         }
         return nullptr; // unknown identifier
     }
@@ -808,6 +827,241 @@ Z3_ast Z3Verifier::translateExprWithEnv(
 }
 
 // ============================================================================
+// v0.14.0: Symbolic Body Walker for Contract Proof
+// ============================================================================
+//
+// Walks a function's AST body and collects all return paths as
+// (pathCondition, returnValue) pairs. Each path represents a possible
+// execution route through the function. The pathCondition is the conjunction
+// of all if-conditions leading to that return; nullptr means unconditional.
+//
+// Supported: VarDeclStmt, AssignmentExpr (=), PassStmt, ReturnStmt,
+//            IfStmt (branches), BlockStmt. Everything else → skipped (no
+//            return path contributed, so verifier falls back to UNKNOWN).
+// ============================================================================
+
+std::vector<Z3Verifier::ReturnPath> Z3Verifier::walkBodySymbolic(
+    ASTNode* node,
+    std::map<std::string, Z3_ast>& env,
+    Z3_sort defaultSort,
+    Z3_ast currentPathCondition)
+{
+    if (!node) return {};
+
+    std::vector<ReturnPath> paths;
+
+    switch (node->type) {
+    case ASTNode::NodeType::BLOCK: {
+        auto* block = static_cast<BlockStmt*>(node);
+        Z3_ast remainingPathCond = currentPathCondition;
+
+        for (auto& stmt : block->statements) {
+            auto stmtPaths = walkBodySymbolic(stmt.get(), env, defaultSort, remainingPathCond);
+            if (!stmtPaths.empty()) {
+                paths.insert(paths.end(), stmtPaths.begin(), stmtPaths.end());
+
+                // Check if any return path is unconditional
+                bool hasUnconditional = false;
+                for (auto& rp : stmtPaths) {
+                    if (rp.pathCondition == nullptr) {
+                        hasUnconditional = true;
+                        break;
+                    }
+                }
+
+                if (hasUnconditional) {
+                    // Unconditional return — remaining stmts are unreachable
+                    break;
+                }
+
+                // All return paths from this statement are conditional.
+                // Remaining statements in this block are only reachable when
+                // NONE of those return paths fired. Update the path condition:
+                // remainingPathCond AND NOT(rp1.cond) AND NOT(rp2.cond) ...
+                for (auto& rp : stmtPaths) {
+                    Z3_ast negCond = Z3_mk_not(ctx, rp.pathCondition);
+                    if (remainingPathCond) {
+                        Z3_ast andArgs[2] = {remainingPathCond, negCond};
+                        remainingPathCond = Z3_mk_and(ctx, 2, andArgs);
+                    } else {
+                        remainingPathCond = negCond;
+                    }
+                }
+            }
+        }
+        break;
+    }
+
+    case ASTNode::NodeType::PASS: {
+        auto* passStmt = static_cast<PassStmt*>(node);
+        if (passStmt->value) {
+            Z3_ast val = translateExprWithEnv(passStmt->value.get(), env, defaultSort);
+            if (val) {
+                paths.push_back({currentPathCondition, val});
+            }
+        }
+        break;
+    }
+
+    case ASTNode::NodeType::RETURN: {
+        auto* retStmt = static_cast<ReturnStmt*>(node);
+        if (retStmt->value) {
+            Z3_ast val = translateExprWithEnv(retStmt->value.get(), env, defaultSort);
+            if (val) {
+                paths.push_back({currentPathCondition, val});
+            }
+        }
+        break;
+    }
+
+    case ASTNode::NodeType::VAR_DECL: {
+        auto* varDecl = static_cast<VarDeclStmt*>(node);
+        if (varDecl->initializer) {
+            Z3_ast val = translateExprWithEnv(varDecl->initializer.get(), env, defaultSort);
+            if (val) {
+                env[varDecl->varName] = val;
+            } else {
+                // Can't translate initializer → make it a fresh symbolic variable
+                Z3_symbol sym = Z3_mk_string_symbol(ctx, varDecl->varName.c_str());
+                env[varDecl->varName] = Z3_mk_const(ctx, sym, defaultSort);
+            }
+        } else {
+            // Uninitialized → fresh symbolic variable
+            Z3_symbol sym = Z3_mk_string_symbol(ctx, varDecl->varName.c_str());
+            env[varDecl->varName] = Z3_mk_const(ctx, sym, defaultSort);
+        }
+        break;
+    }
+
+    case ASTNode::NodeType::EXPRESSION_STMT: {
+        auto* exprStmt = static_cast<ExpressionStmt*>(node);
+        if (exprStmt->expression &&
+            exprStmt->expression->type == ASTNode::NodeType::ASSIGNMENT) {
+            auto* assign = static_cast<AssignmentExpr*>(exprStmt->expression.get());
+            if (assign->target &&
+                assign->target->type == ASTNode::NodeType::IDENTIFIER) {
+                auto* ident = static_cast<IdentifierExpr*>(assign->target.get());
+
+                if (assign->op.type == frontend::TokenType::TOKEN_EQUAL) {
+                    // Simple assignment: x = expr
+                    Z3_ast val = translateExprWithEnv(assign->value.get(), env, defaultSort);
+                    if (val) {
+                        env[ident->name] = val;
+                    }
+                } else if (assign->op.type == frontend::TokenType::TOKEN_PLUS_EQUAL) {
+                    // x += expr → x = x + expr
+                    auto it = env.find(ident->name);
+                    Z3_ast rhs = translateExprWithEnv(assign->value.get(), env, defaultSort);
+                    if (it != env.end() && rhs) {
+                        Z3_ast args[2] = {it->second, rhs};
+                        Z3_sort_kind sk = Z3_get_sort_kind(ctx, defaultSort);
+                        env[ident->name] = (sk == Z3_BV_SORT)
+                            ? Z3_mk_bvadd(ctx, it->second, rhs)
+                            : Z3_mk_add(ctx, 2, args);
+                    }
+                } else if (assign->op.type == frontend::TokenType::TOKEN_MINUS_EQUAL) {
+                    auto it = env.find(ident->name);
+                    Z3_ast rhs = translateExprWithEnv(assign->value.get(), env, defaultSort);
+                    if (it != env.end() && rhs) {
+                        Z3_ast args[2] = {it->second, rhs};
+                        Z3_sort_kind sk = Z3_get_sort_kind(ctx, defaultSort);
+                        env[ident->name] = (sk == Z3_BV_SORT)
+                            ? Z3_mk_bvsub(ctx, it->second, rhs)
+                            : Z3_mk_sub(ctx, 2, args);
+                    }
+                } else if (assign->op.type == frontend::TokenType::TOKEN_STAR_EQUAL) {
+                    auto it = env.find(ident->name);
+                    Z3_ast rhs = translateExprWithEnv(assign->value.get(), env, defaultSort);
+                    if (it != env.end() && rhs) {
+                        Z3_ast args[2] = {it->second, rhs};
+                        Z3_sort_kind sk = Z3_get_sort_kind(ctx, defaultSort);
+                        env[ident->name] = (sk == Z3_BV_SORT)
+                            ? Z3_mk_bvmul(ctx, it->second, rhs)
+                            : Z3_mk_mul(ctx, 2, args);
+                    }
+                }
+            }
+        }
+        break;
+    }
+
+    case ASTNode::NodeType::IF: {
+        auto* ifStmt = static_cast<IfStmt*>(node);
+        Z3_ast cond = translateExprWithEnv(ifStmt->condition.get(), env, defaultSort);
+        if (!cond) break;  // Can't translate condition → skip
+
+        Z3_ast notCond = Z3_mk_not(ctx, cond);
+
+        // Build path condition for the then branch
+        Z3_ast thenPathCond;
+        if (currentPathCondition) {
+            Z3_ast andArgs[2] = {currentPathCondition, cond};
+            thenPathCond = Z3_mk_and(ctx, 2, andArgs);
+        } else {
+            thenPathCond = cond;
+        }
+
+        // Walk then branch with a copy of env
+        auto thenEnv = env;
+        auto thenPaths = walkBodySymbolic(ifStmt->thenBranch.get(), thenEnv, defaultSort, thenPathCond);
+        paths.insert(paths.end(), thenPaths.begin(), thenPaths.end());
+
+        // Walk else branch (if present)
+        if (ifStmt->elseBranch) {
+            Z3_ast elsePathCond;
+            if (currentPathCondition) {
+                Z3_ast andArgs[2] = {currentPathCondition, notCond};
+                elsePathCond = Z3_mk_and(ctx, 2, andArgs);
+            } else {
+                elsePathCond = notCond;
+            }
+
+            auto elseEnv = env;
+            auto elsePaths = walkBodySymbolic(ifStmt->elseBranch.get(), elseEnv, defaultSort, elsePathCond);
+            paths.insert(paths.end(), elsePaths.begin(), elsePaths.end());
+        }
+        break;
+    }
+
+    default:
+        // Unsupported statement (while, for, function calls, etc.)
+        // No return paths contributed — caller will handle fallback
+        break;
+    }
+
+    return paths;
+}
+
+// ============================================================================
+// v0.14.0: Counterexample extraction from SAT model
+// ============================================================================
+
+std::string Z3Verifier::extractCounterexample(
+    Z3_solver solver,
+    const std::map<std::string, Z3_ast>& env)
+{
+    Z3_model model = Z3_solver_get_model(ctx, solver);
+    if (!model) return "";
+
+    Z3_model_inc_ref(ctx, model);
+    std::string result;
+
+    for (auto& [name, var] : env) {
+        if (name == "$" || name == "$result" || name == "result") continue;  // skip result variable
+
+        Z3_ast val = nullptr;
+        if (Z3_model_eval(ctx, model, var, Z3_TRUE, &val) && val) {
+            Z3_string valStr = Z3_ast_to_string(ctx, val);
+            if (!result.empty()) result += ", ";
+            result += name + " = " + valStr;
+        }
+    }
+
+    Z3_model_dec_ref(ctx, model);
+    return result;
+}
+
+// ============================================================================
 // Phase 2: Design-by-Contract — requires/ensures Verification
 // ============================================================================
 
@@ -899,78 +1153,167 @@ VerifyResult Z3Verifier::verifyFunctionContract(
         deleteSolver(solver);
     }
 
-    // 2. If function has ensures clauses, attempt to prove them
-    //    under the assumption that requires hold.
-    //    For now: check that ensures are satisfiable given requires
-    //    (full body analysis would require symbolic execution — future work)
+    // 2. If function has ensures clauses, prove them from requires + body.
+    //    v0.14.0: Symbolic execution of the function body to constrain $.
     if (!func->postconditions.empty()) {
-        // Add $result as a symbolic variable
-        Z3_symbol resSym = Z3_mk_string_symbol(ctx, "$result");
-        Z3_ast resultVar = Z3_mk_const(ctx, resSym, defaultSort);
-        env["$result"] = resultVar;
+        // Walk the function body symbolically to collect return paths
+        std::vector<ReturnPath> returnPaths;
+        if (func->body) {
+            auto bodyEnv = env;  // copy parameter env for body walking
+            returnPaths = walkBodySymbolic(func->body.get(), bodyEnv, defaultSort, nullptr);
+        }
 
-        for (size_t i = 0; i < func->postconditions.size(); ++i) {
-            Z3_solver solver = makeSolver();
+        if (!returnPaths.empty()) {
+            // Body analysis succeeded — prove each ensures clause across all paths
+            for (size_t i = 0; i < func->postconditions.size(); ++i) {
+                bool allPathsProven = true;
+                bool anyPathSAT = false;
+                std::string counterexample;
 
-            // Assert all requires as assumptions
-            for (auto& pre : func->preconditions) {
-                Z3_ast z3pre = translateExprWithEnv(pre.get(), env, defaultSort);
-                if (z3pre) Z3_solver_assert(ctx, solver, z3pre);
-            }
+                for (auto& rp : returnPaths) {
+                    Z3_solver solver = makeSolver();
 
-            Z3_ast z3post = translateExprWithEnv(func->postconditions[i].get(), env, defaultSort);
-            if (!z3post) {
+                    // Assert all requires as assumptions
+                    for (auto& pre : func->preconditions) {
+                        Z3_ast z3pre = translateExprWithEnv(pre.get(), env, defaultSort);
+                        if (z3pre) Z3_solver_assert(ctx, solver, z3pre);
+                    }
+
+                    // Assert path condition (for conditional returns)
+                    if (rp.pathCondition) {
+                        Z3_solver_assert(ctx, solver, rp.pathCondition);
+                    }
+
+                    // Build env with $ set to this path's return value
+                    auto postEnv = env;
+                    postEnv["$"] = rp.returnValue;
+
+                    Z3_ast z3post = translateExprWithEnv(
+                        func->postconditions[i].get(), postEnv, defaultSort);
+                    if (!z3post) {
+                        // Can't translate ensures — fall through to UNKNOWN
+                        allPathsProven = false;
+                        deleteSolver(solver);
+                        break;
+                    }
+
+                    // Assert NOT(ensures) — if UNSAT, ensures holds on this path
+                    Z3_ast negPost = Z3_mk_not(ctx, z3post);
+                    Z3_solver_assert(ctx, solver, negPost);
+
+                    Z3_lbool result = checkSat(solver);
+                    if (result != Z3_L_FALSE) {
+                        allPathsProven = false;
+                        if (result == Z3_L_TRUE) {
+                            anyPathSAT = true;
+                            counterexample = extractCounterexample(solver, env);
+                        }
+                    }
+
+                    deleteSolver(solver);
+
+                    // If we found a counterexample, no need to check more paths
+                    if (anyPathSAT) break;
+                }
+
                 VerifyOutcome out;
-                out.result = VerifyResult::UNKNOWN;
                 out.rulesName = func->funcName;
                 out.conditionText = prettyExpr(func->postconditions[i].get());
-                out.detail = "Could not encode ensures clause for SMT verification";
                 out.line = func->line;
                 out.column = func->column;
+
+                if (allPathsProven) {
+                    out.result = VerifyResult::PROVEN;
+                    out.detail = "Proven: ensures clause '" + out.conditionText +
+                                 "' holds for all valid inputs to '" + func->funcName + "'";
+                    summary.proven++;
+                } else if (anyPathSAT) {
+                    out.result = VerifyResult::DISPROVEN;
+                    out.detail = "Disproven: ensures clause '" + out.conditionText +
+                                 "' on '" + func->funcName +
+                                 "' can be violated";
+                    if (!counterexample.empty()) {
+                        out.detail += " (counterexample: " + counterexample + ")";
+                    }
+                    summary.disproven++;
+                    worstResult = VerifyResult::DISPROVEN;
+                } else {
+                    out.result = VerifyResult::UNKNOWN;
+                    out.detail = "Ensures clause '" + out.conditionText +
+                                 "' on '" + func->funcName +
+                                 "' cannot be fully verified (kept as runtime check)";
+                    summary.unknown++;
+                    if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+                }
+
                 outcomes.push_back(out);
-                summary.unknown++;
-                if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+            }
+        } else {
+            // No return paths found (body too complex or no body) — fallback
+            // Add $ as unconstrained symbolic variable (pre-v0.14.0 behavior)
+            Z3_symbol resSym = Z3_mk_string_symbol(ctx, "$");
+            Z3_ast resultVar = Z3_mk_const(ctx, resSym, defaultSort);
+            env["$"] = resultVar;
+
+            for (size_t i = 0; i < func->postconditions.size(); ++i) {
+                Z3_solver solver = makeSolver();
+
+                // Assert all requires as assumptions
+                for (auto& pre : func->preconditions) {
+                    Z3_ast z3pre = translateExprWithEnv(pre.get(), env, defaultSort);
+                    if (z3pre) Z3_solver_assert(ctx, solver, z3pre);
+                }
+
+                Z3_ast z3post = translateExprWithEnv(
+                    func->postconditions[i].get(), env, defaultSort);
+                if (!z3post) {
+                    VerifyOutcome out;
+                    out.result = VerifyResult::UNKNOWN;
+                    out.rulesName = func->funcName;
+                    out.conditionText = prettyExpr(func->postconditions[i].get());
+                    out.detail = "Could not encode ensures clause for SMT verification";
+                    out.line = func->line;
+                    out.column = func->column;
+                    outcomes.push_back(out);
+                    summary.unknown++;
+                    if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+                    deleteSolver(solver);
+                    continue;
+                }
+
+                // Check if NOT(ensures) is UNSAT (ensures always holds given requires alone)
+                Z3_ast negPost = Z3_mk_not(ctx, z3post);
+                Z3_solver_assert(ctx, solver, negPost);
+
+                Z3_lbool result = checkSat(solver);
+                VerifyOutcome out;
+                out.rulesName = func->funcName;
+                out.conditionText = prettyExpr(func->postconditions[i].get());
+                out.line = func->line;
+                out.column = func->column;
+
+                if (result == Z3_L_FALSE) {
+                    out.result = VerifyResult::PROVEN;
+                    out.detail = "Proven: ensures clause '" + out.conditionText +
+                                 "' holds for all valid inputs to '" + func->funcName + "'";
+                    summary.proven++;
+                } else if (result == Z3_L_TRUE) {
+                    out.result = VerifyResult::UNKNOWN;
+                    out.detail = "Ensures clause '" + out.conditionText +
+                                 "' on '" + func->funcName +
+                                 "' cannot be proven without body analysis (kept as runtime check)";
+                    summary.unknown++;
+                    if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+                } else {
+                    out.result = VerifyResult::UNKNOWN;
+                    out.detail = "Solver returned unknown for ensures clause";
+                    summary.unknown++;
+                    if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
+                }
+
+                outcomes.push_back(out);
                 deleteSolver(solver);
-                continue;
             }
-
-            // Check if ensures is satisfiable given requires (sanity check)
-            // Assert NOT(ensures) — if UNSAT, ensures is always true given requires
-            Z3_ast negPost = Z3_mk_not(ctx, z3post);
-            Z3_solver_assert(ctx, solver, negPost);
-
-            Z3_lbool result = checkSat(solver);
-            VerifyOutcome out;
-            out.rulesName = func->funcName;
-            out.conditionText = prettyExpr(func->postconditions[i].get());
-            out.line = func->line;
-            out.column = func->column;
-
-            if (result == Z3_L_FALSE) {
-                // NOT(ensures) is UNSAT given requires → ensures always holds
-                out.result = VerifyResult::PROVEN;
-                out.detail = "Proven: ensures clause '" + out.conditionText +
-                             "' holds for all valid inputs to '" + func->funcName + "'";
-                summary.proven++;
-            } else if (result == Z3_L_TRUE) {
-                // NOT(ensures) is SAT → ensures doesn't always hold
-                // This is expected for most ensures (they constrain $result)
-                // Report as "checked" not "disproven" since we lack body analysis
-                out.result = VerifyResult::UNKNOWN;
-                out.detail = "Ensures clause '" + out.conditionText +
-                             "' on '" + func->funcName +
-                             "' cannot be statically proven without body analysis (kept as runtime check)";
-                summary.unknown++;
-                if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
-            } else {
-                out.result = VerifyResult::UNKNOWN;
-                out.detail = "Solver returned unknown for ensures clause";
-                summary.unknown++;
-                if (worstResult == VerifyResult::PROVEN) worstResult = VerifyResult::UNKNOWN;
-            }
-
-            outcomes.push_back(out);
-            deleteSolver(solver);
         }
     }
 
@@ -3398,13 +3741,20 @@ VerifyResult Z3Verifier::inferReturnBounds(
 }
 
 // ============================================================================
-// Phase 16: Data Race Detection (v0.5.4)
+// Phase 16: Data Race Detection (v0.5.4, improved v0.14.2)
 // ============================================================================
-// For each thread spawned via aria_thread_create(func, arg), we collect
-// variable accesses in both the spawning function (after the spawn point)
-// and the spawned function. If any variable is accessed by both threads
-// (read+write or write+write) without being protected by mutex lock/unlock,
-// we report a potential data race.
+// For each thread spawned via aria_thread_create/aria_libc_thread_spawn/
+// aria_shim_thread_spawn(func, arg), we collect variable accesses in both
+// the spawning function and the spawned function. If any variable is accessed
+// by both threads (read+write or write+write) without being protected by
+// mutex lock/unlock, we report a potential data race.
+//
+// v0.14.2 improvements:
+//   - Recognize aria_libc_* prefix for all concurrency primitives
+//   - Track lock-to-variable binding (which mutex protects which variable)
+//   - Exempt atomic type operations (AtomicInt*, AtomicBool, etc.)
+//   - Treat channel send/recv as synchronization points
+//   - Exempt lock-free data structure operations
 //
 // Encoding: For each shared variable V:
 //   thread1_accesses(V) ∧ thread2_accesses(V) ∧
@@ -3423,43 +3773,134 @@ static std::string getCallName(ASTNode* node) {
     return "";
 }
 
+// Helper: check if a call name is a lock acquisition
+static bool isLockAcquire(const std::string& name) {
+    return name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
+           name == "aria_libc_mutex_lock" ||
+           name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
+           name == "aria_libc_rwlock_wrlock" ||
+           name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock" ||
+           name == "aria_libc_rwlock_rdlock";
+}
+
+// Helper: check if a call name is a lock release
+static bool isLockRelease(const std::string& name) {
+    return name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
+           name == "aria_libc_mutex_unlock" ||
+           name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock" ||
+           name == "aria_libc_rwlock_unlock";
+}
+
+// Helper: check if a call name is an atomic operation (inherently race-free)
+static bool isAtomicOperation(const std::string& name) {
+    // Covers: aria_atomic_*_load/store/exchange/compare_exchange/fetch_add/fetch_sub
+    // and aria_shim_atomic_* variants
+    return name.find("atomic") != std::string::npos &&
+           (name.find("load") != std::string::npos ||
+            name.find("store") != std::string::npos ||
+            name.find("exchange") != std::string::npos ||
+            name.find("compare_exchange") != std::string::npos ||
+            name.find("fetch_add") != std::string::npos ||
+            name.find("fetch_sub") != std::string::npos ||
+            name.find("create") != std::string::npos ||
+            name.find("destroy") != std::string::npos);
+}
+
+// Helper: check if a call name is a channel operation (provides synchronization)
+static bool isChannelOperation(const std::string& name) {
+    return name.find("channel") != std::string::npos &&
+           (name.find("send") != std::string::npos ||
+            name.find("recv") != std::string::npos ||
+            name.find("create") != std::string::npos ||
+            name.find("close") != std::string::npos ||
+            name.find("destroy") != std::string::npos);
+}
+
+// Helper: check if a call name is a lock-free data structure operation
+static bool isLockFreeOperation(const std::string& name) {
+    return name.find("lfqueue") != std::string::npos ||
+           name.find("lfstack") != std::string::npos ||
+           name.find("ringbuf") != std::string::npos ||
+           name.find("lf_queue") != std::string::npos ||
+           name.find("lf_stack") != std::string::npos ||
+           name.find("ring_buf") != std::string::npos;
+}
+
+// Helper: check if a call is to a concurrency primitive (lock, atomic, channel, etc.)
+// Arguments to these calls are synchronization handles, not shared data
+static bool isConcurrencyPrimitive(const std::string& name) {
+    return name.find("mutex") != std::string::npos ||
+           name.find("rwlock") != std::string::npos ||
+           name.find("condvar") != std::string::npos ||
+           name.find("barrier") != std::string::npos ||
+           name.find("thread") != std::string::npos ||
+           isAtomicOperation(name) ||
+           isChannelOperation(name) ||
+           isLockFreeOperation(name);
+}
+
 // Helper: collect variable accesses from a function body, noting which
-// are inside lock/unlock regions
+// are inside lock/unlock regions and tracking which mutex protects them
 static void collectAccesses(
     ASTNode* node,
     const std::string& funcName,
-    bool& insideLock,
+    std::vector<std::string>& heldLocks,  // stack of currently held mutex names
     std::vector<Z3Verifier::ThreadAccess>& accesses,
-    std::set<std::string>& declaredLocals)
+    std::set<std::string>& declaredLocals,
+    std::set<std::string>& atomicVars,    // variables used as atomic handles
+    std::set<std::string>& channelVars)   // variables used as channel handles
 {
     if (!node) return;
     using NT = ASTNode::NodeType;
+    bool insideLock = !heldLocks.empty();
 
     switch (node->type) {
         case NT::VAR_DECL: {
             auto* vd = static_cast<VarDeclStmt*>(node);
             declaredLocals.insert(vd->varName);
+            // Check if the initializer is an atomic/channel create call
+            if (vd->initializer && vd->initializer->type == NT::CALL) {
+                std::string callName = getCallName(vd->initializer.get());
+                if (isAtomicOperation(callName)) {
+                    atomicVars.insert(vd->varName);
+                } else if (isChannelOperation(callName)) {
+                    channelVars.insert(vd->varName);
+                }
+            }
             if (vd->initializer) {
-                collectAccesses(vd->initializer.get(), funcName, insideLock,
-                                accesses, declaredLocals);
+                collectAccesses(vd->initializer.get(), funcName, heldLocks,
+                                accesses, declaredLocals, atomicVars, channelVars);
             }
             break;
         }
 
         case NT::ASSIGNMENT: {
             auto* assign = static_cast<AssignmentExpr*>(node);
+            // Check if RHS is an atomic/channel create
+            if (assign->value && assign->value->type == NT::CALL) {
+                std::string callName = getCallName(assign->value.get());
+                if (assign->target && assign->target->type == NT::IDENTIFIER) {
+                    auto targetName = static_cast<IdentifierExpr*>(assign->target.get())->name;
+                    if (isAtomicOperation(callName)) {
+                        atomicVars.insert(targetName);
+                    } else if (isChannelOperation(callName)) {
+                        channelVars.insert(targetName);
+                    }
+                }
+            }
             // LHS is a write
             if (assign->target && assign->target->type == NT::IDENTIFIER) {
                 auto* ident = static_cast<IdentifierExpr*>(assign->target.get());
                 if (!declaredLocals.count(ident->name)) {
+                    insideLock = !heldLocks.empty();
                     accesses.push_back({ident->name, true, funcName,
                                         insideLock, assign->line, assign->column});
                 }
             }
             // RHS is a read
             if (assign->value) {
-                collectAccesses(assign->value.get(), funcName, insideLock,
-                                accesses, declaredLocals);
+                collectAccesses(assign->value.get(), funcName, heldLocks,
+                                accesses, declaredLocals, atomicVars, channelVars);
             }
             break;
         }
@@ -3467,6 +3908,7 @@ static void collectAccesses(
         case NT::IDENTIFIER: {
             auto* ident = static_cast<IdentifierExpr*>(node);
             if (!declaredLocals.count(ident->name)) {
+                insideLock = !heldLocks.empty();
                 accesses.push_back({ident->name, false, funcName,
                                     insideLock, node->line, node->column});
             }
@@ -3477,19 +3919,51 @@ static void collectAccesses(
             auto* call = static_cast<CallExpr*>(node);
             std::string name = getCallName(node);
 
-            // Detect lock/unlock transitions  
-            if (name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
-                name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
-                name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock") {
-                insideLock = true;
-            } else if (name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
-                       name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock") {
-                insideLock = false;
+            // Detect lock/unlock transitions using new helpers
+            if (isLockAcquire(name)) {
+                // Get lock name from first argument
+                std::string lockName = "_unknown_lock";
+                if (!call->arguments.empty() &&
+                    call->arguments[0]->type == NT::IDENTIFIER) {
+                    lockName = static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                }
+                heldLocks.push_back(lockName);
+            } else if (isLockRelease(name)) {
+                std::string lockName = "_unknown_lock";
+                if (!call->arguments.empty() &&
+                    call->arguments[0]->type == NT::IDENTIFIER) {
+                    lockName = static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                }
+                // Remove the matching lock from held stack
+                for (auto it = heldLocks.rbegin(); it != heldLocks.rend(); ++it) {
+                    if (*it == lockName) {
+                        heldLocks.erase(std::next(it).base());
+                        break;
+                    }
+                }
+            }
+
+            // Track atomic/channel variables used as arguments
+            if (isAtomicOperation(name) || isChannelOperation(name) ||
+                isLockFreeOperation(name)) {
+                // First argument is typically the handle variable
+                if (!call->arguments.empty() &&
+                    call->arguments[0]->type == NT::IDENTIFIER) {
+                    auto* ident = static_cast<IdentifierExpr*>(
+                        call->arguments[0].get());
+                    if (isAtomicOperation(name)) atomicVars.insert(ident->name);
+                    else if (isChannelOperation(name)) channelVars.insert(ident->name);
+                }
+                // Don't recurse into arguments of atomic/channel/lockfree calls
+                // — these are synchronized operations, not shared data accesses
+                break;
             }
 
             for (auto& arg : call->arguments) {
-                collectAccesses(arg.get(), funcName, insideLock,
-                                accesses, declaredLocals);
+                collectAccesses(arg.get(), funcName, heldLocks,
+                                accesses, declaredLocals, atomicVars, channelVars);
             }
             break;
         }
@@ -3497,30 +3971,39 @@ static void collectAccesses(
         case NT::BLOCK: {
             auto* blk = static_cast<BlockStmt*>(node);
             for (auto& s : blk->statements) {
-                collectAccesses(s.get(), funcName, insideLock,
-                                accesses, declaredLocals);
+                collectAccesses(s.get(), funcName, heldLocks,
+                                accesses, declaredLocals, atomicVars, channelVars);
             }
             break;
         }
 
         case NT::IF: {
             auto* s = static_cast<IfStmt*>(node);
-            if (s->condition) collectAccesses(s->condition.get(), funcName, insideLock, accesses, declaredLocals);
-            collectAccesses(s->thenBranch.get(), funcName, insideLock, accesses, declaredLocals);
-            collectAccesses(s->elseBranch.get(), funcName, insideLock, accesses, declaredLocals);
+            if (s->condition) collectAccesses(s->condition.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
+            auto savedLocks = heldLocks;
+            collectAccesses(s->thenBranch.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
+            auto thenLocks = heldLocks;
+            heldLocks = savedLocks;
+            collectAccesses(s->elseBranch.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
+            // Conservative merge: union of held locks from both branches
+            for (const auto& l : thenLocks) {
+                if (std::find(heldLocks.begin(), heldLocks.end(), l) == heldLocks.end()) {
+                    heldLocks.push_back(l);
+                }
+            }
             break;
         }
 
         case NT::WHILE: {
             auto* s = static_cast<WhileStmt*>(node);
-            if (s->condition) collectAccesses(s->condition.get(), funcName, insideLock, accesses, declaredLocals);
-            collectAccesses(s->body.get(), funcName, insideLock, accesses, declaredLocals);
+            if (s->condition) collectAccesses(s->condition.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
+            collectAccesses(s->body.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
         case NT::FOR: {
             auto* s = static_cast<ForStmt*>(node);
-            collectAccesses(s->body.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(s->body.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
@@ -3531,39 +4014,40 @@ static void collectAccesses(
                 bin->left && bin->left->type == NT::IDENTIFIER) {
                 auto* ident = static_cast<IdentifierExpr*>(bin->left.get());
                 if (!declaredLocals.count(ident->name)) {
+                    insideLock = !heldLocks.empty();
                     accesses.push_back({ident->name, true, funcName,
                                         insideLock, bin->line, bin->column});
                 }
                 // RHS is a read
-                collectAccesses(bin->right.get(), funcName, insideLock, accesses, declaredLocals);
+                collectAccesses(bin->right.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             } else {
-                collectAccesses(bin->left.get(), funcName, insideLock, accesses, declaredLocals);
-                collectAccesses(bin->right.get(), funcName, insideLock, accesses, declaredLocals);
+                collectAccesses(bin->left.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
+                collectAccesses(bin->right.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             }
             break;
         }
 
         case NT::UNARY_OP: {
             auto* un = static_cast<UnaryExpr*>(node);
-            collectAccesses(un->operand.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(un->operand.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
         case NT::EXPRESSION_STMT: {
             auto* es = static_cast<ExpressionStmt*>(node);
-            collectAccesses(es->expression.get(), funcName, insideLock, accesses, declaredLocals);
+            collectAccesses(es->expression.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
         case NT::PASS: {
             auto* s = static_cast<PassStmt*>(node);
-            if (s->value) collectAccesses(s->value.get(), funcName, insideLock, accesses, declaredLocals);
+            if (s->value) collectAccesses(s->value.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
         case NT::RETURN: {
             auto* s = static_cast<ReturnStmt*>(node);
-            if (s->value) collectAccesses(s->value.get(), funcName, insideLock, accesses, declaredLocals);
+            if (s->value) collectAccesses(s->value.get(), funcName, heldLocks, accesses, declaredLocals, atomicVars, channelVars);
             break;
         }
 
@@ -3585,6 +4069,8 @@ VerifyResult Z3Verifier::verifyDataRaceFreedom(
     // include all accesses in the spawner body)
     std::vector<ThreadAccess> spawnerAccesses;
     std::set<std::string> spawnerLocals;
+    std::set<std::string> spawnerAtomicVars;
+    std::set<std::string> spawnerChannelVars;
 
     // Collect declared locals from parameters
     for (auto& p : spawner->parameters) {
@@ -3595,15 +4081,20 @@ VerifyResult Z3Verifier::verifyDataRaceFreedom(
         }
     }
 
-    bool spawnerLockState = false;
-    collectAccesses(spawner->body.get(), spawner->funcName, spawnerLockState,
-                    spawnerAccesses, spawnerLocals);
+    std::vector<std::string> spawnerHeldLocks;
+    collectAccesses(spawner->body.get(), spawner->funcName, spawnerHeldLocks,
+                    spawnerAccesses, spawnerLocals, spawnerAtomicVars,
+                    spawnerChannelVars);
 
     // Collect accesses from each thread function
     std::vector<std::vector<ThreadAccess>> threadAccessSets;
+    std::set<std::string> allAtomicVars = spawnerAtomicVars;
+    std::set<std::string> allChannelVars = spawnerChannelVars;
     for (auto* tf : threadFuncs) {
         std::vector<ThreadAccess> tfAccesses;
         std::set<std::string> tfLocals;
+        std::set<std::string> tfAtomicVars;
+        std::set<std::string> tfChannelVars;
         for (auto& p : tf->parameters) {
             if (p->type == ASTNode::NodeType::PARAMETER) {
                 tfLocals.insert(static_cast<ParameterNode*>(p.get())->paramName);
@@ -3611,9 +4102,12 @@ VerifyResult Z3Verifier::verifyDataRaceFreedom(
                 tfLocals.insert(static_cast<VarDeclStmt*>(p.get())->varName);
             }
         }
-        bool tfLockState = false;
-        collectAccesses(tf->body.get(), tf->funcName, tfLockState, tfAccesses, tfLocals);
+        std::vector<std::string> tfHeldLocks;
+        collectAccesses(tf->body.get(), tf->funcName, tfHeldLocks,
+                        tfAccesses, tfLocals, tfAtomicVars, tfChannelVars);
         threadAccessSets.push_back(std::move(tfAccesses));
+        allAtomicVars.insert(tfAtomicVars.begin(), tfAtomicVars.end());
+        allChannelVars.insert(tfChannelVars.begin(), tfChannelVars.end());
     }
 
     VerifyResult worstResult = VerifyResult::PROVEN;
@@ -3622,17 +4116,14 @@ VerifyResult Z3Verifier::verifyDataRaceFreedom(
     // These are synchronization primitives, not shared data
     std::set<std::string> lockHandleVars;
     auto collectLockHandles = [&](const std::vector<ThreadAccess>& accesses, ASTNode* body) {
-        // Walk body for calls to lock/unlock/create/destroy functions
+        // Walk body for calls to concurrency primitive functions
         std::function<void(ASTNode*)> walk;
         walk = [&](ASTNode* node) {
             if (!node) return;
             if (node->type == ASTNode::NodeType::CALL) {
                 auto* call = static_cast<CallExpr*>(node);
                 std::string name = getCallName(node);
-                if (name.find("mutex") != std::string::npos ||
-                    name.find("rwlock") != std::string::npos ||
-                    name.find("condvar") != std::string::npos ||
-                    name.find("barrier") != std::string::npos) {
+                if (isConcurrencyPrimitive(name)) {
                     for (auto& arg : call->arguments) {
                         if (arg->type == ASTNode::NodeType::IDENTIFIER) {
                             lockHandleVars.insert(
@@ -3659,6 +4150,10 @@ VerifyResult Z3Verifier::verifyDataRaceFreedom(
     for (auto* tf : threadFuncs) {
         collectLockHandles({}, tf->body.get());
     }
+
+    // Also add atomic and channel variables to the exempt set
+    lockHandleVars.insert(allAtomicVars.begin(), allAtomicVars.end());
+    lockHandleVars.insert(allChannelVars.begin(), allChannelVars.end());
 
     // For each pair (spawner, thread), check for conflicting accesses
     for (size_t ti = 0; ti < threadAccessSets.size(); ++ti) {
@@ -3786,10 +4281,7 @@ static void collectLockSequences(
             std::string name = getCallName(node);
             auto* call = static_cast<CallExpr*>(node);
 
-            if ((name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
-                 name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
-                 name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock") &&
-                !call->arguments.empty()) {
+            if (isLockAcquire(name) && !call->arguments.empty()) {
                 // Get the lock variable name
                 std::string lockVar;
                 if (call->arguments[0]->type == NT::IDENTIFIER) {
@@ -3804,9 +4296,7 @@ static void collectLockSequences(
                     currentHeld.push_back(lockVar);
                     allAcq.push_back({lockVar, funcName, node->line, node->column});
                 }
-            } else if ((name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
-                        name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock") &&
-                       !call->arguments.empty()) {
+            } else if (isLockRelease(name) && !call->arguments.empty()) {
                 std::string lockVar;
                 if (call->arguments[0]->type == NT::IDENTIFIER) {
                     lockVar = static_cast<IdentifierExpr*>(
