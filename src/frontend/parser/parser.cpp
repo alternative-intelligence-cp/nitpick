@@ -3267,11 +3267,10 @@ ASTNodePtr Parser::parseFuncDecl() {
     funcDecl->preconditions = preconditions;
     funcDecl->postconditions = postconditions;
     
-    // GPU/PTX Backend - Phase 3: TEMPORARY HACK for testing
-    // TODO: Replace with proper #[gpu_kernel] attribute parsing
+    // GPU/PTX Backend - Phase 3: Temporary gpu_ prefix detection
+    // TODO(Phase 3): Replace with proper #[gpu_kernel] attribute parsing
     if (nameToken.lexeme.find("gpu_") == 0) {
         funcDecl->isGPUKernel = true;
-        std::cerr << "[DEBUG] Detected GPU kernel: " << nameToken.lexeme << std::endl;
     }
     
     return funcDecl;
