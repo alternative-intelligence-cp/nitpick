@@ -154,7 +154,8 @@ private:
      * Rules:
      * - Template literals always produce string type
      * - Type-check all interpolated expressions
-     * - TODO: Add toString() conversion requirements
+     * - Only primitive types have implicit toString conversion
+     * - Struct/object types will require a ToString trait impl
      */
     Type* inferTemplateLiteral(TemplateLiteralExpr* expr);
     

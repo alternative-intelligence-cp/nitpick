@@ -223,10 +223,12 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
             return resultType->getValueType();
         }
         
-        // .error -> error pointer (represented as int64 for now)
+        // .error -> error code (int32)
         // ENFORCEMENT: Cannot access .error without first checking .is_error
         // Phase 2: Can access if we checked OR know is_error == true
-        // TODO: Create proper Error type when error handling is expanded
+        // Error codes are int32, matching failsafe tbb32 convention and fail() error codes.
+        // When the structured error type system is added, this will return ErrorType<T>
+        // with fields like .code (int32), .message (string), .source (string).
         if (expr->member == "error") {
             if (!varName.empty()) {
                 ResultCheckState::State state = currentResultState.getState(varName);
@@ -289,8 +291,10 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         // Look up member in struct fields
         for (const auto& field : fields) {
             if (field.name == expr->member) {
-                // For safe navigation, result type is the same for now
-                // TODO: Return optional<field.type> when optional types are implemented
+                // For safe navigation (?.), semantically the result should be
+                // optional<field.type>. Currently returns field.type directly
+                // since the optional<T> type is not yet in the type system.
+                // The IR generator handles null-check branching regardless.
                 return field.type;
             }
         }
@@ -391,7 +395,21 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         }
     }
     
-    // TODO: Handle other types (obj, dyn, etc.)
+    // Handle dyn Trait types — member access dispatches through the vtable.
+    // The actual method resolution happens in inferCallExpr via UFCS; here
+    // we accept the member access and return unknown so the call path can resolve it.
+    if (objectType->getKind() == TypeKind::DYN_TRAIT) {
+        return typeSystem->getUnknownType();
+    }
+
+    // Handle obj (opaque object) — member access is always dynamic
+    if (objectType->getKind() == TypeKind::PRIMITIVE) {
+        PrimitiveType* prim = static_cast<PrimitiveType*>(objectType);
+        if (prim->getName() == "obj") {
+            return typeSystem->getUnknownType();
+        }
+    }
+
     addError("Member access requires struct, object, or union type, got '" + 
             objectType->toString() + "'", expr);
     return typeSystem->getErrorType();

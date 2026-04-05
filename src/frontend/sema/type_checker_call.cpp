@@ -101,8 +101,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                     if (argType->getKind() == TypeKind::ERROR) {
                         return typeSystem->getErrorType();
                     }
-                    // TODO: Add proper type compatibility checking
-                    // For now, just ensure no error types pass through
+                    // Type compatibility: isAssignableTo covers exact match + safe widening,
+                    // canCoerce covers additional coercions (literal range, etc.)
+                    if (i < paramTypes.size() &&
+                        !argType->isAssignableTo(paramTypes[i]) &&
+                        !canCoerce(argType, paramTypes[i])) {
+                        addError("Argument " + std::to_string(i + 1) + " has type '" +
+                                argType->toString() + "', but function expects '" +
+                                paramTypes[i]->toString() + "'", expr->arguments[i].get());
+                    }
                 }
 
                 // Return the function's return type
@@ -4252,7 +4259,21 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            // TODO: Verify argument is a wild pointer
+            // Verify argument is a wild pointer.
+            // drop() requires a wild pointer (allocated via wild new).
+            // Non-wild pointers have lifetime tracking and are freed automatically.
+            if (argType->getKind() == TypeKind::POINTER) {
+                PointerType* ptrType = static_cast<PointerType*>(argType);
+                if (!ptrType->isWildPointer()) {
+                    addError("'drop' requires a wild pointer (wild T@), got managed pointer '" +
+                            argType->toString() + "'. Managed pointers are freed automatically.", expr);
+                    return typeSystem->getErrorType();
+                }
+            } else if (argType->getKind() != TypeKind::UNKNOWN) {
+                addError("'drop' requires a pointer type, got '" +
+                        argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
             return typeSystem->getPrimitiveType("void");
         }
 
@@ -5171,7 +5192,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 }
             }
 
-            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion) {
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion && !canCoerce(effectiveArgType, paramTypes[i])) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());

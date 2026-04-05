@@ -289,10 +289,19 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                         return typeSystem->getErrorType();
                     }
                 } else {
-                    // TODO: Evaluate constant expression for size
-                    // For now, treat as dynamic if not a simple literal
-                    addError("Array size must be a constant integer literal (for now)", typeNode);
-                    return typeSystem->getErrorType();
+                    // Try compile-time constant folding for expressions like 2+3, N*4, etc.
+                    ComptimeValue constVal = constEvaluator->evaluate(arrayType->sizeExpr.get());
+                    if (constVal.isInteger()) {
+                        int64_t size64 = constVal.getInt();
+                        if (size64 < 0) {
+                            addError("Array size must be non-negative, got " + std::to_string(size64), typeNode);
+                            return typeSystem->getErrorType();
+                        }
+                        arraySize = static_cast<int>(size64);
+                    } else {
+                        addError("Array size must be a constant integer expression", typeNode);
+                        return typeSystem->getErrorType();
+                    }
                 }
             }
             
@@ -448,7 +457,12 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                     return typeSystem->getErrorType();
                 }
                 
-                // TODO: Validate lane count is power of 2 (for now, allow any value)
+                // Validate lane count is power of 2 (required for hardware SIMD alignment)
+                if ((laneCount & (laneCount - 1)) != 0) {
+                    addError("simd<T, N> lane count must be a power of 2 (1, 2, 4, 8, 16, 32, 64), got: " +
+                            std::to_string(laneCount), typeNode);
+                    return typeSystem->getErrorType();
+                }
                 
                 // Create SimdType
                 return typeSystem->getSimdType(elementType, laneCount);
@@ -704,12 +718,12 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Look up or create the specialized struct type
             Type* specializedType = typeSystem->getStructType(mangledName);
             if (!specializedType) {
-                // Need to create the specialized struct type in TypeSystem
-                // Get the specialized struct declaration from monomorphizer
-                // For now, create a placeholder
-                // TODO: Register specialized struct properly
-                addError("Specialized struct type registration not yet implemented: '" + 
-                        mangledName + "'", typeNode);
+                // requestStructSpecialization already registers the type via
+                // typeSystem->createStructType(). If getStructType still returns
+                // nullptr, the monomorphizer hit an internal issue (unknown field
+                // type, failed clone, etc.). Report as internal error.
+                addError("Internal error: monomorphizer returned mangled name '" +
+                        mangledName + "' but type was not registered in TypeSystem", typeNode);
                 return typeSystem->getErrorType();
             }
             
@@ -916,10 +930,19 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                         }
                     }
                 } else {
-                    // Expression result (e.g., 10 + 20) - allow with implicit coercion
-                    // The actual range check will happen at runtime
-                    // TODO: Add compile-time constant folding to catch more errors
-                    tbbLiteralAssignment = true;
+                    // Expression result (e.g., 10 + 20) — try compile-time constant folding
+                    ComptimeValue constVal = constEvaluator->evaluate(stmt->initializer.get());
+                    if (constVal.isInteger()) {
+                        int64_t value = constVal.getInt();
+                        checkTBBLiteralValue(value, declaredType, stmt);
+                        tbbLiteralAssignment = true;
+                        if (hasErrors()) {
+                            return;  // Range validation failed
+                        }
+                    } else {
+                        // Non-constant expression — allow with runtime range enforcement
+                        tbbLiteralAssignment = true;
+                    }
                 }
             }
         }
@@ -1644,8 +1667,15 @@ void TypeChecker::validateContracts(const std::vector<ASTNodePtr>& contracts,
                     " must be boolean expression, got " + contractType->toString(), stmt);
         }
         
-        // TODO Phase 2.5: Check for side effects (no function calls with side effects)
-        // For now, just validate types
+        // Side-effect check: contracts must be pure (no function calls)
+        // Contract expressions describe predicates over parameters and result.
+        // Calling arbitrary functions could mutate state, violating the contract
+        // semantics. Reject call expressions in contract clauses.
+        if (contract->type == ASTNode::NodeType::CALL) {
+            std::string clauseType = isPostcondition ? "ensures" : "requires";
+            addError("Contract " + clauseType + " clause #" + std::to_string(i + 1) +
+                    " must be a pure expression (function calls are not allowed)", stmt);
+        }
     }
     
     // Note: resultSymbol will be automatically cleaned up when function scope exits
@@ -2524,9 +2554,26 @@ void TypeChecker::checkTraitDecl(TraitDeclStmt* stmt) {
 
     // Validate method signatures (basic validation)
     for (const auto& method : stmt->methods) {
-        // Check that return type is valid
-        // For now, just log the method for debugging
-        // TODO: Validate parameter types exist
+        // Validate return type exists
+        if (!method.returnType.empty() && method.returnType != "void") {
+            if (!isTypeKeyword(method.returnType) &&
+                !typeSystem->getStructType(method.returnType) &&
+                !symbolTable->isDefined(method.returnType)) {
+                addError("Unknown return type '" + method.returnType +
+                        "' in trait method '" + method.name + "'", stmt);
+            }
+        }
+        // Validate parameter types exist (skip 'self' which is patched at impl time)
+        for (const auto& param : method.parameters) {
+            if (param.paramName == "self") continue;
+            if (param.typeNode) {
+                // Resolve via the standard type resolution path
+                Type* paramType = resolveTypeNode(param.typeNode.get());
+                if (!paramType || paramType->getKind() == TypeKind::ERROR) {
+                    // resolveTypeNode already reported the error
+                }
+            }
+        }
     }
 }
 
@@ -2541,8 +2588,14 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
     // Look up the type (struct) being implemented for
     Symbol* typeSymbol = symbolTable->lookupSymbol(stmt->typeName);
     if (!typeSymbol || typeSymbol->kind != SymbolKind::TYPE) {
-        // Type might be a primitive - that's ok for now
-        // TODO: Better type resolution
+        // Type might be a primitive type keyword (impl:Numeric:for:int32 etc.)
+        // or a struct not yet in the symbol table but known to the type system
+        if (!isTypeKeyword(stmt->typeName) &&
+            !typeSystem->getPrimitiveType(stmt->typeName) &&
+            !typeSystem->getStructType(stmt->typeName)) {
+            addError("Type '" + stmt->typeName + "' is not defined", stmt);
+            return;
+        }
     }
 
     // Get the trait declaration
@@ -2615,16 +2668,40 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
         }
     }
 
-    // Verify all required methods are present
+    // Verify all required methods are present and signatures match
     for (const auto& requiredMethod : traitDecl->methods) {
         if (implementedMethods.find(requiredMethod.name) == implementedMethods.end()) {
             addError("Missing implementation of method '" + requiredMethod.name +
                     "' from trait '" + stmt->traitName + "' for type '" + stmt->typeName + "'", stmt);
+            continue;
+        }
+
+        // Verify signature: parameter count and return type
+        for (const auto& methodNode : stmt->methods) {
+            auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(methodNode);
+            if (!funcDecl || funcDecl->funcName != requiredMethod.name) continue;
+
+            // Compare parameter count (trait 'self' is implicit in some contexts)
+            size_t traitParamCount = requiredMethod.parameters.size();
+            size_t implParamCount = funcDecl->parameters.size();
+            if (implParamCount != traitParamCount) {
+                addError("Method '" + requiredMethod.name + "' in impl for '" +
+                        stmt->typeName + "' has " + std::to_string(implParamCount) +
+                        " parameters, but trait '" + stmt->traitName + "' requires " +
+                        std::to_string(traitParamCount), stmt);
+            }
+
+            // Compare return type
+            std::string implRetType = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
+            if (!requiredMethod.returnType.empty() && implRetType != requiredMethod.returnType) {
+                addError("Method '" + requiredMethod.name + "' in impl for '" +
+                        stmt->typeName + "' returns '" + implRetType +
+                        "', but trait '" + stmt->traitName + "' requires '" +
+                        requiredMethod.returnType + "'", stmt);
+            }
+            break;
         }
     }
-
-    // TODO: Verify method signatures match
-    // This requires comparing parameter types and return types
 }
 
 // ============================================================================
@@ -3000,16 +3077,16 @@ void TypeChecker::checkFailStmt(FailStmt* stmt) {
     }
     
     // fail(err) builds Result{val: NULL, err: err}
-    // TODO: Validate error type matches TBB (to-be-built) error type system
-    // For now, ensure error code is an integer type
+    // Error codes must be integer or TBB types (TBB types carry sentinel semantics
+    // that align with Aria's error propagation model).
     if (errorType->getKind() != TypeKind::PRIMITIVE) {
-        addError("Fail error code must be an integer type", stmt);
+        addError("Fail error code must be an integer or TBB type", stmt);
         return;
     }
     
     PrimitiveType* primType = static_cast<PrimitiveType*>(errorType);
-    if (!isStandardIntType(primType)) {
-        addError("Fail error code must be an integer type, got '" + errorType->toString() + "'", stmt);
+    if (!isStandardIntType(primType) && !primType->isTBBType()) {
+        addError("Fail error code must be an integer or TBB type, got '" + errorType->toString() + "'", stmt);
     }
 }
 
@@ -4004,8 +4081,10 @@ void TypeChecker::checkUseStmt(UseStmt* stmt) {
                     
                     Symbol* structSym = new Symbol(structDecl->structName, SymbolKind::TYPE, structType, nullptr, structDecl->line, structDecl->column);
                     
-                    // Export the struct as PUBLIC (for now, export all structs)
-                    // TODO: Add pub modifier to struct declarations
+                    // Export the struct as PUBLIC.
+                    // Note: StructDeclStmt currently lacks an isPublic field.
+                    // All module structs are exported as public. When the parser
+                    // adds `pub struct:` syntax, filter here like FuncDeclStmt does.
                     module->moduleInfo->exportSymbol(structDecl->structName, structSym, Visibility::PUBLIC);
                 }
                 else if (decl->type == ASTNode::NodeType::TYPE_DECL) {
