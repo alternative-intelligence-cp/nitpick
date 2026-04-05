@@ -1459,13 +1459,11 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                     return;
                 }
             }
-            bool resultUnwrapping = false;  // never set; kept to avoid restructuring the condition below
-            
             // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
             bool ffiPointerConversion = canConvertFFIPointer(initType, declaredType);
             
             if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && 
-                !optionalWrapping && !resultUnwrapping && !ffiPointerConversion) {
+                !optionalWrapping && !ffiPointerConversion) {
                 addError("Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
                         "' with value of type '" + initType->toString() + "'", stmt);
@@ -4391,7 +4389,7 @@ void TypeChecker::checkExternStmt(ExternStmt* stmt) {
             OpaqueStructDecl* opaqueDecl = static_cast<OpaqueStructDecl*>(decl.get());
             
             // Create opaque struct type (empty struct as placeholder)
-            Type* opaqueType = typeSystem->createStructType(opaqueDecl->structName, {});
+            typeSystem->createStructType(opaqueDecl->structName, {});
             
             // Mark as opaque in symbol table (type is already registered in typeSystem)
             // The type will be treated as a pointer type in IR generation
@@ -4403,7 +4401,7 @@ void TypeChecker::checkExternStmt(ExternStmt* stmt) {
 // Module Symbol Importing (Phase 3 from research_module_loading_system)
 // ============================================================================
 
-void TypeChecker::importWildcardSymbols(LoadedModule* module, UseStmt* stmt) {
+void TypeChecker::importWildcardSymbols(LoadedModule* module, UseStmt* /*stmt*/) {
     if (!module || !module->moduleInfo) {
         return;
     }
