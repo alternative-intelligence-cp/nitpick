@@ -1,0 +1,168 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Module Table — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// Manages module hierarchy, imports, exports, and dependency detection.
+// Ported from src/frontend/sema/module_table.cpp (364 lines C++).
+//
+// Uses opaque C handles via module_table_shim.cpp for storage.
+// Logic (path resolution, import resolution, cycle detection) is in Aria.
+//
+// Visibility Levels:
+//   0 = PRIVATE  — only within defining module
+//   1 = PUBLIC   — any module that imports
+//   2 = PACKAGE  — within same compilation unit
+//   3 = SUPER    — parent module only
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:VIS_PRIVATE  = 0i32;
+const int32:VIS_PUBLIC   = 1i32;
+const int32:VIS_PACKAGE  = 2i32;
+const int32:VIS_SUPER    = 3i32;
+
+// ─── C Shim Externs (module_table_shim.cpp) ───────────────────────────
+
+// State
+extern func:mt_new = wild int8*();
+extern func:mt_free = int32(wild int8*:state);
+
+// Module creation & lookup
+extern func:mt_create_module = wild int8*(wild int8*:state, string:name,
+                                           string:path_str, wild int8*:parent);
+extern func:mt_register = int32(wild int8*:state, string:full_path, wild int8*:mp);
+extern func:mt_get_module = wild int8*(wild int8*:state, string:full_path);
+extern func:mt_get_root = wild int8*(wild int8*:state);
+extern func:mt_null_ptr = wild int8*();
+
+// Module data
+extern func:mt_mod_get_name = string(wild int8*:mp);
+extern func:mt_mod_get_path = string(wild int8*:mp);
+extern func:mt_mod_get_parent = wild int8*(wild int8*:mp);
+extern func:mt_mod_is_null = int32(wild int8*:mp);
+extern func:mt_mod_get_submodule = wild int8*(wild int8*:mp, string:name);
+extern func:mt_mod_submodule_count = int32(wild int8*:mp);
+extern func:mt_mod_get_submodule_at = wild int8*(wild int8*:mp, int32:index);
+
+// Exports
+extern func:mt_mod_export = int32(wild int8*:mp, string:name, int32:vis);
+extern func:mt_mod_is_exported = int32(wild int8*:mp, string:name);
+extern func:mt_mod_get_export_vis = int32(wild int8*:mp, string:name);
+
+// Imports
+extern func:mt_mod_add_import = int32(wild int8*:mp, string:import_path);
+extern func:mt_mod_import_count = int32(wild int8*:mp);
+extern func:mt_mod_get_import = string(wild int8*:mp, int32:index);
+extern func:mt_mod_is_resolved = int32(wild int8*:mp);
+extern func:mt_mod_mark_resolved = int32(wild int8*:mp);
+
+// Path segments
+extern func:mt_path_segment_count = int32(string:path_str);
+extern func:mt_path_segment = string(string:path_str, int32:index);
+
+// Errors
+extern func:mt_add_error = int32(wild int8*:state, string:msg);
+extern func:mt_error_count = int32(wild int8*:state);
+extern func:mt_get_error = string(wild int8*:state, int32:index);
+extern func:mt_clear_errors = int32(wild int8*:state);
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// compute_full_path — walk parent chain to build dotted path
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:mt_compute_full_path = string(wild int8->:mp) {
+    int32:is_null = mt_mod_is_null(mp);
+    if (is_null == 1i32) {
+        pass "";
+    }
+
+    string:name = mt_mod_get_name(mp);
+    wild int8->:parent = mt_mod_get_parent(mp);
+    int32:parent_null = mt_mod_is_null(parent);
+
+    if (parent_null == 1i32) {
+        pass name;
+    }
+
+    string:parent_path = mt_compute_full_path(parent);
+    pass parent_path + "." + name;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// resolve_import — resolve dotted import path to module handle
+// ═══════════════════════════════════════════════════════════════════════
+// Walks the module tree from root following dot-separated segments.
+// Returns null if any segment not found.
+
+pub func:mt_resolve_import = wild int8*(wild int8->:state, string:import_path) {
+    wild int8->:current = mt_get_root(state);
+    int32:seg_count = mt_path_segment_count(import_path);
+
+    if (seg_count == 0i32) {
+        _ = mt_add_error(state, "Invalid import path: " + import_path);
+        pass mt_null_ptr();
+    }
+
+    loop(0i64, seg_count, 1i64) {
+        string:seg = mt_path_segment(import_path, seg_count);
+        current = mt_mod_get_submodule(current, seg);
+        int32:found_null = mt_mod_is_null(current);
+        if (found_null == 1i32) {
+            _ = mt_add_error(state, "Module not found: " + import_path);
+            pass mt_null_ptr();
+        }
+    }
+
+    pass current;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// can_access — check visibility of an export
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:mt_can_access = int32(wild int8->:owner_mod, wild int8->:from_mod,
+                                string:symbol_name) {
+    int32:exported = mt_mod_is_exported(owner_mod, symbol_name);
+    if (exported == 0i32) {
+        // Not exported — only same module can access
+        int32:same_name = 0i32;
+        string:o_name = mt_mod_get_name(owner_mod);
+        string:f_name = mt_mod_get_name(from_mod);
+        if (o_name == f_name) {
+            same_name = 1i32;
+        }
+        pass same_name;
+    }
+
+    int32:vis = mt_mod_get_export_vis(owner_mod, symbol_name);
+
+    if (vis == VIS_PUBLIC) {
+        pass 1i32;
+    }
+
+    if (vis == VIS_PRIVATE) {
+        string:o_path = mt_mod_get_path(owner_mod);
+        string:f_path = mt_mod_get_path(from_mod);
+        if (o_path == f_path) {
+            pass 1i32;
+        }
+        pass 0i32;
+    }
+
+    if (vis == VIS_PACKAGE) {
+        pass 1i32;
+    }
+
+    if (vis == VIS_SUPER) {
+        wild int8->:parent = mt_mod_get_parent(owner_mod);
+        string:p_path = mt_mod_get_path(parent);
+        string:f_path = mt_mod_get_path(from_mod);
+        if (p_path == f_path) {
+            pass 1i32;
+        }
+        pass 0i32;
+    }
+
+    pass 0i32;
+};

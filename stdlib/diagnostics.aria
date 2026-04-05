@@ -1,0 +1,123 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Aria Self-Hosted Diagnostics Engine — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// Collects and formats compiler diagnostics (errors, warnings, notes).
+// Ported from src/frontend/diagnostics.cpp (206 lines C++).
+//
+// Uses opaque C handle for DiagState via diagnostics_shim.cpp.
+// Logic (severity decisions, formatting) is in Aria.
+//
+// Severity Levels:
+//   0 = NOTE     — informational message
+//   1 = WARNING  — doesn't stop compilation
+//   2 = ERROR    — prevents compilation
+//   3 = FATAL    — stops compilation immediately
+// ═══════════════════════════════════════════════════════════════════════
+
+// Severity level constants
+const int32:DIAG_NOTE    = 0i32;
+const int32:DIAG_WARNING = 1i32;
+const int32:DIAG_ERROR   = 2i32;
+const int32:DIAG_FATAL   = 3i32;
+
+// ─── C Shim Externs (diagnostics_shim.cpp) ────────────────────────────
+
+// State management
+extern func:diag_new = wild int8*();
+extern func:diag_free = int32(wild int8*:state);
+
+// Configuration
+extern func:diag_set_warnings_as_errors = int32(wild int8*:state, int32:enabled);
+extern func:diag_get_warnings_as_errors = int32(wild int8*:state);
+
+// Reporting
+extern func:diag_report = int32(wild int8*:state, int32:level, string:filename,
+                                 int32:line_num, int32:col_num, int32:length,
+                                 string:msg);
+
+// Notes & Suggestions
+extern func:diag_add_note = int32(wild int8*:state, string:note_text);
+extern func:diag_add_suggestion = int32(wild int8*:state, string:sug_text);
+
+// Queries
+extern func:diag_count = int32(wild int8*:state);
+extern func:diag_error_count = int32(wild int8*:state);
+extern func:diag_warning_count = int32(wild int8*:state);
+extern func:diag_has_errors = int32(wild int8*:state);
+extern func:diag_has_warnings = int32(wild int8*:state);
+
+// Data extraction
+extern func:diag_get_level = int32(wild int8*:state, int32:index);
+extern func:diag_get_message = string(wild int8*:state, int32:index);
+extern func:diag_get_filename = string(wild int8*:state, int32:index);
+extern func:diag_get_line = int32(wild int8*:state, int32:index);
+extern func:diag_get_col = int32(wild int8*:state, int32:index);
+
+// Clear
+extern func:diag_clear = int32(wild int8*:state);
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// get_level_name — map severity level to string
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:diag_level_name = string(int32:level) {
+    if (level == DIAG_NOTE) {
+        pass "note";
+    }
+    if (level == DIAG_WARNING) {
+        pass "warning";
+    }
+    if (level == DIAG_ERROR) {
+        pass "error";
+    }
+    if (level == DIAG_FATAL) {
+        pass "fatal error";
+    }
+    pass "unknown";
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// format_diagnostic — format a single diagnostic as string
+// ═══════════════════════════════════════════════════════════════════════
+// Output: "filename:line:col: LEVEL: message"
+
+pub func:diag_format = string(wild int8->:state, int32:index) {
+    string:fname = diag_get_filename(state, index);
+    string:msg = diag_get_message(state, index);
+    int32:level = diag_get_level(state, index);
+    string:level_str = diag_level_name(level);
+
+    string:result = fname + ": " + level_str + ": " + msg;
+    pass result;
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Convenience reporters — error/warning/note/fatal
+// ═══════════════════════════════════════════════════════════════════════
+
+pub func:diag_error_at = int32(wild int8->:state, string:filename,
+                                int32:line_num, int32:col_num, string:msg) {
+    _ = diag_report(state, DIAG_ERROR, filename, line_num, col_num, 1i32, msg);
+    pass 0i32;
+};
+
+pub func:diag_warning_at = int32(wild int8->:state, string:filename,
+                                  int32:line_num, int32:col_num, string:msg) {
+    _ = diag_report(state, DIAG_WARNING, filename, line_num, col_num, 1i32, msg);
+    pass 0i32;
+};
+
+pub func:diag_note_at = int32(wild int8->:state, string:filename,
+                               int32:line_num, int32:col_num, string:msg) {
+    _ = diag_report(state, DIAG_NOTE, filename, line_num, col_num, 1i32, msg);
+    pass 0i32;
+};
+
+pub func:diag_fatal_at = int32(wild int8->:state, string:filename,
+                                int32:line_num, int32:col_num, string:msg) {
+    _ = diag_report(state, DIAG_FATAL, filename, line_num, col_num, 1i32, msg);
+    pass 0i32;
+};

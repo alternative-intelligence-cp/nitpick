@@ -1,0 +1,244 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Async Semantic Analyzer — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria async analyzer validation logic.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:aa_null_ptr = wild int8*();
+extern func:aa_new = wild int8*();
+extern func:aa_free = int32(wild int8*:state);
+extern func:aa_add_error = int32(wild int8*:state, string:msg);
+extern func:aa_error_count = int32(wild int8*:state);
+extern func:aa_get_error = string(wild int8*:state, int32:index);
+extern func:aa_clear_errors = int32(wild int8*:state);
+
+// ─── Aria Validation Logic (same as stdlib/async_analyzer.aria) ──────
+// Inlined here so the test is self-contained (no multi-file linking).
+pub func:aa_check_await = int32(wild int8->:state, int32:in_async,
+                                 string:func_name, int32:line_num) {
+    if (in_async == 1i32) {
+        pass 1i32;
+    }
+    string:msg = "E_ASYNC_OUTSIDE_CONTEXT: 'await' can only be used inside async functions or async blocks";
+    if (func_name != "") {
+        msg = msg + " (found in non-async function '" + func_name + "')";
+    }
+    _ = aa_add_error(state, msg);
+    pass 0i32;
+};
+
+
+// ═══ Test 1: Await in async function — no error ═════════════════════
+pub func:test_await_in_async = int32() {
+    wild int8->:state = aa_new();
+    int32:valid = raw aa_check_await(state, 1i32, "fetchData", 10i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (valid == 1i32 && ec == 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Await in non-async function — error ════════════════════
+pub func:test_await_outside_async = int32() {
+    wild int8->:state = aa_new();
+    int32:valid = raw aa_check_await(state, 0i32, "processSync", 25i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (valid == 0i32 && ec == 1i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Multiple awaits in async — all valid ═══════════════════
+pub func:test_multiple_awaits_async = int32() {
+    wild int8->:state = aa_new();
+    int32:v1 = raw aa_check_await(state, 1i32, "asyncHandler", 10i32);
+    int32:v2 = raw aa_check_await(state, 1i32, "asyncHandler", 15i32);
+    int32:v3 = raw aa_check_await(state, 1i32, "asyncHandler", 20i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (v1 == 1i32 && v2 == 1i32 && v3 == 1i32 && ec == 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 4: Multiple awaits outside async — multiple errors ════════
+pub func:test_multiple_awaits_non_async = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "badFunc", 10i32);
+    _ = raw aa_check_await(state, 0i32, "badFunc", 20i32);
+    _ = raw aa_check_await(state, 0i32, "badFunc", 30i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (ec == 3i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 5: Error message contains function name ═══════════════════
+pub func:test_error_contains_func_name = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "calculate", 42i32);
+    string:err = aa_get_error(state, 0i32);
+    int32:result = 1i32;
+    if (err == "E_ASYNC_OUTSIDE_CONTEXT: 'await' can only be used inside async functions or async blocks (found in non-async function 'calculate')") {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Error message starts with error code ═══════════════════
+pub func:test_error_code_prefix = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "syncFunc", 5i32);
+    string:err = aa_get_error(state, 0i32);
+    int32:result = 1i32;
+    if (err == "E_ASYNC_OUTSIDE_CONTEXT: 'await' can only be used inside async functions or async blocks (found in non-async function 'syncFunc')") {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Clear errors resets state ═══════════════════════════════
+pub func:test_clear_errors = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "badFunc1", 10i32);
+    _ = raw aa_check_await(state, 0i32, "badFunc2", 20i32);
+    _ = aa_clear_errors(state);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (ec == 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 8: No errors after fresh creation ═════════════════════════
+pub func:test_has_errors_empty = int32() {
+    wild int8->:state = aa_new();
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (ec == 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 9: Errors present after invalid await ═════════════════════
+pub func:test_has_errors_present = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "syncFunc", 1i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (ec > 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Empty function name produces error without parens ═════
+pub func:test_empty_func_name = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 0i32, "", 100i32);
+    string:err = aa_get_error(state, 0i32);
+    int32:result = 1i32;
+    // Empty func_name should NOT include "(found in non-async function '')"
+    if (err == "E_ASYNC_OUTSIDE_CONTEXT: 'await' can only be used inside async functions or async blocks") {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Mixed valid/invalid — correct error count ═════════════
+pub func:test_mixed_contexts = int32() {
+    wild int8->:state = aa_new();
+    _ = raw aa_check_await(state, 1i32, "asyncOne", 10i32);
+    _ = raw aa_check_await(state, 0i32, "syncTwo", 20i32);
+    _ = raw aa_check_await(state, 1i32, "asyncThree", 30i32);
+    _ = raw aa_check_await(state, 0i32, "syncFour", 40i32);
+    int32:ec = aa_error_count(state);
+    int32:result = 1i32;
+    if (ec == 2i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state);
+    pass result;
+};
+
+// ═══ Test 12: State independence — fresh state has no errors ════════
+pub func:test_state_independence = int32() {
+    wild int8->:state1 = aa_new();
+    _ = raw aa_check_await(state1, 0i32, "badFunc", 10i32);
+    _ = aa_free(state1);
+
+    wild int8->:state2 = aa_new();
+    int32:ec = aa_error_count(state2);
+    int32:result = 1i32;
+    if (ec == 0i32) {
+        result = 0i32;
+    }
+    _ = aa_free(state2);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_await_in_async();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_await_outside_async();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_multiple_awaits_async();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_multiple_awaits_non_async();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_error_contains_func_name();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_error_code_prefix();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_clear_errors();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_has_errors_empty();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_has_errors_present();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_empty_func_name();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_mixed_contexts();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_state_independence();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

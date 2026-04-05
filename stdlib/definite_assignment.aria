@@ -1,0 +1,85 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Self-hosted Definite Assignment Analysis — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// Orchestrates dataflow analysis for variable initialization checking.
+// Uses snapshot/restore/merge via C shim for branch analysis.
+// ═══════════════════════════════════════════════════════════════════════
+
+use "std/io.aria".*;
+
+// ─── Constants ───────────────────────────────────────────────────────
+const int32:ST_UNASSIGNED = 0i32;
+const int32:ST_ASSIGNED   = 1i32;
+const int32:ST_MAYBE      = 2i32;
+
+// ─── C shim externs ──────────────────────────────────────────────────
+extern func:da_new = wild int8*();
+extern func:da_free = int32(wild int8*:state);
+extern func:da_null_ptr = wild int8*();
+extern func:da_release = int32(wild int8*:p);
+extern func:da_enter_scope = int32(wild int8*:state);
+extern func:da_exit_scope = int32(wild int8*:state);
+extern func:da_declare = int32(wild int8*:state, string:name);
+extern func:da_declare_init = int32(wild int8*:state, string:name);
+extern func:da_declare_wild = int32(wild int8*:state, string:name);
+extern func:da_assign = int32(wild int8*:state, string:name);
+extern func:da_get_state = int32(wild int8*:state, string:name);
+extern func:da_save = int32(wild int8*:state, int32:slot);
+extern func:da_load = int32(wild int8*:state, int32:slot);
+extern func:da_merge = int32(wild int8*:state, int32:slot_a, int32:slot_b);
+extern func:da_check_read = int32(wild int8*:state, string:name);
+extern func:da_add_error = int32(wild int8*:state, string:msg);
+extern func:da_error_count = int32(wild int8*:state);
+extern func:da_get_error = string(wild int8*:state, int32:index);
+extern func:da_clear_errors = int32(wild int8*:state);
+extern func:da_mark_loop_maybe = int32(wild int8*:state, int32:before_slot);
+
+// ═══ High-level analysis helpers ═════════════════════════════════════
+
+// Check if reading a variable is safe. Returns 0 if OK, 1 if error added.
+pub func:da_check_var_use = int32(wild int8*:state, string:name) {
+    int32:result = da_check_read(state, name);
+    pass result;
+};
+
+// Analyze an if-else branch pattern:
+//   1. Save state before branches (slot 0)
+//   2. Caller analyzes then-branch, then calls da_after_then()
+//   3. Caller analyzes else-branch, then calls da_after_else_merge()
+pub func:da_before_if = int32(wild int8*:state) {
+    _ = da_save(state, 0i32);
+    pass 0i32;
+};
+
+pub func:da_after_then = int32(wild int8*:state) {
+    _ = da_save(state, 1i32);
+    _ = da_load(state, 0i32);
+    pass 0i32;
+};
+
+pub func:da_after_else_merge = int32(wild int8*:state) {
+    _ = da_save(state, 2i32);
+    _ = da_load(state, 0i32);
+    _ = da_merge(state, 1i32, 2i32);
+    pass 0i32;
+};
+
+// For if without else: then-branch vs no-change
+pub func:da_after_then_no_else = int32(wild int8*:state) {
+    _ = da_save(state, 1i32);
+    _ = da_load(state, 0i32);
+    _ = da_merge(state, 1i32, 0i32);
+    pass 0i32;
+};
+
+// Analyze a loop pattern (while/for):
+//   Loop body might not execute → assignments are MAYBE
+pub func:da_before_loop = int32(wild int8*:state) {
+    _ = da_save(state, 3i32);
+    pass 0i32;
+};
+
+pub func:da_after_loop = int32(wild int8*:state) {
+    _ = da_mark_loop_maybe(state, 3i32);
+    pass 0i32;
+};
