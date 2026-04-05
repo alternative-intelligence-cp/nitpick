@@ -4,28 +4,50 @@
  */
 
 #include "frontend/sema/safety_checker.h"
+#include "frontend/token.h"
 #include <iostream>
 #include <sstream>
+#include <regex>
 
 namespace aria {
 
 SafetyChecker::SafetyChecker(SafetyLevel level) 
     : safety_level(level) {}
 
-bool SafetyChecker::check(ASTNode* root) {
+bool SafetyChecker::check(ASTNode* root, const std::string& file) {
     issues.clear();
     safety_acknowledgments.clear();
+    sourceFile = file;
     
     if (!root) {
         return true;
     }
     
-    // TODO: Parse SAFETY comments from source file
-    // For now, we'll assume no acknowledgments
-    
     checkNode(root);
     
     return !hasErrors();
+}
+
+void SafetyChecker::parseSafetyComments(const std::string& source) {
+    // Scan source for "// SAFETY: <reason>" comments and record line → reason
+    std::istringstream stream(source);
+    std::string line;
+    int lineNum = 1;
+    
+    while (std::getline(stream, line)) {
+        // Match "// SAFETY:" anywhere in the line (allows trailing comments)
+        auto pos = line.find("// SAFETY:");
+        if (pos != std::string::npos) {
+            std::string reason = line.substr(pos + 10); // Skip "// SAFETY:"
+            // Trim leading whitespace from reason
+            auto start = reason.find_first_not_of(" \t");
+            if (start != std::string::npos) {
+                reason = reason.substr(start);
+            }
+            safety_acknowledgments[lineNum] = reason;
+        }
+        lineNum++;
+    }
 }
 
 bool SafetyChecker::hasErrors() const {
@@ -116,9 +138,25 @@ void SafetyChecker::checkNode(ASTNode* node) {
 void SafetyChecker::checkFuncDecl(FuncDeclStmt* func) {
     if (!func) return;
     
-    // Check for async functions
-    // TODO: Once async keyword is parsed, check func->isAsync
-    // For now, check function name or attributes
+    // Check for async functions — potential data races
+    if (func->isAsync) {
+        checkAsyncFunction(func);
+    }
+    
+    // Check for extern functions — FFI boundary
+    if (func->isExtern) {
+        bool acknowledged = hasAcknowledgment(func->line);
+        addIssue(
+            UnsafeOperation::FFI_EXTERN,
+            "extern function bypasses Aria safety guarantees",
+            "validate all FFI inputs and outputs at the boundary",
+            func->line,
+            func->column
+        );
+        if (acknowledged) {
+            issues.back().acknowledged = true;
+        }
+    }
     
     // Check function body
     if (func->body) {
@@ -129,13 +167,24 @@ void SafetyChecker::checkFuncDecl(FuncDeclStmt* func) {
 void SafetyChecker::checkVarDecl(VarDeclStmt* var) {
     if (!var) return;
     
-    // Check for wild memory allocation
-    // In Aria, 'wild' is a memory management keyword
-    // TODO: Once parser tracks storage qualifiers, check var->storageClass
-    // For now, check type name for 'wild' prefix
-    
-    if (var->typeName.find("wild") != std::string::npos) {
+    // Check for wild memory allocation — manual memory management
+    if (var->isWild) {
         checkWildMemory(var);
+    }
+    
+    // Check for wildx — executable memory (JIT, security implications)
+    if (var->isWildx) {
+        bool acknowledged = hasAcknowledgment(var->line);
+        addIssue(
+            UnsafeOperation::WILDX_EXECUTABLE,
+            "wildx allocates executable memory — security risk",
+            "ensure JIT-generated code is validated before execution",
+            var->line,
+            var->column
+        );
+        if (acknowledged) {
+            issues.back().acknowledged = true;
+        }
     }
     
     // Check initializer expression
@@ -146,12 +195,6 @@ void SafetyChecker::checkVarDecl(VarDeclStmt* var) {
 
 void SafetyChecker::checkExpression(ASTNode* expr) {
     if (!expr) return;
-    
-    // Check for pointer operations (@, dereference, etc.)
-    // TODO: Once AST includes operator types, check for:
-    // - ADDRESS_OF (@)
-    // - POINTER_DEREF (@ptr)
-    // - Pointer arithmetic
     
     // Recursively check child expressions
     switch (expr->type) {
@@ -164,14 +207,45 @@ void SafetyChecker::checkExpression(ASTNode* expr) {
         
         case ASTNode::NodeType::UNARY_OP: {
             UnaryExpr* unary = static_cast<UnaryExpr*>(expr);
+            
+            // Check for unsafe pointer operations via operator token
+            using TT = frontend::TokenType;
+            TT opType = unary->op.type;
+            
+            if (opType == TT::TOKEN_AT) {
+                // @ — address-of operator (raw pointer creation)
+                bool acknowledged = hasAcknowledgment(unary->line);
+                addIssue(
+                    UnsafeOperation::POINTER_OPS,
+                    "address-of operator (@) creates raw pointer",
+                    "prefer borrow ($i/$m) instead of raw pointer when possible",
+                    unary->line,
+                    unary->column
+                );
+                if (acknowledged) {
+                    issues.back().acknowledged = true;
+                }
+            } else if (opType == TT::TOKEN_LEFT_ARROW) {
+                // <- — pointer dereference (value <- ptr)
+                bool acknowledged = hasAcknowledgment(unary->line);
+                addIssue(
+                    UnsafeOperation::POINTER_OPS,
+                    "pointer dereference (<-) bypasses bounds checking",
+                    "ensure pointer is valid before dereferencing",
+                    unary->line,
+                    unary->column
+                );
+                if (acknowledged) {
+                    issues.back().acknowledged = true;
+                }
+            }
+            
             checkExpression(unary->operand.get());
             break;
         }
         
         case ASTNode::NodeType::CALL: {
             CallExpr* call = static_cast<CallExpr*>(expr);
-            // Check if calling extern function
-            // checkExternCall(call);
             for (const auto& arg : call->arguments) {
                 checkExpression(arg.get());
             }
@@ -273,13 +347,33 @@ void SafetyChecker::checkAsyncFunction(FuncDeclStmt* func) {
 }
 
 void SafetyChecker::checkPointerOperation(ASTNode* expr) {
-    // This will be called when we detect pointer operations
-    // For now, placeholder
+    if (!expr) return;
+    bool acknowledged = hasAcknowledgment(expr->line);
+    addIssue(
+        UnsafeOperation::POINTER_OPS,
+        "raw pointer operation detected",
+        "ensure pointer validity and bounds are checked manually",
+        expr->line,
+        expr->column
+    );
+    if (acknowledged) {
+        issues.back().acknowledged = true;
+    }
 }
 
 void SafetyChecker::checkExternCall(CallExpr* call) {
-    // Check if calling extern function
-    // For now, placeholder
+    if (!call) return;
+    bool acknowledged = hasAcknowledgment(call->line);
+    addIssue(
+        UnsafeOperation::FFI_EXTERN,
+        "call to extern function — FFI boundary",
+        "validate all data crossing the FFI boundary",
+        call->line,
+        call->column
+    );
+    if (acknowledged) {
+        issues.back().acknowledged = true;
+    }
 }
 
 bool SafetyChecker::hasAcknowledgment(int line) {
@@ -292,7 +386,7 @@ void SafetyChecker::addIssue(UnsafeOperation op, const std::string& msg,
     issue.operation = op;
     issue.message = msg;
     issue.suggestion = suggestion;
-    issue.file = "";  // TODO: Get from context
+    issue.file = sourceFile;  // Set from check() parameter
     issue.line = line;
     issue.column = col;
     issue.acknowledged = false;

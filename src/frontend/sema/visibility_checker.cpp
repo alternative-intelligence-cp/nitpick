@@ -79,18 +79,42 @@ bool VisibilityChecker::isSamePackage(const Module* module1, const Module* modul
         return false;
     }
     
-    // For now, we consider all modules in the same compilation to be in the same package
-    // Future enhancement: Extract package ID from aria.toml or module path
-    // research_028 Section 8.1 discusses package manifests
-    
-    // Simple heuristic: Check if modules share a common root path prefix
-    // This would be replaced with proper package_id comparison
+    // Package detection: modules sharing the same top-level path component
+    // are in the same package. e.g., "std.io" and "std.net" share package "std".
+    // When aria.toml package manifests are available (research_028 Section 8.1),
+    // this will be replaced with explicit package_id comparison.
     const std::string& path1 = module1->getPath();
     const std::string& path2 = module2->getPath();
     
-    // For now, treat all modules as same package
-    // TODO: Implement proper package detection based on aria.toml
-    return true;
+    // Use getFullPath() for hierarchical comparison
+    std::string full1 = module1->getFullPath();
+    std::string full2 = module2->getFullPath();
+    
+    // Extract top-level package name (before first '.')
+    auto dot1 = full1.find('.');
+    auto dot2 = full2.find('.');
+    std::string pkg1 = (dot1 != std::string::npos) ? full1.substr(0, dot1) : full1;
+    std::string pkg2 = (dot2 != std::string::npos) ? full2.substr(0, dot2) : full2;
+    
+    // Same top-level module = same package
+    if (pkg1 == pkg2 && !pkg1.empty()) {
+        return true;
+    }
+    
+    // Fallback: if both modules share a common filesystem path prefix
+    // (for projects without hierarchical module names)
+    if (!path1.empty() && !path2.empty()) {
+        // Find common directory prefix
+        auto lastSlash1 = path1.rfind('/');
+        auto lastSlash2 = path2.rfind('/');
+        std::string dir1 = (lastSlash1 != std::string::npos) ? path1.substr(0, lastSlash1) : "";
+        std::string dir2 = (lastSlash2 != std::string::npos) ? path2.substr(0, lastSlash2) : "";
+        if (!dir1.empty() && dir1 == dir2) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 bool VisibilityChecker::isParentModule(const Module* child, const Module* parent) const {
