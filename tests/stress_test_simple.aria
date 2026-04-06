@@ -77,7 +77,10 @@ func:main = int32() {
     int32:val4 = raw parse_with_pick(6i32);
     total = total + val4;  // Should add 60
     
-    exit total;  // Expected: 20 + 5 + 40 + 60 = 125
+    if (total == 125i32) {
+        exit 0;
+    }
+    exit 1;  // Expected: 20 + 5 + 40 + 60 = 125
 };
 
 func:failsafe = int32(tbb32:err) {

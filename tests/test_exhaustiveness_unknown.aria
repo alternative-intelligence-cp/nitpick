@@ -70,7 +70,11 @@ func:main = int32() {
     int32:c = raw test_priority_order();
     
     // Expected: 20 + 20 + 3 = 43
-    exit a + b + c;
+    int32:total = a + b + c;
+    if (total == 43) {
+        exit 0;
+    }
+    exit 1;
 };
 
 func:failsafe = int32(tbb32:err) {

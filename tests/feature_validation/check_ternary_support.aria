@@ -25,7 +25,11 @@ func:main = int32() {
     int32:r1 = raw test_ternary();      // Should return 20
     int32:r2 = raw test_nested_ternary(); // Should return 15
     
-    exit r1 + r2;  // 20 + 15 = 35
+    int32:total = r1 + r2;
+    if (total == 35) {
+        exit 0;
+    }
+    exit 1;  // 20 + 15 = 35
 };
 
 func:failsafe = int32(tbb32:err) {
