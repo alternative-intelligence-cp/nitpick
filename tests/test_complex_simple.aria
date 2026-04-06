@@ -11,7 +11,6 @@ struct<T>:complex = {
 };
 
 func:failsafe = int32(tbb32:err) {
-    return err_code;
     exit 1;
 };
 
@@ -21,7 +20,7 @@ func:main = int32() {
     z.real = 3.0;
     z.imag = 4.0;
     if (z.real != 3.0 || z.imag != 4.0) {
-        return 1;  // FAIL: Basic construction
+        exit 1;  // FAIL: Basic construction
     }
     
     // Test 2: Addition (3+4i) + (1+2i) = (4+6i)
@@ -38,7 +37,7 @@ func:main = int32() {
     sum.imag = z1.imag + z2.imag;
     
     if (sum.real != 4.0 || sum.imag != 6.0) {
-        return 2;  // FAIL: Addition
+        exit 2;  // FAIL: Addition
     }
     
     // Test 3: Multiplication (3+4i) * (1+2i) = (-5+10i)
@@ -52,7 +51,7 @@ func:main = int32() {
     prod.imag = k1 + k3;
     
     if (prod.real != -5.0 || prod.imag != 10.0) {
-        return 3;  // FAIL: Multiplication
+        exit 3;  // FAIL: Multiplication
     }
     
     //  Test 4: i * i = -1
@@ -69,8 +68,8 @@ func:main = int32() {
     i_squared.imag = k1_i + k3_i;
     
     if (i_squared.real != -1.0 || i_squared.imag != 0.0) {
-        return 4;  // FAIL: i squared
+        exit 4;  // FAIL: i squared
     }
     
-    return 0;  // SUCCESS: All tests passed
+    exit 0;  // SUCCESS: All tests passed
 };

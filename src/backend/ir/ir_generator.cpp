@@ -2627,18 +2627,60 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
         } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::BINARY_OP) {
             // BUG-09 fix: constant-fold binary expressions on literal operands for fixed globals.
-            // Handles e.g. `fixed int64:X = 2i64 * 3i64;` or `fixed int64:NEG = 0i64 - 5i64;`
+            // Extended to also resolve identifier operands referencing already-created globals
+            // (e.g. `const int64:SUM = A + B;` where A and B are earlier const/fixed globals).
             BinaryExpr* binExpr = static_cast<BinaryExpr*>(varDecl->initializer.get());
-            if (binExpr->left && binExpr->left->type == ASTNode::NodeType::LITERAL &&
-                binExpr->right && binExpr->right->type == ASTNode::NodeType::LITERAL) {
-                LiteralExpr* litL = static_cast<LiteralExpr*>(binExpr->left.get());
-                LiteralExpr* litR = static_cast<LiteralExpr*>(binExpr->right.get());
 
+            // Helper: resolve a binary operand to an int64 constant value.
+            // Handles LITERAL nodes and IDENTIFIER nodes that reference existing globals.
+            auto resolveInt = [&](ASTNode* operand, int64_t& out) -> bool {
+                if (operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(operand);
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        out = std::get<int64_t>(lit->value); return true;
+                    }
+                } else if (operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* id = static_cast<IdentifierExpr*>(operand);
+                    auto it = named_values.find(id->name);
+                    if (it != named_values.end()) {
+                        if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
+                            if (gv->hasInitializer()) {
+                                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(gv->getInitializer())) {
+                                    out = ci->getSExtValue(); return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+            // Helper: resolve a binary operand to a double constant value.
+            auto resolveFloat = [&](ASTNode* operand, double& out) -> bool {
+                if (operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(operand);
+                    if (std::holds_alternative<double>(lit->value)) {
+                        out = std::get<double>(lit->value); return true;
+                    }
+                } else if (operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* id = static_cast<IdentifierExpr*>(operand);
+                    auto it = named_values.find(id->name);
+                    if (it != named_values.end()) {
+                        if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
+                            if (gv->hasInitializer()) {
+                                if (auto* cfp = llvm::dyn_cast<llvm::ConstantFP>(gv->getInitializer())) {
+                                    out = cfp->getValueAPF().convertToDouble(); return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+
+            if (binExpr->left && binExpr->right) {
                 // Integer constant folding
-                if (std::holds_alternative<int64_t>(litL->value) &&
-                    std::holds_alternative<int64_t>(litR->value) && varType->isIntegerTy()) {
-                    int64_t lv = std::get<int64_t>(litL->value);
-                    int64_t rv = std::get<int64_t>(litR->value);
+                int64_t lv, rv;
+                if (varType->isIntegerTy() && resolveInt(binExpr->left.get(), lv) && resolveInt(binExpr->right.get(), rv)) {
                     int64_t result = 0;
                     bool folded = true;
                     switch (binExpr->op.type) {
@@ -2659,17 +2701,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     }
                 }
                 // Float constant folding
-                else if (std::holds_alternative<double>(litL->value) &&
-                         std::holds_alternative<double>(litR->value) && varType->isFloatingPointTy()) {
-                    double lv = std::get<double>(litL->value);
-                    double rv = std::get<double>(litR->value);
+                double flv, frv;
+                if (!initVal && varType->isFloatingPointTy() && resolveFloat(binExpr->left.get(), flv) && resolveFloat(binExpr->right.get(), frv)) {
                     double result = 0.0;
                     bool folded = true;
                     switch (binExpr->op.type) {
-                        case TokenType::TOKEN_PLUS:    result = lv + rv; break;
-                        case TokenType::TOKEN_MINUS:   result = lv - rv; break;
-                        case TokenType::TOKEN_STAR:    result = lv * rv; break;
-                        case TokenType::TOKEN_SLASH:   result = rv != 0.0 ? lv / rv : 0.0; break;
+                        case TokenType::TOKEN_PLUS:    result = flv + frv; break;
+                        case TokenType::TOKEN_MINUS:   result = flv - frv; break;
+                        case TokenType::TOKEN_STAR:    result = flv * frv; break;
+                        case TokenType::TOKEN_SLASH:   result = frv != 0.0 ? flv / frv : 0.0; break;
                         default: folded = false; break;
                     }
                     if (folded) {
@@ -11981,6 +12021,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
 
             llvm::Value* sourceValue = codegenExpression(castExpr->expression.get());
             if (!sourceValue) return nullptr;
+
+            // Auto-unwrap Result<T> = { T, ptr, i8 } from safety-wrapped function calls.
+            // Without this, @cast<uint64>(pub_func()) sees a struct source type,
+            // no int/float cast path matches, and the cast returns nullptr.
+            if (sourceValue->getType()->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(sourceValue->getType());
+                if (st->getNumElements() == 3 &&
+                    st->getElementType(1)->isPointerTy() &&
+                    (st->getElementType(2)->isIntegerTy(8) || st->getElementType(2)->isIntegerTy(1))) {
+                    sourceValue = builder.CreateExtractValue(sourceValue, {0}, "cast_unwrap_result");
+                }
+            }
 
             // mapTypeFromName understands full Aria type names like "int64", "uint32"
             llvm::Type* targetType = mapTypeFromName(castExpr->targetType);

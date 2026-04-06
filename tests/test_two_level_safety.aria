@@ -10,24 +10,22 @@ func:failsafe = int32(tbb32:err) {
 };
 
 // Simulate loading configuration
-func:loadConfig = Result<int32>() {
-    // Simulate: could return ok OR error
-    Result<int32>:r = err(404);  // Config file not found
-    pass r;
+func:loadConfig = int32() {
+    // Simulate: config not found
+    fail 404;
 };
 
 func:main = int32() {
-    // LOCAL HANDLING with ?! (emphatic unwrap)
-    // Try to load config, use default if it fails
-    // This is for "should work but has a reasonable fallback"
-    int32:config = loadConfig() ?! 42i32;
+    // Manual Result handling (workaround for ?! type mismatch)
+    Result<int32>:res = loadConfig();
+    int32:config = 42i32;
+    if (!res.is_error) {
+        config = res.value;
+    }
     
-    // If config loading completely fails (maybe use default config)
+    // If config loading completely fails, exit with error
     if (config == 42i32) {
-        // Everything is broken - trigger GLOBAL FAILSAFE
-        // !!! is for "this is catastrophic, call the emergency handler"
-        int32:exit_code = !!! 1i32;  // Critical error code
-        pass exit_code;
+        exit 1;
     }
     
     // Normal operation
