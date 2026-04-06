@@ -519,18 +519,18 @@ int64_t lex_get_current(void* state) {
 // Lexeme extraction
 // -----------------------------------------------------------------------
 
-AriaString* lex_get_lexeme(void* state) {
+AriaString lex_get_lexeme(void* state) {
     LexState* s = (LexState*)state;
     int64_t len = s->current - s->start;
-    if (len <= 0) return make_str("", 0);
-    return make_str(s->source + s->start, len);
+    if (len <= 0) return *make_str("", 0);
+    return *make_str(s->source + s->start, len);
 }
 
 // Get a substring of source[from..from+len)
-AriaString* lex_get_substr(void* state, int64_t from, int64_t len) {
+AriaString lex_get_substr(void* state, int64_t from, int64_t len) {
     LexState* s = (LexState*)state;
-    if (from < 0 || from + len > s->length || len <= 0) return make_str("", 0);
-    return make_str(s->source + from, len);
+    if (from < 0 || from + len > s->length || len <= 0) return *make_str("", 0);
+    return *make_str(s->source + from, len);
 }
 
 // -----------------------------------------------------------------------
@@ -698,16 +698,35 @@ int64_t lex_error_count(void* state) {
     return ((LexState*)state)->error_count;
 }
 
-AriaString* lex_get_error(void* state, int64_t idx) {
+AriaString lex_get_error(void* state, int64_t idx) {
     LexState* s = (LexState*)state;
-    if (idx < 0 || idx >= s->error_count) return make_str("", 0);
+    if (idx < 0 || idx >= s->error_count) return *make_str("", 0);
     const char* e = s->errors[idx];
-    return make_str(e, (int64_t)strlen(e));
+    return *make_str(e, (int64_t)strlen(e));
 }
 
 // -----------------------------------------------------------------------
 // Keyword lookup
 // -----------------------------------------------------------------------
+
+// Combined lexeme→keyword lookup for Aria self-hosted lexer (avoids AriaString ABI mismatch)
+int32_t lex_scan_keyword(void* state) {
+    LexState* s = (LexState*)state;
+    int64_t len = s->current - s->start;
+    if (len <= 0 || len >= 256) return -1;
+    char buf[256];
+    memcpy(buf, s->source + s->start, len);
+    buf[len] = '\0';
+    kw_init();
+    uint32_t idx = kw_hash(buf) & (KW_TABLE_SIZE - 1);
+    for (int i = 0; i < KW_TABLE_SIZE; i++) {
+        uint32_t probe = (idx + i) & (KW_TABLE_SIZE - 1);
+        if (!kw_table[probe].keyword) return -1;
+        if (strcmp(kw_table[probe].keyword, buf) == 0)
+            return kw_table[probe].type;
+    }
+    return -1;
+}
 
 int32_t kw_lookup(const char* word) {
     kw_init();
@@ -772,8 +791,8 @@ double lex_parse_float(const char* text) {
 }
 
 // Remove underscores from numeric text
-AriaString* lex_strip_underscores(const char* text) {
-    if (!text) return make_str("", 0);
+AriaString lex_strip_underscores(const char* text) {
+    if (!text) return *make_str("", 0);
     size_t len = strlen(text);
     char* buf = (char*)malloc(len + 1);
     size_t j = 0;
@@ -781,7 +800,7 @@ AriaString* lex_strip_underscores(const char* text) {
         if (text[i] != '_') buf[j++] = text[i];
     }
     buf[j] = '\0';
-    AriaString* result = make_str(buf, (int64_t)j);
+    AriaString result = *make_str(buf, (int64_t)j);
     free(buf);
     return result;
 }
@@ -790,11 +809,11 @@ AriaString* lex_strip_underscores(const char* text) {
 // Token type name (for debugging/testing)
 // -----------------------------------------------------------------------
 
-AriaString* lex_type_name(int32_t type) {
+AriaString lex_type_name(int32_t type) {
     // Self-contained: return numeric string representation
     // Token type names can be matched via the TK_* constants in lexer.aria
     std::string name = std::to_string(type);
-    return make_str(name.c_str(), (int64_t)name.length());
+    return *make_str(name.c_str(), (int64_t)name.length());
 }
 
 // -----------------------------------------------------------------------

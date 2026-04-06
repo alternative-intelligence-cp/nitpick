@@ -5,7 +5,7 @@
 // In real implementation, compareExchange can fail due to race conditions
 
 // Create an atomic value (simulated)
-func:atomic_new = int32(int32:initial) {
+func:make_atomic = int32(int32:initial) {
     pass initial;  // In real code, would allocate atomic
 };
 
@@ -175,7 +175,7 @@ func:main = int32() {
     int32:result = 0i32;
     
     // Test 1: Simple atomic load (always succeeds)
-    int32:atomic1 = atomic_new(10i32);
+    int32:atomic1 = raw make_atomic(10i32);
     int32:val1 = raw atomic_load(atomic1);
     result = result + val1;  // +10 = 10
     
@@ -222,6 +222,9 @@ func:main = int32() {
         result = result + bounded.value;  // +9 = 166
     }
     
+    if (result == 166i32) {
+        exit 0;
+    }
     exit result;  // Expected: 166
 };
 

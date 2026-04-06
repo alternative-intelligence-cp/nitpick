@@ -531,16 +531,28 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("ok() requires exactly one argument");
         }
 
-        // ok() is a pure pass-through: it strips the compile-time "unknown taint"
-        // and returns the value unchanged. The programmer is explicitly acknowledging
-        // that the value may be Unknown and choosing to propagate it anyway.
-        // Example: int32:y = ok(result_that_might_be_unknown);
+        // ok(value) -> int32: returns 1 if value is valid, 0 if value is Unknown
+        // Unknown sentinel = signed maximum value (INT_MAX for given bit width)
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
         if (!arg) {
             throw std::runtime_error("Failed to generate code for ok() argument");
         }
-        ARIA_DBG_STREAM << "[DEBUG] ok() pass-through" << std::endl;
-        return arg;
+        
+        if (arg->getType()->isIntegerTy()) {
+            llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(arg->getType());
+            unsigned width = intType->getBitWidth();
+            llvm::Value* sentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
+            // Compare: is the value the unknown sentinel?
+            llvm::Value* isUnknown = builder.CreateICmpEQ(arg, sentinel, "ok.isunk");
+            // Return 0 if unknown, 1 if valid (as i32)
+            llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+            llvm::Value* one = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1);
+            return builder.CreateSelect(isUnknown, zero, one, "ok.result");
+        }
+        
+        // Non-integer types: always valid
+        ARIA_DBG_STREAM << "[DEBUG] ok() on non-integer type - always valid" << std::endl;
+        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1);
     }
     
     // ====================================================================

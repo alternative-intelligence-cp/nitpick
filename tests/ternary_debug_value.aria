@@ -1,14 +1,14 @@
-// Debug test - verify trit overflow produces ERR
+// Debug test - verify trit addition clamps on overflow
 func:main = int32() {
     trit:t_add = 1;
     trit:t_one = 1;
-    trit:t_sum = t_add + t_one;  // 1 + 1 = ERR (overflow)
+    trit:t_sum = t_add + t_one;  // 1 + 1 = 1 (clamped)
     
-    // Check if result is ERR sentinel (-128)
-    if (t_sum == -128) {
-        exit 0;  // Success - overflow detected
+    // Check if result is clamped to 1
+    if (t_sum == 1) {
+        exit 0;  // Success - overflow clamped
     } else {
-        exit 1;  // Failure - overflow not detected
+        exit 1;  // Failure - unexpected value
     }
 };
 

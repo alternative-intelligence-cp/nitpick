@@ -1574,6 +1574,9 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.sadd.with.overflow
     llvm::Function* saddIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::sadd_with_overflow, {intType});
@@ -1585,11 +1588,19 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(saddResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(saddResult, 1, "add.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation — if either operand is already
+    // the unknown sentinel, skip arithmetic and return sentinel directly.
+    // Only for types >= 32 bits where sentinel doesn't collide with valid values.
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "add.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "add.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "add.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const std::string& name) {
@@ -1620,6 +1631,9 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.ssub.with.overflow
     llvm::Function* ssubIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::ssub_with_overflow, {intType});
@@ -1631,11 +1645,17 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(ssubResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(ssubResult, 1, "sub.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation (only for >= 32 bit types)
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "sub.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "sub.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "sub.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const std::string& name) {
@@ -1668,6 +1688,9 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.smul.with.overflow
     llvm::Function* smulIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::smul_with_overflow, {intType});
@@ -1679,11 +1702,17 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(smulResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(smulResult, 1, "mul.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation (only for >= 32 bit types)
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "mul.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "mul.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "mul.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 // Helper function to map type name strings to LLVM types
@@ -2367,6 +2396,28 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     }
                     if (!paramType) {
                         paramType = type_system->getStructType(typeStr);
+                    }
+                    // v0.16.5-5: Handle generic struct names: "Complex<int32>" → "Complex_int32"
+                    if (!paramType) {
+                        size_t angle_pos = typeStr.find('<');
+                        if (angle_pos != std::string::npos && typeStr.back() == '>') {
+                            std::string baseName = typeStr.substr(0, angle_pos);
+                            std::string argsStr = typeStr.substr(angle_pos + 1, typeStr.size() - angle_pos - 2);
+                            std::string mangledLookup = baseName;
+                            size_t start_pos = 0;
+                            int depth = 0;
+                            for (size_t ci = 0; ci <= argsStr.size(); ci++) {
+                                if (ci == argsStr.size() || (argsStr[ci] == ',' && depth == 0)) {
+                                    std::string a = argsStr.substr(start_pos, ci - start_pos);
+                                    a.erase(0, a.find_first_not_of(" \t"));
+                                    a.erase(a.find_last_not_of(" \t") + 1);
+                                    if (!a.empty()) mangledLookup += "_" + a;
+                                    start_pos = ci + 1;
+                                } else if (argsStr[ci] == '<') { depth++; }
+                                else if (argsStr[ci] == '>') { depth--; }
+                            }
+                            paramType = type_system->getStructType(mangledLookup);
+                        }
                     }
                     if (!paramType) {
                         paramType = type_system->getPrimitiveType(typeStr);
@@ -3585,6 +3636,28 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             paramType = type_system->getStructType(typeStr);
                             if (paramType) {
                                 ARIA_DBG_STREAM << "[DEBUG] Found as struct type" << std::endl;
+                            }
+                        }
+                        // v0.16.5-5: Handle generic struct names: "Name<T>" → "Name_T"
+                        if (!paramType) {
+                            size_t angle_pos = typeStr.find('<');
+                            if (angle_pos != std::string::npos && typeStr.back() == '>') {
+                                std::string baseName = typeStr.substr(0, angle_pos);
+                                std::string argsStr = typeStr.substr(angle_pos + 1, typeStr.size() - angle_pos - 2);
+                                std::string mangledLookup = baseName;
+                                size_t start_pos = 0;
+                                int depth = 0;
+                                for (size_t ci = 0; ci <= argsStr.size(); ci++) {
+                                    if (ci == argsStr.size() || (argsStr[ci] == ',' && depth == 0)) {
+                                        std::string a = argsStr.substr(start_pos, ci - start_pos);
+                                        a.erase(0, a.find_first_not_of(" \t"));
+                                        a.erase(a.find_last_not_of(" \t") + 1);
+                                        if (!a.empty()) mangledLookup += "_" + a;
+                                        start_pos = ci + 1;
+                                    } else if (argsStr[ci] == '<') { depth++; }
+                                    else if (argsStr[ci] == '>') { depth--; }
+                                }
+                                paramType = type_system->getStructType(mangledLookup);
                             }
                         }
                         
@@ -4985,13 +5058,36 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             auto* arrType = llvm::cast<llvm::ArrayType>(varType);
                             llvm::Type* elemType = arrType->getElementType();
                             uint64_t numElems = arrType->getNumElements();
+                            
+                            // Determine source element type from the alloca
+                            llvm::Type* srcElemType = elemType;  // default: same as target
+                            if (auto* srcAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
+                                srcElemType = srcAlloca->getAllocatedType();
+                            }
+                            
                             for (uint64_t i = 0; i < numElems; ++i) {
-                                // Load element i from the tmp flat alloca
+                                // Load element i from the tmp flat alloca using SOURCE type
                                 llvm::Value* srcPtr = builder.CreateGEP(
-                                    elemType, initVal,
+                                    srcElemType, initVal,
                                     llvm::ConstantInt::get(builder.getInt64Ty(), i),
                                     "arr.init.src");
-                                llvm::Value* elem = builder.CreateLoad(elemType, srcPtr, "arr.init.elem");
+                                llvm::Value* elem = builder.CreateLoad(srcElemType, srcPtr, "arr.init.elem");
+                                
+                                // Cast if source and target element types differ
+                                if (srcElemType != elemType) {
+                                    if (srcElemType->isIntegerTy() && elemType->isIntegerTy()) {
+                                        unsigned srcBits = srcElemType->getIntegerBitWidth();
+                                        unsigned dstBits = elemType->getIntegerBitWidth();
+                                        if (srcBits > dstBits) {
+                                            elem = builder.CreateTrunc(elem, elemType, "arr.init.trunc");
+                                        } else {
+                                            elem = builder.CreateSExt(elem, elemType, "arr.init.sext");
+                                        }
+                                    } else if (srcElemType->isFloatingPointTy() && elemType->isFloatingPointTy()) {
+                                        elem = builder.CreateFPCast(elem, elemType, "arr.init.fpcast");
+                                    }
+                                }
+                                
                                 // Store into our typed alloca via two-index GEP
                                 std::vector<llvm::Value*> destIdx = {
                                     llvm::ConstantInt::get(builder.getInt64Ty(), 0),
@@ -5749,7 +5845,12 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         llvm::IntegerType* patIntTy = llvm::cast<llvm::IntegerType>(pattern_val->getType());
                         if (patIntTy->getBitWidth() < selIntTy->getBitWidth()) {
                             ARIA_DBG_STREAM << "[DEBUG PICK] Extending pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
-                            pattern_val = builder.CreateSExt(pattern_val, selector->getType(), "pat_sext");
+                            // Use ZExt for booleans (i1) to preserve true=1, SExt for other integers
+                            if (patIntTy->getBitWidth() == 1) {
+                                pattern_val = builder.CreateZExt(pattern_val, selector->getType(), "pat_zext");
+                            } else {
+                                pattern_val = builder.CreateSExt(pattern_val, selector->getType(), "pat_sext");
+                            }
                         } else if (patIntTy->getBitWidth() > selIntTy->getBitWidth()) {
                             ARIA_DBG_STREAM << "[DEBUG PICK] Truncating pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
                             pattern_val = builder.CreateTrunc(pattern_val, selector->getType(), "pat_trunc");
@@ -8626,18 +8727,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // SPECIAL HANDLING: Three-valued logic for comparisons (Phase 5.5)
-            // When ONE operand is unknown (not both), comparison result is unknown
-            // Note: unknown == unknown will naturally compare sentinels and return true
-            if ((leftIsUnknown || rightIsUnknown) && !(leftIsUnknown && rightIsUnknown)) {
-                // ONE operand is unknown (XOR) - result is unknown for comparisons
-                if (binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
-                    binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL ||
-                    binop->op.type == frontend::TokenType::TOKEN_LESS ||
+            // When the LEFT operand is the unknown literal (and right is not),
+            // the comparison is indeterminate — result is unknown.
+            // When the RIGHT operand is unknown literal, it's a sentinel CHECK
+            // ("is this value unknown?"), handled by the sentinel replacement below.
+            if (leftIsUnknown && !rightIsUnknown) {
+                // Left is the unknown literal — comparison result is unknown
+                if (binop->op.type == frontend::TokenType::TOKEN_LESS ||
                     binop->op.type == frontend::TokenType::TOKEN_LESS_EQUAL ||
                     binop->op.type == frontend::TokenType::TOKEN_GREATER ||
-                    binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+                    binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL) {
                     
-                    ARIA_DBG_STREAM << "[DEBUG] Comparison with one unknown operand - returning unknown sentinel" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Comparison with unknown literal on left - returning unknown sentinel" << std::endl;
                     // Result is unknown - return i32 max (unknown sentinel for bool)
                     return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 
                                                   llvm::APInt::getSignedMaxValue(32).getSExtValue());
@@ -9124,6 +9227,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             return builder.CreateFAdd(L, R, "vec.addtmp");
                         return builder.CreateAdd(L, R, "vec.addtmp");
                     }
+                    // v0.16.5-5: Unsigned types use wrapping addition (modular arithmetic)
+                    if (isUnsigned) {
+                        return builder.CreateAdd(L, R, "addtmp");
+                    }
                     return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
@@ -9272,6 +9379,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         if (L->getType()->isFPOrFPVectorTy())
                             return builder.CreateFSub(L, R, "vec.subtmp");
                         return builder.CreateSub(L, R, "vec.subtmp");
+                    }
+                    // v0.16.5-5: Unsigned types use wrapping subtraction (modular arithmetic)
+                    if (isUnsigned) {
+                        return builder.CreateSub(L, R, "subtmp");
                     }
                     return generateSafeSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
@@ -9529,6 +9640,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 L = builder.CreateFPExt(L, R->getType(), "div_fpext");
                         }
                         return builder.CreateFDiv(L, R, "fdivtmp");
+                    }
+                    // v0.16.5-5: Unsigned types use UDiv
+                    if (isUnsigned) {
+                        // Division by zero check for unsigned
+                        llvm::Value* isZero = builder.CreateICmpEQ(R, llvm::ConstantInt::get(R->getType(), 0), "div.zero.chk");
+                        llvm::Value* safeR = builder.CreateSelect(isZero, llvm::ConstantInt::get(R->getType(), 1), R, "safe.divisor");
+                        llvm::Value* quotient = builder.CreateUDiv(L, safeR, "udivtmp");
+                        unsigned bw = L->getType()->getIntegerBitWidth();
+                        llvm::Value* sentinel = llvm::ConstantInt::get(context, llvm::APInt::getMaxValue(bw));
+                        return builder.CreateSelect(isZero, sentinel, quotient, "divtmp");
                     }
                     // v0.14.4: Division-by-zero check elimination
                     if (div_check_safe.count(expr)) {

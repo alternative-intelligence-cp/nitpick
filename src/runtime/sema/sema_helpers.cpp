@@ -332,11 +332,11 @@ int64_t tc_error_count(void* state) {
     return (int64_t)((TypeCheckerState*)state)->errors.size();
 }
 
-AriaString* tc_get_error(void* state, int64_t idx) {
+AriaString tc_get_error(void* state, int64_t idx) {
     auto* tc = (TypeCheckerState*)state;
     if (idx < 0 || idx >= (int64_t)tc->errors.size())
-        return make_aria_string("");
-    return make_aria_string(tc->errors[idx]);
+        return *make_aria_string("");
+    return *make_aria_string(tc->errors[idx]);
 }
 
 // --- Type creation / retrieval ---
@@ -524,9 +524,9 @@ int32_t tc_type_kind(void* type_handle) {
     return (int32_t)((SemaType*)type_handle)->kind;
 }
 
-AriaString* tc_type_name(void* type_handle) {
-    if (!type_handle) return make_aria_string("<null>");
-    return make_aria_string(((SemaType*)type_handle)->name);
+AriaString tc_type_name(void* type_handle) {
+    if (!type_handle) return *make_aria_string("<null>");
+    return *make_aria_string(((SemaType*)type_handle)->name);
 }
 
 int32_t tc_type_bit_width(void* type_handle) {
@@ -701,12 +701,12 @@ int32_t tc_struct_field_count(void* type_handle) {
     return (int32_t)t->fields.size();
 }
 
-AriaString* tc_struct_field_name(void* type_handle, int32_t idx) {
-    if (!type_handle) return make_aria_string("");
+AriaString tc_struct_field_name(void* type_handle, int32_t idx) {
+    if (!type_handle) return *make_aria_string("");
     auto* t = (SemaType*)type_handle;
     if (t->kind != TK::STRUCT || idx < 0 || idx >= (int32_t)t->fields.size())
-        return make_aria_string("");
-    return make_aria_string(t->fields[idx].name);
+        return *make_aria_string("");
+    return *make_aria_string(t->fields[idx].name);
 }
 
 void* tc_struct_field_type(void* type_handle, int32_t idx) {
@@ -853,9 +853,9 @@ int32_t tc_symbol_kind(void* sym_handle) {
     return (int32_t)((SemaSymbol*)sym_handle)->kind;
 }
 
-AriaString* tc_symbol_name(void* sym_handle) {
-    if (!sym_handle) return make_aria_string("");
-    return make_aria_string(((SemaSymbol*)sym_handle)->name);
+AriaString tc_symbol_name(void* sym_handle) {
+    if (!sym_handle) return *make_aria_string("");
+    return *make_aria_string(((SemaSymbol*)sym_handle)->name);
 }
 
 int32_t tc_symbol_is_mutable(void* sym_handle) {
@@ -1033,24 +1033,24 @@ void* tc_check_unary_op(void* state, int32_t op_token, void* operand_type) {
 // Type suffix → type name mapping (for literal type inference)
 // ============================================================================
 
-AriaString* tc_suffix_to_type_name(const char* suffix) {
-    if (!suffix || !suffix[0]) return make_aria_string("int32"); // default int
+AriaString tc_suffix_to_type_name(const char* suffix) {
+    if (!suffix || !suffix[0]) return *make_aria_string("int32"); // default int
 
     std::string s(suffix);
     // u8 -> uint8, u16 -> uint16, etc.
     if (s[0] == 'u' && s.size() >= 2 && std::isdigit(s[1]))
-        return make_aria_string("uint" + s.substr(1));
+        return *make_aria_string("uint" + s.substr(1));
     // i8 -> int8, i16 -> int16, etc.
     if (s[0] == 'i' && s.size() >= 2 && std::isdigit(s[1]))
-        return make_aria_string("int" + s.substr(1));
+        return *make_aria_string("int" + s.substr(1));
     // f32 -> flt32, f64 -> flt64
     if (s[0] == 'f' && s.size() >= 2 && std::isdigit(s[1]))
-        return make_aria_string("flt" + s.substr(1));
+        return *make_aria_string("flt" + s.substr(1));
     // tbb, fix — already correct
     if (s.substr(0, 3) == "tbb" || s.substr(0, 3) == "fix")
-        return make_aria_string(s);
+        return *make_aria_string(s);
 
-    return make_aria_string(s);
+    return *make_aria_string(s);
 }
 
 // ============================================================================
@@ -1058,47 +1058,49 @@ AriaString* tc_suffix_to_type_name(const char* suffix) {
 // The self-hosted parser stores the token type in flags, not suffix in str2
 // ============================================================================
 
-AriaString* tc_token_to_type_name(int32_t token_id) {
+AriaString tc_token_to_type_name(int32_t token_id) {
     // Plain untyped literals — return empty string (no explicit type)
-    // TK_INTEGER=184, TK_FLOAT=185
-    if (token_id == 184 || token_id == 185) return make_aria_string("");
+    // TK_INTEGER=226, TK_FLOAT=227
+    if (token_id == 226 || token_id == 227) return *make_aria_string("");
 
     switch (token_id) {
-        // Unsigned integers (186-195)
-        case 186: return make_aria_string("uint8");
-        case 187: return make_aria_string("uint16");
-        case 188: return make_aria_string("uint32");
-        case 189: return make_aria_string("uint64");
-        case 190: return make_aria_string("uint128");
-        case 191: return make_aria_string("uint256");
-        case 192: return make_aria_string("uint512");
-        case 193: return make_aria_string("uint1024");
-        case 194: return make_aria_string("uint2048");
-        case 195: return make_aria_string("uint4096");
-        // Signed integers (196-205)
-        case 196: return make_aria_string("int8");
-        case 197: return make_aria_string("int16");
-        case 198: return make_aria_string("int32");
-        case 199: return make_aria_string("int64");
-        case 200: return make_aria_string("int128");
-        case 201: return make_aria_string("int256");
-        case 202: return make_aria_string("int512");
-        case 203: return make_aria_string("int1024");
-        case 204: return make_aria_string("int2048");
-        case 205: return make_aria_string("int4096");
-        // TBB integers (206-209)
-        case 206: return make_aria_string("tbb8");
-        case 207: return make_aria_string("tbb16");
-        case 208: return make_aria_string("tbb32");
-        case 209: return make_aria_string("tbb64");
-        // Floats (210-215)
-        case 210: return make_aria_string("flt32");
-        case 211: return make_aria_string("flt64");
-        case 212: return make_aria_string("flt128");
-        case 213: return make_aria_string("flt256");
-        case 214: return make_aria_string("flt512");
-        case 215: return make_aria_string("fix256");
-        default: return make_aria_string(""); // unknown token — no explicit type
+        // Unsigned integers (228-237)
+        case 228: return *make_aria_string("uint8");
+        case 229: return *make_aria_string("uint16");
+        case 230: return *make_aria_string("uint32");
+        case 231: return *make_aria_string("uint64");
+        case 232: return *make_aria_string("uint128");
+        case 233: return *make_aria_string("uint256");
+        case 234: return *make_aria_string("uint512");
+        case 235: return *make_aria_string("uint1024");
+        case 236: return *make_aria_string("uint2048");
+        case 237: return *make_aria_string("uint4096");
+        // Signed integers (238-247)
+        case 238: return *make_aria_string("int8");
+        case 239: return *make_aria_string("int16");
+        case 240: return *make_aria_string("int32");
+        case 241: return *make_aria_string("int64");
+        case 242: return *make_aria_string("int128");
+        case 243: return *make_aria_string("int256");
+        case 244: return *make_aria_string("int512");
+        case 245: return *make_aria_string("int1024");
+        case 246: return *make_aria_string("int2048");
+        case 247: return *make_aria_string("int4096");
+        // TBB integers (248-251)
+        case 248: return *make_aria_string("tbb8");
+        case 249: return *make_aria_string("tbb16");
+        case 250: return *make_aria_string("tbb32");
+        case 251: return *make_aria_string("tbb64");
+        // Floats (252-259)
+        case 252: return *make_aria_string("flt32");
+        case 253: return *make_aria_string("flt64");
+        case 254: return *make_aria_string("flt128");
+        case 255: return *make_aria_string("flt256");
+        case 256: return *make_aria_string("flt512");
+        case 257: return *make_aria_string("fix256");
+        case 258: return *make_aria_string("tfp32");
+        case 259: return *make_aria_string("tfp64");
+        default: return *make_aria_string(""); // unknown token — no explicit type
     }
 }
 

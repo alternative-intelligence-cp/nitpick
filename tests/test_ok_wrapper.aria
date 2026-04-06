@@ -1,17 +1,25 @@
-// Test: ok() wrapper for unknown state acknowledgment
+// Test: ok() as unknown state detection
 // Phase 5.2: Propagation safety
+// ok(value) returns 0 if value is unknown, 1 if valid
 
 func:main = int32() {
-    // Test 1: ok() passes through unknown value
+    // Test 1: ok() detects unknown value
     int32:x = unknown;
-    int32:y = ok x;  // Explicitly acknowledge unknown state
+    int32:status = ok x;  // Should be 0 (unknown)
     
-    // Test 2: Check that y is indeed unknown
-    if (y == unknown) {
-        exit 0i32;  // Success - unknown propagated correctly
-    } else {
-        exit 1i32;   // Failure
+    if (status != 0i32) {
+        exit 1i32;   // Failure: ok() didn't detect unknown
     }
+    
+    // Test 2: ok() detects valid value
+    int32:normal = 42i32;
+    int32:status2 = ok normal;  // Should be 1 (valid)
+    
+    if (status2 != 1i32) {
+        exit 2i32;   // Failure: ok() didn't detect valid
+    }
+    
+    exit 0i32;  // Success
 };
 
 func:failsafe = int32(tbb32:err) {
