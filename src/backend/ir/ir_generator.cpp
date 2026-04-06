@@ -1397,8 +1397,20 @@ llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsign
     builder.CreateStore(L, allocaL);
 
     // Truncate shift amount to i32
+    // If R is a struct (LBIM big integer), extract the low i64 limb first
     llvm::Value* shiftI32 = R;
-    if (R->getType() != i32Type) {
+    if (R->getType()->isStructTy()) {
+        llvm::Type* field0 = R->getType()->getStructElementType(0);
+        if (field0->isArrayTy()) {
+            // struct { [N x i64] } — extract element [0][0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0, 0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        } else {
+            // struct { i64, i64, ... } — extract element [0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        }
+    } else if (R->getType() != i32Type) {
         shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
     }
 
@@ -1443,8 +1455,21 @@ llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsign
     llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "shr_arg");
     builder.CreateStore(L, allocaL);
 
+    // Truncate shift amount to i32
+    // If R is a struct (LBIM big integer), extract the low i64 limb first
     llvm::Value* shiftI32 = R;
-    if (R->getType() != i32Type) {
+    if (R->getType()->isStructTy()) {
+        llvm::Type* field0 = R->getType()->getStructElementType(0);
+        if (field0->isArrayTy()) {
+            // struct { [N x i64] } — extract element [0][0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0, 0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        } else {
+            // struct { i64, i64, ... } — extract element [0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        }
+    } else if (R->getType() != i32Type) {
         shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
     }
 
@@ -7899,6 +7924,82 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                                         }
                                                     }
                                                 }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Handle nested struct member access: obj.field1.field2 = value
+                        // Walk the MemberAccess chain to find the root identifier,
+                        // collecting field names, then GEP through each level.
+                        if (member->object->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                            // Collect the chain: [field2, field1] (leaf first)
+                            std::vector<std::string> fieldChain;
+                            fieldChain.push_back(member->member);
+                            ASTNode* cur = member->object.get();
+                            while (cur->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                                MemberAccessExpr* mc = static_cast<MemberAccessExpr*>(cur);
+                                fieldChain.push_back(mc->member);
+                                cur = mc->object.get();
+                            }
+                            // cur should now be the root identifier
+                            if (cur->type == ASTNode::NodeType::IDENTIFIER) {
+                                IdentifierExpr* rootId = static_cast<IdentifierExpr*>(cur);
+                                auto rootIt = named_values.find(rootId->name);
+                                if (rootIt != named_values.end()) {
+                                    llvm::Value* rootPtr = rootIt->second;
+                                    llvm::Type* curLLTy = nullptr;
+                                    if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(rootPtr))
+                                        curLLTy = ai->getAllocatedType();
+                                    // Get the Aria type for the root variable
+                                    sema::Type* curAriaType = nullptr;
+                                    auto tIt = value_types.find(rootPtr);
+                                    if (tIt != value_types.end())
+                                        curAriaType = tIt->second;
+                                    if (!curAriaType) {
+                                        auto vIt = var_aria_types.find(rootId->name);
+                                        if (vIt != var_aria_types.end())
+                                            curAriaType = type_system->getStructType(vIt->second);
+                                    }
+                                    if (curLLTy && curLLTy->isStructTy() && curAriaType &&
+                                        curAriaType->getKind() == TypeKind::STRUCT) {
+                                        // Walk the chain from root to leaf (reverse order)
+                                        llvm::Value* curPtr = rootPtr;
+                                        bool ok = true;
+                                        for (int ci = static_cast<int>(fieldChain.size()) - 1; ci > 0 && ok; --ci) {
+                                            const std::string& fname = fieldChain[ci];
+                                            sema::StructType* aST = static_cast<sema::StructType*>(curAriaType);
+                                            int fIdx = aST->getFieldIndex(fname);
+                                            if (fIdx < 0) { ok = false; break; }
+                                            const sema::StructType::Field* sf = aST->getField(fname);
+                                            curPtr = builder.CreateStructGEP(curLLTy, curPtr, fIdx, fname + ".ptr");
+                                            curLLTy = llvm::cast<llvm::StructType>(curLLTy)->getElementType(fIdx);
+                                            curAriaType = sf ? sf->type : nullptr;
+                                            if (!curAriaType || curAriaType->getKind() != TypeKind::STRUCT) {
+                                                ok = (ci == 1); // Last intermediate must be struct
+                                                if (ci != 1) ok = false;
+                                            }
+                                        }
+                                        if (ok) {
+                                            // Final field: fieldChain[0] is the leaf
+                                            const std::string& leafName = fieldChain[0];
+                                            sema::StructType* leafST = static_cast<sema::StructType*>(curAriaType);
+                                            int leafIdx = leafST->getFieldIndex(leafName);
+                                            if (leafIdx >= 0) {
+                                                llvm::Value* leafPtr = builder.CreateStructGEP(
+                                                    curLLTy, curPtr, leafIdx, leafName + ".ptr");
+                                                llvm::Value* rhs = codegenExpression(binop->right.get());
+                                                if (!rhs) return nullptr;
+                                                llvm::Type* expectedTy = llvm::cast<llvm::StructType>(curLLTy)->getElementType(leafIdx);
+                                                if (rhs->getType() != expectedTy) {
+                                                    if (rhs->getType()->isIntegerTy() && expectedTy->isIntegerTy())
+                                                        rhs = builder.CreateIntCast(rhs, expectedTy, true, "nested.icast");
+                                                    else if (rhs->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy())
+                                                        rhs = builder.CreateFPCast(rhs, expectedTy, "nested.fpcast");
+                                                }
+                                                builder.CreateStore(rhs, leafPtr);
+                                                return rhs;
                                             }
                                         }
                                     }

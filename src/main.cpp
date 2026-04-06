@@ -6399,6 +6399,7 @@ int main(int argc, char** argv) {
                 {"aria_libc_pool_",    "aria_libc_pool"},
                 {"aria_libc_actor_",   "aria_libc_actor"},
                 {"aria_libc_shm_",     "aria_libc_shm"},
+                {"aria_libc_rwlock_",  "aria_libc_rwlock"},
                 {"aria_libc_reply",    "aria_libc_actor"},
                 {"aria_libc_get_reply_channel", "aria_libc_actor"},
                 {"aria_libc_set_reply_channel", "aria_libc_actor"},
@@ -6463,7 +6464,7 @@ int main(int argc, char** argv) {
                     // Add -lpthread if any threading-related libs were linked
                     static const std::set<std::string> pthread_libs = {
                         "aria_libc_thread", "aria_libc_mutex", "aria_libc_channel",
-                        "aria_libc_pool", "aria_libc_actor"
+                        "aria_libc_pool", "aria_libc_actor", "aria_libc_rwlock"
                     };
                     for (const auto& lib : needed_libs) {
                         if (pthread_libs.count(lib)) {
