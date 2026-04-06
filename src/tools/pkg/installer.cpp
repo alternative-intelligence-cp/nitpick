@@ -13,6 +13,23 @@
 
 namespace fs = std::filesystem;
 
+namespace {
+// Shell-escape a string for safe use in system() calls.
+// Wraps in single quotes and escapes embedded single quotes.
+std::string shell_escape(const std::string& s) {
+    std::string escaped = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            escaped += "'\\''";
+        } else {
+            escaped += c;
+        }
+    }
+    escaped += "'";
+    return escaped;
+}
+} // anonymous namespace
+
 namespace aria {
 namespace pkg {
 
@@ -69,7 +86,7 @@ bool PackageInstaller::extractPackage(const std::string& pkg_path, std::string& 
     temp_dir = temp_result;
     
     // Extract tarball using tar command
-    std::string cmd = "tar -xzf \"" + pkg_path + "\" -C \"" + temp_dir + "\"";
+    std::string cmd = "tar -xzf " + shell_escape(pkg_path) + " -C " + shell_escape(temp_dir);
     int result = system(cmd.c_str());
     if (result != 0) {
         std::cerr << "Failed to extract package: " << pkg_path << std::endl;
@@ -754,7 +771,7 @@ bool PackageInstaller::packPackage(const std::string& pkg_dir, const std::string
     std::string parent = fs::path(abs_dir).parent_path().string();
     std::string dir_name = fs::path(abs_dir).filename().string();
     
-    std::string cmd = "tar -czf '" + output_path + "' -C '" + parent + "' '" + dir_name + "'";
+    std::string cmd = "tar -czf " + shell_escape(output_path) + " -C " + shell_escape(parent) + " " + shell_escape(dir_name);
     int result = system(cmd.c_str());
     if (result != 0) {
         std::cerr << "Failed to create package tarball" << std::endl;
