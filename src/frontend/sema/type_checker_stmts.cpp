@@ -3431,7 +3431,7 @@ void TypeChecker::checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node)
     // Check if value is the ERR sentinel
     if (value == errSentinel) {
         PrimitiveType* primType = static_cast<PrimitiveType*>(type);
-        addError("Warning: Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
+        addWarning("Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
                 ") to " + primType->getName() + ". Use 'ERR' keyword for clarity.", node);
     }
     

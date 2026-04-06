@@ -4250,18 +4250,18 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // drop(wild T@) -> void - Free wild pointer
+        // drop(expr) -> void   - Discard return value (value sink)
         if (idExpr->name == "drop") {
             if (expr->arguments.size() != 1) {
-                addError("'drop' requires exactly one argument (wild pointer)", expr);
+                addError("'drop' requires exactly one argument", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            // Verify argument is a wild pointer.
-            // drop() requires a wild pointer (allocated via wild new).
-            // Non-wild pointers have lifetime tracking and are freed automatically.
+            // For pointer types, only wild pointers may be dropped.
+            // Managed pointers have lifetime tracking and are freed automatically.
             if (argType->getKind() == TypeKind::POINTER) {
                 PointerType* ptrType = static_cast<PointerType*>(argType);
                 if (!ptrType->isWildPointer()) {
@@ -4269,11 +4269,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                             argType->toString() + "'. Managed pointers are freed automatically.", expr);
                     return typeSystem->getErrorType();
                 }
-            } else if (argType->getKind() != TypeKind::UNKNOWN) {
-                addError("'drop' requires a pointer type, got '" +
-                        argType->toString() + "'", expr);
-                return typeSystem->getErrorType();
             }
+            // For non-pointer types (int, Result, string, etc.), drop acts as
+            // a value sink — discards the expression result. This is the idiomatic
+            // way to call a function for its side effects when it returns a value.
             return typeSystem->getPrimitiveType("void");
         }
 
