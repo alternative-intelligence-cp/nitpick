@@ -6106,8 +6106,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     }
 
     // exit(int32) -> noreturn — terminate the process with the given exit code.
-    // Only valid in main/failsafe (enforced by type checker).
+    // Only valid in main/failsafe — reject in lambdas and regular functions.
     if (callee_ident->name == "exit") {
+        llvm::Function* parentFn = builder.GetInsertBlock()->getParent();
+        llvm::StringRef fnName = parentFn->getName();
+        if (fnName != "main" && fnName != "failsafe") {
+            throw std::runtime_error(
+                "'exit' can only be used in 'main' or 'failsafe'. "
+                "Use 'pass'/'fail' to return from functions and lambdas. "
+                "(found in function '" + fnName.str() + "')");
+        }
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("exit() requires one argument (exit code: int32)");
         }
