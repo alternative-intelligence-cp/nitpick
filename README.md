@@ -395,8 +395,23 @@ The install script checks prerequisites, builds all tools, and installs binaries
 ```bash
 ./install.sh --build-only          # build without system install
 ./install.sh --prefix=$HOME/.local # install to custom prefix
+./install.sh --install-deps        # auto-install missing packages
 ./install.sh --uninstall           # remove installed files
 ```
+
+### Package Install
+
+```bash
+# Debian / Ubuntu / Mint
+sudo dpkg -i aria-lang_*_amd64.deb
+
+# Fedora / RHEL
+sudo rpm -ivh aria-lang-*.x86_64.rpm
+```
+
+Build packages with `./packaging/build-deb.sh` or `./packaging/build-rpm.sh`.
+
+See [INSTALL.md](INSTALL.md) for all installation methods.
 
 ### Manual Build
 
