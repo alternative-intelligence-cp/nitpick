@@ -1,4 +1,4 @@
-# Aria Programming Language v0.16.7
+# Aria Programming Language v0.16.12
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,15 +10,20 @@
 
 ---
 
-## Current Status (April 6, 2026)
+## Current Status (April 7, 2026)
 
-**v0.16.7 — Error & Warning Message Improvements (v0.16.x series complete)**
+**v0.16.12 — Final Audit & Series Wrap-Up (v0.16.x series complete)**
 
 The v0.16.x series completed a **comprehensive code review** of the entire C++ compiler, runtime, and toolchain (~122,000+ lines across 130+ files). Every major subsystem was reviewed, bugs were fixed, dead code was removed, TODOs were resolved, and 72 stdlib modules were audited.
 
 **1,015 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **72 stdlib modules**
 
 **v0.16.x highlights:**
+- **v0.16.12** — Final audit: 0 TODO/FIXME/HACK in C++ source, CTest 4/4, 891/1015 .aria tests pass (124 expected failures), 800K+ fuzz tests (0 crashes)
+- **v0.16.11** — Programming Manual v1.1: 35+ layout fixes, content updated to v0.16.x, 171-page PDF regenerated (aria-docs)
+- **v0.16.10** — Examples compilation testing: 14 examples fixed, 28/33 pass (aria-docs)
+- **v0.16.9** — Guide chapter review: 30 files fixed across 83 chapters (aria-docs)
+- **v0.16.8** — Documentation update: README, guides, version headers
 - **v0.16.7** — Contextual error and warning message improvements across 9 source files (37+ messages)
 - **v0.16.6** — Stdlib code review: 72 .aria files audited, 13 bugs fixed
 - **v0.16.5** — Tools code review (LSP, DAP, Doc, Pkg); 6 follow-up bug fix releases (AriaString ABI, @cast<> codegen, exit-in-lambda enforcement, uint512 shift, nested struct codegen, TokenType enum sync)
@@ -59,7 +64,7 @@ The v0.16.x series completed a **comprehensive code review** of the entire C++ c
 | Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
 | `aria_packages` | ✅ Active | 102 packages (17 pure, 17 libc, 68 FFI), all passing |
-| PDF Manual | ✅ v1 | [234-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7) — specs, guide, safety walkthrough, reference |
+| PDF Manual | ✅ v1.1 | [171-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11) — specs, guide, safety walkthrough, reference |
 
 ---
 
