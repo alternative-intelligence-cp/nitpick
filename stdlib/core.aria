@@ -115,7 +115,7 @@ pub func<T>:array_new = result<array<*T>>(int64:initial_capacity) {
         // TODO: Need to calculate size based on sizeof(T)
         // For now, this is a placeholder that will be replaced
         // when proper generic sizeof is implemented
-        wild *T@:ptr = std.mem.alloc(initial_capacity * 8);  // Assume 8 bytes per element
+        wild *T@:ptr = @cast<*T@>(aria_libc_mem_malloc(initial_capacity * 8i64));  // Assume 8 bytes per element
         arr.data = ptr;
     };
     
@@ -161,7 +161,7 @@ pub func<T>:at = result<*T>(array<*T>:arr, int64:index) {
  * Example:
  *   nums.push(42);
  */
-pub func<T>:push = result<void>(array<*T>:arr, *T:element) {
+pub func<T>:push = result<int32>(array<*T>:arr, *T:element) {
     // Check if we need to grow the array
     if (arr.length >= arr.capacity) {
         // Double the capacity (or start with 8 if empty)
@@ -178,7 +178,7 @@ pub func<T>:push = result<void>(array<*T>:arr, *T:element) {
     arr.data[arr.length] = element;
     arr.length = arr.length + 1;
     
-    pass result_ok(NIL);
+    pass result_ok(0i32);
 };
 
 /**
@@ -268,12 +268,12 @@ pub func:find = result<int32>(string:haystack, string:needle) {
  * Get a character at a specific index.
  * 
  * Example:
- *   result<byte>:r = s.char_at(0);
+ *   result<int32>:r = s.char_at(0);
  */
-pub func:char_at = result<byte>(string:s, int64:index) {
+pub func:char_at = result<int32>(string:s, int64:index) {
     int64:s_len = string_length(s);
     if (index < 0i64 || index >= s_len) {
-        pass result_err<byte>("String index out of bounds");
+        pass result_err<int32>("String index out of bounds");
     };
     int32:b = aria_libc_string_byte_at(s, index);
     pass result_ok(b);

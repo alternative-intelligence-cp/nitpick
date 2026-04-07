@@ -1162,28 +1162,38 @@ func:parse_return_stmt = wild int8->(wild int8->:ps) {
     pass node;
 };
 
-// Parse pass statement: pass(expr);
+// Parse pass statement: pass expr; or pass(expr);
 func:parse_pass_stmt = wild int8->(wild int8->:ps) {
     int32:line = ps_peek_line(ps);
     int32:col = ps_peek_col(ps);
     ps_advance(ps);  // consume 'pass'
-    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'pass'");
+    int32:has_paren = ps_check(ps, TK_LEFT_PAREN);
+    if (has_paren == 1i32) {
+        ps_advance(ps);  // consume '('
+    }
     wild int8->:expr = raw parse_expression(ps);
-    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after pass expression");
+    if (has_paren == 1i32) {
+        ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after pass expression");
+    }
     ps_expect(ps, TK_SEMICOLON, "Expected ';' after pass");
     wild int8->:node = ast_new_node(NT_PASS, line, col);
     ast_add_child(node, expr);
     pass node;
 };
 
-// Parse fail statement: fail(expr);
+// Parse fail statement: fail expr; or fail(expr);
 func:parse_fail_stmt = wild int8->(wild int8->:ps) {
     int32:line = ps_peek_line(ps);
     int32:col = ps_peek_col(ps);
     ps_advance(ps);  // consume 'fail'
-    ps_expect(ps, TK_LEFT_PAREN, "Expected '(' after 'fail'");
+    int32:has_paren = ps_check(ps, TK_LEFT_PAREN);
+    if (has_paren == 1i32) {
+        ps_advance(ps);  // consume '('
+    }
     wild int8->:expr = raw parse_expression(ps);
-    ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after fail expression");
+    if (has_paren == 1i32) {
+        ps_expect(ps, TK_RIGHT_PAREN, "Expected ')' after fail expression");
+    }
     ps_expect(ps, TK_SEMICOLON, "Expected ';' after fail");
     wild int8->:node = ast_new_node(NT_FAIL, line, col);
     ast_add_child(node, expr);

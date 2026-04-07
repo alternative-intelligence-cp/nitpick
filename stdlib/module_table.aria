@@ -103,14 +103,16 @@ pub func:mt_resolve_import = wild int8*(wild int8->:state, string:import_path) {
         pass mt_null_ptr();
     }
 
+    int32:seg_idx = 0i32;
     loop(0i64, seg_count, 1i64) {
-        string:seg = mt_path_segment(import_path, seg_count);
+        string:seg = mt_path_segment(import_path, seg_idx);
         current = mt_mod_get_submodule(current, seg);
         int32:found_null = mt_mod_is_null(current);
         if (found_null == 1i32) {
             _ = mt_add_error(state, "Module not found: " + import_path);
             pass mt_null_ptr();
         }
+        seg_idx = seg_idx + 1i32;
     }
 
     pass current;
