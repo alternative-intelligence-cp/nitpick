@@ -66,7 +66,7 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
     // Check that index is integer type
     PrimitiveType* indexPrim = dynamic_cast<PrimitiveType*>(indexType);
     if (!indexPrim || (indexPrim->getName().find("int") != 0 && indexPrim->getName().find("uint") != 0)) {
-        addError("Array index must be integer type, got '" + indexType->toString() + "'", expr);
+        addError("Array index must be integer type (int8-64, uint8-64), got '" + indexType->toString() + "'", expr);
         return typeSystem->getErrorType();
     }
     
@@ -410,8 +410,8 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         }
     }
 
-    addError("Member access requires struct, object, or union type, got '" + 
-            objectType->toString() + "'", expr);
+    addError("Member access (.) requires struct, object, or union type, got '" + 
+            objectType->toString() + "'. Use -> for pointer member access.", expr);
     return typeSystem->getErrorType();
 }
 
@@ -430,8 +430,8 @@ Type* TypeChecker::inferTernaryExpr(TernaryExpr* expr) {
     // Condition must be bool
     PrimitiveType* condPrim = dynamic_cast<PrimitiveType*>(condType);
     if (!condPrim || condPrim->getName() != "bool") {
-        addError("Ternary operator condition must be 'bool' type, got '" + 
-                condType->toString() + "'", expr->condition.get());
+        addError("Ternary condition must be 'bool' type, got '" + 
+                condType->toString() + "'. Use explicit comparison (e.g., x != 0) instead of truthiness.", expr->condition.get());
         return typeSystem->getErrorType();
     }
     
@@ -668,7 +668,7 @@ Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
     // Dynamic object literal (no type_name): return obj type
     Type* objType = typeSystem->getPrimitiveType("obj");
     if (!objType) {
-        addError("obj type not defined in type system", expr);
+        addError("Internal error: 'obj' type not registered in type system. This is a compiler bug.", expr);
         return typeSystem->getErrorType();
     }
     
@@ -682,7 +682,8 @@ Type* TypeChecker::inferObjectLiteral(ObjectLiteralExpr* expr) {
 Type* TypeChecker::inferArrayLiteral(ArrayLiteralExpr* expr) {
     // Empty array literal: type cannot be inferred without context
     if (expr->elements.empty()) {
-        addError("Cannot infer type of empty array literal", expr);
+        addError("Cannot infer type of empty array literal []. "
+                "Provide an explicit type: Type:name = []; or use a non-empty initializer.", expr);
         return typeSystem->getErrorType();
     }
     

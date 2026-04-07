@@ -49,7 +49,7 @@ LoadedModule* ModuleLoader::loadModule(const std::string& logicalPath,
 
 LoadedModule* ModuleLoader::loadModule(const UseStmt* useStmt, const std::string& fromPath) {
     if (!useStmt) {
-        addError("Null use statement", fromPath);
+        addError("Internal error: null use statement in module loader", fromPath);
         return nullptr;
     }
     
@@ -112,7 +112,7 @@ LoadedModule* ModuleLoader::loadModuleFile(const std::string& canonicalPath) {
     // Step 4: Parse the file
     modulePtr->ast = parseFile(canonicalPath);
     if (!modulePtr->ast) {
-        addError("Failed to parse module", canonicalPath);
+        addError("Failed to parse module '" + canonicalPath + "'. Check for syntax errors.", canonicalPath);
         loadingStack.pop_back();
         modulePtr->state = ModuleState::NOT_LOADED;
         return nullptr;

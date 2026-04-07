@@ -94,7 +94,7 @@ ResultCheckState ResultCheckState::merge(const ResultCheckState& state1,
 
 void TypeChecker::check(ASTNode* module) {
     if (!module) {
-        addError("Null module node", 0, 0);
+        addError("Internal error: module AST node is null. This is a compiler bug — please report with your source code.", 0, 0);
         return;
     }
 
@@ -373,8 +373,9 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         }
         
         default:
-            addError("Type inference not implemented for node type: " + 
-                    ASTNode::nodeTypeToString(expr->type), expr);
+            addError("Type inference not yet implemented for node type: " + 
+                    ASTNode::nodeTypeToString(expr->type) + 
+                    ". Use an explicit type annotation, e.g. Type:name = expr;", expr);
             return typeSystem->getErrorType();
     }
 }
@@ -1019,12 +1020,12 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // SIMD types should have been handled above - if we get here with SIMD, it's already returned
         // So this check is only for primitives and LBIM
         if (!leftPrim && !leftIsLBIM && !leftIsSIMD) {
-            addError("Arithmetic operators require numeric types, got '" + leftType->toString() + "'", sourceNode);
+            addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + leftType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
         if (!rightPrim && !rightIsLBIM && !rightIsSIMD) {
-            addError("Arithmetic operators require numeric types, got '" + rightType->toString() + "'", sourceNode);
+            addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + rightType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1091,7 +1092,8 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         PrimitiveType* rightPrim = dynamic_cast<PrimitiveType*>(rightType);
         
         if (!leftPrim || !rightPrim) {
-            addError("Bitwise operators require integer types", sourceNode);
+            addError("Bitwise operators require integer types (int8-64, uint8-64), got '" + 
+                    leftType->toString() + "' and '" + rightType->toString() + "'", sourceNode);
             return typeSystem->getErrorType();
         }
         
@@ -1323,7 +1325,9 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
     }
     
     // Unknown operator
-    addError("Unknown binary operator", sourceNode);
+    addError("Unsupported binary operator. Expected arithmetic (+, -, *, /, %), "
+            "bitwise (&, |, ^, <<, >>), comparison (==, !=, <, <=, >, >=), "
+            "or logical (&&, ||).", sourceNode);
     return typeSystem->getErrorType();
 }
 
@@ -1457,7 +1461,8 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
         // <-ptr where ptr: int32-> → result type: int32
         // The arrow shows data flow: value FROM pointer
         if (!operandType->isPointer()) {
-            addError("Dereference operator (<-) requires pointer type", sourceNode);
+            addError("Dereference operator (<-) requires pointer type (T@), got '" + 
+                    operandType->toString() + "'. Use -> for member access through pointers.", sourceNode);
             return typeSystem->getErrorType();
         }
         // Return the pointed-to type
@@ -1499,7 +1504,7 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
     }
 
     // Unknown operator
-    addError("Unknown unary operator", sourceNode);
+    addError("Unknown unary operator. Expected -, !, ~, <-, ?, ++, or --.", sourceNode);
     return typeSystem->getErrorType();
 }
 
@@ -1510,7 +1515,8 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
 Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
     // Infer component types (all must match)
     if (expr->components.empty()) {
-        addError("Vector constructor requires components", expr);
+        addError("Vector constructor requires at least one component. "
+                "Syntax: vec2(1.0, 2.0) or vec3(x, y, z)", expr);
         return typeSystem->getErrorType();
     }
     
@@ -1524,7 +1530,10 @@ Type* TypeChecker::inferVectorConstructor(VectorConstructorExpr* expr) {
     for (size_t i = 1; i < expr->components.size(); ++i) {
         Type* compType = inferType(expr->components[i].get());
         if (!compType->equals(componentType)) {
-            addError("All vector components must have the same type", expr);
+            addError("Vector components must all have the same type. "
+                    "Component 1 is '" + componentType->toString() + 
+                    "' but component " + std::to_string(i + 1) + " is '" + 
+                    compType->toString() + "'", expr);
             return typeSystem->getErrorType();
         }
     }
@@ -1547,7 +1556,8 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
     // Resolve target type from type annotation
     Type* targetType = resolveTypeNode(expr->targetTypeNode.get());
     if (targetType->getKind() == TypeKind::ERROR) {
-        addError("Invalid target type in cast expression", expr);
+        addError("Invalid target type in cast expression. "
+                "Syntax: @cast(expr, TargetType) or @cast_unchecked(expr, TargetType)", expr);
         return typeSystem->getErrorType();
     }
     
@@ -1569,7 +1579,8 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
     
     // Both types must be primitive numeric types for numeric casts
     if (!sourceType->isPrimitive() || !targetType->isPrimitive()) {
-        addError("Cast supports numeric types and pointer types only", expr);
+        addError("@cast supports numeric types and pointer types only. Cannot cast '" +
+                sourceType->toString() + "' to '" + targetType->toString() + "'", expr);
         return typeSystem->getErrorType();
     }
     

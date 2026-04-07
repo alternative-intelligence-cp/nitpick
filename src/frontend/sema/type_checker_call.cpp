@@ -223,7 +223,9 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                             return typeSystem->getPrimitiveType("bool");
                         }
                         else {
-                            addError("Unknown atomic method: " + method, expr);
+                            addError("Unknown atomic method '" + method + "'. "
+                                    "Valid methods: .load(), .store(val), .swap(val), "
+                                    ".fetch_add(val), .fetch_sub(val), .compare_exchange(expected, desired)", expr);
                             return typeSystem->getErrorType();
                         }
                     }

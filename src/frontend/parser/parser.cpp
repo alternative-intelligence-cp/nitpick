@@ -203,6 +203,29 @@ void Parser::error(const std::string& message) {
         ss << "\n  Found: end of file";
     }
     
+    // Contextual hints for common mistakes
+    if (message.find("Expected ';'") != std::string::npos) {
+        // Check if they forgot ; after }
+        if (current > 0 && tokens[current - 1].type == TokenType::TOKEN_RIGHT_BRACE) {
+            ss << "\n  Hint: In Aria, closing braces need a semicolon: '};' not just '}'";
+        }
+    } else if (message.find("Expected expression") != std::string::npos) {
+        // Common: using = instead of == in conditions
+        if (token.type == TokenType::TOKEN_EQUAL) {
+            ss << "\n  Hint: Use '==' for comparison, '=' is assignment";
+        }
+        // Common: using C-style type declaration
+        if (token.type == TokenType::TOKEN_IDENTIFIER && token.lexeme == "int") {
+            ss << "\n  Hint: Aria integer types include a width: int32, int64, etc.";
+        }
+    } else if (message.find("Expected type") != std::string::npos || 
+               message.find("Expected return type") != std::string::npos) {
+        // Hint about Aria's type:name syntax
+        if (token.type == TokenType::TOKEN_COLON) {
+            ss << "\n  Hint: Aria uses Type:name syntax, e.g. int32:x, not name: Type";
+        }
+    }
+    
     errors.push_back(ss.str());
 }
 
@@ -991,7 +1014,24 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<VectorConstructorExpr>(dimension, components, line, col);
     }
     
-    error("Expected expression");
+    // Provide contextual hint based on what we found
+    if (token.type == TokenType::TOKEN_KW_FUNC) {
+        error("Expected expression. 'func' starts a declaration, not an expression. "
+              "Syntax: func:name = ReturnType(params) { body; };");
+    } else if (token.type == TokenType::TOKEN_KW_STRUCT) {
+        error("Expected expression. 'struct' starts a declaration, not an expression. "
+              "Syntax: struct:Name = { Type:field; };");
+    } else if (token.type == TokenType::TOKEN_KW_IF || token.type == TokenType::TOKEN_KW_WHILE ||
+               token.type == TokenType::TOKEN_KW_FOR) {
+        error("Expected expression. Did you mean to start a statement? "
+              "Statements must appear at block level, not inside expressions");
+    } else if (token.type == TokenType::TOKEN_RIGHT_BRACE) {
+        error("Expected expression, found '}'. Possible extra closing brace or empty block");
+    } else if (token.type == TokenType::TOKEN_SEMICOLON) {
+        error("Expected expression, found ';'. Possible empty statement or missing value");
+    } else {
+        error("Expected expression");
+    }
     return nullptr;
 }
 
@@ -2990,7 +3030,8 @@ ASTNodePtr Parser::parseVarDecl() {
     // Parse the type (handles simple types, arrays, pointers, generics, etc.)
     ASTNodePtr typeNode = parseType();
     if (!typeNode) {
-        error("Expected type in variable declaration");
+        error("Expected type in variable declaration. Syntax: Type:name = value;  "
+              "Example: int32:x = 42;  string:msg = \"hello\";");
         return nullptr;
     }
     
@@ -3098,7 +3139,8 @@ ASTNodePtr Parser::parseFuncDecl() {
     // Parse return type (supports generics, pointers, etc.)
     ASTNodePtr returnTypeNode = parseType();
     if (!returnTypeNode) {
-        error("Expected return type");
+        error("Expected return type. Syntax: func:name = ReturnType(params) { body; };  "
+              "Example: func:add = int32(int32:a, int32:b) { pass a + b; };");
         return nullptr;
     }
     
@@ -3242,11 +3284,13 @@ ASTNodePtr Parser::parseFuncDecl() {
         isExternDecl = true;
     } else {
         // Normal function with body
-        consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body");
+        consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body. "
+                "Syntax: func:name = RetType(params) { body; };");
         body = parseBlock();
         
         // Consume semicolon after closing brace
-        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration");
+        consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after function declaration. "
+                "Functions end with '};' — the closing brace needs a semicolon");
     }
     
     auto funcDecl = std::make_shared<FuncDeclStmt>(
@@ -3351,7 +3395,7 @@ ASTNodePtr Parser::parseStructDecl() {
     consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
     
     // Consume semicolon after struct declaration
-    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration");
+    consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after struct declaration. Structs end with '};'");
     
     auto structDecl = std::make_shared<StructDeclStmt>(
         nameToken.lexeme,
@@ -4921,7 +4965,7 @@ ASTNodePtr Parser::parseIfStatement() {
     }
     
     if (!thenBranch) {
-        error("Expected statement or block after if condition");
+        error("Expected statement or block after if condition. Syntax: if (condition) { body; };");
         return nullptr;
     }
     
@@ -4938,7 +4982,7 @@ ASTNodePtr Parser::parseIfStatement() {
         }
         
         if (!elseBranch) {
-            error("Expected statement or block after 'else'");
+            error("Expected statement or block after 'else'. Syntax: else { body; }; or else if (cond) { body; };");
             return nullptr;
         }
     }
@@ -5215,7 +5259,7 @@ ASTNodePtr Parser::parseTillStatement() {
     Token tillToken = previous(); // We already consumed 'till'
     
     // Parse: till(limit, step) { body }
-    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'till'");
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'till'. Syntax: till(limit, step) { body; }");
     
     // Parse limit expression
     ASTNodePtr limit = parseExpression();
@@ -5271,7 +5315,7 @@ ASTNodePtr Parser::parseLoopStatement() {
     Token loopToken = previous(); // We already consumed 'loop'
     
     // Parse: loop(start, limit, step) { body }
-    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'loop'");
+    consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'loop'. Syntax: loop(start, limit, step) { body; }");
     
     // Parse start expression
     ASTNodePtr start = parseExpression();
