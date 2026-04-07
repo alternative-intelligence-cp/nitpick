@@ -8,21 +8,26 @@
 using namespace aria::pkg;
 
 void printUsage(const char* program_name) {
-    std::cout << "Aria Package Manager v0.2.5\n\n";
+    std::cout << "Aria Package Manager v0.3.0\n\n";
     std::cout << "Usage: " << program_name << " <command> [options]\n\n";
     std::cout << "Commands:\n";
-    std::cout << "  install <path>       Install a package from a .aria-pkg file or directory\n";
+    std::cout << "  install <path|name>  Install from file, directory, or remote registry\n";
     std::cout << "  remove <name>        Remove an installed package (all versions)\n";
     std::cout << "  list                 List all installed packages\n";
+    std::cout << "  list --remote [q]    List available packages from remote registry\n";
     std::cout << "  info <name>          Show information about an installed package\n";
     std::cout << "  search [query]       Search the package registry (or list all)\n";
+    std::cout << "  update               Update the remote package registry cache\n";
     std::cout << "  pack [dir]           Pack a directory into a .aria-pkg tarball\n";
     std::cout << "  init                 Initialize ~/.aria/packages/ directory structure\n";
     std::cout << "  help                 Show this help message\n\n";
     std::cout << "Examples:\n";
+    std::cout << "  " << program_name << " update                    # fetch latest registry\n";
+    std::cout << "  " << program_name << " install aria-http          # install from registry\n";
     std::cout << "  " << program_name << " install ./math-utils-1.0.0.aria-pkg\n";
     std::cout << "  " << program_name << " install ./my-package/\n";
     std::cout << "  " << program_name << " search math\n";
+    std::cout << "  " << program_name << " list --remote\n";
     std::cout << "  " << program_name << " pack ./my-package/\n";
     std::cout << "  " << program_name << " list\n";
     std::cout << "  " << program_name << " info math-utils\n";
@@ -31,14 +36,14 @@ void printUsage(const char* program_name) {
 
 int cmdInstall(PackageInstaller& installer, const std::vector<std::string>& args) {
     if (args.size() < 2) {
-        std::cerr << "Error: install command requires a package path\n";
-        std::cerr << "Usage: aria-pkg install <path>\n";
+        std::cerr << "Error: install command requires a package path or name\n";
+        std::cerr << "Usage: aria-pkg install <path|name>\n";
         return 1;
     }
     
     std::string pkg_path = args[1];
     
-    // Check if it's a directory (install from source) or a .aria-pkg file
+    // Check if it's a directory (install from source)
     namespace fs = std::filesystem;
     if (fs::is_directory(pkg_path)) {
         if (installer.installFromDirectory(pkg_path)) {
@@ -48,7 +53,27 @@ int cmdInstall(PackageInstaller& installer, const std::vector<std::string>& args
         }
     }
     
-    if (installer.installPackage(pkg_path)) {
+    // Check if it's a .aria-pkg file
+    if (fs::exists(pkg_path) && 
+        (pkg_path.size() > 9 && pkg_path.substr(pkg_path.size() - 9) == ".aria-pkg")) {
+        if (installer.installPackage(pkg_path)) {
+            return 0;
+        } else {
+            return 1;
+        }
+    }
+    
+    // Check if it's any existing file
+    if (fs::exists(pkg_path)) {
+        if (installer.installPackage(pkg_path)) {
+            return 0;
+        } else {
+            return 1;
+        }
+    }
+    
+    // Not a file or directory — treat as a remote package name
+    if (installer.installRemotePackage(pkg_path)) {
         return 0;
     } else {
         return 1;
@@ -72,6 +97,51 @@ int cmdRemove(PackageInstaller& installer, const std::vector<std::string>& args)
 }
 
 int cmdList(PackageInstaller& installer, const std::vector<std::string>& args) {
+    // Check for --remote flag
+    bool remote = false;
+    std::string query;
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (args[i] == "--remote") {
+            remote = true;
+        } else {
+            query = args[i];
+        }
+    }
+    
+    if (remote) {
+        auto packages = installer.listRemotePackages(query);
+        if (packages.empty()) {
+            if (!installer.hasRemoteCache()) {
+                std::cout << "No cached registry. Run 'aria-pkg update' first.\n";
+            } else if (query.empty()) {
+                std::cout << "No packages found in remote registry.\n";
+            } else {
+                std::cout << "No remote packages matching '" << query << "'.\n";
+            }
+            return 0;
+        }
+        
+        std::cout << "Available packages" 
+                  << (query.empty() ? "" : " matching '" + query + "'") << ":\n\n";
+        std::cout << std::left << std::setw(25) << "Name"
+                  << std::setw(10) << "Version"
+                  << "Description" << std::endl;
+        std::cout << std::string(80, '-') << std::endl;
+        
+        for (const auto& entry : packages) {
+            std::string desc = entry.description;
+            if (desc.length() > 45) {
+                desc = desc.substr(0, 42) + "...";
+            }
+            std::cout << std::left << std::setw(25) << entry.name
+                      << std::setw(10) << entry.latest_version
+                      << desc << std::endl;
+        }
+        std::cout << "\nFound " << packages.size() << " package(s).\n";
+        std::cout << "Install with: aria-pkg install <name>\n";
+        return 0;
+    }
+    
     auto packages = installer.listInstalledPackages();
     
     if (packages.empty()) {
@@ -208,6 +278,19 @@ int cmdPack(PackageInstaller& installer, const std::vector<std::string>& args) {
     }
 }
 
+int cmdUpdate(PackageInstaller& installer, const std::vector<std::string>& args) {
+    std::string url;
+    if (args.size() >= 2) {
+        url = args[1];
+    }
+    
+    if (installer.updateRemoteRegistry(url)) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         printUsage(argv[0]);
@@ -237,6 +320,8 @@ int main(int argc, char* argv[]) {
         return cmdSearch(installer, args);
     } else if (command == "pack") {
         return cmdPack(installer, args);
+    } else if (command == "update") {
+        return cmdUpdate(installer, args);
     } else if (command == "init") {
         return cmdInit(installer, args);
     } else if (command == "help" || command == "--help" || command == "-h") {

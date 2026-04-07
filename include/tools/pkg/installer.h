@@ -126,8 +126,44 @@ public:
      */
     bool installFromDirectory(const std::string& pkg_dir);
     
+    /**
+     * Update the local cache of the remote package registry.
+     * Clones or pulls the aria-packages repo to ~/.aria/cache/aria-packages/
+     * @param remote_url Override the default GitHub repo URL
+     * @return true if update succeeded
+     */
+    bool updateRemoteRegistry(const std::string& remote_url = "");
+    
+    /**
+     * Install a package by name from the remote registry cache.
+     * Requires updateRemoteRegistry() to have been run at least once.
+     * @param name Package name (e.g., "aria-http")
+     * @param version Specific version (empty = latest)
+     * @return true if installation succeeded
+     */
+    bool installRemotePackage(const std::string& name, const std::string& version = "");
+    
+    /**
+     * List packages available in the remote registry cache.
+     * @param query Search filter (empty = list all)
+     * @return Matching registry entries
+     */
+    std::vector<RegistryEntry> listRemotePackages(const std::string& query = "");
+    
+    /**
+     * Get the local cache directory path
+     */
+    std::string getCacheDir() const;
+    
+    /**
+     * Check if the remote registry cache exists
+     */
+    bool hasRemoteCache() const;
+    
 private:
     std::string m_packages_root;
+    static constexpr const char* DEFAULT_REMOTE_URL = 
+        "https://github.com/alternative-intelligence-cp/aria-packages.git";
     
     bool extractPackage(const std::string& pkg_path, std::string& temp_dir);
     bool parseMetadata(const std::string& toml_path, PackageMetadata& metadata);
