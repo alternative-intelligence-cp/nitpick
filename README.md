@@ -1,4 +1,4 @@
-# Aria Programming Language v0.13.7
+# Aria Programming Language v0.16.7
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,25 +10,28 @@
 
 ---
 
-## Current Status (April 4, 2026)
+## Current Status (April 6, 2026)
 
-**v0.13.7 — Final Audit, Cleanup & Release (v0.13.x series complete)**
+**v0.16.7 — Error & Warning Message Improvements (v0.16.x series complete)**
 
-The v0.13.x series delivered **traits, enums, generics, deferred language features, and final hardening**. v0.13.7 is the "close the books" release — full audit, fuzzer validation, and the 234-page Aria Programming Manual.
+The v0.16.x series completed a **comprehensive code review** of the entire C++ compiler, runtime, and toolchain (~122,000+ lines across 130+ files). Every major subsystem was reviewed, bugs were fixed, dead code was removed, TODOs were resolved, and 72 stdlib modules were audited.
 
-**959 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **60 stdlib modules**
+**1,015 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **72 stdlib modules**
 
-**v0.13.x highlights:**
-- **v0.13.7** — Final audit: 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup, 234-page PDF manual
-- **v0.13.6** — `@func_name` function pointer syntax fix with trampoline generation
-- **v0.13.5** — Deferred language features: raw strings, pipeline operator, extended escape sequences
-- **v0.13.4** — Documentation & specifications completeness
-- **v0.13.3** — Generic containers: type-parameterized structs/functions, monomorphization
-- **v0.13.2** — Enum types: tagged unions, pattern matching, exhaustiveness checking
-- **v0.13.1** — Trait method dispatch: vtable codegen, interface compliance checks
-- **v0.13.0** — Trait system foundation: trait definitions, `impl` blocks, `$i`/`$m` borrow semantics
+**v0.16.x highlights:**
+- **v0.16.7** — Contextual error and warning message improvements across 9 source files (37+ messages)
+- **v0.16.6** — Stdlib code review: 72 .aria files audited, 13 bugs fixed
+- **v0.16.5** — Tools code review (LSP, DAP, Doc, Pkg); 6 follow-up bug fix releases (AriaString ABI, @cast<> codegen, exit-in-lambda enforcement, uint512 shift, nested struct codegen, TokenType enum sync)
+- **v0.16.4** — Runtime code review: 83 files, ~42,079 lines
+- **v0.16.3** — Backend & analysis code review: 29 files, ~49,900 lines
+- **v0.16.2** — Semantic analysis code review: 18 files, 30,590 lines
+- **v0.16.1** — Frontend code review: lexer, parser, preprocessor, AST
+- **v0.16.0** — Dead code removal, 11 bug fixes, 72 TODO resolutions, regression tests
 
 **Previous series highlights:**
+- **v0.15.x** — Self-hosting: 12 compiler/tool modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness, const evaluator, module resolver, doc generator, package manager, project config), final census
+- **v0.14.x** — SMT solver expansion: contract proofs, range inference, data race analysis, fast-paths, documentation
+- **v0.13.x** — Traits, enums, generics, deferred language features, @ function pointers, 234-page PDF manual, final audit (959 tests, 17h+ fuzzing)
 - **v0.12.x** — Networking & middleware: HTTP, DNS, socket, server, URL, cookie, CORS, body-parser, session, static, rate-limit, FTP, SMTP, WebSocket, display, input, LRU, glob, retry
 - **v0.11.x** — Threading & concurrency: thread pool, atomics, lock-free structures, channels, mutex/rwlock/barrier, arena/pool/slab allocators, shared memory, IPC, signal handling, AIFS, AriaX kernel mods
 - **v0.7.x** — JIT: 45+ x86-64 instructions, linear scan register allocator, peephole optimizer, WildX security, 0.66x native C -O2
@@ -68,7 +71,7 @@ The v0.13.x series delivered **traits, enums, generics, deferred language featur
 - **TFP TYPES (tfp16/32)** — Twisted Floating Point
 - **any** — type erased pointer, equivalent to void* in C
 - **Balanced Ternary/Nonary Literals & Runtime** — `0t[01T]+` and `0n[01234ABCD]+` syntax, full trit/tryte/nit/nyte arithmetic
-- **Quantum Types** — Superposition states for probabilistic computation
+- **Quantum Types (Q3/Q9/Q21)** — Gradient thinking: two-hypothesis superposition with confidence levels and crystallization thresholds
 - **Generic Functions and Structs** — Monomorphization with type inference
 - **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures, `_?`/`_!` shorthand operators
 - **`fail()` from user functions** — Result-style: `fail(err)` produces `Result{error:err, is_error:true}`, complement to `pass(val)`
@@ -97,7 +100,7 @@ The v0.13.x series delivered **traits, enums, generics, deferred language featur
 
 ### In Progress / Specified
 - **AriaX Linux** — Custom distro with full toolchain pre-installed
-- **Specialist model V7** — Next training corpus covering v0.3.x additions
+- **Specialist model V7** — Next training corpus covering v0.16.x additions
 
 ---
 
@@ -279,19 +282,16 @@ if (result == err) {
 **Layer 5: Z3 SMT Formal Verification** — Compile-time mathematical proofs via Z3 solver:
 ```aria
 // Design-by-Contract: requires/ensures are verified at compile time
-func:safe_divide = Result<int32>(int32:a, int32:b)
-    requires(b != 0i32)
-    ensures($ >= 0i32)
+func:safe_divide = int32(int32:a, int32:b)
+    requires b != 0i32
+    ensures $ >= 0i32
 {
     pass(a / b);
 };
 
 // Integer overflow proofs: Z3 bitvector analysis proves absence of overflow
 func:safe_add = int32(int32:a, int32:b)
-    requires(a > 0i32)
-    requires(a < 1000i32)
-    requires(b > 0i32)
-    requires(b < 1000i32)
+    requires a > 0i32, a < 1000i32, b > 0i32, b < 1000i32
 {
     pass(a + b);  // Z3 proves: no overflow possible in int32 range
 };
@@ -339,17 +339,29 @@ if (result == err) {
 tbb8:sum = result + x;   // ERR + anything = ERR
 ```
 
-### Quantum Types
+### Quantum Types — Gradient Thinking
+
+Quantum types track two hypotheses simultaneously with confidence levels, crystallizing to a definite value when evidence accumulates. Three granularity levels: Q3 (ternary), Q9 (nonary), Q21 (21-state with saturation barriers).
 
 ```aria
-quantum<bool>:choice = superpose(true, false, 0.5);
-bool:measured = collapse(choice);
+use "stdlib/quantum.aria".*;
 
-quantum<int32>:distribution = weighted_superpose(
-    [1i32, 2i32, 3i32],
-    [0.2, 0.5, 0.3]
-);
-int32:sampled = collapse(distribution);
+// Q3<T>: Simple 3-state confidence (trit: -1, 0, +1)
+Q3<int32>:sensor = {a: 20i32, b: 25i32, c: 0};  // Two hypotheses, unknown confidence
+
+// Both hypotheses evolve together
+Q3<int32>:updated = {a: sensor.a + 5i32, b: sensor.b + 5i32, c: 1};
+
+// Crystallize when confident
+int32:result = 0i32;
+if (updated.c > 0) { result = updated.b; }  // Evidence favors B → 30
+if (updated.c < 0) { result = updated.a; }  // Evidence favors A → 25
+
+// Q9<T>: 9-state confidence (nit: -4 to +4) for finer gradients
+Q9<int32>:decision = {a: 100i32, b: 200i32, c: -3};  // Moderately favor A
+
+// Q21<T>: 21-state confidence (tbb8: -10 to +10, saturation barriers at ±6)
+Q21<int32>:complex = {a: 42i32, b: 84i32, c: 8};  // Past barrier, crystallizable
 ```
 
 ### Balanced Ternary Literals (Syntax Complete)
@@ -837,7 +849,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Protocols & terminal** — FTP, SMTP, WebSocket, ANSI display, raw keyboard input
 - ✅ **Utilities** — LRU cache, glob matching, retry with backoff
 
-### v0.13.x — Released (current)
+### v0.13.x — Released
 
 - ✅ **Trait system** — Definitions, `impl` blocks, `$i`/`$m` borrows, vtable dispatch, trait bounds on generics
 - ✅ **Enum types** — Tagged unions, pattern matching, exhaustiveness checking
@@ -847,7 +859,28 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Documentation** — specs_list.txt, full reference docs, 234-page PDF manual
 - ✅ **Final audit** — 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup
 
-### v0.14.x — Planned
+### v0.14.x — Released
+
+- ✅ **SMT solver expansion** — Contract proofs, range inference, data race analysis, fast-paths, comprehensive documentation
+
+### v0.15.x — Released
+
+- ✅ **Self-hosting foundation** — 5 compiler modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker)
+- ✅ **Tier 2 self-hosting** — 4 modules ported (exhaustiveness checker, const evaluator, module resolver, visibility checker)
+- ✅ **Tier 3 tool ports** — Doc generator, package manager, project config ported to Aria
+- ✅ **Self-hosting census** — 12 total modules ported, final audit and documentation
+
+### v0.16.x — Released (current)
+
+- ✅ **Comprehensive code review** — Full C++ compiler, runtime, and toolchain reviewed (~122,000+ lines, 130+ files)
+- ✅ **11 compiler bugs fixed** — Dead code removal, wrong-value bugs, memory/ownership fixes, ABI corrections
+- ✅ **72 TODO resolutions** — Backend codegen, type checker, analysis passes, async/runtime stubs, parser, tools
+- ✅ **Subsystem reviews** — Frontend, semantic analysis, backend, runtime, tools each reviewed independently
+- ✅ **Stdlib audit** — 72 .aria files reviewed, 13 bugs fixed
+- ✅ **Test stability** — 1,015 tests (891 positive, 124 expected-failure), AriaString ABI fix, @cast<> codegen, exit-in-lambda enforcement
+- ✅ **Error messages** — Contextual hints and improved diagnostics across 9 source files (37+ messages)
+
+### v0.17.x — Planned
 
 - AriaX Linux distribution packaging
 - Nikola integration
