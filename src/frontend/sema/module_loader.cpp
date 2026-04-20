@@ -81,7 +81,7 @@ LoadedModule* ModuleLoader::loadModuleFile(const std::string& canonicalPath) {
     auto it = moduleCache.find(canonicalPath);
     if (it != moduleCache.end()) {
         LoadedModule* mod = it->second.get();
-        if (mod->state == ModuleState::FULLY_LOADED) {
+        if (mod->state == ModuleState::FULLY_LOADED || mod->state == ModuleState::CHECKED) {
             return mod;
         }
         // If it's in another state, we might have a circular dependency

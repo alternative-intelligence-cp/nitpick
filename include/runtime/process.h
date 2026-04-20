@@ -323,6 +323,32 @@ int64_t aria_get_parent_pid(void);
 
 // aria_fork_info_free is internal to the runtime (static in process.cpp)
 
+// ============================================================================
+// Fork Safety — Atfork Callback Registration
+// ============================================================================
+
+/**
+ * Callback type for fork safety handlers.
+ */
+typedef void (*AriaAtforkCallback)(void);
+
+/**
+ * Register pre-fork and post-fork callbacks for fork safety.
+ *
+ * Runtime subsystems (GC, thread pools, telemetry, etc.) should call this
+ * during their initialization to register mutex acquire/release callbacks
+ * that prevent deadlocks when aria_fork() is used.
+ *
+ * - pre_fork:     Called in parent BEFORE fork — acquire subsystem locks
+ * - parent_post:  Called in parent AFTER fork — release subsystem locks
+ * - child_post:   Called in child AFTER fork — release/reinitialize locks
+ *
+ * @return 0 on success, -1 if registration table is full
+ */
+int aria_atfork_register(AriaAtforkCallback pre_fork,
+                         AriaAtforkCallback parent_post,
+                         AriaAtforkCallback child_post);
+
 #ifdef __cplusplus
 }
 #endif

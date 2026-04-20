@@ -1,0 +1,16 @@
+// Diamond import test: A imports B and C, both of which import shared (D)
+// This tests that the compiler correctly deduplicates the shared module
+// instead of re-loading/re-parsing it on the second import path.
+use "diamond_b.aria".*;
+use "diamond_c.aria".*;
+
+func:main = int32() {
+    int32:b_val = raw from_b();
+    int32:c_val = raw from_c();
+    // Both should return 42 from the shared module
+    exit b_val + c_val - 84;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

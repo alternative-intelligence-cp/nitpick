@@ -20,6 +20,7 @@
     #include <sys/wait.h>
     #include <signal.h>
     #include <fcntl.h>
+    #include <spawn.h>
     #include <sys/syscall.h>  // For close_range syscall
 
     // close_range syscall wrapper (Linux 5.9+)
@@ -92,6 +93,90 @@ static char* get_error_message(const char* prefix) {
 // Spawn Options
 // ============================================================================
 
+// ============================================================================
+// Fork Safety — Atfork Callback Registration
+// ============================================================================
+
+#ifndef _WIN32
+
+#include <pthread.h>
+
+#define ARIA_MAX_ATFORK_HANDLERS 16
+
+struct AriaAtforkEntry {
+    AriaAtforkCallback pre_fork;
+    AriaAtforkCallback parent_post;
+    AriaAtforkCallback child_post;
+};
+
+static AriaAtforkEntry g_atfork_handlers[ARIA_MAX_ATFORK_HANDLERS];
+static int g_atfork_count = 0;
+static bool g_atfork_installed = false;
+
+static void aria_atfork_pre(void) {
+    // Acquire locks in registration order
+    for (int i = 0; i < g_atfork_count; i++) {
+        if (g_atfork_handlers[i].pre_fork) {
+            g_atfork_handlers[i].pre_fork();
+        }
+    }
+}
+
+static void aria_atfork_parent(void) {
+    // Release locks in reverse order
+    for (int i = g_atfork_count - 1; i >= 0; i--) {
+        if (g_atfork_handlers[i].parent_post) {
+            g_atfork_handlers[i].parent_post();
+        }
+    }
+}
+
+static void aria_atfork_child(void) {
+    // Release/reinitialize in reverse order
+    for (int i = g_atfork_count - 1; i >= 0; i--) {
+        if (g_atfork_handlers[i].child_post) {
+            g_atfork_handlers[i].child_post();
+        }
+    }
+}
+
+int aria_atfork_register(AriaAtforkCallback pre_fork,
+                         AriaAtforkCallback parent_post,
+                         AriaAtforkCallback child_post) {
+    if (g_atfork_count >= ARIA_MAX_ATFORK_HANDLERS) {
+        return -1;
+    }
+
+    // Install the pthread_atfork handler on first registration
+    if (!g_atfork_installed) {
+        if (pthread_atfork(aria_atfork_pre, aria_atfork_parent, aria_atfork_child) != 0) {
+            return -1;
+        }
+        g_atfork_installed = true;
+    }
+
+    g_atfork_handlers[g_atfork_count].pre_fork = pre_fork;
+    g_atfork_handlers[g_atfork_count].parent_post = parent_post;
+    g_atfork_handlers[g_atfork_count].child_post = child_post;
+    g_atfork_count++;
+    return 0;
+}
+
+#else
+
+int aria_atfork_register(AriaAtforkCallback pre_fork,
+                         AriaAtforkCallback parent_post,
+                         AriaAtforkCallback child_post) {
+    (void)pre_fork; (void)parent_post; (void)child_post;
+    return 0;  // No-op on Windows (no fork)
+}
+
+#endif
+
+// ============================================================================
+// Spawn Options
+// ============================================================================
+
 AriaSpawnOptions* aria_spawn_options_create(void) {
     AriaSpawnOptions* options = (AriaSpawnOptions*)calloc(1, sizeof(AriaSpawnOptions));
     if (!options) return NULL;
@@ -126,18 +211,29 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
         return aria_result_err("Out of memory");
     }
     
-    // Fork the process
-    pid_t pid = fork();
-    
-    if (pid < 0) {
-        // Fork failed
-        free(proc);
-        return aria_result_err(get_error_message("fork failed"));
+    // Build argv array before spawn
+    int argc = 0;
+    if (args) {
+        while (args[argc] != NULL) argc++;
     }
     
-    if (pid == 0) {
-        // Child process
-        //
+    char** argv = (char**)malloc((argc + 2) * sizeof(char*));
+    if (!argv) {
+        free(proc);
+        return aria_result_err("Out of memory");
+    }
+    
+    argv[0] = (char*)command;
+    for (int i = 0; i < argc; i++) {
+        argv[i + 1] = (char*)args[i];
+    }
+    argv[argc + 1] = NULL;
+    
+    // Set up posix_spawn file actions for FD redirections
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+    
+    if (options) {
         // Aria Six-Stream I/O Topology (ARIA-020):
         //   FD 0: stdin   - Standard input
         //   FD 1: stdout  - Standard output
@@ -145,120 +241,91 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
         //   FD 3: stddbg  - Debug output (structured diagnostics)
         //   FD 4: stddati - Data input (binary/structured data)
         //   FD 5: stddato - Data output (binary/structured data)
-        //
-        // The FD dance uses dup2() to move pipe ends to their canonical positions.
-        // We use a temp FD (>= 100) to avoid clobbering during the dance.
-
-        // Handle pipe redirections - all six streams
-        if (options) {
-            // FD 0: stdin (read from pipe)
-            if (options->redirect_stdin && options->stdin_pipe) {
-                int fd = aria_pipe_get_read_fd(options->stdin_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDIN) {
-                    dup2(fd, ARIA_FD_STDIN);
-                    // Don't close fd here - O_CLOEXEC will handle it on exec
-                }
-            }
-
-            // FD 1: stdout (write to pipe)
-            if (options->redirect_stdout && options->stdout_pipe) {
-                int fd = aria_pipe_get_write_fd(options->stdout_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDOUT) {
-                    dup2(fd, ARIA_FD_STDOUT);
-                }
-            }
-
-            // FD 2: stderr (write to pipe)
-            if (options->redirect_stderr && options->stderr_pipe) {
-                int fd = aria_pipe_get_write_fd(options->stderr_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDERR) {
-                    dup2(fd, ARIA_FD_STDERR);
-                }
-            }
-
-            // FD 3: stddbg - debug output (write to pipe)
-            if (options->redirect_stddbg && options->stddbg_pipe) {
-                int fd = aria_pipe_get_write_fd(options->stddbg_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDDBG) {
-                    dup2(fd, ARIA_FD_STDDBG);
-                }
-            }
-
-            // FD 4: stddati - data input (read from pipe)
-            if (options->redirect_stddati && options->stddati_pipe) {
-                int fd = aria_pipe_get_read_fd(options->stddati_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDDATI) {
-                    dup2(fd, ARIA_FD_STDDATI);
-                }
-            }
-
-            // FD 5: stddato - data output (write to pipe)
-            if (options->redirect_stddato && options->stddato_pipe) {
-                int fd = aria_pipe_get_write_fd(options->stddato_pipe);
-                if (fd >= 0 && fd != ARIA_FD_STDDATO) {
-                    dup2(fd, ARIA_FD_STDDATO);
-                }
-            }
-
-            // Security: Close all FDs >= 6 to prevent leaking parent's FDs
-            // This is critical for security isolation
-            if (options->close_extra_fds) {
-                #ifdef __linux__
-                    // Use close_range syscall for efficiency (Linux 5.9+)
-                    // Falls back gracefully if syscall not available
-                    if (close_range_wrapper(ARIA_FD_FIRST_FREE, ~0U, 0) < 0) {
-                        // Fallback: close FDs individually (slower but portable)
-                        for (int fd = ARIA_FD_FIRST_FREE; fd < 1024; fd++) {
-                            close(fd);
-                        }
-                    }
-                #else
-                    // Non-Linux: close FDs individually
-                    for (int fd = ARIA_FD_FIRST_FREE; fd < 1024; fd++) {
-                        close(fd);
-                    }
-                #endif
-            }
-
-            // Change working directory if specified
-            if (options->cwd) {
-                if (chdir(options->cwd) < 0) {
-                    perror("chdir failed");
-                    exit(1);
-                }
+        
+        // FD 0: stdin (read from pipe)
+        if (options->redirect_stdin && options->stdin_pipe) {
+            int fd = aria_pipe_get_read_fd(options->stdin_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDIN) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDIN);
             }
         }
-        
-        // Build argv array
-        // Count arguments
-        int argc = 0;
-        if (args) {
-            while (args[argc] != NULL) argc++;
+
+        // FD 1: stdout (write to pipe)
+        if (options->redirect_stdout && options->stdout_pipe) {
+            int fd = aria_pipe_get_write_fd(options->stdout_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDOUT) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDOUT);
+            }
         }
-        
-        // Allocate argv (command + args + NULL)
-        char** argv = (char**)malloc((argc + 2) * sizeof(char*));
-        if (!argv) {
-            perror("malloc failed");
-            exit(1);
+
+        // FD 2: stderr (write to pipe)
+        if (options->redirect_stderr && options->stderr_pipe) {
+            int fd = aria_pipe_get_write_fd(options->stderr_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDERR) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDERR);
+            }
         }
-        
-        argv[0] = (char*)command;
-        for (int i = 0; i < argc; i++) {
-            argv[i + 1] = (char*)args[i];
+
+        // FD 3: stddbg - debug output (write to pipe)
+        if (options->redirect_stddbg && options->stddbg_pipe) {
+            int fd = aria_pipe_get_write_fd(options->stddbg_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDDBG) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDBG);
+            }
         }
-        argv[argc + 1] = NULL;
-        
-        // Execute
-        if (options && options->env) {
-            execve(command, argv, (char**)options->env);
-        } else {
-            execv(command, argv);
+
+        // FD 4: stddati - data input (read from pipe)
+        if (options->redirect_stddati && options->stddati_pipe) {
+            int fd = aria_pipe_get_read_fd(options->stddati_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDDATI) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDATI);
+            }
         }
-        
-        // If we get here, exec failed
-        perror("exec failed");
-        exit(127);
+
+        // FD 5: stddato - data output (write to pipe)
+        if (options->redirect_stddato && options->stddato_pipe) {
+            int fd = aria_pipe_get_write_fd(options->stddato_pipe);
+            if (fd >= 0 && fd != ARIA_FD_STDDATO) {
+                posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDATO);
+            }
+        }
+
+        // Security: Close all FDs >= 6 to prevent leaking parent's FDs
+        if (options->close_extra_fds) {
+            posix_spawn_file_actions_addclosefrom_np(&file_actions, ARIA_FD_FIRST_FREE);
+        }
+
+        // Change working directory if specified
+        if (options->cwd) {
+            posix_spawn_file_actions_addchdir_np(&file_actions, options->cwd);
+        }
+    }
+    
+    // Set up spawn attributes
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    
+    // Spawn the process — no fork(), no deadlock risk from inherited mutexes
+    pid_t pid;
+    int spawn_err;
+    if (options && options->env) {
+        spawn_err = posix_spawn(&pid, command, &file_actions, &attr,
+                                argv, (char**)options->env);
+    } else {
+        extern char **environ;
+        spawn_err = posix_spawn(&pid, command, &file_actions, &attr,
+                                argv, environ);
+    }
+    
+    // Clean up spawn resources
+    posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&file_actions);
+    free(argv);
+    
+    if (spawn_err != 0) {
+        free(proc);
+        errno = spawn_err;
+        return aria_result_err(get_error_message("posix_spawn failed"));
     }
     
     // Parent process
@@ -424,8 +491,10 @@ static void aria_process_free(AriaProcess* process) {
 static __thread AriaForkInfo fork_result_buffer;
 
 AriaResult* aria_fork(void) {
-    // Pre-allocate result structure BEFORE fork to avoid malloc deadlock
-    // Use thread-local storage to avoid race conditions
+    // Pre-allocate result structure BEFORE fork to avoid malloc deadlock.
+    // Runtime mutex safety is handled by pthread_atfork handlers registered
+    // via aria_atfork_register() — GC, thread pools, etc. acquire their locks
+    // before fork and release them in both parent and child afterward.
     fork_result_buffer.is_child = false;
     fork_result_buffer.pid = 0;
     fork_result_buffer.parent_pid = 0;
