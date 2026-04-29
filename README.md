@@ -23,7 +23,7 @@ is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
 **Current validation snapshot:** CTest **7/7 passing** with K semantics enabled;
-`k_semantics_core` **21/21** under K Framework v7.1.320; v0.16/v0.17 compiler
+`k_semantics_core` **26/26** under K Framework v7.1.320; v0.16/v0.17 compiler
 audit baseline **1,015 tests** with 0 genuine regressions; **800K+ fuzz tests**
 with 0 crashes; **103 packages**; **72 stdlib modules**.
 
@@ -32,13 +32,12 @@ with 0 crashes; **103 packages**; **72 stdlib modules**.
     first executable subset: `func:main`/`func:failsafe`, variable binding,
     `fixed`, bounded `int32`/`int64`, explicit `tbb32` min-sentinel behavior,
     integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result operators,
-    zero-argument helper calls returning through `pass`/`fail`, string literals,
-    `print`/`println` stdout modeling, `if`/`else`, `loop(start,end,step)`, and
-    `exit`.
+    zero-/one-/two-argument helper calls returning through `pass`/`fail`,
+    isolated helper call frames, string literals, `print`/`println` stdout
+    modeling, `if`/`else`, `loop(start,end,step)`, and `exit`.
 - **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
     executes core programs with `krun`, and skips cleanly when K is unavailable.
-- **Next semantic slice** — parameterized function calls and isolated call
-    frames, followed by structs/field access.
+- **Next semantic slice** — structs and field access, followed by `pick`/`fall`.
 
 **Recently completed series:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
@@ -71,7 +70,7 @@ with 0 crashes; **103 packages**; **72 stdlib modules**.
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 21/21 core tests |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 26/26 core tests |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
