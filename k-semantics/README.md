@@ -12,6 +12,10 @@ can eventually answer: “what should this Aria program do?” independently of
 - mandatory `func:main` / `func:failsafe` program envelope
 - zero-, one-, and two-argument helper functions returning through `pass` / `fail`
 - isolated helper call frames for parameters and local bindings
+- canonical `struct:Name = { Type:field; ... };` declarations for one-, two-,
+  and three-field structs
+- struct literals such as `Point{x: 10, y: 20}`, field reads such as `p.x`, and
+  direct field writes such as `p.x = 42`
 - `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and `string` type tokens
 - mutable and `fixed` variable bindings
 - typed internal numeric values for declared `int32`, `int64`, and `tbb32`
@@ -61,11 +65,10 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. struct definitions and field access
-2. `pick`/`fall` semantics
-3. `limit<Rules>` and proof-oriented `kprove` lemmas
-4. memory contexts: `stack`, `gc`, `wild`
-5. borrow permissions: `$i` / `$m`
-6. module/import and extern/FFI boundaries
+1. `pick`/`fall` semantics
+2. `limit<Rules>` and proof-oriented `kprove` lemmas
+3. memory contexts: `stack`, `gc`, `wild`
+4. borrow permissions: `$i` / `$m`
+5. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

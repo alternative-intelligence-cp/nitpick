@@ -15,3 +15,5 @@ Planned initial claims:
 8. `println` appends exactly one newline and returns the emitted byte count
 9. parameterized helper calls restore caller frames and preserve `pass`/`fail`
    Result polarity
+10. struct field writes update only the selected field and preserve unrelated
+   fields

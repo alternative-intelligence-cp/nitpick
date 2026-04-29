@@ -1,0 +1,12 @@
+// expect-exit: 30
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+func:sum = int32(Point:p) { pass p.x + p.y; };
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    Point:p = Point{x: 10, y: 20};
+    int32:s = raw sum(p);
+    exit s;
+};

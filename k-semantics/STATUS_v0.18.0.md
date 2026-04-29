@@ -19,9 +19,11 @@ Branch: `dev-0.18.x`
   through expressions such as `raw answer()` and `broken() defaults 43`.
 - Added one- and two-argument helper functions with isolated call frames that
   restore caller locals, types, store, fixed bindings, and allocator state.
+- Added canonical one-, two-, and three-field struct declarations, typed struct
+  literals, field reads, direct field writes, and struct helper parameters.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
-- Compiled `aria.k` and passed all 26 core K tests under `krun`.
+- Compiled `aria.k` and passed all 30 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -35,7 +37,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 26 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 30 passed, 0 failed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -45,7 +47,7 @@ Branch: `dev-0.18.x`
 
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - stderr/stddbg output cells
-- Structs, arrays, and field access
+- Struct arrays, nested field paths, generic structs, and legacy `struct Name { ... }` shorthand
 - `pick`/`fall`
 - `limit<Rules>` SMT/proof integration
 - memory contexts (`stack`, `gc`, `wild`)
@@ -55,5 +57,5 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: structs
-and field access, then `pick`/`fall`.
+Expand semantic coverage in the next small slice. Recommended order: `pick`/`fall`,
+then `limit<Rules>` proof hooks.

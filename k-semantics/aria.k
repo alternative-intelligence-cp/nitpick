@@ -6,6 +6,7 @@ requires "domains.md"
 //   - mandatory func:main / func:failsafe envelope
 //   - zero-, one-, and two-argument helper functions returning through pass/fail
 //   - isolated helper call frames for parameters and local bindings
+//   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -23,7 +24,7 @@ module ARIA-SYNTAX
   imports STRING-SYNTAX
   imports ID-SYNTAX
 
-  syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string"
+     syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Id
 
   syntax Val ::= Int
                | Bool
@@ -45,6 +46,10 @@ module ARIA-SYNTAX
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
+               | Id "{" Id ":" Exp "}" [strict(3), avoid]
+               | Id "{" Id ":" Exp "," Id ":" Exp "}" [strict(3, 5), avoid]
+               | Id "{" Id ":" Exp "," Id ":" Exp "," Id ":" Exp "}" [strict(3, 5, 7), avoid]
+               | Exp "." Id [strict(1), avoid]
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -67,6 +72,7 @@ module ARIA-SYNTAX
   syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(3)]
                 | "fixed" Type ":" Id "=" Exp ";" [strict(3)]
                 | Id "=" Exp ";" [strict(2)]
+                | Id "." Id "=" Exp ";" [strict(3)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict]
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
@@ -77,6 +83,11 @@ module ARIA-SYNTAX
   syntax Block ::= "{" Stmts "}"
   syntax Stmts ::= List{Stmt, ""}
 
+     syntax FieldDecl     ::= Type ":" Id ";"
+     syntax FieldDecls    ::= List{FieldDecl, ""}
+     syntax StructDecl    ::= "struct:" Id "=" "{" FieldDecls "}" ";"
+     syntax StructDecls   ::= List{StructDecl, ""}
+
   syntax Param        ::= Type ":" Id
   syntax FuncDecl     ::= "func:" Id "=" Type "(" ")" Block ";"
                         | "func:" Id "=" Type "(" Param ")" Block ";"
@@ -84,7 +95,7 @@ module ARIA-SYNTAX
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
   syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
-  syntax Pgm          ::= FuncDecls FailsafeDecl MainDecl
+     syntax Pgm          ::= StructDecls FuncDecls FailsafeDecl MainDecl
 endmodule
 
 module ARIA
@@ -98,6 +109,7 @@ module ARIA
   configuration <T>
     <k> $PGM:Pgm </k>
     <functions> .Map </functions>
+     <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
     <store> .Map </store>
@@ -114,8 +126,90 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-  rule <k> FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadFuncs(FUNCS) ~> MAIN </k>
+  rule <k> STRUCTS:StructDecls FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadStructs(STRUCTS) ~> loadFuncs(FUNCS) ~> MAIN </k>
        <failsafe> _ => FS </failsafe>
+
+  // -------------------------------------------------------------------------
+  // Struct definitions, literals, field reads, and field writes
+  // -------------------------------------------------------------------------
+
+  syntax StructInfo ::= "Struct1" "(" Type "," Id ")"
+                      | "Struct2" "(" Type "," Id "," Type "," Id ")"
+                      | "Struct3" "(" Type "," Id "," Type "," Id "," Type "," Id ")"
+
+  syntax Val ::= "StructVal" "(" Id "," Map ")"
+
+  syntax KItem ::= "loadStructs" "(" StructDecls ")"
+
+  rule <k> loadStructs(.StructDecls) => .K ... </k>
+
+  rule <k> loadStructs(struct: S:Id = { T1:Type : F1:Id ; }; REST:StructDecls) => loadStructs(REST) ... </k>
+       <structs> Structs => Structs [ S <- Struct1(T1, F1) ] </structs>
+
+  rule <k> loadStructs(struct: S:Id = { T1:Type : F1:Id ; T2:Type : F2:Id ; }; REST:StructDecls) => loadStructs(REST) ... </k>
+       <structs> Structs => Structs [ S <- Struct2(T1, F1, T2, F2) ] </structs>
+
+  rule <k> loadStructs(struct: S:Id = { T1:Type : F1:Id ; T2:Type : F2:Id ; T3:Type : F3:Id ; }; REST:StructDecls) => loadStructs(REST) ... </k>
+       <structs> Structs => Structs [ S <- Struct3(T1, F1, T2, F2, T3, F3) ] </structs>
+
+  rule <k> S:Id { F1:Id : V1:Val } => StructVal(S, F1 |-> normalizeValue(T1, V1)) ... </k>
+       <structs> ... S |-> Struct1(T1, F1) ... </structs>
+
+  rule <k> S:Id { F1:Id : V1:Val, F2:Id : V2:Val } => StructVal(S, (F1 |-> normalizeValue(T1, V1) F2 |-> normalizeValue(T2, V2))) ... </k>
+       <structs> ... S |-> Struct2(T1, F1, T2, F2) ... </structs>
+
+  rule <k> S:Id { F1:Id : V1:Val, F2:Id : V2:Val, F3:Id : V3:Val } => StructVal(S, (F1 |-> normalizeValue(T1, V1) F2 |-> normalizeValue(T2, V2) F3 |-> normalizeValue(T3, V3))) ... </k>
+       <structs> ... S |-> Struct3(T1, F1, T2, F2, T3, F3) ... </structs>
+
+     rule <k> StructVal(_:Id, (F:Id |-> V:Val _:Map)) . F => V ... </k>
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct1(T, F) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
+       <fixed-vars> Fixed </fixed-vars>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Fixed
 
   // -------------------------------------------------------------------------
   // Helper functions and isolated call frames
