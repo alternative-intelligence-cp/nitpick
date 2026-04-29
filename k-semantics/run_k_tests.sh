@@ -23,10 +23,11 @@ fi
 mkdir -p "$K_DIR/.build"
 
 echo "[k-semantics] kompile aria.k"
-kompile "$K_DIR/aria.k" \
+kompile \
     --main-module ARIA \
     --syntax-module ARIA-SYNTAX \
-    --directory "$DEF_DIR"
+    --output-definition "$DEF_DIR" \
+    "$K_DIR/aria.k"
 
 pass=0
 fail=0
@@ -41,11 +42,25 @@ for test_file in "$TEST_DIR"/*.aria; do
     fi
 
     output="$(krun "$test_file" --definition "$DEF_DIR" 2>&1 || true)"
-    if grep -q "<exit-code>[[:space:]]*$expected[[:space:]]*</exit-code>" <<< "$output"; then
+    actual="$(awk '
+        /<exit-code>/ {
+            if ($0 ~ /<exit-code>[[:space:]]*-?[0-9]+[[:space:]]*<\/exit-code>/) {
+                gsub(/.*<exit-code>[[:space:]]*|[[:space:]]*<\/exit-code>.*/, "")
+                print
+                exit
+            }
+            getline
+            gsub(/[[:space:]]/, "")
+            print
+            exit
+        }
+    ' <<< "$output")"
+
+    if [[ "$actual" == "$expected" ]]; then
         echo "PASS $name"
         pass=$((pass + 1))
     else
-        echo "FAIL $name: expected exit-code $expected"
+        echo "FAIL $name: expected exit-code $expected, got ${actual:-<missing>}"
         echo "$output" | sed -n '1,80p'
         fail=$((fail + 1))
     fi

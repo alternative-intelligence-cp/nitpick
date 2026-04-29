@@ -19,7 +19,7 @@ module ARIA-SYNTAX
   imports BOOL-SYNTAX
   imports ID-SYNTAX
 
-  syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "NIL"
+     syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64"
 
   syntax Val ::= Int
                | Bool
@@ -27,6 +27,8 @@ module ARIA-SYNTAX
                | "ERR"
                | "Unknown"
                | "Result" "(" Val "," Val "," Bool ")"
+
+     syntax KResult ::= Val
 
   syntax Exp ::= Val
                | Id
@@ -47,10 +49,10 @@ module ARIA-SYNTAX
                | "raw" Exp [strict]
                | "drop" Exp [strict]
                | "?!" Exp [strict]
-               | Exp "defaults" Exp [strict(1), right]
+               > Exp "defaults" Exp [strict(1), right]
 
-  syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(2)]
-                | "fixed" Type ":" Id "=" Exp ";" [strict(2)]
+  syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(3)]
+                | "fixed" Type ":" Id "=" Exp ";" [strict(3)]
                 | Id "=" Exp ";" [strict(2)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict]
@@ -90,7 +92,7 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-  rule <k> func:failsafe = int32(tbb32:ERRID) FS ; func:main = int32() MAIN ; => MAIN </k>
+     rule <k> func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => MAIN </k>
        <failsafe> _ => FS </failsafe>
 
   // -------------------------------------------------------------------------
@@ -100,7 +102,7 @@ module ARIA
   rule <k> { SS:Stmts } => SS ... </k>
   rule <k> S:Stmt SS:Stmts => S ~> SS ... </k>
   rule <k> .Stmts => .K ... </k>
-  rule <k> V:Val ; => .K ... </k>
+     rule <k> _:Val ; => .K ... </k>
 
   // -------------------------------------------------------------------------
   // Values and variables
@@ -178,10 +180,10 @@ module ARIA
   rule <k> B1:Bool != B2:Bool => B1 =/=Bool B2 ... </k>
   rule <k> ERR == ERR => true ... </k>
   rule <k> ERR != ERR => false ... </k>
-  rule <k> ERR == I:Int => false ... </k>
-  rule <k> I:Int == ERR => false ... </k>
-  rule <k> ERR != I:Int => true ... </k>
-  rule <k> I:Int != ERR => true ... </k>
+     rule <k> ERR == _:Int => false ... </k>
+     rule <k> _:Int == ERR => false ... </k>
+     rule <k> ERR != _:Int => true ... </k>
+     rule <k> _:Int != ERR => true ... </k>
   rule <k> Unknown == Unknown => true ... </k>
   rule <k> Unknown != Unknown => false ... </k>
 
@@ -202,7 +204,7 @@ module ARIA
   rule <k> Result(_:Val, _:Val, true) defaults Fallback:Exp => Fallback ... </k>
   rule <k> ?! Result(_:Val, V:Val, false) => V ... </k>
 
-  syntax Exp ::= "invokeFailsafe" "(" Val ")" [klabel(invokeFailsafe)]
+     syntax Exp ::= "invokeFailsafe" "(" Val ")" [symbol(invokeFailsafe)]
 
   rule <k> ?! Result(E:Val, _:Val, true) => invokeFailsafe(E) ... </k>
        <failsafe-triggered> _ => true </failsafe-triggered>
@@ -219,7 +221,7 @@ module ARIA
   // loop(start, end, step) with implicit $ iterator
   // -------------------------------------------------------------------------
 
-  syntax Stmt ::= "loopIter" "(" Int "," Int "," Int "," Block ")" [klabel(loopIter)]
+     syntax Stmt ::= "loopIter" "(" Int "," Int "," Int "," Block ")" [symbol(loopIter)]
 
   rule <k> $ => I ... </k>
        <loop-index> I </loop-index>

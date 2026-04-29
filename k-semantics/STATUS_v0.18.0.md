@@ -10,21 +10,26 @@ Branch: `dev-0.18.x`
   unwrapping/fallback, sticky `ERR`, failsafe routing, and `if/else`.
 - Added `run_k_tests.sh` with CTest-friendly skip behavior when K is absent.
 - Added install notes capturing the current local toolchain state.
+- Installed K Framework v7.1.320 through `kup` and fixed the runner for the
+  current `kompile --output-definition` CLI.
+- Compiled `aria.k` and passed all 10 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
 
-- `kompile`: not installed
-- `krun`: not installed
-- `kprove`: not installed
+- `kompile`: K Framework v7.1.320 via `kup`
+- `krun`: K Framework v7.1.320 via `kup`
+- `kprove`: K Framework v7.1.320 via `kup`
 - Java: OpenJDK 21 available
 - Z3: 4.16.0 available
 - Docker: installed, but current user lacks Docker socket permission
 
 ## Validation performed
 
-- Static file/content checks can run immediately.
-- K compilation/execution is blocked until K tools are installed.
+- `./k-semantics/run_k_tests.sh --require-k`: 10 passed, 0 failed.
+- `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
+  `k_semantics_core` passed with K enabled.
+- `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
 - Existing Aria generated formal-tool artifacts remain untracked and ignored where generated.
 
 ## Semantic gaps intentionally left open
@@ -42,5 +47,6 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Install K, run `./k-semantics/run_k_tests.sh --require-k`, and fix any concrete
-K syntax/backend issues before expanding semantic coverage.
+Expand semantic coverage in the next small slice. Recommended order: bounded
+`int32`/`int64`, explicit `tbb32` range/min-sentinel behavior, then function
+declarations/calls beyond the fixed `main`/`failsafe` envelope.

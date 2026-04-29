@@ -10,11 +10,13 @@ The Aria repository does not vendor K. The local environment should provide:
 
 ## Current workspace probe
 
-As of this v0.18.0 seed:
+As of the K-enabled v0.18.0 seed:
 
 - Java is available (`openjdk 21`).
 - Z3 is available (`4.16.0` in the Python environment).
-- Native `kompile`, `krun`, and `kprove` are not installed.
+- `kup` is available at `~/.nix-profile/bin/kup`.
+- K Framework v7.1.320 is installed through `kup`; `kompile`, `krun`, and
+	`kprove` are available after the Nix profile is loaded.
 - Docker is installed but the current user cannot access `/var/run/docker.sock`.
 - Ubuntu apt does not expose a direct `kframework` package here.
 
@@ -34,6 +36,14 @@ and verify:
 kompile --version
 krun --version
 kprove --version
+```
+
+If an existing terminal cannot see the tools yet, load Nix and prepend the user
+profile path:
+
+```bash
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+export PATH="$HOME/.nix-profile/bin:$PATH"
 ```
 
 ## Docker fallback

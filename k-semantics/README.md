@@ -10,7 +10,7 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
-- `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and `NIL` type tokens
+- `int32`, `int64`, `tbb32`, `flt32`, and `flt64` type tokens
 - mutable and `fixed` variable bindings
 - integer arithmetic and comparisons
 - sticky `ERR` propagation for arithmetic
