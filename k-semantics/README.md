@@ -28,6 +28,8 @@ can eventually answer: “what should this Aria program do?” independently of
 - helper calls such as `raw answer()`, `raw inc(8)`, and `broken(17) defaults 23`
 - string literals plus `print` / `println` writes to the `<stdout>` cell
 - `if` / `else`
+- `pick(selector) { ... }` first-match dispatch over value patterns, `(*)`
+  wildcards, optional labeled arms, and `fall label;` jumps to a labeled arm
 - `loop(start, end, step) { ... }` with implicit `$` iterator
 - terminal `exit` / `exit(...)`
 
@@ -65,10 +67,9 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. `pick`/`fall` semantics
-2. `limit<Rules>` and proof-oriented `kprove` lemmas
-3. memory contexts: `stack`, `gc`, `wild`
-4. borrow permissions: `$i` / `$m`
-5. module/import and extern/FFI boundaries
+1. `limit<Rules>` and proof-oriented `kprove` lemmas
+2. memory contexts: `stack`, `gc`, `wild`
+3. borrow permissions: `$i` / `$m`
+4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

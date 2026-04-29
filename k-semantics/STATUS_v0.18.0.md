@@ -21,9 +21,11 @@ Branch: `dev-0.18.x`
   restore caller locals, types, store, fixed bindings, and allocator state.
 - Added canonical one-, two-, and three-field struct declarations, typed struct
   literals, field reads, direct field writes, and struct helper parameters.
+- Added `pick`/`fall` executable semantics for first-match value dispatch,
+  `(*)` wildcards, optional labeled arms, and `fall label;` jumps.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
-- Compiled `aria.k` and passed all 30 core K tests under `krun`.
+- Compiled `aria.k` and passed all 33 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -37,7 +39,9 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 30 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 33 passed, 0 failed.
+- Cross-checked new `pick`/`fall` K tests with `build/ariac`; expected exits
+  matched actual process exits for all three new programs.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -48,7 +52,7 @@ Branch: `dev-0.18.x`
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - stderr/stddbg output cells
 - Struct arrays, nested field paths, generic structs, and legacy `struct Name { ... }` shorthand
-- `pick`/`fall`
+- Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - `limit<Rules>` SMT/proof integration
 - memory contexts (`stack`, `gc`, `wild`)
 - borrow permissions (`$i`, `$m`)
@@ -57,5 +61,5 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: `pick`/`fall`,
-then `limit<Rules>` proof hooks.
+Expand semantic coverage in the next small slice. Recommended order:
+`limit<Rules>` proof hooks, then memory contexts.

@@ -1,0 +1,17 @@
+// expect-exit: 1
+
+func:failsafe = int32(tbb32:err) {
+  exit 1;
+};
+
+func:main = int32() {
+  int32:r = 0;
+  bool:is_err = false;
+
+  pick (is_err) {
+    (false) { r = 1; },
+    (true) { r = 2; }
+  }
+
+  exit r;
+};

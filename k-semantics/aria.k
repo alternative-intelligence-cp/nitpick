@@ -13,7 +13,7 @@ requires "domains.md"
 //   - integer arithmetic, two's-complement int bounds, and sticky ERR propagation
 //   - Result construction and unwrapping: pass/fail/raw/drop/defaults/?!
 //   - bounded loop(start, end, step) with implicit $ iterator
-//   - if/else, comparisons, and exit semantics
+//   - if/else, pick/fall, comparisons, and exit semantics
 //
 // This file is intentionally a small golden-oracle nucleus, not a full Aria
 // definition. Later v0.18.x slices should extend it module-by-module.
@@ -77,11 +77,18 @@ module ARIA-SYNTAX
                 | "exit" "(" Exp ")" ";" [strict]
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
                 | "if" "(" Exp ")" Block [strict(1)]
+                | "pick" "(" Exp ")" "{" PickCases "}" [strict(1)]
+                | "fall" Id ";"
                 | "loop" "(" Exp "," Exp "," Exp ")" Block [strict(1, 2, 3)]
                 | Exp ";" [strict]
 
-  syntax Block ::= "{" Stmts "}"
-  syntax Stmts ::= List{Stmt, ""}
+     syntax Block ::= "{" Stmts "}"
+     syntax Stmts ::= List{Stmt, ""}
+
+     syntax PickPattern ::= Exp | "*"
+     syntax PickCase    ::= "(" PickPattern ")" Block
+                                                        | Id ":" "(" PickPattern ")" Block
+     syntax PickCases   ::= List{PickCase, ","}
 
      syntax FieldDecl     ::= Type ":" Id ";"
      syntax FieldDecls    ::= List{FieldDecl, ""}
@@ -94,7 +101,7 @@ module ARIA-SYNTAX
                         | "func:" Id "=" Type "(" Param "," Param ")" Block ";"
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
-  syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
+     syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
      syntax Pgm          ::= StructDecls FuncDecls FailsafeDecl MainDecl
 endmodule
 
@@ -109,7 +116,7 @@ module ARIA
   configuration <T>
     <k> $PGM:Pgm </k>
     <functions> .Map </functions>
-     <structs> .Map </structs>
+          <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
     <store> .Map </store>
@@ -501,6 +508,48 @@ module ARIA
   rule <k> if ( false ) _ else B:Block => B ... </k>
   rule <k> if ( true )  B:Block => B ... </k>
   rule <k> if ( false ) _:Block => .K ... </k>
+
+     // -------------------------------------------------------------------------
+     // pick/fall pattern dispatch
+     // -------------------------------------------------------------------------
+
+     syntax Bool ::= pickMatches(Val, Val) [function]
+
+     rule pickMatches(V1:Val, V2:Val) => numericValue(V1) ==Int numericValue(V2)
+          requires isNumericValue(V1) andBool isNumericValue(V2)
+     rule pickMatches(B1:Bool, B2:Bool) => B1 ==Bool B2
+     rule pickMatches(ERR, ERR) => true
+     rule pickMatches(Unknown, Unknown) => true
+     rule pickMatches(_, _) => false [owise]
+
+     syntax KItem ::= "selectPick" "(" Val "," PickCases "," PickCases ")"
+                                         | "finishPickCase" "(" Val "," Block "," PickCases "," PickCases ")"
+                                         | "selectPickLabel" "(" Id "," PickCases ")"
+                                         | "endPick" "(" PickCases ")"
+
+     rule <k> pick ( V:Val ) { CASES:PickCases } => selectPick(V, CASES, CASES) ... </k>
+
+     rule <k> selectPick(_:Val, .PickCases, _:PickCases) => .K ... </k>
+
+     rule <k> selectPick(_:Val, (*) B:Block , _:PickCases, ALL:PickCases) => B ~> endPick(ALL) ... </k>
+     rule <k> selectPick(_:Val, _:Id : (*) B:Block , _:PickCases, ALL:PickCases) => B ~> endPick(ALL) ... </k>
+
+     rule <k> selectPick(V:Val, (P:Exp) B:Block , REST:PickCases, ALL:PickCases) => P ~> finishPickCase(V, B, REST, ALL) ... </k>
+     rule <k> selectPick(V:Val, _:Id : (P:Exp) B:Block , REST:PickCases, ALL:PickCases) => P ~> finishPickCase(V, B, REST, ALL) ... </k>
+
+     rule <k> P:Val ~> finishPickCase(V:Val, B:Block, _:PickCases, ALL:PickCases) => B ~> endPick(ALL) ... </k>
+          requires pickMatches(V, P)
+     rule <k> P:Val ~> finishPickCase(V:Val, _:Block, REST:PickCases, ALL:PickCases) => selectPick(V, REST, ALL) ... </k>
+          requires notBool(pickMatches(V, P))
+
+     rule <k> fall L:Id ; ~> _:Stmts ~> endPick(ALL:PickCases) => selectPickLabel(L, ALL) ~> endPick(ALL) ... </k>
+
+     rule <k> selectPickLabel(_:Id, .PickCases) => .K ... </k>
+     rule <k> selectPickLabel(L:Id, L : (_:PickPattern) B:Block , _:PickCases) => B ... </k>
+     rule <k> selectPickLabel(L:Id, _:Id : (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+     rule <k> selectPickLabel(L:Id, (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+
+     rule <k> endPick(_:PickCases) => .K ... </k>
 
   // -------------------------------------------------------------------------
   // Result<T> construction, unwrapping, and fallback

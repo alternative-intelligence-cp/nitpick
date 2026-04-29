@@ -17,3 +17,5 @@ Planned initial claims:
    Result polarity
 10. struct field writes update only the selected field and preserve unrelated
    fields
+11. `pick` dispatch chooses the first matching arm, and `fall label;` reaches
+    only the named labeled arm before returning to the pick continuation
