@@ -23,20 +23,20 @@ is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
 **Current validation snapshot:** CTest **7/7 passing** with K semantics enabled;
-`k_semantics_core` **10/10** under K Framework v7.1.320; v0.16/v0.17 compiler
+`k_semantics_core` **15/15** under K Framework v7.1.320; v0.16/v0.17 compiler
 audit baseline **1,015 tests** with 0 genuine regressions; **800K+ fuzz tests**
 with 0 crashes; **103 packages**; **72 stdlib modules**.
 
 **v0.18.x in progress:**
 - **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
     first executable subset: `func:main`/`func:failsafe`, variable binding,
-    `fixed`, integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result
-    operators, `if`/`else`, `loop(start,end,step)`, and `exit`.
+    `fixed`, bounded `int32`/`int64`, explicit `tbb32` min-sentinel behavior,
+    integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result operators,
+    `if`/`else`, `loop(start,end,step)`, and `exit`.
 - **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
     executes core programs with `krun`, and skips cleanly when K is unavailable.
-- **Next semantic slice** — bounded `int32`/`int64`, explicit `tbb32`
-    range/min-sentinel behavior, then function declarations and calls beyond the
-    fixed `main`/`failsafe` envelope.
+- **Next semantic slice** — function declarations and calls beyond the fixed
+    `main`/`failsafe` envelope, followed by strings/`println` output modeling.
 
 **Recently completed series:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
@@ -69,7 +69,7 @@ with 0 crashes; **103 packages**; **72 stdlib modules**.
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 10/10 core tests |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 15/15 core tests |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
@@ -935,13 +935,13 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 
 - 🔧 **K Framework executable semantics** — First formal semantics seed in
     `k-semantics/aria.k`
-- ✅ **Core K test corpus** — 10 programs covering exit, arithmetic, binding,
+- ✅ **Core K test corpus** — 15 programs covering exit, arithmetic, binding,
     fixed values, loops, Result operations, sticky `ERR`, failsafe routing, and
-    `if`/`else`
+    `if`/`else`, plus int32/int64 bounds and tbb32 sentinel edges
 - ✅ **CTest integration** — K semantics test passes when K is installed and
     skips cleanly when K is absent
-- ⏭️ **Next** — Bounded integer semantics, explicit `tbb32` sentinel behavior,
-    then function declarations/calls
+- ⏭️ **Next** — Function declarations/calls beyond `main`/`failsafe`, then
+    string values and `println` output modeling
 
 ### Long Term
 

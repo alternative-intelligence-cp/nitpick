@@ -12,7 +12,10 @@ can eventually answer: “what should this Aria program do?” independently of
 - mandatory `func:main` / `func:failsafe` program envelope
 - `int32`, `int64`, `tbb32`, `flt32`, and `flt64` type tokens
 - mutable and `fixed` variable bindings
-- integer arithmetic and comparisons
+- typed internal numeric values for declared `int32`, `int64`, and `tbb32`
+- two's-complement bounded `int32`/`int64` arithmetic
+- `tbb32` min-sentinel (`-2147483648`) and overflow/underflow to sticky `ERR`
+- integer arithmetic and comparisons across raw and typed numeric values
 - sticky `ERR` propagation for arithmetic
 - `Unknown` propagation through arithmetic
 - `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!`
@@ -49,14 +52,13 @@ The runner checks the final K configuration for the matching `<exit-code>` cell.
 
 Next increments should add, in order:
 
-1. int32/int64 bounded overflow behavior and explicit tbb32 range semantics
-2. function declarations/calls beyond the fixed `main`/`failsafe` envelope
-3. string values and `println` output modeling
-4. struct definitions and field access
-5. `pick`/`fall` semantics
-6. `limit<Rules>` and proof-oriented `kprove` lemmas
-7. memory contexts: `stack`, `gc`, `wild`
-8. borrow permissions: `$i` / `$m`
-9. module/import and extern/FFI boundaries
+1. function declarations/calls beyond the fixed `main`/`failsafe` envelope
+2. string values and `println` output modeling
+3. struct definitions and field access
+4. `pick`/`fall` semantics
+5. `limit<Rules>` and proof-oriented `kprove` lemmas
+6. memory contexts: `stack`, `gc`, `wild`
+7. borrow permissions: `$i` / `$m`
+8. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

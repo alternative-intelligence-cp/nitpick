@@ -1,0 +1,12 @@
+// expect-exit: 22
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int64:hi = 9223372036854775807;
+    int64:lo = -9223372036854775808;
+    int64:wrap_hi = hi + 1;
+    int64:wrap_lo = lo - 1;
+    if (wrap_hi == -9223372036854775808) {
+        if (wrap_lo == 9223372036854775807) { exit 22; }
+    }
+    exit 23;
+};

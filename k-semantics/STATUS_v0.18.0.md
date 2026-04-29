@@ -12,7 +12,10 @@ Branch: `dev-0.18.x`
 - Added install notes capturing the current local toolchain state.
 - Installed K Framework v7.1.320 through `kup` and fixed the runner for the
   current `kompile --output-definition` CLI.
-- Compiled `aria.k` and passed all 10 core K tests under `krun`.
+- Added typed internal numeric values for `int32`, `int64`, and `tbb32`.
+- Modeled two's-complement `int32`/`int64` bounds and `tbb32` min-sentinel
+  overflow/underflow to sticky `ERR`.
+- Compiled `aria.k` and passed all 15 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -26,7 +29,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 10 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 15 passed, 0 failed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -35,7 +38,7 @@ Branch: `dev-0.18.x`
 ## Semantic gaps intentionally left open
 
 - Full function declarations/calls
-- Type-accurate int32/int64 bounds and tbb32 min-sentinel encoding
+- Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - Strings and stdout/stderr/stddbg output cells
 - Structs, arrays, and field access
 - `pick`/`fall`
@@ -47,6 +50,6 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: bounded
-`int32`/`int64`, explicit `tbb32` range/min-sentinel behavior, then function
-declarations/calls beyond the fixed `main`/`failsafe` envelope.
+Expand semantic coverage in the next small slice. Recommended order: function
+declarations/calls beyond the fixed `main`/`failsafe` envelope, then string
+values and `println` output cells.

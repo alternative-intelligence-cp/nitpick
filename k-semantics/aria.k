@@ -4,9 +4,9 @@ requires "domains.md"
 //
 // Scope of this first definition:
 //   - mandatory func:main / func:failsafe envelope
-//   - int32/int64/tbb32 declarations and assignments
+//   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - fixed bindings with dynamic immutability enforcement
-//   - integer arithmetic and sticky ERR propagation
+//   - integer arithmetic, two's-complement int bounds, and sticky ERR propagation
 //   - Result construction and unwrapping: pass/fail/raw/drop/defaults/?!
 //   - bounded loop(start, end, step) with implicit $ iterator
 //   - if/else, comparisons, and exit semantics
@@ -19,7 +19,7 @@ module ARIA-SYNTAX
   imports BOOL-SYNTAX
   imports ID-SYNTAX
 
-     syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64"
+  syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64"
 
   syntax Val ::= Int
                | Bool
@@ -27,8 +27,11 @@ module ARIA-SYNTAX
                | "ERR"
                | "Unknown"
                | "Result" "(" Val "," Val "," Bool ")"
+               | "I32" "(" Int ")"
+               | "I64" "(" Int ")"
+               | "TBB32" "(" Int ")"
 
-     syntax KResult ::= Val
+  syntax KResult ::= Val
 
   syntax Exp ::= Val
                | Id
@@ -79,6 +82,7 @@ module ARIA
   configuration <T>
     <k> $PGM:Pgm </k>
     <env> .Map </env>
+    <types> .Map </types>
     <store> .Map </store>
     <fixed-vars> .Set </fixed-vars>
     <next-loc> 0 </next-loc>
@@ -92,7 +96,7 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-     rule <k> func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => MAIN </k>
+  rule <k> func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => MAIN </k>
        <failsafe> _ => FS </failsafe>
 
   // -------------------------------------------------------------------------
@@ -102,7 +106,7 @@ module ARIA
   rule <k> { SS:Stmts } => SS ... </k>
   rule <k> S:Stmt SS:Stmts => S ~> SS ... </k>
   rule <k> .Stmts => .K ... </k>
-     rule <k> _:Val ; => .K ... </k>
+  rule <k> _:Val ; => .K ... </k>
 
   // -------------------------------------------------------------------------
   // Values and variables
@@ -112,20 +116,23 @@ module ARIA
        <env> ... X |-> L ... </env>
        <store> ... L |-> V ... </store>
 
-  rule <k> _:Type : X:Id = V:Val ; => .K ... </k>
+  rule <k> T:Type : X:Id = V:Val ; => .K ... </k>
        <env> Env => Env [ X <- L ] </env>
-       <store> Store => Store [ L <- V ] </store>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
        <next-loc> L => L +Int 1 </next-loc>
 
-  rule <k> fixed _:Type : X:Id = V:Val ; => .K ... </k>
+  rule <k> fixed T:Type : X:Id = V:Val ; => .K ... </k>
        <env> Env => Env [ X <- L ] </env>
-       <store> Store => Store [ L <- V ] </store>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
        <fixed-vars> Fixed => Fixed SetItem(X) </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
 
   rule <k> X:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
-       <store> Store => Store [ L <- V ] </store>
+       <types> ... X |-> T ... </types>
+       <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
        <fixed-vars> Fixed </fixed-vars>
     requires notBool(X in Fixed)
 
@@ -139,14 +146,96 @@ module ARIA
     requires X in Fixed
 
   // -------------------------------------------------------------------------
-  // Integer arithmetic and sticky sentinel propagation
+  // Typed integer normalization and arithmetic
   // -------------------------------------------------------------------------
+
+  syntax Int ::= wrapI32(Int) [function]
+               | wrapI64(Int) [function]
+
+  rule wrapI32(I) => wrapI32(I -Int 4294967296) requires I >Int 2147483647
+  rule wrapI32(I) => wrapI32(I +Int 4294967296) requires I <Int -2147483648
+  rule wrapI32(I) => I requires I >=Int -2147483648 andBool I <=Int 2147483647
+
+  rule wrapI64(I) => wrapI64(I -Int 18446744073709551616) requires I >Int 9223372036854775807
+  rule wrapI64(I) => wrapI64(I +Int 18446744073709551616) requires I <Int -9223372036854775808
+  rule wrapI64(I) => I requires I >=Int -9223372036854775808 andBool I <=Int 9223372036854775807
+
+  syntax Val ::= normalizeValue(Type, Val) [function]
+               | normalizeTBB32(Int) [function]
+
+  rule normalizeValue(int32, I:Int) => I32(wrapI32(I))
+  rule normalizeValue(int64, I:Int) => I64(wrapI64(I))
+  rule normalizeValue(tbb32, I:Int) => normalizeTBB32(I)
+  rule normalizeValue(int32, I32(I)) => I32(wrapI32(I))
+  rule normalizeValue(int64, I64(I)) => I64(wrapI64(I))
+  rule normalizeValue(tbb32, TBB32(I)) => normalizeTBB32(I)
+  rule normalizeValue(tbb32, ERR) => ERR
+  rule normalizeValue(_:Type, V:Val) => V [owise]
+
+  rule normalizeTBB32(I) => ERR requires I <=Int -2147483648 orBool I >Int 2147483647
+  rule normalizeTBB32(I) => TBB32(I) requires I >Int -2147483648 andBool I <=Int 2147483647
+
+  syntax Int ::= numericValue(Val) [function]
+  syntax Bool ::= isNumericValue(Val) [function]
+
+  rule numericValue(I:Int) => I
+  rule numericValue(I32(I)) => I
+  rule numericValue(I64(I)) => I
+  rule numericValue(TBB32(I)) => I
+
+  rule isNumericValue(_:Int) => true
+  rule isNumericValue(I32(_:Int)) => true
+  rule isNumericValue(I64(_:Int)) => true
+  rule isNumericValue(TBB32(_:Int)) => true
+  rule isNumericValue(_) => false [owise]
 
   rule <k> I1:Int + I2:Int => I1 +Int I2 ... </k>
   rule <k> I1:Int - I2:Int => I1 -Int I2 ... </k>
   rule <k> I1:Int * I2:Int => I1 *Int I2 ... </k>
   rule <k> I1:Int / I2:Int => I1 /Int I2 ... </k> requires I2 =/=Int 0
   rule <k> _I:Int / 0 => ERR ... </k>
+
+  rule <k> I32(I1) + I32(I2) => I32(wrapI32(I1 +Int I2)) ... </k>
+  rule <k> I32(I1) + I2:Int => I32(wrapI32(I1 +Int I2)) ... </k>
+  rule <k> I1:Int + I32(I2) => I32(wrapI32(I1 +Int I2)) ... </k>
+  rule <k> I32(I1) - I32(I2) => I32(wrapI32(I1 -Int I2)) ... </k>
+  rule <k> I32(I1) - I2:Int => I32(wrapI32(I1 -Int I2)) ... </k>
+  rule <k> I1:Int - I32(I2) => I32(wrapI32(I1 -Int I2)) ... </k>
+  rule <k> I32(I1) * I32(I2) => I32(wrapI32(I1 *Int I2)) ... </k>
+  rule <k> I32(I1) * I2:Int => I32(wrapI32(I1 *Int I2)) ... </k>
+  rule <k> I1:Int * I32(I2) => I32(wrapI32(I1 *Int I2)) ... </k>
+  rule <k> I32(I1) / I32(I2) => I32(wrapI32(I1 /Int I2)) ... </k> requires I2 =/=Int 0
+  rule <k> I32(I1) / I2:Int => I32(wrapI32(I1 /Int I2)) ... </k> requires I2 =/=Int 0
+  rule <k> I32(_) / I32(0) => ERR ... </k>
+  rule <k> I32(_) / 0 => ERR ... </k>
+
+  rule <k> I64(I1) + I64(I2) => I64(wrapI64(I1 +Int I2)) ... </k>
+  rule <k> I64(I1) + I2:Int => I64(wrapI64(I1 +Int I2)) ... </k>
+  rule <k> I1:Int + I64(I2) => I64(wrapI64(I1 +Int I2)) ... </k>
+  rule <k> I64(I1) - I64(I2) => I64(wrapI64(I1 -Int I2)) ... </k>
+  rule <k> I64(I1) - I2:Int => I64(wrapI64(I1 -Int I2)) ... </k>
+  rule <k> I1:Int - I64(I2) => I64(wrapI64(I1 -Int I2)) ... </k>
+  rule <k> I64(I1) * I64(I2) => I64(wrapI64(I1 *Int I2)) ... </k>
+  rule <k> I64(I1) * I2:Int => I64(wrapI64(I1 *Int I2)) ... </k>
+  rule <k> I1:Int * I64(I2) => I64(wrapI64(I1 *Int I2)) ... </k>
+  rule <k> I64(I1) / I64(I2) => I64(wrapI64(I1 /Int I2)) ... </k> requires I2 =/=Int 0
+  rule <k> I64(I1) / I2:Int => I64(wrapI64(I1 /Int I2)) ... </k> requires I2 =/=Int 0
+  rule <k> I64(_) / I64(0) => ERR ... </k>
+  rule <k> I64(_) / 0 => ERR ... </k>
+
+  rule <k> TBB32(I1) + TBB32(I2) => normalizeTBB32(I1 +Int I2) ... </k>
+  rule <k> TBB32(I1) + I2:Int => normalizeTBB32(I1 +Int I2) ... </k>
+  rule <k> I1:Int + TBB32(I2) => normalizeTBB32(I1 +Int I2) ... </k>
+  rule <k> TBB32(I1) - TBB32(I2) => normalizeTBB32(I1 -Int I2) ... </k>
+  rule <k> TBB32(I1) - I2:Int => normalizeTBB32(I1 -Int I2) ... </k>
+  rule <k> I1:Int - TBB32(I2) => normalizeTBB32(I1 -Int I2) ... </k>
+  rule <k> TBB32(I1) * TBB32(I2) => normalizeTBB32(I1 *Int I2) ... </k>
+  rule <k> TBB32(I1) * I2:Int => normalizeTBB32(I1 *Int I2) ... </k>
+  rule <k> I1:Int * TBB32(I2) => normalizeTBB32(I1 *Int I2) ... </k>
+  rule <k> TBB32(I1) / TBB32(I2) => normalizeTBB32(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB32(I1) / I2:Int => normalizeTBB32(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB32(_) / TBB32(0) => ERR ... </k>
+  rule <k> TBB32(_) / 0 => ERR ... </k>
 
   rule <k> ERR + _:Val => ERR ... </k>
   rule <k> _:Val + ERR => ERR ... </k>
@@ -170,20 +259,26 @@ module ARIA
   // Comparisons and conditionals
   // -------------------------------------------------------------------------
 
-  rule <k> I1:Int <  I2:Int => I1 <Int  I2 ... </k>
-  rule <k> I1:Int <= I2:Int => I1 <=Int I2 ... </k>
-  rule <k> I1:Int >  I2:Int => I1 >Int  I2 ... </k>
-  rule <k> I1:Int >= I2:Int => I1 >=Int I2 ... </k>
-  rule <k> I1:Int == I2:Int => I1 ==Int I2 ... </k>
-  rule <k> I1:Int != I2:Int => I1 =/=Int I2 ... </k>
+  rule <k> V1:Val <  V2:Val => numericValue(V1) <Int  numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
+  rule <k> V1:Val <= V2:Val => numericValue(V1) <=Int numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
+  rule <k> V1:Val >  V2:Val => numericValue(V1) >Int  numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
+  rule <k> V1:Val >= V2:Val => numericValue(V1) >=Int numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
+  rule <k> V1:Val == V2:Val => numericValue(V1) ==Int numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
+  rule <k> V1:Val != V2:Val => numericValue(V1) =/=Int numericValue(V2) ... </k>
+    requires isNumericValue(V1) andBool isNumericValue(V2)
   rule <k> B1:Bool == B2:Bool => B1 ==Bool B2 ... </k>
   rule <k> B1:Bool != B2:Bool => B1 =/=Bool B2 ... </k>
   rule <k> ERR == ERR => true ... </k>
   rule <k> ERR != ERR => false ... </k>
-     rule <k> ERR == _:Int => false ... </k>
-     rule <k> _:Int == ERR => false ... </k>
-     rule <k> ERR != _:Int => true ... </k>
-     rule <k> _:Int != ERR => true ... </k>
+  rule <k> ERR == V:Val => false ... </k> requires isNumericValue(V)
+  rule <k> V:Val == ERR => false ... </k> requires isNumericValue(V)
+  rule <k> ERR != V:Val => true ... </k> requires isNumericValue(V)
+  rule <k> V:Val != ERR => true ... </k> requires isNumericValue(V)
   rule <k> Unknown == Unknown => true ... </k>
   rule <k> Unknown != Unknown => false ... </k>
 
@@ -204,7 +299,7 @@ module ARIA
   rule <k> Result(_:Val, _:Val, true) defaults Fallback:Exp => Fallback ... </k>
   rule <k> ?! Result(_:Val, V:Val, false) => V ... </k>
 
-     syntax Exp ::= "invokeFailsafe" "(" Val ")" [symbol(invokeFailsafe)]
+  syntax Exp ::= "invokeFailsafe" "(" Val ")" [symbol(invokeFailsafe)]
 
   rule <k> ?! Result(E:Val, _:Val, true) => invokeFailsafe(E) ... </k>
        <failsafe-triggered> _ => true </failsafe-triggered>
@@ -221,7 +316,7 @@ module ARIA
   // loop(start, end, step) with implicit $ iterator
   // -------------------------------------------------------------------------
 
-     syntax Stmt ::= "loopIter" "(" Int "," Int "," Int "," Block ")" [symbol(loopIter)]
+  syntax Stmt ::= "loopIter" "(" Int "," Int "," Int "," Block ")" [symbol(loopIter)]
 
   rule <k> $ => I ... </k>
        <loop-index> I </loop-index>
@@ -252,9 +347,11 @@ module ARIA
   // Terminal process semantics
   // -------------------------------------------------------------------------
 
-  rule <k> exit V:Int ; ~> _ => .K </k>
-       <exit-code> _ => V </exit-code>
+  rule <k> exit V:Val ; ~> _ => .K </k>
+       <exit-code> _ => numericValue(V) </exit-code>
+    requires isNumericValue(V)
 
-  rule <k> exit ( V:Int ) ; ~> _ => .K </k>
-       <exit-code> _ => V </exit-code>
+  rule <k> exit ( V:Val ) ; ~> _ => .K </k>
+       <exit-code> _ => numericValue(V) </exit-code>
+    requires isNumericValue(V)
 endmodule
