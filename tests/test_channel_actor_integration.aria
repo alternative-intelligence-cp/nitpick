@@ -84,7 +84,7 @@ func:main = int32() {
         raw Channel.send(ch, 100i64);
         raw Channel.send(ch, 200i64);
         raw Channel.send(ch, 300i64);
-        exit 0i64;
+        pass 0i64;
     };
 
     // Producer B sends 10,20,30
@@ -92,7 +92,7 @@ func:main = int32() {
         raw Channel.send(ch, 10i64);
         raw Channel.send(ch, 20i64);
         raw Channel.send(ch, 30i64);
-        exit 0i64;
+        pass 0i64;
     };
 
     int64:ta = raw Thread.spawn(prod_a, fanin_ch);
@@ -140,7 +140,7 @@ func:main = int32() {
     (int64)(int64):uc_sender = int64(int64:ch) {
         raw Channel.send(ch, 42i64);
         raw Channel.close(ch);
-        exit 0i64;
+        pass 0i64;
     };
 
     int64:uc_tid = raw Thread.spawn(uc_sender, uc);
@@ -170,7 +170,7 @@ func:main = int32() {
     // Simulate: worker sends a result to reply channel
     (int64)(int64):worker = int64(int64:reply) {
         raw Channel.send(reply, 42i64);
-        exit 0i64;
+        pass 0i64;
     };
 
     int64:wt = raw Thread.spawn(worker, reply_ch);

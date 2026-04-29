@@ -1,8 +1,5 @@
-// Expected: COMPILER ERROR
-/**
- * Determinism Test: Loop Allocations (simple)
- * Tests allocation determinism in a loop without dereferencing
- */
+// Determinism Test: Loop Allocations (simple)
+// Tests allocation determinism in a loop without dereferencing
 
 func:main = int32() {
     int64:i = 0;
@@ -10,16 +7,16 @@ func:main = int32() {
     int64:size = 256;
 
     while (i < count) {
-        wild int8->ptr = alloc(size);
-        print(i);
+        wild int8->:ptr = alloc(size);
+        print("alloc");
         free(ptr);
         i = (i + 1);
     }
 
     int64:complete = 100;
-    print(complete);
+    print("complete");
 
-    return 0;
+    exit 0;
 };
 
 func:failsafe = int32(tbb32:err) {

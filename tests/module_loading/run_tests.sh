@@ -99,4 +99,21 @@ echo "====================================="
 echo "Results: $PASSED passed, $FAILED failed"
 echo "====================================="
 
+# Test 9: Diamond import pattern (A→B→D, A→C→D)
+echo ""
+echo "[TEST 9] Diamond import deduplication..."
+if $ARIA_COMPILER $TEST_DIR/diamond_test.aria -o /tmp/test_diamond 2>/dev/null && /tmp/test_diamond; then
+    echo "  ✓ PASS: Diamond import compiled and ran correctly"
+    PASSED=$((PASSED + 1))
+else
+    echo "  ✗ FAIL: Diamond import failed (module cache deduplication broken)"
+    FAILED=$((FAILED + 1))
+fi
+rm -f /tmp/test_diamond
+
+echo ""
+echo "====================================="
+echo "Final Results: $PASSED passed, $FAILED failed"
+echo "====================================="
+
 exit $FAILED

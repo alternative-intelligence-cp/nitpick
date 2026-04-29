@@ -14,7 +14,11 @@ func:main = int32() {
     Result<int32>:r2 = divide(30i32, 5i32);
     int32:z = r2 ? 0i32;                      // Pattern 3: stored unwrap
     
-    exit x + y + z;  // Should be 16
+    int32:total = x + y + z;
+    if (total == 16i32) {
+        exit 0;
+    }
+    exit 1;  // Should be 16
 };
 
 func:failsafe = int32(tbb32:err) {

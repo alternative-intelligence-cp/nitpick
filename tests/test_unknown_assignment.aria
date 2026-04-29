@@ -28,8 +28,11 @@ func:main = int32() {
     int32:a = raw test_unknown_assignment();  // Should be 42
     int32:b = raw test_unknown_vs_regular();  // Should be 2
     
-    // Return 42 + 2 = 44
-    exit a + b;
+    // Self-check: 42 + 2 = 44
+    if (a == 42i32 && b == 2i32) {
+        exit 0;
+    }
+    exit 1;
 };
 
 func:failsafe = int32(tbb32:err) {

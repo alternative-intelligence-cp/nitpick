@@ -246,6 +246,10 @@ public:
     void register_jit_root(void** root_addr);
     void unregister_jit_root(void** root_addr);
     
+    // Fork safety: acquire/release all GC mutexes around fork()
+    void lock_for_fork();
+    void unlock_for_fork();
+    
     // Queries
     bool is_heap_pointer(void* ptr) const;
     ObjHeader* get_header(void* ptr) const;

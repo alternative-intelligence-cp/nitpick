@@ -2,7 +2,7 @@
 
 ## Overview
 
-Aria v0.2.13 adds WebAssembly (WASM) as a compilation target. Compile Aria programs to `.wasm` files that run in WASI-compatible runtimes like `wasmtime`, `wasmer`, or `wasm3`.
+Aria supports WebAssembly (WASM) as a compilation target (since v0.2.13). Compile Aria programs to `.wasm` files that run in WASI-compatible runtimes like `wasmtime`, `wasmer`, or `wasm3`.
 
 ## Prerequisites
 

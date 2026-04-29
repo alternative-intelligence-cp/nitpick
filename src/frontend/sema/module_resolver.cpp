@@ -35,7 +35,7 @@ ModuleResolver::ModuleResolver(const std::string& rootPath)
 std::string ModuleResolver::resolveImport(const UseStmt* useStmt, 
                                           const std::string& currentModulePath) {
     if (!useStmt) {
-        addError("Null use statement");
+        addError("Internal error: null use statement in module resolver");
         return "";
     }
     
@@ -85,7 +85,7 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
                                                bool isFilePath,
                                                const std::string& currentModulePath) {
     if (path.empty()) {
-        addError("Empty module path");
+        addError("Empty module path in use statement. Syntax: use \"module\".* or use \"./path.aria\".*");
         return "";
     }
     

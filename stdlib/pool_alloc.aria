@@ -3,7 +3,7 @@
 // Fixed-size block allocation with free list.
 // Import with: use "pool_alloc.aria".*;
 //
-// Pool layout (4 int64 header + data buffer + free-list buffer):
+// Pool layout (5 int64 header + data buffer + free-list buffer):
 //   slot 0 = block_size   (bytes per block)
 //   slot 1 = block_count  (total blocks)
 //   slot 2 = data_ptr     (pointer to data buffer)
@@ -42,10 +42,8 @@ Type:PoolAlloc = {
         aria_libc_mem_write_i64(hdr, 32i64, block_count - 1i64);
 
         // Fill free list: [0, 1, 2, ..., block_count-1]
-        int64:i = 0i64;
         loop(0i64, block_count, 1i64) {
-            aria_libc_mem_write_i64(flist, i * 8i64, i);
-            i = i + 1i64;
+            aria_libc_mem_write_i64(flist, $ * 8i64, $);
         }
         pass hdr;
     };

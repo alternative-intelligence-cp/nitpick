@@ -1109,5 +1109,23 @@ void GCState::unregister_jit_root(void** root_addr) {
     );
 }
 
+// =========================================================================
+// Fork Safety
+// =========================================================================
+
+void GCState::lock_for_fork() {
+    gc_mutex.lock();
+    gray_mutex.lock();
+    safepoint_mutex.lock();
+    jit_roots_mutex.lock();
+}
+
+void GCState::unlock_for_fork() {
+    jit_roots_mutex.unlock();
+    safepoint_mutex.unlock();
+    gray_mutex.unlock();
+    gc_mutex.unlock();
+}
+
 } // namespace runtime
 } // namespace aria

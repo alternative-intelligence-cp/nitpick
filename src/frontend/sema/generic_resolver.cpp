@@ -148,13 +148,14 @@ TypeSubstitution GenericResolver::resolveExplicitTypeArgs(
     TypeSubstitution substitution;
     
     if (!funcDecl) {
-        addError("Invalid function declaration");
+        addError("Internal error: null function declaration in generic resolution");
         return substitution;
     }
     
     // Check count match
     if (funcDecl->genericParams.size() != typeArgs.size()) {
-        addError("Type argument count mismatch: expected " +
+        addError("Generic type argument count mismatch for '" + funcDecl->funcName + 
+                "': expected " +
                 std::to_string(funcDecl->genericParams.size()) +
                 ", got " + std::to_string(typeArgs.size()));
         return substitution;
@@ -162,7 +163,7 @@ TypeSubstitution GenericResolver::resolveExplicitTypeArgs(
     
     // Check if TypeSystem is available
     if (!typeSystem) {
-        addError("TypeSystem not initialized for type resolution");
+        addError("Internal error: TypeSystem not initialized for generic type resolution");
         return substitution;
     }
     
@@ -372,7 +373,7 @@ Specialization* Monomorphizer::requestSpecialization(
     const TypeSubstitution& substitution) {
     
     if (!funcDecl) {
-        addError("Invalid function declaration");
+        addError("Internal error: null function declaration in monomorphization");
         return nullptr;
     }
     
@@ -1078,12 +1079,12 @@ std::string Monomorphizer::requestStructSpecialization(
     const TypeSubstitution& substitution) {
     
     if (!structDecl) {
-        addError("Invalid struct declaration");
+        addError("Internal error: null struct declaration in generic specialization");
         return "";
     }
     
     if (!typeSystem) {
-        addError("TypeSystem not initialized for struct specialization");
+        addError("Internal error: TypeSystem not initialized for struct specialization");
         return "";
     }
     

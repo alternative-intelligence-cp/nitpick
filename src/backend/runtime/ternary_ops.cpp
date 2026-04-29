@@ -153,13 +153,11 @@ int8_t aria_trit_add(int8_t a, int8_t b) {
     // ERR propagation (sticky error)
     if (a == -128 || b == -128) return -128;  // TRIT_ERR
     
-    int16_t result = aria_trit_add_carry(a, b, 0);
-    int8_t sum = static_cast<int8_t>(result & 0xFF);
-    
-    // Check if result is out of valid trit range (-1, 0, 1)
-    if (sum < -1 || sum > 1) return -128;  // Overflow → ERR
-    
-    return sum;
+    // Saturating addition: clamp to valid trit range [-1, 1]
+    int raw_sum = static_cast<int>(a) + static_cast<int>(b);
+    if (raw_sum > 1) return 1;
+    if (raw_sum < -1) return -1;
+    return static_cast<int8_t>(raw_sum);
 }
 
 int8_t aria_trit_sub(int8_t a, int8_t b) {
@@ -626,13 +624,13 @@ uint16_t aria_bin_to_nyte(int32_t value) {
 
 int32_t aria_nyte_to_bin(uint16_t nyte) {
     if (nyte == NYTE_DIRECT_ERR) return INT32_MIN;
-    // Remove the NYTE_BIAS offset to recover the signed balanced-nonary integer.
-    return static_cast<int32_t>(nyte) - NYTE_BIAS;
+    // Interpret as signed to recover the balanced-nonary integer.
+    return static_cast<int32_t>(static_cast<int16_t>(nyte));
 }
 
 int8_t aria_nyte_get_nit(uint16_t nyte, uint8_t index) {
     if (nyte == NYTE_DIRECT_ERR || index > 4) return INT8_MIN;
-    int32_t value = static_cast<int32_t>(nyte) - NYTE_BIAS;
+    int32_t value = static_cast<int32_t>(static_cast<int16_t>(nyte));
     // Balanced nonary digit extraction: use floor_mod (non-negative remainder
     // for a positive divisor) so that the digit is always extracted correctly
     // even when value is negative. C's % for negative values truncates toward
@@ -704,7 +702,7 @@ extern "C" uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, i
         n2 < -4 || n2 > 4 ||
         n3 < -4 || n3 > 4 ||
         n4 < -4 || n4 > 4) {
-        return NYTE_ERR;
+        return NYTE_DIRECT_ERR;
     }
     
     // Compute positional value in balanced nonary
@@ -715,12 +713,12 @@ extern "C" uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, i
                     n4 * POW9[4];
     
     // Check if result is in valid nyte range
-    if (value < -NYTE_BIAS || value > NYTE_BIAS) {
-        return NYTE_ERR;
+    if (value < TERNARY_MIN || value > TERNARY_MAX) {
+        return NYTE_DIRECT_ERR;
     }
     
-    // Apply bias to map to unsigned range
-    return static_cast<uint16_t>(value + NYTE_BIAS);
+    // Return as raw signed value (consistent with nyte arithmetic)
+    return static_cast<uint16_t>(static_cast<int16_t>(value));
 }
 
 /**
@@ -740,14 +738,14 @@ extern "C" uint16_t aria_pack_nyte(int8_t n0, int8_t n1, int8_t n2, int8_t n3, i
  * If packed == NYTE_ERR, all nits are set to INT8_MIN (error sentinel)
  */
 extern "C" void aria_unpack_nyte(uint16_t packed, int8_t* n0, int8_t* n1, int8_t* n2, int8_t* n3, int8_t* n4) {
-    if (packed == NYTE_ERR) {
+    if (packed == NYTE_DIRECT_ERR) {
         // Error propagation
         *n0 = *n1 = *n2 = *n3 = *n4 = INT8_MIN;
         return;
     }
     
-    // Remove bias to get signed value
-    int32_t value = static_cast<int32_t>(packed) - NYTE_BIAS;
+    // Interpret as signed to get balanced nonary value
+    int32_t value = static_cast<int32_t>(static_cast<int16_t>(packed));
     
     // Extract each nit using balanced nonary (floor_mod, not C truncation mod).
     for (int i = 0; i < 5; ++i) {

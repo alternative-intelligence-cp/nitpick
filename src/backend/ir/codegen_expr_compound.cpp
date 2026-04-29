@@ -1388,6 +1388,18 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
         throw std::runtime_error("Failed to generate code for cast source expression");
     }
     
+    // Auto-unwrap Result<T> = { T, ptr, i8 } from function calls.
+    // User functions return safety-wrapped results; extract field 0 (the value)
+    // before performing the cast.
+    if (sourceValue->getType()->isStructTy()) {
+        llvm::StructType* st = llvm::cast<llvm::StructType>(sourceValue->getType());
+        if (st->getNumElements() == 3 &&
+            st->getElementType(1)->isPointerTy() &&
+            (st->getElementType(2)->isIntegerTy(8) || st->getElementType(2)->isIntegerTy(1))) {
+            sourceValue = builder.CreateExtractValue(sourceValue, {0}, "cast_unwrap_result");
+        }
+    }
+    
     // Get LLVM types
     llvm::Type* sourceLLVMType = sourceValue->getType();
     llvm::Type* targetLLVMType = getLLVMTypeFromString(expr->targetType);

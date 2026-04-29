@@ -1397,8 +1397,20 @@ llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsign
     builder.CreateStore(L, allocaL);
 
     // Truncate shift amount to i32
+    // If R is a struct (LBIM big integer), extract the low i64 limb first
     llvm::Value* shiftI32 = R;
-    if (R->getType() != i32Type) {
+    if (R->getType()->isStructTy()) {
+        llvm::Type* field0 = R->getType()->getStructElementType(0);
+        if (field0->isArrayTy()) {
+            // struct { [N x i64] } — extract element [0][0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0, 0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        } else {
+            // struct { i64, i64, ... } — extract element [0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        }
+    } else if (R->getType() != i32Type) {
         shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
     }
 
@@ -1443,8 +1455,21 @@ llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsign
     llvm::Value* allocaL = builder.CreateAlloca(structType, nullptr, "shr_arg");
     builder.CreateStore(L, allocaL);
 
+    // Truncate shift amount to i32
+    // If R is a struct (LBIM big integer), extract the low i64 limb first
     llvm::Value* shiftI32 = R;
-    if (R->getType() != i32Type) {
+    if (R->getType()->isStructTy()) {
+        llvm::Type* field0 = R->getType()->getStructElementType(0);
+        if (field0->isArrayTy()) {
+            // struct { [N x i64] } — extract element [0][0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0, 0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        } else {
+            // struct { i64, i64, ... } — extract element [0]
+            llvm::Value* limb0 = builder.CreateExtractValue(R, {0}, "shift_limb0");
+            shiftI32 = builder.CreateTrunc(limb0, i32Type, "shift_trunc");
+        }
+    } else if (R->getType() != i32Type) {
         shiftI32 = builder.CreateTrunc(R, i32Type, "shift_trunc");
     }
 
@@ -1549,6 +1574,9 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.sadd.with.overflow
     llvm::Function* saddIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::sadd_with_overflow, {intType});
@@ -1560,11 +1588,19 @@ llvm::Value* IRGenerator::generateSafeAdd(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(saddResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(saddResult, 1, "add.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation — if either operand is already
+    // the unknown sentinel, skip arithmetic and return sentinel directly.
+    // Only for types >= 32 bits where sentinel doesn't collide with valid values.
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "add.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "add.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "add.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const std::string& name) {
@@ -1595,6 +1631,9 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.ssub.with.overflow
     llvm::Function* ssubIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::ssub_with_overflow, {intType});
@@ -1606,11 +1645,17 @@ llvm::Value* IRGenerator::generateSafeSub(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(ssubResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(ssubResult, 1, "sub.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation (only for >= 32 bit types)
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "sub.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "sub.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "sub.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const std::string& name) {
@@ -1643,6 +1688,9 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
         }
     }
     
+    // Generate Unknown sentinel (signed maximum)
+    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
+    
     // Get the overflow intrinsic: llvm.smul.with.overflow
     llvm::Function* smulIntrinsic = llvm::Intrinsic::getOrInsertDeclaration(
         module.get(), llvm::Intrinsic::smul_with_overflow, {intType});
@@ -1654,11 +1702,17 @@ llvm::Value* IRGenerator::generateSafeMul(llvm::Value* L, llvm::Value* R, const 
     llvm::Value* result = builder.CreateExtractValue(smulResult, 0, name);
     llvm::Value* overflow = builder.CreateExtractValue(smulResult, 1, "mul.overflow");
     
-    // Generate Unknown sentinel (signed maximum)
-    llvm::Value* unknownSentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(bitWidth));
-    
     // Select: if overflow, return Unknown; otherwise return actual result
-    return builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    llvm::Value* overflowResult = builder.CreateSelect(overflow, unknownSentinel, result, "safe." + name);
+    
+    // Phase 5.3: Unknown sentinel propagation (only for >= 32 bit types)
+    if (bitWidth >= 32) {
+        llvm::Value* lIsUnknown = builder.CreateICmpEQ(L, unknownSentinel, "mul.l.isunk");
+        llvm::Value* rIsUnknown = builder.CreateICmpEQ(R, unknownSentinel, "mul.r.isunk");
+        llvm::Value* eitherUnknown = builder.CreateOr(lIsUnknown, rIsUnknown, "mul.either.unk");
+        return builder.CreateSelect(eitherUnknown, unknownSentinel, overflowResult, "prop." + name);
+    }
+    return overflowResult;
 }
 
 // Helper function to map type name strings to LLVM types
@@ -2343,6 +2397,28 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     if (!paramType) {
                         paramType = type_system->getStructType(typeStr);
                     }
+                    // v0.16.5-5: Handle generic struct names: "Complex<int32>" → "Complex_int32"
+                    if (!paramType) {
+                        size_t angle_pos = typeStr.find('<');
+                        if (angle_pos != std::string::npos && typeStr.back() == '>') {
+                            std::string baseName = typeStr.substr(0, angle_pos);
+                            std::string argsStr = typeStr.substr(angle_pos + 1, typeStr.size() - angle_pos - 2);
+                            std::string mangledLookup = baseName;
+                            size_t start_pos = 0;
+                            int depth = 0;
+                            for (size_t ci = 0; ci <= argsStr.size(); ci++) {
+                                if (ci == argsStr.size() || (argsStr[ci] == ',' && depth == 0)) {
+                                    std::string a = argsStr.substr(start_pos, ci - start_pos);
+                                    a.erase(0, a.find_first_not_of(" \t"));
+                                    a.erase(a.find_last_not_of(" \t") + 1);
+                                    if (!a.empty()) mangledLookup += "_" + a;
+                                    start_pos = ci + 1;
+                                } else if (argsStr[ci] == '<') { depth++; }
+                                else if (argsStr[ci] == '>') { depth--; }
+                            }
+                            paramType = type_system->getStructType(mangledLookup);
+                        }
+                    }
                     if (!paramType) {
                         paramType = type_system->getPrimitiveType(typeStr);
                     }
@@ -2602,18 +2678,60 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
         } else if (varDecl->initializer && varDecl->initializer->type == ASTNode::NodeType::BINARY_OP) {
             // BUG-09 fix: constant-fold binary expressions on literal operands for fixed globals.
-            // Handles e.g. `fixed int64:X = 2i64 * 3i64;` or `fixed int64:NEG = 0i64 - 5i64;`
+            // Extended to also resolve identifier operands referencing already-created globals
+            // (e.g. `const int64:SUM = A + B;` where A and B are earlier const/fixed globals).
             BinaryExpr* binExpr = static_cast<BinaryExpr*>(varDecl->initializer.get());
-            if (binExpr->left && binExpr->left->type == ASTNode::NodeType::LITERAL &&
-                binExpr->right && binExpr->right->type == ASTNode::NodeType::LITERAL) {
-                LiteralExpr* litL = static_cast<LiteralExpr*>(binExpr->left.get());
-                LiteralExpr* litR = static_cast<LiteralExpr*>(binExpr->right.get());
 
+            // Helper: resolve a binary operand to an int64 constant value.
+            // Handles LITERAL nodes and IDENTIFIER nodes that reference existing globals.
+            auto resolveInt = [&](ASTNode* operand, int64_t& out) -> bool {
+                if (operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(operand);
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        out = std::get<int64_t>(lit->value); return true;
+                    }
+                } else if (operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* id = static_cast<IdentifierExpr*>(operand);
+                    auto it = named_values.find(id->name);
+                    if (it != named_values.end()) {
+                        if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
+                            if (gv->hasInitializer()) {
+                                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(gv->getInitializer())) {
+                                    out = ci->getSExtValue(); return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+            // Helper: resolve a binary operand to a double constant value.
+            auto resolveFloat = [&](ASTNode* operand, double& out) -> bool {
+                if (operand->type == ASTNode::NodeType::LITERAL) {
+                    LiteralExpr* lit = static_cast<LiteralExpr*>(operand);
+                    if (std::holds_alternative<double>(lit->value)) {
+                        out = std::get<double>(lit->value); return true;
+                    }
+                } else if (operand->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* id = static_cast<IdentifierExpr*>(operand);
+                    auto it = named_values.find(id->name);
+                    if (it != named_values.end()) {
+                        if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(it->second)) {
+                            if (gv->hasInitializer()) {
+                                if (auto* cfp = llvm::dyn_cast<llvm::ConstantFP>(gv->getInitializer())) {
+                                    out = cfp->getValueAPF().convertToDouble(); return true;
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+
+            if (binExpr->left && binExpr->right) {
                 // Integer constant folding
-                if (std::holds_alternative<int64_t>(litL->value) &&
-                    std::holds_alternative<int64_t>(litR->value) && varType->isIntegerTy()) {
-                    int64_t lv = std::get<int64_t>(litL->value);
-                    int64_t rv = std::get<int64_t>(litR->value);
+                int64_t lv, rv;
+                if (varType->isIntegerTy() && resolveInt(binExpr->left.get(), lv) && resolveInt(binExpr->right.get(), rv)) {
                     int64_t result = 0;
                     bool folded = true;
                     switch (binExpr->op.type) {
@@ -2634,17 +2752,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     }
                 }
                 // Float constant folding
-                else if (std::holds_alternative<double>(litL->value) &&
-                         std::holds_alternative<double>(litR->value) && varType->isFloatingPointTy()) {
-                    double lv = std::get<double>(litL->value);
-                    double rv = std::get<double>(litR->value);
+                double flv, frv;
+                if (!initVal && varType->isFloatingPointTy() && resolveFloat(binExpr->left.get(), flv) && resolveFloat(binExpr->right.get(), frv)) {
                     double result = 0.0;
                     bool folded = true;
                     switch (binExpr->op.type) {
-                        case TokenType::TOKEN_PLUS:    result = lv + rv; break;
-                        case TokenType::TOKEN_MINUS:   result = lv - rv; break;
-                        case TokenType::TOKEN_STAR:    result = lv * rv; break;
-                        case TokenType::TOKEN_SLASH:   result = rv != 0.0 ? lv / rv : 0.0; break;
+                        case TokenType::TOKEN_PLUS:    result = flv + frv; break;
+                        case TokenType::TOKEN_MINUS:   result = flv - frv; break;
+                        case TokenType::TOKEN_STAR:    result = flv * frv; break;
+                        case TokenType::TOKEN_SLASH:   result = frv != 0.0 ? flv / frv : 0.0; break;
                         default: folded = false; break;
                     }
                     if (folded) {
@@ -3520,6 +3636,28 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             paramType = type_system->getStructType(typeStr);
                             if (paramType) {
                                 ARIA_DBG_STREAM << "[DEBUG] Found as struct type" << std::endl;
+                            }
+                        }
+                        // v0.16.5-5: Handle generic struct names: "Name<T>" → "Name_T"
+                        if (!paramType) {
+                            size_t angle_pos = typeStr.find('<');
+                            if (angle_pos != std::string::npos && typeStr.back() == '>') {
+                                std::string baseName = typeStr.substr(0, angle_pos);
+                                std::string argsStr = typeStr.substr(angle_pos + 1, typeStr.size() - angle_pos - 2);
+                                std::string mangledLookup = baseName;
+                                size_t start_pos = 0;
+                                int depth = 0;
+                                for (size_t ci = 0; ci <= argsStr.size(); ci++) {
+                                    if (ci == argsStr.size() || (argsStr[ci] == ',' && depth == 0)) {
+                                        std::string a = argsStr.substr(start_pos, ci - start_pos);
+                                        a.erase(0, a.find_first_not_of(" \t"));
+                                        a.erase(a.find_last_not_of(" \t") + 1);
+                                        if (!a.empty()) mangledLookup += "_" + a;
+                                        start_pos = ci + 1;
+                                    } else if (argsStr[ci] == '<') { depth++; }
+                                    else if (argsStr[ci] == '>') { depth--; }
+                                }
+                                paramType = type_system->getStructType(mangledLookup);
                             }
                         }
                         
@@ -4920,13 +5058,36 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             auto* arrType = llvm::cast<llvm::ArrayType>(varType);
                             llvm::Type* elemType = arrType->getElementType();
                             uint64_t numElems = arrType->getNumElements();
+                            
+                            // Determine source element type from the alloca
+                            llvm::Type* srcElemType = elemType;  // default: same as target
+                            if (auto* srcAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
+                                srcElemType = srcAlloca->getAllocatedType();
+                            }
+                            
                             for (uint64_t i = 0; i < numElems; ++i) {
-                                // Load element i from the tmp flat alloca
+                                // Load element i from the tmp flat alloca using SOURCE type
                                 llvm::Value* srcPtr = builder.CreateGEP(
-                                    elemType, initVal,
+                                    srcElemType, initVal,
                                     llvm::ConstantInt::get(builder.getInt64Ty(), i),
                                     "arr.init.src");
-                                llvm::Value* elem = builder.CreateLoad(elemType, srcPtr, "arr.init.elem");
+                                llvm::Value* elem = builder.CreateLoad(srcElemType, srcPtr, "arr.init.elem");
+                                
+                                // Cast if source and target element types differ
+                                if (srcElemType != elemType) {
+                                    if (srcElemType->isIntegerTy() && elemType->isIntegerTy()) {
+                                        unsigned srcBits = srcElemType->getIntegerBitWidth();
+                                        unsigned dstBits = elemType->getIntegerBitWidth();
+                                        if (srcBits > dstBits) {
+                                            elem = builder.CreateTrunc(elem, elemType, "arr.init.trunc");
+                                        } else {
+                                            elem = builder.CreateSExt(elem, elemType, "arr.init.sext");
+                                        }
+                                    } else if (srcElemType->isFloatingPointTy() && elemType->isFloatingPointTy()) {
+                                        elem = builder.CreateFPCast(elem, elemType, "arr.init.fpcast");
+                                    }
+                                }
+                                
                                 // Store into our typed alloca via two-index GEP
                                 std::vector<llvm::Value*> destIdx = {
                                     llvm::ConstantInt::get(builder.getInt64Ty(), 0),
@@ -5684,7 +5845,12 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         llvm::IntegerType* patIntTy = llvm::cast<llvm::IntegerType>(pattern_val->getType());
                         if (patIntTy->getBitWidth() < selIntTy->getBitWidth()) {
                             ARIA_DBG_STREAM << "[DEBUG PICK] Extending pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
-                            pattern_val = builder.CreateSExt(pattern_val, selector->getType(), "pat_sext");
+                            // Use ZExt for booleans (i1) to preserve true=1, SExt for other integers
+                            if (patIntTy->getBitWidth() == 1) {
+                                pattern_val = builder.CreateZExt(pattern_val, selector->getType(), "pat_zext");
+                            } else {
+                                pattern_val = builder.CreateSExt(pattern_val, selector->getType(), "pat_sext");
+                            }
                         } else if (patIntTy->getBitWidth() > selIntTy->getBitWidth()) {
                             ARIA_DBG_STREAM << "[DEBUG PICK] Truncating pattern from " << patIntTy->getBitWidth() << " to " << selIntTy->getBitWidth() << std::endl;
                             pattern_val = builder.CreateTrunc(pattern_val, selector->getType(), "pat_trunc");
@@ -7905,6 +8071,82 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 }
                             }
                         }
+                        // Handle nested struct member access: obj.field1.field2 = value
+                        // Walk the MemberAccess chain to find the root identifier,
+                        // collecting field names, then GEP through each level.
+                        if (member->object->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                            // Collect the chain: [field2, field1] (leaf first)
+                            std::vector<std::string> fieldChain;
+                            fieldChain.push_back(member->member);
+                            ASTNode* cur = member->object.get();
+                            while (cur->type == ASTNode::NodeType::MEMBER_ACCESS) {
+                                MemberAccessExpr* mc = static_cast<MemberAccessExpr*>(cur);
+                                fieldChain.push_back(mc->member);
+                                cur = mc->object.get();
+                            }
+                            // cur should now be the root identifier
+                            if (cur->type == ASTNode::NodeType::IDENTIFIER) {
+                                IdentifierExpr* rootId = static_cast<IdentifierExpr*>(cur);
+                                auto rootIt = named_values.find(rootId->name);
+                                if (rootIt != named_values.end()) {
+                                    llvm::Value* rootPtr = rootIt->second;
+                                    llvm::Type* curLLTy = nullptr;
+                                    if (auto* ai = llvm::dyn_cast<llvm::AllocaInst>(rootPtr))
+                                        curLLTy = ai->getAllocatedType();
+                                    // Get the Aria type for the root variable
+                                    sema::Type* curAriaType = nullptr;
+                                    auto tIt = value_types.find(rootPtr);
+                                    if (tIt != value_types.end())
+                                        curAriaType = tIt->second;
+                                    if (!curAriaType) {
+                                        auto vIt = var_aria_types.find(rootId->name);
+                                        if (vIt != var_aria_types.end())
+                                            curAriaType = type_system->getStructType(vIt->second);
+                                    }
+                                    if (curLLTy && curLLTy->isStructTy() && curAriaType &&
+                                        curAriaType->getKind() == TypeKind::STRUCT) {
+                                        // Walk the chain from root to leaf (reverse order)
+                                        llvm::Value* curPtr = rootPtr;
+                                        bool ok = true;
+                                        for (int ci = static_cast<int>(fieldChain.size()) - 1; ci > 0 && ok; --ci) {
+                                            const std::string& fname = fieldChain[ci];
+                                            sema::StructType* aST = static_cast<sema::StructType*>(curAriaType);
+                                            int fIdx = aST->getFieldIndex(fname);
+                                            if (fIdx < 0) { ok = false; break; }
+                                            const sema::StructType::Field* sf = aST->getField(fname);
+                                            curPtr = builder.CreateStructGEP(curLLTy, curPtr, fIdx, fname + ".ptr");
+                                            curLLTy = llvm::cast<llvm::StructType>(curLLTy)->getElementType(fIdx);
+                                            curAriaType = sf ? sf->type : nullptr;
+                                            if (!curAriaType || curAriaType->getKind() != TypeKind::STRUCT) {
+                                                ok = (ci == 1); // Last intermediate must be struct
+                                                if (ci != 1) ok = false;
+                                            }
+                                        }
+                                        if (ok) {
+                                            // Final field: fieldChain[0] is the leaf
+                                            const std::string& leafName = fieldChain[0];
+                                            sema::StructType* leafST = static_cast<sema::StructType*>(curAriaType);
+                                            int leafIdx = leafST->getFieldIndex(leafName);
+                                            if (leafIdx >= 0) {
+                                                llvm::Value* leafPtr = builder.CreateStructGEP(
+                                                    curLLTy, curPtr, leafIdx, leafName + ".ptr");
+                                                llvm::Value* rhs = codegenExpression(binop->right.get());
+                                                if (!rhs) return nullptr;
+                                                llvm::Type* expectedTy = llvm::cast<llvm::StructType>(curLLTy)->getElementType(leafIdx);
+                                                if (rhs->getType() != expectedTy) {
+                                                    if (rhs->getType()->isIntegerTy() && expectedTy->isIntegerTy())
+                                                        rhs = builder.CreateIntCast(rhs, expectedTy, true, "nested.icast");
+                                                    else if (rhs->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy())
+                                                        rhs = builder.CreateFPCast(rhs, expectedTy, "nested.fpcast");
+                                                }
+                                                builder.CreateStore(rhs, leafPtr);
+                                                return rhs;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         return nullptr;
                     }
                     
@@ -8485,18 +8727,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // SPECIAL HANDLING: Three-valued logic for comparisons (Phase 5.5)
-            // When ONE operand is unknown (not both), comparison result is unknown
-            // Note: unknown == unknown will naturally compare sentinels and return true
-            if ((leftIsUnknown || rightIsUnknown) && !(leftIsUnknown && rightIsUnknown)) {
-                // ONE operand is unknown (XOR) - result is unknown for comparisons
-                if (binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
-                    binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL ||
-                    binop->op.type == frontend::TokenType::TOKEN_LESS ||
+            // When the LEFT operand is the unknown literal (and right is not),
+            // the comparison is indeterminate — result is unknown.
+            // When the RIGHT operand is unknown literal, it's a sentinel CHECK
+            // ("is this value unknown?"), handled by the sentinel replacement below.
+            if (leftIsUnknown && !rightIsUnknown) {
+                // Left is the unknown literal — comparison result is unknown
+                if (binop->op.type == frontend::TokenType::TOKEN_LESS ||
                     binop->op.type == frontend::TokenType::TOKEN_LESS_EQUAL ||
                     binop->op.type == frontend::TokenType::TOKEN_GREATER ||
-                    binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL) {
+                    binop->op.type == frontend::TokenType::TOKEN_GREATER_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_EQUAL_EQUAL ||
+                    binop->op.type == frontend::TokenType::TOKEN_BANG_EQUAL) {
                     
-                    ARIA_DBG_STREAM << "[DEBUG] Comparison with one unknown operand - returning unknown sentinel" << std::endl;
+                    ARIA_DBG_STREAM << "[DEBUG] Comparison with unknown literal on left - returning unknown sentinel" << std::endl;
                     // Result is unknown - return i32 max (unknown sentinel for bool)
                     return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 
                                                   llvm::APInt::getSignedMaxValue(32).getSExtValue());
@@ -8983,6 +9227,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             return builder.CreateFAdd(L, R, "vec.addtmp");
                         return builder.CreateAdd(L, R, "vec.addtmp");
                     }
+                    // v0.16.5-5: Unsigned types use wrapping addition (modular arithmetic)
+                    if (isUnsigned) {
+                        return builder.CreateAdd(L, R, "addtmp");
+                    }
                     return generateSafeAdd(L, R, "addtmp");
                 case frontend::TokenType::TOKEN_MINUS:
                     // Check if either operand is a vector
@@ -9131,6 +9379,10 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         if (L->getType()->isFPOrFPVectorTy())
                             return builder.CreateFSub(L, R, "vec.subtmp");
                         return builder.CreateSub(L, R, "vec.subtmp");
+                    }
+                    // v0.16.5-5: Unsigned types use wrapping subtraction (modular arithmetic)
+                    if (isUnsigned) {
+                        return builder.CreateSub(L, R, "subtmp");
                     }
                     return generateSafeSub(L, R, "subtmp");
                 case frontend::TokenType::TOKEN_STAR:
@@ -9388,6 +9640,16 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 L = builder.CreateFPExt(L, R->getType(), "div_fpext");
                         }
                         return builder.CreateFDiv(L, R, "fdivtmp");
+                    }
+                    // v0.16.5-5: Unsigned types use UDiv
+                    if (isUnsigned) {
+                        // Division by zero check for unsigned
+                        llvm::Value* isZero = builder.CreateICmpEQ(R, llvm::ConstantInt::get(R->getType(), 0), "div.zero.chk");
+                        llvm::Value* safeR = builder.CreateSelect(isZero, llvm::ConstantInt::get(R->getType(), 1), R, "safe.divisor");
+                        llvm::Value* quotient = builder.CreateUDiv(L, safeR, "udivtmp");
+                        unsigned bw = L->getType()->getIntegerBitWidth();
+                        llvm::Value* sentinel = llvm::ConstantInt::get(context, llvm::APInt::getMaxValue(bw));
+                        return builder.CreateSelect(isZero, sentinel, quotient, "divtmp");
                     }
                     // v0.14.4: Division-by-zero check elimination
                     if (div_check_safe.count(expr)) {
@@ -11880,6 +12142,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
 
             llvm::Value* sourceValue = codegenExpression(castExpr->expression.get());
             if (!sourceValue) return nullptr;
+
+            // Auto-unwrap Result<T> = { T, ptr, i8 } from safety-wrapped function calls.
+            // Without this, @cast<uint64>(pub_func()) sees a struct source type,
+            // no int/float cast path matches, and the cast returns nullptr.
+            if (sourceValue->getType()->isStructTy()) {
+                llvm::StructType* st = llvm::cast<llvm::StructType>(sourceValue->getType());
+                if (st->getNumElements() == 3 &&
+                    st->getElementType(1)->isPointerTy() &&
+                    (st->getElementType(2)->isIntegerTy(8) || st->getElementType(2)->isIntegerTy(1))) {
+                    sourceValue = builder.CreateExtractValue(sourceValue, {0}, "cast_unwrap_result");
+                }
+            }
 
             // mapTypeFromName understands full Aria type names like "int64", "uint32"
             llvm::Type* targetType = mapTypeFromName(castExpr->targetType);

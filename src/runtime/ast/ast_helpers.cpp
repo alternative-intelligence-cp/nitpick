@@ -443,22 +443,22 @@ int32_t ast_get_type(void* node) {
     return ((ASTNode*)node)->type;
 }
 
-AriaString* ast_get_str(void* node) {
+AriaString ast_get_str(void* node) {
     ASTNode* n = (ASTNode*)node;
-    if (!n || !n->str_val) return make_str("", 0);
-    return make_str(n->str_val, (int64_t)strlen(n->str_val));
+    if (!n || !n->str_val) return *make_str("", 0);
+    return *make_str(n->str_val, (int64_t)strlen(n->str_val));
 }
 
-AriaString* ast_get_str2(void* node) {
+AriaString ast_get_str2(void* node) {
     ASTNode* n = (ASTNode*)node;
-    if (!n || !n->str_val2) return make_str("", 0);
-    return make_str(n->str_val2, (int64_t)strlen(n->str_val2));
+    if (!n || !n->str_val2) return *make_str("", 0);
+    return *make_str(n->str_val2, (int64_t)strlen(n->str_val2));
 }
 
-AriaString* ast_get_str3(void* node) {
+AriaString ast_get_str3(void* node) {
     ASTNode* n = (ASTNode*)node;
-    if (!n || !n->str_val3) return make_str("", 0);
-    return make_str(n->str_val3, (int64_t)strlen(n->str_val3));
+    if (!n || !n->str_val3) return *make_str("", 0);
+    return *make_str(n->str_val3, (int64_t)strlen(n->str_val3));
 }
 
 int64_t ast_get_int(void* node) {
@@ -603,26 +603,29 @@ int32_t ps_previous_type(void* state) {
 // Current token accessors
 // -----------------------------------------------------------------------
 
-AriaString* ps_peek_lexeme(void* state) {
+AriaString ps_peek_lexeme(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current;
     if (idx >= ps->token_count) idx = ps->token_count - 1;
-    return lex_token_lexeme(ps->lex_state, idx);
+    return *lex_token_lexeme(ps->lex_state, idx);
 }
 
 // Return the string value from a string literal token (lexeme with quotes stripped)
-AriaString* ps_peek_string_value(void* state) {
+AriaString ps_peek_string_value(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current;
     if (idx >= ps->token_count) idx = ps->token_count - 1;
     AriaString* lex = lex_token_lexeme(ps->lex_state, idx);
-    if (!lex || lex->length < 2) return lex;
+    if (!lex || lex->length < 2) {
+        if (!lex) return *make_str("", 0);
+        return *lex;
+    }
     // Strip leading and trailing quote characters
     if ((lex->data[0] == '"' && lex->data[lex->length - 1] == '"') ||
         (lex->data[0] == '\'' && lex->data[lex->length - 1] == '\'')) {
-        return make_str(lex->data + 1, lex->length - 2);
+        return *make_str(lex->data + 1, lex->length - 2);
     }
-    return lex;
+    return *lex;
 }
 
 int32_t ps_peek_line(void* state) {
@@ -653,28 +656,28 @@ double ps_peek_float_val(void* state) {
     return lex_token_float_val(ps->lex_state, idx);
 }
 
-AriaString* ps_peek_str_val(void* state) {
+AriaString ps_peek_str_val(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current;
     if (idx >= ps->token_count) idx = ps->token_count - 1;
-    return lex_token_str_val(ps->lex_state, idx);
+    return *lex_token_str_val(ps->lex_state, idx);
 }
 
-AriaString* ps_peek_raw_text(void* state) {
+AriaString ps_peek_raw_text(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current;
     if (idx >= ps->token_count) idx = ps->token_count - 1;
-    return lex_token_raw_val(ps->lex_state, idx);
+    return *lex_token_raw_val(ps->lex_state, idx);
 }
 
 // -----------------------------------------------------------------------
 // Previous token accessors
 // -----------------------------------------------------------------------
 
-AriaString* ps_previous_lexeme(void* state) {
+AriaString ps_previous_lexeme(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current > 0 ? ps->current - 1 : 0;
-    return lex_token_lexeme(ps->lex_state, idx);
+    return *lex_token_lexeme(ps->lex_state, idx);
 }
 
 int32_t ps_previous_line(void* state) {
@@ -701,16 +704,16 @@ double ps_previous_float_val(void* state) {
     return lex_token_float_val(ps->lex_state, idx);
 }
 
-AriaString* ps_previous_str_val(void* state) {
+AriaString ps_previous_str_val(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current > 0 ? ps->current - 1 : 0;
-    return lex_token_str_val(ps->lex_state, idx);
+    return *lex_token_str_val(ps->lex_state, idx);
 }
 
-AriaString* ps_previous_raw_text(void* state) {
+AriaString ps_previous_raw_text(void* state) {
     ParseState* ps = (ParseState*)state;
     int64_t idx = ps->current > 0 ? ps->current - 1 : 0;
-    return lex_token_raw_val(ps->lex_state, idx);
+    return *lex_token_raw_val(ps->lex_state, idx);
 }
 
 // -----------------------------------------------------------------------
@@ -736,11 +739,11 @@ int64_t ps_error_count(void* state) {
     return ((ParseState*)state)->error_count;
 }
 
-AriaString* ps_get_error(void* state, int64_t idx) {
+AriaString ps_get_error(void* state, int64_t idx) {
     ParseState* ps = (ParseState*)state;
-    if (!ps || idx < 0 || idx >= ps->error_count) return make_str("", 0);
+    if (!ps || idx < 0 || idx >= ps->error_count) return *make_str("", 0);
     const char* e = ps->errors[idx];
-    return make_str(e, (int64_t)strlen(e));
+    return *make_str(e, (int64_t)strlen(e));
 }
 
 // -----------------------------------------------------------------------
@@ -924,20 +927,20 @@ void ps_synchronize(void* state) {
 
 // Error message building helper — concat two strings in C
 // (Workaround: Aria codegen can't do string concat)
-AriaString* ast_concat_str(const char* a, const char* b) {
+AriaString ast_concat_str(const char* a, const char* b) {
     size_t la = a ? strlen(a) : 0;
     size_t lb = b ? strlen(b) : 0;
     char* buf = (char*)malloc(la + lb + 1);
     if (la > 0) memcpy(buf, a, la);
     if (lb > 0) memcpy(buf + la, b, lb);
     buf[la + lb] = '\0';
-    AriaString* result = make_str(buf, (int64_t)(la + lb));
+    AriaString result = *make_str(buf, (int64_t)(la + lb));
     free(buf);
     return result;
 }
 
 // Concat three strings
-AriaString* ast_concat_str3(const char* a, const char* b, const char* c) {
+AriaString ast_concat_str3(const char* a, const char* b, const char* c) {
     size_t la = a ? strlen(a) : 0;
     size_t lb = b ? strlen(b) : 0;
     size_t lc = c ? strlen(c) : 0;
@@ -946,7 +949,7 @@ AriaString* ast_concat_str3(const char* a, const char* b, const char* c) {
     if (lb > 0) memcpy(buf + la, b, lb);
     if (lc > 0) memcpy(buf + la + lb, c, lc);
     buf[la + lb + lc] = '\0';
-    AriaString* result = make_str(buf, (int64_t)(la + lb + lc));
+    AriaString result = *make_str(buf, (int64_t)(la + lb + lc));
     free(buf);
     return result;
 }
@@ -967,10 +970,10 @@ int32_t ast_child_type(void* node, int64_t idx) {
     return c ? c->type : -1;
 }
 
-AriaString* ast_child_str(void* node, int64_t idx) {
+AriaString ast_child_str(void* node, int64_t idx) {
     ASTNode* c = walk_child(node, idx);
-    if (!c || !c->str_val) return make_str("", 0);
-    return make_str(c->str_val, (int64_t)strlen(c->str_val));
+    if (!c || !c->str_val) return *make_str("", 0);
+    return *make_str(c->str_val, (int64_t)strlen(c->str_val));
 }
 
 int64_t ast_child_int(void* node, int64_t idx) {
@@ -1001,12 +1004,12 @@ int32_t ast_child2_type(void* node, int64_t i, int64_t j) {
     return cc ? cc->type : -1;
 }
 
-AriaString* ast_child2_str(void* node, int64_t i, int64_t j) {
+AriaString ast_child2_str(void* node, int64_t i, int64_t j) {
     ASTNode* c = walk_child(node, i);
-    if (!c) return make_str("", 0);
+    if (!c) return *make_str("", 0);
     ASTNode* cc = walk_child(c, j);
-    if (!cc || !cc->str_val) return make_str("", 0);
-    return make_str(cc->str_val, (int64_t)strlen(cc->str_val));
+    if (!cc || !cc->str_val) return *make_str("", 0);
+    return *make_str(cc->str_val, (int64_t)strlen(cc->str_val));
 }
 
 int64_t ast_child2_child_count(void* node, int64_t i, int64_t j) {

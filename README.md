@@ -1,4 +1,4 @@
-# Aria Programming Language v0.13.7
+# Aria Programming Language v0.18.x
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,25 +10,46 @@
 
 ---
 
-## Current Status (April 4, 2026)
+## Current Status (April 29, 2026)
 
-**v0.13.7 — Final Audit, Cleanup & Release (v0.13.x series complete)**
+**Stable release: v0.17.5 — Installers, Packaging & Distribution complete**
 
-The v0.13.x series delivered **traits, enums, generics, deferred language features, and final hardening**. v0.13.7 is the "close the books" release — full audit, fuzzer validation, and the 234-page Aria Programming Manual.
+**Active development: v0.18.0 — K Framework executable semantics**
 
-**959 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **60 stdlib modules**
+Aria is now feature-frozen for broad language-surface expansion and focused on
+distribution, formal semantics, and certification-grade validation. The v0.17.x
+series made Aria installable through mainstream Linux paths; the v0.18.x series
+is building a formal K Framework oracle for “what should this program do?”
+independent of `ariac`.
 
-**v0.13.x highlights:**
-- **v0.13.7** — Final audit: 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup, 234-page PDF manual
-- **v0.13.6** — `@func_name` function pointer syntax fix with trampoline generation
-- **v0.13.5** — Deferred language features: raw strings, pipeline operator, extended escape sequences
-- **v0.13.4** — Documentation & specifications completeness
-- **v0.13.3** — Generic containers: type-parameterized structs/functions, monomorphization
-- **v0.13.2** — Enum types: tagged unions, pattern matching, exhaustiveness checking
-- **v0.13.1** — Trait method dispatch: vtable codegen, interface compliance checks
-- **v0.13.0** — Trait system foundation: trait definitions, `impl` blocks, `$i`/`$m` borrow semantics
+**Current validation snapshot:** CTest **7/7 passing** with K semantics enabled;
+`k_semantics_core` **10/10** under K Framework v7.1.320; v0.16/v0.17 compiler
+audit baseline **1,015 tests** with 0 genuine regressions; **800K+ fuzz tests**
+with 0 crashes; **103 packages**; **72 stdlib modules**.
+
+**v0.18.x in progress:**
+- **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
+    first executable subset: `func:main`/`func:failsafe`, variable binding,
+    `fixed`, integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result
+    operators, `if`/`else`, `loop(start,end,step)`, and `exit`.
+- **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
+    executes core programs with `krun`, and skips cleanly when K is unavailable.
+- **Next semantic slice** — bounded `int32`/`int64`, explicit `tbb32`
+    range/min-sentinel behavior, then function declarations and calls beyond the
+    fixed `main`/`failsafe` envelope.
+
+**Recently completed series:**
+- **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
+    Debian `.deb` builder, RPM builder, `aria-pkg` remote fetch from GitHub, and
+    refreshed install/tooling docs.
+- **v0.16.x** — Full compiler/runtime/tooling audit: 0 TODO/FIXME/HACK in C++
+    source, 72 stdlib modules audited, 33 examples tested, 171-page manual
+    regenerated, improved diagnostics, and 800K+ fuzz tests with 0 crashes.
 
 **Previous series highlights:**
+- **v0.15.x** — Self-hosting: 12 compiler/tool modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness, const evaluator, module resolver, doc generator, package manager, project config), final census
+- **v0.14.x** — SMT solver expansion: contract proofs, range inference, data race analysis, fast-paths, documentation
+- **v0.13.x** — Traits, enums, generics, deferred language features, @ function pointers, 234-page PDF manual, final audit (959 tests, 17h+ fuzzing)
 - **v0.12.x** — Networking & middleware: HTTP, DNS, socket, server, URL, cookie, CORS, body-parser, session, static, rate-limit, FTP, SMTP, WebSocket, display, input, LRU, glob, retry
 - **v0.11.x** — Threading & concurrency: thread pool, atomics, lock-free structures, channels, mutex/rwlock/barrier, arena/pool/slab allocators, shared memory, IPC, signal handling, AIFS, AriaX kernel mods
 - **v0.7.x** — JIT: 45+ x86-64 instructions, linear scan register allocator, peephole optimizer, WildX security, 0.66x native C -O2
@@ -43,20 +64,21 @@ The v0.13.x series delivered **traits, enums, generics, deferred language featur
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Stable | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 102 packages verified |
+| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 103 packages verified |
 | `aria-doc` | ✅ Stable | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 10/10 core tests |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
 | Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
-| Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
+| Linux packages | ✅ Stable | Debian `.deb` and RPM builders, plus source/install-script paths |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 102 packages (17 pure, 17 libc, 68 FFI), all passing |
-| PDF Manual | ✅ v1 | [234-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7) — specs, guide, safety walkthrough, reference |
+| `aria_packages` | ✅ Active | 103 packages, all passing |
+| PDF Manual | ✅ v1.1 | [171-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11) — specs, guide, safety walkthrough, reference |
 
 ---
 
@@ -68,7 +90,7 @@ The v0.13.x series delivered **traits, enums, generics, deferred language featur
 - **TFP TYPES (tfp16/32)** — Twisted Floating Point
 - **any** — type erased pointer, equivalent to void* in C
 - **Balanced Ternary/Nonary Literals & Runtime** — `0t[01T]+` and `0n[01234ABCD]+` syntax, full trit/tryte/nit/nyte arithmetic
-- **Quantum Types** — Superposition states for probabilistic computation
+- **Quantum Types (Q3/Q9/Q21)** — Gradient thinking: two-hypothesis superposition with confidence levels and crystallization thresholds
 - **Generic Functions and Structs** — Monomorphization with type inference
 - **Result Types** — `pass`/`fail` with `?` propagation and `!` unwrap, `Result<T>` signatures, `_?`/`_!` shorthand operators
 - **`fail()` from user functions** — Result-style: `fail(err)` produces `Result{error:err, is_error:true}`, complement to `pass(val)`
@@ -97,13 +119,13 @@ The v0.13.x series delivered **traits, enums, generics, deferred language featur
 
 ### In Progress / Specified
 - **AriaX Linux** — Custom distro with full toolchain pre-installed
-- **Specialist model V7** — Next training corpus covering v0.3.x additions
+- **Specialist model V7** — Next training corpus covering v0.16.x additions
 
 ---
 
 ## `aria-packages` Library Ecosystem
 
-All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 102 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 103 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
 **Package tiers:**
 
@@ -279,19 +301,16 @@ if (result == err) {
 **Layer 5: Z3 SMT Formal Verification** — Compile-time mathematical proofs via Z3 solver:
 ```aria
 // Design-by-Contract: requires/ensures are verified at compile time
-func:safe_divide = Result<int32>(int32:a, int32:b)
-    requires(b != 0i32)
-    ensures($ >= 0i32)
+func:safe_divide = int32(int32:a, int32:b)
+    requires b != 0i32
+    ensures $ >= 0i32
 {
     pass(a / b);
 };
 
 // Integer overflow proofs: Z3 bitvector analysis proves absence of overflow
 func:safe_add = int32(int32:a, int32:b)
-    requires(a > 0i32)
-    requires(a < 1000i32)
-    requires(b > 0i32)
-    requires(b < 1000i32)
+    requires a > 0i32, a < 1000i32, b > 0i32, b < 1000i32
 {
     pass(a + b);  // Z3 proves: no overflow possible in int32 range
 };
@@ -339,17 +358,29 @@ if (result == err) {
 tbb8:sum = result + x;   // ERR + anything = ERR
 ```
 
-### Quantum Types
+### Quantum Types — Gradient Thinking
+
+Quantum types track two hypotheses simultaneously with confidence levels, crystallizing to a definite value when evidence accumulates. Three granularity levels: Q3 (ternary), Q9 (nonary), Q21 (21-state with saturation barriers).
 
 ```aria
-quantum<bool>:choice = superpose(true, false, 0.5);
-bool:measured = collapse(choice);
+use "stdlib/quantum.aria".*;
 
-quantum<int32>:distribution = weighted_superpose(
-    [1i32, 2i32, 3i32],
-    [0.2, 0.5, 0.3]
-);
-int32:sampled = collapse(distribution);
+// Q3<T>: Simple 3-state confidence (trit: -1, 0, +1)
+Q3<int32>:sensor = {a: 20i32, b: 25i32, c: 0};  // Two hypotheses, unknown confidence
+
+// Both hypotheses evolve together
+Q3<int32>:updated = {a: sensor.a + 5i32, b: sensor.b + 5i32, c: 1};
+
+// Crystallize when confident
+int32:result = 0i32;
+if (updated.c > 0) { result = updated.b; }  // Evidence favors B → 30
+if (updated.c < 0) { result = updated.a; }  // Evidence favors A → 25
+
+// Q9<T>: 9-state confidence (nit: -4 to +4) for finer gradients
+Q9<int32>:decision = {a: 100i32, b: 200i32, c: -3};  // Moderately favor A
+
+// Q21<T>: 21-state confidence (tbb8: -10 to +10, saturation barriers at ±6)
+Q21<int32>:complex = {a: 42i32, b: 84i32, c: 8};  // Past barrier, crystallizable
 ```
 
 ### Balanced Ternary Literals (Syntax Complete)
@@ -378,8 +409,23 @@ The install script checks prerequisites, builds all tools, and installs binaries
 ```bash
 ./install.sh --build-only          # build without system install
 ./install.sh --prefix=$HOME/.local # install to custom prefix
+./install.sh --install-deps        # auto-install missing packages
 ./install.sh --uninstall           # remove installed files
 ```
+
+### Package Install
+
+```bash
+# Debian / Ubuntu / Mint
+sudo dpkg -i aria-lang_*_amd64.deb
+
+# Fedora / RHEL
+sudo rpm -ivh aria-lang-*.x86_64.rpm
+```
+
+Build packages with `./packaging/build-deb.sh` or `./packaging/build-rpm.sh`.
+
+See [INSTALL.md](INSTALL.md) for all installation methods.
 
 ### Manual Build
 
@@ -421,7 +467,7 @@ EOF
 
 📚 **[aria-docs](https://github.com/alternative-intelligence-cp/aria-docs)** — Package reference, language guides, and tutorials (separate repo).
 
-📖 **[Aria Programming Manual v1 (PDF)](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)** — 234-page offline manual: specs cheat sheet, full programming guide, safety walkthrough, and reference appendix.
+📖 **[Aria Programming Manual v1.1 (PDF)](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11)** — 171-page offline manual: specs cheat sheet, full programming guide, safety walkthrough, and reference appendix.
 
 **Quick links in aria-docs:**
 - `guide/` — Full programming guide (12 sections)
@@ -455,6 +501,7 @@ aria/
 │   └── misc/                # Exploratory/scratch tests and archived test results
 ├── examples/                 # Example programs
 ├── docs/                     # Design docs and architecture
+├── k-semantics/              # K Framework executable semantics and core tests
 ├── scripts/                  # Build and maintenance scripts
 ├── tools/                    # Development tooling (specialist model, semantic_db)
 ├── benchmarks/               # Performance benchmarks
@@ -473,8 +520,8 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 102 library packages (17 pure, 17 libc, 68 FFI)
-- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs, guides, and [234-page PDF manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 103 library packages
+- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs, guides, and [171-page PDF manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11)
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
 - [`aria-make`](https://github.com/alternative-intelligence-cp/aria-make) — build system
@@ -489,6 +536,9 @@ aria/
 
 # Run the full test suite
 ./scripts/run_comprehensive_tests.sh
+
+# Run K executable-semantics core tests (requires K Framework)
+./k-semantics/run_k_tests.sh --require-k
 
 # Run fuzzer
 cd tests/fuzz && python3 fullstack_fuzzer.py
@@ -837,7 +887,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Protocols & terminal** — FTP, SMTP, WebSocket, ANSI display, raw keyboard input
 - ✅ **Utilities** — LRU cache, glob matching, retry with backoff
 
-### v0.13.x — Released (current)
+### v0.13.x — Released
 
 - ✅ **Trait system** — Definitions, `impl` blocks, `$i`/`$m` borrows, vtable dispatch, trait bounds on generics
 - ✅ **Enum types** — Tagged unions, pattern matching, exhaustiveness checking
@@ -847,11 +897,51 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Documentation** — specs_list.txt, full reference docs, 234-page PDF manual
 - ✅ **Final audit** — 959 tests, 17h+ fuzzing (0 crashes), benchmarks, KNOWN_ISSUES/BUGS cleanup
 
-### v0.14.x — Planned
+### v0.14.x — Released
 
-- AriaX Linux distribution packaging
-- Nikola integration
-- Specialist model retraining with current corpus
+- ✅ **SMT solver expansion** — Contract proofs, range inference, data race analysis, fast-paths, comprehensive documentation
+
+### v0.15.x — Released
+
+- ✅ **Self-hosting foundation** — 5 compiler modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker)
+- ✅ **Tier 2 self-hosting** — 4 modules ported (exhaustiveness checker, const evaluator, module resolver, visibility checker)
+- ✅ **Tier 3 tool ports** — Doc generator, package manager, project config ported to Aria
+- ✅ **Self-hosting census** — 12 total modules ported, final audit and documentation
+
+### v0.16.x — Released
+
+- ✅ **Comprehensive code review** — Full C++ compiler, runtime, and toolchain reviewed (~122,000+ lines, 130+ files)
+- ✅ **11 compiler bugs fixed** — Dead code removal, wrong-value bugs, memory/ownership fixes, ABI corrections
+- ✅ **72 TODO resolutions** — Backend codegen, type checker, analysis passes, async/runtime stubs, parser, tools
+- ✅ **Subsystem reviews** — Frontend, semantic analysis, backend, runtime, tools each reviewed independently
+- ✅ **Stdlib audit** — 72 .aria files reviewed, 13 bugs fixed
+- ✅ **Test stability** — 1,015 tests (891 positive, 124 expected-failure), AriaString ABI fix, @cast<> codegen, exit-in-lambda enforcement
+- ✅ **Error messages** — Contextual hints and improved diagnostics across 9 source files (37+ messages)
+
+### v0.17.x — Released
+
+- ✅ **Install script expansion** — Distro detection, dependency installation,
+    build-only/custom-prefix/uninstall modes, and post-install verification
+- ✅ **Debian packaging** — Standalone `.deb` builder with runtime dependencies
+    and bundled Aria libraries
+- ✅ **RPM packaging** — `.rpm` builder with generated spec and staged install
+    tree
+- ✅ **aria-pkg remote fetch** — `update`, `list --remote`, and remote package
+    install from the GitHub package registry
+- ✅ **Install documentation** — Source, script, package, and package-manager
+    install paths documented
+
+### v0.18.x — In Progress
+
+- 🔧 **K Framework executable semantics** — First formal semantics seed in
+    `k-semantics/aria.k`
+- ✅ **Core K test corpus** — 10 programs covering exit, arithmetic, binding,
+    fixed values, loops, Result operations, sticky `ERR`, failsafe routing, and
+    `if`/`else`
+- ✅ **CTest integration** — K semantics test passes when K is installed and
+    skips cleanly when K is absent
+- ⏭️ **Next** — Bounded integer semantics, explicit `tbb32` sentinel behavior,
+    then function declarations/calls
 
 ### Long Term
 

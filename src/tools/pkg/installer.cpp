@@ -176,8 +176,10 @@ bool PackageInstaller::parseMetadata(const std::string& toml_path, PackageMetada
         if (data.contains("build")) {
             const auto& build = toml::find(data, "build");
             PackageMetadata::BuildInfo build_info;
-            build_info.type = toml::find<std::string>(build, "type");
-            build_info.entry = toml::find<std::string>(build, "entry");
+            build_info.type = build.contains("type") 
+                ? toml::find<std::string>(build, "type") : "library";
+            build_info.entry = build.contains("entry")
+                ? toml::find<std::string>(build, "entry") : "";
             
             if (build.contains("outputs")) {
                 build_info.outputs = toml::find<std::vector<std::string>>(build, "outputs");
@@ -837,6 +839,248 @@ bool PackageInstaller::installFromDirectory(const std::string& pkg_dir) {
     
     std::cout << "Successfully installed " << metadata.name << " v" << metadata.version << std::endl;
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Remote fetch support (v0.17.3)
+// ═══════════════════════════════════════════════════════════════════════
+
+std::string PackageInstaller::getCacheDir() const {
+    const char* home = getenv("HOME");
+    if (!home) {
+        home = getpwuid(getuid())->pw_dir;
+    }
+    return std::string(home) + "/.aria/cache";
+}
+
+bool PackageInstaller::hasRemoteCache() const {
+    std::string cache_repo = getCacheDir() + "/aria-packages";
+    return fs::exists(cache_repo + "/registry/index.json");
+}
+
+bool PackageInstaller::updateRemoteRegistry(const std::string& remote_url) {
+    std::string url = remote_url.empty() ? DEFAULT_REMOTE_URL : remote_url;
+    std::string cache_dir = getCacheDir();
+    std::string cache_repo = cache_dir + "/aria-packages";
+    
+    // Ensure cache directory exists
+    try {
+        fs::create_directories(cache_dir);
+    } catch (const std::exception& e) {
+        std::cerr << "Error creating cache directory: " << e.what() << std::endl;
+        return false;
+    }
+    
+    // Check if git is available
+    if (system("command -v git >/dev/null 2>&1") != 0) {
+        std::cerr << "Error: git is required for remote package fetching\n";
+        std::cerr << "Install git and try again.\n";
+        return false;
+    }
+    
+    if (fs::exists(cache_repo + "/.git")) {
+        // Already cloned — pull latest
+        std::cout << "Updating package registry..." << std::endl;
+        std::string cmd = "cd " + shell_escape(cache_repo) +
+                          " && git pull --ff-only -q 2>&1";
+        int ret = system(cmd.c_str());
+        if (ret != 0) {
+            // Pull failed (diverged?) — re-clone
+            std::cerr << "Warning: pull failed, re-cloning..." << std::endl;
+            fs::remove_all(cache_repo);
+        } else {
+            std::cout << "Package registry updated." << std::endl;
+            return true;
+        }
+    }
+    
+    // Fresh clone
+    std::cout << "Downloading package registry from " << url << " ..." << std::endl;
+    std::string cmd = "git clone --depth=1 -q " +
+                      shell_escape(url) + " " +
+                      shell_escape(cache_repo) + " 2>&1";
+    int ret = system(cmd.c_str());
+    if (ret != 0) {
+        std::cerr << "Error: failed to clone package registry\n";
+        std::cerr << "Check your internet connection and try again.\n";
+        return false;
+    }
+    
+    // Verify we got a valid registry
+    if (!fs::exists(cache_repo + "/registry/index.json")) {
+        std::cerr << "Warning: registry.json not found in cloned repo\n";
+    }
+    
+    // Count available packages
+    int pkg_count = 0;
+    if (fs::exists(cache_repo + "/packages")) {
+        for (const auto& entry : fs::directory_iterator(cache_repo + "/packages")) {
+            if (entry.is_directory()) {
+                pkg_count++;
+            }
+        }
+    }
+    
+    std::cout << "Package registry ready (" << pkg_count << " packages available)." << std::endl;
+    return true;
+}
+
+bool PackageInstaller::installRemotePackage(const std::string& name,
+                                             const std::string& version) {
+    std::string cache_repo = getCacheDir() + "/aria-packages";
+    
+    if (!hasRemoteCache()) {
+        std::cout << "Package registry not found. Running update first..." << std::endl;
+        if (!updateRemoteRegistry()) {
+            return false;
+        }
+    }
+    
+    // Look for the package in the cached repo
+    std::string pkg_dir = cache_repo + "/packages/" + name;
+    
+    if (!fs::exists(pkg_dir)) {
+        std::cerr << "Package not found: " << name << std::endl;
+        std::cerr << "Run 'aria-pkg search " << name << "' to find available packages.\n";
+        return false;
+    }
+    
+    if (!fs::exists(pkg_dir + "/aria-package.toml")) {
+        std::cerr << "Error: package '" << name << "' has no aria-package.toml\n";
+        return false;
+    }
+    
+    // Install from the cached directory
+    std::cout << "Installing " << name << " from registry..." << std::endl;
+    return installFromDirectory(pkg_dir);
+}
+
+std::vector<RegistryEntry> PackageInstaller::listRemotePackages(const std::string& query) {
+    std::string cache_repo = getCacheDir() + "/aria-packages";
+    std::string registry_path = cache_repo + "/registry/index.json";
+    std::vector<RegistryEntry> results;
+    
+    if (!fs::exists(registry_path)) {
+        std::cerr << "No cached registry. Run 'aria-pkg update' first.\n";
+        return results;
+    }
+    
+    // Parse the actual aria-packages registry format:
+    // { "packages": { "name": { "latest": "ver", "description": "...", "versions": {...} }, ... } }
+    std::ifstream file(registry_path);
+    if (!file.is_open()) {
+        std::cerr << "Cannot open registry: " << registry_path << std::endl;
+        return results;
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string json = buffer.str();
+    
+    // Simple state-machine parser for the nested object format
+    bool in_packages = false;
+    int brace_depth = 0;
+    std::string current_name;
+    std::string current_latest;
+    std::string current_desc;
+    int pkg_depth = -1; // depth when we entered a package entry
+    
+    std::istringstream stream(json);
+    std::string line;
+    
+    while (std::getline(stream, line)) {
+        size_t start = line.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) continue;
+        std::string trimmed = line.substr(start);
+        
+        // Track "packages" section
+        if (!in_packages && trimmed.find("\"packages\"") != std::string::npos) {
+            in_packages = true;
+            brace_depth = 1;  // The '{' on this line opens the packages object
+            continue;
+        }
+        
+        if (!in_packages) continue;
+        
+        // Count braces
+        for (char c : trimmed) {
+            if (c == '{') brace_depth++;
+            else if (c == '}') brace_depth--;
+        }
+        
+        // depth 1 = inside "packages" object, new key = package name
+        // depth 2 = inside a package entry
+        
+        // Detect package name (key at depth 1 followed by '{')
+        if (brace_depth >= 2 && pkg_depth < 0) {
+            // This line has a key opening a new package object
+            auto q1 = trimmed.find('"');
+            auto q2 = trimmed.find('"', q1 + 1);
+            if (q1 != std::string::npos && q2 != std::string::npos) {
+                std::string key = trimmed.substr(q1 + 1, q2 - q1 - 1);
+                // Only treat as package name if line contains '{'
+                if (trimmed.find('{') != std::string::npos && 
+                    key != "packages" && key != "versions") {
+                    current_name = key;
+                    current_latest.clear();
+                    current_desc.clear();
+                    pkg_depth = brace_depth;
+                    continue;
+                }
+            }
+        }
+        
+        // Inside a package entry — extract fields
+        if (pkg_depth > 0 && brace_depth >= pkg_depth) {
+            auto colon = trimmed.find(':');
+            if (colon != std::string::npos) {
+                std::string key_part = trimmed.substr(0, colon);
+                std::string val_part = trimmed.substr(colon + 1);
+                
+                auto kq1 = key_part.find('"');
+                auto kq2 = key_part.rfind('"');
+                if (kq1 != std::string::npos && kq1 != kq2) {
+                    std::string key = key_part.substr(kq1 + 1, kq2 - kq1 - 1);
+                    
+                    auto vq1 = val_part.find('"');
+                    auto vq2 = val_part.rfind('"');
+                    std::string val;
+                    if (vq1 != std::string::npos && vq1 != vq2) {
+                        val = val_part.substr(vq1 + 1, vq2 - vq1 - 1);
+                    }
+                    
+                    if (key == "latest") current_latest = val;
+                    else if (key == "description") current_desc = val;
+                }
+            }
+        }
+        
+        // Closing a package entry
+        if (pkg_depth > 0 && brace_depth < pkg_depth) {
+            if (!current_name.empty()) {
+                bool match = query.empty() ||
+                    containsCI(current_name, query) ||
+                    containsCI(current_desc, query);
+                if (match) {
+                    RegistryEntry entry;
+                    entry.name = current_name;
+                    entry.latest_version = current_latest;
+                    entry.description = current_desc;
+                    entry.downloads = 0;
+                    results.push_back(entry);
+                }
+            }
+            current_name.clear();
+            pkg_depth = -1;
+        }
+        
+        // Exited "packages" entirely
+        if (brace_depth <= 0) {
+            break;
+        }
+    }
+    
+    return results;
 }
 
 } // namespace pkg

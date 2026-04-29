@@ -15,6 +15,7 @@
  */
 
 #include "gc_internal.h"
+#include "runtime/process.h"
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -379,6 +380,18 @@ bool aria_gc_is_heap_pointer(void* ptr) {
 
 void aria_gc_init(size_t nursery_size, size_t old_gen_threshold) {
     GCState::instance().init(nursery_size, old_gen_threshold);
+    
+    // Register fork safety handlers so aria_fork() doesn't deadlock
+    // on GC mutexes held by concurrent mark/sweep threads
+    static bool gc_atfork_registered = false;
+    if (!gc_atfork_registered) {
+        aria_atfork_register(
+            []() { GCState::instance().lock_for_fork(); },
+            []() { GCState::instance().unlock_for_fork(); },
+            []() { GCState::instance().unlock_for_fork(); }
+        );
+        gc_atfork_registered = true;
+    }
 }
 
 void aria_gc_shutdown(void) {

@@ -16,7 +16,10 @@ func:main = int32() {
         (false) {
             // In this branch, we KNOW r.is_error == false
             // So we can access r.value without further checking
-            exit r.value;  // Should be allowed - KNOWN_SUCCESS
+            if (r.value == 5i32) {
+                exit 0;  // Success - KNOWN_SUCCESS
+            }
+            exit 1;
         },
         (true) {
             // In this branch, we KNOW r.is_error == true

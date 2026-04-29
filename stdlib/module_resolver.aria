@@ -38,12 +38,14 @@ extern func:mr_reset = int32(wild int8*:state);
 // for each search path. Returns the first resolved path, or "" if none.
 pub func:mr_resolve_logical = string(wild int8*:state, string:name) {
     int32:cnt = mr_search_path_count(state);
-    loop(0i32, cnt, 1i32) {
-        string:sp = mr_search_path(state, $i);
+    int32:idx = 0i32;
+    loop(0i64, cnt, 1i64) {
+        string:sp = mr_search_path(state, idx);
         string:p1 = mr_try_pattern1(sp, name);
         // In a real system we'd check file existence here.
         // For the shim, pattern1 is preferred.
         pass p1;
+        idx = idx + 1i32;
     }
     pass "";
 };

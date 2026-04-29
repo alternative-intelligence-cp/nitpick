@@ -134,45 +134,45 @@ const int32:NT_ARGUMENT   = 61i32;
 // Must match lexer.aria values
 // ═══════════════════════════════════════════════════════════════════════
 
-const int32:TK_PLUS         = 124i32;
-const int32:TK_MINUS        = 125i32;
-const int32:TK_STAR         = 126i32;
-const int32:TK_SLASH        = 127i32;
-const int32:TK_PERCENT      = 128i32;
+const int32:TK_PLUS         = 160i32;
+const int32:TK_MINUS        = 161i32;
+const int32:TK_STAR         = 162i32;
+const int32:TK_SLASH        = 163i32;
+const int32:TK_PERCENT      = 164i32;
 
-const int32:TK_EQUAL_EQUAL   = 137i32;
-const int32:TK_BANG_EQUAL    = 138i32;
-const int32:TK_LESS          = 139i32;
-const int32:TK_LESS_EQUAL    = 140i32;
-const int32:TK_GREATER       = 141i32;
-const int32:TK_GREATER_EQUAL = 142i32;
+const int32:TK_EQUAL_EQUAL   = 173i32;
+const int32:TK_BANG_EQUAL    = 174i32;
+const int32:TK_LESS          = 175i32;
+const int32:TK_LESS_EQUAL    = 176i32;
+const int32:TK_GREATER       = 177i32;
+const int32:TK_GREATER_EQUAL = 178i32;
 
-const int32:TK_AND_AND       = 144i32;
-const int32:TK_OR_OR         = 145i32;
-const int32:TK_BANG          = 146i32;
+const int32:TK_AND_AND       = 180i32;
+const int32:TK_OR_OR         = 181i32;
+const int32:TK_BANG          = 182i32;
 
-const int32:TK_AMPERSAND    = 149i32;
-const int32:TK_PIPE         = 150i32;
-const int32:TK_CARET        = 151i32;
-const int32:TK_TILDE        = 152i32;
-const int32:TK_SHIFT_LEFT   = 153i32;
-const int32:TK_SHIFT_RIGHT  = 154i32;
+const int32:TK_AMPERSAND    = 188i32;
+const int32:TK_PIPE         = 189i32;
+const int32:TK_CARET        = 190i32;
+const int32:TK_TILDE        = 191i32;
+const int32:TK_SHIFT_LEFT   = 192i32;
+const int32:TK_SHIFT_RIGHT  = 193i32;
 
 // Literal sub-kinds (stored in bool field of literal nodes)
+// Must match parser.aria definitions
 const int32:LIT_INT    = 1i32;
 const int32:LIT_FLOAT  = 2i32;
 const int32:LIT_STRING = 3i32;
 const int32:LIT_BOOL   = 4i32;
 const int32:LIT_NULL   = 5i32;
-const int32:LIT_NIL    = 6i32;
-const int32:LIT_CHAR   = 7i32;
-const int32:LIT_ERR    = 8i32;
-const int32:LIT_UNKNOWN = 9i32;
+const int32:LIT_CHAR   = 6i32;
 
 // Flags bits used in var decl / func decl
-const int32:FLAG_IS_CONST  = 1i32;
-const int32:FLAG_IS_PUBLIC = 2i32;
-const int32:FLAG_IS_ASYNC  = 4i32;
+// Must match parser.aria definitions
+const int32:FLAG_IS_PUBLIC = 1i32;
+const int32:FLAG_IS_CONST  = 2i32;
+const int32:FLAG_IS_FIXED  = 4i32;
+const int32:FLAG_IS_ASYNC  = 8i32;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Extern C Helper Declarations — sema_helpers.cpp
@@ -448,12 +448,7 @@ func:infer_literal = wild int8->(wild int8->:tc, wild int8->:node) {
     int64:et_len = string_length(explicit_t);
 
     if (et_len > 0i64) {
-        // NIL literal
-        if (lit_kind == LIT_NIL) {
-            wild int8->:unk = tc_get_unknown_type(tc);
-            pass unk;
-        }
-        // NULL literal
+        // NULL literal (parser uses LIT_NULL for null/nil/err/unknown)
         if (lit_kind == LIT_NULL) {
             wild int8->:unk2 = tc_get_unknown_type(tc);
             pass unk2;
@@ -492,18 +487,9 @@ func:infer_literal = wild int8->(wild int8->:tc, wild int8->:node) {
         wild int8->:unk3 = tc_get_unknown_type(tc);
         pass unk3;
     }
-    if (lit_kind == LIT_NIL) {
-        wild int8->:unk4 = tc_get_unknown_type(tc);
-        pass unk4;
-    }
-    if (lit_kind == LIT_ERR) {
-        // ERR defaults to tbb32
-        wild int8->:tbb_t = tc_get_primitive(tc, "tbb32");
-        pass tbb_t;
-    }
-    if (lit_kind == LIT_UNKNOWN) {
-        wild int8->:unk5 = tc_get_unknown_type(tc);
-        pass unk5;
+    if (lit_kind == LIT_CHAR) {
+        wild int8->:char_t = tc_get_primitive(tc, "int32");
+        pass char_t;
     }
 
     // Default: int32
@@ -1599,11 +1585,19 @@ func:check_statement = void(wild int8->:tc, wild int8->:node) {
         return;
     }
     if (ntype == NT_LOOP) {
-        // Loop has child[0] = body
+        // Loop children: [start_expr, limit_expr, step_expr, body]
         int64:cc2 = ast_child_count(node);
-        if (cc2 > 0i64) {
+        if (cc2 >= 3i64) {
+            wild int8->:start_e = ast_child_at(node, 0i64);
+            wild int8->:st_t = raw infer_type(tc, start_e);
+            wild int8->:limit_e = ast_child_at(node, 1i64);
+            wild int8->:lt_t = raw infer_type(tc, limit_e);
+            wild int8->:step_e = ast_child_at(node, 2i64);
+            wild int8->:stp_t = raw infer_type(tc, step_e);
+        }
+        if (cc2 >= 4i64) {
             tc_push_scope(tc, SCOPE_BLOCK, "loop_body");
-            wild int8->:body = ast_child_at(node, 0i64);
+            wild int8->:body = ast_child_at(node, 3i64);
             int32:body_nt = ast_get_type(body);
             if (body_nt == NT_BLOCK) {
                 check_block(tc, body);
@@ -1615,15 +1609,17 @@ func:check_statement = void(wild int8->:tc, wild int8->:node) {
         return;
     }
     if (ntype == NT_TILL) {
-        // Till loop: child[0] = condition, child[1] = body
+        // Till children: [limit_expr, step_expr, body]
         int64:cc3 = ast_child_count(node);
-        if (cc3 >= 1i64) {
-            wild int8->:cond = ast_child_at(node, 0i64);
-            wild int8->:ct = raw infer_type(tc, cond);
-        }
         if (cc3 >= 2i64) {
+            wild int8->:limit_e = ast_child_at(node, 0i64);
+            wild int8->:lt_t = raw infer_type(tc, limit_e);
+            wild int8->:step_e = ast_child_at(node, 1i64);
+            wild int8->:stp_t = raw infer_type(tc, step_e);
+        }
+        if (cc3 >= 3i64) {
             tc_push_scope(tc, SCOPE_BLOCK, "till_body");
-            wild int8->:body = ast_child_at(node, 1i64);
+            wild int8->:body = ast_child_at(node, 2i64);
             int32:body_nt = ast_get_type(body);
             if (body_nt == NT_BLOCK) {
                 check_block(tc, body);

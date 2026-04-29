@@ -285,7 +285,7 @@ ConstEvaluator::ConstEvaluator(SymbolTable* symTab)
 
 ComptimeValue ConstEvaluator::evaluate(ASTNode* node) {
     if (!node) {
-        addError("Cannot evaluate null AST node");
+        addError("Internal error: null AST node in const evaluation. This is a compiler bug.");
         return ComptimeValue();
     }
     
@@ -300,7 +300,7 @@ ComptimeValue ConstEvaluator::evaluate(ASTNode* node) {
 
 ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
     if (!node) {
-        addError("Cannot evaluate null expression");
+        addError("Internal error: null expression in const evaluation. This is a compiler bug.");
         return ComptimeValue();
     }
     
@@ -324,7 +324,8 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
             // Unwrap: comptime(expr) just evaluates the inner expression
             return evaluateExpr(static_cast<ComptimeExpr*>(node)->expr.get());
         default:
-            addError("Unsupported expression type in const evaluation");
+            addError("Expression type not supported in compile-time evaluation. "
+                    "Only literals, identifiers, binary/unary ops, ternary, and function calls are allowed.");
             return ComptimeValue();
     }
 }
@@ -360,7 +361,7 @@ ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
         return lastValue;
     }
     
-    addError("Statement cannot be evaluated at compile time");
+    addError("Statement cannot be evaluated at compile time. Only const declarations and block expressions are supported.");
     return ComptimeValue();
 }
 
@@ -408,7 +409,7 @@ ComptimeValue ConstEvaluator::evalLiteral(LiteralExpr* lit) {
         return ComptimeValue();
     }
     
-    addError("Unsupported literal type");
+    addError("Unsupported literal type in const evaluation. Supported: int, float, bool, string, nil.");
     return ComptimeValue();
 }
 
@@ -468,7 +469,8 @@ ComptimeValue ConstEvaluator::evalBinaryOp(BinaryExpr* binOp) {
     if (op == "&&") return logicalAnd(left, right);
     if (op == "||") return logicalOr(left, right);
     
-    addError("Unsupported binary operator: " + op);
+    addError("Unsupported binary operator '" + op + "' in const evaluation. "
+            "Supported: +, -, *, /, %, ==, !=, <, <=, >, >=, &&, ||");
     return ComptimeValue();
 }
 
@@ -489,7 +491,7 @@ ComptimeValue ConstEvaluator::evalUnaryOp(UnaryExpr* unOp) {
         return logicalNot(operand);
     }
     
-    addError("Unsupported unary operator: " + op);
+    addError("Unsupported unary operator '" + op + "' in const evaluation. Supported: -, !");
     return ComptimeValue();
 }
 
@@ -499,7 +501,7 @@ ComptimeValue ConstEvaluator::evalTernary(TernaryExpr* ternary) {
     if (hasErrors()) return ComptimeValue();
     
     if (!cond.isBool()) {
-        addError("Ternary condition must be boolean");
+        addError("Ternary condition must be boolean in const evaluation");
         return ComptimeValue();
     }
     

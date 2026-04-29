@@ -1,6 +1,6 @@
 # Macro & Derive Authoring Guide
 
-> v0.8.4 — Aria Compiler Documentation
+> v0.16.12 — Aria Compiler Documentation
 
 ## Overview
 

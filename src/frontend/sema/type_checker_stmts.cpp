@@ -697,7 +697,8 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             
             // Check if monomorphizer is available
             if (!monomorphizer) {
-                addError("Monomorphizer not initialized for generic type instantiation", typeNode);
+                addError("Internal error: monomorphizer not initialized for generic type '" + 
+                        genericType->baseName + "<...>'. This is a compiler bug.", typeNode);
                 return typeSystem->getErrorType();
             }
             
@@ -723,7 +724,8 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 // nullptr, the monomorphizer hit an internal issue (unknown field
                 // type, failed clone, etc.). Report as internal error.
                 addError("Internal error: monomorphizer returned mangled name '" +
-                        mangledName + "' but type was not registered in TypeSystem", typeNode);
+                        mangledName + "' but type was not registered in TypeSystem. "
+                        "Check for circular type dependencies or unknown field types.", typeNode);
                 return typeSystem->getErrorType();
             }
             
@@ -741,7 +743,8 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         }
 
         default:
-            addError("Unsupported type node in type resolution", typeNode);
+            addError("Unsupported type syntax in type resolution. "
+                    "Valid type forms: Type, Type[], Type@, Type<Args>, Result<T>, (Ret)(Params)", typeNode);
             return typeSystem->getErrorType();
     }
 }
@@ -3431,7 +3434,7 @@ void TypeChecker::checkTBBLiteralValue(int64_t value, Type* type, ASTNode* node)
     // Check if value is the ERR sentinel
     if (value == errSentinel) {
         PrimitiveType* primType = static_cast<PrimitiveType*>(type);
-        addError("Warning: Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
+        addWarning("Assigning ERR sentinel value (" + std::to_string(errSentinel) + 
                 ") to " + primType->getName() + ". Use 'ERR' keyword for clarity.", node);
     }
     

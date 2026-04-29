@@ -18,13 +18,13 @@ func:apply_and_add = int32((int32)(int32):f, int32:a, int32:b) {
 };
 
 func:main = int32() {
-    // Test 1: exit identity lambda to apply
-    (int32)(int32):identity = int32(int32:x) { exit x; };
+    // Test 1: pass identity lambda to apply
+    (int32)(int32):identity = int32(int32:x) { pass x; };
     int32:r1 = apply(identity, 42i32) ? -1i32;
     if (r1 != 42i32) { exit 1i32; }
 
-    // Test 2: exit doubling lambda to apply
-    (int32)(int32):dbl = int32(int32:x) { int32:v = x + x; exit v; };
+    // Test 2: pass doubling lambda to apply
+    (int32)(int32):dbl = int32(int32:x) { int32:v = x + x; pass v; };
     int32:r2 = apply(dbl, 21i32) ? -1i32;
     if (r2 != 42i32) { exit 2i32; }
 
