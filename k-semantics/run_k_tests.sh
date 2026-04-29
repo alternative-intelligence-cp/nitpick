@@ -35,6 +35,7 @@ fail=0
 for test_file in "$TEST_DIR"/*.aria; do
     name="$(basename "$test_file")"
     expected="$(sed -n 's|^// expect-exit:[[:space:]]*||p' "$test_file" | head -1)"
+    expected_stdout="$(sed -n 's|^// expect-stdout:[[:space:]]*||p' "$test_file" | head -1)"
     if [[ -z "$expected" ]]; then
         echo "FAIL $name: missing // expect-exit: N header"
         fail=$((fail + 1))
@@ -55,12 +56,31 @@ for test_file in "$TEST_DIR"/*.aria; do
             exit
         }
     ' <<< "$output")"
+    actual_stdout=""
+    if [[ -n "$expected_stdout" ]]; then
+        actual_stdout="$(awk '
+            /<stdout>/ {
+                if ($0 ~ /<stdout>[[:space:]]*.*[[:space:]]*<\/stdout>/) {
+                    gsub(/.*<stdout>[[:space:]]*|[[:space:]]*<\/stdout>.*/, "")
+                    print
+                    exit
+                }
+                getline
+                gsub(/^[[:space:]]*|[[:space:]]*$/, "")
+                print
+                exit
+            }
+        ' <<< "$output")"
+    fi
 
-    if [[ "$actual" == "$expected" ]]; then
+    if [[ "$actual" == "$expected" && ( -z "$expected_stdout" || "$actual_stdout" == "$expected_stdout" ) ]]; then
         echo "PASS $name"
         pass=$((pass + 1))
     else
         echo "FAIL $name: expected exit-code $expected, got ${actual:-<missing>}"
+        if [[ -n "$expected_stdout" ]]; then
+            echo "           expected stdout $expected_stdout, got ${actual_stdout:-<missing>}"
+        fi
         echo "$output" | sed -n '1,80p'
         fail=$((fail + 1))
     fi

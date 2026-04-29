@@ -6,6 +6,7 @@ requires "domains.md"
 //   - mandatory func:main / func:failsafe envelope
 //   - zero-argument helper functions returning through pass/fail
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
+//   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
 //   - integer arithmetic, two's-complement int bounds, and sticky ERR propagation
 //   - Result construction and unwrapping: pass/fail/raw/drop/defaults/?!
@@ -18,12 +19,14 @@ requires "domains.md"
 module ARIA-SYNTAX
   imports INT-SYNTAX
   imports BOOL-SYNTAX
+  imports STRING-SYNTAX
   imports ID-SYNTAX
 
-  syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64"
+  syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string"
 
   syntax Val ::= Int
                | Bool
+               | String
                | "NIL"
                | "ERR"
                | "Unknown"
@@ -37,6 +40,8 @@ module ARIA-SYNTAX
   syntax Exp ::= Val
                | Id
                | Id "(" ")"
+               | "print" "(" Exp ")" [strict]
+               | "println" "(" Exp ")" [strict]
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -80,6 +85,7 @@ module ARIA
   imports ARIA-SYNTAX
   imports INT
   imports BOOL
+  imports STRING
   imports MAP
   imports SET
 
@@ -90,6 +96,7 @@ module ARIA
     <types> .Map </types>
     <store> .Map </store>
     <fixed-vars> .Set </fixed-vars>
+    <stdout> "" </stdout>
     <next-loc> 0 </next-loc>
     <loop-index> 0 </loop-index>
     <failsafe> .K </failsafe>
@@ -101,36 +108,36 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-    rule <k> FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadFuncs(FUNCS) ~> MAIN </k>
+  rule <k> FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadFuncs(FUNCS) ~> MAIN </k>
        <failsafe> _ => FS </failsafe>
 
-    // -------------------------------------------------------------------------
-    // Zero-argument helper functions
-    // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Zero-argument helper functions
+  // -------------------------------------------------------------------------
 
-    syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
-         | "Fn0Fail" "(" Exp ")"
+  syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
+                | "Fn0Fail" "(" Exp ")"
 
-    syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
-          | "finishCallPass" "(" Type ")"
-          | "finishCallFail"
+  syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
+                 | "finishCallPass" "(" Type ")"
+                 | "finishCallFail"
 
-    rule <k> loadFuncs(.FuncDecls) => .K ... </k>
+  rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
-    rule <k> loadFuncs(func: F:Id = T:Type() { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-      <functions> Funcs => Funcs [ F <- Fn0Pass(T, E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = T:Type() { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn0Pass(T, E) ] </functions>
 
-    rule <k> loadFuncs(func: F:Id = _T:Type() { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-      <functions> Funcs => Funcs [ F <- Fn0Fail(E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = _T:Type() { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn0Fail(E) ] </functions>
 
-    rule <k> F:Id() => E ~> finishCallPass(T) ... </k>
-      <functions> ... F |-> Fn0Pass(T, E) ... </functions>
+  rule <k> F:Id() => E ~> finishCallPass(T) ... </k>
+       <functions> ... F |-> Fn0Pass(T, E) ... </functions>
 
-    rule <k> F:Id() => E ~> finishCallFail ... </k>
-      <functions> ... F |-> Fn0Fail(E) ... </functions>
+  rule <k> F:Id() => E ~> finishCallFail ... </k>
+       <functions> ... F |-> Fn0Fail(E) ... </functions>
 
-    rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
-    rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
+  rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
+  rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
   // -------------------------------------------------------------------------
   // Statement sequencing and blocks
@@ -203,6 +210,7 @@ module ARIA
   rule normalizeValue(int64, I64(I)) => I64(wrapI64(I))
   rule normalizeValue(tbb32, TBB32(I)) => normalizeTBB32(I)
   rule normalizeValue(tbb32, ERR) => ERR
+  rule normalizeValue(string, S:String) => S
   rule normalizeValue(_:Type, V:Val) => V [owise]
 
   rule normalizeTBB32(I) => ERR requires I <=Int -2147483648 orBool I >Int 2147483647
@@ -328,9 +336,20 @@ module ARIA
   rule <k> fail E:Val => Result(E, NIL, true) ... </k>
   rule <k> raw Result(_:Val, V:Val, _:Bool) => V ... </k>
   rule <k> drop Result(_:Val, _:Val, _:Bool) => NIL ... </k>
+    rule <k> drop _:Val => NIL ... </k> [owise]
   rule <k> Result(_:Val, V:Val, false) defaults _:Exp => V ... </k>
   rule <k> Result(_:Val, _:Val, true) defaults Fallback:Exp => Fallback ... </k>
   rule <k> ?! Result(_:Val, V:Val, false) => V ... </k>
+
+    // -------------------------------------------------------------------------
+    // String output builtins
+    // -------------------------------------------------------------------------
+
+    rule <k> print(S:String) => I64(lengthString(S)) ... </k>
+      <stdout> OUT => OUT +String S </stdout>
+
+    rule <k> println(S:String) => I64(lengthString(S) +Int 1) ... </k>
+      <stdout> OUT => OUT +String S +String "\n" </stdout>
 
   syntax Exp ::= "invokeFailsafe" "(" Val ")" [symbol(invokeFailsafe)]
 

@@ -12,3 +12,4 @@ Planned initial claims:
 5. reassignment to `fixed` bindings cannot silently mutate state
 6. `?!` on an error `Result` always reaches the failsafe path
 7. zero-argument helper calls preserve `pass`/`fail` Result polarity
+8. `println` appends exactly one newline and returns the emitted byte count
