@@ -1,4 +1,4 @@
-# Aria Programming Language v0.16.12
+# Aria Programming Language v0.18.x
 
 ![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
@@ -10,28 +10,41 @@
 
 ---
 
-## Current Status (April 7, 2026)
+## Current Status (April 29, 2026)
 
-**v0.16.12 — Final Audit & Series Wrap-Up (v0.16.x series complete)**
+**Stable release: v0.17.5 — Installers, Packaging & Distribution complete**
 
-The v0.16.x series completed a **comprehensive code review** of the entire C++ compiler, runtime, and toolchain (~122,000+ lines across 130+ files). Every major subsystem was reviewed, bugs were fixed, dead code was removed, TODOs were resolved, and 72 stdlib modules were audited.
+**Active development: v0.18.0 — K Framework executable semantics**
 
-**1,015 tests** (0 genuine failures) · **17h+ fuzzing** (0 crashes) · **102 packages** · **72 stdlib modules**
+Aria is now feature-frozen for broad language-surface expansion and focused on
+distribution, formal semantics, and certification-grade validation. The v0.17.x
+series made Aria installable through mainstream Linux paths; the v0.18.x series
+is building a formal K Framework oracle for “what should this program do?”
+independent of `ariac`.
 
-**v0.16.x highlights:**
-- **v0.16.12** — Final audit: 0 TODO/FIXME/HACK in C++ source, CTest 4/4, 891/1015 .aria tests pass (124 expected failures), 800K+ fuzz tests (0 crashes)
-- **v0.16.11** — Programming Manual v1.1: 35+ layout fixes, content updated to v0.16.x, 171-page PDF regenerated (aria-docs)
-- **v0.16.10** — Examples compilation testing: 14 examples fixed, 28/33 pass (aria-docs)
-- **v0.16.9** — Guide chapter review: 30 files fixed across 83 chapters (aria-docs)
-- **v0.16.8** — Documentation update: README, guides, version headers
-- **v0.16.7** — Contextual error and warning message improvements across 9 source files (37+ messages)
-- **v0.16.6** — Stdlib code review: 72 .aria files audited, 13 bugs fixed
-- **v0.16.5** — Tools code review (LSP, DAP, Doc, Pkg); 6 follow-up bug fix releases (AriaString ABI, @cast<> codegen, exit-in-lambda enforcement, uint512 shift, nested struct codegen, TokenType enum sync)
-- **v0.16.4** — Runtime code review: 83 files, ~42,079 lines
-- **v0.16.3** — Backend & analysis code review: 29 files, ~49,900 lines
-- **v0.16.2** — Semantic analysis code review: 18 files, 30,590 lines
-- **v0.16.1** — Frontend code review: lexer, parser, preprocessor, AST
-- **v0.16.0** — Dead code removal, 11 bug fixes, 72 TODO resolutions, regression tests
+**Current validation snapshot:** CTest **7/7 passing** with K semantics enabled;
+`k_semantics_core` **10/10** under K Framework v7.1.320; v0.16/v0.17 compiler
+audit baseline **1,015 tests** with 0 genuine regressions; **800K+ fuzz tests**
+with 0 crashes; **103 packages**; **72 stdlib modules**.
+
+**v0.18.x in progress:**
+- **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
+    first executable subset: `func:main`/`func:failsafe`, variable binding,
+    `fixed`, integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result
+    operators, `if`/`else`, `loop(start,end,step)`, and `exit`.
+- **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
+    executes core programs with `krun`, and skips cleanly when K is unavailable.
+- **Next semantic slice** — bounded `int32`/`int64`, explicit `tbb32`
+    range/min-sentinel behavior, then function declarations and calls beyond the
+    fixed `main`/`failsafe` envelope.
+
+**Recently completed series:**
+- **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
+    Debian `.deb` builder, RPM builder, `aria-pkg` remote fetch from GitHub, and
+    refreshed install/tooling docs.
+- **v0.16.x** — Full compiler/runtime/tooling audit: 0 TODO/FIXME/HACK in C++
+    source, 72 stdlib modules audited, 33 examples tested, 171-page manual
+    regenerated, improved diagnostics, and 800K+ fuzz tests with 0 crashes.
 
 **Previous series highlights:**
 - **v0.15.x** — Self-hosting: 12 compiler/tool modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness, const evaluator, module resolver, doc generator, package manager, project config), final census
@@ -51,19 +64,20 @@ The v0.16.x series completed a **comprehensive code review** of the entire C++ c
 |---|---|---|
 | `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
 | `aria-ls` | ✅ Stable | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 102 packages verified |
+| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 103 packages verified |
 | `aria-doc` | ✅ Stable | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 10/10 core tests |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
 | Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
-| Debian package | ✅ Built | `aria_0.5.5-1_amd64.deb`, tested on Mint 22.3 |
+| Linux packages | ✅ Stable | Debian `.deb` and RPM builders, plus source/install-script paths |
 | AriaX Linux | 🔧 In progress | Custom distro with full toolchain |
-| `aria_packages` | ✅ Active | 102 packages (17 pure, 17 libc, 68 FFI), all passing |
+| `aria_packages` | ✅ Active | 103 packages, all passing |
 | PDF Manual | ✅ v1.1 | [171-page programming manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11) — specs, guide, safety walkthrough, reference |
 
 ---
@@ -111,7 +125,7 @@ The v0.16.x series completed a **comprehensive code review** of the entire C++ c
 
 ## `aria-packages` Library Ecosystem
 
-All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 102 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
+All packages live in the separate [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) repository. 103 packages total, organized into utility, graphics/game, server, database, and AI/ML tiers. Each package has a `src/` module, a `tests/` file with assertions, and where FFI is needed, a C `shim/`.
 
 **Package tiers:**
 
@@ -453,7 +467,7 @@ EOF
 
 📚 **[aria-docs](https://github.com/alternative-intelligence-cp/aria-docs)** — Package reference, language guides, and tutorials (separate repo).
 
-📖 **[Aria Programming Manual v1 (PDF)](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)** — 234-page offline manual: specs cheat sheet, full programming guide, safety walkthrough, and reference appendix.
+📖 **[Aria Programming Manual v1.1 (PDF)](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11)** — 171-page offline manual: specs cheat sheet, full programming guide, safety walkthrough, and reference appendix.
 
 **Quick links in aria-docs:**
 - `guide/` — Full programming guide (12 sections)
@@ -487,6 +501,7 @@ aria/
 │   └── misc/                # Exploratory/scratch tests and archived test results
 ├── examples/                 # Example programs
 ├── docs/                     # Design docs and architecture
+├── k-semantics/              # K Framework executable semantics and core tests
 ├── scripts/                  # Build and maintenance scripts
 ├── tools/                    # Development tooling (specialist model, semantic_db)
 ├── benchmarks/               # Performance benchmarks
@@ -505,8 +520,8 @@ aria/
 ```
 
 **Related repositories:**
-- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 102 library packages (17 pure, 17 libc, 68 FFI)
-- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs, guides, and [234-page PDF manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.13.7)
+- [`aria-packages`](https://github.com/alternative-intelligence-cp/aria-packages) — 103 library packages
+- [`aria-docs`](https://github.com/alternative-intelligence-cp/aria-docs) — reference docs, guides, and [171-page PDF manual](https://github.com/alternative-intelligence-cp/aria-docs/releases/tag/v0.16.11)
 - [`ariax`](https://github.com/alternative-intelligence-cp/ariax) — POSIX tools and AX Linux distro
 - [`aria-lang`](https://github.com/alternative-intelligence-cp/aria-lang) — VS Code extension
 - [`aria-make`](https://github.com/alternative-intelligence-cp/aria-make) — build system
@@ -521,6 +536,9 @@ aria/
 
 # Run the full test suite
 ./scripts/run_comprehensive_tests.sh
+
+# Run K executable-semantics core tests (requires K Framework)
+./k-semantics/run_k_tests.sh --require-k
 
 # Run fuzzer
 cd tests/fuzz && python3 fullstack_fuzzer.py
@@ -890,7 +908,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Tier 3 tool ports** — Doc generator, package manager, project config ported to Aria
 - ✅ **Self-hosting census** — 12 total modules ported, final audit and documentation
 
-### v0.16.x — Released (current)
+### v0.16.x — Released
 
 - ✅ **Comprehensive code review** — Full C++ compiler, runtime, and toolchain reviewed (~122,000+ lines, 130+ files)
 - ✅ **11 compiler bugs fixed** — Dead code removal, wrong-value bugs, memory/ownership fixes, ABI corrections
@@ -900,11 +918,30 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Test stability** — 1,015 tests (891 positive, 124 expected-failure), AriaString ABI fix, @cast<> codegen, exit-in-lambda enforcement
 - ✅ **Error messages** — Contextual hints and improved diagnostics across 9 source files (37+ messages)
 
-### v0.17.x — Planned
+### v0.17.x — Released
 
-- AriaX Linux distribution packaging
-- Nikola integration
-- Specialist model retraining with current corpus
+- ✅ **Install script expansion** — Distro detection, dependency installation,
+    build-only/custom-prefix/uninstall modes, and post-install verification
+- ✅ **Debian packaging** — Standalone `.deb` builder with runtime dependencies
+    and bundled Aria libraries
+- ✅ **RPM packaging** — `.rpm` builder with generated spec and staged install
+    tree
+- ✅ **aria-pkg remote fetch** — `update`, `list --remote`, and remote package
+    install from the GitHub package registry
+- ✅ **Install documentation** — Source, script, package, and package-manager
+    install paths documented
+
+### v0.18.x — In Progress
+
+- 🔧 **K Framework executable semantics** — First formal semantics seed in
+    `k-semantics/aria.k`
+- ✅ **Core K test corpus** — 10 programs covering exit, arithmetic, binding,
+    fixed values, loops, Result operations, sticky `ERR`, failsafe routing, and
+    `if`/`else`
+- ✅ **CTest integration** — K semantics test passes when K is installed and
+    skips cleanly when K is absent
+- ⏭️ **Next** — Bounded integer semantics, explicit `tbb32` sentinel behavior,
+    then function declarations/calls
 
 ### Long Term
 
