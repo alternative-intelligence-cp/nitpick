@@ -15,7 +15,9 @@ Branch: `dev-0.18.x`
 - Added typed internal numeric values for `int32`, `int64`, and `tbb32`.
 - Modeled two's-complement `int32`/`int64` bounds and `tbb32` min-sentinel
   overflow/underflow to sticky `ERR`.
-- Compiled `aria.k` and passed all 15 core K tests under `krun`.
+- Added zero-argument helper functions returning through `pass`/`fail`, callable
+  through expressions such as `raw answer()` and `broken() defaults 43`.
+- Compiled `aria.k` and passed all 18 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -29,7 +31,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 15 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 18 passed, 0 failed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -37,7 +39,7 @@ Branch: `dev-0.18.x`
 
 ## Semantic gaps intentionally left open
 
-- Full function declarations/calls
+- Parameterized function calls and isolated local call frames
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - Strings and stdout/stderr/stddbg output cells
 - Structs, arrays, and field access
@@ -50,6 +52,6 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: function
-declarations/calls beyond the fixed `main`/`failsafe` envelope, then string
-values and `println` output cells.
+Expand semantic coverage in the next small slice. Recommended order: string
+values and `println` output cells, then parameterized function calls with
+isolated call frames.

@@ -10,6 +10,7 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
+- zero-argument helper functions returning through `pass` / `fail`
 - `int32`, `int64`, `tbb32`, `flt32`, and `flt64` type tokens
 - mutable and `fixed` variable bindings
 - typed internal numeric values for declared `int32`, `int64`, and `tbb32`
@@ -19,6 +20,7 @@ can eventually answer: “what should this Aria program do?” independently of
 - sticky `ERR` propagation for arithmetic
 - `Unknown` propagation through arithmetic
 - `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!`
+- helper calls such as `raw answer()` and `broken() defaults 43`
 - `if` / `else`
 - `loop(start, end, step) { ... }` with implicit `$` iterator
 - terminal `exit` / `exit(...)`
@@ -52,8 +54,8 @@ The runner checks the final K configuration for the matching `<exit-code>` cell.
 
 Next increments should add, in order:
 
-1. function declarations/calls beyond the fixed `main`/`failsafe` envelope
-2. string values and `println` output modeling
+1. string values and `println` output modeling
+2. parameterized function calls and isolated call frames
 3. struct definitions and field access
 4. `pick`/`fall` semantics
 5. `limit<Rules>` and proof-oriented `kprove` lemmas

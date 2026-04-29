@@ -4,6 +4,7 @@ requires "domains.md"
 //
 // Scope of this first definition:
 //   - mandatory func:main / func:failsafe envelope
+//   - zero-argument helper functions returning through pass/fail
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - fixed bindings with dynamic immutability enforcement
 //   - integer arithmetic, two's-complement int bounds, and sticky ERR propagation
@@ -35,6 +36,7 @@ module ARIA-SYNTAX
 
   syntax Exp ::= Val
                | Id
+               | Id "(" ")"
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -67,9 +69,11 @@ module ARIA-SYNTAX
   syntax Block ::= "{" Stmts "}"
   syntax Stmts ::= List{Stmt, ""}
 
+  syntax FuncDecl     ::= "func:" Id "=" Type "(" ")" Block ";"
+  syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
   syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
-  syntax Pgm          ::= FailsafeDecl MainDecl
+  syntax Pgm          ::= FuncDecls FailsafeDecl MainDecl
 endmodule
 
 module ARIA
@@ -81,6 +85,7 @@ module ARIA
 
   configuration <T>
     <k> $PGM:Pgm </k>
+    <functions> .Map </functions>
     <env> .Map </env>
     <types> .Map </types>
     <store> .Map </store>
@@ -96,8 +101,36 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-  rule <k> func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => MAIN </k>
+    rule <k> FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadFuncs(FUNCS) ~> MAIN </k>
        <failsafe> _ => FS </failsafe>
+
+    // -------------------------------------------------------------------------
+    // Zero-argument helper functions
+    // -------------------------------------------------------------------------
+
+    syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
+         | "Fn0Fail" "(" Exp ")"
+
+    syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
+          | "finishCallPass" "(" Type ")"
+          | "finishCallFail"
+
+    rule <k> loadFuncs(.FuncDecls) => .K ... </k>
+
+    rule <k> loadFuncs(func: F:Id = T:Type() { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+      <functions> Funcs => Funcs [ F <- Fn0Pass(T, E) ] </functions>
+
+    rule <k> loadFuncs(func: F:Id = _T:Type() { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+      <functions> Funcs => Funcs [ F <- Fn0Fail(E) ] </functions>
+
+    rule <k> F:Id() => E ~> finishCallPass(T) ... </k>
+      <functions> ... F |-> Fn0Pass(T, E) ... </functions>
+
+    rule <k> F:Id() => E ~> finishCallFail ... </k>
+      <functions> ... F |-> Fn0Fail(E) ... </functions>
+
+    rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
+    rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
   // -------------------------------------------------------------------------
   // Statement sequencing and blocks

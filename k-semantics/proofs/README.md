@@ -11,3 +11,4 @@ Planned initial claims:
 4. zero-step loops route to failsafe instead of diverging
 5. reassignment to `fixed` bindings cannot silently mutate state
 6. `?!` on an error `Result` always reaches the failsafe path
+7. zero-argument helper calls preserve `pass`/`fail` Result polarity
