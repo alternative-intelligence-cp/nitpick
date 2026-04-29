@@ -4,7 +4,8 @@ requires "domains.md"
 //
 // Scope of this first definition:
 //   - mandatory func:main / func:failsafe envelope
-//   - zero-argument helper functions returning through pass/fail
+//   - zero-, one-, and two-argument helper functions returning through pass/fail
+//   - isolated helper call frames for parameters and local bindings
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -39,9 +40,11 @@ module ARIA-SYNTAX
 
   syntax Exp ::= Val
                | Id
-               | Id "(" ")"
                | "print" "(" Exp ")" [strict]
                | "println" "(" Exp ")" [strict]
+               | Id "(" ")"
+               | Id "(" Exp ")" [strict(2), avoid]
+               | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -74,7 +77,10 @@ module ARIA-SYNTAX
   syntax Block ::= "{" Stmts "}"
   syntax Stmts ::= List{Stmt, ""}
 
+  syntax Param        ::= Type ":" Id
   syntax FuncDecl     ::= "func:" Id "=" Type "(" ")" Block ";"
+                        | "func:" Id "=" Type "(" Param ")" Block ";"
+                        | "func:" Id "=" Type "(" Param "," Param ")" Block ";"
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
   syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
@@ -112,15 +118,21 @@ module ARIA
        <failsafe> _ => FS </failsafe>
 
   // -------------------------------------------------------------------------
-  // Zero-argument helper functions
+  // Helper functions and isolated call frames
   // -------------------------------------------------------------------------
 
   syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
                 | "Fn0Fail" "(" Exp ")"
+                | "Fn1Pass" "(" Type "," Type "," Id "," Exp ")"
+                | "Fn1Fail" "(" Type "," Id "," Exp ")"
+                | "Fn2Pass" "(" Type "," Type "," Id "," Type "," Id "," Exp ")"
+                | "Fn2Fail" "(" Type "," Id "," Type "," Id "," Exp ")"
 
   syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
                  | "finishCallPass" "(" Type ")"
                  | "finishCallFail"
+                 | "finishCallPassFrame" "(" Type "," Map "," Map "," Map "," Set "," Int ")"
+                 | "finishCallFailFrame" "(" Map "," Map "," Map "," Set "," Int ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -130,14 +142,82 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = _T:Type() { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn0Fail(E) ] </functions>
 
-  rule <k> F:Id() => E ~> finishCallPass(T) ... </k>
-       <functions> ... F |-> Fn0Pass(T, E) ... </functions>
+  rule <k> loadFuncs(func: F:Id = T:Type(PT:Type : PX:Id) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Pass(T, PT, PX, E) ] </functions>
 
-  rule <k> F:Id() => E ~> finishCallFail ... </k>
+  rule <k> loadFuncs(func: F:Id = _T:Type(PT:Type : PX:Id) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Fail(PT, PX, E) ] </functions>
+
+  rule <k> loadFuncs(func: F:Id = T:Type(PT1:Type : PX1:Id, PT2:Type : PX2:Id) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Pass(T, PT1, PX1, PT2, PX2, E) ] </functions>
+
+  rule <k> loadFuncs(func: F:Id = _T:Type(PT1:Type : PX1:Id, PT2:Type : PX2:Id) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Fail(PT1, PX1, PT2, PX2, E) ] </functions>
+
+  rule <k> F:Id() => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, Next) ... </k>
+       <functions> ... F |-> Fn0Pass(T, E) ... </functions>
+       <env> Env => .Map </env>
+       <types> Types => .Map </types>
+       <store> Store => .Map </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> Next </next-loc>
+
+  rule <k> F:Id() => E ~> finishCallFailFrame(Env, Types, Store, Fixed, Next) ... </k>
        <functions> ... F |-> Fn0Fail(E) ... </functions>
+       <env> Env => .Map </env>
+       <types> Types => .Map </types>
+       <store> Store => .Map </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> Next </next-loc>
+
+  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, L) ... </k>
+       <functions> ... F |-> Fn1Pass(T, PT, PX, E) ... </functions>
+       <env> Env => PX |-> L </env>
+       <types> Types => PX |-> PT </types>
+       <store> Store => L |-> normalizeValue(PT, A) </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(Env, Types, Store, Fixed, L) ... </k>
+       <functions> ... F |-> Fn1Fail(PT, PX, E) ... </functions>
+       <env> Env => PX |-> L </env>
+       <types> Types => PX |-> PT </types>
+       <store> Store => L |-> normalizeValue(PT, A) </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, L) ... </k>
+       <functions> ... F |-> Fn2Pass(T, PT1, PX1, PT2, PX2, E) ... </functions>
+       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+       <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> L => L +Int 2 </next-loc>
+
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(Env, Types, Store, Fixed, L) ... </k>
+       <functions> ... F |-> Fn2Fail(PT1, PX1, PT2, PX2, E) ... </functions>
+       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+       <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> L => L +Int 2 </next-loc>
 
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
+
+  rule <k> V:Val ~> finishCallPassFrame(T, Env, Types, Store, Fixed, Next) => Result(NIL, normalizeValue(T, V), false) ... </k>
+       <env> _ => Env </env>
+       <types> _ => Types </types>
+       <store> _ => Store </store>
+       <fixed-vars> _ => Fixed </fixed-vars>
+       <next-loc> _ => Next </next-loc>
+
+  rule <k> V:Val ~> finishCallFailFrame(Env, Types, Store, Fixed, Next) => Result(V, NIL, true) ... </k>
+       <env> _ => Env </env>
+       <types> _ => Types </types>
+       <store> _ => Store </store>
+       <fixed-vars> _ => Fixed </fixed-vars>
+       <next-loc> _ => Next </next-loc>
 
   // -------------------------------------------------------------------------
   // Statement sequencing and blocks
@@ -336,20 +416,20 @@ module ARIA
   rule <k> fail E:Val => Result(E, NIL, true) ... </k>
   rule <k> raw Result(_:Val, V:Val, _:Bool) => V ... </k>
   rule <k> drop Result(_:Val, _:Val, _:Bool) => NIL ... </k>
-    rule <k> drop _:Val => NIL ... </k> [owise]
+  rule <k> drop _:Val => NIL ... </k> [owise]
   rule <k> Result(_:Val, V:Val, false) defaults _:Exp => V ... </k>
   rule <k> Result(_:Val, _:Val, true) defaults Fallback:Exp => Fallback ... </k>
   rule <k> ?! Result(_:Val, V:Val, false) => V ... </k>
 
-    // -------------------------------------------------------------------------
-    // String output builtins
-    // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // String output builtins
+  // -------------------------------------------------------------------------
 
-    rule <k> print(S:String) => I64(lengthString(S)) ... </k>
-      <stdout> OUT => OUT +String S </stdout>
+  rule <k> print(S:String) => I64(lengthString(S)) ... </k>
+       <stdout> OUT => OUT +String S </stdout>
 
-    rule <k> println(S:String) => I64(lengthString(S) +Int 1) ... </k>
-      <stdout> OUT => OUT +String S +String "\n" </stdout>
+  rule <k> println(S:String) => I64(lengthString(S) +Int 1) ... </k>
+       <stdout> OUT => OUT +String S +String "\n" </stdout>
 
   syntax Exp ::= "invokeFailsafe" "(" Val ")" [symbol(invokeFailsafe)]
 

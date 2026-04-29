@@ -17,9 +17,11 @@ Branch: `dev-0.18.x`
   overflow/underflow to sticky `ERR`.
 - Added zero-argument helper functions returning through `pass`/`fail`, callable
   through expressions such as `raw answer()` and `broken() defaults 43`.
+- Added one- and two-argument helper functions with isolated call frames that
+  restore caller locals, types, store, fixed bindings, and allocator state.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
-- Compiled `aria.k` and passed all 21 core K tests under `krun`.
+- Compiled `aria.k` and passed all 26 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -33,7 +35,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 21 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 26 passed, 0 failed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -41,7 +43,6 @@ Branch: `dev-0.18.x`
 
 ## Semantic gaps intentionally left open
 
-- Parameterized function calls and isolated local call frames
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - stderr/stddbg output cells
 - Structs, arrays, and field access
@@ -54,6 +55,5 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order:
-parameterized function calls with isolated call frames, then structs and field
-access.
+Expand semantic coverage in the next small slice. Recommended order: structs
+and field access, then `pick`/`fall`.

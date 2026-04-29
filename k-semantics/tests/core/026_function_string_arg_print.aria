@@ -1,0 +1,9 @@
+// expect-exit: 26
+// expect-stdout: "ok"
+func:emit = int64(string:msg) { pass print(msg); };
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int64:n = raw emit("ok");
+    if (n == 2) { exit 26; }
+    exit 27;
+};

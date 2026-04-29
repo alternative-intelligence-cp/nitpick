@@ -10,7 +10,8 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
-- zero-argument helper functions returning through `pass` / `fail`
+- zero-, one-, and two-argument helper functions returning through `pass` / `fail`
+- isolated helper call frames for parameters and local bindings
 - `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and `string` type tokens
 - mutable and `fixed` variable bindings
 - typed internal numeric values for declared `int32`, `int64`, and `tbb32`
@@ -20,7 +21,7 @@ can eventually answer: “what should this Aria program do?” independently of
 - sticky `ERR` propagation for arithmetic
 - `Unknown` propagation through arithmetic
 - `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!`
-- helper calls such as `raw answer()` and `broken() defaults 43`
+- helper calls such as `raw answer()`, `raw inc(8)`, and `broken(17) defaults 23`
 - string literals plus `print` / `println` writes to the `<stdout>` cell
 - `if` / `else`
 - `loop(start, end, step) { ... }` with implicit `$` iterator
@@ -60,12 +61,11 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. parameterized function calls and isolated call frames
-2. struct definitions and field access
-3. `pick`/`fall` semantics
-4. `limit<Rules>` and proof-oriented `kprove` lemmas
-5. memory contexts: `stack`, `gc`, `wild`
-6. borrow permissions: `$i` / `$m`
-7. module/import and extern/FFI boundaries
+1. struct definitions and field access
+2. `pick`/`fall` semantics
+3. `limit<Rules>` and proof-oriented `kprove` lemmas
+4. memory contexts: `stack`, `gc`, `wild`
+5. borrow permissions: `$i` / `$m`
+6. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.
