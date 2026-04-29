@@ -37,6 +37,23 @@ if(INTEGRATION_TESTS)
 endif()
 
 # ============================================================================
+# K Framework Executable Semantics (v0.18.x)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/k-semantics/run_k_tests.sh")
+    add_test(
+        NAME k_semantics_core
+        COMMAND ${CMAKE_SOURCE_DIR}/k-semantics/run_k_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(k_semantics_core PROPERTIES
+        TIMEOUT 120
+        LABELS "formal;k-semantics"
+        SKIP_RETURN_CODE 77
+    )
+endif()
+
+# ============================================================================
 # GPU Tests (target-conditional)
 # ============================================================================
 
