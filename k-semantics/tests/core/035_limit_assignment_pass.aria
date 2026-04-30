@@ -1,0 +1,15 @@
+// expect-exit: 75
+
+Rules:r_lt_100 = {
+  $ < 100
+};
+
+func:failsafe = int32(tbb32:err) {
+  exit 9;
+};
+
+func:main = int32() {
+  limit<r_lt_100> int32:a = 50;
+  a = 75;
+  exit a;
+};

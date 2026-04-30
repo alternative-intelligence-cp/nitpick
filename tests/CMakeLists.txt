@@ -53,6 +53,19 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/k-semantics/run_k_tests.sh")
     )
 endif()
 
+if(EXISTS "${CMAKE_SOURCE_DIR}/k-semantics/run_k_proofs.sh")
+    add_test(
+        NAME k_semantics_proofs
+        COMMAND bash ${CMAKE_SOURCE_DIR}/k-semantics/run_k_proofs.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(k_semantics_proofs PROPERTIES
+        TIMEOUT 180
+        LABELS "formal;k-semantics;kprove"
+        SKIP_RETURN_CODE 77
+    )
+endif()
+
 # ============================================================================
 # GPU Tests (target-conditional)
 # ============================================================================

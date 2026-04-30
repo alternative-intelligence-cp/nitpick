@@ -10,13 +10,40 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
-- `int32`, `int64`, `tbb32`, `flt32`, and `flt64` type tokens
+- zero-, one-, and two-argument helper functions returning through `pass` / `fail`
+- isolated helper call frames for parameters and local bindings
+- canonical `struct:Name = { Type:field; ... };` declarations for one-, two-,
+  and three-field structs
+- struct literals such as `Point{x: 10, y: 20}`, field reads such as `p.x`, and
+  direct field writes such as `p.x = 42`
+- top-level untyped `Rules:Name = { ... };` declarations with integer `$`
+  conditions and cascaded `limit<OtherRules>` references
+- `limit<RulesName> Type:x = expr;` declarations and reassignment checks for
+  numeric values, including failsafe routing on violated constraints
+- `stack`, `gc`, and `wild` declaration qualifiers with live allocation-class
+  tracking cells
+- `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
+  for leaked or invalid wild frees
+- `defer { ... }` cleanup blocks, registered per block scope and executed in
+  LIFO order on scope exit or before terminal `exit`
+- `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
+  minimal alias tracking, immutable-vs-mutable conflict checks, and `$$m`
+  argument-shape enforcement
+- `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
+  `string` type tokens
 - mutable and `fixed` variable bindings
-- integer arithmetic and comparisons
+- typed internal numeric values for declared `int32`, `int64`, and `tbb32`
+- two's-complement bounded `int32`/`int64` arithmetic
+- `tbb32` min-sentinel (`-2147483648`) and overflow/underflow to sticky `ERR`
+- integer arithmetic and comparisons across raw and typed numeric values
 - sticky `ERR` propagation for arithmetic
 - `Unknown` propagation through arithmetic
 - `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!`
+- helper calls such as `raw answer()`, `raw inc(8)`, and `broken(17) defaults 23`
+- string literals plus `print` / `println` writes to the `<stdout>` cell
 - `if` / `else`
+- `pick(selector) { ... }` first-match dispatch over value patterns, `(*)`
+  wildcards, optional labeled arms, and `fall label;` jumps to a labeled arm
 - `loop(start, end, step) { ... }` with implicit `$` iterator
 - terminal `exit` / `exit(...)`
 
@@ -34,6 +61,20 @@ Install K first (see `INSTALL.md`), then run:
 Without `--require-k`, the script exits `77` when K is missing so CTest can mark
 the test as skipped instead of failing unrelated builds.
 
+## Run the K proofs
+
+The first proof hook compiles `aria.k` with the Haskell backend required by
+`kprove`, then proves every `*.k` claim module under `proofs/`:
+
+```bash
+bash ./k-semantics/run_k_proofs.sh --require-k
+```
+
+The initial `proofs/core-proofs.k` module contains three concrete claims for
+sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+Like the test runner, the proof runner exits `77` without `--require-k` when K is
+not installed so CTest can skip it cleanly.
+
 ## Test corpus
 
 Core seed tests live in `tests/core/`. Each test includes an expected terminal
@@ -44,19 +85,22 @@ state header:
 ```
 
 The runner checks the final K configuration for the matching `<exit-code>` cell.
+Tests that model terminal output can also include an optional stdout assertion:
+
+```aria
+// expect-stdout: "hello\n"
+```
 
 ## Roadmap
 
 Next increments should add, in order:
 
-1. int32/int64 bounded overflow behavior and explicit tbb32 range semantics
-2. function declarations/calls beyond the fixed `main`/`failsafe` envelope
-3. string values and `println` output modeling
-4. struct definitions and field access
-5. `pick`/`fall` semantics
-6. `limit<Rules>` and proof-oriented `kprove` lemmas
-7. memory contexts: `stack`, `gc`, `wild`
-8. borrow permissions: `$i` / `$m`
-9. module/import and extern/FFI boundaries
+1. richer memory and borrow behavior: pointer dereference/addressing, pinning
+  (`#`), positive `$$m` call-by-reference mutation, scope-based borrow release,
+  and `wildx`
+2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
+3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
+  borrow permissions
+4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

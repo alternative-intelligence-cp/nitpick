@@ -1,0 +1,19 @@
+// expect-exit: 42
+
+Rules:r_positive = {
+  $ > 0
+};
+
+Rules:r_small_positive = {
+  limit<r_positive>,
+  $ < 100
+};
+
+func:failsafe = int32(tbb32:err) {
+  exit 9;
+};
+
+func:main = int32() {
+  limit<r_small_positive> int32:a = 42;
+  exit a;
+};

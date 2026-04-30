@@ -1,0 +1,18 @@
+// expect-exit: 30
+
+func:failsafe = int32(tbb32:err) {
+  exit 1;
+};
+
+func:main = int32() {
+  int32:x = 1;
+  int32:r = 0;
+
+  pick (x) {
+    (1) { r = r + 10; fall arm_two; },
+    arm_two: (2) { r = r + 20; },
+    (*) { r = r + 99; }
+  }
+
+  exit r;
+};
