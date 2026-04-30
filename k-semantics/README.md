@@ -24,6 +24,9 @@ can eventually answer: “what should this Aria program do?” independently of
   tracking cells
 - `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
   for leaked or invalid wild frees
+- `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
+  minimal alias tracking, immutable-vs-mutable conflict checks, and `$$m`
+  argument-shape enforcement
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
@@ -90,11 +93,12 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. borrow permissions: `$i` / `$m`
-2. richer memory behavior: `defer { free(...) }`, pointer dereference/addressing,
-   pinning (`#`), and `wildx`
-3. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
-4. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, and memory
-5. module/import and extern/FFI boundaries
+1. richer memory and borrow behavior: `defer { free(...) }`, pointer
+  dereference/addressing, pinning (`#`), positive `$$m` call-by-reference
+  mutation, scope-based borrow release, and `wildx`
+2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
+3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
+  borrow permissions
+4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

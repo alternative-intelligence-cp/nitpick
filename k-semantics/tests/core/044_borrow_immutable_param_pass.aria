@@ -1,0 +1,15 @@
+// expect-exit: 11
+
+func:read_ref = int32($$i int32:x) {
+    pass x + 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:a = 10;
+    int32:r = raw read_ref(a);
+    exit r;
+};

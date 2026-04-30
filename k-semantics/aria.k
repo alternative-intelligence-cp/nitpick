@@ -9,6 +9,7 @@ requires "domains.md"
 //   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
+//   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -28,6 +29,8 @@ module ARIA-SYNTAX
 
      syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Id
      syntax MemMode ::= "stack" | "gc" | "wild"
+     syntax BorrowMode ::= "$$i" | "$$m"
+     syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
 
   syntax Val ::= Int
                | Bool
@@ -40,6 +43,7 @@ module ARIA-SYNTAX
                | "I64" "(" Int ")"
                | "TBB32" "(" Int ")"
                | "PTR" "(" Int ")"
+               | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
 
   syntax KResult ::= Val
 
@@ -49,6 +53,8 @@ module ARIA-SYNTAX
                | "println" "(" Exp ")" [strict]
                | "alloc" "(" Exp ")" [strict]
                | "free" "(" Id ")"
+               | "$" Id
+               | "!" "$" Id
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
@@ -79,6 +85,7 @@ module ARIA-SYNTAX
                 | "fixed" Type ":" Id "=" Exp ";" [strict(3)]
                 | "limit" "<" Id ">" Type ":" Id "=" Exp ";" [strict(4)]
                 | MemMode Type ":" Id "=" Exp ";" [strict(4)]
+                | BorrowMode Type ":" Id "=" Id ";"
                 | Id "=" Exp ";" [strict(2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | "exit" Exp ";" [strict]
@@ -108,7 +115,8 @@ module ARIA-SYNTAX
      syntax StructDecl    ::= "struct:" Id "=" "{" FieldDecls "}" ";"
      syntax StructDecls   ::= List{StructDecl, ""}
 
-  syntax Param        ::= Type ":" Id
+     syntax Param         ::= Type ":" Id
+                                                             | BorrowMode Type ":" Id
   syntax FuncDecl     ::= "func:" Id "=" Type "(" ")" Block ";"
                         | "func:" Id "=" Type "(" Param ")" Block ";"
                         | "func:" Id "=" Type "(" Param "," Param ")" Block ";"
@@ -135,6 +143,9 @@ module ARIA
      <stack-live> .Set </stack-live>
      <gc-live> .Set </gc-live>
      <wild-live> .Set </wild-live>
+     <borrow-vars> .Map </borrow-vars>
+     <imm-borrow-hosts> .Set </imm-borrow-hosts>
+     <mut-borrow-hosts> .Set </mut-borrow-hosts>
           <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
@@ -259,8 +270,87 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(L in Wild)
 
-     rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
-          requires isNumericValue(V)
+  rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
+    requires isNumericValue(V)
+
+  // -------------------------------------------------------------------------
+  // Borrow permission qualifiers: $$i / $$m
+  // -------------------------------------------------------------------------
+
+  syntax Type ::= paramType(Param) [function]
+  syntax Id ::= paramName(Param) [function]
+  syntax BorrowInfo ::= paramBorrow(Param) [function]
+  syntax Val ::= argumentValue(Val) [function]
+  syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
+                | isImmutableBorrowVar(Id, Map) [function]
+  syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
+
+  rule paramType(T:Type : _:Id) => T
+  rule paramType($$i T:Type : _:Id) => T
+  rule paramType($$m T:Type : _:Id) => T
+
+  rule paramName(_:Type : X:Id) => X
+  rule paramName($$i _:Type : X:Id) => X
+  rule paramName($$m _:Type : X:Id) => X
+
+  rule paramBorrow(_:Type : _:Id) => CopyBorrow
+  rule paramBorrow($$i _:Type : _:Id) => ImmBorrow
+  rule paramBorrow($$m _:Type : _:Id) => MutBorrow
+
+  rule argumentValue(BorrowVal(_:BorrowInfo, _:Id, V:Val)) => V
+  rule argumentValue(V:Val) => V [owise]
+
+  rule acceptsBorrowArg(MutBorrow, BorrowVal(MutBorrow, _:Id, _:Val)) => true
+  rule acceptsBorrowArg(MutBorrow, _) => false [owise]
+  rule acceptsBorrowArg(ImmBorrow, _) => true
+  rule acceptsBorrowArg(CopyBorrow, _) => true
+
+  rule paramBorrowMap(_:Id, CopyBorrow) => .Map
+  rule paramBorrowMap(X:Id, ImmBorrow) => X |-> ImmBorrow
+  rule paramBorrowMap(X:Id, MutBorrow) => X |-> MutBorrow
+
+  rule isImmutableBorrowVar(X:Id, (X |-> ImmBorrow _:Map)) => true
+  rule isImmutableBorrowVar(X:Id, (X |-> MutBorrow _:Map)) => false
+  rule isImmutableBorrowVar(_:Id, _:Map) => false [owise]
+
+  rule <k> $ X:Id => BorrowVal(MutBorrow, X, V) ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> V ... </store>
+
+  rule <k> ! $ X:Id => BorrowVal(ImmBorrow, X, V) ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> V ... </store>
+
+  rule <k> $$i T:Type : X:Id = H:Id ; => .K ... </k>
+       <env> Env => Env [ X <- Env [ H ] ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+       <imm-borrow-hosts> Imm => Imm SetItem(H) </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+    requires H in_keys(Env) andBool notBool(H in Mut)
+
+  rule <k> $$m T:Type : X:Id = H:Id ; => .K ... </k>
+       <env> Env => Env [ X <- Env [ H ] ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+       <mut-borrow-hosts> Mut => Mut SetItem(H) </mut-borrow-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+    requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm)
+
+  rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
+       <env> Env </env>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(H in_keys(Env)) orBool H in Mut
+
+  rule <k> $$m _:Type : _:Id = H:Id ; ~> _ => FS </k>
+       <env> Env </env>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -349,17 +439,19 @@ module ARIA
   // -------------------------------------------------------------------------
 
   syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
-                | "Fn0Fail" "(" Exp ")"
-                | "Fn1Pass" "(" Type "," Type "," Id "," Exp ")"
-                | "Fn1Fail" "(" Type "," Id "," Exp ")"
-                | "Fn2Pass" "(" Type "," Type "," Id "," Type "," Id "," Exp ")"
-                | "Fn2Fail" "(" Type "," Id "," Type "," Id "," Exp ")"
+                          | "Fn0Fail" "(" Exp ")"
+                          | "Fn1Pass" "(" Type "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn1Fail" "(" BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn2Pass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn2Fail" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
+
+  syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Set "," Set "," Set "," Int ")"
 
   syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
                  | "finishCallPass" "(" Type ")"
                  | "finishCallFail"
-                 | "finishCallPassFrame" "(" Type "," Map "," Map "," Map "," Map "," Set "," Int ")"
-                 | "finishCallFailFrame" "(" Map "," Map "," Map "," Map "," Set "," Int ")"
+                 | "finishCallPassFrame" "(" Type "," FrameState ")"
+                 | "finishCallFailFrame" "(" FrameState ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -369,88 +461,172 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = _T:Type() { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn0Fail(E) ] </functions>
 
-  rule <k> loadFuncs(func: F:Id = T:Type(PT:Type : PX:Id) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-       <functions> Funcs => Funcs [ F <- Fn1Pass(T, PT, PX, E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = T:Type(P:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Pass(T, paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
 
-  rule <k> loadFuncs(func: F:Id = _T:Type(PT:Type : PX:Id) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-       <functions> Funcs => Funcs [ F <- Fn1Fail(PT, PX, E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = _T:Type(P:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Fail(paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
 
-  rule <k> loadFuncs(func: F:Id = T:Type(PT1:Type : PX1:Id, PT2:Type : PX2:Id) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-       <functions> Funcs => Funcs [ F <- Fn2Pass(T, PT1, PX1, PT2, PX2, E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = T:Type(P1:Param, P2:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Pass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
-  rule <k> loadFuncs(func: F:Id = _T:Type(PT1:Type : PX1:Id, PT2:Type : PX2:Id) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
-       <functions> Funcs => Funcs [ F <- Fn2Fail(PT1, PX1, PT2, PX2, E) ] </functions>
+  rule <k> loadFuncs(func: F:Id = _T:Type(P1:Param, P2:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Fail(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
-  rule <k> F:Id() => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, Next) ... </k>
+  rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Pass(T, E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
        <store> Store => .Map </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => .Map </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id() => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, Next) ... </k>
+  rule <k> F:Id() => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Fail(E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
        <store> Store => .Map </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => .Map </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, L) ... </k>
-       <functions> ... F |-> Fn1Pass(T, PT, PX, E) ... </functions>
+  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+       <functions> ... F |-> Fn1Pass(T, B, PT, PX, E) ... </functions>
        <env> Env => PX |-> L </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, A) </store>
+       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
+    requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, L) ... </k>
-       <functions> ... F |-> Fn1Fail(PT, PX, E) ... </functions>
+  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+       <functions> ... F |-> Fn1Fail(B, PT, PX, E) ... </functions>
        <env> Env => PX |-> L </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, A) </store>
+       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
+    requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, L) ... </k>
-       <functions> ... F |-> Fn2Pass(T, PT1, PX1, PT2, PX2, E) ... </functions>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+       <functions> ... F |-> Fn2Pass(T, B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
+    requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, L) ... </k>
-       <functions> ... F |-> Fn2Fail(PT1, PX1, PT2, PX2, E) ... </functions>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+       <functions> ... F |-> Fn2Fail(B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
        <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
+    requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
+
+  rule <k> F:Id(A:Val) ~> _ => FS </k>
+       <functions> ... F |-> Fn1Pass(_:Type, B, _:Type, _:Id, _:Exp) ... </functions>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B, A))
+
+  rule <k> F:Id(A:Val) ~> _ => FS </k>
+       <functions> ... F |-> Fn1Fail(B, _:Type, _:Id, _:Exp) ... </functions>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B, A))
+
+  rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
+       <functions> ... F |-> Fn2Pass(_:Type, B1, _:Type, _:Id, B2, _:Type, _:Id, _:Exp) ... </functions>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
+
+  rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
+       <functions> ... F |-> Fn2Fail(B1, _:Type, _:Id, B2, _:Type, _:Id, _:Exp) ... </functions>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
 
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
-  rule <k> V:Val ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, Next) => Result(NIL, normalizeValue(T, V), false) ... </k>
+  rule <k> V:Val ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) => Result(NIL, normalizeValue(T, V), false) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
        <limits> _ => Limits </limits>
+       <mem-modes> _ => Modes </mem-modes>
+       <stack-live> _ => Stack </stack-live>
+       <gc-live> _ => GC </gc-live>
+       <wild-live> _ => Wild </wild-live>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
-  rule <k> V:Val ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, Next) => Result(V, NIL, true) ... </k>
+  rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
        <limits> _ => Limits </limits>
+       <mem-modes> _ => Modes </mem-modes>
+       <stack-live> _ => Stack </stack-live>
+       <gc-live> _ => GC </gc-live>
+       <wild-live> _ => Wild </wild-live>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
@@ -490,7 +666,20 @@ module ARIA
        <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
            <limits> Limits </limits>
        <fixed-vars> Fixed </fixed-vars>
-      requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
+        <borrow-vars> BorrowVars </borrow-vars>
+        <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
+        <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
+       requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
+        andBool notBool(isImmutableBorrowVar(X, BorrowVars))
+        andBool notBool(X in ImmHosts) andBool notBool(X in MutHosts)
+
+  rule <k> X:Id = _:Val ; ~> _ => FS </k>
+        <borrow-vars> BorrowVars </borrow-vars>
+        <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
+        <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
+        <failsafe> FS </failsafe>
+        <failsafe-triggered> _ => true </failsafe-triggered>
+     requires isImmutableBorrowVar(X, BorrowVars) orBool X in ImmHosts orBool X in MutHosts
 
   // Fixed reassignment is a semantic error in this executable model. ariac
   // should normally reject it statically; the oracle routes it to failsafe so

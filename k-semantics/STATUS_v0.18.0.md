@@ -37,7 +37,11 @@ Branch: `dev-0.18.x`
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
   declaration syntax, memory classification cells, minimal pointer/`alloc`
   values, `free(id)`, and wild-leak failsafe routing.
-- Compiled `aria.k` and passed all 40 core K tests under `krun`.
+- Added first borrow permission slice: `$$i`/`$$m` local aliases, borrow
+  parameter metadata, `$x`/`!$x` borrow values, immutable/mutable conflict
+  checks, immutable-borrow assignment blocking, and `$$m` bad-argument failsafe
+  routing.
+- Compiled `aria.k` and passed all 46 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -52,12 +56,16 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 40 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 46 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
   `build/ariac`; expected exits matched actual process exits.
+- Cross-checked the new borrow pass cases with `build/ariac`; expected exits
+  matched actual process exits. Cross-checked borrow negative cases against
+  `ariac` static rejections for double mutable borrow, plain value passed to
+  `$$m`, and assignment to a borrowed host.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -75,12 +83,13 @@ Branch: `dev-0.18.x`
 - richer memory semantics beyond the initial allocation qualifier slice:
   `defer { free(...) }`, pointer dereference/addressing, pinning (`#`), and
   `wildx`
-- borrow permissions (`$i`, `$m`)
+- richer borrow semantics beyond the initial permission qualifier slice:
+  positive `$$m` call-by-reference mutation, scope-based borrow release,
+  field/path-sensitive borrows, and pin-aware borrowing
 - modules/imports and extern/FFI
 - concurrency primitives
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: borrow
-permissions (`$i`, `$m`), then richer memory behavior and broader symbolic
-`kprove` lemmas.
+Expand semantic coverage in the next small slice. Recommended order: richer
+memory/borrow behavior, then broader symbolic `kprove` lemmas.
