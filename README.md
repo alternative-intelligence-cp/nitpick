@@ -22,10 +22,11 @@ series made Aria installable through mainstream Linux paths; the v0.18.x series
 is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
-**Current validation snapshot:** CTest **7/7 passing** with K semantics enabled;
-`k_semantics_core` **37/37** under K Framework v7.1.320; v0.16/v0.17 compiler
-audit baseline **1,015 tests** with 0 genuine regressions; **800K+ fuzz tests**
-with 0 crashes; **103 packages**; **72 stdlib modules**.
+**Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
+`k_semantics_core` **37/37** under K Framework v7.1.320;
+`k_semantics_proofs` **1/1 proof module** with three initial `kprove` claims;
+v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
+**800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
 
 **v0.18.x in progress:**
 - **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
@@ -40,8 +41,11 @@ with 0 crashes; **103 packages**; **72 stdlib modules**.
     routing, cascaded rules, `loop(start,end,step)`, and `exit`.
 - **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
     executes core programs with `krun`, and skips cleanly when K is unavailable.
-- **Next semantic slice** — proof-oriented `kprove` hooks and memory contexts
-    (`stack`, `gc`, `wild`).
+- **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
+    semantics with the Haskell backend required by `kprove` and proves the first
+    executable-core claim module.
+- **Next semantic slice** — memory contexts (`stack`, `gc`, `wild`), then borrow
+    permissions (`$i`, `$m`) and broader symbolic `kprove` lemmas.
 
 **Recently completed series:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
@@ -74,7 +78,7 @@ with 0 crashes; **103 packages**; **72 stdlib modules**.
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, CTest hook, 37/37 core tests |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 37/37 core tests, 1/1 proof module |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
