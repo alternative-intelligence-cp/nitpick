@@ -10,6 +10,7 @@ requires "domains.md"
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
+//   - @ address-of and <- read-only pointer dereference for local bindings
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
@@ -44,6 +45,7 @@ module ARIA-SYNTAX
                | "I64" "(" Int ")"
                | "TBB32" "(" Int ")"
                | "PTR" "(" Int ")"
+               | "PTRLOC" "(" Int ")"
                | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
 
   syntax KResult ::= Val
@@ -54,6 +56,8 @@ module ARIA-SYNTAX
                | "println" "(" Exp ")" [strict]
                | "alloc" "(" Exp ")" [strict]
                | "free" "(" Id ")"
+               | "@" Id
+               | "<-" Exp [strict]
                | "$" Id
                | "!" "$" Id
                | Id "(" ")"
@@ -276,6 +280,25 @@ module ARIA
 
   rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
     requires isNumericValue(V)
+
+  // Read-only pointer slice: @x captures the store location of a local binding,
+  // and <-ptr reads the current value at that location. Store-through-pointer
+  // is deliberately left out until ariac behavior is stable there.
+  syntax Bool ::= isStorePointer(Val) [function]
+
+  rule isStorePointer(PTRLOC(_:Int)) => true
+  rule isStorePointer(_) => false [owise]
+
+  rule <k> @ X:Id => PTRLOC(L) ... </k>
+       <env> ... X |-> L ... </env>
+
+  rule <k> <- PTRLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
+  rule <k> <- V:Val ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
 
   // -------------------------------------------------------------------------
   // Borrow permission qualifiers: $$i / $$m

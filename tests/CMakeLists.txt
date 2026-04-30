@@ -47,7 +47,7 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/k-semantics/run_k_tests.sh")
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
     set_tests_properties(k_semantics_core PROPERTIES
-        TIMEOUT 120
+        TIMEOUT 180
         LABELS "formal;k-semantics"
         SKIP_RETURN_CODE 77
     )

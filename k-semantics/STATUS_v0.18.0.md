@@ -44,7 +44,13 @@ Branch: `dev-0.18.x`
 - Added first `defer { ... }` cleanup slice: per-block defer stacks, LIFO
   deferred block execution at scope exit, pending cleanup before terminal
   `exit`, and `pick`/`fall` interaction with scoped block cleanup.
-- Compiled `aria.k` and passed all 48 core K tests under `krun`.
+- Added first pointer address/dereference slice: `@id` produces a local-store
+  pointer value and `<-ptr` reads the current value behind that pointer, with
+  failsafe routing for invalid non-pointer dereferences. Pointer store-through
+  is intentionally not modeled yet.
+- Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
+  50-program K corpus can complete reliably after a fresh `kompile`.
+- Compiled `aria.k` and passed all 50 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -59,7 +65,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 48 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 50 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -72,6 +78,9 @@ Branch: `dev-0.18.x`
 - Cross-checked focused `defer { free(...) }` probes with `build/ariac`: the
   defer-cleaned wild allocation compiled and ran with the requested exit, while
   the no-defer wild allocation was statically rejected with ARIA-014.
+- Cross-checked focused pointer probes with `build/ariac`: `@value` plus
+  `<-ptr` compiled and returned the pointed-to value, read-after-reassignment
+  returned the updated value, and invalid `<-value` was statically rejected.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -86,8 +95,8 @@ Branch: `dev-0.18.x`
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
-- richer memory semantics beyond the allocation/defer qualifier slices: pointer
-  dereference/addressing, pinning (`#`), and `wildx`
+- richer memory semantics beyond the allocation/defer/pointer-read slices:
+  pointer store-through, pinning (`#`), and `wildx`
 - richer borrow semantics beyond the initial permission qualifier slice:
   positive `$$m` call-by-reference mutation, scope-based borrow release,
   field/path-sensitive borrows, and pin-aware borrowing
