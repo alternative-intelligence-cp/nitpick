@@ -26,6 +26,8 @@ can eventually answer: “what should this Aria program do?” independently of
   for leaked or invalid wild frees
 - `defer { ... }` cleanup blocks, registered per block scope and executed in
   LIFO order on scope exit or before terminal `exit`
+- standalone nested `{ ... }` statement blocks with block-exit restoration of
+  local borrow aliases and immutable/mutable borrowed-host tracking
 - read-only local pointer operations: `@value` captures a local binding address
   and `<-ptr` reads the current value from that address
 - pin registration via `#value`, with pinned-host tracking, double-pin blocking,
@@ -101,8 +103,7 @@ Tests that model terminal output can also include an optional stdout assertion:
 Next increments should add, in order:
 
 1. richer memory and borrow behavior: positive `$$m` call-by-reference
-  mutation, pointer store-through, scope-based borrow release, fuller runtime
-  pin behavior, and `wildx`
+  mutation, pointer store-through, fuller runtime pin behavior, and `wildx`
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions

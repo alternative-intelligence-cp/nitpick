@@ -54,9 +54,13 @@ Branch: `dev-0.18.x`
   to failsafe while allowing immutable aliases.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
+- Added first scope-based borrow release slice: standalone nested block
+  statements now save borrow-tracking cells on entry and restore local borrow
+  aliases plus immutable/mutable borrowed-host sets on normal block exit or
+  terminal `exit` unwinding, while preserving existing deferred cleanup order.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 55 core K tests under `krun`.
+- Compiled `aria.k` and passed all 59 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -71,7 +75,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 55 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 59 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -91,6 +95,11 @@ Branch: `dev-0.18.x`
   #value` compiled and ran, immutable aliasing of a pinned host compiled and
   returned the expected value, and reassignment, double pin, and mutable alias
   attempts were statically rejected with ARIA-016.
+- Cross-checked focused scope-based borrow probes with `build/ariac`: immutable
+  and mutable borrows created inside nested blocks were released at block exit,
+  later assignment or borrowing compiled and returned the expected value, and a
+  same-scope immutable-then-mutable borrow conflict was statically rejected with
+  ARIA-023.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -109,8 +118,8 @@ Branch: `dev-0.18.x`
   pointer store-through, fuller runtime pin dereference/release behavior, and
   `wildx`
 - richer borrow semantics beyond the initial permission qualifier slice:
-  positive `$$m` call-by-reference mutation, scope-based borrow release,
-  field/path-sensitive borrows, and pin-aware field/path edge cases
+  positive `$$m` call-by-reference mutation, field/path-sensitive borrows, and
+  pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 

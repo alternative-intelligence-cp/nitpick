@@ -104,6 +104,7 @@ module ARIA-SYNTAX
                 | "fall" Id ";"
                 | "loop" "(" Exp "," Exp "," Exp ")" Block [strict(1, 2, 3)]
                 | "defer" Block
+                | Block
                 | Exp ";" [strict]
 
      syntax Block ::= "{" Stmts "}"
@@ -688,7 +689,7 @@ module ARIA
   // Statement sequencing and blocks
   // -------------------------------------------------------------------------
 
-  syntax KItem ::= "DeferScope" "(" List ")"
+     syntax KItem ::= "DeferScope" "(" List "," Map "," Set "," Set ")"
                  | "Deferred" "(" Stmts ")"
                  | "enterBlock"
                  | "leaveBlock"
@@ -698,10 +699,13 @@ module ARIA
   rule <k> { SS:Stmts } => enterBlock ~> SS ~> leaveBlock ... </k>
 
   rule <k> enterBlock => .K ... </k>
-       <defer-stack> DS => ListItem(DeferScope(.List)) DS </defer-stack>
+       <defer-stack> DS => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts)) DS </defer-stack>
+       <borrow-vars> BorrowVars </borrow-vars>
+       <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
 
   rule <k> defer { SS:Stmts } => .K ... </k>
-       <defer-stack> ListItem(DeferScope(OLD:List)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(OLD:List, BorrowVars, ImmHosts, MutHosts)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD, BorrowVars, ImmHosts, MutHosts)) REST </defer-stack>
 
   rule <k> defer _:Block ~> _ => FS </k>
        <defer-stack> .List </defer-stack>
@@ -709,13 +713,16 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   rule <k> leaveBlock => runDefers(DS) ~> popBlock ... </k>
-       <defer-stack> ListItem(DeferScope(DS:List)) _:List </defer-stack>
+       <defer-stack> ListItem(DeferScope(DS:List, _:Map, _:Set, _:Set)) _:List </defer-stack>
 
   rule <k> runDefers(.List) => .K ... </k>
   rule <k> runDefers(ListItem(Deferred(SS:Stmts)) REST:List) => SS ~> runDefers(REST) ... </k>
 
   rule <k> popBlock => .K ... </k>
-       <defer-stack> ListItem(DeferScope(_:List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(_:List, BorrowVars, ImmHosts, MutHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
 
   rule <k> S:Stmt SS:Stmts => S ~> SS ... </k>
   rule <k> .Stmts => .K ... </k>
@@ -1033,16 +1040,22 @@ module ARIA
   // -------------------------------------------------------------------------
 
   rule <k> exit V:Val ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, ImmHosts, MutHosts)) REST => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts)) REST </defer-stack>
 
   rule <k> exit ( V:Val ) ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, ImmHosts, MutHosts)) REST => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts)) REST </defer-stack>
 
   rule <k> exit V:Val ; => exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
 
   rule <k> exit ( V:Val ) ; => exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
 
   rule <k> exit V:Val ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>
