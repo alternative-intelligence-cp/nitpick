@@ -53,6 +53,9 @@ Branch: `dev-0.18.x`
   dedicated `<pinned-hosts>` cell, returns a distinct pin pointer value, and
   routes double pins, pinned-host reassignment, and pinned-host mutable borrows
   to failsafe while allowing immutable aliases.
+- Added local pin dereference/read-only slice: `#id` now lowers to a stable
+  local pointer in `ariac`, `<-pin` reads the pinned host, and `<-pin = value;`
+  is rejected by `ariac` and routed to failsafe in K.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
 - Added first scope-based borrow release slice: standalone nested block
@@ -61,7 +64,7 @@ Branch: `dev-0.18.x`
   terminal `exit` unwinding, while preserving existing deferred cleanup order.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 60 core K tests under `krun`.
+- Compiled `aria.k` and passed all 62 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -76,7 +79,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 60 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 62 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -97,6 +100,9 @@ Branch: `dev-0.18.x`
   #value` compiled and ran, immutable aliasing of a pinned host compiled and
   returned the expected value, and reassignment, double pin, and mutable alias
   attempts were statically rejected with ARIA-016.
+- Cross-checked local pin dereference probes with `build/ariac`: `<-pin`
+  returns the pinned host value (`42`), and `<-pin = 9;` is statically rejected
+  with ARIA-016.
 - Cross-checked focused scope-based borrow probes with `build/ariac`: immutable
   and mutable borrows created inside nested blocks were released at block exit,
   later assignment or borrowing compiled and returned the expected value, and a
@@ -116,9 +122,8 @@ Branch: `dev-0.18.x`
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
-- richer memory semantics beyond the allocation/defer/local-pointer slices:
-  fuller runtime pin dereference/release behavior, pointer path/field
-  store-through, and `wildx`
+- richer memory semantics beyond the allocation/defer/local-pointer/pin slices:
+  pin release/path edge cases, pointer path/field store-through, and `wildx`
 - richer borrow semantics beyond the initial permission qualifier slice:
   positive `$$m` call-by-reference mutation, field/path-sensitive borrows, and
   pin-aware field/path edge cases
@@ -128,4 +133,4 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order: richer
-borrow/pin behavior, then broader symbolic `kprove` lemmas.
+borrow mutation/path behavior, then broader symbolic `kprove` lemmas.

@@ -23,7 +23,7 @@ is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **60/60** under K Framework v7.1.320;
+`k_semantics_core` **62/62** under K Framework v7.1.320;
 `k_semantics_proofs` **1/1 proof module** with three initial `kprove` claims;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
@@ -42,8 +42,8 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
     `stack`/`gc`/`wild`, `alloc`/`free` wild cleanup and leak routing, initial
     `defer { ... }` block-scoped LIFO cleanup semantics, local pointer
     address/dereference/store-through semantics for `@value`, `<-ptr`, and
-    `<-ptr = value`, initial
-    `#value` pin registration and static pin-safety checks, initial borrow
+    `<-ptr = value`, `#value` pin registration with pin dereference and
+    read-only pin store-through enforcement, initial borrow
     permission semantics for `$$i`/`$$m` aliases and helper parameters,
     block-scoped borrow release for nested statement blocks,
     `loop(start,end,step)`, and `exit`.
@@ -53,7 +53,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
     semantics with the Haskell backend required by `kprove` and proves the first
     executable-core claim module.
 - **Next semantic slice** — richer memory/borrow behavior (positive `$$m`
-    call-by-reference mutation, fuller runtime pin behavior, pointer path/field
+    call-by-reference mutation, pin release/path edge cases, pointer path/field
     store-through, `wildx`) and broader symbolic `kprove` lemmas.
 
 **Recently completed series:**
@@ -87,7 +87,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 60/60 core tests, 1/1 proof module |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 62/62 core tests, 1/1 proof module |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
@@ -953,12 +953,13 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 
 - 🔧 **K Framework executable semantics** — First formal semantics seed in
     `k-semantics/aria.k`
-- ✅ **Core K test corpus** — 60 programs covering exit, arithmetic, binding,
+- ✅ **Core K test corpus** — 62 programs covering exit, arithmetic, binding,
     fixed values, loops, Result operations, sticky `ERR`, failsafe routing,
     `if`/`else`, helper calls, strings/stdout, structs, `pick`/`fall`, and
     integer `Rules` / `limit<Rules>` checks, plus initial `stack`/`gc`/`wild`
     memory qualifier checks, `defer { ... }` cleanup checks, `@`/`<-` pointer
-    read/store-through checks, and `$$i`/`$$m` borrow permission checks
+    read/store-through checks, `#` pin dereference/read-only checks, and
+    `$$i`/`$$m` borrow permission checks
 - ✅ **CTest integration** — K semantics test passes when K is installed and
     skips cleanly when K is absent
 - ✅ **Proof-oriented `kprove` hook** — Haskell-backend proof runner integrated

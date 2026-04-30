@@ -11,7 +11,7 @@ requires "domains.md"
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
-//   - # pin registration with basic reassignment / mutable-borrow blocking
+//   - # pin registration with dereference plus reassignment / mutation blocking
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
@@ -290,10 +290,12 @@ module ARIA
 
      // Local pointer slice: @x captures the store location of a local binding,
      // <-ptr reads the current value at that location, and <-ptr = value writes
-     // back through that captured location.
+     // back through that captured location. #x returns a pinned pointer that can
+     // read the host but cannot write through the pin reference.
   syntax Bool ::= isStorePointer(Val) [function]
 
   rule isStorePointer(PTRLOC(_:Int)) => true
+     rule isStorePointer(PINPTRLOC(_:Int)) => true
   rule isStorePointer(_) => false [owise]
 
      rule <k> @ X:Id => PTRLOC(L) ... </k>
@@ -314,8 +316,15 @@ module ARIA
   rule <k> <- PTRLOC(L:Int) => V ... </k>
        <store> ... L |-> V ... </store>
 
+  rule <k> <- PINPTRLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
   rule <k> <- PTRLOC(L:Int) = V:Val ; => .K ... </k>
        <store> ... L |-> (OLD:Val => normalizeLike(OLD, V)) ... </store>
+
+  rule <k> <- PINPTRLOC(_:Int) = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
 
   rule <k> <- V:Val = _:Val ; ~> _ => FS </k>
        <failsafe> FS </failsafe>

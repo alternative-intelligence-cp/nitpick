@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR
+/// Regression test: pin references are read-only; store-through must be rejected.
+
+func:main = int32() {
+    int32:value = 42;
+    int32->:pin = #value;
+    <-pin = 9;
+    exit <-pin;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

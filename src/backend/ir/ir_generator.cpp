@@ -7313,6 +7313,31 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 return address;
             }
+
+            // Special handling for pin operator (#)
+            // Local pinning creates a stable pointer to the binding while the
+            // borrow checker records and enforces the pin relationship.
+            if (unary->op.type == frontend::TokenType::TOKEN_HASH) {
+                if (unary->operand->type != ASTNode::NodeType::IDENTIFIER) {
+                    return nullptr;
+                }
+
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                auto it = named_values.find(ident->name);
+                if (it == named_values.end()) {
+                    return nullptr;
+                }
+
+                llvm::Value* address = it->second;
+                if (!llvm::isa<llvm::AllocaInst>(address) && !address->getType()->isPointerTy()) {
+                    llvm::AllocaInst* tmp = builder.CreateAlloca(
+                        address->getType(), nullptr, ident->name + ".pin.addr");
+                    builder.CreateStore(address, tmp);
+                    return tmp;
+                }
+
+                return address;
+            }
             
             // Special handling for dereference operator (<-)
             // Blueprint style: arrow shows data flow FROM pointer TO value
@@ -7540,45 +7565,6 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 case frontend::TokenType::TOKEN_TILDE:
                     // Bitwise NOT
                     return builder.CreateNot(operand, "nottmp");
-
-                case frontend::TokenType::TOKEN_HASH: {
-                    // ARIA-016: Pin operator (#) - pins a GC object in memory
-                    // This prevents the GC from relocating the object, making it
-                    // safe to pass to FFI/DMA operations that need a stable address.
-                    //
-                    // The operand must be a pointer to a GC-managed object.
-                    // Returns the same pointer (now guaranteed to be stable).
-
-                    if (!operand->getType()->isPointerTy()) {
-                        // Error: cannot pin non-pointer type
-                        return nullptr;
-                    }
-
-                    // Get or declare the aria_gc_pin runtime function
-                    llvm::Function* pinFunc = module->getFunction("aria_gc_pin");
-                    if (!pinFunc) {
-                        // Declare: void aria_gc_pin(void* ptr)
-                        llvm::FunctionType* pinFuncType = llvm::FunctionType::get(
-                            builder.getVoidTy(),
-                            {builder.getPtrTy()},
-                            false
-                        );
-                        pinFunc = llvm::Function::Create(
-                            pinFuncType,
-                            llvm::Function::ExternalLinkage,
-                            "aria_gc_pin",
-                            module.get()
-                        );
-                    }
-
-                    // Cast operand to void* if needed and call pin function
-                    llvm::Value* ptrToPin = builder.CreateBitCast(operand, builder.getPtrTy());
-                    builder.CreateCall(pinFunc, {ptrToPin});
-
-                    // Return the original pointer (now pinned)
-                    // The type transitions from managed to "wild" at the AST level
-                    return operand;
-                }
 
                 default:
                     return nullptr;
