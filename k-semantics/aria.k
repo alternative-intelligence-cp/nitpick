@@ -7,6 +7,7 @@ requires "domains.md"
 //   - zero-, one-, and two-argument helper functions returning through pass/fail
 //   - isolated helper call frames for parameters and local bindings
 //   - one-, two-, and three-field struct literals, field reads, and field writes
+//   - Rules declarations and limit<Rules> integer declaration/assignment checks
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -71,6 +72,7 @@ module ARIA-SYNTAX
 
   syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(3)]
                 | "fixed" Type ":" Id "=" Exp ";" [strict(3)]
+                | "limit" "<" Id ">" Type ":" Id "=" Exp ";" [strict(4)]
                 | Id "=" Exp ";" [strict(2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | "exit" Exp ";" [strict]
@@ -90,6 +92,11 @@ module ARIA-SYNTAX
                                                         | Id ":" "(" PickPattern ")" Block
      syntax PickCases   ::= List{PickCase, ","}
 
+     syntax RuleItem    ::= Exp | "limit" "<" Id ">"
+     syntax RuleItems   ::= List{RuleItem, ","}
+     syntax RulesDecl   ::= "Rules:" Id "=" "{" RuleItems "}" ";"
+     syntax RulesDecls  ::= List{RulesDecl, ""}
+
      syntax FieldDecl     ::= Type ":" Id ";"
      syntax FieldDecls    ::= List{FieldDecl, ""}
      syntax StructDecl    ::= "struct:" Id "=" "{" FieldDecls "}" ";"
@@ -102,7 +109,7 @@ module ARIA-SYNTAX
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
      syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
-     syntax Pgm          ::= StructDecls FuncDecls FailsafeDecl MainDecl
+     syntax Pgm          ::= RulesDecls StructDecls FuncDecls FailsafeDecl MainDecl
 endmodule
 
 module ARIA
@@ -116,6 +123,8 @@ module ARIA
   configuration <T>
     <k> $PGM:Pgm </k>
     <functions> .Map </functions>
+     <rules> .Map </rules>
+     <limits> .Map </limits>
           <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
@@ -133,8 +142,64 @@ module ARIA
   // Program envelope
   // -------------------------------------------------------------------------
 
-  rule <k> STRUCTS:StructDecls FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadStructs(STRUCTS) ~> loadFuncs(FUNCS) ~> MAIN </k>
+  rule <k> RULES:RulesDecls STRUCTS:StructDecls FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadRules(RULES) ~> loadStructs(STRUCTS) ~> loadFuncs(FUNCS) ~> MAIN </k>
        <failsafe> _ => FS </failsafe>
+
+  // -------------------------------------------------------------------------
+  // Rules declarations and limit<Rules> enforcement
+  // -------------------------------------------------------------------------
+
+  syntax RulesInfo ::= "RuleSet" "(" RuleItems ")"
+
+  syntax KItem ::= "loadRules" "(" RulesDecls ")"
+                 | "checkLimit" "(" Id "," Val ")"
+                 | "checkRuleItems" "(" Val "," RuleItems "," Int ")"
+                 | "finishRuleCond" "(" Val "," RuleItems "," Int ")"
+                 | "storeLimited" "(" Id "," Type "," Id "," Val ")"
+                 | "storeLimitedAssign" "(" Int "," Val ")"
+
+  rule <k> loadRules(.RulesDecls) => .K ... </k>
+
+  rule <k> loadRules(Rules: R:Id = { ITEMS:RuleItems }; REST:RulesDecls) => loadRules(REST) ... </k>
+       <rules> Rules => Rules [ R <- RuleSet(ITEMS) ] </rules>
+
+  rule <k> limit < R:Id > T:Type : X:Id = V:Val ; => checkLimit(R, normalizeValue(T, V)) ~> storeLimited(R, T, X, normalizeValue(T, V)) ... </k>
+
+  rule <k> storeLimited(R:Id, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <limits> Limits => Limits [ X <- R ] </limits>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> X:Id = V:Val ; => checkLimit(R, normalizeValue(T, V)) ~> storeLimitedAssign(L, normalizeValue(T, V)) ... </k>
+       <env> ... X |-> L ... </env>
+       <types> ... X |-> T ... </types>
+       <limits> ... X |-> R ... </limits>
+       <fixed-vars> Fixed </fixed-vars>
+    requires notBool(X in Fixed)
+
+  rule <k> storeLimitedAssign(L:Int, V:Val) => .K ... </k>
+       <store> Store => Store [ L <- V ] </store>
+
+  rule <k> checkLimit(R:Id, V:Val) => checkRuleItems(V, ITEMS, OLD) ... </k>
+       <rules> ... R |-> RuleSet(ITEMS) ... </rules>
+       <loop-index> OLD => numericValue(V) </loop-index>
+    requires isNumericValue(V)
+
+  rule <k> checkRuleItems(_:Val, .RuleItems, OLD:Int) => .K ... </k>
+       <loop-index> _ => OLD </loop-index>
+
+  rule <k> checkRuleItems(V:Val, limit < R:Id > , REST:RuleItems, OLD:Int) => checkLimit(R, V) ~> checkRuleItems(V, REST, OLD) ... </k>
+
+  rule <k> checkRuleItems(V:Val, COND:Exp , REST:RuleItems, OLD:Int) => COND ~> finishRuleCond(V, REST, OLD) ... </k>
+
+  rule <k> true ~> finishRuleCond(V:Val, REST:RuleItems, OLD:Int) => checkRuleItems(V, REST, OLD) ... </k>
+
+  rule <k> false ~> finishRuleCond(_:Val, _:RuleItems, OLD:Int) ~> _ => FS </k>
+       <loop-index> _ => OLD </loop-index>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -232,8 +297,8 @@ module ARIA
   syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
                  | "finishCallPass" "(" Type ")"
                  | "finishCallFail"
-                 | "finishCallPassFrame" "(" Type "," Map "," Map "," Map "," Set "," Int ")"
-                 | "finishCallFailFrame" "(" Map "," Map "," Map "," Set "," Int ")"
+                 | "finishCallPassFrame" "(" Type "," Map "," Map "," Map "," Map "," Set "," Int ")"
+                 | "finishCallFailFrame" "(" Map "," Map "," Map "," Map "," Set "," Int ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -255,68 +320,76 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = _T:Type(PT1:Type : PX1:Id, PT2:Type : PX2:Id) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Fail(PT1, PX1, PT2, PX2, E) ] </functions>
 
-  rule <k> F:Id() => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, Next) ... </k>
+  rule <k> F:Id() => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, Next) ... </k>
        <functions> ... F |-> Fn0Pass(T, E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
        <store> Store => .Map </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id() => E ~> finishCallFailFrame(Env, Types, Store, Fixed, Next) ... </k>
+  rule <k> F:Id() => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, Next) ... </k>
        <functions> ... F |-> Fn0Fail(E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
        <store> Store => .Map </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, L) ... </k>
+  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, L) ... </k>
        <functions> ... F |-> Fn1Pass(T, PT, PX, E) ... </functions>
        <env> Env => PX |-> L </env>
        <types> Types => PX |-> PT </types>
        <store> Store => L |-> normalizeValue(PT, A) </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(Env, Types, Store, Fixed, L) ... </k>
+  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, L) ... </k>
        <functions> ... F |-> Fn1Fail(PT, PX, E) ... </functions>
        <env> Env => PX |-> L </env>
        <types> Types => PX |-> PT </types>
        <store> Store => L |-> normalizeValue(PT, A) </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Fixed, L) ... </k>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, L) ... </k>
        <functions> ... F |-> Fn2Pass(T, PT1, PX1, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
        <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(Env, Types, Store, Fixed, L) ... </k>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, L) ... </k>
        <functions> ... F |-> Fn2Fail(PT1, PX1, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
        <store> Store => (L |-> normalizeValue(PT1, A1) (L +Int 1) |-> normalizeValue(PT2, A2)) </store>
+       <limits> Limits => .Map </limits>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
 
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
-  rule <k> V:Val ~> finishCallPassFrame(T, Env, Types, Store, Fixed, Next) => Result(NIL, normalizeValue(T, V), false) ... </k>
+  rule <k> V:Val ~> finishCallPassFrame(T, Env, Types, Store, Limits, Fixed, Next) => Result(NIL, normalizeValue(T, V), false) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
+       <limits> _ => Limits </limits>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
-  rule <k> V:Val ~> finishCallFailFrame(Env, Types, Store, Fixed, Next) => Result(V, NIL, true) ... </k>
+  rule <k> V:Val ~> finishCallFailFrame(Env, Types, Store, Limits, Fixed, Next) => Result(V, NIL, true) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
+       <limits> _ => Limits </limits>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
@@ -354,8 +427,9 @@ module ARIA
        <env> ... X |-> L ... </env>
        <types> ... X |-> T ... </types>
        <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
+           <limits> Limits </limits>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+      requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
 
   // Fixed reassignment is a semantic error in this executable model. ariac
   // should normally reject it statically; the oracle routes it to failsafe so

@@ -16,6 +16,10 @@ can eventually answer: “what should this Aria program do?” independently of
   and three-field structs
 - struct literals such as `Point{x: 10, y: 20}`, field reads such as `p.x`, and
   direct field writes such as `p.x = 42`
+- top-level untyped `Rules:Name = { ... };` declarations with integer `$`
+  conditions and cascaded `limit<OtherRules>` references
+- `limit<RulesName> Type:x = expr;` declarations and reassignment checks for
+  numeric values, including failsafe routing on violated constraints
 - `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and `string` type tokens
 - mutable and `fixed` variable bindings
 - typed internal numeric values for declared `int32`, `int64`, and `tbb32`
@@ -67,9 +71,10 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. `limit<Rules>` and proof-oriented `kprove` lemmas
+1. proof-oriented `kprove` lemmas for the executable core
 2. memory contexts: `stack`, `gc`, `wild`
 3. borrow permissions: `$i` / `$m`
-4. module/import and extern/FFI boundaries
+4. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
+5. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

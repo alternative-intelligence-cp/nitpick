@@ -1,6 +1,6 @@
 # Aria v0.18.0 K Semantics Status
 
-Date: April 29, 2026
+Date: April 30, 2026
 Branch: `dev-0.18.x`
 
 ## Completed in this slice
@@ -23,9 +23,14 @@ Branch: `dev-0.18.x`
   literals, field reads, direct field writes, and struct helper parameters.
 - Added `pick`/`fall` executable semantics for first-match value dispatch,
   `(*)` wildcards, optional labeled arms, and `fall label;` jumps.
+- Added top-level untyped `Rules:` declarations, integer `$` rule conditions,
+  cascaded `limit<OtherRules>` references, and `limit<Rules>` declaration and
+  reassignment checks for numeric values.
+- Added failsafe routing for violated `limit<Rules>` constraints while
+  preserving and restoring the previous `$` / loop-index value after checks.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
-- Compiled `aria.k` and passed all 33 core K tests under `krun`.
+- Compiled `aria.k` and passed all 37 core K tests under `krun`.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -39,9 +44,10 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 33 passed, 0 failed.
-- Cross-checked new `pick`/`fall` K tests with `build/ariac`; expected exits
-  matched actual process exits for all three new programs.
+- `./k-semantics/run_k_tests.sh --require-k`: 37 passed, 0 failed.
+- Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
+  expected exits matched actual process exits for all four new programs.
+- `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
 - `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
@@ -53,7 +59,8 @@ Branch: `dev-0.18.x`
 - stderr/stddbg output cells
 - Struct arrays, nested field paths, generic structs, and legacy `struct Name { ... }` shorthand
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
-- `limit<Rules>` SMT/proof integration
+- Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
+  modulo expressions, and SMT/proof integration for `limit<Rules>`
 - memory contexts (`stack`, `gc`, `wild`)
 - borrow permissions (`$i`, `$m`)
 - modules/imports and extern/FFI
@@ -62,4 +69,4 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order:
-`limit<Rules>` proof hooks, then memory contexts.
+proof-oriented `kprove` hooks, then memory contexts (`stack`, `gc`, `wild`).

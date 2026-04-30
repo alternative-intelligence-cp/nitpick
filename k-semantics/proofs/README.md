@@ -19,3 +19,6 @@ Planned initial claims:
    fields
 11. `pick` dispatch chooses the first matching arm, and `fall label;` reaches
     only the named labeled arm before returning to the pick continuation
+12. integer `limit<Rules>` declarations and assignments either satisfy every
+    cascaded rule condition or route to `failsafe` without committing the
+    violating store update
