@@ -20,7 +20,12 @@ can eventually answer: “what should this Aria program do?” independently of
   conditions and cascaded `limit<OtherRules>` references
 - `limit<RulesName> Type:x = expr;` declarations and reassignment checks for
   numeric values, including failsafe routing on violated constraints
-- `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and `string` type tokens
+- `stack`, `gc`, and `wild` declaration qualifiers with live allocation-class
+  tracking cells
+- `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
+  for leaked or invalid wild frees
+- `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
+  `string` type tokens
 - mutable and `fixed` variable bindings
 - typed internal numeric values for declared `int32`, `int64`, and `tbb32`
 - two's-complement bounded `int32`/`int64` arithmetic
@@ -85,8 +90,9 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. memory contexts: `stack`, `gc`, `wild`
-2. borrow permissions: `$i` / `$m`
+1. borrow permissions: `$i` / `$m`
+2. richer memory behavior: `defer { free(...) }`, pointer dereference/addressing,
+   pinning (`#`), and `wildx`
 3. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 4. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, and memory
 5. module/import and extern/FFI boundaries

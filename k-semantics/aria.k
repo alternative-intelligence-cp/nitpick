@@ -8,6 +8,7 @@ requires "domains.md"
 //   - isolated helper call frames for parameters and local bindings
 //   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
+//   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -25,7 +26,8 @@ module ARIA-SYNTAX
   imports STRING-SYNTAX
   imports ID-SYNTAX
 
-     syntax Type ::= "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Id
+     syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Id
+     syntax MemMode ::= "stack" | "gc" | "wild"
 
   syntax Val ::= Int
                | Bool
@@ -37,6 +39,7 @@ module ARIA-SYNTAX
                | "I32" "(" Int ")"
                | "I64" "(" Int ")"
                | "TBB32" "(" Int ")"
+               | "PTR" "(" Int ")"
 
   syntax KResult ::= Val
 
@@ -44,6 +47,8 @@ module ARIA-SYNTAX
                | Id
                | "print" "(" Exp ")" [strict]
                | "println" "(" Exp ")" [strict]
+               | "alloc" "(" Exp ")" [strict]
+               | "free" "(" Id ")"
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
@@ -73,6 +78,7 @@ module ARIA-SYNTAX
   syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(3)]
                 | "fixed" Type ":" Id "=" Exp ";" [strict(3)]
                 | "limit" "<" Id ">" Type ":" Id "=" Exp ";" [strict(4)]
+                | MemMode Type ":" Id "=" Exp ";" [strict(4)]
                 | Id "=" Exp ";" [strict(2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | "exit" Exp ";" [strict]
@@ -125,6 +131,10 @@ module ARIA
     <functions> .Map </functions>
      <rules> .Map </rules>
      <limits> .Map </limits>
+     <mem-modes> .Map </mem-modes>
+     <stack-live> .Set </stack-live>
+     <gc-live> .Set </gc-live>
+     <wild-live> .Set </wild-live>
           <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
@@ -200,6 +210,57 @@ module ARIA
        <loop-index> _ => OLD </loop-index>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
+
+  // -------------------------------------------------------------------------
+  // Memory allocation qualifiers: stack / gc / wild
+  // -------------------------------------------------------------------------
+
+  syntax MemInfo ::= "StackMem" | "GCMem" | "WildMem"
+
+  syntax KItem ::= "storeMemory" "(" MemInfo "," Type "," Id "," Val ")"
+
+  rule <k> stack T:Type : X:Id = V:Val ; => storeMemory(StackMem, T, X, normalizeValue(T, V)) ... </k>
+  rule <k> gc    T:Type : X:Id = V:Val ; => storeMemory(GCMem,    T, X, normalizeValue(T, V)) ... </k>
+  rule <k> wild  T:Type : X:Id = V:Val ; => storeMemory(WildMem,  T, X, normalizeValue(T, V)) ... </k>
+
+  rule <k> storeMemory(StackMem, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <mem-modes> Modes => Modes [ X <- StackMem ] </mem-modes>
+       <stack-live> Stack => Stack SetItem(L) </stack-live>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> storeMemory(GCMem, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <mem-modes> Modes => Modes [ X <- GCMem ] </mem-modes>
+       <gc-live> GC => GC SetItem(L) </gc-live>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> storeMemory(WildMem, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <mem-modes> Modes => Modes [ X <- WildMem ] </mem-modes>
+       <wild-live> Wild => Wild SetItem(L) </wild-live>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> free(X:Id) => NIL ... </k>
+       <env> ... X |-> L ... </env>
+       <wild-live> Wild => Wild -Set SetItem(L) </wild-live>
+    requires L in Wild
+
+  rule <k> free(X:Id) ~> _ => FS </k>
+       <env> ... X |-> L ... </env>
+       <wild-live> Wild => .Set </wild-live>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(L in Wild)
+
+     rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
+          requires isNumericValue(V)
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -698,9 +759,21 @@ module ARIA
 
   rule <k> exit V:Val ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>
+       <wild-live> .Set </wild-live>
     requires isNumericValue(V)
 
   rule <k> exit ( V:Val ) ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>
+       <wild-live> .Set </wild-live>
     requires isNumericValue(V)
+
+  rule <k> exit _:Val ; ~> _ => FS </k>
+       <wild-live> SetItem(_:Int) _:Set => .Set </wild-live>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> exit ( _:Val ) ; ~> _ => FS </k>
+       <wild-live> SetItem(_:Int) _:Set => .Set </wild-live>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
 endmodule

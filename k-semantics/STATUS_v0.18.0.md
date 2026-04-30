@@ -34,7 +34,10 @@ Branch: `dev-0.18.x`
   sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
-- Compiled `aria.k` and passed all 37 core K tests under `krun`.
+- Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
+  declaration syntax, memory classification cells, minimal pointer/`alloc`
+  values, `free(id)`, and wild-leak failsafe routing.
+- Compiled `aria.k` and passed all 40 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -49,14 +52,16 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 37 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 40 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
+- Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
+  `build/ariac`; expected exits matched actual process exits.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
-- `ctest --test-dir build --output-on-failure`: 7/7 tests passed.
+- `ctest --test-dir build --output-on-failure`: 8/8 tests passed.
 - Existing Aria generated formal-tool artifacts remain untracked and ignored where generated.
 
 ## Semantic gaps intentionally left open
@@ -67,13 +72,15 @@ Branch: `dev-0.18.x`
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
-- memory contexts (`stack`, `gc`, `wild`)
+- richer memory semantics beyond the initial allocation qualifier slice:
+  `defer { free(...) }`, pointer dereference/addressing, pinning (`#`), and
+  `wildx`
 - borrow permissions (`$i`, `$m`)
 - modules/imports and extern/FFI
 - concurrency primitives
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: memory
-contexts (`stack`, `gc`, `wild`), then borrow permissions (`$i`, `$m`) and
-broader symbolic `kprove` lemmas.
+Expand semantic coverage in the next small slice. Recommended order: borrow
+permissions (`$i`, `$m`), then richer memory behavior and broader symbolic
+`kprove` lemmas.
