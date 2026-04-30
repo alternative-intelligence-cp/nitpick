@@ -9,6 +9,7 @@ requires "domains.md"
 //   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
+//   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
@@ -95,6 +96,7 @@ module ARIA-SYNTAX
                 | "pick" "(" Exp ")" "{" PickCases "}" [strict(1)]
                 | "fall" Id ";"
                 | "loop" "(" Exp "," Exp "," Exp ")" Block [strict(1, 2, 3)]
+                | "defer" Block
                 | Exp ";" [strict]
 
      syntax Block ::= "{" Stmts "}"
@@ -133,6 +135,7 @@ module ARIA
   imports STRING
   imports MAP
   imports SET
+     imports LIST
 
   configuration <T>
     <k> $PGM:Pgm </k>
@@ -143,6 +146,7 @@ module ARIA
      <stack-live> .Set </stack-live>
      <gc-live> .Set </gc-live>
      <wild-live> .Set </wild-live>
+     <defer-stack> .List </defer-stack>
      <borrow-vars> .Map </borrow-vars>
      <imm-borrow-hosts> .Set </imm-borrow-hosts>
      <mut-borrow-hosts> .Set </mut-borrow-hosts>
@@ -634,7 +638,35 @@ module ARIA
   // Statement sequencing and blocks
   // -------------------------------------------------------------------------
 
-  rule <k> { SS:Stmts } => SS ... </k>
+  syntax KItem ::= "DeferScope" "(" List ")"
+                 | "Deferred" "(" Stmts ")"
+                 | "enterBlock"
+                 | "leaveBlock"
+                 | "popBlock"
+                 | "runDefers" "(" List ")"
+
+  rule <k> { SS:Stmts } => enterBlock ~> SS ~> leaveBlock ... </k>
+
+  rule <k> enterBlock => .K ... </k>
+       <defer-stack> DS => ListItem(DeferScope(.List)) DS </defer-stack>
+
+  rule <k> defer { SS:Stmts } => .K ... </k>
+       <defer-stack> ListItem(DeferScope(OLD:List)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD)) REST </defer-stack>
+
+  rule <k> defer _:Block ~> _ => FS </k>
+       <defer-stack> .List </defer-stack>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> leaveBlock => runDefers(DS) ~> popBlock ... </k>
+       <defer-stack> ListItem(DeferScope(DS:List)) _:List </defer-stack>
+
+  rule <k> runDefers(.List) => .K ... </k>
+  rule <k> runDefers(ListItem(Deferred(SS:Stmts)) REST:List) => SS ~> runDefers(REST) ... </k>
+
+  rule <k> popBlock => .K ... </k>
+       <defer-stack> ListItem(DeferScope(_:List)) REST => REST </defer-stack>
+
   rule <k> S:Stmt SS:Stmts => S ~> SS ... </k>
   rule <k> .Stmts => .K ... </k>
   rule <k> _:Val ; => .K ... </k>
@@ -866,6 +898,7 @@ module ARIA
      rule <k> P:Val ~> finishPickCase(V:Val, _:Block, REST:PickCases, ALL:PickCases) => selectPick(V, REST, ALL) ... </k>
           requires notBool(pickMatches(V, P))
 
+     rule <k> fall L:Id ; ~> _:Stmts ~> leaveBlock ~> endPick(ALL:PickCases) => leaveBlock ~> selectPickLabel(L, ALL) ~> endPick(ALL) ... </k>
      rule <k> fall L:Id ; ~> _:Stmts ~> endPick(ALL:PickCases) => selectPickLabel(L, ALL) ~> endPick(ALL) ... </k>
 
      rule <k> selectPickLabel(_:Id, .PickCases) => .K ... </k>
@@ -946,23 +979,39 @@ module ARIA
   // Terminal process semantics
   // -------------------------------------------------------------------------
 
+  rule <k> exit V:Val ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit V ; ... </k>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+
+  rule <k> exit ( V:Val ) ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit ( V ) ; ... </k>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+
+  rule <k> exit V:Val ; => exit V ; ... </k>
+       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+
+  rule <k> exit ( V:Val ) ; => exit ( V ) ; ... </k>
+       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+
   rule <k> exit V:Val ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>
        <wild-live> .Set </wild-live>
+       <defer-stack> .List </defer-stack>
     requires isNumericValue(V)
 
   rule <k> exit ( V:Val ) ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>
        <wild-live> .Set </wild-live>
+       <defer-stack> .List </defer-stack>
     requires isNumericValue(V)
 
   rule <k> exit _:Val ; ~> _ => FS </k>
        <wild-live> SetItem(_:Int) _:Set => .Set </wild-live>
+       <defer-stack> .List </defer-stack>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   rule <k> exit ( _:Val ) ; ~> _ => FS </k>
        <wild-live> SetItem(_:Int) _:Set => .Set </wild-live>
+       <defer-stack> .List </defer-stack>
        <failsafe> FS </failsafe>
-       <failsafe-triggered> _ => true </failsafe-triggered>
+     <failsafe-triggered> _ => true </failsafe-triggered>
 endmodule

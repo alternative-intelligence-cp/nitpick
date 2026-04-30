@@ -1,0 +1,14 @@
+// expect-exit: 17
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:answer = 3;
+    if (true) {
+        defer { answer = answer + 2; }
+        defer { answer = answer * 5; }
+    }
+    exit answer;
+};

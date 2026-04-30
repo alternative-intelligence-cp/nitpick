@@ -24,6 +24,8 @@ can eventually answer: “what should this Aria program do?” independently of
   tracking cells
 - `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
   for leaked or invalid wild frees
+- `defer { ... }` cleanup blocks, registered per block scope and executed in
+  LIFO order on scope exit or before terminal `exit`
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
   minimal alias tracking, immutable-vs-mutable conflict checks, and `$$m`
   argument-shape enforcement
@@ -93,9 +95,9 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: `defer { free(...) }`, pointer
-  dereference/addressing, pinning (`#`), positive `$$m` call-by-reference
-  mutation, scope-based borrow release, and `wildx`
+1. richer memory and borrow behavior: pointer dereference/addressing, pinning
+  (`#`), positive `$$m` call-by-reference mutation, scope-based borrow release,
+  and `wildx`
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions
