@@ -1,0 +1,12 @@
+// expect-exit: 7
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 42;
+    int32->:pinned = #value;
+    $$m int32:ref = value;
+    exit ref;
+};

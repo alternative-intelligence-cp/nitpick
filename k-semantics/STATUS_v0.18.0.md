@@ -48,9 +48,15 @@ Branch: `dev-0.18.x`
   pointer value and `<-ptr` reads the current value behind that pointer, with
   failsafe routing for invalid non-pointer dereferences. Pointer store-through
   is intentionally not modeled yet.
+- Added first pin-safety slice: `#id` registers a pinned host, records it in a
+  dedicated `<pinned-hosts>` cell, returns a distinct pin pointer value, and
+  routes double pins, pinned-host reassignment, and pinned-host mutable borrows
+  to failsafe while allowing immutable aliases.
+- Threaded pinned-host state through isolated helper call frames so callee-local
+  pins do not leak into callers and caller pins are restored after return.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
-  50-program K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 50 core K tests under `krun`.
+  K corpus can complete reliably after a fresh `kompile`.
+- Compiled `aria.k` and passed all 55 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -65,7 +71,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 50 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 55 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -81,6 +87,10 @@ Branch: `dev-0.18.x`
 - Cross-checked focused pointer probes with `build/ariac`: `@value` plus
   `<-ptr` compiled and returned the pointed-to value, read-after-reassignment
   returned the updated value, and invalid `<-value` was statically rejected.
+- Cross-checked focused pin probes with `build/ariac`: non-wild `int32->:pin =
+  #value` compiled and ran, immutable aliasing of a pinned host compiled and
+  returned the expected value, and reassignment, double pin, and mutable alias
+  attempts were statically rejected with ARIA-016.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -96,10 +106,11 @@ Branch: `dev-0.18.x`
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/pointer-read slices:
-  pointer store-through, pinning (`#`), and `wildx`
+  pointer store-through, fuller runtime pin dereference/release behavior, and
+  `wildx`
 - richer borrow semantics beyond the initial permission qualifier slice:
   positive `$$m` call-by-reference mutation, scope-based borrow release,
-  field/path-sensitive borrows, and pin-aware borrowing
+  field/path-sensitive borrows, and pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 
