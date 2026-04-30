@@ -8281,7 +8281,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 // Handle pointer dereference assignment: <-ptr = value or *ptr = value
-        if (binop->left->type == ASTNode::NodeType::UNARY_OP) {
+                if (binop->left->type == ASTNode::NodeType::UNARY_OP) {
                     UnaryExpr* unary = static_cast<UnaryExpr*>(binop->left.get());
                     
                     // Only handle dereference operators (<- and *)
@@ -8291,16 +8291,135 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Evaluate the pointer operand (the thing being dereferenced)
                         llvm::Value* ptr = codegenExpression(unary->operand.get());
                         if (!ptr) return nullptr;
+                        if (!ptr->getType()->isPointerTy()) return nullptr;
+
+                        auto coercePointerStoreValue = [&](llvm::Value* value, llvm::Type* targetType,
+                                                           const std::string& name) -> llvm::Value* {
+                            if (!value || !targetType || value->getType() == targetType) {
+                                return value;
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                                return builder.CreateIntCast(value, targetType, true, name + ".icast");
+                            }
+                            if (value->getType()->isFloatingPointTy() && targetType->isFloatingPointTy()) {
+                                return builder.CreateFPCast(value, targetType, name + ".fpcast");
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+                                return builder.CreateSIToFP(value, targetType, name + ".itof");
+                            }
+                            if (value->getType()->isFloatingPointTy() && targetType->isIntegerTy()) {
+                                return builder.CreateFPToSI(value, targetType, name + ".ftoi");
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isStructTy()) {
+                                llvm::StructType* st = llvm::cast<llvm::StructType>(targetType);
+                                std::string structName = st->getName().str();
+                                if (structName.find("struct.int") == 0 || structName.find("struct.uint") == 0) {
+                                    return promoteToLBIMStruct(value, targetType);
+                                }
+                            }
+                            if (value->getType()->isStructTy()) {
+                                llvm::StructType* st = llvm::cast<llvm::StructType>(value->getType());
+                                if (st->getNumElements() == 3 &&
+                                    st->getElementType(1)->isPointerTy() &&
+                                    st->getElementType(2)->isIntegerTy(8) &&
+                                    st->getElementType(0) == targetType) {
+                                    return builder.CreateExtractValue(value, {0}, name + ".unwrap_result");
+                                }
+                                if (st->getNumElements() == 2 &&
+                                    st->getElementType(0)->isIntegerTy(1) &&
+                                    st->getElementType(1) == targetType) {
+                                    return builder.CreateExtractValue(value, {1}, name + ".unwrap_optional");
+                                }
+                            }
+                            return value;
+                        };
+
+                        auto pointerPointeeType = [&]() -> llvm::Type* {
+                            if (unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                                auto ariaTypeIt = var_aria_types.find(ident->name);
+                                if (ariaTypeIt != var_aria_types.end()) {
+                                    std::string pointeeName = ariaTypeIt->second;
+                                    if (!pointeeName.empty() &&
+                                        (pointeeName.back() == '@' || pointeeName.back() == '*')) {
+                                        pointeeName.pop_back();
+                                        return mapTypeFromName(pointeeName);
+                                    }
+                                    if (pointeeName.size() > 2 &&
+                                        pointeeName.substr(pointeeName.size() - 2) == "->") {
+                                        pointeeName = pointeeName.substr(0, pointeeName.size() - 2);
+                                        return mapTypeFromName(pointeeName);
+                                    }
+                                }
+                            }
+                            if (unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+                                UnaryExpr* operandUnary = static_cast<UnaryExpr*>(unary->operand.get());
+                                if (operandUnary->op.type == frontend::TokenType::TOKEN_AT &&
+                                    operandUnary->operand &&
+                                    operandUnary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(operandUnary->operand.get());
+                                    auto targetIt = named_values.find(ident->name);
+                                    if (targetIt != named_values.end()) {
+                                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(targetIt->second)) {
+                                            return allocaInst->getAllocatedType();
+                                        }
+                                        if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(targetIt->second)) {
+                                            return global->getValueType();
+                                        }
+                                    }
+                                }
+                            }
+                            return nullptr;
+                        };
                         
                         // Evaluate the right-hand side value
                         llvm::Value* rhs = codegenExpression(binop->right.get());
                         if (!rhs) return nullptr;
-                        
+
+                        llvm::Type* pointeeType = pointerPointeeType();
+                        if (!pointeeType) {
+                            pointeeType = rhs->getType();
+                        }
+
+                        llvm::Value* result = nullptr;
+                        if (binop->op.type == frontend::TokenType::TOKEN_EQUAL) {
+                            result = coercePointerStoreValue(rhs, pointeeType, "ptr.store");
+                        } else {
+                            llvm::Value* currentVal = builder.CreateLoad(pointeeType, ptr, "ptr.current");
+                            rhs = coercePointerStoreValue(rhs, pointeeType, "ptr.rhs");
+                            bool isFP = currentVal->getType()->isFloatingPointTy();
+                            switch (binop->op.type) {
+                                case frontend::TokenType::TOKEN_PLUS_EQUAL:
+                                    result = isFP ? builder.CreateFAdd(currentVal, rhs, "ptr.fadd")
+                                                  : generateSafeAdd(currentVal, rhs, "ptr.add");
+                                    break;
+                                case frontend::TokenType::TOKEN_MINUS_EQUAL:
+                                    result = isFP ? builder.CreateFSub(currentVal, rhs, "ptr.fsub")
+                                                  : generateSafeSub(currentVal, rhs, "ptr.sub");
+                                    break;
+                                case frontend::TokenType::TOKEN_STAR_EQUAL:
+                                    result = isFP ? builder.CreateFMul(currentVal, rhs, "ptr.fmul")
+                                                  : generateSafeMul(currentVal, rhs, "ptr.mul");
+                                    break;
+                                case frontend::TokenType::TOKEN_SLASH_EQUAL:
+                                    result = isFP ? builder.CreateFDiv(currentVal, rhs, "ptr.fdiv")
+                                                  : generateSafeSDiv(currentVal, rhs, "ptr.div");
+                                    break;
+                                case frontend::TokenType::TOKEN_PERCENT_EQUAL:
+                                    result = isFP ? builder.CreateFRem(currentVal, rhs, "ptr.frem")
+                                                  : generateSafeSRem(currentVal, rhs, "ptr.mod");
+                                    break;
+                                default:
+                                    return nullptr;
+                            }
+                            result = coercePointerStoreValue(result, pointeeType, "ptr.result");
+                        }
+
                         // Store through the pointer
-                        builder.CreateStore(rhs, ptr);
-                        
+                        builder.CreateStore(result, ptr);
+
                         // Assignment expression returns the assigned value
-                        return rhs;
+                        return result;
                     }
                 }
                 

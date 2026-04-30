@@ -1058,9 +1058,43 @@ llvm::Value* ExprCodegen::codegenUnary(UnaryExpr* expr) {
         if (!operand->getType()->isPointerTy()) {
             throw std::runtime_error("Dereference operator (<-) can only be applied to pointer types");
         }
-        // With LLVM 20 opaque pointers, we load as pointer type
-        // The actual element type will be determined by usage context
-        return builder.CreateLoad(builder.getPtrTy(), operand, "deref");
+        llvm::Type* pointeeType = nullptr;
+        if (expr->operand->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr->operand.get());
+            auto ariaTypeIt = var_aria_types.find(ident->name);
+            if (ariaTypeIt != var_aria_types.end()) {
+                std::string pointeeName = ariaTypeIt->second;
+                if (!pointeeName.empty() &&
+                    (pointeeName.back() == '@' || pointeeName.back() == '*')) {
+                    pointeeName.pop_back();
+                    pointeeType = getLLVMTypeFromString(pointeeName);
+                } else if (pointeeName.size() > 2 &&
+                           pointeeName.substr(pointeeName.size() - 2) == "->") {
+                    pointeeName = pointeeName.substr(0, pointeeName.size() - 2);
+                    pointeeType = getLLVMTypeFromString(pointeeName);
+                }
+            }
+        }
+        if (expr->operand->type == ASTNode::NodeType::UNARY_OP) {
+            UnaryExpr* operandUnary = static_cast<UnaryExpr*>(expr->operand.get());
+            if (operandUnary->op.type == TokenType::TOKEN_AT &&
+                operandUnary->operand &&
+                operandUnary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(operandUnary->operand.get());
+                auto targetIt = named_values.find(ident->name);
+                if (targetIt != named_values.end()) {
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(targetIt->second)) {
+                        pointeeType = allocaInst->getAllocatedType();
+                    } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(targetIt->second)) {
+                        pointeeType = global->getValueType();
+                    }
+                }
+            }
+        }
+        if (!pointeeType) {
+            pointeeType = llvm::Type::getInt32Ty(context);
+        }
+        return builder.CreateLoad(pointeeType, operand, "deref");
     }
     
     // Dereference operator: * (when TOKEN_STAR used as unary)

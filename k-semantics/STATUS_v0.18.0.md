@@ -46,8 +46,9 @@ Branch: `dev-0.18.x`
   `exit`, and `pick`/`fall` interaction with scoped block cleanup.
 - Added first pointer address/dereference slice: `@id` produces a local-store
   pointer value and `<-ptr` reads the current value behind that pointer, with
-  failsafe routing for invalid non-pointer dereferences. Pointer store-through
-  is intentionally not modeled yet.
+  failsafe routing for invalid non-pointer dereferences.
+- Added pointer store-through for local store pointers: `<-ptr = value;` now
+  updates the pointee location in both `ariac` LLVM codegen and the K oracle.
 - Added first pin-safety slice: `#id` registers a pinned host, records it in a
   dedicated `<pinned-hosts>` cell, returns a distinct pin pointer value, and
   routes double pins, pinned-host reassignment, and pinned-host mutable borrows
@@ -60,7 +61,7 @@ Branch: `dev-0.18.x`
   terminal `exit` unwinding, while preserving existing deferred cleanup order.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 59 core K tests under `krun`.
+- Compiled `aria.k` and passed all 60 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -75,7 +76,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 59 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 60 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -90,7 +91,8 @@ Branch: `dev-0.18.x`
   the no-defer wild allocation was statically rejected with ARIA-014.
 - Cross-checked focused pointer probes with `build/ariac`: `@value` plus
   `<-ptr` compiled and returned the pointed-to value, read-after-reassignment
-  returned the updated value, and invalid `<-value` was statically rejected.
+  returned the updated value, invalid `<-value` was statically rejected, and
+  `<-ptr = 37;` updates the pointee with a typed `i32` store and exits `37`.
 - Cross-checked focused pin probes with `build/ariac`: non-wild `int32->:pin =
   #value` compiled and ran, immutable aliasing of a pinned host compiled and
   returned the expected value, and reassignment, double pin, and mutable alias
@@ -114,9 +116,9 @@ Branch: `dev-0.18.x`
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
-- richer memory semantics beyond the allocation/defer/pointer-read slices:
-  pointer store-through, fuller runtime pin dereference/release behavior, and
-  `wildx`
+- richer memory semantics beyond the allocation/defer/local-pointer slices:
+  fuller runtime pin dereference/release behavior, pointer path/field
+  store-through, and `wildx`
 - richer borrow semantics beyond the initial permission qualifier slice:
   positive `$$m` call-by-reference mutation, field/path-sensitive borrows, and
   pin-aware field/path edge cases
@@ -126,4 +128,4 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order: richer
-pointer/borrow behavior, then broader symbolic `kprove` lemmas.
+borrow/pin behavior, then broader symbolic `kprove` lemmas.

@@ -10,7 +10,7 @@ requires "domains.md"
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
-//   - @ address-of and <- read-only pointer dereference for local bindings
+//   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - # pin registration with basic reassignment / mutable-borrow blocking
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
@@ -95,6 +95,7 @@ module ARIA-SYNTAX
                 | MemMode Type ":" Id "=" Exp ";" [strict(4)]
                 | BorrowMode Type ":" Id "=" Id ";"
                 | Id "=" Exp ";" [strict(2)]
+                | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict]
@@ -287,9 +288,9 @@ module ARIA
   rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
     requires isNumericValue(V)
 
-  // Read-only pointer slice: @x captures the store location of a local binding,
-  // and <-ptr reads the current value at that location. Store-through-pointer
-  // is deliberately left out until ariac behavior is stable there.
+     // Local pointer slice: @x captures the store location of a local binding,
+     // <-ptr reads the current value at that location, and <-ptr = value writes
+     // back through that captured location.
   syntax Bool ::= isStorePointer(Val) [function]
 
   rule isStorePointer(PTRLOC(_:Int)) => true
@@ -312,6 +313,14 @@ module ARIA
 
   rule <k> <- PTRLOC(L:Int) => V ... </k>
        <store> ... L |-> V ... </store>
+
+  rule <k> <- PTRLOC(L:Int) = V:Val ; => .K ... </k>
+       <store> ... L |-> (OLD:Val => normalizeLike(OLD, V)) ... </store>
+
+  rule <k> <- V:Val = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
 
   rule <k> <- V:Val ~> _ => FS </k>
        <failsafe> FS </failsafe>
@@ -798,6 +807,7 @@ module ARIA
   rule wrapI64(I) => I requires I >=Int -9223372036854775808 andBool I <=Int 9223372036854775807
 
   syntax Val ::= normalizeValue(Type, Val) [function]
+               | normalizeLike(Val, Val) [function]
                | normalizeTBB32(Int) [function]
 
   rule normalizeValue(int32, I:Int) => I32(wrapI32(I))
@@ -809,6 +819,12 @@ module ARIA
   rule normalizeValue(tbb32, ERR) => ERR
   rule normalizeValue(string, S:String) => S
   rule normalizeValue(_:Type, V:Val) => V [owise]
+
+     rule normalizeLike(I32(_:Int), V:Val) => normalizeValue(int32, V)
+     rule normalizeLike(I64(_:Int), V:Val) => normalizeValue(int64, V)
+     rule normalizeLike(TBB32(_:Int), V:Val) => normalizeValue(tbb32, V)
+     rule normalizeLike(ERR, V:Val) => normalizeValue(tbb32, V)
+     rule normalizeLike(_:Val, V:Val) => V [owise]
 
   rule normalizeTBB32(I) => ERR requires I <=Int -2147483648 orBool I >Int 2147483647
   rule normalizeTBB32(I) => TBB32(I) requires I >Int -2147483648 andBool I <=Int 2147483647
