@@ -51,6 +51,20 @@ Install K first (see `INSTALL.md`), then run:
 Without `--require-k`, the script exits `77` when K is missing so CTest can mark
 the test as skipped instead of failing unrelated builds.
 
+## Run the K proofs
+
+The first proof hook compiles `aria.k` with the Haskell backend required by
+`kprove`, then proves every `*.k` claim module under `proofs/`:
+
+```bash
+bash ./k-semantics/run_k_proofs.sh --require-k
+```
+
+The initial `proofs/core-proofs.k` module contains three concrete claims for
+sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+Like the test runner, the proof runner exits `77` without `--require-k` when K is
+not installed so CTest can skip it cleanly.
+
 ## Test corpus
 
 Core seed tests live in `tests/core/`. Each test includes an expected terminal
@@ -71,10 +85,10 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. proof-oriented `kprove` lemmas for the executable core
-2. memory contexts: `stack`, `gc`, `wild`
-3. borrow permissions: `$i` / `$m`
-4. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
+1. memory contexts: `stack`, `gc`, `wild`
+2. borrow permissions: `$i` / `$m`
+3. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
+4. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, and memory
 5. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

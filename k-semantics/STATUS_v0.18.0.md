@@ -28,9 +28,14 @@ Branch: `dev-0.18.x`
   reassignment checks for numeric values.
 - Added failsafe routing for violated `limit<Rules>` constraints while
   preserving and restoring the previous `$` / loop-index value after checks.
+- Added `run_k_proofs.sh`, a Haskell-backend `kprove` proof runner with
+  CTest-friendly skip behavior when K is absent.
+- Added `proofs/core-proofs.k` with three concrete executable-core claims for
+  sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Compiled `aria.k` and passed all 37 core K tests under `krun`.
+- Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -45,6 +50,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 37 passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - `git diff --check`: passed.
@@ -68,5 +74,6 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order:
-proof-oriented `kprove` hooks, then memory contexts (`stack`, `gc`, `wild`).
+Expand semantic coverage in the next small slice. Recommended order: memory
+contexts (`stack`, `gc`, `wild`), then borrow permissions (`$i`, `$m`) and
+broader symbolic `kprove` lemmas.
