@@ -11,7 +11,8 @@ can eventually answer: “what should this Aria program do?” independently of
 
 - mandatory `func:main` / `func:failsafe` program envelope
 - zero-, one-, and two-argument helper functions returning through `pass` / `fail`
-- isolated helper call frames for parameters and local bindings
+- isolated helper call frames for parameters, local bindings, and pinned-host
+  preservation
 - canonical `struct:Name = { Type:field; ... };` declarations for one-, two-,
   and three-field structs
 - struct literals such as `Point{x: 10, y: 20}`, field reads such as `p.x`, and

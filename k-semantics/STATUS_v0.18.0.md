@@ -62,6 +62,8 @@ Branch: `dev-0.18.x`
   borrow-location call frames with return-time writeback.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
+- Added focused pin call-frame regressions for callee-local pin release and
+  caller-pin preservation across helper calls.
 - Added first scope-based borrow release slice: standalone nested block
   statements now save borrow-tracking cells on entry and restore local borrow
   aliases plus immutable/mutable borrowed-host sets on normal block exit or
@@ -71,7 +73,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 66 core K tests under `krun`.
+- Compiled `aria.k` and passed all 68 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -86,7 +88,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 66 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 68 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -122,6 +124,9 @@ Branch: `dev-0.18.x`
 - Cross-checked focused scope-based pin probes with `build/ariac`: a pin created
   inside a nested block no longer blocks later host reassignment after block
   exit, and the same host can be pinned again after the first pin's block exits.
+- Cross-checked focused pin call-frame probes with `build/ariac`: callee-local
+  pins do not block later caller reassignment after return, while caller pins
+  remain active across helper calls and still reject pinned-host reassignment.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
