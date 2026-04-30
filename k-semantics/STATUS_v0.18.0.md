@@ -66,9 +66,12 @@ Branch: `dev-0.18.x`
   statements now save borrow-tracking cells on entry and restore local borrow
   aliases plus immutable/mutable borrowed-host sets on normal block exit or
   terminal `exit` unwinding, while preserving existing deferred cleanup order.
+- Added first scope-based pin release slice: standalone nested block statements
+  now save and restore pinned-host state, so pins created inside a block do not
+  block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 64 core K tests under `krun`.
+- Compiled `aria.k` and passed all 66 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -83,7 +86,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 64 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 66 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -116,6 +119,9 @@ Branch: `dev-0.18.x`
   later assignment or borrowing compiled and returned the expected value, and a
   same-scope immutable-then-mutable borrow conflict was statically rejected with
   ARIA-023.
+- Cross-checked focused scope-based pin probes with `build/ariac`: a pin created
+  inside a nested block no longer blocks later host reassignment after block
+  exit, and the same host can be pinned again after the first pin's block exits.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -131,7 +137,7 @@ Branch: `dev-0.18.x`
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin slices:
-  pin release/path edge cases, pointer path/field store-through, and `wildx`
+  pin path edge cases, pointer path/field store-through, and `wildx`
 - richer borrow semantics beyond the initial permission qualifier and
   call-by-reference writeback slices: field/path-sensitive borrows and
   pin-aware field/path edge cases
