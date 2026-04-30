@@ -49,6 +49,7 @@ module ARIA-SYNTAX
                | "PTRLOC" "(" Int ")"
                | "PINPTRLOC" "(" Int ")"
                | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
+               | "BorrowLoc" "(" BorrowInfo "," Id "," Int "," Val ")"
 
   syntax KResult ::= Val
 
@@ -347,6 +348,10 @@ module ARIA
   syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
                 | isImmutableBorrowVar(Id, Map) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
+               | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
+               | callWritebacks(BorrowInfo, Val) [function]
+               | writebackStore(Map, Map, Map) [function]
+  syntax Int ::= callParamLoc(Int, BorrowInfo, Val) [function]
 
   rule paramType(T:Type : _:Id) => T
   rule paramType($$i T:Type : _:Id) => T
@@ -360,13 +365,26 @@ module ARIA
   rule paramBorrow($$i _:Type : _:Id) => ImmBorrow
   rule paramBorrow($$m _:Type : _:Id) => MutBorrow
 
-  rule argumentValue(BorrowVal(_:BorrowInfo, _:Id, V:Val)) => V
+     rule argumentValue(BorrowLoc(_:BorrowInfo, _:Id, _:Int, V:Val)) => V
+     rule argumentValue(BorrowVal(_:BorrowInfo, _:Id, V:Val)) => V
   rule argumentValue(V:Val) => V [owise]
 
+     rule acceptsBorrowArg(MutBorrow, BorrowLoc(MutBorrow, _:Id, _:Int, _:Val)) => true
   rule acceptsBorrowArg(MutBorrow, BorrowVal(MutBorrow, _:Id, _:Val)) => true
   rule acceptsBorrowArg(MutBorrow, _) => false [owise]
   rule acceptsBorrowArg(ImmBorrow, _) => true
   rule acceptsBorrowArg(CopyBorrow, _) => true
+
+     rule callParamLoc(_:Int, MutBorrow, BorrowLoc(MutBorrow, _:Id, BL:Int, _:Val)) => BL
+     rule callParamLoc(L:Int, _:BorrowInfo, _:Val) => L [owise]
+
+     rule callParamStore(Store:Map, PT:Type, B:BorrowInfo, L:Int, A:Val) => Store [ callParamLoc(L, B, A) <- normalizeValue(PT, argumentValue(A)) ]
+
+     rule callWritebacks(MutBorrow, BorrowLoc(MutBorrow, _:Id, L:Int, _:Val)) => L |-> true
+     rule callWritebacks(_:BorrowInfo, _:Val) => .Map [owise]
+
+     rule writebackStore(Saved:Map, _:Map, .Map) => Saved
+     rule writebackStore(Saved:Map, Current:Map, (L:Int |-> _:Bool REST:Map)) => writebackStore(Saved [ L <- Current [ L ] ], Current, REST)
 
   rule paramBorrowMap(_:Id, CopyBorrow) => .Map
   rule paramBorrowMap(X:Id, ImmBorrow) => X |-> ImmBorrow
@@ -376,11 +394,11 @@ module ARIA
   rule isImmutableBorrowVar(X:Id, (X |-> MutBorrow _:Map)) => false
   rule isImmutableBorrowVar(_:Id, _:Map) => false [owise]
 
-  rule <k> $ X:Id => BorrowVal(MutBorrow, X, V) ... </k>
+  rule <k> $ X:Id => BorrowLoc(MutBorrow, X, L, V) ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> V ... </store>
 
-  rule <k> ! $ X:Id => BorrowVal(ImmBorrow, X, V) ... </k>
+  rule <k> ! $ X:Id => BorrowLoc(ImmBorrow, X, L, V) ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> V ... </store>
 
@@ -506,6 +524,7 @@ module ARIA
   syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
                           | "Fn0Fail" "(" Exp ")"
                           | "Fn1Pass" "(" Type "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn1StmtPass" "(" Type "," BorrowInfo "," Type "," Id "," Stmt "," Exp ")"
                           | "Fn1Fail" "(" BorrowInfo "," Type "," Id "," Exp ")"
                           | "Fn2Pass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
                           | "Fn2Fail" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
@@ -517,6 +536,8 @@ module ARIA
                  | "finishCallFail"
                  | "finishCallPassFrame" "(" Type "," FrameState ")"
                  | "finishCallFailFrame" "(" FrameState ")"
+                 | "finishCallPassFrameWriteback" "(" Type "," FrameState "," Map ")"
+                 | "finishCallFailFrameWriteback" "(" FrameState "," Map ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -528,6 +549,9 @@ module ARIA
 
   rule <k> loadFuncs(func: F:Id = T:Type(P:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn1Pass(T, paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
+
+  rule <k> loadFuncs(func: F:Id = T:Type(P:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1StmtPass(T, paramBorrow(P), paramType(P), paramName(P), S, E) ] </functions>
 
   rule <k> loadFuncs(func: F:Id = _T:Type(P:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn1Fail(paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
@@ -572,11 +596,11 @@ module ARIA
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L)) ... </k>
+  rule <k> F:Id(A:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Pass(T, B, PT, PX, E) ... </functions>
-       <env> Env => PX |-> L </env>
+       <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
+       <store> Store => callParamStore(Store, PT, B, L, A) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
@@ -590,11 +614,29 @@ module ARIA
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L)) ... </k>
+     rule <k> F:Id(A:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
+                <functions> ... F |-> Fn1StmtPass(T, B, PT, PX, S, E) ... </functions>
+                <env> Env => PX |-> callParamLoc(L, B, A) </env>
+                <types> Types => PX |-> PT </types>
+                <store> Store => callParamStore(Store, PT, B, L, A) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires acceptsBorrowArg(B, A)
+
+     rule <k> F:Id(A:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Fail(B, PT, PX, E) ... </functions>
-       <env> Env => PX |-> L </env>
+                <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
+                <store> Store => callParamStore(Store, PT, B, L, A) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
@@ -608,11 +650,11 @@ module ARIA
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L)) ... </k>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Pass(T, B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
-       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
+       <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
@@ -626,11 +668,11 @@ module ARIA
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L)) ... </k>
+  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Fail(B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
-       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
+       <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
@@ -649,6 +691,12 @@ module ARIA
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(acceptsBorrowArg(B, A))
+
+     rule <k> F:Id(A:Val) ~> _ => FS </k>
+                <functions> ... F |-> Fn1StmtPass(_:Type, B, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires notBool(acceptsBorrowArg(B, A))
 
   rule <k> F:Id(A:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn1Fail(B, _:Type, _:Id, _:Exp) ... </functions>
@@ -687,6 +735,22 @@ module ARIA
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
+           rule <k> V:Val ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(NIL, normalizeValue(T, V), false) ... </k>
+                <env> _ => Env </env>
+                <types> _ => Types </types>
+                <store> Current => writebackStore(Store, Current, W) </store>
+                <limits> _ => Limits </limits>
+                <mem-modes> _ => Modes </mem-modes>
+                <stack-live> _ => Stack </stack-live>
+                <gc-live> _ => GC </gc-live>
+                <wild-live> _ => Wild </wild-live>
+                <borrow-vars> _ => BorrowVars </borrow-vars>
+                <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+                <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+           <pinned-hosts> _ => PinnedHosts </pinned-hosts>
+                <fixed-vars> _ => Fixed </fixed-vars>
+                <next-loc> _ => Next </next-loc>
+
   rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
@@ -702,6 +766,22 @@ module ARIA
      <pinned-hosts> _ => PinnedHosts </pinned-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
+
+     rule <k> V:Val ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(V, NIL, true) ... </k>
+                <env> _ => Env </env>
+                <types> _ => Types </types>
+                <store> Current => writebackStore(Store, Current, W) </store>
+                <limits> _ => Limits </limits>
+                <mem-modes> _ => Modes </mem-modes>
+                <stack-live> _ => Stack </stack-live>
+                <gc-live> _ => GC </gc-live>
+                <wild-live> _ => Wild </wild-live>
+                <borrow-vars> _ => BorrowVars </borrow-vars>
+                <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+                <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+           <pinned-hosts> _ => PinnedHosts </pinned-hosts>
+                <fixed-vars> _ => Fixed </fixed-vars>
+                <next-loc> _ => Next </next-loc>
 
   // -------------------------------------------------------------------------
   // Statement sequencing and blocks

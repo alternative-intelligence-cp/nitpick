@@ -1642,6 +1642,20 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
     }
     
     llvm::Value* var_ptr = it->second;
+
+    // v0.18.0: $$m function parameters are bound to the caller's storage as
+    // pointer arguments. Reading the parameter should load the pointed-to value;
+    // writing is handled by the assignment path in IRGenerator.
+    if (llvm::isa<llvm::Argument>(var_ptr) && var_ptr->getType()->isPointerTy() &&
+        var_aria_types.count("__borrow_param_mut:" + expr->name)) {
+        llvm::Type* loadType = llvm::Type::getInt32Ty(context);
+        auto typeIt = var_aria_types.find(expr->name);
+        if (typeIt != var_aria_types.end()) {
+            llvm::Type* mapped = getLLVMTypeFromString(typeIt->second);
+            if (mapped) loadType = mapped;
+        }
+        return builder.CreateLoad(loadType, var_ptr, expr->name);
+    }
     
     // ARIA-026: SAFETY FIX - Handle both AllocaInst AND GlobalVariable
     // Gemini Safety Audit Fix #2: Global Variable Pointer Corruption

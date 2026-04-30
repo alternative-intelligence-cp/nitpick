@@ -1,0 +1,20 @@
+/// Regression test: $$m call-by-reference writes through to caller storage.
+/// Expected process exit: 15
+
+func:mutate = int32($$m int32:x) {
+    x = x + 5;
+    pass x;
+};
+
+func:main = int32() {
+    int32:value = 10;
+    int32:result = raw mutate($value);
+    if (value == 15) {
+        exit result;
+    }
+    exit value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

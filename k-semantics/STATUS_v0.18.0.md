@@ -56,6 +56,10 @@ Branch: `dev-0.18.x`
 - Added local pin dereference/read-only slice: `#id` now lowers to a stable
   local pointer in `ariac`, `<-pin` reads the pinned host, and `<-pin = value;`
   is rejected by `ariac` and routed to failsafe in K.
+- Added positive `$$m` call-by-reference mutation: `ariac` now accepts
+  `$value` for `$$m T:param`, lowers the callee parameter as a pointer alias,
+  writes assignments back through caller storage, and the K oracle models
+  borrow-location call frames with return-time writeback.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
 - Added first scope-based borrow release slice: standalone nested block
@@ -64,7 +68,7 @@ Branch: `dev-0.18.x`
   terminal `exit` unwinding, while preserving existing deferred cleanup order.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 62 core K tests under `krun`.
+- Compiled `aria.k` and passed all 64 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -79,7 +83,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 62 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 64 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -103,6 +107,10 @@ Branch: `dev-0.18.x`
 - Cross-checked local pin dereference probes with `build/ariac`: `<-pin`
   returns the pinned host value (`42`), and `<-pin = 9;` is statically rejected
   with ARIA-016.
+- Cross-checked focused mutable-borrow call probes with `build/ariac`: `raw
+  mutate($value)` compiles, lowers to `@mutate(ptr %value)`, writes through the
+  caller slot, and exits `15`, while plain `raw mutate(value)` remains rejected
+  with ARIA-020 and the `$value` hint.
 - Cross-checked focused scope-based borrow probes with `build/ariac`: immutable
   and mutable borrows created inside nested blocks were released at block exit,
   later assignment or borrowing compiled and returned the expected value, and a
@@ -124,13 +132,14 @@ Branch: `dev-0.18.x`
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin slices:
   pin release/path edge cases, pointer path/field store-through, and `wildx`
-- richer borrow semantics beyond the initial permission qualifier slice:
-  positive `$$m` call-by-reference mutation, field/path-sensitive borrows, and
+- richer borrow semantics beyond the initial permission qualifier and
+  call-by-reference writeback slices: field/path-sensitive borrows and
   pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: richer
-borrow mutation/path behavior, then broader symbolic `kprove` lemmas.
+Expand semantic coverage in the next small slice. Recommended order: pin
+release/path edge cases or richer pointer path/field store-through, then
+broader symbolic `kprove` lemmas.

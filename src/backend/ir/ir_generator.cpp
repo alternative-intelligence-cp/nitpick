@@ -2840,7 +2840,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         std::vector<llvm::Type*> pre_params;
         for (const auto& param : fd->parameters) {
             ParameterNode* pn = static_cast<ParameterNode*>(param.get());
-            if (pn->isWild) {
+            std::string fn = modulePrefix.empty() ? fd->funcName
+                                                   : modulePrefix + "." + fd->funcName;
+            unsigned paramIndex = static_cast<unsigned>(pre_params.size());
+            if (pn->isBorrowMut) {
+                // v0.18.0: $$m params are passed by reference so writes in the
+                // callee update the caller's storage.
+                pre_params.push_back(builder.getPtrTy());
+                var_aria_types["__func_borrow_param:" + fn + ":" + std::to_string(paramIndex)] = "mut";
+            } else if (pn->isWild) {
                 pre_params.push_back(builder.getPtrTy());
             } else if (pn->typeNode && pn->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
                 // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
@@ -2853,8 +2861,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 // v0.2.36: Track dyn Trait parameters for coercion at call sites
                 if (pstr.substr(0, 4) == "dyn ") {
                     std::string traitName = pstr.substr(4);
-                    std::string fn = modulePrefix.empty() ? fd->funcName
-                                                           : modulePrefix + "." + fd->funcName;
                     func_dyn_params[fn][static_cast<unsigned>(pre_params.size() - 1)] = traitName;
                 }
             }
@@ -3195,11 +3201,19 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             
             // Create function signature with proper type mapping
             std::vector<llvm::Type*> param_types;
+            std::string func_name = modulePrefix.empty()
+                ? funcDecl->funcName
+                : modulePrefix + "." + funcDecl->funcName;
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                unsigned paramIndex = static_cast<unsigned>(param_types.size());
                 
                 // Check for wild qualifier (FFI pointers)
-                if (pnode->isWild) {
+                if (pnode->isBorrowMut) {
+                    // v0.18.0: $$m params are call-by-reference aliases.
+                    param_types.push_back(builder.getPtrTy());
+                    var_aria_types["__func_borrow_param:" + func_name + ":" + std::to_string(paramIndex)] = "mut";
+                } else if (pnode->isWild) {
                     // Wild pointers always map to LLVM ptr regardless of base type
                     param_types.push_back(builder.getPtrTy());
                 } else if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
@@ -3260,11 +3274,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
 
             llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, funcDecl->isVariadic);
-            
-            // Determine function name (qualified if in a module)
-            std::string func_name = modulePrefix.empty() 
-                ? funcDecl->funcName 
-                : modulePrefix + "." + funcDecl->funcName;
             
             // Determine linkage based on pub modifier
             // Special case: main function and module init always have external linkage
@@ -3539,7 +3548,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // To ensure consistent access semantics, we copy all struct params to stack allocas.
                     // This matches Clang's behavior and ensures member access works correctly.
                     llvm::Value* param_storage = nullptr;
-                    if (arg.getType()->isStructTy() || arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
+                    if (param->isBorrowMut) {
+                        // v0.18.0: A $$m parameter is already a pointer to the
+                        // caller's storage. Bind the parameter name directly to
+                        // that pointer so assignments write through the alias.
+                        param_storage = &arg;
+                        named_values[param->paramName] = &arg;
+                        var_aria_types["__borrow_param_mut:" + param->paramName] = "1";
+                    } else if (arg.getType()->isStructTy() || arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
                         // Struct, array, and vector parameters must be copied to a local alloca.
                         // Structs: LLVM ABI may pass in registers or via hidden pointer.
                         // Arrays: cannot be GEP'd as values — need an addressable alloca
@@ -3852,6 +3868,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
                 named_values.erase(pnode->paramName);
+                var_aria_types.erase("__borrow_param_mut:" + pnode->paramName);
             }
         }
 
@@ -7188,6 +7205,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Without this check the load defaults to i32, mismatching the ptr type of
                     // a string literal on the other side of a comparison (ICmpInst assert).
                     if (llvm::isa<llvm::Argument>(val)) {
+                        if (var_aria_types.count("__borrow_param_mut:" + ident->name)) {
+                            llvm::Type* loadType = builder.getInt32Ty();
+                            auto ariaIt = var_aria_types.find(ident->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                                if (mappedType) loadType = mappedType;
+                            }
+                            llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
+                            auto typeIt = value_types.find(val);
+                            if (typeIt != value_types.end()) value_types[loaded] = typeIt->second;
+                            return loaded;
+                        }
                         auto typeIt = value_types.find(val);
                         (void)typeIt;
                         // (value_types entry was already registered during parameter setup)
@@ -8429,6 +8458,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 llvm::Value* var = it->second;
                 llvm::Value* result = nullptr;
+                auto isMutableBorrowParam = [&](const std::string& name) -> bool {
+                    return var_aria_types.count("__borrow_param_mut:" + name) > 0;
+                };
+                auto mutableBorrowValueType = [&](const std::string& name) -> llvm::Type* {
+                    auto ariaIt = var_aria_types.find(name);
+                    if (ariaIt != var_aria_types.end()) {
+                        llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                        if (mappedType) return mappedType;
+                    }
+                    return builder.getInt32Ty();
+                };
 
                 // If the target is a raw (non-pointer) function parameter value,
                 // promote it to a stack alloca so it can be written to.
@@ -8453,6 +8493,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Type* varElemType = nullptr;
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
                         varElemType = allocaInst->getAllocatedType();
+                    } else if (isMutableBorrowParam(lhs->name)) {
+                        varElemType = mutableBorrowValueType(lhs->name);
                     } else {
                         // For now, default to int32 if not an alloca
                         varElemType = builder.getInt32Ty();
@@ -8554,8 +8596,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // i32/i8/etc.  Without this conversion the store is type-mismatched
                 // (e.g. "store i64 5, ptr %x" into an i32 alloca), which LLVM treats
                 // as undefined behaviour and may optimise away entirely.
+                llvm::Type* targetType = nullptr;
                 if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
-                    llvm::Type* targetType = allocaInst->getAllocatedType();
+                    targetType = allocaInst->getAllocatedType();
+                } else if (isMutableBorrowParam(lhs->name)) {
+                    targetType = mutableBorrowValueType(lhs->name);
+                }
+                if (targetType) {
                     if (result->getType() != targetType) {
                         if (result->getType()->isIntegerTy() && targetType->isIntegerTy()) {
                             unsigned srcBits = result->getType()->getIntegerBitWidth();
