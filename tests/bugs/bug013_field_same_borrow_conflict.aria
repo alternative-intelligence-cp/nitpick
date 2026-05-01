@@ -1,0 +1,18 @@
+// BUG-013: Same struct-field path cannot be mutably borrowed twice.
+// Expected: error ARIA-023
+
+struct:Pair = {
+    int32:a;
+    int32:b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    Pair:pair = Pair { a: 10, b: 20 };
+    $$m int32:ra = pair.a;
+    $$m int32:rb = pair.a;
+    exit pair.a;
+};

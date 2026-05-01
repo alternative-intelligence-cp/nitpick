@@ -1,0 +1,18 @@
+// BUG-014: Assignment to a borrowed struct-field path should be rejected.
+// Expected: error ARIA-026
+
+struct:Pair = {
+    int32:a;
+    int32:b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    Pair:pair = Pair { a: 10, b: 20 };
+    $$m int32:ra = pair.a;
+    pair.a = 22;
+    exit pair.a;
+};

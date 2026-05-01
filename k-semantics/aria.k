@@ -13,7 +13,7 @@ requires "domains.md"
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
 //   - # pin registration with dereference plus direct/nested mutation blocking
-//   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
+//   - $$i/$$m borrow qualifiers with path-sensitive field tracking and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -35,6 +35,7 @@ module ARIA-SYNTAX
      syntax MemMode ::= "stack" | "gc" | "wild"
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
+     syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
 
   syntax Val ::= Int
                | Bool
@@ -98,6 +99,7 @@ module ARIA-SYNTAX
                 | "limit" "<" Id ">" Type ":" Id "=" Exp ";" [strict(4)]
                 | MemMode Type ":" Id "=" Exp ";" [strict(4)]
                 | BorrowMode Type ":" Id "=" Id ";"
+                | BorrowMode Type ":" Id "=" Id "." Id ";"
                 | Id "=" Exp ";" [strict(2)]
                 | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
@@ -359,6 +361,9 @@ module ARIA
   syntax Val ::= argumentValue(Val) [function]
   syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
                 | isImmutableBorrowVar(Id, Map) [function]
+                | hasBorrowOnHost(Id, Set) [function]
+     syntax Int ::= envLoc(Map, Id) [function]
+  syntax Val ::= fieldValue(Map, Int, Id) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
                | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
                | callWritebacks(BorrowInfo, Val) [function]
@@ -406,6 +411,14 @@ module ARIA
   rule isImmutableBorrowVar(X:Id, (X |-> MutBorrow _:Map)) => false
   rule isImmutableBorrowVar(_:Id, _:Map) => false [owise]
 
+     rule hasBorrowOnHost(_:Id, .Set) => false
+     rule hasBorrowOnHost(H:Id, SetItem(H) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(FieldPath(H, _:Id)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnHost(H, REST) [owise]
+
+     rule envLoc((H:Id |-> L:Int _:Map), H) => L
+     rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
+
   rule <k> $ X:Id => BorrowLoc(MutBorrow, X, L, V) ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> V ... </store>
@@ -420,7 +433,7 @@ module ARIA
        <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
        <imm-borrow-hosts> Imm => Imm SetItem(H) </imm-borrow-hosts>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
-    requires H in_keys(Env) andBool notBool(H in Mut)
+      requires H in_keys(Env) andBool notBool(hasBorrowOnHost(H, Mut))
 
   rule <k> $$m T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -429,14 +442,36 @@ module ARIA
        <mut-borrow-hosts> Mut => Mut SetItem(H) </mut-borrow-hosts>
        <imm-borrow-hosts> Imm </imm-borrow-hosts>
        <pinned-hosts> Pinned </pinned-hosts>
-    requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+      requires H in_keys(Env) andBool notBool(hasBorrowOnHost(H, Mut)) andBool notBool(hasBorrowOnHost(H, Imm)) andBool notBool(H in Pinned)
+
+  rule <k> $$i T:Type : X:Id = H:Id . F:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, fieldValue(Store, envLoc(Env, H), F)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(FieldPath(H, F)) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(FieldPath(H, F) in Mut)
+
+  rule <k> $$m T:Type : X:Id = H:Id . F:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, fieldValue(Store, envLoc(Env, H), F)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <mut-borrow-hosts> Mut => Mut SetItem(FieldPath(H, F)) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(FieldPath(H, F) in Mut) andBool notBool(FieldPath(H, F) in Imm)
 
   rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
-    requires notBool(H in_keys(Env)) orBool H in Mut
+      requires notBool(H in_keys(Env)) orBool hasBorrowOnHost(H, Mut)
 
   rule <k> $$m _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
@@ -445,7 +480,24 @@ module ARIA
            <pinned-hosts> Pinned </pinned-hosts>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
-      requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+         requires notBool(H in_keys(Env)) orBool hasBorrowOnHost(H, Mut) orBool hasBorrowOnHost(H, Imm) orBool H in Pinned
+
+       rule <k> $$i _:Type : _:Id = H:Id . F:Id ; ~> _ => FS </k>
+           <env> Env </env>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+         requires notBool(H in_keys(Env)) orBool H in Mut orBool FieldPath(H, F) in Mut
+
+       rule <k> $$m _:Type : _:Id = H:Id . F:Id ; ~> _ => FS </k>
+           <env> Env </env>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+         requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+          orBool FieldPath(H, F) in Mut orBool FieldPath(H, F) in Imm
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -505,54 +557,85 @@ module ARIA
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct1(T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-           <pinned-hosts> Pinned </pinned-hosts>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
            <pinned-hosts> Pinned </pinned-hosts>
            <failsafe> FS </failsafe>
            <failsafe-triggered> _ => true </failsafe-triggered>
       requires X in Pinned
+
+  rule <k> X:Id . F:Id = _:Val ; ~> _ => FS </k>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Imm orBool X in Mut orBool FieldPath(X, F) in Imm orBool FieldPath(X, F) in Mut
 
   rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
        <fixed-vars> Fixed </fixed-vars>
@@ -946,7 +1029,7 @@ module ARIA
         <pinned-hosts> PinnedHosts </pinned-hosts>
      requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
       andBool notBool(isImmutableBorrowVar(X, BorrowVars))
-      andBool notBool(X in ImmHosts) andBool notBool(X in MutHosts)
+     andBool notBool(hasBorrowOnHost(X, ImmHosts)) andBool notBool(hasBorrowOnHost(X, MutHosts))
       andBool notBool(X in PinnedHosts)
 
   rule <k> X:Id = _:Val ; ~> _ => FS </k>
@@ -956,7 +1039,7 @@ module ARIA
         <pinned-hosts> PinnedHosts </pinned-hosts>
         <failsafe> FS </failsafe>
         <failsafe-triggered> _ => true </failsafe-triggered>
-     requires isImmutableBorrowVar(X, BorrowVars) orBool X in ImmHosts orBool X in MutHosts orBool X in PinnedHosts
+       requires isImmutableBorrowVar(X, BorrowVars) orBool hasBorrowOnHost(X, ImmHosts) orBool hasBorrowOnHost(X, MutHosts) orBool X in PinnedHosts
 
   // Fixed reassignment is a semantic error in this executable model. ariac
   // should normally reject it statically; the oracle routes it to failsafe so

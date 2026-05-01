@@ -76,6 +76,14 @@ Branch: `dev-0.18.x`
   `pin->leaf->x` remain allowed, while `pin->leaf->x = value;` and direct
   pinned-host field mutation such as `box.tag = value;` are rejected by `ariac`
   and routed to failsafe in K.
+- Added direct field/path-sensitive borrow slice: `$$i`/`$$m` declarations over
+  `obj.field` now record precise one-level access paths in the compiler borrow
+  checker and in the K oracle, allowing disjoint field borrows such as `pair.a`
+  and `pair.b` while rejecting same-field conflicts and assignment to an active
+  borrowed field.
+- Threaded compiler path loans through snapshots, branch merges, loop back-edge
+  merges, equality checks, and scope release so field-sensitive borrows behave
+  consistently across existing borrow-control-flow machinery.
 - Added first scope-based borrow release slice: standalone nested block
   statements now save borrow-tracking cells on entry and restore local borrow
   aliases plus immutable/mutable borrowed-host sets on normal block exit or
@@ -83,9 +91,9 @@ Branch: `dev-0.18.x`
 - Added first scope-based pin release slice: standalone nested block statements
   now save and restore pinned-host state, so pins created inside a block do not
   block later reassignment or repinning after block exit.
-- Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
+- Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 76 core K tests under `krun`.
+- Compiled `aria.k` and passed all 80 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -100,7 +108,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 76 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 80 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -150,6 +158,14 @@ Branch: `dev-0.18.x`
   `pin->leaf->x` returns the inner pointee field value (`10`), while
   `pin->leaf->x = 44;` and `box.tag = 44;` with an active `#box` pin are
   statically rejected with ARIA-016.
+- Cross-checked focused field-borrow probes with `build/ariac`: disjoint
+  mutable field borrows (`pair.a` and `pair.b`) now compile and exit `30`,
+  same-field mutable borrow conflicts reject with ARIA-023, sibling field
+  assignment while another field is borrowed exits `22`, and assignment to the
+  borrowed field rejects with ARIA-026. A separate probe confirmed local `$$m`
+  field aliases are still copy-in rather than writeback aliases, so this slice
+  intentionally covers borrow precision and mutation blocking, not field-alias
+  writeback codegen.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -166,8 +182,8 @@ Branch: `dev-0.18.x`
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin slices:
   any remaining deeper pin path edge cases and `wildx`
-- richer borrow semantics beyond the initial permission qualifier and
-  call-by-reference writeback slices: field/path-sensitive borrows and
+- richer borrow semantics beyond direct one-level field path tracking:
+  nested/array field borrow paths, field-alias writeback codegen, and broader
   pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
@@ -175,5 +191,5 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order:
-field/path-sensitive borrows, `wildx`, any remaining deeper pin path edge cases,
-or broader symbolic `kprove` lemmas.
+`wildx`, any remaining deeper pin path edge cases, nested/array field borrow
+paths, field-alias writeback codegen, or broader symbolic `kprove` lemmas.

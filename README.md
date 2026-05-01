@@ -23,7 +23,7 @@ is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **76/76** under K Framework v7.1.320;
+`k_semantics_core` **80/80** under K Framework v7.1.320;
 `k_semantics_proofs` **1/1 proof module** with three initial `kprove` claims;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
@@ -50,6 +50,9 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
     pin-derived nested path mutation blocking, pinned-host field mutation blocking,
     and block-scoped pin release,
     initial borrow permission semantics for `$$i`/`$$m` aliases and helper parameters,
+    direct struct-field borrow path tracking that distinguishes disjoint fields
+    such as `obj.a` and `obj.b`, blocks exact borrowed-field mutation, and keeps
+    conservative host-level conflicts,
     positive `$$m` call-by-reference mutation/writeback,
     block-scoped borrow release for nested statement blocks,
     `loop(start,end,step)`, and `exit`.
@@ -58,8 +61,8 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 - **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
     semantics with the Haskell backend required by `kprove` and proves the first
     executable-core claim module.
-- **Next semantic slice** — richer memory/borrow behavior (field/path-sensitive
-    borrows, `wildx`, and any remaining deeper pin path edge cases)
+- **Next semantic slice** — richer memory/borrow behavior (`wildx`, any remaining
+    deeper pin path edge cases, nested/array field borrow paths)
     and broader symbolic `kprove` lemmas.
 
 **Recently completed series:**
@@ -93,7 +96,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 76/76 core tests, 1/1 proof module |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 80/80 core tests, 1/1 proof module |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |

@@ -43,8 +43,10 @@ can eventually answer: “what should this Aria program do?” independently of
   pin-derived nested path mutation blocking, block-scoped pin release, and
   mutable-borrow blocking while immutable aliases remain allowed
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
-  minimal alias tracking, immutable-vs-mutable conflict checks, `$$m`
-  argument-shape enforcement, and positive `$$m` call-by-reference writeback
+  direct one-level field path tracking for aliases such as `pair.a`,
+  immutable-vs-mutable conflict checks, disjoint-field split borrows,
+  exact borrowed-field assignment blocking, `$$m` argument-shape enforcement,
+  and positive `$$m` call-by-reference writeback for ordinary variable borrows
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
@@ -111,8 +113,8 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: field/path-sensitive borrows, `wildx`,
-  and any remaining deeper pin path edge cases
+1. richer memory and borrow behavior: `wildx`, any remaining deeper pin path
+  edge cases, and nested/array field borrow paths beyond direct `obj.field`
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions

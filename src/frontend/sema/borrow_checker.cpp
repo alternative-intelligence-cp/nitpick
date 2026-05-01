@@ -30,6 +30,7 @@ LifetimeContext LifetimeContext::snapshot() const {
     snap.var_depths = this->var_depths;
     snap.loan_origins = this->loan_origins;
     snap.active_loans = this->active_loans;
+    snap.path_loans = this->path_loans;
     snap.active_pins = this->active_pins;
     snap.pending_wild_frees = this->pending_wild_frees;
     snap.wild_states = this->wild_states;
@@ -44,6 +45,7 @@ void LifetimeContext::restore(const LifetimeContext& snap) {
     this->var_depths = snap.var_depths;
     this->loan_origins = snap.loan_origins;
     this->active_loans = snap.active_loans;
+    this->path_loans = snap.path_loans;
     this->active_pins = snap.active_pins;
     this->pending_wild_frees = snap.pending_wild_frees;
     this->wild_states = snap.wild_states;
@@ -138,6 +140,31 @@ void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeCon
         }
     }
 
+    auto merge_path_loans = [this](const auto& source_path_loans) {
+        for (const auto& [path, loans] : source_path_loans) {
+            auto& our_loans = path_loans[path];
+            for (const auto& loan : loans) {
+                bool found = false;
+                for (const auto& existing : our_loans) {
+                    if (existing.borrower == loan.borrower &&
+                        existing.is_mutable == loan.is_mutable &&
+                        existing.creation_line == loan.creation_line &&
+                        existing.creation_column == loan.creation_column &&
+                        existing.path == loan.path &&
+                        existing.phase == loan.phase) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    our_loans.push_back(loan);
+                }
+            }
+        }
+    };
+    merge_path_loans(then_state.path_loans);
+    merge_path_loans(else_state.path_loans);
+
     // ARIA-021: Merge active_pins using UNION
     for (const auto& [host, pinner] : then_state.active_pins) {
         if (active_pins.find(host) == active_pins.end()) {
@@ -229,6 +256,38 @@ bool LifetimeContext::mergeLoopBackEdgeLivenessAware(const LifetimeContext& back
         }
         if (our_origins.size() > old_size) {
             changed = true;
+        }
+    }
+
+    // Merge path-sensitive loans with the same liveness filter used for the
+    // legacy active_loans map. These power split borrows such as p.a vs p.b.
+    for (const auto& [path, loans] : back_edge_state.path_loans) {
+        if (!liveness.isLiveAtHeader(path.base_var)) {
+            continue;
+        }
+
+        auto& our_loans = path_loans[path];
+        for (const auto& loan : loans) {
+            if (!liveness.isLiveAtHeader(loan.borrower)) {
+                continue;
+            }
+
+            bool found = false;
+            for (const auto& existing : our_loans) {
+                if (existing.borrower == loan.borrower &&
+                    existing.is_mutable == loan.is_mutable &&
+                    existing.creation_line == loan.creation_line &&
+                    existing.creation_column == loan.creation_column &&
+                    existing.path == loan.path &&
+                    existing.phase == loan.phase) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                our_loans.push_back(loan);
+                changed = true;
+            }
         }
     }
 
@@ -384,6 +443,8 @@ static bool are_loans_equal(const Loan& a, const Loan& b) {
     // at different points in the code.
     if (a.creation_line != b.creation_line) return false;
     if (a.creation_column != b.creation_column) return false;
+    if (!(a.path == b.path)) return false;
+    if (a.phase != b.phase) return false;
 
     return true;
 }
@@ -424,6 +485,24 @@ bool LifetimeContext::equivalent(const LifetimeContext& other) const {
         for (size_t i = 0; i < my_loans.size(); ++i) {
             if (!are_loans_equal(my_loans[i], other_loans[i])) {
                 // Identity mismatch found (e.g. different borrower name)
+                return false;
+            }
+        }
+    }
+
+    // ==========================================================
+    // 2b. Compare Path-Sensitive Loans
+    // ==========================================================
+    if (path_loans.size() != other.path_loans.size()) return false;
+    for (const auto& [path, my_loans] : path_loans) {
+        auto it = other.path_loans.find(path);
+        if (it == other.path_loans.end()) return false;
+
+        const auto& other_loans = it->second;
+        if (my_loans.size() != other_loans.size()) return false;
+
+        for (size_t i = 0; i < my_loans.size(); ++i) {
+            if (!are_loans_equal(my_loans[i], other_loans[i])) {
                 return false;
             }
         }
@@ -852,6 +931,20 @@ void BorrowChecker::releaseBorrows(const std::string& var) {
                 [&var](const Loan& loan) { return loan.borrower == var; }),
             loans.end()
         );
+    }
+
+    for (auto it = ctx.path_loans.begin(); it != ctx.path_loans.end(); ) {
+        auto& loans = it->second;
+        loans.erase(
+            std::remove_if(loans.begin(), loans.end(),
+                [&var](const Loan& loan) { return loan.borrower == var; }),
+            loans.end()
+        );
+        if (loans.empty()) {
+            it = ctx.path_loans.erase(it);
+        } else {
+            ++it;
+        }
     }
     
     // Remove from loan origins
@@ -1288,23 +1381,10 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         if (stmt->isBorrowImm || stmt->isBorrowMut) {
             // Extract borrow target from initializer (must be an identifier or
             // member access — validated by type checker, but guard defensively)
-            std::string borrow_target;
-            if (stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
-                borrow_target = 
-                    static_cast<IdentifierExpr*>(stmt->initializer.get())->name;
-            } else if (stmt->initializer->type == ASTNode::NodeType::MEMBER_ACCESS) {
-                // For struct field borrows (e.g., data.temperature),
-                // borrow from the base object
-                MemberAccessExpr* member =
-                    static_cast<MemberAccessExpr*>(stmt->initializer.get());
-                if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
-                    borrow_target =
-                        static_cast<IdentifierExpr*>(member->object.get())->name;
-                }
-            }
-            if (!borrow_target.empty()) {
+            AccessPath borrow_path = extractAccessPath(stmt->initializer.get());
+            if (!borrow_path.base_var.empty()) {
                 bool is_mutable = stmt->isBorrowMut;
-                recordBorrow(borrow_target, stmt->varName, is_mutable, stmt);
+                recordBorrowWithPath(borrow_path, stmt->varName, is_mutable, stmt);
             }
             // Early return — $$i/$$m variables don't need the legacy $ checks
             return;
@@ -1536,6 +1616,19 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
         }
     } else if (expr->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
         MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
+        AccessPath target_path = extractAccessPath(expr->left.get());
+        if (!target_path.base_var.empty()) {
+            const Loan* conflict = ctx.checkPathConflict(target_path, true);
+            if (conflict) {
+                addError("Cannot assign to '" + target_path.toString() + "' because it is borrowed",
+                        expr,
+                        "Borrowed by '" + conflict->borrower + "' here",
+                        conflict->creation_line, conflict->creation_column);
+                tagCode("ARIA-026");
+                return;
+            }
+        }
+
         std::string root = rootIdentifierName(rootIdentifierName, expr->left.get());
         if (!root.empty() && isPinned(root)) {
             addErrorWithSuggestion("Cannot assign to field '" + member->member +
