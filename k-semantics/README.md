@@ -39,7 +39,8 @@ can eventually answer: “what should this Aria program do?” independently of
   selected inner pointee
 - pin registration via `#value`, with pinned-host tracking, pin dereference,
   pin store-through and pin-member store-through blocking, double-pin blocking,
-  same-scope reassignment blocking, block-scoped pin release, and
+  same-scope reassignment blocking, pinned-host field mutation blocking,
+  pin-derived nested path mutation blocking, block-scoped pin release, and
   mutable-borrow blocking while immutable aliases remain allowed
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
   minimal alias tracking, immutable-vs-mutable conflict checks, `$$m`
@@ -110,8 +111,8 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: remaining pin path edge cases, nested
-  pointer paths, field/path-sensitive borrows, and `wildx`
+1. richer memory and borrow behavior: field/path-sensitive borrows, `wildx`,
+  and any remaining deeper pin path edge cases
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions

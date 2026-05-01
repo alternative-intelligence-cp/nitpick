@@ -72,6 +72,10 @@ Branch: `dev-0.18.x`
   semantic pointee type metadata in `ariac`, so `ptr->leaf->x` reads the inner
   pointee field and `ptr->leaf->x = value;` stores through it; K regressions
   cover the same nested read/store-through behavior.
+- Added pin path read-only edge slice: nested reads through a pin path such as
+  `pin->leaf->x` remain allowed, while `pin->leaf->x = value;` and direct
+  pinned-host field mutation such as `box.tag = value;` are rejected by `ariac`
+  and routed to failsafe in K.
 - Added first scope-based borrow release slice: standalone nested block
   statements now save borrow-tracking cells on entry and restore local borrow
   aliases plus immutable/mutable borrowed-host sets on normal block exit or
@@ -81,7 +85,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 180 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 73 core K tests under `krun`.
+- Compiled `aria.k` and passed all 76 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -96,7 +100,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 73 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 76 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -142,6 +146,10 @@ Branch: `dev-0.18.x`
 - Cross-checked focused nested pointer-member probes with `build/ariac`:
   `ptr->leaf->x` returns the inner pointee field value (`10`), and
   `ptr->leaf->x = 44;` updates the inner pointee and exits `44`.
+- Cross-checked focused pin path read-only probes with `build/ariac`:
+  `pin->leaf->x` returns the inner pointee field value (`10`), while
+  `pin->leaf->x = 44;` and `box.tag = 44;` with an active `#box` pin are
+  statically rejected with ARIA-016.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -157,7 +165,7 @@ Branch: `dev-0.18.x`
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin slices:
-  remaining pin path edge cases and `wildx`
+  any remaining deeper pin path edge cases and `wildx`
 - richer borrow semantics beyond the initial permission qualifier and
   call-by-reference writeback slices: field/path-sensitive borrows and
   pin-aware field/path edge cases
@@ -166,6 +174,6 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-Expand semantic coverage in the next small slice. Recommended order: remaining
-pin release/path edge cases, field/path-sensitive borrows, `wildx`, or broader
-symbolic `kprove` lemmas.
+Expand semantic coverage in the next small slice. Recommended order:
+field/path-sensitive borrows, `wildx`, any remaining deeper pin path edge cases,
+or broader symbolic `kprove` lemmas.

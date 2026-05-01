@@ -1435,6 +1435,55 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
 
     std::string target_name;
 
+    auto findPinnedRootedPath = [&](auto&& self, ASTNode* node,
+                                    std::string& pin_ref,
+                                    std::string& host,
+                                    std::string& path) -> bool {
+        if (!node) return false;
+
+        if (node->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* pointer = static_cast<IdentifierExpr*>(node);
+            auto originsIt = ctx.loan_origins.find(pointer->name);
+            if (originsIt != ctx.loan_origins.end()) {
+                for (const auto& origin : originsIt->second) {
+                    auto pinIt = ctx.active_pins.find(origin);
+                    if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
+                        pin_ref = pointer->name;
+                        host = origin;
+                        path = pointer->name;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if (node->type == ASTNode::NodeType::POINTER_MEMBER ||
+            node->type == ASTNode::NodeType::MEMBER_ACCESS) {
+            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(node);
+            if (self(self, member->object.get(), pin_ref, host, path)) {
+                path += (node->type == ASTNode::NodeType::POINTER_MEMBER ? "->" : ".");
+                path += member->member;
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    auto rootIdentifierName = [&](auto&& self, ASTNode* node) -> std::string {
+        if (!node) return "";
+        if (node->type == ASTNode::NodeType::IDENTIFIER) {
+            return static_cast<IdentifierExpr*>(node)->name;
+        }
+        if (node->type == ASTNode::NodeType::MEMBER_ACCESS ||
+            node->type == ASTNode::NodeType::POINTER_MEMBER) {
+            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(node);
+            return self(self, member->object.get());
+        }
+        return "";
+    };
+
     // Check left side (ensure it's not pinned or borrowed mutably)
     if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
         IdentifierExpr* target = static_cast<IdentifierExpr*>(expr->left.get());
@@ -1464,41 +1513,36 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
         checkWildUse(target->name, expr);
     } else if (expr->left->type == ASTNode::NodeType::UNARY_OP) {
         UnaryExpr* unary = static_cast<UnaryExpr*>(expr->left.get());
-        if ((unary->op.type == frontend::TokenType::TOKEN_LEFT_ARROW ||
-             unary->op.type == frontend::TokenType::TOKEN_STAR) &&
-            unary->operand && unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* pointer = static_cast<IdentifierExpr*>(unary->operand.get());
-            auto originsIt = ctx.loan_origins.find(pointer->name);
-            if (originsIt != ctx.loan_origins.end()) {
-                for (const auto& host : originsIt->second) {
-                    auto pinIt = ctx.active_pins.find(host);
-                    if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
-                        addErrorWithSuggestion("Cannot assign through pin reference '" + pointer->name +
-                                "' to pinned variable '" + host + "'", expr,
-                                "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
-                        tagCode("ARIA-016");
-                        return;
-                    }
-                }
+        if (unary->op.type == frontend::TokenType::TOKEN_LEFT_ARROW ||
+            unary->op.type == frontend::TokenType::TOKEN_STAR) {
+            std::string pin_ref, host, path;
+            if (findPinnedRootedPath(findPinnedRootedPath, unary->operand.get(), pin_ref, host, path)) {
+                addErrorWithSuggestion("Cannot assign through pin reference '" + pin_ref +
+                        "' via path '" + path + "' rooted at pinned variable '" + host + "'", expr,
+                        "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
+                tagCode("ARIA-016");
+                return;
             }
         }
     } else if (expr->left->type == ASTNode::NodeType::POINTER_MEMBER) {
         MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
-        if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* pointer = static_cast<IdentifierExpr*>(member->object.get());
-            auto originsIt = ctx.loan_origins.find(pointer->name);
-            if (originsIt != ctx.loan_origins.end()) {
-                for (const auto& host : originsIt->second) {
-                    auto pinIt = ctx.active_pins.find(host);
-                    if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
-                        addErrorWithSuggestion("Cannot assign through pin reference '" + pointer->name +
-                                "' to field '" + member->member + "' of pinned variable '" + host + "'", expr,
-                                "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
-                        tagCode("ARIA-016");
-                        return;
-                    }
-                }
-            }
+        std::string pin_ref, host, path;
+        if (findPinnedRootedPath(findPinnedRootedPath, expr->left.get(), pin_ref, host, path)) {
+            addErrorWithSuggestion("Cannot assign through pin reference '" + pin_ref +
+                    "' via path '" + path + "' rooted at pinned variable '" + host + "'", expr,
+                    "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
+            tagCode("ARIA-016");
+            return;
+        }
+    } else if (expr->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
+        std::string root = rootIdentifierName(rootIdentifierName, expr->left.get());
+        if (!root.empty() && isPinned(root)) {
+            addErrorWithSuggestion("Cannot assign to field '" + member->member +
+                    "' of pinned variable '" + root + "'", expr,
+                    "hint: pins provide stable read access; unpin before mutating fields");
+            tagCode("ARIA-016");
+            return;
         }
     }
 

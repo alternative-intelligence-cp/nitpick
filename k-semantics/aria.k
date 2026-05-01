@@ -12,7 +12,7 @@ requires "domains.md"
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
-//   - # pin registration with dereference plus reassignment / mutation blocking
+//   - # pin registration with dereference plus direct/nested mutation blocking
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
@@ -49,6 +49,7 @@ module ARIA-SYNTAX
                | "PTR" "(" Int ")"
                | "PTRLOC" "(" Int ")"
                | "PINPTRLOC" "(" Int ")"
+               | "PINPATHLOC" "(" Int ")"
                | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
                | "BorrowLoc" "(" BorrowInfo "," Id "," Int "," Val ")"
 
@@ -300,6 +301,7 @@ module ARIA
 
   rule isStorePointer(PTRLOC(_:Int)) => true
      rule isStorePointer(PINPTRLOC(_:Int)) => true
+       rule isStorePointer(PINPATHLOC(_:Int)) => true
   rule isStorePointer(_) => false [owise]
 
      rule <k> @ X:Id => PTRLOC(L) ... </k>
@@ -323,10 +325,17 @@ module ARIA
   rule <k> <- PINPTRLOC(L:Int) => V ... </k>
        <store> ... L |-> V ... </store>
 
+  rule <k> <- PINPATHLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
   rule <k> <- PTRLOC(L:Int) = V:Val ; => .K ... </k>
        <store> ... L |-> (OLD:Val => normalizeLike(OLD, V)) ... </store>
 
   rule <k> <- PINPTRLOC(_:Int) = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> <- PINPATHLOC(_:Int) = _:Val ; ~> _ => FS </k>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
 
@@ -477,48 +486,73 @@ module ARIA
 
      rule <k> PINPTRLOC(L:Int) -> F:Id => V ... </k>
           <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+    requires notBool(isStorePointer(V))
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PTRLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PINPTRLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PINPATHLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPATHLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct1(T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+
+  rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+      requires X in Pinned
 
   rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
        <fixed-vars> Fixed </fixed-vars>
@@ -551,6 +585,10 @@ module ARIA
        <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
 
   rule <k> PINPTRLOC(_:Int) -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> PINPATHLOC(_:Int) -> _:Id = _:Val ; ~> _ => FS </k>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
 
