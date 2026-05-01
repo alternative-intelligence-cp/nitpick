@@ -34,7 +34,9 @@ can eventually answer: “what should this Aria program do?” independently of
   `<-ptr` reads the current value from that address, and `<-ptr = value`
   writes back through the captured location
 - pointer-member operations: `ptr->field` reads through a local pointer to a
-  struct binding, and `ptr->field = value` stores back through that field path
+  struct binding, `ptr->field = value` stores back through that field path, and
+  nested pointer-valued paths such as `ptr->leaf->x` read/store through the
+  selected inner pointee
 - pin registration via `#value`, with pinned-host tracking, pin dereference,
   pin store-through and pin-member store-through blocking, double-pin blocking,
   same-scope reassignment blocking, block-scoped pin release, and

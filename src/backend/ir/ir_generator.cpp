@@ -11457,9 +11457,14 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 member->member + ".ptr"
             );
             
-            // Load the field value
+            // Load the field value and preserve its Aria semantic type. This is
+            // essential for nested pointer-valued fields such as ptr->leaf->x:
+            // the outer access returns a loaded pointer value, and the inner
+            // POINTER_MEMBER lowering needs to know that value's pointee type.
             llvm::Type* llvm_field_type = mapType(field_type);
-            return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            llvm::Value* field_value = builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            value_types[field_value] = field_type;
+            return field_value;
         }
         
         case ASTNode::NodeType::MEMBER_ACCESS: {

@@ -11,7 +11,7 @@ requires "domains.md"
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
-//   - ptr->field reads and ptr->field = value store-through for local struct pointers
+//   - ptr->field reads/store-through, including nested pointer-valued field paths
 //   - # pin registration with dereference plus reassignment / mutation blocking
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
