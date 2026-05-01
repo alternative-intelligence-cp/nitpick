@@ -1482,6 +1482,24 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                 }
             }
         }
+    } else if (expr->left->type == ASTNode::NodeType::POINTER_MEMBER) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
+        if (member->object && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+            IdentifierExpr* pointer = static_cast<IdentifierExpr*>(member->object.get());
+            auto originsIt = ctx.loan_origins.find(pointer->name);
+            if (originsIt != ctx.loan_origins.end()) {
+                for (const auto& host : originsIt->second) {
+                    auto pinIt = ctx.active_pins.find(host);
+                    if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
+                        addErrorWithSuggestion("Cannot assign through pin reference '" + pointer->name +
+                                "' to field '" + member->member + "' of pinned variable '" + host + "'", expr,
+                                "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
+                        tagCode("ARIA-016");
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     // Check right side

@@ -1,0 +1,18 @@
+/// Regression test: pointer member read through ptr->field.
+/// Expected process exit: 10
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    stack Point:p = Point{x: 10, y: 20};
+    stack Point->:ptr = @p;
+    int32:got = ptr->x;
+    exit got;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

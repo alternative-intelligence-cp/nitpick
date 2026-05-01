@@ -33,10 +33,12 @@ can eventually answer: “what should this Aria program do?” independently of
 - local pointer operations: `@value` captures a local binding address,
   `<-ptr` reads the current value from that address, and `<-ptr = value`
   writes back through the captured location
+- pointer-member operations: `ptr->field` reads through a local pointer to a
+  struct binding, and `ptr->field = value` stores back through that field path
 - pin registration via `#value`, with pinned-host tracking, pin dereference,
-  pin store-through blocking, double-pin blocking, same-scope reassignment
-  blocking, block-scoped pin release, and mutable-borrow blocking while
-  immutable aliases remain allowed
+  pin store-through and pin-member store-through blocking, double-pin blocking,
+  same-scope reassignment blocking, block-scoped pin release, and
+  mutable-borrow blocking while immutable aliases remain allowed
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
   minimal alias tracking, immutable-vs-mutable conflict checks, `$$m`
   argument-shape enforcement, and positive `$$m` call-by-reference writeback
@@ -106,8 +108,8 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: pin path edge cases, pointer path/field
-  store-through, field/path-sensitive borrows, and `wildx`
+1. richer memory and borrow behavior: remaining pin path edge cases, nested
+  pointer paths, field/path-sensitive borrows, and `wildx`
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions

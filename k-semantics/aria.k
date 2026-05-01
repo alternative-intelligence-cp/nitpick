@@ -11,6 +11,7 @@ requires "domains.md"
 //   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
+//   - ptr->field reads and ptr->field = value store-through for local struct pointers
 //   - # pin registration with dereference plus reassignment / mutation blocking
 //   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
@@ -71,6 +72,7 @@ module ARIA-SYNTAX
                | Id "{" Id ":" Exp "," Id ":" Exp "}" [strict(3, 5), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "," Id ":" Exp "}" [strict(3, 5, 7), avoid]
                | Exp "." Id [strict(1), avoid]
+               | Exp "->" Id [strict(1), avoid]
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -98,6 +100,7 @@ module ARIA-SYNTAX
                 | Id "=" Exp ";" [strict(2)]
                 | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
+                | Exp "->" Id "=" Exp ";" [strict(1, 3)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict]
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
@@ -469,6 +472,12 @@ module ARIA
 
      rule <k> StructVal(_:Id, (F:Id |-> V:Val _:Map)) . F => V ... </k>
 
+     rule <k> PTRLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
@@ -516,6 +525,44 @@ module ARIA
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires X in Fixed
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct1(T, F) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
+
+  rule <k> PINPTRLOC(_:Int) -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> V:Val -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
+
+  rule <k> V:Val -> _:Id ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
 
   // -------------------------------------------------------------------------
   // Helper functions and isolated call frames

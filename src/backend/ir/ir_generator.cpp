@@ -4776,8 +4776,27 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (type_system) {
                 Type* aria_type = nullptr;
                 
+                // Check for pointer types before primitives, since getPrimitiveType()
+                // accepts arbitrary strings and would otherwise turn "Point@" into
+                // a fake primitive instead of semantic PointerType(Point).
+                if (!actualTypeName.empty() &&
+                    (actualTypeName.back() == '@' || actualTypeName.back() == '*')) {
+                    std::string baseTypeName = actualTypeName.substr(0, actualTypeName.size() - 1);
+                    Type* pointeeType = nullptr;
+                    if (baseTypeName == "?") {
+                        aria_type = type_system->getErasedPointerType();
+                    } else {
+                        pointeeType = type_system->getStructType(baseTypeName);
+                        if (!pointeeType) {
+                            pointeeType = type_system->getPrimitiveType(baseTypeName);
+                        }
+                        if (pointeeType) {
+                            aria_type = type_system->getPointerType(pointeeType);
+                        }
+                    }
+                }
                 // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
-                if (actualTypeName.find("vec") != std::string::npos) {
+                else if (actualTypeName.find("vec") != std::string::npos) {
                     // Extract component type and dimension from type name
                     Type* componentType = type_system->getPrimitiveType("flt64");  // default
                     int dimension = 2;  // default
@@ -7975,6 +7994,90 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return rhs;
                 }
                 
+                // Handle pointer struct field assignment: ptr->field = value
+                if (binop->left->type == ASTNode::NodeType::POINTER_MEMBER) {
+                    MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
+
+                    llvm::Value* object_ptr = codegenExpression(member->object.get());
+                    if (!object_ptr || !object_ptr->getType()->isPointerTy()) {
+                        return nullptr;
+                    }
+
+                    Type* pointer_aria_type = nullptr;
+                    auto loadedTypeIt = value_types.find(object_ptr);
+                    if (loadedTypeIt != value_types.end()) {
+                        pointer_aria_type = loadedTypeIt->second;
+                    }
+                    if (!pointer_aria_type && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* ptr_ident = static_cast<IdentifierExpr*>(member->object.get());
+                        auto ptr_it = named_values.find(ptr_ident->name);
+                        if (ptr_it != named_values.end()) {
+                            auto allocaTypeIt = value_types.find(ptr_it->second);
+                            if (allocaTypeIt != value_types.end()) {
+                                pointer_aria_type = allocaTypeIt->second;
+                            }
+                        }
+                    }
+
+                    if (!pointer_aria_type || pointer_aria_type->getKind() != TypeKind::POINTER) {
+                        return nullptr;
+                    }
+
+                    sema::PointerType* ptr_type = static_cast<sema::PointerType*>(pointer_aria_type);
+                    Type* aria_type = ptr_type->getPointeeType();
+                    if (!aria_type || aria_type->getKind() != TypeKind::STRUCT) {
+                        return nullptr;
+                    }
+
+                    StructType* struct_type = static_cast<StructType*>(aria_type);
+                    int field_index = -1;
+                    Type* field_type = nullptr;
+                    const auto& fields = struct_type->getFields();
+                    for (size_t i = 0; i < fields.size(); ++i) {
+                        if (fields[i].name == member->member) {
+                            field_index = static_cast<int>(i);
+                            field_type = fields[i].type;
+                            break;
+                        }
+                    }
+                    if (field_index < 0 || !field_type) {
+                        return nullptr;
+                    }
+
+                    llvm::Type* llvm_struct_type = mapType(struct_type);
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    if (!rhs) return nullptr;
+
+                    llvm::Value* field_ptr = builder.CreateStructGEP(
+                        llvm_struct_type,
+                        object_ptr,
+                        field_index,
+                        member->member + ".ptr"
+                    );
+
+                    llvm::Type* expected_field_type = llvm::cast<llvm::StructType>(llvm_struct_type)->getElementType(field_index);
+                    if (rhs->getType() != expected_field_type) {
+                        if (rhs->getType()->isStructTy()) {
+                            auto* rhs_st = llvm::cast<llvm::StructType>(rhs->getType());
+                            if (rhs_st->getNumElements() == 2 &&
+                                rhs_st->getElementType(0)->isIntegerTy(1) &&
+                                rhs_st->getElementType(1) == expected_field_type) {
+                                rhs = builder.CreateExtractValue(rhs, 1, "unwrap.ptr.field.optional");
+                            }
+                        }
+                        if (rhs->getType() != expected_field_type) {
+                            if (rhs->getType()->isIntegerTy() && expected_field_type->isIntegerTy())
+                                rhs = builder.CreateIntCast(rhs, expected_field_type, true, "ptr.field.icast");
+                            else if (rhs->getType()->isFloatingPointTy() && expected_field_type->isFloatingPointTy())
+                                rhs = builder.CreateFPCast(rhs, expected_field_type, "ptr.field.fpcast");
+                        }
+                    }
+
+                    builder.CreateStore(rhs, field_ptr);
+                    value_types[rhs] = field_type;
+                    return rhs;
+                }
+
                 // Handle struct field assignment: obj.field = value
                 if (binop->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
                     MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
@@ -11287,13 +11390,27 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // (no need to load again since codegenExpression already gives us the pointer value)
             llvm::Value* object_ptr = ptr_val;
             
-            // Look up the Aria type of the pointer
+            // Look up the Aria type of the pointer. Identifier codegen returns the
+            // loaded pointer value, so prefer that value's type but fall back to the
+            // pointer variable alloca where declarations record their semantic type.
+            Type* pointer_aria_type = nullptr;
             auto type_it = value_types.find(ptr_val);
-            if (type_it == value_types.end()) {
+            if (type_it != value_types.end()) {
+                pointer_aria_type = type_it->second;
+            }
+            if (!pointer_aria_type && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ptr_ident = static_cast<IdentifierExpr*>(member->object.get());
+                auto ptr_it = named_values.find(ptr_ident->name);
+                if (ptr_it != named_values.end()) {
+                    auto alloca_type_it = value_types.find(ptr_it->second);
+                    if (alloca_type_it != value_types.end()) {
+                        pointer_aria_type = alloca_type_it->second;
+                    }
+                }
+            }
+            if (!pointer_aria_type) {
                 return nullptr;
             }
-            
-            Type* pointer_aria_type = type_it->second;
             
             // Extract the pointee type
             if (pointer_aria_type->getKind() != TypeKind::POINTER) {
