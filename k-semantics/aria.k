@@ -13,7 +13,7 @@ requires "domains.md"
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
 //   - # pin registration with dereference plus direct/nested mutation and by-value call blocking
-//   - $$i/$$m borrow qualifiers with path-sensitive field tracking and call enforcement
+//   - $$i/$$m borrow qualifiers with nested path-sensitive field tracking and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -36,6 +36,7 @@ module ARIA-SYNTAX
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
      syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
+                         | "NestedFieldPath" "(" Id "," Id "," Id ")"
 
   syntax Val ::= Int
                | Bool
@@ -100,9 +101,11 @@ module ARIA-SYNTAX
                 | MemMode Type ":" Id "=" Exp ";" [strict(4)]
                 | BorrowMode Type ":" Id "=" Id ";"
                 | BorrowMode Type ":" Id "=" Id "." Id ";"
+                | BorrowMode Type ":" Id "=" Id "." Id "." Id ";"
                 | Id "=" Exp ";" [strict(2)]
                 | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
+                | Id "." Id "." Id "=" Exp ";" [strict(4)]
                 | Exp "->" Id "=" Exp ";" [strict(1, 3)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict, prefer]
@@ -370,9 +373,12 @@ module ARIA
   syntax Val ::= argumentValue(Val) [function]
   syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
                 | isImmutableBorrowVar(Id, Map) [function]
-                | hasBorrowOnHost(Id, Set) [function]
+                          | hasBorrowOnHost(Id, Set) [function]
+                          | hasBorrowOnFieldPath(Id, Id, Set) [function]
+                          | hasBorrowOnNestedPath(Id, Id, Id, Set) [function]
      syntax Int ::= envLoc(Map, Id) [function]
   syntax Val ::= fieldValue(Map, Int, Id) [function]
+                         | nestedFieldValue(Map, Int, Id, Id) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
                | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
                | callWritebacks(BorrowInfo, Val) [function]
@@ -423,10 +429,22 @@ module ARIA
      rule hasBorrowOnHost(_:Id, .Set) => false
      rule hasBorrowOnHost(H:Id, SetItem(H) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(FieldPath(H, _:Id)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(NestedFieldPath(H, _:Id, _:Id)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnHost(H, REST) [owise]
+
+     rule hasBorrowOnFieldPath(_:Id, _:Id, .Set) => false
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(FieldPath(H, F)) _:Set) => true
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(NestedFieldPath(H, F, _:Id)) _:Set) => true
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnFieldPath(H, F, REST) [owise]
+
+     rule hasBorrowOnNestedPath(_:Id, _:Id, _:Id, .Set) => false
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, _:Id, SetItem(FieldPath(H, F1)) _:Set) => true
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(NestedFieldPath(H, F1, F2)) _:Set) => true
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnNestedPath(H, F1, F2, REST) [owise]
 
      rule envLoc((H:Id |-> L:Int _:Map), H) => L
      rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
+     rule nestedFieldValue((L:Int |-> StructVal(_:Id, (F1:Id |-> StructVal(_:Id, (F2:Id |-> V:Val _:Map)) _:Map)) _:Map), L, F1, F2) => V
 
   rule <k> $ X:Id => BorrowLoc(MutBorrow, X, L, V) ... </k>
        <env> ... X |-> L ... </env>
@@ -475,6 +493,28 @@ module ARIA
       requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
        andBool notBool(FieldPath(H, F) in Mut) andBool notBool(FieldPath(H, F) in Imm)
 
+  rule <k> $$i T:Type : X:Id = H:Id . F1:Id . F2:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, nestedFieldValue(Store, envLoc(Env, H), F1, F2)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(NestedFieldPath(H, F1, F2)) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Mut))
+
+  rule <k> $$m T:Type : X:Id = H:Id . F1:Id . F2:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, nestedFieldValue(Store, envLoc(Env, H), F1, F2)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <mut-borrow-hosts> Mut => Mut SetItem(NestedFieldPath(H, F1, F2)) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Mut)) andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Imm))
+
   rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
@@ -496,7 +536,7 @@ module ARIA
            <mut-borrow-hosts> Mut </mut-borrow-hosts>
            <failsafe> FS </failsafe>
            <failsafe-triggered> _ => true </failsafe-triggered>
-         requires notBool(H in_keys(Env)) orBool H in Mut orBool FieldPath(H, F) in Mut
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnFieldPath(H, F, Mut) [priority(25)]
 
        rule <k> $$m _:Type : _:Id = H:Id . F:Id ; ~> _ => FS </k>
            <env> Env </env>
@@ -506,7 +546,24 @@ module ARIA
            <failsafe> FS </failsafe>
            <failsafe-triggered> _ => true </failsafe-triggered>
          requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
-          orBool FieldPath(H, F) in Mut orBool FieldPath(H, F) in Imm
+                         orBool hasBorrowOnFieldPath(H, F, Mut) orBool hasBorrowOnFieldPath(H, F, Imm) [priority(25)]
+
+                rule <k> $$i _:Type : _:Id = H:Id . F1:Id . F2:Id ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnNestedPath(H, F1, F2, Mut) [priority(25)]
+
+                rule <k> $$m _:Type : _:Id = H:Id . F1:Id . F2:Id ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                          <pinned-hosts> Pinned </pinned-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+                         orBool hasBorrowOnNestedPath(H, F1, F2, Mut) orBool hasBorrowOnNestedPath(H, F1, F2, Imm) [priority(25)]
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -644,13 +701,43 @@ module ARIA
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
-    requires X in Imm orBool X in Mut orBool FieldPath(X, F) in Imm orBool FieldPath(X, F) in Mut
+    requires X in Imm orBool X in Mut orBool hasBorrowOnFieldPath(X, F, Imm) orBool hasBorrowOnFieldPath(X, F, Mut) [priority(25)]
 
   rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
        <fixed-vars> Fixed </fixed-vars>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires X in Fixed
+
+  rule <k> X:Id . F1:Id . F2:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, (F1 |-> StructVal(NS, (F2 |-> OLD:Val NFields:Map)) Fields:Map)) => StructVal(S, (F1 |-> StructVal(NS, (F2 |-> normalizeLike(OLD, V)) NFields)) Fields)) ... </store>
+       <fixed-vars> Fixed </fixed-vars>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(hasBorrowOnNestedPath(X, F1, F2, Imm)) andBool notBool(hasBorrowOnNestedPath(X, F1, F2, Mut))
+
+  rule <k> X:Id . _:Id . _:Id = _:Val ; ~> _ => FS </k>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+      requires X in Pinned [priority(25)]
+
+  rule <k> X:Id . F1:Id . F2:Id = _:Val ; ~> _ => FS </k>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Imm orBool X in Mut orBool hasBorrowOnNestedPath(X, F1, F2, Imm) orBool hasBorrowOnNestedPath(X, F1, F2, Mut) [priority(25)]
+
+  rule <k> X:Id . _:Id . _:Id = _:Val ; ~> _ => FS </k>
+       <fixed-vars> Fixed </fixed-vars>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Fixed [priority(25)]
 
   rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>

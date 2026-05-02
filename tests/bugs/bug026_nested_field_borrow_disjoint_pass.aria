@@ -1,0 +1,23 @@
+// BUG-026: Nested sibling fields can be borrowed independently.
+// Expected: compile and exit 30
+
+struct:Leaf = {
+    int32:x;
+    int32:y;
+};
+
+struct:Box = {
+    Leaf:leaf;
+    int32:tag;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Box:box = Box{leaf: Leaf{x: 10, y: 20}, tag: 1};
+    $$m int32:rx = box.leaf.x;
+    $$m int32:ry = box.leaf.y;
+    exit box.leaf.x + box.leaf.y;
+};

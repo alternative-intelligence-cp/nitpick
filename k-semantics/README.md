@@ -47,8 +47,12 @@ can eventually answer: “what should this Aria program do?” independently of
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
   direct one-level field path tracking for aliases such as `pair.a`,
   immutable-vs-mutable conflict checks, disjoint-field split borrows,
-  exact borrowed-field assignment blocking, `$$m` argument-shape enforcement,
-  and positive `$$m` call-by-reference writeback for ordinary variable borrows
+  exact borrowed-field assignment blocking, nested two-level struct-field path
+  tracking for aliases such as `box.leaf.x`, nested sibling split borrows,
+  parent/child borrow conflict checks, nested-field mutation, parent-field
+  mutation blocking while a child field is borrowed, `$$m` argument-shape
+  enforcement, and positive `$$m` call-by-reference writeback for ordinary
+  variable borrows
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
@@ -116,8 +120,8 @@ Tests that model terminal output can also include an optional stdout assertion:
 Next increments should add, in order:
 
 1. richer memory and borrow behavior: remaining concrete deeper pin path edge cases,
-  nested/array field borrow paths beyond direct `obj.field`, and field-alias
-  writeback semantics
+  array/index field borrow paths once accepted by the compiler surface, and
+  field-alias writeback semantics
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions

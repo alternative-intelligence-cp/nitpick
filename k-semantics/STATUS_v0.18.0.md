@@ -88,6 +88,12 @@ Branch: `dev-0.18.x`
   checker and in the K oracle, allowing disjoint field borrows such as `pair.a`
   and `pair.b` while rejecting same-field conflicts and assignment to an active
   borrowed field.
+- Added nested struct-field borrow path slice: `$$i`/`$$m` declarations over
+  two-level paths such as `box.leaf.x` now track `NestedFieldPath` entries in
+  the K oracle, allow disjoint sibling paths such as `box.leaf.x` and
+  `box.leaf.y`, reject same-path and parent/child borrow conflicts, allow
+  nested sibling assignment, and route exact-path or parent-field mutation while
+  a child field is borrowed to failsafe.
 - Threaded compiler path loans through snapshots, branch merges, loop back-edge
   merges, equality checks, and scope release so field-sensitive borrows behave
   consistently across existing borrow-control-flow machinery.
@@ -104,7 +110,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 90 core K tests under `krun`.
+- Compiled `aria.k` and passed all 96 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -119,7 +125,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 90 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 96 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -177,6 +183,14 @@ Branch: `dev-0.18.x`
   field aliases are still copy-in rather than writeback aliases, so this slice
   intentionally covers borrow precision and mutation blocking, not field-alias
   writeback codegen.
+- Cross-checked focused nested field-borrow probes with `build/ariac`: disjoint
+  mutable nested sibling borrows (`box.leaf.x` and `box.leaf.y`) compile and
+  exit `30`, sibling nested assignment while another nested field is borrowed
+  exits `22`, same nested path and parent/child borrow conflicts reject with
+  ARIA-023, and exact nested-field or parent-field assignment while a child path
+  is borrowed rejects with ARIA-026. A separate array/index probe was rejected
+  by the current compiler surface as an unsupported borrow initializer, so
+  array/index borrow paths remain intentionally out of scope for this slice.
 - Cross-checked focused `wildx` probes with `build/ariac`: `wildx int8->`
   allocation plus `free` compiles and exits `41`, `defer { free(buffer); }`
   satisfies cleanup obligations and exits `42`, an unfreed `wildx` allocation is
@@ -197,7 +211,7 @@ Branch: `dev-0.18.x`
 
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - stderr/stddbg output cells
-- Struct arrays, nested field paths, generic structs, and legacy `struct Name { ... }` shorthand
+- Struct arrays, array/index field paths, generic structs, and legacy `struct Name { ... }` shorthand
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
@@ -205,14 +219,16 @@ Branch: `dev-0.18.x`
   slices: any remaining concrete deeper pin path edge cases not covered by
   store-through, nested pointer paths, direct host-field mutation, call
   arguments, or terminal exits
-- richer borrow semantics beyond direct one-level field path tracking:
-  nested/array field borrow paths, field-alias writeback codegen, and broader
-  pin-aware field/path edge cases
+- richer borrow semantics beyond direct one-level and currently modeled
+  two-level struct-field path tracking: array/index field borrow paths once
+  accepted by the compiler surface, deeper field paths if/when needed,
+  field-alias writeback codegen, and broader pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order:
-remaining concrete deeper pin path edge cases, nested/array field borrow paths,
-field-alias writeback codegen, or broader symbolic `kprove` lemmas.
+remaining concrete deeper pin path edge cases, array/index field borrow paths
+once accepted by the compiler surface, field-alias writeback codegen, or broader
+symbolic `kprove` lemmas.
