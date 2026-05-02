@@ -1,0 +1,12 @@
+// BUG-024: Pinned hosts must not be used as direct exit values.
+// Expected: error ARIA-016
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 10;
+    int32->:pinned = #value;
+    exit value;
+};

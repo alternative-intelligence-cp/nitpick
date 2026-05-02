@@ -42,7 +42,8 @@ can eventually answer: “what should this Aria program do?” independently of
   pin store-through and pin-member store-through blocking, double-pin blocking,
   same-scope reassignment blocking, pinned-host field mutation blocking,
   pin-derived nested path mutation blocking, block-scoped pin release, and
-  mutable-borrow blocking while immutable aliases remain allowed
+  pinned-host by-value helper-call / terminal-exit blocking, plus mutable-borrow
+  blocking while immutable aliases remain allowed
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
   direct one-level field path tracking for aliases such as `pair.a`,
   immutable-vs-mutable conflict checks, disjoint-field split borrows,
@@ -114,7 +115,7 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: any remaining deeper pin path edge cases,
+1. richer memory and borrow behavior: remaining concrete deeper pin path edge cases,
   nested/array field borrow paths beyond direct `obj.field`, and field-alias
   writeback semantics
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT

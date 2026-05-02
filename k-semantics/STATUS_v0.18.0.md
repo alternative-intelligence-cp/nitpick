@@ -64,6 +64,13 @@ Branch: `dev-0.18.x`
   pins do not leak into callers and caller pins are restored after return.
 - Added focused pin call-frame regressions for callee-local pin release and
   caller-pin preservation across helper calls.
+- Added pinned-host by-value rejection slice: K now routes plain pinned
+  identifiers used as helper-call arguments or direct terminal `exit` values to
+  failsafe before strict evaluation erases the source identifier, matching
+  `ariac` ARIA-016 behavior across one-argument calls, both two-argument
+  positions, `$$i` parameters, and `exit` / `exit(...)` spellings.
+- Resolved the parenthesized `exit(value);` K parse ambiguity by preferring the
+  explicit `exit ( Exp ) ;` production, matching accepted `ariac` syntax.
 - Added pointer-member read/store-through slice: `ptr->field` now reads through
   a local pointer to a struct binding, `ptr->field = value;` stores through the
   selected field in both `ariac` LLVM codegen and the K oracle, and
@@ -97,7 +104,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 84 core K tests under `krun`.
+- Compiled `aria.k` and passed all 90 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -112,7 +119,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 84 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 90 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -175,6 +182,11 @@ Branch: `dev-0.18.x`
   satisfies cleanup obligations and exits `42`, an unfreed `wildx` allocation is
   statically rejected with ARIA-014, double-free is rejected with ARIA-022, and
   combining `wildx` with `$$i`/`$$m` remains rejected by the type checker.
+- Cross-checked focused pinned-by-value regressions with `build/ariac`: pinned
+  hosts passed as helper-call arguments are rejected with ARIA-016 for
+  one-argument calls, first and second two-argument positions, and `$$i`
+  parameters; direct `exit value;` and `exit(value);` with an active pin are
+  also rejected with ARIA-016.
 - `git diff --check`: passed.
 - `ctest --test-dir build -R '^k_semantics_core$' --output-on-failure -V`:
   `k_semantics_core` passed with K enabled.
@@ -190,7 +202,9 @@ Branch: `dev-0.18.x`
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin/wildx
-  slices: any remaining deeper pin path edge cases
+  slices: any remaining concrete deeper pin path edge cases not covered by
+  store-through, nested pointer paths, direct host-field mutation, call
+  arguments, or terminal exits
 - richer borrow semantics beyond direct one-level field path tracking:
   nested/array field borrow paths, field-alias writeback codegen, and broader
   pin-aware field/path edge cases
@@ -200,5 +214,5 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order:
-any remaining deeper pin path edge cases, nested/array field borrow paths,
+remaining concrete deeper pin path edge cases, nested/array field borrow paths,
 field-alias writeback codegen, or broader symbolic `kprove` lemmas.

@@ -1,0 +1,17 @@
+// BUG-020: Pinned hosts must not be passed by value.
+// Expected: error ARIA-016
+
+func:identity = int32(int32:x) {
+    pass x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 10;
+    int32->:pinned = #value;
+    int32:got = raw identity(value);
+    exit got;
+};

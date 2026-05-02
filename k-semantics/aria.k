@@ -12,7 +12,7 @@ requires "domains.md"
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
-//   - # pin registration with dereference plus direct/nested mutation blocking
+//   - # pin registration with dereference plus direct/nested mutation and by-value call blocking
 //   - $$i/$$m borrow qualifiers with path-sensitive field tracking and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
@@ -105,7 +105,7 @@ module ARIA-SYNTAX
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | Exp "->" Id "=" Exp ";" [strict(1, 3)]
                 | "exit" Exp ";" [strict]
-                | "exit" "(" Exp ")" ";" [strict]
+                | "exit" "(" Exp ")" ";" [strict, prefer]
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
                 | "if" "(" Exp ")" Block [strict(1)]
                 | "pick" "(" Exp ")" "{" PickCases "}" [strict(1)]
@@ -863,6 +863,55 @@ module ARIA
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1Fail(_:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Fail(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Fail(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
   rule <k> F:Id(A:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn1Pass(_:Type, B, _:Type, _:Id, _:Exp) ... </functions>
        <failsafe> FS </failsafe>
@@ -1322,6 +1371,18 @@ module ARIA
   // -------------------------------------------------------------------------
   // Terminal process semantics
   // -------------------------------------------------------------------------
+
+     rule <k> exit X:Id ; ~> _ => FS </k>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> exit ( X:Id ) ; ~> _ => FS </k>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
 
   rule <k> exit V:Val ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit V ; ... </k>
        <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
