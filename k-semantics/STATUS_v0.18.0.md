@@ -94,6 +94,10 @@ Branch: `dev-0.18.x`
   `box.leaf.y`, reject same-path and parent/child borrow conflicts, allow
   nested sibling assignment, and route exact-path or parent-field mutation while
   a child field is borrowed to failsafe.
+- Added mutable field-alias writeback slice: local `$$m` aliases over direct
+  and two-level struct-field paths now carry source-field alias metadata in the
+  K oracle, `alias = value;` updates both the local alias and source field, and
+  `ariac` lowers those aliases to LLVM field pointers instead of copy-in locals.
 - Threaded compiler path loans through snapshots, branch merges, loop back-edge
   merges, equality checks, and scope release so field-sensitive borrows behave
   consistently across existing borrow-control-flow machinery.
@@ -110,7 +114,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 96 core K tests under `krun`.
+- Compiled `aria.k` and passed all 100 core K tests under `krun`.
 - Proved the first `kprove` proof module under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -125,7 +129,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 96 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -191,6 +195,12 @@ Branch: `dev-0.18.x`
   is borrowed rejects with ARIA-026. A separate array/index probe was rejected
   by the current compiler surface as an unsupported borrow initializer, so
   array/index borrow paths remain intentionally out of scope for this slice.
+- Cross-checked focused field-alias writeback probes with `build/ariac`: direct
+  mutable field alias assignment updates the source field and exits `33`,
+  nested mutable field alias assignment updates the nested source field and
+  exits `44`, direct alias reads still load through the field pointer and exit
+  `10`, and assigning through an immutable field alias remains statically
+  rejected with the immutable-borrow diagnostic.
 - Cross-checked focused `wildx` probes with `build/ariac`: `wildx int8->`
   allocation plus `free` compiles and exits `41`, `defer { free(buffer); }`
   satisfies cleanup obligations and exits `42`, an unfreed `wildx` allocation is
@@ -221,8 +231,8 @@ Branch: `dev-0.18.x`
   arguments, or terminal exits
 - richer borrow semantics beyond direct one-level and currently modeled
   two-level struct-field path tracking: array/index field borrow paths once
-  accepted by the compiler surface, deeper field paths if/when needed,
-  field-alias writeback codegen, and broader pin-aware field/path edge cases
+  accepted by the compiler surface, deeper field paths if/when needed, and
+  broader pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 
@@ -230,5 +240,4 @@ Branch: `dev-0.18.x`
 
 Expand semantic coverage in the next small slice. Recommended order:
 remaining concrete deeper pin path edge cases, array/index field borrow paths
-once accepted by the compiler surface, field-alias writeback codegen, or broader
-symbolic `kprove` lemmas.
+once accepted by the compiler surface, or broader symbolic `kprove` lemmas.

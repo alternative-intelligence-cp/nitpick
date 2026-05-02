@@ -1693,6 +1693,20 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
 #endif
         return loaded;
     }
+
+    // v0.18.0: local mutable borrow aliases over struct fields are stored as
+    // GEP pointers into the borrowed aggregate, not as allocas. Expression
+    // helpers (notably exit(...)) still need identifier reads to load through
+    // those pointers instead of treating the pointer itself as the value.
+    if (var_ptr->getType()->isPointerTy() && !llvm::isa<llvm::Argument>(var_ptr)) {
+        auto typeIt = var_aria_types.find(expr->name);
+        if (typeIt != var_aria_types.end()) {
+            llvm::Type* loadType = getLLVMTypeFromString(typeIt->second);
+            if (loadType) {
+                return builder.CreateLoad(loadType, var_ptr, expr->name);
+            }
+        }
+    }
     
     // If it's not an alloca or global, return the value directly
     // (could be a function parameter or SSA value)  

@@ -57,6 +57,109 @@ void IRGenerator::setTypeSystem(TypeSystem* ts) {
     type_system = ts;
 }
 
+llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) {
+    if (out_type) {
+        *out_type = nullptr;
+    }
+    if (!expr) {
+        return nullptr;
+    }
+
+    if (expr->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
+        auto it = named_values.find(ident->name);
+        if (it == named_values.end()) {
+            return nullptr;
+        }
+        if (out_type) {
+            auto type_it = value_types.find(it->second);
+            if (type_it != value_types.end()) {
+                *out_type = type_it->second;
+            }
+        }
+        return it->second;
+    }
+
+    if (expr->type != ASTNode::NodeType::MEMBER_ACCESS) {
+        return nullptr;
+    }
+
+    std::vector<std::string> field_chain;
+    ASTNode* cur = expr;
+    while (cur && cur->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(cur);
+        if (member->isPointerAccess) {
+            return nullptr;
+        }
+        field_chain.push_back(member->member);
+        cur = member->object.get();
+    }
+
+    if (!cur || cur->type != ASTNode::NodeType::IDENTIFIER || field_chain.empty()) {
+        return nullptr;
+    }
+
+    IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(cur);
+    auto root_it = named_values.find(root_ident->name);
+    if (root_it == named_values.end()) {
+        return nullptr;
+    }
+
+    llvm::Value* cur_ptr = root_it->second;
+    llvm::Type* cur_llvm_type = nullptr;
+    if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(cur_ptr)) {
+        cur_llvm_type = alloca_inst->getAllocatedType();
+    } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(cur_ptr)) {
+        cur_llvm_type = global->getValueType();
+    }
+
+    Type* cur_aria_type = nullptr;
+    auto value_type_it = value_types.find(cur_ptr);
+    if (value_type_it != value_types.end()) {
+        cur_aria_type = value_type_it->second;
+    }
+    if (!cur_aria_type && type_system) {
+        auto name_it = var_aria_types.find(root_ident->name);
+        if (name_it != var_aria_types.end()) {
+            cur_aria_type = type_system->getStructType(name_it->second);
+        }
+    }
+    if (!cur_llvm_type && cur_aria_type) {
+        cur_llvm_type = mapType(cur_aria_type);
+    }
+
+    for (int i = static_cast<int>(field_chain.size()) - 1; i >= 0; --i) {
+        if (!cur_aria_type || cur_aria_type->getKind() != TypeKind::STRUCT ||
+            !cur_llvm_type || !cur_llvm_type->isStructTy()) {
+            return nullptr;
+        }
+
+        sema::StructType* struct_type = static_cast<sema::StructType*>(cur_aria_type);
+        const std::string& field_name = field_chain[static_cast<size_t>(i)];
+        int field_index = struct_type->getFieldIndex(field_name);
+        if (field_index < 0) {
+            return nullptr;
+        }
+        const sema::StructType::Field* field = struct_type->getField(field_name);
+        if (!field) {
+            return nullptr;
+        }
+
+        cur_ptr = builder.CreateStructGEP(cur_llvm_type, cur_ptr, field_index,
+                                          field_name + ".borrow.ptr");
+        cur_llvm_type = llvm::cast<llvm::StructType>(cur_llvm_type)->getElementType(field_index);
+        cur_aria_type = field->type;
+    }
+
+    if (cur_aria_type) {
+        value_types[cur_ptr] = cur_aria_type;
+    }
+    if (out_type) {
+        *out_type = cur_aria_type;
+    }
+    return cur_ptr;
+}
+
 // Helper: Promote int64 literal to LBIM struct (int128/256/512/1024/2048/4096)
 llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* targetType) {
     // Verify target is a struct type
@@ -4722,18 +4825,17 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // v0.2.35: Borrow variables ($$i/$$m) — alias the original
             // ================================================================
             if (varDecl->isBorrowImm || varDecl->isBorrowMut) {
-                if (varDecl->initializer && 
-                    varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
-                    std::string target_name = 
-                        static_cast<IdentifierExpr*>(varDecl->initializer.get())->name;
-                    auto it = named_values.find(target_name);
-                    if (it != named_values.end()) {
-                        named_values[varDecl->varName] = it->second;
-                        var_aria_types[varDecl->varName] = actualTypeName;
-                        ARIA_DBG_STREAM << "[DEBUG] Borrow " << varDecl->varName 
-                                  << " aliased to " << target_name << std::endl;
-                        return nullptr;
+                Type* alias_type = nullptr;
+                llvm::Value* alias_ptr = getBorrowAliasPointer(varDecl->initializer.get(), &alias_type);
+                if (alias_ptr) {
+                    named_values[varDecl->varName] = alias_ptr;
+                    var_aria_types[varDecl->varName] = actualTypeName;
+                    if (alias_type) {
+                        value_types[alias_ptr] = alias_type;
                     }
+                    ARIA_DBG_STREAM << "[DEBUG] Borrow " << varDecl->varName
+                              << " aliased to initializer storage" << std::endl;
+                    return nullptr;
                 }
                 // Fallthrough if target not found (shouldn't happen after type checker)
             }
@@ -7269,6 +7371,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                                 ARIA_DBG_STREAM << "[DEBUG]   Allocated type name: " << st->getName().str() << std::endl;
                             }
                         }
+                    } else {
+                        auto valueTypeIt = value_types.find(val);
+                        if (valueTypeIt != value_types.end()) {
+                            llvm::Type* mappedType = mapType(valueTypeIt->second);
+                            if (mappedType) loadType = mappedType;
+                        } else {
+                            auto ariaIt = var_aria_types.find(ident->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                                if (mappedType) loadType = mappedType;
+                            }
+                        }
                     }
                     
                     // Create the load instruction
@@ -8599,8 +8713,20 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     } else if (isMutableBorrowParam(lhs->name)) {
                         varElemType = mutableBorrowValueType(lhs->name);
                     } else {
-                        // For now, default to int32 if not an alloca
-                        varElemType = builder.getInt32Ty();
+                        auto valueTypeIt = value_types.find(var);
+                        if (valueTypeIt != value_types.end()) {
+                            varElemType = mapType(valueTypeIt->second);
+                        }
+                        if (!varElemType) {
+                            auto ariaIt = var_aria_types.find(lhs->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                varElemType = mapTypeFromName(ariaIt->second);
+                            }
+                        }
+                        if (!varElemType) {
+                            // For now, default to int32 if not an alloca
+                            varElemType = builder.getInt32Ty();
+                        }
                     }
                     
                     llvm::Value* currentVal = builder.CreateLoad(varElemType, var, lhs->name);
@@ -8704,6 +8830,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     targetType = allocaInst->getAllocatedType();
                 } else if (isMutableBorrowParam(lhs->name)) {
                     targetType = mutableBorrowValueType(lhs->name);
+                } else {
+                    auto valueTypeIt = value_types.find(var);
+                    if (valueTypeIt != value_types.end()) {
+                        targetType = mapType(valueTypeIt->second);
+                    }
+                    if (!targetType) {
+                        auto ariaIt = var_aria_types.find(lhs->name);
+                        if (ariaIt != var_aria_types.end()) {
+                            targetType = mapTypeFromName(ariaIt->second);
+                        }
+                    }
                 }
                 if (targetType) {
                     if (result->getType() != targetType) {

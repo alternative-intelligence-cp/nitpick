@@ -37,6 +37,8 @@ module ARIA-SYNTAX
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
      syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
                          | "NestedFieldPath" "(" Id "," Id "," Id ")"
+     syntax BorrowAlias ::= "FieldAlias" "(" Id "," Id ")"
+                          | "NestedFieldAlias" "(" Id "," Id "," Id ")"
 
   syntax Val ::= Int
                | Bool
@@ -167,6 +169,7 @@ module ARIA
      <wild-live> .Set </wild-live>
      <defer-stack> .List </defer-stack>
      <borrow-vars> .Map </borrow-vars>
+     <borrow-aliases> .Map </borrow-aliases>
      <imm-borrow-hosts> .Set </imm-borrow-hosts>
      <mut-borrow-hosts> .Set </mut-borrow-hosts>
      <pinned-hosts> .Set </pinned-hosts>
@@ -487,6 +490,7 @@ module ARIA
            <store> Store => Store [ L <- normalizeValue(T, fieldValue(Store, envLoc(Env, H), F)) ] </store>
            <next-loc> L => L +Int 1 </next-loc>
            <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- FieldAlias(H, F) ] </borrow-aliases>
            <mut-borrow-hosts> Mut => Mut SetItem(FieldPath(H, F)) </mut-borrow-hosts>
            <imm-borrow-hosts> Imm </imm-borrow-hosts>
            <pinned-hosts> Pinned </pinned-hosts>
@@ -509,6 +513,7 @@ module ARIA
            <store> Store => Store [ L <- normalizeValue(T, nestedFieldValue(Store, envLoc(Env, H), F1, F2)) ] </store>
            <next-loc> L => L +Int 1 </next-loc>
            <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- NestedFieldAlias(H, F1, F2) ] </borrow-aliases>
            <mut-borrow-hosts> Mut => Mut SetItem(NestedFieldPath(H, F1, F2)) </mut-borrow-hosts>
            <imm-borrow-hosts> Imm </imm-borrow-hosts>
            <pinned-hosts> Pinned </pinned-hosts>
@@ -793,7 +798,7 @@ module ARIA
                           | "Fn2Pass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
                           | "Fn2Fail" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
 
-     syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Set "," Set "," Set "," Set "," Int ")"
+     syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Map "," Set "," Set "," Set "," Set "," Int ")"
 
   syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
                  | "finishCallPass" "(" Type ")"
@@ -826,7 +831,7 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = _T:Type(P1:Param, P2:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Fail(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
-     rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
+     rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Pass(T, E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
@@ -837,13 +842,14 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => .Map </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id() => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
+     rule <k> F:Id() => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Fail(E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
@@ -854,13 +860,14 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => .Map </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
+     rule <k> F:Id(A:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Pass(T, B, PT, PX, E) ... </functions>
        <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
@@ -871,6 +878,7 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
@@ -878,7 +886,7 @@ module ARIA
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-     rule <k> F:Id(A:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
+     rule <k> F:Id(A:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
                 <functions> ... F |-> Fn1StmtPass(T, B, PT, PX, S, E) ... </functions>
                 <env> Env => PX |-> callParamLoc(L, B, A) </env>
                 <types> Types => PX |-> PT </types>
@@ -889,6 +897,7 @@ module ARIA
                 <gc-live> GC => .Set </gc-live>
                 <wild-live> Wild => .Set </wild-live>
                 <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+                <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
                 <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
                 <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
                 <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
@@ -896,7 +905,7 @@ module ARIA
                 <next-loc> L => L +Int 1 </next-loc>
           requires acceptsBorrowArg(B, A)
 
-     rule <k> F:Id(A:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
+     rule <k> F:Id(A:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Fail(B, PT, PX, E) ... </functions>
                 <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
@@ -907,6 +916,7 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
@@ -914,7 +924,7 @@ module ARIA
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
+     rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Pass(T, B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
@@ -925,6 +935,7 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
      <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
@@ -932,7 +943,7 @@ module ARIA
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
+     rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Fail(B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
@@ -943,6 +954,7 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
                 <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
@@ -1032,7 +1044,7 @@ module ARIA
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
-     rule <k> V:Val ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(NIL, normalizeValue(T, V), false) ... </k>
+     rule <k> V:Val ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(NIL, normalizeValue(T, V), false) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
@@ -1042,13 +1054,14 @@ module ARIA
        <gc-live> _ => GC </gc-live>
        <wild-live> _ => Wild </wild-live>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+     <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
      <pinned-hosts> _ => PinnedHosts </pinned-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
-           rule <k> V:Val ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(NIL, normalizeValue(T, V), false) ... </k>
+           rule <k> V:Val ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(NIL, normalizeValue(T, V), false) ... </k>
                 <env> _ => Env </env>
                 <types> _ => Types </types>
                 <store> Current => writebackStore(Store, Current, W) </store>
@@ -1058,13 +1071,14 @@ module ARIA
                 <gc-live> _ => GC </gc-live>
                 <wild-live> _ => Wild </wild-live>
                 <borrow-vars> _ => BorrowVars </borrow-vars>
+                <borrow-aliases> _ => BorrowAliases </borrow-aliases>
                 <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
                 <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
            <pinned-hosts> _ => PinnedHosts </pinned-hosts>
                 <fixed-vars> _ => Fixed </fixed-vars>
                 <next-loc> _ => Next </next-loc>
 
-  rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
+     rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
@@ -1074,13 +1088,14 @@ module ARIA
        <gc-live> _ => GC </gc-live>
        <wild-live> _ => Wild </wild-live>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+     <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
      <pinned-hosts> _ => PinnedHosts </pinned-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
-     rule <k> V:Val ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(V, NIL, true) ... </k>
+     rule <k> V:Val ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(V, NIL, true) ... </k>
                 <env> _ => Env </env>
                 <types> _ => Types </types>
                 <store> Current => writebackStore(Store, Current, W) </store>
@@ -1090,6 +1105,7 @@ module ARIA
                 <gc-live> _ => GC </gc-live>
                 <wild-live> _ => Wild </wild-live>
                 <borrow-vars> _ => BorrowVars </borrow-vars>
+                <borrow-aliases> _ => BorrowAliases </borrow-aliases>
                 <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
                 <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
            <pinned-hosts> _ => PinnedHosts </pinned-hosts>
@@ -1100,7 +1116,7 @@ module ARIA
   // Statement sequencing and blocks
   // -------------------------------------------------------------------------
 
-     syntax KItem ::= "DeferScope" "(" List "," Map "," Set "," Set "," Set ")"
+     syntax KItem ::= "DeferScope" "(" List "," Map "," Map "," Set "," Set "," Set ")"
                  | "Deferred" "(" Stmts ")"
                  | "enterBlock"
                  | "leaveBlock"
@@ -1110,14 +1126,15 @@ module ARIA
   rule <k> { SS:Stmts } => enterBlock ~> SS ~> leaveBlock ... </k>
 
   rule <k> enterBlock => .K ... </k>
-       <defer-stack> DS => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) DS </defer-stack>
+       <defer-stack> DS => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) DS </defer-stack>
        <borrow-vars> BorrowVars </borrow-vars>
+       <borrow-aliases> BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
        <pinned-hosts> PinnedHosts </pinned-hosts>
 
   rule <k> defer { SS:Stmts } => .K ... </k>
-       <defer-stack> ListItem(DeferScope(OLD:List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(OLD:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> defer _:Block ~> _ => FS </k>
        <defer-stack> .List </defer-stack>
@@ -1125,14 +1142,15 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   rule <k> leaveBlock => runDefers(DS) ~> popBlock ... </k>
-       <defer-stack> ListItem(DeferScope(DS:List, _:Map, _:Set, _:Set, _:Set)) _:List </defer-stack>
+       <defer-stack> ListItem(DeferScope(DS:List, _:Map, _:Map, _:Set, _:Set, _:Set)) _:List </defer-stack>
 
   rule <k> runDefers(.List) => .K ... </k>
   rule <k> runDefers(ListItem(Deferred(SS:Stmts)) REST:List) => SS ~> runDefers(REST) ... </k>
 
   rule <k> popBlock => .K ... </k>
-       <defer-stack> ListItem(DeferScope(_:List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(_:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
        <pinned-hosts> _ => PinnedHosts </pinned-hosts>
@@ -1169,13 +1187,34 @@ module ARIA
         <limits> Limits </limits>
        <fixed-vars> Fixed </fixed-vars>
         <borrow-vars> BorrowVars </borrow-vars>
+        <borrow-aliases> BorrowAliases </borrow-aliases>
         <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
         <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
         <pinned-hosts> PinnedHosts </pinned-hosts>
      requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
       andBool notBool(isImmutableBorrowVar(X, BorrowVars))
+       andBool notBool(X in_keys(BorrowAliases))
      andBool notBool(hasBorrowOnHost(X, ImmHosts)) andBool notBool(hasBorrowOnHost(X, MutHosts))
       andBool notBool(X in PinnedHosts)
+
+  rule <k> X:Id = V:Val ; => .K ... </k>
+        <env> ... X |-> AL H |-> HL ... </env>
+        <types> ... X |-> T ... </types>
+        <store> ... AL |-> (_:Val => normalizeValue(T, V)) HL |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+        <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+        <borrow-aliases> ... X |-> FieldAlias(H, F) ... </borrow-aliases>
+        <fixed-vars> Fixed </fixed-vars>
+        <pinned-hosts> PinnedHosts </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in PinnedHosts)
+
+  rule <k> X:Id = V:Val ; => .K ... </k>
+        <env> ... X |-> AL H |-> HL ... </env>
+        <store> ... AL |-> (_:Val => normalizeLike(OLD, V)) HL |-> (StructVal(S, (F1 |-> StructVal(NS, (F2 |-> OLD:Val NFields:Map)) Fields:Map)) => StructVal(S, (F1 |-> StructVal(NS, (F2 |-> normalizeLike(OLD, V)) NFields)) Fields)) ... </store>
+        <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+        <borrow-aliases> ... X |-> NestedFieldAlias(H, F1, F2) ... </borrow-aliases>
+        <fixed-vars> Fixed </fixed-vars>
+        <pinned-hosts> PinnedHosts </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in PinnedHosts)
 
   rule <k> X:Id = _:Val ; ~> _ => FS </k>
         <borrow-vars> BorrowVars </borrow-vars>
@@ -1472,21 +1511,23 @@ module ARIA
           requires X in Pinned [priority(25)]
 
   rule <k> exit V:Val ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> exit ( V:Val ) ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> exit V:Val ; => exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
        <pinned-hosts> _ => PinnedHosts </pinned-hosts>
 
   rule <k> exit ( V:Val ) ; => exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List, BorrowVars, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
        <pinned-hosts> _ => PinnedHosts </pinned-hosts>
