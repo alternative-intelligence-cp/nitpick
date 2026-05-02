@@ -23,7 +23,7 @@ is building a formal K Framework oracle for “what should this program do?”
 independent of `ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **80/80** under K Framework v7.1.320;
+`k_semantics_core` **84/84** under K Framework v7.1.320;
 `k_semantics_proofs` **1/1 proof module** with three initial `kprove` claims;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
@@ -41,7 +41,9 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
     integer `limit<Rules>` declaration and reassignment checks with failsafe
     routing, cascaded rules, initial memory allocation qualifier semantics for
     `stack`/`gc`/`wild`, `alloc`/`free` wild cleanup and leak routing, initial
-    `defer { ... }` block-scoped LIFO cleanup semantics, local pointer
+    `wildx` declarations as explicit executable-memory allocations sharing the
+    currently modeled wild cleanup/leak lifecycle, initial `defer { ... }`
+    block-scoped LIFO cleanup semantics, local pointer
     address/dereference/store-through semantics for `@value`, `<-ptr`, and
     `<-ptr = value`, pointer-member reads and store-through via `ptr->field`,
     including nested pointer-valued paths such as `ptr->leaf->x`,
@@ -61,8 +63,8 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 - **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
     semantics with the Haskell backend required by `kprove` and proves the first
     executable-core claim module.
-- **Next semantic slice** — richer memory/borrow behavior (`wildx`, any remaining
-    deeper pin path edge cases, nested/array field borrow paths)
+- **Next semantic slice** — richer memory/borrow behavior (any remaining deeper
+    pin path edge cases, nested/array field borrow paths, field-alias writeback)
     and broader symbolic `kprove` lemmas.
 
 **Recently completed series:**
@@ -96,7 +98,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 80/80 core tests, 1/1 proof module |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 84/84 core tests, 1/1 proof module |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |

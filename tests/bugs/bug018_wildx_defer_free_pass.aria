@@ -1,0 +1,12 @@
+// BUG-018: defer free should satisfy wildx cleanup obligations.
+// Expected: compile and exit 42.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    wildx int8->:buffer = alloc(64);
+    defer { free(buffer); }
+    exit 42;
+};

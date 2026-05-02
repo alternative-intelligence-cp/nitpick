@@ -8,7 +8,7 @@ requires "domains.md"
 //   - isolated helper call frames for parameters and local bindings
 //   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
-//   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
+//   - stack/gc/wild/wildx declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
 //   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
@@ -32,7 +32,7 @@ module ARIA-SYNTAX
   imports ID-SYNTAX
 
      syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Id
-     syntax MemMode ::= "stack" | "gc" | "wild"
+     syntax MemMode ::= "stack" | "gc" | "wild" | "wildx"
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
      syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
@@ -245,16 +245,17 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   // -------------------------------------------------------------------------
-  // Memory allocation qualifiers: stack / gc / wild
+     // Memory allocation qualifiers: stack / gc / wild / wildx
   // -------------------------------------------------------------------------
 
-  syntax MemInfo ::= "StackMem" | "GCMem" | "WildMem"
+     syntax MemInfo ::= "StackMem" | "GCMem" | "WildMem" | "WildXMem"
 
   syntax KItem ::= "storeMemory" "(" MemInfo "," Type "," Id "," Val ")"
 
   rule <k> stack T:Type : X:Id = V:Val ; => storeMemory(StackMem, T, X, normalizeValue(T, V)) ... </k>
   rule <k> gc    T:Type : X:Id = V:Val ; => storeMemory(GCMem,    T, X, normalizeValue(T, V)) ... </k>
   rule <k> wild  T:Type : X:Id = V:Val ; => storeMemory(WildMem,  T, X, normalizeValue(T, V)) ... </k>
+     rule <k> wildx T:Type : X:Id = V:Val ; => storeMemory(WildXMem, T, X, normalizeValue(T, V)) ... </k>
 
   rule <k> storeMemory(StackMem, T:Type, X:Id, V:Val) => .K ... </k>
        <env> Env => Env [ X <- L ] </env>
@@ -277,6 +278,14 @@ module ARIA
        <types> Types => Types [ X <- T ] </types>
        <store> Store => Store [ L <- V ] </store>
        <mem-modes> Modes => Modes [ X <- WildMem ] </mem-modes>
+       <wild-live> Wild => Wild SetItem(L) </wild-live>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  rule <k> storeMemory(WildXMem, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <mem-modes> Modes => Modes [ X <- WildXMem ] </mem-modes>
        <wild-live> Wild => Wild SetItem(L) </wild-live>
        <next-loc> L => L +Int 1 </next-loc>
 

@@ -21,10 +21,11 @@ can eventually answer: “what should this Aria program do?” independently of
   conditions and cascaded `limit<OtherRules>` references
 - `limit<RulesName> Type:x = expr;` declarations and reassignment checks for
   numeric values, including failsafe routing on violated constraints
-- `stack`, `gc`, and `wild` declaration qualifiers with live allocation-class
+- `stack`, `gc`, `wild`, and `wildx` declaration qualifiers with live allocation-class
   tracking cells
-- `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
-  for leaked or invalid wild frees
+- `wild int8->:p = alloc(size);` / `wildx int8->:p = alloc(size);`
+  declarations, `free(p);`, and failsafe routing for leaked or invalid
+  wild-family frees
 - `defer { ... }` cleanup blocks, registered per block scope and executed in
   LIFO order on scope exit or before terminal `exit`
 - standalone nested `{ ... }` statement blocks with block-exit restoration of
@@ -113,8 +114,9 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: `wildx`, any remaining deeper pin path
-  edge cases, and nested/array field borrow paths beyond direct `obj.field`
+1. richer memory and borrow behavior: any remaining deeper pin path edge cases,
+  nested/array field borrow paths beyond direct `obj.field`, and field-alias
+  writeback semantics
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
   borrow permissions
