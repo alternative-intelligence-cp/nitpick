@@ -3,9 +3,9 @@
 func:test_immutable_borrows = int32() {
     // Test 1: Multiple immutable borrows are allowed
     int32:x = 42;
-    int32$:ref1 = !$x;   // First immutable borrow
-    int32$:ref2 = !$x;   // Second immutable borrow - should be OK
-    int32$:ref3 = !$x;   // Third immutable borrow - should be OK
+    $$i int32:ref1 = x;   // First immutable borrow
+    $$i int32:ref2 = x;   // Second immutable borrow - should be OK
+    $$i int32:ref3 = x;   // Third immutable borrow - should be OK
     
     int32:zero = 0;
     pass zero;
@@ -14,7 +14,7 @@ func:test_immutable_borrows = int32() {
 func:test_single_mutable_borrow = int32() {
     // Test 2: Single mutable borrow is allowed
     int32:y = 100;
-    int32$:mut_ref = $y;  // Mutable borrow - should be OK
+    $$m int32:mut_ref = y;  // Mutable borrow - should be OK
     
     int32:zero = 0;
     pass zero;
@@ -28,8 +28,8 @@ func:test_mutable_blocks_immutable = int32() {
     // Test 3: Cannot create immutable borrow when mutable exists
     // This should FAIL at compile time
     int32:z = 50;
-    int32$:mut_ref = $z;   // Mutable borrow
-    int32$:imm_ref = !$z;  // ERROR: Cannot borrow as immutable while mutably borrowed
+    $$m int32:mut_ref = z;   // Mutable borrow
+    $$i int32:imm_ref = z;   // ERROR: Cannot borrow as immutable while mutably borrowed
     
     int32:one = 1;
     pass(one);
@@ -39,8 +39,8 @@ func:test_immutable_blocks_mutable = int32() {
     // Test 4: Cannot create mutable borrow when immutable exists
     // This should FAIL at compile time
     int32:w = 75;
-    int32$:ref1 = !$w;     // Immutable borrow
-    int32$:mut_ref = $w;   // ERROR: Cannot borrow as mutable while immutably borrowed
+    $$i int32:ref1 = w;      // Immutable borrow
+    $$m int32:mut_ref = w;   // ERROR: Cannot borrow as mutable while immutably borrowed
     
     int32:one = 1;
     pass(one);
@@ -52,10 +52,10 @@ func:test_scope_releases_borrows = int32() {
     int32:a = 10;
     
     {
-        int32$:ref = !$a;     // Borrow in inner scope
+        $$i int32:ref = a;     // Borrow in inner scope
     }  // ref goes out of scope here
     
-    int32$:mut_ref = $a;  // Should be OK - no active borrows
+    $$m int32:mut_ref = a;  // Should be OK - no active borrows
     int32:zero = 0;
     pass zero;
 };

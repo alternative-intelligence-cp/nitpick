@@ -54,8 +54,6 @@ module ARIA-SYNTAX
                | "PTRLOC" "(" Int ")"
                | "PINPTRLOC" "(" Int ")"
                | "PINPATHLOC" "(" Int ")"
-               | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
-               | "BorrowLoc" "(" BorrowInfo "," Id "," Int "," Val ")"
 
   syntax KResult ::= Val
 
@@ -68,8 +66,6 @@ module ARIA-SYNTAX
                | "@" Id
                | "#" Id
                | "<-" Exp [strict]
-               | "$" Id
-               | "!" "$" Id
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
@@ -400,22 +396,16 @@ module ARIA
   rule paramBorrow($$i _:Type : _:Id) => ImmBorrow
   rule paramBorrow($$m _:Type : _:Id) => MutBorrow
 
-     rule argumentValue(BorrowLoc(_:BorrowInfo, _:Id, _:Int, V:Val)) => V
-     rule argumentValue(BorrowVal(_:BorrowInfo, _:Id, V:Val)) => V
   rule argumentValue(V:Val) => V [owise]
 
-     rule acceptsBorrowArg(MutBorrow, BorrowLoc(MutBorrow, _:Id, _:Int, _:Val)) => true
-  rule acceptsBorrowArg(MutBorrow, BorrowVal(MutBorrow, _:Id, _:Val)) => true
   rule acceptsBorrowArg(MutBorrow, _) => false [owise]
   rule acceptsBorrowArg(ImmBorrow, _) => true
   rule acceptsBorrowArg(CopyBorrow, _) => true
 
-     rule callParamLoc(_:Int, MutBorrow, BorrowLoc(MutBorrow, _:Id, BL:Int, _:Val)) => BL
      rule callParamLoc(L:Int, _:BorrowInfo, _:Val) => L [owise]
 
      rule callParamStore(Store:Map, PT:Type, B:BorrowInfo, L:Int, A:Val) => Store [ callParamLoc(L, B, A) <- normalizeValue(PT, argumentValue(A)) ]
 
-     rule callWritebacks(MutBorrow, BorrowLoc(MutBorrow, _:Id, L:Int, _:Val)) => L |-> true
      rule callWritebacks(_:BorrowInfo, _:Val) => .Map [owise]
 
      rule writebackStore(Saved:Map, _:Map, .Map) => Saved
@@ -448,14 +438,6 @@ module ARIA
      rule envLoc((H:Id |-> L:Int _:Map), H) => L
      rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
      rule nestedFieldValue((L:Int |-> StructVal(_:Id, (F1:Id |-> StructVal(_:Id, (F2:Id |-> V:Val _:Map)) _:Map)) _:Map), L, F1, F2) => V
-
-  rule <k> $ X:Id => BorrowLoc(MutBorrow, X, L, V) ... </k>
-       <env> ... X |-> L ... </env>
-       <store> ... L |-> V ... </store>
-
-  rule <k> ! $ X:Id => BorrowLoc(ImmBorrow, X, L, V) ... </k>
-       <env> ... X |-> L ... </env>
-       <store> ... L |-> V ... </store>
 
   rule <k> $$i T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -866,6 +848,63 @@ module ARIA
        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
+
+           rule <k> F:Id(X:Id) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                <functions> ... F |-> Fn1Pass(T, MutBorrow, PT, PX, E) ... </functions>
+                <env> Env => PX |-> envLoc(Env, X) </env>
+                <types> Types => PX |-> PT </types>
+                <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
+
+           rule <k> F:Id(X:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                                        <functions> ... F |-> Fn1StmtPass(T, MutBorrow, PT, PX, S, E) ... </functions>
+                                        <env> Env => PX |-> envLoc(Env, X) </env>
+                                        <types> Types => PX |-> PT </types>
+                                        <store> Store </store>
+                                        <limits> Limits => .Map </limits>
+                                        <mem-modes> Modes => .Map </mem-modes>
+                                        <stack-live> Stack => .Set </stack-live>
+                                        <gc-live> GC => .Set </gc-live>
+                                        <wild-live> Wild => .Set </wild-live>
+                                        <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+                                        <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                                        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                                        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                                        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                                        <fixed-vars> Fixed => .Set </fixed-vars>
+                                        <next-loc> L => L +Int 1 </next-loc>
+                         requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
+
+           rule <k> F:Id(X:Id) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                <functions> ... F |-> Fn1Fail(MutBorrow, PT, PX, E) ... </functions>
+                                        <env> Env => PX |-> envLoc(Env, X) </env>
+                <types> Types => PX |-> PT </types>
+                                        <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
 
      rule <k> F:Id(A:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Pass(T, B, PT, PX, E) ... </functions>

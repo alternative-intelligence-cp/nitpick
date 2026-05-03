@@ -9,7 +9,7 @@ This directory contains comprehensive tests for Aria's borrow checker implementa
 - `test_pinning_basic.aria` - Basic # operator pinning
 - `test_address_of.aria` - Basic @ operator address-of
 - `test_nested_borrows.aria` - Borrow tracking across scopes
-- `test_mixed_operators.aria` - All three operators ($, #, @) together
+- `test_mixed_operators.aria` - Pin/address operators plus $$i/$$m qualifiers
 - `test_borrow_chains.aria` - Multiple borrows of same variable
 - `test_annotations_populated.aria` - Verify AST annotations are set
 
@@ -24,8 +24,8 @@ This directory contains comprehensive tests for Aria's borrow checker implementa
 ## Current Implementation Status
 
 **✅ Working:**
-- Immutable borrows with `$` operator (legacy) and `$$i` qualifier (v0.2.35)
-- Mutable borrows with `$$m` qualifier (v0.2.35)
+- Immutable borrows with `$$i` qualifier
+- Mutable borrows with `$$m` qualifier
 - Pinning with `#` operator
 - Address-of with `@` operator
 - AST annotations for borrow tracking
@@ -68,7 +68,8 @@ The borrow checker operates in Phase 3.5 of the compilation pipeline:
 - `pinned_target`: Name of pinned variable (if is_pinned_shadow)
 
 **UnaryExpr annotations:**
-- `creates_loan`: True for `$` (borrow) operator
-- `loan_target`: Variable name being borrowed
 - `creates_pin`: True for `#` (pin) operator
 - `pin_target`: Variable name being pinned
+
+Dollar-prefixed borrow expressions are intentionally not Aria syntax; borrow
+intent belongs in `$$i` / `$$m` declarations and parameters.

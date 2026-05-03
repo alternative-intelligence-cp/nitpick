@@ -51,9 +51,10 @@ can eventually answer: “what should this Aria program do?” independently of
   tracking for aliases such as `box.leaf.x`, nested sibling split borrows,
   parent/child borrow conflict checks, nested-field mutation, parent-field
   mutation blocking while a child field is borrowed, mutable field-alias
-  writeback for local direct and two-level struct-field aliases, `$$m`
-  argument-shape enforcement, and positive `$$m` call-by-reference writeback
-  for ordinary variable borrows
+  writeback for local direct and two-level struct-field aliases, plain-identifier
+  `$$m` argument-shape enforcement, rejection of stale dollar-prefixed borrow
+  expressions, and positive `$$m` call-by-reference writeback for ordinary
+  variable borrows
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings

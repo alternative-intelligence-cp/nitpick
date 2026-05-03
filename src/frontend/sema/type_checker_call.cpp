@@ -5131,14 +5131,6 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                 return typeSystem->getErrorType();
             }
 
-            bool mutableBorrowParam = false;
-            if (funcDecl && i < funcDecl->parameters.size() &&
-                funcDecl->parameters[i] &&
-                funcDecl->parameters[i]->type == ASTNode::NodeType::PARAMETER) {
-                auto* paramNode = static_cast<ParameterNode*>(funcDecl->parameters[i].get());
-                mutableBorrowParam = paramNode->isBorrowMut;
-            }
-            
             // Pipeline operators automatically unwrap Result types
             // When Result<T> is passed where T is expected, we auto-unwrap
             // v0.4.3: Emit warning — error will propagate to caller if result is ERR
@@ -5202,21 +5194,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
 
             // v0.18.0: $$m call-by-reference parameters are declared as their
-            // logical value type (e.g. $$m int32:x), while the call-site borrow
-            // expression `$value` has pointer type (int32@). Accept the borrow
-            // when its pointee is assignable to the declared parameter type;
-            // the borrow checker separately enforces that the syntax is `$x`.
-            bool mutableBorrowCoercion = false;
-            if (mutableBorrowParam && effectiveArgType->getKind() == TypeKind::POINTER) {
-                PointerType* ptrType = static_cast<PointerType*>(effectiveArgType);
-                Type* pointeeType = ptrType->getPointeeType();
-                if (pointeeType && i < paramTypes.size()) {
-                    mutableBorrowCoercion = pointeeType->isAssignableTo(paramTypes[i]) ||
-                                           canCoerce(pointeeType, paramTypes[i]);
-                }
-            }
+            // logical value type (e.g. $$m int32:x). The declaration carries
+            // the borrow contract; the call site uses the normal identifier.
 
-            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion && !mutableBorrowCoercion && !canCoerce(effectiveArgType, paramTypes[i])) {
+            if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion && !canCoerce(effectiveArgType, paramTypes[i])) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 
                         argType->toString() + "', but function expects '" + 
                         paramTypes[i]->toString() + "'", expr->arguments[i].get());

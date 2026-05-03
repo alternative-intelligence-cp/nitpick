@@ -60,9 +60,9 @@ Branch: `dev-0.18.x`
   declaration syntax, memory classification cells, minimal pointer/`alloc`
   values, `free(id)`, and wild-leak failsafe routing.
 - Added first borrow permission slice: `$$i`/`$$m` local aliases, borrow
-  parameter metadata, `$x`/`!$x` borrow values, immutable/mutable conflict
-  checks, immutable-borrow assignment blocking, and `$$m` bad-argument failsafe
-  routing.
+  parameter metadata, immutable/mutable conflict checks, immutable-borrow
+  assignment blocking, and `$$m` plain-identifier argument routing. Removed the
+  stale dollar-prefixed borrow-expression model from the executable semantics.
 - Added first `defer { ... }` cleanup slice: per-block defer stacks, LIFO
   deferred block execution at scope exit, pending cleanup before terminal
   `exit`, and `pick`/`fall` interaction with scoped block cleanup.
@@ -78,10 +78,11 @@ Branch: `dev-0.18.x`
 - Added local pin dereference/read-only slice: `#id` now lowers to a stable
   local pointer in `ariac`, `<-pin` reads the pinned host, and `<-pin = value;`
   is rejected by `ariac` and routed to failsafe in K.
-- Added positive `$$m` call-by-reference mutation: `ariac` now accepts
-  `$value` for `$$m T:param`, lowers the callee parameter as a pointer alias,
-  writes assignments back through caller storage, and the K oracle models
-  borrow-location call frames with return-time writeback.
+- Added positive `$$m` call-by-reference mutation: the declaration carries the
+  borrow contract and call sites pass a plain addressable identifier. `ariac`
+  lowers the callee parameter as a pointer alias, writes assignments back
+  through caller storage, and the K oracle models borrow-location call frames
+  with return-time writeback.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
 - Added focused pin call-frame regressions for callee-local pin release and
@@ -159,8 +160,9 @@ Branch: `dev-0.18.x`
   `build/ariac`; expected exits matched actual process exits.
 - Cross-checked the new borrow pass cases with `build/ariac`; expected exits
   matched actual process exits. Cross-checked borrow negative cases against
-  `ariac` static rejections for double mutable borrow, plain value passed to
-  `$$m`, and assignment to a borrowed host.
+  `ariac` static rejections for double mutable borrow, unsupported/non-addressable
+  `$$m` arguments, stale dollar-prefixed argument syntax, and assignment to a
+  borrowed host.
 - Cross-checked focused `defer { free(...) }` probes with `build/ariac`: the
   defer-cleaned wild allocation compiled and ran with the requested exit, while
   the no-defer wild allocation was statically rejected with ARIA-014.
@@ -176,9 +178,12 @@ Branch: `dev-0.18.x`
   returns the pinned host value (`42`), and `<-pin = 9;` is statically rejected
   with ARIA-016.
 - Cross-checked focused mutable-borrow call probes with `build/ariac`: `raw
-  mutate($value)` compiles, lowers to `@mutate(ptr %value)`, writes through the
-  caller slot, and exits `15`, while plain `raw mutate(value)` remains rejected
-  with ARIA-020 and the `$value` hint.
+  mutate(value)` compiles, lowers to `@mutate(ptr %value)`, writes through the
+  caller slot, and exits `15`, while dollar-prefixed argument syntax is rejected
+  instead of treated as a borrow expression.
+- Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
+  plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
+  and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
 - Cross-checked focused scope-based borrow probes with `build/ariac`: immutable
   and mutable borrows created inside nested blocks were released at block exit,
   later assignment or borrowing compiled and returned the expected value, and a

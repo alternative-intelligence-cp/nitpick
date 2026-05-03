@@ -149,7 +149,7 @@ public:
 
 /**
  * Unary operation expression node
- * Represents: -x, !flag, ~bits, @ptr, #ref, $iter
+ * Represents: -x, !flag, ~bits, @ptr, #ref
  */
 class UnaryExpr : public ASTNode {
 public:
@@ -157,16 +157,12 @@ public:
     ASTNodePtr operand;
     bool isPostfix;
     
-    // Borrow checker annotations
-    bool creates_loan;      // True if this is a $ (borrow) operator
-    bool is_mutable_loan;   // True if mutable borrow ($x), false if immutable (!$x)
-    std::string loan_target; // Variable name being borrowed (for $ operator)
     bool creates_pin;       // True if this is a # (pin) operator
     std::string pin_target;  // Variable name being pinned (for # operator)
     
     UnaryExpr(const Token& o, ASTNodePtr operand, bool isPost = false, int line = 0, int column = 0)
         : ASTNode(NodeType::UNARY_OP, line, column), op(o), operand(operand), isPostfix(isPost),
-          creates_loan(false), is_mutable_loan(false), loan_target(""), creates_pin(false), pin_target("") {}
+                    creates_pin(false), pin_target("") {}
     
     std::string toString() const override;
 };

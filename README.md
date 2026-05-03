@@ -641,7 +641,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Balanced ternary/nonary runtime** — Full trit/tryte arithmetic (add, sub, mul, div, mod), 15/15 tests
 - ✅ **NIL ↔ void bridge** — NIL = Aria unit type, void = C ABI only, pointer erasure bridge
 - ✅ **Code quality pass** — 44 deprecated LLVM API migrations, all warnings fixed, zero Aria-source warnings
-- ✅ **Traits & borrow semantics RFC** — Design doc for monomorphized traits + `$x`/`$mut x` borrows
+- ✅ **Traits & borrow semantics RFC** — Design doc for monomorphized traits + `$$i`/`$$m` borrow qualifiers
 - ✅ **6 regression tests** — Dedicated regression suite covering critical bug fixes
 
 ### v0.2.1.1 — Released

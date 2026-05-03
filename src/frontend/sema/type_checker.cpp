@@ -1336,16 +1336,6 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
 // ============================================================================
 
 Type* TypeChecker::inferUnaryOp(UnaryExpr* expr) {
-    // Special case: !$x is immutable borrow syntax, not logical NOT
-    if (expr->op.type == frontend::TokenType::TOKEN_BANG &&
-        expr->operand && expr->operand->type == ASTNode::NodeType::UNARY_OP) {
-        UnaryExpr* innerExpr = static_cast<UnaryExpr*>(expr->operand.get());
-        if (innerExpr->op.type == frontend::TokenType::TOKEN_DOLLAR) {
-            // This is !$x - immutable borrow, treat like $x
-            return inferUnaryOp(innerExpr);
-        }
-    }
-    
     // Infer operand type
     Type* operandType = inferType(expr->operand.get());
     
@@ -1440,16 +1430,6 @@ Type* TypeChecker::checkUnaryOperator(frontend::TokenType op, Type* operandType,
         // Pin GC object to get wild pointer
         // #x where x: int32 → result type: int32@ (wild pointer)
         // The borrow checker will track the pinning relationship
-        return typeSystem->getPointerType(operandType);
-    }
-    
-    // ========================================================================
-    // Borrow/Safe Reference: $
-    // ========================================================================
-    if (op == TokenType::TOKEN_DOLLAR) {
-        // Borrow variable to create safe reference
-        // $x where x: int32 → result type: int32$ (safe reference, resolves to int32@ internally)
-        // The borrow checker will track the borrowing relationship
         return typeSystem->getPointerType(operandType);
     }
     

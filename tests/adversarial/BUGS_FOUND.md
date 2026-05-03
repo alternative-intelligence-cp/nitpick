@@ -8,25 +8,20 @@
 
 ## ✅ BUG #1 (FIXED): Reference Escape to Local Variable
 
-**Test File**: `borrow_checker/borrow_scope_escape.aria`
+**Test File**: superseded legacy fixture
 **Expected**: COMPILER ERROR
 **Actual**: CORRECTLY REJECTED ✅
 
 ### Description
-The compiler allows returning a reference (`int32$`) to a local variable, creating a dangling reference when the function returns.
+An early pre-`$$i`/`$$m` borrow-expression fixture showed that returning a
+reference to a local variable could create a dangling reference. Current Aria no
+longer exposes dollar-prefixed borrow-return syntax; active tests now reject
+that syntax at parse/semantic entry points and cover borrow lifetimes with
+`$$i` / `$$m` declarations and parameters.
 
 ### Code
-```aria
-func:get_ref = int32$() {
-    int32:x = 10;
-    pass($x);  // ERROR: Returning reference to local variable
-};
-
-func:main = int32() {
-    int32$:r = get_ref();  // Creates dangling reference
-    return 0;
-};
-```
+Legacy code sample removed: dollar-prefixed borrow-return expressions are not
+Aria syntax.
 
 ### Impact
 - **Severity**: CRITICAL
@@ -34,10 +29,9 @@ func:main = int32() {
 - **Affected Feature**: Borrow checker lifetime analysis
 
 ### Fix Applied
-Added `checkReferenceEscape()` function in `borrow_checker.cpp` that:
-1. Detects borrow expressions (`$x` or `!$x`) in `pass` and `return` statements
-2. Checks if the target is a local variable in the current scope stack
-3. Emits error: "Cannot return reference to local variable"
+The old borrow-expression escape hook is now a no-op because the syntax itself
+is invalid. Current lifetime checks are attached to `$$i` / `$$m` declarations,
+parameters, and path aliases.
 
 ---
 
@@ -123,7 +117,7 @@ The compiler allowed moving (passing by value to a function) a variable while it
 ```aria
 func:main = int32() {
     int32:x = 10;
-    int32$:r = $x;  // Borrow x
+    $$m int32:r = x;  // Borrow x
     take_ownership(x);  // ERROR: Cannot move x while borrowed
     return 0;
 };
@@ -189,15 +183,18 @@ After a conditional where different branches borrow different variables, the com
 
 ### Code
 ```aria
-int32$:r;
-if (cond) { r = $x; } else { r = $y; }
-x = 30;  // ERROR: x might be borrowed by r
+if (cond) {
+    $$i int32:r = x;
+    x = 30;  // ERROR: x is borrowed by r
+} else {
+    $$i int32:r = y;
+}
 ```
 
 ### Fix Applied
 Two-part fix in `borrow_checker.cpp` (ARIA-021):
-1. Modified `checkAssignment()` to create loans for borrow assignments (r = $x)
-2. Modified `LifetimeContext::merge()` to use UNION for:
+1. Modified `LifetimeContext::merge()` to preserve loans created in branches
+2. Used UNION for:
    - `loan_origins`: track all possible borrow targets from either branch
    - `active_loans`: keep loans that exist in either branch
    - `active_pins`: keep pins that exist in either branch
@@ -215,7 +212,7 @@ Passing the same variable as two mutable reference arguments creates aliasing.
 
 ### Code
 ```aria
-modify_both($x, $x);  // ERROR: Same variable borrowed twice
+modify_both(x, x);  // ERROR: Same variable borrowed mutably twice
 ```
 
 ### Fix Applied
@@ -237,8 +234,8 @@ Passing a variable to a function while an existing mutable borrow is active.
 
 ### Code
 ```aria
-int32$:m1 = $x;  // First borrow
-use_ref($x);     // ERROR: x already borrowed by m1
+$$m int32:m1 = x;  // First borrow
+use_ref(x);        // ERROR: x already borrowed by m1
 ```
 
 ### Fix Applied

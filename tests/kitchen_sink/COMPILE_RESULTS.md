@@ -66,12 +66,10 @@ Undefined identifier: 'aria'
 ---
 
 ### CATEGORY 5: Borrow Checker Issues
-```
-Cannot initialize variable 'safe_ref' of type 'string@' with value of type 'string@@'
-```
 
-**Problem**: `!$pinned_str` returns double pointer  
-**Status**: 🐛 **BUG** - Borrow operator type inference issue
+The old dollar-prefixed borrow operator notes are obsolete. Current Aria uses
+`$$i` / `$$m` declaration and parameter qualifiers; dollar-prefixed borrow
+expressions should be rejected rather than type-inferred.
 
 ---
 
@@ -138,7 +136,7 @@ Based on what **didn't** error:
 14. ✅ **Template Literals** - `` syntax accepted
 15. ✅ **Address-of @** - @variable syntax parsed
 16. ✅ **Pin #** - #variable syntax parsed
-17. ✅ **Borrow $** - $variable and !$variable parsed
+17. ✅ **Borrow qualifiers** - `$$i` / `$$m` declarations parsed
 18. ✅ **Pointer Member Access ->** - ptr->member parsed
 19. ✅ **Unwrap ?** - value ? default parsed
 20. ✅ **Spaceship <=>** - a <=> b parsed

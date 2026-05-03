@@ -197,7 +197,7 @@ enum class LoanPhase {
  */
 struct Loan {
     std::string borrower;    // Name of the reference variable
-    bool is_mutable;         // true for $mut, false for $
+    bool is_mutable;         // true for $$m, false for $$i
     int creation_line;       // Line where borrow was created
     int creation_column;     // Column where borrow was created
     AccessPath path;         // The exact path being borrowed (for split borrows)
@@ -715,7 +715,7 @@ private:
      * 
      * @param host The variable being borrowed
      * @param reference The reference variable receiving the borrow
-     * @param is_mutable true for $mut, false for $
+    * @param is_mutable true for $$m, false for $$i
      * @param node AST node for error reporting
      */
     void recordBorrow(const std::string& host, const std::string& reference, 

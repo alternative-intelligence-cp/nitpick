@@ -287,9 +287,7 @@ bool Parser::isUnaryOperator(TokenType type) const {
            type == TokenType::TOKEN_TILDE ||
            type == TokenType::TOKEN_AT ||
            type == TokenType::TOKEN_LEFT_ARROW ||  // <- for pointer dereference
-           type == TokenType::TOKEN_HASH ||
-           type == TokenType::TOKEN_DOLLAR;  // $ for safe borrow/reference
-           // Note: TOKEN_DOLLAR is BOTH a unary operator ($x for borrow) AND used as iteration variable in till loops
+           type == TokenType::TOKEN_HASH;
 }
 
 bool Parser::isAssignmentOperator(TokenType type) const {
@@ -1556,16 +1554,8 @@ ASTNodePtr Parser::parseUnary() {
         // FIX: Explicitly pass false for isPostfix, otherwise token.line (int) is converted to true
         auto unaryExpr = std::make_shared<UnaryExpr>(token, operand, false, token.line, token.column);
         
-        // Set borrow checker annotations for $ and # operators
-        if (token.type == TokenType::TOKEN_DOLLAR) {
-            unaryExpr->creates_loan = true;
-            unaryExpr->is_mutable_loan = true;  // $x = mutable borrow
-            // Extract target variable name from operand if it's an identifier
-            if (operand && operand->type == ASTNode::NodeType::IDENTIFIER) {
-                auto identExpr = std::static_pointer_cast<IdentifierExpr>(operand);
-                unaryExpr->loan_target = identExpr->name;
-            }
-        } else if (token.type == TokenType::TOKEN_HASH) {
+        // Set borrow checker annotations for # pin operators.
+        if (token.type == TokenType::TOKEN_HASH) {
             unaryExpr->creates_pin = true;
             // Extract target variable name from operand if it's an identifier
             if (operand && operand->type == ASTNode::NodeType::IDENTIFIER) {

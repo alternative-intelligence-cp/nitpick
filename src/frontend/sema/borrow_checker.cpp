@@ -105,9 +105,9 @@ void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeCon
     }
 
     // ARIA-021: Merge active_loans using UNION (if loan may exist, assume it exists)
-    // This is critical for Bug #5: conditional borrow merge
-    // After: if (cond) { r = $x; } else { r = $y; }
-    // Both x and y should be considered potentially borrowed
+    // This is critical for conditional borrow merge: if branches create
+    // different $$i/$$m aliases, all possible hosts remain conservatively
+    // borrowed after the merge.
     for (const auto& [host, loans] : then_state.active_loans) {
         auto& our_loans = active_loans[host];
         for (const auto& loan : loans) {
@@ -676,6 +676,7 @@ void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
 
 void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary) {
     size_t num_params = summary.param_ownership.size();
+    std::unordered_map<std::string, size_t> mutable_borrow_targets;
     
     for (size_t i = 0; i < expr->arguments.size() && i < num_params; ++i) {
         const auto& arg = expr->arguments[i];
@@ -728,67 +729,69 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
             }
                 
             case ParamOwnership::BORROW_MUT: {
-                // Callee expects $$m — argument should be a mutable borrow ($x)
-                // Detect borrow expression: $x (direct) or !$x (immutable — wrong)
-                bool found_borrow = false;
-                bool is_mutable = false;
+                // Callee expects $$m. The parameter declaration carries the
+                // mutable-borrow contract; the call site must pass a normal,
+                // addressable identifier. Dollar-prefixed borrow expressions are not Aria syntax.
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
-                    auto* unary = static_cast<UnaryExpr*>(arg.get());
-                    if (unary->creates_loan) {
-                        found_borrow = true;
-                        is_mutable = unary->is_mutable_loan;
-                    } else if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
-                               unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
-                        // !$x pattern — immutable borrow
-                        auto* inner = static_cast<UnaryExpr*>(unary->operand.get());
-                        if (inner->creates_loan) {
-                            found_borrow = true;
-                            is_mutable = false;  // ! negates mutability
-                        }
+                    addErrorWithSuggestion(
+                        "Function '" + summary.func_name + "' parameter '" +
+                        param_name + "' expects a mutable borrow ($$m), but dollar-borrow syntax is not Aria syntax",
+                        arg.get(),
+                        "hint: pass the addressable variable directly; keep $$m on the parameter declaration");
+                    tagCode("ARIA-020");
+                } else if (arg_var.empty()) {
+                    addErrorWithSuggestion(
+                        "Function '" + summary.func_name + "' parameter '" +
+                        param_name + "' expects a mutable borrow ($$m), but the argument is not an addressable variable",
+                        arg.get(),
+                        "hint: pass a local variable name directly");
+                    tagCode("ARIA-020");
+                } else {
+                    auto existing = mutable_borrow_targets.find(arg_var);
+                    if (existing != mutable_borrow_targets.end()) {
+                        addError("Cannot mutably borrow '" + arg_var +
+                                 "' multiple times in the same function call",
+                                 arg.get());
+                        tagCode("ARIA-020");
+                        break;
                     }
-                }
-                if (found_borrow && !is_mutable) {
-                    addErrorWithSuggestion(
-                        "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' requires a mutable borrow ($$m), but an immutable borrow was passed",
-                        arg.get(),
-                        "hint: use mutable borrow ($x) instead of immutable (!$x)");
-                    tagCode("ARIA-020");
-                } else if (!found_borrow && !arg_var.empty()) {
-                    addErrorWithSuggestion(
-                        "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects a mutable borrow ($$m), but '" + arg_var + "' was passed by value",
-                        arg.get(),
-                        "hint: pass a mutable borrow: $" + arg_var);
-                    tagCode("ARIA-020");
+                    mutable_borrow_targets[arg_var] = i;
+
+                    if (ctx.moved_variables.count(arg_var)) {
+                        addErrorWithSuggestion(
+                            "Cannot mutably borrow '" + arg_var + "' for '" + summary.func_name +
+                            "' parameter '" + param_name + "' because it was already moved",
+                            arg.get(),
+                            "hint: clone the value before moving if you need to borrow it later");
+                        tagCode("ARIA-019");
+                        break;
+                    }
+
+                    auto loans_it = ctx.active_loans.find(arg_var);
+                    if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
+                        const Loan& loan = loans_it->second.front();
+                        addError("Cannot mutably borrow '" + arg_var + "' for '" + summary.func_name +
+                                 "' parameter '" + param_name + "' because it is already borrowed by '" +
+                                 loan.borrower + "'",
+                                 arg.get(),
+                                 "Existing borrow was created here", loan.creation_line, loan.creation_column);
+                        tagCode("ARIA-023");
+                    }
                 }
                 break;
             }
                 
             case ParamOwnership::BORROW_IMM: {
-                // Callee expects $$i — passing mutable borrow works but is a warning
-                bool found_borrow = false;
-                bool is_mutable = false;
+                // Callee expects $$i. As with $$m, the parameter declaration
+                // carries the borrow contract; dollar-borrow expressions are
+                // intentionally rejected as non-Aria syntax.
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
-                    auto* unary = static_cast<UnaryExpr*>(arg.get());
-                    if (unary->creates_loan) {
-                        found_borrow = true;
-                        is_mutable = unary->is_mutable_loan;
-                    } else if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
-                               unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
-                        auto* inner = static_cast<UnaryExpr*>(unary->operand.get());
-                        if (inner->creates_loan) {
-                            found_borrow = true;
-                            is_mutable = false;
-                        }
-                    }
-                }
-                if (found_borrow && is_mutable) {
-                    addWarning(
+                    addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects immutable borrow ($$i), but mutable borrow was passed",
+                        param_name + "' expects immutable borrow ($$i), but dollar-borrow syntax is not Aria syntax",
                         arg.get(),
-                        "hint: this works but grants more access than needed — consider using !$x instead of $x");
+                        "hint: pass the value directly; keep $$i on the parameter declaration");
+                    tagCode("ARIA-020");
                 }
                 break;
             }
@@ -1386,61 +1389,13 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 bool is_mutable = stmt->isBorrowMut;
                 recordBorrowWithPath(borrow_path, stmt->varName, is_mutable, stmt);
             }
-            // Early return — $$i/$$m variables don't need the legacy $ checks
+            // Early return — $$i/$$m variables fully express borrow intent.
             return;
         }
 
-        // Check if initializer is a borrow or pin operation
+        // Check if initializer is a pin operation.
         if (stmt->initializer->type == ASTNode::NodeType::UNARY_OP) {
             UnaryExpr* unary = static_cast<UnaryExpr*>(stmt->initializer.get());
-
-            // Determine mutability from variable type name
-            // int32$mut -> mutable, int32$ -> immutable
-            bool is_mutable_type = stmt->typeName.find("$mut") != std::string::npos;
-            bool is_ref_type = stmt->typeName.find("$") != std::string::npos;
-
-            // Check for !$x pattern (immutable borrow - alternative syntax)
-            bool is_negated_borrow = false;
-            if (unary->op.type == frontend::TokenType::TOKEN_BANG &&
-                unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
-                UnaryExpr* inner = static_cast<UnaryExpr*>(unary->operand.get());
-                // Detect borrow by AST flags OR by token type
-                bool inner_is_borrow = inner->creates_loan ||
-                                       inner->op.type == frontend::TokenType::TOKEN_DOLLAR;
-                std::string inner_target = inner->loan_target;
-
-                // If loan_target not set, extract from operand
-                if (inner_target.empty() && inner->operand &&
-                    inner->operand->type == ASTNode::NodeType::IDENTIFIER) {
-                    inner_target = static_cast<IdentifierExpr*>(inner->operand.get())->name;
-                }
-
-                if (inner_is_borrow && !inner_target.empty()) {
-                    // This is !$x - immutable borrow
-                    is_negated_borrow = true;
-                    recordBorrow(inner_target, stmt->varName, false, stmt);
-                }
-            }
-
-            // Detect borrow by AST flags OR by token type (TOKEN_DOLLAR)
-            bool is_borrow = unary->creates_loan ||
-                             unary->op.type == frontend::TokenType::TOKEN_DOLLAR;
-            std::string borrow_target = unary->loan_target;
-
-            // If loan_target not set, extract from operand
-            if (borrow_target.empty() && unary->operand &&
-                unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
-                borrow_target = static_cast<IdentifierExpr*>(unary->operand.get())->name;
-            }
-
-            if (!is_negated_borrow && is_borrow && !borrow_target.empty()) {
-                // Borrow operation: determine mutability from type name
-                // If type contains $mut -> mutable borrow
-                // If type contains $ but not $mut -> immutable borrow
-                // Default (plain $ operator without type annotation) -> mutable borrow
-                bool is_mutable = is_mutable_type || (!is_ref_type);
-                recordBorrow(borrow_target, stmt->varName, is_mutable, stmt);
-            }
 
             // Detect pin by AST flags OR by token type (TOKEN_HASH)
             bool is_pin = unary->creates_pin ||
@@ -1641,47 +1596,6 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
 
     // Check right side
     checkExpression(expr->right.get());
-
-    // ARIA-021: Handle borrow assignment (r = $x)
-    // When assigning a borrow expression to a reference variable,
-    // we need to create a loan and track the origin
-    if (!target_name.empty() && expr->right->type == ASTNode::NodeType::UNARY_OP) {
-        auto* unary = static_cast<UnaryExpr*>(expr->right.get());
-        if (unary->creates_loan && !unary->loan_target.empty()) {
-            const std::string& host = unary->loan_target;
-            bool is_mutable = (unary->op.type != frontend::TokenType::TOKEN_BANG);  // !$ is immutable
-
-            // Check XOR rule: 1 mutable OR N immutable (not both)
-            auto loans_it = ctx.active_loans.find(host);
-            if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
-                bool has_mutable = std::any_of(loans_it->second.begin(), loans_it->second.end(),
-                    [](const Loan& l) { return l.is_mutable; });
-
-                if (has_mutable) {
-                    const Loan& existing = loans_it->second.front();
-                    addError("Cannot borrow '" + host + "' because it is already mutably borrowed by '" +
-                             existing.borrower + "'",
-                             expr->right.get(),
-                             "Mutable borrow was created here", existing.creation_line, existing.creation_column);
-                    tagCode("ARIA-023");
-                    return;
-                } else if (is_mutable) {
-                    const Loan& existing = loans_it->second.front();
-                    addError("Cannot borrow '" + host + "' as mutable because it is already borrowed",
-                             expr->right.get(),
-                             "Existing borrow by '" + existing.borrower + "' created here",
-                             existing.creation_line, existing.creation_column);
-                    tagCode("ARIA-023");
-                    return;
-                }
-            }
-
-            // Create the loan
-            Loan loan(target_name, is_mutable, expr->line, expr->column);
-            ctx.active_loans[host].push_back(loan);
-            ctx.loan_origins[target_name].insert(host);
-        }
-    }
 }
 
 void BorrowChecker::checkIfStmt(IfStmt* stmt) {
@@ -2251,29 +2165,10 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
 // ============================================================================
 
 void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context) {
-    if (!returnValue) return;
-
-    // Check if the return value is a borrow expression ($ or !$)
-    if (returnValue->type == ASTNode::NodeType::UNARY_OP) {
-        auto* unary = static_cast<UnaryExpr*>(returnValue);
-        if (unary->creates_loan && unary->operand) {
-            // This is returning a borrow — check if the source is local
-            AccessPath path = extractAccessPath(unary->operand.get());
-            if (!path.base_var.empty()) {
-                // Check if the borrowed variable is local to this function
-                int depth = getVariableDepth(path.base_var);
-                if (depth > 1) {  // depth 1 = function params, > 1 = local
-                    addError("Cannot return borrow of local variable '" + path.base_var +
-                            "' — it will be destroyed when the function returns",
-                            context,
-                            "'" + path.base_var + "' declared here with scope depth " +
-                            std::to_string(depth),
-                            returnValue->line, returnValue->column);
-                    tagCode("ARIA-017");
-                }
-            }
-        }
-    }
+    (void)returnValue;
+    (void)context;
+    // Dollar-prefixed borrow-return expression syntax is intentionally invalid in Aria.
+    // $$i/$$m qualifier escape checks are handled by declaration/path tracking.
 
     // Also check if returning a variable that's itself a borrow
     if (returnValue->type == ASTNode::NodeType::IDENTIFIER) {
@@ -2450,67 +2345,13 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
  * ARIA-017: Check if a reference/borrow expression would escape its scope.
  * Called when returning or passing values that might be references to locals.
  *
- * Detects patterns like:
- *   func:get_ref = int32$() {
- *       int32:x = 10;
- *       pass($x);  // ERROR: Reference to local would escape
- *   }
+ * Dollar-prefixed borrow expressions are rejected by the parser; current Aria
+ * borrow intent is declared with $$i / $$m qualifiers.
  */
 void BorrowChecker::checkReferenceEscape(ASTNode* value, ASTNode* context) {
-    if (!value) return;
-
-    // Check if this is a borrow expression ($x or !$x)
-    if (value->type == ASTNode::NodeType::UNARY_OP) {
-        UnaryExpr* unary = static_cast<UnaryExpr*>(value);
-
-        // Detect borrow by token type or AST flag
-        bool is_borrow = unary->creates_loan ||
-                         unary->op.type == frontend::TokenType::TOKEN_DOLLAR;
-
-        // Also check for negated borrow (!$x)
-        if (!is_borrow && unary->op.type == frontend::TokenType::TOKEN_BANG &&
-            unary->operand && unary->operand->type == ASTNode::NodeType::UNARY_OP) {
-            UnaryExpr* inner = static_cast<UnaryExpr*>(unary->operand.get());
-            is_borrow = inner->creates_loan ||
-                        inner->op.type == frontend::TokenType::TOKEN_DOLLAR;
-            if (is_borrow) {
-                unary = inner;  // Use inner expression for target extraction
-            }
-        }
-
-        if (is_borrow) {
-            // Extract the borrowed variable name
-            std::string target;
-            if (!unary->loan_target.empty()) {
-                target = unary->loan_target;
-            } else if (unary->operand &&
-                       unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
-                target = static_cast<IdentifierExpr*>(unary->operand.get())->name;
-            }
-
-            if (!target.empty()) {
-                // Check if target is a local variable (exists in any scope)
-                bool is_local = false;
-                for (const auto& scope_vars : ctx.scope_stack) {
-                    for (const auto& var : scope_vars) {
-                        if (var == target) {
-                            is_local = true;
-                            break;
-                        }
-                    }
-                    if (is_local) break;
-                }
-
-                if (is_local) {
-                    addErrorWithSuggestion("Cannot return reference to local variable '" + target +
-                             "'. The reference would become invalid when the function returns.",
-                             context,
-                             "hint: return the value by copy instead, or move it to the caller's scope");
-                    tagCode("ARIA-017");
-                }
-            }
-        }
-    }
+    (void)value;
+    (void)context;
+    // No dollar-borrow expression syntax exists in current Aria.
 }
 
 /**
@@ -2848,8 +2689,8 @@ void BorrowChecker::checkUnaryExpr(UnaryExpr* expr) {
     // Check operand first
     checkExpression(expr->operand.get());
     
-    // Borrow and pin operations are handled at variable declaration
-    // Here we just validate the operand
+    // Pin operations are handled at variable declaration. Dollar-borrow
+    // expressions are intentionally not Aria syntax.
 }
 
 void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
@@ -2868,13 +2709,8 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
 void BorrowChecker::checkCallExpr(CallExpr* expr) {
     if (!expr) return;
 
-    // ARIA-020: Track borrow targets in this call to detect aliasing
-    // Maps variable name -> first argument index where it was borrowed
-    std::unordered_map<std::string, size_t> borrow_targets;
-
     // Check all arguments
-    for (size_t i = 0; i < expr->arguments.size(); ++i) {
-        const auto& arg = expr->arguments[i];
+    for (const auto& arg : expr->arguments) {
         checkExpression(arg.get());
 
         // ARIA-016: Check if argument is a pinned variable being passed by value
@@ -2886,7 +2722,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
             if (isPinned(ident->name)) {
                 addError("Cannot pass pinned variable '" + ident->name +
                          "' by value. Pinned objects must remain at a stable address. "
-                         "Use a reference ($" + ident->name + ") instead.",
+                         "Use an explicit $$i/$$m borrow-compatible API instead.",
                          arg.get());
                 tagCode("ARIA-016");
             }
@@ -2904,39 +2740,6 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
             }
         }
 
-        // ARIA-020: Check for borrow expressions in arguments
-        // Detects aliasing (same variable borrowed multiple times) and
-        // reborrowing (borrowing while existing borrow exists)
-        if (arg && arg->type == ASTNode::NodeType::UNARY_OP) {
-            auto* unary = static_cast<UnaryExpr*>(arg.get());
-            if (unary->creates_loan && !unary->loan_target.empty()) {
-                const std::string& target = unary->loan_target;
-
-                // ARIA-020a: Check for argument aliasing (Bug #6)
-                // Same variable borrowed multiple times in same call
-                auto existing = borrow_targets.find(target);
-                if (existing != borrow_targets.end()) {
-                    addError("Cannot borrow '" + target + "' multiple times in the same function call. "
-                             "This would create aliasing references to the same variable.",
-                             arg.get());
-                    tagCode("ARIA-020");
-                } else {
-                    borrow_targets[target] = i;
-                }
-
-                // ARIA-020b: Check for reborrow while existing borrow (Bug #7)
-                // Cannot create new borrow if variable already has active loans
-                auto loans_it = ctx.active_loans.find(target);
-                if (loans_it != ctx.active_loans.end() && !loans_it->second.empty()) {
-                    const Loan& loan = loans_it->second.front();
-                    addError("Cannot borrow '" + target + "' because it is already borrowed by '" +
-                             loan.borrower + "'",
-                             arg.get(),
-                             "Previous borrow was created here", loan.creation_line, loan.creation_column);
-                    tagCode("ARIA-020");
-                }
-            }
-        }
     }
 
     // ARIA-022: Check for wild memory deallocation calls
@@ -3659,10 +3462,9 @@ AccessPath BorrowChecker::extractAccessPath(ASTNode* expr) {
         }
 
         case ASTNode::NodeType::UNARY_OP: {
-            // Handle dereference and borrow operators
+            // Handle dereference/address operators that preserve the base path.
             auto* unary = static_cast<UnaryExpr*>(expr);
-            if (unary->op.type == frontend::TokenType::TOKEN_DOLLAR ||
-                unary->op.type == frontend::TokenType::TOKEN_STAR ||
+            if (unary->op.type == frontend::TokenType::TOKEN_STAR ||
                 unary->op.type == frontend::TokenType::TOKEN_AT) {
                 return extractAccessPath(unary->operand.get());
             }

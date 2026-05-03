@@ -7,8 +7,8 @@
 func:main = int32() {
     int32:x = 10;
 
-    int32$:m1 = $x;  // First mutable borrow
-    int32$:m2 = $x;  // ERROR: Second mutable borrow while first exists
+    $$m int32:m1 = x;  // First mutable borrow
+    $$m int32:m2 = x;  // ERROR: Second mutable borrow while first exists
 
     // Both borrows are alive here - this should be rejected
     print("Should not compile!\n");

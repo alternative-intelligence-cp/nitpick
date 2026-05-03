@@ -6,9 +6,9 @@
 
 func:main = int32() {
     int32:x = 10;
-    int32$:m = $x;  // Mutable borrow
+    $$m int32:m = x;  // Mutable borrow
 
-    int32$:r = !$x;  // ERROR: Cannot immutably borrow while mutably borrowed
+    $$i int32:r = x;  // ERROR: Cannot immutably borrow while mutably borrowed
 
     print("Should not compile!\n");
     return 0;

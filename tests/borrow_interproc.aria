@@ -22,21 +22,17 @@ func:test_immutable_param = int32() {
 
 // ============================================================================
 // Test 2: Mutable borrow parameter ($$m) — function can modify borrowed value
-// Error case: passing plain value to $$m param is caught by borrow checker
-// (Uncomment to test error detection)
 // ============================================================================
-/*
 func:mutate_value = int32($$m int32:ref) {
-    int32:val = (ref + 1);
-    pass val;
+    ref = ref + 1;
+    pass ref;
 };
 
 func:test_mutable_param = int32() {
     int32:x = 10;
-    int32:result = raw mutate_value(x);  // ERROR: $$m expects mutable borrow, got value
+    int32:result = raw mutate_value(x);
     pass result;
 };
-*/
 
 // ============================================================================
 // Test 3: Multiple parameters with different ownership
@@ -107,22 +103,18 @@ func:test_borrow_release = int32() {
 
 // ============================================================================
 // Test 7: Mixed $$i and $$m parameters
-// Error case: passing plain value to $$m is caught
-// (Uncomment to test error detection)
 // ============================================================================
-/*
 func:read_and_compute = int32($$i int32:source, $$m int32:dest) {
-    int32:result = (source + dest);
-    pass result;
+    dest = source + dest;
+    pass dest;
 };
 
 func:test_mixed_borrows = int32() {
     int32:a = 5;
     int32:b = 10;
-    int32:result = raw read_and_compute(a, b);  // ERROR: $$m 'dest' expects borrow
+    int32:result = raw read_and_compute(a, b);
     pass result;
 };
-*/
 
 // ============================================================================
 // Test 8: Recursive function with borrow parameter
@@ -148,10 +140,12 @@ func:test_recursive_borrow = int32() {
 // ============================================================================
 func:main = int32() {
     drop test_immutable_param();
+    drop test_mutable_param();
     drop test_multi_params();
     drop test_copy_param();
     drop test_borrow_chain();
     drop test_borrow_release();
+    drop test_mixed_borrows();
     drop test_recursive_borrow();
     exit 0;
 };
