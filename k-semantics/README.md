@@ -102,7 +102,10 @@ claims for direct field-alias writeback, nested field-alias writeback, and
 immutable field-alias assignment failsafe routing, plus `proofs/pin-proofs.k`
 with concrete claims for pin registration, pin store-through rejection,
 pin-member mutation rejection, pin-path mutation rejection, and pinned-host
-reassignment failsafe routing.
+reassignment failsafe routing, plus `proofs/pin-by-value-proofs.k` with
+concrete claims for pinned-host rejection in one-argument calls, immutable
+parameter calls, both two-argument positions, and both direct and parenthesized
+terminal `exit` values.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 

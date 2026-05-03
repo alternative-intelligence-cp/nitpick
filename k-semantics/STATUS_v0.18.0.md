@@ -38,6 +38,10 @@ Branch: `dev-0.18.x`
 - Added `proofs/pin-proofs.k` with five concrete claims for pin registration,
   pin store-through rejection, pin-member mutation rejection, pin-path mutation
   rejection, and pinned-host reassignment failsafe routing.
+- Added `proofs/pin-by-value-proofs.k` with six concrete claims for pinned-host
+  by-value rejection in one-argument calls, immutable parameter calls, both
+  two-argument positions, and both direct and parenthesized terminal `exit`
+  values.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
@@ -121,7 +125,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 100 core K tests under `krun`.
-- Proved all three current `kprove` proof modules under K Framework v7.1.320.
+- Proved all four current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -136,7 +140,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 3 proof modules passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 4 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -242,7 +246,7 @@ Branch: `dev-0.18.x`
 - modules/imports and extern/FFI
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
-  field-alias, and pin read-only claims
+  field-alias, pin read-only, and pinned by-value claims
 
 ## Next recommended slice
 
