@@ -13,8 +13,10 @@ by `kprove`, discovers `*.k` files in this directory, reads each file's
 
 Current proof modules:
 
-- `core-proofs.k` — three concrete executable-core claims covering sticky `ERR`,
-  bounded `int32` wraparound, and `tbb32` overflow-to-`ERR` behavior.
+- `core-proofs.k` — concrete executable-core claims covering sticky `ERR`,
+  bounded `int32` wraparound, `tbb32` overflow-to-`ERR`, zero-step loop
+  failsafe routing, fixed reassignment failsafe routing, and `?!` error-result
+  failsafe routing.
 - `pointer-path-proofs.k` — concrete nested pointer and pin-path claims,
   including pin-derived pointer alias read and mutation-rejection behavior.
 
@@ -25,9 +27,9 @@ Planned initial claims:
    concrete overflow claim added
 3. `int32`/`int64` arithmetic stays within two's-complement bounds — initial
    concrete `int32` wrap claim added
-4. zero-step loops route to failsafe instead of diverging
-5. reassignment to `fixed` bindings cannot silently mutate state
-6. `?!` on an error `Result` always reaches the failsafe path
+4. zero-step loops route to failsafe instead of diverging — concrete claim added
+5. reassignment to `fixed` bindings cannot silently mutate state — concrete claim added
+6. `?!` on an error `Result` always reaches the failsafe path — concrete claim added
 7. zero-argument helper calls preserve `pass`/`fail` Result polarity
 8. `println` appends exactly one newline and returns the emitted byte count
 9. parameterized helper calls restore caller frames and preserve `pass`/`fail`

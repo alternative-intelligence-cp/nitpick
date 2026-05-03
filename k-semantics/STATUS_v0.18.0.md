@@ -30,8 +30,10 @@ Branch: `dev-0.18.x`
   preserving and restoring the previous `$` / loop-index value after checks.
 - Added `run_k_proofs.sh`, a Haskell-backend `kprove` proof runner with
   CTest-friendly skip behavior when K is absent.
-- Added `proofs/core-proofs.k` with three concrete executable-core claims for
-  sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+- Added `proofs/core-proofs.k` with concrete executable-core claims for
+  sticky `ERR`, bounded `int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step
+  loop failsafe routing, fixed reassignment failsafe routing, and `?!`
+  error-result failsafe routing.
 - Added `proofs/field-alias-proofs.k` with three concrete claims for direct
   field-alias writeback, nested field-alias writeback, and immutable
   field-alias assignment failsafe routing.
@@ -202,6 +204,9 @@ Branch: `dev-0.18.x`
 - Extended `proofs/pointer-path-proofs.k` with two concrete pin-derived alias
   claims: an alias storing `PINPATHLOC` reads the pointee field, while
   store-through via that alias routes to failsafe.
+- Extended `proofs/core-proofs.k` with three concrete failsafe claims for
+  zero-step loops, reassignment to fixed bindings, and `?!` applied to error
+  results.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
