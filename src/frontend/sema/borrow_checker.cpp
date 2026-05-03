@@ -32,6 +32,8 @@ LifetimeContext LifetimeContext::snapshot() const {
     snap.active_loans = this->active_loans;
     snap.path_loans = this->path_loans;
     snap.active_pins = this->active_pins;
+    snap.pin_derived_aliases = this->pin_derived_aliases;
+    snap.pointer_vars = this->pointer_vars;
     snap.pending_wild_frees = this->pending_wild_frees;
     snap.wild_states = this->wild_states;
     snap.wild_alloc_sizes = this->wild_alloc_sizes;
@@ -47,6 +49,8 @@ void LifetimeContext::restore(const LifetimeContext& snap) {
     this->active_loans = snap.active_loans;
     this->path_loans = snap.path_loans;
     this->active_pins = snap.active_pins;
+    this->pin_derived_aliases = snap.pin_derived_aliases;
+    this->pointer_vars = snap.pointer_vars;
     this->pending_wild_frees = snap.pending_wild_frees;
     this->wild_states = snap.wild_states;
     this->wild_alloc_sizes = snap.wild_alloc_sizes;
@@ -176,6 +180,18 @@ void LifetimeContext::merge(const LifetimeContext& then_state, const LifetimeCon
             active_pins[host] = pinner;
         }
     }
+
+    // Merge pin-derived aliases conservatively: if an alias is pin-derived on
+    // either branch, retain the read-only pin provenance after the merge.
+    for (const auto& [alias, info] : then_state.pin_derived_aliases) {
+        pin_derived_aliases.emplace(alias, info);
+    }
+    for (const auto& [alias, info] : else_state.pin_derived_aliases) {
+        pin_derived_aliases.emplace(alias, info);
+    }
+
+    pointer_vars.insert(then_state.pointer_vars.begin(), then_state.pointer_vars.end());
+    pointer_vars.insert(else_state.pointer_vars.begin(), else_state.pointer_vars.end());
 }
 
 bool LifetimeContext::mergeLoopBackEdge(const LifetimeContext& back_edge_state) {
@@ -359,6 +375,23 @@ bool LifetimeContext::mergeLoopBackEdgeLivenessAware(const LifetimeContext& back
         }
     }
 
+    // Merge pin-derived aliases using the same liveness filter as loan origins.
+    for (const auto& [alias, info] : back_edge_state.pin_derived_aliases) {
+        if (!liveness.isLiveAtHeader(alias)) {
+            continue;
+        }
+        auto [_, inserted] = pin_derived_aliases.emplace(alias, info);
+        if (inserted) {
+            changed = true;
+        }
+    }
+
+    for (const auto& var : back_edge_state.pointer_vars) {
+        if (liveness.isLiveAtHeader(var) && pointer_vars.insert(var).second) {
+            changed = true;
+        }
+    }
+
     return changed;
 }
 
@@ -520,10 +553,16 @@ bool LifetimeContext::equivalent(const LifetimeContext& other) const {
     // ==========================================================
     // 4. Compare Pending Frees (Leak Detection)
     // ==========================================================
+    if (pin_derived_aliases != other.pin_derived_aliases) return false;
+    if (pointer_vars != other.pointer_vars) return false;
+
+    // ==========================================================
+    // 5. Compare Pending Frees (Leak Detection)
+    // ==========================================================
     if (pending_wild_frees != other.pending_wild_frees) return false;
 
     // ==========================================================
-    // 5. Compare Moved Variables (Use-After-Move)
+    // 6. Compare Moved Variables (Use-After-Move)
     // ==========================================================
     if (moved_variables != other.moved_variables) return false;
 
@@ -952,6 +991,8 @@ void BorrowChecker::releaseBorrows(const std::string& var) {
     
     // Remove from loan origins
     ctx.loan_origins.erase(var);
+    ctx.pin_derived_aliases.erase(var);
+    ctx.pointer_vars.erase(var);
     
     // Check if any other variables borrowed from this one
     std::vector<std::string> invalidated_refs;
@@ -968,6 +1009,72 @@ void BorrowChecker::releaseBorrows(const std::string& var) {
 // ============================================================================
 // Pinning Support (Phase 3.3.2)
 // ============================================================================
+
+bool BorrowChecker::findPinnedRootedPath(ASTNode* node,
+                                         std::string& pin_ref,
+                                         std::string& host,
+                                         std::string& path) const {
+    if (!node) return false;
+
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* pointer = static_cast<IdentifierExpr*>(node);
+
+        auto aliasIt = ctx.pin_derived_aliases.find(pointer->name);
+        if (aliasIt != ctx.pin_derived_aliases.end()) {
+            pin_ref = aliasIt->second.pin_ref;
+            host = aliasIt->second.host;
+            path = pointer->name + " (derived from " + aliasIt->second.source_path + ")";
+            return true;
+        }
+
+        auto originsIt = ctx.loan_origins.find(pointer->name);
+        if (originsIt != ctx.loan_origins.end()) {
+            for (const auto& origin : originsIt->second) {
+                auto pinIt = ctx.active_pins.find(origin);
+                if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
+                    pin_ref = pointer->name;
+                    host = origin;
+                    path = pointer->name;
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    if (node->type == ASTNode::NodeType::POINTER_MEMBER ||
+        node->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(node);
+        if (findPinnedRootedPath(member->object.get(), pin_ref, host, path)) {
+            path += (node->type == ASTNode::NodeType::POINTER_MEMBER ? "->" : ".");
+            path += member->member;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void BorrowChecker::recordPinDerivedAlias(const std::string& alias,
+                                          ASTNode* initializer,
+                                          ASTNode* node) {
+    std::string pin_ref;
+    std::string host;
+    std::string path;
+
+    if (!findPinnedRootedPath(initializer, pin_ref, host, path)) {
+        ctx.pin_derived_aliases.erase(alias);
+        return;
+    }
+
+    if (!validateLifetime(host, alias, node)) {
+        return;
+    }
+
+    ctx.pin_derived_aliases[alias] = PinAliasInfo{pin_ref, host, path};
+    ctx.loan_origins[alias].insert(host);
+}
 
 void BorrowChecker::recordPin(const std::string& host, const std::string& pin_ref, ASTNode* node) {
     // Check if already pinned
@@ -1003,6 +1110,14 @@ void BorrowChecker::releasePin(const std::string& var) {
     
     for (const auto& host : to_unpin) {
         ctx.active_pins.erase(host);
+    }
+
+    for (auto it = ctx.pin_derived_aliases.begin(); it != ctx.pin_derived_aliases.end(); ) {
+        if (it->second.pin_ref == var) {
+            it = ctx.pin_derived_aliases.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -1374,6 +1489,15 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Register the variable first
     registerVariable(stmt->varName, stmt);
 
+    const std::string type_text = stmt->typeNode ? stmt->typeNode->toString() : stmt->typeName;
+    const bool is_pointer_decl = stmt->typeName.find("->") != std::string::npos ||
+        stmt->typeName.find("@") != std::string::npos ||
+        type_text.find("->") != std::string::npos ||
+        type_text.find("@") != std::string::npos;
+    if (is_pointer_decl) {
+        ctx.pointer_vars.insert(stmt->varName);
+    }
+
     // Check initializer if present
     if (stmt->initializer) {
         checkExpression(stmt->initializer.get());
@@ -1416,6 +1540,10 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 // Don't record as wild allocation - it's just a pin
                 return;
             }
+        }
+
+        if (is_pointer_decl) {
+            recordPinDerivedAlias(stmt->varName, stmt->initializer.get(), stmt);
         }
     }
 
@@ -1470,42 +1598,6 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
 
     std::string target_name;
 
-    auto findPinnedRootedPath = [&](auto&& self, ASTNode* node,
-                                    std::string& pin_ref,
-                                    std::string& host,
-                                    std::string& path) -> bool {
-        if (!node) return false;
-
-        if (node->type == ASTNode::NodeType::IDENTIFIER) {
-            IdentifierExpr* pointer = static_cast<IdentifierExpr*>(node);
-            auto originsIt = ctx.loan_origins.find(pointer->name);
-            if (originsIt != ctx.loan_origins.end()) {
-                for (const auto& origin : originsIt->second) {
-                    auto pinIt = ctx.active_pins.find(origin);
-                    if (pinIt != ctx.active_pins.end() && pinIt->second == pointer->name) {
-                        pin_ref = pointer->name;
-                        host = origin;
-                        path = pointer->name;
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        if (node->type == ASTNode::NodeType::POINTER_MEMBER ||
-            node->type == ASTNode::NodeType::MEMBER_ACCESS) {
-            MemberAccessExpr* member = static_cast<MemberAccessExpr*>(node);
-            if (self(self, member->object.get(), pin_ref, host, path)) {
-                path += (node->type == ASTNode::NodeType::POINTER_MEMBER ? "->" : ".");
-                path += member->member;
-                return true;
-            }
-        }
-
-        return false;
-    };
-
     auto rootIdentifierName = [&](auto&& self, ASTNode* node) -> std::string {
         if (!node) return "";
         if (node->type == ASTNode::NodeType::IDENTIFIER) {
@@ -1551,7 +1643,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
         if (unary->op.type == frontend::TokenType::TOKEN_LEFT_ARROW ||
             unary->op.type == frontend::TokenType::TOKEN_STAR) {
             std::string pin_ref, host, path;
-            if (findPinnedRootedPath(findPinnedRootedPath, unary->operand.get(), pin_ref, host, path)) {
+            if (findPinnedRootedPath(unary->operand.get(), pin_ref, host, path)) {
                 addErrorWithSuggestion("Cannot assign through pin reference '" + pin_ref +
                         "' via path '" + path + "' rooted at pinned variable '" + host + "'", expr,
                         "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
@@ -1562,7 +1654,7 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
     } else if (expr->left->type == ASTNode::NodeType::POINTER_MEMBER) {
         MemberAccessExpr* member = static_cast<MemberAccessExpr*>(expr->left.get());
         std::string pin_ref, host, path;
-        if (findPinnedRootedPath(findPinnedRootedPath, expr->left.get(), pin_ref, host, path)) {
+        if (findPinnedRootedPath(expr->left.get(), pin_ref, host, path)) {
             addErrorWithSuggestion("Cannot assign through pin reference '" + pin_ref +
                     "' via path '" + path + "' rooted at pinned variable '" + host + "'", expr,
                     "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
@@ -1596,6 +1688,10 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
 
     // Check right side
     checkExpression(expr->right.get());
+
+    if (!target_name.empty() && ctx.pointer_vars.count(target_name) > 0) {
+        recordPinDerivedAlias(target_name, expr->right.get(), expr);
+    }
 }
 
 void BorrowChecker::checkIfStmt(IfStmt* stmt) {
@@ -2723,6 +2819,16 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                 addError("Cannot pass pinned variable '" + ident->name +
                          "' by value. Pinned objects must remain at a stable address. "
                          "Use an explicit $$i/$$m borrow-compatible API instead.",
+                         arg.get());
+                tagCode("ARIA-016");
+            }
+
+            auto aliasIt = ctx.pin_derived_aliases.find(ident->name);
+            if (aliasIt != ctx.pin_derived_aliases.end()) {
+                addError("Cannot pass pin-derived pointer alias '" + ident->name +
+                         "' by value. Alias derives from pin reference '" + aliasIt->second.pin_ref +
+                         "' rooted at pinned variable '" + aliasIt->second.host + "'. "
+                         "Use an explicit $$i borrow-compatible API instead.",
                          arg.get());
                 tagCode("ARIA-016");
             }

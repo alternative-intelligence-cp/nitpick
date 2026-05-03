@@ -174,6 +174,28 @@ struct AccessPathHash {
     }
 };
 
+/**
+ * PinAliasInfo - provenance for pointer variables derived from a pin path.
+ *
+ * Example:
+ *   stack Box->:pin = #box;
+ *   stack Leaf->:alias = pin->leaf;
+ *
+ * The alias must preserve the read-only pin contract, even though it is no
+ * longer syntactically rooted at the original pin reference.
+ */
+struct PinAliasInfo {
+    std::string pin_ref;
+    std::string host;
+    std::string source_path;
+
+    bool operator==(const PinAliasInfo& other) const {
+        return pin_ref == other.pin_ref &&
+               host == other.host &&
+               source_path == other.source_path;
+    }
+};
+
 // ============================================================================
 // Two-Phase Borrowing (Gemini Report: Method Call Patterns)
 // ============================================================================
@@ -355,6 +377,16 @@ struct LifetimeContext {
     // Key: Host Variable, Value: Pinning Reference Name
     // Pinned variables cannot be moved, reassigned, or collected by GC
     std::unordered_map<std::string, std::string> active_pins;
+
+    // Pointer variables derived from a pin-rooted path. These aliases retain
+    // the pin's read-only contract and may not be used for mutation or by-value
+    // escape into an unconstrained callee.
+    std::unordered_map<std::string, PinAliasInfo> pin_derived_aliases;
+
+    // Variables whose declared type is pointer-like (contains ->). This lets
+    // reassignment tracking distinguish pointer aliases from scalar reads of a
+    // pin-rooted path.
+    std::unordered_set<std::string> pointer_vars;
     
     // Tracks wild allocations requiring cleanup (for leak detection)
     // Variables in this set must be freed before going out of scope
@@ -749,6 +781,20 @@ private:
      * - Remain stable in memory
      */
     void recordPin(const std::string& host, const std::string& pin_ref, ASTNode* node);
+
+    /**
+     * Record that a pointer variable aliases a path derived from a pin.
+     */
+    void recordPinDerivedAlias(const std::string& alias, ASTNode* initializer, ASTNode* node);
+
+    /**
+     * Detect whether an expression is rooted in a pin reference or pin-derived
+     * pointer alias, returning provenance for diagnostics.
+     */
+    bool findPinnedRootedPath(ASTNode* node,
+                              std::string& pin_ref,
+                              std::string& host,
+                              std::string& path) const;
     
     /**
      * Check if a variable is currently pinned

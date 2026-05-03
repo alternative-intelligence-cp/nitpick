@@ -87,6 +87,10 @@ Branch: `dev-0.18.x`
   two-argument statement-body helpers with mutable first parameters, mutable
   second parameters, and distinct two-mutable-parameter calls, preserving the
   ordinary call-site syntax used by `ariac`.
+- Added pin-derived pointer alias edge coverage: `ariac` now tracks pointer
+  variables initialized or reassigned from pin-rooted paths such as
+  `pin->leaf`, rejects mutation through those aliases with ARIA-016, and K
+  regressions preserve read-only `PINPATHLOC` behavior through the alias.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
 - Added focused pin call-frame regressions for callee-local pin release and
@@ -141,7 +145,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 103 core K tests under `krun`.
+- Compiled `aria.k` and passed all 105 core K tests under `krun`.
 - Proved all seven current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -156,7 +160,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 103 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 105 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 7 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -189,6 +193,11 @@ Branch: `dev-0.18.x`
   `build/ariac`: mutable first-argument writeback exited `11`, mutable
   second-argument writeback exited `15`, and distinct two-mutable-parameter
   writeback exited `7`.
+- Cross-checked focused pin-derived alias probes with `build/ariac`: reading
+  through `stack Leaf->:alias = pin->leaf; alias->x` compiled and exited `10`,
+  while mutating through declaration- or reassignment-derived aliases rejected
+  with ARIA-016, and passing a pin-derived pointer alias by value also rejected
+  with ARIA-016.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
@@ -261,8 +270,8 @@ Branch: `dev-0.18.x`
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
 - richer memory semantics beyond the allocation/defer/local-pointer/pin/wildx
-  slices: any remaining concrete deeper pin path edge cases not covered by
-  store-through, nested pointer paths, direct host-field mutation, call
+  slices: any newly discovered concrete pin-path bypasses not covered by direct
+  pin paths, derived pointer aliases, direct host-field mutation, helper-call
   arguments, or terminal exits
 - richer borrow semantics beyond direct one-level and currently modeled
   two-level struct-field path tracking: array/index field borrow paths once
@@ -277,5 +286,6 @@ Branch: `dev-0.18.x`
 ## Next recommended slice
 
 Expand semantic coverage in the next small slice. Recommended order:
-remaining concrete deeper pin path edge cases, array/index field borrow paths
-once accepted by the compiler surface, or broader symbolic `kprove` lemmas.
+array/index field borrow paths once accepted by the compiler surface, or broader
+symbolic `kprove` lemmas. Probe additional pin paths only if a new concrete
+bypass appears.
