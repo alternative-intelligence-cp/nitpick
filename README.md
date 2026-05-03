@@ -24,7 +24,7 @@ independent of `ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
 `k_semantics_core` **100/100** under K Framework v7.1.320;
-`k_semantics_proofs` **2/2 proof modules** with six concrete `kprove` claims;
+`k_semantics_proofs` **3/3 proof modules** with eleven concrete `kprove` claims;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
 
@@ -68,7 +68,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
     executes core programs with `krun`, and skips cleanly when K is unavailable.
 - **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
     semantics with the Haskell backend required by `kprove` and proves the core
-    arithmetic plus field-alias claim modules.
+    arithmetic, field-alias, and pin read-only claim modules.
 - **Next semantic slice** — richer memory/borrow behavior (remaining concrete
     pin path edge cases and array/index field borrow paths once accepted by the
     compiler surface) plus broader symbolic `kprove` lemmas.
@@ -104,7 +104,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 100/100 core tests, 2/2 proof modules |
+| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 100/100 core tests, 3/3 proof modules |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
@@ -985,7 +985,8 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **CTest integration** — K semantics test passes when K is installed and
     skips cleanly when K is absent
 - ✅ **Proof-oriented `kprove` hook** — Haskell-backend proof runner integrated
-    with CTest; core arithmetic and field-alias claim modules are passing
+    with CTest; core arithmetic, field-alias, and pin read-only claim modules
+    are passing
 - ⏭️ **Next** — Richer pointer/borrow behavior and broader symbolic `kprove`
     lemmas
 

@@ -99,7 +99,10 @@ The initial proof corpus includes `proofs/core-proofs.k` with three concrete
 claims for sticky `ERR`, bounded `int32` wrapping, and `tbb32`
 overflow-to-`ERR` behavior, plus `proofs/field-alias-proofs.k` with concrete
 claims for direct field-alias writeback, nested field-alias writeback, and
-immutable field-alias assignment failsafe routing.
+immutable field-alias assignment failsafe routing, plus `proofs/pin-proofs.k`
+with concrete claims for pin registration, pin store-through rejection,
+pin-member mutation rejection, pin-path mutation rejection, and pinned-host
+reassignment failsafe routing.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 

@@ -1,6 +1,6 @@
 # Aria v0.18.0 K Semantics Status
 
-Date: May 2, 2026
+Date: May 3, 2026
 Branch: `dev-0.18.x`
 
 ## Completed in this slice
@@ -35,6 +35,9 @@ Branch: `dev-0.18.x`
 - Added `proofs/field-alias-proofs.k` with three concrete claims for direct
   field-alias writeback, nested field-alias writeback, and immutable
   field-alias assignment failsafe routing.
+- Added `proofs/pin-proofs.k` with five concrete claims for pin registration,
+  pin store-through rejection, pin-member mutation rejection, pin-path mutation
+  rejection, and pinned-host reassignment failsafe routing.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
@@ -118,7 +121,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 100 core K tests under `krun`.
-- Proved both current `kprove` proof modules under K Framework v7.1.320.
+- Proved all three current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -133,7 +136,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 2 proof modules passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 3 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -238,8 +241,8 @@ Branch: `dev-0.18.x`
   broader pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
-- broader symbolic `kprove` lemmas beyond the current concrete core and
-  field-alias claims
+- broader symbolic `kprove` lemmas beyond the current concrete core,
+  field-alias, and pin read-only claims
 
 ## Next recommended slice
 
