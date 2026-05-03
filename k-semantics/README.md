@@ -105,7 +105,10 @@ pin-member mutation rejection, pin-path mutation rejection, and pinned-host
 reassignment failsafe routing, plus `proofs/pin-by-value-proofs.k` with
 concrete claims for pinned-host rejection in one-argument calls, immutable
 parameter calls, both two-argument positions, and both direct and parenthesized
-terminal `exit` values.
+terminal `exit` values, plus `proofs/pointer-proofs.k` with concrete claims
+for local address-of, pointer dereference, pointer store-through, invalid
+non-pointer dereference routing, pointer-member reads, and pointer-member
+store-through.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 
