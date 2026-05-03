@@ -1,0 +1,20 @@
+// expect-exit: 11
+
+func:add_to_left = int32($$m int32:left, int32:right) {
+    left = left + right;
+    pass left;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
+
+func:main = int32() {
+    int32:left = 7;
+    int32:right = 4;
+    int32:result = raw add_to_left(left, right);
+    if (left == 11) {
+        exit result;
+    }
+    exit left;
+};

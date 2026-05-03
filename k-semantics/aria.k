@@ -778,6 +778,7 @@ module ARIA
                           | "Fn1StmtPass" "(" Type "," BorrowInfo "," Type "," Id "," Stmt "," Exp ")"
                           | "Fn1Fail" "(" BorrowInfo "," Type "," Id "," Exp ")"
                           | "Fn2Pass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn2StmtPass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Stmt "," Exp ")"
                           | "Fn2Fail" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
 
      syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Map "," Set "," Set "," Set "," Set "," Int ")"
@@ -789,6 +790,7 @@ module ARIA
                  | "finishCallFailFrame" "(" FrameState ")"
                  | "finishCallPassFrameWriteback" "(" Type "," FrameState "," Map ")"
                  | "finishCallFailFrameWriteback" "(" FrameState "," Map ")"
+                 | "finishFn2MutFirstArg" "(" Id "," Id ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -809,6 +811,9 @@ module ARIA
 
   rule <k> loadFuncs(func: F:Id = T:Type(P1:Param, P2:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Pass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
+
+  rule <k> loadFuncs(func: F:Id = T:Type(P1:Param, P2:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2StmtPass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), S, E) ] </functions>
 
   rule <k> loadFuncs(func: F:Id = _T:Type(P1:Param, P2:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Fail(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
@@ -982,6 +987,96 @@ module ARIA
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
+           rule <k> F:Id(X:Id, A2:Exp) => A2 ~> finishFn2MutFirstArg(F, X) ... </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, MutBorrow, _:Type, _:Id, CopyBorrow, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <env> Env </env>
+                <pinned-hosts> PinnedHosts </pinned-hosts>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(30)]
+
+           rule <k> F:Id(X:Id, A2:Exp) => A2 ~> finishFn2MutFirstArg(F, X) ... </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, MutBorrow, _:Type, _:Id, ImmBorrow, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <env> Env </env>
+                <pinned-hosts> PinnedHosts </pinned-hosts>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(30)]
+
+     rule <k> V:Val ~> finishFn2MutFirstArg(F:Id, X:Id) => F(X, V) ... </k>
+
+           rule <k> F:Id(X:Id, A2:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), (envLoc(Env, X) |-> true) callWritebacks(B2, A2)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, MutBorrow, PT1, PX1, B2, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> envLoc(Env, X) PX2 |-> callParamLoc(L, B2, A2)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(Store, PT2, B2, L, A2) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, MutBorrow) paramBorrowMap(PX2, B2) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) andBool acceptsBorrowArg(B2, A2) [priority(25)]
+
+           rule <k> F:Id(A1:Val, Y:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) (envLoc(Env, Y) |-> true)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, B1, PT1, PX1, MutBorrow, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> envLoc(Env, Y)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(Store, PT1, B1, L, A1) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires Y in_keys(Env) andBool notBool(Y in PinnedHosts) andBool acceptsBorrowArg(B1, A1) [priority(25)]
+
+           rule <k> F:Id(X:Id, Y:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), (envLoc(Env, X) |-> true) (envLoc(Env, Y) |-> true)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, MutBorrow, PT1, PX1, MutBorrow, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> envLoc(Env, X) PX2 |-> envLoc(Env, Y)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, MutBorrow) paramBorrowMap(PX2, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 2 </next-loc>
+          requires X in_keys(Env) andBool Y in_keys(Env) andBool notBool(X in PinnedHosts) andBool notBool(Y in PinnedHosts) andBool envLoc(Env, X) =/=Int envLoc(Env, Y) [priority(25)]
+
+           rule <k> F:Id(A1:Val, A2:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, B1, PT1, PX1, B2, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 2 </next-loc>
+          requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
+
      rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Fail(B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
        <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
@@ -1036,6 +1131,20 @@ module ARIA
                 <failsafe-triggered> _ => true </failsafe-triggered>
           requires X in Pinned [priority(25)]
 
+          rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                   <functions> ... F |-> Fn2StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                   <pinned-hosts> Pinned </pinned-hosts>
+                   <failsafe> FS </failsafe>
+                   <failsafe-triggered> _ => true </failsafe-triggered>
+              requires X in Pinned [priority(25)]
+
+          rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                   <functions> ... F |-> Fn2StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                   <pinned-hosts> Pinned </pinned-hosts>
+                   <failsafe> FS </failsafe>
+                   <failsafe-triggered> _ => true </failsafe-triggered>
+              requires X in Pinned [priority(25)]
+
      rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
                 <functions> ... F |-> Fn2Fail(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
                 <pinned-hosts> Pinned </pinned-hosts>
@@ -1073,6 +1182,12 @@ module ARIA
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
+
+     rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, B1, _:Type, _:Id, B2, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
 
   rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn2Fail(B1, _:Type, _:Id, B2, _:Type, _:Id, _:Exp) ... </functions>

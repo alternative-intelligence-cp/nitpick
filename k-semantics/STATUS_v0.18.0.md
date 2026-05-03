@@ -83,6 +83,10 @@ Branch: `dev-0.18.x`
   lowers the callee parameter as a pointer alias, writes assignments back
   through caller storage, and the K oracle models borrow-location call frames
   with return-time writeback.
+- Added multi-argument `$$m` helper writeback coverage: K now models
+  two-argument statement-body helpers with mutable first parameters, mutable
+  second parameters, and distinct two-mutable-parameter calls, preserving the
+  ordinary call-site syntax used by `ariac`.
 - Threaded pinned-host state through isolated helper call frames so callee-local
   pins do not leak into callers and caller pins are restored after return.
 - Added focused pin call-frame regressions for callee-local pin release and
@@ -137,7 +141,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 100 core K tests under `krun`.
+- Compiled `aria.k` and passed all 103 core K tests under `krun`.
 - Proved all seven current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -152,7 +156,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 103 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 7 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -181,6 +185,10 @@ Branch: `dev-0.18.x`
   mutate(value)` compiles, lowers to `@mutate(ptr %value)`, writes through the
   caller slot, and exits `15`, while dollar-prefixed argument syntax is rejected
   instead of treated as a borrow expression.
+- Cross-checked new multi-argument `$$m` helper writeback K tests with
+  `build/ariac`: mutable first-argument writeback exited `11`, mutable
+  second-argument writeback exited `15`, and distinct two-mutable-parameter
+  writeback exited `7`.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).

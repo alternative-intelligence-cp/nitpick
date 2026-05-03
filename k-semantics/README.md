@@ -10,7 +10,8 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
-- zero-, one-, and two-argument helper functions returning through `pass` / `fail`
+- zero-, one-, and two-argument helper functions returning through `pass` / `fail`,
+  including one-statement helper bodies for modeled mutation/writeback slices
 - isolated helper call frames for parameters, local bindings, and pinned-host
   preservation
 - canonical `struct:Name = { Type:field; ... };` declarations for one-, two-,
@@ -54,7 +55,7 @@ can eventually answer: “what should this Aria program do?” independently of
   writeback for local direct and two-level struct-field aliases, plain-identifier
   `$$m` argument-shape enforcement, rejection of stale dollar-prefixed borrow
   expressions, and positive `$$m` call-by-reference writeback for ordinary
-  variable borrows
+  variable borrows in one- and two-argument helper calls
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
