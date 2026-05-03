@@ -46,9 +46,10 @@ Branch: `dev-0.18.x`
   address-of, pointer dereference, pointer store-through, invalid non-pointer
   dereference failsafe routing, pointer-member reads, and pointer-member
   store-through.
-- Added `proofs/pointer-path-proofs.k` with four concrete claims for nested
+- Added `proofs/pointer-path-proofs.k` with concrete claims for nested
   pointer-valued field reads, nested pointer-valued store-through, pin-derived
-  nested path reads, and pin-derived nested path mutation rejection.
+  nested path reads, pin-derived nested path mutation rejection, pin-derived
+  pointer alias reads, and pin-derived pointer alias mutation rejection.
 - Added `proofs/borrow-path-proofs.k` with four concrete claims for direct
   sibling-field assignment while a different field is borrowed, exact
   borrowed-field assignment rejection, nested sibling-field assignment while a
@@ -198,6 +199,9 @@ Branch: `dev-0.18.x`
   while mutating through declaration- or reassignment-derived aliases rejected
   with ARIA-016, and passing a pin-derived pointer alias by value also rejected
   with ARIA-016.
+- Extended `proofs/pointer-path-proofs.k` with two concrete pin-derived alias
+  claims: an alias storing `PINPATHLOC` reads the pointee field, while
+  store-through via that alias routes to failsafe.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
@@ -280,8 +284,8 @@ Branch: `dev-0.18.x`
 - modules/imports and extern/FFI
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
-  field-alias, pin read-only, pinned by-value, local pointer, pointer-path, and
-  borrow-path claims
+  field-alias, pin read-only, pinned by-value, local pointer, pointer-path
+  (including pin-derived aliases), and borrow-path claims
 
 ## Next recommended slice
 

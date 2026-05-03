@@ -15,6 +15,8 @@ Current proof modules:
 
 - `core-proofs.k` — three concrete executable-core claims covering sticky `ERR`,
   bounded `int32` wraparound, and `tbb32` overflow-to-`ERR` behavior.
+- `pointer-path-proofs.k` — concrete nested pointer and pin-path claims,
+  including pin-derived pointer alias read and mutation-rejection behavior.
 
 Planned initial claims:
 
