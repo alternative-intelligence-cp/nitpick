@@ -46,6 +46,9 @@ Branch: `dev-0.18.x`
   address-of, pointer dereference, pointer store-through, invalid non-pointer
   dereference failsafe routing, pointer-member reads, and pointer-member
   store-through.
+- Added `proofs/pointer-path-proofs.k` with four concrete claims for nested
+  pointer-valued field reads, nested pointer-valued store-through, pin-derived
+  nested path reads, and pin-derived nested path mutation rejection.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
@@ -129,7 +132,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 100 core K tests under `krun`.
-- Proved all five current `kprove` proof modules under K Framework v7.1.320.
+- Proved all six current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -144,7 +147,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 5 proof modules passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 6 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -250,7 +253,8 @@ Branch: `dev-0.18.x`
 - modules/imports and extern/FFI
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
-  field-alias, pin read-only, pinned by-value, and local pointer claims
+  field-alias, pin read-only, pinned by-value, local pointer, and pointer-path
+  claims
 
 ## Next recommended slice
 
