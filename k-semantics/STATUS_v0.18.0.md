@@ -32,6 +32,9 @@ Branch: `dev-0.18.x`
   CTest-friendly skip behavior when K is absent.
 - Added `proofs/core-proofs.k` with three concrete executable-core claims for
   sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+- Added `proofs/field-alias-proofs.k` with three concrete claims for direct
+  field-alias writeback, nested field-alias writeback, and immutable
+  field-alias assignment failsafe routing.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
@@ -115,7 +118,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 100 core K tests under `krun`.
-- Proved the first `kprove` proof module under K Framework v7.1.320.
+- Proved both current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -130,7 +133,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 100 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 1 proof module passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 2 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -235,6 +238,8 @@ Branch: `dev-0.18.x`
   broader pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
+- broader symbolic `kprove` lemmas beyond the current concrete core and
+  field-alias claims
 
 ## Next recommended slice
 

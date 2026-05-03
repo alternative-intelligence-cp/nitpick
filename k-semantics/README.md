@@ -95,8 +95,11 @@ The first proof hook compiles `aria.k` with the Haskell backend required by
 bash ./k-semantics/run_k_proofs.sh --require-k
 ```
 
-The initial `proofs/core-proofs.k` module contains three concrete claims for
-sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+The initial proof corpus includes `proofs/core-proofs.k` with three concrete
+claims for sticky `ERR`, bounded `int32` wrapping, and `tbb32`
+overflow-to-`ERR` behavior, plus `proofs/field-alias-proofs.k` with concrete
+claims for direct field-alias writeback, nested field-alias writeback, and
+immutable field-alias assignment failsafe routing.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 
