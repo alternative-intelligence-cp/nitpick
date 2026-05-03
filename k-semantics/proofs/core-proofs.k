@@ -74,6 +74,82 @@ module ARIA-CORE-PROOFS
     <next-loc> 1 </next-loc>
 
   claim
+    <k> #token("inc", "Id")(I32(8)) => Result(NIL, I32(9), false) ... </k>
+    <functions> #token("inc", "Id") |-> Fn1Pass(int32, CopyBorrow, int32, #token("x", "Id"), #token("x", "Id") + I32(1)) </functions>
+    <env> #token("caller", "Id") |-> 0 </env>
+    <types> #token("caller", "Id") |-> int32 </types>
+    <store> 0 |-> I32(5) </store>
+    <limits> .Map </limits>
+    <mem-modes> .Map </mem-modes>
+    <stack-live> .Set </stack-live>
+    <gc-live> .Set </gc-live>
+    <wild-live> .Set </wild-live>
+    <borrow-vars> .Map </borrow-vars>
+    <borrow-aliases> .Map </borrow-aliases>
+    <imm-borrow-hosts> .Set </imm-borrow-hosts>
+    <mut-borrow-hosts> .Set </mut-borrow-hosts>
+    <pinned-hosts> .Set </pinned-hosts>
+    <fixed-vars> .Set </fixed-vars>
+    <next-loc> 1 </next-loc>
+
+  claim
+    <k> #token("broken", "Id")(I32(17)) => Result(I32(17), NIL, true) ... </k>
+    <functions> #token("broken", "Id") |-> Fn1Fail(CopyBorrow, int32, #token("e", "Id"), #token("e", "Id")) </functions>
+    <env> #token("caller", "Id") |-> 0 </env>
+    <types> #token("caller", "Id") |-> int32 </types>
+    <store> 0 |-> I32(5) </store>
+    <limits> .Map </limits>
+    <mem-modes> .Map </mem-modes>
+    <stack-live> .Set </stack-live>
+    <gc-live> .Set </gc-live>
+    <wild-live> .Set </wild-live>
+    <borrow-vars> .Map </borrow-vars>
+    <borrow-aliases> .Map </borrow-aliases>
+    <imm-borrow-hosts> .Set </imm-borrow-hosts>
+    <mut-borrow-hosts> .Set </mut-borrow-hosts>
+    <pinned-hosts> .Set </pinned-hosts>
+    <fixed-vars> .Set </fixed-vars>
+    <next-loc> 1 </next-loc>
+
+  claim
+    <k> #token("add", "Id")(I32(7), I32(5)) => Result(NIL, I32(12), false) ... </k>
+    <functions> #token("add", "Id") |-> Fn2Pass(int32, CopyBorrow, int32, #token("a", "Id"), CopyBorrow, int32, #token("b", "Id"), #token("a", "Id") + #token("b", "Id")) </functions>
+    <env> #token("caller", "Id") |-> 0 </env>
+    <types> #token("caller", "Id") |-> int32 </types>
+    <store> 0 |-> I32(5) </store>
+    <limits> .Map </limits>
+    <mem-modes> .Map </mem-modes>
+    <stack-live> .Set </stack-live>
+    <gc-live> .Set </gc-live>
+    <wild-live> .Set </wild-live>
+    <borrow-vars> .Map </borrow-vars>
+    <borrow-aliases> .Map </borrow-aliases>
+    <imm-borrow-hosts> .Set </imm-borrow-hosts>
+    <mut-borrow-hosts> .Set </mut-borrow-hosts>
+    <pinned-hosts> .Set </pinned-hosts>
+    <fixed-vars> .Set </fixed-vars>
+    <next-loc> 1 </next-loc>
+
+  claim
+    <k> #token("broken2", "Id")(I32(17), I32(99)) => Result(I32(17), NIL, true) ... </k>
+    <functions> #token("broken2", "Id") |-> Fn2Fail(CopyBorrow, int32, #token("e", "Id"), CopyBorrow, int32, #token("ignored", "Id"), #token("e", "Id")) </functions>
+    <env> #token("caller", "Id") |-> 0 </env>
+    <types> #token("caller", "Id") |-> int32 </types>
+    <store> 0 |-> I32(5) </store>
+    <limits> .Map </limits>
+    <mem-modes> .Map </mem-modes>
+    <stack-live> .Set </stack-live>
+    <gc-live> .Set </gc-live>
+    <wild-live> .Set </wild-live>
+    <borrow-vars> .Map </borrow-vars>
+    <borrow-aliases> .Map </borrow-aliases>
+    <imm-borrow-hosts> .Set </imm-borrow-hosts>
+    <mut-borrow-hosts> .Set </mut-borrow-hosts>
+    <pinned-hosts> .Set </pinned-hosts>
+    <fixed-vars> .Set </fixed-vars>
+    <next-loc> 1 </next-loc>
+
+  claim
     <k> `_._=_;_ARIA-SYNTAX_Stmt_Id_Id_Exp`(#token("p", "Id"), #token("x", "Id"), I32(42)) => .K ... </k>
     <env> #token("p", "Id") |-> 0 </env>
     <store>

@@ -18,7 +18,8 @@ Current proof modules:
    failsafe routing, fixed reassignment failsafe routing, `?!` error-result
    failsafe routing, `println` newline/byte-count behavior, zero-argument helper
    `pass`/`fail` polarity, and direct struct field writes preserving unrelated
-   fields.
+   fields, plus modeled one- and two-argument helper `pass`/`fail` polarity with
+   caller-frame restoration.
 - `field-alias-proofs.k` — direct and nested mutable field-alias writeback plus
    immutable field-alias assignment rejection.
 - `pin-proofs.k` — pin registration, read-only pin mutation rejection, and
@@ -45,7 +46,7 @@ Planned initial claims:
 7. zero-argument helper calls preserve `pass`/`fail` Result polarity — concrete claims added
 8. `println` appends exactly one newline and returns the emitted byte count — concrete claim added
 9. parameterized helper calls restore caller frames and preserve `pass`/`fail`
-   Result polarity
+   Result polarity — concrete one- and two-argument claims added
 10. struct field writes update only the selected field and preserve unrelated
    fields — concrete claim added
 11. `pick` dispatch chooses the first matching arm, and `fall label;` reaches

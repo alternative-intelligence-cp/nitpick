@@ -35,7 +35,8 @@ Branch: `dev-0.18.x`
   loop failsafe routing, fixed reassignment failsafe routing, and `?!`
   error-result failsafe routing, plus `println` newline/byte-count behavior,
   zero-argument helper `pass`/`fail` polarity, and direct struct field writes
-  preserving unrelated fields.
+  preserving unrelated fields, plus modeled one- and two-argument helper
+  `pass`/`fail` polarity with caller-frame restoration.
 - Added `proofs/field-alias-proofs.k` with three concrete claims for direct
   field-alias writeback, nested field-alias writeback, and immutable
   field-alias assignment failsafe routing.
@@ -212,6 +213,8 @@ Branch: `dev-0.18.x`
 - Extended `proofs/core-proofs.k` with five concrete claims for `println`
   newline/byte-count behavior, zero-argument helper `pass`/`fail` polarity, and
   direct struct field writes preserving unrelated fields.
+- Extended `proofs/core-proofs.k` with four concrete claims for modeled one-
+  and two-argument helper `pass`/`fail` polarity with caller-frame restoration.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
