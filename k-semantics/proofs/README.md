@@ -15,10 +15,22 @@ Current proof modules:
 
 - `core-proofs.k` — concrete executable-core claims covering sticky `ERR`,
   bounded `int32` wraparound, `tbb32` overflow-to-`ERR`, zero-step loop
-  failsafe routing, fixed reassignment failsafe routing, and `?!` error-result
-  failsafe routing.
+   failsafe routing, fixed reassignment failsafe routing, `?!` error-result
+   failsafe routing, `println` newline/byte-count behavior, zero-argument helper
+   `pass`/`fail` polarity, and direct struct field writes preserving unrelated
+   fields.
+- `field-alias-proofs.k` — direct and nested mutable field-alias writeback plus
+   immutable field-alias assignment rejection.
+- `pin-proofs.k` — pin registration, read-only pin mutation rejection, and
+   pinned-host reassignment rejection.
+- `pin-by-value-proofs.k` — pinned-host by-value rejection for helper-call and
+   terminal-exit positions.
+- `pointer-proofs.k` — local address-of/deref/store-through and pointer-member
+   behavior.
 - `pointer-path-proofs.k` — concrete nested pointer and pin-path claims,
   including pin-derived pointer alias read and mutation-rejection behavior.
+- `borrow-path-proofs.k` — direct and nested path-sensitive borrow assignment
+   claims.
 
 Planned initial claims:
 
@@ -30,12 +42,12 @@ Planned initial claims:
 4. zero-step loops route to failsafe instead of diverging — concrete claim added
 5. reassignment to `fixed` bindings cannot silently mutate state — concrete claim added
 6. `?!` on an error `Result` always reaches the failsafe path — concrete claim added
-7. zero-argument helper calls preserve `pass`/`fail` Result polarity
-8. `println` appends exactly one newline and returns the emitted byte count
+7. zero-argument helper calls preserve `pass`/`fail` Result polarity — concrete claims added
+8. `println` appends exactly one newline and returns the emitted byte count — concrete claim added
 9. parameterized helper calls restore caller frames and preserve `pass`/`fail`
    Result polarity
 10. struct field writes update only the selected field and preserve unrelated
-   fields
+   fields — concrete claim added
 11. `pick` dispatch chooses the first matching arm, and `fall label;` reaches
     only the named labeled arm before returning to the pick continuation
 12. integer `limit<Rules>` declarations and assignments either satisfy every

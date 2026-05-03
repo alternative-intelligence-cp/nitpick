@@ -100,8 +100,10 @@ bash ./k-semantics/run_k_proofs.sh --require-k
 
 The initial proof corpus includes `proofs/core-proofs.k` with concrete claims
 for sticky `ERR`, bounded `int32` wrapping, `tbb32` overflow-to-`ERR`,
-zero-step loop failsafe routing, fixed reassignment failsafe routing, and `?!`
-error-result failsafe routing, plus `proofs/field-alias-proofs.k` with concrete
+zero-step loop failsafe routing, fixed reassignment failsafe routing, `?!`
+error-result failsafe routing, `println` newline/byte-count behavior,
+zero-argument helper `pass`/`fail` polarity, and direct struct field writes
+preserving unrelated fields, plus `proofs/field-alias-proofs.k` with concrete
 claims for direct field-alias writeback, nested field-alias writeback, and
 immutable field-alias assignment failsafe routing, plus `proofs/pin-proofs.k`
 with concrete claims for pin registration, pin store-through rejection,

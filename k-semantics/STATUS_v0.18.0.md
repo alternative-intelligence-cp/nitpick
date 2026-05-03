@@ -33,7 +33,9 @@ Branch: `dev-0.18.x`
 - Added `proofs/core-proofs.k` with concrete executable-core claims for
   sticky `ERR`, bounded `int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step
   loop failsafe routing, fixed reassignment failsafe routing, and `?!`
-  error-result failsafe routing.
+  error-result failsafe routing, plus `println` newline/byte-count behavior,
+  zero-argument helper `pass`/`fail` polarity, and direct struct field writes
+  preserving unrelated fields.
 - Added `proofs/field-alias-proofs.k` with three concrete claims for direct
   field-alias writeback, nested field-alias writeback, and immutable
   field-alias assignment failsafe routing.
@@ -207,6 +209,9 @@ Branch: `dev-0.18.x`
 - Extended `proofs/core-proofs.k` with three concrete failsafe claims for
   zero-step loops, reassignment to fixed bindings, and `?!` applied to error
   results.
+- Extended `proofs/core-proofs.k` with five concrete claims for `println`
+  newline/byte-count behavior, zero-argument helper `pass`/`fail` polarity, and
+  direct struct field writes preserving unrelated fields.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
