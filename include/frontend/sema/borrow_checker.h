@@ -93,6 +93,11 @@ struct AccessPath {
         size_t min_len = std::min(fields.size(), other.fields.size());
         for (size_t i = 0; i < min_len; ++i) {
             if (fields[i] != other.fields[i]) {
+                // A dynamic index placeholder may alias any concrete index, so
+                // [*] vs [0] is overlapping unless a later proof says otherwise.
+                if (fields[i] == "[*]" || other.fields[i] == "[*]") {
+                    return false;
+                }
                 // They diverge here - check if both have more fields
                 // a.x vs a.y -> disjoint (diverge at same level)
                 return true;

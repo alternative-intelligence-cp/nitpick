@@ -1,0 +1,13 @@
+// BUG-039: Assigning to a borrowed literal-index array element is rejected.
+// Expected: compile failure with ARIA-026
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[2]:arr = [10, 20];
+    $$m int32:left = arr[0];
+    arr[0] = 22;
+    exit arr[0];
+};

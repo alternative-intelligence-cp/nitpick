@@ -1608,6 +1608,10 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
             MemberAccessExpr* member = static_cast<MemberAccessExpr*>(node);
             return self(self, member->object.get());
         }
+        if (node->type == ASTNode::NodeType::INDEX) {
+            IndexExpr* index = static_cast<IndexExpr*>(node);
+            return self(self, index->array.get());
+        }
         return "";
     };
 
@@ -1658,6 +1662,27 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
             addErrorWithSuggestion("Cannot assign through pin reference '" + pin_ref +
                     "' via path '" + path + "' rooted at pinned variable '" + host + "'", expr,
                     "hint: pins provide stable read access; unpin or use a non-pinned pointer before mutation");
+            tagCode("ARIA-016");
+            return;
+        }
+    } else if (expr->left->type == ASTNode::NodeType::INDEX) {
+        AccessPath target_path = extractAccessPath(expr->left.get());
+        if (!target_path.base_var.empty()) {
+            const Loan* conflict = ctx.checkPathConflict(target_path, true);
+            if (conflict) {
+                addError("Cannot assign to '" + target_path.toString() + "' because it is borrowed",
+                        expr,
+                        "Borrowed by '" + conflict->borrower + "' here",
+                        conflict->creation_line, conflict->creation_column);
+                tagCode("ARIA-026");
+                return;
+            }
+        }
+
+        std::string root = rootIdentifierName(rootIdentifierName, expr->left.get());
+        if (!root.empty() && isPinned(root)) {
+            addErrorWithSuggestion("Cannot assign to indexed element of pinned variable '" + root + "'", expr,
+                    "hint: pins provide stable read access; unpin before mutating elements");
             tagCode("ARIA-016");
             return;
         }
