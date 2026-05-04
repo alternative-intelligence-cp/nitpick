@@ -16,11 +16,21 @@ non-compiler slice covering core execution, safety routing, Result behavior,
 structs, rules/limits, memory qualifiers, pointers, pins, borrows, field aliases,
 and focused proof modules.
 
-The release is now at the intended non-compiler wall: array/index borrow paths
-remain blocked until `ariac` accepts indexed borrow initializers and the K model
-grows array/index-path semantics. Larger unchecked roadmap items such as full
-modules/FFI semantics, concurrency, richer arrays/rules/floats/integers, and
-deeper compiler/K integration are future expansion tracks.
+At tag time, the release reached the intended non-compiler wall: array/index
+borrow paths were deferred until `ariac` accepted indexed borrow initializers
+and the K model grew matching array/index-path semantics. Larger unchecked
+roadmap items such as full modules/FFI semantics, concurrency, richer
+arrays/rules/floats/integers, and deeper compiler/K integration remain future
+expansion tracks.
+
+**Post-tag v0.18.x update (May 4, 2026):** the narrow fixed-array literal-index
+subset has now landed on `dev-0.18.x` after the v0.18.0 tag. `ariac` and K both
+cover direct literal-index aliases such as `$$m int32:x = arr[0]`, same-slot
+conflicts, borrowed-slot assignment rejection, disjoint `arr[0]`/`arr[1]` split
+borrows, and mutable index-alias writeback. The historical v0.18.0 tag remains
+the 105-core-test release snapshot; current `dev-0.18.x` validates 109 K core
+tests. Richer arrays, dynamic index paths, arrays-in-structs, and mixed
+field/index paths remain future expansion work.
 
 ---
 
@@ -56,7 +66,8 @@ Full CTest result from the final proof-hardening slice:
 - `k-semantics/aria.k` — active executable K seed.
 - `k-semantics/run_k_tests.sh` — K core test runner with CTest-friendly skip behavior.
 - `k-semantics/run_k_proofs.sh` — Haskell-backend `kprove` runner.
-- `k-semantics/tests/core/` — 105 core executable-semantics programs.
+- `k-semantics/tests/core/` — 105 core executable-semantics programs at the
+  v0.18.0 tag; 109 on current `dev-0.18.x` after the literal-index array slice.
 - `k-semantics/proofs/` — 10 proof modules.
 - `k-semantics/STATUS_v0.18.0.md` — detailed status, validation notes, and gaps.
 - `k-semantics/README.md` — local K semantics usage notes.
@@ -91,6 +102,9 @@ The v0.18.0 K seed covers:
 - `$$i` / `$$m` borrow qualifiers, helper parameter borrow behavior, writeback,
   scope release, direct/two-level path-sensitive field borrows, and local
   mutable field-alias writeback
+- post-tag on `dev-0.18.x`: fixed two-element array literals, literal-index
+  reads/writes, literal-index borrow path tracking, and mutable index-alias
+  writeback
 
 ---
 
@@ -124,11 +138,14 @@ These are not v0.18.0 regressions:
 - remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - richer float semantics beyond type tokens/simple presence
 - stderr / stddbg output cells
-- arrays, array/index field paths, generic structs, and legacy struct shorthand
+- richer arrays beyond the currently modeled fixed two-element literal subset,
+  dynamic index expressions, arrays-in-structs, generic structs, and legacy
+  struct shorthand
 - rich `pick` patterns beyond value equality and `(*)`
 - typed `Rules<T>`, non-integer rule values, struct-field rules, arrays, modulo
   expressions, and deeper SMT integration for `limit<Rules>`
-- array/index field borrow paths until compiler and K array/index semantics exist
+- richer array/index field borrow paths beyond direct literal indices, including
+  dynamic indices and mixed field/index paths
 - modules/imports, module dot notation, extern/FFI boundary semantics
 - concurrency primitives
 - deeper symbolic type/memory/failsafe safety theorems beyond the focused proof corpus

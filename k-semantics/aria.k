@@ -14,6 +14,7 @@ requires "domains.md"
 //   - ptr->field reads/store-through, including nested pointer-valued field paths
 //   - # pin registration with dereference plus direct/nested mutation and by-value call blocking
 //   - $$i/$$m borrow qualifiers with nested path-sensitive field tracking and call enforcement
+//   - fixed two-element array literals plus literal-index borrow path tracking/writeback
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -31,14 +32,16 @@ module ARIA-SYNTAX
   imports STRING-SYNTAX
   imports ID-SYNTAX
 
-     syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Id
+     syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Type "[" Int "]" | Id
      syntax MemMode ::= "stack" | "gc" | "wild" | "wildx"
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
      syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
                          | "NestedFieldPath" "(" Id "," Id "," Id ")"
+                         | "IndexPath" "(" Id "," Int ")"
      syntax BorrowAlias ::= "FieldAlias" "(" Id "," Id ")"
                           | "NestedFieldAlias" "(" Id "," Id "," Id ")"
+                          | "IndexAlias" "(" Id "," Int ")"
 
   syntax Val ::= Int
                | Bool
@@ -69,9 +72,11 @@ module ARIA-SYNTAX
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
+               | "[" Exp "," Exp "]" [strict(1, 2)]
                | Id "{" Id ":" Exp "}" [strict(3), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "}" [strict(3, 5), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "," Id ":" Exp "}" [strict(3, 5, 7), avoid]
+               | Exp "[" Exp "]" [strict, avoid]
                | Exp "." Id [strict(1), avoid]
                | Exp "->" Id [strict(1), avoid]
                | "$"
@@ -100,7 +105,9 @@ module ARIA-SYNTAX
                 | BorrowMode Type ":" Id "=" Id ";"
                 | BorrowMode Type ":" Id "=" Id "." Id ";"
                 | BorrowMode Type ":" Id "=" Id "." Id "." Id ";"
+                | BorrowMode Type ":" Id "=" Id "[" Int "]" ";"
                 | Id "=" Exp ";" [strict(2)]
+                | Id "[" Exp "]" "=" Exp ";" [strict(2, 3)]
                 | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
                 | Id "." Id "." Id "=" Exp ";" [strict(4)]
@@ -376,9 +383,11 @@ module ARIA
                           | hasBorrowOnHost(Id, Set) [function]
                           | hasBorrowOnFieldPath(Id, Id, Set) [function]
                           | hasBorrowOnNestedPath(Id, Id, Id, Set) [function]
+                                          | hasBorrowOnIndexPath(Id, Int, Set) [function]
      syntax Int ::= envLoc(Map, Id) [function]
   syntax Val ::= fieldValue(Map, Int, Id) [function]
                          | nestedFieldValue(Map, Int, Id, Id) [function]
+                                         | arrayValue(Map, Int, Int) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
                | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
                | callWritebacks(BorrowInfo, Val) [function]
@@ -424,6 +433,7 @@ module ARIA
      rule hasBorrowOnHost(H:Id, SetItem(H) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(FieldPath(H, _:Id)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(NestedFieldPath(H, _:Id, _:Id)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(IndexPath(H, _:Int)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnHost(H, REST) [owise]
 
      rule hasBorrowOnFieldPath(_:Id, _:Id, .Set) => false
@@ -436,9 +446,14 @@ module ARIA
      rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(NestedFieldPath(H, F1, F2)) _:Set) => true
      rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnNestedPath(H, F1, F2, REST) [owise]
 
+     rule hasBorrowOnIndexPath(_:Id, _:Int, .Set) => false
+     rule hasBorrowOnIndexPath(H:Id, I:Int, SetItem(IndexPath(H, I)) _:Set) => true
+     rule hasBorrowOnIndexPath(H:Id, I:Int, SetItem(_:KItem) REST:Set) => hasBorrowOnIndexPath(H, I, REST) [owise]
+
      rule envLoc((H:Id |-> L:Int _:Map), H) => L
      rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
      rule nestedFieldValue((L:Int |-> StructVal(_:Id, (F1:Id |-> StructVal(_:Id, (F2:Id |-> V:Val _:Map)) _:Map)) _:Map), L, F1, F2) => V
+     rule arrayValue((L:Int |-> ArrayVal((I:Int |-> V:Val _:Map)) _:Map), L, I) => V
 
   rule <k> $$i T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -503,6 +518,29 @@ module ARIA
       requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
        andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Mut)) andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Imm))
 
+  rule <k> $$i T:Type : X:Id = H:Id [ I:Int ] ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, arrayValue(Store, envLoc(Env, H), I)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(IndexPath(H, I)) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(hasBorrowOnIndexPath(H, I, Mut))
+
+  rule <k> $$m T:Type : X:Id = H:Id [ I:Int ] ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, arrayValue(Store, envLoc(Env, H), I)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- IndexAlias(H, I) ] </borrow-aliases>
+           <mut-borrow-hosts> Mut => Mut SetItem(IndexPath(H, I)) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(hasBorrowOnIndexPath(H, I, Mut)) andBool notBool(hasBorrowOnIndexPath(H, I, Imm))
+
   rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
@@ -552,6 +590,64 @@ module ARIA
                           <failsafe-triggered> _ => true </failsafe-triggered>
                      requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
                          orBool hasBorrowOnNestedPath(H, F1, F2, Mut) orBool hasBorrowOnNestedPath(H, F1, F2, Imm) [priority(25)]
+
+                rule <k> $$i _:Type : _:Id = H:Id [ I:Int ] ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnIndexPath(H, I, Mut) [priority(25)]
+
+                rule <k> $$m _:Type : _:Id = H:Id [ I:Int ] ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                          <pinned-hosts> Pinned </pinned-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+                               orBool hasBorrowOnIndexPath(H, I, Mut) orBool hasBorrowOnIndexPath(H, I, Imm) [priority(25)]
+
+     // -------------------------------------------------------------------------
+     // Fixed two-element arrays and literal index paths
+     // -------------------------------------------------------------------------
+
+     syntax Val ::= "ArrayVal" "(" Map ")"
+
+     rule <k> [ V1:Val , V2:Val ] => ArrayVal(0 |-> V1 1 |-> V2) ... </k>
+
+     rule <k> ArrayVal(Items:Map) [ I:Int ] => Items [ I ] ... </k>
+          requires I in_keys(Items)
+
+     rule <k> ArrayVal(Items:Map) [ I:Int ] ~> _ => FS </k>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires notBool(I in_keys(Items))
+
+     rule <k> X:Id [ I:Int ] = V:Val ; => .K ... </k>
+                <env> ... X |-> L ... </env>
+                <store> ... L |-> (ArrayVal((I |-> OLD:Val REST:Map)) => ArrayVal((I |-> normalizeLike(OLD, V)) REST)) ... </store>
+                <fixed-vars> Fixed </fixed-vars>
+                <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                <pinned-hosts> Pinned </pinned-hosts>
+               requires notBool(X in Fixed) andBool notBool(X in Pinned)
+                andBool notBool(X in Imm) andBool notBool(X in Mut)
+                andBool notBool(hasBorrowOnIndexPath(X, I, Imm)) andBool notBool(hasBorrowOnIndexPath(X, I, Mut))
+
+     rule <k> X:Id [ I:Int ] = _:Val ; ~> _ => FS </k>
+                <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Imm orBool X in Mut orBool X in Pinned orBool hasBorrowOnIndexPath(X, I, Imm) orBool hasBorrowOnIndexPath(X, I, Mut) [priority(25)]
+
+     rule <k> X:Id [ _:Int ] = _:Val ; ~> _ => FS </k>
+                <fixed-vars> Fixed </fixed-vars>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Fixed [priority(25)]
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -1371,6 +1467,16 @@ module ARIA
         <pinned-hosts> PinnedHosts </pinned-hosts>
       requires notBool(X in Fixed) andBool notBool(X in PinnedHosts)
 
+     rule <k> X:Id = V:Val ; => .K ... </k>
+                    <env> ... X |-> AL H |-> HL ... </env>
+                    <types> ... X |-> T ... </types>
+                    <store> ... AL |-> (_:Val => normalizeValue(T, V)) HL |-> (ArrayVal(Items) => ArrayVal(Items [ I <- normalizeValue(T, V) ])) ... </store>
+                    <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+                    <borrow-aliases> ... X |-> IndexAlias(H, I) ... </borrow-aliases>
+                    <fixed-vars> Fixed </fixed-vars>
+                    <pinned-hosts> PinnedHosts </pinned-hosts>
+               requires notBool(X in Fixed) andBool notBool(X in PinnedHosts) andBool I in_keys(Items)
+
   rule <k> X:Id = _:Val ; ~> _ => FS </k>
         <borrow-vars> BorrowVars </borrow-vars>
         <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
@@ -1414,6 +1520,7 @@ module ARIA
   rule normalizeValue(int32, I32(I)) => I32(wrapI32(I))
   rule normalizeValue(int64, I64(I)) => I64(wrapI64(I))
   rule normalizeValue(tbb32, TBB32(I)) => normalizeTBB32(I)
+     rule normalizeValue(_:Type [ _:Int ], V:Val) => V
   rule normalizeValue(tbb32, ERR) => ERR
   rule normalizeValue(string, S:String) => S
   rule normalizeValue(_:Type, V:Val) => V [owise]
