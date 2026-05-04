@@ -57,6 +57,9 @@ can eventually answer: “what should this Aria program do?” independently of
   `$$m` argument-shape enforcement, rejection of stale dollar-prefixed borrow
   expressions, and positive `$$m` call-by-reference writeback for ordinary
   variable borrows in one- and two-argument helper calls
+- fixed two-element array literals such as `[10, 20]`, literal-index reads and
+  writes such as `arr[0]` / `arr[1] = value`, and literal-index borrow path
+  tracking/writeback for aliases such as `$$m int32:x = arr[0]`
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
@@ -155,9 +158,9 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: array/index field borrow paths once
-  accepted by the compiler surface, plus any newly discovered concrete pin-path
-  bypasses
+1. richer memory and borrow behavior beyond the current fixed-array
+  literal-index subset: dynamic indices, arrays-in-structs, deeper mixed
+  field/index paths, plus any newly discovered concrete pin-path bypasses
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory,
   control flow, and borrow permissions only when they support a concrete audit

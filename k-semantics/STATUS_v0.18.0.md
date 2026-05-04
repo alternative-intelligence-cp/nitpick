@@ -1,6 +1,6 @@
 # Aria v0.18.0 K Semantics Status
 
-Date: May 3, 2026
+Date: May 4, 2026
 Branch: `dev-0.18.x`
 
 ## Completed in this slice
@@ -147,6 +147,11 @@ Branch: `dev-0.18.x`
   and two-level struct-field paths now carry source-field alias metadata in the
   K oracle, `alias = value;` updates both the local alias and source field, and
   `ariac` lowers those aliases to LLVM field pointers instead of copy-in locals.
+- Added fixed-array literal-index borrow slice: K now models two-element array
+  literals, literal-index reads/writes, `IndexPath(host, index)` borrow tracking,
+  direct `$$i`/`$$m` aliases over `arr[0]`-style initializers, disjoint
+  `arr[0]`/`arr[1]` split borrows, same-slot conflict routing, assignment to a
+  borrowed indexed slot routing, and mutable index-alias writeback.
 - Threaded compiler path loans through snapshots, branch merges, loop back-edge
   merges, equality checks, and scope release so field-sensitive borrows behave
   consistently across existing borrow-control-flow machinery.
@@ -163,7 +168,7 @@ Branch: `dev-0.18.x`
   block later reassignment or repinning after block exit.
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
-- Compiled `aria.k` and passed all 105 core K tests under `krun`.
+- Compiled `aria.k` and passed all 109 core K tests under `krun`.
 - Proved all ten current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
@@ -178,7 +183,7 @@ Branch: `dev-0.18.x`
 
 ## Validation performed
 
-- `./k-semantics/run_k_tests.sh --require-k`: 105 passed, 0 failed.
+- `./k-semantics/run_k_tests.sh --require-k`: 109 passed, 0 failed.
 - `bash ./k-semantics/run_k_proofs.sh --require-k`: 10 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
@@ -274,9 +279,13 @@ Branch: `dev-0.18.x`
   exit `30`, sibling nested assignment while another nested field is borrowed
   exits `22`, same nested path and parent/child borrow conflicts reject with
   ARIA-023, and exact nested-field or parent-field assignment while a child path
-  is borrowed rejects with ARIA-026. A separate array/index probe was rejected
-  by the current compiler surface as an unsupported borrow initializer, so
-  array/index borrow paths remain intentionally out of scope for this slice.
+  is borrowed rejects with ARIA-026.
+- Cross-checked focused literal-index array borrow probes with `build/ariac`:
+  mutable alias writeback through `$$m int32:left = arr[0]` exits `33`, disjoint
+  `arr[0]`/`arr[1]` split borrows exit `42`, same-slot mutable borrow conflict
+  rejects with ARIA-023, assignment to a borrowed indexed slot rejects with
+  ARIA-026, and dynamic-index borrow initializers remain rejected by the
+  compiler surface.
 - Cross-checked focused field-alias writeback probes with `build/ariac`: direct
   mutable field alias assignment updates the source field and exits `33`,
   nested mutable field alias assignment updates the nested source field and
@@ -303,7 +312,9 @@ Branch: `dev-0.18.x`
 
 - Remaining integer families (`int8`/`int16`, unsigned ints, `tbb8`/`tbb16`/`tbb64`)
 - stderr/stddbg output cells
-- Struct arrays, array/index field paths, generic structs, and legacy `struct Name { ... }` shorthand
+- richer arrays beyond the currently modeled fixed two-element literals,
+  dynamic index expressions, arrays in structs, generic structs, and legacy
+  `struct Name { ... }` shorthand
 - Rich `pick` patterns beyond value equality and `(*)` wildcard dispatch
 - Typed `Rules<T>`, non-integer rule values, struct-field rules, arrays,
   modulo expressions, and SMT/proof integration for `limit<Rules>`
@@ -311,10 +322,10 @@ Branch: `dev-0.18.x`
   slices: any newly discovered concrete pin-path bypasses not covered by direct
   pin paths, derived pointer aliases, direct host-field mutation, helper-call
   arguments, or terminal exits
-- richer borrow semantics beyond direct one-level and currently modeled
-  two-level struct-field path tracking: array/index field borrow paths once
-  accepted by the compiler surface, deeper field paths if/when needed, and
-  broader pin-aware field/path edge cases
+- richer borrow semantics beyond direct one-level, currently modeled two-level
+  struct-field path tracking, and fixed-array literal-index paths: dynamic index
+  paths, mixed field/index paths, deeper field paths if/when needed, and broader
+  pin-aware field/path edge cases
 - modules/imports and extern/FFI
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
@@ -324,7 +335,9 @@ Branch: `dev-0.18.x`
 
 ## Next recommended slice
 
-The current non-compiler K seed is ready for final v0.18.0 audit/closeout unless
-a concrete safety edge appears during audit. Array/index field borrow paths stay
-blocked until the compiler surface and K array semantics are extended. Probe
-additional pin paths only if a new concrete bypass appears.
+The current K seed has consumed the small remaining array/index blocker that was
+safe to model without expanding into full array semantics: fixed two-element
+literal arrays plus literal-index borrow paths. Further work should move to the
+Nitpick rebrand runway or a future v0.18.x/v0.18.2 validation track for richer
+arrays, dynamic indices, mixed field/index paths, or external formal-tool
+triage. Probe additional pin paths only if a new concrete bypass appears.
