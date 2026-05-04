@@ -30,6 +30,9 @@ Branch: `dev-0.18.x`
   preserving and restoring the previous `$` / loop-index value after checks.
 - Added `run_k_proofs.sh`, a Haskell-backend `kprove` proof runner with
   CTest-friendly skip behavior when K is absent.
+- Added `proofs/arithmetic-proofs.k` with symbolic claims for `int32`, `int64`,
+  and `tbb32` add/subtract/multiply normalization, division-by-zero sentinel
+  routing, and numeric-operand `ERR` / `Unknown` propagation.
 - Added `proofs/core-proofs.k` with concrete executable-core claims for
   sticky `ERR`, bounded `int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step
   loop failsafe routing, fixed reassignment failsafe routing, and `?!`
@@ -159,7 +162,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 105 core K tests under `krun`.
-- Proved all eight current `kprove` proof modules under K Framework v7.1.320.
+- Proved all nine current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -174,7 +177,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 105 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 8 proof modules passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 9 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -222,6 +225,9 @@ Branch: `dev-0.18.x`
   direct struct field writes preserving unrelated fields.
 - Extended `proofs/core-proofs.k` with four concrete claims for modeled one-
   and two-argument helper `pass`/`fail` polarity with caller-frame restoration.
+- Added `proofs/arithmetic-proofs.k` with symbolic claims that generalize the
+  concrete numeric proof seed across `int32`, `int64`, `tbb32`, division-by-zero,
+  and numeric-operand `ERR` / `Unknown` propagation.
 - Added `proofs/control-rules-proofs.k` with concrete claims for `pick`/`fall`
   nonmatch/match dispatch, `fall label;` handoff to label lookup, labeled-arm
   selection, `limit<Rules>` declaration/assignment commits, violated-limit
@@ -309,8 +315,8 @@ Branch: `dev-0.18.x`
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
   field-alias, pin read-only, pinned by-value, local pointer, pointer-path
-  (including pin-derived aliases), borrow-path, control-flow, and limit/rules
-  claims
+  (including pin-derived aliases), borrow-path, arithmetic, control-flow, and
+  limit/rules claims
 
 ## Next recommended slice
 

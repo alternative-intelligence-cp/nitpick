@@ -98,12 +98,15 @@ The first proof hook compiles `aria.k` with the Haskell backend required by
 bash ./k-semantics/run_k_proofs.sh --require-k
 ```
 
-The initial proof corpus includes `proofs/core-proofs.k` with concrete claims
-for sticky `ERR`, bounded `int32` wrapping, `tbb32` overflow-to-`ERR`,
-zero-step loop failsafe routing, fixed reassignment failsafe routing, `?!`
-error-result failsafe routing, `println` newline/byte-count behavior,
-zero-argument helper `pass`/`fail` polarity, and direct struct field writes
-preserving unrelated fields, plus modeled one- and two-argument helper
+The proof corpus includes `proofs/arithmetic-proofs.k` with symbolic claims for
+`int32`, `int64`, and `tbb32` add/subtract/multiply normalization,
+division-by-zero sentinel routing, and numeric-operand `ERR` / `Unknown`
+propagation, plus `proofs/core-proofs.k` with concrete claims for sticky `ERR`,
+bounded `int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step loop failsafe
+routing, fixed reassignment failsafe routing, `?!` error-result failsafe
+routing, `println` newline/byte-count behavior, zero-argument helper
+`pass`/`fail` polarity, and direct struct field writes preserving unrelated
+fields, plus modeled one- and two-argument helper
 `pass`/`fail` polarity with caller-frame restoration, plus
 `proofs/field-alias-proofs.k` with concrete
 claims for direct field-alias writeback, nested field-alias writeback, and

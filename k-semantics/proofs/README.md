@@ -13,6 +13,9 @@ by `kprove`, discovers `*.k` files in this directory, reads each file's
 
 Current proof modules:
 
+- `arithmetic-proofs.k` — symbolic arithmetic claims for `int32`, `int64`, and
+   `tbb32` add/subtract/multiply normalization, division-by-zero sentinel
+   routing, and numeric-operand `ERR` / `Unknown` propagation.
 - `core-proofs.k` — concrete executable-core claims covering sticky `ERR`,
   bounded `int32` wraparound, `tbb32` overflow-to-`ERR`, zero-step loop
    failsafe routing, fixed reassignment failsafe routing, `?!` error-result
@@ -58,3 +61,6 @@ Planned initial claims:
 12. integer `limit<Rules>` declarations and assignments either satisfy every
     cascaded rule condition or route to `failsafe` without committing the
     violating store update — concrete commit/no-commit claims added
+13. symbolic arithmetic lemmas generalize the concrete numeric proof seed for
+   `int32`, `int64`, `tbb32`, division-by-zero, and numeric `ERR` / `Unknown`
+   propagation — initial symbolic claims added
