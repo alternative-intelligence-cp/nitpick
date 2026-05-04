@@ -1,11 +1,14 @@
 # Aria Programming Language v0.18.x
 
+<p align="center">
+    <img src="assets/nitpick_logo.png" alt="Nitpick logo: raccoon holding a magnifying glass" width="280">
+</p>
+
 > 🚧 **Rebrand in progress:** Aria is becoming **Nitpick**. The `v0.18.0` tag is
 > preserved as the final Aria-named K Framework semantics milestone. This repo
 > still uses Aria names while the migration is underway; history, tags, and
 > compatibility paths will be preserved. See [REBRAND_TO_NITPICK.md](REBRAND_TO_NITPICK.md).
 
-![Aria Logo](/AriaLogo.png)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![CI](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml/badge.svg)](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml)
 
