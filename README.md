@@ -10,26 +10,26 @@
 
 ---
 
-## Current Status (May 2, 2026)
+## Current Status (May 3, 2026)
 
-**Stable release: v0.17.5 — Installers, Packaging & Distribution complete**
+**Stable release: v0.18.0 — K Framework executable semantics seed complete**
 
-**Active development: v0.18.0 — K Framework executable semantics**
+**Next transition: Nitpick rebrand planning and repository/README cleanup**
 
 Aria is now feature-frozen for broad language-surface expansion and focused on
 distribution, formal semantics, and certification-grade validation. The v0.17.x
-series made Aria installable through mainstream Linux paths; the v0.18.x series
-is building a formal K Framework oracle for “what should this program do?”
-independent of `ariac`.
+series made Aria installable through mainstream Linux paths; v0.18.0 delivered a
+formal K Framework oracle seed for “what should this program do?” independent of
+`ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **100/100** under K Framework v7.1.320;
-`k_semantics_proofs` **7/7 proof modules** with thirty-one concrete `kprove` claims;
+`k_semantics_core` **105/105** under K Framework v7.1.320;
+`k_semantics_proofs` **10/10 proof modules**;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
 
-**v0.18.x in progress:**
-- **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
+**v0.18.0 complete:**
+- **K executable semantics seed** — `k-semantics/aria.k` defines a
     first executable subset: `func:main`/`func:failsafe`, variable binding,
     `fixed`, bounded `int32`/`int64`, explicit `tbb32` min-sentinel behavior,
     integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result operators,
@@ -69,10 +69,10 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 - **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
     semantics with the Haskell backend required by `kprove` and proves the core
     arithmetic, field-alias, pin read-only, pinned by-value, and local pointer
-    pointer-path, and borrow-path claim modules.
-- **Next semantic slice** — richer memory/borrow behavior (remaining concrete
-    pin path edge cases and array/index field borrow paths once accepted by the
-    compiler surface) plus broader symbolic `kprove` lemmas.
+    pointer-path, borrow-path, control/rules, arithmetic, and Result claim modules.
+- **Current wall documented** — array/index field borrow paths remain blocked
+    until the compiler surface accepts indexed borrow initializers and K grows
+    array/index-path semantics.
 
 **Recently completed series:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
@@ -105,7 +105,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 100/100 core tests, 7/7 proof modules |
+| K semantics | ✅ v0.18.0 seed | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 105/105 core tests, 10/10 proof modules |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
@@ -967,11 +967,11 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Install documentation** — Source, script, package, and package-manager
     install paths documented
 
-### v0.18.x — In Progress
+### v0.18.0 — Released
 
-- 🔧 **K Framework executable semantics** — First formal semantics seed in
+- ✅ **K Framework executable semantics** — First formal semantics seed in
     `k-semantics/aria.k`
-- ✅ **Core K test corpus** — 100 programs covering exit, arithmetic, binding,
+- ✅ **Core K test corpus** — 105 programs covering exit, arithmetic, binding,
     fixed values, loops, Result operations, sticky `ERR`, failsafe routing,
     `if`/`else`, helper calls, strings/stdout, structs, `pick`/`fall`, and
     integer `Rules` / `limit<Rules>` checks, plus initial `stack`/`gc`/`wild`
@@ -987,9 +987,12 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
     skips cleanly when K is absent
 - ✅ **Proof-oriented `kprove` hook** — Haskell-backend proof runner integrated
     with CTest; core arithmetic, field-alias, pin read-only, pinned by-value,
-    local pointer, pointer-path, and borrow-path claim modules are passing
-- ⏭️ **Next** — Richer pointer/borrow behavior and broader symbolic `kprove`
-    lemmas
+    local pointer, pointer-path, borrow-path, control/rules, arithmetic, and
+    Result claim modules are passing
+- ✅ **Final audit** — `AUDIT_v0.18.0.md` records validation, proof corpus, gaps,
+    and the non-compiler wall for array/index borrow paths
+- ⏭️ **Next** — Nitpick rebrand repository/README transition, then future
+    compiler/K expansion tracks as needed
 
 ### Long Term
 
