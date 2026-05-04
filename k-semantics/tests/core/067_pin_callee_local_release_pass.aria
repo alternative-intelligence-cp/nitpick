@@ -1,0 +1,17 @@
+// expect-exit: 37
+
+func:pin_copy = int32(int32:x) {
+    int32->:pinned = #x;
+    pass <- pinned;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 10;
+    int32:seen = raw pin_copy(value);
+    value = 37;
+    exit value;
+};

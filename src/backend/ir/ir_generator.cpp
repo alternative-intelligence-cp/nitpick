@@ -57,6 +57,164 @@ void IRGenerator::setTypeSystem(TypeSystem* ts) {
     type_system = ts;
 }
 
+llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) {
+    if (out_type) {
+        *out_type = nullptr;
+    }
+    if (!expr) {
+        return nullptr;
+    }
+
+    if (expr->type == ASTNode::NodeType::IDENTIFIER) {
+        IdentifierExpr* ident = static_cast<IdentifierExpr*>(expr);
+        auto it = named_values.find(ident->name);
+        if (it == named_values.end()) {
+            return nullptr;
+        }
+        if (out_type) {
+            auto type_it = value_types.find(it->second);
+            if (type_it != value_types.end()) {
+                *out_type = type_it->second;
+            }
+        }
+        return it->second;
+    }
+
+    if (expr->type == ASTNode::NodeType::INDEX) {
+        IndexExpr* index = static_cast<IndexExpr*>(expr);
+        if (!index->array || index->array->type != ASTNode::NodeType::IDENTIFIER) {
+            return nullptr;
+        }
+
+        IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(index->array.get());
+        auto root_it = named_values.find(root_ident->name);
+        if (root_it == named_values.end()) {
+            return nullptr;
+        }
+
+        llvm::Value* array_ptr = root_it->second;
+        llvm::Type* array_llvm_type = nullptr;
+        if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
+            array_llvm_type = alloca_inst->getAllocatedType();
+        } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(array_ptr)) {
+            array_llvm_type = global->getValueType();
+        }
+
+        if (!array_llvm_type || !array_llvm_type->isArrayTy()) {
+            return nullptr;
+        }
+
+        llvm::Value* index_value = codegenExpression(index->index.get());
+        if (!index_value) {
+            return nullptr;
+        }
+        if (!index_value->getType()->isIntegerTy(64)) {
+            index_value = builder.CreateSExtOrTrunc(index_value, builder.getInt64Ty(), "borrow.idx.i64");
+        }
+
+        std::vector<llvm::Value*> gep_indices = {
+            llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+            index_value
+        };
+        llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
+            array_llvm_type, array_ptr, gep_indices, root_ident->name + ".borrow.elem.ptr");
+
+        Type* elem_aria_type = nullptr;
+        auto value_type_it = value_types.find(array_ptr);
+        if (value_type_it != value_types.end() && value_type_it->second &&
+            value_type_it->second->getKind() == TypeKind::ARRAY) {
+            elem_aria_type = static_cast<sema::ArrayType*>(value_type_it->second)->getElementType();
+        }
+
+        if (elem_aria_type) {
+            value_types[elem_ptr] = elem_aria_type;
+        }
+        if (out_type) {
+            *out_type = elem_aria_type;
+        }
+        return elem_ptr;
+    }
+
+    if (expr->type != ASTNode::NodeType::MEMBER_ACCESS) {
+        return nullptr;
+    }
+
+    std::vector<std::string> field_chain;
+    ASTNode* cur = expr;
+    while (cur && cur->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        MemberAccessExpr* member = static_cast<MemberAccessExpr*>(cur);
+        if (member->isPointerAccess) {
+            return nullptr;
+        }
+        field_chain.push_back(member->member);
+        cur = member->object.get();
+    }
+
+    if (!cur || cur->type != ASTNode::NodeType::IDENTIFIER || field_chain.empty()) {
+        return nullptr;
+    }
+
+    IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(cur);
+    auto root_it = named_values.find(root_ident->name);
+    if (root_it == named_values.end()) {
+        return nullptr;
+    }
+
+    llvm::Value* cur_ptr = root_it->second;
+    llvm::Type* cur_llvm_type = nullptr;
+    if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(cur_ptr)) {
+        cur_llvm_type = alloca_inst->getAllocatedType();
+    } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(cur_ptr)) {
+        cur_llvm_type = global->getValueType();
+    }
+
+    Type* cur_aria_type = nullptr;
+    auto value_type_it = value_types.find(cur_ptr);
+    if (value_type_it != value_types.end()) {
+        cur_aria_type = value_type_it->second;
+    }
+    if (!cur_aria_type && type_system) {
+        auto name_it = var_aria_types.find(root_ident->name);
+        if (name_it != var_aria_types.end()) {
+            cur_aria_type = type_system->getStructType(name_it->second);
+        }
+    }
+    if (!cur_llvm_type && cur_aria_type) {
+        cur_llvm_type = mapType(cur_aria_type);
+    }
+
+    for (int i = static_cast<int>(field_chain.size()) - 1; i >= 0; --i) {
+        if (!cur_aria_type || cur_aria_type->getKind() != TypeKind::STRUCT ||
+            !cur_llvm_type || !cur_llvm_type->isStructTy()) {
+            return nullptr;
+        }
+
+        sema::StructType* struct_type = static_cast<sema::StructType*>(cur_aria_type);
+        const std::string& field_name = field_chain[static_cast<size_t>(i)];
+        int field_index = struct_type->getFieldIndex(field_name);
+        if (field_index < 0) {
+            return nullptr;
+        }
+        const sema::StructType::Field* field = struct_type->getField(field_name);
+        if (!field) {
+            return nullptr;
+        }
+
+        cur_ptr = builder.CreateStructGEP(cur_llvm_type, cur_ptr, field_index,
+                                          field_name + ".borrow.ptr");
+        cur_llvm_type = llvm::cast<llvm::StructType>(cur_llvm_type)->getElementType(field_index);
+        cur_aria_type = field->type;
+    }
+
+    if (cur_aria_type) {
+        value_types[cur_ptr] = cur_aria_type;
+    }
+    if (out_type) {
+        *out_type = cur_aria_type;
+    }
+    return cur_ptr;
+}
+
 // Helper: Promote int64 literal to LBIM struct (int128/256/512/1024/2048/4096)
 llvm::Value* IRGenerator::promoteToLBIMStruct(llvm::Value* literal, llvm::Type* targetType) {
     // Verify target is a struct type
@@ -2840,7 +2998,15 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
         std::vector<llvm::Type*> pre_params;
         for (const auto& param : fd->parameters) {
             ParameterNode* pn = static_cast<ParameterNode*>(param.get());
-            if (pn->isWild) {
+            std::string fn = modulePrefix.empty() ? fd->funcName
+                                                   : modulePrefix + "." + fd->funcName;
+            unsigned paramIndex = static_cast<unsigned>(pre_params.size());
+            if (pn->isBorrowMut) {
+                // v0.18.0: $$m params are passed by reference so writes in the
+                // callee update the caller's storage.
+                pre_params.push_back(builder.getPtrTy());
+                var_aria_types["__func_borrow_param:" + fn + ":" + std::to_string(paramIndex)] = "mut";
+            } else if (pn->isWild) {
                 pre_params.push_back(builder.getPtrTy());
             } else if (pn->typeNode && pn->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
                 // Function pointer params are fat pointers: {ptr, ptr} (method_ptr, env_ptr)
@@ -2853,8 +3019,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 // v0.2.36: Track dyn Trait parameters for coercion at call sites
                 if (pstr.substr(0, 4) == "dyn ") {
                     std::string traitName = pstr.substr(4);
-                    std::string fn = modulePrefix.empty() ? fd->funcName
-                                                           : modulePrefix + "." + fd->funcName;
                     func_dyn_params[fn][static_cast<unsigned>(pre_params.size() - 1)] = traitName;
                 }
             }
@@ -3195,11 +3359,19 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             
             // Create function signature with proper type mapping
             std::vector<llvm::Type*> param_types;
+            std::string func_name = modulePrefix.empty()
+                ? funcDecl->funcName
+                : modulePrefix + "." + funcDecl->funcName;
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                unsigned paramIndex = static_cast<unsigned>(param_types.size());
                 
                 // Check for wild qualifier (FFI pointers)
-                if (pnode->isWild) {
+                if (pnode->isBorrowMut) {
+                    // v0.18.0: $$m params are call-by-reference aliases.
+                    param_types.push_back(builder.getPtrTy());
+                    var_aria_types["__func_borrow_param:" + func_name + ":" + std::to_string(paramIndex)] = "mut";
+                } else if (pnode->isWild) {
                     // Wild pointers always map to LLVM ptr regardless of base type
                     param_types.push_back(builder.getPtrTy());
                 } else if (pnode->typeNode && pnode->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
@@ -3260,11 +3432,6 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             }
 
             llvm::FunctionType* func_type = llvm::FunctionType::get(actual_return_type, actual_param_types, funcDecl->isVariadic);
-            
-            // Determine function name (qualified if in a module)
-            std::string func_name = modulePrefix.empty() 
-                ? funcDecl->funcName 
-                : modulePrefix + "." + funcDecl->funcName;
             
             // Determine linkage based on pub modifier
             // Special case: main function and module init always have external linkage
@@ -3539,7 +3706,14 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // To ensure consistent access semantics, we copy all struct params to stack allocas.
                     // This matches Clang's behavior and ensures member access works correctly.
                     llvm::Value* param_storage = nullptr;
-                    if (arg.getType()->isStructTy() || arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
+                    if (param->isBorrowMut) {
+                        // v0.18.0: A $$m parameter is already a pointer to the
+                        // caller's storage. Bind the parameter name directly to
+                        // that pointer so assignments write through the alias.
+                        param_storage = &arg;
+                        named_values[param->paramName] = &arg;
+                        var_aria_types["__borrow_param_mut:" + param->paramName] = "1";
+                    } else if (arg.getType()->isStructTy() || arg.getType()->isArrayTy() || arg.getType()->isVectorTy()) {
                         // Struct, array, and vector parameters must be copied to a local alloca.
                         // Structs: LLVM ABI may pass in registers or via hidden pointer.
                         // Arrays: cannot be GEP'd as values — need an addressable alloca
@@ -3852,6 +4026,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             for (const auto& param : funcDecl->parameters) {
                 ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
                 named_values.erase(pnode->paramName);
+                var_aria_types.erase("__borrow_param_mut:" + pnode->paramName);
             }
         }
 
@@ -4705,18 +4880,17 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // v0.2.35: Borrow variables ($$i/$$m) — alias the original
             // ================================================================
             if (varDecl->isBorrowImm || varDecl->isBorrowMut) {
-                if (varDecl->initializer && 
-                    varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
-                    std::string target_name = 
-                        static_cast<IdentifierExpr*>(varDecl->initializer.get())->name;
-                    auto it = named_values.find(target_name);
-                    if (it != named_values.end()) {
-                        named_values[varDecl->varName] = it->second;
-                        var_aria_types[varDecl->varName] = actualTypeName;
-                        ARIA_DBG_STREAM << "[DEBUG] Borrow " << varDecl->varName 
-                                  << " aliased to " << target_name << std::endl;
-                        return nullptr;
+                Type* alias_type = nullptr;
+                llvm::Value* alias_ptr = getBorrowAliasPointer(varDecl->initializer.get(), &alias_type);
+                if (alias_ptr) {
+                    named_values[varDecl->varName] = alias_ptr;
+                    var_aria_types[varDecl->varName] = actualTypeName;
+                    if (alias_type) {
+                        value_types[alias_ptr] = alias_type;
                     }
+                    ARIA_DBG_STREAM << "[DEBUG] Borrow " << varDecl->varName
+                              << " aliased to initializer storage" << std::endl;
+                    return nullptr;
                 }
                 // Fallthrough if target not found (shouldn't happen after type checker)
             }
@@ -4759,8 +4933,27 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (type_system) {
                 Type* aria_type = nullptr;
                 
+                // Check for pointer types before primitives, since getPrimitiveType()
+                // accepts arbitrary strings and would otherwise turn "Point@" into
+                // a fake primitive instead of semantic PointerType(Point).
+                if (!actualTypeName.empty() &&
+                    (actualTypeName.back() == '@' || actualTypeName.back() == '*')) {
+                    std::string baseTypeName = actualTypeName.substr(0, actualTypeName.size() - 1);
+                    Type* pointeeType = nullptr;
+                    if (baseTypeName == "?") {
+                        aria_type = type_system->getErasedPointerType();
+                    } else {
+                        pointeeType = type_system->getStructType(baseTypeName);
+                        if (!pointeeType) {
+                            pointeeType = type_system->getPrimitiveType(baseTypeName);
+                        }
+                        if (pointeeType) {
+                            aria_type = type_system->getPointerType(pointeeType);
+                        }
+                    }
+                }
                 // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
-                if (actualTypeName.find("vec") != std::string::npos) {
+                else if (actualTypeName.find("vec") != std::string::npos) {
                     // Extract component type and dimension from type name
                     Type* componentType = type_system->getPrimitiveType("flt64");  // default
                     int dimension = 2;  // default
@@ -7188,6 +7381,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Without this check the load defaults to i32, mismatching the ptr type of
                     // a string literal on the other side of a comparison (ICmpInst assert).
                     if (llvm::isa<llvm::Argument>(val)) {
+                        if (var_aria_types.count("__borrow_param_mut:" + ident->name)) {
+                            llvm::Type* loadType = builder.getInt32Ty();
+                            auto ariaIt = var_aria_types.find(ident->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                                if (mappedType) loadType = mappedType;
+                            }
+                            llvm::Value* loaded = builder.CreateLoad(loadType, val, ident->name);
+                            auto typeIt = value_types.find(val);
+                            if (typeIt != value_types.end()) value_types[loaded] = typeIt->second;
+                            return loaded;
+                        }
                         auto typeIt = value_types.find(val);
                         (void)typeIt;
                         // (value_types entry was already registered during parameter setup)
@@ -7219,6 +7424,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             llvm::StructType* st = llvm::cast<llvm::StructType>(loadType);
                             if (st->hasName()) {
                                 ARIA_DBG_STREAM << "[DEBUG]   Allocated type name: " << st->getName().str() << std::endl;
+                            }
+                        }
+                    } else {
+                        auto valueTypeIt = value_types.find(val);
+                        if (valueTypeIt != value_types.end()) {
+                            llvm::Type* mappedType = mapType(valueTypeIt->second);
+                            if (mappedType) loadType = mappedType;
+                        } else {
+                            auto ariaIt = var_aria_types.find(ident->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                                if (mappedType) loadType = mappedType;
                             }
                         }
                     }
@@ -7311,6 +7528,31 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return tmp;
                 }
                 
+                return address;
+            }
+
+            // Special handling for pin operator (#)
+            // Local pinning creates a stable pointer to the binding while the
+            // borrow checker records and enforces the pin relationship.
+            if (unary->op.type == frontend::TokenType::TOKEN_HASH) {
+                if (unary->operand->type != ASTNode::NodeType::IDENTIFIER) {
+                    return nullptr;
+                }
+
+                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                auto it = named_values.find(ident->name);
+                if (it == named_values.end()) {
+                    return nullptr;
+                }
+
+                llvm::Value* address = it->second;
+                if (!llvm::isa<llvm::AllocaInst>(address) && !address->getType()->isPointerTy()) {
+                    llvm::AllocaInst* tmp = builder.CreateAlloca(
+                        address->getType(), nullptr, ident->name + ".pin.addr");
+                    builder.CreateStore(address, tmp);
+                    return tmp;
+                }
+
                 return address;
             }
             
@@ -7540,45 +7782,6 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 case frontend::TokenType::TOKEN_TILDE:
                     // Bitwise NOT
                     return builder.CreateNot(operand, "nottmp");
-
-                case frontend::TokenType::TOKEN_HASH: {
-                    // ARIA-016: Pin operator (#) - pins a GC object in memory
-                    // This prevents the GC from relocating the object, making it
-                    // safe to pass to FFI/DMA operations that need a stable address.
-                    //
-                    // The operand must be a pointer to a GC-managed object.
-                    // Returns the same pointer (now guaranteed to be stable).
-
-                    if (!operand->getType()->isPointerTy()) {
-                        // Error: cannot pin non-pointer type
-                        return nullptr;
-                    }
-
-                    // Get or declare the aria_gc_pin runtime function
-                    llvm::Function* pinFunc = module->getFunction("aria_gc_pin");
-                    if (!pinFunc) {
-                        // Declare: void aria_gc_pin(void* ptr)
-                        llvm::FunctionType* pinFuncType = llvm::FunctionType::get(
-                            builder.getVoidTy(),
-                            {builder.getPtrTy()},
-                            false
-                        );
-                        pinFunc = llvm::Function::Create(
-                            pinFuncType,
-                            llvm::Function::ExternalLinkage,
-                            "aria_gc_pin",
-                            module.get()
-                        );
-                    }
-
-                    // Cast operand to void* if needed and call pin function
-                    llvm::Value* ptrToPin = builder.CreateBitCast(operand, builder.getPtrTy());
-                    builder.CreateCall(pinFunc, {ptrToPin});
-
-                    // Return the original pointer (now pinned)
-                    // The type transitions from managed to "wild" at the AST level
-                    return operand;
-                }
 
                 default:
                     return nullptr;
@@ -7960,6 +8163,90 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     return rhs;
                 }
                 
+                // Handle pointer struct field assignment: ptr->field = value
+                if (binop->left->type == ASTNode::NodeType::POINTER_MEMBER) {
+                    MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
+
+                    llvm::Value* object_ptr = codegenExpression(member->object.get());
+                    if (!object_ptr || !object_ptr->getType()->isPointerTy()) {
+                        return nullptr;
+                    }
+
+                    Type* pointer_aria_type = nullptr;
+                    auto loadedTypeIt = value_types.find(object_ptr);
+                    if (loadedTypeIt != value_types.end()) {
+                        pointer_aria_type = loadedTypeIt->second;
+                    }
+                    if (!pointer_aria_type && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                        IdentifierExpr* ptr_ident = static_cast<IdentifierExpr*>(member->object.get());
+                        auto ptr_it = named_values.find(ptr_ident->name);
+                        if (ptr_it != named_values.end()) {
+                            auto allocaTypeIt = value_types.find(ptr_it->second);
+                            if (allocaTypeIt != value_types.end()) {
+                                pointer_aria_type = allocaTypeIt->second;
+                            }
+                        }
+                    }
+
+                    if (!pointer_aria_type || pointer_aria_type->getKind() != TypeKind::POINTER) {
+                        return nullptr;
+                    }
+
+                    sema::PointerType* ptr_type = static_cast<sema::PointerType*>(pointer_aria_type);
+                    Type* aria_type = ptr_type->getPointeeType();
+                    if (!aria_type || aria_type->getKind() != TypeKind::STRUCT) {
+                        return nullptr;
+                    }
+
+                    StructType* struct_type = static_cast<StructType*>(aria_type);
+                    int field_index = -1;
+                    Type* field_type = nullptr;
+                    const auto& fields = struct_type->getFields();
+                    for (size_t i = 0; i < fields.size(); ++i) {
+                        if (fields[i].name == member->member) {
+                            field_index = static_cast<int>(i);
+                            field_type = fields[i].type;
+                            break;
+                        }
+                    }
+                    if (field_index < 0 || !field_type) {
+                        return nullptr;
+                    }
+
+                    llvm::Type* llvm_struct_type = mapType(struct_type);
+                    llvm::Value* rhs = codegenExpression(binop->right.get());
+                    if (!rhs) return nullptr;
+
+                    llvm::Value* field_ptr = builder.CreateStructGEP(
+                        llvm_struct_type,
+                        object_ptr,
+                        field_index,
+                        member->member + ".ptr"
+                    );
+
+                    llvm::Type* expected_field_type = llvm::cast<llvm::StructType>(llvm_struct_type)->getElementType(field_index);
+                    if (rhs->getType() != expected_field_type) {
+                        if (rhs->getType()->isStructTy()) {
+                            auto* rhs_st = llvm::cast<llvm::StructType>(rhs->getType());
+                            if (rhs_st->getNumElements() == 2 &&
+                                rhs_st->getElementType(0)->isIntegerTy(1) &&
+                                rhs_st->getElementType(1) == expected_field_type) {
+                                rhs = builder.CreateExtractValue(rhs, 1, "unwrap.ptr.field.optional");
+                            }
+                        }
+                        if (rhs->getType() != expected_field_type) {
+                            if (rhs->getType()->isIntegerTy() && expected_field_type->isIntegerTy())
+                                rhs = builder.CreateIntCast(rhs, expected_field_type, true, "ptr.field.icast");
+                            else if (rhs->getType()->isFloatingPointTy() && expected_field_type->isFloatingPointTy())
+                                rhs = builder.CreateFPCast(rhs, expected_field_type, "ptr.field.fpcast");
+                        }
+                    }
+
+                    builder.CreateStore(rhs, field_ptr);
+                    value_types[rhs] = field_type;
+                    return rhs;
+                }
+
                 // Handle struct field assignment: obj.field = value
                 if (binop->left->type == ASTNode::NodeType::MEMBER_ACCESS) {
                     MemberAccessExpr* member = static_cast<MemberAccessExpr*>(binop->left.get());
@@ -8281,7 +8568,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 // Handle pointer dereference assignment: <-ptr = value or *ptr = value
-        if (binop->left->type == ASTNode::NodeType::UNARY_OP) {
+                if (binop->left->type == ASTNode::NodeType::UNARY_OP) {
                     UnaryExpr* unary = static_cast<UnaryExpr*>(binop->left.get());
                     
                     // Only handle dereference operators (<- and *)
@@ -8291,16 +8578,135 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Evaluate the pointer operand (the thing being dereferenced)
                         llvm::Value* ptr = codegenExpression(unary->operand.get());
                         if (!ptr) return nullptr;
+                        if (!ptr->getType()->isPointerTy()) return nullptr;
+
+                        auto coercePointerStoreValue = [&](llvm::Value* value, llvm::Type* targetType,
+                                                           const std::string& name) -> llvm::Value* {
+                            if (!value || !targetType || value->getType() == targetType) {
+                                return value;
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+                                return builder.CreateIntCast(value, targetType, true, name + ".icast");
+                            }
+                            if (value->getType()->isFloatingPointTy() && targetType->isFloatingPointTy()) {
+                                return builder.CreateFPCast(value, targetType, name + ".fpcast");
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+                                return builder.CreateSIToFP(value, targetType, name + ".itof");
+                            }
+                            if (value->getType()->isFloatingPointTy() && targetType->isIntegerTy()) {
+                                return builder.CreateFPToSI(value, targetType, name + ".ftoi");
+                            }
+                            if (value->getType()->isIntegerTy() && targetType->isStructTy()) {
+                                llvm::StructType* st = llvm::cast<llvm::StructType>(targetType);
+                                std::string structName = st->getName().str();
+                                if (structName.find("struct.int") == 0 || structName.find("struct.uint") == 0) {
+                                    return promoteToLBIMStruct(value, targetType);
+                                }
+                            }
+                            if (value->getType()->isStructTy()) {
+                                llvm::StructType* st = llvm::cast<llvm::StructType>(value->getType());
+                                if (st->getNumElements() == 3 &&
+                                    st->getElementType(1)->isPointerTy() &&
+                                    st->getElementType(2)->isIntegerTy(8) &&
+                                    st->getElementType(0) == targetType) {
+                                    return builder.CreateExtractValue(value, {0}, name + ".unwrap_result");
+                                }
+                                if (st->getNumElements() == 2 &&
+                                    st->getElementType(0)->isIntegerTy(1) &&
+                                    st->getElementType(1) == targetType) {
+                                    return builder.CreateExtractValue(value, {1}, name + ".unwrap_optional");
+                                }
+                            }
+                            return value;
+                        };
+
+                        auto pointerPointeeType = [&]() -> llvm::Type* {
+                            if (unary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                                IdentifierExpr* ident = static_cast<IdentifierExpr*>(unary->operand.get());
+                                auto ariaTypeIt = var_aria_types.find(ident->name);
+                                if (ariaTypeIt != var_aria_types.end()) {
+                                    std::string pointeeName = ariaTypeIt->second;
+                                    if (!pointeeName.empty() &&
+                                        (pointeeName.back() == '@' || pointeeName.back() == '*')) {
+                                        pointeeName.pop_back();
+                                        return mapTypeFromName(pointeeName);
+                                    }
+                                    if (pointeeName.size() > 2 &&
+                                        pointeeName.substr(pointeeName.size() - 2) == "->") {
+                                        pointeeName = pointeeName.substr(0, pointeeName.size() - 2);
+                                        return mapTypeFromName(pointeeName);
+                                    }
+                                }
+                            }
+                            if (unary->operand->type == ASTNode::NodeType::UNARY_OP) {
+                                UnaryExpr* operandUnary = static_cast<UnaryExpr*>(unary->operand.get());
+                                if (operandUnary->op.type == frontend::TokenType::TOKEN_AT &&
+                                    operandUnary->operand &&
+                                    operandUnary->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(operandUnary->operand.get());
+                                    auto targetIt = named_values.find(ident->name);
+                                    if (targetIt != named_values.end()) {
+                                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(targetIt->second)) {
+                                            return allocaInst->getAllocatedType();
+                                        }
+                                        if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(targetIt->second)) {
+                                            return global->getValueType();
+                                        }
+                                    }
+                                }
+                            }
+                            return nullptr;
+                        };
                         
                         // Evaluate the right-hand side value
                         llvm::Value* rhs = codegenExpression(binop->right.get());
                         if (!rhs) return nullptr;
-                        
+
+                        llvm::Type* pointeeType = pointerPointeeType();
+                        if (!pointeeType) {
+                            pointeeType = rhs->getType();
+                        }
+
+                        llvm::Value* result = nullptr;
+                        if (binop->op.type == frontend::TokenType::TOKEN_EQUAL) {
+                            result = coercePointerStoreValue(rhs, pointeeType, "ptr.store");
+                        } else {
+                            llvm::Value* currentVal = builder.CreateLoad(pointeeType, ptr, "ptr.current");
+                            rhs = coercePointerStoreValue(rhs, pointeeType, "ptr.rhs");
+                            bool isFP = currentVal->getType()->isFloatingPointTy();
+                            switch (binop->op.type) {
+                                case frontend::TokenType::TOKEN_PLUS_EQUAL:
+                                    result = isFP ? builder.CreateFAdd(currentVal, rhs, "ptr.fadd")
+                                                  : generateSafeAdd(currentVal, rhs, "ptr.add");
+                                    break;
+                                case frontend::TokenType::TOKEN_MINUS_EQUAL:
+                                    result = isFP ? builder.CreateFSub(currentVal, rhs, "ptr.fsub")
+                                                  : generateSafeSub(currentVal, rhs, "ptr.sub");
+                                    break;
+                                case frontend::TokenType::TOKEN_STAR_EQUAL:
+                                    result = isFP ? builder.CreateFMul(currentVal, rhs, "ptr.fmul")
+                                                  : generateSafeMul(currentVal, rhs, "ptr.mul");
+                                    break;
+                                case frontend::TokenType::TOKEN_SLASH_EQUAL:
+                                    result = isFP ? builder.CreateFDiv(currentVal, rhs, "ptr.fdiv")
+                                                  : generateSafeSDiv(currentVal, rhs, "ptr.div");
+                                    break;
+                                case frontend::TokenType::TOKEN_PERCENT_EQUAL:
+                                    result = isFP ? builder.CreateFRem(currentVal, rhs, "ptr.frem")
+                                                  : generateSafeSRem(currentVal, rhs, "ptr.mod");
+                                    break;
+                                default:
+                                    return nullptr;
+                            }
+                            result = coercePointerStoreValue(result, pointeeType, "ptr.result");
+                        }
+
                         // Store through the pointer
-                        builder.CreateStore(rhs, ptr);
-                        
+                        builder.CreateStore(result, ptr);
+
                         // Assignment expression returns the assigned value
-                        return rhs;
+                        return result;
                     }
                 }
                 
@@ -8324,6 +8730,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 llvm::Value* var = it->second;
                 llvm::Value* result = nullptr;
+                auto isMutableBorrowParam = [&](const std::string& name) -> bool {
+                    return var_aria_types.count("__borrow_param_mut:" + name) > 0;
+                };
+                auto mutableBorrowValueType = [&](const std::string& name) -> llvm::Type* {
+                    auto ariaIt = var_aria_types.find(name);
+                    if (ariaIt != var_aria_types.end()) {
+                        llvm::Type* mappedType = mapTypeFromName(ariaIt->second);
+                        if (mappedType) return mappedType;
+                    }
+                    return builder.getInt32Ty();
+                };
 
                 // If the target is a raw (non-pointer) function parameter value,
                 // promote it to a stack alloca so it can be written to.
@@ -8348,9 +8765,23 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Type* varElemType = nullptr;
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
                         varElemType = allocaInst->getAllocatedType();
+                    } else if (isMutableBorrowParam(lhs->name)) {
+                        varElemType = mutableBorrowValueType(lhs->name);
                     } else {
-                        // For now, default to int32 if not an alloca
-                        varElemType = builder.getInt32Ty();
+                        auto valueTypeIt = value_types.find(var);
+                        if (valueTypeIt != value_types.end()) {
+                            varElemType = mapType(valueTypeIt->second);
+                        }
+                        if (!varElemType) {
+                            auto ariaIt = var_aria_types.find(lhs->name);
+                            if (ariaIt != var_aria_types.end()) {
+                                varElemType = mapTypeFromName(ariaIt->second);
+                            }
+                        }
+                        if (!varElemType) {
+                            // For now, default to int32 if not an alloca
+                            varElemType = builder.getInt32Ty();
+                        }
                     }
                     
                     llvm::Value* currentVal = builder.CreateLoad(varElemType, var, lhs->name);
@@ -8449,8 +8880,24 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // i32/i8/etc.  Without this conversion the store is type-mismatched
                 // (e.g. "store i64 5, ptr %x" into an i32 alloca), which LLVM treats
                 // as undefined behaviour and may optimise away entirely.
+                llvm::Type* targetType = nullptr;
                 if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
-                    llvm::Type* targetType = allocaInst->getAllocatedType();
+                    targetType = allocaInst->getAllocatedType();
+                } else if (isMutableBorrowParam(lhs->name)) {
+                    targetType = mutableBorrowValueType(lhs->name);
+                } else {
+                    auto valueTypeIt = value_types.find(var);
+                    if (valueTypeIt != value_types.end()) {
+                        targetType = mapType(valueTypeIt->second);
+                    }
+                    if (!targetType) {
+                        auto ariaIt = var_aria_types.find(lhs->name);
+                        if (ariaIt != var_aria_types.end()) {
+                            targetType = mapTypeFromName(ariaIt->second);
+                        }
+                    }
+                }
+                if (targetType) {
                     if (result->getType() != targetType) {
                         if (result->getType()->isIntegerTy() && targetType->isIntegerTy()) {
                             unsigned srcBits = result->getType()->getIntegerBitWidth();
@@ -11135,13 +11582,27 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // (no need to load again since codegenExpression already gives us the pointer value)
             llvm::Value* object_ptr = ptr_val;
             
-            // Look up the Aria type of the pointer
+            // Look up the Aria type of the pointer. Identifier codegen returns the
+            // loaded pointer value, so prefer that value's type but fall back to the
+            // pointer variable alloca where declarations record their semantic type.
+            Type* pointer_aria_type = nullptr;
             auto type_it = value_types.find(ptr_val);
-            if (type_it == value_types.end()) {
+            if (type_it != value_types.end()) {
+                pointer_aria_type = type_it->second;
+            }
+            if (!pointer_aria_type && member->object->type == ASTNode::NodeType::IDENTIFIER) {
+                IdentifierExpr* ptr_ident = static_cast<IdentifierExpr*>(member->object.get());
+                auto ptr_it = named_values.find(ptr_ident->name);
+                if (ptr_it != named_values.end()) {
+                    auto alloca_type_it = value_types.find(ptr_it->second);
+                    if (alloca_type_it != value_types.end()) {
+                        pointer_aria_type = alloca_type_it->second;
+                    }
+                }
+            }
+            if (!pointer_aria_type) {
                 return nullptr;
             }
-            
-            Type* pointer_aria_type = type_it->second;
             
             // Extract the pointee type
             if (pointer_aria_type->getKind() != TypeKind::POINTER) {
@@ -11188,9 +11649,14 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 member->member + ".ptr"
             );
             
-            // Load the field value
+            // Load the field value and preserve its Aria semantic type. This is
+            // essential for nested pointer-valued fields such as ptr->leaf->x:
+            // the outer access returns a loaded pointer value, and the inner
+            // POINTER_MEMBER lowering needs to know that value's pointee type.
             llvm::Type* llvm_field_type = mapType(field_type);
-            return builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            llvm::Value* field_value = builder.CreateLoad(llvm_field_type, field_ptr, member->member);
+            value_types[field_value] = field_type;
+            return field_value;
         }
         
         case ASTNode::NodeType::MEMBER_ACCESS: {

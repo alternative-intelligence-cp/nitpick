@@ -3,7 +3,7 @@
 func:test_valid_lifetime = int32() {
     // Test 1: Reference at same depth as host - should be OK
     int32:outer = 42;
-    int32$:ref = !$outer;
+    $$i int32:ref = outer;
     int32:zero = 0;
     pass zero;
 };
@@ -13,11 +13,11 @@ func:test_valid_lifetime = int32() {
 func:test_inner_host_invalid = int32() {
     // Test 2: Reference cannot outlive host
     // This should FAIL at compile time
-    int32$:ref;
+    $$i int32:ref;
     
     {
         int32:inner = 100;
-        ref = !$inner;   // ERROR: inner is at deeper scope, ref outlives it
+        ref = inner;   // ERROR: inner is at deeper scope, ref outlives it
     }
     
     int32:one = 1;
@@ -30,7 +30,7 @@ func:test_nested_scopes_valid = int32() {
     int32:outer = 50;
     
     {
-        int32$:ref = !$outer;  // OK: outer is at equal or shallower scope
+        $$i int32:ref = outer;  // OK: outer is at equal or shallower scope
     }
     
     int32:zero = 0;
@@ -43,7 +43,7 @@ func:test_assignment_while_borrowed = int32() {
     // Test 4: Cannot assign to borrowed variable
     // This should FAIL at compile time
     int32:x = 10;
-    int32$:ref = !$x;
+    $$i int32:ref = x;
     x = 20;  // ERROR: Cannot assign to x while borrowed
     
     int32:one = 1;
@@ -56,7 +56,7 @@ func:test_assignment_after_borrow_scope = int32() {
     int32:x = 10;
     
     {
-        int32$:ref = !$x;
+        $$i int32:ref = x;
     }  // ref goes out of scope
     
     x = 20;  // OK: no active borrows

@@ -1,0 +1,12 @@
+// expect-exit: 30
+struct:Pair = {
+    int32:a;
+    int32:b;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:pair = Pair{a: 10, b: 20};
+    $$m int32:ra = pair.a;
+    $$m int32:rb = pair.b;
+    exit pair.a + pair.b;
+};

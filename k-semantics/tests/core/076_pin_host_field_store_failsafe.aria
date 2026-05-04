@@ -1,0 +1,16 @@
+// expect-exit: 7
+
+struct:Box = {
+    int32:tag;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    stack Box:box = Box{tag: 1};
+    stack Box->:pin = #box;
+    box.tag = 44;
+    exit 0;
+};

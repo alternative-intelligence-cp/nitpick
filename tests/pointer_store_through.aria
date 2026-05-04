@@ -1,0 +1,13 @@
+/// Regression test: store-through via native pointer syntax.
+/// Expected process exit: 37
+
+func:main = int32() {
+    int32:value = 5;
+    int32->:ptr = @value;
+    <-ptr = 37;
+    exit value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,18 @@
+// expect-exit: 7
+
+func:identity = int32(int32:x) {
+    pass x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 5;
+    int32->:pinned = #value;
+    int32:other = 11;
+    int32:seen = raw identity(other);
+    value = 37;
+    exit seen;
+};

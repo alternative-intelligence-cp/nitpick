@@ -250,27 +250,26 @@ class AriaGenerator:
         """Generate a borrow of a variable.
 
         Aria borrow syntax:
-        - Mutable borrow: type$:name = $var;
-        - Immutable borrow: type$:name = !$var;
+        - Mutable borrow: $$m type:name = var;
+        - Immutable borrow: $$i type:name = var;
         """
         ref_name = self._fresh_var("ref")
+        type_str = var.type_kind.to_aria()
 
         if mutable:
             if var.is_borrowed or var.is_borrowed_mut:
                 # Can't borrow mutably if already borrowed
                 return ""
             var.is_borrowed_mut = True
-            borrow_expr = f"${var.name}"  # Mutable: $var
-            ref_type = f"{var.type_kind.to_aria()}$"  # type$
+            qualifier = "$$m"
         else:
             if var.is_borrowed_mut:
                 # Can't borrow immutably if mutably borrowed
                 return ""
             var.is_borrowed = True
-            borrow_expr = f"!${var.name}"  # Immutable: !$var
-            ref_type = f"{var.type_kind.to_aria()}$"  # type$
+            qualifier = "$$i"
 
-        return f"{self._indent()}{ref_type}:{ref_name} = {borrow_expr};\n"
+        return f"{self._indent()}{qualifier} {type_str}:{ref_name} = {var.name};\n"
 
     def _gen_if_stmt(self, depth: int = 0) -> str:
         """Generate an if statement"""
@@ -583,13 +582,13 @@ func:main = int32() {
  * Expected: COMPILER ERROR
  */
 
-func:modify_both = void(int32$:a, int32$:b) {
+func:modify_both = void($$m int32:a, $$m int32:b) {
     return;
 };
 
 func:main = int32() {
     int32:x = 10;
-    modify_both($x, $x);  // Should error: same variable borrowed mutably twice
+    modify_both(x, x);  // Should error: same variable borrowed mutably twice
     return 0;
 };
 """
@@ -603,7 +602,7 @@ func:main = int32() {
 
 func:main = int32() {
     int32:x = 10;
-    int32$:ref = !$x;  // Immutable borrow (type$:name = !$var)
+    $$i int32:ref = x;  // Immutable borrow
     x = 20;            // Should error: x is borrowed
     return 0;
 };

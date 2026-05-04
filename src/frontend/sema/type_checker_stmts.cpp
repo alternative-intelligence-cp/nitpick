@@ -787,11 +787,28 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                      "$$i/$$m must reference an existing variable", stmt);
             return;
         }
-        // Borrow initializer must be a variable reference or struct field access
+        auto isLiteralIndexBorrowInitializer = [](ASTNode* node) -> bool {
+            if (!node || node->type != ASTNode::NodeType::INDEX) {
+                return false;
+            }
+            auto* indexExpr = static_cast<IndexExpr*>(node);
+            if (!indexExpr->array || indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+                return false;
+            }
+            if (!indexExpr->index || indexExpr->index->type != ASTNode::NodeType::LITERAL) {
+                return false;
+            }
+            auto* literal = static_cast<LiteralExpr*>(indexExpr->index.get());
+            return std::holds_alternative<int64_t>(literal->value);
+        };
+
+        // Borrow initializer must be addressable storage. Start conservatively:
+        // variables, struct fields, and direct literal-index fixed-array slots.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
-            stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS) {
-            addError("Borrow variable '" + stmt->varName + "' must borrow from a named variable, "
-                     "not a literal or expression", stmt);
+            stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
+            !isLiteralIndexBorrowInitializer(stmt->initializer.get())) {
+            addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "
+                     "(a named variable, struct field, or direct literal-index array element)", stmt);
             return;
         }
     }

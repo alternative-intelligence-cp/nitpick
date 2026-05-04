@@ -1,0 +1,17 @@
+// expect-exit: 7
+
+func:add = int32(int32:a, int32:b) {
+    pass a + b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:left = 3;
+    int32:right = 4;
+    int32->:pinned = #left;
+    int32:got = raw add(left, right);
+    exit got;
+};

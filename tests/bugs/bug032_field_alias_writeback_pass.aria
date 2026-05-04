@@ -1,0 +1,18 @@
+// BUG-032: Mutable direct field aliases write back into the source field.
+// Expected: exits 33
+
+struct:Pair = {
+    int32:a;
+    int32:b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Pair:pair = Pair{a: 10, b: 20};
+    $$m int32:alias = pair.a;
+    alias = 33;
+    exit pair.a;
+};

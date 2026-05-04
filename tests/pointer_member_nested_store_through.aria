@@ -1,0 +1,23 @@
+/// Regression test: nested pointer member store-through via ptr->field->field.
+/// Expected process exit: 44
+
+struct:Leaf = {
+    int32:x;
+};
+
+struct:Box = {
+    Leaf->:leaf;
+    int32:tag;
+};
+
+func:main = int32() {
+    stack Leaf:leaf = Leaf{x: 10};
+    stack Box:box = Box{leaf: @leaf, tag: 1};
+    stack Box->:ptr = @box;
+    ptr->leaf->x = 44;
+    exit leaf.x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

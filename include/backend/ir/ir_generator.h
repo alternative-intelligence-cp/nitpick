@@ -285,6 +285,13 @@ private:
      * @return Corresponding LLVM type
      */
     llvm::Type* mapTypeFromName(const std::string& type_name);
+
+    /**
+     * Resolve a borrow initializer lvalue to its storage pointer.
+     * Supports ordinary variables and struct-field member paths such as
+     * obj.field and obj.field.subfield.
+     */
+    llvm::Value* getBorrowAliasPointer(ASTNode* expr, Type** out_type = nullptr);
     
     /**
      * Generate code for a statement node

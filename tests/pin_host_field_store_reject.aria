@@ -1,0 +1,17 @@
+// Expected: COMPILER ERROR
+/// Regression test: direct field mutation of a pinned host is rejected.
+
+struct:Box = {
+    int32:tag;
+};
+
+func:main = int32() {
+    stack Box:box = Box{tag: 1};
+    stack Box->:pin = #box;
+    box.tag = 44;
+    exit box.tag;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

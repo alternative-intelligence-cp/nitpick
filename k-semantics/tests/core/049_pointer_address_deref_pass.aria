@@ -1,0 +1,13 @@
+// expect-exit: 42
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 40;
+    int32->:ptr = @value;
+    value = value + 2;
+    int32:got = <-ptr;
+    exit got;
+};

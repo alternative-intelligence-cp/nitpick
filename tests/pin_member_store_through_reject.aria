@@ -1,0 +1,18 @@
+// Expected: COMPILER ERROR
+/// Regression test: pin pointer member store-through must be rejected.
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    stack Point:p = Point{x: 10, y: 20};
+    stack Point->:pin = #p;
+    pin->x = 37;
+    exit p.x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

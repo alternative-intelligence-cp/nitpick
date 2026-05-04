@@ -1,0 +1,17 @@
+/// Regression test: dollar-borrow syntax is intentionally not Aria syntax.
+/// Expected: COMPILER ERROR
+
+func:mutate = int32($$m int32:x) {
+    x = x + 5;
+    pass x;
+};
+
+func:main = int32() {
+    int32:value = 10;
+    int32:result = raw mutate($value);
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

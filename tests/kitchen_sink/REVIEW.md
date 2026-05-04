@@ -371,8 +371,8 @@ fi
 4. **Add Mutable Borrow Test**:
    ```aria
    int64:original = 100;
-   int64$:mut_ref = $original;  // Mutable borrow
-   *mut_ref = 200;  // Modify through ref (if dereference syntax exists)
+    $$m int64:mut_ref = original;  // Mutable borrow
+    mut_ref = 200;  // Modify through the alias
    ```
 
 5. **Add fail() Test**:

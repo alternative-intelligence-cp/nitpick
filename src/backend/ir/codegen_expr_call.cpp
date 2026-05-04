@@ -7598,7 +7598,39 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         // Evaluate all arguments recursively
         std::vector<llvm::Value*> args;
         for (size_t i = 0; i < expr->arguments.size(); i++) {
-            llvm::Value* arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
+            bool mutableBorrowParam =
+                var_aria_types.count("__func_borrow_param:" + func_name + ":" + std::to_string(i)) &&
+                var_aria_types["__func_borrow_param:" + func_name + ":" + std::to_string(i)] == "mut";
+
+            llvm::Value* arg_value = nullptr;
+            if (mutableBorrowParam) {
+                // v0.18.0: `$$m T:param` expects an address. The parameter
+                // declaration carries the borrow contract; the call site passes
+                // the addressable variable directly.
+                ASTNode* argNode = expr->arguments[i].get();
+                if (argNode && argNode->type == ASTNode::NodeType::IDENTIFIER) {
+                    auto* ident = static_cast<IdentifierExpr*>(argNode);
+                    auto storageIt = named_values.find(ident->name);
+                    if (storageIt == named_values.end()) {
+                        throw std::runtime_error("Undefined variable for mutable borrow: " + ident->name);
+                    }
+
+                    arg_value = storageIt->second;
+                    if (!arg_value->getType()->isPointerTy()) {
+                        llvm::AllocaInst* tmp = builder.CreateAlloca(
+                            arg_value->getType(), nullptr, ident->name + ".borrow.addr");
+                        builder.CreateStore(arg_value, tmp);
+                        named_values[ident->name] = tmp;
+                        arg_value = tmp;
+                    }
+                }
+
+                if (!arg_value) {
+                    throw std::runtime_error("Mutable borrow parameter requires an addressable identifier argument");
+                }
+            } else {
+                arg_value = codegenExpressionNode(expr->arguments[i].get(), this);
+            }
             if (!arg_value) {
                 throw std::runtime_error("Failed to generate code for argument " + std::to_string(i));
             }

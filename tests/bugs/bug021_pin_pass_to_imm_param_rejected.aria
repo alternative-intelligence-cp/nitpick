@@ -1,0 +1,17 @@
+// BUG-021: Pinned hosts must not be passed by value even to $$i parameters.
+// Expected: error ARIA-016
+
+func:read_ref = int32($$i int32:x) {
+    pass x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 42;
+    int32->:pinned = #value;
+    int32:got = raw read_ref(value);
+    exit got;
+};

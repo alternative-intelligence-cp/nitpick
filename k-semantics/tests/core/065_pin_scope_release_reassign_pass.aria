@@ -1,0 +1,15 @@
+// expect-exit: 37
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:value = 5;
+    {
+        int32->:pinned = #value;
+        int32:seen = <- pinned;
+    }
+    value = 37;
+    exit value;
+};

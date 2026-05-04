@@ -1,6 +1,14 @@
 # Aria Programming Language v0.18.x
 
-![Aria Logo](/AriaLogo.png)
+<p align="center">
+    <img src="assets/nitpick_logo.png" alt="Nitpick logo: raccoon holding a magnifying glass" width="280">
+</p>
+
+> 🚧 **Rebrand in progress:** Aria is becoming **Nitpick**. The `v0.18.0` tag is
+> preserved as the final Aria-named K Framework semantics milestone. This repo
+> still uses Aria names while the migration is underway; history, tags, and
+> compatibility paths will be preserved. See [REBRAND_TO_NITPICK.md](REBRAND_TO_NITPICK.md).
+
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![CI](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml/badge.svg)](https://github.com/alternative-intelligence-cp/aria/actions/workflows/ci.yml)
 
@@ -10,50 +18,69 @@
 
 ---
 
-## Current Status (April 30, 2026)
+## Current Status (May 3, 2026)
 
-**Stable release: v0.17.5 — Installers, Packaging & Distribution complete**
+**Stable release: v0.18.0 — K Framework executable semantics seed complete**
 
-**Active development: v0.18.0 — K Framework executable semantics**
+**Next transition: Nitpick rebrand planning and repository/README cleanup**
 
 Aria is now feature-frozen for broad language-surface expansion and focused on
 distribution, formal semantics, and certification-grade validation. The v0.17.x
-series made Aria installable through mainstream Linux paths; the v0.18.x series
-is building a formal K Framework oracle for “what should this program do?”
-independent of `ariac`.
+series made Aria installable through mainstream Linux paths; v0.18.0 delivered a
+formal K Framework oracle seed for “what should this program do?” independent of
+`ariac`.
 
 **Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **59/59** under K Framework v7.1.320;
-`k_semantics_proofs` **1/1 proof module** with three initial `kprove` claims;
+`k_semantics_core` **105/105** under K Framework v7.1.320;
+`k_semantics_proofs` **10/10 proof modules**;
 v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 **800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
 
-**v0.18.x in progress:**
-- **v0.18.0 K executable semantics seed** — `k-semantics/aria.k` defines a
+**v0.18.0 complete:**
+- **K executable semantics seed** — `k-semantics/aria.k` defines a
     first executable subset: `func:main`/`func:failsafe`, variable binding,
     `fixed`, bounded `int32`/`int64`, explicit `tbb32` min-sentinel behavior,
     integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result operators,
     zero-/one-/two-argument helper calls returning through `pass`/`fail`,
-    isolated helper call frames, one-/two-/three-field structs with field reads
-    and writes, string literals, `print`/`println` stdout modeling, `if`/`else`,
+    isolated helper call frames with pinned-host preservation,
+    one-/two-/three-field structs with field reads and writes, string literals,
+    `print`/`println` stdout modeling, `if`/`else`,
     `pick`/`fall` value and wildcard dispatch, untyped `Rules:` declarations,
     integer `limit<Rules>` declaration and reassignment checks with failsafe
     routing, cascaded rules, initial memory allocation qualifier semantics for
-    `stack`/`gc`/`wild`, `alloc`/`free` wild cleanup and leak routing, initial
-    `defer { ... }` block-scoped LIFO cleanup semantics, read-only local
-    pointer address/dereference semantics for `@value` and `<-ptr`, initial
-    `#value` pin registration and static pin-safety checks, initial borrow
-    permission semantics for `$$i`/`$$m` aliases and helper parameters,
+    `stack`/`gc`/`wild`, `alloc`/`free` wild cleanup and leak routing,
+    `wildx` declarations as explicit executable-memory allocations sharing the
+    currently modeled wild cleanup/leak lifecycle, initial `defer { ... }`
+    block-scoped LIFO cleanup semantics, local pointer
+    address/dereference/store-through semantics for `@value`, `<-ptr`, and
+    `<-ptr = value`, pointer-member reads and store-through via `ptr->field`,
+    including nested pointer-valued paths such as `ptr->leaf->x`,
+    `#value` pin registration with pin dereference,
+    read-only pin store-through, pin-member store-through enforcement,
+    pin-derived nested path mutation blocking, pinned-host field mutation blocking,
+    pinned-host by-value call and terminal-exit blocking,
+    and block-scoped pin release,
+    initial borrow permission semantics for `$$i`/`$$m` aliases and helper parameters,
+    direct struct-field borrow path tracking that distinguishes disjoint fields
+    such as `obj.a` and `obj.b`, blocks exact borrowed-field mutation, and keeps
+    conservative host-level conflicts,
+    nested two-level struct-field borrow path tracking such as `box.leaf.x`,
+    including sibling split borrows, parent/child conflict checks, nested-field
+    mutation, and parent-field mutation blocking while a child field is borrowed,
+    local mutable field-alias writeback for direct and two-level paths such as
+    `$$m int32:x = pair.a` and `$$m int32:x = box.leaf.x`,
+    positive `$$m` call-by-reference mutation/writeback,
     block-scoped borrow release for nested statement blocks,
     `loop(start,end,step)`, and `exit`.
 - **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
     executes core programs with `krun`, and skips cleanly when K is unavailable.
 - **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
-    semantics with the Haskell backend required by `kprove` and proves the first
-    executable-core claim module.
-- **Next semantic slice** — richer memory/borrow behavior (positive `$$m`
-    call-by-reference mutation, pointer store-through, fuller runtime pin
-    behavior, `wildx`) and broader symbolic `kprove` lemmas.
+    semantics with the Haskell backend required by `kprove` and proves the core
+    arithmetic, field-alias, pin read-only, pinned by-value, local pointer,
+    pointer-path, borrow-path, control/rules, and Result claim modules.
+- **Current wall documented** — K array/index-path semantics remain future work;
+    the compiler now accepts and validates direct literal-index fixed-array
+    borrow initializers such as `$$m int32:x = arr[0]`.
 
 **Recently completed series:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
@@ -86,7 +113,7 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
-| K semantics | 🔧 Active | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 59/59 core tests, 1/1 proof module |
+| K semantics | ✅ v0.18.0 seed | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 105/105 core tests, 10/10 proof modules |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
 | `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
@@ -622,7 +649,7 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Balanced ternary/nonary runtime** — Full trit/tryte arithmetic (add, sub, mul, div, mod), 15/15 tests
 - ✅ **NIL ↔ void bridge** — NIL = Aria unit type, void = C ABI only, pointer erasure bridge
 - ✅ **Code quality pass** — 44 deprecated LLVM API migrations, all warnings fixed, zero Aria-source warnings
-- ✅ **Traits & borrow semantics RFC** — Design doc for monomorphized traits + `$x`/`$mut x` borrows
+- ✅ **Traits & borrow semantics RFC** — Design doc for monomorphized traits + `$$i`/`$$m` borrow qualifiers
 - ✅ **6 regression tests** — Dedicated regression suite covering critical bug fixes
 
 ### v0.2.1.1 — Released
@@ -948,22 +975,35 @@ Test results are archived in `test_results/` for regression tracking. The fuzzer
 - ✅ **Install documentation** — Source, script, package, and package-manager
     install paths documented
 
-### v0.18.x — In Progress
+### v0.18.0 — Released
 
-- 🔧 **K Framework executable semantics** — First formal semantics seed in
+- ✅ **K Framework executable semantics** — First formal semantics seed in
     `k-semantics/aria.k`
-- ✅ **Core K test corpus** — 50 programs covering exit, arithmetic, binding,
+- ✅ **Core K test corpus** — 105 programs covering exit, arithmetic, binding,
     fixed values, loops, Result operations, sticky `ERR`, failsafe routing,
     `if`/`else`, helper calls, strings/stdout, structs, `pick`/`fall`, and
     integer `Rules` / `limit<Rules>` checks, plus initial `stack`/`gc`/`wild`
     memory qualifier checks, `defer { ... }` cleanup checks, `@`/`<-` pointer
-    read checks, and `$$i`/`$$m` borrow permission checks
+    read/store-through checks, pointer-member read/store-through checks,
+    nested pointer-member path read/store-through checks,
+    `#` pin dereference/read-only checks, pin-member store-through rejection,
+    pin-derived nested path store-through rejection, pinned-host field mutation rejection,
+    direct and nested struct-field borrow path checks, local field-alias
+    writeback checks, `wildx` cleanup checks, pinned-host by-value rejection,
+    and `$$i`/`$$m` borrow permission checks
 - ✅ **CTest integration** — K semantics test passes when K is installed and
     skips cleanly when K is absent
 - ✅ **Proof-oriented `kprove` hook** — Haskell-backend proof runner integrated
-    with CTest and first concrete executable-core claim module passing
-- ⏭️ **Next** — Richer pointer/borrow behavior and broader symbolic `kprove`
-    lemmas
+    with CTest; core arithmetic, field-alias, pin read-only, pinned by-value,
+    local pointer, pointer-path, borrow-path, control/rules, and
+    Result claim modules are passing
+- ✅ **Final audit** — `AUDIT_v0.18.0.md` records validation, proof corpus, gaps,
+    and the then-current compiler/K wall for array/index borrow paths
+- ✅ **Compiler literal-index borrow paths** — v0.18.x now accepts direct
+    literal fixed-array element borrows, tracks indexed path conflicts, rejects
+    dynamic-index borrow initializers, and aliases `arr[0]` borrows to source storage
+- ⏭️ **Next** — Nitpick rebrand repository/README transition, then future
+    compiler/K expansion tracks as needed
 
 ### Long Term
 

@@ -8,9 +8,12 @@ requires "domains.md"
 //   - isolated helper call frames for parameters and local bindings
 //   - one-, two-, and three-field struct literals, field reads, and field writes
 //   - Rules declarations and limit<Rules> integer declaration/assignment checks
-//   - stack/gc/wild declaration qualifiers with minimal wild free/leak checks
+//   - stack/gc/wild/wildx declaration qualifiers with minimal wild free/leak checks
 //   - defer { ... } cleanup blocks with block-scoped LIFO execution
-//   - $$i/$$m borrow qualifiers with minimal aliasing and call enforcement
+//   - @ address-of, <- dereference, and <-ptr = value store-through for local bindings
+//   - ptr->field reads/store-through, including nested pointer-valued field paths
+//   - # pin registration with dereference plus direct/nested mutation and by-value call blocking
+//   - $$i/$$m borrow qualifiers with nested path-sensitive field tracking and call enforcement
 //   - int32/int64/tbb32 declarations, assignments, and bounded numeric values
 //   - string literals and stdout-producing print/println builtins
 //   - fixed bindings with dynamic immutability enforcement
@@ -29,9 +32,13 @@ module ARIA-SYNTAX
   imports ID-SYNTAX
 
      syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Id
-     syntax MemMode ::= "stack" | "gc" | "wild"
+     syntax MemMode ::= "stack" | "gc" | "wild" | "wildx"
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
+     syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
+                         | "NestedFieldPath" "(" Id "," Id "," Id ")"
+     syntax BorrowAlias ::= "FieldAlias" "(" Id "," Id ")"
+                          | "NestedFieldAlias" "(" Id "," Id "," Id ")"
 
   syntax Val ::= Int
                | Bool
@@ -44,7 +51,9 @@ module ARIA-SYNTAX
                | "I64" "(" Int ")"
                | "TBB32" "(" Int ")"
                | "PTR" "(" Int ")"
-               | "BorrowVal" "(" BorrowInfo "," Id "," Val ")"
+               | "PTRLOC" "(" Int ")"
+               | "PINPTRLOC" "(" Int ")"
+               | "PINPATHLOC" "(" Int ")"
 
   syntax KResult ::= Val
 
@@ -54,8 +63,9 @@ module ARIA-SYNTAX
                | "println" "(" Exp ")" [strict]
                | "alloc" "(" Exp ")" [strict]
                | "free" "(" Id ")"
-               | "$" Id
-               | "!" "$" Id
+               | "@" Id
+               | "#" Id
+               | "<-" Exp [strict]
                | Id "(" ")"
                | Id "(" Exp ")" [strict(2), avoid]
                | Id "(" Exp "," Exp ")" [strict(2, 3), avoid]
@@ -63,6 +73,7 @@ module ARIA-SYNTAX
                | Id "{" Id ":" Exp "," Id ":" Exp "}" [strict(3, 5), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "," Id ":" Exp "}" [strict(3, 5, 7), avoid]
                | Exp "." Id [strict(1), avoid]
+               | Exp "->" Id [strict(1), avoid]
                | "$"
                | "(" Exp ")" [bracket]
                > Exp "*" Exp [strict, left]
@@ -87,16 +98,22 @@ module ARIA-SYNTAX
                 | "limit" "<" Id ">" Type ":" Id "=" Exp ";" [strict(4)]
                 | MemMode Type ":" Id "=" Exp ";" [strict(4)]
                 | BorrowMode Type ":" Id "=" Id ";"
+                | BorrowMode Type ":" Id "=" Id "." Id ";"
+                | BorrowMode Type ":" Id "=" Id "." Id "." Id ";"
                 | Id "=" Exp ";" [strict(2)]
+                | "<-" Exp "=" Exp ";" [strict(1, 2)]
                 | Id "." Id "=" Exp ";" [strict(3)]
+                | Id "." Id "." Id "=" Exp ";" [strict(4)]
+                | Exp "->" Id "=" Exp ";" [strict(1, 3)]
                 | "exit" Exp ";" [strict]
-                | "exit" "(" Exp ")" ";" [strict]
+                | "exit" "(" Exp ")" ";" [strict, prefer]
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
                 | "if" "(" Exp ")" Block [strict(1)]
                 | "pick" "(" Exp ")" "{" PickCases "}" [strict(1)]
                 | "fall" Id ";"
                 | "loop" "(" Exp "," Exp "," Exp ")" Block [strict(1, 2, 3)]
                 | "defer" Block
+                | Block
                 | Exp ";" [strict]
 
      syntax Block ::= "{" Stmts "}"
@@ -136,6 +153,7 @@ module ARIA
   imports MAP
   imports SET
      imports LIST
+     imports K-EQUAL
 
   configuration <T>
     <k> $PGM:Pgm </k>
@@ -148,8 +166,10 @@ module ARIA
      <wild-live> .Set </wild-live>
      <defer-stack> .List </defer-stack>
      <borrow-vars> .Map </borrow-vars>
+     <borrow-aliases> .Map </borrow-aliases>
      <imm-borrow-hosts> .Set </imm-borrow-hosts>
      <mut-borrow-hosts> .Set </mut-borrow-hosts>
+     <pinned-hosts> .Set </pinned-hosts>
           <structs> .Map </structs>
     <env> .Map </env>
     <types> .Map </types>
@@ -202,7 +222,8 @@ module ARIA
        <types> ... X |-> T ... </types>
        <limits> ... X |-> R ... </limits>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <pinned-hosts> Pinned </pinned-hosts>
+    requires notBool(X in Fixed) andBool notBool(X in Pinned)
 
   rule <k> storeLimitedAssign(L:Int, V:Val) => .K ... </k>
        <store> Store => Store [ L <- V ] </store>
@@ -227,16 +248,17 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   // -------------------------------------------------------------------------
-  // Memory allocation qualifiers: stack / gc / wild
+     // Memory allocation qualifiers: stack / gc / wild / wildx
   // -------------------------------------------------------------------------
 
-  syntax MemInfo ::= "StackMem" | "GCMem" | "WildMem"
+     syntax MemInfo ::= "StackMem" | "GCMem" | "WildMem" | "WildXMem"
 
   syntax KItem ::= "storeMemory" "(" MemInfo "," Type "," Id "," Val ")"
 
   rule <k> stack T:Type : X:Id = V:Val ; => storeMemory(StackMem, T, X, normalizeValue(T, V)) ... </k>
   rule <k> gc    T:Type : X:Id = V:Val ; => storeMemory(GCMem,    T, X, normalizeValue(T, V)) ... </k>
   rule <k> wild  T:Type : X:Id = V:Val ; => storeMemory(WildMem,  T, X, normalizeValue(T, V)) ... </k>
+     rule <k> wildx T:Type : X:Id = V:Val ; => storeMemory(WildXMem, T, X, normalizeValue(T, V)) ... </k>
 
   rule <k> storeMemory(StackMem, T:Type, X:Id, V:Val) => .K ... </k>
        <env> Env => Env [ X <- L ] </env>
@@ -262,6 +284,14 @@ module ARIA
        <wild-live> Wild => Wild SetItem(L) </wild-live>
        <next-loc> L => L +Int 1 </next-loc>
 
+  rule <k> storeMemory(WildXMem, T:Type, X:Id, V:Val) => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <types> Types => Types [ X <- T ] </types>
+       <store> Store => Store [ L <- V ] </store>
+       <mem-modes> Modes => Modes [ X <- WildXMem ] </mem-modes>
+       <wild-live> Wild => Wild SetItem(L) </wild-live>
+       <next-loc> L => L +Int 1 </next-loc>
+
   rule <k> free(X:Id) => NIL ... </k>
        <env> ... X |-> L ... </env>
        <wild-live> Wild => Wild -Set SetItem(L) </wild-live>
@@ -277,6 +307,62 @@ module ARIA
   rule <k> alloc(V:Val) => PTR(numericValue(V)) ... </k>
     requires isNumericValue(V)
 
+     // Local pointer slice: @x captures the store location of a local binding,
+     // <-ptr reads the current value at that location, and <-ptr = value writes
+     // back through that captured location. #x returns a pinned pointer that can
+     // read the host but cannot write through the pin reference.
+  syntax Bool ::= isStorePointer(Val) [function]
+
+  rule isStorePointer(PTRLOC(_:Int)) => true
+     rule isStorePointer(PINPTRLOC(_:Int)) => true
+       rule isStorePointer(PINPATHLOC(_:Int)) => true
+  rule isStorePointer(_) => false [owise]
+
+     rule <k> @ X:Id => PTRLOC(L) ... </k>
+          <env> ... X |-> L ... </env>
+
+     rule <k> # X:Id => PINPTRLOC(L) ... </k>
+          <env> ... X |-> L ... </env>
+          <pinned-hosts> Pinned => Pinned SetItem(X) </pinned-hosts>
+     requires notBool(X in Pinned)
+
+  rule <k> # X:Id ~> _ => FS </k>
+       <env> Env </env>
+       <pinned-hosts> Pinned </pinned-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(X in_keys(Env)) orBool X in Pinned
+
+  rule <k> <- PTRLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
+  rule <k> <- PINPTRLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
+  rule <k> <- PINPATHLOC(L:Int) => V ... </k>
+       <store> ... L |-> V ... </store>
+
+  rule <k> <- PTRLOC(L:Int) = V:Val ; => .K ... </k>
+       <store> ... L |-> (OLD:Val => normalizeLike(OLD, V)) ... </store>
+
+  rule <k> <- PINPTRLOC(_:Int) = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> <- PINPATHLOC(_:Int) = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> <- V:Val = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
+
+  rule <k> <- V:Val ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
+
   // -------------------------------------------------------------------------
   // Borrow permission qualifiers: $$i / $$m
   // -------------------------------------------------------------------------
@@ -287,7 +373,17 @@ module ARIA
   syntax Val ::= argumentValue(Val) [function]
   syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
                 | isImmutableBorrowVar(Id, Map) [function]
+                          | hasBorrowOnHost(Id, Set) [function]
+                          | hasBorrowOnFieldPath(Id, Id, Set) [function]
+                          | hasBorrowOnNestedPath(Id, Id, Id, Set) [function]
+     syntax Int ::= envLoc(Map, Id) [function]
+  syntax Val ::= fieldValue(Map, Int, Id) [function]
+                         | nestedFieldValue(Map, Int, Id, Id) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
+               | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
+               | callWritebacks(BorrowInfo, Val) [function]
+               | writebackStore(Map, Map, Map) [function]
+  syntax Int ::= callParamLoc(Int, BorrowInfo, Val) [function]
 
   rule paramType(T:Type : _:Id) => T
   rule paramType($$i T:Type : _:Id) => T
@@ -301,13 +397,20 @@ module ARIA
   rule paramBorrow($$i _:Type : _:Id) => ImmBorrow
   rule paramBorrow($$m _:Type : _:Id) => MutBorrow
 
-  rule argumentValue(BorrowVal(_:BorrowInfo, _:Id, V:Val)) => V
   rule argumentValue(V:Val) => V [owise]
 
-  rule acceptsBorrowArg(MutBorrow, BorrowVal(MutBorrow, _:Id, _:Val)) => true
   rule acceptsBorrowArg(MutBorrow, _) => false [owise]
   rule acceptsBorrowArg(ImmBorrow, _) => true
   rule acceptsBorrowArg(CopyBorrow, _) => true
+
+     rule callParamLoc(L:Int, _:BorrowInfo, _:Val) => L [owise]
+
+     rule callParamStore(Store:Map, PT:Type, B:BorrowInfo, L:Int, A:Val) => Store [ callParamLoc(L, B, A) <- normalizeValue(PT, argumentValue(A)) ]
+
+     rule callWritebacks(_:BorrowInfo, _:Val) => .Map [owise]
+
+     rule writebackStore(Saved:Map, _:Map, .Map) => Saved
+     rule writebackStore(Saved:Map, Current:Map, (L:Int |-> _:Bool REST:Map)) => writebackStore(Saved [ L <- Current [ L ] ], Current, REST)
 
   rule paramBorrowMap(_:Id, CopyBorrow) => .Map
   rule paramBorrowMap(X:Id, ImmBorrow) => X |-> ImmBorrow
@@ -317,13 +420,25 @@ module ARIA
   rule isImmutableBorrowVar(X:Id, (X |-> MutBorrow _:Map)) => false
   rule isImmutableBorrowVar(_:Id, _:Map) => false [owise]
 
-  rule <k> $ X:Id => BorrowVal(MutBorrow, X, V) ... </k>
-       <env> ... X |-> L ... </env>
-       <store> ... L |-> V ... </store>
+     rule hasBorrowOnHost(_:Id, .Set) => false
+     rule hasBorrowOnHost(H:Id, SetItem(H) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(FieldPath(H, _:Id)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(NestedFieldPath(H, _:Id, _:Id)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnHost(H, REST) [owise]
 
-  rule <k> ! $ X:Id => BorrowVal(ImmBorrow, X, V) ... </k>
-       <env> ... X |-> L ... </env>
-       <store> ... L |-> V ... </store>
+     rule hasBorrowOnFieldPath(_:Id, _:Id, .Set) => false
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(FieldPath(H, F)) _:Set) => true
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(NestedFieldPath(H, F, _:Id)) _:Set) => true
+     rule hasBorrowOnFieldPath(H:Id, F:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnFieldPath(H, F, REST) [owise]
+
+     rule hasBorrowOnNestedPath(_:Id, _:Id, _:Id, .Set) => false
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, _:Id, SetItem(FieldPath(H, F1)) _:Set) => true
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(NestedFieldPath(H, F1, F2)) _:Set) => true
+     rule hasBorrowOnNestedPath(H:Id, F1:Id, F2:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnNestedPath(H, F1, F2, REST) [owise]
+
+     rule envLoc((H:Id |-> L:Int _:Map), H) => L
+     rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
+     rule nestedFieldValue((L:Int |-> StructVal(_:Id, (F1:Id |-> StructVal(_:Id, (F2:Id |-> V:Val _:Map)) _:Map)) _:Map), L, F1, F2) => V
 
   rule <k> $$i T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -331,7 +446,7 @@ module ARIA
        <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
        <imm-borrow-hosts> Imm => Imm SetItem(H) </imm-borrow-hosts>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
-    requires H in_keys(Env) andBool notBool(H in Mut)
+      requires H in_keys(Env) andBool notBool(hasBorrowOnHost(H, Mut))
 
   rule <k> $$m T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -339,22 +454,104 @@ module ARIA
        <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
        <mut-borrow-hosts> Mut => Mut SetItem(H) </mut-borrow-hosts>
        <imm-borrow-hosts> Imm </imm-borrow-hosts>
-    requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm)
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(hasBorrowOnHost(H, Mut)) andBool notBool(hasBorrowOnHost(H, Imm)) andBool notBool(H in Pinned)
+
+  rule <k> $$i T:Type : X:Id = H:Id . F:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, fieldValue(Store, envLoc(Env, H), F)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(FieldPath(H, F)) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(FieldPath(H, F) in Mut)
+
+  rule <k> $$m T:Type : X:Id = H:Id . F:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, fieldValue(Store, envLoc(Env, H), F)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- FieldAlias(H, F) ] </borrow-aliases>
+           <mut-borrow-hosts> Mut => Mut SetItem(FieldPath(H, F)) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(FieldPath(H, F) in Mut) andBool notBool(FieldPath(H, F) in Imm)
+
+  rule <k> $$i T:Type : X:Id = H:Id . F1:Id . F2:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, nestedFieldValue(Store, envLoc(Env, H), F1, F2)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(NestedFieldPath(H, F1, F2)) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Mut))
+
+  rule <k> $$m T:Type : X:Id = H:Id . F1:Id . F2:Id ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, nestedFieldValue(Store, envLoc(Env, H), F1, F2)) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- NestedFieldAlias(H, F1, F2) ] </borrow-aliases>
+           <mut-borrow-hosts> Mut => Mut SetItem(NestedFieldPath(H, F1, F2)) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Mut)) andBool notBool(hasBorrowOnNestedPath(H, F1, F2, Imm))
 
   rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
-    requires notBool(H in_keys(Env)) orBool H in Mut
+      requires notBool(H in_keys(Env)) orBool hasBorrowOnHost(H, Mut)
 
   rule <k> $$m _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
        <mut-borrow-hosts> Mut </mut-borrow-hosts>
        <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
-    requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm
+         requires notBool(H in_keys(Env)) orBool hasBorrowOnHost(H, Mut) orBool hasBorrowOnHost(H, Imm) orBool H in Pinned
+
+       rule <k> $$i _:Type : _:Id = H:Id . F:Id ; ~> _ => FS </k>
+           <env> Env </env>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnFieldPath(H, F, Mut) [priority(25)]
+
+       rule <k> $$m _:Type : _:Id = H:Id . F:Id ; ~> _ => FS </k>
+           <env> Env </env>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+         requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+                         orBool hasBorrowOnFieldPath(H, F, Mut) orBool hasBorrowOnFieldPath(H, F, Imm) [priority(25)]
+
+                rule <k> $$i _:Type : _:Id = H:Id . F1:Id . F2:Id ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnNestedPath(H, F1, F2, Mut) [priority(25)]
+
+                rule <k> $$m _:Type : _:Id = H:Id . F1:Id . F2:Id ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                          <pinned-hosts> Pinned </pinned-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
+                         orBool hasBorrowOnNestedPath(H, F1, F2, Mut) orBool hasBorrowOnNestedPath(H, F1, F2, Imm) [priority(25)]
 
   // -------------------------------------------------------------------------
   // Struct definitions, literals, field reads, and field writes
@@ -390,53 +587,187 @@ module ARIA
 
      rule <k> StructVal(_:Id, (F:Id |-> V:Val _:Map)) . F => V ... </k>
 
+     rule <k> PTRLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+    requires notBool(isStorePointer(V))
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PTRLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PINPTRLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPTRLOC(L:Int) -> F:Id => PINPATHLOC(PL) ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> PINPATHLOC(PL) _:Map)) ... </store>
+
+     rule <k> PINPATHLOC(L:Int) -> F:Id => V ... </k>
+          <store> ... L |-> StructVal(_:Id, (F |-> V:Val _:Map)) ... </store>
+
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct1(T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
 
   rule <k> X:Id . F:Id = V:Val ; => .K ... </k>
        <env> ... X |-> L ... </env>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
        <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
        <fixed-vars> Fixed </fixed-vars>
-    requires notBool(X in Fixed)
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(FieldPath(X, F) in Imm) andBool notBool(FieldPath(X, F) in Mut)
+
+  rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+      requires X in Pinned
+
+  rule <k> X:Id . F:Id = _:Val ; ~> _ => FS </k>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Imm orBool X in Mut orBool hasBorrowOnFieldPath(X, F, Imm) orBool hasBorrowOnFieldPath(X, F, Mut) [priority(25)]
 
   rule <k> X:Id . _:Id = _:Val ; ~> _ => FS </k>
        <fixed-vars> Fixed </fixed-vars>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires X in Fixed
+
+  rule <k> X:Id . F1:Id . F2:Id = V:Val ; => .K ... </k>
+       <env> ... X |-> L ... </env>
+       <store> ... L |-> (StructVal(S, (F1 |-> StructVal(NS, (F2 |-> OLD:Val NFields:Map)) Fields:Map)) => StructVal(S, (F1 |-> StructVal(NS, (F2 |-> normalizeLike(OLD, V)) NFields)) Fields)) ... </store>
+       <fixed-vars> Fixed </fixed-vars>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <pinned-hosts> Pinned </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in Pinned)
+       andBool notBool(X in Imm) andBool notBool(X in Mut)
+       andBool notBool(hasBorrowOnNestedPath(X, F1, F2, Imm)) andBool notBool(hasBorrowOnNestedPath(X, F1, F2, Mut))
+
+  rule <k> X:Id . _:Id . _:Id = _:Val ; ~> _ => FS </k>
+           <pinned-hosts> Pinned </pinned-hosts>
+           <failsafe> FS </failsafe>
+           <failsafe-triggered> _ => true </failsafe-triggered>
+      requires X in Pinned [priority(25)]
+
+  rule <k> X:Id . F1:Id . F2:Id = _:Val ; ~> _ => FS </k>
+       <imm-borrow-hosts> Imm </imm-borrow-hosts>
+       <mut-borrow-hosts> Mut </mut-borrow-hosts>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Imm orBool X in Mut orBool hasBorrowOnNestedPath(X, F1, F2, Imm) orBool hasBorrowOnNestedPath(X, F1, F2, Mut) [priority(25)]
+
+  rule <k> X:Id . _:Id . _:Id = _:Val ; ~> _ => FS </k>
+       <fixed-vars> Fixed </fixed-vars>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires X in Fixed [priority(25)]
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct1(T, F) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
+       <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
+
+  rule <k> PINPTRLOC(_:Int) -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> PINPATHLOC(_:Int) -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+
+  rule <k> V:Val -> _:Id = _:Val ; ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
+
+  rule <k> V:Val -> _:Id ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(isStorePointer(V))
 
   // -------------------------------------------------------------------------
   // Helper functions and isolated call frames
@@ -445,17 +776,22 @@ module ARIA
   syntax Func ::= "Fn0Pass" "(" Type "," Exp ")"
                           | "Fn0Fail" "(" Exp ")"
                           | "Fn1Pass" "(" Type "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn1StmtPass" "(" Type "," BorrowInfo "," Type "," Id "," Stmt "," Exp ")"
                           | "Fn1Fail" "(" BorrowInfo "," Type "," Id "," Exp ")"
                           | "Fn2Pass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
+                          | "Fn2StmtPass" "(" Type "," BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Stmt "," Exp ")"
                           | "Fn2Fail" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Exp ")"
 
-  syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Set "," Set "," Set "," Int ")"
+     syntax FrameState ::= "FrameState" "(" Map "," Map "," Map "," Map "," Map "," Set "," Set "," Set "," Map "," Map "," Set "," Set "," Set "," Set "," Int ")"
 
   syntax KItem ::= "loadFuncs" "(" FuncDecls ")"
                  | "finishCallPass" "(" Type ")"
                  | "finishCallFail"
                  | "finishCallPassFrame" "(" Type "," FrameState ")"
                  | "finishCallFailFrame" "(" FrameState ")"
+                 | "finishCallPassFrameWriteback" "(" Type "," FrameState "," Map ")"
+                 | "finishCallFailFrameWriteback" "(" FrameState "," Map ")"
+                 | "finishFn2MutFirstArg" "(" Id "," Id ")"
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
@@ -468,16 +804,22 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = T:Type(P:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn1Pass(T, paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
 
+  rule <k> loadFuncs(func: F:Id = T:Type(P:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1StmtPass(T, paramBorrow(P), paramType(P), paramName(P), S, E) ] </functions>
+
   rule <k> loadFuncs(func: F:Id = _T:Type(P:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn1Fail(paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
 
   rule <k> loadFuncs(func: F:Id = T:Type(P1:Param, P2:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Pass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
+  rule <k> loadFuncs(func: F:Id = T:Type(P1:Param, P2:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2StmtPass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), S, E) ] </functions>
+
   rule <k> loadFuncs(func: F:Id = _T:Type(P1:Param, P2:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Fail(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
-  rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) ... </k>
+     rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Pass(T, E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
@@ -488,12 +830,14 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => .Map </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id() => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) ... </k>
+     rule <k> F:Id() => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Fail(E) ... </functions>
        <env> Env => .Map </env>
        <types> Types => .Map </types>
@@ -504,84 +848,329 @@ module ARIA
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => .Map </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> Next </next-loc>
 
-  rule <k> F:Id(A:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+           rule <k> F:Id(X:Id) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                <functions> ... F |-> Fn1Pass(T, MutBorrow, PT, PX, E) ... </functions>
+                <env> Env => PX |-> envLoc(Env, X) </env>
+                <types> Types => PX |-> PT </types>
+                <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
+
+           rule <k> F:Id(X:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                                        <functions> ... F |-> Fn1StmtPass(T, MutBorrow, PT, PX, S, E) ... </functions>
+                                        <env> Env => PX |-> envLoc(Env, X) </env>
+                                        <types> Types => PX |-> PT </types>
+                                        <store> Store </store>
+                                        <limits> Limits => .Map </limits>
+                                        <mem-modes> Modes => .Map </mem-modes>
+                                        <stack-live> Stack => .Set </stack-live>
+                                        <gc-live> GC => .Set </gc-live>
+                                        <wild-live> Wild => .Set </wild-live>
+                                        <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+                                        <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                                        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                                        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                                        <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                                        <fixed-vars> Fixed => .Set </fixed-vars>
+                                        <next-loc> L => L +Int 1 </next-loc>
+                         requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
+
+           rule <k> F:Id(X:Id) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), envLoc(Env, X) |-> true) ... </k>
+                <functions> ... F |-> Fn1Fail(MutBorrow, PT, PX, E) ... </functions>
+                                        <env> Env => PX |-> envLoc(Env, X) </env>
+                <types> Types => PX |-> PT </types>
+                                        <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(25)]
+
+     rule <k> F:Id(A:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Pass(T, B, PT, PX, E) ... </functions>
-       <env> Env => PX |-> L </env>
+       <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
+       <store> Store => callParamStore(Store, PT, B, L, A) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+     rule <k> F:Id(A:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
+                <functions> ... F |-> Fn1StmtPass(T, B, PT, PX, S, E) ... </functions>
+                <env> Env => PX |-> callParamLoc(L, B, A) </env>
+                <types> Types => PX |-> PT </types>
+                <store> Store => callParamStore(Store, PT, B, L, A) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+                <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires acceptsBorrowArg(B, A)
+
+     rule <k> F:Id(A:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B, A)) ... </k>
        <functions> ... F |-> Fn1Fail(B, PT, PX, E) ... </functions>
-       <env> Env => PX |-> L </env>
+                <env> Env => PX |-> callParamLoc(L, B, A) </env>
        <types> Types => PX |-> PT </types>
-       <store> Store => L |-> normalizeValue(PT, argumentValue(A)) </store>
+                <store> Store => callParamStore(Store, PT, B, L, A) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 1 </next-loc>
     requires acceptsBorrowArg(B, A)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+     rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Pass(T, B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
-       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
+       <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+     <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
 
-  rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, L)) ... </k>
+           rule <k> F:Id(X:Id, A2:Exp) => A2 ~> finishFn2MutFirstArg(F, X) ... </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, MutBorrow, _:Type, _:Id, CopyBorrow, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <env> Env </env>
+                <pinned-hosts> PinnedHosts </pinned-hosts>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(30)]
+
+           rule <k> F:Id(X:Id, A2:Exp) => A2 ~> finishFn2MutFirstArg(F, X) ... </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, MutBorrow, _:Type, _:Id, ImmBorrow, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <env> Env </env>
+                <pinned-hosts> PinnedHosts </pinned-hosts>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) [priority(30)]
+
+     rule <k> V:Val ~> finishFn2MutFirstArg(F:Id, X:Id) => F(X, V) ... </k>
+
+           rule <k> F:Id(X:Id, A2:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), (envLoc(Env, X) |-> true) callWritebacks(B2, A2)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, MutBorrow, PT1, PX1, B2, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> envLoc(Env, X) PX2 |-> callParamLoc(L, B2, A2)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(Store, PT2, B2, L, A2) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, MutBorrow) paramBorrowMap(PX2, B2) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires X in_keys(Env) andBool notBool(X in PinnedHosts) andBool acceptsBorrowArg(B2, A2) [priority(25)]
+
+           rule <k> F:Id(A1:Val, Y:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) (envLoc(Env, Y) |-> true)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, B1, PT1, PX1, MutBorrow, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> envLoc(Env, Y)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(Store, PT1, B1, L, A1) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 1 </next-loc>
+          requires Y in_keys(Env) andBool notBool(Y in PinnedHosts) andBool acceptsBorrowArg(B1, A1) [priority(25)]
+
+           rule <k> F:Id(X:Id, Y:Id) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), (envLoc(Env, X) |-> true) (envLoc(Env, Y) |-> true)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, MutBorrow, PT1, PX1, MutBorrow, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> envLoc(Env, X) PX2 |-> envLoc(Env, Y)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, MutBorrow) paramBorrowMap(PX2, MutBorrow) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 2 </next-loc>
+          requires X in_keys(Env) andBool Y in_keys(Env) andBool notBool(X in PinnedHosts) andBool notBool(Y in PinnedHosts) andBool envLoc(Env, X) =/=Int envLoc(Env, Y) [priority(25)]
+
+           rule <k> F:Id(A1:Val, A2:Val) => S ~> E ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
+                <functions> ... F |-> Fn2StmtPass(T, B1, PT1, PX1, B2, PT2, PX2, S, E) ... </functions>
+                <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
+                <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+                <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
+                <limits> Limits => .Map </limits>
+                <mem-modes> Modes => .Map </mem-modes>
+                <stack-live> Stack => .Set </stack-live>
+                <gc-live> GC => .Set </gc-live>
+                <wild-live> Wild => .Set </wild-live>
+                <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+           <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+                <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+                <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+           <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+                <fixed-vars> Fixed => .Set </fixed-vars>
+                <next-loc> L => L +Int 2 </next-loc>
+          requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
+
+     rule <k> F:Id(A1:Val, A2:Val) => E ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, L), callWritebacks(B1, A1) callWritebacks(B2, A2)) ... </k>
        <functions> ... F |-> Fn2Fail(B1, PT1, PX1, B2, PT2, PX2, E) ... </functions>
-       <env> Env => (PX1 |-> L PX2 |-> (L +Int 1)) </env>
+       <env> Env => (PX1 |-> callParamLoc(L, B1, A1) PX2 |-> callParamLoc(L +Int 1, B2, A2)) </env>
        <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
-       <store> Store => (L |-> normalizeValue(PT1, argumentValue(A1)) (L +Int 1) |-> normalizeValue(PT2, argumentValue(A2))) </store>
+       <store> Store => callParamStore(callParamStore(Store, PT1, B1, L, A1), PT2, B2, L +Int 1, A2) </store>
        <limits> Limits => .Map </limits>
        <mem-modes> Modes => .Map </mem-modes>
        <stack-live> Stack => .Set </stack-live>
        <gc-live> GC => .Set </gc-live>
        <wild-live> Wild => .Set </wild-live>
        <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+     <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
        <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
        <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+                <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
        <fixed-vars> Fixed => .Set </fixed-vars>
        <next-loc> L => L +Int 2 </next-loc>
     requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
+
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn1Fail(_:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Pass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+          rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                   <functions> ... F |-> Fn2StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                   <pinned-hosts> Pinned </pinned-hosts>
+                   <failsafe> FS </failsafe>
+                   <failsafe-triggered> _ => true </failsafe-triggered>
+              requires X in Pinned [priority(25)]
+
+          rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                   <functions> ... F |-> Fn2StmtPass(_:Type, _:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                   <pinned-hosts> Pinned </pinned-hosts>
+                   <failsafe> FS </failsafe>
+                   <failsafe-triggered> _ => true </failsafe-triggered>
+              requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(X:Id, _:Exp) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Fail(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> F:Id(_:Exp, X:Id) ~> _ => FS </k>
+                <functions> ... F |-> Fn2Fail(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Exp) ... </functions>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
 
   rule <k> F:Id(A:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn1Pass(_:Type, B, _:Type, _:Id, _:Exp) ... </functions>
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(acceptsBorrowArg(B, A))
+
+     rule <k> F:Id(A:Val) ~> _ => FS </k>
+                <functions> ... F |-> Fn1StmtPass(_:Type, B, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires notBool(acceptsBorrowArg(B, A))
 
   rule <k> F:Id(A:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn1Fail(B, _:Type, _:Id, _:Exp) ... </functions>
@@ -595,6 +1184,12 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
 
+     rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
+                <functions> ... F |-> Fn2StmtPass(_:Type, B1, _:Type, _:Id, B2, _:Type, _:Id, _:Stmt, _:Exp) ... </functions>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
+
   rule <k> F:Id(A1:Val, A2:Val) ~> _ => FS </k>
        <functions> ... F |-> Fn2Fail(B1, _:Type, _:Id, B2, _:Type, _:Id, _:Exp) ... </functions>
        <failsafe> FS </failsafe>
@@ -604,7 +1199,7 @@ module ARIA
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
-  rule <k> V:Val ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) => Result(NIL, normalizeValue(T, V), false) ... </k>
+     rule <k> V:Val ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(NIL, normalizeValue(T, V), false) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
@@ -614,12 +1209,31 @@ module ARIA
        <gc-live> _ => GC </gc-live>
        <wild-live> _ => Wild </wild-live>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+     <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+     <pinned-hosts> _ => PinnedHosts </pinned-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
 
-  rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, ImmHosts, MutHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
+           rule <k> V:Val ~> finishCallPassFrameWriteback(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(NIL, normalizeValue(T, V), false) ... </k>
+                <env> _ => Env </env>
+                <types> _ => Types </types>
+                <store> Current => writebackStore(Store, Current, W) </store>
+                <limits> _ => Limits </limits>
+                <mem-modes> _ => Modes </mem-modes>
+                <stack-live> _ => Stack </stack-live>
+                <gc-live> _ => GC </gc-live>
+                <wild-live> _ => Wild </wild-live>
+                <borrow-vars> _ => BorrowVars </borrow-vars>
+                <borrow-aliases> _ => BorrowAliases </borrow-aliases>
+                <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+                <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+           <pinned-hosts> _ => PinnedHosts </pinned-hosts>
+                <fixed-vars> _ => Fixed </fixed-vars>
+                <next-loc> _ => Next </next-loc>
+
+     rule <k> V:Val ~> finishCallFailFrame(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) => Result(V, NIL, true) ... </k>
        <env> _ => Env </env>
        <types> _ => Types </types>
        <store> _ => Store </store>
@@ -629,16 +1243,35 @@ module ARIA
        <gc-live> _ => GC </gc-live>
        <wild-live> _ => Wild </wild-live>
        <borrow-vars> _ => BorrowVars </borrow-vars>
+     <borrow-aliases> _ => BorrowAliases </borrow-aliases>
        <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
        <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+     <pinned-hosts> _ => PinnedHosts </pinned-hosts>
        <fixed-vars> _ => Fixed </fixed-vars>
        <next-loc> _ => Next </next-loc>
+
+     rule <k> V:Val ~> finishCallFailFrameWriteback(FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next), W:Map) => Result(V, NIL, true) ... </k>
+                <env> _ => Env </env>
+                <types> _ => Types </types>
+                <store> Current => writebackStore(Store, Current, W) </store>
+                <limits> _ => Limits </limits>
+                <mem-modes> _ => Modes </mem-modes>
+                <stack-live> _ => Stack </stack-live>
+                <gc-live> _ => GC </gc-live>
+                <wild-live> _ => Wild </wild-live>
+                <borrow-vars> _ => BorrowVars </borrow-vars>
+                <borrow-aliases> _ => BorrowAliases </borrow-aliases>
+                <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+                <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+           <pinned-hosts> _ => PinnedHosts </pinned-hosts>
+                <fixed-vars> _ => Fixed </fixed-vars>
+                <next-loc> _ => Next </next-loc>
 
   // -------------------------------------------------------------------------
   // Statement sequencing and blocks
   // -------------------------------------------------------------------------
 
-  syntax KItem ::= "DeferScope" "(" List ")"
+     syntax KItem ::= "DeferScope" "(" List "," Map "," Map "," Set "," Set "," Set ")"
                  | "Deferred" "(" Stmts ")"
                  | "enterBlock"
                  | "leaveBlock"
@@ -648,10 +1281,15 @@ module ARIA
   rule <k> { SS:Stmts } => enterBlock ~> SS ~> leaveBlock ... </k>
 
   rule <k> enterBlock => .K ... </k>
-       <defer-stack> DS => ListItem(DeferScope(.List)) DS </defer-stack>
+       <defer-stack> DS => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) DS </defer-stack>
+       <borrow-vars> BorrowVars </borrow-vars>
+       <borrow-aliases> BorrowAliases </borrow-aliases>
+       <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts </pinned-hosts>
 
   rule <k> defer { SS:Stmts } => .K ... </k>
-       <defer-stack> ListItem(DeferScope(OLD:List)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(OLD:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(ListItem(Deferred(SS)) OLD, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> defer _:Block ~> _ => FS </k>
        <defer-stack> .List </defer-stack>
@@ -659,13 +1297,18 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
 
   rule <k> leaveBlock => runDefers(DS) ~> popBlock ... </k>
-       <defer-stack> ListItem(DeferScope(DS:List)) _:List </defer-stack>
+       <defer-stack> ListItem(DeferScope(DS:List, _:Map, _:Map, _:Set, _:Set, _:Set)) _:List </defer-stack>
 
   rule <k> runDefers(.List) => .K ... </k>
   rule <k> runDefers(ListItem(Deferred(SS:Stmts)) REST:List) => SS ~> runDefers(REST) ... </k>
 
   rule <k> popBlock => .K ... </k>
-       <defer-stack> ListItem(DeferScope(_:List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(_:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+       <pinned-hosts> _ => PinnedHosts </pinned-hosts>
 
   rule <k> S:Stmt SS:Stmts => S ~> SS ... </k>
   rule <k> .Stmts => .K ... </k>
@@ -696,22 +1339,46 @@ module ARIA
        <env> ... X |-> L ... </env>
        <types> ... X |-> T ... </types>
        <store> Store => Store [ L <- normalizeValue(T, V) ] </store>
-           <limits> Limits </limits>
+        <limits> Limits </limits>
        <fixed-vars> Fixed </fixed-vars>
         <borrow-vars> BorrowVars </borrow-vars>
+        <borrow-aliases> BorrowAliases </borrow-aliases>
         <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
         <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
-       requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
-        andBool notBool(isImmutableBorrowVar(X, BorrowVars))
-        andBool notBool(X in ImmHosts) andBool notBool(X in MutHosts)
+        <pinned-hosts> PinnedHosts </pinned-hosts>
+     requires notBool(X in Fixed) andBool notBool(X in_keys(Limits))
+      andBool notBool(isImmutableBorrowVar(X, BorrowVars))
+       andBool notBool(X in_keys(BorrowAliases))
+     andBool notBool(hasBorrowOnHost(X, ImmHosts)) andBool notBool(hasBorrowOnHost(X, MutHosts))
+      andBool notBool(X in PinnedHosts)
+
+  rule <k> X:Id = V:Val ; => .K ... </k>
+        <env> ... X |-> AL H |-> HL ... </env>
+        <types> ... X |-> T ... </types>
+        <store> ... AL |-> (_:Val => normalizeValue(T, V)) HL |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
+        <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+        <borrow-aliases> ... X |-> FieldAlias(H, F) ... </borrow-aliases>
+        <fixed-vars> Fixed </fixed-vars>
+        <pinned-hosts> PinnedHosts </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in PinnedHosts)
+
+  rule <k> X:Id = V:Val ; => .K ... </k>
+        <env> ... X |-> AL H |-> HL ... </env>
+        <store> ... AL |-> (_:Val => normalizeLike(OLD, V)) HL |-> (StructVal(S, (F1 |-> StructVal(NS, (F2 |-> OLD:Val NFields:Map)) Fields:Map)) => StructVal(S, (F1 |-> StructVal(NS, (F2 |-> normalizeLike(OLD, V)) NFields)) Fields)) ... </store>
+        <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+        <borrow-aliases> ... X |-> NestedFieldAlias(H, F1, F2) ... </borrow-aliases>
+        <fixed-vars> Fixed </fixed-vars>
+        <pinned-hosts> PinnedHosts </pinned-hosts>
+      requires notBool(X in Fixed) andBool notBool(X in PinnedHosts)
 
   rule <k> X:Id = _:Val ; ~> _ => FS </k>
         <borrow-vars> BorrowVars </borrow-vars>
         <imm-borrow-hosts> ImmHosts </imm-borrow-hosts>
         <mut-borrow-hosts> MutHosts </mut-borrow-hosts>
+        <pinned-hosts> PinnedHosts </pinned-hosts>
         <failsafe> FS </failsafe>
         <failsafe-triggered> _ => true </failsafe-triggered>
-     requires isImmutableBorrowVar(X, BorrowVars) orBool X in ImmHosts orBool X in MutHosts
+       requires isImmutableBorrowVar(X, BorrowVars) orBool hasBorrowOnHost(X, ImmHosts) orBool hasBorrowOnHost(X, MutHosts) orBool X in PinnedHosts
 
   // Fixed reassignment is a semantic error in this executable model. ariac
   // should normally reject it statically; the oracle routes it to failsafe so
@@ -738,6 +1405,7 @@ module ARIA
   rule wrapI64(I) => I requires I >=Int -9223372036854775808 andBool I <=Int 9223372036854775807
 
   syntax Val ::= normalizeValue(Type, Val) [function]
+               | normalizeLike(Val, Val) [function]
                | normalizeTBB32(Int) [function]
 
   rule normalizeValue(int32, I:Int) => I32(wrapI32(I))
@@ -749,6 +1417,12 @@ module ARIA
   rule normalizeValue(tbb32, ERR) => ERR
   rule normalizeValue(string, S:String) => S
   rule normalizeValue(_:Type, V:Val) => V [owise]
+
+     rule normalizeLike(I32(_:Int), V:Val) => normalizeValue(int32, V)
+     rule normalizeLike(I64(_:Int), V:Val) => normalizeValue(int64, V)
+     rule normalizeLike(TBB32(_:Int), V:Val) => normalizeValue(tbb32, V)
+     rule normalizeLike(ERR, V:Val) => normalizeValue(tbb32, V)
+     rule normalizeLike(_:Val, V:Val) => V [owise]
 
   rule normalizeTBB32(I) => ERR requires I <=Int -2147483648 orBool I >Int 2147483647
   rule normalizeTBB32(I) => TBB32(I) requires I >Int -2147483648 andBool I <=Int 2147483647
@@ -903,7 +1577,8 @@ module ARIA
 
      rule <k> selectPickLabel(_:Id, .PickCases) => .K ... </k>
      rule <k> selectPickLabel(L:Id, L : (_:PickPattern) B:Block , _:PickCases) => B ... </k>
-     rule <k> selectPickLabel(L:Id, _:Id : (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+     rule <k> selectPickLabel(L:Id, L2:Id : (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+          requires L =/=K L2
      rule <k> selectPickLabel(L:Id, (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
 
      rule <k> endPick(_:PickCases) => .K ... </k>
@@ -979,17 +1654,39 @@ module ARIA
   // Terminal process semantics
   // -------------------------------------------------------------------------
 
+     rule <k> exit X:Id ; ~> _ => FS </k>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
+     rule <k> exit ( X:Id ) ; ~> _ => FS </k>
+                <pinned-hosts> Pinned </pinned-hosts>
+                <failsafe> FS </failsafe>
+                <failsafe-triggered> _ => true </failsafe-triggered>
+          requires X in Pinned [priority(25)]
+
   rule <k> exit V:Val ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> exit ( V:Val ) ; => runDefers(ListItem(Deferred(SS)) DS) ~> exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List)) REST => ListItem(DeferScope(.List)) REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(ListItem(Deferred(SS:Stmts)) DS:List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST </defer-stack>
 
   rule <k> exit V:Val ; => exit V ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+       <pinned-hosts> _ => PinnedHosts </pinned-hosts>
 
   rule <k> exit ( V:Val ) ; => exit ( V ) ; ... </k>
-       <defer-stack> ListItem(DeferScope(.List)) REST => REST </defer-stack>
+       <defer-stack> ListItem(DeferScope(.List, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts)) REST => REST </defer-stack>
+       <borrow-vars> _ => BorrowVars </borrow-vars>
+       <borrow-aliases> _ => BorrowAliases </borrow-aliases>
+       <imm-borrow-hosts> _ => ImmHosts </imm-borrow-hosts>
+       <mut-borrow-hosts> _ => MutHosts </mut-borrow-hosts>
+       <pinned-hosts> _ => PinnedHosts </pinned-hosts>
 
   rule <k> exit V:Val ; ~> _ => .K </k>
        <exit-code> _ => numericValue(V) </exit-code>

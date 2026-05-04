@@ -314,7 +314,7 @@ enum class TokenType {
     // Operators - Special
     // ========================================================================
     TOKEN_AT,           // @ - address-of operator
-    TOKEN_DOLLAR,       // $ - iteration variable, safe reference
+    TOKEN_DOLLAR,       // $ - loop/rule placeholder only
     TOKEN_HASH,         // # - memory pinning operator
     TOKEN_ARROW,        // -> - pointer type & member access (int64->:ptr, ptr->member)
     TOKEN_LEFT_ARROW,   // <- - pointer dereference (value <- ptr)

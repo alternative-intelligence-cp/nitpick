@@ -10,8 +10,10 @@ can eventually answer: “what should this Aria program do?” independently of
 `aria.k` currently models a deliberately small core subset:
 
 - mandatory `func:main` / `func:failsafe` program envelope
-- zero-, one-, and two-argument helper functions returning through `pass` / `fail`
-- isolated helper call frames for parameters and local bindings
+- zero-, one-, and two-argument helper functions returning through `pass` / `fail`,
+  including one-statement helper bodies for modeled mutation/writeback slices
+- isolated helper call frames for parameters, local bindings, and pinned-host
+  preservation
 - canonical `struct:Name = { Type:field; ... };` declarations for one-, two-,
   and three-field structs
 - struct literals such as `Point{x: 10, y: 20}`, field reads such as `p.x`, and
@@ -20,15 +22,41 @@ can eventually answer: “what should this Aria program do?” independently of
   conditions and cascaded `limit<OtherRules>` references
 - `limit<RulesName> Type:x = expr;` declarations and reassignment checks for
   numeric values, including failsafe routing on violated constraints
-- `stack`, `gc`, and `wild` declaration qualifiers with live allocation-class
+- `stack`, `gc`, `wild`, and `wildx` declaration qualifiers with live allocation-class
   tracking cells
-- `wild int8->:p = alloc(size);` declarations, `free(p);`, and failsafe routing
-  for leaked or invalid wild frees
+- `wild int8->:p = alloc(size);` / `wildx int8->:p = alloc(size);`
+  declarations, `free(p);`, and failsafe routing for leaked or invalid
+  wild-family frees
 - `defer { ... }` cleanup blocks, registered per block scope and executed in
   LIFO order on scope exit or before terminal `exit`
+- standalone nested `{ ... }` statement blocks with block-exit restoration of
+  local borrow aliases, immutable/mutable borrowed-host tracking, and pinned
+  host tracking
+- local pointer operations: `@value` captures a local binding address,
+  `<-ptr` reads the current value from that address, and `<-ptr = value`
+  writes back through the captured location
+- pointer-member operations: `ptr->field` reads through a local pointer to a
+  struct binding, `ptr->field = value` stores back through that field path, and
+  nested pointer-valued paths such as `ptr->leaf->x` read/store through the
+  selected inner pointee
+- pin registration via `#value`, with pinned-host tracking, pin dereference,
+  pin store-through and pin-member store-through blocking, double-pin blocking,
+  same-scope reassignment blocking, pinned-host field mutation blocking,
+  pin-derived nested path mutation blocking, pin-derived pointer alias mutation
+  blocking, block-scoped pin release, and pinned-host by-value helper-call /
+  terminal-exit blocking, plus mutable-borrow blocking while immutable aliases
+  remain allowed
 - `$$i` / `$$m` borrow qualifiers on local aliases and helper parameters, with
-  minimal alias tracking, immutable-vs-mutable conflict checks, and `$$m`
-  argument-shape enforcement
+  direct one-level field path tracking for aliases such as `pair.a`,
+  immutable-vs-mutable conflict checks, disjoint-field split borrows,
+  exact borrowed-field assignment blocking, nested two-level struct-field path
+  tracking for aliases such as `box.leaf.x`, nested sibling split borrows,
+  parent/child borrow conflict checks, nested-field mutation, parent-field
+  mutation blocking while a child field is borrowed, mutable field-alias
+  writeback for local direct and two-level struct-field aliases, plain-identifier
+  `$$m` argument-shape enforcement, rejection of stale dollar-prefixed borrow
+  expressions, and positive `$$m` call-by-reference writeback for ordinary
+  variable borrows in one- and two-argument helper calls
 - `int8`, pointer (`Type->`), `int32`, `int64`, `tbb32`, `flt32`, `flt64`, and
   `string` type tokens
 - mutable and `fixed` variable bindings
@@ -70,8 +98,40 @@ The first proof hook compiles `aria.k` with the Haskell backend required by
 bash ./k-semantics/run_k_proofs.sh --require-k
 ```
 
-The initial `proofs/core-proofs.k` module contains three concrete claims for
-sticky `ERR`, bounded `int32` wrapping, and `tbb32` overflow-to-`ERR` behavior.
+The proof corpus includes `proofs/arithmetic-proofs.k` with symbolic claims for
+`int32`, `int64`, and `tbb32` add/subtract/multiply normalization,
+division-by-zero sentinel routing, and numeric-operand `ERR` / `Unknown`
+propagation, `proofs/result-proofs.k` with symbolic `Result` operator claims
+for `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!` success/error routing,
+plus `proofs/core-proofs.k` with concrete claims for sticky `ERR`, bounded
+`int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step loop failsafe routing,
+fixed reassignment failsafe routing, `?!` error-result failsafe routing,
+`println` newline/byte-count behavior, zero-argument helper `pass`/`fail`
+polarity, and direct struct field writes preserving unrelated fields, plus
+modeled one- and two-argument helper `pass`/`fail` polarity with caller-frame
+restoration, plus `proofs/field-alias-proofs.k` with concrete
+claims for direct field-alias writeback, nested field-alias writeback, and
+immutable field-alias assignment failsafe routing, plus `proofs/pin-proofs.k`
+with concrete claims for pin registration, pin store-through rejection,
+pin-member mutation rejection, pin-path mutation rejection, and pinned-host
+reassignment failsafe routing, plus `proofs/pin-by-value-proofs.k` with
+concrete claims for pinned-host rejection in one-argument calls, immutable
+parameter calls, both two-argument positions, and both direct and parenthesized
+terminal `exit` values, plus `proofs/pointer-proofs.k` with concrete claims
+for local address-of, pointer dereference, pointer store-through, invalid
+non-pointer dereference routing, pointer-member reads, and pointer-member
+store-through, plus `proofs/pointer-path-proofs.k` with concrete claims for
+nested pointer-valued field reads, nested pointer-valued store-through,
+pin-derived nested path reads, pin-derived nested path mutation rejection,
+pin-derived pointer alias reads, and pin-derived pointer alias mutation
+rejection, plus `proofs/borrow-path-proofs.k` with concrete claims for direct
+sibling field assignment while a different field is borrowed, exact
+borrowed-field assignment rejection, nested sibling-field assignment while a
+different nested field is borrowed, and exact nested borrowed-field assignment
+rejection, plus `proofs/control-rules-proofs.k` with concrete claims for
+`pick`/`fall` dispatcher behavior, labeled-arm routing, `limit<Rules>`
+declaration and assignment commits, violated-limit failsafe no-commit behavior,
+and cascaded limit checks.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 
@@ -95,12 +155,13 @@ Tests that model terminal output can also include an optional stdout assertion:
 
 Next increments should add, in order:
 
-1. richer memory and borrow behavior: pointer dereference/addressing, pinning
-  (`#`), positive `$$m` call-by-reference mutation, scope-based borrow release,
-  and `wildx`
+1. richer memory and borrow behavior: array/index field borrow paths once
+  accepted by the compiler surface, plus any newly discovered concrete pin-path
+  bypasses
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
-3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
-  borrow permissions
+3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory,
+  control flow, and borrow permissions only when they support a concrete audit
+  finding or future compiler/K expansion
 4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

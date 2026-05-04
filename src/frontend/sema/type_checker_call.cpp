@@ -5130,7 +5130,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            
+
             // Pipeline operators automatically unwrap Result types
             // When Result<T> is passed where T is expected, we auto-unwrap
             // v0.4.3: Emit warning — error will propagate to caller if result is ERR
@@ -5192,6 +5192,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                     }
                 }
             }
+
+            // v0.18.0: $$m call-by-reference parameters are declared as their
+            // logical value type (e.g. $$m int32:x). The declaration carries
+            // the borrow contract; the call site uses the normal identifier.
 
             if (!effectiveArgType->isAssignableTo(paramTypes[i]) && !ffiPointerConversion && !arrayToPointerCoercion && !dynTraitCoercion && !funcPtrCoercion && !canCoerce(effectiveArgType, paramTypes[i])) {
                 addError("Argument " + std::to_string(i + 1) + " has type '" + 

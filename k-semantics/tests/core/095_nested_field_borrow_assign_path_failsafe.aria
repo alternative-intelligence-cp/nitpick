@@ -1,0 +1,22 @@
+// expect-exit: 7
+
+struct:Leaf = {
+    int32:x;
+    int32:y;
+};
+
+struct:Box = {
+    Leaf:leaf;
+    int32:tag;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Box:box = Box{leaf: Leaf{x: 10, y: 20}, tag: 1};
+    $$m int32:rx = box.leaf.x;
+    box.leaf.x = 33;
+    exit box.leaf.x;
+};

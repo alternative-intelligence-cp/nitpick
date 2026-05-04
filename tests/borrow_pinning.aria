@@ -74,7 +74,7 @@ func:test_borrow_pinned_immutable = int32() {
     // Test 6: Can borrow pinned variable immutably
     int32:x = 10;
     wild int32->:pin = #x;
-    int32$:ref = !$x;  // Should be OK - immutable borrow of pinned var
+    $$i int32:ref = x;  // Should be OK - immutable borrow of pinned var
     
     int32:zero = 0;
     pass zero;
@@ -87,7 +87,7 @@ func:test_borrow_pinned_mutable = int32() {
     // This should FAIL at compile time
     int32:x = 10;
     wild int32->:pin = #x;
-    int32$:mut_ref = $x;  // ERROR: Cannot mutably borrow pinned variable
+    $$m int32:mut_ref = x;  // ERROR: Cannot mutably borrow pinned variable
     
     int32:one = 1;
     pass(one);

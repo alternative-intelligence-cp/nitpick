@@ -6,10 +6,10 @@
 
 func:main = int32() {
     int32:x = 10;
-    int32$:outer = $x;  // Mutable borrow in outer scope
+    $$m int32:outer = x;  // Mutable borrow in outer scope
 
     {
-        int32$:inner = $x;  // ERROR: Cannot borrow again while outer exists
+        $$m int32:inner = x;  // ERROR: Cannot borrow again while outer exists
         print("inner borrowed\n");
     }
 

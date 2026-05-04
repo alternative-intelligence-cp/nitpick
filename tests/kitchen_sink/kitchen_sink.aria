@@ -106,15 +106,15 @@ func:main = int32() {
     int64:stack_val = 42;
     // wild int64->stack_ptr = @stack_val;  // TODO: Compiler requires drop() for wild pointers
 
-    // Pinning and Borrowing - TODO: !$ returns @@, need @ variable
+    // Pinning and borrowing use # plus $$i/$$m declarations/parameters.
     // string:volatile_str = "do not move me";
     // wild string->pinned_str = #volatile_str;   // Pin memory (#)
-    // wild string->safe_ref = !$pinned_str;      // Immutable borrow of pinned (!$)
-    // string$:mut_ref = $pinned_str;     // COMPILER CHECK: This should fail if uncommented
+    // $$i string:safe_ref = volatile_str;        // Immutable borrow
+    // $$m string:mut_ref = volatile_str;         // COMPILER CHECK: reject while pinned
     
     // Mutable borrow test
     int64:mut_test = 100;
-    // wild int64->mut_ref = $mut_test;  // TODO: Compiler requires drop() for wild pointers
+    // wild int64->mut_ref = @mut_test;  // TODO: Compiler requires drop() for wild pointers
 
     // ------------------------------------------
     // C. POINTER MEMBER ACCESS

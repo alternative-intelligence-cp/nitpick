@@ -4,14 +4,14 @@
  * Why Critical: Two mutable references to same memory = data race
  */
 
-func:modify_both = NIL(int32$:a, int32$:b) {
+func:modify_both = NIL($$m int32:a, $$m int32:b) {
     // Uses the references (just read them to keep it simple)
     print("a and b received\n");
 };
 
 func:main = int32() {
     int32:x = 5;
-    modify_both($x, $x);  // ERROR: Same variable borrowed mutably twice
+    modify_both(x, x);  // ERROR: Same variable borrowed mutably twice
 
     print("Should not compile!\n");
     return 0;

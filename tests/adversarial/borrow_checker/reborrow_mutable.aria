@@ -4,15 +4,15 @@
  * Why Critical: Creates two mutable paths to same data
  */
 
-func:use_ref = NIL(int32$:r) {
+func:use_ref = NIL($$m int32:r) {
     print("using ref\n");
 };
 
 func:main = int32() {
     int32:x = 10;
-    int32$:m1 = $x;  // First mutable borrow
+    $$m int32:m1 = x;  // First mutable borrow
 
-    use_ref($x);  // ERROR: Reborrowing x while m1 exists
+    use_ref(x);  // ERROR: Reborrowing x while m1 exists
 
     print("m1 still active\n");
     return 0;

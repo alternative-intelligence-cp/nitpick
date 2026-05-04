@@ -1,0 +1,23 @@
+// Expected: COMPILER ERROR
+/// Regression test: nested store-through rooted at a pin path is rejected.
+
+struct:Leaf = {
+    int32:x;
+};
+
+struct:Box = {
+    Leaf->:leaf;
+    int32:tag;
+};
+
+func:main = int32() {
+    stack Leaf:leaf = Leaf{x: 10};
+    stack Box:box = Box{leaf: @leaf, tag: 1};
+    stack Box->:pin = #box;
+    pin->leaf->x = 44;
+    exit leaf.x;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
