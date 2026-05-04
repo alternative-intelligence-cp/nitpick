@@ -32,6 +32,9 @@ Current proof modules:
   including pin-derived pointer alias read and mutation-rejection behavior.
 - `borrow-path-proofs.k` — direct and nested path-sensitive borrow assignment
    claims.
+- `control-rules-proofs.k` — concrete `pick`/`fall` dispatcher and labeled-arm
+   routing claims, plus `limit<Rules>` declaration/assignment commit and
+   failsafe no-commit claims.
 
 Planned initial claims:
 
@@ -50,7 +53,8 @@ Planned initial claims:
 10. struct field writes update only the selected field and preserve unrelated
    fields — concrete claim added
 11. `pick` dispatch chooses the first matching arm, and `fall label;` reaches
-    only the named labeled arm before returning to the pick continuation
+    only the named labeled arm before returning to the pick continuation —
+    concrete dispatcher and label-routing claims added
 12. integer `limit<Rules>` declarations and assignments either satisfy every
     cascaded rule condition or route to `failsafe` without committing the
-    violating store update
+    violating store update — concrete commit/no-commit claims added

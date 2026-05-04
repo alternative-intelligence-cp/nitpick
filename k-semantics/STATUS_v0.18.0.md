@@ -60,6 +60,13 @@ Branch: `dev-0.18.x`
   borrowed-field assignment rejection, nested sibling-field assignment while a
   different nested field is borrowed, and exact nested borrowed-field
   assignment rejection.
+- Added `proofs/control-rules-proofs.k` with concrete claims for `pick`/`fall`
+  dispatcher behavior, `fall label;` routing, labeled-arm selection,
+  `limit<Rules>` declaration and assignment commits, violated-limit failsafe
+  no-commit behavior, and cascaded limit checks.
+- Tightened labeled `fall` lookup so the labeled-arm skip rule only applies to
+  nonmatching labels (`L =/=K L2`), removing a nondeterministic path that could
+  skip the matching target arm.
 - Added string literals plus `print`/`println` stdout modeling with optional
   `// expect-stdout:` assertions in the K runner.
 - Added first memory allocation qualifier slice: `stack`, `gc`, and `wild`
@@ -152,7 +159,7 @@ Branch: `dev-0.18.x`
 - Raised the `k_semantics_core` CTest timeout to 300 seconds so the expanded
   K corpus can complete reliably after a fresh `kompile`.
 - Compiled `aria.k` and passed all 105 core K tests under `krun`.
-- Proved all seven current `kprove` proof modules under K Framework v7.1.320.
+- Proved all eight current `kprove` proof modules under K Framework v7.1.320.
 - Ignored generated K build output at `/k-semantics/.build/`.
 
 ## Local toolchain state
@@ -167,7 +174,7 @@ Branch: `dev-0.18.x`
 ## Validation performed
 
 - `./k-semantics/run_k_tests.sh --require-k`: 105 passed, 0 failed.
-- `bash ./k-semantics/run_k_proofs.sh --require-k`: 7 proof modules passed, 0 failed.
+- `bash ./k-semantics/run_k_proofs.sh --require-k`: 8 proof modules passed, 0 failed.
 - Cross-checked the new `Rules` / `limit<Rules>` K tests with `build/ariac`;
   expected exits matched actual process exits for all four new programs.
 - Cross-checked the new `stack`/`gc` and `wild`/`free` pass cases with
@@ -215,6 +222,10 @@ Branch: `dev-0.18.x`
   direct struct field writes preserving unrelated fields.
 - Extended `proofs/core-proofs.k` with four concrete claims for modeled one-
   and two-argument helper `pass`/`fail` polarity with caller-frame restoration.
+- Added `proofs/control-rules-proofs.k` with concrete claims for `pick`/`fall`
+  nonmatch/match dispatch, `fall label;` handoff to label lookup, labeled-arm
+  selection, `limit<Rules>` declaration/assignment commits, violated-limit
+  failsafe no-commit behavior, and cascaded limit checks.
 - Rebuilt `ariac` after parser/sema/backend cleanup, ran focused probes for
   plain `$$m`/`$$i` calls, dollar-prefixed rejection, pinned-by-value rejection,
   and duplicate mutable arguments, then passed the full CTest suite (`8/8`).
@@ -298,7 +309,8 @@ Branch: `dev-0.18.x`
 - concurrency primitives
 - broader symbolic `kprove` lemmas beyond the current concrete core,
   field-alias, pin read-only, pinned by-value, local pointer, pointer-path
-  (including pin-derived aliases), and borrow-path claims
+  (including pin-derived aliases), borrow-path, control-flow, and limit/rules
+  claims
 
 ## Next recommended slice
 

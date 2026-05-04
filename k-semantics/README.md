@@ -124,7 +124,10 @@ rejection, plus `proofs/borrow-path-proofs.k` with concrete claims for direct
 sibling field assignment while a different field is borrowed, exact
 borrowed-field assignment rejection, nested sibling-field assignment while a
 different nested field is borrowed, and exact nested borrowed-field assignment
-rejection.
+rejection, plus `proofs/control-rules-proofs.k` with concrete claims for
+`pick`/`fall` dispatcher behavior, labeled-arm routing, `limit<Rules>`
+declaration and assignment commits, violated-limit failsafe no-commit behavior,
+and cascaded limit checks.
 Like the test runner, the proof runner exits `77` without `--require-k` when K is
 not installed so CTest can skip it cleanly.
 
@@ -152,8 +155,8 @@ Next increments should add, in order:
   accepted by the compiler surface, plus any newly discovered concrete pin-path
   bypasses
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
-3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory, and
-  borrow permissions
+3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory,
+  control flow, and borrow permissions
 4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.

@@ -153,6 +153,7 @@ module ARIA
   imports MAP
   imports SET
      imports LIST
+     imports K-EQUAL
 
   configuration <T>
     <k> $PGM:Pgm </k>
@@ -1576,7 +1577,8 @@ module ARIA
 
      rule <k> selectPickLabel(_:Id, .PickCases) => .K ... </k>
      rule <k> selectPickLabel(L:Id, L : (_:PickPattern) B:Block , _:PickCases) => B ... </k>
-     rule <k> selectPickLabel(L:Id, _:Id : (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+     rule <k> selectPickLabel(L:Id, L2:Id : (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
+          requires L =/=K L2
      rule <k> selectPickLabel(L:Id, (_:PickPattern) _:Block , REST:PickCases) => selectPickLabel(L, REST) ... </k>
 
      rule <k> endPick(_:PickCases) => .K ... </k>
