@@ -33,6 +33,8 @@ Current proof modules:
    behavior.
 - `pointer-path-proofs.k` — concrete nested pointer and pin-path claims,
   including pin-derived pointer alias read and mutation-rejection behavior.
+- `result-proofs.k` — symbolic `Result` operator claims for `pass`, `fail`,
+   `raw`, `drop`, `defaults`, and `?!` success/error routing.
 - `borrow-path-proofs.k` — direct and nested path-sensitive borrow assignment
    claims.
 - `control-rules-proofs.k` — concrete `pick`/`fall` dispatcher and labeled-arm
@@ -64,3 +66,5 @@ Planned initial claims:
 13. symbolic arithmetic lemmas generalize the concrete numeric proof seed for
    `int32`, `int64`, `tbb32`, division-by-zero, and numeric `ERR` / `Unknown`
    propagation — initial symbolic claims added
+14. symbolic `Result` lemmas generalize `pass`, `fail`, `raw`, `drop`,
+   `defaults`, and `?!` success/error routing — initial symbolic claims added

@@ -101,14 +101,15 @@ bash ./k-semantics/run_k_proofs.sh --require-k
 The proof corpus includes `proofs/arithmetic-proofs.k` with symbolic claims for
 `int32`, `int64`, and `tbb32` add/subtract/multiply normalization,
 division-by-zero sentinel routing, and numeric-operand `ERR` / `Unknown`
-propagation, plus `proofs/core-proofs.k` with concrete claims for sticky `ERR`,
-bounded `int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step loop failsafe
-routing, fixed reassignment failsafe routing, `?!` error-result failsafe
-routing, `println` newline/byte-count behavior, zero-argument helper
-`pass`/`fail` polarity, and direct struct field writes preserving unrelated
-fields, plus modeled one- and two-argument helper
-`pass`/`fail` polarity with caller-frame restoration, plus
-`proofs/field-alias-proofs.k` with concrete
+propagation, `proofs/result-proofs.k` with symbolic `Result` operator claims
+for `pass`, `fail`, `raw`, `drop`, `defaults`, and `?!` success/error routing,
+plus `proofs/core-proofs.k` with concrete claims for sticky `ERR`, bounded
+`int32` wrapping, `tbb32` overflow-to-`ERR`, zero-step loop failsafe routing,
+fixed reassignment failsafe routing, `?!` error-result failsafe routing,
+`println` newline/byte-count behavior, zero-argument helper `pass`/`fail`
+polarity, and direct struct field writes preserving unrelated fields, plus
+modeled one- and two-argument helper `pass`/`fail` polarity with caller-frame
+restoration, plus `proofs/field-alias-proofs.k` with concrete
 claims for direct field-alias writeback, nested field-alias writeback, and
 immutable field-alias assignment failsafe routing, plus `proofs/pin-proofs.k`
 with concrete claims for pin registration, pin store-through rejection,
@@ -159,7 +160,8 @@ Next increments should add, in order:
   bypasses
 2. richer `Rules<T>` coverage: floats, strings, arrays, struct fields, and SMT
 3. broader proof-oriented `kprove` lemmas for helper calls, `Rules`, memory,
-  control flow, and borrow permissions
+  control flow, and borrow permissions only when they support a concrete audit
+  finding or future compiler/K expansion
 4. module/import and extern/FFI boundaries
 
 Keep each step small enough to compare against real `ariac` output.
