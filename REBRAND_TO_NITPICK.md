@@ -24,6 +24,20 @@ Compatibility aliases should remain during the transition wherever practical.
 The goal is to make the new name obvious without breaking existing users in one
 giant pain-ball. The pain-ball is real; we are simply slicing it politely.
 
+## Logo Assets
+
+The first Nitpick logo is a raccoon holding a magnifying glass, leaning into the
+“pickiness as a feature” identity.
+
+- Master/source image: `aria-docs/pics/nitpik_logo_compressed.png`
+- README-friendly repo-local copy: `assets/nitpick_logo.png`
+- README display convention: centered HTML image block with descriptive alt text
+    and a fixed width (`220`–`280`) so GitHub rendering stays tidy.
+
+Keep README references local to each repository. Do not point satellite READMEs
+at another repo's raw image URL; local copies avoid broken images after repo
+renames, archive moves, or branch changes.
+
 ## Repository Strategy
 
 Preferred path: **rename existing repositories** rather than creating fresh repos
@@ -56,7 +70,8 @@ Proposed mapping:
 ### Phase 1 — Public transition notices
 
 - [x] Add a prominent rebrand notice to the main `aria` README.
-- [ ] Add prominent rebrand notices to all satellite repo READMEs.
+- [x] Add prominent rebrand notices to all satellite repo READMEs.
+- [x] Add local README logo assets using `assets/nitpick_logo.png`.
 - [ ] Add website/front-page notices.
 - [ ] Add package-manager notices once package naming is decided.
 
