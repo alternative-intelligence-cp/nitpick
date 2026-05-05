@@ -1,4 +1,4 @@
-# Aria Programming Language v0.18.x
+# Nitpick Programming Language v0.18.x (formerly Aria)
 
 <p align="center">
     <img src="assets/nitpick_logo.png" alt="Nitpick logo: raccoon holding a magnifying glass" width="280">
@@ -109,16 +109,16 @@ v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
 
 | Tool | Status | Description |
 |---|---|---|
-| `ariac` | ✅ Stable | Full compiler, LLVM 20 backend |
+| `npkc` | ✅ Stable | Full compiler, LLVM 20 backend (`ariac` is a compat alias) |
 | `aria-ls` | ✅ Stable | Language Server — hover, goto-definition, completion, documentSymbol, references, signatureHelp |
-| `aria-pkg` | ✅ Stable | Package manager — install, search, pack, 103 packages verified |
+| `npkpkg` | ✅ Stable | Package manager — install, search, pack, 103 packages verified |
 | `aria-doc` | ✅ Stable | Documentation generator — 435 unique HTML pages from ecosystem |
 | `aria-mcp` | ✅ Stable | MCP server — compile, safety audit, docs search, format, specialist model |
 | `aria-safety` | ✅ Stable | Static safety auditor — 11 checks including UNSAFE, EXTERN, CAST, TODO; `--json` output |
 | Z3 Verifier | ✅ Stable | SMT-based formal verification — contracts, overflow, concurrency, memory safety, `prove`/`assert_static`, `--smt-opt` |
 | K semantics | ✅ v0.18.x seed | Executable formal semantics seed — `kompile`/`krun` core oracle, `kprove` proof hook, CTest integration, 109/109 core tests, 10/10 proof modules |
 | `aria-dap` | ✅ Stable | Debug Adapter Protocol — LLDB 20 backend, conditional breakpoints, logpoints |
-| `aria_make` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
+| `npkbld` | ✅ Stable | Build system — project manifest, dependency resolution, test runner |
 | `install.sh` | ✅ Stable | One-command build + install with prerequisite checking |
 | Fuzzer V2 | ✅ Active | 27 generators, 100% compile rate, zero unresolved crashes |
 | Specialist model | ✅ V6+SMT | Qwen 7B LoRA, v6 corpus + v7 SMT verification examples |
@@ -364,7 +364,7 @@ func:safe_add = int32(int32:a, int32:b)
 ```
 ```bash
 # Verify contracts and overflow safety at compile time
-ariac program.aria --verify-contracts --verify-overflow --verify-report -o program
+npkc program.npk --verify-contracts --verify-overflow --verify-report -o program
 ```
 Aria uses the Z3 SMT solver to mathematically *prove* the absence of contract violations and arithmetic overflow across all possible execution paths — the same class of static formal verification used by Ada/SPARK for safety-critical aerospace and automotive systems.
 
@@ -486,24 +486,24 @@ cd ..
 ### Hello World
 
 ```bash
-cat > hello.aria << 'EOF'
+cat > hello.npk << 'EOF'
 func:main = int32() {
-    drop(println("Hello from Aria!"));
+    drop(println("Hello from Nitpick!"));
     exit(0);
 };
 func:failsafe = int32(tbb32:err) { exit(1); };
 EOF
 
-./build/ariac hello.aria -o hello
+./build/npkc hello.npk -o hello
 ./hello
 ```
 
 ```bash
 # Compile options
-./build/ariac program.aria -o program          # compile
-./build/ariac program.aria --emit-llvm -o out.ll  # LLVM IR
-./build/ariac program.aria -O2 -o program      # optimized
-./build/ariac program.aria --emit-wasm -o out.wasm  # WebAssembly
+./build/npkc program.npk -o program          # compile
+./build/npkc program.npk --emit-llvm -o out.ll  # LLVM IR
+./build/npkc program.npk -O2 -o program      # optimized
+./build/npkc program.npk --emit-wasm -o out.wasm  # WebAssembly
 ```
 
 **Prerequisites:** LLVM 20.1+, CMake 3.20+, C++17 compiler, Python 3.8+, Linux/macOS/WSL2
@@ -591,7 +591,7 @@ aria/
 cd tests/fuzz && python3 fullstack_fuzzer.py
 
 # Single test
-./build/ariac tests/some_feature.aria -o /tmp/t && /tmp/t
+./build/npkc tests/some_feature.npk -o /tmp/t && /tmp/t
 ```
 
 Test results are archived in `test_results/` for regression tracking. The fuzzer archives crashes in `tests/fuzz/crashes_archive/`.
