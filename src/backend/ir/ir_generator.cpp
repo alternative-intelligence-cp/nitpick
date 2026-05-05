@@ -25,7 +25,7 @@ using namespace sema;  // Now inside aria namespace
 
 IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
     : context(), 
-      module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
+      module(std::make_unique<llvm::Module>(module_name.empty() ? "npk_module" : module_name, context)),
       builder(context),
       type_system(nullptr),
       tbb_codegen(context, builder),
@@ -41,7 +41,7 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       current_async_result_type(nullptr),
       current_func_decl(nullptr) {
     // Set source filename for better debug info
-    module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
+    module->setSourceFileName(module_name.empty() ? "npk_module" : module_name);
 
     // Set module reference for TernaryCodegen to declare runtime intrinsics
     // (ARIA-013: Balanced Ternary and Nonary Intrinsics)
@@ -1088,8 +1088,8 @@ llvm::Value* IRGenerator::generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsign
         
         std::string funcName;
         switch (numLimbs) {
-            case 32: funcName = "aria_lbim_scmp2048"; break;
-            case 64: funcName = "aria_lbim_scmp4096"; break;
+            case 32: funcName = "npk_lbim_scmp2048"; break;
+            case 64: funcName = "npk_lbim_scmp4096"; break;
             default:
                 llvm::errs() << "LBIM slt: unsupported limb count " << numLimbs << "\n";
                 return builder.getInt1(false);
@@ -1370,12 +1370,12 @@ llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsign
     // Determine the runtime function name based on number of limbs
     std::string funcName;
     switch (numLimbs) {
-        case 2: funcName = "aria_lbim_sdiv128"; break;
-        case 4: funcName = "aria_lbim_sdiv256"; break;
-        case 8: funcName = "aria_lbim_sdiv512"; break;
-        case 16: funcName = "aria_lbim_sdiv1024"; break;
-        case 32: funcName = "aria_lbim_sdiv2048"; break;
-        case 64: funcName = "aria_lbim_sdiv4096"; break;
+        case 2: funcName = "npk_lbim_sdiv128"; break;
+        case 4: funcName = "npk_lbim_sdiv256"; break;
+        case 8: funcName = "npk_lbim_sdiv512"; break;
+        case 16: funcName = "npk_lbim_sdiv1024"; break;
+        case 32: funcName = "npk_lbim_sdiv2048"; break;
+        case 64: funcName = "npk_lbim_sdiv4096"; break;
         default:
             llvm::errs() << "LBIM div: unsupported limb count " << numLimbs << "\n";
             return llvm::UndefValue::get(structType);
@@ -1437,12 +1437,12 @@ llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsign
 
     std::string funcName;
     switch (numLimbs) {
-        case 2: funcName = "aria_lbim_smod128"; break;
-        case 4: funcName = "aria_lbim_smod256"; break;
-        case 8: funcName = "aria_lbim_smod512"; break;
-        case 16: funcName = "aria_lbim_smod1024"; break;
-        case 32: funcName = "aria_lbim_smod2048"; break;
-        case 64: funcName = "aria_lbim_smod4096"; break;
+        case 2: funcName = "npk_lbim_smod128"; break;
+        case 4: funcName = "npk_lbim_smod256"; break;
+        case 8: funcName = "npk_lbim_smod512"; break;
+        case 16: funcName = "npk_lbim_smod1024"; break;
+        case 32: funcName = "npk_lbim_smod2048"; break;
+        case 64: funcName = "npk_lbim_smod4096"; break;
         default:
             llvm::errs() << "LBIM mod: unsupported limb count " << numLimbs << "\n";
             return llvm::UndefValue::get(structType);
@@ -1532,7 +1532,7 @@ llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsign
     bool usePointers = (numLimbs > 16);
 
     unsigned bits = numLimbs * 64;
-    std::string funcName = "aria_lbim_shl" + std::to_string(bits);
+    std::string funcName = "npk_lbim_shl" + std::to_string(bits);
 
     // ABI: void func(ptr sret, ptr a, i32 shift)
     llvm::FunctionType* funcType = llvm::FunctionType::get(
@@ -1592,7 +1592,7 @@ llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsign
     bool usePointers = (numLimbs > 16);
 
     unsigned bits = numLimbs * 64;
-    std::string funcName = (isArithmetic ? "aria_lbim_ashr" : "aria_lbim_lshr") + std::to_string(bits);
+    std::string funcName = (isArithmetic ? "npk_lbim_ashr" : "npk_lbim_lshr") + std::to_string(bits);
 
     llvm::FunctionType* funcType = llvm::FunctionType::get(
         voidType, {ptrType, ptrType, i32Type}, false);
@@ -2153,13 +2153,13 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // String type - represented as pointer to AriaString struct {char* data, int64 length}
     // BUGFIX (Feb 2026): Was returning i8*, but AriaString is a struct - caused corruption
     if (type_name == "string") {
-        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!ariaStringType) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            ariaStringType = llvm::StructType::create(context, fields, "struct.AriaString");
+            ariaStringType = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         return llvm::PointerType::get(ariaStringType, 0);
     }
@@ -2797,12 +2797,12 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
             } else if (std::holds_alternative<std::string>(lit->value)) {
                 const std::string& s = std::get<std::string>(lit->value);
                 if (s != "unknown" && s != "ERR") {
-                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                     if (!ariaStrType) {
                         ariaStrType = llvm::StructType::create(context,
                             {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                              llvm::Type::getInt64Ty(context)},
-                            "struct.AriaString");
+                            "struct.NpkString");
                     }
                     llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
                     llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
@@ -3277,12 +3277,12 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     // String global: create a constant AriaString and use its address as init.
                     const std::string& s = std::get<std::string>(lit->value);
                     if (s != "unknown" && s != "ERR") {
-                        llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                        llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                         if (!ariaStrType) {
                             ariaStrType = llvm::StructType::create(context,
                                 {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                  llvm::Type::getInt64Ty(context)},
-                                "struct.AriaString");
+                                "struct.NpkString");
                         }
                         llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
                         llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
@@ -3555,7 +3555,7 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     false
                 );
                 llvm::Function* gc_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_gc_init", gc_init_type).getCallee()
+                    module->getOrInsertFunction("npk_gc_init", gc_init_type).getCallee()
                 );
                 
                 // Call aria_gc_init(0, 0) to use default sizes (4MB nursery, 64MB old gen)
@@ -3569,7 +3569,7 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     false
                 );
                 llvm::Function* args_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_args_init", args_init_type).getCallee()
+                    module->getOrInsertFunction("npk_args_init", args_init_type).getCallee()
                 );
                 // main's first two LLVM args are always argc (i32) and argv (ptr)
                 auto main_arg_iter = func->arg_begin();
@@ -3583,7 +3583,7 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     builder.getVoidTy(), false
                 );
                 llvm::Function* streams_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_streams_init", streams_init_type).getCallee()
+                    module->getOrInsertFunction("npk_streams_init", streams_init_type).getCallee()
                 );
                 builder.CreateCall(streams_init, {});
             }
@@ -4632,7 +4632,7 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                         // Heap-allocate env via aria_gc_alloc so it survives scope
                         const llvm::DataLayout& dl = module->getDataLayout();
                         uint64_t envSize = dl.getTypeAllocSize(envStructType);
-                        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+                        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("npk_gc_alloc",
                             llvm::FunctionType::get(
                                 llvm::PointerType::get(context, 0),
                                 {llvm::Type::getInt64Ty(context)},
@@ -5453,10 +5453,10 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (!builder.GetInsertBlock()->getTerminator()) {
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -5576,10 +5576,10 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                 builder.CreateStore(nextVal, iteratorVar);
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -5725,10 +5725,10 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -6552,10 +6552,10 @@ skip_comparison:
             counterPhi->addIncoming(nextVal, incBB);
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -6654,10 +6654,10 @@ skip_comparison:
             counterPhi->addIncoming(nextVal, incBB);
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -6731,10 +6731,10 @@ skip_comparison:
                 builder.CreateStore(builder.getInt1(true), completedFlag);
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -7333,13 +7333,13 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                 );
                 
                 // Get or create AriaString struct type
-                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
                 if (!aria_string_type) {
                     std::vector<llvm::Type*> fields = {
                         llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                         llvm::Type::getInt64Ty(context)
                     };
-                    aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+                    aria_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
                 }
                 
                 // Create a global AriaString struct constant
@@ -7688,7 +7688,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && primType) {
                         // Numeric type negation - call aria_*_neg runtime function
                         std::string typeName = primType->getName();
-                        std::string funcName = "aria_" + typeName + "_neg";
+                        std::string funcName = "npk_" + typeName + "_neg";
                         
                         ARIA_DBG_STREAM << "[DEBUG] Generated numeric negation call: " << funcName << std::endl;
                         
@@ -9439,17 +9439,17 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
 
             // Helper lambda: call aria_string_compare_str and return i32 result (-1/0/1)
             auto emitStringCompare = [&]() -> llvm::Value* {
-                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                 if (!ariaStrType) {
                     ariaStrType = llvm::StructType::create(context,
                         {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                          llvm::Type::getInt64Ty(context)},
-                        "struct.AriaString");
+                        "struct.NpkString");
                 }
                 llvm::FunctionType* cmpFT = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(context),
                     {ariaStrType, ariaStrType}, false);
-                llvm::FunctionCallee cmpFn = module->getOrInsertFunction("aria_string_compare_str", cmpFT);
+                llvm::FunctionCallee cmpFn = module->getOrInsertFunction("npk_string_compare_str", cmpFT);
                 llvm::Value* lStr = L->getType()->isPointerTy()
                     ? builder.CreateLoad(ariaStrType, L, "str.cmp.lhs")
                     : L;
@@ -9544,7 +9544,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type addition
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_add";
+                        std::string funcName = "npk_" + typeName + "_add";
                         
                         // frac types use sret/pointer ABI: void aria_frac32_add(Frac32*, const Frac32*, const Frac32*)
                         if (typeName.find("frac") == 0) {
@@ -9587,7 +9587,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee addFunc = module->getOrInsertFunction(
-                            "aria_fix256_add", funcType);
+                            "npk_fix256_add", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_r");
@@ -9639,17 +9639,17 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                         if (leftIsStr || rightIsStr) {
                             ARIA_DBG_STREAM << "[STRING +] Emitting aria_string_concat_simple call" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::Type* strPtrTy = llvm::PointerType::get(ariaStrType, 0);
                             llvm::FunctionType* concatFT = llvm::FunctionType::get(
                                 strPtrTy, {strPtrTy, strPtrTy}, false);
-                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat_simple", concatFT);
+                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("npk_string_concat_simple", concatFT);
                             // L and R are already AriaString* pointers
                             return builder.CreateCall(concatFn, {L, R}, "str.concat");
                         }
@@ -9727,7 +9727,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type subtraction
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_sub";
+                        std::string funcName = "npk_" + typeName + "_sub";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -9785,7 +9785,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee subFunc = module->getOrInsertFunction(
-                            "aria_fix256_sub", funcType);
+                            "npk_fix256_sub", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_r");
@@ -9897,7 +9897,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type multiplication
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_mul";
+                        std::string funcName = "npk_" + typeName + "_mul";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -9939,7 +9939,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee mulFunc = module->getOrInsertFunction(
-                            "aria_fix256_mul", funcType);
+                            "npk_fix256_mul", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_r");
@@ -10023,7 +10023,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type division
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_div";
+                        std::string funcName = "npk_" + typeName + "_div";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -10065,7 +10065,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee divFunc = module->getOrInsertFunction(
-                            "aria_fix256_div", funcType);
+                            "npk_fix256_div", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_r");
@@ -10197,7 +10197,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
-                            "aria_fix256_eq", funcType);
+                            "npk_fix256_eq", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10229,7 +10229,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10288,17 +10288,17 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                         if (leftIsString || rightIsString) {
                             ARIA_DBG_STREAM << "[STRING ==] Emitting aria_string_equals call" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::FunctionType* eqFT = llvm::FunctionType::get(
                                 llvm::Type::getInt1Ty(context),
                                 {ariaStrType, ariaStrType}, false);
-                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("npk_string_equals", eqFT);
                             // Load AriaString value from pointer (both sides are ptr to AriaString)
                             llvm::Value* lStr = L->getType()->isPointerTy()
                                 ? builder.CreateLoad(ariaStrType, L, "str.lhs")
@@ -10380,7 +10380,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
-                            "aria_fix256_eq", funcType);
+                            "npk_fix256_eq", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10410,7 +10410,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10472,17 +10472,17 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                         if (leftIsString || rightIsString) {
                             ARIA_DBG_STREAM << "[STRING !=] Emitting aria_string_equals + negate" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::FunctionType* eqFT = llvm::FunctionType::get(
                                 llvm::Type::getInt1Ty(context),
                                 {ariaStrType, ariaStrType}, false);
-                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("npk_string_equals", eqFT);
                             llvm::Value* lStr = L->getType()->isPointerTy()
                                 ? builder.CreateLoad(ariaStrType, L, "str.lhs")
                                 : L;
@@ -10554,7 +10554,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee ltFunc = module->getOrInsertFunction(
-                            "aria_fix256_lt", funcType);
+                            "npk_fix256_lt", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10568,7 +10568,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10657,7 +10657,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee leFunc = module->getOrInsertFunction(
-                            "aria_fix256_le", funcType);
+                            "npk_fix256_le", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10671,7 +10671,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10761,7 +10761,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee gtFunc = module->getOrInsertFunction(
-                            "aria_fix256_gt", funcType);
+                            "npk_fix256_gt", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10775,7 +10775,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10864,7 +10864,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee geFunc = module->getOrInsertFunction(
-                            "aria_fix256_ge", funcType);
+                            "npk_fix256_ge", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10878,7 +10878,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10952,7 +10952,7 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(
-                            "aria_fix256_cmp", funcType);
+                            "npk_fix256_cmp", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_r");
                         builder.CreateStore(L, leftAlloca);
@@ -11872,13 +11872,13 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::Value* strPtr = builder.CreateLoad(
                         llvm::PointerType::get(context, 0), object_ptr, "str.ptr");
                     // Get or create AriaString struct type
-                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                     if (!ariaStrType) {
                         std::vector<llvm::Type*> fields = {
                             llvm::PointerType::get(context, 0),
                             builder.getInt64Ty()
                         };
-                        ariaStrType = llvm::StructType::create(context, fields, "struct.AriaString");
+                        ariaStrType = llvm::StructType::create(context, fields, "struct.NpkString");
                     }
                     // GEP to field 1 (length) and load
                     llvm::Value* lenPtr = builder.CreateStructGEP(ariaStrType, strPtr, 1, "str.len.ptr");

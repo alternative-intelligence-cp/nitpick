@@ -31,19 +31,18 @@ extern "C" {
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * Aria string structure.
- * 
+ * Nitpick string structure (formerly AriaString).
+ *
  * Strings are immutable UTF-8 byte sequences with explicit length.
  * No null termination required (but may be present for C interop).
  */
 typedef struct {
     const char* data;   // UTF-8 byte data (may or may not be null-terminated)
     int64_t length;     // Length in bytes (NOT characters)
-} AriaString;
+} NpkString;
 
-// Transition alias: NpkString is the new canonical name; AriaString kept for
-// compatibility with existing user code and Phase 6 C API migration.
-typedef AriaString NpkString;
+// Backward-compat alias: AriaString kept until Phase 7 removes legacy names.
+typedef NpkString AriaString;
 
 // ═══════════════════════════════════════════════════════════════════════
 // String Creation

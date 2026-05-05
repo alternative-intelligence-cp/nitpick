@@ -347,17 +347,17 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
         // String concatenation: string + string calls aria_string_concat_simple
         // which takes AriaString* pointers and returns AriaString* (aborts on error)
         if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
-            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
             if (!ariaStrType) {
                 ariaStrType = llvm::StructType::create(context,
                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                      llvm::Type::getInt64Ty(context)},
-                    "struct.AriaString");
+                    "struct.NpkString");
             }
             llvm::Type* strPtrTy = llvm::PointerType::get(ariaStrType, 0);
             llvm::FunctionType* concatFT = llvm::FunctionType::get(
                 strPtrTy, {strPtrTy, strPtrTy}, false);
-            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat_simple", concatFT);
+            llvm::FunctionCallee concatFn = module->getOrInsertFunction("npk_string_concat_simple", concatFT);
             // left and right are already AriaString* pointers from codegenBinary
             return builder.CreateCall(concatFn, {left, right}, "str.concat");
         }
@@ -445,24 +445,24 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
 
     // String comparison helper: loads AriaString structs from pointers and calls runtime
     auto getStrType = [&]() -> llvm::StructType* {
-        llvm::StructType* st = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* st = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!st) {
             st = llvm::StructType::create(context,
                 {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                  llvm::Type::getInt64Ty(context)},
-                "struct.AriaString");
+                "struct.NpkString");
         }
         return st;
     };
 
     auto stringCompareCall = [&]() -> llvm::Value* {
         llvm::StructType* ariaStrType = getStrType();
-        llvm::Function* cmpFunc = module->getFunction("aria_string_compare_str");
+        llvm::Function* cmpFunc = module->getFunction("npk_string_compare_str");
         if (!cmpFunc) {
             llvm::FunctionType* cmpFT = llvm::FunctionType::get(
                 builder.getInt32Ty(), {ariaStrType, ariaStrType}, false);
             cmpFunc = llvm::Function::Create(cmpFT, llvm::Function::ExternalLinkage,
-                "aria_string_compare_str", module);
+                "npk_string_compare_str", module);
         }
         llvm::Value* lStr = left->getType()->isPointerTy()
             ? builder.CreateLoad(ariaStrType, left, "str.cmp.lhs")
@@ -475,12 +475,12 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
 
     auto stringEqualsCall = [&]() -> llvm::Value* {
         llvm::StructType* ariaStrType = getStrType();
-        llvm::Function* eqFunc = module->getFunction("aria_string_equals");
+        llvm::Function* eqFunc = module->getFunction("npk_string_equals");
         if (!eqFunc) {
             llvm::FunctionType* eqFT = llvm::FunctionType::get(
                 builder.getInt1Ty(), {ariaStrType, ariaStrType}, false);
             eqFunc = llvm::Function::Create(eqFT, llvm::Function::ExternalLinkage,
-                "aria_string_equals", module);
+                "npk_string_equals", module);
         }
         llvm::Value* lStr = left->getType()->isPointerTy()
             ? builder.CreateLoad(ariaStrType, left, "str.eq.lhs")

@@ -196,13 +196,13 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     
     // String - AriaString struct { i8* data, i64 length }
     if (type_name == "string") {
-        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!aria_string_type) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+            aria_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         // Return pointer to AriaString struct (strings are heap-allocated)
         return llvm::PointerType::get(aria_string_type, 0);
@@ -241,7 +241,7 @@ llvm::Type* StmtCodegen::getLLVMType(Type* type) {
  * Signature: void* aria_gc_alloc(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
-    llvm::Function* func = module->getFunction("aria_gc_alloc");
+    llvm::Function* func = module->getFunction("npk_gc_alloc");
     if (!func) {
         // Declare: void* aria_gc_alloc(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -252,7 +252,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_gc_alloc",
+            "npk_gc_alloc",
             module
         );
     }
@@ -265,7 +265,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
  * AUDIT FIX BUG-10: Matching deallocator for aria_gc_alloc
  */
 llvm::Function* StmtCodegen::getOrDeclareGCFree() {
-    llvm::Function* func = module->getFunction("aria_gc_free");
+    llvm::Function* func = module->getFunction("npk_gc_free");
     if (!func) {
         // Declare: void aria_gc_free(void* ptr)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -276,7 +276,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCFree() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_gc_free",
+            "npk_gc_free",
             module
         );
     }
@@ -289,7 +289,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCFree() {
  * Inserted at loop back-edges for GC safepoint polling.
  */
 llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
-    llvm::Function* func = module->getFunction("aria_gc_safepoint");
+    llvm::Function* func = module->getFunction("npk_gc_safepoint");
     if (!func) {
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),  // void return
@@ -299,7 +299,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_gc_safepoint",
+            "npk_gc_safepoint",
             module
         );
     }
@@ -311,7 +311,7 @@ llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
  * Signature: void* aria_alloc(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
-    llvm::Function* func = module->getFunction("aria_alloc");
+    llvm::Function* func = module->getFunction("npk_alloc");
     if (!func) {
         // Declare: void* aria_alloc(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -322,7 +322,7 @@ llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_alloc",
+            "npk_alloc",
             module
         );
     }
@@ -334,7 +334,7 @@ llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
  * Signature: void* aria_alloc_exec(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
-    llvm::Function* func = module->getFunction("aria_alloc_exec");
+    llvm::Function* func = module->getFunction("npk_alloc_exec");
     if (!func) {
         // Declare: void* aria_alloc_exec(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -345,7 +345,7 @@ llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_alloc_exec",
+            "npk_alloc_exec",
             module
         );
     }
@@ -357,7 +357,7 @@ llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
  * Signature: void aria_free(void* ptr)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildFree() {
-    llvm::Function* func = module->getFunction("aria_free");
+    llvm::Function* func = module->getFunction("npk_free");
     if (!func) {
         // Declare: void aria_free(void* ptr)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -368,7 +368,7 @@ llvm::Function* StmtCodegen::getOrDeclareWildFree() {
         func = llvm::Function::Create(
             func_type,
             llvm::Function::ExternalLinkage,
-            "aria_free",
+            "npk_free",
             module
         );
     }
@@ -743,11 +743,11 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                             {ptrType, builder.getDoubleTy()},
                             false
                         );
-                        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_f64");
+                        llvm::Function* runtimeFunc = module->getFunction("npk_fix256_from_f64");
                         if (!runtimeFunc) {
                             runtimeFunc = llvm::Function::Create(
                                 funcType, llvm::Function::ExternalLinkage,
-                                "aria_fix256_from_f64", module
+                                "npk_fix256_from_f64", module
                             );
                             runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
                         }
@@ -765,11 +765,11 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                             {ptrType, builder.getInt64Ty()},
                             false
                         );
-                        llvm::Function* runtimeFunc = module->getFunction("aria_fix256_from_i64");
+                        llvm::Function* runtimeFunc = module->getFunction("npk_fix256_from_i64");
                         if (!runtimeFunc) {
                             runtimeFunc = llvm::Function::Create(
                                 funcType, llvm::Function::ExternalLinkage,
-                                "aria_fix256_from_i64", module
+                                "npk_fix256_from_i64", module
                             );
                             runtimeFunc->addParamAttr(0, llvm::Attribute::getWithStructRetType(context, st));
                         }
@@ -1000,7 +1000,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
             if (it != named_values.end()) {
                 // v0.4.3+: Use fast destroy if SMT-optimized
                 bool fast = expr_codegen && expr_codegen->ustack_fast_mode;
-                const char* dname = fast ? "aria_ustack_destroy_fast" : "aria_ustack_destroy";
+                const char* dname = fast ? "npk_ustack_destroy_fast" : "npk_ustack_destroy";
                 llvm::Function* destroyFunc = module->getFunction(dname);
                 if (!destroyFunc) {
                     llvm::FunctionType* ft = llvm::FunctionType::get(
@@ -1016,7 +1016,7 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         // v0.4.5: Auto-cleanup all user hash tables before fallthrough return
         {
             bool fast = expr_codegen && expr_codegen->uhash_fast_mode;
-            const char* dname = fast ? "aria_uhash_destroy_fast" : "aria_uhash_destroy";
+            const char* dname = fast ? "npk_uhash_destroy_fast" : "npk_uhash_destroy";
             for (auto& [key, val] : named_values) {
                 if (key.find("__aria_uhash_handle_") == 0) {
                     llvm::Function* destroyFunc = module->getFunction(dname);
@@ -2642,7 +2642,7 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
         if (it != named_values.end()) {
             // v0.4.3+: Use fast destroy if SMT-optimized
             bool fast = expr_codegen && expr_codegen->ustack_fast_mode;
-            const char* dname = fast ? "aria_ustack_destroy_fast" : "aria_ustack_destroy";
+            const char* dname = fast ? "npk_ustack_destroy_fast" : "npk_ustack_destroy";
             llvm::Function* destroyFunc = module->getFunction(dname);
             if (!destroyFunc) {
                 llvm::FunctionType* ft = llvm::FunctionType::get(
@@ -2658,7 +2658,7 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
     // v0.4.5: Auto-cleanup all user hash tables before return
     {
         bool fast = expr_codegen && expr_codegen->uhash_fast_mode;
-        const char* dname = fast ? "aria_uhash_destroy_fast" : "aria_uhash_destroy";
+        const char* dname = fast ? "npk_uhash_destroy_fast" : "npk_uhash_destroy";
         for (auto& [key, val] : named_values) {
             if (key.find("__aria_uhash_handle_") == 0) {
                 llvm::Function* destroyFunc = module->getFunction(dname);

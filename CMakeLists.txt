@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(nitpick VERSION 0.9.1 LANGUAGES C CXX)
+project(nitpick VERSION 0.9.1 LANGUAGES C CXX ASM)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -451,6 +451,7 @@ add_library(aria_runtime STATIC
     ${STDLIB_SOURCES}
     ${HIGHPREC_SOURCES}
     ${PIPELINE_SOURCES}
+    src/runtime/npk_aliases.s   # phase 6: npk_* → aria_* zero-overhead aliases
 )
 
 # ARIA-017: Enable AVX-512 and ADX intrinsics for high-precision floating-point

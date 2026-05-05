@@ -134,13 +134,13 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
     if (type_name == "str") {
         // str is a fat pointer: { i8* data, i64 length }
         // Return the struct type, not a single pointer
-        llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!strType) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            strType = llvm::StructType::create(context, fields, "struct.AriaString");
+            strType = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         
         return strType;
@@ -881,7 +881,7 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
     // Runtime: void aria_frac32_add(Frac32* result, const Frac32* a, const Frac32* b)
     // Comparison: int32_t aria_frac32_cmp(const Frac32* a, const Frac32* b) → -1/0/1
     if (numericType.find("frac") == 0) {
-        std::string runtimeFunc = "aria_" + numericType + opSuffix;
+        std::string runtimeFunc = "npk_" + numericType + opSuffix;
         llvm::StructType* fracType = llvm::cast<llvm::StructType>(left->getType());
         
         if (isComparison) {
@@ -1022,7 +1022,7 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
     
     // fix256 uses aria_fix256_* functions (deterministic fixed-point)
     if (lbimType == "fix256") {
-        funcName = "aria_fix256" + opSuffix;
+        funcName = "npk_fix256" + opSuffix;
     }
     // Signed LBIM integers use aria_lbim_s* functions (signed division, etc.)
     else if (lbimType.find("int") == 0) {  // int128, int256, int512, int1024
@@ -1031,17 +1031,17 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
         
         // Use signed functions for division/modulo, unsigned for add/sub/mul
         if (op == frontend::TokenType::TOKEN_SLASH) {
-            funcName = "aria_lbim_sdiv" + bitWidth;
+            funcName = "npk_lbim_sdiv" + bitWidth;
         } else if (op == frontend::TokenType::TOKEN_PERCENT) {
-            funcName = "aria_lbim_smod" + bitWidth;
+            funcName = "npk_lbim_smod" + bitWidth;
         } else if (opSuffix == "_cmp") {
             // Signed comparison
-            funcName = "aria_lbim_scmp" + bitWidth;
+            funcName = "npk_lbim_scmp" + bitWidth;
         } else if (opSuffix == "_eq") {
             // Equality works same for signed/unsigned
-            funcName = "aria_lbim_eq" + bitWidth;
+            funcName = "npk_lbim_eq" + bitWidth;
         } else {
-            funcName = "aria_lbim" + opSuffix + bitWidth;
+            funcName = "npk_lbim" + opSuffix + bitWidth;
         }
     }
     // Unsigned LBIM integers use aria_lbim_u* for div/mod
@@ -1049,17 +1049,17 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
         std::string bitWidth = lbimType.substr(4);
         
         if (op == frontend::TokenType::TOKEN_SLASH) {
-            funcName = "aria_lbim_udiv" + bitWidth;
+            funcName = "npk_lbim_udiv" + bitWidth;
         } else if (op == frontend::TokenType::TOKEN_PERCENT) {
-            funcName = "aria_lbim_umod" + bitWidth;
+            funcName = "npk_lbim_umod" + bitWidth;
         } else if (opSuffix == "_cmp") {
             // Unsigned comparison
-            funcName = "aria_lbim_ucmp" + bitWidth;
+            funcName = "npk_lbim_ucmp" + bitWidth;
         } else if (opSuffix == "_eq") {
             // Equality works same for signed/unsigned
-            funcName = "aria_lbim_eq" + bitWidth;
+            funcName = "npk_lbim_eq" + bitWidth;
         } else {
-            funcName = "aria_lbim" + opSuffix + bitWidth;
+            funcName = "npk_lbim" + opSuffix + bitWidth;
         }
     }
     // LBIM float types: flt256/flt512 (software-emulated extended precision)
@@ -1067,11 +1067,11 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
         std::string bitWidth = lbimType.substr(3);  // "256" or "512"
 
         if (opSuffix == "_cmp") {
-            funcName = "aria_lbim_fcmp" + bitWidth;
+            funcName = "npk_lbim_fcmp" + bitWidth;
         } else if (opSuffix == "_eq") {
-            funcName = "aria_lbim_feq" + bitWidth;
+            funcName = "npk_lbim_feq" + bitWidth;
         } else {
-            funcName = "aria_lbim_f" + opSuffix.substr(1) + bitWidth;  // e.g. aria_lbim_fadd256
+            funcName = "npk_lbim_f" + opSuffix.substr(1) + bitWidth;  // e.g. aria_lbim_fadd256
         }
     }
     else {
@@ -1582,13 +1582,13 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         }
         
         // Get or create AriaString struct type
-        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!aria_string_type) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+            aria_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         
         // Create a global AriaString struct constant
@@ -1756,7 +1756,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         );
         
         // Allocate on stack
-        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "aria_str");
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "npk_str");
         
         // Set data field
         llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0, "data_ptr");
@@ -1767,7 +1767,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), str.length()), lengthPtr);
         
         // Load and return the struct value
-        return builder.CreateLoad(ariaStringType, ariaStr, "aria_str_val");
+        return builder.CreateLoad(ariaStringType, ariaStr, "npk_str_val");
     };
     
     // ARIA-026: SAFETY FIX - Use deterministic aria_int64_to_str instead of sprintf
@@ -1780,7 +1780,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         // if these helpers are ever used in return statements or stored in variables
         
         // Allocate 24-byte buffer on GC heap (sufficient for "-9223372036854775808\0")
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -1806,7 +1806,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(nullBB);
-        llvm::Function* panicOOM = module->getFunction("aria_panic_oom");
+        llvm::Function* panicOOM = module->getFunction("npk_panic_oom");
         if (!panicOOM) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
@@ -1816,7 +1816,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             panicOOM = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -1833,7 +1833,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         // Declare aria_int64_to_str (deterministic, locale-independent runtime function)
         // Signature: int64_t aria_int64_to_str(int64_t value, char* buffer)
         // Returns: length of resulting string (excluding null terminator)
-        llvm::Function* toStrFn = module->getFunction("aria_int64_to_str");
+        llvm::Function* toStrFn = module->getFunction("npk_int64_to_str");
         if (!toStrFn) {
             llvm::FunctionType* fnType = llvm::FunctionType::get(
                 llvm::Type::getInt64Ty(context),  // Returns length
@@ -1843,7 +1843,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             toStrFn = llvm::Function::Create(
                 fnType,
                 llvm::Function::ExternalLinkage,
-                "aria_int64_to_str",
+                "npk_int64_to_str",
                 module
             );
         }
@@ -1877,7 +1877,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     auto floatToString = [this](llvm::Value* floatVal) -> llvm::Value* {
         // ARIA-026 FIX: Use GC heap instead of stack to prevent use-after-return
         // Allocate 64-byte buffer on GC heap (sufficient for floating point)
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -1903,7 +1903,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(nullBB);
-        llvm::Function* panicOOM = module->getFunction("aria_panic_oom");
+        llvm::Function* panicOOM = module->getFunction("npk_panic_oom");
         if (!panicOOM) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
@@ -1913,7 +1913,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             panicOOM = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -1942,7 +1942,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Declare aria_snprintf_c_locale (our deterministic wrapper)
         // This is a runtime function that forces C locale for formatting
-        llvm::Function* snprintfFn = module->getFunction("aria_snprintf_c_locale");
+        llvm::Function* snprintfFn = module->getFunction("npk_snprintf_c_locale");
         if (!snprintfFn) {
             llvm::FunctionType* snprintfType = llvm::FunctionType::get(
                 llvm::Type::getInt32Ty(context),
@@ -1955,7 +1955,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             snprintfFn = llvm::Function::Create(
                 snprintfType,
                 llvm::Function::ExternalLinkage,
-                "aria_snprintf_c_locale",
+                "npk_snprintf_c_locale",
                 module
             );
         }
@@ -2100,7 +2100,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // FIX: Allocate on GC heap and return pointer (matches string literal behavior)
         // Allocate AriaString struct on GC heap
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -2142,7 +2142,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         );
         
         // Call aria_gc_alloc (GC-visible memory) for temporary buffer
-        llvm::FunctionCallee aria_gc_alloc_callee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee aria_gc_alloc_callee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -2167,7 +2167,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(gcNullBB);
-        llvm::Function* aria_panic_oom = module->getFunction("aria_panic_oom");
+        llvm::Function* aria_panic_oom = module->getFunction("npk_panic_oom");
         if (!aria_panic_oom) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
@@ -2177,7 +2177,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             aria_panic_oom = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -2227,7 +2227,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
 
             if (needsSpecialFormatter(ariaType)) {
                 // Use type-aware formatter from runtime/fmt/formatters.cpp
-                std::string formatterName = "aria_format_" + ariaType;
+                std::string formatterName = "npk_format_" + ariaType;
 
                 // Get or declare the formatter function
                 // For large structs (int256, etc.), pass by pointer per x86-64 ABI
@@ -2296,12 +2296,12 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         false
     );
 
-    llvm::Function* concatNFn = module->getFunction("aria_string_concat_n_simple");
+    llvm::Function* concatNFn = module->getFunction("npk_string_concat_n_simple");
     if (!concatNFn) {
         concatNFn = llvm::Function::Create(
             concatNType,
             llvm::Function::ExternalLinkage,
-            "aria_string_concat_n_simple",
+            "npk_string_concat_n_simple",
             module
         );
     }
@@ -2333,7 +2333,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     
     // Null path: panic with OOM message
     builder.SetInsertPoint(nullCheckBB);
-    llvm::Function* aria_panic_oom = module->getFunction("aria_panic_oom");
+    llvm::Function* aria_panic_oom = module->getFunction("npk_panic_oom");
     if (!aria_panic_oom) {
         llvm::FunctionType* panicType = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),
@@ -2343,7 +2343,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         aria_panic_oom = llvm::Function::Create(
             panicType,
             llvm::Function::ExternalLinkage,
-            "aria_panic_oom",
+            "npk_panic_oom",
             module
         );
     }
@@ -2360,7 +2360,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     // Cleanup: Free heap-allocated array if needed
     if (totalSegments > MAX_STACK_SEGMENTS) {
         // Call aria_free on the heap-allocated array
-        llvm::FunctionCallee aria_free_callee = module->getOrInsertFunction("aria_wild_free",
+        llvm::FunctionCallee aria_free_callee = module->getOrInsertFunction("npk_wild_free",
             llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
                 {llvm::PointerType::get(context, 0)},

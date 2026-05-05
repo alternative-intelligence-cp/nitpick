@@ -104,12 +104,12 @@ llvm::Value* TernaryCodegen::generateAdd(llvm::Value* lhs, llvm::Value* rhs, Typ
         llvm::Function* addFn = nullptr;
         if (typeName == "tryte") {
             if (!fn_tryte_add) {
-                fn_tryte_add = getOrDeclareIntrinsic("aria_tryte_add", true);
+                fn_tryte_add = getOrDeclareIntrinsic("npk_tryte_add", true);
             }
             addFn = fn_tryte_add;
         } else {  // nyte
             if (!fn_nyte_add) {
-                fn_nyte_add = getOrDeclareIntrinsic("aria_nyte_add", true);
+                fn_nyte_add = getOrDeclareIntrinsic("npk_nyte_add", true);
             }
             addFn = fn_nyte_add;
         }
@@ -131,12 +131,12 @@ llvm::Value* TernaryCodegen::generateAdd(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* addFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_add) {
-            fn_trit_add = getOrDeclareIntrinsic("aria_trit_add", true, true);
+            fn_trit_add = getOrDeclareIntrinsic("npk_trit_add", true, true);
         }
         addFn = fn_trit_add;
     } else if (typeName == "nit") {
         if (!fn_nit_add) {
-            fn_nit_add = getOrDeclareIntrinsic("aria_nit_add", true, true);
+            fn_nit_add = getOrDeclareIntrinsic("npk_nit_add", true, true);
         }
         addFn = fn_nit_add;
     }
@@ -165,12 +165,12 @@ llvm::Value* TernaryCodegen::generateSub(llvm::Value* lhs, llvm::Value* rhs, Typ
         llvm::Function* subFn = nullptr;
         if (typeName == "tryte") {
             if (!fn_tryte_sub) {
-                fn_tryte_sub = getOrDeclareIntrinsic("aria_tryte_sub", true);
+                fn_tryte_sub = getOrDeclareIntrinsic("npk_tryte_sub", true);
             }
             subFn = fn_tryte_sub;
         } else {  // nyte
             if (!fn_nyte_sub) {
-                fn_nyte_sub = getOrDeclareIntrinsic("aria_nyte_sub", true);
+                fn_nyte_sub = getOrDeclareIntrinsic("npk_nyte_sub", true);
             }
             subFn = fn_nyte_sub;
         }
@@ -191,12 +191,12 @@ llvm::Value* TernaryCodegen::generateSub(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* subFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_sub) {
-            fn_trit_sub = getOrDeclareIntrinsic("aria_trit_sub", true, true);
+            fn_trit_sub = getOrDeclareIntrinsic("npk_trit_sub", true, true);
         }
         subFn = fn_trit_sub;
     } else if (typeName == "nit") {
         if (!fn_nit_sub) {
-            fn_nit_sub = getOrDeclareIntrinsic("aria_nit_sub", true, true);
+            fn_nit_sub = getOrDeclareIntrinsic("npk_nit_sub", true, true);
         }
         subFn = fn_nit_sub;
     }
@@ -225,12 +225,12 @@ llvm::Value* TernaryCodegen::generateMul(llvm::Value* lhs, llvm::Value* rhs, Typ
         llvm::Function* mulFn = nullptr;
         if (typeName == "tryte") {
             if (!fn_tryte_mul) {
-                fn_tryte_mul = getOrDeclareIntrinsic("aria_tryte_mul", true);
+                fn_tryte_mul = getOrDeclareIntrinsic("npk_tryte_mul", true);
             }
             mulFn = fn_tryte_mul;
         } else {  // nyte
             if (!fn_nyte_mul) {
-                fn_nyte_mul = getOrDeclareIntrinsic("aria_nyte_mul", true);
+                fn_nyte_mul = getOrDeclareIntrinsic("npk_nyte_mul", true);
             }
             mulFn = fn_nyte_mul;
         }
@@ -251,12 +251,12 @@ llvm::Value* TernaryCodegen::generateMul(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* mulFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_mul) {
-            fn_trit_mul = getOrDeclareIntrinsic("aria_trit_mul", true, true);
+            fn_trit_mul = getOrDeclareIntrinsic("npk_trit_mul", true, true);
         }
         mulFn = fn_trit_mul;
     } else if (typeName == "nit") {
         if (!fn_nit_mul) {
-            fn_nit_mul = getOrDeclareIntrinsic("aria_nit_mul", true, true);
+            fn_nit_mul = getOrDeclareIntrinsic("npk_nit_mul", true, true);
         }
         mulFn = fn_nit_mul;
     }
@@ -285,12 +285,12 @@ llvm::Value* TernaryCodegen::generateDiv(llvm::Value* lhs, llvm::Value* rhs, Typ
         llvm::Function* divFn = nullptr;
         if (typeName == "tryte") {
             if (!fn_tryte_div) {
-                fn_tryte_div = getOrDeclareIntrinsic("aria_tryte_div", true);
+                fn_tryte_div = getOrDeclareIntrinsic("npk_tryte_div", true);
             }
             divFn = fn_tryte_div;
         } else {  // nyte
             if (!fn_nyte_div) {
-                fn_nyte_div = getOrDeclareIntrinsic("aria_nyte_div", true);
+                fn_nyte_div = getOrDeclareIntrinsic("npk_nyte_div", true);
             }
             divFn = fn_nyte_div;
         }
@@ -332,14 +332,14 @@ llvm::Value* TernaryCodegen::generateMod(llvm::Value* lhs, llvm::Value* rhs, Typ
         if (typeName == "tryte") {
             ARIA_DBG_STREAM << "[TERNARY MOD] Getting aria_tryte_mod" << std::endl;
             if (!fn_tryte_mod) {
-                fn_tryte_mod = getOrDeclareIntrinsic("aria_tryte_mod", true);
+                fn_tryte_mod = getOrDeclareIntrinsic("npk_tryte_mod", true);
                 ARIA_DBG_STREAM << "[TERNARY MOD] Declared fn_tryte_mod=" << (void*)fn_tryte_mod << std::endl;
             }
             modFn = fn_tryte_mod;
         } else {  // nyte
             ARIA_DBG_STREAM << "[TERNARY MOD] Getting aria_nyte_mod" << std::endl;
             if (!fn_nyte_mod) {
-                fn_nyte_mod = getOrDeclareIntrinsic("aria_nyte_mod", true);
+                fn_nyte_mod = getOrDeclareIntrinsic("npk_nyte_mod", true);
                 ARIA_DBG_STREAM << "[TERNARY MOD] Declared fn_nyte_mod=" << (void*)fn_nyte_mod << std::endl;
             }
             modFn = fn_nyte_mod;
@@ -390,12 +390,12 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
         llvm::Function* negFn = nullptr;
         if (typeName == "tryte") {
             if (!fn_tryte_neg) {
-                fn_tryte_neg = getOrDeclareIntrinsic("aria_tryte_neg", false);
+                fn_tryte_neg = getOrDeclareIntrinsic("npk_tryte_neg", false);
             }
             negFn = fn_tryte_neg;
         } else {  // nyte
             if (!fn_nyte_neg) {
-                fn_nyte_neg = getOrDeclareIntrinsic("aria_nyte_neg", false);
+                fn_nyte_neg = getOrDeclareIntrinsic("npk_nyte_neg", false);
             }
             negFn = fn_nyte_neg;
         }
@@ -413,12 +413,12 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
     llvm::Function* negFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_not) {  // Note: aria_trit_not is same as aria_trit_neg
-            fn_trit_not = getOrDeclareIntrinsic("aria_trit_neg", false, true);
+            fn_trit_not = getOrDeclareIntrinsic("npk_trit_neg", false, true);
         }
         negFn = fn_trit_not;
     } else if (typeName == "nit") {
         if (!fn_nit_neg) {
-            fn_nit_neg = getOrDeclareIntrinsic("aria_nit_neg", false, true);
+            fn_nit_neg = getOrDeclareIntrinsic("npk_nit_neg", false, true);
         }
         negFn = fn_nit_neg;
     }
@@ -444,12 +444,12 @@ llvm::Value* TernaryCodegen::generateAnd(llvm::Value* lhs, llvm::Value* rhs, Typ
     llvm::Function* andFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_and) {
-            fn_trit_and = getOrDeclareIntrinsic("aria_trit_and", true, true);
+            fn_trit_and = getOrDeclareIntrinsic("npk_trit_and", true, true);
         }
         andFn = fn_trit_and;
     } else if (typeName == "nit") {
         if (!fn_nit_and) {
-            fn_nit_and = getOrDeclareIntrinsic("aria_nit_and", true, true);
+            fn_nit_and = getOrDeclareIntrinsic("npk_nit_and", true, true);
         }
         andFn = fn_nit_and;
     }
@@ -478,12 +478,12 @@ llvm::Value* TernaryCodegen::generateOr(llvm::Value* lhs, llvm::Value* rhs, Type
     llvm::Function* orFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_or) {
-            fn_trit_or = getOrDeclareIntrinsic("aria_trit_or", true, true);
+            fn_trit_or = getOrDeclareIntrinsic("npk_trit_or", true, true);
         }
         orFn = fn_trit_or;
     } else if (typeName == "nit") {
         if (!fn_nit_or) {
-            fn_nit_or = getOrDeclareIntrinsic("aria_nit_or", true, true);
+            fn_nit_or = getOrDeclareIntrinsic("npk_nit_or", true, true);
         }
         orFn = fn_nit_or;
     }
@@ -512,12 +512,12 @@ llvm::Value* TernaryCodegen::generateNot(llvm::Value* operand, Type* type) {
     llvm::Function* notFn = nullptr;
     if (typeName == "trit") {
         if (!fn_trit_not) {
-            fn_trit_not = getOrDeclareIntrinsic("aria_trit_not", false, true);
+            fn_trit_not = getOrDeclareIntrinsic("npk_trit_not", false, true);
         }
         notFn = fn_trit_not;
     } else if (typeName == "nit") {
         if (!fn_nit_not) {
-            fn_nit_not = getOrDeclareIntrinsic("aria_nit_not", false, true);
+            fn_nit_not = getOrDeclareIntrinsic("npk_nit_not", false, true);
         }
         notFn = fn_nit_not;
     }

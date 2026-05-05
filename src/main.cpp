@@ -6006,11 +6006,16 @@ bool link_executable(const std::string& object_file, const std::string& output_f
     
     // Try to find the runtime library in several locations
     std::vector<std::string> search_paths = {
-        "build/libaria_runtime.a",           // Build directory (development, cwd)
-        "../build/libaria_runtime.a",        // Relative to cwd
-        "libaria_runtime.a",                 // Current directory
-        "/usr/local/lib/libaria_runtime.a",  // Installation directory
-        "/usr/lib/libaria_runtime.a"         // System installation
+        "build/libnitpick_runtime.a",        // Build directory (new name)
+        "build/libaria_runtime.a",           // Build directory (compat name)
+        "../build/libnitpick_runtime.a",
+        "../build/libaria_runtime.a",
+        "libnitpick_runtime.a",
+        "libaria_runtime.a",
+        "/usr/local/lib/libnitpick_runtime.a",
+        "/usr/local/lib/libaria_runtime.a",
+        "/usr/lib/libnitpick_runtime.a",
+        "/usr/lib/libaria_runtime.a"
     };
     
     // Add path relative to compiler executable (if we could determine it)
