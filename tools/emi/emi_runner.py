@@ -168,7 +168,10 @@ def main():
     parser.add_argument("--compiler", default=None,
                         help="Path to npkc compiler binary (auto-detected if omitted)")
     parser.add_argument("--seeds", default=None,
-                        help="Directory to scan for seed programs (default: tests/)")
+                        help="Directory to scan for seed programs (default: tools/emi/corpus/)")
+    parser.add_argument("--seed-list", default=None,
+                        help="File containing one seed path per line (overrides --seeds). "
+                             "Use tools/emi/priority_seeds.txt to run coverage-ranked seeds first.")
     parser.add_argument("--variants", type=int, default=20,
                         help="Variants to generate per seed (default: 20)")
     parser.add_argument("--hours", type=float, default=0,
@@ -198,26 +201,42 @@ def main():
               f"cd build && cmake .. && make -j$(nproc)", file=sys.stderr)
         sys.exit(1)
 
-    seeds_dir = Path(args.seeds) if args.seeds else repo_root / "tests"
     out_dir = Path(args.out) if args.out else script_dir / "results"
     miscompile_dir = out_dir / "miscompiles"
     miscompile_dir.mkdir(parents=True, exist_ok=True)
 
-    seeds = _collect_seeds(seeds_dir, limit=args.seed_limit or None)
-    if not seeds:
-        print(f"ERROR: no seed files found under {seeds_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    # Shuffle deterministically
     rng = random.Random(args.rng_seed)
-    rng.shuffle(seeds)
+
+    if args.seed_list:
+        # Priority-ordered list from coverage_runner.py
+        seed_list_path = Path(args.seed_list)
+        seeds = [
+            Path(line.strip()) for line in seed_list_path.read_text().splitlines()
+            if line.strip() and Path(line.strip()).exists()
+        ]
+        if not seeds:
+            print(f"ERROR: no valid seed paths in {seed_list_path}", file=sys.stderr)
+            sys.exit(1)
+        seed_source = str(seed_list_path)
+    else:
+        seeds_dir = Path(args.seeds) if args.seeds else script_dir / "corpus"
+        seeds = _collect_seeds(seeds_dir, limit=None)
+        if not seeds:
+            print(f"ERROR: no seed files found under {seeds_dir}", file=sys.stderr)
+            sys.exit(1)
+        # Shuffle deterministically when not using a priority list
+        rng.shuffle(seeds)
+        seed_source = str(seeds_dir)
+
+    if args.seed_limit:
+        seeds = seeds[:args.seed_limit]
 
     stats = Stats(start_time=time.time())
     deadline = time.time() + args.hours * 3600 if args.hours > 0 else float("inf")
 
     print(f"Nitpick EMI v0.18.1")
     print(f"Compiler : {compiler}")
-    print(f"Seeds    : {len(seeds)} files under {seeds_dir}")
+    print(f"Seeds    : {len(seeds)} files from {seed_source}")
     print(f"Variants : {args.variants} per seed")
     print(f"Workers  : {args.workers}")
     print(f"Out      : {out_dir}")
