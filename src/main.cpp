@@ -189,17 +189,19 @@ void initialize_wasm_targets() {
  * Print version information
  */
 void print_version() {
-    std::cout << "Aria Compiler (ariac) version " << ARIA_VERSION << "\n";
+    std::cout << "Nitpick Compiler (npkc) version " << ARIA_VERSION << "\n";
     std::cout << "Built with LLVM " << LLVM_VERSION_STRING << "\n";
+    std::cout << "(ariac is a compatibility alias for npkc)\n";
 }
 
 /**
  * Print usage information
  */
 void print_help() {
-    std::cout << "Aria Compiler (ariac) - Compile Aria source files\n\n";
+    std::cout << "Nitpick Compiler (npkc) - Compile Nitpick source files\n\n";
     std::cout << "Usage:\n";
-    std::cout << "  ariac <input.aria> [<input2.aria> ...] [options]\n\n";
+    std::cout << "  npkc <input.npk> [<input2.npk> ...] [options]\n";
+    std::cout << "  npkc <input.aria> [<input2.aria> ...] [options]  # .aria accepted during transition\n\n";
     std::cout << "CPU Target Options:\n";
     std::cout << "  -o <file>         Write output to <file>\n";
     std::cout << "  -I <dir>          Add directory to module search path\n";
@@ -207,7 +209,7 @@ void print_help() {
     std::cout << "  --emit-llvm       Emit LLVM IR text (.ll)\n";
     std::cout << "  --emit-llvm-bc    Emit LLVM bitcode (.bc)\n";
     std::cout << "  --emit-asm        Emit assembly (.s)\n";
-    std::cout << "  --emit-deps       Emit JSON dependency manifest (for aria_make)\n";
+    std::cout << "  --emit-deps       Emit JSON dependency manifest (for npkbld)\n";
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
@@ -260,24 +262,24 @@ void print_help() {
     std::cout << "  --version         Show version\n";
     std::cout << "  --help            Show this help\n\n";
     std::cout << "Examples (CPU):\n";
-    std::cout << "  ariac hello.aria -o hello\n";
-    std::cout << "  ariac main.aria utils.aria -o program\n";
-    std::cout << "  ariac program.aria -o program -lm -lpthread\n";
-    std::cout << "  ariac program.aria --emit-llvm -o program.ll\n";
-    std::cout << "  ariac mylib.aria --shared -o libmylib.so\n";
-    std::cout << "  ariac program.aria --static -o program -lm\n";
-    std::cout << "  ariac test.aria --ast-dump\n\n";
+    std::cout << "  npkc hello.npk -o hello\n";
+    std::cout << "  npkc main.npk utils.npk -o program\n";
+    std::cout << "  npkc program.npk -o program -lm -lpthread\n";
+    std::cout << "  npkc program.npk --emit-llvm -o program.ll\n";
+    std::cout << "  npkc mylib.npk --shared -o libmylib.so\n";
+    std::cout << "  npkc program.npk --static -o program -lm\n";
+    std::cout << "  npkc test.npk --ast-dump\n\n";
     std::cout << "Examples (GPU):\n";
-    std::cout << "  ariac physics.aria --emit-ptx -o physics.ptx\n";
-    std::cout << "  ariac kernel.aria --emit-ptx --gpu-arch=sm_86 -o kernel.ptx\n";
-    std::cout << "  ariac compute.aria --target=gpu --gpu-opt=3 -o compute.ptx\n\n";
+    std::cout << "  npkc physics.npk --emit-ptx -o physics.ptx\n";
+    std::cout << "  npkc kernel.npk --emit-ptx --gpu-arch=sm_86 -o kernel.ptx\n";
+    std::cout << "  npkc compute.npk --target=gpu --gpu-opt=3 -o compute.ptx\n\n";
     std::cout << "WASM Target Options (WebAssembly):\n";
     std::cout << "  --emit-wasm       Compile to WebAssembly (.wasm)\n";
     std::cout << "  --target=wasm32-wasi\n";
     std::cout << "                    Target wasm32-wasi (WASI system interface)\n\n";
     std::cout << "Examples (WASM):\n";
-    std::cout << "  ariac hello.aria --emit-wasm -o hello.wasm\n";
-    std::cout << "  ariac program.aria --target=wasm32-wasi -o program.wasm\n";
+    std::cout << "  npkc hello.npk --emit-wasm -o hello.wasm\n";
+    std::cout << "  npkc program.npk --target=wasm32-wasi -o program.wasm\n";
     std::cout << "  wasmtime hello.wasm                    # Run with wasmtime\n";
 }
 

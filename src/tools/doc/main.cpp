@@ -76,7 +76,8 @@ int main(int argc, char* argv[]) {
         // Check if it's a directory (process all .aria files)
         else if (fs::exists(pattern) && fs::is_directory(pattern)) {
             for (const auto& entry : fs::recursive_directory_iterator(pattern)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".aria") {
+                if (entry.is_regular_file() &&
+                (entry.path().extension() == ".aria" || entry.path().extension() == ".npk")) {
                     expanded_files.push_back(entry.path().string());
                 }
             }
@@ -121,7 +122,8 @@ int main(int argc, char* argv[]) {
     // Filter to only .aria files
     std::vector<std::string> aria_files;
     for (const auto& file : expanded_files) {
-        if (file.size() >= 5 && file.substr(file.size() - 5) == ".aria") {
+        if ((file.size() >= 5 && file.substr(file.size() - 5) == ".aria") ||
+            (file.size() >= 4 && file.substr(file.size() - 4) == ".npk")) {
             aria_files.push_back(file);
         }
     }

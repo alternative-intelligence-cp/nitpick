@@ -167,7 +167,8 @@ bool ModuleResolver::isValidAriaFile(const std::string& path) {
     
     try {
         fs::path p(path);
-        return fs::exists(p) && fs::is_regular_file(p) && p.extension() == ".aria";
+        return fs::exists(p) && fs::is_regular_file(p) &&
+               (p.extension() == ".aria" || p.extension() == ".npk");
     } catch (...) {
         return false;
     }
@@ -252,21 +253,29 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
                                           const std::vector<std::string>& components) {
     if (components.empty()) return "";
     
-    // Try pattern 1: <base>/path/to/module.aria
-    // Example: std.io -> /usr/lib/aria/std/io.aria
+    // Try pattern 1: <base>/path/to/module.aria  (then .npk fallback)
+    // Example: std.io -> /usr/lib/nitpick/std/io.aria
     std::string filePath = buildPath(baseDir, components, ".aria");
     if (isValidAriaFile(filePath)) {
         return filePath;
     }
-    
-    // Try pattern 2: <base>/path/to/module/mod.aria
-    // Example: std.io -> /usr/lib/aria/std/io/mod.aria
+    std::string filePathNpk = buildPath(baseDir, components, ".npk");
+    if (isValidAriaFile(filePathNpk)) {
+        return filePathNpk;
+    }
+
+    // Try pattern 2: <base>/path/to/module/mod.aria  (then mod.npk fallback)
+    // Example: std.io -> /usr/lib/nitpick/std/io/mod.aria
     // research_028 Section 3.2 step 3
     std::vector<std::string> modComponents = components;
     modComponents.push_back("mod");
     std::string modPath = buildPath(baseDir, modComponents, ".aria");
     if (isValidAriaFile(modPath)) {
         return modPath;
+    }
+    std::string modPathNpk = buildPath(baseDir, modComponents, ".npk");
+    if (isValidAriaFile(modPathNpk)) {
+        return modPathNpk;
     }
     
     return "";

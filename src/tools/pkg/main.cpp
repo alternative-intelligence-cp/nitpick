@@ -8,7 +8,7 @@
 using namespace aria::pkg;
 
 void printUsage(const char* program_name) {
-    std::cout << "Aria Package Manager v0.3.0\n\n";
+    std::cout << "Nitpick Package Manager (npkpkg) v0.3.0\n\n";
     std::cout << "Usage: " << program_name << " <command> [options]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  install <path|name>  Install from file, directory, or remote registry\n";

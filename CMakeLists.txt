@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(aria VERSION 0.9.1 LANGUAGES C CXX)
+project(nitpick VERSION 0.9.1 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -541,6 +541,8 @@ if(Z3_FOUND)
 else()
     target_link_libraries(ariac ${llvm_libs} uring atomic)
 endif()
+# Primary binary is npkc; ariac is a compat symlink (installed via install rules below)
+set_target_properties(ariac PROPERTIES OUTPUT_NAME "npkc")
 
 # Testing compiler executable (separate binary for testing without disrupting fuzzer)
 # Build with: cmake --build build --target ariac_testing
@@ -617,6 +619,8 @@ add_executable(aria-pkg
     ${PKG_SOURCES}
 )
 target_link_libraries(aria-pkg)
+# Primary binary is npkpkg; aria-pkg is a compat symlink
+set_target_properties(aria-pkg PROPERTIES OUTPUT_NAME "npkpkg")
 
 # Documentation generator executable (Phase 7.6)
 add_executable(aria-doc
@@ -640,8 +644,13 @@ endif()
 # Installation
 # ============================================================================
 
-# install(TARGETS ariac DESTINATION bin)
-# install(DIRECTORY lib/std DESTINATION lib/aria)
+install(TARGETS ariac DESTINATION bin)
+install(TARGETS aria-pkg DESTINATION bin)
+install(TARGETS aria-doc DESTINATION bin)
+# Compat symlinks: ariac -> npkc, aria-pkg -> npkpkg
+install(CODE "execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink npkc \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/ariac)")
+install(CODE "execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink npkpkg \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/aria-pkg)")
+install(DIRECTORY lib/std DESTINATION lib/nitpick)
 
 # ============================================================================
 # Print configuration summary

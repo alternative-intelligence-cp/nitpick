@@ -186,11 +186,13 @@ Module* ModuleTable::resolveImport(const std::string& importPath, Module* fromMo
         
         // Also try with .aria extension
         if (resolved.extension().empty()) {
-            fs::path withExt = resolved;
-            withExt.replace_extension(".aria");
-            existing = getModule(withExt.string());
-            if (existing) {
-                return existing;
+            for (const auto& ext : {".aria", ".npk"}) {
+                fs::path withExt = resolved;
+                withExt.replace_extension(ext);
+                existing = getModule(withExt.string());
+                if (existing) {
+                    return existing;
+                }
             }
         }
         
