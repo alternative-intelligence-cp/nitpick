@@ -6,7 +6,7 @@
 #include "tools/debugger/async_debugger.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 AsyncDebugger::AsyncDebugger(lldb::SBTarget target, lldb::SBProcess process)
@@ -369,4 +369,4 @@ std::vector<uint32_t> AsyncDebugger::getSuspensionPoints(lldb::SBFrame frame) {
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

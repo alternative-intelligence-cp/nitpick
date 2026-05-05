@@ -8,7 +8,7 @@
 #include <limits>
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -1541,4 +1541,4 @@ void ConstEvaluator::memoizeResult(const std::string& funcName,
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

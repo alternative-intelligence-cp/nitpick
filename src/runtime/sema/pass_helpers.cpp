@@ -67,7 +67,7 @@ static const char* safety_help_texts[] = {
     "wild memory must be manually freed - you are responsible for deallocation",
     "async code may race without proper synchronization",
     "pointer operations bypass bounds checking - ensure validity manually",
-    "extern functions bypass Aria safety - validate all FFI boundaries",
+    "extern functions bypass Nitpick safety - validate all FFI boundaries",
     "executable memory has security implications - ensure proper validation",
     "pointer casts can violate type safety - verify correctness",
     "pointer arithmetic can cause buffer overflows - validate bounds"

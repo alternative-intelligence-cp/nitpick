@@ -31,7 +31,7 @@
 
 // Note: Fully qualify nlohmann::json to avoid conflicts with LLDB's internal json types
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 /**
@@ -285,6 +285,6 @@ private:
 };
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DEBUGGER_DAP_SERVER_H

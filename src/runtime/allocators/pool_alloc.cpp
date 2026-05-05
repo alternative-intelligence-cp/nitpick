@@ -35,9 +35,9 @@ typedef struct FreeNode {
  * @param capacity Size in bytes
  * @return Pointer to chunk or NULL on failure
  */
-static aria_pool_chunk* allocate_chunk(size_t capacity) {
+static npk_pool_chunk* allocate_chunk(size_t capacity) {
     // Allocate chunk header
-    aria_pool_chunk* chunk = (aria_pool_chunk*)malloc(sizeof(aria_pool_chunk));
+    npk_pool_chunk* chunk = (npk_pool_chunk*)malloc(sizeof(npk_pool_chunk));
     if (!chunk) {
         return NULL;
     }
@@ -57,7 +57,7 @@ static aria_pool_chunk* allocate_chunk(size_t capacity) {
 /**
  * Free a chunk and its memory
  */
-static void free_chunk(aria_pool_chunk* chunk) {
+static void free_chunk(npk_pool_chunk* chunk) {
     if (chunk) {
         free(chunk->memory);
         free(chunk);
@@ -74,7 +74,7 @@ static void free_chunk(aria_pool_chunk* chunk) {
  * @param tail Existing free list to append to
  * @return New head of free list
  */
-static FreeNode* thread_chunk(aria_pool_chunk* chunk, size_t block_size, FreeNode* tail) {
+static FreeNode* thread_chunk(npk_pool_chunk* chunk, size_t block_size, FreeNode* tail) {
     uint8_t* mem = (uint8_t*)chunk->memory;
     size_t num_blocks = chunk->capacity / block_size;
     
@@ -99,13 +99,13 @@ static FreeNode* thread_chunk(aria_pool_chunk* chunk, size_t block_size, FreeNod
  * @param pool Pool to grow
  * @return true on success, false on OOM
  */
-static bool grow_pool(aria_pool* pool) {
+static bool grow_pool(npk_pool* pool) {
     // Calculate next chunk size (geometric growth)
     size_t last_chunk_capacity = pool->current_chunk ? pool->current_chunk->capacity : pool->initial_capacity;
     size_t new_capacity = last_chunk_capacity * pool->growth_factor;
     
     // Allocate new chunk
-    aria_pool_chunk* new_chunk = allocate_chunk(new_capacity);
+    npk_pool_chunk* new_chunk = allocate_chunk(new_capacity);
     if (!new_chunk) {
         return false;
     }
@@ -131,7 +131,7 @@ static bool grow_pool(aria_pool* pool) {
 // Lifecycle Functions
 // ============================================================================
 
-AriaPoolResult aria_pool_new_with_growth(size_t block_size, size_t initial_capacity, size_t growth_factor) {
+AriaPoolResult npk_pool_new_with_growth(size_t block_size, size_t initial_capacity, size_t growth_factor) {
     AriaPoolResult result = {NULL, ARIA_POOL_OK, initial_capacity, block_size};
     
     // Validate block size (must hold a pointer)
@@ -147,21 +147,21 @@ AriaPoolResult aria_pool_new_with_growth(size_t block_size, size_t initial_capac
     }
     
     // Allocate pool handle
-    aria_pool* pool = (aria_pool*)malloc(sizeof(aria_pool));
+    npk_pool* pool = (npk_pool*)malloc(sizeof(npk_pool));
     if (!pool) {
         result.error_code = ARIA_POOL_ERR_OUT_OF_MEMORY;
         return result;
     }
     
     // Initialize pool
-    memset(pool, 0, sizeof(aria_pool));
+    memset(pool, 0, sizeof(npk_pool));
     pool->block_size = block_size;
     pool->initial_capacity = initial_capacity;
     pool->growth_factor = growth_factor;
     pool->head = NULL;
     
     // Allocate first chunk
-    aria_pool_chunk* first_chunk = allocate_chunk(initial_capacity);
+    npk_pool_chunk* first_chunk = allocate_chunk(initial_capacity);
     if (!first_chunk) {
         free(pool);
         result.error_code = ARIA_POOL_ERR_OUT_OF_MEMORY;
@@ -186,19 +186,19 @@ AriaPoolResult aria_pool_new_with_growth(size_t block_size, size_t initial_capac
     return result;
 }
 
-AriaPoolResult aria_pool_new(size_t block_size, size_t initial_capacity) {
-    return aria_pool_new_with_growth(block_size, initial_capacity, DEFAULT_GROWTH_FACTOR);
+AriaPoolResult npk_pool_new(size_t block_size, size_t initial_capacity) {
+    return npk_pool_new_with_growth(block_size, initial_capacity, DEFAULT_GROWTH_FACTOR);
 }
 
-void aria_pool_destroy(aria_pool* pool) {
+void npk_pool_destroy(npk_pool* pool) {
     if (!pool) {
         return;
     }
     
     // Free all chunks
-    aria_pool_chunk* chunk = pool->chunks;
+    npk_pool_chunk* chunk = pool->chunks;
     while (chunk) {
-        aria_pool_chunk* next = chunk->next;
+        npk_pool_chunk* next = chunk->next;
         free_chunk(chunk);
         chunk = next;
     }
@@ -211,7 +211,7 @@ void aria_pool_destroy(aria_pool* pool) {
 // Allocation Functions
 // ============================================================================
 
-AriaAllocResult aria_pool_alloc(aria_pool* pool) {
+AriaAllocResult npk_pool_alloc(npk_pool* pool) {
     AriaAllocResult result = {NULL, ARIA_ALLOC_OK, pool->block_size, sizeof(void*)};
     
     // HOT PATH: Try free list first
@@ -257,7 +257,7 @@ AriaAllocResult aria_pool_alloc(aria_pool* pool) {
     return result;
 }
 
-void aria_pool_free(aria_pool* pool, void* ptr) {
+void npk_pool_free(npk_pool* pool, void* ptr) {
     if (!pool || !ptr) {
         return;
     }
@@ -269,7 +269,7 @@ void aria_pool_free(aria_pool* pool, void* ptr) {
     pool->used_blocks--;
 }
 
-void aria_pool_reset(aria_pool* pool) {
+void npk_pool_reset(npk_pool* pool) {
     if (!pool) {
         return;
     }
@@ -277,7 +277,7 @@ void aria_pool_reset(aria_pool* pool) {
     // Rebuild free list by threading all chunks
     pool->head = NULL;
     
-    aria_pool_chunk* chunk = pool->chunks;
+    npk_pool_chunk* chunk = pool->chunks;
     while (chunk) {
         pool->head = thread_chunk(chunk, pool->block_size, (FreeNode*)pool->head);
         chunk = chunk->next;
@@ -293,8 +293,8 @@ void aria_pool_reset(aria_pool* pool) {
 // Query Functions
 // ============================================================================
 
-void aria_pool_get_stats(
-    const aria_pool* pool,
+void npk_pool_get_stats(
+    const npk_pool* pool,
     size_t* total_blocks,
     size_t* used_blocks,
     size_t* free_blocks,
@@ -321,7 +321,7 @@ void aria_pool_get_stats(
     }
 }
 
-size_t aria_pool_free_count(const aria_pool* pool) {
+size_t npk_pool_free_count(const npk_pool* pool) {
     if (!pool) {
         return 0;
     }
@@ -341,7 +341,7 @@ size_t aria_pool_free_count(const aria_pool* pool) {
 // Error Messages
 // ============================================================================
 
-const char* aria_pool_error_message(AriaPoolError error) {
+const char* npk_pool_error_message(AriaPoolError error) {
     switch (error) {
         case ARIA_POOL_OK:
             return "Success";

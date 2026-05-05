@@ -17,14 +17,14 @@ func:SEQ_CST = int32() { pass 4; };
 // Extern Declarations (from stdlib/atomic/int32.aria)
 // ============================================================================
 
-extern func:aria_atomic_int32_create = wild int8*(int32);
-extern func:aria_atomic_int32_destroy = void(wild int8*);
-extern func:aria_atomic_int32_store = void(wild int8*, int32, int32);
-extern func:aria_atomic_int32_load = int32(wild int8*, int32);
-extern func:aria_atomic_int32_exchange = int32(wild int8*, int32, int32);
-extern func:aria_atomic_int32_compare_exchange_strong = bool(wild int8*, wild int32*, int32, int32, int32);
-extern func:aria_atomic_int32_fetch_add = int32(wild int8*, int32, int32);
-extern func:aria_atomic_int32_fetch_sub = int32(wild int8*, int32, int32);
+extern func:npk_atomic_int32_create = wild int8*(int32);
+extern func:npk_atomic_int32_destroy = void(wild int8*);
+extern func:npk_atomic_int32_store = void(wild int8*, int32, int32);
+extern func:npk_atomic_int32_load = int32(wild int8*, int32);
+extern func:npk_atomic_int32_exchange = int32(wild int8*, int32, int32);
+extern func:npk_atomic_int32_compare_exchange_strong = bool(wild int8*, wild int32*, int32, int32, int32);
+extern func:npk_atomic_int32_fetch_add = int32(wild int8*, int32, int32);
+extern func:npk_atomic_int32_fetch_sub = int32(wild int8*, int32, int32);
 
 struct atomic_int32 {
     ptr: wild int8*;
@@ -32,27 +32,27 @@ struct atomic_int32 {
 
 pub func atomic_int32_new(int32:value) = atomic_int32 {
     atomic_int32:result;
-    result.ptr = aria_atomic_int32_create(value);
+    result.ptr = npk_atomic_int32_create(value);
     pass result;
 };
 
 pub func atomic_int32_destroy(atomic_int32:self) = void {
-    aria_atomic_int32_destroy(self.ptr);
+    npk_atomic_int32_destroy(self.ptr);
     pass;
 };
 
 pub func atomic_int32_store(atomic_int32:self, int32:value, int32:order) = void {
-    aria_atomic_int32_store(self.ptr, value, order);
+    npk_atomic_int32_store(self.ptr, value, order);
     pass;
 };
 
 pub func atomic_int32_load(atomic_int32:self, int32:order) = int32 {
-    int32:result = aria_atomic_int32_load(self.ptr, order);
+    int32:result = npk_atomic_int32_load(self.ptr, order);
     pass result;
 };
 
 pub func atomic_int32_exchange(atomic_int32:self, int32:value, int32:order) = int32 {
-    int32:result = aria_atomic_int32_exchange(self.ptr, value, order);
+    int32:result = npk_atomic_int32_exchange(self.ptr, value, order);
     pass result;
 };
 
@@ -63,19 +63,19 @@ pub func atomic_int32_compare_exchange_strong(
     int32:success_order,
     int32:failure_order
 ) = bool {
-    bool:result = aria_atomic_int32_compare_exchange_strong(
+    bool:result = npk_atomic_int32_compare_exchange_strong(
         self.ptr, expected, desired, success_order, failure_order
     );
     pass result;
 };
 
 pub func atomic_int32_fetch_add(atomic_int32:self, int32:value, int32:order) = int32 {
-    int32:result = aria_atomic_int32_fetch_add(self.ptr, value, order);
+    int32:result = npk_atomic_int32_fetch_add(self.ptr, value, order);
     pass result;
 };
 
 pub func atomic_int32_fetch_sub(atomic_int32:self, int32:value, int32:order) = int32 {
-    int32:result = aria_atomic_int32_fetch_sub(self.ptr, value, order);
+    int32:result = npk_atomic_int32_fetch_sub(self.ptr, value, order);
     pass result;
 };
 

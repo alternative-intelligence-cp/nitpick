@@ -7,7 +7,7 @@
 #include <regex>
 #include <sys/stat.h>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // Initialize the static hygiene counter (thread-safe unique ID generation)
@@ -1542,4 +1542,4 @@ std::string Preprocessor::applyHygienicRenaming(const std::string& macro_body, u
 }
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk

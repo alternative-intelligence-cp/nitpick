@@ -160,10 +160,12 @@ int32_t mr_is_relative(const char* path) {
 }
 
 // ─── Module resolution patterns ─────────────────────────────────────
-// Pattern 1: <base>/<logical>.aria
+// Pattern 1: <base>/<logical>.aria  (falls back to .npk if .aria not found on disk)
 const char* mr_try_pattern1(const char* base, const char* logical) {
-    std::string result = build_path(base ? base : "", std::string(logical ? logical : "") + ".aria");
-    return tls_ret(normalize(result));
+    std::string ariaResult = normalize(build_path(base ? base : "", std::string(logical ? logical : "") + ".aria"));
+    if (access(ariaResult.c_str(), F_OK) == 0) return tls_ret(ariaResult);
+    std::string npkResult = build_path(base ? base : "", std::string(logical ? logical : "") + ".npk");
+    return tls_ret(normalize(npkResult));
 }
 
 // Pattern 2: <base>/<logical>/mod.aria

@@ -96,7 +96,7 @@ static size_t next_power_of_2(size_t n) {
     return n + 1;
 }
 
-AriaRingBuffer* aria_ring_buffer_create(size_t capacity) {
+AriaRingBuffer* npk_ring_buffer_create(size_t capacity) {
     // Ensure power of 2 capacity
     capacity = next_power_of_2(capacity);
     if (capacity < 64) capacity = 64;  // Minimum 64 bytes
@@ -123,7 +123,7 @@ AriaRingBuffer* aria_ring_buffer_create(size_t capacity) {
     return rb;
 }
 
-void aria_ring_buffer_destroy(AriaRingBuffer* rb) {
+void npk_ring_buffer_destroy(AriaRingBuffer* rb) {
     if (!rb) return;
 #ifdef _WIN32
     _aligned_free(rb);
@@ -132,7 +132,7 @@ void aria_ring_buffer_destroy(AriaRingBuffer* rb) {
 #endif
 }
 
-size_t aria_ring_buffer_write(AriaRingBuffer* rb, const void* data, size_t len) {
+size_t npk_ring_buffer_write(AriaRingBuffer* rb, const void* data, size_t len) {
     if (!rb || !data || len == 0) return 0;
 
     size_t w = rb->write_idx.load(std::memory_order_relaxed);
@@ -164,7 +164,7 @@ size_t aria_ring_buffer_write(AriaRingBuffer* rb, const void* data, size_t len) 
     return to_write;
 }
 
-size_t aria_ring_buffer_read(AriaRingBuffer* rb, void* data, size_t len) {
+size_t npk_ring_buffer_read(AriaRingBuffer* rb, void* data, size_t len) {
     if (!rb || !data || len == 0) return 0;
 
     size_t r = rb->read_idx.load(std::memory_order_relaxed);
@@ -194,33 +194,33 @@ size_t aria_ring_buffer_read(AriaRingBuffer* rb, void* data, size_t len) {
     return to_read;
 }
 
-size_t aria_ring_buffer_write_available(AriaRingBuffer* rb) {
+size_t npk_ring_buffer_write_available(AriaRingBuffer* rb) {
     if (!rb) return 0;
     size_t w = rb->write_idx.load(std::memory_order_relaxed);
     size_t r = rb->read_idx.load(std::memory_order_acquire);
     return rb->capacity - (w - r);
 }
 
-size_t aria_ring_buffer_read_available(AriaRingBuffer* rb) {
+size_t npk_ring_buffer_read_available(AriaRingBuffer* rb) {
     if (!rb) return 0;
     size_t r = rb->read_idx.load(std::memory_order_relaxed);
     size_t w = rb->write_idx.load(std::memory_order_acquire);
     return w - r;
 }
 
-bool aria_ring_buffer_is_empty(AriaRingBuffer* rb) {
-    return aria_ring_buffer_read_available(rb) == 0;
+bool npk_ring_buffer_is_empty(AriaRingBuffer* rb) {
+    return npk_ring_buffer_read_available(rb) == 0;
 }
 
-bool aria_ring_buffer_is_full(AriaRingBuffer* rb) {
-    return aria_ring_buffer_write_available(rb) == 0;
+bool npk_ring_buffer_is_full(AriaRingBuffer* rb) {
+    return npk_ring_buffer_write_available(rb) == 0;
 }
 
 // ============================================================================
 // Platform Detection
 // ============================================================================
 
-bool aria_splice_available(void) {
+bool npk_splice_available(void) {
 #ifdef __linux__
     return true;
 #else
@@ -228,7 +228,7 @@ bool aria_splice_available(void) {
 #endif
 }
 
-bool aria_copy_file_range_available(void) {
+bool npk_copy_file_range_available(void) {
 #ifdef __linux__
     // Check kernel version at runtime (Linux 4.5+)
     // For now, assume it's available on modern systems
@@ -238,7 +238,7 @@ bool aria_copy_file_range_available(void) {
 #endif
 }
 
-size_t aria_max_pipe_size(void) {
+size_t npk_max_pipe_size(void) {
 #ifdef __linux__
     // Try to read from /proc/sys/fs/pipe-max-size
     FILE* f = fopen("/proc/sys/fs/pipe-max-size", "r");
@@ -260,7 +260,7 @@ size_t aria_max_pipe_size(void) {
 // Pipe Utilities
 // ============================================================================
 
-int aria_create_splice_pipe(int pipe_fds[2], size_t size) {
+int npk_create_splice_pipe(int pipe_fds[2], size_t size) {
     if (!pipe_fds) return ARIA_SPLICE_ERR_INVALID_FD;
 
 #ifdef __linux__
@@ -271,7 +271,7 @@ int aria_create_splice_pipe(int pipe_fds[2], size_t size) {
 
     // Try to resize the pipe if requested
     if (size > 0) {
-        aria_resize_pipe(pipe_fds[0], size);
+        npk_resize_pipe(pipe_fds[0], size);
     }
 
     return ARIA_SPLICE_OK;
@@ -293,7 +293,7 @@ int aria_create_splice_pipe(int pipe_fds[2], size_t size) {
 #endif
 }
 
-int64_t aria_resize_pipe(int fd, size_t size) {
+int64_t npk_resize_pipe(int fd, size_t size) {
 #ifdef __linux__
     // F_SETPIPE_SZ to resize pipe buffer
     int result = fcntl(fd, F_SETPIPE_SZ, (int)size);
@@ -428,7 +428,7 @@ static void pump_reader_thread(AriaActivePump* pump) {
             size_t written = 0;
             while (written < (size_t)n &&
                    !pump->cancel_requested.load(std::memory_order_acquire)) {
-                size_t w = aria_ring_buffer_write(pump->buffer,
+                size_t w = npk_ring_buffer_write(pump->buffer,
                                                    temp + written, n - written);
                 if (w == 0) {
                     // Buffer full, spin briefly
@@ -451,7 +451,7 @@ static void pump_reader_thread(AriaActivePump* pump) {
     }
 
     // Signal EOF to writer by waiting for buffer to drain
-    while (!aria_ring_buffer_is_empty(pump->buffer) &&
+    while (!npk_ring_buffer_is_empty(pump->buffer) &&
            !pump->cancel_requested.load(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
@@ -461,9 +461,9 @@ static void pump_writer_thread(AriaActivePump* pump) {
     uint8_t temp[8192];
 
     while (!pump->cancel_requested.load(std::memory_order_acquire) ||
-           !aria_ring_buffer_is_empty(pump->buffer)) {
+           !npk_ring_buffer_is_empty(pump->buffer)) {
 
-        size_t n = aria_ring_buffer_read(pump->buffer, temp, sizeof(temp));
+        size_t n = npk_ring_buffer_read(pump->buffer, temp, sizeof(temp));
 
         if (n > 0) {
             size_t written = 0;
@@ -497,13 +497,13 @@ static void pump_writer_thread(AriaActivePump* pump) {
     }
 }
 
-AriaActivePump* aria_active_pump_create(int fd_in, int fd_out, size_t buffer_size) {
+AriaActivePump* npk_active_pump_create(int fd_in, int fd_out, size_t buffer_size) {
     AriaActivePump* pump = new(std::nothrow) AriaActivePump();
     if (!pump) return nullptr;
 
     if (buffer_size == 0) buffer_size = 64 * 1024;  // Default 64KB
 
-    pump->buffer = aria_ring_buffer_create(buffer_size);
+    pump->buffer = npk_ring_buffer_create(buffer_size);
     if (!pump->buffer) {
         delete pump;
         return nullptr;
@@ -522,22 +522,22 @@ AriaActivePump* aria_active_pump_create(int fd_in, int fd_out, size_t buffer_siz
     return pump;
 }
 
-AriaPumpStatus aria_active_pump_status(AriaActivePump* pump) {
+AriaPumpStatus npk_active_pump_status(AriaActivePump* pump) {
     if (!pump) return ARIA_PUMP_ERROR;
     return pump->status.load(std::memory_order_acquire);
 }
 
-int64_t aria_active_pump_bytes_transferred(AriaActivePump* pump) {
+int64_t npk_active_pump_bytes_transferred(AriaActivePump* pump) {
     if (!pump) return 0;
     return pump->bytes_transferred.load(std::memory_order_acquire);
 }
 
-void aria_active_pump_cancel(AriaActivePump* pump) {
+void npk_active_pump_cancel(AriaActivePump* pump) {
     if (!pump) return;
     pump->cancel_requested.store(true, std::memory_order_release);
 }
 
-AriaPumpStatus aria_active_pump_wait(AriaActivePump* pump, uint32_t timeout_ms) {
+AriaPumpStatus npk_active_pump_wait(AriaActivePump* pump, uint32_t timeout_ms) {
     if (!pump) return ARIA_PUMP_ERROR;
 
     if (timeout_ms == 0) {
@@ -560,7 +560,7 @@ AriaPumpStatus aria_active_pump_wait(AriaActivePump* pump, uint32_t timeout_ms) 
     return pump->status.load(std::memory_order_acquire);
 }
 
-void aria_active_pump_destroy(AriaActivePump* pump) {
+void npk_active_pump_destroy(AriaActivePump* pump) {
     if (!pump) return;
 
     // Cancel if still running
@@ -570,7 +570,7 @@ void aria_active_pump_destroy(AriaActivePump* pump) {
     if (pump->reader_thread.joinable()) pump->reader_thread.join();
     if (pump->writer_thread.joinable()) pump->writer_thread.join();
 
-    aria_ring_buffer_destroy(pump->buffer);
+    npk_ring_buffer_destroy(pump->buffer);
     delete pump;
 }
 
@@ -578,12 +578,12 @@ void aria_active_pump_destroy(AriaActivePump* pump) {
 // Main Transfer API
 // ============================================================================
 
-AriaTransferResult aria_io_transfer(int fd_in, int fd_out, int64_t len,
+AriaTransferResult npk_io_transfer(int fd_in, int fd_out, int64_t len,
                                      const AriaTransferOptions* opts) {
     AriaTransferResult result = {0, ARIA_SPLICE_OK, false};
 
     // TBB safety check
-    if (aria_is_tbb_err(len)) {
+    if (npk_is_tbb_err(len)) {
         result.error_code = ARIA_SPLICE_ERR_TBB_OVERFLOW;
         return result;
     }
@@ -614,15 +614,15 @@ AriaTransferResult aria_io_transfer(int fd_in, int fd_out, int64_t len,
 
     // Fallback: Use Active Pump for a single transfer
     // This is less efficient but works everywhere
-    AriaActivePump* pump = aria_active_pump_create(fd_in, fd_out, 64 * 1024);
+    AriaActivePump* pump = npk_active_pump_create(fd_in, fd_out, 64 * 1024);
     if (!pump) {
         result.error_code = ARIA_SPLICE_ERR_MEMORY;
         return result;
     }
 
     // Wait for completion
-    AriaPumpStatus status = aria_active_pump_wait(pump, 0);
-    result.bytes_transferred = aria_active_pump_bytes_transferred(pump);
+    AriaPumpStatus status = npk_active_pump_wait(pump, 0);
+    result.bytes_transferred = npk_active_pump_bytes_transferred(pump);
 
     if (status == ARIA_PUMP_COMPLETED) {
         result.eof_reached = true;
@@ -632,12 +632,12 @@ AriaTransferResult aria_io_transfer(int fd_in, int fd_out, int64_t len,
         result.error_code = ARIA_SPLICE_ERR_UNKNOWN;
     }
 
-    aria_active_pump_destroy(pump);
+    npk_active_pump_destroy(pump);
     return result;
 }
 
-int64_t aria_io_splice(int fd_in, int fd_out, int64_t len) {
-    AriaTransferResult result = aria_io_transfer(fd_in, fd_out, len, nullptr);
+int64_t npk_io_splice(int fd_in, int fd_out, int64_t len) {
+    AriaTransferResult result = npk_io_transfer(fd_in, fd_out, len, nullptr);
 
     if (result.error_code != ARIA_SPLICE_OK &&
         result.error_code != ARIA_SPLICE_ERR_EOF) {

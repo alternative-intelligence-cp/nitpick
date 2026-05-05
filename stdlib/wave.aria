@@ -59,12 +59,12 @@
  * Addressable States: 9^9 = 387,420,489 unique wave configurations
  */
 // FFI: nyte packing intrinsics (from backend/runtime/ternary_ops.h)
-extern func:aria_pack_nyte   = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
-extern func:aria_nyte_get_nit = nit(nyte:packed, int32:index);
+extern func:npk_pack_nyte   = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
+extern func:npk_nyte_get_nit = nit(nyte:packed, int32:index);
 // Per-component lerp: returns a single nit to avoid 9-byte struct return ABI
 // mismatch between LLVM-20 (sret) and clang-18 (register return).
-extern func:aria_lerp_component = nit(int32:a, int32:b, int32:t);
-extern func:aria_wave_lerp_dims = Wave9(
+extern func:npk_lerp_component = nit(int32:a, int32:b, int32:t);
+extern func:npk_wave_lerp_dims = Wave9(
     int32:ar,  int32:as_,  int32:at_,
     int32:au,  int32:av,   int32:aw,
     int32:ax,  int32:ay,   int32:az,
@@ -285,7 +285,7 @@ pub func:wave_equals = bool(Wave9:a, Wave9:b) {
 pub func:nyte_from_wave = nyte(Wave9:w) {
     // Priority encoding: x, y, z (spatial) > u (quantum) > r (state)
     // Dimensions s, t, v, w are discarded in this 5D projection.
-    pass aria_pack_nyte(w.x, w.y, w.z, w.u, w.r);
+    pass npk_pack_nyte(w.x, w.y, w.z, w.u, w.r);
 };
 
 /**
@@ -321,11 +321,11 @@ pub func:nyte_from_wave = nyte(Wave9:w) {
 pub func:wave_from_nyte = Wave9(nyte:encoded) {
     // Unpack the 5 nits and map back to their respective dimensions.
     // Discarded dimensions (s, t, v, w) are reconstructed as 0.
-    nit:n0 = aria_nyte_get_nit(encoded, 0);  // x (spatial X)
-    nit:n1 = aria_nyte_get_nit(encoded, 1);  // y (spatial Y)
-    nit:n2 = aria_nyte_get_nit(encoded, 2);  // z (spatial Z)
-    nit:n3 = aria_nyte_get_nit(encoded, 3);  // u (quantum U)
-    nit:n4 = aria_nyte_get_nit(encoded, 4);  // r (state R)
+    nit:n0 = npk_nyte_get_nit(encoded, 0);  // x (spatial X)
+    nit:n1 = npk_nyte_get_nit(encoded, 1);  // y (spatial Y)
+    nit:n2 = npk_nyte_get_nit(encoded, 2);  // z (spatial Z)
+    nit:n3 = npk_nyte_get_nit(encoded, 3);  // u (quantum U)
+    nit:n4 = npk_nyte_get_nit(encoded, 4);  // r (state R)
     nit:zero = 0;
     pass Wave9 {
         r: n4, s: zero, t: zero,
@@ -488,15 +488,15 @@ pub func:wave_distance_squared = int32(Wave9:a, Wave9:b) {
 pub func:wave_lerp = Wave9(Wave9:a, Wave9:b, int32:t) {
     // Use per-component lerp to avoid 9-byte struct return ABI mismatch
     // between LLVM-20 (uses sret hidden pointer) and clang-18 (uses rax+rdx).
-    nit:lr = aria_lerp_component(@cast<int32>(a.r), @cast<int32>(b.r), t);
-    nit:ls = aria_lerp_component(@cast<int32>(a.s), @cast<int32>(b.s), t);
-    nit:lt = aria_lerp_component(@cast<int32>(a.t), @cast<int32>(b.t), t);
-    nit:lu = aria_lerp_component(@cast<int32>(a.u), @cast<int32>(b.u), t);
-    nit:lv = aria_lerp_component(@cast<int32>(a.v), @cast<int32>(b.v), t);
-    nit:lw = aria_lerp_component(@cast<int32>(a.w), @cast<int32>(b.w), t);
-    nit:lx = aria_lerp_component(@cast<int32>(a.x), @cast<int32>(b.x), t);
-    nit:ly = aria_lerp_component(@cast<int32>(a.y), @cast<int32>(b.y), t);
-    nit:lz = aria_lerp_component(@cast<int32>(a.z), @cast<int32>(b.z), t);
+    nit:lr = npk_lerp_component(@cast<int32>(a.r), @cast<int32>(b.r), t);
+    nit:ls = npk_lerp_component(@cast<int32>(a.s), @cast<int32>(b.s), t);
+    nit:lt = npk_lerp_component(@cast<int32>(a.t), @cast<int32>(b.t), t);
+    nit:lu = npk_lerp_component(@cast<int32>(a.u), @cast<int32>(b.u), t);
+    nit:lv = npk_lerp_component(@cast<int32>(a.v), @cast<int32>(b.v), t);
+    nit:lw = npk_lerp_component(@cast<int32>(a.w), @cast<int32>(b.w), t);
+    nit:lx = npk_lerp_component(@cast<int32>(a.x), @cast<int32>(b.x), t);
+    nit:ly = npk_lerp_component(@cast<int32>(a.y), @cast<int32>(b.y), t);
+    nit:lz = npk_lerp_component(@cast<int32>(a.z), @cast<int32>(b.z), t);
     pass Wave9 { r: lr, s: ls, t: lt, u: lu, v: lv, w: lw, x: lx, y: ly, z: lz };
 };
 
@@ -507,11 +507,11 @@ pub func:wave_lerp = Wave9(Wave9:a, Wave9:b, int32:t) {
  * @return Human-readable string
  */
 pub func:nyte_toString = string(nyte:encoded) {
-    nit:n0 = aria_nyte_get_nit(encoded, 0);
-    nit:n1 = aria_nyte_get_nit(encoded, 1);
-    nit:n2 = aria_nyte_get_nit(encoded, 2);
-    nit:n3 = aria_nyte_get_nit(encoded, 3);
-    nit:n4 = aria_nyte_get_nit(encoded, 4);
+    nit:n0 = npk_nyte_get_nit(encoded, 0);
+    nit:n1 = npk_nyte_get_nit(encoded, 1);
+    nit:n2 = npk_nyte_get_nit(encoded, 2);
+    nit:n3 = npk_nyte_get_nit(encoded, 3);
+    nit:n4 = npk_nyte_get_nit(encoded, 4);
     string:result = "N5(";
     result = string_concat(result, string_from_int(@cast<int32>(n0)));
     result = string_concat(result, ",");

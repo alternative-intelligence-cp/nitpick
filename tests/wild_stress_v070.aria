@@ -6,10 +6,10 @@
 // Guard:   ariac tests/wild_stress_v070.aria --wild-stats --guard-pages -o /tmp/test_wild_stress
 
 extern func:puts = int32(string:s);
-extern func:aria_alloc = wild ?*(int64:size);
-extern func:aria_free = void(wild ?*:ptr);
-extern func:aria_realloc = wild ?*(wild ?*:ptr, int64:new_size);
-extern func:aria_alloc_get_size = int64(wild ?*:ptr);
+extern func:npk_alloc = wild ?*(int64:size);
+extern func:npk_free = void(wild ?*:ptr);
+extern func:npk_realloc = wild ?*(wild ?*:ptr, int64:new_size);
+extern func:npk_alloc_get_size = int64(wild ?*:ptr);
 
 func:failsafe = int32(tbb32:err) {
     drop puts("FAILSAFE: wild stress test crashed");
@@ -20,22 +20,22 @@ func:failsafe = int32(tbb32:err) {
 // Test 1: Rapid alloc/free cycles — no leaks expected
 // ============================================================================
 func:test_rapid_alloc_free = NIL() {
-    wild ?->:a = aria_alloc(64i64);
-    aria_free(a);
-    wild ?->:b = aria_alloc(128i64);
-    aria_free(b);
-    wild ?->:c = aria_alloc(256i64);
-    aria_free(c);
-    wild ?->:d = aria_alloc(512i64);
-    aria_free(d);
-    wild ?->:e = aria_alloc(1024i64);
-    aria_free(e);
-    wild ?->:f = aria_alloc(4096i64);
-    aria_free(f);
-    wild ?->:g = aria_alloc(8192i64);
-    aria_free(g);
-    wild ?->:h = aria_alloc(16384i64);
-    aria_free(h);
+    wild ?->:a = npk_alloc(64i64);
+    npk_free(a);
+    wild ?->:b = npk_alloc(128i64);
+    npk_free(b);
+    wild ?->:c = npk_alloc(256i64);
+    npk_free(c);
+    wild ?->:d = npk_alloc(512i64);
+    npk_free(d);
+    wild ?->:e = npk_alloc(1024i64);
+    npk_free(e);
+    wild ?->:f = npk_alloc(4096i64);
+    npk_free(f);
+    wild ?->:g = npk_alloc(8192i64);
+    npk_free(g);
+    wild ?->:h = npk_alloc(16384i64);
+    npk_free(h);
     drop puts("  [PASS] rapid alloc/free cycles");
 };
 
@@ -43,16 +43,16 @@ func:test_rapid_alloc_free = NIL() {
 // Test 2: Multiple concurrent allocations — all freed
 // ============================================================================
 func:test_concurrent_allocs = NIL() {
-    wild ?->:a = aria_alloc(100i64);
-    wild ?->:b = aria_alloc(200i64);
-    wild ?->:c = aria_alloc(300i64);
-    wild ?->:d = aria_alloc(400i64);
-    wild ?->:e = aria_alloc(500i64);
-    aria_free(e);
-    aria_free(d);
-    aria_free(c);
-    aria_free(b);
-    aria_free(a);
+    wild ?->:a = npk_alloc(100i64);
+    wild ?->:b = npk_alloc(200i64);
+    wild ?->:c = npk_alloc(300i64);
+    wild ?->:d = npk_alloc(400i64);
+    wild ?->:e = npk_alloc(500i64);
+    npk_free(e);
+    npk_free(d);
+    npk_free(c);
+    npk_free(b);
+    npk_free(a);
     drop puts("  [PASS] concurrent allocs with reverse free");
 };
 
@@ -60,14 +60,14 @@ func:test_concurrent_allocs = NIL() {
 // Test 3: Interleaved alloc/free
 // ============================================================================
 func:test_interleaved = NIL() {
-    wild ?->:a = aria_alloc(64i64);
-    wild ?->:b = aria_alloc(128i64);
-    aria_free(a);
-    wild ?->:c = aria_alloc(256i64);
-    aria_free(b);
-    wild ?->:d = aria_alloc(512i64);
-    aria_free(c);
-    aria_free(d);
+    wild ?->:a = npk_alloc(64i64);
+    wild ?->:b = npk_alloc(128i64);
+    npk_free(a);
+    wild ?->:c = npk_alloc(256i64);
+    npk_free(b);
+    wild ?->:d = npk_alloc(512i64);
+    npk_free(c);
+    npk_free(d);
     drop puts("  [PASS] interleaved alloc/free");
 };
 
@@ -75,12 +75,12 @@ func:test_interleaved = NIL() {
 // Test 4: Realloc — grow
 // ============================================================================
 func:test_realloc_grow = NIL() {
-    wild ?->:buf = aria_alloc(32i64);
-    wild ?->:buf2 = aria_realloc(buf, 64i64);
-    wild ?->:buf3 = aria_realloc(buf2, 128i64);
-    wild ?->:buf4 = aria_realloc(buf3, 256i64);
-    wild ?->:buf5 = aria_realloc(buf4, 512i64);
-    aria_free(buf5);
+    wild ?->:buf = npk_alloc(32i64);
+    wild ?->:buf2 = npk_realloc(buf, 64i64);
+    wild ?->:buf3 = npk_realloc(buf2, 128i64);
+    wild ?->:buf4 = npk_realloc(buf3, 256i64);
+    wild ?->:buf5 = npk_realloc(buf4, 512i64);
+    npk_free(buf5);
     drop puts("  [PASS] realloc grow chain");
 };
 
@@ -88,11 +88,11 @@ func:test_realloc_grow = NIL() {
 // Test 5: Realloc — shrink
 // ============================================================================
 func:test_realloc_shrink = NIL() {
-    wild ?->:buf = aria_alloc(4096i64);
-    wild ?->:buf2 = aria_realloc(buf, 2048i64);
-    wild ?->:buf3 = aria_realloc(buf2, 1024i64);
-    wild ?->:buf4 = aria_realloc(buf3, 512i64);
-    aria_free(buf4);
+    wild ?->:buf = npk_alloc(4096i64);
+    wild ?->:buf2 = npk_realloc(buf, 2048i64);
+    wild ?->:buf3 = npk_realloc(buf2, 1024i64);
+    wild ?->:buf4 = npk_realloc(buf3, 512i64);
+    npk_free(buf4);
     drop puts("  [PASS] realloc shrink chain");
 };
 
@@ -100,8 +100,8 @@ func:test_realloc_shrink = NIL() {
 // Test 6: Large allocation
 // ============================================================================
 func:test_large_alloc = NIL() {
-    wild ?->:big = aria_alloc(1048576i64);
-    aria_free(big);
+    wild ?->:big = npk_alloc(1048576i64);
+    npk_free(big);
     drop puts("  [PASS] large allocation (1MB)");
 };
 
@@ -109,27 +109,27 @@ func:test_large_alloc = NIL() {
 // Test 7: Small allocation
 // ============================================================================
 func:test_small_alloc = NIL() {
-    wild ?->:tiny = aria_alloc(1i64);
-    aria_free(tiny);
+    wild ?->:tiny = npk_alloc(1i64);
+    npk_free(tiny);
     drop puts("  [PASS] small allocation (1 byte)");
 };
 
 // ============================================================================
-// Test 8: Size tracking via aria_alloc_get_size (consumes pointer — leak expected)
+// Test 8: Size tracking via npk_alloc_get_size (consumes pointer — leak expected)
 // ============================================================================
 func:test_get_size = NIL() {
-    wild ?->:buf = aria_alloc(256i64);
-    int64:sz = aria_alloc_get_size(buf);
-    drop puts("  [PASS] aria_alloc_get_size returned size (1 leak expected)");
+    wild ?->:buf = npk_alloc(256i64);
+    int64:sz = npk_alloc_get_size(buf);
+    drop puts("  [PASS] npk_alloc_get_size returned size (1 leak expected)");
 };
 
 // ============================================================================
 // Test 9: Alloc, realloc, get_size (consumes — leak expected)
 // ============================================================================
 func:test_realloc_then_get_size = NIL() {
-    wild ?->:buf = aria_alloc(64i64);
-    wild ?->:buf2 = aria_realloc(buf, 512i64);
-    int64:sz = aria_alloc_get_size(buf2);
+    wild ?->:buf = npk_alloc(64i64);
+    wild ?->:buf2 = npk_realloc(buf, 512i64);
+    int64:sz = npk_alloc_get_size(buf2);
     drop puts("  [PASS] realloc + get_size (1 leak expected)");
 };
 

@@ -6,7 +6,7 @@
 #include <cstring>
 #include <chrono>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Global instance
@@ -150,8 +150,8 @@ void GCCoroAllocator::scan_frames(std::function<void(void*)> mark_fn) {
 
 void GCCoroAllocator::init_gc() {
     // Initialize GC subsystem if not already running
-    // (aria_gc_init is idempotent)
-    aria_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
+    // (npk_gc_init is idempotent)
+    npk_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
     
     // Store a self-pointer as the gc_handle so we can identify
     // this allocator instance from C callbacks if needed
@@ -163,7 +163,7 @@ void GCCoroAllocator::shutdown_gc() {
     for (auto& pair : frame_metadata) {
         CoroFrameMetadata* metadata = pair.second;
         for (void** root : metadata->gc_roots) {
-            aria_gc_unregister_jit_root(root);
+            npk_gc_unregister_jit_root(root);
         }
     }
     
@@ -171,7 +171,7 @@ void GCCoroAllocator::shutdown_gc() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 // ============================================================================
 // C API
@@ -180,27 +180,27 @@ void GCCoroAllocator::shutdown_gc() {
 extern "C" {
 
 void* __aria_coro_alloc_gc(size_t size, uint64_t task_id) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     return allocator->allocate_frame(size, task_id);
 }
 
 void __aria_coro_free_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->free_frame(frame);
 }
 
 void __aria_coro_suspend_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->suspend_frame(frame);
 }
 
 void __aria_coro_resume_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->resume_frame(frame);
 }
 
 void __aria_coro_add_root_gc(void* frame, void** root) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->add_gc_root(frame, root);
 }
 

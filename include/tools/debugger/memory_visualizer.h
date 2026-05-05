@@ -24,7 +24,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 /**
@@ -283,6 +283,6 @@ private:
 };
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DEBUGGER_MEMORY_VISUALIZER_H

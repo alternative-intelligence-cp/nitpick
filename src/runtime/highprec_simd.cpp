@@ -51,7 +51,7 @@
     #endif
 #endif
 
-namespace aria {
+namespace npk {
 namespace runtime {
 namespace simd {
 
@@ -1154,4 +1154,4 @@ bool flt512_ge(const flt512& a, const flt512& b) {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

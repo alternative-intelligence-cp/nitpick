@@ -165,7 +165,7 @@ static void* random_mmap_hint() {
 // WildX Allocator
 // =============================================================================
 
-WildXGuard aria_alloc_exec(size_t size) {
+WildXGuard npk_alloc_exec(size_t size) {
     WildXGuard empty = {nullptr, 0, 0, WILDX_STATE_UNINITIALIZED, false, 0};
     if (size == 0) {
         return empty;
@@ -267,7 +267,7 @@ WildXGuard aria_alloc_exec(size_t size) {
     return guard;
 }
 
-int aria_mem_protect_exec(WildXGuard* guard) {
+int npk_mem_protect_exec(WildXGuard* guard) {
     if (!guard || !guard->ptr) {
         return -1;  // Invalid guard
     }
@@ -307,7 +307,7 @@ int aria_mem_protect_exec(WildXGuard* guard) {
     return 0;  // Success
 }
 
-void aria_free_exec(WildXGuard* guard) {
+void npk_free_exec(WildXGuard* guard) {
     if (!guard || !guard->ptr) {
         return;  // NULL guard is no-op
     }
@@ -342,7 +342,7 @@ void aria_free_exec(WildXGuard* guard) {
     guard->code_hash = 0;
 }
 
-void* aria_exec_jit(WildXGuard* guard, void* args) {
+void* npk_exec_jit(WildXGuard* guard, void* args) {
     if (!guard || !guard->ptr) {
         return nullptr;  // Invalid guard
     }
@@ -377,24 +377,24 @@ void* aria_exec_jit(WildXGuard* guard, void* args) {
 // v0.7.1: Configuration API
 // =============================================================================
 
-void aria_wildx_enable_guard_pages(bool enable) {
+void npk_wildx_enable_guard_pages(bool enable) {
     g_wildx_guard_pages_enabled.store(enable, std::memory_order_relaxed);
 }
 
-void aria_wildx_enable_audit(bool enable) {
+void npk_wildx_enable_audit(bool enable) {
     g_wildx_audit_enabled.store(enable, std::memory_order_relaxed);
 }
 
-void aria_wildx_set_quota(size_t bytes) {
+void npk_wildx_set_quota(size_t bytes) {
     g_wildx_quota.store(bytes, std::memory_order_relaxed);
 }
 
-uint64_t aria_wildx_verify_hash(WildXGuard* guard) {
+uint64_t npk_wildx_verify_hash(WildXGuard* guard) {
     if (!guard || !guard->ptr || guard->state == WILDX_STATE_FREED) {
         return 0;
     }
     return fnv1a_hash(guard->ptr, guard->size);
 }
 
-// Note: aria_allocator_get_stats() is implemented in wild_alloc.cpp
+// Note: npk_allocator_get_stats() is implemented in wild_alloc.cpp
 // This file only provides the WildX statistics via global atomics

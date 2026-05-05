@@ -44,7 +44,7 @@ extern "C" {
  *   }
  *   GenArena<Neuron>:arena = arena_res.unwrap();
  */
-int64_t aria_gen_arena_create_builtin(int64_t elem_size, int64_t initial_capacity);
+int64_t npk_gen_arena_create_builtin(int64_t elem_size, int64_t initial_capacity);
 
 /**
  * Destroy generational arena
@@ -57,7 +57,7 @@ int64_t aria_gen_arena_create_builtin(int64_t elem_size, int64_t initial_capacit
  * Example:
  *   gen_arena_destroy(arena);
  */
-void aria_gen_arena_destroy_builtin(int64_t arena_ptr);
+void npk_gen_arena_destroy_builtin(int64_t arena_ptr);
 
 /**
  * Clear arena (free all slots, retain capacity)
@@ -70,7 +70,7 @@ void aria_gen_arena_destroy_builtin(int64_t arena_ptr);
  * Example:
  *   gen_arena_clear(arena);  // All handles become invalid
  */
-void aria_gen_arena_clear_builtin(int64_t arena_ptr);
+void npk_gen_arena_clear_builtin(int64_t arena_ptr);
 
 // ============================================================================
 // Arena Allocation Builtins
@@ -96,7 +96,7 @@ void aria_gen_arena_clear_builtin(int64_t arena_ptr);
  *   3. Check error code
  *   4. Return Result<Handle<T>>
  */
-int32_t aria_gen_arena_alloc_handle(int64_t arena_ptr, void* elem_ptr, void* handle_out);
+int32_t npk_gen_arena_alloc_handle(int64_t arena_ptr, void* elem_ptr, void* handle_out);
 
 // ============================================================================
 // Arena Get Builtins
@@ -124,7 +124,7 @@ int32_t aria_gen_arena_alloc_handle(int64_t arena_ptr, void* elem_ptr, void* han
  *   4. Check error code
  *   5. Return Result<T*>
  */
-int64_t aria_gen_arena_get_ptr(int64_t arena_ptr, int64_t index, uint32_t generation, int32_t* err_code_out);
+int64_t npk_gen_arena_get_ptr(int64_t arena_ptr, int64_t index, uint32_t generation, int32_t* err_code_out);
 
 // ============================================================================
 // Arena Free Builtins
@@ -147,7 +147,7 @@ int64_t aria_gen_arena_get_ptr(int64_t arena_ptr, int64_t index, uint32_t genera
  *   3. Check error code
  *   4. Return Result<void>
  */
-int32_t aria_gen_arena_free_handle(int64_t arena_ptr, int64_t index, uint32_t generation);
+int32_t npk_gen_arena_free_handle(int64_t arena_ptr, int64_t index, uint32_t generation);
 
 // ============================================================================
 // Arena Query Builtins
@@ -159,7 +159,7 @@ int32_t aria_gen_arena_free_handle(int64_t arena_ptr, int64_t index, uint32_t ge
  * Aria signature:
  *   func:gen_arena_count<T> = int64(GenArena<T>:arena)
  */
-int64_t aria_gen_arena_count_builtin(int64_t arena_ptr);
+int64_t npk_gen_arena_count_builtin(int64_t arena_ptr);
 
 /**
  * Get arena capacity (total slots)
@@ -167,7 +167,7 @@ int64_t aria_gen_arena_count_builtin(int64_t arena_ptr);
  * Aria signature:
  *   func:gen_arena_capacity<T> = int64(GenArena<T>:arena)
  */
-int64_t aria_gen_arena_capacity_builtin(int64_t arena_ptr);
+int64_t npk_gen_arena_capacity_builtin(int64_t arena_ptr);
 
 /**
  * Get arena statistics
@@ -178,7 +178,7 @@ int64_t aria_gen_arena_capacity_builtin(int64_t arena_ptr);
  * @param arena_ptr Arena pointer
  * @param stats_out Output parameter: stats struct written here
  */
-void aria_gen_arena_stats_builtin(int64_t arena_ptr, AriaGenArenaStats* stats_out);
+void npk_gen_arena_stats_builtin(int64_t arena_ptr, AriaGenArenaStats* stats_out);
 
 #ifdef __cplusplus
 }

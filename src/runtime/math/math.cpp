@@ -24,15 +24,15 @@ const double ARIA_MATH_NAN = std::numeric_limits<double>::quiet_NaN();
 // Advanced Math Functions (double versions for min/max)
 // ═══════════════════════════════════════════════════════════════════════
 
-double aria_math_abs(double x) {
+double npk_math_abs(double x) {
     return std::fabs(x);
 }
 
-double aria_math_min(double a, double b) {
+double npk_math_min(double a, double b) {
     return std::fmin(a, b);
 }
 
-double aria_math_max(double a, double b) {
+double npk_math_max(double a, double b) {
     return std::fmax(a, b);
 }
 
@@ -40,19 +40,19 @@ double aria_math_max(double a, double b) {
 // Exponential and Logarithmic Functions
 // ═══════════════════════════════════════════════════════════════════════
 
-double aria_math_exp(double x) {
+double npk_math_exp(double x) {
     return std::exp(x);
 }
 
-double aria_math_log(double x) {
+double npk_math_log(double x) {
     return std::log(x);
 }
 
-double aria_math_log10(double x) {
+double npk_math_log10(double x) {
     return std::log10(x);
 }
 
-double aria_math_log2(double x) {
+double npk_math_log2(double x) {
     return std::log2(x);
 }
 
@@ -60,31 +60,31 @@ double aria_math_log2(double x) {
 // Trigonometric Functions
 // ═══════════════════════════════════════════════════════════════════════
 
-double aria_math_sin(double x) {
+double npk_math_sin(double x) {
     return std::sin(x);
 }
 
-double aria_math_cos(double x) {
+double npk_math_cos(double x) {
     return std::cos(x);
 }
 
-double aria_math_tan(double x) {
+double npk_math_tan(double x) {
     return std::tan(x);
 }
 
-double aria_math_asin(double x) {
+double npk_math_asin(double x) {
     return std::asin(x);
 }
 
-double aria_math_acos(double x) {
+double npk_math_acos(double x) {
     return std::acos(x);
 }
 
-double aria_math_atan(double x) {
+double npk_math_atan(double x) {
     return std::atan(x);
 }
 
-double aria_math_atan2(double y, double x) {
+double npk_math_atan2(double y, double x) {
     return std::atan2(y, x);
 }
 
@@ -92,19 +92,19 @@ double aria_math_atan2(double y, double x) {
 // Rounding and Truncation Functions
 // ═══════════════════════════════════════════════════════════════════════
 
-double aria_math_floor(double x) {
+double npk_math_floor(double x) {
     return std::floor(x);
 }
 
-double aria_math_ceil(double x) {
+double npk_math_ceil(double x) {
     return std::ceil(x);
 }
 
-double aria_math_round(double x) {
+double npk_math_round(double x) {
     return std::round(x);
 }
 
-double aria_math_trunc(double x) {
+double npk_math_trunc(double x) {
     return std::trunc(x);
 }
 
@@ -112,15 +112,15 @@ double aria_math_trunc(double x) {
 // Utility Functions
 // ═══════════════════════════════════════════════════════════════════════
 
-bool aria_math_is_nan(double x) {
+bool npk_math_is_nan(double x) {
     return std::isnan(x);
 }
 
-bool aria_math_is_inf(double x) {
+bool npk_math_is_inf(double x) {
     return std::isinf(x);
 }
 
-bool aria_math_is_finite(double x) {
+bool npk_math_is_finite(double x) {
     return std::isfinite(x);
 }
 
@@ -130,11 +130,11 @@ bool aria_math_is_finite(double x) {
 
 extern "C" {
 
-double aria_math_fmod(double x, double y) {
+double npk_math_fmod(double x, double y) {
     return std::fmod(x, y);
 }
 
-int64_t aria_math_to_int(double x) {
+int64_t npk_math_to_int(double x) {
     return (int64_t)x;
 }
 

@@ -6,10 +6,10 @@
 use "mutex.aria".*;
 
 extern func:puts = int32(string:s);
-extern func:aria_libc_mutex_create = int64(int32:mutex_type);
-extern func:aria_libc_mutex_lock = int32(int64:handle);
-extern func:aria_libc_mutex_unlock = int32(int64:handle);
-extern func:aria_libc_mutex_destroy = int32(int64:handle);
+extern func:npk_libc_mutex_create = int64(int32:mutex_type);
+extern func:npk_libc_mutex_lock = int32(int64:handle);
+extern func:npk_libc_mutex_unlock = int32(int64:handle);
+extern func:npk_libc_mutex_destroy = int32(int64:handle);
 
 int64:mtx_a = 0i64;
 int64:mtx_b = 0i64;
@@ -19,17 +19,17 @@ int64:mtx_b = 0i64;
 // Should detect deadlock potential
 // ============================================================
 func:lock_ab = NIL() {
-    drop aria_libc_mutex_lock(mtx_a);
-    drop aria_libc_mutex_lock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
 };
 
 func:lock_ba = NIL() {
-    drop aria_libc_mutex_lock(mtx_b);
-    drop aria_libc_mutex_lock(mtx_a);
-    drop aria_libc_mutex_unlock(mtx_a);
-    drop aria_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_unlock(mtx_a);
+    drop npk_libc_mutex_unlock(mtx_b);
 };
 
 // ============================================================
@@ -37,17 +37,17 @@ func:lock_ba = NIL() {
 // Should prove deadlock-free
 // ============================================================
 func:lock_ab_consistent_1 = NIL() {
-    drop aria_libc_mutex_lock(mtx_a);
-    drop aria_libc_mutex_lock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
 };
 
 func:lock_ab_consistent_2 = NIL() {
-    drop aria_libc_mutex_lock(mtx_a);
-    drop aria_libc_mutex_lock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_b);
-    drop aria_libc_mutex_unlock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
 };
 
 func:failsafe = int32(tbb32:err) {
@@ -57,14 +57,14 @@ func:failsafe = int32(tbb32:err) {
 
 func:main = int32() {
     drop puts("=== Deadlock Freedom Tests ===");
-    mtx_a = aria_libc_mutex_create(0i32);
-    mtx_b = aria_libc_mutex_create(0i32);
+    mtx_a = npk_libc_mutex_create(0i32);
+    mtx_b = npk_libc_mutex_create(0i32);
     drop lock_ab();
     drop lock_ba();
     drop lock_ab_consistent_1();
     drop lock_ab_consistent_2();
-    drop aria_libc_mutex_destroy(mtx_a);
-    drop aria_libc_mutex_destroy(mtx_b);
+    drop npk_libc_mutex_destroy(mtx_a);
+    drop npk_libc_mutex_destroy(mtx_b);
     drop puts("=== Done ===");
     exit 0;
 };

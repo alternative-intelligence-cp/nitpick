@@ -6,7 +6,7 @@
 #include "test_helpers.h"
 #include "tools/debugger/web_server.h"
 
-using namespace aria::debugger;
+using namespace npk::debugger;
 
 // Test web server creation
 TEST_CASE(web_server_creation) {

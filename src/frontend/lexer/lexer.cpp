@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // ============================================================================
@@ -1532,4 +1532,4 @@ TokenType Lexer::suffixToTokenType(const std::string& suffix, bool isFloat) {
 }
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk

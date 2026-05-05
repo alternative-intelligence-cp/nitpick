@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 // Forward declarations from AST
 class FuncDeclStmt;
@@ -192,6 +192,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SYMBOL_TABLE_H

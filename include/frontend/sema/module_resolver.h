@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <filesystem>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -205,6 +205,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_SEMA_MODULE_RESOLVER_H

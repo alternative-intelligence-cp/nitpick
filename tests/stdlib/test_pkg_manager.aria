@@ -35,8 +35,8 @@ extern func:pkg_create_test_fixture = int64(string:base_dir);
 extern func:pkg_cleanup_test       = int64(string:path);
 
 // ─── Test paths ──────────────────────────────────────────────────────
-const string:TEST_ROOT    = "/tmp/aria_pkg_test_root";
-const string:TEST_PKG_DIR = "/tmp/aria_pkg_test_pkg";
+const string:TEST_ROOT    = "/tmp/npk_pkg_test_root";
+const string:TEST_PKG_DIR = "/tmp/npk_pkg_test_pkg";
 
 // ═══ Test 1: Initialize package directory ════════════════════════════
 pub func:test_init_dir = int32() {
@@ -65,7 +65,7 @@ pub func:test_dir_exists = int32() {
 pub func:test_parse_metadata = int32() {
     _ = pkg_cleanup_test(TEST_PKG_DIR);
     _ = pkg_create_test_fixture(TEST_PKG_DIR);
-    int64:h = pkg_parse_metadata("/tmp/aria_pkg_test_pkg/aria-package.toml");
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
     int32:result = 1i32;
     if (h >= 0i64) {
         result = 0i32;
@@ -78,7 +78,7 @@ pub func:test_parse_metadata = int32() {
 pub func:test_metadata_name = int32() {
     _ = pkg_cleanup_test(TEST_PKG_DIR);
     _ = pkg_create_test_fixture(TEST_PKG_DIR);
-    int64:h = pkg_parse_metadata("/tmp/aria_pkg_test_pkg/aria-package.toml");
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
     string:name = pkg_metadata_name(h);
     int32:result = 1i32;
     if (name == "test-hello") {
@@ -92,7 +92,7 @@ pub func:test_metadata_name = int32() {
 pub func:test_metadata_version = int32() {
     _ = pkg_cleanup_test(TEST_PKG_DIR);
     _ = pkg_create_test_fixture(TEST_PKG_DIR);
-    int64:h = pkg_parse_metadata("/tmp/aria_pkg_test_pkg/aria-package.toml");
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
     string:ver = pkg_metadata_version(h);
     int32:result = 1i32;
     if (ver == "1.0.0") {
@@ -132,7 +132,7 @@ pub func:test_valid_version = int32() {
 pub func:test_author_count = int32() {
     _ = pkg_cleanup_test(TEST_PKG_DIR);
     _ = pkg_create_test_fixture(TEST_PKG_DIR);
-    int64:h = pkg_parse_metadata("/tmp/aria_pkg_test_pkg/aria-package.toml");
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
     int32:count = pkg_metadata_author_count(h);
     int32:result = 1i32;
     if (count == 1i32) {
@@ -146,7 +146,7 @@ pub func:test_author_count = int32() {
 pub func:test_dep_count = int32() {
     _ = pkg_cleanup_test(TEST_PKG_DIR);
     _ = pkg_create_test_fixture(TEST_PKG_DIR);
-    int64:h = pkg_parse_metadata("/tmp/aria_pkg_test_pkg/aria-package.toml");
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
     int32:count = pkg_metadata_dep_count(h);
     int32:result = 1i32;
     if (count == 1i32) {

@@ -16,7 +16,7 @@
 #include <set>
 #include <cmath>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 using namespace tc_helpers;
@@ -1022,4 +1022,4 @@ void TypeChecker::addWarning(const std::string& message, ASTNode* node) {
 
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

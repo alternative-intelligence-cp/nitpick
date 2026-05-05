@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 class ASTNode;
 class FuncDeclStmt;
@@ -107,6 +107,6 @@ private:
     static bool mulOverflows(int64_t a, int64_t b);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RANGE_ANALYSIS_H

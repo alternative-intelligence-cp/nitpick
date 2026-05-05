@@ -5,7 +5,7 @@
 #include "frontend/sema/symbol_table.h"
 #include "frontend/sema/type_checker.h"
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 // JSON-RPC error codes (from spec)
@@ -253,7 +253,7 @@ json Server::handle_initialize(const json& params) {
     json result = {
         {"capabilities", capabilities_.to_json()},
         {"serverInfo", {
-            {"name", "aria-ls"},
+            {"name", "npk-ls"},
             {"version", "0.3.3"}
         }}
     };
@@ -413,11 +413,11 @@ void Server::publish_diagnostics(const std::string& uri) {
     
     try {
         // Create diagnostic engine
-        aria::DiagnosticEngine diag_engine;
+        npk::DiagnosticEngine diag_engine;
         
         // Lex the file
-        aria::frontend::Lexer lexer(content);
-        std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+        npk::frontend::Lexer lexer(content);
+        std::vector<npk::frontend::Token> tokens = lexer.tokenize();
         
         // Check for lexer errors
         if (!lexer.getErrors().empty()) {
@@ -431,7 +431,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                     int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
                     int col = std::stoi(error.substr(col_pos + 6));
                     
-                    aria::SourceLocation loc(uri, line, col, 1);
+                    npk::SourceLocation loc(uri, line, col, 1);
                     
                     diag_engine.error(loc, error.substr(error.find("Error: ") + 7));
                 }
@@ -439,7 +439,7 @@ void Server::publish_diagnostics(const std::string& uri) {
         }
         
         // Parse the tokens
-        aria::Parser parser(tokens);
+        npk::Parser parser(tokens);
         try {
             auto ast = parser.parse();
             
@@ -454,7 +454,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                         int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
                         int col = std::stoi(error.substr(col_pos + 9));
                         
-                        aria::SourceLocation loc(uri, line, col, 1);
+                        npk::SourceLocation loc(uri, line, col, 1);
                         
                         // Extract error message
                         size_t msg_start = error.find(": ", col_pos);
@@ -467,9 +467,9 @@ void Server::publish_diagnostics(const std::string& uri) {
             
             // Semantic analysis — lightweight type checking (no resolver/monomorphizer/loader)
             try {
-                aria::sema::TypeSystem typeSystem;
-                aria::sema::SymbolTable symbolTable;
-                aria::sema::TypeChecker checker(&typeSystem, &symbolTable);
+                npk::sema::TypeSystem typeSystem;
+                npk::sema::SymbolTable symbolTable;
+                npk::sema::TypeChecker checker(&typeSystem, &symbolTable);
                 checker.check(ast.get());
                 
                 for (const auto& error : checker.getErrors()) {
@@ -480,7 +480,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                     if (line_pos != std::string::npos && col_pos != std::string::npos) {
                         int line = std::stoi(error.substr(line_pos + 5, col_pos - line_pos - 5));
                         int col = std::stoi(error.substr(col_pos + 9));
-                        aria::SourceLocation loc(uri, line, col, 1);
+                        npk::SourceLocation loc(uri, line, col, 1);
                         
                         size_t msg_start = error.find(": ", col_pos);
                         if (msg_start != std::string::npos) {
@@ -490,7 +490,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                         }
                     } else {
                         // No location info — report at file start
-                        aria::SourceLocation loc(uri, 1, 1, 1);
+                        npk::SourceLocation loc(uri, 1, 1, 1);
                         diag_engine.error(loc, error);
                     }
                 }
@@ -503,7 +503,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                     if (line_pos != std::string::npos && col_pos != std::string::npos) {
                         int line = std::stoi(warning.substr(line_pos + 5, col_pos - line_pos - 5));
                         int col = std::stoi(warning.substr(col_pos + 9));
-                        aria::SourceLocation loc(uri, line, col, 1);
+                        npk::SourceLocation loc(uri, line, col, 1);
                         
                         size_t msg_start = warning.find(": ", col_pos);
                         if (msg_start != std::string::npos) {
@@ -512,7 +512,7 @@ void Server::publish_diagnostics(const std::string& uri) {
                             diag_engine.warning(loc, warning);
                         }
                     } else {
-                        aria::SourceLocation loc(uri, 1, 1, 1);
+                        npk::SourceLocation loc(uri, 1, 1, 1);
                         diag_engine.warning(loc, warning);
                     }
                 }
@@ -522,7 +522,7 @@ void Server::publish_diagnostics(const std::string& uri) {
             
         } catch (const std::exception& e) {
             // Parser threw exception - create diagnostic
-            aria::SourceLocation loc(uri, 1, 1, 1);
+            npk::SourceLocation loc(uri, 1, 1, 1);
             diag_engine.error(loc, std::string("Parse error: ") + e.what());
         }
         
@@ -560,18 +560,18 @@ void Server::clear_diagnostics(const std::string& uri) {
     std::cerr << "Cleared diagnostics for " << uri << std::endl;
 }
 
-json Server::convert_diagnostic_to_lsp(const aria::Diagnostic& diag) {
+json Server::convert_diagnostic_to_lsp(const npk::Diagnostic& diag) {
     // Map severity (research_034 Table 2)
     int lsp_severity;
     switch (diag.level()) {
-        case aria::DiagnosticLevel::NOTE:
+        case npk::DiagnosticLevel::NOTE:
             lsp_severity = 3; // Information
             break;
-        case aria::DiagnosticLevel::WARNING:
+        case npk::DiagnosticLevel::WARNING:
             lsp_severity = 2; // Warning
             break;
-        case aria::DiagnosticLevel::ERROR:
-        case aria::DiagnosticLevel::FATAL:
+        case npk::DiagnosticLevel::ERROR:
+        case npk::DiagnosticLevel::FATAL:
             lsp_severity = 1; // Error
             break;
         default:
@@ -579,7 +579,7 @@ json Server::convert_diagnostic_to_lsp(const aria::Diagnostic& diag) {
     }
     
     // Convert 1-based to 0-based indices (research_034 Section 5.1)
-    const aria::SourceLocation& loc = diag.location();
+    const npk::SourceLocation& loc = diag.location();
     int lsp_line = loc.line - 1;
     int lsp_col = loc.column - 1;
     
@@ -606,22 +606,22 @@ json Server::handle_hover(const json& params) {
     if (!content) return nullptr;
     
     // Lex to find token at cursor position
-    aria::frontend::Lexer lexer(*content);
-    std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+    npk::frontend::Lexer lexer(*content);
+    std::vector<npk::frontend::Token> tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     // Find token under cursor
     std::string hovered_lexeme;
-    aria::frontend::TokenType hovered_type{};
+    npk::frontend::TokenType hovered_type{};
     int tok_col = 0;
     int tok_len = 0;
     
     for (const auto& token : tokens) {
-        if (token.line == aria_line &&
-            token.column <= aria_col &&
-            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+        if (token.line == npk_line &&
+            token.column <= npk_col &&
+            npk_col < token.column + static_cast<int>(token.lexeme.length())) {
             hovered_lexeme = token.lexeme;
             hovered_type = token.type;
             tok_col = token.column;
@@ -633,7 +633,7 @@ json Server::handle_hover(const json& params) {
     if (hovered_lexeme.empty()) return nullptr;
     
     // Parse to get AST and build declaration index
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     ASTNodePtr ast;
     try { ast = parser.parse(); } catch (...) { /* fall through to token-only hover */ }
     
@@ -707,18 +707,18 @@ json Server::handle_definition(const json& params) {
     if (!content) return nullptr;
     
     // Lex to find identifier at cursor
-    aria::frontend::Lexer lexer(*content);
-    std::vector<aria::frontend::Token> tokens = lexer.tokenize();
+    npk::frontend::Lexer lexer(*content);
+    std::vector<npk::frontend::Token> tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     std::string target_name;
     for (const auto& token : tokens) {
-        if (token.type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
-            token.line == aria_line &&
-            token.column <= aria_col &&
-            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+        if (token.type == npk::frontend::TokenType::TOKEN_IDENTIFIER &&
+            token.line == npk_line &&
+            token.column <= npk_col &&
+            npk_col < token.column + static_cast<int>(token.lexeme.length())) {
             target_name = token.lexeme;
             break;
         }
@@ -727,7 +727,7 @@ json Server::handle_definition(const json& params) {
     if (target_name.empty()) return nullptr;
     
     // Parse to get AST and find declaration
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     ASTNodePtr ast;
     try { ast = parser.parse(); } catch (...) { return nullptr; }
     if (!ast) return nullptr;
@@ -823,9 +823,9 @@ json Server::handle_completion(const json& params) {
     }
     
     // Add declared symbols from the file
-    aria::frontend::Lexer lexer(*content);
+    npk::frontend::Lexer lexer(*content);
     auto tokens = lexer.tokenize();
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     
     try {
         auto ast = parser.parse();
@@ -861,9 +861,9 @@ json Server::handle_document_symbol(const json& params) {
     auto content = vfs_.get_content(uri);
     if (!content) return json::array();
     
-    aria::frontend::Lexer lexer(*content);
+    npk::frontend::Lexer lexer(*content);
     auto tokens = lexer.tokenize();
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     
     json symbols = json::array();
     
@@ -920,18 +920,18 @@ json Server::handle_references(const json& params) {
     if (!content) return json::array();
     
     // Find the identifier at the cursor position
-    aria::frontend::Lexer lexer(*content);
+    npk::frontend::Lexer lexer(*content);
     auto tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     std::string target_name;
     for (const auto& tok : tokens) {
-        if (tok.type == aria::frontend::TokenType::TOKEN_IDENTIFIER &&
-            tok.line == aria_line &&
-            tok.column <= aria_col &&
-            aria_col < tok.column + static_cast<int>(tok.lexeme.length())) {
+        if (tok.type == npk::frontend::TokenType::TOKEN_IDENTIFIER &&
+            tok.line == npk_line &&
+            tok.column <= npk_col &&
+            npk_col < tok.column + static_cast<int>(tok.lexeme.length())) {
             target_name = tok.lexeme;
             break;
         }
@@ -942,7 +942,7 @@ json Server::handle_references(const json& params) {
     // Find all occurrences of the identifier in the file
     json locations = json::array();
     for (const auto& tok : tokens) {
-        if (tok.type == aria::frontend::TokenType::TOKEN_IDENTIFIER && tok.lexeme == target_name) {
+        if (tok.type == npk::frontend::TokenType::TOKEN_IDENTIFIER && tok.lexeme == target_name) {
             int tok_line = tok.line - 1;
             int tok_col = tok.column - 1;
             json loc = json{
@@ -1023,9 +1023,9 @@ json Server::handle_signature_help(const json& params) {
     if (func_name.empty()) return json(nullptr);
     
     // Look up the function in AST declarations
-    aria::frontend::Lexer lexer2(text);
+    npk::frontend::Lexer lexer2(text);
     auto tokens = lexer2.tokenize();
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     
     try {
         auto ast = parser.parse();
@@ -1342,4 +1342,4 @@ TaskPriority Server::get_priority(const std::string& method) const {
 }
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk

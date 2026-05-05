@@ -16,7 +16,7 @@
 #include <set>
 #include <cmath>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 using namespace tc_helpers;
@@ -162,7 +162,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
     switch (typeNode->type) {
         case ASTNode::NodeType::TYPE_ANNOTATION: {
             // Simple type: int32, string, etc.
-            aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
+            npk::SimpleType* simpleType = static_cast<npk::SimpleType*>(typeNode);
             
             // Handle vector types specially (vec2, vec3)
             // Default to flt64 components to match float literal inference
@@ -248,7 +248,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                     std::string lower = simpleType->typeName;
                     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
                     if (lower == suggestion || lower == "nil") {
-                        errorMsg += " (Aria types are lowercase)";
+                        errorMsg += " (Nitpick types are lowercase)";
                     }
                 }
                 addError(errorMsg, typeNode);
@@ -258,7 +258,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::ARRAY_TYPE: {
             // Array type: int32[], int32[10], etc.
-            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            npk::ArrayType* arrayType = static_cast<npk::ArrayType*>(typeNode);
             
             // Resolve element type
             Type* elementType = resolveTypeNode(arrayType->elementType.get());
@@ -311,7 +311,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::POINTER_TYPE: {
             // Pointer type: int32@, string@, ?@ (erased), etc.
-            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            npk::PointerType* ptrType = static_cast<npk::PointerType*>(typeNode);
             
             // ARIA-P3: ?-> / ?* — type-erased pointer
             // baseType is null; create an erased sema PointerType directly.
@@ -332,7 +332,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Safe reference type: int32$, string$, etc.
             // For now, treat safe references as pointer types in the type system
             // The borrow checker will enforce the safety rules
-            aria::SafeRefType* safeRefType = static_cast<aria::SafeRefType*>(typeNode);
+            npk::SafeRefType* safeRefType = static_cast<npk::SafeRefType*>(typeNode);
             
             // Resolve base type
             Type* baseType = resolveTypeNode(safeRefType->baseType.get());
@@ -346,7 +346,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::OPTIONAL_TYPE: {
             // Optional type: int64?, string?, etc.
-            aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+            npk::OptionalTypeNode* optType = static_cast<npk::OptionalTypeNode*>(typeNode);
             
             // Resolve wrapped type
             Type* wrappedType = resolveTypeNode(optType->wrappedType.get());
@@ -359,7 +359,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::GENERIC_TYPE: {
             // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
-            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            npk::GenericType* genericType = static_cast<npk::GenericType*>(typeNode);
             
             // Phase 3.4: Generic Struct Instantiation (Session 13)
             // Resolve all type arguments
@@ -425,11 +425,11 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 // Support two formats:
                 // 1. Plain integer: "4", "8", "16" (Phase 2: parser handles this)
                 // 2. Identifier format: "N4", "N8", "N16" (Phase 1 workaround, still supported)
-                aria::ASTNode* laneCountNode = genericType->typeArgs[1].get();
+                npk::ASTNode* laneCountNode = genericType->typeArgs[1].get();
                 size_t laneCount = 0;
                 
                 if (laneCountNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
-                    aria::SimpleType* laneCountType = static_cast<aria::SimpleType*>(laneCountNode);
+                    npk::SimpleType* laneCountType = static_cast<npk::SimpleType*>(laneCountNode);
                     std::string laneCountStr = laneCountType->typeName;
                     
                     // Check for "N<number>" format (e.g., "N4", "N8", "N16") - Phase 1 workaround
@@ -627,9 +627,9 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // - DimensionName is a registered dimension (Joules, Meters, etc.)
             if (genericType->typeArgs.size() == 1) {
                 // Check if the type argument is a simple identifier (potential dimension name)
-                aria::ASTNode* typeArgNode = genericType->typeArgs[0].get();
+                npk::ASTNode* typeArgNode = genericType->typeArgs[0].get();
                 if (typeArgNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
-                    aria::SimpleType* simpleTypeArg = static_cast<aria::SimpleType*>(typeArgNode);
+                    npk::SimpleType* simpleTypeArg = static_cast<npk::SimpleType*>(typeArgNode);
                     std::string potentialDimensionName = simpleTypeArg->typeName;
                     
                     // Check if this is a registered dimension
@@ -867,7 +867,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                     std::string lower = stmt->typeName;
                     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
                     if (lower == suggestion || lower == "nil") {
-                        errorMsg += " (Aria types are lowercase)";
+                        errorMsg += " (Nitpick types are lowercase)";
                     }
                 }
                 addError(errorMsg, stmt);
@@ -1790,7 +1790,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // ARIA-026 FIX: FFI Safety - Ban string return types from extern functions
     if (!stmt->body && valueType->toString() == "str") {  // No body = extern function
         addError("FFI Safety Violation: Cannot return 'str' from extern function '" + 
-                 stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                 stmt->funcName + "'. Nitpick strings are fat pointers {data, len} incompatible " +
                  "with C char*. Use 'wild int8*' for C strings and convert with string_from_cstr().", 
                  stmt);
     }
@@ -1880,7 +1880,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
             // This corrupts actuator force limits and sensor readings in robotic control.
             if (!stmt->body && paramType->toString() == "str") {  // No body = extern function
                 addError("FFI Safety Violation: Cannot pass 'str' type to extern function '" + 
-                         stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                         stmt->funcName + "'. Nitpick strings are fat pointers {data, len} incompatible " +
                          "with C char*. Use 'wild int8*' for C strings and convert with string_to_cstr().", 
                          param.get());
             }
@@ -4995,7 +4995,7 @@ bool TypeChecker::validateFailsafeExists() {
     Symbol* failsafeSymbol = symbolTable->resolveSymbol("failsafe");
     
     if (!failsafeSymbol) {
-        addError("Every Aria program must define a 'func:failsafe = int32(tbb32:err)' function. "
+        addError("Every Nitpick program must define a 'func:failsafe = int32(tbb32:err)' function. "
                  "failsafe is one of two program endpoints (with main). "
                  "It handles error exits via 'exit <code>' where code > 0.", nullptr);
         return false;
@@ -5018,7 +5018,7 @@ bool TypeChecker::validateMainExists() {
     Symbol* mainSymbol = symbolTable->resolveSymbol("main");
     
     if (!mainSymbol) {
-        addError("Every Aria program must define a 'func:main = int32()' function. "
+        addError("Every Nitpick program must define a 'func:main = int32()' function. "
                  "main is one of two program endpoints (with failsafe). "
                  "It is the entry point and must call 'exit <code>' where code 0 = success.", nullptr);
         return false;
@@ -5572,4 +5572,4 @@ void TypeChecker::processAttributes(FuncDeclStmt* stmt) {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

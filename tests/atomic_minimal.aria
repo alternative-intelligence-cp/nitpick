@@ -1,22 +1,22 @@
 // Test atomic operations step by step
 
-extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
-extern func:aria_atomic_int32_destroy = void(wild int8*:atomic_ptr);
-extern func:aria_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
+extern func:npk_atomic_int32_create = wild int8*(int32:initial_value);
+extern func:npk_atomic_int32_destroy = void(wild int8*:atomic_ptr);
+extern func:npk_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:npk_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
 
 func:main = int32() {
     // Create atomic with 0 (use wild int8-> for the pointer type)
-    wild int8->:atomic_ptr = aria_atomic_int32_create(0);
+    wild int8->:atomic_ptr = npk_atomic_int32_create(0);
     
     // Store 42
-    _ = aria_atomic_int32_store(atomic_ptr, 42, 4);
+    _ = npk_atomic_int32_store(atomic_ptr, 42, 4);
     
     // Load back
-    int32:value = aria_atomic_int32_load(atomic_ptr, 4);
+    int32:value = npk_atomic_int32_load(atomic_ptr, 4);
     
     // Cleanup
-    _ = aria_atomic_int32_destroy(atomic_ptr);
+    _ = npk_atomic_int32_destroy(atomic_ptr);
     
     // Check if value is 42
     if (value == 42) {

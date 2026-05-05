@@ -6,7 +6,7 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/APInt.h>
 
-namespace aria {
+namespace npk {
 namespace semantic {
 
 // Precision enums for clarity (defined outside class for forward declaration)
@@ -110,6 +110,6 @@ private:
 };
 
 } // namespace semantic
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LITERAL_CONVERTER_H

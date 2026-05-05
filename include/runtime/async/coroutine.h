@@ -8,7 +8,7 @@
 #include <cstddef>  // For std::size_t
 #include <cstdint>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Forward declarations for LLVM intrinsics
@@ -112,6 +112,6 @@ void complete_future_error(void* futurePtr);
 } // namespace coro_support
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_COROUTINE_H

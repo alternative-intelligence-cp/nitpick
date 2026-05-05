@@ -418,42 +418,42 @@ int64_t tbb64_abs(int64_t a) {
 // which is a valid value, not the tbb16 sentinel (-32768).
 // These functions map source sentinel → destination sentinel.
 
-extern "C" int16_t aria_tbb_widen_8_16(int8_t val) {
+extern "C" int16_t npk_tbb_widen_8_16(int8_t val) {
     if (val == TBB8_ERR) {
         return TBB16_ERR;
     }
     return (int16_t)val;
 }
 
-extern "C" int32_t aria_tbb_widen_8_32(int8_t val) {
+extern "C" int32_t npk_tbb_widen_8_32(int8_t val) {
     if (val == TBB8_ERR) {
         return TBB32_ERR;
     }
     return (int32_t)val;
 }
 
-extern "C" int64_t aria_tbb_widen_8_64(int8_t val) {
+extern "C" int64_t npk_tbb_widen_8_64(int8_t val) {
     if (val == TBB8_ERR) {
         return TBB64_ERR;
     }
     return (int64_t)val;
 }
 
-extern "C" int32_t aria_tbb_widen_16_32(int16_t val) {
+extern "C" int32_t npk_tbb_widen_16_32(int16_t val) {
     if (val == TBB16_ERR) {
         return TBB32_ERR;
     }
     return (int32_t)val;
 }
 
-extern "C" int64_t aria_tbb_widen_16_64(int16_t val) {
+extern "C" int64_t npk_tbb_widen_16_64(int16_t val) {
     if (val == TBB16_ERR) {
         return TBB64_ERR;
     }
     return (int64_t)val;
 }
 
-extern "C" int64_t aria_tbb_widen_32_64(int32_t val) {
+extern "C" int64_t npk_tbb_widen_32_64(int32_t val) {
     if (val == TBB32_ERR) {
         return TBB64_ERR;
     }

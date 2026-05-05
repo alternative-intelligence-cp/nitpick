@@ -53,7 +53,7 @@ static size_t next_power_of_2(size_t n) {
 /**
  * Grow arena capacity (allocate new slots)
  */
-static AriaGenArenaError grow_arena(aria_gen_arena* arena) {
+static AriaGenArenaError grow_arena(npk_gen_arena* arena) {
     if (!arena) return ARIA_GEN_ARENA_ERR_OUT_OF_MEMORY;
     
     // Calculate new capacity (2x growth)
@@ -67,9 +67,9 @@ static AriaGenArenaError grow_arena(aria_gen_arena* arena) {
     }
     
     // Reallocate slots array
-    aria_gen_slot* new_slots = (aria_gen_slot*)realloc(
+    npk_gen_slot* new_slots = (npk_gen_slot*)realloc(
         arena->slots, 
-        new_capacity * sizeof(aria_gen_slot)
+        new_capacity * sizeof(npk_gen_slot)
     );
     if (!new_slots) {
         return ARIA_GEN_ARENA_ERR_OUT_OF_MEMORY;
@@ -101,7 +101,7 @@ static AriaGenArenaError grow_arena(aria_gen_arena* arena) {
 // Arena Lifecycle Functions
 // ============================================================================
 
-AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity) {
+AriaGenArenaResult npk_gen_arena_new(size_t elem_size, size_t initial_capacity) {
     AriaGenArenaResult result = {NULL, ARIA_GEN_ARENA_OK};
     
     // Validate elem_size
@@ -111,7 +111,7 @@ AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity)
     }
     
     // Allocate arena structure
-    aria_gen_arena* arena = (aria_gen_arena*)malloc(sizeof(aria_gen_arena));
+    npk_gen_arena* arena = (npk_gen_arena*)malloc(sizeof(npk_gen_arena));
     if (!arena) {
         result.error_code = ARIA_GEN_ARENA_ERR_OUT_OF_MEMORY;
         return result;
@@ -136,7 +136,7 @@ AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity)
             initial_capacity = ARIA_GEN_ARENA_MAX_CAPACITY;
         }
         
-        arena->slots = (aria_gen_slot*)malloc(initial_capacity * sizeof(aria_gen_slot));
+        arena->slots = (npk_gen_slot*)malloc(initial_capacity * sizeof(npk_gen_slot));
         arena->free_list = (size_t*)malloc(initial_capacity * sizeof(size_t));
         
         if (!arena->slots || !arena->free_list) {
@@ -161,7 +161,7 @@ AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity)
     return result;
 }
 
-void aria_gen_arena_destroy(aria_gen_arena* arena) {
+void npk_gen_arena_destroy(npk_gen_arena* arena) {
     if (!arena) return;
     
     // Free all slot data
@@ -183,7 +183,7 @@ void aria_gen_arena_destroy(aria_gen_arena* arena) {
     free(arena);
 }
 
-void aria_gen_arena_clear(aria_gen_arena* arena) {
+void npk_gen_arena_clear(npk_gen_arena* arena) {
     if (!arena) return;
     
     // Mark all slots as free
@@ -202,7 +202,7 @@ void aria_gen_arena_clear(aria_gen_arena* arena) {
 // Arena Allocation Functions
 // ============================================================================
 
-AriaHandleAllocResult aria_gen_arena_alloc(aria_gen_arena* arena, const void* data) {
+AriaHandleAllocResult npk_gen_arena_alloc(npk_gen_arena* arena, const void* data) {
     AriaHandleAllocResult result = {ARIA_HANDLE_INVALID, ARIA_GEN_ARENA_OK};
     
     if (!arena || !data) {
@@ -264,7 +264,7 @@ AriaHandleAllocResult aria_gen_arena_alloc(aria_gen_arena* arena, const void* da
     return result;
 }
 
-AriaElemGetResult aria_gen_arena_get(aria_gen_arena* arena, aria_handle handle) {
+AriaElemGetResult npk_gen_arena_get(npk_gen_arena* arena, npk_handle handle) {
     AriaElemGetResult result = {NULL, ARIA_GEN_ARENA_OK};
     
     if (!arena) {
@@ -275,7 +275,7 @@ AriaElemGetResult aria_gen_arena_get(aria_gen_arena* arena, aria_handle handle) 
     arena->total_gets++;
     
     // Check 1: Invalid handle
-    if (aria_handle_is_invalid(handle)) {
+    if (npk_handle_is_invalid(handle)) {
         result.error_code = ARIA_GEN_ARENA_ERR_INVALID_HANDLE;
         return result;
     }
@@ -305,13 +305,13 @@ AriaElemGetResult aria_gen_arena_get(aria_gen_arena* arena, aria_handle handle) 
     return result;
 }
 
-AriaGenArenaError aria_gen_arena_free(aria_gen_arena* arena, aria_handle handle) {
+AriaGenArenaError npk_gen_arena_free(npk_gen_arena* arena, npk_handle handle) {
     if (!arena) {
         return ARIA_GEN_ARENA_ERR_OUT_OF_MEMORY;
     }
     
     // Validate handle (same checks as get)
-    if (aria_handle_is_invalid(handle)) {
+    if (npk_handle_is_invalid(handle)) {
         return ARIA_GEN_ARENA_ERR_INVALID_HANDLE;
     }
     
@@ -353,7 +353,7 @@ AriaGenArenaError aria_gen_arena_free(aria_gen_arena* arena, aria_handle handle)
 // Arena Query Functions
 // ============================================================================
 
-AriaGenArenaStats aria_gen_arena_stats(const aria_gen_arena* arena) {
+AriaGenArenaStats npk_gen_arena_stats(const npk_gen_arena* arena) {
     AriaGenArenaStats stats = {0};
     
     if (!arena) return stats;

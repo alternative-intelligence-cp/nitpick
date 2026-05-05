@@ -11,16 +11,16 @@
 // ═══════════════════════════════════════════════════════════════════════
 // aria-libc extern declarations for string/memory operations
 // ═══════════════════════════════════════════════════════════════════════
-extern "aria_libc_string" {
-    func:aria_libc_string_byte_at     = int32(string:s, int64:idx);
-    func:aria_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
-    func:aria_libc_string_from_buf    = string(int64:buf, int64:offset, int64:len);
+extern "npk_libc_string" {
+    func:npk_libc_string_byte_at     = int32(string:s, int64:idx);
+    func:npk_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
+    func:npk_libc_string_from_buf    = string(int64:buf, int64:offset, int64:len);
 };
 
-extern "aria_libc_mem" {
-    func:aria_libc_mem_malloc     = int64(int64:size);
-    func:aria_libc_mem_free       = void(int64:ptr);
-    func:aria_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
+extern "npk_libc_mem" {
+    func:npk_libc_mem_malloc     = int64(int64:size);
+    func:npk_libc_mem_free       = void(int64:ptr);
+    func:npk_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
 };
 
 // =============================================================================
@@ -115,7 +115,7 @@ pub func<T>:array_new = result<array<*T>>(int64:initial_capacity) {
         // TODO: Need to calculate size based on sizeof(T)
         // For now, this is a placeholder that will be replaced
         // when proper generic sizeof is implemented
-        wild *T@:ptr = @cast<*T@>(aria_libc_mem_malloc(initial_capacity * 8i64));  // Assume 8 bytes per element
+        wild *T@:ptr = @cast<*T@>(npk_libc_mem_malloc(initial_capacity * 8i64));  // Assume 8 bytes per element
         arr.data = ptr;
     };
     
@@ -207,11 +207,11 @@ pub func:substring = result<string>(string:s, int64:start, int64:len) {
     };
     
     // Use aria-libc to extract bytes and construct result string
-    int64:buf = aria_libc_mem_malloc(len + 1i64);
-    drop aria_libc_string_copy_to_buf(buf, 0i64, s, start, len);
-    drop aria_libc_mem_write_byte(buf, len, 0i32);
-    string:result = aria_libc_string_from_buf(buf, 0i64, len);
-    drop aria_libc_mem_free(buf);
+    int64:buf = npk_libc_mem_malloc(len + 1i64);
+    drop npk_libc_string_copy_to_buf(buf, 0i64, s, start, len);
+    drop npk_libc_mem_write_byte(buf, len, 0i32);
+    string:result = npk_libc_string_from_buf(buf, 0i64, len);
+    drop npk_libc_mem_free(buf);
     pass result_ok(result);
 };
 
@@ -245,8 +245,8 @@ pub func:find = result<int32>(string:haystack, string:needle) {
         int64:j = 0i64;
         bool:match = true;
         when (j < n_len) {
-            int32:hb = aria_libc_string_byte_at(haystack, i + j);
-            int32:nb = aria_libc_string_byte_at(needle, j);
+            int32:hb = npk_libc_string_byte_at(haystack, i + j);
+            int32:nb = npk_libc_string_byte_at(needle, j);
             if (hb != nb) {
                 match = false;
                 j = n_len;  // break out of inner loop
@@ -275,6 +275,6 @@ pub func:char_at = result<int32>(string:s, int64:index) {
     if (index < 0i64 || index >= s_len) {
         pass result_err<int32>("String index out of bounds");
     };
-    int32:b = aria_libc_string_byte_at(s, index);
+    int32:b = npk_libc_string_byte_at(s, index);
     pass result_ok(b);
 };

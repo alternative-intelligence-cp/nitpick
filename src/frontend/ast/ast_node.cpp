@@ -2,12 +2,12 @@
 #include <ostream>
 
 // Stream output operator for NodeType (for testing)
-std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type) {
-    os << aria::ASTNode::nodeTypeToString(type);
+std::ostream& operator<<(std::ostream& os, npk::ASTNode::NodeType type) {
+    os << npk::ASTNode::nodeTypeToString(type);
     return os;
 }
 
-namespace aria {
+namespace npk {
 
 std::string ASTNode::nodeTypeToString(NodeType type) {
     switch (type) {
@@ -118,4 +118,4 @@ bool ASTNode::isType() const {
     return type >= NodeType::TYPE_ANNOTATION && type <= NodeType::FUNCTION_TYPE;
 }
 
-} // namespace aria
+} // namespace npk

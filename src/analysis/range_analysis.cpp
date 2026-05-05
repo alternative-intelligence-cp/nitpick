@@ -25,7 +25,7 @@
 #include <algorithm>
 #include <climits>
 
-namespace aria {
+namespace npk {
 
 // ============================================================================
 // Type-width helpers
@@ -848,4 +848,4 @@ void RangeAnalyzer::mergeInferred(VarRulesMap& target, const RangeMap& ranges) {
     }
 }
 
-} // namespace aria
+} // namespace npk

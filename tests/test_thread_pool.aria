@@ -2,7 +2,7 @@ use "thread.aria".*;
 use "thread_pool.aria".*;
 use "atomic.aria".*;
 
-extern func:aria_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
+extern func:npk_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
 
 func:failsafe = int32(tbb32:err) { exit 1; };
 
@@ -19,7 +19,7 @@ func:main = int32() {
     AtomicInt32:counter = raw AtomicInt32.create(0i32);
     
     (int64)(int64):inc_task = int64(int64:atom_handle) {
-        aria_shim_atomic_int32_fetch_add(atom_handle, 1i32, 0i32);
+        npk_shim_atomic_int32_fetch_add(atom_handle, 1i32, 0i32);
         pass 0i64;
     };
     

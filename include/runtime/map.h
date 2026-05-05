@@ -69,14 +69,14 @@ typedef struct {
  * @param initial_capacity Initial capacity (0 for default 16)
  * @return Result containing pointer to AriaMap or error
  */
-AriaResultPtr aria_map_new(size_t key_size, size_t value_size, size_t initial_capacity);
+AriaResultPtr npk_map_new(size_t key_size, size_t value_size, size_t initial_capacity);
 
 /**
  * Free a map (only needed for Wild allocator, no-op for GC).
  * 
  * @param map Map to free
  */
-void aria_map_free(AriaMap* map);
+void npk_map_free(AriaMap* map);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Map Basic Operations
@@ -88,7 +88,7 @@ void aria_map_free(AriaMap* map);
  * @param map Map to query
  * @return Number of entries
  */
-size_t aria_map_length(const AriaMap* map);
+size_t npk_map_length(const AriaMap* map);
 
 /**
  * Insert or update a key-value pair in the map.
@@ -99,7 +99,7 @@ size_t aria_map_length(const AriaMap* map);
  * @param value Pointer to value data
  * @return Result indicating success or error
  */
-AriaResultVoid aria_map_insert(AriaMap* map, const void* key, const void* value);
+AriaResultVoid npk_map_insert(AriaMap* map, const void* key, const void* value);
 
 /**
  * Get value for a given key.
@@ -108,7 +108,7 @@ AriaResultVoid aria_map_insert(AriaMap* map, const void* key, const void* value)
  * @param key Pointer to key data
  * @return Result containing pointer to value or error if not found
  */
-AriaResultPtr aria_map_get(const AriaMap* map, const void* key);
+AriaResultPtr npk_map_get(const AriaMap* map, const void* key);
 
 /**
  * Remove a key-value pair from the map.
@@ -117,7 +117,7 @@ AriaResultPtr aria_map_get(const AriaMap* map, const void* key);
  * @param key Pointer to key data
  * @return Result indicating success or error if key not found
  */
-AriaResultVoid aria_map_remove(AriaMap* map, const void* key);
+AriaResultVoid npk_map_remove(AriaMap* map, const void* key);
 
 /**
  * Check if a key exists in the map.
@@ -126,14 +126,14 @@ AriaResultVoid aria_map_remove(AriaMap* map, const void* key);
  * @param key Pointer to key data
  * @return true if key exists, false otherwise
  */
-bool aria_map_has(const AriaMap* map, const void* key);
+bool npk_map_has(const AriaMap* map, const void* key);
 
 /**
  * Clear all entries from the map (sets length to 0, keeps capacity).
  * 
  * @param map Map to clear
  */
-void aria_map_clear(AriaMap* map);
+void npk_map_clear(AriaMap* map);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Hash Functions
@@ -147,7 +147,7 @@ void aria_map_clear(AriaMap* map);
  * @param size Size of data in bytes
  * @return 64-bit hash value
  */
-uint64_t aria_hash_bytes(const void* data, size_t size);
+uint64_t npk_hash_bytes(const void* data, size_t size);
 
 /**
  * Hash function for int64 keys.
@@ -155,7 +155,7 @@ uint64_t aria_hash_bytes(const void* data, size_t size);
  * @param value Integer value to hash
  * @return 64-bit hash value
  */
-uint64_t aria_hash_int64(int64_t value);
+uint64_t npk_hash_int64(int64_t value);
 
 /**
  * Hash function for string keys (assumes null-terminated).
@@ -163,7 +163,7 @@ uint64_t aria_hash_int64(int64_t value);
  * @param str String to hash
  * @return 64-bit hash value
  */
-uint64_t aria_hash_string(const char* str);
+uint64_t npk_hash_string(const char* str);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Simple API (no error handling, for performance)
@@ -176,7 +176,7 @@ uint64_t aria_hash_string(const char* str);
  * @param value_size Size of each value in bytes
  * @return Pointer to new AriaMap
  */
-AriaMap* aria_map_new_simple(size_t key_size, size_t value_size);
+AriaMap* npk_map_new_simple(size_t key_size, size_t value_size);
 
 /**
  * Insert key-value pair (panics on allocation failure).
@@ -185,7 +185,7 @@ AriaMap* aria_map_new_simple(size_t key_size, size_t value_size);
  * @param key Pointer to key data
  * @param value Pointer to value data
  */
-void aria_map_insert_simple(AriaMap* map, const void* key, const void* value);
+void npk_map_insert_simple(AriaMap* map, const void* key, const void* value);
 
 /**
  * Get value for key (returns NULL if not found).
@@ -194,7 +194,7 @@ void aria_map_insert_simple(AriaMap* map, const void* key, const void* value);
  * @param key Pointer to key data
  * @return Pointer to value or NULL
  */
-void* aria_map_get_simple(AriaMap* map, const void* key);
+void* npk_map_get_simple(AriaMap* map, const void* key);
 
 #ifdef __cplusplus
 }

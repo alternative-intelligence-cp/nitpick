@@ -13,9 +13,9 @@
 #include "frontend/parser/parser.h"
 #include "frontend/lexer/lexer.h"
 
-using namespace aria;
-using namespace aria::sema;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::sema;
+using namespace npk::frontend;
 
 // ============================================================================
 // Integration Tests - Complete Semantic Analysis (Phase 3.6)

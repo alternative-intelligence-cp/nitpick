@@ -20,7 +20,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 // Forward declarations (for future AST integration)
 class ASTNode;
@@ -132,6 +132,6 @@ private:
     static WarningType stringToWarningType(const std::string& name);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_WARNINGS_H

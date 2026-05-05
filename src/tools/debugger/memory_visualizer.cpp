@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 MemoryVisualizer::MemoryVisualizer(lldb::SBTarget target, lldb::SBProcess process)
@@ -463,4 +463,4 @@ bool MemoryVisualizer::readMemorySafe(lldb::addr_t address, void* buffer, size_t
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

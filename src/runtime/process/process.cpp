@@ -113,7 +113,7 @@ static AriaAtforkEntry g_atfork_handlers[ARIA_MAX_ATFORK_HANDLERS];
 static int g_atfork_count = 0;
 static bool g_atfork_installed = false;
 
-static void aria_atfork_pre(void) {
+static void npk_atfork_pre(void) {
     // Acquire locks in registration order
     for (int i = 0; i < g_atfork_count; i++) {
         if (g_atfork_handlers[i].pre_fork) {
@@ -122,7 +122,7 @@ static void aria_atfork_pre(void) {
     }
 }
 
-static void aria_atfork_parent(void) {
+static void npk_atfork_parent(void) {
     // Release locks in reverse order
     for (int i = g_atfork_count - 1; i >= 0; i--) {
         if (g_atfork_handlers[i].parent_post) {
@@ -131,7 +131,7 @@ static void aria_atfork_parent(void) {
     }
 }
 
-static void aria_atfork_child(void) {
+static void npk_atfork_child(void) {
     // Release/reinitialize in reverse order
     for (int i = g_atfork_count - 1; i >= 0; i--) {
         if (g_atfork_handlers[i].child_post) {
@@ -140,7 +140,7 @@ static void aria_atfork_child(void) {
     }
 }
 
-int aria_atfork_register(AriaAtforkCallback pre_fork,
+int npk_atfork_register(AriaAtforkCallback pre_fork,
                          AriaAtforkCallback parent_post,
                          AriaAtforkCallback child_post) {
     if (g_atfork_count >= ARIA_MAX_ATFORK_HANDLERS) {
@@ -149,7 +149,7 @@ int aria_atfork_register(AriaAtforkCallback pre_fork,
 
     // Install the pthread_atfork handler on first registration
     if (!g_atfork_installed) {
-        if (pthread_atfork(aria_atfork_pre, aria_atfork_parent, aria_atfork_child) != 0) {
+        if (pthread_atfork(npk_atfork_pre, npk_atfork_parent, npk_atfork_child) != 0) {
             return -1;
         }
         g_atfork_installed = true;
@@ -164,7 +164,7 @@ int aria_atfork_register(AriaAtforkCallback pre_fork,
 
 #else
 
-int aria_atfork_register(AriaAtforkCallback pre_fork,
+int npk_atfork_register(AriaAtforkCallback pre_fork,
                          AriaAtforkCallback parent_post,
                          AriaAtforkCallback child_post) {
     (void)pre_fork; (void)parent_post; (void)child_post;
@@ -177,7 +177,7 @@ int aria_atfork_register(AriaAtforkCallback pre_fork,
 // Spawn Options
 // ============================================================================
 
-AriaSpawnOptions* aria_spawn_options_create(void) {
+AriaSpawnOptions* npk_spawn_options_create(void) {
     AriaSpawnOptions* options = (AriaSpawnOptions*)calloc(1, sizeof(AriaSpawnOptions));
     if (!options) return NULL;
 
@@ -189,7 +189,7 @@ AriaSpawnOptions* aria_spawn_options_create(void) {
     return options;
 }
 
-static void aria_spawn_options_free(AriaSpawnOptions* options) {
+static void npk_spawn_options_free(AriaSpawnOptions* options) {
     if (!options) return;
     free(options);
 }
@@ -200,15 +200,15 @@ static void aria_spawn_options_free(AriaSpawnOptions* options) {
 
 #ifndef _WIN32
 
-AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions* options) {
+AriaResult* npk_spawn(const char* command, const char** args, AriaSpawnOptions* options) {
     if (!command) {
-        return aria_result_err("Command is NULL");
+        return npk_result_err("Command is NULL");
     }
     
     // Create process structure
     AriaProcess* proc = (AriaProcess*)calloc(1, sizeof(AriaProcess));
     if (!proc) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
     
     // Build argv array before spawn
@@ -220,7 +220,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
     char** argv = (char**)malloc((argc + 2) * sizeof(char*));
     if (!argv) {
         free(proc);
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
     
     argv[0] = (char*)command;
@@ -244,7 +244,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
         
         // FD 0: stdin (read from pipe)
         if (options->redirect_stdin && options->stdin_pipe) {
-            int fd = aria_pipe_get_read_fd(options->stdin_pipe);
+            int fd = npk_pipe_get_read_fd(options->stdin_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDIN) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDIN);
             }
@@ -252,7 +252,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
         // FD 1: stdout (write to pipe)
         if (options->redirect_stdout && options->stdout_pipe) {
-            int fd = aria_pipe_get_write_fd(options->stdout_pipe);
+            int fd = npk_pipe_get_write_fd(options->stdout_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDOUT) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDOUT);
             }
@@ -260,7 +260,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
         // FD 2: stderr (write to pipe)
         if (options->redirect_stderr && options->stderr_pipe) {
-            int fd = aria_pipe_get_write_fd(options->stderr_pipe);
+            int fd = npk_pipe_get_write_fd(options->stderr_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDERR) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDERR);
             }
@@ -268,7 +268,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
         // FD 3: stddbg - debug output (write to pipe)
         if (options->redirect_stddbg && options->stddbg_pipe) {
-            int fd = aria_pipe_get_write_fd(options->stddbg_pipe);
+            int fd = npk_pipe_get_write_fd(options->stddbg_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDDBG) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDBG);
             }
@@ -276,7 +276,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
         // FD 4: stddati - data input (read from pipe)
         if (options->redirect_stddati && options->stddati_pipe) {
-            int fd = aria_pipe_get_read_fd(options->stddati_pipe);
+            int fd = npk_pipe_get_read_fd(options->stddati_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDDATI) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDATI);
             }
@@ -284,7 +284,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
         // FD 5: stddato - data output (write to pipe)
         if (options->redirect_stddato && options->stddato_pipe) {
-            int fd = aria_pipe_get_write_fd(options->stddato_pipe);
+            int fd = npk_pipe_get_write_fd(options->stddato_pipe);
             if (fd >= 0 && fd != ARIA_FD_STDDATO) {
                 posix_spawn_file_actions_adddup2(&file_actions, fd, ARIA_FD_STDDATO);
             }
@@ -325,7 +325,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
     if (spawn_err != 0) {
         free(proc);
         errno = spawn_err;
-        return aria_result_err(get_error_message("posix_spawn failed"));
+        return npk_result_err(get_error_message("posix_spawn failed"));
     }
     
     // Parent process
@@ -337,20 +337,20 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
     AriaProcessInfo* info = (AriaProcessInfo*)malloc(sizeof(AriaProcessInfo));
     if (!info) {
         free(proc);
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
     
     info->pid = (int64_t)pid;
     info->handle = proc;
     
-    return aria_result_ok(info, sizeof(AriaProcessInfo));
+    return npk_result_ok(info, sizeof(AriaProcessInfo));
 }
 
 #else
 
 // Windows implementation (basic stub)
-AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions* options) {
-    return aria_result_err("aria_spawn not yet implemented on Windows");
+AriaResult* npk_spawn(const char* command, const char** args, AriaSpawnOptions* options) {
+    return npk_result_err("npk_spawn not yet implemented on Windows");
 }
 
 #endif
@@ -361,7 +361,7 @@ AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions*
 
 #ifndef _WIN32
 
-int aria_process_wait(AriaProcess* process) {
+int npk_process_wait(AriaProcess* process) {
     if (!process) return -1;
     
     if (process->has_exited) {
@@ -388,7 +388,7 @@ int aria_process_wait(AriaProcess* process) {
     return process->exit_code;
 }
 
-bool aria_process_is_running(AriaProcess* process) {
+bool npk_process_is_running(AriaProcess* process) {
     if (!process) return false;
     
     if (process->has_exited) {
@@ -418,12 +418,12 @@ bool aria_process_is_running(AriaProcess* process) {
     return false;
 }
 
-bool aria_process_get_exit_code(AriaProcess* process, int* exit_code) {
+bool npk_process_get_exit_code(AriaProcess* process, int* exit_code) {
     if (!process || !exit_code) return false;
     
     if (!process->has_exited) {
         // Check if it has exited without blocking
-        aria_process_is_running(process);
+        npk_process_is_running(process);
     }
     
     if (process->has_exited) {
@@ -434,7 +434,7 @@ bool aria_process_get_exit_code(AriaProcess* process, int* exit_code) {
     return false;
 }
 
-int aria_process_kill(AriaProcess* process, int signal) {
+int npk_process_kill(AriaProcess* process, int signal) {
     if (!process) return -1;
     
     if (signal == 0) {
@@ -444,7 +444,7 @@ int aria_process_kill(AriaProcess* process, int signal) {
     return kill(process->pid, signal);
 }
 
-int64_t aria_process_get_pid(AriaProcess* process) {
+int64_t npk_process_get_pid(AriaProcess* process) {
     if (!process) return -1;
     return (int64_t)process->pid;
 }
@@ -452,29 +452,29 @@ int64_t aria_process_get_pid(AriaProcess* process) {
 #else
 
 // Windows stubs
-int aria_process_wait(AriaProcess* process) {
+int npk_process_wait(AriaProcess* process) {
     return -1;
 }
 
-bool aria_process_is_running(AriaProcess* process) {
+bool npk_process_is_running(AriaProcess* process) {
     return false;
 }
 
-bool aria_process_get_exit_code(AriaProcess* process, int* exit_code) {
+bool npk_process_get_exit_code(AriaProcess* process, int* exit_code) {
     return false;
 }
 
-int aria_process_kill(AriaProcess* process, int signal) {
+int npk_process_kill(AriaProcess* process, int signal) {
     return -1;
 }
 
-int64_t aria_process_get_pid(AriaProcess* process) {
+int64_t npk_process_get_pid(AriaProcess* process) {
     return -1;
 }
 
 #endif
 
-static void aria_process_free(AriaProcess* process) {
+static void npk_process_free(AriaProcess* process) {
     if (!process) return;
     free(process);
 }
@@ -490,10 +490,10 @@ static void aria_process_free(AriaProcess* process) {
 // thread might hold malloc's lock when we fork
 static __thread AriaForkInfo fork_result_buffer;
 
-AriaResult* aria_fork(void) {
+AriaResult* npk_fork(void) {
     // Pre-allocate result structure BEFORE fork to avoid malloc deadlock.
     // Runtime mutex safety is handled by pthread_atfork handlers registered
-    // via aria_atfork_register() — GC, thread pools, etc. acquire their locks
+    // via npk_atfork_register() — GC, thread pools, etc. acquire their locks
     // before fork and release them in both parent and child afterward.
     fork_result_buffer.is_child = false;
     fork_result_buffer.pid = 0;
@@ -502,7 +502,7 @@ AriaResult* aria_fork(void) {
     pid_t pid = fork();
     
     if (pid < 0) {
-        return aria_result_err(get_error_message("fork failed"));
+        return npk_result_err(get_error_message("fork failed"));
     }
     
     if (pid == 0) {
@@ -519,10 +519,10 @@ AriaResult* aria_fork(void) {
     
     // Return pointer to thread-local buffer
     // Caller must copy this before next fork() call
-    return aria_result_ok(&fork_result_buffer, sizeof(AriaForkInfo));
+    return npk_result_ok(&fork_result_buffer, sizeof(AriaForkInfo));
 }
 
-int aria_exec(const char* command, const char** args) {
+int npk_exec(const char* command, const char** args) {
     if (!command) return -1;
     
     // Count arguments
@@ -548,7 +548,7 @@ int aria_exec(const char* command, const char** args) {
     return -1;
 }
 
-int aria_execve(const char* command, const char** args, const char** env) {
+int npk_execve(const char* command, const char** args, const char** env) {
     if (!command) return -1;
     
     // Count arguments
@@ -577,15 +577,15 @@ int aria_execve(const char* command, const char** args, const char** env) {
 #else
 
 // Windows stubs
-AriaResult* aria_fork(void) {
-    return aria_result_err("fork not available on Windows");
+AriaResult* npk_fork(void) {
+    return npk_result_err("fork not available on Windows");
 }
 
-int aria_exec(const char* command, const char** args) {
+int npk_exec(const char* command, const char** args) {
     return -1;
 }
 
-int aria_execve(const char* command, const char** args, const char** env) {
+int npk_execve(const char* command, const char** args, const char** env) {
     return -1;
 }
 
@@ -597,10 +597,10 @@ int aria_execve(const char* command, const char** args, const char** env) {
 
 #ifndef _WIN32
 
-AriaResult* aria_pipe_create(void) {
-    AriaPipe* aria_pipe = (AriaPipe*)calloc(1, sizeof(AriaPipe));
-    if (!aria_pipe) {
-        return aria_result_err("Out of memory");
+AriaResult* npk_pipe_create(void) {
+    AriaPipe* npk_pipe = (AriaPipe*)calloc(1, sizeof(AriaPipe));
+    if (!npk_pipe) {
+        return npk_result_err("Out of memory");
     }
 
     int fds[2];
@@ -610,43 +610,43 @@ AriaResult* aria_pipe_create(void) {
     // preventing FD leaks to forked children in multithreaded programs
     #ifdef __linux__
         if (pipe2(fds, O_CLOEXEC) < 0) {
-            free(aria_pipe);
-            return aria_result_err(get_error_message("pipe2 creation failed"));
+            free(npk_pipe);
+            return npk_result_err(get_error_message("pipe2 creation failed"));
         }
     #else
         // Fallback for non-Linux: create pipe then set close-on-exec
         if (::pipe(fds) < 0) {
-            free(aria_pipe);
-            return aria_result_err(get_error_message("pipe creation failed"));
+            free(npk_pipe);
+            return npk_result_err(get_error_message("pipe creation failed"));
         }
         // Set close-on-exec flags (not atomic, but best we can do)
         fcntl(fds[0], F_SETFD, FD_CLOEXEC);
         fcntl(fds[1], F_SETFD, FD_CLOEXEC);
     #endif
 
-    aria_pipe->read_fd = fds[0];
-    aria_pipe->write_fd = fds[1];
-    aria_pipe->read_closed = false;
-    aria_pipe->write_closed = false;
+    npk_pipe->read_fd = fds[0];
+    npk_pipe->write_fd = fds[1];
+    npk_pipe->read_closed = false;
+    npk_pipe->write_closed = false;
 
-    return aria_result_ok(aria_pipe, sizeof(AriaPipe));
+    return npk_result_ok(npk_pipe, sizeof(AriaPipe));
 }
 
-int64_t aria_pipe_write(AriaPipe* pipe, const void* data, size_t size) {
+int64_t npk_pipe_write(AriaPipe* pipe, const void* data, size_t size) {
     if (!pipe || !data || pipe->write_closed) return -1;
     
     ssize_t written = write(pipe->write_fd, data, size);
     return (int64_t)written;
 }
 
-int64_t aria_pipe_read(AriaPipe* pipe, void* buffer, size_t size) {
+int64_t npk_pipe_read(AriaPipe* pipe, void* buffer, size_t size) {
     if (!pipe || !buffer || pipe->read_closed) return -1;
     
     ssize_t bytes_read = read(pipe->read_fd, buffer, size);
     return (int64_t)bytes_read;
 }
 
-int aria_pipe_close_write(AriaPipe* pipe) {
+int npk_pipe_close_write(AriaPipe* pipe) {
     if (!pipe || pipe->write_closed) return -1;
     
     int result = close(pipe->write_fd);
@@ -656,7 +656,7 @@ int aria_pipe_close_write(AriaPipe* pipe) {
     return result;
 }
 
-int aria_pipe_close_read(AriaPipe* pipe) {
+int npk_pipe_close_read(AriaPipe* pipe) {
     if (!pipe || pipe->read_closed) return -1;
     
     int result = close(pipe->read_fd);
@@ -666,17 +666,17 @@ int aria_pipe_close_read(AriaPipe* pipe) {
     return result;
 }
 
-int aria_pipe_get_read_fd(AriaPipe* pipe) {
+int npk_pipe_get_read_fd(AriaPipe* pipe) {
     if (!pipe) return -1;
     return pipe->read_fd;
 }
 
-int aria_pipe_get_write_fd(AriaPipe* pipe) {
+int npk_pipe_get_write_fd(AriaPipe* pipe) {
     if (!pipe) return -1;
     return pipe->write_fd;
 }
 
-static void aria_pipe_free(AriaPipe* pipe) {
+static void npk_pipe_free(AriaPipe* pipe) {
     if (!pipe) return;
     
     if (!pipe->read_closed) {
@@ -693,35 +693,35 @@ static void aria_pipe_free(AriaPipe* pipe) {
 #else
 
 // Windows stubs
-AriaResult* aria_pipe_create(void) {
-    return aria_result_err("Pipes not yet implemented on Windows");
+AriaResult* npk_pipe_create(void) {
+    return npk_result_err("Pipes not yet implemented on Windows");
 }
 
-int64_t aria_pipe_write(AriaPipe* pipe, const void* data, size_t size) {
+int64_t npk_pipe_write(AriaPipe* pipe, const void* data, size_t size) {
     return -1;
 }
 
-int64_t aria_pipe_read(AriaPipe* pipe, void* buffer, size_t size) {
+int64_t npk_pipe_read(AriaPipe* pipe, void* buffer, size_t size) {
     return -1;
 }
 
-int aria_pipe_close_write(AriaPipe* pipe) {
+int npk_pipe_close_write(AriaPipe* pipe) {
     return -1;
 }
 
-int aria_pipe_close_read(AriaPipe* pipe) {
+int npk_pipe_close_read(AriaPipe* pipe) {
     return -1;
 }
 
-int aria_pipe_get_read_fd(AriaPipe* pipe) {
+int npk_pipe_get_read_fd(AriaPipe* pipe) {
     return -1;
 }
 
-int aria_pipe_get_write_fd(AriaPipe* pipe) {
+int npk_pipe_get_write_fd(AriaPipe* pipe) {
     return -1;
 }
 
-static void aria_pipe_free(AriaPipe* pipe) {
+static void npk_pipe_free(AriaPipe* pipe) {
     if (pipe) free(pipe);
 }
 
@@ -733,33 +733,33 @@ static void aria_pipe_free(AriaPipe* pipe) {
 
 #ifndef _WIN32
 
-int64_t aria_get_current_pid(void) {
+int64_t npk_get_current_pid(void) {
     return (int64_t)getpid();
 }
 
-int64_t aria_get_parent_pid(void) {
+int64_t npk_get_parent_pid(void) {
     return (int64_t)getppid();
 }
 
 #else
 
-int64_t aria_get_current_pid(void) {
+int64_t npk_get_current_pid(void) {
     return (int64_t)GetCurrentProcessId();
 }
 
-int64_t aria_get_parent_pid(void) {
+int64_t npk_get_parent_pid(void) {
     // Windows doesn't have a direct equivalent
     return -1;
 }
 
 #endif
 
-static void aria_process_info_free(AriaProcessInfo* info) {
+static void npk_process_info_free(AriaProcessInfo* info) {
     if (!info) return;
     free(info);
 }
 
-static void aria_fork_info_free(AriaForkInfo* info) {
+static void npk_fork_info_free(AriaForkInfo* info) {
     if (!info) return;
     free(info);
 }

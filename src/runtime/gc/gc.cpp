@@ -20,7 +20,7 @@
 #include <iostream>
 #include <cstring>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // =============================================================================
@@ -1128,4 +1128,4 @@ void GCState::unlock_for_fork() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

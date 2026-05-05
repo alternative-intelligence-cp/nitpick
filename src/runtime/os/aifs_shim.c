@@ -46,14 +46,14 @@ static AriaString make_string(const char* s) {
 // ============================================================================
 
 // Set tensor dtype on a file: "float32", "float16", "bfloat16", "int8", etc.
-int32_t aria_shim_aifs_set_dtype(const char* path, const char* dtype) {
+int32_t npk_shim_aifs_set_dtype(const char* path, const char* dtype) {
     if (setxattr(path, "user.tensor.dtype", dtype, strlen(dtype), 0) != 0)
         return -1;
     return 0;
 }
 
 // Get tensor dtype from a file
-AriaString aria_shim_aifs_get_dtype(const char* path) {
+AriaString npk_shim_aifs_get_dtype(const char* path) {
     char buf[64] = {0};
     ssize_t len = getxattr(path, "user.tensor.dtype", buf, sizeof(buf) - 1);
     if (len <= 0) return make_string("");
@@ -62,14 +62,14 @@ AriaString aria_shim_aifs_get_dtype(const char* path) {
 }
 
 // Set tensor shape as comma-separated: "3,224,224"
-int32_t aria_shim_aifs_set_shape(const char* path, const char* shape) {
+int32_t npk_shim_aifs_set_shape(const char* path, const char* shape) {
     if (setxattr(path, "user.tensor.shape", shape, strlen(shape), 0) != 0)
         return -1;
     return 0;
 }
 
 // Get tensor shape
-AriaString aria_shim_aifs_get_shape(const char* path) {
+AriaString npk_shim_aifs_get_shape(const char* path) {
     char buf[256] = {0};
     ssize_t len = getxattr(path, "user.tensor.shape", buf, sizeof(buf) - 1);
     if (len <= 0) return make_string("");
@@ -78,7 +78,7 @@ AriaString aria_shim_aifs_get_shape(const char* path) {
 }
 
 // Mark/unmark as checkpoint
-int32_t aria_shim_aifs_set_checkpoint(const char* path, int32_t is_ckpt) {
+int32_t npk_shim_aifs_set_checkpoint(const char* path, int32_t is_ckpt) {
     const char* val = is_ckpt ? "1" : "0";
     if (setxattr(path, "user.checkpoint", val, 1, 0) != 0)
         return -1;
@@ -86,7 +86,7 @@ int32_t aria_shim_aifs_set_checkpoint(const char* path, int32_t is_ckpt) {
 }
 
 // Check if file is a checkpoint
-int32_t aria_shim_aifs_is_checkpoint(const char* path) {
+int32_t npk_shim_aifs_is_checkpoint(const char* path) {
     char buf[4] = {0};
     ssize_t len = getxattr(path, "user.checkpoint", buf, sizeof(buf) - 1);
     if (len <= 0) return 0;
@@ -98,31 +98,31 @@ int32_t aria_shim_aifs_is_checkpoint(const char* path) {
 // ============================================================================
 
 // Open a file for reading, returns fd (handle)
-int64_t aria_shim_aifs_open_read(const char* path) {
+int64_t npk_shim_aifs_open_read(const char* path) {
     int fd = open(path, O_RDONLY);
     return (int64_t)fd;
 }
 
 // Open a file for writing (create/truncate), returns fd
-int64_t aria_shim_aifs_open_write(const char* path) {
+int64_t npk_shim_aifs_open_write(const char* path) {
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     return (int64_t)fd;
 }
 
 // Open for append
-int64_t aria_shim_aifs_open_append(const char* path) {
+int64_t npk_shim_aifs_open_append(const char* path) {
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     return (int64_t)fd;
 }
 
 // Close fd
-int32_t aria_shim_aifs_close(int64_t fd) {
+int32_t npk_shim_aifs_close(int64_t fd) {
     if (fd < 0) return -1;
     return close((int)fd) == 0 ? 0 : -1;
 }
 
 // Read up to nbytes, returns number of bytes read
-int64_t aria_shim_aifs_read_bytes(int64_t fd, int64_t nbytes) {
+int64_t npk_shim_aifs_read_bytes(int64_t fd, int64_t nbytes) {
     // This is a "skip/seek" style read — just advances position
     // For Aria, actual data reads use the file I/O stdlib
     if (fd < 0 || nbytes <= 0) return -1;
@@ -134,7 +134,7 @@ int64_t aria_shim_aifs_read_bytes(int64_t fd, int64_t nbytes) {
 }
 
 // Get file size
-int64_t aria_shim_aifs_file_size(const char* path) {
+int64_t npk_shim_aifs_file_size(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) return -1;
     return (int64_t)st.st_size;
@@ -147,7 +147,7 @@ int64_t aria_shim_aifs_file_size(const char* path) {
 // Detect AI model file format from magic bytes / extension
 // Returns: "onnx", "safetensors", "gguf", "pytorch", "hdf5",
 //          "numpy", "tflite", "tensorrt", "unknown"
-AriaString aria_shim_aifs_detect_format(const char* path) {
+AriaString npk_shim_aifs_detect_format(const char* path) {
     unsigned char magic[16] = {0};
     int fd = open(path, O_RDONLY);
     if (fd < 0) return make_string("unknown");
@@ -207,14 +207,14 @@ AriaString aria_shim_aifs_detect_format(const char* path) {
 }
 
 // Store detected format as xattr
-int32_t aria_shim_aifs_set_format(const char* path, const char* format) {
+int32_t npk_shim_aifs_set_format(const char* path, const char* format) {
     if (setxattr(path, "user.model.format", format, strlen(format), 0) != 0)
         return -1;
     return 0;
 }
 
 // Get stored format
-AriaString aria_shim_aifs_get_format(const char* path) {
+AriaString npk_shim_aifs_get_format(const char* path) {
     char buf[64] = {0};
     ssize_t len = getxattr(path, "user.model.format", buf, sizeof(buf) - 1);
     if (len <= 0) return make_string("");
@@ -227,7 +227,7 @@ AriaString aria_shim_aifs_get_format(const char* path) {
 // ============================================================================
 
 // Compute and store SHA-256 checksum of a file in xattr
-int32_t aria_shim_aifs_compute_checksum(const char* path) {
+int32_t npk_shim_aifs_compute_checksum(const char* path) {
     // Use popen to call sha256sum (avoids linking -lcrypto for the shim)
     char cmd[MAX_PATH_LEN + 32];
     snprintf(cmd, sizeof(cmd), "sha256sum '%s' 2>/dev/null", path);
@@ -251,7 +251,7 @@ int32_t aria_shim_aifs_compute_checksum(const char* path) {
 }
 
 // Get stored checksum
-AriaString aria_shim_aifs_get_checksum(const char* path) {
+AriaString npk_shim_aifs_get_checksum(const char* path) {
     char buf[128] = {0};
     ssize_t len = getxattr(path, "user.checksum.sha256", buf, sizeof(buf) - 1);
     if (len <= 0) return make_string("");
@@ -261,7 +261,7 @@ AriaString aria_shim_aifs_get_checksum(const char* path) {
 
 // Verify checksum: compute fresh and compare with stored
 // Returns: 1 = match, 0 = mismatch, -1 = error (no stored checksum)
-int32_t aria_shim_aifs_verify_checksum(const char* path) {
+int32_t npk_shim_aifs_verify_checksum(const char* path) {
     char stored[128] = {0};
     ssize_t slen = getxattr(path, "user.checksum.sha256", stored, sizeof(stored) - 1);
     if (slen < 64) return -1;
@@ -289,7 +289,7 @@ int32_t aria_shim_aifs_verify_checksum(const char* path) {
 // ============================================================================
 
 // Open file optimized for sequential read — sets POSIX_FADV_SEQUENTIAL
-int64_t aria_shim_aifs_open_sequential(const char* path) {
+int64_t npk_shim_aifs_open_sequential(const char* path) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) return -1;
     // Hint to kernel: we'll read this file sequentially
@@ -301,11 +301,11 @@ int64_t aria_shim_aifs_open_sequential(const char* path) {
 }
 
 // Read a chunk of bytes from fd into internal buffer, return bytes read
-// The data is accessible via aria_shim_aifs_get_read_buffer()
+// The data is accessible via npk_shim_aifs_get_read_buffer()
 static char*   g_read_chunk = NULL;
 static int64_t g_read_chunk_len = 0;
 
-int64_t aria_shim_aifs_read_chunk(int64_t fd, int64_t nbytes) {
+int64_t npk_shim_aifs_read_chunk(int64_t fd, int64_t nbytes) {
     if (fd < 0 || nbytes <= 0) return -1;
     if (g_read_chunk) { free(g_read_chunk); g_read_chunk = NULL; }
     g_read_chunk = (char*)malloc((size_t)nbytes);
@@ -317,7 +317,7 @@ int64_t aria_shim_aifs_read_chunk(int64_t fd, int64_t nbytes) {
 }
 
 // Get pointer to last read chunk as string (for Aria consumption)
-AriaString aria_shim_aifs_get_read_buffer(void) {
+AriaString npk_shim_aifs_get_read_buffer(void) {
     if (!g_read_chunk || g_read_chunk_len <= 0)
         return make_string("");
     // Make a copy as AriaString
@@ -330,14 +330,14 @@ AriaString aria_shim_aifs_get_read_buffer(void) {
 }
 
 // Seek in an open fd
-int64_t aria_shim_aifs_seek(int64_t fd, int64_t offset) {
+int64_t npk_shim_aifs_seek(int64_t fd, int64_t offset) {
     if (fd < 0) return -1;
     off_t pos = lseek((int)fd, (off_t)offset, SEEK_SET);
     return (int64_t)pos;
 }
 
 // Trigger kernel readahead for a range
-int32_t aria_shim_aifs_readahead(int64_t fd, int64_t offset, int64_t count) {
+int32_t npk_shim_aifs_readahead(int64_t fd, int64_t offset, int64_t count) {
     if (fd < 0) return -1;
     // readahead() is Linux-specific
     return readahead((int)fd, (off_t)offset, (size_t)count) == 0 ? 0 : -1;
@@ -353,7 +353,7 @@ int32_t aria_shim_aifs_readahead(int64_t fd, int64_t offset, int64_t count) {
 static char*   g_scan_buf = NULL;
 static int64_t g_scan_len = 0;
 
-AriaString aria_shim_aifs_scan_models(const char* dir_path) {
+AriaString npk_shim_aifs_scan_models(const char* dir_path) {
     if (g_scan_buf) { free(g_scan_buf); g_scan_buf = NULL; g_scan_len = 0; }
 
     DIR* d = opendir(dir_path);
@@ -422,7 +422,7 @@ done:
 // ============================================================================
 
 // Set arbitrary metadata on a file (prefixed with user.aria.)
-int32_t aria_shim_aifs_set_meta(const char* path, const char* key, const char* value) {
+int32_t npk_shim_aifs_set_meta(const char* path, const char* key, const char* value) {
     char xattr_name[256];
     snprintf(xattr_name, sizeof(xattr_name), "user.aria.%s", key);
     if (setxattr(path, xattr_name, value, strlen(value), 0) != 0)
@@ -431,7 +431,7 @@ int32_t aria_shim_aifs_set_meta(const char* path, const char* key, const char* v
 }
 
 // Get arbitrary metadata
-AriaString aria_shim_aifs_get_meta(const char* path, const char* key) {
+AriaString npk_shim_aifs_get_meta(const char* path, const char* key) {
     char xattr_name[256];
     snprintf(xattr_name, sizeof(xattr_name), "user.aria.%s", key);
     char buf[1024] = {0};

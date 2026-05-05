@@ -75,10 +75,10 @@ enum AArch64SIMD : int {
 // Emit a 32-bit AArch64 instruction (little-endian)
 static void aarch64_emit_insn(CodeBuffer* buf, uint32_t insn) {
     if (!buf) return;
-    aria_asm_emit_byte(buf, (insn >>  0) & 0xFF);
-    aria_asm_emit_byte(buf, (insn >>  8) & 0xFF);
-    aria_asm_emit_byte(buf, (insn >> 16) & 0xFF);
-    aria_asm_emit_byte(buf, (insn >> 24) & 0xFF);
+    npk_asm_emit_byte(buf, (insn >>  0) & 0xFF);
+    npk_asm_emit_byte(buf, (insn >>  8) & 0xFF);
+    npk_asm_emit_byte(buf, (insn >> 16) & 0xFF);
+    npk_asm_emit_byte(buf, (insn >> 24) & 0xFF);
 }
 
 // =============================================================================
@@ -95,7 +95,7 @@ static void aarch64_emit_insn(CodeBuffer* buf, uint32_t insn) {
 // =============================================================================
 
 // This file is compiled but the functions are only called if
-// aria_asm_get_arch() returns ASM_ARCH_AARCH64, which currently
+// npk_asm_get_arch() returns ASM_ARCH_AARCH64, which currently
 // never happens on x86-64 builds. When AArch64 support is added,
 // these stubs will be replaced with real encoders.
 

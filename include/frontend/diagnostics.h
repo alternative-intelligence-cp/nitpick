@@ -7,7 +7,7 @@
 #include <sstream>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 
 // ============================================================================
 // Diagnostic Severity Levels
@@ -154,6 +154,6 @@ private:
     void printSourceContext(const Diagnostic& diag) const;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DIAGNOSTICS_H

@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <netinet/in.h>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 /**
@@ -296,6 +296,6 @@ bool set_nonblocking(int fd);
 bool set_socket_option(int fd, int level, int optname, int value);
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_NET_H

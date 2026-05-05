@@ -5,8 +5,8 @@
 // This is a negative test — race detection must NOT be suppressed.
 
 extern func:puts = int32(string:s);
-extern func:aria_libc_thread_spawn = int64(wild ?*:func, int64:arg);
-extern func:aria_libc_thread_join = int32(int64:handle);
+extern func:npk_libc_thread_spawn = int64(wild ?*:func, int64:arg);
+extern func:npk_libc_thread_join = int32(int64:handle);
 
 // Shared state — NO synchronization
 int32:shared_data = 0i32;
@@ -22,9 +22,9 @@ func:unprotected_writer = int64(int64:arg) {
 // Spawner: reads shared_data without any lock
 // Expected: DISPROVEN — data races on shared_data and shared_flag
 func:test_unprotected_access = NIL() {
-    int64:t1 = aria_libc_thread_spawn(@unprotected_writer, 0i64);
+    int64:t1 = npk_libc_thread_spawn(@unprotected_writer, 0i64);
     int32:val = shared_data + shared_flag;
-    drop aria_libc_thread_join(t1);
+    drop npk_libc_thread_join(t1);
 };
 
 func:failsafe = int32(tbb32:err) {

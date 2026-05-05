@@ -5,7 +5,7 @@
 #include <regex>
 #include <filesystem>
 
-namespace aria {
+namespace npk {
 namespace tools {
 
 // ============================================================================
@@ -365,4 +365,4 @@ std::string ProjectConfigParser::validate_version(const std::string& version) {
 }
 
 } // namespace tools
-} // namespace aria
+} // namespace npk

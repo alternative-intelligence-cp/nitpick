@@ -58,7 +58,7 @@ typedef struct AriaTelemetryWriter AriaTelemetryWriter;
  *
  * @return Global writer instance
  */
-AriaTelemetryWriter* aria_telemetry_get_writer(void);
+AriaTelemetryWriter* npk_telemetry_get_writer(void);
 
 /**
  * Create a new telemetry writer
@@ -68,18 +68,18 @@ AriaTelemetryWriter* aria_telemetry_get_writer(void);
  * @param async        Use async buffering (recommended)
  * @return Writer instance or NULL on failure
  */
-AriaTelemetryWriter* aria_telemetry_writer_create(int fd, size_t buffer_size, bool async);
+AriaTelemetryWriter* npk_telemetry_writer_create(int fd, size_t buffer_size, bool async);
 
 /**
  * Destroy a telemetry writer
  * Flushes any pending output before destruction
  */
-void aria_telemetry_writer_destroy(AriaTelemetryWriter* writer);
+void npk_telemetry_writer_destroy(AriaTelemetryWriter* writer);
 
 /**
  * Flush buffered telemetry to the output
  */
-void aria_telemetry_flush(AriaTelemetryWriter* writer);
+void npk_telemetry_flush(AriaTelemetryWriter* writer);
 
 // ============================================================================
 // Low-Level Emission API
@@ -94,7 +94,7 @@ void aria_telemetry_flush(AriaTelemetryWriter* writer);
  * @param len     Length of JSON string (0 for strlen)
  * @return 0 on success, negative on error
  */
-int aria_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_t len);
+int npk_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_t len);
 
 /**
  * Emit a formatted JSON event
@@ -105,7 +105,7 @@ int aria_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_
  * @param payload  JSON payload string (e.g., "{\"file\": \"foo.aria\"}")
  * @return 0 on success, negative on error
  */
-int aria_telemetry_emit(AriaTelemetryWriter* writer,
+int npk_telemetry_emit(AriaTelemetryWriter* writer,
                          const char* source,
                          const char* event,
                          const char* payload);
@@ -119,7 +119,7 @@ int aria_telemetry_emit(AriaTelemetryWriter* writer,
  * @param message Log message
  * @return 0 on success, negative on error
  */
-int aria_telemetry_log(AriaTelemetryWriter* writer,
+int npk_telemetry_log(AriaTelemetryWriter* writer,
                         AriaTelemetryLevel level,
                         const char* source,
                         const char* message);
@@ -137,7 +137,7 @@ int aria_telemetry_log(AriaTelemetryWriter* writer,
  * @param value   Counter value (tbb64)
  * @return 0 on success, negative on error
  */
-int aria_telemetry_counter(AriaTelemetryWriter* writer,
+int npk_telemetry_counter(AriaTelemetryWriter* writer,
                             const char* source,
                             const char* name,
                             int64_t value);
@@ -151,7 +151,7 @@ int aria_telemetry_counter(AriaTelemetryWriter* writer,
  * @param value   Gauge value (tbb64)
  * @return 0 on success, negative on error
  */
-int aria_telemetry_gauge(AriaTelemetryWriter* writer,
+int npk_telemetry_gauge(AriaTelemetryWriter* writer,
                           const char* source,
                           const char* name,
                           int64_t value);
@@ -165,7 +165,7 @@ int aria_telemetry_gauge(AriaTelemetryWriter* writer,
  * @param value   Sample value (tbb64)
  * @return 0 on success, negative on error
  */
-int aria_telemetry_histogram(AriaTelemetryWriter* writer,
+int npk_telemetry_histogram(AriaTelemetryWriter* writer,
                               const char* source,
                               const char* name,
                               int64_t value);
@@ -185,9 +185,9 @@ typedef struct AriaSpan AriaSpan;
  * @param writer      Telemetry writer (NULL for global)
  * @param source      Source component name
  * @param operation   Operation name
- * @return Span handle (must be ended with aria_span_end)
+ * @return Span handle (must be ended with npk_span_end)
  */
-AriaSpan* aria_span_start(AriaTelemetryWriter* writer,
+AriaSpan* npk_span_start(AriaTelemetryWriter* writer,
                            const char* source,
                            const char* operation);
 
@@ -198,23 +198,23 @@ AriaSpan* aria_span_start(AriaTelemetryWriter* writer,
  * @param key    Attribute key
  * @param value  Attribute value (as string)
  */
-void aria_span_set_attribute(AriaSpan* span, const char* key, const char* value);
+void npk_span_set_attribute(AriaSpan* span, const char* key, const char* value);
 
 /**
  * Add an integer attribute to a span
  */
-void aria_span_set_attribute_int(AriaSpan* span, const char* key, int64_t value);
+void npk_span_set_attribute_int(AriaSpan* span, const char* key, int64_t value);
 
 /**
  * Mark span as error
  */
-void aria_span_set_error(AriaSpan* span, const char* message);
+void npk_span_set_error(AriaSpan* span, const char* message);
 
 /**
  * End a span and emit the telemetry
  * The span is destroyed after this call
  */
-void aria_span_end(AriaSpan* span);
+void npk_span_end(AriaSpan* span);
 
 // ============================================================================
 // Session Stats (atar-compatible)
@@ -243,7 +243,7 @@ typedef struct {
  * @param stats   Session statistics
  * @return 0 on success, negative on error
  */
-int aria_telemetry_session_stats(AriaTelemetryWriter* writer,
+int npk_telemetry_session_stats(AriaTelemetryWriter* writer,
                                   const char* source,
                                   const AriaSessionStats* stats);
 
@@ -278,34 +278,34 @@ typedef void (*AriaTelemetryCallback)(const char* source,
  * @param userdata User context passed to callback
  * @return Consumer instance or NULL on failure
  */
-AriaTelemetryConsumer* aria_telemetry_consumer_create(int fd,
+AriaTelemetryConsumer* npk_telemetry_consumer_create(int fd,
                                                        AriaTelemetryCallback callback,
                                                        void* userdata);
 
 /**
  * Start consuming telemetry (spawns background thread)
  */
-int aria_telemetry_consumer_start(AriaTelemetryConsumer* consumer);
+int npk_telemetry_consumer_start(AriaTelemetryConsumer* consumer);
 
 /**
  * Stop consuming telemetry
  */
-void aria_telemetry_consumer_stop(AriaTelemetryConsumer* consumer);
+void npk_telemetry_consumer_stop(AriaTelemetryConsumer* consumer);
 
 /**
  * Destroy consumer
  */
-void aria_telemetry_consumer_destroy(AriaTelemetryConsumer* consumer);
+void npk_telemetry_consumer_destroy(AriaTelemetryConsumer* consumer);
 
 /**
  * Get count of events processed
  */
-int64_t aria_telemetry_consumer_event_count(AriaTelemetryConsumer* consumer);
+int64_t npk_telemetry_consumer_event_count(AriaTelemetryConsumer* consumer);
 
 /**
  * Get count of parse errors
  */
-int64_t aria_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer);
+int64_t npk_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer);
 
 // ============================================================================
 // Utility Functions
@@ -314,7 +314,7 @@ int64_t aria_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer);
 /**
  * Get current timestamp in nanoseconds
  */
-int64_t aria_telemetry_timestamp_ns(void);
+int64_t npk_telemetry_timestamp_ns(void);
 
 /**
  * Escape a string for JSON output
@@ -324,12 +324,12 @@ int64_t aria_telemetry_timestamp_ns(void);
  * @param outlen Output buffer size
  * @return Length of escaped string (may exceed outlen if truncated)
  */
-size_t aria_json_escape(const char* input, char* output, size_t outlen);
+size_t npk_json_escape(const char* input, char* output, size_t outlen);
 
 /**
  * Convert log level to string
  */
-const char* aria_telemetry_level_string(AriaTelemetryLevel level);
+const char* npk_telemetry_level_string(AriaTelemetryLevel level);
 
 // ============================================================================
 // TBB Safety
@@ -340,7 +340,7 @@ const char* aria_telemetry_level_string(AriaTelemetryLevel level);
 /**
  * Check if value is a TBB error sentinel
  */
-static inline bool aria_telem_is_tbb_err(int64_t value) {
+static inline bool npk_telem_is_tbb_err(int64_t value) {
     return value == TBB64_ERR;
 }
 

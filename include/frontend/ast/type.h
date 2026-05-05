@@ -4,7 +4,7 @@
 #include "ast_node.h"
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 /**
  * Base class for type annotations
@@ -134,6 +134,6 @@ public:
     std::string toString() const override;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TYPE_H

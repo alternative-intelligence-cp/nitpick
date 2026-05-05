@@ -25,7 +25,7 @@
 #include <cstddef>
 #include <string>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // ============================================================================
@@ -231,27 +231,27 @@ bool flt512_is_tbb_error_nan(const flt512& f);
 
 extern "C" {
     // flt256 C API
-    void aria_flt256_add(const flt256* a, const flt256* b, flt256* result);
-    void aria_flt256_sub(const flt256* a, const flt256* b, flt256* result);
-    void aria_flt256_mul(const flt256* a, const flt256* b, flt256* result);
-    void aria_flt256_div(const flt256* a, const flt256* b, flt256* result);
-    void aria_flt256_neg(const flt256* a, flt256* result);
+    void npk_flt256_add(const flt256* a, const flt256* b, flt256* result);
+    void npk_flt256_sub(const flt256* a, const flt256* b, flt256* result);
+    void npk_flt256_mul(const flt256* a, const flt256* b, flt256* result);
+    void npk_flt256_div(const flt256* a, const flt256* b, flt256* result);
+    void npk_flt256_neg(const flt256* a, flt256* result);
 
     // flt512 C API
-    void aria_flt512_add(const flt512* a, const flt512* b, flt512* result);
-    void aria_flt512_sub(const flt512* a, const flt512* b, flt512* result);
-    void aria_flt512_mul(const flt512* a, const flt512* b, flt512* result);
-    void aria_flt512_div(const flt512* a, const flt512* b, flt512* result);
-    void aria_flt512_neg(const flt512* a, flt512* result);
+    void npk_flt512_add(const flt512* a, const flt512* b, flt512* result);
+    void npk_flt512_sub(const flt512* a, const flt512* b, flt512* result);
+    void npk_flt512_mul(const flt512* a, const flt512* b, flt512* result);
+    void npk_flt512_div(const flt512* a, const flt512* b, flt512* result);
+    void npk_flt512_neg(const flt512* a, flt512* result);
 
     // Conversion C API
-    void aria_flt256_from_double(double d, flt256* result);
-    double aria_flt256_to_double(const flt256* f);
-    void aria_flt512_from_double(double d, flt512* result);
-    double aria_flt512_to_double(const flt512* f);
+    void npk_flt256_from_double(double d, flt256* result);
+    double npk_flt256_to_double(const flt256* f);
+    void npk_flt512_from_double(double d, flt512* result);
+    double npk_flt512_to_double(const flt512* f);
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_HIGHPREC_FLOAT_H

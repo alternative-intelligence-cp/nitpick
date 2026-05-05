@@ -8,7 +8,7 @@
 #include <set>
 #include <atomic>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // Macro Parameter
@@ -149,6 +149,6 @@ public:
 };
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_PREPROCESSOR_H

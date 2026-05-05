@@ -14,7 +14,7 @@
 
 TEST_CASE(wild_alloc_basic) {
     // Basic allocation test
-    void* ptr = aria_alloc(1024);
+    void* ptr = npk_alloc(1024);
     ASSERT(ptr != nullptr, "Allocation should succeed");
     
     // Write and read back
@@ -24,12 +24,12 @@ TEST_CASE(wild_alloc_basic) {
     ASSERT(data[0] == 'A', "First byte should be 'A'");
     ASSERT(data[1023] == 'Z', "Last byte should be 'Z'");
     
-    aria_free(ptr);
+    npk_free(ptr);
 }
 
 TEST_CASE(wild_alloc_zero_size) {
     // Zero-size allocation should return NULL
-    void* ptr = aria_alloc(0);
+    void* ptr = npk_alloc(0);
     ASSERT(ptr == nullptr, "Zero-size allocation should return NULL");
 }
 
@@ -39,7 +39,7 @@ TEST_CASE(wild_alloc_multiple) {
     void* ptrs[count];
     
     for (int i = 0; i < count; ++i) {
-        ptrs[i] = aria_alloc(64);
+        ptrs[i] = npk_alloc(64);
         ASSERT(ptrs[i] != nullptr, "Allocation should succeed");
         
         // Mark each allocation with unique pattern
@@ -55,18 +55,18 @@ TEST_CASE(wild_alloc_multiple) {
     
     // Free all
     for (int i = 0; i < count; ++i) {
-        aria_free(ptrs[i]);
+        npk_free(ptrs[i]);
     }
 }
 
 TEST_CASE(wild_free_null) {
     // Freeing NULL should be safe
-    aria_free(nullptr);  // Should not crash
+    npk_free(nullptr);  // Should not crash
 }
 
 TEST_CASE(wild_realloc_basic) {
     // Basic realloc test
-    void* ptr = aria_alloc(100);
+    void* ptr = npk_alloc(100);
     ASSERT(ptr != nullptr, "Initial allocation should succeed");
     
     // Write pattern
@@ -75,7 +75,7 @@ TEST_CASE(wild_realloc_basic) {
     data[99] = 'Y';
     
     // Grow allocation
-    void* new_ptr = aria_realloc(ptr, 200);
+    void* new_ptr = npk_realloc(ptr, 200);
     ASSERT(new_ptr != nullptr, "Realloc should succeed");
     
     // Verify original data preserved
@@ -83,34 +83,34 @@ TEST_CASE(wild_realloc_basic) {
     ASSERT(data[0] == 'X', "First byte should be preserved");
     ASSERT(data[99] == 'Y', "Last byte should be preserved");
     
-    aria_free(new_ptr);
+    npk_free(new_ptr);
 }
 
 TEST_CASE(wild_realloc_shrink) {
     // Shrink allocation
-    void* ptr = aria_alloc(1000);
+    void* ptr = npk_alloc(1000);
     ASSERT(ptr != nullptr, "Allocation should succeed");
     
     char* data = static_cast<char*>(ptr);
     data[0] = 'A';
     data[50] = 'B';
     
-    void* new_ptr = aria_realloc(ptr, 100);
+    void* new_ptr = npk_realloc(ptr, 100);
     ASSERT(new_ptr != nullptr, "Shrink should succeed");
     
     data = static_cast<char*>(new_ptr);
     ASSERT(data[0] == 'A', "Data should be preserved");
     ASSERT(data[50] == 'B', "Data should be preserved");
     
-    aria_free(new_ptr);
+    npk_free(new_ptr);
 }
 
 TEST_CASE(wild_realloc_to_zero) {
     // Realloc to zero size should free
-    void* ptr = aria_alloc(100);
+    void* ptr = npk_alloc(100);
     ASSERT(ptr != nullptr, "Allocation should succeed");
     
-    void* new_ptr = aria_realloc(ptr, 0);
+    void* new_ptr = npk_realloc(ptr, 0);
     ASSERT(new_ptr == nullptr, "Realloc to zero should return NULL");
 }
 
@@ -120,14 +120,14 @@ TEST_CASE(wild_realloc_to_zero) {
 
 TEST_CASE(alloc_buffer_basic) {
     // Basic buffer allocation
-    void* buf = aria_alloc_buffer(1024, 0, false);
+    void* buf = npk_alloc_buffer(1024, 0, false);
     ASSERT(buf != nullptr, "Buffer allocation should succeed");
-    aria_free(buf);
+    npk_free(buf);
 }
 
 TEST_CASE(alloc_buffer_aligned) {
     // Aligned buffer allocation
-    void* buf = aria_alloc_buffer(1024, 64, false);
+    void* buf = npk_alloc_buffer(1024, 64, false);
     ASSERT(buf != nullptr, "Aligned buffer allocation should succeed");
     
     // Check alignment (address should be multiple of 64)
@@ -144,7 +144,7 @@ TEST_CASE(alloc_buffer_aligned) {
 TEST_CASE(alloc_buffer_zero_init) {
     // Zero-initialized buffer
     size_t size = 256;
-    void* buf = aria_alloc_buffer(size, 0, true);
+    void* buf = npk_alloc_buffer(size, 0, true);
     ASSERT(buf != nullptr, "Buffer allocation should succeed");
     
     // Verify all bytes are zero
@@ -153,13 +153,13 @@ TEST_CASE(alloc_buffer_zero_init) {
         ASSERT(data[i] == 0, "Buffer should be zero-initialized");
     }
     
-    aria_free(buf);
+    npk_free(buf);
 }
 
 TEST_CASE(alloc_string_basic) {
     // String allocation
     size_t len = 100;
-    char* str = aria_alloc_string(len);
+    char* str = npk_alloc_string(len);
     ASSERT(str != nullptr, "String allocation should succeed");
     
     // Verify null terminator
@@ -169,14 +169,14 @@ TEST_CASE(alloc_string_basic) {
     std::strcpy(str, "Hello, Aria!");
     ASSERT(std::strcmp(str, "Hello, Aria!") == 0, "String should match");
     
-    aria_free(str);
+    npk_free(str);
 }
 
 TEST_CASE(alloc_array_basic) {
     // Array allocation
     size_t elem_size = sizeof(int);
     size_t count = 50;
-    int* arr = static_cast<int*>(aria_alloc_array(elem_size, count));
+    int* arr = static_cast<int*>(npk_alloc_array(elem_size, count));
     ASSERT(arr != nullptr, "Array allocation should succeed");
     
     // Initialize array
@@ -189,14 +189,14 @@ TEST_CASE(alloc_array_basic) {
         ASSERT(arr[i] == static_cast<int>(i * 2), "Array value should match");
     }
     
-    aria_free(arr);
+    npk_free(arr);
 }
 
 TEST_CASE(alloc_array_overflow) {
     // Test overflow protection
     size_t elem_size = SIZE_MAX / 2;
     size_t count = 3;  // This will overflow
-    void* ptr = aria_alloc_array(elem_size, count);
+    void* ptr = npk_alloc_array(elem_size, count);
     ASSERT(ptr == nullptr, "Overflow should be detected");
 }
 
@@ -206,19 +206,19 @@ TEST_CASE(alloc_array_overflow) {
 
 TEST_CASE(wildx_alloc_basic) {
     // Basic executable memory allocation
-    WildXGuard guard = aria_alloc_exec(4096);
+    WildXGuard guard = npk_alloc_exec(4096);
     ASSERT(guard.ptr != nullptr, "WildX allocation should succeed");
     ASSERT(guard.size >= 4096, "Size should be at least 4096");
     ASSERT(guard.state == WILDX_STATE_WRITABLE, "Initial state should be WRITABLE");
     ASSERT(!guard.sealed, "Should not be sealed initially");
     
-    aria_free_exec(&guard);
+    npk_free_exec(&guard);
     ASSERT(guard.state == WILDX_STATE_FREED, "State should be FREED");
 }
 
 TEST_CASE(wildx_write_then_seal) {
     // Write to writable memory, then seal
-    WildXGuard guard = aria_alloc_exec(4096);
+    WildXGuard guard = npk_alloc_exec(4096);
     ASSERT(guard.ptr != nullptr, "Allocation should succeed");
     
     // Write opcodes to writable memory
@@ -226,45 +226,45 @@ TEST_CASE(wildx_write_then_seal) {
     code[0] = 0xC3;  // x86_64: RET instruction (simplified test)
     
     // Seal memory (RW → RX)
-    int result = aria_mem_protect_exec(&guard);
+    int result = npk_mem_protect_exec(&guard);
     ASSERT(result == 0, "Sealing should succeed");
     ASSERT(guard.state == WILDX_STATE_EXECUTABLE, "State should be EXECUTABLE");
     ASSERT(guard.sealed, "Guard should be sealed");
     
     // Note: We cannot test write failure (SIGSEGV) safely in unit tests
     
-    aria_free_exec(&guard);
+    npk_free_exec(&guard);
 }
 
 TEST_CASE(wildx_seal_invalid_state) {
     // Attempt to seal already sealed memory
-    WildXGuard guard = aria_alloc_exec(4096);
+    WildXGuard guard = npk_alloc_exec(4096);
     ASSERT(guard.ptr != nullptr, "Allocation should succeed");
     
-    int result = aria_mem_protect_exec(&guard);
+    int result = npk_mem_protect_exec(&guard);
     ASSERT(result == 0, "First seal should succeed");
     
     // Try to seal again
-    result = aria_mem_protect_exec(&guard);
+    result = npk_mem_protect_exec(&guard);
     ASSERT(result == -1, "Second seal should fail");
     
-    aria_free_exec(&guard);
+    npk_free_exec(&guard);
 }
 
 TEST_CASE(wildx_seal_null_guard) {
     // Sealing NULL guard should fail
-    int result = aria_mem_protect_exec(nullptr);
+    int result = npk_mem_protect_exec(nullptr);
     ASSERT(result == -1, "Sealing NULL guard should fail");
 }
 
 TEST_CASE(wildx_free_null) {
     // Freeing NULL guard should be safe
-    aria_free_exec(nullptr);  // Should not crash
+    npk_free_exec(nullptr);  // Should not crash
 }
 
 TEST_CASE(wildx_page_alignment) {
     // Verify page alignment
-    WildXGuard guard = aria_alloc_exec(100);  // Small size
+    WildXGuard guard = npk_alloc_exec(100);  // Small size
     ASSERT(guard.ptr != nullptr, "Allocation should succeed");
     
     // Size should be rounded up to page boundary
@@ -274,7 +274,7 @@ TEST_CASE(wildx_page_alignment) {
     uintptr_t addr = reinterpret_cast<uintptr_t>(guard.ptr);
     ASSERT((addr % 4096) == 0, "Address should be page-aligned");
     
-    aria_free_exec(&guard);
+    npk_free_exec(&guard);
 }
 
 TEST_CASE(wildx_multiple_allocations) {
@@ -283,20 +283,20 @@ TEST_CASE(wildx_multiple_allocations) {
     WildXGuard guards[count];
     
     for (int i = 0; i < count; ++i) {
-        guards[i] = aria_alloc_exec(4096);
+        guards[i] = npk_alloc_exec(4096);
         ASSERT(guards[i].ptr != nullptr, "Allocation should succeed");
         ASSERT(guards[i].state == WILDX_STATE_WRITABLE, "State should be WRITABLE");
     }
     
     // Seal all
     for (int i = 0; i < count; ++i) {
-        int result = aria_mem_protect_exec(&guards[i]);
+        int result = npk_mem_protect_exec(&guards[i]);
         ASSERT(result == 0, "Sealing should succeed");
     }
     
     // Free all
     for (int i = 0; i < count; ++i) {
-        aria_free_exec(&guards[i]);
+        npk_free_exec(&guards[i]);
         ASSERT(guards[i].state == WILDX_STATE_FREED, "State should be FREED");
     }
 }
@@ -308,7 +308,7 @@ TEST_CASE(wildx_multiple_allocations) {
 TEST_CASE(allocator_stats_basic) {
     // Query allocator statistics
     AllocatorStats stats;
-    aria_allocator_get_stats(&stats);
+    npk_allocator_get_stats(&stats);
     
     // Stats should be reasonable (not checking >= 0 since size_t is always non-negative)
     ASSERT(stats.total_wild_allocated == stats.total_wild_allocated, "Wild allocated should be valid");
@@ -320,16 +320,16 @@ TEST_CASE(allocator_stats_basic) {
 TEST_CASE(allocator_stats_tracking) {
     // Verify stats tracking
     AllocatorStats before, after;
-    aria_allocator_get_stats(&before);
+    npk_allocator_get_stats(&before);
     
     // Allocate wild memory
-    void* ptr1 = aria_alloc(1024);
-    void* ptr2 = aria_alloc(2048);
+    void* ptr1 = npk_alloc(1024);
+    void* ptr2 = npk_alloc(2048);
     
     // Allocate WildX memory
-    WildXGuard guard = aria_alloc_exec(4096);
+    WildXGuard guard = npk_alloc_exec(4096);
     
-    aria_allocator_get_stats(&after);
+    npk_allocator_get_stats(&after);
     
     // Verify wild stats increased
     ASSERT(after.num_wild_allocations >= before.num_wild_allocations + 2,
@@ -340,7 +340,7 @@ TEST_CASE(allocator_stats_tracking) {
            "WildX allocation count should increase");
     
     // Cleanup
-    aria_free(ptr1);
-    aria_free(ptr2);
-    aria_free_exec(&guard);
+    npk_free(ptr1);
+    npk_free(ptr2);
+    npk_free_exec(&guard);
 }

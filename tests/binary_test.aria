@@ -304,13 +304,13 @@ func:main = int32() {
     drop bin_write_int32(b21, 42i32);
     drop bin_write_str(b21, "file-test");
     drop bin_write_flt64(b21, 6.28);
-    int32:ok21 = raw bin_to_file(b21, "/tmp/aria_bin_test.bin");
+    int32:ok21 = raw bin_to_file(b21, "/tmp/npk_bin_test.bin");
     if (ok21 == 1i32) { drop check(true, "T21 write to file ok"); passed = passed + 1i32;
     } else { drop check(false, "T21 write file"); failed = failed + 1i32; }
     drop bin_free(b21);
 
     // T22: Read from file
-    int64:b22 = raw bin_from_file("/tmp/aria_bin_test.bin");
+    int64:b22 = raw bin_from_file("/tmp/npk_bin_test.bin");
     int32:v22a = raw bin_read_int32(b22);
     string:v22b = raw bin_read_str(b22);
     flt64:v22c = raw bin_read_flt64(b22);
@@ -392,10 +392,10 @@ func:main = int32() {
     drop bin_write_flt64(b25w, 1.11);
     drop bin_write_str(b25w, "Record2");
     drop bin_write_flt64(b25w, 2.22);
-    int32:ok25 = raw bin_to_file(b25w, "/tmp/aria_bin_records.bin");
+    int32:ok25 = raw bin_to_file(b25w, "/tmp/npk_bin_records.bin");
     drop bin_free(b25w);
 
-    int64:b25r = raw bin_from_file("/tmp/aria_bin_records.bin");
+    int64:b25r = raw bin_from_file("/tmp/npk_bin_records.bin");
     int32:cnt25 = raw bin_read_int32(b25r);
     string:r25a = raw bin_read_str(b25r);
     flt64:rv25a = raw bin_read_flt64(b25r);

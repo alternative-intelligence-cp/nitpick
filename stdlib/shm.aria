@@ -7,33 +7,33 @@
 //          0 direct extern calls; backed by libaria_libc_thread.so
 
 // ── aria-libc shims ──────────────────────────────────────────────────────────
-extern "aria_libc_thread" {
-    func:aria_libc_shm_create     = int64(int64:size);
-    func:aria_libc_shm_destroy    = int32(int64:handle);
-    func:aria_libc_shm_write_int64 = int32(int64:handle, int64:offset, int64:value);
-    func:aria_libc_shm_read_int64  = int64(int64:handle, int64:offset);
-    func:aria_libc_shm_size       = int64(int64:handle);
+extern "npk_libc_thread" {
+    func:npk_libc_shm_create     = int64(int64:size);
+    func:npk_libc_shm_destroy    = int32(int64:handle);
+    func:npk_libc_shm_write_int64 = int32(int64:handle, int64:offset, int64:value);
+    func:npk_libc_shm_read_int64  = int64(int64:handle, int64:offset);
+    func:npk_libc_shm_size       = int64(int64:handle);
 }
 
 Type:SharedMemory = {
     func:create = int64(int64:size) {
-        pass aria_libc_shm_create(size);
+        pass npk_libc_shm_create(size);
     };
 
     func:destroy = int32(int64:shm) {
-        pass aria_libc_shm_destroy(shm);
+        pass npk_libc_shm_destroy(shm);
     };
 
     func:write_int64 = int32(int64:shm, int64:offset, int64:value) {
-        pass aria_libc_shm_write_int64(shm, offset, value);
+        pass npk_libc_shm_write_int64(shm, offset, value);
     };
 
     func:read_int64 = int64(int64:shm, int64:offset) {
-        pass aria_libc_shm_read_int64(shm, offset);
+        pass npk_libc_shm_read_int64(shm, offset);
     };
 
     func:size = int64(int64:shm) {
-        pass aria_libc_shm_size(shm);
+        pass npk_libc_shm_size(shm);
     };
 
     struct:interface = {

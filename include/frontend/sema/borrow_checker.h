@@ -12,9 +12,9 @@
 #include <memory>
 
 // Forward declaration for optional Z3 integration (v0.6.1)
-namespace aria { class Z3Verifier; }
+namespace npk { class Z3Verifier; }
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -1078,6 +1078,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_BORROW_CHECKER_H

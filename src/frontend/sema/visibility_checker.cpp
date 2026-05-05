@@ -1,7 +1,7 @@
 #include "frontend/sema/visibility_checker.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 VisibilityChecker::VisibilityChecker(ModuleTable* moduleTable)
@@ -171,4 +171,4 @@ std::string VisibilityChecker::visibilityToString(VisibilityLevel visibility) co
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

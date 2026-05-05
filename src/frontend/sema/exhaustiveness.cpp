@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -481,4 +481,4 @@ std::string ExhaustivenessAnalyzer::generateErrorMessage(
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

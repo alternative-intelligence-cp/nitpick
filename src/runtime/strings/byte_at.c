@@ -1,5 +1,5 @@
 /**
- * aria_string_byte_at — single-byte accessor for Aria strings
+ * npk_string_byte_at — single-byte accessor for Aria strings
  *
  * AriaString is { const char* data; int64_t length }. This gives Aria code
  * a way to do character-by-character string parsing without depending on the
@@ -19,10 +19,10 @@ typedef struct {
  *
  * NOTE: The Aria compiler passes `string` parameters as AriaString* (pointer to
  * the struct), not AriaString by value.  The LLVM IR shows:
- *   declare i64 @aria_string_byte_at(ptr, i64)
+ *   declare i64 @npk_string_byte_at(ptr, i64)
  * where the first ptr is &AriaString and the second i64 is idx.
  */
-int64_t aria_string_byte_at(const AriaString *str, int64_t idx) {
+int64_t npk_string_byte_at(const AriaString *str, int64_t idx) {
     if (!str || idx < 0 || idx >= str->length) return -1;
     return (int64_t)(unsigned char)str->data[idx];
 }

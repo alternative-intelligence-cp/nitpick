@@ -26,7 +26,7 @@
 #include <optional>
 #include <variant>
 
-namespace aria::adap {
+namespace npk::adap {
 
 // =============================================================================
 // TBB Types
@@ -452,6 +452,6 @@ void aria_dap_free_string(char* str);
 
 }  // extern "C"
 
-}  // namespace aria::adap
+}  // namespace npk::adap
 
 #endif // ARIA_ADAP_DAP_PROTOCOL_HPP

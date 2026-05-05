@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -146,6 +146,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_SEMA_VISIBILITY_CHECKER_H

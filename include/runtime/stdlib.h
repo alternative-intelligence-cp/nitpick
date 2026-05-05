@@ -27,79 +27,79 @@ extern "C" {
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_print(const char* str, int64_t len);
+void npk_print(const char* str, int64_t len);
 
 /**
  * Print a string to stdout with newline
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_println(const char* str, int64_t len);
+void npk_println(const char* str, int64_t len);
 
 /**
  * Print a string to stderr (no newline)
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_eprint(const char* str, int64_t len);
+void npk_eprint(const char* str, int64_t len);
 
 /**
  * Print a string to stderr with newline
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_eprintln(const char* str, int64_t len);
+void npk_eprintln(const char* str, int64_t len);
 
 /**
  * Print a string to debug channel (stddbg - fd 3)
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_debug(const char* str, int64_t len);
+void npk_debug(const char* str, int64_t len);
 
 /**
  * Print a string to debug channel with newline
  * @param str Pointer to UTF-8 string
  * @param len Length of string in bytes
  */
-void aria_debugln(const char* str, int64_t len);
+void npk_debugln(const char* str, int64_t len);
 
 // ============================================================================
 // Memory Functions (std.mem) - Wrappers for existing allocators
 // ============================================================================
 
 /**
- * Allocate memory on GC heap (wrapper for aria_gc_alloc)
+ * Allocate memory on GC heap (wrapper for npk_gc_alloc)
  * @param size Size in bytes
  * @return Pointer to allocated memory or NULL on failure
  */
-void* aria_std_gc_alloc(int64_t size);
+void* npk_std_gc_alloc(int64_t size);
 
 /**
- * Allocate memory on wild heap (wrapper for aria_alloc)
+ * Allocate memory on wild heap (wrapper for npk_alloc)
  * @param size Size in bytes
  * @return Pointer to allocated memory or NULL on failure
  */
-void* aria_std_alloc(int64_t size);
+void* npk_std_alloc(int64_t size);
 
 /**
- * Free memory on wild heap (wrapper for aria_free)
+ * Free memory on wild heap (wrapper for npk_free)
  * @param ptr Pointer to memory to free
  */
-void aria_std_free(void* ptr);
+void npk_std_free(void* ptr);
 
 /**
- * Allocate executable memory (wrapper for aria_alloc_exec)
+ * Allocate executable memory (wrapper for npk_alloc_exec)
  * @param size Size in bytes
  * @return Pointer to allocated memory or NULL on failure
  */
-void* aria_std_alloc_exec(int64_t size);
+void* npk_std_alloc_exec(int64_t size);
 
 /**
  * Free executable memory
  * @param ptr Pointer to memory to free
  */
-void aria_std_free_exec(void* ptr);
+void npk_std_free_exec(void* ptr);
 
 // ============================================================================
 // String Functions (std.string)
@@ -110,7 +110,7 @@ void aria_std_free_exec(void* ptr);
  * @param str Pointer to string
  * @return Length in bytes (excluding null terminator)
  */
-int64_t aria_cstr_length(const char* str);
+int64_t npk_cstr_length(const char* str);
 
 /**
  * Compare two strings
@@ -118,7 +118,7 @@ int64_t aria_cstr_length(const char* str);
  * @param s2 Second string
  * @return 0 if equal, <0 if s1 < s2, >0 if s1 > s2
  */
-int32_t aria_string_compare(const char* s1, const char* s2);
+int32_t npk_string_compare(const char* s1, const char* s2);
 
 /**
  * Concatenate two strings (allocates new string on GC heap)
@@ -126,7 +126,7 @@ int32_t aria_string_compare(const char* s1, const char* s2);
  * @param s2 Second string
  * @return Pointer to new concatenated string or NULL on failure
  */
-char* aria_cstr_concat(const char* s1, const char* s2);
+char* npk_cstr_concat(const char* s1, const char* s2);
 
 // ============================================================================
 // Math Functions (std.math)
@@ -137,21 +137,21 @@ char* aria_cstr_concat(const char* s1, const char* s2);
  * @param x Input value
  * @return Absolute value
  */
-int64_t aria_math_abs_i64(int64_t x);
+int64_t npk_math_abs_i64(int64_t x);
 
 /**
  * Absolute value for flt64
  * @param x Input value
  * @return Absolute value
  */
-double aria_math_abs_f64(double x);
+double npk_math_abs_f64(double x);
 
 /**
  * Square root
  * @param x Input value
  * @return Square root of x
  */
-double aria_math_sqrt(double x);
+double npk_math_sqrt(double x);
 
 /**
  * Power function
@@ -159,7 +159,7 @@ double aria_math_sqrt(double x);
  * @param y Exponent
  * @return x raised to power y
  */
-double aria_math_pow(double x, double y);
+double npk_math_pow(double x, double y);
 
 /**
  * Minimum of two int64 values
@@ -167,7 +167,7 @@ double aria_math_pow(double x, double y);
  * @param b Second value
  * @return Minimum value
  */
-int64_t aria_math_min_i64(int64_t a, int64_t b);
+int64_t npk_math_min_i64(int64_t a, int64_t b);
 
 /**
  * Maximum of two int64 values
@@ -175,7 +175,7 @@ int64_t aria_math_min_i64(int64_t a, int64_t b);
  * @param b Second value
  * @return Maximum value
  */
-int64_t aria_math_max_i64(int64_t a, int64_t b);
+int64_t npk_math_max_i64(int64_t a, int64_t b);
 
 // ============================================================================
 // Math Constants
@@ -185,13 +185,13 @@ int64_t aria_math_max_i64(int64_t a, int64_t b);
  * Get PI constant
  * @return Value of PI
  */
-double aria_math_pi(void);
+double npk_math_pi(void);
 
 /**
  * Get E constant
  * @return Value of E
  */
-double aria_math_e(void);
+double npk_math_e(void);
 
 #ifdef __cplusplus
 }

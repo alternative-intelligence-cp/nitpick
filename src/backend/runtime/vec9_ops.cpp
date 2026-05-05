@@ -17,13 +17,13 @@ extern "C" {
 // Construction
 // ============================================================================
 
-vec9_tbb32 aria_vec9_tbb32_zero() {
+vec9_tbb32 npk_vec9_tbb32_zero() {
     vec9_tbb32 result;
     memset(result.data, 0, sizeof(result.data));
     return result;
 }
 
-vec9_tbb32 aria_vec9_tbb32_err() {
+vec9_tbb32 npk_vec9_tbb32_err() {
     vec9_tbb32 result;
     for (int i = 0; i < 16; i++) {
         result.data[i] = TBB32_ERR;
@@ -31,7 +31,7 @@ vec9_tbb32 aria_vec9_tbb32_err() {
     return result;
 }
 
-vec9_tbb32 aria_vec9_tbb32_from_array(const int32_t* arr) {
+vec9_tbb32 npk_vec9_tbb32_from_array(const int32_t* arr) {
     vec9_tbb32 result;
     // Copy 9 active elements
     for (int i = 0; i < 9; i++) {
@@ -48,14 +48,14 @@ vec9_tbb32 aria_vec9_tbb32_from_array(const int32_t* arr) {
 // Element Access
 // ============================================================================
 
-int32_t aria_vec9_tbb32_get(const vec9_tbb32* v, int idx) {
+int32_t npk_vec9_tbb32_get(const vec9_tbb32* v, int idx) {
     if (idx < 0 || idx >= 9) {
         return TBB32_ERR;
     }
     return v->data[idx];
 }
 
-void aria_vec9_tbb32_set(vec9_tbb32* v, int idx, int32_t val) {
+void npk_vec9_tbb32_set(vec9_tbb32* v, int idx, int32_t val) {
     if (idx >= 0 && idx < 9) {
         v->data[idx] = val;
     }
@@ -65,7 +65,7 @@ void aria_vec9_tbb32_set(vec9_tbb32* v, int idx, int32_t val) {
 // Vector Arithmetic
 // ============================================================================
 
-vec9_tbb32 aria_vec9_tbb32_add(const vec9_tbb32* a, const vec9_tbb32* b) {
+vec9_tbb32 npk_vec9_tbb32_add(const vec9_tbb32* a, const vec9_tbb32* b) {
     vec9_tbb32 result;
     
     // Element-wise addition with overflow detection
@@ -96,7 +96,7 @@ vec9_tbb32 aria_vec9_tbb32_add(const vec9_tbb32* a, const vec9_tbb32* b) {
     return result;
 }
 
-vec9_tbb32 aria_vec9_tbb32_sub(const vec9_tbb32* a, const vec9_tbb32* b) {
+vec9_tbb32 npk_vec9_tbb32_sub(const vec9_tbb32* a, const vec9_tbb32* b) {
     vec9_tbb32 result;
     
     for (int i = 0; i < 9; i++) {
@@ -126,12 +126,12 @@ vec9_tbb32 aria_vec9_tbb32_sub(const vec9_tbb32* a, const vec9_tbb32* b) {
     return result;
 }
 
-vec9_tbb32 aria_vec9_tbb32_scale(const vec9_tbb32* v, int32_t scalar) {
+vec9_tbb32 npk_vec9_tbb32_scale(const vec9_tbb32* v, int32_t scalar) {
     vec9_tbb32 result;
     
     // Error propagation
     if (scalar == TBB32_ERR) {
-        return aria_vec9_tbb32_err();
+        return npk_vec9_tbb32_err();
     }
     
     for (int i = 0; i < 9; i++) {
@@ -164,7 +164,7 @@ vec9_tbb32 aria_vec9_tbb32_scale(const vec9_tbb32* v, int32_t scalar) {
     return result;
 }
 
-int32_t aria_vec9_tbb32_dot(const vec9_tbb32* a, const vec9_tbb32* b) {
+int32_t npk_vec9_tbb32_dot(const vec9_tbb32* a, const vec9_tbb32* b) {
     int64_t sum = 0;
     
     for (int i = 0; i < 9; i++) {
@@ -187,7 +187,7 @@ int32_t aria_vec9_tbb32_dot(const vec9_tbb32* a, const vec9_tbb32* b) {
     return (int32_t)sum;
 }
 
-int64_t aria_vec9_tbb32_mag_sq(const vec9_tbb32* v) {
+int64_t npk_vec9_tbb32_mag_sq(const vec9_tbb32* v) {
     int64_t sum = 0;
     
     for (int i = 0; i < 9; i++) {
@@ -208,7 +208,7 @@ int64_t aria_vec9_tbb32_mag_sq(const vec9_tbb32* v) {
 // Toroidal Operations
 // ============================================================================
 
-vec9_tbb32 aria_vec9_tbb32_wrap(const vec9_tbb32* v, const int32_t* dims) {
+vec9_tbb32 npk_vec9_tbb32_wrap(const vec9_tbb32* v, const int32_t* dims) {
     vec9_tbb32 result;
     
     for (int i = 0; i < 9; i++) {
@@ -236,7 +236,7 @@ vec9_tbb32 aria_vec9_tbb32_wrap(const vec9_tbb32* v, const int32_t* dims) {
     return result;
 }
 
-int64_t aria_vec9_tbb32_toroidal_dist_sq(const vec9_tbb32* a, const vec9_tbb32* b, const int32_t* dims) {
+int64_t npk_vec9_tbb32_toroidal_dist_sq(const vec9_tbb32* a, const vec9_tbb32* b, const int32_t* dims) {
     int64_t sum = 0;
     
     for (int i = 0; i < 9; i++) {
@@ -267,7 +267,7 @@ int64_t aria_vec9_tbb32_toroidal_dist_sq(const vec9_tbb32* a, const vec9_tbb32* 
 // Safety Checks
 // ============================================================================
 
-int aria_vec9_tbb32_has_err(const vec9_tbb32* v) {
+int npk_vec9_tbb32_has_err(const vec9_tbb32* v) {
     for (int i = 0; i < 9; i++) {
         if (v->data[i] == TBB32_ERR) {
             return 1;
@@ -276,7 +276,7 @@ int aria_vec9_tbb32_has_err(const vec9_tbb32* v) {
     return 0;
 }
 
-int aria_vec9_tbb32_is_zero(const vec9_tbb32* v) {
+int npk_vec9_tbb32_is_zero(const vec9_tbb32* v) {
     for (int i = 0; i < 9; i++) {
         if (v->data[i] != 0) {
             return 0;
@@ -289,7 +289,7 @@ int aria_vec9_tbb32_is_zero(const vec9_tbb32* v) {
 // String Conversion
 // ============================================================================
 
-int aria_vec9_tbb32_to_string(char* buffer, size_t size, const vec9_tbb32* v) {
+int npk_vec9_tbb32_to_string(char* buffer, size_t size, const vec9_tbb32* v) {
     int offset = 0;
     
     offset += snprintf(buffer + offset, size - offset, "vec9[");

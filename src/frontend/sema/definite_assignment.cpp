@@ -1,7 +1,7 @@
 #include "frontend/sema/definite_assignment.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -462,4 +462,4 @@ void DefiniteAssignmentAnalyzer::checkIdentifier(IdentifierExpr* ident) {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

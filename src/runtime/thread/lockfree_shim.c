@@ -55,7 +55,7 @@ static int64_t next_pow2(int64_t n) {
     return n + 1;
 }
 
-int64_t aria_shim_lfqueue_create(int64_t capacity) {
+int64_t npk_shim_lfqueue_create(int64_t capacity) {
     if (capacity <= 0) capacity = 256;
     capacity = next_pow2(capacity);
 
@@ -77,7 +77,7 @@ int64_t aria_shim_lfqueue_create(int64_t capacity) {
     return alloc_lfqueue_slot(q);
 }
 
-int32_t aria_shim_lfqueue_destroy(int64_t handle) {
+int32_t npk_shim_lfqueue_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_LF_QUEUES || !g_lf_queues[handle]) return -1;
     LFQueue* q = g_lf_queues[handle];
     free(q->slots);
@@ -87,7 +87,7 @@ int32_t aria_shim_lfqueue_destroy(int64_t handle) {
 }
 
 // Non-blocking enqueue. Returns 0 on success, -1 if full.
-int32_t aria_shim_lfqueue_push(int64_t handle, int64_t value) {
+int32_t npk_shim_lfqueue_push(int64_t handle, int64_t value) {
     if (handle < 0 || handle >= MAX_LF_QUEUES || !g_lf_queues[handle]) return -1;
     LFQueue* q = g_lf_queues[handle];
 
@@ -112,7 +112,7 @@ int32_t aria_shim_lfqueue_push(int64_t handle, int64_t value) {
 }
 
 // Non-blocking dequeue. Returns value on success, writes to *out. Returns 0/-1.
-int32_t aria_shim_lfqueue_pop(int64_t handle, int64_t* out) {
+int32_t npk_shim_lfqueue_pop(int64_t handle, int64_t* out) {
     if (handle < 0 || handle >= MAX_LF_QUEUES || !g_lf_queues[handle]) return -1;
     LFQueue* q = g_lf_queues[handle];
 
@@ -137,13 +137,13 @@ int32_t aria_shim_lfqueue_pop(int64_t handle, int64_t* out) {
 }
 
 // Simplified pop that returns the value directly (-1 if empty — use only for positive values)
-int64_t aria_shim_lfqueue_pop_val(int64_t handle) {
+int64_t npk_shim_lfqueue_pop_val(int64_t handle) {
     int64_t out = -1;
-    aria_shim_lfqueue_pop(handle, &out);
+    npk_shim_lfqueue_pop(handle, &out);
     return out;
 }
 
-int64_t aria_shim_lfqueue_size(int64_t handle) {
+int64_t npk_shim_lfqueue_size(int64_t handle) {
     if (handle < 0 || handle >= MAX_LF_QUEUES || !g_lf_queues[handle]) return -1;
     LFQueue* q = g_lf_queues[handle];
     int64_t t = atomic_load_explicit(&q->tail, memory_order_relaxed);
@@ -180,7 +180,7 @@ static int64_t alloc_lfstack_slot(LFStack* s) {
     return -1;
 }
 
-int64_t aria_shim_lfstack_create(void) {
+int64_t npk_shim_lfstack_create(void) {
     LFStack* s = (LFStack*)calloc(1, sizeof(LFStack));
     if (!s) return -1;
     atomic_store(&s->top, (LFStackNode*)NULL);
@@ -188,7 +188,7 @@ int64_t aria_shim_lfstack_create(void) {
     return alloc_lfstack_slot(s);
 }
 
-int32_t aria_shim_lfstack_destroy(int64_t handle) {
+int32_t npk_shim_lfstack_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_LF_STACKS || !g_lf_stacks[handle]) return -1;
     LFStack* s = g_lf_stacks[handle];
     // Free all remaining nodes
@@ -203,7 +203,7 @@ int32_t aria_shim_lfstack_destroy(int64_t handle) {
     return 0;
 }
 
-int32_t aria_shim_lfstack_push(int64_t handle, int64_t value) {
+int32_t npk_shim_lfstack_push(int64_t handle, int64_t value) {
     if (handle < 0 || handle >= MAX_LF_STACKS || !g_lf_stacks[handle]) return -1;
     LFStack* s = g_lf_stacks[handle];
 
@@ -223,7 +223,7 @@ int32_t aria_shim_lfstack_push(int64_t handle, int64_t value) {
 }
 
 // Pop returns value, -1 if empty
-int64_t aria_shim_lfstack_pop(int64_t handle) {
+int64_t npk_shim_lfstack_pop(int64_t handle) {
     if (handle < 0 || handle >= MAX_LF_STACKS || !g_lf_stacks[handle]) return -1;
     LFStack* s = g_lf_stacks[handle];
 
@@ -240,7 +240,7 @@ int64_t aria_shim_lfstack_pop(int64_t handle) {
     return value;
 }
 
-int64_t aria_shim_lfstack_size(int64_t handle) {
+int64_t npk_shim_lfstack_size(int64_t handle) {
     if (handle < 0 || handle >= MAX_LF_STACKS || !g_lf_stacks[handle]) return -1;
     return atomic_load_explicit(&g_lf_stacks[handle]->count, memory_order_relaxed);
 }
@@ -268,7 +268,7 @@ static int64_t alloc_ringbuf_slot(RingBuf* r) {
     return -1;
 }
 
-int64_t aria_shim_ringbuf_create(int64_t capacity) {
+int64_t npk_shim_ringbuf_create(int64_t capacity) {
     if (capacity <= 0) capacity = 256;
     capacity = next_pow2(capacity);
 
@@ -286,7 +286,7 @@ int64_t aria_shim_ringbuf_create(int64_t capacity) {
     return alloc_ringbuf_slot(r);
 }
 
-int32_t aria_shim_ringbuf_destroy(int64_t handle) {
+int32_t npk_shim_ringbuf_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_RINGBUFS || !g_ringbufs[handle]) return -1;
     RingBuf* r = g_ringbufs[handle];
     free(r->buffer);
@@ -296,7 +296,7 @@ int32_t aria_shim_ringbuf_destroy(int64_t handle) {
 }
 
 // Producer push. Returns 0 on success, -1 if full.
-int32_t aria_shim_ringbuf_push(int64_t handle, int64_t value) {
+int32_t npk_shim_ringbuf_push(int64_t handle, int64_t value) {
     if (handle < 0 || handle >= MAX_RINGBUFS || !g_ringbufs[handle]) return -1;
     RingBuf* r = g_ringbufs[handle];
 
@@ -311,7 +311,7 @@ int32_t aria_shim_ringbuf_push(int64_t handle, int64_t value) {
 }
 
 // Consumer pop. Returns value, -1 if empty.
-int64_t aria_shim_ringbuf_pop(int64_t handle) {
+int64_t npk_shim_ringbuf_pop(int64_t handle) {
     if (handle < 0 || handle >= MAX_RINGBUFS || !g_ringbufs[handle]) return -1;
     RingBuf* r = g_ringbufs[handle];
 
@@ -325,7 +325,7 @@ int64_t aria_shim_ringbuf_pop(int64_t handle) {
     return value;
 }
 
-int64_t aria_shim_ringbuf_size(int64_t handle) {
+int64_t npk_shim_ringbuf_size(int64_t handle) {
     if (handle < 0 || handle >= MAX_RINGBUFS || !g_ringbufs[handle]) return -1;
     RingBuf* r = g_ringbufs[handle];
     int64_t tail = atomic_load_explicit(&r->tail, memory_order_acquire);
@@ -334,7 +334,7 @@ int64_t aria_shim_ringbuf_size(int64_t handle) {
     return sz >= 0 ? sz : 0;
 }
 
-int64_t aria_shim_ringbuf_capacity(int64_t handle) {
+int64_t npk_shim_ringbuf_capacity(int64_t handle) {
     if (handle < 0 || handle >= MAX_RINGBUFS || !g_ringbufs[handle]) return -1;
     return g_ringbufs[handle]->capacity;
 }

@@ -8,7 +8,7 @@
 #include <vector>
 #include <memory>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -96,6 +96,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_ASYNC_ANALYZER_H

@@ -89,45 +89,45 @@ typedef struct AriaSystemTime AriaSystemTime;
  * Create a duration from nanoseconds.
  * Returns ERR if value is already ERR or invalid.
  */
-AriaDuration* aria_duration_from_nanos(int64_t nanos);
+AriaDuration* npk_duration_from_nanos(int64_t nanos);
 
 /**
  * Create duration from various time units.
  */
-AriaDuration* aria_duration_from_micros(int64_t micros);
-AriaDuration* aria_duration_from_millis(int64_t millis);
-AriaDuration* aria_duration_from_secs(int64_t secs);
+AriaDuration* npk_duration_from_micros(int64_t micros);
+AriaDuration* npk_duration_from_millis(int64_t millis);
+AriaDuration* npk_duration_from_secs(int64_t secs);
 
 /**
  * Extract duration components.
  * Returns ARIA_TIME_ERR if duration is ERR.
  */
-int64_t aria_duration_as_nanos(const AriaDuration* duration);
-int64_t aria_duration_as_micros(const AriaDuration* duration);
-int64_t aria_duration_as_millis(const AriaDuration* duration);
-int64_t aria_duration_as_secs(const AriaDuration* duration);
+int64_t npk_duration_as_nanos(const AriaDuration* duration);
+int64_t npk_duration_as_micros(const AriaDuration* duration);
+int64_t npk_duration_as_millis(const AriaDuration* duration);
+int64_t npk_duration_as_secs(const AriaDuration* duration);
 
 /**
  * Duration arithmetic with TBB64 overflow detection.
  * Returns ERR duration if either operand is ERR or result overflows.
  */
-AriaDuration* aria_duration_add(const AriaDuration* a, const AriaDuration* b);
-AriaDuration* aria_duration_sub(const AriaDuration* a, const AriaDuration* b);
-AriaDuration* aria_duration_mul(const AriaDuration* d, int64_t scalar);
-AriaDuration* aria_duration_div(const AriaDuration* d, int64_t divisor);
+AriaDuration* npk_duration_add(const AriaDuration* a, const AriaDuration* b);
+AriaDuration* npk_duration_sub(const AriaDuration* a, const AriaDuration* b);
+AriaDuration* npk_duration_mul(const AriaDuration* d, int64_t scalar);
+AriaDuration* npk_duration_div(const AriaDuration* d, int64_t divisor);
 
 /**
  * Duration comparison.
  * If either is ERR, returns false for all comparisons.
  */
-bool aria_duration_is_zero(const AriaDuration* duration);
-bool aria_duration_is_err(const AriaDuration* duration);
-int aria_duration_compare(const AriaDuration* a, const AriaDuration* b); // -1, 0, 1
+bool npk_duration_is_zero(const AriaDuration* duration);
+bool npk_duration_is_err(const AriaDuration* duration);
+int npk_duration_compare(const AriaDuration* a, const AriaDuration* b); // -1, 0, 1
 
 /**
  * Destroy a duration.
  */
-void aria_duration_destroy(AriaDuration* duration);
+void npk_duration_destroy(AriaDuration* duration);
 
 /* ============================================================================
  * Monotonic Clock (Instant)
@@ -147,41 +147,41 @@ void aria_duration_destroy(AriaDuration* duration);
  * - macOS: mach_absolute_time
  * - Windows: QueryPerformanceCounter
  */
-AriaInstant* aria_instant_now(void);
+AriaInstant* npk_instant_now(void);
 
 /**
  * Calculate elapsed time since an instant.
  * Returns ERR duration if instant is invalid or calculation overflows.
  */
-AriaDuration* aria_instant_elapsed(const AriaInstant* instant);
+AriaDuration* npk_instant_elapsed(const AriaInstant* instant);
 
 /**
  * Calculate duration between two instants.
  * Returns (later - earlier). ERR if either is invalid or overflow occurs.
  */
-AriaDuration* aria_instant_duration_since(const AriaInstant* later, const AriaInstant* earlier);
+AriaDuration* npk_instant_duration_since(const AriaInstant* later, const AriaInstant* earlier);
 
 /**
  * Add duration to instant.
  * Returns new instant or ERR instant if overflow.
  */
-AriaInstant* aria_instant_add(const AriaInstant* instant, const AriaDuration* duration);
+AriaInstant* npk_instant_add(const AriaInstant* instant, const AriaDuration* duration);
 
 /**
  * Subtract duration from instant.
  * Returns new instant or ERR instant if underflow.
  */
-AriaInstant* aria_instant_sub(const AriaInstant* instant, const AriaDuration* duration);
+AriaInstant* npk_instant_sub(const AriaInstant* instant, const AriaDuration* duration);
 
 /**
  * Check if instant is ERR.
  */
-bool aria_instant_is_err(const AriaInstant* instant);
+bool npk_instant_is_err(const AriaInstant* instant);
 
 /**
  * Destroy an instant.
  */
-void aria_instant_destroy(AriaInstant* instant);
+void npk_instant_destroy(AriaInstant* instant);
 
 /* ============================================================================
  * Wall-Clock Time (SystemTime)
@@ -203,40 +203,40 @@ void aria_instant_destroy(AriaInstant* instant);
  * - macOS: gettimeofday
  * - Windows: GetSystemTimePreciseAsFileTime
  */
-AriaSystemTime* aria_systemtime_now(void);
+AriaSystemTime* npk_systemtime_now(void);
 
 /**
  * Create SystemTime from Unix timestamp (seconds since 1970-01-01 UTC).
  */
-AriaSystemTime* aria_systemtime_from_unix_secs(int64_t secs);
+AriaSystemTime* npk_systemtime_from_unix_secs(int64_t secs);
 
 /**
  * Create SystemTime from Unix timestamp with nanosecond precision.
  */
-AriaSystemTime* aria_systemtime_from_unix_nanos(int64_t nanos);
+AriaSystemTime* npk_systemtime_from_unix_nanos(int64_t nanos);
 
 /**
  * Convert SystemTime to Unix timestamp.
  * Returns ARIA_TIME_ERR if systemtime is invalid.
  */
-int64_t aria_systemtime_to_unix_secs(const AriaSystemTime* time);
-int64_t aria_systemtime_to_unix_nanos(const AriaSystemTime* time);
+int64_t npk_systemtime_to_unix_secs(const AriaSystemTime* time);
+int64_t npk_systemtime_to_unix_nanos(const AriaSystemTime* time);
 
 /**
  * Calculate duration since Unix epoch (1970-01-01 00:00:00 UTC).
  * Returns ERR duration if systemtime is invalid.
  */
-AriaDuration* aria_systemtime_duration_since_epoch(const AriaSystemTime* time);
+AriaDuration* npk_systemtime_duration_since_epoch(const AriaSystemTime* time);
 
 /**
  * Check if systemtime is ERR.
  */
-bool aria_systemtime_is_err(const AriaSystemTime* time);
+bool npk_systemtime_is_err(const AriaSystemTime* time);
 
 /**
  * Destroy a system time.
  */
-void aria_systemtime_destroy(AriaSystemTime* time);
+void npk_systemtime_destroy(AriaSystemTime* time);
 
 /* ============================================================================
  * Sleep/Delay Functions
@@ -254,7 +254,7 @@ void aria_systemtime_destroy(AriaSystemTime* time);
  * 
  * Note: Actual sleep time may be slightly longer due to scheduler granularity.
  */
-int aria_sleep(const AriaDuration* duration);
+int npk_sleep(const AriaDuration* duration);
 
 /**
  * Sleep until the specified deadline (monotonic).
@@ -266,7 +266,7 @@ int aria_sleep(const AriaDuration* duration);
  * - 0 on success
  * - -1 if interrupted or instant is ERR
  */
-int aria_sleep_until(const AriaInstant* deadline);
+int npk_sleep_until(const AriaInstant* deadline);
 
 /* ============================================================================
  * High-Resolution Timing Utilities
@@ -281,13 +281,13 @@ int aria_sleep_until(const AriaInstant* deadline);
  * - macOS: ~1ns (mach_absolute_time)
  * - Windows: ~100ns (QueryPerformanceCounter)
  */
-int64_t aria_timer_resolution(void);
+int64_t npk_timer_resolution(void);
 
 /**
  * Check if high-resolution timers are available.
  * Returns true if nanosecond precision is supported.
  */
-bool aria_timer_has_high_resolution(void);
+bool npk_timer_has_high_resolution(void);
 
 #ifdef __cplusplus
 }

@@ -7,7 +7,7 @@
 #include <optional>
 #include <toml.hpp>
 
-namespace aria {
+namespace npk {
 namespace tools {
 
 /// Represents a dependency in aria.toml
@@ -147,6 +147,6 @@ private:
 };
 
 } // namespace tools
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TOOLS_PROJECT_CONFIG_H

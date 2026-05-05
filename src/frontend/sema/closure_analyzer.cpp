@@ -2,7 +2,7 @@
 #include "frontend/sema/type.h"
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 ClosureAnalyzer::ClosureAnalyzer(SymbolTable* symTable)
@@ -260,4 +260,4 @@ bool ClosureAnalyzer::validateLifetimes() {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

@@ -176,37 +176,37 @@ int64_t tbb64_abs(int64_t a);
  * Widen tbb8 to tbb16 with sentinel preservation
  * ERR (-128) → ERR (-32768)
  */
-int16_t aria_tbb_widen_8_16(int8_t val);
+int16_t npk_tbb_widen_8_16(int8_t val);
 
 /**
  * Widen tbb8 to tbb32 with sentinel preservation
  * ERR (-128) → ERR (-2147483648)
  */
-int32_t aria_tbb_widen_8_32(int8_t val);
+int32_t npk_tbb_widen_8_32(int8_t val);
 
 /**
  * Widen tbb8 to tbb64 with sentinel preservation
  * ERR (-128) → ERR (INT64_MIN)
  */
-int64_t aria_tbb_widen_8_64(int8_t val);
+int64_t npk_tbb_widen_8_64(int8_t val);
 
 /**
  * Widen tbb16 to tbb32 with sentinel preservation
  * ERR (-32768) → ERR (-2147483648)
  */
-int32_t aria_tbb_widen_16_32(int16_t val);
+int32_t npk_tbb_widen_16_32(int16_t val);
 
 /**
  * Widen tbb16 to tbb64 with sentinel preservation
  * ERR (-32768) → ERR (INT64_MIN)
  */
-int64_t aria_tbb_widen_16_64(int16_t val);
+int64_t npk_tbb_widen_16_64(int16_t val);
 
 /**
  * Widen tbb32 to tbb64 with sentinel preservation
  * ERR (-2147483648) → ERR (INT64_MIN)
  */
-int64_t aria_tbb_widen_32_64(int32_t val);
+int64_t npk_tbb_widen_32_64(int32_t val);
 
 #ifdef __cplusplus
 }

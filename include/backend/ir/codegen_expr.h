@@ -13,7 +13,7 @@
 #include <unordered_map>
 
 // Forward declarations
-namespace aria {
+namespace npk {
     class ASTNode;
     class LiteralExpr;
     class IdentifierExpr;
@@ -39,7 +39,7 @@ namespace aria {
     }
 }
 
-namespace aria {
+namespace npk {
 namespace backend {
 
 // Forward declaration for circular dependency
@@ -196,7 +196,7 @@ public:
 
     // v0.4.3+: SMT-proven user stack fast mode
     // When true, Z3 has proven all pushes in this function are type-homogeneous.
-    // Codegen uses aria_ustack_*_fast() functions (no tags, no bounds checks).
+    // Codegen uses npk_ustack_*_fast() functions (no tags, no bounds checks).
     bool ustack_fast_mode = false;
 
     // v0.4.5: User hash table get destination type context
@@ -397,10 +397,10 @@ public:
      * @param codegen ExprCodegen instance
      * @return LLVM value of the expression
      */
-    static llvm::Value* codegenExpressionNode(aria::ASTNode* node, ExprCodegen* codegen);
+    static llvm::Value* codegenExpressionNode(npk::ASTNode* node, ExprCodegen* codegen);
 };
 
 } // namespace backend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_CODEGEN_EXPR_H

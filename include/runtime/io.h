@@ -13,22 +13,22 @@
  * 
  * Usage:
  *   // Simple file read
- *   AriaResult* result = aria_read_file("config.txt");
+ *   AriaResult* result = npk_read_file("config.txt");
  *   if (result->err == NULL) {
  *       printf("Content: %s\n", (char*)result->val);
- *       aria_result_free(result);
+ *       npk_result_free(result);
  *   }
  *   
  *   // Stream operations
- *   AriaStream* stream = aria_open_file("data.txt", "r");
+ *   AriaStream* stream = npk_open_file("data.txt", "r");
  *   if (stream) {
- *       char* line = aria_stream_read_line(stream);
+ *       char* line = npk_stream_read_line(stream);
  *       while (line) {
  *           process(line);
  *           free(line);
- *           line = aria_stream_read_line(stream);
+ *           line = npk_stream_read_line(stream);
  *       }
- *       aria_stream_close(stream);
+ *       npk_stream_close(stream);
  *   }
  */
 
@@ -67,7 +67,7 @@ typedef struct AriaResult {
  * @param size Size of value
  * @return Result with err=NULL, val=value
  */
-AriaResult* aria_result_ok(void* value, size_t size);
+AriaResult* npk_result_ok(void* value, size_t size);
 
 /**
  * Create error result
@@ -75,7 +75,7 @@ AriaResult* aria_result_ok(void* value, size_t size);
  * @param error Error message (copied internally)
  * @return Result with err=message, val=NULL
  */
-AriaResult* aria_result_err(const char* error);
+AriaResult* npk_result_err(const char* error);
 
 /**
  * Free result
@@ -84,7 +84,7 @@ AriaResult* aria_result_err(const char* error);
  * 
  * @param result Result to free
  */
-void aria_result_free(AriaResult* result);
+void npk_result_free(AriaResult* result);
 
 // ============================================================================
 // Stream Type
@@ -109,13 +109,13 @@ typedef struct AriaStream AriaStream;
  * @return Result with string content or error
  * 
  * Example:
- *   AriaResult* r = aria_read_file("config.txt");
+ *   AriaResult* r = npk_read_file("config.txt");
  *   if (r->err == NULL) {
  *       printf("%s\n", (char*)r->val);
  *   }
- *   aria_result_free(r);
+ *   npk_result_free(r);
  */
-AriaResult* aria_read_file(const char* path);
+AriaResult* npk_read_file(const char* path);
 
 /**
  * Write string to file
@@ -125,13 +125,13 @@ AriaResult* aria_read_file(const char* path);
  * @return Result with NULL val on success, error on failure
  * 
  * Example:
- *   AriaResult* r = aria_write_file("output.txt", "Hello world");
+ *   AriaResult* r = npk_write_file("output.txt", "Hello world");
  *   if (r->err != NULL) {
  *       fprintf(stderr, "Error: %s\n", r->err);
  *   }
- *   aria_result_free(r);
+ *   npk_result_free(r);
  */
-AriaResult* aria_write_file(const char* path, const char* content);
+AriaResult* npk_write_file(const char* path, const char* content);
 
 /**
  * Read binary file into buffer
@@ -142,14 +142,14 @@ AriaResult* aria_write_file(const char* path, const char* content);
  * 
  * Example:
  *   size_t size;
- *   AriaResult* r = aria_read_binary(path, &size);
+ *   AriaResult* r = npk_read_binary(path, &size);
  *   if (r->err == NULL) {
  *       uint8_t* data = (uint8_t*)r->val;
  *       process(data, size);
  *   }
- *   aria_result_free(r);
+ *   npk_result_free(r);
  */
-AriaResult* aria_read_binary(const char* path, size_t* size);
+AriaResult* npk_read_binary(const char* path, size_t* size);
 
 /**
  * Write binary buffer to file
@@ -159,7 +159,7 @@ AriaResult* aria_read_binary(const char* path, size_t* size);
  * @param size Size of buffer
  * @return Result with NULL val on success, error on failure
  */
-AriaResult* aria_write_binary(const char* path, const void* data, size_t size);
+AriaResult* npk_write_binary(const char* path, const void* data, size_t size);
 
 /**
  * Check if file exists
@@ -167,7 +167,7 @@ AriaResult* aria_write_binary(const char* path, const void* data, size_t size);
  * @param path File path
  * @return true if file exists, false otherwise
  */
-bool aria_file_exists(const char* path);
+bool npk_file_exists(const char* path);
 
 /**
  * Get file size
@@ -175,7 +175,7 @@ bool aria_file_exists(const char* path);
  * @param path File path
  * @return File size in bytes, or -1 on error
  */
-int64_t aria_file_size(const char* path);
+int64_t npk_file_size(const char* path);
 
 /**
  * Delete file
@@ -183,7 +183,7 @@ int64_t aria_file_size(const char* path);
  * @param path File path
  * @return Result with NULL val on success, error on failure
  */
-AriaResult* aria_delete_file(const char* path);
+AriaResult* npk_delete_file(const char* path);
 
 // ============================================================================
 // Stream Operations
@@ -198,20 +198,20 @@ AriaResult* aria_delete_file(const char* path);
  * @return Stream handle or NULL on error
  * 
  * Example:
- *   AriaStream* stream = aria_open_file("data.txt", "r");
+ *   AriaStream* stream = npk_open_file("data.txt", "r");
  *   if (stream) {
  *       // Use stream
- *       aria_stream_close(stream);
+ *       npk_stream_close(stream);
  *   }
  */
-AriaStream* aria_open_file(const char* path, const char* mode);
+AriaStream* npk_open_file(const char* path, const char* mode);
 
 /**
  * Close file stream
  * 
  * @param stream Stream handle
  */
-void aria_stream_close(AriaStream* stream);
+void npk_stream_close(AriaStream* stream);
 
 /**
  * Read line from stream
@@ -220,14 +220,14 @@ void aria_stream_close(AriaStream* stream);
  * @return Line string (caller must free), or NULL on EOF/error
  * 
  * Example:
- *   char* line = aria_stream_read_line(stream);
+ *   char* line = npk_stream_read_line(stream);
  *   while (line) {
  *       printf("%s\n", line);
  *       free(line);
- *       line = aria_stream_read_line(stream);
+ *       line = npk_stream_read_line(stream);
  *   }
  */
-char* aria_stream_read_line(AriaStream* stream);
+char* npk_stream_read_line(AriaStream* stream);
 
 /**
  * Write string to stream
@@ -236,7 +236,7 @@ char* aria_stream_read_line(AriaStream* stream);
  * @param str String to write
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_stream_write(AriaStream* stream, const char* str);
+int64_t npk_stream_write(AriaStream* stream, const char* str);
 
 /**
  * Write bytes to stream
@@ -246,7 +246,7 @@ int64_t aria_stream_write(AriaStream* stream, const char* str);
  * @param size Size of buffer
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_stream_write_bytes(AriaStream* stream, const void* data, size_t size);
+int64_t npk_stream_write_bytes(AriaStream* stream, const void* data, size_t size);
 
 /**
  * Read bytes from stream
@@ -256,7 +256,7 @@ int64_t aria_stream_write_bytes(AriaStream* stream, const void* data, size_t siz
  * @param size Maximum bytes to read
  * @return Number of bytes read, or -1 on error
  */
-int64_t aria_stream_read_bytes(AriaStream* stream, void* buffer, size_t size);
+int64_t npk_stream_read_bytes(AriaStream* stream, void* buffer, size_t size);
 
 /**
  * Check if stream is at EOF
@@ -264,7 +264,7 @@ int64_t aria_stream_read_bytes(AriaStream* stream, void* buffer, size_t size);
  * @param stream Stream handle
  * @return true if at EOF, false otherwise
  */
-bool aria_stream_eof(AriaStream* stream);
+bool npk_stream_eof(AriaStream* stream);
 
 /**
  * Flush stream buffer
@@ -272,7 +272,7 @@ bool aria_stream_eof(AriaStream* stream);
  * @param stream Stream handle
  * @return 0 on success, -1 on error
  */
-int aria_stream_flush(AriaStream* stream);
+int npk_stream_flush(AriaStream* stream);
 
 /**
  * Seek to position in stream
@@ -282,7 +282,7 @@ int aria_stream_flush(AriaStream* stream);
  * @param whence SEEK_SET (0), SEEK_CUR (1), or SEEK_END (2)
  * @return 0 on success, -1 on error
  */
-int aria_stream_seek(AriaStream* stream, int64_t offset, int whence);
+int npk_stream_seek(AriaStream* stream, int64_t offset, int whence);
 
 /**
  * Get current position in stream
@@ -290,7 +290,7 @@ int aria_stream_seek(AriaStream* stream, int64_t offset, int whence);
  * @param stream Stream handle
  * @return Current byte position, or -1 on error
  */
-int64_t aria_stream_tell(AriaStream* stream);
+int64_t npk_stream_tell(AriaStream* stream);
 
 // ============================================================================
 // Structured File Parsing
@@ -338,15 +338,15 @@ typedef struct AriaJsonValue {
  * @return Result with AriaJsonValue* or error
  * 
  * Example:
- *   AriaResult* r = aria_read_json("config.json");
+ *   AriaResult* r = npk_read_json("config.json");
  *   if (r->err == NULL) {
  *       AriaJsonValue* json = (AriaJsonValue*)r->val;
  *       // Use json
- *       aria_json_free(json);
+ *       npk_json_free(json);
  *   }
- *   aria_result_free(r);
+ *   npk_result_free(r);
  */
-AriaResult* aria_read_json(const char* path);
+AriaResult* npk_read_json(const char* path);
 
 /**
  * Parse JSON string
@@ -354,9 +354,9 @@ AriaResult* aria_read_json(const char* path);
  * @param json_str JSON string
  * @return Result with AriaJsonValue* or error
  */
-AriaResult* aria_parse_json(const char* json_str);
+AriaResult* npk_parse_json(const char* json_str);
 
-// aria_json_free is internal to the runtime (static in io.cpp)
+// npk_json_free is internal to the runtime (static in io.cpp)
 // User packages should define their own cleanup functions
 
 /**
@@ -366,7 +366,7 @@ AriaResult* aria_parse_json(const char* json_str);
  * @param key Key name
  * @return JSON value or NULL if not found
  */
-AriaJsonValue* aria_json_get(AriaJsonValue* obj, const char* key);
+AriaJsonValue* npk_json_get(AriaJsonValue* obj, const char* key);
 
 /**
  * Get string from JSON value
@@ -375,7 +375,7 @@ AriaJsonValue* aria_json_get(AriaJsonValue* obj, const char* key);
  * @param default_val Default value if not a string
  * @return String value or default
  */
-const char* aria_json_as_string(AriaJsonValue* value, const char* default_val);
+const char* npk_json_as_string(AriaJsonValue* value, const char* default_val);
 
 /**
  * Get number from JSON value
@@ -384,7 +384,7 @@ const char* aria_json_as_string(AriaJsonValue* value, const char* default_val);
  * @param default_val Default value if not a number
  * @return Number value or default
  */
-double aria_json_as_number(AriaJsonValue* value, double default_val);
+double npk_json_as_number(AriaJsonValue* value, double default_val);
 
 /**
  * Get boolean from JSON value
@@ -393,7 +393,7 @@ double aria_json_as_number(AriaJsonValue* value, double default_val);
  * @param default_val Default value if not a boolean
  * @return Boolean value or default
  */
-bool aria_json_as_bool(AriaJsonValue* value, bool default_val);
+bool npk_json_as_bool(AriaJsonValue* value, bool default_val);
 
 /**
  * CSV Row
@@ -418,7 +418,7 @@ typedef struct AriaCsvData {
  * @return Result with AriaCsvData* or error
  * 
  * Example:
- *   AriaResult* r = aria_read_csv("data.csv");
+ *   AriaResult* r = npk_read_csv("data.csv");
  *   if (r->err == NULL) {
  *       AriaCsvData* csv = (AriaCsvData*)r->val;
  *       for (size_t i = 0; i < csv->row_count; i++) {
@@ -427,11 +427,11 @@ typedef struct AriaCsvData {
  *           }
  *           printf("\n");
  *       }
- *       aria_csv_free(csv);
+ *       npk_csv_free(csv);
  *   }
- *   aria_result_free(r);
+ *   npk_result_free(r);
  */
-AriaResult* aria_read_csv(const char* path);
+AriaResult* npk_read_csv(const char* path);
 
 /**
  * Parse CSV string
@@ -439,9 +439,9 @@ AriaResult* aria_read_csv(const char* path);
  * @param csv_str CSV string
  * @return Result with AriaCsvData* or error
  */
-AriaResult* aria_parse_csv(const char* csv_str);
+AriaResult* npk_parse_csv(const char* csv_str);
 
-// aria_csv_free is internal to the runtime (static in io.cpp)
+// npk_csv_free is internal to the runtime (static in io.cpp)
 // User packages should define their own cleanup functions
 
 // ============================================================================
@@ -454,7 +454,7 @@ AriaResult* aria_parse_csv(const char* csv_str);
  * @param path Relative or absolute path
  * @return Absolute path (caller must free), or NULL on error
  */
-char* aria_path_absolute(const char* path);
+char* npk_path_absolute(const char* path);
 
 /**
  * Get directory name from path
@@ -462,7 +462,7 @@ char* aria_path_absolute(const char* path);
  * @param path File path
  * @return Directory name (caller must free), or NULL on error
  */
-char* aria_path_dirname(const char* path);
+char* npk_path_dirname(const char* path);
 
 /**
  * Get base name from path
@@ -470,7 +470,7 @@ char* aria_path_dirname(const char* path);
  * @param path File path
  * @return Base name (caller must free), or NULL on error
  */
-char* aria_path_basename(const char* path);
+char* npk_path_basename(const char* path);
 
 /**
  * Join path components
@@ -479,7 +479,7 @@ char* aria_path_basename(const char* path);
  * @param name File name
  * @return Joined path (caller must free), or NULL on error
  */
-char* aria_path_join(const char* dir, const char* name);
+char* npk_path_join(const char* dir, const char* name);
 
 /**
  * Check if path is absolute
@@ -487,7 +487,7 @@ char* aria_path_join(const char* dir, const char* name);
  * @param path File path
  * @return true if absolute, false otherwise
  */
-bool aria_path_is_absolute(const char* path);
+bool npk_path_is_absolute(const char* path);
 
 // ============================================================================
 // Result-Based File I/O Functions for Aria Builtins (Phase 4.2)
@@ -501,7 +501,7 @@ bool aria_path_is_absolute(const char* path);
  * @param path File path (C string)
  * @return AriaResultPtr with AriaString* on success, error on failure
  */
-AriaResultPtr aria_read_file_result(const char* path);
+AriaResultPtr npk_read_file_result(const char* path);
 
 /**
  * Write file and return result<void>
@@ -510,7 +510,7 @@ AriaResultPtr aria_read_file_result(const char* path);
  * @param content Content to write (AriaString*)
  * @return AriaResultVoid with success/error status
  */
-AriaResultVoid aria_write_file_result(const char* path, const void* content);
+AriaResultVoid npk_write_file_result(const char* path, const void* content);
 
 /**
  * Delete file and return result<void>
@@ -518,7 +518,7 @@ AriaResultVoid aria_write_file_result(const char* path, const void* content);
  * @param path File path (C string)
  * @return AriaResultVoid with success/error status
  */
-AriaResultVoid aria_delete_file_result(const char* path);
+AriaResultVoid npk_delete_file_result(const char* path);
 
 /**
  * Check if file exists and return result<bool>
@@ -526,7 +526,7 @@ AriaResultVoid aria_delete_file_result(const char* path);
  * @param path File path (C string)
  * @return AriaResultBool with exists status or error
  */
-AriaResultBool aria_file_exists_result(const char* path);
+AriaResultBool npk_file_exists_result(const char* path);
 
 /**
  * Get file size and return result<int64>
@@ -534,7 +534,7 @@ AriaResultBool aria_file_exists_result(const char* path);
  * @param path File path (C string)
  * @return AriaResultI64 with file size in bytes or error
  */
-AriaResultI64 aria_file_size_result(const char* path);
+AriaResultI64 npk_file_size_result(const char* path);
 
 /**
  * Convert path to absolute and return result<string>
@@ -542,7 +542,7 @@ AriaResultI64 aria_file_size_result(const char* path);
  * @param path File path (C string)
  * @return AriaResultPtr with AriaString* on success, error on failure
  */
-AriaResultPtr aria_path_absolute_result(const char* path);
+AriaResultPtr npk_path_absolute_result(const char* path);
 
 /**
  * Get directory portion of path and return result<string>
@@ -550,7 +550,7 @@ AriaResultPtr aria_path_absolute_result(const char* path);
  * @param path File path (C string)
  * @return AriaResultPtr with AriaString* on success, error on failure
  */
-AriaResultPtr aria_path_dirname_result(const char* path);
+AriaResultPtr npk_path_dirname_result(const char* path);
 
 /**
  * Get filename portion of path and return result<string>
@@ -558,7 +558,7 @@ AriaResultPtr aria_path_dirname_result(const char* path);
  * @param path File path (C string)
  * @return AriaResultPtr with AriaString* on success, error on failure
  */
-AriaResultPtr aria_path_basename_result(const char* path);
+AriaResultPtr npk_path_basename_result(const char* path);
 
 /**
  * Join path components and return result<string>
@@ -567,7 +567,7 @@ AriaResultPtr aria_path_basename_result(const char* path);
  * @param name File/directory name (C string)
  * @return AriaResultPtr with AriaString* on success, error on failure
  */
-AriaResultPtr aria_path_join_result(const char* dir, const char* name);
+AriaResultPtr npk_path_join_result(const char* dir, const char* name);
 
 /**
  * Check if path is absolute and return result<bool>
@@ -575,7 +575,7 @@ AriaResultPtr aria_path_join_result(const char* dir, const char* name);
  * @param path File path (C string)
  * @return AriaResultBool with is_absolute status or error
  */
-AriaResultBool aria_path_is_absolute_result(const char* path);
+AriaResultBool npk_path_is_absolute_result(const char* path);
 
 // ============================================================================
 // Simplified Wrappers for Aria Builtins (DEPRECATED - will be removed)
@@ -589,7 +589,7 @@ AriaResultBool aria_path_is_absolute_result(const char* path);
  * @return Pointer to AriaString with file contents (or empty on error)
  */
 struct AriaString;  // Forward declaration
-struct AriaString* aria_read_file_simple(const char* path);
+struct AriaString* npk_read_file_simple(const char* path);
 
 /**
  * Simplified writeFile for Aria - returns int64
@@ -598,7 +598,7 @@ struct AriaString* aria_read_file_simple(const char* path);
  * @param content Content to write (C string)
  * @return 0 on success, -1 on error
  */
-int64_t aria_write_file_simple(const char* path, const char* content);
+int64_t npk_write_file_simple(const char* path, const char* content);
 
 /**
  * Simplified deleteFile for Aria - returns int64
@@ -606,15 +606,15 @@ int64_t aria_write_file_simple(const char* path, const char* content);
  * @param path File path (C string)
  * @return 0 on success, -1 on error
  */
-int64_t aria_delete_file_simple(const char* path);
+int64_t npk_delete_file_simple(const char* path);
 
 /**
  * Path operation wrappers that return AriaString*
  */
-AriaString* aria_path_absolute_string(const char* path);
-AriaString* aria_path_dirname_string(const char* path);
-AriaString* aria_path_basename_string(const char* path);
-AriaString* aria_path_join_string(const char* dir, const char* name);
+AriaString* npk_path_absolute_string(const char* path);
+AriaString* npk_path_dirname_string(const char* path);
+AriaString* npk_path_basename_string(const char* path);
+AriaString* npk_path_join_string(const char* dir, const char* name);
 
 /**
  * Simplified stream read_line for Aria - returns AriaString*
@@ -624,7 +624,7 @@ AriaString* aria_path_join_string(const char* dir, const char* name);
  * @param stream Stream handle
  * @return AriaString with line content (empty on EOF)
  */
-AriaString* aria_stream_read_line_string(AriaStream* stream);
+AriaString* npk_stream_read_line_string(AriaStream* stream);
 
 // ============================================================================
 // UFCS-Compatible File Aliases (for File.open(), stream.read(), etc.)

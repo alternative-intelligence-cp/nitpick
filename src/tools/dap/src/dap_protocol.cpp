@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace aria::adap {
+namespace npk::adap {
 
 // =============================================================================
 // JSON Value Implementation
@@ -769,4 +769,4 @@ void DAPServer::handle_disconnect(const Request& req, Response& resp) {
     shutdown_ = true;
 }
 
-}  // namespace aria::adap
+}  // namespace npk::adap

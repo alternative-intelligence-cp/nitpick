@@ -50,27 +50,27 @@ extern "C" {
  * Comparison: Handles are equal iff index AND generation match
  * Invalid handle: {SIZE_MAX, 0}
  */
-typedef struct aria_handle {
+typedef struct npk_handle {
     size_t index;           // Slot index (SIZE_MAX = invalid)
     uint32_t generation;    // Generation counter
-} aria_handle;
+} npk_handle;
 
 /**
  * Invalid handle sentinel
  */
-#define ARIA_HANDLE_INVALID ((aria_handle){SIZE_MAX, 0})
+#define ARIA_HANDLE_INVALID ((npk_handle){SIZE_MAX, 0})
 
 /**
  * Check if handle is invalid
  */
-static inline bool aria_handle_is_invalid(aria_handle h) {
+static inline bool npk_handle_is_invalid(npk_handle h) {
     return h.index == SIZE_MAX;
 }
 
 /**
  * Check if handles are equal
  */
-static inline bool aria_handle_eq(aria_handle a, aria_handle b) {
+static inline bool npk_handle_eq(npk_handle a, npk_handle b) {
     return a.index == b.index && a.generation == b.generation;
 }
 
@@ -92,11 +92,11 @@ static inline bool aria_handle_eq(aria_handle a, aria_handle b) {
  * Memory Layout (for elem_size=16):
  *   [void* data | u32 generation | bool occupied | padding]
  */
-typedef struct aria_gen_slot {
+typedef struct npk_gen_slot {
     void* data;             // Pointer to element data
     uint32_t generation;    // Current generation (starts at 1)
     bool occupied;          // Is slot allocated?
-} aria_gen_slot;
+} npk_gen_slot;
 
 // ============================================================================
 // Generational Arena Structure
@@ -127,8 +127,8 @@ typedef struct aria_gen_slot {
  * - Grow: 2x when full (geometric growth)
  * - Max: SIZE_MAX / elem_size slots
  */
-typedef struct aria_gen_arena {
-    aria_gen_slot* slots;       // Dynamic array of slots
+typedef struct npk_gen_arena {
+    npk_gen_slot* slots;       // Dynamic array of slots
     size_t* free_list;          // Array of free slot indices
     size_t capacity;            // Total allocated slots
     size_t count;               // Occupied slots
@@ -140,7 +140,7 @@ typedef struct aria_gen_arena {
     size_t total_frees;         // Lifetime frees
     size_t total_gets;          // Lifetime gets
     size_t stale_gets;          // Stale handle detections
-} aria_gen_arena;
+} npk_gen_arena;
 
 // ============================================================================
 // Arena Error Codes
@@ -168,7 +168,7 @@ typedef enum {
  * Arena creation result
  */
 typedef struct {
-    aria_gen_arena* arena;          // Arena handle (NULL if error)
+    npk_gen_arena* arena;          // Arena handle (NULL if error)
     AriaGenArenaError error_code;   // Error code (0 = success)
 } AriaGenArenaResult;
 
@@ -176,7 +176,7 @@ typedef struct {
  * Handle allocation result
  */
 typedef struct {
-    aria_handle handle;             // Handle (invalid if error)
+    npk_handle handle;             // Handle (invalid if error)
     AriaGenArenaError error_code;   // Error code (0 = success)
 } AriaHandleAllocResult;
 
@@ -201,14 +201,14 @@ typedef struct {
  * 
  * Example:
  *   // Arena for Neuron structs (64 bytes each)
- *   AriaGenArenaResult res = aria_gen_arena_new(64, 16);
+ *   AriaGenArenaResult res = npk_gen_arena_new(64, 16);
  *   if (res.error_code == ARIA_GEN_ARENA_OK) {
- *       aria_gen_arena* arena = res.arena;
+ *       npk_gen_arena* arena = res.arena;
  *       // Use arena...
- *       aria_gen_arena_destroy(arena);
+ *       npk_gen_arena_destroy(arena);
  *   }
  */
-AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity);
+AriaGenArenaResult npk_gen_arena_new(size_t elem_size, size_t initial_capacity);
 
 /**
  * Destroy generational arena
@@ -223,7 +223,7 @@ AriaGenArenaResult aria_gen_arena_new(size_t elem_size, size_t initial_capacity)
  * 
  * Complexity: O(capacity)
  */
-void aria_gen_arena_destroy(aria_gen_arena* arena);
+void npk_gen_arena_destroy(npk_gen_arena* arena);
 
 /**
  * Clear arena (free all slots but retain capacity)
@@ -236,7 +236,7 @@ void aria_gen_arena_destroy(aria_gen_arena* arena);
  * 
  * Use case: Reset between requests in server loop
  */
-void aria_gen_arena_clear(aria_gen_arena* arena);
+void npk_gen_arena_clear(npk_gen_arena* arena);
 
 // ============================================================================
 // Arena Allocation Functions
@@ -260,13 +260,13 @@ void aria_gen_arena_clear(aria_gen_arena* arena);
  * 
  * Example:
  *   Neuron n = {.id = 42, .value = 1.5};
- *   AriaHandleAllocResult res = aria_gen_arena_alloc(arena, &n);
+ *   AriaHandleAllocResult res = npk_gen_arena_alloc(arena, &n);
  *   if (res.error_code == ARIA_GEN_ARENA_OK) {
- *       aria_handle h = res.handle;
+ *       npk_handle h = res.handle;
  *       // Use handle...
  *   }
  */
-AriaHandleAllocResult aria_gen_arena_alloc(aria_gen_arena* arena, const void* data);
+AriaHandleAllocResult npk_gen_arena_alloc(npk_gen_arena* arena, const void* data);
 
 /**
  * Get element from handle
@@ -283,7 +283,7 @@ AriaHandleAllocResult aria_gen_arena_alloc(aria_gen_arena* arena, const void* da
  * Returns NULL and error code if ANY check fails.
  * 
  * Example:
- *   AriaElemGetResult res = aria_gen_arena_get(arena, handle);
+ *   AriaElemGetResult res = npk_gen_arena_get(arena, handle);
  *   if (res.error_code == ARIA_GEN_ARENA_OK) {
  *       Neuron* n = (Neuron*)res.elem;
  *       // Use neuron...
@@ -291,7 +291,7 @@ AriaHandleAllocResult aria_gen_arena_alloc(aria_gen_arena* arena, const void* da
  *       // Handle was freed - safe failure!
  *   }
  */
-AriaElemGetResult aria_gen_arena_get(aria_gen_arena* arena, aria_handle handle);
+AriaElemGetResult npk_gen_arena_get(npk_gen_arena* arena, npk_handle handle);
 
 /**
  * Free handle (mark slot as free)
@@ -310,12 +310,12 @@ AriaElemGetResult aria_gen_arena_get(aria_gen_arena* arena, aria_handle handle);
  * handle will fail with ARIA_GEN_ARENA_ERR_STALE_HANDLE.
  * 
  * Example:
- *   AriaGenArenaError err = aria_gen_arena_free(arena, handle);
+ *   AriaGenArenaError err = npk_gen_arena_free(arena, handle);
  *   if (err == ARIA_GEN_ARENA_OK) {
  *       // Slot is now free and handle is stale
  *   }
  */
-AriaGenArenaError aria_gen_arena_free(aria_gen_arena* arena, aria_handle handle);
+AriaGenArenaError npk_gen_arena_free(npk_gen_arena* arena, npk_handle handle);
 
 // ============================================================================
 // Arena Query Functions
@@ -324,28 +324,28 @@ AriaGenArenaError aria_gen_arena_free(aria_gen_arena* arena, aria_handle handle)
 /**
  * Get number of occupied slots
  */
-static inline size_t aria_gen_arena_count(const aria_gen_arena* arena) {
+static inline size_t npk_gen_arena_count(const npk_gen_arena* arena) {
     return arena ? arena->count : 0;
 }
 
 /**
  * Get total capacity (allocated slots)
  */
-static inline size_t aria_gen_arena_capacity(const aria_gen_arena* arena) {
+static inline size_t npk_gen_arena_capacity(const npk_gen_arena* arena) {
     return arena ? arena->capacity : 0;
 }
 
 /**
  * Get free list size
  */
-static inline size_t aria_gen_arena_free_count(const aria_gen_arena* arena) {
+static inline size_t npk_gen_arena_free_count(const npk_gen_arena* arena) {
     return arena ? arena->free_count : 0;
 }
 
 /**
  * Get element size
  */
-static inline size_t aria_gen_arena_elem_size(const aria_gen_arena* arena) {
+static inline size_t npk_gen_arena_elem_size(const npk_gen_arena* arena) {
     return arena ? arena->elem_size : 0;
 }
 
@@ -364,7 +364,7 @@ typedef struct {
     double stale_rate;      // stale_gets / total_gets
 } AriaGenArenaStats;
 
-AriaGenArenaStats aria_gen_arena_stats(const aria_gen_arena* arena);
+AriaGenArenaStats npk_gen_arena_stats(const npk_gen_arena* arena);
 
 #ifdef __cplusplus
 }

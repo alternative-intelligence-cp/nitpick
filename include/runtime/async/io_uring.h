@@ -21,7 +21,7 @@ struct io_uring;
 struct io_uring_sqe;
 struct io_uring_cqe;
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 /**
@@ -283,6 +283,6 @@ private:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_IO_URING_H

@@ -4,7 +4,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace aria {
+namespace npk {
 
 // ============================================================================
 // DiagnosticEngine Implementation
@@ -203,4 +203,4 @@ void DiagnosticEngine::printSourceContext(const Diagnostic& diag) const {
     std::cerr << (color_enabled_ ? RESET : "") << "\n";
 }
 
-} // namespace aria
+} // namespace npk

@@ -3,11 +3,11 @@
  * Phase 7.4.2: TBB Type Formatters
  */
 
-#include "tools/debugger/aria_formatters.h"
+#include "tools/debugger/npk_formatters.h"
 #include <sstream>
 #include <iomanip>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 // ============================================================================
@@ -294,7 +294,7 @@ bool RegisterAriaFormatters(lldb::SBDebugger& debugger) {
 
     // TBB types - using regex to match tbb\d+
     lldb::SBTypeSummary tbb_summary = lldb::SBTypeSummary::CreateWithFunctionName(
-        "aria::debugger::TBBTypeSummaryProvider::GetSummary"
+        "npk::debugger::TBBTypeSummaryProvider::GetSummary"
     );
     
     if (tbb_summary.IsValid()) {
@@ -306,7 +306,7 @@ bool RegisterAriaFormatters(lldb::SBDebugger& debugger) {
 
     // Result<T> type - using regex to match result<.*>
     lldb::SBTypeSummary result_summary = lldb::SBTypeSummary::CreateWithFunctionName(
-        "aria::debugger::ResultTypeSummaryProvider::GetSummary"
+        "npk::debugger::ResultTypeSummaryProvider::GetSummary"
     );
     
     if (result_summary.IsValid()) {
@@ -343,4 +343,4 @@ bool RegisterAriaFormatters(lldb::SBDebugger& debugger) {
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

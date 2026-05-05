@@ -12,7 +12,7 @@
 #include <atomic>
 #include <unordered_map>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 /**
@@ -139,7 +139,7 @@ private:
     // Diagnostics
     void publish_diagnostics(const std::string& uri);
     void clear_diagnostics(const std::string& uri);
-    json convert_diagnostic_to_lsp(const aria::Diagnostic& diag);
+    json convert_diagnostic_to_lsp(const npk::Diagnostic& diag);
     
     // Navigation handlers (executed by worker threads)
     json handle_hover(const json& params);
@@ -180,6 +180,6 @@ private:
 };
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LSP_SERVER_H

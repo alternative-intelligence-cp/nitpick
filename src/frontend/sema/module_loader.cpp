@@ -8,7 +8,7 @@
 
 namespace fs = std::filesystem;
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 ModuleLoader::ModuleLoader(const std::string& rootPath)
@@ -161,7 +161,7 @@ std::unique_ptr<ProgramNode> ModuleLoader::parseFile(const std::string& filePath
     try {
         frontend::Lexer lexer(source);
         auto tokens = lexer.tokenize();  // Get tokens
-        aria::Parser parser(tokens);
+        npk::Parser parser(tokens);
         
         auto programAst = parser.parse();  // Returns shared_ptr<ASTNode>
         
@@ -263,4 +263,4 @@ std::string ModuleLoader::dumpDependencyGraph() const {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

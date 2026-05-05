@@ -18,18 +18,18 @@
 
 // Forward declare GPU functions (defined in fix256_gpu.cu)
 // Must match exact signatures - no extern "C" with __device__ __host__
-__device__ __host__ aria_fix256_t aria_fix256_div_gpu(aria_fix256_t a, aria_fix256_t b);
-__device__ __host__ aria_fix256_t aria_fix256_add_gpu(aria_fix256_t a, aria_fix256_t b);
-__device__ __host__ aria_fix256_t aria_fix256_mul_gpu(aria_fix256_t a, aria_fix256_t b);
+__device__ __host__ npk_fix256_t npk_fix256_div_gpu(npk_fix256_t a, npk_fix256_t b);
+__device__ __host__ npk_fix256_t npk_fix256_add_gpu(npk_fix256_t a, npk_fix256_t b);
+__device__ __host__ npk_fix256_t npk_fix256_mul_gpu(npk_fix256_t a, npk_fix256_t b);
 
 // CPU reference (has extern "C" wrapper in fix256.cpp)
 extern "C" {
-    aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b);
+    npk_fix256_t npk_fix256_div(npk_fix256_t a, npk_fix256_t b);
 }
 
 // Helper to create fix256 from int64
-__host__ __device__ aria_fix256_t make_fix256_int(int64_t val) {
-    aria_fix256_t result;
+__host__ __device__ npk_fix256_t make_fix256_int(int64_t val) {
+    npk_fix256_t result;
     result.limbs[0] = 0;
     result.limbs[1] = 0;
     
@@ -45,12 +45,12 @@ __host__ __device__ aria_fix256_t make_fix256_int(int64_t val) {
 }
 
 // Helper to extract int64 from fix256
-__host__ __device__ int64_t fix256_get_int(aria_fix256_t val) {
+__host__ __device__ int64_t fix256_get_int(npk_fix256_t val) {
     return (int64_t)val.limbs[2];
 }
 
 // Helper to compare two fix256 values
-__host__ __device__ bool fix256_eq(aria_fix256_t a, aria_fix256_t b) {
+__host__ __device__ bool fix256_eq(npk_fix256_t a, npk_fix256_t b) {
     return (a.limbs[0] == b.limbs[0] &&
             a.limbs[1] == b.limbs[1] &&
             a.limbs[2] == b.limbs[2] &&
@@ -58,33 +58,33 @@ __host__ __device__ bool fix256_eq(aria_fix256_t a, aria_fix256_t b) {
 }
 
 // GPU kernel for single division test
-__global__ void single_division_kernel(aria_fix256_t a, aria_fix256_t b, aria_fix256_t* result) {
-    *result = aria_fix256_div_gpu(a, b);
+__global__ void single_division_kernel(npk_fix256_t a, npk_fix256_t b, npk_fix256_t* result) {
+    *result = npk_fix256_div_gpu(a, b);
 }
 
 // GPU kernel that performs many divisions
-__global__ void test_division_kernel(aria_fix256_t* results, int n) {
+__global__ void test_division_kernel(npk_fix256_t* results, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         // Each thread computes a different division
-        aria_fix256_t a = make_fix256_int(100 + idx);
-        aria_fix256_t b = make_fix256_int(3 + (idx % 7));
-        results[idx] = aria_fix256_div_gpu(a, b);
+        npk_fix256_t a = make_fix256_int(100 + idx);
+        npk_fix256_t b = make_fix256_int(3 + (idx % 7));
+        results[idx] = npk_fix256_div_gpu(a, b);
     }
 }
 
 // Benchmark kernel (compute many divisions)
-__global__ void benchmark_division_kernel(aria_fix256_t* results, int iterations) {
+__global__ void benchmark_division_kernel(npk_fix256_t* results, int iterations) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
-    aria_fix256_t a = make_fix256_int(1234567);
-    aria_fix256_t b = make_fix256_int(789);
-    aria_fix256_t result = a;
+    npk_fix256_t a = make_fix256_int(1234567);
+    npk_fix256_t b = make_fix256_int(789);
+    npk_fix256_t result = a;
     
     // Perform many divisions
     for (int i = 0; i < iterations; i++) {
-        result = aria_fix256_div_gpu(result, b);
-        result = aria_fix256_mul_gpu(result, b);  // Keep value in range
+        result = npk_fix256_div_gpu(result, b);
+        result = npk_fix256_mul_gpu(result, b);  // Keep value in range
     }
     
     results[idx] = result;
@@ -137,22 +137,22 @@ int main() {
     int passed = 0, failed = 0;
     
     for (auto& test : tests) {
-        aria_fix256_t a_cpu = make_fix256_int(test.a);
-        aria_fix256_t b_cpu = make_fix256_int(test.b);
+        npk_fix256_t a_cpu = make_fix256_int(test.a);
+        npk_fix256_t b_cpu = make_fix256_int(test.b);
         
         // CPU computation
-        aria_fix256_t result_cpu = aria_fix256_div(a_cpu, b_cpu);
+        npk_fix256_t result_cpu = npk_fix256_div(a_cpu, b_cpu);
         
         // GPU computation (pass actual test values)
-        aria_fix256_t *d_result;
-        cudaMalloc(&d_result, sizeof(aria_fix256_t));
+        npk_fix256_t *d_result;
+        cudaMalloc(&d_result, sizeof(npk_fix256_t));
         
         single_division_kernel<<<1, 1>>>(a_cpu, b_cpu, d_result);
         cudaDeviceSynchronize();
         check_cuda_error("kernel launch");
         
-        aria_fix256_t result_gpu;
-        cudaMemcpy(&result_gpu, d_result, sizeof(aria_fix256_t), cudaMemcpyDeviceToHost);
+        npk_fix256_t result_gpu;
+        cudaMemcpy(&result_gpu, d_result, sizeof(npk_fix256_t), cudaMemcpyDeviceToHost);
         cudaFree(d_result);
         
         // Compare
@@ -174,15 +174,15 @@ int main() {
     printf("-------------------------------\n");
     
     const int n_threads = 1024;
-    aria_fix256_t *d_results;
-    cudaMalloc(&d_results, n_threads * sizeof(aria_fix256_t));
+    npk_fix256_t *d_results;
+    cudaMalloc(&d_results, n_threads * sizeof(npk_fix256_t));
     
     test_division_kernel<<<32, 32>>>(d_results, n_threads);
     cudaDeviceSynchronize();
     check_cuda_error("parallel kernel");
     
-    aria_fix256_t *h_results = new aria_fix256_t[n_threads];
-    cudaMemcpy(h_results, d_results, n_threads * sizeof(aria_fix256_t), cudaMemcpyDeviceToHost);
+    npk_fix256_t *h_results = new npk_fix256_t[n_threads];
+    cudaMemcpy(h_results, d_results, n_threads * sizeof(npk_fix256_t), cudaMemcpyDeviceToHost);
     cudaFree(d_results);
     
     // Verify first few results
@@ -208,7 +208,7 @@ int main() {
     const int total_threads = n_blocks * threads_per_block;
     const int iterations = 100;
     
-    cudaMalloc(&d_results, total_threads * sizeof(aria_fix256_t));
+    cudaMalloc(&d_results, total_threads * sizeof(npk_fix256_t));
     
     // Warmup
     benchmark_division_kernel<<<n_blocks, threads_per_block>>>(d_results, 10);

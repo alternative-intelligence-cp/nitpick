@@ -7,7 +7,7 @@
 #include <shared_mutex>
 #include <optional>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 /**
@@ -67,6 +67,6 @@ private:
 };
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LSP_VFS_H

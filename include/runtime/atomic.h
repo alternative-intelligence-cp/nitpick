@@ -94,15 +94,15 @@ typedef struct AriaAtomicTBB64 AriaAtomicTBB64;
  * Atomic Boolean Operations
  * ============================================================================ */
 
-AriaAtomicBool* aria_atomic_bool_create(bool initial_value);
-void aria_atomic_bool_destroy(AriaAtomicBool* atomic);
-bool aria_atomic_bool_load(AriaAtomicBool* atomic, AriaMemoryOrder order);
-void aria_atomic_bool_store(AriaAtomicBool* atomic, bool value, AriaMemoryOrder order);
-bool aria_atomic_bool_exchange(AriaAtomicBool* atomic, bool value, AriaMemoryOrder order);
-bool aria_atomic_bool_compare_exchange_strong(AriaAtomicBool* atomic, bool* expected, 
+AriaAtomicBool* npk_atomic_bool_create(bool initial_value);
+void npk_atomic_bool_destroy(AriaAtomicBool* atomic);
+bool npk_atomic_bool_load(AriaAtomicBool* atomic, AriaMemoryOrder order);
+void npk_atomic_bool_store(AriaAtomicBool* atomic, bool value, AriaMemoryOrder order);
+bool npk_atomic_bool_exchange(AriaAtomicBool* atomic, bool value, AriaMemoryOrder order);
+bool npk_atomic_bool_compare_exchange_strong(AriaAtomicBool* atomic, bool* expected, 
                                                bool desired, AriaMemoryOrder success_order,
                                                AriaMemoryOrder failure_order);
-bool aria_atomic_bool_compare_exchange_weak(AriaAtomicBool* atomic, bool* expected,
+bool npk_atomic_bool_compare_exchange_weak(AriaAtomicBool* atomic, bool* expected,
                                              bool desired, AriaMemoryOrder success_order,
                                              AriaMemoryOrder failure_order);
 
@@ -111,69 +111,69 @@ bool aria_atomic_bool_compare_exchange_weak(AriaAtomicBool* atomic, bool* expect
  * ============================================================================ */
 
 // Int8
-AriaAtomicInt8* aria_atomic_int8_create(int8_t initial_value);
-void aria_atomic_int8_destroy(AriaAtomicInt8* atomic);
-int8_t aria_atomic_int8_load(AriaAtomicInt8* atomic, AriaMemoryOrder order);
-void aria_atomic_int8_store(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
-int8_t aria_atomic_int8_exchange(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
-bool aria_atomic_int8_compare_exchange_strong(AriaAtomicInt8* atomic, int8_t* expected,
+AriaAtomicInt8* npk_atomic_int8_create(int8_t initial_value);
+void npk_atomic_int8_destroy(AriaAtomicInt8* atomic);
+int8_t npk_atomic_int8_load(AriaAtomicInt8* atomic, AriaMemoryOrder order);
+void npk_atomic_int8_store(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_int8_exchange(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
+bool npk_atomic_int8_compare_exchange_strong(AriaAtomicInt8* atomic, int8_t* expected,
                                                int8_t desired, AriaMemoryOrder success_order,
                                                AriaMemoryOrder failure_order);
-int8_t aria_atomic_int8_fetch_add(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
-int8_t aria_atomic_int8_fetch_sub(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_int8_fetch_add(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_int8_fetch_sub(AriaAtomicInt8* atomic, int8_t value, AriaMemoryOrder order);
 
 // Uint8
-AriaAtomicUint8* aria_atomic_uint8_create(uint8_t initial_value);
-void aria_atomic_uint8_destroy(AriaAtomicUint8* atomic);
-uint8_t aria_atomic_uint8_load(AriaAtomicUint8* atomic, AriaMemoryOrder order);
-void aria_atomic_uint8_store(AriaAtomicUint8* atomic, uint8_t value, AriaMemoryOrder order);
-uint8_t aria_atomic_uint8_fetch_add(AriaAtomicUint8* atomic, uint8_t value, AriaMemoryOrder order);
+AriaAtomicUint8* npk_atomic_uint8_create(uint8_t initial_value);
+void npk_atomic_uint8_destroy(AriaAtomicUint8* atomic);
+uint8_t npk_atomic_uint8_load(AriaAtomicUint8* atomic, AriaMemoryOrder order);
+void npk_atomic_uint8_store(AriaAtomicUint8* atomic, uint8_t value, AriaMemoryOrder order);
+uint8_t npk_atomic_uint8_fetch_add(AriaAtomicUint8* atomic, uint8_t value, AriaMemoryOrder order);
 
 // Int32
-AriaAtomicInt32* aria_atomic_int32_create(int32_t initial_value);
-void aria_atomic_int32_destroy(AriaAtomicInt32* atomic);
-int32_t aria_atomic_int32_load(AriaAtomicInt32* atomic, AriaMemoryOrder order);
-void aria_atomic_int32_store(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
-int32_t aria_atomic_int32_exchange(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
-bool aria_atomic_int32_compare_exchange_strong(AriaAtomicInt32* atomic, int32_t* expected,
+AriaAtomicInt32* npk_atomic_int32_create(int32_t initial_value);
+void npk_atomic_int32_destroy(AriaAtomicInt32* atomic);
+int32_t npk_atomic_int32_load(AriaAtomicInt32* atomic, AriaMemoryOrder order);
+void npk_atomic_int32_store(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_int32_exchange(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
+bool npk_atomic_int32_compare_exchange_strong(AriaAtomicInt32* atomic, int32_t* expected,
                                                 int32_t desired, AriaMemoryOrder success_order,
                                                 AriaMemoryOrder failure_order);
-int32_t aria_atomic_int32_fetch_add(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
-int32_t aria_atomic_int32_fetch_sub(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_int32_fetch_add(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_int32_fetch_sub(AriaAtomicInt32* atomic, int32_t value, AriaMemoryOrder order);
 
 // Uint32
-AriaAtomicUint32* aria_atomic_uint32_create(uint32_t initial_value);
-void aria_atomic_uint32_destroy(AriaAtomicUint32* atomic);
-uint32_t aria_atomic_uint32_load(AriaAtomicUint32* atomic, AriaMemoryOrder order);
-void aria_atomic_uint32_store(AriaAtomicUint32* atomic, uint32_t value, AriaMemoryOrder order);
-uint32_t aria_atomic_uint32_fetch_add(AriaAtomicUint32* atomic, uint32_t value, AriaMemoryOrder order);
+AriaAtomicUint32* npk_atomic_uint32_create(uint32_t initial_value);
+void npk_atomic_uint32_destroy(AriaAtomicUint32* atomic);
+uint32_t npk_atomic_uint32_load(AriaAtomicUint32* atomic, AriaMemoryOrder order);
+void npk_atomic_uint32_store(AriaAtomicUint32* atomic, uint32_t value, AriaMemoryOrder order);
+uint32_t npk_atomic_uint32_fetch_add(AriaAtomicUint32* atomic, uint32_t value, AriaMemoryOrder order);
 
 // Int64
-AriaAtomicInt64* aria_atomic_int64_create(int64_t initial_value);
-void aria_atomic_int64_destroy(AriaAtomicInt64* atomic);
-int64_t aria_atomic_int64_load(AriaAtomicInt64* atomic, AriaMemoryOrder order);
-void aria_atomic_int64_store(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
-int64_t aria_atomic_int64_exchange(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
-bool aria_atomic_int64_compare_exchange_strong(AriaAtomicInt64* atomic, int64_t* expected,
+AriaAtomicInt64* npk_atomic_int64_create(int64_t initial_value);
+void npk_atomic_int64_destroy(AriaAtomicInt64* atomic);
+int64_t npk_atomic_int64_load(AriaAtomicInt64* atomic, AriaMemoryOrder order);
+void npk_atomic_int64_store(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_int64_exchange(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
+bool npk_atomic_int64_compare_exchange_strong(AriaAtomicInt64* atomic, int64_t* expected,
                                                 int64_t desired, AriaMemoryOrder success_order,
                                                 AriaMemoryOrder failure_order);
-int64_t aria_atomic_int64_fetch_add(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
-int64_t aria_atomic_int64_fetch_sub(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_int64_fetch_add(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_int64_fetch_sub(AriaAtomicInt64* atomic, int64_t value, AriaMemoryOrder order);
 
 // Uint64
-AriaAtomicUint64* aria_atomic_uint64_create(uint64_t initial_value);
-void aria_atomic_uint64_destroy(AriaAtomicUint64* atomic);
-uint64_t aria_atomic_uint64_load(AriaAtomicUint64* atomic, AriaMemoryOrder order);
-void aria_atomic_uint64_store(AriaAtomicUint64* atomic, uint64_t value, AriaMemoryOrder order);
-uint64_t aria_atomic_uint64_fetch_add(AriaAtomicUint64* atomic, uint64_t value, AriaMemoryOrder order);
+AriaAtomicUint64* npk_atomic_uint64_create(uint64_t initial_value);
+void npk_atomic_uint64_destroy(AriaAtomicUint64* atomic);
+uint64_t npk_atomic_uint64_load(AriaAtomicUint64* atomic, AriaMemoryOrder order);
+void npk_atomic_uint64_store(AriaAtomicUint64* atomic, uint64_t value, AriaMemoryOrder order);
+uint64_t npk_atomic_uint64_fetch_add(AriaAtomicUint64* atomic, uint64_t value, AriaMemoryOrder order);
 
 // Pointer
-AriaAtomicPtr* aria_atomic_ptr_create(void* initial_value);
-void aria_atomic_ptr_destroy(AriaAtomicPtr* atomic);
-void* aria_atomic_ptr_load(AriaAtomicPtr* atomic, AriaMemoryOrder order);
-void aria_atomic_ptr_store(AriaAtomicPtr* atomic, void* value, AriaMemoryOrder order);
-void* aria_atomic_ptr_exchange(AriaAtomicPtr* atomic, void* value, AriaMemoryOrder order);
-bool aria_atomic_ptr_compare_exchange_strong(AriaAtomicPtr* atomic, void** expected,
+AriaAtomicPtr* npk_atomic_ptr_create(void* initial_value);
+void npk_atomic_ptr_destroy(AriaAtomicPtr* atomic);
+void* npk_atomic_ptr_load(AriaAtomicPtr* atomic, AriaMemoryOrder order);
+void npk_atomic_ptr_store(AriaAtomicPtr* atomic, void* value, AriaMemoryOrder order);
+void* npk_atomic_ptr_exchange(AriaAtomicPtr* atomic, void* value, AriaMemoryOrder order);
+bool npk_atomic_ptr_compare_exchange_strong(AriaAtomicPtr* atomic, void** expected,
                                               void* desired, AriaMemoryOrder success_order,
                                               AriaMemoryOrder failure_order);
 
@@ -183,40 +183,40 @@ bool aria_atomic_ptr_compare_exchange_strong(AriaAtomicPtr* atomic, void** expec
  * ============================================================================ */
 
 // TBB8
-AriaAtomicTBB8* aria_atomic_tbb8_create(int8_t initial_value);
-void aria_atomic_tbb8_destroy(AriaAtomicTBB8* atomic);
-int8_t aria_atomic_tbb8_load(AriaAtomicTBB8* atomic, AriaMemoryOrder order);
-void aria_atomic_tbb8_store(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
-int8_t aria_atomic_tbb8_exchange(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
-bool aria_atomic_tbb8_compare_exchange_strong(AriaAtomicTBB8* atomic, int8_t* expected,
+AriaAtomicTBB8* npk_atomic_tbb8_create(int8_t initial_value);
+void npk_atomic_tbb8_destroy(AriaAtomicTBB8* atomic);
+int8_t npk_atomic_tbb8_load(AriaAtomicTBB8* atomic, AriaMemoryOrder order);
+void npk_atomic_tbb8_store(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_tbb8_exchange(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
+bool npk_atomic_tbb8_compare_exchange_strong(AriaAtomicTBB8* atomic, int8_t* expected,
                                                int8_t desired, AriaMemoryOrder success_order,
                                                AriaMemoryOrder failure_order);
-int8_t aria_atomic_tbb8_fetch_add(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
-int8_t aria_atomic_tbb8_fetch_sub(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_tbb8_fetch_add(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
+int8_t npk_atomic_tbb8_fetch_sub(AriaAtomicTBB8* atomic, int8_t value, AriaMemoryOrder order);
 
 // TBB32
-AriaAtomicTBB32* aria_atomic_tbb32_create(int32_t initial_value);
-void aria_atomic_tbb32_destroy(AriaAtomicTBB32* atomic);
-int32_t aria_atomic_tbb32_load(AriaAtomicTBB32* atomic, AriaMemoryOrder order);
-void aria_atomic_tbb32_store(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
-int32_t aria_atomic_tbb32_exchange(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
-bool aria_atomic_tbb32_compare_exchange_strong(AriaAtomicTBB32* atomic, int32_t* expected,
+AriaAtomicTBB32* npk_atomic_tbb32_create(int32_t initial_value);
+void npk_atomic_tbb32_destroy(AriaAtomicTBB32* atomic);
+int32_t npk_atomic_tbb32_load(AriaAtomicTBB32* atomic, AriaMemoryOrder order);
+void npk_atomic_tbb32_store(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_tbb32_exchange(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
+bool npk_atomic_tbb32_compare_exchange_strong(AriaAtomicTBB32* atomic, int32_t* expected,
                                                 int32_t desired, AriaMemoryOrder success_order,
                                                 AriaMemoryOrder failure_order);
-int32_t aria_atomic_tbb32_fetch_add(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
-int32_t aria_atomic_tbb32_fetch_sub(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_tbb32_fetch_add(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
+int32_t npk_atomic_tbb32_fetch_sub(AriaAtomicTBB32* atomic, int32_t value, AriaMemoryOrder order);
 
 // TBB64
-AriaAtomicTBB64* aria_atomic_tbb64_create(int64_t initial_value);
-void aria_atomic_tbb64_destroy(AriaAtomicTBB64* atomic);
-int64_t aria_atomic_tbb64_load(AriaAtomicTBB64* atomic, AriaMemoryOrder order);
-void aria_atomic_tbb64_store(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
-int64_t aria_atomic_tbb64_exchange(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
-bool aria_atomic_tbb64_compare_exchange_strong(AriaAtomicTBB64* atomic, int64_t* expected,
+AriaAtomicTBB64* npk_atomic_tbb64_create(int64_t initial_value);
+void npk_atomic_tbb64_destroy(AriaAtomicTBB64* atomic);
+int64_t npk_atomic_tbb64_load(AriaAtomicTBB64* atomic, AriaMemoryOrder order);
+void npk_atomic_tbb64_store(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_tbb64_exchange(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
+bool npk_atomic_tbb64_compare_exchange_strong(AriaAtomicTBB64* atomic, int64_t* expected,
                                                 int64_t desired, AriaMemoryOrder success_order,
                                                 AriaMemoryOrder failure_order);
-int64_t aria_atomic_tbb64_fetch_add(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
-int64_t aria_atomic_tbb64_fetch_sub(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_tbb64_fetch_add(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
+int64_t npk_atomic_tbb64_fetch_sub(AriaAtomicTBB64* atomic, int64_t value, AriaMemoryOrder order);
 
 /* ============================================================================
  * Memory Fences
@@ -226,13 +226,13 @@ int64_t aria_atomic_tbb64_fetch_sub(AriaAtomicTBB64* atomic, int64_t value, Aria
  * Atomic thread fence (memory barrier).
  * Establishes synchronization ordering without an atomic operation.
  */
-void aria_atomic_thread_fence(AriaMemoryOrder order);
+void npk_atomic_thread_fence(AriaMemoryOrder order);
 
 /**
  * Atomic signal fence (compiler barrier only).
  * Prevents compiler reordering but does not affect hardware ordering.
  */
-void aria_atomic_signal_fence(AriaMemoryOrder order);
+void npk_atomic_signal_fence(AriaMemoryOrder order);
 
 /* ============================================================================
  * Lock-Free Property Queries
@@ -242,11 +242,11 @@ void aria_atomic_signal_fence(AriaMemoryOrder order);
  * Check if atomic operations on a specific type are lock-free.
  * Returns true if the operation uses hardware instructions, false if it uses locks.
  */
-bool aria_atomic_is_lock_free_bool(void);
-bool aria_atomic_is_lock_free_int8(void);
-bool aria_atomic_is_lock_free_int32(void);
-bool aria_atomic_is_lock_free_int64(void);
-bool aria_atomic_is_lock_free_ptr(void);
+bool npk_atomic_is_lock_free_bool(void);
+bool npk_atomic_is_lock_free_int8(void);
+bool npk_atomic_is_lock_free_int32(void);
+bool npk_atomic_is_lock_free_int64(void);
+bool npk_atomic_is_lock_free_ptr(void);
 
 #ifdef __cplusplus
 }

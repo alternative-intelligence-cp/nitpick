@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // Forward declarations
@@ -164,6 +164,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_SEMA_MODULE_TABLE_H

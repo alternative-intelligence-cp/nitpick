@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // Forward declarations
@@ -213,6 +213,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_SEMA_MODULE_LOADER_H

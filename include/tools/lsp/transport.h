@@ -7,7 +7,7 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 using json = nlohmann::json;
@@ -124,6 +124,6 @@ private:
 };
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LSP_TRANSPORT_H

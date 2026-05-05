@@ -9,17 +9,17 @@
 // Test allocation and basic operations
 func:test_arena_basic = int64() {
     // Create arena with 4096 bytes capacity
-    wild void->arena = @extern("aria_arena_new", 4096);
+    wild void->arena = @extern("npk_arena_new", 4096);
     
     if (arena == NULL) {
         return 1;  // Arena creation failed
     }
     
     // Allocate space for an int64 (8 bytes, 8-byte aligned)
-    wild void->ptr_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    wild void->ptr_raw = @extern("npk_arena_alloc", arena, 8, 8);
     
     if (ptr_raw == NULL) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 2;  // Allocation failed
     }
     
@@ -28,15 +28,15 @@ func:test_arena_basic = int64() {
     ptr@ = 42;
     
     if (ptr@ != 42) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 3;  // Value mismatch
     }
     
     // Allocate another value
-    wild void->ptr2_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    wild void->ptr2_raw = @extern("npk_arena_alloc", arena, 8, 8);
     
     if (ptr2_raw == NULL) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 4;  // Second allocation failed
     }
     
@@ -44,18 +44,18 @@ func:test_arena_basic = int64() {
     ptr2@ = 100;
     
     if (ptr2@ != 100) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 5;  // Second value mismatch
     }
     
     // Verify first allocation still valid
     if (ptr@ != 42) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 6;  // First value corrupted
     }
     
     // Clean up
-    @extern("aria_arena_destroy", arena);
+    @extern("npk_arena_destroy", arena);
     
     return 0;  // Success
 }
@@ -63,17 +63,17 @@ func:test_arena_basic = int64() {
 // Test arena reset functionality
 func:test_arena_reset = int64() {
     // Create arena
-    wild void->arena = @extern("aria_arena_new", 4096);
+    wild void->arena = @extern("npk_arena_new", 4096);
     
     if (arena == NULL) {
         return 1;  // Creation failed
     }
     
     // Allocate value
-    wild void->ptr1_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    wild void->ptr1_raw = @extern("npk_arena_alloc", arena, 8, 8);
     
     if (ptr1_raw == NULL) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 2;  // Allocation failed
     }
     
@@ -81,13 +81,13 @@ func:test_arena_reset = int64() {
     ptr1@ = 99;
     
     // Reset arena (invalidates ptr1)
-    @extern("aria_arena_reset", arena);
+    @extern("npk_arena_reset", arena);
     
     // Allocate again (should reuse same memory)
-    wild void->ptr2_raw = @extern("aria_arena_alloc", arena, 8, 8);
+    wild void->ptr2_raw = @extern("npk_arena_alloc", arena, 8, 8);
     
     if (ptr2_raw == NULL) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 3;  // Allocation after reset failed
     }
     
@@ -95,29 +95,29 @@ func:test_arena_reset = int64() {
     ptr2@ = 200;
     
     if (ptr2@ != 200) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 4;  // Value after reset incorrect
     }
     
     // Clean up
-    @extern("aria_arena_destroy", arena);
+    @extern("npk_arena_destroy", arena);
     
     return 0;  // Success
 }
 
 // Test array allocation
 func:test_arena_array = int64() {
-    wild void->arena = @extern("aria_arena_new", 8192);
+    wild void->arena = @extern("npk_arena_new", 8192);
     
     if (arena == NULL) {
         return 1;  // Creation failed
     }
     
     // Allocate array of 10 int64s (80 bytes total, 8-byte aligned)
-    wild void->arr_raw = @extern("aria_arena_alloc", arena, 80, 8);
+    wild void->arr_raw = @extern("npk_arena_alloc", arena, 80, 8);
     
     if (arr_raw == NULL) {
-        @extern("aria_arena_destroy", arena);
+        @extern("npk_arena_destroy", arena);
         return 2;  // Array allocation failed
     }
     
@@ -137,13 +137,13 @@ func:test_arena_array = int64() {
         wild int64->elem = @extern("pointer_add", arr, i * 8);
         int64:expected = i * 10;
         if (elem@ != expected) {
-            @extern("aria_arena_destroy", arena);
+            @extern("npk_arena_destroy", arena);
             return 3;  // Array value mismatch
         }
         i = i + 1;
     }
     
-    @extern("aria_arena_destroy", arena);
+    @extern("npk_arena_destroy", arena);
     return 0;  // Success
 }
 

@@ -19,7 +19,7 @@
 #include <vector>
 #include <memory>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 /**
@@ -188,6 +188,6 @@ private:
 };
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DEBUGGER_ASYNC_DEBUGGER_H

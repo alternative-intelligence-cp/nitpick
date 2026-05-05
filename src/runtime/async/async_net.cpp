@@ -12,7 +12,7 @@
 #include <cstring>
 #include <stdexcept>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Helper to set non-blocking mode
@@ -702,4 +702,4 @@ bool parse_url(const std::string& url, std::string& host, uint16_t& port, std::s
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

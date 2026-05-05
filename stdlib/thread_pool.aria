@@ -7,45 +7,45 @@
 //          0 direct extern calls; backed by libaria_libc_thread.so
 
 // ── aria-libc shims ──────────────────────────────────────────────────────────
-extern func:aria_libc_pool_submit = int32(int64:handle, wild ?*:func, int64:arg);
+extern func:npk_libc_pool_submit = int32(int64:handle, wild ?*:func, int64:arg);
 
-extern "aria_libc_thread" {
-    func:aria_libc_pool_create        = int64(int32:num_workers);
-    func:aria_libc_pool_shutdown      = int32(int64:handle);
-    func:aria_libc_pool_active_tasks  = int64(int64:handle);
-    func:aria_libc_pool_pending_tasks = int64(int64:handle);
-    func:aria_libc_pool_worker_count  = int32(int64:handle);
-    func:aria_libc_pool_wait_idle     = int32(int64:handle);
+extern "npk_libc_thread" {
+    func:npk_libc_pool_create        = int64(int32:num_workers);
+    func:npk_libc_pool_shutdown      = int32(int64:handle);
+    func:npk_libc_pool_active_tasks  = int64(int64:handle);
+    func:npk_libc_pool_pending_tasks = int64(int64:handle);
+    func:npk_libc_pool_worker_count  = int32(int64:handle);
+    func:npk_libc_pool_wait_idle     = int32(int64:handle);
 }
 
 Type:ThreadPool = {
     func:create = int64(int32:num_workers) {
-        int64:h = aria_libc_pool_create(num_workers);
+        int64:h = npk_libc_pool_create(num_workers);
         pass h;
     };
 
     func:submit = int32(int64:pool, ?->:func, int64:arg) {
-        pass aria_libc_pool_submit(pool, func, arg);
+        pass npk_libc_pool_submit(pool, func, arg);
     };
 
     func:shutdown = int32(int64:pool) {
-        pass aria_libc_pool_shutdown(pool);
+        pass npk_libc_pool_shutdown(pool);
     };
 
     func:wait_idle = int32(int64:pool) {
-        pass aria_libc_pool_wait_idle(pool);
+        pass npk_libc_pool_wait_idle(pool);
     };
 
     func:active_tasks = int64(int64:pool) {
-        pass aria_libc_pool_active_tasks(pool);
+        pass npk_libc_pool_active_tasks(pool);
     };
 
     func:pending_tasks = int64(int64:pool) {
-        pass aria_libc_pool_pending_tasks(pool);
+        pass npk_libc_pool_pending_tasks(pool);
     };
 
     func:worker_count = int32(int64:pool) {
-        pass aria_libc_pool_worker_count(pool);
+        pass npk_libc_pool_worker_count(pool);
     };
 
     struct:interface = {

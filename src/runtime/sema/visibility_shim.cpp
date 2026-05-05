@@ -66,14 +66,14 @@ int32_t vc_free(void* state) {
 // Returns 1 if symbol is public, 0 if private/null
 int32_t vc_symbol_is_public(void* symbol_ptr) {
     if (!symbol_ptr) return 0;
-    auto* sym = (aria::sema::Symbol*)symbol_ptr;
+    auto* sym = (npk::sema::Symbol*)symbol_ptr;
     return sym->isPublic ? 1 : 0;
 }
 
 // Returns symbol name as C string (Aria FFI wraps to AriaString)
 const char* vc_symbol_get_name(void* symbol_ptr) {
     if (!symbol_ptr) return "";
-    auto* sym = (aria::sema::Symbol*)symbol_ptr;
+    auto* sym = (npk::sema::Symbol*)symbol_ptr;
     return vc_return_str(sym->name);
 }
 
@@ -82,7 +82,7 @@ const char* vc_symbol_get_name(void* symbol_ptr) {
 // Returns module file path as C string (Aria FFI wraps to AriaString)
 const char* vc_module_get_path(void* module_ptr) {
     if (!module_ptr) return "";
-    auto* mod = (aria::sema::Module*)module_ptr;
+    auto* mod = (npk::sema::Module*)module_ptr;
     return vc_return_str(mod->getPath());
 }
 
@@ -94,7 +94,7 @@ int32_t vc_modules_same(void* mod1, void* mod2) {
 // Returns parent module pointer (or null/0)
 void* vc_module_get_parent(void* module_ptr) {
     if (!module_ptr) return nullptr;
-    auto* mod = (aria::sema::Module*)module_ptr;
+    auto* mod = (npk::sema::Module*)module_ptr;
     return (void*)mod->getParent();
 }
 
@@ -202,7 +202,7 @@ int32_t vc_test_module_free(void* mod) {
 // types are what the pointers actually point to.
 
 // The extraction functions above (vc_symbol_is_public, etc.) cast to
-// aria::sema::Symbol*. For testing, we provide mock-aware versions:
+// npk::sema::Symbol*. For testing, we provide mock-aware versions:
 
 int32_t vc_test_symbol_is_public(void* sym) {
     if (!sym) return 0;

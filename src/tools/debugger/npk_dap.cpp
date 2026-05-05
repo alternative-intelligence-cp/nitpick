@@ -6,7 +6,7 @@
  * Communicates via stdin/stdout using JSON-RPC messages.
  * 
  * Usage:
- *   aria-dap
+ *   npk-dap
  * 
  * Typically launched by VS Code or other DAP-compatible editors.
  */
@@ -15,7 +15,7 @@
 #include <iostream>
 #include <csignal>
 
-using namespace aria::debugger;
+using namespace npk::debugger;
 
 // Global server instance for signal handling
 DAPServer* g_server = nullptr;

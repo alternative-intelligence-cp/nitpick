@@ -32,8 +32,8 @@ extern "C" {
 // Forward Declarations
 // ============================================================================
 
-typedef struct aria_pool aria_pool;
-typedef struct aria_pool_chunk aria_pool_chunk;
+typedef struct npk_pool npk_pool;
+typedef struct npk_pool_chunk npk_pool_chunk;
 
 // ============================================================================
 // Error Codes
@@ -57,7 +57,7 @@ typedef enum {
  * Result type for pool creation
  */
 typedef struct {
-    aria_pool* pool;               // Pool handle (NULL on error)
+    npk_pool* pool;               // Pool handle (NULL on error)
     AriaPoolError error_code;      // Error code
     size_t requested_capacity;     // Requested initial capacity
     size_t block_size;             // Fixed block size
@@ -73,8 +73,8 @@ typedef struct {
  * Chunks are chained in a singly-linked list for geometric growth.
  * Each chunk manages (capacity / block_size) blocks.
  */
-struct aria_pool_chunk {
-    aria_pool_chunk* next;         // Next chunk in chain
+struct npk_pool_chunk {
+    npk_pool_chunk* next;         // Next chunk in chain
     void* memory;                  // Allocated memory region
     size_t capacity;               // Total bytes in this chunk
 };
@@ -94,13 +94,13 @@ struct aria_pool_chunk {
  * - Third chunk: initial_capacity * 4
  * - etc.
  */
-struct aria_pool {
+struct npk_pool {
     // Free list head (intrusive LIFO stack)
     void* head;                    // Points to first free block (NULL if exhausted)
     
     // Chunk management
-    aria_pool_chunk* chunks;       // Head of chunk list
-    aria_pool_chunk* current_chunk;// Chunk currently being allocated from
+    npk_pool_chunk* chunks;       // Head of chunk list
+    npk_pool_chunk* current_chunk;// Chunk currently being allocated from
     size_t current_offset;         // Offset within current chunk
     
     // Configuration
@@ -126,14 +126,14 @@ struct aria_pool {
  * @return AriaPoolResult with pool handle or error
  * 
  * Example:
- *   AriaPoolResult result = aria_pool_new(64, 4096);  // 64-byte blocks, 4KB initial
- *   if (aria_pool_result_is_ok(result)) {
- *       aria_pool* pool = result.pool;
+ *   AriaPoolResult result = npk_pool_new(64, 4096);  // 64-byte blocks, 4KB initial
+ *   if (npk_pool_result_is_ok(result)) {
+ *       npk_pool* pool = result.pool;
  *       // Use pool...
- *       aria_pool_destroy(pool);
+ *       npk_pool_destroy(pool);
  *   }
  */
-AriaPoolResult aria_pool_new(size_t block_size, size_t initial_capacity);
+AriaPoolResult npk_pool_new(size_t block_size, size_t initial_capacity);
 
 /**
  * Create a pool with custom growth factor
@@ -143,7 +143,7 @@ AriaPoolResult aria_pool_new(size_t block_size, size_t initial_capacity);
  * @param growth_factor Multiplier for geometric growth (e.g., 2 for doubling)
  * @return AriaPoolResult with pool handle or error
  */
-AriaPoolResult aria_pool_new_with_growth(size_t block_size, size_t initial_capacity, size_t growth_factor);
+AriaPoolResult npk_pool_new_with_growth(size_t block_size, size_t initial_capacity, size_t growth_factor);
 
 /**
  * Destroy pool and free all chunks
@@ -155,7 +155,7 @@ AriaPoolResult aria_pool_new_with_growth(size_t block_size, size_t initial_capac
  * 
  * Complexity: O(num_chunks) typically < 10 chunks
  */
-void aria_pool_destroy(aria_pool* pool);
+void npk_pool_destroy(npk_pool* pool);
 
 // ============================================================================
 // Allocation Functions
@@ -182,7 +182,7 @@ void aria_pool_destroy(aria_pool* pool);
  * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System malloc failed during growth
  * - Size/alignment in result are always (block_size, alignof(void*))
  */
-AriaAllocResult aria_pool_alloc(aria_pool* pool);
+AriaAllocResult npk_pool_alloc(npk_pool* pool);
 
 /**
  * Free a block back to the pool
@@ -200,7 +200,7 @@ AriaAllocResult aria_pool_alloc(aria_pool* pool);
  * 
  * Complexity: O(1)
  */
-void aria_pool_free(aria_pool* pool, void* ptr);
+void npk_pool_free(npk_pool* pool, void* ptr);
 
 /**
  * Reset pool (free all blocks without deallocating chunks)
@@ -215,7 +215,7 @@ void aria_pool_free(aria_pool* pool, void* ptr);
  * Complexity: O(total_blocks)
  * Performance: ~1-2ns per block (pure pointer writes)
  */
-void aria_pool_reset(aria_pool* pool);
+void npk_pool_reset(npk_pool* pool);
 
 // ============================================================================
 // Query Functions
@@ -230,8 +230,8 @@ void aria_pool_reset(aria_pool* pool);
  * @param free_blocks Out: Blocks available (or NULL)
  * @param total_capacity Out: Total bytes reserved from system (or NULL)
  */
-void aria_pool_get_stats(
-    const aria_pool* pool,
+void npk_pool_get_stats(
+    const npk_pool* pool,
     size_t* total_blocks,
     size_t* used_blocks,
     size_t* free_blocks,
@@ -246,7 +246,7 @@ void aria_pool_get_stats(
  * @param pool Pool allocator
  * @return Number of blocks in free list
  */
-size_t aria_pool_free_count(const aria_pool* pool);
+size_t npk_pool_free_count(const npk_pool* pool);
 
 /**
  * Get pool block size
@@ -254,7 +254,7 @@ size_t aria_pool_free_count(const aria_pool* pool);
  * @param pool Pool allocator
  * @return Fixed block size (bytes)
  */
-static inline size_t aria_pool_block_size(const aria_pool* pool) {
+static inline size_t npk_pool_block_size(const npk_pool* pool) {
     return pool->block_size;
 }
 
@@ -265,14 +265,14 @@ static inline size_t aria_pool_block_size(const aria_pool* pool) {
 /**
  * Check if pool creation succeeded
  */
-static inline bool aria_pool_result_is_ok(AriaPoolResult result) {
+static inline bool npk_pool_result_is_ok(AriaPoolResult result) {
     return result.error_code == ARIA_POOL_OK && result.pool != NULL;
 }
 
 /**
  * Check if pool creation failed
  */
-static inline bool aria_pool_result_is_err(AriaPoolResult result) {
+static inline bool npk_pool_result_is_err(AriaPoolResult result) {
     return result.error_code != ARIA_POOL_OK || result.pool == NULL;
 }
 
@@ -282,7 +282,7 @@ static inline bool aria_pool_result_is_err(AriaPoolResult result) {
  * @param error Error code
  * @return Human-readable error message
  */
-const char* aria_pool_error_message(AriaPoolError error);
+const char* npk_pool_error_message(AriaPoolError error);
 
 #ifdef __cplusplus
 }

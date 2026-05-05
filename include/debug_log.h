@@ -16,8 +16,8 @@
     AriaDbgNull& operator<<(const T&) { return *this; }
     AriaDbgNull& operator<<(std::ostream& (*)(std::ostream&)) { return *this; }
   };
-  inline AriaDbgNull aria_dbg_null;
-  #define ARIA_DBG_STREAM aria_dbg_null
+  inline AriaDbgNull npk_dbg_null;
+  #define ARIA_DBG_STREAM npk_dbg_null
 #endif
 
 #endif // ARIA_DEBUG_LOG_H

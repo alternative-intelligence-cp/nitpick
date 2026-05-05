@@ -56,14 +56,14 @@ typedef struct {
  * @param type_id Type ID for GC tracking (0 for generic)
  * @return Result containing pointer to AriaArray or error
  */
-AriaResultPtr aria_array_new(size_t element_size, size_t initial_capacity, int type_id);
+AriaResultPtr npk_array_new(size_t element_size, size_t initial_capacity, int type_id);
 
 /**
  * Free an array (only needed for Wild allocator, no-op for GC).
  * 
  * @param array Array to free
  */
-void aria_array_free(AriaArray* array);
+void npk_array_free(AriaArray* array);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Array Basic Operations
@@ -75,7 +75,7 @@ void aria_array_free(AriaArray* array);
  * @param array Array to query
  * @return Number of elements in array
  */
-size_t aria_array_length(const AriaArray* array);
+size_t npk_array_length(const AriaArray* array);
 
 /**
  * Get pointer to element at index (no bounds checking).
@@ -84,7 +84,7 @@ size_t aria_array_length(const AriaArray* array);
  * @param index Element index
  * @return Pointer to element or NULL if array is NULL
  */
-void* aria_array_get_unchecked(const AriaArray* array, size_t index);
+void* npk_array_get_unchecked(const AriaArray* array, size_t index);
 
 /**
  * Get pointer to element at index with bounds checking.
@@ -93,7 +93,7 @@ void* aria_array_get_unchecked(const AriaArray* array, size_t index);
  * @param index Element index
  * @return Result containing pointer to element or error
  */
-AriaResultPtr aria_array_get(const AriaArray* array, size_t index);
+AriaResultPtr npk_array_get(const AriaArray* array, size_t index);
 
 /**
  * Set element at index (no bounds checking).
@@ -102,7 +102,7 @@ AriaResultPtr aria_array_get(const AriaArray* array, size_t index);
  * @param index Element index
  * @param value Pointer to value to copy
  */
-void aria_array_set_unchecked(AriaArray* array, size_t index, const void* value);
+void npk_array_set_unchecked(AriaArray* array, size_t index, const void* value);
 
 /**
  * Set element at index with bounds checking.
@@ -112,7 +112,7 @@ void aria_array_set_unchecked(AriaArray* array, size_t index, const void* value)
  * @param value Pointer to value to copy
  * @return Result indicating success or error
  */
-AriaResultVoid aria_array_set(AriaArray* array, size_t index, const void* value);
+AriaResultVoid npk_array_set(AriaArray* array, size_t index, const void* value);
 
 /**
  * Push element to end of array (grows if needed).
@@ -121,7 +121,7 @@ AriaResultVoid aria_array_set(AriaArray* array, size_t index, const void* value)
  * @param value Pointer to value to copy
  * @return Result indicating success or error
  */
-AriaResultVoid aria_array_push(AriaArray* array, const void* value);
+AriaResultVoid npk_array_push(AriaArray* array, const void* value);
 
 /**
  * Pop element from end of array.
@@ -130,7 +130,7 @@ AriaResultVoid aria_array_push(AriaArray* array, const void* value);
  * @param out_value Pointer to store popped value (optional, can be NULL)
  * @return Result indicating success or error
  */
-AriaResultVoid aria_array_pop(AriaArray* array, void* out_value);
+AriaResultVoid npk_array_pop(AriaArray* array, void* out_value);
 
 /**
  * Create a slice (view) of an array.
@@ -140,7 +140,7 @@ AriaResultVoid aria_array_pop(AriaArray* array, void* out_value);
  * @param end End index (exclusive)
  * @return Result containing new array with copied elements or error
  */
-AriaResultPtr aria_array_slice(const AriaArray* array, size_t start, size_t end);
+AriaResultPtr npk_array_slice(const AriaArray* array, size_t start, size_t end);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Array Functional Operations
@@ -194,7 +194,7 @@ typedef int (*AriaComparatorFn)(const void* a, const void* b, void* context);
  * @param context User-provided context (optional)
  * @return Result containing new filtered array or error
  */
-AriaResultPtr aria_array_filter(const AriaArray* array, AriaPredicateFn predicate, void* context);
+AriaResultPtr npk_array_filter(const AriaArray* array, AriaPredicateFn predicate, void* context);
 
 /**
  * Transform/map array elements using mapper function.
@@ -206,7 +206,7 @@ AriaResultPtr aria_array_filter(const AriaArray* array, AriaPredicateFn predicat
  * @param context User-provided context (optional)
  * @return Result containing new transformed array or error
  */
-AriaResultPtr aria_array_transform(const AriaArray* array, AriaMapperFn mapper, 
+AriaResultPtr npk_array_transform(const AriaArray* array, AriaMapperFn mapper, 
                                    size_t output_element_size, int output_type_id, void* context);
 
 /**
@@ -219,7 +219,7 @@ AriaResultPtr aria_array_transform(const AriaArray* array, AriaMapperFn mapper,
  * @param context User-provided context (optional)
  * @return Result containing pointer to final accumulator or error
  */
-AriaResultPtr aria_array_reduce(const AriaArray* array, AriaReducerFn reducer,
+AriaResultPtr npk_array_reduce(const AriaArray* array, AriaReducerFn reducer,
                                 const void* initial, size_t accumulator_size, void* context);
 
 /**
@@ -230,7 +230,7 @@ AriaResultPtr aria_array_reduce(const AriaArray* array, AriaReducerFn reducer,
  * @param context User-provided context (optional)
  * @return Result indicating success or error
  */
-AriaResultVoid aria_array_sort(AriaArray* array, AriaComparatorFn comparator, void* context);
+AriaResultVoid npk_array_sort(AriaArray* array, AriaComparatorFn comparator, void* context);
 
 /**
  * Reverse array elements in-place.
@@ -238,7 +238,7 @@ AriaResultVoid aria_array_sort(AriaArray* array, AriaComparatorFn comparator, vo
  * @param array Array to reverse
  * @return Result indicating success or error
  */
-AriaResultVoid aria_array_reverse(AriaArray* array);
+AriaResultVoid npk_array_reverse(AriaArray* array);
 
 /**
  * Remove duplicate elements from array (preserves order, keeps first occurrence).
@@ -248,7 +248,7 @@ AriaResultVoid aria_array_reverse(AriaArray* array);
  * @param context User-provided context (optional)
  * @return Result containing new deduplicated array or error
  */
-AriaResultPtr aria_array_unique(const AriaArray* array, AriaComparatorFn comparator, void* context);
+AriaResultPtr npk_array_unique(const AriaArray* array, AriaComparatorFn comparator, void* context);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Simple Wrapper Functions (for builtin use - abort on error)
@@ -261,27 +261,27 @@ AriaResultPtr aria_array_unique(const AriaArray* array, AriaComparatorFn compara
  * @param type_id Type ID for GC tracking (0 for generic)
  * @return Pointer to AriaArray
  */
-AriaArray* aria_array_new_simple(size_t element_size, int type_id);
+AriaArray* npk_array_new_simple(size_t element_size, int type_id);
 
 /**
  * Push element to end of array (aborts on error).
  */
-void aria_array_push_simple(AriaArray* array, const void* value);
+void npk_array_push_simple(AriaArray* array, const void* value);
 
 /**
  * Get pointer to element at index (aborts on error).
  */
-void* aria_array_get_simple(AriaArray* array, size_t index);
+void* npk_array_get_simple(AriaArray* array, size_t index);
 
 /**
  * Set element at index (aborts on error).
  */
-void aria_array_set_simple(AriaArray* array, size_t index, const void* value);
+void npk_array_set_simple(AriaArray* array, size_t index, const void* value);
 
 /**
  * Pop element from end of array (aborts on error).
  */
-void aria_array_pop_simple(AriaArray* array, void* out_value);
+void npk_array_pop_simple(AriaArray* array, void* out_value);
 
 #ifdef __cplusplus
 }

@@ -7,7 +7,7 @@
 #include <optional>
 #include <memory>
 
-namespace aria {
+namespace npk {
 namespace doc {
 
 /**
@@ -260,6 +260,6 @@ private:
 };
 
 } // namespace doc
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TOOLS_DOC_PARSER_H

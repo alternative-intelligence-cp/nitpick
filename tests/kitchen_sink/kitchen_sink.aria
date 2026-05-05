@@ -11,9 +11,9 @@ extern "libc" {
     func:free = void(void*:ptr);
 }
 
-extern "aria_runtime" {
-    func:aria_alloc = void*(uint64:size);
-    func:aria_free = void(void*:ptr);
+extern "npk_runtime" {
+    func:npk_alloc = void*(uint64:size);
+    func:npk_free = void(void*:ptr);
 }
 
 // ==========================================
@@ -94,10 +94,10 @@ func:main = int32() {
     // Stack allocation
     stack int32[10]:local_buf;
 
-    // Wild allocation (Manual Memory) with Defer - TODO: aria_alloc not importing
-    // wild int64->heap_ptr = aria_alloc(8); // Allocate 8 bytes for int64
+    // Wild allocation (Manual Memory) with Defer - TODO: npk_alloc not importing
+    // wild int64->heap_ptr = npk_alloc(8); // Allocate 8 bytes for int64
     // if (heap_ptr == NULL) { fail(-1); }
-    // defer { aria_free(heap_ptr); } // RAII cleanup
+    // defer { npk_free(heap_ptr); } // RAII cleanup
 
     // Pointer arithmetic & operations
     // wild int64->ptr_copy = heap_ptr;
@@ -120,7 +120,7 @@ func:main = int32() {
     // C. POINTER MEMBER ACCESS
     // ------------------------------------------
     // TODO: Generic allocator syntax not working - need to calculate size
-    // wild ComplexState->state_ptr = aria_alloc(32);  // Approximate size
+    // wild ComplexState->state_ptr = npk_alloc(32);  // Approximate size
     // if (state_ptr != NULL) {
     //     // ARROW OPERATOR (ptr->member)
     //     state_ptr->id = 500;

@@ -22,7 +22,7 @@ add_test(NAME test_runner_minimal COMMAND test_runner)
 # ============================================================================
 
 # Find all .aria files in integration directory
-file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.aria")
+file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.npk")
 
 # Add integration test runner if we have .aria files
 if(INTEGRATION_TESTS)
@@ -100,11 +100,11 @@ endif()
 # ============================================================================
 
 # Diamond import test: A→B→D, A→C→D — verifies module cache deduplication
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.aria")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.npk")
     add_test(
         NAME module_loading_diamond
-        COMMAND ${CMAKE_BINARY_DIR}/ariac
-            ${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.aria
+        COMMAND ${CMAKE_BINARY_DIR}/npkc
+            ${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.npk
             -o ${CMAKE_BINARY_DIR}/test_diamond
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/module_loading
     )

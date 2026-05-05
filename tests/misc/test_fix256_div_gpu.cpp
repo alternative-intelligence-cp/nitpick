@@ -8,12 +8,12 @@
 
 // Use the GPU version
 extern "C" {
-    aria_fix256_t aria_fix256_div_gpu(aria_fix256_t a, aria_fix256_t b);
+    npk_fix256_t npk_fix256_div_gpu(npk_fix256_t a, npk_fix256_t b);
 }
 
 // Helper to create fix256 from int64
-aria_fix256_t make_fix256_int(int64_t val) {
-    aria_fix256_t result;
+npk_fix256_t make_fix256_int(int64_t val) {
+    npk_fix256_t result;
     memset(&result, 0, sizeof(result));
     
     if (val >= 0) {
@@ -30,12 +30,12 @@ aria_fix256_t make_fix256_int(int64_t val) {
 }
 
 // Helper to extract int64 from fix256
-int64_t fix256_get_int(aria_fix256_t val) {
+int64_t fix256_get_int(npk_fix256_t val) {
     return (int64_t)val.limbs[2];
 }
 
 // Helper to get float representation
-double fix256_get_float(aria_fix256_t val) {
+double fix256_get_float(npk_fix256_t val) {
     // Integer part in limbs[2:3], fractional in limbs[0:1]
     double integer_part = (double)(int64_t)val.limbs[2];
     double frac_part = (double)val.limbs[0] / (double)(1ULL << 63) / 2.0;
@@ -49,44 +49,44 @@ int main() {
     printf("=== fix256 GPU Division Tests ===\n\n");
     
     // Test 1: 10 / 2 = 5
-    aria_fix256_t a1 = make_fix256_int(10);
-    aria_fix256_t b1 = make_fix256_int(2);
-    aria_fix256_t result1 = aria_fix256_div_gpu(a1, b1);
+    npk_fix256_t a1 = make_fix256_int(10);
+    npk_fix256_t b1 = make_fix256_int(2);
+    npk_fix256_t result1 = npk_fix256_div_gpu(a1, b1);
     printf("Test 1: 10 / 2 = %ld (expected 5)\n", fix256_get_int(result1));
     
     // Test 2: 7 / 2 = 3.5
-    aria_fix256_t a2 = make_fix256_int(7);
-    aria_fix256_t b2 = make_fix256_int(2);
-    aria_fix256_t result2 = aria_fix256_div_gpu(a2, b2);
+    npk_fix256_t a2 = make_fix256_int(7);
+    npk_fix256_t b2 = make_fix256_int(2);
+    npk_fix256_t result2 = npk_fix256_div_gpu(a2, b2);
     printf("Test 2: 7 / 2 = %f (expected 3.5)\n", fix256_get_float(result2));
     
     // Test 3: 100 / 3 = 33.333...
-    aria_fix256_t a3 = make_fix256_int(100);
-    aria_fix256_t b3 = make_fix256_int(3);
-    aria_fix256_t result3 = aria_fix256_div_gpu(a3, b3);
+    npk_fix256_t a3 = make_fix256_int(100);
+    npk_fix256_t b3 = make_fix256_int(3);
+    npk_fix256_t result3 = npk_fix256_div_gpu(a3, b3);
     printf("Test 3: 100 / 3 = %f (expected ~33.333)\n", fix256_get_float(result3));
     
     // Test 4: 42 / 1 = 42
-    aria_fix256_t a4 = make_fix256_int(42);
-    aria_fix256_t b4 = make_fix256_int(1);
-    aria_fix256_t result4 = aria_fix256_div_gpu(a4, b4);
+    npk_fix256_t a4 = make_fix256_int(42);
+    npk_fix256_t b4 = make_fix256_int(1);
+    npk_fix256_t result4 = npk_fix256_div_gpu(a4, b4);
     printf("Test 4: 42 / 1 = %ld (expected 42)\n", fix256_get_int(result4));
     
     // Test 5: 123 / 123 = 1
-    aria_fix256_t a5 = make_fix256_int(123);
-    aria_fix256_t result5 = aria_fix256_div_gpu(a5, a5);
+    npk_fix256_t a5 = make_fix256_int(123);
+    npk_fix256_t result5 = npk_fix256_div_gpu(a5, a5);
     printf("Test 5: 123 / 123 = %ld (expected 1)\n", fix256_get_int(result5));
     
     // Test 6: -10 / 2 = -5
-    aria_fix256_t a6 = make_fix256_int(-10);
-    aria_fix256_t b6 = make_fix256_int(2);
-    aria_fix256_t result6 = aria_fix256_div_gpu(a6, b6);
+    npk_fix256_t a6 = make_fix256_int(-10);
+    npk_fix256_t b6 = make_fix256_int(2);
+    npk_fix256_t result6 = npk_fix256_div_gpu(a6, b6);
     printf("Test 6: -10 / 2 = %ld (expected -5)\n", fix256_get_int(result6));
     
     // Test 7: -10 / -2 = 5
-    aria_fix256_t a7 = make_fix256_int(-10);
-    aria_fix256_t b7 = make_fix256_int(-2);
-    aria_fix256_t result7 = aria_fix256_div_gpu(a7, b7);
+    npk_fix256_t a7 = make_fix256_int(-10);
+    npk_fix256_t b7 = make_fix256_int(-2);
+    npk_fix256_t result7 = npk_fix256_div_gpu(a7, b7);
     printf("Test 7: -10 / -2 = %ld (expected 5)\n", fix256_get_int(result7));
     
     printf("\n=== Tests Complete ===\n");
