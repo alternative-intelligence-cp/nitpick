@@ -50,8 +50,8 @@ static int tests_passed = 0;
 // ── Helper: Reset GC between tests ─────────────────────────────────────
 
 static void reset_gc() {
-    aria_gc_shutdown();
-    aria_gc_init(0, 0);  // Default sizes
+    npk_gc_shutdown();
+    npk_gc_init(0, 0);  // Default sizes
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -60,8 +60,8 @@ static void reset_gc() {
 
 TEST(tricolor_initial_white) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_EQ((long)h->color, (long)GC_COLOR_WHITE);
 }
 
@@ -73,32 +73,32 @@ TEST(tricolor_header_size_unchanged) {
 TEST(tricolor_color_field_range) {
     // color is 2 bits, should hold values 0, 1, 2
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    ObjHeader* h = npk_gc_get_header(ptr);
     h->color = GC_COLOR_WHITE;
     ASSERT_EQ((long)h->color, 0L);
 }
 
 TEST(tricolor_color_gray) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    ObjHeader* h = npk_gc_get_header(ptr);
     h->color = GC_COLOR_GRAY;
     ASSERT_EQ((long)h->color, 1L);
 }
 
 TEST(tricolor_color_black) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    ObjHeader* h = npk_gc_get_header(ptr);
     h->color = GC_COLOR_BLACK;
     ASSERT_EQ((long)h->color, 2L);
 }
 
 TEST(tricolor_does_not_corrupt_other_fields) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 42);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 42);
+    ObjHeader* h = npk_gc_get_header(ptr);
     h->color = GC_COLOR_BLACK;
     // Verify other fields unaffected
     ASSERT_TRUE(h->type_id == 42 && h->is_nursery == 1 && h->pinned_bit == 0);
@@ -110,48 +110,48 @@ TEST(tricolor_does_not_corrupt_other_fields) {
 
 TEST(stw_major_gc_tricolor) {
     // STW mark-sweep should work with tri-color (default path)
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     // Create garbage
     for (int i = 0; i < 100; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
-    aria_gc_collect(true);  // Major GC
+    npk_gc_collect(true);  // Major GC
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_major_collections, 1L);
 }
 
 TEST(stw_major_gc_color_reset) {
     // After STW major GC, surviving objects should be WHITE again
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);
     
-    aria_shadow_stack_push_frame();
-    void* obj = aria_gc_alloc(32, 1);
-    aria_shadow_stack_add_root((void**)&obj);
+    npk_shadow_stack_push_frame();
+    void* obj = npk_gc_alloc(32, 1);
+    npk_shadow_stack_add_root((void**)&obj);
     
     // Trigger minor GC to promote to old gen
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     // Now do major GC — obj should be marked then reset to WHITE
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
-    ObjHeader* h = aria_gc_get_header(obj);
-    aria_shadow_stack_pop_frame();
+    ObjHeader* h = npk_gc_get_header(obj);
+    npk_shadow_stack_pop_frame();
     ASSERT_EQ((long)h->color, (long)GC_COLOR_WHITE);
 }
 
@@ -161,80 +161,80 @@ TEST(stw_major_gc_color_reset) {
 
 TEST(concurrent_enable_disable) {
     reset_gc();
-    aria_gc_enable_concurrent(1);
-    aria_gc_enable_concurrent(0);
+    npk_gc_enable_concurrent(1);
+    npk_gc_enable_concurrent(0);
     ASSERT_TRUE(true);  // No crash
 }
 
 TEST(concurrent_mark_basic) {
     // Enable concurrent mode and trigger major GC
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     for (int i = 0; i < 100; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
-    aria_gc_collect(true);  // Triggers concurrent mark
+    npk_gc_collect(true);  // Triggers concurrent mark
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_concurrent_marks, 1L);
 }
 
 TEST(concurrent_mark_survivor_intact) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    uint8_t* anchor = (uint8_t*)aria_gc_alloc(32, 1);
+    npk_shadow_stack_push_frame();
+    uint8_t* anchor = (uint8_t*)npk_gc_alloc(32, 1);
     memset(anchor, 0xAB, 32);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     // Promote to old gen
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     // Concurrent major GC
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     bool intact = (anchor[0] == 0xAB && anchor[31] == 0xAB);
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(intact);
 }
 
 TEST(concurrent_mark_repeated_cycles) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     for (int cycle = 0; cycle < 5; cycle++) {
         for (int i = 0; i < 50; i++) {
-            void* tmp = aria_gc_alloc(32, 1);
+            void* tmp = npk_gc_alloc(32, 1);
             (void)tmp;
         }
-        aria_gc_collect(true);
+        npk_gc_collect(true);
     }
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_concurrent_marks, 5L);
 }
 
@@ -244,32 +244,32 @@ TEST(concurrent_mark_repeated_cycles) {
 
 TEST(incremental_sweep_completes) {
     // With concurrent enabled, sweep should be incremental
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     // Create garbage in old gen
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
-    aria_gc_collect(true);  // Starts incremental sweep
+    npk_gc_collect(true);  // Starts incremental sweep
     
     // Keep allocating to drive incremental sweep forward
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_incremental_sweeps, 1L);
 }
 
@@ -279,11 +279,11 @@ TEST(incremental_sweep_completes) {
 
 TEST(satb_barrier_no_crash) {
     reset_gc();
-    aria_gc_enable_concurrent(1);
+    npk_gc_enable_concurrent(1);
     
-    void* a = aria_gc_alloc(64, 1);
-    void* b = aria_gc_alloc(64, 1);
-    aria_gc_write_barrier(a, b);
+    void* a = npk_gc_alloc(64, 1);
+    void* b = npk_gc_alloc(64, 1);
+    npk_gc_write_barrier(a, b);
     
     ASSERT_TRUE(true);
 }
@@ -291,11 +291,11 @@ TEST(satb_barrier_no_crash) {
 TEST(satb_barrier_during_stw) {
     // Even with concurrent disabled, write barrier should work
     reset_gc();
-    aria_gc_enable_concurrent(0);
+    npk_gc_enable_concurrent(0);
     
-    void* a = aria_gc_alloc(64, 1);
-    void* b = aria_gc_alloc(64, 1);
-    aria_gc_write_barrier(a, b);
+    void* a = npk_gc_alloc(64, 1);
+    void* b = npk_gc_alloc(64, 1);
+    npk_gc_write_barrier(a, b);
     
     ASSERT_TRUE(true);
 }
@@ -306,7 +306,7 @@ TEST(satb_barrier_during_stw) {
 
 TEST(safepoint_no_crash) {
     reset_gc();
-    aria_gc_safepoint();
+    npk_gc_safepoint();
     ASSERT_TRUE(true);
 }
 
@@ -314,7 +314,7 @@ TEST(safepoint_rapid_polling) {
     reset_gc();
     // Rapid safepoint polling should be fast (no GC pending)
     for (int i = 0; i < 10000; i++) {
-        aria_gc_safepoint();
+        npk_gc_safepoint();
     }
     ASSERT_TRUE(true);
 }
@@ -325,43 +325,43 @@ TEST(safepoint_rapid_polling) {
 
 TEST(pause_time_tracked_minor) {
     reset_gc();
-    aria_gc_collect(false);
+    npk_gc_collect(false);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     // Minor GC should record some pause time
     ASSERT_GT((long)stats.total_pause_time_ns, 0L);
 }
 
 TEST(pause_time_tracked_major) {
     reset_gc();
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_GT((long)stats.total_pause_time_ns, 0L);
 }
 
 TEST(pause_time_max_tracks) {
     reset_gc();
-    aria_gc_collect(false);
-    aria_gc_collect(true);
+    npk_gc_collect(false);
+    npk_gc_collect(true);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_GT((long)stats.max_pause_time_ns, 0L);
 }
 
 TEST(pause_time_last_updates) {
     reset_gc();
-    aria_gc_collect(false);
+    npk_gc_collect(false);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     uint64_t first = stats.last_pause_time_ns;
     
-    aria_gc_collect(true);
-    aria_gc_get_stats(&stats);
+    npk_gc_collect(true);
+    npk_gc_get_stats(&stats);
     // last_pause_time should have changed (or be > 0)
     ASSERT_GT((long)stats.last_pause_time_ns, 0L);
 }
@@ -371,59 +371,59 @@ TEST(pause_time_last_updates) {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST(mode_switch_stw_to_concurrent) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     // STW collection
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     // Switch to concurrent
-    aria_gc_enable_concurrent(1);
+    npk_gc_enable_concurrent(1);
     
     for (int i = 0; i < 100; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_concurrent_marks, 1L);
 }
 
 TEST(mode_switch_concurrent_to_stw) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     // Concurrent collection
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     // Switch back to STW
-    aria_gc_enable_concurrent(0);
+    npk_gc_enable_concurrent(0);
     
     for (int i = 0; i < 100; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_GE((long)stats.num_major_collections, 2L);
 }
 
@@ -432,28 +432,28 @@ TEST(mode_switch_concurrent_to_stw) {
 // ═══════════════════════════════════════════════════════════════════════
 
 TEST(stress_concurrent_incremental) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 32 * 1024);
-    aria_gc_enable_concurrent(1);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 32 * 1024);
+    npk_gc_enable_concurrent(1);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     for (int cycle = 0; cycle < 10; cycle++) {
         for (int i = 0; i < 100; i++) {
-            void* tmp = aria_gc_alloc(64, 1);
+            void* tmp = npk_gc_alloc(64, 1);
             (void)tmp;
         }
         if (cycle % 2 == 0) {
-            aria_gc_collect(true);
+            npk_gc_collect(true);
         }
     }
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(stats.total_allocated > 0 && stats.num_concurrent_marks > 0);
 }
 
@@ -464,7 +464,7 @@ TEST(stress_concurrent_incremental) {
 TEST(stats_new_fields_zeroed) {
     reset_gc();
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_TRUE(stats.num_concurrent_marks == 0 &&
                 stats.num_incremental_sweeps == 0 &&
                 stats.total_pause_time_ns == 0 &&
@@ -533,6 +533,6 @@ int main() {
     }
     printf("═══════════════════════════════════════════════════════════\n");
     
-    aria_gc_shutdown();
+    npk_gc_shutdown();
     return (tests_passed == tests_run) ? 0 : 1;
 }

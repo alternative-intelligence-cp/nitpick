@@ -176,7 +176,7 @@ TEST_CASE(ir_generator_type_mapping_placeholder) {
 // Test IR generator with Aria type system integration
 TEST_CASE(ir_generator_aria_type_integration) {
     TypeSystem types;
-    IRGenerator gen("aria_types");
+    IRGenerator gen("npk_types");
     
     // Create various Aria types
     Type* int8 = types.getPrimitiveType("int8");

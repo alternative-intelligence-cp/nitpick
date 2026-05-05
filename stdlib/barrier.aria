@@ -11,24 +11,24 @@
 //   Barrier.wait(bar);  // blocks until all 4 threads arrive
 //   Barrier.destroy(bar);
 
-extern func:aria_shim_barrier_create = int64(int32:count);
-extern func:aria_shim_barrier_wait = int32(int64:handle);
-extern func:aria_shim_barrier_destroy = int32(int64:handle);
+extern func:npk_shim_barrier_create = int64(int32:count);
+extern func:npk_shim_barrier_wait = int32(int64:handle);
+extern func:npk_shim_barrier_destroy = int32(int64:handle);
 
 Type:Barrier = {
     // Create barrier for count threads. Returns handle or -1.
     func:create = int64(int32:count) {
-        pass aria_shim_barrier_create(count);
+        pass npk_shim_barrier_create(count);
     };
 
     // Wait at barrier. Blocks until all threads arrive.
     // Returns 0 on success, -1 on error.
     func:wait = int32(int64:handle) {
-        pass aria_shim_barrier_wait(handle);
+        pass npk_shim_barrier_wait(handle);
     };
 
     // Destroy barrier. Returns 0 on success, -1 on error.
     func:destroy = int32(int64:handle) {
-        pass aria_shim_barrier_destroy(handle);
+        pass npk_shim_barrier_destroy(handle);
     };
 };

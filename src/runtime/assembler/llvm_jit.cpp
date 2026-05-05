@@ -80,7 +80,7 @@ static void initialize_llvm_once() {
 // LLVM JIT Lifecycle
 // ============================================================================
 
-AriaLLVMJIT* aria_llvm_jit_create(int opt_level) {
+AriaLLVMJIT* npk_llvm_jit_create(int opt_level) {
     initialize_llvm_once();
     
     // Create LLJIT instance
@@ -115,7 +115,7 @@ AriaLLVMJIT* aria_llvm_jit_create(int opt_level) {
     return wrapper;
 }
 
-void aria_llvm_jit_destroy(AriaLLVMJIT* jit) {
+void npk_llvm_jit_destroy(AriaLLVMJIT* jit) {
     if (!jit) return;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -167,7 +167,7 @@ static void optimize_module(Module* module, int opt_level, bool inlining, bool v
     MPM.run(*module, MAM);
 }
 
-int aria_llvm_jit_add_module(AriaLLVMJIT* jit, Module* module) {
+int npk_llvm_jit_add_module(AriaLLVMJIT* jit, Module* module) {
     if (!jit || !module) return -1;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -178,7 +178,7 @@ int aria_llvm_jit_add_module(AriaLLVMJIT* jit, Module* module) {
     // Wrap in ThreadSafeModule
     // NOTE: This creates a new context for the module. If the module was created with
     // a different context, there will be a context mismatch during cleanup.
-    // Prefer using aria_llvm_jit_compile_ir which handles context management correctly.
+    // Prefer using npk_llvm_jit_compile_ir which handles context management correctly.
     auto TSM = ThreadSafeModule(std::unique_ptr<Module>(module), 
                                   ThreadSafeContext(std::make_unique<LLVMContext>()));
     
@@ -192,7 +192,7 @@ int aria_llvm_jit_add_module(AriaLLVMJIT* jit, Module* module) {
     return 0;
 }
 
-int aria_llvm_jit_compile_ir(AriaLLVMJIT* jit, const char* ir_text, const char* module_name) {
+int npk_llvm_jit_compile_ir(AriaLLVMJIT* jit, const char* ir_text, const char* module_name) {
     if (!jit || !ir_text || !module_name) return -1;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -208,7 +208,7 @@ int aria_llvm_jit_compile_ir(AriaLLVMJIT* jit, const char* ir_text, const char* 
     
     if (!module) {
         // Parse error
-        err.print("aria_llvm_jit_compile_ir", errs());
+        err.print("npk_llvm_jit_compile_ir", errs());
         return -1;
     }
     
@@ -234,7 +234,7 @@ int aria_llvm_jit_compile_ir(AriaLLVMJIT* jit, const char* ir_text, const char* 
 // Function Lookup and Execution
 // ============================================================================
 
-AriaJITFunction* aria_llvm_jit_lookup(AriaLLVMJIT* jit, const char* function_name) {
+AriaJITFunction* npk_llvm_jit_lookup(AriaLLVMJIT* jit, const char* function_name) {
     if (!jit || !function_name) return nullptr;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -262,7 +262,7 @@ AriaJITFunction* aria_llvm_jit_lookup(AriaLLVMJIT* jit, const char* function_nam
     return func;
 }
 
-void aria_jit_execute(AriaJITFunction* func) {
+void npk_jit_execute(AriaJITFunction* func) {
     if (!func || !func->function_ptr) return;
     
     typedef void (*FuncType)();
@@ -270,7 +270,7 @@ void aria_jit_execute(AriaJITFunction* func) {
     fn();
 }
 
-int64_t aria_jit_execute_i64(AriaJITFunction* func, int64_t arg) {
+int64_t npk_jit_execute_i64(AriaJITFunction* func, int64_t arg) {
     if (!func || !func->function_ptr) return 0;
     
     typedef int64_t (*FuncType)(int64_t);
@@ -278,7 +278,7 @@ int64_t aria_jit_execute_i64(AriaJITFunction* func, int64_t arg) {
     return fn(arg);
 }
 
-int64_t aria_jit_execute_i64_i64(AriaJITFunction* func, int64_t arg1, int64_t arg2) {
+int64_t npk_jit_execute_i64_i64(AriaJITFunction* func, int64_t arg1, int64_t arg2) {
     if (!func || !func->function_ptr) return 0;
     
     typedef int64_t (*FuncType)(int64_t, int64_t);
@@ -290,7 +290,7 @@ int64_t aria_jit_execute_i64_i64(AriaJITFunction* func, int64_t arg1, int64_t ar
 // JIT Configuration
 // ============================================================================
 
-void aria_llvm_jit_set_opt_level(AriaLLVMJIT* jit, int opt_level) {
+void npk_llvm_jit_set_opt_level(AriaLLVMJIT* jit, int opt_level) {
     if (!jit) return;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -298,7 +298,7 @@ void aria_llvm_jit_set_opt_level(AriaLLVMJIT* jit, int opt_level) {
     jit->optimization_level = impl->opt_level;
 }
 
-void aria_llvm_jit_set_inlining(AriaLLVMJIT* jit, bool enable) {
+void npk_llvm_jit_set_inlining(AriaLLVMJIT* jit, bool enable) {
     if (!jit) return;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -306,7 +306,7 @@ void aria_llvm_jit_set_inlining(AriaLLVMJIT* jit, bool enable) {
     jit->enable_inlining = enable;
 }
 
-void aria_llvm_jit_set_vectorization(AriaLLVMJIT* jit, bool enable) {
+void npk_llvm_jit_set_vectorization(AriaLLVMJIT* jit, bool enable) {
     if (!jit) return;
     
     AriaLLVMJITImpl* impl = (AriaLLVMJITImpl*)jit->execution_session;
@@ -318,7 +318,7 @@ void aria_llvm_jit_set_vectorization(AriaLLVMJIT* jit, bool enable) {
 // Utilities
 // ============================================================================
 
-const char* aria_llvm_get_target_triple() {
+const char* npk_llvm_get_target_triple() {
     initialize_llvm_once();
     
     // Use JITTargetMachineBuilder to detect host target
@@ -333,7 +333,7 @@ const char* aria_llvm_get_target_triple() {
     return triple.c_str();
 }
 
-const char* aria_llvm_get_data_layout() {
+const char* npk_llvm_get_data_layout() {
     initialize_llvm_once();
     
     // Use JITTargetMachineBuilder to get native data layout
@@ -347,7 +347,7 @@ const char* aria_llvm_get_data_layout() {
     return layout.c_str();
 }
 
-void aria_llvm_jit_dump_module(AriaLLVMJIT* jit, const char* module_name) {
+void npk_llvm_jit_dump_module(AriaLLVMJIT* jit, const char* module_name) {
     if (!jit || !module_name) return;
     
     errs() << "Module dump not implemented (LLJIT doesn't expose module access)\n";

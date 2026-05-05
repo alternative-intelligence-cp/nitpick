@@ -5,18 +5,18 @@
 // ═══════════════════════════════════════════════════════════════════════
 // aria-libc shims
 // ═══════════════════════════════════════════════════════════════════════
-extern "aria_libc_mem" {
-    func:aria_libc_mem_malloc     = int64(int64:size);
-    func:aria_libc_mem_realloc    = int64(int64:ptr, int64:size);
-    func:aria_libc_mem_free       = void(int64:ptr);
-    func:aria_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
-    func:aria_libc_mem_copy       = void(int64:dst, int64:src, int64:n);
+extern "npk_libc_mem" {
+    func:npk_libc_mem_malloc     = int64(int64:size);
+    func:npk_libc_mem_realloc    = int64(int64:ptr, int64:size);
+    func:npk_libc_mem_free       = void(int64:ptr);
+    func:npk_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
+    func:npk_libc_mem_copy       = void(int64:dst, int64:src, int64:n);
 };
 
-extern "aria_libc_string" {
-    func:aria_libc_string_byte_at  = int32(string:s, int64:idx);
-    func:aria_libc_string_from_buf = string(int64:buf, int64:offset, int64:len);
-    func:aria_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
+extern "npk_libc_string" {
+    func:npk_libc_string_byte_at  = int32(string:s, int64:idx);
+    func:npk_libc_string_from_buf = string(int64:buf, int64:offset, int64:len);
+    func:npk_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
 };
 
 struct:StringBuilder = {
@@ -31,7 +31,7 @@ func:StringBuilder_new = StringBuilder(int64:initial_capacity) {
     failsafe {
         cap = 64i64;
     };
-    int64:buf = aria_libc_mem_malloc(cap);
+    int64:buf = npk_libc_mem_malloc(cap);
     StringBuilder:sb = {
         buf,
         cap,
@@ -53,7 +53,7 @@ func:StringBuilder_ensure_capacity = StringBuilder(StringBuilder:sb, int64:addit
         when (cap < needed) {
             cap = cap * 2i64;
         };
-        buf = aria_libc_mem_realloc(buf, cap);
+        buf = npk_libc_mem_realloc(buf, cap);
     };
     StringBuilder:result = { buf, cap, sb.length };
     pass result;
@@ -67,7 +67,7 @@ func:StringBuilder_append = StringBuilder(StringBuilder:sb, string:str) {
     };
     StringBuilder:grown = StringBuilder_ensure_capacity(sb, str_len) ? sb;
     // Copy string bytes into buffer at current length offset
-    drop aria_libc_string_copy_to_buf(grown.buf, grown.length, str, 0i64, str_len);
+    drop npk_libc_string_copy_to_buf(grown.buf, grown.length, str, 0i64, str_len);
     int64:new_len = grown.length + str_len;
     StringBuilder:result = { grown.buf, grown.capacity, new_len };
     pass result;
@@ -79,7 +79,7 @@ func:StringBuilder_append_byte = StringBuilder(StringBuilder:sb, int32:byte) {
         pass sb;
     };
     StringBuilder:grown = StringBuilder_ensure_capacity(sb, 1i64) ? sb;
-    drop aria_libc_mem_write_byte(grown.buf, grown.length, byte);
+    drop npk_libc_mem_write_byte(grown.buf, grown.length, byte);
     int64:new_len = grown.length + 1i64;
     StringBuilder:result = { grown.buf, grown.capacity, new_len };
     pass result;
@@ -90,13 +90,13 @@ func:StringBuilder_build = string(StringBuilder:sb) {
     failsafe {
         pass "";
     };
-    string:result = aria_libc_string_from_buf(sb.buf, 0i64, sb.length);
+    string:result = npk_libc_string_from_buf(sb.buf, 0i64, sb.length);
     pass result;
 };
 
 // Free the StringBuilder's buffer
 func:StringBuilder_free = NIL(StringBuilder:sb) {
-    drop aria_libc_mem_free(sb.buf);
+    drop npk_libc_mem_free(sb.buf);
     pass NIL;
 };
 

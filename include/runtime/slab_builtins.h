@@ -32,7 +32,7 @@ extern "C" {
  *   if (cache == 0) { // error
  *   }
  */
-int64_t aria_slab_cache_new_handle(int64_t object_size, int64_t slab_size);
+int64_t npk_slab_cache_new_handle(int64_t object_size, int64_t slab_size);
 
 /**
  * Allocate an object from slab cache
@@ -47,7 +47,7 @@ int64_t aria_slab_cache_new_handle(int64_t object_size, int64_t slab_size);
  *   if (ptr == 0) { // allocation failed
  *   }
  */
-int64_t aria_slab_cache_alloc_handle(int64_t handle);
+int64_t npk_slab_cache_alloc_handle(int64_t handle);
 
 /**
  * Free an object back to slab cache
@@ -61,7 +61,7 @@ int64_t aria_slab_cache_alloc_handle(int64_t handle);
  * Example:
  *   slab_free(cache, ptr);
  */
-void aria_slab_cache_free_handle(int64_t handle, int64_t ptr);
+void npk_slab_cache_free_handle(int64_t handle, int64_t ptr);
 
 /**
  * Destroy slab cache and free all memory
@@ -73,7 +73,7 @@ void aria_slab_cache_free_handle(int64_t handle, int64_t ptr);
  * Example:
  *   slab_destroy(cache);
  */
-void aria_slab_cache_destroy_handle(int64_t handle);
+void npk_slab_cache_destroy_handle(int64_t handle);
 
 /**
  * Get total number of objects in cache
@@ -81,7 +81,7 @@ void aria_slab_cache_destroy_handle(int64_t handle);
  * @param handle Slab cache handle
  * @return Total objects (allocated + free)
  */
-int64_t aria_slab_cache_get_total_objects_handle(int64_t handle);
+int64_t npk_slab_cache_get_total_objects_handle(int64_t handle);
 
 /**
  * Get number of allocated objects in cache
@@ -89,7 +89,7 @@ int64_t aria_slab_cache_get_total_objects_handle(int64_t handle);
  * @param handle Slab cache handle
  * @return Number of currently allocated objects
  */
-int64_t aria_slab_cache_get_allocated_objects_handle(int64_t handle);
+int64_t npk_slab_cache_get_allocated_objects_handle(int64_t handle);
 
 #ifdef __cplusplus
 }

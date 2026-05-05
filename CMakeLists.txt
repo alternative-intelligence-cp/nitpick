@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(nitpick VERSION 0.9.1 LANGUAGES C CXX ASM)
+project(nitpick VERSION 0.9.1 LANGUAGES C CXX)
 
 # C++17 standard required
 set(CMAKE_CXX_STANDARD 17)
@@ -382,7 +382,7 @@ set(HIGHPREC_SOURCES
 # Phase 5.4: Integration Pipeline — AST converter + validation
 # These frontend sources are LLVM-free and needed by pipeline_helpers.cpp
 # to convert self-hosted ASTNodeCompat trees to native C++ AST nodes.
-# Added ONLY to aria_runtime (ariac already has them via ARIA_SOURCES).
+# Added ONLY to aria_runtime (npkc already has them via ARIA_SOURCES).
 set(PIPELINE_SOURCES
     src/frontend/ast/ast_node.cpp
     src/frontend/ast/expr.cpp
@@ -408,7 +408,7 @@ set(TOOLS_SOURCES
 # Phase 7.4: Debugger (optional, requires LLDB)
 if(LLDB_FOUND)
     set(DEBUGGER_SOURCES
-        src/tools/debugger/aria_formatters.cpp
+        src/tools/debugger/npk_formatters.cpp
         src/tools/debugger/dap_server.cpp
         src/tools/debugger/async_debugger.cpp
         src/tools/debugger/memory_visualizer.cpp
@@ -451,7 +451,6 @@ add_library(aria_runtime STATIC
     ${STDLIB_SOURCES}
     ${HIGHPREC_SOURCES}
     ${PIPELINE_SOURCES}
-    src/runtime/npk_aliases.s   # phase 6: npk_* → aria_* zero-overhead aliases
 )
 
 # ARIA-017: Enable AVX-512 and ADX intrinsics for high-precision floating-point
@@ -535,25 +534,22 @@ endif()
 # ============================================================================
 
 # Main compiler executable
-add_executable(ariac src/main.cpp ${ARIA_SOURCES})
+add_executable(npkc src/main.cpp ${ARIA_SOURCES})
 if(Z3_FOUND)
-    target_link_libraries(ariac ${llvm_libs} ${Z3_LIBRARY} uring atomic)
-    target_compile_definitions(ariac PRIVATE ARIA_HAS_Z3=1)
+    target_link_libraries(npkc ${llvm_libs} ${Z3_LIBRARY} uring atomic)
+    target_compile_definitions(npkc PRIVATE ARIA_HAS_Z3=1)
 else()
-    target_link_libraries(ariac ${llvm_libs} uring atomic)
+    target_link_libraries(npkc ${llvm_libs} uring atomic)
 endif()
-# Primary binary is npkc; ariac is a compat symlink (installed via install rules below)
-set_target_properties(ariac PROPERTIES OUTPUT_NAME "npkc")
 
 # Testing compiler executable (separate binary for testing without disrupting fuzzer)
-# Build with: cmake --build build --target ariac_testing
-# Use with: ./build/ariac_testing your_test.aria
-add_executable(ariac_testing src/main.cpp ${ARIA_SOURCES})
+# Build with: cmake --build build --target npkc_testing
+add_executable(npkc_testing src/main.cpp ${ARIA_SOURCES})
 if(Z3_FOUND)
-    target_link_libraries(ariac_testing ${llvm_libs} ${Z3_LIBRARY} uring atomic)
-    target_compile_definitions(ariac_testing PRIVATE ARIA_HAS_Z3=1)
+    target_link_libraries(npkc_testing ${llvm_libs} ${Z3_LIBRARY} uring atomic)
+    target_compile_definitions(npkc_testing PRIVATE ARIA_HAS_Z3=1)
 else()
-    target_link_libraries(ariac_testing ${llvm_libs} uring atomic)
+    target_link_libraries(npkc_testing ${llvm_libs} uring atomic)
 endif()
 
 # ============================================================================
@@ -562,7 +558,7 @@ endif()
 # LLVM headers are large and included in many translation units. PCH avoids
 # re-parsing them for each .cpp file, significantly reducing compile time.
 
-set(ARIA_PCH_HEADER ${CMAKE_SOURCE_DIR}/include/aria_pch.h)
+set(ARIA_PCH_HEADER ${CMAKE_SOURCE_DIR}/include/npk_pch.h)
 
 # Separate C++ sources that benefit from PCH (exclude .c files)
 # PCH with LLVM headers only makes sense for C++ translation units
@@ -572,7 +568,7 @@ set_source_files_properties(
     ${TOOLS_SOURCES} src/main.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS OFF
 )
-target_precompile_headers(ariac PRIVATE ${ARIA_PCH_HEADER})
+target_precompile_headers(npkc PRIVATE ${ARIA_PCH_HEADER})
 # C source files must not use the C++ PCH
 set_source_files_properties(
     src/runtime/allocators/mem_primitives.c
@@ -584,8 +580,8 @@ set_source_files_properties(
     src/runtime/thread/lockfree_shim.c
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON
 )
-target_precompile_headers(ariac_testing REUSE_FROM ariac)
-message(STATUS "Precompiled headers enabled for ariac (LLVM + stdlib, CXX only)")
+target_precompile_headers(npkc_testing REUSE_FROM npkc)
+message(STATUS "Precompiled headers enabled for npkc (LLVM + stdlib, CXX only)")
 
 # LSP server executable (Phase 7.3)
 add_executable(aria-ls src/tools/lsp/aria-ls.cpp 
@@ -602,7 +598,7 @@ target_link_libraries(aria-ls ${llvm_libs})
 # DAP server executable (Phase 7.4.3)
 if(LLDB_FOUND)
     add_executable(aria-dap 
-        src/tools/debugger/aria_dap.cpp
+        src/tools/debugger/npk_dap.cpp
         ${DEBUGGER_SOURCES}
     )
     target_include_directories(aria-dap PRIVATE ${LLDB_INCLUDE_DIRS})
@@ -645,12 +641,9 @@ endif()
 # Installation
 # ============================================================================
 
-install(TARGETS ariac DESTINATION bin)
+install(TARGETS npkc DESTINATION bin)
 install(TARGETS aria-pkg DESTINATION bin)
 install(TARGETS aria-doc DESTINATION bin)
-# Compat symlinks: ariac -> npkc, aria-pkg -> npkpkg
-install(CODE "execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink npkc \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/ariac)")
-install(CODE "execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink npkpkg \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin/aria-pkg)")
 install(DIRECTORY lib/std DESTINATION lib/nitpick)
 
 # ============================================================================
@@ -659,7 +652,7 @@ install(DIRECTORY lib/std DESTINATION lib/nitpick)
 
 message(STATUS "")
 message(STATUS "============================================")
-message(STATUS "Aria Compiler Configuration")
+message(STATUS "Nitpick Compiler Configuration")
 message(STATUS "============================================")
 message(STATUS "Version: ${PROJECT_VERSION}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

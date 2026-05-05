@@ -11,7 +11,7 @@ namespace frontend {
 // ============================================================================
 // Lexer Class - Tokenizes Aria source code
 // ============================================================================
-// Reference: aria_specs.txt
+// Reference: npk_specs.txt
 // Converts raw source text into a stream of tokens for the parser
 
 class Lexer {

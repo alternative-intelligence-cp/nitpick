@@ -167,19 +167,19 @@ public:
     void setMonomorphizer(sema::Monomorphizer* mono);
     
     // Phase 4.4: Memory Model Helpers (Public for ExprCodegen access)
-    // Helper: Get or declare aria_gc_alloc runtime function
+    // Helper: Get or declare npk_gc_alloc runtime function
     llvm::Function* getOrDeclareGCAlloc();
     
-    // Helper: Get or declare aria_gc_free runtime function (AUDIT FIX BUG-10)
+    // Helper: Get or declare npk_gc_free runtime function (AUDIT FIX BUG-10)
     llvm::Function* getOrDeclareGCFree();
     
-    // v0.8.1: Get or declare aria_gc_safepoint for loop back-edge insertion
+    // v0.8.1: Get or declare npk_gc_safepoint for loop back-edge insertion
     llvm::Function* getOrDeclareGCSafepoint();
     
     // Helper: Get or declare aria.alloc runtime function (wild memory)
     llvm::Function* getOrDeclareWildAlloc();
     
-    // Helper: Get or declare aria_alloc_exec runtime function (wildx memory)
+    // Helper: Get or declare npk_alloc_exec runtime function (wildx memory)
     llvm::Function* getOrDeclareWildXAlloc();
     
     // Helper: Get or declare aria.free runtime function

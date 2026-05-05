@@ -6,13 +6,13 @@
  * and produces executables or intermediate outputs.
  * 
  * Usage:
- *   ariac input.aria -o output           # Compile to executable
- *   ariac input.aria --emit-llvm         # Emit LLVM IR (.ll)
- *   ariac input.aria --emit-llvm-bc      # Emit LLVM bitcode (.bc)
- *   ariac input.aria --ast-dump          # Dump AST
- *   ariac input.aria --tokens            # Dump tokens
- *   ariac --version                      # Show version
- *   ariac --help                         # Show help
+ *   npkc input.npk -o output           # Compile to executable
+ *   npkc input.npk --emit-llvm         # Emit LLVM IR (.ll)
+ *   npkc input.npk --emit-llvm-bc      # Emit LLVM bitcode (.bc)
+ *   npkc input.npk --ast-dump          # Dump AST
+ *   npkc input.npk --tokens            # Dump tokens
+ *   npkc --version                      # Show version
+ *   npkc --help                         # Show help
  */
 
 #include <iostream>
@@ -158,7 +158,7 @@ struct CompilerOptions {
     
     // v0.8.2: Incremental compilation
     bool incremental = false;         // --incremental: Cache per-module IR, only recompile changed files
-    std::string cache_dir = ".aria-cache";  // --cache-dir=<path>: IR cache directory
+    std::string cache_dir = ".npk-cache";  // --cache-dir=<path>: IR cache directory
 };
 
 /**
@@ -200,8 +200,7 @@ void print_version() {
 void print_help() {
     std::cout << "Nitpick Compiler (npkc) - Compile Nitpick source files\n\n";
     std::cout << "Usage:\n";
-    std::cout << "  npkc <input.npk> [<input2.npk> ...] [options]\n";
-    std::cout << "  npkc <input.aria> [<input2.aria> ...] [options]  # .aria accepted during transition\n\n";
+    std::cout << "  npkc <input.npk> [<input2.npk> ...] [options]\n\n";
     std::cout << "CPU Target Options:\n";
     std::cout << "  -o <file>         Write output to <file>\n";
     std::cout << "  -I <dir>          Add directory to module search path\n";
@@ -566,10 +565,10 @@ bool read_source_file(const std::string& filename, std::string& source, npk::Dia
  *
  * Output format:
  * {
- *   "source": "/path/to/file.aria",
+ *   "source": "/path/to/file.npk",
  *   "imports": [
- *     {"module": "std.io", "path": "/path/to/std/io.aria"},
- *     {"module": "./utils", "path": "/path/to/utils.aria"}
+ *     {"module": "std.io", "path": "/path/to/std/io.npk"},
+ *     {"module": "./utils", "path": "/path/to/utils.npk"}
  *   ],
  *   "error": null
  * }
@@ -1734,7 +1733,7 @@ llvm::Module* compile_to_module(
         }
         
         // Phase 2d: Data race detection & Deadlock freedom (v0.5.4)
-        // Walk each function for aria_thread_create calls, verify shared
+        // Walk each function for npk_thread_create calls, verify shared
         // variable accesses are properly synchronized; build lock acquisition
         // graph and verify consistent ordering.
         if (opts.verify_concurrency && program) {
@@ -1755,7 +1754,7 @@ llvm::Module* compile_to_module(
             for (const auto& [fname, func] : all_funcs_2d) {
                 if (!func->body) continue;
 
-                // Find aria_thread_create calls in this function
+                // Find npk_thread_create calls in this function
                 std::vector<npk::FuncDeclStmt*> threadFuncs;
                 std::function<void(npk::ASTNode*)> findSpawns;
                 findSpawns = [&](npk::ASTNode* node) {
@@ -1764,9 +1763,9 @@ llvm::Module* compile_to_module(
                         auto* call = static_cast<npk::CallExpr*>(node);
                         if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
                             auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
-                            if ((ident->name == "aria_thread_create" ||
-                                 ident->name == "aria_shim_thread_spawn" ||
-                                 ident->name == "aria_libc_thread_spawn") &&
+                            if ((ident->name == "npk_thread_create" ||
+                                 ident->name == "npk_shim_thread_spawn" ||
+                                 ident->name == "npk_libc_thread_spawn") &&
                                 !call->arguments.empty()) {
                                 // First argument is the thread function (may be @func or bare func)
                                 npk::ASTNode* arg0 = call->arguments[0].get();
@@ -1919,7 +1918,7 @@ llvm::Module* compile_to_module(
                         auto* call = static_cast<npk::CallExpr*>(node);
                         if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
                             auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
-                            if ((ident->name == "free" || ident->name == "aria_free" ||
+                            if ((ident->name == "free" || ident->name == "npk_free" ||
                                  ident->name == "_release" || ident->name == "_destroy") &&
                                 !call->arguments.empty() &&
                                 call->arguments[0]->type == npk::ASTNode::NodeType::IDENTIFIER) {
@@ -5176,7 +5175,7 @@ llvm::Module* compile_to_module(
         if (main_func && !main_func->empty()) {
             llvm::BasicBlock& entry = main_func->getEntryBlock();
             // Find the insertion point: right after the runtime init calls
-            // (aria_gc_init, aria_args_init, aria_streams_init)
+            // (npk_gc_init, npk_args_init, npk_streams_init)
             // but before any user code.
             llvm::Instruction* insert_before = nullptr;
             int init_calls_seen = 0;
@@ -5185,8 +5184,8 @@ llvm::Module* compile_to_module(
                     llvm::Function* callee = call->getCalledFunction();
                     if (callee) {
                         std::string name = callee->getName().str();
-                        if (name == "aria_gc_init" || name == "aria_args_init" ||
-                            name == "aria_streams_init") {
+                        if (name == "npk_gc_init" || name == "npk_args_init" ||
+                            name == "npk_streams_init") {
                             init_calls_seen++;
                             continue;
                         }
@@ -5212,33 +5211,33 @@ llvm::Module* compile_to_module(
             
             if (opts.wild_stats) {
                 llvm::FunctionCallee enable_stats = mod->getOrInsertFunction(
-                    "aria_wild_enable_stats_at_exit", void_bool_ty);
+                    "npk_wild_enable_stats_at_exit", void_bool_ty);
                 inject_builder.CreateCall(enable_stats, {inject_builder.getInt8(1)});
             }
             if (opts.guard_pages) {
                 llvm::FunctionCallee enable_guards = mod->getOrInsertFunction(
-                    "aria_wild_enable_guard_pages", void_bool_ty);
+                    "npk_wild_enable_guard_pages", void_bool_ty);
                 inject_builder.CreateCall(enable_guards, {inject_builder.getInt8(1)});
             }
             if (opts.wildx_audit) {
                 llvm::FunctionCallee enable_audit = mod->getOrInsertFunction(
-                    "aria_wildx_enable_audit", void_bool_ty);
+                    "npk_wildx_enable_audit", void_bool_ty);
                 inject_builder.CreateCall(enable_audit, {inject_builder.getInt8(1)});
             }
             if (opts.wildx_guard_pages) {
                 llvm::FunctionCallee enable_wildx_guards = mod->getOrInsertFunction(
-                    "aria_wildx_enable_guard_pages", void_bool_ty);
+                    "npk_wildx_enable_guard_pages", void_bool_ty);
                 inject_builder.CreateCall(enable_wildx_guards, {inject_builder.getInt8(1)});
             }
             
             // v0.8.0: GC configuration injection
             if (opts.gc_nursery_size || opts.gc_threshold) {
-                // Replace default aria_gc_init with custom parameters
-                // Find and update the existing aria_gc_init call
+                // Replace default npk_gc_init with custom parameters
+                // Find and update the existing npk_gc_init call
                 for (auto& inst : entry) {
                     if (auto* call = llvm::dyn_cast<llvm::CallInst>(&inst)) {
                         llvm::Function* callee = call->getCalledFunction();
-                        if (callee && callee->getName() == "aria_gc_init") {
+                        if (callee && callee->getName() == "npk_gc_init") {
                             // Replace operands with user-specified values
                             if (opts.gc_nursery_size) {
                                 call->setArgOperand(0, llvm::ConstantInt::get(
@@ -5261,7 +5260,7 @@ llvm::Module* compile_to_module(
                     false
                 );
                 llvm::FunctionCallee set_max_heap = mod->getOrInsertFunction(
-                    "aria_gc_set_max_heap", void_i64_ty);
+                    "npk_gc_set_max_heap", void_i64_ty);
                 inject_builder.CreateCall(set_max_heap, {
                     llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), opts.gc_max_heap)
                 });
@@ -5269,7 +5268,7 @@ llvm::Module* compile_to_module(
             
             if (opts.gc_stats) {
                 llvm::FunctionCallee enable_gc_stats = mod->getOrInsertFunction(
-                    "aria_gc_enable_stats_at_exit", void_bool_ty);
+                    "npk_gc_enable_stats_at_exit", void_bool_ty);
                 inject_builder.CreateCall(enable_gc_stats, {inject_builder.getInt8(1)});
             }
         }
@@ -5812,13 +5811,13 @@ bool emit_wasm_object(
 void check_wasm_compatibility(llvm::Module* module, bool verbose) {
     // Functions that are not available in WASM
     static const char* unsupported_prefixes[] = {
-        "aria_thread_", "aria_mutex_", "aria_rwlock_", "aria_condvar_",
-        "aria_channel_", "aria_threadpool_", "aria_atomic_",
-        "aria_async_", "aria_io_uring_", "aria_event_loop_",
-        "aria_process_", "aria_fork", "aria_exec", "aria_signal_",
-        "aria_pipe_", "aria_mmap", "aria_mprotect",
-        "aria_ipc_", "aria_shmem_",
-        "aria_avx_", "aria_simd_",
+        "npk_thread_", "npk_mutex_", "npk_rwlock_", "npk_condvar_",
+        "npk_channel_", "npk_threadpool_", "npk_atomic_",
+        "npk_async_", "npk_io_uring_", "npk_event_loop_",
+        "npk_process_", "npk_fork", "npk_exec", "npk_signal_",
+        "npk_pipe_", "npk_mmap", "npk_mprotect",
+        "npk_ipc_", "npk_shmem_",
+        "npk_avx_", "npk_simd_",
         nullptr
     };
 
@@ -6064,7 +6063,7 @@ bool link_executable(const std::string& object_file, const std::string& output_f
         link_args.push_back("-static");
     }
 
-    // Link libatomic for C++11 atomic operations (required by aria_runtime atomics)
+    // Link libatomic for C++11 atomic operations (required by npk_runtime atomics)
     link_args.push_back("-latomic");
 
     // Add user link args in order (preserves -L/-l/-Wl, interleaving)
@@ -6160,9 +6159,9 @@ int main(int argc, char** argv) {
     }
 
     // ARIA-011: For --emit-deps, extract and output dependencies as JSON
-    // Used by aria_make for accurate dependency scanning using the proper parser
+    // Used by npk_make for accurate dependency scanning using the proper parser
     if (opts.emit_deps) {
-        // Process first input file only (aria_make calls per-file)
+        // Process first input file only (npk_make calls per-file)
         const auto& input_file = opts.input_files[0];
 
         std::string source;
@@ -6386,30 +6385,30 @@ int main(int argc, char** argv) {
         }
         
         // Auto-detect aria-libc libraries needed by scanning module for
-        // undefined aria_libc_* symbols and adding corresponding -L/-l flags
+        // undefined npk_libc_* symbols and adding corresponding -L/-l flags
         {
             // Map: symbol prefix → library name
             static const std::pair<std::string, std::string> lib_map[] = {
-                {"aria_libc_mem_",     "aria_libc_mem"},
-                {"aria_libc_io_",      "aria_libc_io"},
-                {"aria_libc_math_",    "aria_libc_math"},
-                {"aria_libc_string_",  "aria_libc_string"},
-                {"aria_libc_time_",    "aria_libc_time"},
-                {"aria_libc_fs_",      "aria_libc_fs"},
-                {"aria_libc_net_",     "aria_libc_net"},
-                {"aria_libc_process_", "aria_libc_process"},
-                {"aria_libc_posix_",   "aria_libc_posix"},
-                {"aria_libc_thread_",  "aria_libc_thread"},
-                {"aria_libc_mutex_",   "aria_libc_mutex"},
-                {"aria_libc_channel_", "aria_libc_channel"},
-                {"aria_libc_hexstream_", "aria_libc_hexstream"},
-                {"aria_libc_pool_",    "aria_libc_pool"},
-                {"aria_libc_actor_",   "aria_libc_actor"},
-                {"aria_libc_shm_",     "aria_libc_shm"},
-                {"aria_libc_rwlock_",  "aria_libc_rwlock"},
-                {"aria_libc_reply",    "aria_libc_actor"},
-                {"aria_libc_get_reply_channel", "aria_libc_actor"},
-                {"aria_libc_set_reply_channel", "aria_libc_actor"},
+                {"npk_libc_mem_",     "npk_libc_mem"},
+                {"npk_libc_io_",      "npk_libc_io"},
+                {"npk_libc_math_",    "npk_libc_math"},
+                {"npk_libc_string_",  "npk_libc_string"},
+                {"npk_libc_time_",    "npk_libc_time"},
+                {"npk_libc_fs_",      "npk_libc_fs"},
+                {"npk_libc_net_",     "npk_libc_net"},
+                {"npk_libc_process_", "npk_libc_process"},
+                {"npk_libc_posix_",   "npk_libc_posix"},
+                {"npk_libc_thread_",  "npk_libc_thread"},
+                {"npk_libc_mutex_",   "npk_libc_mutex"},
+                {"npk_libc_channel_", "npk_libc_channel"},
+                {"npk_libc_hexstream_", "npk_libc_hexstream"},
+                {"npk_libc_pool_",    "npk_libc_pool"},
+                {"npk_libc_actor_",   "npk_libc_actor"},
+                {"npk_libc_shm_",     "npk_libc_shm"},
+                {"npk_libc_rwlock_",  "npk_libc_rwlock"},
+                {"npk_libc_reply",    "npk_libc_actor"},
+                {"npk_libc_get_reply_channel", "npk_libc_actor"},
+                {"npk_libc_set_reply_channel", "npk_libc_actor"},
             };
 
             std::set<std::string> needed_libs;
@@ -6470,8 +6469,8 @@ int main(int argc, char** argv) {
                     }
                     // Add -lpthread if any threading-related libs were linked
                     static const std::set<std::string> pthread_libs = {
-                        "aria_libc_thread", "aria_libc_mutex", "aria_libc_channel",
-                        "aria_libc_pool", "aria_libc_actor", "aria_libc_rwlock"
+                        "npk_libc_thread", "npk_libc_mutex", "npk_libc_channel",
+                        "npk_libc_pool", "npk_libc_actor", "npk_libc_rwlock"
                     };
                     for (const auto& lib : needed_libs) {
                         if (pthread_libs.count(lib)) {

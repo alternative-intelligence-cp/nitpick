@@ -1,15 +1,15 @@
 // seed_wild_array_result.aria — Bug #1.6 pattern (Result<T> array store)
 func:failsafe = int32(tbb32:err) { exit 1; };
-extern func:aria_alloc = wild float64*(int64:size);
-extern func:aria_free  = void(wild float64*:ptr);
+extern func:npk_alloc = wild float64*(int64:size);
+extern func:npk_free  = void(wild float64*:ptr);
 pub func:get_val = float64(float64:v) { pass v; };
 func:main = int32() {
-    wild float64->:arr = aria_alloc(5i64 * 8i64);
+    wild float64->:arr = npk_alloc(5i64 * 8i64);
     arr[0i64] = raw get_val(1.0);
     arr[1i64] = raw get_val(2.0);
     arr[2i64] = raw get_val(3.0);
     arr[3i64] = raw get_val(4.0);
     arr[4i64] = raw get_val(5.0);
-    aria_free(arr);
+    npk_free(arr);
     exit 0;
 };

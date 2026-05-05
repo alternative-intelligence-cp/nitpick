@@ -190,84 +190,84 @@ static int64_t platform_realtime_nanos(void) {
  * Duration Operations
  * ============================================================================ */
 
-AriaDuration* aria_duration_from_nanos(int64_t nanos) {
+AriaDuration* npk_duration_from_nanos(int64_t nanos) {
     AriaDuration* duration = (AriaDuration*)malloc(sizeof(AriaDuration));
     if (!duration) return NULL;
     duration->nanos = nanos;
     return duration;
 }
 
-AriaDuration* aria_duration_from_micros(int64_t micros) {
+AriaDuration* npk_duration_from_micros(int64_t micros) {
     int64_t nanos = tbb64_mul(micros, ARIA_MICROSECOND);
-    return aria_duration_from_nanos(nanos);
+    return npk_duration_from_nanos(nanos);
 }
 
-AriaDuration* aria_duration_from_millis(int64_t millis) {
+AriaDuration* npk_duration_from_millis(int64_t millis) {
     int64_t nanos = tbb64_mul(millis, ARIA_MILLISECOND);
-    return aria_duration_from_nanos(nanos);
+    return npk_duration_from_nanos(nanos);
 }
 
-AriaDuration* aria_duration_from_secs(int64_t secs) {
+AriaDuration* npk_duration_from_secs(int64_t secs) {
     int64_t nanos = tbb64_mul(secs, ARIA_SECOND);
-    return aria_duration_from_nanos(nanos);
+    return npk_duration_from_nanos(nanos);
 }
 
-int64_t aria_duration_as_nanos(const AriaDuration* duration) {
+int64_t npk_duration_as_nanos(const AriaDuration* duration) {
     if (!duration) return ARIA_TIME_ERR;
     return duration->nanos;
 }
 
-int64_t aria_duration_as_micros(const AriaDuration* duration) {
+int64_t npk_duration_as_micros(const AriaDuration* duration) {
     if (!duration) return ARIA_TIME_ERR;
     if (is_time_err(duration->nanos)) return ARIA_TIME_ERR;
     return duration->nanos / ARIA_MICROSECOND;
 }
 
-int64_t aria_duration_as_millis(const AriaDuration* duration) {
+int64_t npk_duration_as_millis(const AriaDuration* duration) {
     if (!duration) return ARIA_TIME_ERR;
     if (is_time_err(duration->nanos)) return ARIA_TIME_ERR;
     return duration->nanos / ARIA_MILLISECOND;
 }
 
-int64_t aria_duration_as_secs(const AriaDuration* duration) {
+int64_t npk_duration_as_secs(const AriaDuration* duration) {
     if (!duration) return ARIA_TIME_ERR;
     if (is_time_err(duration->nanos)) return ARIA_TIME_ERR;
     return duration->nanos / ARIA_SECOND;
 }
 
-AriaDuration* aria_duration_add(const AriaDuration* a, const AriaDuration* b) {
-    if (!a || !b) return aria_duration_from_nanos(ARIA_TIME_ERR);
+AriaDuration* npk_duration_add(const AriaDuration* a, const AriaDuration* b) {
+    if (!a || !b) return npk_duration_from_nanos(ARIA_TIME_ERR);
     int64_t result = tbb64_add(a->nanos, b->nanos);
-    return aria_duration_from_nanos(result);
+    return npk_duration_from_nanos(result);
 }
 
-AriaDuration* aria_duration_sub(const AriaDuration* a, const AriaDuration* b) {
-    if (!a || !b) return aria_duration_from_nanos(ARIA_TIME_ERR);
+AriaDuration* npk_duration_sub(const AriaDuration* a, const AriaDuration* b) {
+    if (!a || !b) return npk_duration_from_nanos(ARIA_TIME_ERR);
     int64_t result = tbb64_sub(a->nanos, b->nanos);
-    return aria_duration_from_nanos(result);
+    return npk_duration_from_nanos(result);
 }
 
-AriaDuration* aria_duration_mul(const AriaDuration* d, int64_t scalar) {
-    if (!d) return aria_duration_from_nanos(ARIA_TIME_ERR);
+AriaDuration* npk_duration_mul(const AriaDuration* d, int64_t scalar) {
+    if (!d) return npk_duration_from_nanos(ARIA_TIME_ERR);
     int64_t result = tbb64_mul(d->nanos, scalar);
-    return aria_duration_from_nanos(result);
+    return npk_duration_from_nanos(result);
 }
 
-AriaDuration* aria_duration_div(const AriaDuration* d, int64_t divisor) {
-    if (!d || divisor == 0) return aria_duration_from_nanos(ARIA_TIME_ERR);
-    if (is_time_err(d->nanos)) return aria_duration_from_nanos(ARIA_TIME_ERR);
-    return aria_duration_from_nanos(d->nanos / divisor);
+AriaDuration* npk_duration_div(const AriaDuration* d, int64_t divisor) {
+    if (!d || divisor == 0) return npk_duration_from_nanos(ARIA_TIME_ERR);
+    if (is_time_err(d->nanos)) return npk_duration_from_nanos(ARIA_TIME_ERR);
+    return npk_duration_from_nanos(d->nanos / divisor);
 }
 
-bool aria_duration_is_zero(const AriaDuration* duration) {
+bool npk_duration_is_zero(const AriaDuration* duration) {
     return duration && duration->nanos == 0;
 }
 
-bool aria_duration_is_err(const AriaDuration* duration) {
+bool npk_duration_is_err(const AriaDuration* duration) {
     return !duration || is_time_err(duration->nanos);
 }
 
-int aria_duration_compare(const AriaDuration* a, const AriaDuration* b) {
+int npk_duration_compare(const AriaDuration* a, const AriaDuration* b) {
     if (!a || !b) return 0;
     if (is_time_err(a->nanos) || is_time_err(b->nanos)) return 0;
     if (a->nanos < b->nanos) return -1;
@@ -275,7 +275,7 @@ int aria_duration_compare(const AriaDuration* a, const AriaDuration* b) {
     return 0;
 }
 
-void aria_duration_destroy(AriaDuration* duration) {
+void npk_duration_destroy(AriaDuration* duration) {
     free(duration);
 }
 
@@ -283,31 +283,31 @@ void aria_duration_destroy(AriaDuration* duration) {
  * Monotonic Clock (Instant)
  * ============================================================================ */
 
-AriaInstant* aria_instant_now(void) {
+AriaInstant* npk_instant_now(void) {
     AriaInstant* instant = (AriaInstant*)malloc(sizeof(AriaInstant));
     if (!instant) return NULL;
     instant->nanos = platform_monotonic_nanos();
     return instant;
 }
 
-AriaDuration* aria_instant_elapsed(const AriaInstant* instant) {
-    if (!instant) return aria_duration_from_nanos(ARIA_TIME_ERR);
+AriaDuration* npk_instant_elapsed(const AriaInstant* instant) {
+    if (!instant) return npk_duration_from_nanos(ARIA_TIME_ERR);
     
-    AriaInstant* now = aria_instant_now();
-    if (!now) return aria_duration_from_nanos(ARIA_TIME_ERR);
+    AriaInstant* now = npk_instant_now();
+    if (!now) return npk_duration_from_nanos(ARIA_TIME_ERR);
     
-    AriaDuration* elapsed = aria_instant_duration_since(now, instant);
-    aria_instant_destroy(now);
+    AriaDuration* elapsed = npk_instant_duration_since(now, instant);
+    npk_instant_destroy(now);
     return elapsed;
 }
 
-AriaDuration* aria_instant_duration_since(const AriaInstant* later, const AriaInstant* earlier) {
-    if (!later || !earlier) return aria_duration_from_nanos(ARIA_TIME_ERR);
+AriaDuration* npk_instant_duration_since(const AriaInstant* later, const AriaInstant* earlier) {
+    if (!later || !earlier) return npk_duration_from_nanos(ARIA_TIME_ERR);
     int64_t diff = tbb64_sub(later->nanos, earlier->nanos);
-    return aria_duration_from_nanos(diff);
+    return npk_duration_from_nanos(diff);
 }
 
-AriaInstant* aria_instant_add(const AriaInstant* instant, const AriaDuration* duration) {
+AriaInstant* npk_instant_add(const AriaInstant* instant, const AriaDuration* duration) {
     if (!instant || !duration) {
         AriaInstant* err = (AriaInstant*)malloc(sizeof(AriaInstant));
         if (err) err->nanos = ARIA_TIME_ERR;
@@ -320,7 +320,7 @@ AriaInstant* aria_instant_add(const AriaInstant* instant, const AriaDuration* du
     return result;
 }
 
-AriaInstant* aria_instant_sub(const AriaInstant* instant, const AriaDuration* duration) {
+AriaInstant* npk_instant_sub(const AriaInstant* instant, const AriaDuration* duration) {
     if (!instant || !duration) {
         AriaInstant* err = (AriaInstant*)malloc(sizeof(AriaInstant));
         if (err) err->nanos = ARIA_TIME_ERR;
@@ -333,11 +333,11 @@ AriaInstant* aria_instant_sub(const AriaInstant* instant, const AriaDuration* du
     return result;
 }
 
-bool aria_instant_is_err(const AriaInstant* instant) {
+bool npk_instant_is_err(const AriaInstant* instant) {
     return !instant || is_time_err(instant->nanos);
 }
 
-void aria_instant_destroy(AriaInstant* instant) {
+void npk_instant_destroy(AriaInstant* instant) {
     free(instant);
 }
 
@@ -345,14 +345,14 @@ void aria_instant_destroy(AriaInstant* instant) {
  * Wall-Clock Time (SystemTime)
  * ============================================================================ */
 
-AriaSystemTime* aria_systemtime_now(void) {
+AriaSystemTime* npk_systemtime_now(void) {
     AriaSystemTime* time = (AriaSystemTime*)malloc(sizeof(AriaSystemTime));
     if (!time) return NULL;
     time->nanos = platform_realtime_nanos();
     return time;
 }
 
-AriaSystemTime* aria_systemtime_from_unix_secs(int64_t secs) {
+AriaSystemTime* npk_systemtime_from_unix_secs(int64_t secs) {
     int64_t nanos = tbb64_mul(secs, ARIA_SECOND);
     AriaSystemTime* time = (AriaSystemTime*)malloc(sizeof(AriaSystemTime));
     if (!time) return NULL;
@@ -360,34 +360,34 @@ AriaSystemTime* aria_systemtime_from_unix_secs(int64_t secs) {
     return time;
 }
 
-AriaSystemTime* aria_systemtime_from_unix_nanos(int64_t nanos) {
+AriaSystemTime* npk_systemtime_from_unix_nanos(int64_t nanos) {
     AriaSystemTime* time = (AriaSystemTime*)malloc(sizeof(AriaSystemTime));
     if (!time) return NULL;
     time->nanos = nanos;
     return time;
 }
 
-int64_t aria_systemtime_to_unix_secs(const AriaSystemTime* time) {
+int64_t npk_systemtime_to_unix_secs(const AriaSystemTime* time) {
     if (!time) return ARIA_TIME_ERR;
     if (is_time_err(time->nanos)) return ARIA_TIME_ERR;
     return time->nanos / ARIA_SECOND;
 }
 
-int64_t aria_systemtime_to_unix_nanos(const AriaSystemTime* time) {
+int64_t npk_systemtime_to_unix_nanos(const AriaSystemTime* time) {
     if (!time) return ARIA_TIME_ERR;
     return time->nanos;
 }
 
-AriaDuration* aria_systemtime_duration_since_epoch(const AriaSystemTime* time) {
-    if (!time) return aria_duration_from_nanos(ARIA_TIME_ERR);
-    return aria_duration_from_nanos(time->nanos);
+AriaDuration* npk_systemtime_duration_since_epoch(const AriaSystemTime* time) {
+    if (!time) return npk_duration_from_nanos(ARIA_TIME_ERR);
+    return npk_duration_from_nanos(time->nanos);
 }
 
-bool aria_systemtime_is_err(const AriaSystemTime* time) {
+bool npk_systemtime_is_err(const AriaSystemTime* time) {
     return !time || is_time_err(time->nanos);
 }
 
-void aria_systemtime_destroy(AriaSystemTime* time) {
+void npk_systemtime_destroy(AriaSystemTime* time) {
     free(time);
 }
 
@@ -395,7 +395,7 @@ void aria_systemtime_destroy(AriaSystemTime* time) {
  * Sleep/Delay Functions
  * ============================================================================ */
 
-int aria_sleep(const AriaDuration* duration) {
+int npk_sleep(const AriaDuration* duration) {
     if (!duration || is_time_err(duration->nanos)) return -1;
     if (duration->nanos <= 0) return 0; // No sleep for zero or negative duration
     
@@ -434,23 +434,23 @@ int aria_sleep(const AriaDuration* duration) {
     #endif
 }
 
-int aria_sleep_until(const AriaInstant* deadline) {
+int npk_sleep_until(const AriaInstant* deadline) {
     if (!deadline || is_time_err(deadline->nanos)) return -1;
     
-    AriaInstant* now = aria_instant_now();
+    AriaInstant* now = npk_instant_now();
     if (!now) return -1;
     
-    AriaDuration* remaining = aria_instant_duration_since(deadline, now);
-    aria_instant_destroy(now);
+    AriaDuration* remaining = npk_instant_duration_since(deadline, now);
+    npk_instant_destroy(now);
     
     if (!remaining) return -1;
     
     int result = 0;
     if (remaining->nanos > 0) {
-        result = aria_sleep(remaining);
+        result = npk_sleep(remaining);
     }
     
-    aria_duration_destroy(remaining);
+    npk_duration_destroy(remaining);
     return result;
 }
 
@@ -458,7 +458,7 @@ int aria_sleep_until(const AriaInstant* deadline) {
  * High-Resolution Timing Utilities
  * ============================================================================ */
 
-int64_t aria_timer_resolution(void) {
+int64_t npk_timer_resolution(void) {
     #ifdef __linux__
         struct timespec ts;
         if (clock_getres(CLOCK_MONOTONIC, &ts) != 0) {
@@ -487,7 +487,7 @@ int64_t aria_timer_resolution(void) {
     #endif
 }
 
-bool aria_timer_has_high_resolution(void) {
-    int64_t resolution = aria_timer_resolution();
+bool npk_timer_has_high_resolution(void) {
+    int64_t resolution = npk_timer_resolution();
     return resolution <= ARIA_MICROSECOND; // Consider < 1μs as high-resolution
 }

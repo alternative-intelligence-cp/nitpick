@@ -120,15 +120,15 @@ int main(int argc, char* argv[]) {
     }
     
     // Filter to only .aria files
-    std::vector<std::string> aria_files;
+    std::vector<std::string> npk_files;
     for (const auto& file : expanded_files) {
         if ((file.size() >= 5 && file.substr(file.size() - 5) == ".aria") ||
             (file.size() >= 4 && file.substr(file.size() - 4) == ".npk")) {
-            aria_files.push_back(file);
+            npk_files.push_back(file);
         }
     }
     
-    if (aria_files.empty()) {
+    if (npk_files.empty()) {
         std::cerr << "Error: no .aria files found in input" << std::endl;
         return 1;
     }
@@ -136,8 +136,8 @@ int main(int argc, char* argv[]) {
     if (verbose) {
         std::cout << "aria-doc - Aria Documentation Generator\n";
         std::cout << "========================================\n\n";
-        std::cout << "Input files (" << aria_files.size() << "):\n";
-        for (const auto& file : aria_files) {
+        std::cout << "Input files (" << npk_files.size() << "):\n";
+        for (const auto& file : npk_files) {
             std::cout << "  - " << file << "\n";
         }
         std::cout << "\nOutput directory: " << output_dir << "\n";
@@ -151,12 +151,12 @@ int main(int argc, char* argv[]) {
     
     std::shared_ptr<npk::doc::Module> module;
     
-    if (aria_files.size() == 1) {
+    if (npk_files.size() == 1) {
         // Single file
-        module = parser.parse_file(aria_files[0]);
+        module = parser.parse_file(npk_files[0]);
     } else {
         // Multiple files (package)
-        module = parser.parse_package(aria_files);
+        module = parser.parse_package(npk_files);
     }
     
     if (!module) {

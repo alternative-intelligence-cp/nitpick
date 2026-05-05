@@ -3743,14 +3743,14 @@ VerifyResult Z3Verifier::inferReturnBounds(
 // ============================================================================
 // Phase 16: Data Race Detection (v0.5.4, improved v0.14.2)
 // ============================================================================
-// For each thread spawned via aria_thread_create/aria_libc_thread_spawn/
-// aria_shim_thread_spawn(func, arg), we collect variable accesses in both
+// For each thread spawned via npk_thread_create/npk_libc_thread_spawn/
+// npk_shim_thread_spawn(func, arg), we collect variable accesses in both
 // the spawning function and the spawned function. If any variable is accessed
 // by both threads (read+write or write+write) without being protected by
 // mutex lock/unlock, we report a potential data race.
 //
 // v0.14.2 improvements:
-//   - Recognize aria_libc_* prefix for all concurrency primitives
+//   - Recognize npk_libc_* prefix for all concurrency primitives
 //   - Track lock-to-variable binding (which mutex protects which variable)
 //   - Exempt atomic type operations (AtomicInt*, AtomicBool, etc.)
 //   - Treat channel send/recv as synchronization points
@@ -3775,26 +3775,26 @@ static std::string getCallName(ASTNode* node) {
 
 // Helper: check if a call name is a lock acquisition
 static bool isLockAcquire(const std::string& name) {
-    return name == "aria_mutex_lock" || name == "aria_shim_mutex_lock" ||
-           name == "aria_libc_mutex_lock" ||
-           name == "aria_rwlock_wrlock" || name == "aria_shim_rwlock_wrlock" ||
-           name == "aria_libc_rwlock_wrlock" ||
-           name == "aria_rwlock_rdlock" || name == "aria_shim_rwlock_rdlock" ||
-           name == "aria_libc_rwlock_rdlock";
+    return name == "npk_mutex_lock" || name == "npk_shim_mutex_lock" ||
+           name == "npk_libc_mutex_lock" ||
+           name == "npk_rwlock_wrlock" || name == "npk_shim_rwlock_wrlock" ||
+           name == "npk_libc_rwlock_wrlock" ||
+           name == "npk_rwlock_rdlock" || name == "npk_shim_rwlock_rdlock" ||
+           name == "npk_libc_rwlock_rdlock";
 }
 
 // Helper: check if a call name is a lock release
 static bool isLockRelease(const std::string& name) {
-    return name == "aria_mutex_unlock" || name == "aria_shim_mutex_unlock" ||
-           name == "aria_libc_mutex_unlock" ||
-           name == "aria_rwlock_unlock" || name == "aria_shim_rwlock_unlock" ||
-           name == "aria_libc_rwlock_unlock";
+    return name == "npk_mutex_unlock" || name == "npk_shim_mutex_unlock" ||
+           name == "npk_libc_mutex_unlock" ||
+           name == "npk_rwlock_unlock" || name == "npk_shim_rwlock_unlock" ||
+           name == "npk_libc_rwlock_unlock";
 }
 
 // Helper: check if a call name is an atomic operation (inherently race-free)
 static bool isAtomicOperation(const std::string& name) {
-    // Covers: aria_atomic_*_load/store/exchange/compare_exchange/fetch_add/fetch_sub
-    // and aria_shim_atomic_* variants
+    // Covers: npk_atomic_*_load/store/exchange/compare_exchange/fetch_add/fetch_sub
+    // and npk_shim_atomic_* variants
     return name.find("atomic") != std::string::npos &&
            (name.find("load") != std::string::npos ||
             name.find("store") != std::string::npos ||
@@ -4553,7 +4553,7 @@ VerifyResult Z3Verifier::proveNoUseAfterFree(
                 auto* call = static_cast<CallExpr*>(node);
 
                 // Check if this is a free() call on our variable
-                if ((name == "free" || name == "aria_free" || name == "_release" ||
+                if ((name == "free" || name == "npk_free" || name == "_release" ||
                      name == "_destroy") && !call->arguments.empty()) {
                     if (call->arguments[0]->type == NT::IDENTIFIER) {
                         auto* arg = static_cast<IdentifierExpr*>(

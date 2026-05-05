@@ -3,11 +3,11 @@
 // NOTE: Starting with int8 to avoid FFI pointer casting issues
 
 // Runtime function declarations
-extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
-extern func:aria_array_length = int64(wild int8*:arr);
-extern func:aria_array_free = NIL(wild int8*:arr);
-extern func:aria_array_push_simple = NIL(wild int8*:arr, wild int8*:val);
-extern func:aria_array_pop_simple = NIL(wild int8*:arr, wild int8*:out_val);
+extern func:npk_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:npk_array_length = int64(wild int8*:arr);
+extern func:npk_array_free = NIL(wild int8*:arr);
+extern func:npk_array_push_simple = NIL(wild int8*:arr, wild int8*:val);
+extern func:npk_array_pop_simple = NIL(wild int8*:arr, wild int8*:out_val);
 
 // Vec<int8> constructor
 // Returns: Vec<int8> struct initialized with empty array
@@ -17,7 +17,7 @@ func:Vec_int8_new = Vec<int8>() {
     // Call runtime to create array and store directly (transfers ownership)
     // element_size = sizeof(int8) = 1 byte
     // type_id = 1 (primitive type for GC)
-    vec.data = aria_array_new_simple(1i64, 1i32);
+    vec.data = npk_array_new_simple(1i64, 1i32);
     vec.length = 0i64;
     vec.capacity = 16i64;  // Default capacity from runtime
     vec.element_size = 1i64;
@@ -30,7 +30,7 @@ func:Vec_int8_new = Vec<int8>() {
 // Parameters: data pointer, value to push  
 func:Vec_int8_push = NIL(wild int8->:data, int8:value) {
     // Call runtime push directly with data pointer
-    aria_array_push_simple(data, @value);
+    npk_array_push_simple(data, @value);
 };
 
 // Vec<int8> pop method - simplified to take data pointer directly
@@ -40,7 +40,7 @@ func:Vec_int8_pop = int8(wild int8->:data) {
     int8:result = 0i8;
     
     // Call runtime pop directly
-    aria_array_pop_simple(data, @result);
+    npk_array_pop_simple(data, @result);
     
     pass result;
 };
@@ -48,7 +48,7 @@ func:Vec_int8_pop = int8(wild int8->:data) {
 // Vec<int8> update length helper -  takes data pointer directly
 // Gets the actual length from runtime
 func:Vec_int8_update_length = int64(wild int8->:data) {
-    pass aria_array_length(data);
+    pass npk_array_length(data);
 };
 // Vec<T> Phase 3: Method Syntax Test  
 // Goal: Clean, ergonomic Vec API for Nikola

@@ -5,12 +5,12 @@
 // Should detect race on unprotected var but prove protected var safe.
 
 extern func:puts = int32(string:s);
-extern func:aria_libc_thread_spawn = int64(wild ?*:func, int64:arg);
-extern func:aria_libc_thread_join = int32(int64:handle);
-extern func:aria_libc_mutex_create = int64(int32:mutex_type);
-extern func:aria_libc_mutex_lock = int32(int64:handle);
-extern func:aria_libc_mutex_unlock = int32(int64:handle);
-extern func:aria_libc_mutex_destroy = int32(int64:handle);
+extern func:npk_libc_thread_spawn = int64(wild ?*:func, int64:arg);
+extern func:npk_libc_thread_join = int32(int64:handle);
+extern func:npk_libc_mutex_create = int64(int32:mutex_type);
+extern func:npk_libc_mutex_lock = int32(int64:handle);
+extern func:npk_libc_mutex_unlock = int32(int64:handle);
+extern func:npk_libc_mutex_destroy = int32(int64:handle);
 
 // Two shared variables — one protected, one not
 int32:safe_var = 0i32;
@@ -19,9 +19,9 @@ int64:mtx = 0i64;
 
 // Worker: accesses both — safe_var under lock, unsafe_var without
 func:mixed_worker = int64(int64:arg) {
-    drop aria_libc_mutex_lock(mtx);
+    drop npk_libc_mutex_lock(mtx);
     safe_var = safe_var + 1i32;
-    drop aria_libc_mutex_unlock(mtx);
+    drop npk_libc_mutex_unlock(mtx);
     // Deliberately unprotected
     unsafe_var = unsafe_var + 1i32;
     pass 0i64;
@@ -30,14 +30,14 @@ func:mixed_worker = int64(int64:arg) {
 // Spawner: same pattern
 // Expected: DISPROVEN on unsafe_var, no race on safe_var
 func:test_mixed_access = NIL() {
-    mtx = aria_libc_mutex_create(0i32);
-    int64:t1 = aria_libc_thread_spawn(@mixed_worker, 0i64);
-    drop aria_libc_mutex_lock(mtx);
+    mtx = npk_libc_mutex_create(0i32);
+    int64:t1 = npk_libc_thread_spawn(@mixed_worker, 0i64);
+    drop npk_libc_mutex_lock(mtx);
     safe_var = safe_var + 1i32;
-    drop aria_libc_mutex_unlock(mtx);
+    drop npk_libc_mutex_unlock(mtx);
     unsafe_var = unsafe_var + 1i32;
-    drop aria_libc_thread_join(t1);
-    drop aria_libc_mutex_destroy(mtx);
+    drop npk_libc_thread_join(t1);
+    drop npk_libc_mutex_destroy(mtx);
 };
 
 func:failsafe = int32(tbb32:err) {

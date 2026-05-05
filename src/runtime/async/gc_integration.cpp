@@ -150,8 +150,8 @@ void GCCoroAllocator::scan_frames(std::function<void(void*)> mark_fn) {
 
 void GCCoroAllocator::init_gc() {
     // Initialize GC subsystem if not already running
-    // (aria_gc_init is idempotent)
-    aria_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
+    // (npk_gc_init is idempotent)
+    npk_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
     
     // Store a self-pointer as the gc_handle so we can identify
     // this allocator instance from C callbacks if needed
@@ -163,7 +163,7 @@ void GCCoroAllocator::shutdown_gc() {
     for (auto& pair : frame_metadata) {
         CoroFrameMetadata* metadata = pair.second;
         for (void** root : metadata->gc_roots) {
-            aria_gc_unregister_jit_root(root);
+            npk_gc_unregister_jit_root(root);
         }
     }
     

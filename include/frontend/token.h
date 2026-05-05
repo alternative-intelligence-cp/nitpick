@@ -11,7 +11,7 @@ namespace frontend {
 // ============================================================================
 // TokenType Enum - Complete token classification
 // ============================================================================
-// Reference: aria_specs.txt, research_012 (types), research_002 (TBB)
+// Reference: npk_specs.txt, research_012 (types), research_002 (TBB)
 // All possible tokens in Aria language
 
 enum class TokenType {

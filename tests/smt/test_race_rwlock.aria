@@ -4,13 +4,13 @@
 // Tests that rwlock read/write lock operations are recognized as synchronization.
 
 extern func:puts = int32(string:s);
-extern func:aria_libc_thread_spawn = int64(wild ?*:func, int64:arg);
-extern func:aria_libc_thread_join = int32(int64:handle);
-extern func:aria_libc_rwlock_create = int64();
-extern func:aria_libc_rwlock_rdlock = int32(int64:handle);
-extern func:aria_libc_rwlock_wrlock = int32(int64:handle);
-extern func:aria_libc_rwlock_unlock = int32(int64:handle);
-extern func:aria_libc_rwlock_destroy = int32(int64:handle);
+extern func:npk_libc_thread_spawn = int64(wild ?*:func, int64:arg);
+extern func:npk_libc_thread_join = int32(int64:handle);
+extern func:npk_libc_rwlock_create = int64();
+extern func:npk_libc_rwlock_rdlock = int32(int64:handle);
+extern func:npk_libc_rwlock_wrlock = int32(int64:handle);
+extern func:npk_libc_rwlock_unlock = int32(int64:handle);
+extern func:npk_libc_rwlock_destroy = int32(int64:handle);
 
 // Shared state
 int32:shared_value = 0i32;
@@ -18,22 +18,22 @@ int64:rwl = 0i64;
 
 // Worker: writes under write lock
 func:rw_writer = int64(int64:arg) {
-    drop aria_libc_rwlock_wrlock(rwl);
+    drop npk_libc_rwlock_wrlock(rwl);
     shared_value = shared_value + 1i32;
-    drop aria_libc_rwlock_unlock(rwl);
+    drop npk_libc_rwlock_unlock(rwl);
     pass 0i64;
 };
 
 // Spawner: reads under read lock
 // Expected: PROVEN race-free (both sides use rwlock)
 func:test_rwlock_protected = NIL() {
-    rwl = aria_libc_rwlock_create();
-    int64:t1 = aria_libc_thread_spawn(@rw_writer, 0i64);
-    drop aria_libc_rwlock_rdlock(rwl);
+    rwl = npk_libc_rwlock_create();
+    int64:t1 = npk_libc_thread_spawn(@rw_writer, 0i64);
+    drop npk_libc_rwlock_rdlock(rwl);
     int32:val = shared_value;
-    drop aria_libc_rwlock_unlock(rwl);
-    drop aria_libc_thread_join(t1);
-    drop aria_libc_rwlock_destroy(rwl);
+    drop npk_libc_rwlock_unlock(rwl);
+    drop npk_libc_thread_join(t1);
+    drop npk_libc_rwlock_destroy(rwl);
 };
 
 func:failsafe = int32(tbb32:err) {

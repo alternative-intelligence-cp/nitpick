@@ -29,7 +29,7 @@ extern "C" {
  *   if (pool == 0) { // error
  *   }
  */
-int64_t aria_pool_new_handle(int64_t block_size, int64_t initial_capacity);
+int64_t npk_pool_new_handle(int64_t block_size, int64_t initial_capacity);
 
 /**
  * Allocate a block from pool
@@ -42,7 +42,7 @@ int64_t aria_pool_new_handle(int64_t block_size, int64_t initial_capacity);
  *   if (ptr == 0) { // allocation failed
  *   }
  */
-int64_t aria_pool_alloc_handle(int64_t handle);
+int64_t npk_pool_alloc_handle(int64_t handle);
 
 /**
  * Free a block back to pool
@@ -53,7 +53,7 @@ int64_t aria_pool_alloc_handle(int64_t handle);
  * Example:
  *   pool_free(pool, ptr);
  */
-void aria_pool_free_handle(int64_t handle, int64_t ptr);
+void npk_pool_free_handle(int64_t handle, int64_t ptr);
 
 /**
  * Reset pool to reuse all blocks
@@ -66,7 +66,7 @@ void aria_pool_free_handle(int64_t handle, int64_t ptr);
  * Example:
  *   pool_reset(pool);
  */
-void aria_pool_reset_handle(int64_t handle);
+void npk_pool_reset_handle(int64_t handle);
 
 /**
  * Destroy pool and free all memory
@@ -76,7 +76,7 @@ void aria_pool_reset_handle(int64_t handle);
  * Example:
  *   pool_destroy(pool);
  */
-void aria_pool_destroy_handle(int64_t handle);
+void npk_pool_destroy_handle(int64_t handle);
 
 /**
  * Get total number of blocks in pool
@@ -84,7 +84,7 @@ void aria_pool_destroy_handle(int64_t handle);
  * @param handle Pool handle
  * @return Total blocks (used + free)
  */
-int64_t aria_pool_get_total_blocks_handle(int64_t handle);
+int64_t npk_pool_get_total_blocks_handle(int64_t handle);
 
 /**
  * Get number of used blocks in pool
@@ -92,7 +92,7 @@ int64_t aria_pool_get_total_blocks_handle(int64_t handle);
  * @param handle Pool handle
  * @return Number of currently allocated blocks
  */
-int64_t aria_pool_get_used_blocks_handle(int64_t handle);
+int64_t npk_pool_get_used_blocks_handle(int64_t handle);
 
 #ifdef __cplusplus
 }

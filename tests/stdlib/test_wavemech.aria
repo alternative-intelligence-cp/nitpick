@@ -20,8 +20,8 @@
 // ---------------------------------------------------------------------------
 // FFI: nyte packing intrinsics
 // ---------------------------------------------------------------------------
-extern func:aria_pack_nyte    = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
-extern func:aria_nyte_get_nit = nit(nyte:packed, int32:index);
+extern func:npk_pack_nyte    = nyte(nit:n0, nit:n1, nit:n2, nit:n3, nit:n4);
+extern func:npk_nyte_get_nit = nit(nyte:packed, int32:index);
 
 // ---------------------------------------------------------------------------
 // Wave9 struct (mirrors stdlib/wave.aria)
@@ -42,15 +42,15 @@ struct:Wave9 = {
 // wave.aria encoding stubs (re-implemented inline for self-contained test)
 // ---------------------------------------------------------------------------
 func:nyte_from_wave = nyte(Wave9:w) {
-    pass aria_pack_nyte(w.x, w.y, w.z, w.u, w.r);
+    pass npk_pack_nyte(w.x, w.y, w.z, w.u, w.r);
 };
 
 func:wave_from_nyte = Wave9(nyte:encoded) {
-    nit:n0 = aria_nyte_get_nit(encoded, 0);
-    nit:n1 = aria_nyte_get_nit(encoded, 1);
-    nit:n2 = aria_nyte_get_nit(encoded, 2);
-    nit:n3 = aria_nyte_get_nit(encoded, 3);
-    nit:n4 = aria_nyte_get_nit(encoded, 4);
+    nit:n0 = npk_nyte_get_nit(encoded, 0);
+    nit:n1 = npk_nyte_get_nit(encoded, 1);
+    nit:n2 = npk_nyte_get_nit(encoded, 2);
+    nit:n3 = npk_nyte_get_nit(encoded, 3);
+    nit:n4 = npk_nyte_get_nit(encoded, 4);
     pass Wave9 {
         r: n4, s: 0, t: 0,
         u: n3, v: 0, w: 0,
@@ -66,12 +66,12 @@ func:nyte_interfere = nyte(nyte:a, nyte:b) {
 };
 
 func:nyte_phase_shift = nyte(nyte:wave, nit:phase) {
-    nit:d0 = aria_nyte_get_nit(wave, 0) + phase;
-    nit:d1 = aria_nyte_get_nit(wave, 1) + phase;
-    nit:d2 = aria_nyte_get_nit(wave, 2) + phase;
-    nit:d3 = aria_nyte_get_nit(wave, 3) + phase;
-    nit:d4 = aria_nyte_get_nit(wave, 4) + phase;
-    pass aria_pack_nyte(d0, d1, d2, d3, d4);
+    nit:d0 = npk_nyte_get_nit(wave, 0) + phase;
+    nit:d1 = npk_nyte_get_nit(wave, 1) + phase;
+    nit:d2 = npk_nyte_get_nit(wave, 2) + phase;
+    nit:d3 = npk_nyte_get_nit(wave, 3) + phase;
+    nit:d4 = npk_nyte_get_nit(wave, 4) + phase;
+    pass npk_pack_nyte(d0, d1, d2, d3, d4);
 };
 
 func:wave_kleene_and = Wave9(Wave9:a, Wave9:b) {
@@ -115,11 +115,11 @@ func:wave_err_guard = bool(Wave9:w) {
 };
 
 func:nyte_is_err = bool(nyte:n) {
-    nit:n0 = aria_nyte_get_nit(n, 0);
-    nit:n1 = aria_nyte_get_nit(n, 1);
-    nit:n2 = aria_nyte_get_nit(n, 2);
-    nit:n3 = aria_nyte_get_nit(n, 3);
-    nit:n4 = aria_nyte_get_nit(n, 4);
+    nit:n0 = npk_nyte_get_nit(n, 0);
+    nit:n1 = npk_nyte_get_nit(n, 1);
+    nit:n2 = npk_nyte_get_nit(n, 2);
+    nit:n3 = npk_nyte_get_nit(n, 3);
+    nit:n4 = npk_nyte_get_nit(n, 4);
     pass nit_is_err(n0) ||
         nit_is_err(n1) ||
         nit_is_err(n2) ||
@@ -151,14 +151,14 @@ func:main = int32() {
     };
     nyte:packed = raw nyte_from_wave(w1);
     // Encoding: nit0=x, nit1=y, nit2=z, nit3=u, nit4=r
-    if (aria_nyte_get_nit(packed, 0) != wx) { exit 1i32; }
-    if (aria_nyte_get_nit(packed, 1) != wy) { exit 1i32; }
-    if (aria_nyte_get_nit(packed, 2) != wz) { exit 1i32; }
-    if (aria_nyte_get_nit(packed, 3) != wu) { exit 1i32; }
-    if (aria_nyte_get_nit(packed, 4) != wr) { exit 1i32; }
+    if (npk_nyte_get_nit(packed, 0) != wx) { exit 1i32; }
+    if (npk_nyte_get_nit(packed, 1) != wy) { exit 1i32; }
+    if (npk_nyte_get_nit(packed, 2) != wz) { exit 1i32; }
+    if (npk_nyte_get_nit(packed, 3) != wu) { exit 1i32; }
+    if (npk_nyte_get_nit(packed, 4) != wr) { exit 1i32; }
 
     // ── Test 2: wave_from_nyte — verify decoded dims match packed nits ───────
-    nyte:src_nyte = aria_pack_nyte(
+    nyte:src_nyte = npk_pack_nyte(
         nit_from_int(3),
         nit_from_int(-2),
         nit_from_int(1),
@@ -200,26 +200,26 @@ func:main = int32() {
     // ── Test 4: nyte_interfere — verify each nit is summed ──────────────────
     nit:one = nit_from_int(1);
     nit:two = nit_from_int(2);
-    nyte:na = aria_pack_nyte(one, one, one, one, one);
-    nyte:nb = aria_pack_nyte(two, two, two, two, two);
+    nyte:na = npk_pack_nyte(one, one, one, one, one);
+    nyte:nb = npk_pack_nyte(two, two, two, two, two);
     nyte:ni = raw nyte_interfere(na, nb);
     nit:three = nit_from_int(3);
-    if (aria_nyte_get_nit(ni, 0) != three) { exit 4i32; }
-    if (aria_nyte_get_nit(ni, 1) != three) { exit 4i32; }
-    if (aria_nyte_get_nit(ni, 2) != three) { exit 4i32; }
-    if (aria_nyte_get_nit(ni, 3) != three) { exit 4i32; }
-    if (aria_nyte_get_nit(ni, 4) != three) { exit 4i32; }
+    if (npk_nyte_get_nit(ni, 0) != three) { exit 4i32; }
+    if (npk_nyte_get_nit(ni, 1) != three) { exit 4i32; }
+    if (npk_nyte_get_nit(ni, 2) != three) { exit 4i32; }
+    if (npk_nyte_get_nit(ni, 3) != three) { exit 4i32; }
+    if (npk_nyte_get_nit(ni, 4) != three) { exit 4i32; }
 
     // ── Test 5: nyte_phase_shift — shift each dim by +2 ─────────────────────
     nit:shift_phase = nit_from_int(2);
-    nyte:base = aria_pack_nyte(one, one, one, one, one);  // all nits = 1
+    nyte:base = npk_pack_nyte(one, one, one, one, one);  // all nits = 1
     nyte:shifted = raw nyte_phase_shift(base, shift_phase);
     // Each nit should now be 1 + 2 = 3
-    if (aria_nyte_get_nit(shifted, 0) != three) { exit 5i32; }
-    if (aria_nyte_get_nit(shifted, 1) != three) { exit 5i32; }
-    if (aria_nyte_get_nit(shifted, 2) != three) { exit 5i32; }
-    if (aria_nyte_get_nit(shifted, 3) != three) { exit 5i32; }
-    if (aria_nyte_get_nit(shifted, 4) != three) { exit 5i32; }
+    if (npk_nyte_get_nit(shifted, 0) != three) { exit 5i32; }
+    if (npk_nyte_get_nit(shifted, 1) != three) { exit 5i32; }
+    if (npk_nyte_get_nit(shifted, 2) != three) { exit 5i32; }
+    if (npk_nyte_get_nit(shifted, 3) != three) { exit 5i32; }
+    if (npk_nyte_get_nit(shifted, 4) != three) { exit 5i32; }
 
     // ── Test 6: wave_kleene_and — elementwise min ────────────────────────────
     Wave9:ka = Wave9 {
@@ -280,7 +280,7 @@ func:main = int32() {
     if (!is_err_dirty) { exit 9i32; }
 
     // ── Test 10: nyte_is_err — clean nyte → false ────────────────────────────
-    nyte:clean_nyte = aria_pack_nyte(
+    nyte:clean_nyte = npk_pack_nyte(
         nit_from_int(1), nit_from_int(-2), nit_from_int(3),
         nit_from_int(-1), nit_from_int(2)
     );
@@ -289,7 +289,7 @@ func:main = int32() {
 
     // ── Test 11: nyte_is_err — ERR nyte → true ───────────────────────────────
     nit:err_nit2 = nit_from_int(4) + nit_from_int(4);  // overflow → ERR
-    nyte:err_nyte = aria_pack_nyte(
+    nyte:err_nyte = npk_pack_nyte(
         nit_from_int(1), err_nit2, nit_from_int(0),
         nit_from_int(0), nit_from_int(0)
     );

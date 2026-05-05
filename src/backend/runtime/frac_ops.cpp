@@ -118,10 +118,10 @@ static T gcd_impl(T a, T b) {
 }
 
 extern "C" {
-    int8_t aria_gcd8(int8_t a, int8_t b) { return gcd_impl(a, b); }
-    int16_t aria_gcd16(int16_t a, int16_t b) { return gcd_impl(a, b); }
-    int32_t aria_gcd32(int32_t a, int32_t b) { return gcd_impl(a, b); }
-    int64_t aria_gcd64(int64_t a, int64_t b) { return gcd_impl(a, b); }
+    int8_t npk_gcd8(int8_t a, int8_t b) { return gcd_impl(a, b); }
+    int16_t npk_gcd16(int16_t a, int16_t b) { return gcd_impl(a, b); }
+    int32_t npk_gcd32(int32_t a, int32_t b) { return gcd_impl(a, b); }
+    int64_t npk_gcd64(int64_t a, int64_t b) { return gcd_impl(a, b); }
 }
 
 // ============================================================================
@@ -224,19 +224,19 @@ static FracT add_impl(FracT a, FracT b) {
 }
 
 extern "C" {
-    void aria_frac8_add(Frac8* result, const Frac8* a, const Frac8* b) {
+    void npk_frac8_add(Frac8* result, const Frac8* a, const Frac8* b) {
         *result = add_impl<int8_t, Frac8>(*a, *b);
     }
     
-    void aria_frac16_add(Frac16* result, const Frac16* a, const Frac16* b) {
+    void npk_frac16_add(Frac16* result, const Frac16* a, const Frac16* b) {
         *result = add_impl<int16_t, Frac16>(*a, *b);
     }
     
-    void aria_frac32_add(Frac32* result, const Frac32* a, const Frac32* b) {
+    void npk_frac32_add(Frac32* result, const Frac32* a, const Frac32* b) {
         *result = add_impl<int32_t, Frac32>(*a, *b);
     }
     
-    void aria_frac64_add(Frac64* result, const Frac64* a, const Frac64* b) {
+    void npk_frac64_add(Frac64* result, const Frac64* a, const Frac64* b) {
         *result = add_impl<int64_t, Frac64>(*a, *b);
     }
 }
@@ -261,19 +261,19 @@ static FracT sub_impl(FracT a, FracT b) {
 }
 
 extern "C" {
-    void aria_frac8_sub(Frac8* result, const Frac8* a, const Frac8* b) {
+    void npk_frac8_sub(Frac8* result, const Frac8* a, const Frac8* b) {
         *result = sub_impl<int8_t, Frac8>(*a, *b);
     }
     
-    void aria_frac16_sub(Frac16* result, const Frac16* a, const Frac16* b) {
+    void npk_frac16_sub(Frac16* result, const Frac16* a, const Frac16* b) {
         *result = sub_impl<int16_t, Frac16>(*a, *b);
     }
     
-    void aria_frac32_sub(Frac32* result, const Frac32* a, const Frac32* b) {
+    void npk_frac32_sub(Frac32* result, const Frac32* a, const Frac32* b) {
         *result = sub_impl<int32_t, Frac32>(*a, *b);
     }
     
-    void aria_frac64_sub(Frac64* result, const Frac64* a, const Frac64* b) {
+    void npk_frac64_sub(Frac64* result, const Frac64* a, const Frac64* b) {
         *result = sub_impl<int64_t, Frac64>(*a, *b);
     }
 }
@@ -312,19 +312,19 @@ static FracT mul_impl(FracT a, FracT b) {
 }
 
 extern "C" {
-    void aria_frac8_mul(Frac8* result, const Frac8* a, const Frac8* b) {
+    void npk_frac8_mul(Frac8* result, const Frac8* a, const Frac8* b) {
         *result = mul_impl<int8_t, Frac8>(*a, *b);
     }
     
-    void aria_frac16_mul(Frac16* result, const Frac16* a, const Frac16* b) {
+    void npk_frac16_mul(Frac16* result, const Frac16* a, const Frac16* b) {
         *result = mul_impl<int16_t, Frac16>(*a, *b);
     }
     
-    void aria_frac32_mul(Frac32* result, const Frac32* a, const Frac32* b) {
+    void npk_frac32_mul(Frac32* result, const Frac32* a, const Frac32* b) {
         *result = mul_impl<int32_t, Frac32>(*a, *b);
     }
     
-    void aria_frac64_mul(Frac64* result, const Frac64* a, const Frac64* b) {
+    void npk_frac64_mul(Frac64* result, const Frac64* a, const Frac64* b) {
         *result = mul_impl<int64_t, Frac64>(*a, *b);
     }
 }
@@ -361,19 +361,19 @@ static FracT div_impl(FracT a, FracT b) {
 }
 
 extern "C" {
-    void aria_frac8_div(Frac8* result, const Frac8* a, const Frac8* b) {
+    void npk_frac8_div(Frac8* result, const Frac8* a, const Frac8* b) {
         *result = div_impl<int8_t, Frac8>(*a, *b);
     }
     
-    void aria_frac16_div(Frac16* result, const Frac16* a, const Frac16* b) {
+    void npk_frac16_div(Frac16* result, const Frac16* a, const Frac16* b) {
         *result = div_impl<int16_t, Frac16>(*a, *b);
     }
     
-    void aria_frac32_div(Frac32* result, const Frac32* a, const Frac32* b) {
+    void npk_frac32_div(Frac32* result, const Frac32* a, const Frac32* b) {
         *result = div_impl<int32_t, Frac32>(*a, *b);
     }
     
-    void aria_frac64_div(Frac64* result, const Frac64* a, const Frac64* b) {
+    void npk_frac64_div(Frac64* result, const Frac64* a, const Frac64* b) {
         *result = div_impl<int64_t, Frac64>(*a, *b);
     }
 }
@@ -405,19 +405,19 @@ static FracT neg_impl(FracT a) {
 }
 
 extern "C" {
-    void aria_frac8_neg(Frac8* result, const Frac8* a) {
+    void npk_frac8_neg(Frac8* result, const Frac8* a) {
         *result = neg_impl<int8_t, Frac8>(*a);
     }
     
-    void aria_frac16_neg(Frac16* result, const Frac16* a) {
+    void npk_frac16_neg(Frac16* result, const Frac16* a) {
         *result = neg_impl<int16_t, Frac16>(*a);
     }
     
-    void aria_frac32_neg(Frac32* result, const Frac32* a) {
+    void npk_frac32_neg(Frac32* result, const Frac32* a) {
         *result = neg_impl<int32_t, Frac32>(*a);
     }
     
-    void aria_frac64_neg(Frac64* result, const Frac64* a) {
+    void npk_frac64_neg(Frac64* result, const Frac64* a) {
         *result = neg_impl<int64_t, Frac64>(*a);
     }
 }
@@ -452,19 +452,19 @@ static int32_t compare_impl(FracT a, FracT b) {
 }
 
 extern "C" {
-    int32_t aria_frac8_cmp(const Frac8* a, const Frac8* b) {
+    int32_t npk_frac8_cmp(const Frac8* a, const Frac8* b) {
         return compare_impl<int8_t, Frac8>(*a, *b);
     }
     
-    int32_t aria_frac16_cmp(const Frac16* a, const Frac16* b) {
+    int32_t npk_frac16_cmp(const Frac16* a, const Frac16* b) {
         return compare_impl<int16_t, Frac16>(*a, *b);
     }
     
-    int32_t aria_frac32_cmp(const Frac32* a, const Frac32* b) {
+    int32_t npk_frac32_cmp(const Frac32* a, const Frac32* b) {
         return compare_impl<int32_t, Frac32>(*a, *b);
     }
     
-    int32_t aria_frac64_cmp(const Frac64* a, const Frac64* b) {
+    int32_t npk_frac64_cmp(const Frac64* a, const Frac64* b) {
         return compare_impl<int64_t, Frac64>(*a, *b);
     }
 
@@ -473,39 +473,39 @@ extern "C" {
     // ========================================================================
 
     // To integer (rounds toward zero)
-    int8_t aria_frac8_to_int(const Frac8* f) {
+    int8_t npk_frac8_to_int(const Frac8* f) {
         return f->whole + (f->num / f->denom);
     }
 
-    int16_t aria_frac16_to_int(const Frac16* f) {
+    int16_t npk_frac16_to_int(const Frac16* f) {
         return f->whole + (f->num / f->denom);
     }
 
-    int32_t aria_frac32_to_int(const Frac32* f) {
+    int32_t npk_frac32_to_int(const Frac32* f) {
         return f->whole + (f->num / f->denom);
     }
 
-    int64_t aria_frac64_to_int(const Frac64* f) {
+    int64_t npk_frac64_to_int(const Frac64* f) {
         return f->whole + (f->num / f->denom);
     }
 
     // To float
-    float aria_frac8_to_float(const Frac8* f) {
+    float npk_frac8_to_float(const Frac8* f) {
         return static_cast<float>(f->whole) + 
                (static_cast<float>(f->num) / static_cast<float>(f->denom));
     }
 
-    float aria_frac16_to_float(const Frac16* f) {
+    float npk_frac16_to_float(const Frac16* f) {
         return static_cast<float>(f->whole) + 
                (static_cast<float>(f->num) / static_cast<float>(f->denom));
     }
 
-    float aria_frac32_to_float(const Frac32* f) {
+    float npk_frac32_to_float(const Frac32* f) {
         return static_cast<float>(f->whole) + 
                (static_cast<float>(f->num) / static_cast<float>(f->denom));
     }
 
-    double aria_frac64_to_float(const Frac64* f) {
+    double npk_frac64_to_float(const Frac64* f) {
         return static_cast<double>(f->whole) + 
                (static_cast<double>(f->num) / static_cast<double>(f->denom));
     }
@@ -516,7 +516,7 @@ extern "C" {
 // ============================================================================
 
 template<typename T, typename FracT>
-static int aria_frac_to_string(char* buffer, size_t size, FracT f) {
+static int npk_frac_to_string(char* buffer, size_t size, FracT f) {
     T err_sentinel = tbb_err_sentinel<T>();
     
     if (f.whole == err_sentinel) {
@@ -536,25 +536,25 @@ static int aria_frac_to_string(char* buffer, size_t size, FracT f) {
 }
 
 extern "C" {
-    int aria_frac8_to_string(char* buffer, size_t size, const Frac8* f) {
-        return aria_frac_to_string<int8_t, Frac8>(buffer, size, *f);
+    int npk_frac8_to_string(char* buffer, size_t size, const Frac8* f) {
+        return npk_frac_to_string<int8_t, Frac8>(buffer, size, *f);
     }
     
-    int aria_frac16_to_string(char* buffer, size_t size, const Frac16* f) {
-        return aria_frac_to_string<int16_t, Frac16>(buffer, size, *f);
+    int npk_frac16_to_string(char* buffer, size_t size, const Frac16* f) {
+        return npk_frac_to_string<int16_t, Frac16>(buffer, size, *f);
     }
     
-    int aria_frac32_to_string(char* buffer, size_t size, const Frac32* f) {
-        return aria_frac_to_string<int32_t, Frac32>(buffer, size, *f);
+    int npk_frac32_to_string(char* buffer, size_t size, const Frac32* f) {
+        return npk_frac_to_string<int32_t, Frac32>(buffer, size, *f);
     }
     
-    int aria_frac64_to_string(char* buffer, size_t size, const Frac64* f) {
-        return aria_frac_to_string<int64_t, Frac64>(buffer, size, *f);
+    int npk_frac64_to_string(char* buffer, size_t size, const Frac64* f) {
+        return npk_frac_to_string<int64_t, Frac64>(buffer, size, *f);
     }
 }
 
 // ============================================================================
-// Construction from parts (called by IR-generated code — bare names, no aria_ prefix)
+// Construction from parts (called by IR-generated code — bare names, no npk_ prefix)
 // ============================================================================
 
 extern "C" {

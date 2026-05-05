@@ -26,7 +26,7 @@
 // fix256 TBB Safety Helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-static inline bool is_fix256_err(const aria_fix256_t* val) {
+static inline bool is_fix256_err(const npk_fix256_t* val) {
     // ERR: limbs[3] = 0x8000000000000000, all others = 0
     return (val->limbs[3] == 0x8000000000000000ULL &&
             val->limbs[2] == 0 &&
@@ -34,8 +34,8 @@ static inline bool is_fix256_err(const aria_fix256_t* val) {
             val->limbs[0] == 0);
 }
 
-static inline aria_fix256_t make_fix256_err() {
-    aria_fix256_t err;
+static inline npk_fix256_t make_fix256_err() {
+    npk_fix256_t err;
     err.limbs[0] = 0;
     err.limbs[1] = 0;
     err.limbs[2] = 0;
@@ -43,8 +43,8 @@ static inline aria_fix256_t make_fix256_err() {
     return err;
 }
 
-static inline aria_fix256_t make_zero() {
-    aria_fix256_t zero;
+static inline npk_fix256_t make_zero() {
+    npk_fix256_t zero;
     zero.limbs[0] = 0;
     zero.limbs[1] = 0;
     zero.limbs[2] = 0;
@@ -56,7 +56,7 @@ static inline aria_fix256_t make_zero() {
 // fix256 Addition
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_fix256_t aria_fix256_add(aria_fix256_t a, aria_fix256_t b) {
+extern "C" npk_fix256_t npk_fix256_add(npk_fix256_t a, npk_fix256_t b) {
     // TBB safety: sticky error propagation
     if (is_fix256_err(&a) || is_fix256_err(&b)) {
         return make_fix256_err();
@@ -69,7 +69,7 @@ extern "C" aria_fix256_t aria_fix256_add(aria_fix256_t a, aria_fix256_t b) {
     bool a_sign = (a.limbs[3] & 0x8000000000000000ULL) != 0;
     bool b_sign = (b.limbs[3] & 0x8000000000000000ULL) != 0;
     
-    aria_fix256_t result;
+    npk_fix256_t result;
     uint64_t carry = 0;
     
     // Add fractional part (limbs 0-1) then integer part (limbs 2-3)
@@ -103,7 +103,7 @@ extern "C" aria_fix256_t aria_fix256_add(aria_fix256_t a, aria_fix256_t b) {
 // fix256 Subtraction
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_fix256_t aria_fix256_sub(aria_fix256_t a, aria_fix256_t b) {
+extern "C" npk_fix256_t npk_fix256_sub(npk_fix256_t a, npk_fix256_t b) {
     // TBB safety: sticky error propagation
     if (is_fix256_err(&a) || is_fix256_err(&b)) {
         return make_fix256_err();
@@ -112,7 +112,7 @@ extern "C" aria_fix256_t aria_fix256_sub(aria_fix256_t a, aria_fix256_t b) {
     // Q128.128 subtraction: subtract all 4 limbs with borrow propagation
     // Uses unsigned limb-wise subtraction with proper borrow handling
     
-    aria_fix256_t result;
+    npk_fix256_t result;
     uint64_t borrow = 0;
     
     for (int i = 0; i < 4; ++i) {
@@ -136,7 +136,7 @@ extern "C" aria_fix256_t aria_fix256_sub(aria_fix256_t a, aria_fix256_t b) {
 // fix256 Multiplication
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_fix256_t aria_fix256_mul(aria_fix256_t a, aria_fix256_t b) {
+extern "C" npk_fix256_t npk_fix256_mul(npk_fix256_t a, npk_fix256_t b) {
     // TBB safety: sticky error propagation
     if (is_fix256_err(&a) || is_fix256_err(&b)) {
         return make_fix256_err();
@@ -156,8 +156,8 @@ extern "C" aria_fix256_t aria_fix256_mul(aria_fix256_t a, aria_fix256_t b) {
     bool result_negative = a_negative ^ b_negative;  // XOR for sign of product
     
     // Convert to absolute values for unsigned multiplication
-    aria_fix256_t abs_a = a;
-    aria_fix256_t abs_b = b;
+    npk_fix256_t abs_a = a;
+    npk_fix256_t abs_b = b;
     
     if (a_negative) {
         // Two's complement negation
@@ -201,7 +201,7 @@ extern "C" aria_fix256_t aria_fix256_mul(aria_fix256_t a, aria_fix256_t b) {
     
     // Extract middle 256 bits (limbs 2-5) - right-shift by 128 bits
     // This realigns the decimal point for Q128.128 format
-    aria_fix256_t result;
+    npk_fix256_t result;
     result.limbs[0] = temp[2];  // Fractional part low
     result.limbs[1] = temp[3];  // Fractional part high
     result.limbs[2] = temp[4];  // Integer part low
@@ -232,12 +232,12 @@ extern "C" aria_fix256_t aria_fix256_mul(aria_fix256_t a, aria_fix256_t b) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // Helper: Check if 256-bit number is zero
-static inline bool is_zero_256(const aria_fix256_t* val) {
+static inline bool is_zero_256(const npk_fix256_t* val) {
     return (val->limbs[0] | val->limbs[1] | val->limbs[2] | val->limbs[3]) == 0;
 }
 
 // Helper: Two's complement negation for 256-bit number
-static inline void negate_fix256(aria_fix256_t* val) {
+static inline void negate_fix256(npk_fix256_t* val) {
     uint64_t carry = 1;
     for (int i = 0; i < 4; ++i) {
         val->limbs[i] = ~val->limbs[i];
@@ -268,7 +268,7 @@ static inline unsigned __int128 mul_wide(uint64_t a, uint64_t b) {
 
 // Knuth's Algorithm D: 512-bit / 256-bit division
 // Returns false if overflow detected (quotient doesn't fit in 256 bits)
-static bool knuth_div_512_256(const uint64_t u_in[8], const aria_fix256_t* v_in, aria_fix256_t* q_out) {
+static bool knuth_div_512_256(const uint64_t u_in[8], const npk_fix256_t* v_in, npk_fix256_t* q_out) {
     // Initialize output quotient to zero
     memset(q_out->limbs, 0, sizeof(q_out->limbs));
     
@@ -390,7 +390,7 @@ static bool knuth_div_512_256(const uint64_t u_in[8], const aria_fix256_t* v_in,
     return true;
 }
 
-extern "C" aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b) {
+extern "C" npk_fix256_t npk_fix256_div(npk_fix256_t a, npk_fix256_t b) {
     // TBB safety: sticky error propagation
     if (is_fix256_err(&a) || is_fix256_err(&b)) {
         return make_fix256_err();
@@ -407,8 +407,8 @@ extern "C" aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b) {
     bool result_negative = a_negative ^ b_negative;
     
     // Convert to absolute values for unsigned division
-    aria_fix256_t abs_a = a;
-    aria_fix256_t abs_b = b;
+    npk_fix256_t abs_a = a;
+    npk_fix256_t abs_b = b;
     
     if (a_negative) negate_fix256(&abs_a);
     if (b_negative) negate_fix256(&abs_b);
@@ -425,7 +425,7 @@ extern "C" aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b) {
     // dividend_512[6,7] = 0 (overflow detection space)
     
     // Perform 512-bit / 256-bit division using Knuth's Algorithm D
-    aria_fix256_t quotient;
+    npk_fix256_t quotient;
     bool success = knuth_div_512_256(dividend_512, &abs_b, &quotient);
     
     if (!success) {
@@ -450,7 +450,7 @@ extern "C" aria_fix256_t aria_fix256_div(aria_fix256_t a, aria_fix256_t b) {
 // fix256 Comparison Operations
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" int aria_fix256_cmp(aria_fix256_t a, aria_fix256_t b) {
+extern "C" int npk_fix256_cmp(npk_fix256_t a, npk_fix256_t b) {
     // TBB safety: ERR comparison (ERR == ERR, ERR < all non-ERR)
     bool a_err = is_fix256_err(&a);
     bool b_err = is_fix256_err(&b);
@@ -478,32 +478,32 @@ extern "C" int aria_fix256_cmp(aria_fix256_t a, aria_fix256_t b) {
     return 0;  // Equal
 }
 
-extern "C" int aria_fix256_eq(aria_fix256_t a, aria_fix256_t b) {
-    return aria_fix256_cmp(a, b) == 0;
+extern "C" int npk_fix256_eq(npk_fix256_t a, npk_fix256_t b) {
+    return npk_fix256_cmp(a, b) == 0;
 }
 
-extern "C" int aria_fix256_lt(aria_fix256_t a, aria_fix256_t b) {
-    return aria_fix256_cmp(a, b) < 0;
+extern "C" int npk_fix256_lt(npk_fix256_t a, npk_fix256_t b) {
+    return npk_fix256_cmp(a, b) < 0;
 }
 
-extern "C" int aria_fix256_le(aria_fix256_t a, aria_fix256_t b) {
-    return aria_fix256_cmp(a, b) <= 0;
+extern "C" int npk_fix256_le(npk_fix256_t a, npk_fix256_t b) {
+    return npk_fix256_cmp(a, b) <= 0;
 }
 
-extern "C" int aria_fix256_gt(aria_fix256_t a, aria_fix256_t b) {
-    return aria_fix256_cmp(a, b) > 0;
+extern "C" int npk_fix256_gt(npk_fix256_t a, npk_fix256_t b) {
+    return npk_fix256_cmp(a, b) > 0;
 }
 
-extern "C" int aria_fix256_ge(aria_fix256_t a, aria_fix256_t b) {
-    return aria_fix256_cmp(a, b) >= 0;
+extern "C" int npk_fix256_ge(npk_fix256_t a, npk_fix256_t b) {
+    return npk_fix256_cmp(a, b) >= 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 // fix256 Conversion Functions
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_fix256_t aria_fix256_from_i32(int32_t val) {
-    aria_fix256_t result;
+extern "C" npk_fix256_t npk_fix256_from_i32(int32_t val) {
+    npk_fix256_t result;
     result.limbs[0] = 0;  // Fractional part = 0
     result.limbs[1] = 0;
     result.limbs[2] = (uint64_t)(int64_t)val;  // Cast to int64_t for sign extension
@@ -511,8 +511,8 @@ extern "C" aria_fix256_t aria_fix256_from_i32(int32_t val) {
     return result;
 }
 
-extern "C" aria_fix256_t aria_fix256_from_i64(int64_t val) {
-    aria_fix256_t result;
+extern "C" npk_fix256_t npk_fix256_from_i64(int64_t val) {
+    npk_fix256_t result;
     result.limbs[0] = 0;  // Fractional part = 0
     result.limbs[1] = 0;
     result.limbs[2] = (uint64_t)val;           // Integer part low
@@ -520,7 +520,7 @@ extern "C" aria_fix256_t aria_fix256_from_i64(int64_t val) {
     return result;
 }
 
-extern "C" int32_t aria_fix256_to_i32(aria_fix256_t val) {
+extern "C" int32_t npk_fix256_to_i32(npk_fix256_t val) {
     // TBB safety: ERR converts to 0
     if (is_fix256_err(&val)) {
         return 0;
@@ -544,7 +544,7 @@ extern "C" int32_t aria_fix256_to_i32(aria_fix256_t val) {
     return (int32_t)val64;
 }
 
-extern "C" int64_t aria_fix256_to_i64(aria_fix256_t val) {
+extern "C" int64_t npk_fix256_to_i64(npk_fix256_t val) {
     // TBB safety: ERR converts to 0
     if (is_fix256_err(&val)) {
         return 0;
@@ -563,23 +563,23 @@ extern "C" int64_t aria_fix256_to_i64(aria_fix256_t val) {
     return result;
 }
 
-extern "C" aria_fix256_t aria_fix256_from_f32(float val) {
+extern "C" npk_fix256_t npk_fix256_from_f32(float val) {
     // Special cases
     if (val != val) return make_fix256_err();  // NaN
     if (val >= 1.7014118e+38f) return make_fix256_err();  // Overflow (2^127)
     if (val <= -1.7014118e+38f) return make_fix256_err(); // Underflow (-2^127)
     
     // Convert to double for better intermediate precision
-    return aria_fix256_from_f64((double)val);
+    return npk_fix256_from_f64((double)val);
 }
 
-extern "C" aria_fix256_t aria_fix256_from_f64(double val) {
+extern "C" npk_fix256_t npk_fix256_from_f64(double val) {
     // Special cases
     if (val != val) return make_fix256_err();  // NaN
     if (val >= 1.7014118346046923e+38) return make_fix256_err();  // Overflow (2^127)
     if (val <= -1.7014118346046923e+38) return make_fix256_err(); // Underflow (-2^127)
     
-    aria_fix256_t result;
+    npk_fix256_t result;
     
     // Handle sign
     bool negative = val < 0;
@@ -612,12 +612,12 @@ extern "C" aria_fix256_t aria_fix256_from_f64(double val) {
     return result;
 }
 
-extern "C" float aria_fix256_to_f32(aria_fix256_t val) {
+extern "C" float npk_fix256_to_f32(npk_fix256_t val) {
     // Convert to double first for better precision
-    return (float)aria_fix256_to_f64(val);
+    return (float)npk_fix256_to_f64(val);
 }
 
-extern "C" double aria_fix256_to_f64(aria_fix256_t val) {
+extern "C" double npk_fix256_to_f64(npk_fix256_t val) {
     // TBB safety: ERR converts to NaN
     if (is_fix256_err(&val)) {
         return 0.0 / 0.0;  // NaN
@@ -625,7 +625,7 @@ extern "C" double aria_fix256_to_f64(aria_fix256_t val) {
     
     // Handle sign
     bool negative = (int64_t)val.limbs[3] < 0;
-    aria_fix256_t abs_val = val;
+    npk_fix256_t abs_val = val;
     if (negative) {
         negate_fix256(&abs_val);
     }

@@ -91,52 +91,52 @@ typedef struct {
 /**
  * Create a success result with pointer value
  */
-AriaResultPtr aria_result_ok_ptr(void* value);
+AriaResultPtr npk_result_ok_ptr(void* value);
 
 /**
  * Create an error result with pointer type
  */
-AriaResultPtr aria_result_err_ptr(AriaError* error);
+AriaResultPtr npk_result_err_ptr(AriaError* error);
 
 /**
  * Create a success result with int64 value
  */
-AriaResultI64 aria_result_ok_i64(int64_t value);
+AriaResultI64 npk_result_ok_i64(int64_t value);
 
 /**
  * Create an error result with int64 type
  */
-AriaResultI64 aria_result_err_i64(AriaError* error);
+AriaResultI64 npk_result_err_i64(AriaError* error);
 
 /**
  * Create a success result with flt64 value
  */
-AriaResultF64 aria_result_ok_f64(double value);
+AriaResultF64 npk_result_ok_f64(double value);
 
 /**
  * Create an error result with flt64 type
  */
-AriaResultF64 aria_result_err_f64(AriaError* error);
+AriaResultF64 npk_result_err_f64(AriaError* error);
 
 /**
  * Create a success result with bool value
  */
-AriaResultBool aria_result_ok_bool(bool value);
+AriaResultBool npk_result_ok_bool(bool value);
 
 /**
  * Create an error result with bool type
  */
-AriaResultBool aria_result_err_bool(AriaError* error);
+AriaResultBool npk_result_err_bool(AriaError* error);
 
 /**
  * Create a success result for void operation
  */
-AriaResultVoid aria_result_ok_void(void);
+AriaResultVoid npk_result_ok_void(void);
 
 /**
  * Create an error result for void operation
  */
-AriaResultVoid aria_result_err_void(AriaError* error);
+AriaResultVoid npk_result_err_void(AriaError* error);
 
 // ============================================================================
 // Error Construction Functions
@@ -150,12 +150,12 @@ AriaResultVoid aria_result_err_void(AriaError* error);
  * @param line Line number (0 if not applicable)
  * @return Pointer to error object (allocated on GC heap)
  */
-AriaError* aria_error_new(int32_t code, const char* message, const char* file, int32_t line);
+AriaError* npk_error_new(int32_t code, const char* message, const char* file, int32_t line);
 
 /**
  * Create a simple error with just a message
  */
-AriaError* aria_error_msg(const char* message);
+AriaError* npk_error_msg(const char* message);
 
 // ============================================================================
 // Allocation Result Types (Phase 4.2)
@@ -216,46 +216,46 @@ typedef struct {
 /**
  * Check if result is Ok (success)
  */
-bool aria_result_is_ok_ptr(AriaResultPtr result);
-bool aria_result_is_ok_i64(AriaResultI64 result);
-bool aria_result_is_ok_f64(AriaResultF64 result);
-bool aria_result_is_ok_bool(AriaResultBool result);
-bool aria_result_is_ok_void(AriaResultVoid result);
+bool npk_result_is_ok_ptr(AriaResultPtr result);
+bool npk_result_is_ok_i64(AriaResultI64 result);
+bool npk_result_is_ok_f64(AriaResultF64 result);
+bool npk_result_is_ok_bool(AriaResultBool result);
+bool npk_result_is_ok_void(AriaResultVoid result);
 
 /**
  * Check if result is Err (error)
  */
-bool aria_result_is_err_ptr(AriaResultPtr result);
-bool aria_result_is_err_i64(AriaResultI64 result);
-bool aria_result_is_err_f64(AriaResultF64 result);
-bool aria_result_is_err_bool(AriaResultBool result);
-bool aria_result_is_err_void(AriaResultVoid result);
+bool npk_result_is_err_ptr(AriaResultPtr result);
+bool npk_result_is_err_i64(AriaResultI64 result);
+bool npk_result_is_err_f64(AriaResultF64 result);
+bool npk_result_is_err_bool(AriaResultBool result);
+bool npk_result_is_err_void(AriaResultVoid result);
 
 /**
  * Get error from result (returns NULL if result is Ok)
  */
-AriaError* aria_result_get_error_ptr(AriaResultPtr result);
-AriaError* aria_result_get_error_i64(AriaResultI64 result);
-AriaError* aria_result_get_error_f64(AriaResultF64 result);
-AriaError* aria_result_get_error_bool(AriaResultBool result);
-AriaError* aria_result_get_error_void(AriaResultVoid result);
+AriaError* npk_result_get_error_ptr(AriaResultPtr result);
+AriaError* npk_result_get_error_i64(AriaResultI64 result);
+AriaError* npk_result_get_error_f64(AriaResultF64 result);
+AriaError* npk_result_get_error_bool(AriaResultBool result);
+AriaError* npk_result_get_error_void(AriaResultVoid result);
 
 /**
  * Unwrap result (returns value, panics if error)
  * NOTE: These should only be used when you're certain the result is Ok
  */
-void* aria_result_unwrap_ptr(AriaResultPtr result);
-int64_t aria_result_unwrap_i64(AriaResultI64 result);
-double aria_result_unwrap_f64(AriaResultF64 result);
-bool aria_result_unwrap_bool(AriaResultBool result);
+void* npk_result_unwrap_ptr(AriaResultPtr result);
+int64_t npk_result_unwrap_i64(AriaResultI64 result);
+double npk_result_unwrap_f64(AriaResultF64 result);
+bool npk_result_unwrap_bool(AriaResultBool result);
 
 /**
  * Unwrap or return default value
  */
-void* aria_result_unwrap_or_ptr(AriaResultPtr result, void* default_value);
-int64_t aria_result_unwrap_or_i64(AriaResultI64 result, int64_t default_value);
-double aria_result_unwrap_or_f64(AriaResultF64 result, double default_value);
-bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value);
+void* npk_result_unwrap_or_ptr(AriaResultPtr result, void* default_value);
+int64_t npk_result_unwrap_or_i64(AriaResultI64 result, int64_t default_value);
+double npk_result_unwrap_or_f64(AriaResultF64 result, double default_value);
+bool npk_result_unwrap_or_bool(AriaResultBool result, bool default_value);
 
 // ============================================================================
 // Allocation Result Functions (Phase 4.2)
@@ -267,7 +267,7 @@ bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value);
  * @param size Size that was allocated
  * @param align Alignment that was used (0 = default)
  */
-AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align);
+AriaAllocResult npk_alloc_result_ok(void* ptr, size_t size, size_t align);
 
 /**
  * Create error allocation result
@@ -275,23 +275,23 @@ AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align);
  * @param size Size that was requested
  * @param align Alignment that was requested
  */
-AriaAllocResult aria_alloc_result_err(AriaAllocError error, size_t size, size_t align);
+AriaAllocResult npk_alloc_result_err(AriaAllocError error, size_t size, size_t align);
 
 /**
  * Check if allocation result is Ok
  */
-bool aria_alloc_result_is_ok(AriaAllocResult result);
+bool npk_alloc_result_is_ok(AriaAllocResult result);
 
 /**
  * Check if allocation result is Err
  */
-bool aria_alloc_result_is_err(AriaAllocResult result);
+bool npk_alloc_result_is_err(AriaAllocResult result);
 
 /**
  * Get error message for allocation error
  * @return Static string describing the error
  */
-const char* aria_alloc_error_message(AriaAllocError error);
+const char* npk_alloc_error_message(AriaAllocError error);
 
 #ifdef __cplusplus
 }

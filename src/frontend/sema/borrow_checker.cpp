@@ -1561,7 +1561,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             auto* call = static_cast<CallExpr*>(stmt->initializer.get());
             if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
                 auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
-                if ((callee->name == "alloc" || callee->name == "aria_alloc" ||
+                if ((callee->name == "alloc" || callee->name == "npk_alloc" ||
                      callee->name == "malloc") &&
                     !call->arguments.empty()) {
                     ASTNode* sizeArg = call->arguments[0].get();
@@ -1575,7 +1575,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                     }
                 }
                 // v0.6.3: Also extract size from realloc(ptr, new_size)
-                if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+                if ((callee->name == "realloc" || callee->name == "npk_realloc") &&
                     call->arguments.size() >= 2) {
                     ASTNode* sizeArg = call->arguments[1].get();
                     if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
@@ -2576,7 +2576,7 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
 
 // Known deallocator function names
 static const std::unordered_set<std::string> KNOWN_DEALLOCATORS = {
-    "free", "aria.free", "aria_free",
+    "free", "aria.free", "npk_free",
     "deallocate", "dealloc",
     "release", "destroy",
     "close", "aria.close",
@@ -2893,7 +2893,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
 
         // v0.6.3: Realloc borrow invalidation
         // realloc(ptr, new_size) may move memory — invalidate all borrows of ptr
-        if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+        if ((callee->name == "realloc" || callee->name == "npk_realloc") &&
             expr->arguments.size() >= 2) {
             ASTNode* ptrArg = expr->arguments[0].get();
             if (ptrArg && ptrArg->type == ASTNode::NodeType::IDENTIFIER) {

@@ -7,8 +7,8 @@
 
 func:failsafe = int32(tbb32:err) { exit 1; };
 
-extern func:aria_alloc = wild float64*(int64:size);
-extern func:aria_free  = void(wild float64*:ptr);
+extern func:npk_alloc = wild float64*(int64:size);
+extern func:npk_free  = void(wild float64*:ptr);
 extern func:malloc     = wild int64*(int64:size);
 extern func:free       = void(wild int64*:ptr);
 
@@ -23,10 +23,10 @@ func:main = int32() {
     drop println("edge_cases/wild_array_last_elements");
     drop println("====================================");
 
-    // ── float64 wild array tests (via aria_alloc) ────────────────────────
+    // ── float64 wild array tests (via npk_alloc) ────────────────────────
 
     int64:flt_count = 8i64;
-    wild float64->:farr = aria_alloc(flt_count * 8i64);
+    wild float64->:farr = npk_alloc(flt_count * 8i64);
 
     // T01: write to every element including last
     int64:fi = 0i64;
@@ -98,7 +98,7 @@ func:main = int32() {
         failed = failed + 1i64;
     }
 
-    aria_free(farr);
+    npk_free(farr);
 
     // ── int64 wild array tests (via malloc) ──────────────────────────────
 

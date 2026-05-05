@@ -609,8 +609,8 @@ json Server::handle_hover(const json& params) {
     npk::frontend::Lexer lexer(*content);
     std::vector<npk::frontend::Token> tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     // Find token under cursor
     std::string hovered_lexeme;
@@ -619,9 +619,9 @@ json Server::handle_hover(const json& params) {
     int tok_len = 0;
     
     for (const auto& token : tokens) {
-        if (token.line == aria_line &&
-            token.column <= aria_col &&
-            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+        if (token.line == npk_line &&
+            token.column <= npk_col &&
+            npk_col < token.column + static_cast<int>(token.lexeme.length())) {
             hovered_lexeme = token.lexeme;
             hovered_type = token.type;
             tok_col = token.column;
@@ -710,15 +710,15 @@ json Server::handle_definition(const json& params) {
     npk::frontend::Lexer lexer(*content);
     std::vector<npk::frontend::Token> tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     std::string target_name;
     for (const auto& token : tokens) {
         if (token.type == npk::frontend::TokenType::TOKEN_IDENTIFIER &&
-            token.line == aria_line &&
-            token.column <= aria_col &&
-            aria_col < token.column + static_cast<int>(token.lexeme.length())) {
+            token.line == npk_line &&
+            token.column <= npk_col &&
+            npk_col < token.column + static_cast<int>(token.lexeme.length())) {
             target_name = token.lexeme;
             break;
         }
@@ -923,15 +923,15 @@ json Server::handle_references(const json& params) {
     npk::frontend::Lexer lexer(*content);
     auto tokens = lexer.tokenize();
     
-    int aria_line = line + 1;
-    int aria_col = character + 1;
+    int npk_line = line + 1;
+    int npk_col = character + 1;
     
     std::string target_name;
     for (const auto& tok : tokens) {
         if (tok.type == npk::frontend::TokenType::TOKEN_IDENTIFIER &&
-            tok.line == aria_line &&
-            tok.column <= aria_col &&
-            aria_col < tok.column + static_cast<int>(tok.lexeme.length())) {
+            tok.line == npk_line &&
+            tok.column <= npk_col &&
+            npk_col < tok.column + static_cast<int>(tok.lexeme.length())) {
             target_name = tok.lexeme;
             break;
         }

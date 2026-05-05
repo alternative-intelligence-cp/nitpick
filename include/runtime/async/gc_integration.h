@@ -242,7 +242,7 @@ public:
         // SATB barrier: mark the old value so it isn't lost
         if (slot && *slot) {
             // Register old value as a root so current cycle doesn't miss it
-            aria_gc_register_jit_root(slot);
+            npk_gc_register_jit_root(slot);
         }
         *slot = new_value;
     }

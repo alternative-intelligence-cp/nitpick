@@ -110,7 +110,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             // ATOMIC<T> METHOD DISPATCH
             // ====================================================================
             // Handle atomic<T> method calls by dispatching to runtime C functions
-            // counter.load() → aria_atomic_TYPE_load(&counter, SEQCST)
+            // counter.load() → npk_atomic_TYPE_load(&counter, SEQCST)
             // Supports both "atomic<int32>" and "atomic_int32" type name formats
             if (type_name.find("atomic<") == 0 || type_name.find("atomic_") == 0) {
                 // Extract the inner type from atomic<TYPE> or atomic_TYPE
@@ -137,7 +137,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 std::string method_name = member_access->member;
                 
                 if (method_name == "load") {
-                    // atomic.load() → aria_atomic_TYPE_load(atomic_ptr, SEQCST)
+                    // atomic.load() → npk_atomic_TYPE_load(atomic_ptr, SEQCST)
                     std::string func_name = "npk_atomic_" + runtime_type + "_load";
                     llvm::Function* load_func = module->getFunction(func_name);
                     
@@ -151,7 +151,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                         else if (inner_type == "bool") ret_type = builder.getInt1Ty();
                         else throw std::runtime_error("Unsupported atomic type: " + inner_type);
                         
-                        // Signature: TYPE aria_atomic_TYPE_load(AriaAtomicTYPE*, int32)
+                        // Signature: TYPE npk_atomic_TYPE_load(AriaAtomicTYPE*, int32)
                         llvm::FunctionType* func_type = llvm::FunctionType::get(
                             ret_type,
                             {llvm::PointerType::get(context, 0),  // atomic pointer
@@ -172,7 +172,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     return builder.CreateCall(load_func, {atomic_ptr, order}, "atomic_load");
                 }
                 else if (method_name == "store") {
-                    // atomic.store(value) → aria_atomic_TYPE_store(atomic_ptr, value, SEQCST)
+                    // atomic.store(value) → npk_atomic_TYPE_store(atomic_ptr, value, SEQCST)
                     if (expr->arguments.size() != 1) {
                         throw std::runtime_error("atomic.store() requires exactly one argument");
                     }
@@ -183,7 +183,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     llvm::Value* value_arg = codegenExpressionNode(expr->arguments[0].get(), this);
                     
                     if (!store_func) {
-                        // Signature: void aria_atomic_TYPE_store(AriaAtomicTYPE*, TYPE, int32)
+                        // Signature: void npk_atomic_TYPE_store(AriaAtomicTYPE*, TYPE, int32)
                         llvm::FunctionType* func_type = llvm::FunctionType::get(
                             builder.getVoidTy(),
                             {llvm::PointerType::get(context, 0),  // atomic pointer
@@ -205,7 +205,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     return nullptr;
                 }
                 else if (method_name == "swap") {
-                    // atomic.swap(value) → aria_atomic_TYPE_exchange(atomic_ptr, value, SEQCST)
+                    // atomic.swap(value) → npk_atomic_TYPE_exchange(atomic_ptr, value, SEQCST)
                     if (expr->arguments.size() != 1) {
                         throw std::runtime_error("atomic.swap() requires exactly one argument");
                     }
@@ -215,7 +215,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     llvm::Function* swap_func = module->getFunction(func_name);
                     
                     if (!swap_func) {
-                        // Signature: TYPE aria_atomic_TYPE_exchange(AriaAtomicTYPE*, TYPE, int32)
+                        // Signature: TYPE npk_atomic_TYPE_exchange(AriaAtomicTYPE*, TYPE, int32)
                         llvm::FunctionType* func_type = llvm::FunctionType::get(
                             value_arg->getType(),                // returns old value
                             {llvm::PointerType::get(context, 0), // atomic pointer
@@ -236,7 +236,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     return builder.CreateCall(swap_func, {atomic_ptr, value_arg, order}, "atomic_swap");
                 }
                 else if (method_name == "fetch_add") {
-                    // atomic.fetch_add(delta) → aria_atomic_TYPE_fetch_add(atomic_ptr, delta, SEQCST)
+                    // atomic.fetch_add(delta) → npk_atomic_TYPE_fetch_add(atomic_ptr, delta, SEQCST)
                     if (expr->arguments.size() != 1) {
                         throw std::runtime_error("atomic.fetch_add() requires exactly one argument");
                     }
@@ -266,7 +266,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                     return builder.CreateCall(add_func, {atomic_ptr, delta_arg, order}, "atomic_fetch_add");
                 }
                 else if (method_name == "fetch_sub") {
-                    // atomic.fetch_sub(delta) → aria_atomic_TYPE_fetch_sub(atomic_ptr, delta, SEQCST)
+                    // atomic.fetch_sub(delta) → npk_atomic_TYPE_fetch_sub(atomic_ptr, delta, SEQCST)
                     if (expr->arguments.size() != 1) {
                         throw std::runtime_error("atomic.fetch_sub() requires exactly one argument");
                     }
@@ -304,9 +304,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             // ANY TYPE METHOD DISPATCH
             // ====================================================================
             // Handle any type method calls:
-            //   box.get::<int64>() → aria_any_get(any_ptr, type_id, sizeof_T)
-            //   box.set::<int64>(val) → aria_any_set(any_ptr, &val, type_id, sizeof_T)
-            //   box.resolve::<int64>() → aria_any_resolve(any_ptr, type_id, sizeof_T) → T*
+            //   box.get::<int64>() → npk_any_get(any_ptr, type_id, sizeof_T)
+            //   box.set::<int64>(val) → npk_any_set(any_ptr, &val, type_id, sizeof_T)
+            //   box.resolve::<int64>() → npk_any_resolve(any_ptr, type_id, sizeof_T) → T*
             if (type_name == "any" || type_name == "wild any" || type_name == "wildx any") {
                 std::string method_name = member_access->member;
                 llvm::Value* any_ptr = var_value;
@@ -964,18 +964,18 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        // Declare runtime function: aria_print_cstr or aria_println_cstr
-        // Signature: int64_t aria_print[ln]_cstr(const char* str)
+        // Declare runtime function: npk_print_cstr or npk_println_cstr
+        // Signature: int64_t npk_print[ln]_cstr(const char* str)
         // Returns: Number of bytes written, or -1 on error
         const char* func_name = add_newline ? "npk_println_cstr" : "npk_print_cstr";
-        llvm::Function* aria_print = module->getFunction(func_name);
-        if (!aria_print) {
+        llvm::Function* npk_print = module->getFunction(func_name);
+        if (!npk_print) {
             llvm::FunctionType* print_type = llvm::FunctionType::get(
                 builder.getInt64Ty(),                    // returns bytes written
                 {llvm::PointerType::get(context, 0)},    // takes const char*
                 false                                     // not vararg
             );
-            aria_print = llvm::Function::Create(
+            npk_print = llvm::Function::Create(
                 print_type,
                 llvm::Function::ExternalLinkage,
                 func_name,
@@ -983,8 +983,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        // Call aria_print[ln]_cstr(str) and return result
-        return builder.CreateCall(aria_print, {str_ptr}, "print_call");
+        // Call npk_print[ln]_cstr(str) and return result
+        return builder.CreateCall(npk_print, {str_ptr}, "print_call");
     }
     
     // ====================================================================
@@ -1030,7 +1030,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // Declare the C runtime function if not already declared
-        // Signature: int64_t aria_xxx_write(const char* str)
+        // Signature: int64_t npk_xxx_write(const char* str)
         llvm::Function* stream_func_ptr = module->getFunction(stream_func);
         if (!stream_func_ptr) {
             llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -1574,7 +1574,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return result;
     }
     
-    // Helper to get or declare aria_string_from_cstr_simple
+    // Helper to get or declare npk_string_from_cstr_simple
     auto getOrDeclareStringFromCstr = [&]() -> llvm::Function* {
         llvm::Function* func = module->getFunction("npk_string_from_cstr_simple");
         if (!func) {
@@ -1891,8 +1891,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // Operations: load, store, swap, compare_exchange, fetch_add, fetch_sub
     //
     // Design: atomic_new(initial) creates atomic, methods dispatch to runtime:
-    //   counter.load() → aria_atomic_TYPE_load(&counter, SEQCST)
-    //   counter.store(val) → aria_atomic_TYPE_store(&counter, val, SEQCST)
+    //   counter.load() → npk_atomic_TYPE_load(&counter, SEQCST)
+    //   counter.store(val) → npk_atomic_TYPE_store(&counter, val, SEQCST)
     //   etc.
     
     // atomic_new(initial_value) -> atomic<T>*
@@ -1912,29 +1912,29 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         // Determine the type from the argument
         llvm::Type* arg_type = initial_val->getType();
         std::string runtime_type_name;
-        std::string aria_type_name;
+        std::string npk_type_name;
         
         // Map LLVM type to runtime type name
         if (arg_type->isIntegerTy(8)) {
             runtime_type_name = "int8";
-            aria_type_name = "int8";
+            npk_type_name = "int8";
         } else if (arg_type->isIntegerTy(16)) {
             runtime_type_name = "int16";
-            aria_type_name = "int16";
+            npk_type_name = "int16";
         } else if (arg_type->isIntegerTy(32)) {
             runtime_type_name = "int32";
-            aria_type_name = "int32";
+            npk_type_name = "int32";
         } else if (arg_type->isIntegerTy(64)) {
             runtime_type_name = "int64";
-            aria_type_name = "int64";
+            npk_type_name = "int64";
         } else if (arg_type->isIntegerTy(1)) {
             runtime_type_name = "bool";
-            aria_type_name = "bool";
+            npk_type_name = "bool";
         } else {
             throw std::runtime_error("atomic_new() currently supports int8-64 and bool types");
         }
         
-        // Construct runtime function name: aria_atomic_TYPE_create
+        // Construct runtime function name: npk_atomic_TYPE_create
         std::string runtime_func_name = "npk_atomic_" + runtime_type_name + "_create";
         
         // Get or declare the runtime function
@@ -1957,7 +1957,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             
             llvm::StructType* atomic_type = llvm::StructType::create(context, atomic_struct_name);
             
-            // Signature: AriaAtomicTYPE* aria_atomic_TYPE_create(TYPE initial)
+            // Signature: AriaAtomicTYPE* npk_atomic_TYPE_create(TYPE initial)
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(atomic_type, 0),  // returns atomic ptr
                 {arg_type},                              // takes initial value
@@ -3428,7 +3428,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // WILD MEMORY BUILTINS (Phase 2.2 - Manual Memory Management)
     // ====================================================================
     // Primitive wild memory operations tracked by the borrow checker.
-    // Runtime functions: aria_alloc, aria_free, aria_realloc (wild_alloc.cpp)
+    // Runtime functions: npk_alloc, npk_free, npk_realloc (wild_alloc.cpp)
 
     // alloc(size: int64) -> wild int8@
     // Allocates 'size' bytes of wild (manual) memory
@@ -3437,7 +3437,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("alloc() requires exactly one argument (size)");
         }
 
-        // Get or declare aria_alloc: void* aria_alloc(size_t size)
+        // Get or declare npk_alloc: void* npk_alloc(size_t size)
         llvm::Function* alloc_func = module->getFunction("npk_alloc");
         if (!alloc_func) {
             llvm::FunctionType* alloc_type = llvm::FunctionType::get(
@@ -3474,7 +3474,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("free() requires exactly one argument (pointer)");
         }
 
-        // Get or declare aria_free: void aria_free(void* ptr)
+        // Get or declare npk_free: void npk_free(void* ptr)
         llvm::Function* free_func = module->getFunction("npk_free");
         if (!free_func) {
             llvm::FunctionType* free_type = llvm::FunctionType::get(
@@ -3501,7 +3501,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("realloc() requires exactly two arguments (ptr, new_size)");
         }
 
-        // Get or declare aria_realloc: void* aria_realloc(void* ptr, size_t new_size)
+        // Get or declare npk_realloc: void* npk_realloc(void* ptr, size_t new_size)
         llvm::Function* realloc_func = module->getFunction("npk_realloc");
         if (!realloc_func) {
             llvm::FunctionType* realloc_type = llvm::FunctionType::get(
@@ -3552,7 +3552,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_string_from_cstr_simple");
         if (!func) {
-            // aria_string_from_cstr_simple returns AriaString* directly (aborts on error)
+            // npk_string_from_cstr_simple returns AriaString* directly (aborts on error)
             std::vector<llvm::Type*> params = {llvm::PointerType::get(builder.getInt8Ty(), 0)};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
@@ -3576,7 +3576,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_string_from_char_simple");
         if (!func) {
-            // aria_string_from_char_simple returns AriaString* directly (aborts on error)
+            // npk_string_from_char_simple returns AriaString* directly (aborts on error)
             std::vector<llvm::Type*> params = {builder.getInt8Ty()};  // uint8_t ch
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
@@ -3651,7 +3651,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
 
         llvm::Function* func = module->getFunction("npk_string_concat_simple");
         if (!func) {
-            // aria_string_concat_simple returns AriaString* directly (aborts on error)
+            // npk_string_concat_simple returns AriaString* directly (aborts on error)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(getAriaStringType(), 0),  // AriaString* a
                 llvm::PointerType::get(getAriaStringType(), 0)   // AriaString* b
@@ -3692,7 +3692,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_string_substring_simple");
         if (!func) {
-            // aria_string_substring_simple(AriaString*, i64, i64) -> AriaString*
+            // npk_string_substring_simple(AriaString*, i64, i64) -> AriaString*
             // aborts on out-of-bounds (matches the _simple wrapper convention)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(getAriaStringType(), 0),  // str
@@ -4108,9 +4108,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return str_val;
     };
 
-    // aria_write_file_simple(path: int8*, content: int8*) -> int64
+    // npk_write_file_simple(path: int8*, content: int8*) -> int64
     if (callee_ident->name == "npk_write_file_simple") {
-        ARIA_DBG_STREAM << "[FS DEBUG] aria_write_file_simple codegen called" << std::endl;
+        ARIA_DBG_STREAM << "[FS DEBUG] npk_write_file_simple codegen called" << std::endl;
         
         if (expr->arguments.size() != 2) {
             throw std::runtime_error("npk_write_file_simple() requires two arguments");
@@ -4155,7 +4155,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(func, {path, content}, "write_result");
     }
 
-    // aria_file_exists(path: int8*) -> bool
+    // npk_file_exists(path: int8*) -> bool
     if (callee_ident->name == "npk_file_exists") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("npk_file_exists() requires one argument");
@@ -4175,7 +4175,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(func, {path}, "exists_result");
     }
 
-    // aria_delete_file_simple(path: int8*) -> int64
+    // npk_delete_file_simple(path: int8*) -> int64
     if (callee_ident->name == "npk_delete_file_simple") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("npk_delete_file_simple() requires one argument");
@@ -4195,7 +4195,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         return builder.CreateCall(func, {path}, "delete_result");
     }
 
-    // aria_read_file_simple(path: int8*) -> string
+    // npk_read_file_simple(path: int8*) -> string
     if (callee_ident->name == "npk_read_file_simple") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("npk_read_file_simple() requires one argument");
@@ -4842,7 +4842,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     
     // ====================================================================
     // LBIM EXPONENTIATION — int*_pow(base, exp_int64) -> int*
-    // Binary exponentiation via runtime: aria_lbim_pow{128,256,512,1024}
+    // Binary exponentiation via runtime: npk_lbim_pow{128,256,512,1024}
     // C ABI: struct-return-by-value, struct base by-value, uint64_t exp
     // LLVM lowering: sret + byval for large structs
     // ====================================================================
@@ -4898,7 +4898,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         // Ensure exp is i64
         exp_val = builder.CreateZExtOrTrunc(exp_val, i64Type);
         
-        // C ABI: void aria_lbim_pow*(result*, base*, uint64_t exp)
+        // C ABI: void npk_lbim_pow*(result*, base*, uint64_t exp)
         // Using sret + byval pattern matching generateLBIMDiv
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             builder.getVoidTy(), {ptrType, ptrType, i64Type}, false);
@@ -4940,7 +4940,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // SysV x86-64 ABI: fix256 is 32 bytes (>16), so returned via hidden sret pointer.
-        // C ABI: void aria_fix256_from_i64(fix256* sret, int64_t)
+        // C ABI: void npk_fix256_from_i64(fix256* sret, int64_t)
         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),
@@ -4987,7 +4987,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // SysV x86-64 ABI: fix256 is 32 bytes (>16), so returned via hidden sret pointer.
-        // C ABI: void aria_fix256_from_f64(fix256* sret, double)
+        // C ABI: void npk_fix256_from_f64(fix256* sret, double)
         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),
@@ -5037,7 +5037,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // SysV x86-64 ABI: fix256 is 32 bytes (>16), so passed via byval pointer.
-        // C ABI: int64_t aria_fix256_to_i64(const fix256* byval)
+        // C ABI: int64_t npk_fix256_to_i64(const fix256* byval)
         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             builder.getInt64Ty(),
@@ -5082,7 +5082,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // SysV x86-64 ABI: fix256 is 32 bytes (>16), so passed via byval pointer.
-        // C ABI: double aria_fix256_to_f64(const fix256* byval)
+        // C ABI: double npk_fix256_to_f64(const fix256* byval)
         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
         llvm::FunctionType* funcType = llvm::FunctionType::get(
             builder.getDoubleTy(),
@@ -5304,7 +5304,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Value* a = codegenExpressionNode(expr->arguments[0].get(), this);
         
-        // Call aria_nit_is_err (returns i8 0/1), truncate to i1 for bool
+        // Call npk_nit_is_err (returns i8 0/1), truncate to i1 for bool
         llvm::Function* func = module->getFunction("npk_nit_is_err");
         if (!func) {
             llvm::FunctionType* funcType = llvm::FunctionType::get(builder.getInt8Ty(), {builder.getInt8Ty()}, false);
@@ -6160,7 +6160,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Function* func = module->getFunction("npk_env_get_builtin");
         if (!func) {
-            // aria_env_get_builtin(AriaString name) -> AriaString*
+            // npk_env_get_builtin(AriaString name) -> AriaString*
             std::vector<llvm::Type*> params = {getAriaStringType()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 llvm::PointerType::get(getAriaStringType(), 0), params, false);
@@ -6179,7 +6179,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         llvm::Function* func = module->getFunction("npk_sort_lines");
         if (!func) {
-            // aria_sort_lines(AriaString* content) -> AriaString*
+            // npk_sort_lines(AriaString* content) -> AriaString*
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(getAriaStringType(), 0)
             };
@@ -6202,10 +6202,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_new() requires one argument (element_size)");
         }
 
-        // Get or declare aria_array_new_simple
+        // Get or declare npk_array_new_simple
         llvm::Function* func = module->getFunction("npk_array_new_simple");
         if (!func) {
-            // AriaArray* aria_array_new_simple(size_t element_size, int type_id)
+            // AriaArray* npk_array_new_simple(size_t element_size, int type_id)
             std::vector<llvm::Type*> params = {
                 builder.getInt64Ty(),  // element_size (size_t)
                 builder.getInt32Ty()   // type_id
@@ -6232,10 +6232,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_length() requires one argument (array)");
         }
 
-        // Get or declare aria_array_length
+        // Get or declare npk_array_length
         llvm::Function* func = module->getFunction("npk_array_length");
         if (!func) {
-            // size_t aria_array_length(const AriaArray* array)
+            // size_t npk_array_length(const AriaArray* array)
             std::vector<llvm::Type*> params = {builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt64Ty(), params, false);
@@ -6253,10 +6253,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_push() requires two arguments (array, value)");
         }
 
-        // Get or declare aria_array_push_simple
+        // Get or declare npk_array_push_simple
         llvm::Function* func = module->getFunction("npk_array_push_simple");
         if (!func) {
-            // void aria_array_push_simple(AriaArray* array, const void* value)
+            // void npk_array_push_simple(AriaArray* array, const void* value)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getVoidTy(), params, false);
@@ -6284,10 +6284,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_get() requires two arguments (array, index)");
         }
 
-        // Get or declare aria_array_get_simple
+        // Get or declare npk_array_get_simple
         llvm::Function* func = module->getFunction("npk_array_get_simple");
         if (!func) {
-            // void* aria_array_get_simple(AriaArray* array, size_t index)
+            // void* npk_array_get_simple(AriaArray* array, size_t index)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getPtrTy(), params, false);
@@ -6311,10 +6311,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_set() requires three arguments (array, index, value)");
         }
 
-        // Get or declare aria_array_set_simple
+        // Get or declare npk_array_set_simple
         llvm::Function* func = module->getFunction("npk_array_set_simple");
         if (!func) {
-            // void aria_array_set_simple(AriaArray* array, size_t index, const void* value)
+            // void npk_array_set_simple(AriaArray* array, size_t index, const void* value)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getInt64Ty(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getVoidTy(), params, false);
@@ -6348,10 +6348,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("array_pop() requires one argument (array)");
         }
 
-        // Get or declare aria_array_pop_simple
+        // Get or declare npk_array_pop_simple
         llvm::Function* func = module->getFunction("npk_array_pop_simple");
         if (!func) {
-            // void aria_array_pop_simple(AriaArray* array, void* out_value)
+            // void npk_array_pop_simple(AriaArray* array, void* out_value)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getVoidTy(), params, false);
@@ -6380,10 +6380,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_new() requires two arguments (key_size, value_size)");
         }
 
-        // Get or declare aria_map_new_simple
+        // Get or declare npk_map_new_simple
         llvm::Function* func = module->getFunction("npk_map_new_simple");
         if (!func) {
-            // AriaMap* aria_map_new_simple(size_t key_size, size_t value_size)
+            // AriaMap* npk_map_new_simple(size_t key_size, size_t value_size)
             std::vector<llvm::Type*> params = {builder.getInt64Ty(), builder.getInt64Ty()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getPtrTy(), params, false);
@@ -6411,10 +6411,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_length() requires one argument (map)");
         }
 
-        // Get or declare aria_map_length
+        // Get or declare npk_map_length
         llvm::Function* func = module->getFunction("npk_map_length");
         if (!func) {
-            // size_t aria_map_length(const AriaMap* map)
+            // size_t npk_map_length(const AriaMap* map)
             std::vector<llvm::Type*> params = {builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt64Ty(), params, false);
@@ -6432,10 +6432,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_insert() requires three arguments (map, key, value)");
         }
 
-        // Get or declare aria_map_insert_simple
+        // Get or declare npk_map_insert_simple
         llvm::Function* func = module->getFunction("npk_map_insert_simple");
         if (!func) {
-            // void aria_map_insert_simple(AriaMap* map, const void* key, const void* value)
+            // void npk_map_insert_simple(AriaMap* map, const void* key, const void* value)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getVoidTy(), params, false);
@@ -6471,10 +6471,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_get() requires two arguments (map, key)");
         }
 
-        // Get or declare aria_map_get_simple
+        // Get or declare npk_map_get_simple
         llvm::Function* func = module->getFunction("npk_map_get_simple");
         if (!func) {
-            // void* aria_map_get_simple(AriaMap* map, const void* key)
+            // void* npk_map_get_simple(AriaMap* map, const void* key)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getPtrTy(), params, false);
@@ -6501,10 +6501,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_has() requires two arguments (map, key)");
         }
 
-        // Get or declare aria_map_has
+        // Get or declare npk_map_has
         llvm::Function* func = module->getFunction("npk_map_has");
         if (!func) {
-            // bool aria_map_has(const AriaMap* map, const void* key)
+            // bool npk_map_has(const AriaMap* map, const void* key)
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt1Ty(), params, false);
@@ -6531,10 +6531,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("map_remove() requires two arguments (map, key)");
         }
 
-        // Get or declare aria_map_remove (we'll use the full Result version since simple version doesn't exist)
+        // Get or declare npk_map_remove (we'll use the full Result version since simple version doesn't exist)
         llvm::Function* func = module->getFunction("npk_map_remove");
         if (!func) {
-            // AriaResultVoid aria_map_remove(AriaMap* map, const void* key)
+            // AriaResultVoid npk_map_remove(AriaMap* map, const void* key)
             // For now, we'll create a void version wrapper
             std::vector<llvm::Type*> params = {builder.getPtrTy(), builder.getPtrTy()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
@@ -6569,7 +6569,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_trit_and");
         if (!func) {
-            // int8_t aria_trit_and(int8_t a, int8_t b)
+            // int8_t npk_trit_and(int8_t a, int8_t b)
             std::vector<llvm::Type*> params = {builder.getInt8Ty(), builder.getInt8Ty()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt8Ty(), params, false);
@@ -6662,7 +6662,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_tbb8_from_int");
         if (!func) {
-            // int8_t aria_tbb8_from_int(int32_t value)
+            // int8_t npk_tbb8_from_int(int32_t value)
             std::vector<llvm::Type*> params = {builder.getInt32Ty()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt8Ty(), params, false);
@@ -6686,7 +6686,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         
         llvm::Function* func = module->getFunction("npk_tbb8_to_int");
         if (!func) {
-            // int32_t aria_tbb8_to_int(int8_t value)
+            // int32_t npk_tbb8_to_int(int8_t value)
             std::vector<llvm::Type*> params = {builder.getInt8Ty()};
             llvm::FunctionType* func_type = llvm::FunctionType::get(
                 builder.getInt32Ty(), params, false);
@@ -6769,16 +6769,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // ====================================================================
     
     // readFile(path: string) -> string
-    // Calls aria_read_file_simple which returns AriaString directly
+    // Calls npk_read_file_simple which returns AriaString directly
     if (callee_ident->name == "readFile") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("readFile() requires one argument (path)");
         }
         
-        // Get or declare aria_read_file_simple
+        // Get or declare npk_read_file_simple
         llvm::Function* func = module->getFunction("npk_read_file_simple");
         if (!func) {
-            // AriaString aria_read_file_simple(const char* path)
+            // AriaString npk_read_file_simple(const char* path)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(builder.getInt8Ty(), 0)  // const char*
             };
@@ -6809,10 +6809,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("writeFile() requires two arguments (path, content)");
         }
         
-        // Get or declare aria_write_file_simple
+        // Get or declare npk_write_file_simple
         llvm::Function* func = module->getFunction("npk_write_file_simple");
         if (!func) {
-            // int64_t aria_write_file_simple(const char* path, const char* content)
+            // int64_t npk_write_file_simple(const char* path, const char* content)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(builder.getInt8Ty(), 0),  // const char* path
                 llvm::PointerType::get(builder.getInt8Ty(), 0)   // const char* content
@@ -6847,10 +6847,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("allocate() requires one argument (size)");
         }
         
-        // Get or declare aria_alloc
+        // Get or declare npk_alloc
         llvm::Function* func = module->getFunction("npk_alloc");
         if (!func) {
-            // void* aria_alloc(size_t size)
+            // void* npk_alloc(size_t size)
             std::vector<llvm::Type*> params = {
                 builder.getInt64Ty()  // size_t size (using i64 for size_t)
             };
@@ -6878,10 +6878,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("fileExists() requires one argument (path)");
         }
         
-        // Get or declare aria_file_exists
+        // Get or declare npk_file_exists
         llvm::Function* func = module->getFunction("npk_file_exists");
         if (!func) {
-            // bool aria_file_exists(const char* path)
+            // bool npk_file_exists(const char* path)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(builder.getInt8Ty(), 0)
             };
@@ -6907,10 +6907,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("fileSize() requires one argument (path)");
         }
         
-        // Get or declare aria_file_size
+        // Get or declare npk_file_size
         llvm::Function* func = module->getFunction("npk_file_size");
         if (!func) {
-            // int64_t aria_file_size(const char* path)
+            // int64_t npk_file_size(const char* path)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(builder.getInt8Ty(), 0)
             };
@@ -6936,10 +6936,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             throw std::runtime_error("deleteFile() requires one argument (path)");
         }
         
-        // Get or declare aria_delete_file_simple
+        // Get or declare npk_delete_file_simple
         llvm::Function* func = module->getFunction("npk_delete_file_simple");
         if (!func) {
-            // int64_t aria_delete_file_simple(const char* path)
+            // int64_t npk_delete_file_simple(const char* path)
             std::vector<llvm::Type*> params = {
                 llvm::PointerType::get(builder.getInt8Ty(), 0)
             };
@@ -7549,9 +7549,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         {
             auto type_it = var_aria_types.find(callee_ident->name);
             if (type_it != var_aria_types.end()) {
-                const std::string& aria_type = type_it->second;
-                if (aria_type.size() > 9 && aria_type.substr(0, 9) == "func_ptr:") {
-                    std::string ret_str = aria_type.substr(9);
+                const std::string& npk_type = type_it->second;
+                if (npk_type.size() > 9 && npk_type.substr(0, 9) == "func_ptr:") {
+                    std::string ret_str = npk_type.substr(9);
                     if (ret_str == "void") {
                         return_type = llvm::Type::getVoidTy(context);
                     } else {
@@ -7727,8 +7727,8 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 
                 if (needs_data_extraction) {
                     // Load AriaString struct from the AriaString* pointer, then extract .data
-                    llvm::StructType* aria_string_type = getAriaStringType();
-                    llvm::Value* str_struct = builder.CreateLoad(aria_string_type, arg_value, "str_struct_ffi");
+                    llvm::StructType* npk_string_type = getAriaStringType();
+                    llvm::Value* str_struct = builder.CreateLoad(npk_string_type, arg_value, "str_struct_ffi");
                     arg_value = builder.CreateExtractValue(str_struct, 0, "str_data_ffi");
                 }
             }
@@ -7928,9 +7928,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             auto ffi_ret_it = var_aria_types.find("__ffi_ret_" + callee_name);
             if (ffi_ret_it != var_aria_types.end() && ffi_ret_it->second == "string") {
                 // call_result is a raw char* from C. Wrap into AriaString {ptr, i64}.
-                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
-                if (!aria_string_type) {
-                    aria_string_type = llvm::StructType::create(context,
+                llvm::StructType* npk_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
+                if (!npk_string_type) {
+                    npk_string_type = llvm::StructType::create(context,
                         {builder.getPtrTy(), builder.getInt64Ty()}, "struct.NpkString");
                 }
 
@@ -7958,9 +7958,9 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
 
                 // Populate the GC-allocated AriaString struct
                 builder.CreateStore(data_heap,
-                    builder.CreateStructGEP(aria_string_type, str_heap, 0, "ffi_str_data"));
+                    builder.CreateStructGEP(npk_string_type, str_heap, 0, "ffi_str_data"));
                 builder.CreateStore(str_len,
-                    builder.CreateStructGEP(aria_string_type, str_heap, 1, "ffi_str_len"));
+                    builder.CreateStructGEP(npk_string_type, str_heap, 1, "ffi_str_len"));
 
                 // Use the GC-allocated AriaString pointer as the result.
                 // Skip Optional wrapping — the string is always valid (never NULL).

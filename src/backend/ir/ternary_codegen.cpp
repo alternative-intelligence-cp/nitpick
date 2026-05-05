@@ -15,7 +15,7 @@
  * - nyte:  5 nits packed in 16 bits (Biased-Radix format)
  *
  * For tryte/nyte, we emit calls to the C runtime intrinsics defined in
- * ternary_ops.cpp (aria_tryte_add, aria_nyte_add, etc.) because:
+ * ternary_ops.cpp (npk_tryte_add, npk_nyte_add, etc.) because:
  * - tryte uses Split-Byte packing (two 5-trit trybbles)
  * - nyte uses Biased-Radix storage (value + 29524 bias)
  * - Both require LUT-based arithmetic with proper carry propagation
@@ -330,14 +330,14 @@ llvm::Value* TernaryCodegen::generateMod(llvm::Value* lhs, llvm::Value* rhs, Typ
         // CRITICAL: Runtime functions implement balanced remainder, not truncating modulo
         llvm::Function* modFn = nullptr;
         if (typeName == "tryte") {
-            ARIA_DBG_STREAM << "[TERNARY MOD] Getting aria_tryte_mod" << std::endl;
+            ARIA_DBG_STREAM << "[TERNARY MOD] Getting npk_tryte_mod" << std::endl;
             if (!fn_tryte_mod) {
                 fn_tryte_mod = getOrDeclareIntrinsic("npk_tryte_mod", true);
                 ARIA_DBG_STREAM << "[TERNARY MOD] Declared fn_tryte_mod=" << (void*)fn_tryte_mod << std::endl;
             }
             modFn = fn_tryte_mod;
         } else {  // nyte
-            ARIA_DBG_STREAM << "[TERNARY MOD] Getting aria_nyte_mod" << std::endl;
+            ARIA_DBG_STREAM << "[TERNARY MOD] Getting npk_nyte_mod" << std::endl;
             if (!fn_nyte_mod) {
                 fn_nyte_mod = getOrDeclareIntrinsic("npk_nyte_mod", true);
                 ARIA_DBG_STREAM << "[TERNARY MOD] Declared fn_nyte_mod=" << (void*)fn_nyte_mod << std::endl;
@@ -412,7 +412,7 @@ llvm::Value* TernaryCodegen::generateNeg(llvm::Value* operand, Type* type) {
     // Atomic type (trit/nit): call runtime intrinsic
     llvm::Function* negFn = nullptr;
     if (typeName == "trit") {
-        if (!fn_trit_not) {  // Note: aria_trit_not is same as aria_trit_neg
+        if (!fn_trit_not) {  // Note: npk_trit_not is same as npk_trit_neg
             fn_trit_not = getOrDeclareIntrinsic("npk_trit_neg", false, true);
         }
         negFn = fn_trit_not;

@@ -11,7 +11,7 @@
 #include <limits.h>
 
 #ifdef LLDB_FOUND
-#include "tools/debugger/aria_formatters.h"
+#include "tools/debugger/npk_formatters.h"
 #include <lldb/API/LLDB.h>
 using namespace npk::debugger;
 #endif
@@ -87,9 +87,9 @@ TEST_CASE(formatter_registration_creates_category) {
     ASSERT(success, "Formatter registration should succeed");
     
     // Verify category exists and is enabled
-    lldb::SBTypeCategory aria_category = debugger.GetCategory("aria");
-    ASSERT(aria_category.IsValid(), "Aria category should be created");
-    ASSERT(aria_category.GetEnabled(), "Aria category should be enabled");
+    lldb::SBTypeCategory npk_category = debugger.GetCategory("aria");
+    ASSERT(npk_category.IsValid(), "Aria category should be created");
+    ASSERT(npk_category.GetEnabled(), "Aria category should be enabled");
     
     // Cleanup
     lldb::SBDebugger::Destroy(debugger);

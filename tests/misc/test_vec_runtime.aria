@@ -1,21 +1,21 @@
 // Vec<T> Phase 2: Runtime Integration Test
-// Testing direct calls to aria_array_* runtime functions
+// Testing direct calls to npk_array_* runtime functions
 
 // Extern declarations for runtime array functions
-// AriaArray* aria_array_new_simple(size_t element_size, int type_id)
-extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+// AriaArray* npk_array_new_simple(size_t element_size, int type_id)
+extern func:npk_array_new_simple = wild int8*(int64:element_size, int32:type_id);
 
-// size_t aria_array_length(const AriaArray* array)
-extern func:aria_array_length = int64(wild int8*:arr);
+// size_t npk_array_length(const AriaArray* array)
+extern func:npk_array_length = int64(wild int8*:arr);
 
-// void aria_array_free(AriaArray* array) - no-op for GC
-extern func:aria_array_free = void(wild int8*:arr);
+// void npk_array_free(AriaArray* array) - no-op for GC
+extern func:npk_array_free = void(wild int8*:arr);
 
-// void aria_array_push_simple(AriaArray* array, const void* value)
-extern func:aria_array_push_simple = void(wild int8*:arr, wild int8*:val);
+// void npk_array_push_simple(AriaArray* array, const void* value)
+extern func:npk_array_push_simple = void(wild int8*:arr, wild int8*:val);
 
-// void aria_array_pop_simple(AriaArray* array, void* out_value)
-extern func:aria_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
+// void npk_array_pop_simple(AriaArray* array, void* out_value)
+extern func:npk_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
 
 // Test Vec<int32> operations
 func:main = int32() {
@@ -24,7 +24,7 @@ func:main = int32() {
     int32:type_id = 1i32;
     
     // Create new array
-    wild int8->:array_ptr = aria_array_new_simple(elem_size, type_id);
+    wild int8->:array_ptr = npk_array_new_simple(elem_size, type_id);
     
     // Check if array creation failed
     if (array_ptr == NULL) {
@@ -32,13 +32,13 @@ func:main = int32() {
     }
     
     // Check length is 0
-    int64:len = aria_array_length(array_ptr);
+    int64:len = npk_array_length(array_ptr);
     if (len != 0i64) {
         exit 1i32;  // FAIL: Initial length should be 0 (got: len)
     }
     
     // Clean up (no-op for GC, but satisfies borrow checker)
-    _ = aria_array_free(array_ptr);
+    _ = npk_array_free(array_ptr);
     
     exit 0;  // SUCCESS
 };

@@ -7,14 +7,14 @@
 //          0 direct extern calls; backed by libaria_libc_process.so
 
 // ── aria-libc shims ──────────────────────────────────────────────────────────
-extern "aria_libc_process" {
-    func:aria_libc_process_signal_register = int32(int32:signo);
-    func:aria_libc_process_signal_pending  = int32(int32:signo);
-    func:aria_libc_process_signal_ignore   = int32(int32:signo);
-    func:aria_libc_process_signal_restore  = int32(int32:signo);
-    func:aria_libc_process_SIGQUIT = int32();
-    func:aria_libc_process_SIGUSR1 = int32();
-    func:aria_libc_process_SIGUSR2 = int32();
+extern "npk_libc_process" {
+    func:npk_libc_process_signal_register = int32(int32:signo);
+    func:npk_libc_process_signal_pending  = int32(int32:signo);
+    func:npk_libc_process_signal_ignore   = int32(int32:signo);
+    func:npk_libc_process_signal_restore  = int32(int32:signo);
+    func:npk_libc_process_SIGQUIT = int32();
+    func:npk_libc_process_SIGUSR1 = int32();
+    func:npk_libc_process_SIGUSR2 = int32();
 }
 
 // POSIX signal numbers
@@ -27,19 +27,19 @@ int32:SIGUSR2 = 12;
 
 Type:Signal = {
     func:register = int32(int32:signo) {
-        pass aria_libc_process_signal_register(signo);
+        pass npk_libc_process_signal_register(signo);
     };
 
     func:pending = int32(int32:signo) {
-        pass aria_libc_process_signal_pending(signo);
+        pass npk_libc_process_signal_pending(signo);
     };
 
     func:ignore = int32(int32:signo) {
-        pass aria_libc_process_signal_ignore(signo);
+        pass npk_libc_process_signal_ignore(signo);
     };
 
     func:restore = int32(int32:signo) {
-        pass aria_libc_process_signal_restore(signo);
+        pass npk_libc_process_signal_restore(signo);
     };
 
     struct:interface = {

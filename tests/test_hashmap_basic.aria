@@ -2,16 +2,16 @@
 // Testing that HashMap<K,V> type is recognized and fields are mutable
 
 // FFI declarations for HashMap runtime
-extern func:aria_map_new_simple = wild int8*(int64:key_size, int64:value_size);
-extern func:aria_map_length = int64(wild int8*:map);
-extern func:aria_map_free = void(wild int8*:map);
+extern func:npk_map_new_simple = wild int8*(int64:key_size, int64:value_size);
+extern func:npk_map_length = int64(wild int8*:map);
+extern func:npk_map_free = void(wild int8*:map);
 
 // Helper to create initialized HashMap
 func:HashMap_int32_int64_new = HashMap<int32, int64>() {
     HashMap<int32, int64>:map;
     
     // Call runtime to create map (key_size=4, value_size=8)
-    map.entries = aria_map_new_simple(4i64, 8i64);
+    map.entries = npk_map_new_simple(4i64, 8i64);
     map.capacity = 16i64;
     map.length = 0i64;
     map.key_size = 4i64;

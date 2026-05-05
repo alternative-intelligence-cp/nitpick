@@ -26,8 +26,8 @@ using Type = npk::sema::Type;
  * ternary_ops.cpp for proper Split-Byte packing and LUT-based arithmetic.
  *
  * Runtime Intrinsics (ARIA-013):
- * - aria_tryte_add, aria_tryte_sub, aria_tryte_mul, aria_tryte_div, aria_tryte_neg
- * - aria_nyte_add, aria_nyte_sub, aria_nyte_mul, aria_nyte_div, aria_nyte_neg
+ * - npk_tryte_add, npk_tryte_sub, npk_tryte_mul, npk_tryte_div, npk_tryte_neg
+ * - npk_nyte_add, npk_nyte_sub, npk_nyte_mul, npk_nyte_div, npk_nyte_neg
  *
  * Valid Ranges:
  * - trit:  [-1, +1]
@@ -166,7 +166,7 @@ private:
 
     /**
      * @brief Get or declare a runtime intrinsic function
-     * @param name Function name (e.g., "aria_tryte_add")
+     * @param name Function name (e.g., "npk_tryte_add")
      * @param isBinaryOp True for binary ops, false for unary
      * @param isAtomic True for trit/nit (i8), false for tryte/nyte (i16)
      */

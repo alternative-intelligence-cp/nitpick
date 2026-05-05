@@ -21,19 +21,19 @@
 //   Actor.destroy(actor);
 
 // ── aria-libc shims ──────────────────────────────────────────────────────────
-extern func:aria_libc_actor_spawn = int64(wild ?*:behavior_func);
+extern func:npk_libc_actor_spawn = int64(wild ?*:behavior_func);
 
-extern "aria_libc_thread" {
-    func:aria_libc_actor_send     = int32(int64:actor_handle, int64:message);
-    func:aria_libc_actor_try_send = int32(int64:actor_handle, int64:message);
-    func:aria_libc_actor_mailbox  = int64(int64:actor_handle);
-    func:aria_libc_actor_pending  = int32(int64:actor_handle);
-    func:aria_libc_actor_is_alive = int32(int64:actor_handle);
-    func:aria_libc_actor_stop     = int32(int64:actor_handle);
-    func:aria_libc_actor_destroy  = int32(int64:actor_handle);
-    func:aria_libc_set_reply_channel = void(int64:ch);
-    func:aria_libc_get_reply_channel = int64();
-    func:aria_libc_reply          = int32(int64:value);
+extern "npk_libc_thread" {
+    func:npk_libc_actor_send     = int32(int64:actor_handle, int64:message);
+    func:npk_libc_actor_try_send = int32(int64:actor_handle, int64:message);
+    func:npk_libc_actor_mailbox  = int64(int64:actor_handle);
+    func:npk_libc_actor_pending  = int32(int64:actor_handle);
+    func:npk_libc_actor_is_alive = int32(int64:actor_handle);
+    func:npk_libc_actor_stop     = int32(int64:actor_handle);
+    func:npk_libc_actor_destroy  = int32(int64:actor_handle);
+    func:npk_libc_set_reply_channel = void(int64:ch);
+    func:npk_libc_get_reply_channel = int64();
+    func:npk_libc_reply          = int32(int64:value);
 }
 
 Type:Actor = {
@@ -41,62 +41,62 @@ Type:Actor = {
     // behavior_func: called for each message with signature (int64:msg) -> NIL
     // Returns actor handle (>= 0) on success, -1 on error.
     func:spawn = int64(?->:behavior_func) {
-        pass aria_libc_actor_spawn(behavior_func);
+        pass npk_libc_actor_spawn(behavior_func);
     };
 
     // Send a message to the actor's mailbox. Blocks if mailbox is full.
     // Returns 0 on success, -1 if actor is stopped or mailbox full.
     func:send = int32(int64:actor_handle, int64:message) {
-        pass aria_libc_actor_send(actor_handle, message);
+        pass npk_libc_actor_send(actor_handle, message);
     };
 
     // Try to send without blocking.
     // Returns 0 on success, -1 if mailbox full or actor stopped.
     func:try_send = int32(int64:actor_handle, int64:message) {
-        pass aria_libc_actor_try_send(actor_handle, message);
+        pass npk_libc_actor_try_send(actor_handle, message);
     };
 
     // Get the mailbox channel handle (for advanced channel operations).
     func:mailbox = int64(int64:actor_handle) {
-        pass aria_libc_actor_mailbox(actor_handle);
+        pass npk_libc_actor_mailbox(actor_handle);
     };
 
     // Get count of pending messages in mailbox.
     func:pending = int32(int64:actor_handle) {
-        pass aria_libc_actor_pending(actor_handle);
+        pass npk_libc_actor_pending(actor_handle);
     };
 
     // Check if actor is running. Returns 1 if alive, 0 if stopped.
     func:is_alive = int32(int64:actor_handle) {
-        pass aria_libc_actor_is_alive(actor_handle);
+        pass npk_libc_actor_is_alive(actor_handle);
     };
 
     // Stop an actor gracefully (close mailbox, join thread).
     // Returns 0 on success.
     func:stop = int32(int64:actor_handle) {
-        pass aria_libc_actor_stop(actor_handle);
+        pass npk_libc_actor_stop(actor_handle);
     };
 
     // Destroy actor (stop + free all resources).
     // Returns 0 on success.
     func:destroy = int32(int64:actor_handle) {
-        pass aria_libc_actor_destroy(actor_handle);
+        pass npk_libc_actor_destroy(actor_handle);
     };
 
     // Set the global reply channel for actor behaviors.
     func:set_reply_channel = NIL(int64:ch) {
-        aria_libc_set_reply_channel(ch);
+        npk_libc_set_reply_channel(ch);
         pass NIL;
     };
 
     // Get the global reply channel handle.
     func:get_reply_channel = int64() {
-        pass aria_libc_get_reply_channel();
+        pass npk_libc_get_reply_channel();
     };
 
     // Send a value to the global reply channel.
     // Returns 0 on success, -1 if no reply channel set.
     func:reply = int32(int64:value) {
-        pass aria_libc_reply(value);
+        pass npk_libc_reply(value);
     };
 };

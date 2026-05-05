@@ -37,11 +37,11 @@ extern "C" {
  * Linked list node containing a memory region for bump allocation.
  * Blocks are typically 4KB but can be custom-sized for large allocations.
  */
-typedef struct aria_arena_block {
-    struct aria_arena_block* next;  // Next block in chain (NULL = end)
+typedef struct npk_arena_block {
+    struct npk_arena_block* next;  // Next block in chain (NULL = end)
     uint8_t* memory;                // Pointer to allocatable memory
     size_t capacity;                // Total usable size of this block
-} aria_arena_block;
+} npk_arena_block;
 
 /**
  * Arena allocator handle
@@ -49,9 +49,9 @@ typedef struct aria_arena_block {
  * Manages a chain of blocks with pointer-bump allocation.
  * Thread-local by design (not thread-safe).
  */
-typedef struct aria_arena {
-    aria_arena_block* head;         // First block (kept for reset)
-    aria_arena_block* current;      // Current active block
+typedef struct npk_arena {
+    npk_arena_block* head;         // First block (kept for reset)
+    npk_arena_block* current;      // Current active block
     size_t current_offset;          // Offset into current block
     size_t default_block_size;      // Size for new blocks (typically 4096)
     
@@ -59,7 +59,7 @@ typedef struct aria_arena {
     size_t total_allocated_user;    // Bytes requested by user
     size_t total_reserved_sys;      // Bytes allocated from OS
     size_t num_blocks;              // Total blocks in chain
-} aria_arena;
+} npk_arena;
 
 /**
  * Arena creation error codes
@@ -76,7 +76,7 @@ typedef enum {
  * Contains either a valid arena pointer or error details.
  */
 typedef struct {
-    aria_arena* arena;              // Arena handle (NULL if error)
+    npk_arena* arena;              // Arena handle (NULL if error)
     AriaArenaError error_code;      // Error code (0 = success)
     size_t requested_capacity;      // Capacity parameter (diagnostic)
 } AriaArenaResult;
@@ -96,14 +96,14 @@ typedef struct {
  * block is allocated.
  * 
  * Example:
- *   AriaArenaResult res = aria_arena_new(8192);
- *   if (aria_arena_result_is_ok(res)) {
- *       aria_arena* arena = res.arena;
+ *   AriaArenaResult res = npk_arena_new(8192);
+ *   if (npk_arena_result_is_ok(res)) {
+ *       npk_arena* arena = res.arena;
  *       // Use arena...
- *       aria_arena_destroy(arena);
+ *       npk_arena_destroy(arena);
  *   }
  */
-AriaArenaResult aria_arena_new(size_t initial_capacity);
+AriaArenaResult npk_arena_new(size_t initial_capacity);
 
 /**
  * Create arena with custom block size
@@ -117,7 +117,7 @@ AriaArenaResult aria_arena_new(size_t initial_capacity);
  * - Large blocks (64KB): Less overhead, potential waste
  * - Default (4KB): Good balance for most workloads
  */
-AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t block_size);
+AriaArenaResult npk_arena_new_with_block_size(size_t initial_capacity, size_t block_size);
 
 /**
  * Reset arena for reuse (retain capacity)
@@ -129,7 +129,7 @@ AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t b
  * 
  * This is the KEY optimization for server loops:
  *   while (handle_request()) {
- *       aria_arena_reset(arena);  // Zero malloc calls!
+ *       npk_arena_reset(arena);  // Zero malloc calls!
  *       // Process request using arena...
  *   }
  * 
@@ -137,7 +137,7 @@ AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t b
  * The Aria borrow checker should treat this as a mutable borrow that
  * invalidates all previous loans.
  */
-void aria_arena_reset(aria_arena* arena);
+void npk_arena_reset(npk_arena* arena);
 
 /**
  * Reset arena and free excess capacity
@@ -150,9 +150,9 @@ void aria_arena_reset(aria_arena* arena);
  * 
  * Example:
  *   // Keep first 64KB, free the rest
- *   aria_arena_reset_limit(arena, 65536);
+ *   npk_arena_reset_limit(arena, 65536);
  */
-void aria_arena_reset_limit(aria_arena* arena, size_t max_retain);
+void npk_arena_reset_limit(npk_arena* arena, size_t max_retain);
 
 /**
  * Destroy arena and free all memory
@@ -164,7 +164,7 @@ void aria_arena_reset_limit(aria_arena* arena, size_t max_retain);
  * 
  * After this call, the arena pointer is invalid.
  */
-void aria_arena_destroy(aria_arena* arena);
+void npk_arena_destroy(npk_arena* arena);
 
 // ============================================================================
 // Arena Allocation Functions
@@ -185,13 +185,13 @@ void aria_arena_destroy(aria_arena* arena);
  * a dedicated block to avoid wasting standard blocks.
  * 
  * Example:
- *   AriaAllocResult res = aria_arena_alloc(arena, 64, 8);
- *   if (aria_alloc_result_is_ok(res)) {
+ *   AriaAllocResult res = npk_arena_alloc(arena, 64, 8);
+ *   if (npk_alloc_result_is_ok(res)) {
  *       void* ptr = res.value;
  *       // Use ptr (valid until arena reset/destroy)
  *   }
  */
-AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align);
+AriaAllocResult npk_arena_alloc(npk_arena* arena, size_t size, size_t align);
 
 /**
  * Allocate array from arena with result
@@ -206,9 +206,9 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align);
  * 
  * Example:
  *   // Allocate 100 int64_t with 8-byte alignment
- *   AriaAllocResult res = aria_arena_alloc_array(arena, 8, 100, 8);
+ *   AriaAllocResult res = npk_arena_alloc_array(arena, 8, 100, 8);
  */
-AriaAllocResult aria_arena_alloc_array(aria_arena* arena, size_t elem_size, size_t count, size_t align);
+AriaAllocResult npk_arena_alloc_array(npk_arena* arena, size_t elem_size, size_t count, size_t align);
 
 /**
  * Allocate zeroed memory from arena
@@ -218,9 +218,9 @@ AriaAllocResult aria_arena_alloc_array(aria_arena* arena, size_t elem_size, size
  * @param align Alignment requirement
  * @return Result containing zeroed pointer or error
  * 
- * Like aria_arena_alloc but guarantees zero-initialization.
+ * Like npk_arena_alloc but guarantees zero-initialization.
  */
-AriaAllocResult aria_arena_alloc_zeroed(aria_arena* arena, size_t size, size_t align);
+AriaAllocResult npk_arena_alloc_zeroed(npk_arena* arena, size_t size, size_t align);
 
 // ============================================================================
 // Arena Query Functions
@@ -236,7 +236,7 @@ AriaAllocResult aria_arena_alloc_zeroed(aria_arena* arena, size_t size, size_t a
  * 
  * Useful for diagnostics and tuning.
  */
-void aria_arena_get_stats(const aria_arena* arena, 
+void npk_arena_get_stats(const npk_arena* arena, 
                           size_t* total_allocated_user,
                           size_t* total_reserved_sys,
                           size_t* num_blocks);
@@ -249,7 +249,7 @@ void aria_arena_get_stats(const aria_arena* arena,
  * 
  * Useful for debugging allocation patterns.
  */
-size_t aria_arena_remaining_capacity(const aria_arena* arena);
+size_t npk_arena_remaining_capacity(const npk_arena* arena);
 
 // ============================================================================
 // Arena Result Helper Functions
@@ -258,21 +258,21 @@ size_t aria_arena_remaining_capacity(const aria_arena* arena);
 /**
  * Check if arena creation result is Ok
  */
-static inline bool aria_arena_result_is_ok(AriaArenaResult result) {
+static inline bool npk_arena_result_is_ok(AriaArenaResult result) {
     return result.error_code == ARIA_ARENA_OK;
 }
 
 /**
  * Check if arena creation result is Err
  */
-static inline bool aria_arena_result_is_err(AriaArenaResult result) {
+static inline bool npk_arena_result_is_err(AriaArenaResult result) {
     return result.error_code != ARIA_ARENA_OK;
 }
 
 /**
  * Get error message for arena error
  */
-const char* aria_arena_error_message(AriaArenaError error);
+const char* npk_arena_error_message(AriaArenaError error);
 
 #ifdef __cplusplus
 }

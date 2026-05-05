@@ -30,14 +30,14 @@ func:main = int32() {
     int64:q2 = raw LFQueue.create(1024i64);
     AtomicInt32:done_count = raw AtomicInt32.create(0i32);
     
-    extern func:aria_shim_lfqueue_push = int32(int64:handle, int64:value);
-    extern func:aria_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
+    extern func:npk_shim_lfqueue_push = int32(int64:handle, int64:value);
+    extern func:npk_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
     
     // Producer — pushes values 1..10
     (int64)(int64):producer = int64(int64:queue_h) {
         for(int32:i = 1i32; i < 11i32; i += 1i32) {
             int64:val = @cast<int64>(i);
-            aria_shim_lfqueue_push(queue_h, val);
+            npk_shim_lfqueue_push(queue_h, val);
         }
         pass 0i64;
     };
@@ -88,11 +88,11 @@ func:main = int32() {
     
     // Test 4: LFStack concurrent push
     int64:stk2 = raw LFStack.create();
-    extern func:aria_shim_lfstack_push = int32(int64:handle, int64:value);
+    extern func:npk_shim_lfstack_push = int32(int64:handle, int64:value);
     
     (int64)(int64):stack_pusher = int64(int64:stack_h) {
         for(int32:i = 0i32; i < 50i32; i += 1i32) {
-            aria_shim_lfstack_push(stack_h, 1i64);
+            npk_shim_lfstack_push(stack_h, 1i64);
         }
         pass 0i64;
     };

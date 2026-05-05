@@ -26,14 +26,14 @@ extern "C" {
  * @param capacity_bytes  Byte budget for payload (0 = unbounded)
  * @return Opaque handle (as int64), or 0 on allocation failure
  */
-int64_t aria_uhash_new(int64_t capacity_bytes);
+int64_t npk_uhash_new(int64_t capacity_bytes);
 
 /**
  * Destroy a user hash table, freeing all memory.
  *
- * @param handle  Table handle from aria_uhash_new
+ * @param handle  Table handle from npk_uhash_new
  */
-void aria_uhash_destroy(int64_t handle);
+void npk_uhash_destroy(int64_t handle);
 
 /**
  * Set a key/value pair (upsert semantics).
@@ -45,7 +45,7 @@ void aria_uhash_destroy(int64_t handle);
  * @param value_size Size of the logical value in bytes (for capacity accounting)
  * @return 0 on success, -1 if capacity would be exceeded
  */
-int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value,
+int32_t npk_uhash_set(int64_t handle, const char* key, int64_t value,
                        int64_t type_tag, int64_t value_size);
 
 /**
@@ -56,7 +56,7 @@ int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value,
  * @param expected_tag  Expected type tag — failsafe on mismatch, -1 to skip
  * @return The value (as int64), or 0 if key not found
  */
-int64_t aria_uhash_get(int64_t handle, const char* key, int64_t expected_tag);
+int64_t npk_uhash_get(int64_t handle, const char* key, int64_t expected_tag);
 
 /**
  * Return all keys as an array of AriaString pointers.
@@ -66,7 +66,7 @@ int64_t aria_uhash_get(int64_t handle, const char* key, int64_t expected_tag);
  * @return Heap-allocated array of {char*, int64_t} AriaString structs,
  *         or NULL if empty. Caller (compiler runtime) manages lifetime.
  */
-void* aria_uhash_keys(int64_t handle, int64_t* out_count);
+void* npk_uhash_keys(int64_t handle, int64_t* out_count);
 
 /**
  * Return current payload bytes consumed.
@@ -74,7 +74,7 @@ void* aria_uhash_keys(int64_t handle, int64_t* out_count);
  * @param handle  Table handle
  * @return Bytes used by stored values
  */
-int64_t aria_uhash_size(int64_t handle);
+int64_t npk_uhash_size(int64_t handle);
 
 /**
  * Check if a value of given size fits within remaining capacity.
@@ -83,7 +83,7 @@ int64_t aria_uhash_size(int64_t handle);
  * @param value_size  Size of the value to check
  * @return 1 if fits (or unbounded), 0 if would exceed capacity
  */
-int64_t aria_uhash_fits(int64_t handle, int64_t value_size);
+int64_t npk_uhash_fits(int64_t handle, int64_t value_size);
 
 /**
  * Return the type tag of the value at a given key.
@@ -92,7 +92,7 @@ int64_t aria_uhash_fits(int64_t handle, int64_t value_size);
  * @param key     Null-terminated string key
  * @return Type tag (ARIA_TAG_*), or -1 if key not found
  */
-int32_t aria_uhash_type(int64_t handle, const char* key);
+int32_t npk_uhash_type(int64_t handle, const char* key);
 
 /**
  * Return the number of entries (key-value pairs) in the table.
@@ -100,7 +100,7 @@ int32_t aria_uhash_type(int64_t handle, const char* key);
  * @param handle  Table handle
  * @return Number of entries, or 0 if handle is null
  */
-int64_t aria_uhash_count(int64_t handle);
+int64_t npk_uhash_count(int64_t handle);
 
 /**
  * Delete a key from the table (tombstone-based deletion).
@@ -109,7 +109,7 @@ int64_t aria_uhash_count(int64_t handle);
  * @param key     Null-terminated string key to delete
  * @return 0 on success, -1 if key not found
  */
-int32_t aria_uhash_delete(int64_t handle, const char* key);
+int32_t npk_uhash_delete(int64_t handle, const char* key);
 
 /**
  * Check if a key exists in the table.
@@ -118,31 +118,31 @@ int32_t aria_uhash_delete(int64_t handle, const char* key);
  * @param key     Null-terminated string key
  * @return 1 if key exists, 0 if not (or handle is null)
  */
-int32_t aria_uhash_has(int64_t handle, const char* key);
+int32_t npk_uhash_has(int64_t handle, const char* key);
 
 /**
  * Remove all entries from the table without destroying it.
  *
  * @param handle  Table handle
  */
-void aria_uhash_clear(int64_t handle);
+void npk_uhash_clear(int64_t handle);
 
 /**
  * Fast-path variants (SMT-proven type-homogeneous tables).
  * Skip type tag storage and checking.
  */
-int64_t aria_uhash_new_fast(int64_t capacity_bytes);
-void    aria_uhash_destroy_fast(int64_t handle);
-int32_t aria_uhash_set_fast(int64_t handle, const char* key, int64_t value,
+int64_t npk_uhash_new_fast(int64_t capacity_bytes);
+void    npk_uhash_destroy_fast(int64_t handle);
+int32_t npk_uhash_set_fast(int64_t handle, const char* key, int64_t value,
                             int64_t value_size);
-int64_t aria_uhash_get_fast(int64_t handle, const char* key);
-void*   aria_uhash_keys_fast(int64_t handle, int64_t* out_count);
-int64_t aria_uhash_size_fast(int64_t handle);
-int64_t aria_uhash_fits_fast(int64_t handle, int64_t value_size);
-int64_t aria_uhash_count_fast(int64_t handle);
-int32_t aria_uhash_delete_fast(int64_t handle, const char* key);
-int32_t aria_uhash_has_fast(int64_t handle, const char* key);
-void    aria_uhash_clear_fast(int64_t handle);
+int64_t npk_uhash_get_fast(int64_t handle, const char* key);
+void*   npk_uhash_keys_fast(int64_t handle, int64_t* out_count);
+int64_t npk_uhash_size_fast(int64_t handle);
+int64_t npk_uhash_fits_fast(int64_t handle, int64_t value_size);
+int64_t npk_uhash_count_fast(int64_t handle);
+int32_t npk_uhash_delete_fast(int64_t handle, const char* key);
+int32_t npk_uhash_has_fast(int64_t handle, const char* key);
+void    npk_uhash_clear_fast(int64_t handle);
 
 #ifdef __cplusplus
 }

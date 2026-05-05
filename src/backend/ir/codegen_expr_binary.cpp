@@ -344,7 +344,7 @@ llvm::Value* ExprCodegen::codegenBinary(BinaryExpr* expr) {
     
     // ARITHMETIC OPERATORS
     if (op == TokenType::TOKEN_PLUS) {
-        // String concatenation: string + string calls aria_string_concat_simple
+        // String concatenation: string + string calls npk_string_concat_simple
         // which takes AriaString* pointers and returns AriaString* (aborts on error)
         if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
             llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");

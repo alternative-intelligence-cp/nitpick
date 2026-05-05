@@ -28,7 +28,7 @@ extern "C" {
  *   if (handle == 0) { // error
  *   }
  */
-int64_t aria_arena_new_handle(int64_t capacity);
+int64_t npk_arena_new_handle(int64_t capacity);
 
 /**
  * Allocate memory from arena
@@ -41,7 +41,7 @@ int64_t aria_arena_new_handle(int64_t capacity);
  *   int64:ptr = arena_alloc(handle, 64);
  *   if (ptr == 0) { allocation failed }
  */
-int64_t aria_arena_alloc_handle(int64_t handle, int64_t size);
+int64_t npk_arena_alloc_handle(int64_t handle, int64_t size);
 
 /**
  * Reset arena to reuse memory
@@ -54,7 +54,7 @@ int64_t aria_arena_alloc_handle(int64_t handle, int64_t size);
  * Example:
  *   arena_reset(handle);
  */
-void aria_arena_reset_handle(int64_t handle);
+void npk_arena_reset_handle(int64_t handle);
 
 /**
  * Destroy arena and free all memory
@@ -64,7 +64,7 @@ void aria_arena_reset_handle(int64_t handle);
  * Example:
  *   arena_destroy(handle);
  */
-void aria_arena_destroy_handle(int64_t handle);
+void npk_arena_destroy_handle(int64_t handle);
 
 /**
  * Get total bytes allocated by user
@@ -72,7 +72,7 @@ void aria_arena_destroy_handle(int64_t handle);
  * @param handle Arena handle
  * @return Total user-requested bytes
  */
-int64_t aria_arena_get_allocated_handle(int64_t handle);
+int64_t npk_arena_get_allocated_handle(int64_t handle);
 
 /**
  * Get total bytes reserved from OS
@@ -80,7 +80,7 @@ int64_t aria_arena_get_allocated_handle(int64_t handle);
  * @param handle Arena handle  
  * @return Total system-reserved bytes
  */
-int64_t aria_arena_get_reserved_handle(int64_t handle);
+int64_t npk_arena_get_reserved_handle(int64_t handle);
 
 #ifdef __cplusplus
 }

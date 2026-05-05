@@ -6,16 +6,16 @@
 // Follows same pattern as Vec<int8> in lib_vec_int32.aria
 
 // Runtime function declarations
-extern func:aria_array_new_simple = wild int8*(int64:element_size, int32:type_id);
-extern func:aria_array_length = int64(wild int8*:arr);
-extern func:aria_array_free = void(wild int8*:arr);
-extern func:aria_array_push_simple = void(wild int8*:arr, wild int8*:val);
-extern func:aria_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
+extern func:npk_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:npk_array_length = int64(wild int8*:arr);
+extern func:npk_array_free = void(wild int8*:arr);
+extern func:npk_array_push_simple = void(wild int8*:arr, wild int8*:val);
+extern func:npk_array_pop_simple = void(wild int8*:arr, wild int8*:out_val);
 
 // Vec<int16> constructor
 func:Vec_int16_new = Vec<int16>() {
     Vec<int16>:vec;
-    vec.data = aria_array_new_simple(2i64, 2i32);
+    vec.data = npk_array_new_simple(2i64, 2i32);
     vec.length = 0i64;
     vec.capacity = 16i64;
     vec.element_size = 2i64;
@@ -25,17 +25,17 @@ func:Vec_int16_new = Vec<int16>() {
 
 // Vec<int16> push
 func:Vec_int16_push = void(wild int8->:data, int16:value) {
-    aria_array_push_simple(data, @value);
+    npk_array_push_simple(data, @value);
 };
 
 // Vec<int16> pop
 func:Vec_int16_pop = int16(wild int8->:data) {
     int16:result = 0i16;
-    aria_array_pop_simple(data, @result);
+    npk_array_pop_simple(data, @result);
     pass result;
 };
 
 // Vec<int16> update length
 func:Vec_int16_update_length = int64(wild int8->:data) {
-    pass aria_array_length(data);
+    pass npk_array_length(data);
 };

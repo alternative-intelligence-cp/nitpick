@@ -254,33 +254,33 @@ void enable_telemetry() {
 // C interface for runtime calls
 extern "C" {
 
-void aria_telemetry_init() {
+void npk_telemetry_init() {
     npk::telemetry::init_telemetry();
 }
 
-void aria_telemetry_record_compilation() {
+void npk_telemetry_record_compilation() {
     npk::telemetry::record_compilation();
 }
 
-void aria_telemetry_record_ffi(const char* func) {
+void npk_telemetry_record_ffi(const char* func) {
     npk::telemetry::record_ffi_call(func);
 }
 
-void aria_telemetry_flush() {
+void npk_telemetry_flush() {
     npk::telemetry::flush_telemetry();
 }
 
-void aria_telemetry_disable() {
+void npk_telemetry_disable() {
     npk::telemetry::disable_telemetry();
 }
 
 } // extern "C"
 
 // Additional telemetry function implementations
-extern "C" void aria_telemetry_record_type(const char* type_name) {
+extern "C" void npk_telemetry_record_type(const char* type_name) {
     npk::telemetry::record_type_usage(type_name);
 }
 
-extern "C" void aria_telemetry_record_panic(const char* reason) {
+extern "C" void npk_telemetry_record_panic(const char* reason) {
     npk::telemetry::record_panic(reason);
 }

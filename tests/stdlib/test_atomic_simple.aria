@@ -1,29 +1,29 @@
 // Simple atomic_int32 test - just basic operations
 
-extern func:aria_atomic_int32_create = wild int8*(int32:initial_value);
-extern func:aria_atomic_int32_destroy = void(wild int8*:atomic_ptr);
-extern func:aria_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
-extern func:aria_atomic_int32_fetch_add = int32(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:npk_atomic_int32_create = wild int8*(int32:initial_value);
+extern func:npk_atomic_int32_destroy = void(wild int8*:atomic_ptr);
+extern func:npk_atomic_int32_store = void(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:npk_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
+extern func:npk_atomic_int32_fetch_add = int32(wild int8*:atomic_ptr, int32:value, int32:order);
 
 func:main = int32() {
     // Create atomic with value 0
-    wild int8->:atomic_ptr = aria_atomic_int32_create(0);
+    wild int8->:atomic_ptr = npk_atomic_int32_create(0);
     
     // Store 42 with SEQ_CST (4) - explicitly discard result
-    _ = aria_atomic_int32_store(atomic_ptr, 42, 4);
+    _ = npk_atomic_int32_store(atomic_ptr, 42, 4);
     
     // Load with SEQ_CST (4)
-    int32:value = aria_atomic_int32_load(atomic_ptr, 4);
+    int32:value = npk_atomic_int32_load(atomic_ptr, 4);
     
     // Add 10
-    int32:old = aria_atomic_int32_fetch_add(atomic_ptr, 10, 4);
+    int32:old = npk_atomic_int32_fetch_add(atomic_ptr, 10, 4);
     
     // Load again
-    int32:new_value = aria_atomic_int32_load(atomic_ptr, 4);
+    int32:new_value = npk_atomic_int32_load(atomic_ptr, 4);
     
     // Cleanup - explicitly discard result
-    _ = aria_atomic_int32_destroy(atomic_ptr);
+    _ = npk_atomic_int32_destroy(atomic_ptr);
     
     // Check results: value should be 42, old should be 42, new_value should be 52
     if (value == 42 && old == 42 && new_value == 52) {

@@ -2073,7 +2073,7 @@ ASTNodePtr Parser::parseTemplateLiteral() {
 /**
  * Parse lambda expressions (Closures - Phase 4.5.2)
  * 
- * Syntax (from aria_specs.txt):
+ * Syntax (from npk_specs.txt):
  * Lambda syntax is just: returnType(type:param, type:param) { body }
  * NO arrow operator (=>), NO special keywords
  * 

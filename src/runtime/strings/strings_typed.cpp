@@ -28,11 +28,11 @@ extern "C" {
 
 // Helper: allocate an AriaString on the GC heap
 static AriaString* make_string(const char* data, int64_t length) {
-    char* buf = (char*)aria_gc_alloc(length + 1, 0);
+    char* buf = (char*)npk_gc_alloc(length + 1, 0);
     if (!buf) std::abort();
     if (length > 0) memcpy(buf, data, length);
     buf[length] = '\0';
-    AriaString* s = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    AriaString* s = (AriaString*)npk_gc_alloc(sizeof(AriaString), 0);
     if (!s) std::abort();
     s->data = buf;
     s->length = length;
@@ -44,7 +44,7 @@ static AriaString* make_string(const char* data, int64_t length) {
 // ═══════════════════════════════════════════════════════════════════════
 
 AriaString* str_replace(const char* src, const char* old_s, const char* new_s) {
-    if (!src) return aria_string_empty();
+    if (!src) return npk_string_empty();
     int64_t src_len = (int64_t)strlen(src);
     int64_t old_len = old_s ? (int64_t)strlen(old_s) : 0;
     int64_t new_len = new_s ? (int64_t)strlen(new_s) : 0;
@@ -62,7 +62,7 @@ AriaString* str_replace(const char* src, const char* old_s, const char* new_s) {
     if (count == 0) return make_string(src, src_len);
 
     int64_t result_len = src_len + count * (new_len - old_len);
-    char* buf = (char*)aria_gc_alloc(result_len + 1, 0);
+    char* buf = (char*)npk_gc_alloc(result_len + 1, 0);
     if (!buf) std::abort();
 
     int64_t pos = 0, i = 0;
@@ -85,7 +85,7 @@ AriaString* str_replace(const char* src, const char* old_s, const char* new_s) {
 // ═══════════════════════════════════════════════════════════════════════
 
 AriaString* str_replace_first(const char* src, const char* old_s, const char* new_s) {
-    if (!src) return aria_string_empty();
+    if (!src) return npk_string_empty();
     int64_t src_len = (int64_t)strlen(src);
     int64_t old_len = old_s ? (int64_t)strlen(old_s) : 0;
     int64_t new_len = new_s ? (int64_t)strlen(new_s) : 0;
@@ -98,7 +98,7 @@ AriaString* str_replace_first(const char* src, const char* old_s, const char* ne
 
     int64_t pos = found - src;
     int64_t result_len = src_len + (new_len - old_len);
-    char* buf = (char*)aria_gc_alloc(result_len + 1, 0);
+    char* buf = (char*)npk_gc_alloc(result_len + 1, 0);
     if (!buf) std::abort();
 
     memcpy(buf, src, pos);
@@ -155,11 +155,11 @@ AriaString* str_char_at(const char* s, int64_t idx) {
 // ═══════════════════════════════════════════════════════════════════════
 
 AriaString* str_reverse(const char* s) {
-    if (!s) return aria_string_empty();
+    if (!s) return npk_string_empty();
     int64_t len = (int64_t)strlen(s);
     if (len <= 1) return make_string(s, len);
 
-    char* buf = (char*)aria_gc_alloc(len + 1, 0);
+    char* buf = (char*)npk_gc_alloc(len + 1, 0);
     if (!buf) std::abort();
     for (int64_t i = 0; i < len; i++) {
         buf[i] = s[len - 1 - i];
@@ -188,7 +188,7 @@ struct SplitResult {
 };
 
 void* str_split(const char* s, const char* delim) {
-    SplitResult* result = (SplitResult*)aria_gc_alloc(sizeof(SplitResult), 0);
+    SplitResult* result = (SplitResult*)npk_gc_alloc(sizeof(SplitResult), 0);
     if (!result) std::abort();
 
     if (!s || !*s) {
@@ -203,7 +203,7 @@ void* str_split(const char* s, const char* delim) {
     // Empty delimiter: split into individual chars
     if (d_len == 0) {
         result->count = s_len;
-        result->parts = (AriaString**)aria_gc_alloc(sizeof(AriaString*) * s_len, 0);
+        result->parts = (AriaString**)npk_gc_alloc(sizeof(AriaString*) * s_len, 0);
         if (!result->parts) std::abort();
         for (int64_t i = 0; i < s_len; i++) {
             result->parts[i] = make_string(s + i, 1);
@@ -221,7 +221,7 @@ void* str_split(const char* s, const char* delim) {
     }
 
     result->count = count;
-    result->parts = (AriaString**)aria_gc_alloc(sizeof(AriaString*) * count, 0);
+    result->parts = (AriaString**)npk_gc_alloc(sizeof(AriaString*) * count, 0);
     if (!result->parts) std::abort();
 
     int64_t part_idx = 0;
@@ -262,7 +262,7 @@ AriaString* str_split_get(void* split_handle, int64_t index) {
 
 AriaString* str_join(void* split_handle, const char* delim) {
     SplitResult* sr = (SplitResult*)split_handle;
-    if (!sr || sr->count == 0) return aria_string_empty();
+    if (!sr || sr->count == 0) return npk_string_empty();
 
     int64_t d_len = delim ? (int64_t)strlen(delim) : 0;
 
@@ -275,7 +275,7 @@ AriaString* str_join(void* split_handle, const char* delim) {
         total += d_len * (sr->count - 1);
     }
 
-    char* buf = (char*)aria_gc_alloc(total + 1, 0);
+    char* buf = (char*)npk_gc_alloc(total + 1, 0);
     if (!buf) std::abort();
 
     int64_t pos = 0;

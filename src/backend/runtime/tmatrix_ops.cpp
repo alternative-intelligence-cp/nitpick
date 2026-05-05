@@ -46,7 +46,7 @@ static inline int32_t tbb32_mul(int32_t a, int32_t b) {
 // Construction/Destruction
 // ============================================================================
 
-tmatrix_tbb32 aria_tmatrix_tbb32_create(int32_t rows, int32_t cols) {
+tmatrix_tbb32 npk_tmatrix_tbb32_create(int32_t rows, int32_t cols) {
     tmatrix_tbb32 m;
     
     // Check for ERR in dimensions
@@ -105,7 +105,7 @@ tmatrix_tbb32 aria_tmatrix_tbb32_create(int32_t rows, int32_t cols) {
     return m;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_create_err(void) {
+tmatrix_tbb32 npk_tmatrix_tbb32_create_err(void) {
     tmatrix_tbb32 m;
     m.rows = TBB32_ERR;
     m.cols = TBB32_ERR;
@@ -116,7 +116,7 @@ tmatrix_tbb32 aria_tmatrix_tbb32_create_err(void) {
     return m;
 }
 
-void aria_tmatrix_tbb32_destroy(tmatrix_tbb32* m) {
+void npk_tmatrix_tbb32_destroy(tmatrix_tbb32* m) {
     if (m && m->data && m->owns_data) {
         std::free(m->data);
         m->data = nullptr;
@@ -127,17 +127,17 @@ void aria_tmatrix_tbb32_destroy(tmatrix_tbb32* m) {
 // Initialization
 // ============================================================================
 
-tmatrix_tbb32 aria_tmatrix_tbb32_zero(int32_t rows, int32_t cols) {
-    tmatrix_tbb32 m = aria_tmatrix_tbb32_create(rows, cols);
-    if (!aria_tmatrix_tbb32_has_err(&m)) {
+tmatrix_tbb32 npk_tmatrix_tbb32_zero(int32_t rows, int32_t cols) {
+    tmatrix_tbb32 m = npk_tmatrix_tbb32_create(rows, cols);
+    if (!npk_tmatrix_tbb32_has_err(&m)) {
         std::memset(m.data, 0, rows * cols * sizeof(int32_t));
     }
     return m;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_identity(int32_t n) {
-    tmatrix_tbb32 m = aria_tmatrix_tbb32_zero(n, n);
-    if (!aria_tmatrix_tbb32_has_err(&m)) {
+tmatrix_tbb32 npk_tmatrix_tbb32_identity(int32_t n) {
+    tmatrix_tbb32 m = npk_tmatrix_tbb32_zero(n, n);
+    if (!npk_tmatrix_tbb32_has_err(&m)) {
         int32_t* data = (int32_t*)m.data;
         for (int32_t i = 0; i < n; i++) {
             data[i * n + i] = 1;
@@ -146,9 +146,9 @@ tmatrix_tbb32 aria_tmatrix_tbb32_identity(int32_t n) {
     return m;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_from_array(int32_t rows, int32_t cols, const int32_t* data) {
-    tmatrix_tbb32 m = aria_tmatrix_tbb32_create(rows, cols);
-    if (!aria_tmatrix_tbb32_has_err(&m)) {
+tmatrix_tbb32 npk_tmatrix_tbb32_from_array(int32_t rows, int32_t cols, const int32_t* data) {
+    tmatrix_tbb32 m = npk_tmatrix_tbb32_create(rows, cols);
+    if (!npk_tmatrix_tbb32_has_err(&m)) {
         std::memcpy(m.data, data, rows * cols * sizeof(int32_t));
     }
     return m;
@@ -158,9 +158,9 @@ tmatrix_tbb32 aria_tmatrix_tbb32_from_array(int32_t rows, int32_t cols, const in
 // Element Access
 // ============================================================================
 
-int32_t aria_tmatrix_tbb32_get(const tmatrix_tbb32* m, int32_t row, int32_t col) {
+int32_t npk_tmatrix_tbb32_get(const tmatrix_tbb32* m, int32_t row, int32_t col) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(m)) {
+    if (npk_tmatrix_tbb32_has_err(m)) {
         return TBB32_ERR;
     }
     
@@ -174,9 +174,9 @@ int32_t aria_tmatrix_tbb32_get(const tmatrix_tbb32* m, int32_t row, int32_t col)
     return data[row * m->cols + col];
 }
 
-void aria_tmatrix_tbb32_set(tmatrix_tbb32* m, int32_t row, int32_t col, int32_t value) {
+void npk_tmatrix_tbb32_set(tmatrix_tbb32* m, int32_t row, int32_t col, int32_t value) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(m)) {
+    if (npk_tmatrix_tbb32_has_err(m)) {
         return;
     }
     
@@ -196,7 +196,7 @@ void aria_tmatrix_tbb32_set(tmatrix_tbb32* m, int32_t row, int32_t col, int32_t 
 // Safety Checks
 // ============================================================================
 
-bool aria_tmatrix_tbb32_has_err(const tmatrix_tbb32* m) {
+bool npk_tmatrix_tbb32_has_err(const tmatrix_tbb32* m) {
     if (!m) return true;
     
     // Check dimensions for ERR
@@ -224,8 +224,8 @@ bool aria_tmatrix_tbb32_has_err(const tmatrix_tbb32* m) {
     return false;
 }
 
-bool aria_tmatrix_tbb32_is_zero(const tmatrix_tbb32* m) {
-    if (aria_tmatrix_tbb32_has_err(m)) {
+bool npk_tmatrix_tbb32_is_zero(const tmatrix_tbb32* m) {
+    if (npk_tmatrix_tbb32_has_err(m)) {
         return false;
     }
     
@@ -244,19 +244,19 @@ bool aria_tmatrix_tbb32_is_zero(const tmatrix_tbb32* m) {
 // Arithmetic Operations
 // ============================================================================
 
-tmatrix_tbb32 aria_tmatrix_tbb32_add(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
+tmatrix_tbb32 npk_tmatrix_tbb32_add(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(a) || aria_tmatrix_tbb32_has_err(b)) {
-        return aria_tmatrix_tbb32_create_err();
+    if (npk_tmatrix_tbb32_has_err(a) || npk_tmatrix_tbb32_has_err(b)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
     // Dimension check
     if (a->rows != b->rows || a->cols != b->cols) {
-        return aria_tmatrix_tbb32_create_err();
+        return npk_tmatrix_tbb32_create_err();
     }
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_create(a->rows, a->cols);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_create(a->rows, a->cols);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -272,19 +272,19 @@ tmatrix_tbb32 aria_tmatrix_tbb32_add(const tmatrix_tbb32* a, const tmatrix_tbb32
     return result;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_sub(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
+tmatrix_tbb32 npk_tmatrix_tbb32_sub(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(a) || aria_tmatrix_tbb32_has_err(b)) {
-        return aria_tmatrix_tbb32_create_err();
+    if (npk_tmatrix_tbb32_has_err(a) || npk_tmatrix_tbb32_has_err(b)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
     // Dimension check
     if (a->rows != b->rows || a->cols != b->cols) {
-        return aria_tmatrix_tbb32_create_err();
+        return npk_tmatrix_tbb32_create_err();
     }
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_create(a->rows, a->cols);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_create(a->rows, a->cols);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -302,14 +302,14 @@ tmatrix_tbb32 aria_tmatrix_tbb32_sub(const tmatrix_tbb32* a, const tmatrix_tbb32
     return result;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_scale(const tmatrix_tbb32* m, int32_t scalar) {
+tmatrix_tbb32 npk_tmatrix_tbb32_scale(const tmatrix_tbb32* m, int32_t scalar) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(m) || is_err_tbb32(scalar)) {
-        return aria_tmatrix_tbb32_create_err();
+    if (npk_tmatrix_tbb32_has_err(m) || is_err_tbb32(scalar)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_create(m->rows, m->cols);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_create(m->rows, m->cols);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -328,23 +328,23 @@ tmatrix_tbb32 aria_tmatrix_tbb32_scale(const tmatrix_tbb32* m, int32_t scalar) {
 // Matrix Multiply (Sentinel-Aware GEMM)
 // ============================================================================
 
-tmatrix_tbb32 aria_tmatrix_tbb32_mul(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
+tmatrix_tbb32 npk_tmatrix_tbb32_mul(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
     // Pre-flight ERR check
-    if (aria_tmatrix_tbb32_has_err(a) || aria_tmatrix_tbb32_has_err(b)) {
-        return aria_tmatrix_tbb32_create_err();
+    if (npk_tmatrix_tbb32_has_err(a) || npk_tmatrix_tbb32_has_err(b)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
     // Dimension check: (m x n) * (n x p) = (m x p)
     if (a->cols != b->rows) {
-        return aria_tmatrix_tbb32_create_err();
+        return npk_tmatrix_tbb32_create_err();
     }
     
     int32_t m = a->rows;
     int32_t n = a->cols;  // = b->rows
     int32_t p = b->cols;
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_zero(m, p);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_zero(m, p);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -402,13 +402,13 @@ tmatrix_tbb32 aria_tmatrix_tbb32_mul(const tmatrix_tbb32* a, const tmatrix_tbb32
 // Matrix Operations
 // ============================================================================
 
-tmatrix_tbb32 aria_tmatrix_tbb32_transpose(const tmatrix_tbb32* m) {
-    if (aria_tmatrix_tbb32_has_err(m)) {
-        return aria_tmatrix_tbb32_create_err();
+tmatrix_tbb32 npk_tmatrix_tbb32_transpose(const tmatrix_tbb32* m) {
+    if (npk_tmatrix_tbb32_has_err(m)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_create(m->cols, m->rows);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_create(m->cols, m->rows);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -424,24 +424,24 @@ tmatrix_tbb32 aria_tmatrix_tbb32_transpose(const tmatrix_tbb32* m) {
     return result;
 }
 
-tmatrix_tbb32 aria_tmatrix_tbb32_slice(const tmatrix_tbb32* m, 
+tmatrix_tbb32 npk_tmatrix_tbb32_slice(const tmatrix_tbb32* m, 
                                        int32_t row_start, int32_t row_end,
                                        int32_t col_start, int32_t col_end) {
-    if (aria_tmatrix_tbb32_has_err(m)) {
-        return aria_tmatrix_tbb32_create_err();
+    if (npk_tmatrix_tbb32_has_err(m)) {
+        return npk_tmatrix_tbb32_create_err();
     }
     
     // Bounds check
     if (row_start < 0 || row_end > m->rows || row_start >= row_end ||
         col_start < 0 || col_end > m->cols || col_start >= col_end) {
-        return aria_tmatrix_tbb32_create_err();
+        return npk_tmatrix_tbb32_create_err();
     }
     
     int32_t new_rows = row_end - row_start;
     int32_t new_cols = col_end - col_start;
     
-    tmatrix_tbb32 result = aria_tmatrix_tbb32_create(new_rows, new_cols);
-    if (aria_tmatrix_tbb32_has_err(&result)) {
+    tmatrix_tbb32 result = npk_tmatrix_tbb32_create(new_rows, new_cols);
+    if (npk_tmatrix_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -463,10 +463,10 @@ tmatrix_tbb32 aria_tmatrix_tbb32_slice(const tmatrix_tbb32* m,
 // Utility
 // ============================================================================
 
-const char* aria_tmatrix_tbb32_to_string(const tmatrix_tbb32* m) {
+const char* npk_tmatrix_tbb32_to_string(const tmatrix_tbb32* m) {
     static char buffer[4096];
     
-    if (aria_tmatrix_tbb32_has_err(m)) {
+    if (npk_tmatrix_tbb32_has_err(m)) {
         snprintf(buffer, sizeof(buffer), "tmatrix[ERR]");
         return buffer;
     }
@@ -493,10 +493,10 @@ const char* aria_tmatrix_tbb32_to_string(const tmatrix_tbb32* m) {
     return buffer;
 }
 
-bool aria_tmatrix_tbb32_equal(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
+bool npk_tmatrix_tbb32_equal(const tmatrix_tbb32* a, const tmatrix_tbb32* b) {
     // If both are ERR, they're equal
-    bool a_err = aria_tmatrix_tbb32_has_err(a);
-    bool b_err = aria_tmatrix_tbb32_has_err(b);
+    bool a_err = npk_tmatrix_tbb32_has_err(a);
+    bool b_err = npk_tmatrix_tbb32_has_err(b);
     
     if (a_err && b_err) return true;
     if (a_err || b_err) return false;

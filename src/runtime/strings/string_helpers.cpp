@@ -19,11 +19,11 @@
 #include <cstdint>
 
 static AriaString* make_aria_string(const char* data, int64_t length) {
-    char* buf = (char*)aria_gc_alloc(length + 1, 0);
+    char* buf = (char*)npk_gc_alloc(length + 1, 0);
     if (!buf) std::abort();
     if (length > 0) memcpy(buf, data, length);
     buf[length] = '\0';
-    AriaString* s = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    AriaString* s = (AriaString*)npk_gc_alloc(sizeof(AriaString), 0);
     if (!s) std::abort();
     s->data = buf;
     s->length = length;
@@ -50,7 +50,7 @@ AriaString* sh_make_str_direct(const char* data, int64_t offset, int64_t len) {
 
 // Return an empty AriaString
 AriaString* sh_empty_str() {
-    return aria_string_empty();
+    return npk_string_empty();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -111,7 +111,7 @@ void sh_copy_from_str(int64_t* h, int64_t buf_offset, const char* src, int64_t s
 // Allocate array of AriaString pointers for split results
 // split_handle: int64-> with [0] = parts_array_ptr, [1] = count
 void sh_split_alloc(int64_t* h, int64_t count) {
-    AriaString** parts = (AriaString**)aria_gc_alloc(sizeof(AriaString*) * count, 0);
+    AriaString** parts = (AriaString**)npk_gc_alloc(sizeof(AriaString*) * count, 0);
     if (!parts) std::abort();
     h[0] = (int64_t)(uintptr_t)parts;
     h[1] = count;

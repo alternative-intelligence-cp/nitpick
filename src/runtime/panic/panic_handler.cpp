@@ -32,7 +32,7 @@ static std::atomic<bool> g_panic_in_progress{false};
 
 // Register hardware safety callback
 // This should be called at application startup to register robot safety logic
-extern "C" void aria_runtime_register_safety_callback(HardwareSafetyCallback callback) {
+extern "C" void npk_runtime_register_safety_callback(HardwareSafetyCallback callback) {
     g_hardware_safety_callback.store(callback, std::memory_order_release);
 }
 
@@ -83,14 +83,14 @@ struct DeferStack {
 static thread_local DeferStack tl_defer_stack;
 
 // Register a defer cleanup function (called by compiler-generated code)
-extern "C" void aria_defer_push(DeferFn fn) {
+extern "C" void npk_defer_push(DeferFn fn) {
     if (tl_defer_stack.count < DeferStack::MAX_DEFERS && fn) {
         tl_defer_stack.entries[tl_defer_stack.count++] = fn;
     }
 }
 
 // Unregister the most recent defer (called on normal scope exit)
-extern "C" void aria_defer_pop() {
+extern "C" void npk_defer_pop() {
     if (tl_defer_stack.count > 0) {
         tl_defer_stack.count--;
     }
@@ -122,18 +122,18 @@ struct AsyncTaskContext {
 static thread_local AsyncTaskContext tl_async_ctx = {false, {}, nullptr};
 
 // Enter async task context (called by executor/thread pool before running a task)
-extern "C" void aria_async_task_enter(void* future_ptr) {
+extern "C" void npk_async_task_enter(void* future_ptr) {
     tl_async_ctx.active = true;
     tl_async_ctx.task_future = static_cast<npk::runtime::Future*>(future_ptr);
 }
 
 // Get pointer to recovery jmp_buf (caller uses setjmp on the returned buffer)
-extern "C" void* aria_async_task_get_jmpbuf() {
+extern "C" void* npk_async_task_get_jmpbuf() {
     return &tl_async_ctx.recovery_point;
 }
 
 // Leave async task context (called after task completes normally)
-extern "C" void aria_async_task_leave() {
+extern "C" void npk_async_task_leave() {
     tl_async_ctx.active = false;
     tl_async_ctx.task_future = nullptr;
 }
@@ -162,7 +162,7 @@ static void try_task_isolation() {
 
 // Main panic handler
 // Called when unwrap() fails, assertions trigger, or other fatal errors occur
-extern "C" void aria_runtime_panic_unwrap(const char* reason) {
+extern "C" void npk_runtime_panic_unwrap(const char* reason) {
     // Prevent recursive panics
     bool expected = false;
     if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
@@ -200,7 +200,7 @@ extern "C" void aria_runtime_panic_unwrap(const char* reason) {
 }
 
 // Generic panic handler for other panic types
-extern "C" void aria_runtime_panic(const char* reason) {
+extern "C" void npk_runtime_panic(const char* reason) {
     // Same as unwrap panic, but with different location
     bool expected = false;
     if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
@@ -223,7 +223,7 @@ extern "C" void aria_runtime_panic(const char* reason) {
 }
 
 // Assertion failure handler
-extern "C" void aria_runtime_assert_failed(const char* expr, const char* file, int line) {
+extern "C" void npk_runtime_assert_failed(const char* expr, const char* file, int line) {
     char location[512];
     snprintf(location, sizeof(location), "%s:%d", file, line);
     
@@ -252,7 +252,7 @@ extern "C" void aria_runtime_assert_failed(const char* expr, const char* file, i
 
 // Out-of-memory panic handler
 // Called when heap allocation fails during string operations, etc.
-extern "C" void aria_panic_oom(const char* message) {
+extern "C" void npk_panic_oom(const char* message) {
     bool expected = false;
     if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
         const char* msg = "RECURSIVE PANIC DETECTED - ABORTING\n";
@@ -275,7 +275,7 @@ extern "C" void aria_panic_oom(const char* message) {
 
 // Overflow panic handler
 // Called when a checked @cast detects value overflow during narrowing
-extern "C" void aria_panic_overflow(const char* message) {
+extern "C" void npk_panic_overflow(const char* message) {
     bool expected = false;
     if (!g_panic_in_progress.compare_exchange_strong(expected, true)) {
         const char* msg = "RECURSIVE PANIC DETECTED - ABORTING\n";

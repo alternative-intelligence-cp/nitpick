@@ -51,7 +51,7 @@ static int64_t alloc_arena_slot(Arena* a) {
     return -1;
 }
 
-int64_t aria_shim_arena_create(int64_t capacity) {
+int64_t npk_shim_arena_create(int64_t capacity) {
     if (capacity <= 0) capacity = ARENA_DEFAULT_SIZE;
     Arena* a = (Arena*)malloc(sizeof(Arena));
     if (!a) return -1;
@@ -62,7 +62,7 @@ int64_t aria_shim_arena_create(int64_t capacity) {
     return alloc_arena_slot(a);
 }
 
-int32_t aria_shim_arena_destroy(int64_t handle) {
+int32_t npk_shim_arena_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     Arena* a = g_arenas[handle];
     free(a->base);
@@ -72,7 +72,7 @@ int32_t aria_shim_arena_destroy(int64_t handle) {
 }
 
 // Allocate n bytes from arena, returns offset (or -1 if full)
-int64_t aria_shim_arena_alloc(int64_t handle, int64_t nbytes) {
+int64_t npk_shim_arena_alloc(int64_t handle, int64_t nbytes) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     Arena* a = g_arenas[handle];
     // Align to 8 bytes
@@ -84,27 +84,27 @@ int64_t aria_shim_arena_alloc(int64_t handle, int64_t nbytes) {
 }
 
 // Reset arena (bulk free)
-int32_t aria_shim_arena_reset(int64_t handle) {
+int32_t npk_shim_arena_reset(int64_t handle) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     g_arenas[handle]->offset = 0;
     return 0;
 }
 
 // Get used bytes
-int64_t aria_shim_arena_used(int64_t handle) {
+int64_t npk_shim_arena_used(int64_t handle) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     return g_arenas[handle]->offset;
 }
 
 // Get remaining capacity
-int64_t aria_shim_arena_remaining(int64_t handle) {
+int64_t npk_shim_arena_remaining(int64_t handle) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     Arena* a = g_arenas[handle];
     return a->capacity - a->offset;
 }
 
 // Write int64 at offset
-int32_t aria_shim_arena_write_int64(int64_t handle, int64_t offset, int64_t value) {
+int32_t npk_shim_arena_write_int64(int64_t handle, int64_t offset, int64_t value) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return -1;
     Arena* a = g_arenas[handle];
     if (offset < 0 || offset + 8 > a->capacity) return -1;
@@ -113,7 +113,7 @@ int32_t aria_shim_arena_write_int64(int64_t handle, int64_t offset, int64_t valu
 }
 
 // Read int64 at offset
-int64_t aria_shim_arena_read_int64(int64_t handle, int64_t offset) {
+int64_t npk_shim_arena_read_int64(int64_t handle, int64_t offset) {
     if (handle < 0 || handle >= MAX_ARENAS || !g_arenas[handle]) return 0;
     Arena* a = g_arenas[handle];
     if (offset < 0 || offset + 8 > a->capacity) return 0;
@@ -144,7 +144,7 @@ static int64_t alloc_pool_alloc_slot(Pool* p) {
     return -1;
 }
 
-int64_t aria_shim_pool_alloc_create(int64_t block_size, int64_t block_count) {
+int64_t npk_shim_pool_alloc_create(int64_t block_size, int64_t block_count) {
     if (block_size <= 0) block_size = 64;
     if (block_count <= 0) block_count = 256;
     // Align block_size to 8 bytes
@@ -174,7 +174,7 @@ int64_t aria_shim_pool_alloc_create(int64_t block_size, int64_t block_count) {
     return alloc_pool_alloc_slot(p);
 }
 
-int32_t aria_shim_pool_alloc_destroy(int64_t handle) {
+int32_t npk_shim_pool_alloc_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return -1;
     Pool* p = g_pool_allocs[handle];
     free(p->base);
@@ -185,7 +185,7 @@ int32_t aria_shim_pool_alloc_destroy(int64_t handle) {
 }
 
 // Allocate a block, returns block index (or -1 if exhausted)
-int64_t aria_shim_pool_alloc_get(int64_t handle) {
+int64_t npk_shim_pool_alloc_get(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return -1;
     Pool* p = g_pool_allocs[handle];
     if (p->free_top == 0) return -1; // exhausted
@@ -194,7 +194,7 @@ int64_t aria_shim_pool_alloc_get(int64_t handle) {
 }
 
 // Return a block to the pool
-int32_t aria_shim_pool_alloc_put(int64_t handle, int64_t block_index) {
+int32_t npk_shim_pool_alloc_put(int64_t handle, int64_t block_index) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return -1;
     Pool* p = g_pool_allocs[handle];
     if (block_index < 0 || block_index >= p->block_count) return -1;
@@ -205,7 +205,7 @@ int32_t aria_shim_pool_alloc_put(int64_t handle, int64_t block_index) {
 }
 
 // Write int64 into a pool block at offset within the block
-int32_t aria_shim_pool_alloc_write_int64(int64_t handle, int64_t block_index, int64_t offset, int64_t value) {
+int32_t npk_shim_pool_alloc_write_int64(int64_t handle, int64_t block_index, int64_t offset, int64_t value) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return -1;
     Pool* p = g_pool_allocs[handle];
     if (block_index < 0 || block_index >= p->block_count) return -1;
@@ -216,7 +216,7 @@ int32_t aria_shim_pool_alloc_write_int64(int64_t handle, int64_t block_index, in
 }
 
 // Read int64 from a pool block at offset
-int64_t aria_shim_pool_alloc_read_int64(int64_t handle, int64_t block_index, int64_t offset) {
+int64_t npk_shim_pool_alloc_read_int64(int64_t handle, int64_t block_index, int64_t offset) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return 0;
     Pool* p = g_pool_allocs[handle];
     if (block_index < 0 || block_index >= p->block_count) return 0;
@@ -228,7 +228,7 @@ int64_t aria_shim_pool_alloc_read_int64(int64_t handle, int64_t block_index, int
 }
 
 // Get number of free blocks
-int64_t aria_shim_pool_alloc_available(int64_t handle) {
+int64_t npk_shim_pool_alloc_available(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS_ALLOC || !g_pool_allocs[handle]) return -1;
     return g_pool_allocs[handle]->free_top;
 }
@@ -252,7 +252,7 @@ static int64_t alloc_shm_slot(ShmRegion* s) {
     return -1;
 }
 
-int64_t aria_shim_shm_create(int64_t size) {
+int64_t npk_shim_shm_create(int64_t size) {
     if (size <= 0) return -1;
     void* addr = mmap(NULL, (size_t)size, PROT_READ | PROT_WRITE,
                        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -265,7 +265,7 @@ int64_t aria_shim_shm_create(int64_t size) {
     return alloc_shm_slot(r);
 }
 
-int32_t aria_shim_shm_destroy(int64_t handle) {
+int32_t npk_shim_shm_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_SHM || !g_shm[handle]) return -1;
     ShmRegion* r = g_shm[handle];
     munmap(r->addr, (size_t)r->size);
@@ -274,7 +274,7 @@ int32_t aria_shim_shm_destroy(int64_t handle) {
     return 0;
 }
 
-int32_t aria_shim_shm_write_int64(int64_t handle, int64_t offset, int64_t value) {
+int32_t npk_shim_shm_write_int64(int64_t handle, int64_t offset, int64_t value) {
     if (handle < 0 || handle >= MAX_SHM || !g_shm[handle]) return -1;
     ShmRegion* r = g_shm[handle];
     if (offset < 0 || offset + 8 > r->size) return -1;
@@ -282,7 +282,7 @@ int32_t aria_shim_shm_write_int64(int64_t handle, int64_t offset, int64_t value)
     return 0;
 }
 
-int64_t aria_shim_shm_read_int64(int64_t handle, int64_t offset) {
+int64_t npk_shim_shm_read_int64(int64_t handle, int64_t offset) {
     if (handle < 0 || handle >= MAX_SHM || !g_shm[handle]) return 0;
     ShmRegion* r = g_shm[handle];
     if (offset < 0 || offset + 8 > r->size) return 0;
@@ -291,7 +291,7 @@ int64_t aria_shim_shm_read_int64(int64_t handle, int64_t offset) {
     return value;
 }
 
-int64_t aria_shim_shm_size(int64_t handle) {
+int64_t npk_shim_shm_size(int64_t handle) {
     if (handle < 0 || handle >= MAX_SHM || !g_shm[handle]) return -1;
     return g_shm[handle]->size;
 }
@@ -315,7 +315,7 @@ static int64_t alloc_pipe_slot(PipePair* p) {
     return -1;
 }
 
-int64_t aria_shim_pipe_create(void) {
+int64_t npk_shim_pipe_create(void) {
     int fds[2];
     if (pipe(fds) != 0) return -1;
     PipePair* p = (PipePair*)malloc(sizeof(PipePair));
@@ -325,7 +325,7 @@ int64_t aria_shim_pipe_create(void) {
     return alloc_pipe_slot(p);
 }
 
-int32_t aria_shim_pipe_destroy(int64_t handle) {
+int32_t npk_shim_pipe_destroy(int64_t handle) {
     if (handle < 0 || handle >= MAX_PIPES || !g_pipes[handle]) return -1;
     PipePair* p = g_pipes[handle];
     if (p->read_fd >= 0) close(p->read_fd);
@@ -335,7 +335,7 @@ int32_t aria_shim_pipe_destroy(int64_t handle) {
     return 0;
 }
 
-int32_t aria_shim_pipe_write_int64(int64_t handle, int64_t value) {
+int32_t npk_shim_pipe_write_int64(int64_t handle, int64_t value) {
     if (handle < 0 || handle >= MAX_PIPES || !g_pipes[handle]) return -1;
     PipePair* p = g_pipes[handle];
     if (p->write_fd < 0) return -1;
@@ -343,7 +343,7 @@ int32_t aria_shim_pipe_write_int64(int64_t handle, int64_t value) {
     return (n == sizeof(int64_t)) ? 0 : -1;
 }
 
-int64_t aria_shim_pipe_read_int64(int64_t handle) {
+int64_t npk_shim_pipe_read_int64(int64_t handle) {
     if (handle < 0 || handle >= MAX_PIPES || !g_pipes[handle]) return -1;
     PipePair* p = g_pipes[handle];
     if (p->read_fd < 0) return -1;
@@ -352,14 +352,14 @@ int64_t aria_shim_pipe_read_int64(int64_t handle) {
     return (n == sizeof(int64_t)) ? value : -1;
 }
 
-int32_t aria_shim_pipe_close_write(int64_t handle) {
+int32_t npk_shim_pipe_close_write(int64_t handle) {
     if (handle < 0 || handle >= MAX_PIPES || !g_pipes[handle]) return -1;
     PipePair* p = g_pipes[handle];
     if (p->write_fd >= 0) { close(p->write_fd); p->write_fd = -1; }
     return 0;
 }
 
-int32_t aria_shim_pipe_close_read(int64_t handle) {
+int32_t npk_shim_pipe_close_read(int64_t handle) {
     if (handle < 0 || handle >= MAX_PIPES || !g_pipes[handle]) return -1;
     PipePair* p = g_pipes[handle];
     if (p->read_fd >= 0) { close(p->read_fd); p->read_fd = -1; }
@@ -379,7 +379,7 @@ static void signal_handler(int signo) {
     }
 }
 
-int32_t aria_shim_signal_register(int32_t signo) {
+int32_t npk_shim_signal_register(int32_t signo) {
     if (signo < 0 || signo >= MAX_SIGNAL_COUNT) return -1;
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
@@ -391,7 +391,7 @@ int32_t aria_shim_signal_register(int32_t signo) {
 }
 
 // Check if signal is pending, clears the flag
-int32_t aria_shim_signal_pending(int32_t signo) {
+int32_t npk_shim_signal_pending(int32_t signo) {
     if (signo < 0 || signo >= MAX_SIGNAL_COUNT) return 0;
     if (g_signal_pending[signo]) {
         g_signal_pending[signo] = 0;
@@ -400,13 +400,13 @@ int32_t aria_shim_signal_pending(int32_t signo) {
     return 0;
 }
 
-int32_t aria_shim_signal_ignore(int32_t signo) {
+int32_t npk_shim_signal_ignore(int32_t signo) {
     if (signo < 0 || signo >= MAX_SIGNAL_COUNT) return -1;
     signal(signo, SIG_IGN);
     return 0;
 }
 
-int32_t aria_shim_signal_restore(int32_t signo) {
+int32_t npk_shim_signal_restore(int32_t signo) {
     if (signo < 0 || signo >= MAX_SIGNAL_COUNT) return -1;
     signal(signo, SIG_DFL);
     return 0;
@@ -416,16 +416,16 @@ int32_t aria_shim_signal_restore(int32_t signo) {
 // 6. Process Management
 // ============================================================================
 
-int64_t aria_shim_process_getpid(void) {
+int64_t npk_shim_process_getpid(void) {
     return (int64_t)getpid();
 }
 
-int64_t aria_shim_process_getppid(void) {
+int64_t npk_shim_process_getppid(void) {
     return (int64_t)getppid();
 }
 
 // Simple system() call — returns exit status
-int32_t aria_shim_process_system(const char* cmd) {
+int32_t npk_shim_process_system(const char* cmd) {
     int status = system(cmd);
     if (status == -1) return -1;
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
@@ -433,7 +433,7 @@ int32_t aria_shim_process_system(const char* cmd) {
 
 // Get environment variable, returns "" if not found
 // (Aria will get this as a string via the extern ABI)
-const char* aria_shim_process_getenv(const char* name) {
+const char* npk_shim_process_getenv(const char* name) {
     const char* val = getenv(name);
     return val ? val : "";
 }

@@ -19,7 +19,7 @@ struct FFIHandlerData {
     void* user_data;
 };
 
-AriaDAPServerHandle aria_dap_new(int in_fd, int out_fd) {
+AriaDAPServerHandle npk_dap_new(int in_fd, int out_fd) {
     try {
         DAPServer* server = new DAPServer(in_fd, out_fd);
         return static_cast<AriaDAPServerHandle>(server);
@@ -28,14 +28,14 @@ AriaDAPServerHandle aria_dap_new(int in_fd, int out_fd) {
     }
 }
 
-void aria_dap_free(AriaDAPServerHandle handle) {
+void npk_dap_free(AriaDAPServerHandle handle) {
     if (handle) {
         DAPServer* server = static_cast<DAPServer*>(handle);
         delete server;
     }
 }
 
-void aria_dap_register_handler(AriaDAPServerHandle handle,
+void npk_dap_register_handler(AriaDAPServerHandle handle,
                                 const char* command,
                                 AriaDAPRequestHandler handler,
                                 void* user_data) {
@@ -72,19 +72,19 @@ void aria_dap_register_handler(AriaDAPServerHandle handle,
                     resp.body.erase("error");
                 }
             }
-            aria_dap_free_string(response_json);
+            npk_dap_free_string(response_json);
         }
     });
 }
 
-int aria_dap_run(AriaDAPServerHandle handle) {
+int npk_dap_run(AriaDAPServerHandle handle) {
     if (!handle) return -1;
 
     DAPServer* server = static_cast<DAPServer*>(handle);
     return server->run();
 }
 
-void aria_dap_send_event(AriaDAPServerHandle handle,
+void npk_dap_send_event(AriaDAPServerHandle handle,
                           const char* event,
                           const char* body_json) {
     if (!handle || !event) return;
@@ -102,14 +102,14 @@ void aria_dap_send_event(AriaDAPServerHandle handle,
     server->send_event(event, body);
 }
 
-void aria_dap_shutdown(AriaDAPServerHandle handle) {
+void npk_dap_shutdown(AriaDAPServerHandle handle) {
     if (!handle) return;
 
     DAPServer* server = static_cast<DAPServer*>(handle);
     server->shutdown();
 }
 
-void aria_dap_free_string(char* str) {
+void npk_dap_free_string(char* str) {
     if (str) {
         free(str);
     }
@@ -117,13 +117,13 @@ void aria_dap_free_string(char* str) {
 
 // Additional utility functions
 
-void aria_dap_enable_tracing(AriaDAPServerHandle handle, int enable) {
+void npk_dap_enable_tracing(AriaDAPServerHandle handle, int enable) {
     if (!handle) return;
     DAPServer* server = static_cast<DAPServer*>(handle);
     server->enable_tracing(enable != 0);
 }
 
-int aria_dap_is_shutdown(AriaDAPServerHandle handle) {
+int npk_dap_is_shutdown(AriaDAPServerHandle handle) {
     if (!handle) return 1;
     DAPServer* server = static_cast<DAPServer*>(handle);
     return server->is_shutdown() ? 1 : 0;

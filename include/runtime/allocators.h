@@ -31,32 +31,32 @@ extern "C" {
  * Allocate unmanaged memory from the wild heap
  * 
  * This is Aria's equivalent to malloc(). Memory is NOT tracked by the GC
- * and must be manually freed via aria_free().
+ * and must be manually freed via npk_free().
  * 
  * @param size Number of bytes to allocate
  * @return Pointer to allocated memory, or NULL on failure
  * 
  * Safety: The returned pointer is opaque to the GC. Objects allocated
- * via aria_alloc can contain references to GC objects, but those GC
+ * via npk_alloc can contain references to GC objects, but those GC
  * objects must be pinned (# operator) to prevent collection.
  * 
  * Usage:
- *   wild int64:data = aria_alloc(sizeof(int64)) ? NULL;
- *   defer aria_free(data);  // RAII cleanup
+ *   wild int64:data = npk_alloc(sizeof(int64)) ? NULL;
+ *   defer npk_free(data);  // RAII cleanup
  */
-void* aria_alloc(size_t size);
+void* npk_alloc(size_t size);
 
 /**
  * Free wild memory
  * 
- * @param ptr Pointer returned by aria_alloc (or NULL)
+ * @param ptr Pointer returned by npk_alloc (or NULL)
  * 
  * Safety:
  * - Double free: Undefined behavior (use defer to prevent)
  * - Use after free: Undefined behavior (Borrow Checker detects)
  * - Freeing NULL: Safe no-op
  */
-void aria_free(void* ptr);
+void npk_free(void* ptr);
 
 /**
  * Reallocate wild memory
@@ -68,11 +68,11 @@ void aria_free(void* ptr);
  * @return New pointer (may differ from ptr), or NULL on failure
  * 
  * Critical: If reallocation succeeds, the old pointer is INVALID.
- * Always update: ptr = aria_realloc(ptr, new_size);
+ * Always update: ptr = npk_realloc(ptr, new_size);
  * 
  * If reallocation fails, the original pointer remains valid.
  */
-void* aria_realloc(void* ptr, size_t new_size);
+void* npk_realloc(void* ptr, size_t new_size);
 
 // =============================================================================
 // Specialized Allocators
@@ -88,7 +88,7 @@ void* aria_realloc(void* ptr, size_t new_size);
  * 
  * Use case: Arena allocators, I/O buffers, custom data structures
  */
-void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init);
+void* npk_alloc_buffer(size_t size, size_t alignment, bool zero_init);
 
 /**
  * Allocate memory for string data
@@ -98,7 +98,7 @@ void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init);
  * @param size String length (excluding null terminator)
  * @return Allocated string buffer, or NULL on failure
  */
-char* aria_alloc_string(size_t size);
+char* npk_alloc_string(size_t size);
 
 /**
  * Allocate array memory
@@ -109,7 +109,7 @@ char* aria_alloc_string(size_t size);
  * 
  * Safety: Checks for size_t overflow (elem_size * count)
  */
-void* aria_alloc_array(size_t elem_size, size_t count);
+void* npk_alloc_array(size_t elem_size, size_t count);
 
 // =============================================================================
 // Result-Based Allocations (Phase 4.2)
@@ -123,7 +123,7 @@ void* aria_alloc_array(size_t elem_size, size_t count);
  * @param size Number of bytes to allocate
  * @return Result containing pointer or error details
  * 
- * Advantages over aria_alloc():
+ * Advantages over npk_alloc():
  * - Distinguishes out-of-memory from invalid size
  * - Provides diagnostic info (requested size/alignment)
  * - Type-safe error codes (not generic NULL)
@@ -132,7 +132,7 @@ void* aria_alloc_array(size_t elem_size, size_t count);
  * - ARIA_ALLOC_ERR_INVALID_SIZE: size == 0
  * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
  */
-AriaAllocResult aria_alloc_result(size_t size);
+AriaAllocResult npk_alloc_result(size_t size);
 
 /**
  * Allocate array with result-based error handling
@@ -146,7 +146,7 @@ AriaAllocResult aria_alloc_result(size_t size);
  * - ARIA_ALLOC_ERR_SIZE_OVERFLOW: elem_size * count overflows size_t
  * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
  */
-AriaAllocResult aria_alloc_array_result(size_t elem_size, size_t count);
+AriaAllocResult npk_alloc_array_result(size_t elem_size, size_t count);
 
 /**
  * Allocate aligned memory with result-based error handling
@@ -160,7 +160,7 @@ AriaAllocResult aria_alloc_array_result(size_t elem_size, size_t count);
  * - ARIA_ALLOC_ERR_INVALID_ALIGNMENT: alignment not power of 2
  * - ARIA_ALLOC_ERR_OUT_OF_MEMORY: System allocator failed
  */
-AriaAllocResult aria_alloc_aligned_result(size_t size, size_t alignment);
+AriaAllocResult npk_alloc_aligned_result(size_t size, size_t alignment);
 
 /**
  * Allocate buffer with result-based error handling
@@ -170,7 +170,7 @@ AriaAllocResult aria_alloc_aligned_result(size_t size, size_t alignment);
  * @param zero_init If true, zero-initialize the buffer
  * @return Result containing pointer or error details
  */
-AriaAllocResult aria_alloc_buffer_result(size_t size, size_t alignment, bool zero_init);
+AriaAllocResult npk_alloc_buffer_result(size_t size, size_t alignment, bool zero_init);
 
 // =============================================================================
 // WildX Executable Memory (JIT Support)
@@ -217,7 +217,7 @@ typedef struct {
  * 
  * Security: Memory is NOT executable until sealed.
  */
-WildXGuard aria_alloc_exec(size_t size);
+WildXGuard npk_alloc_exec(size_t size);
 
 /**
  * Seal executable memory (transition: WRITABLE → EXECUTABLE)
@@ -239,7 +239,7 @@ WildXGuard aria_alloc_exec(size_t size);
  * 
  * Security: Prevents JIT-spray attacks by eliminating RWX window
  */
-int aria_mem_protect_exec(WildXGuard* guard);
+int npk_mem_protect_exec(WildXGuard* guard);
 
 /**
  * Free executable memory
@@ -249,7 +249,7 @@ int aria_mem_protect_exec(WildXGuard* guard);
  * Deallocates the page-aligned memory. Sets guard to FREED state.
  * Idempotent: Safe to call multiple times.
  */
-void aria_free_exec(WildXGuard* guard);
+void npk_free_exec(WildXGuard* guard);
 
 /**
  * Execute JIT-compiled code
@@ -264,14 +264,14 @@ void aria_free_exec(WildXGuard* guard);
  * this function returns NULL without executing.
  * 
  * Typical usage:
- *   WildXGuard g = aria_alloc_exec(4096);
+ *   WildXGuard g = npk_alloc_exec(4096);
  *   // ... write opcodes to g.ptr ...
- *   aria_mem_protect_exec(&g);
+ *   npk_mem_protect_exec(&g);
  *   typedef int64_t (*jit_func_t)(int64_t);
  *   jit_func_t func = (jit_func_t)g.ptr;
  *   int64_t result = func(42);
  */
-void* aria_exec_jit(WildXGuard* guard, void* args);
+void* npk_exec_jit(WildXGuard* guard, void* args);
 
 // =============================================================================
 // Memory Diagnostics
@@ -291,19 +291,19 @@ typedef struct {
     size_t peak_wildx_usage;          // Peak wildx memory
 } AllocatorStats;
 
-void aria_allocator_get_stats(AllocatorStats* stats);
+void npk_allocator_get_stats(AllocatorStats* stats);
 
 /**
  * v0.7.0: Enable/disable guard pages around wild allocations
  * 
- * When enabled, each aria_alloc() call places PROT_NONE guard pages
+ * When enabled, each npk_alloc() call places PROT_NONE guard pages
  * before and after the data region. Any buffer overflow/underflow
  * immediately triggers SIGSEGV instead of silent corruption.
  * 
  * Overhead: ~8KB per allocation (2 guard pages). Use for debugging only.
  * Linux only; no-op on other platforms.
  */
-void aria_wild_enable_guard_pages(bool enable);
+void npk_wild_enable_guard_pages(bool enable);
 
 /**
  * v0.7.0: Print wild memory statistics dashboard to stderr
@@ -311,7 +311,7 @@ void aria_wild_enable_guard_pages(bool enable);
  * Shows current/peak usage, active allocations, leak count, quota.
  * Designed to be called at program exit via --wild-stats flag.
  */
-void aria_wild_print_stats(void);
+void npk_wild_print_stats(void);
 
 /**
  * v0.7.0: Get the allocation size of a wild pointer
@@ -319,15 +319,15 @@ void aria_wild_print_stats(void);
  * Uses the hidden header to retrieve the user-requested size.
  * Returns 0 if ptr is NULL or not a valid wild allocation.
  */
-size_t aria_alloc_get_size(void* ptr);
+size_t npk_alloc_get_size(void* ptr);
 
 /**
  * v0.7.0: Enable automatic stats printing at program exit
  * 
- * When enabled, aria_wild_print_stats() is called automatically
+ * When enabled, npk_wild_print_stats() is called automatically
  * after main() returns (via __attribute__((destructor))).
  */
-void aria_wild_enable_stats_at_exit(bool enable);
+void npk_wild_enable_stats_at_exit(bool enable);
 
 // =============================================================================
 // v0.7.1: WildX Security Hardening
@@ -338,26 +338,26 @@ void aria_wild_enable_stats_at_exit(bool enable);
  * Buffer overflow/underflow in JIT code triggers immediate SIGSEGV.
  * Linux only; no-op on other platforms.
  */
-void aria_wildx_enable_guard_pages(bool enable);
+void npk_wildx_enable_guard_pages(bool enable);
 
 /**
  * Enable WildX audit logging to stderr.
  * Logs ALLOC, SEAL, EXEC, FREE, TAMPER events with pointers, sizes, hashes.
  */
-void aria_wildx_enable_audit(bool enable);
+void npk_wildx_enable_audit(bool enable);
 
 /**
  * Set the WildX executable memory quota in bytes (default: 64MB).
  * Allocations that would exceed the quota return a failed guard.
  */
-void aria_wildx_set_quota(size_t bytes);
+void npk_wildx_set_quota(size_t bytes);
 
 /**
  * Compute and return the FNV-1a hash of a WildX guard's code region.
  * Useful for manual integrity verification.
  * Returns 0 if guard is invalid or freed.
  */
-uint64_t aria_wildx_verify_hash(WildXGuard* guard);
+uint64_t npk_wildx_verify_hash(WildXGuard* guard);
 
 #ifdef __cplusplus
 }

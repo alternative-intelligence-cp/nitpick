@@ -91,32 +91,32 @@ typedef struct {
 /**
  * Create new code buffer with initial capacity
  */
-CodeBuffer* aria_asm_buffer_create(size_t initial_capacity);
+CodeBuffer* npk_asm_buffer_create(size_t initial_capacity);
 
 /**
  * Destroy code buffer
  */
-void aria_asm_buffer_destroy(CodeBuffer* buf);
+void npk_asm_buffer_destroy(CodeBuffer* buf);
 
 /**
  * Emit single byte into buffer
  */
-void aria_asm_emit_byte(CodeBuffer* buf, uint8_t byte);
+void npk_asm_emit_byte(CodeBuffer* buf, uint8_t byte);
 
 /**
  * Emit 32-bit immediate value (little-endian)
  */
-void aria_asm_emit_i32(CodeBuffer* buf, int32_t value);
+void npk_asm_emit_i32(CodeBuffer* buf, int32_t value);
 
 /**
  * Emit 64-bit immediate value (little-endian)
  */
-void aria_asm_emit_i64(CodeBuffer* buf, int64_t value);
+void npk_asm_emit_i64(CodeBuffer* buf, int64_t value);
 
 /**
  * Get current code offset (for label binding)
  */
-size_t aria_asm_buffer_offset(const CodeBuffer* buf);
+size_t npk_asm_buffer_offset(const CodeBuffer* buf);
 
 // =============================================================================
 // Label Management
@@ -133,12 +133,12 @@ typedef struct {
 /**
  * Create unbound label
  */
-AsmLabel aria_asm_label_create();
+AsmLabel npk_asm_label_create();
 
 /**
  * Check if label is bound
  */
-bool aria_asm_label_is_bound(const AsmLabel* label);
+bool npk_asm_label_is_bound(const AsmLabel* label);
 
 // =============================================================================
 // Assembler Core
@@ -330,22 +330,22 @@ typedef struct {
 /**
  * Create new assembler instance
  */
-Assembler* aria_asm_create();
+Assembler* npk_asm_create();
 
 /**
  * Destroy assembler and release resources
  */
-void aria_asm_destroy(Assembler* asm_ctx);
+void npk_asm_destroy(Assembler* asm_ctx);
 
 /**
  * Check for assembly errors
  */
-bool aria_asm_has_error(const Assembler* asm_ctx);
+bool npk_asm_has_error(const Assembler* asm_ctx);
 
 /**
  * Get error message
  */
-const char* aria_asm_get_error(const Assembler* asm_ctx);
+const char* npk_asm_get_error(const Assembler* asm_ctx);
 
 // =============================================================================
 // Label Operations
@@ -356,16 +356,16 @@ const char* aria_asm_get_error(const Assembler* asm_ctx);
  * 
  * @return Label index, or -1 on error
  */
-int aria_asm_new_label(Assembler* asm_ctx);
+int npk_asm_new_label(Assembler* asm_ctx);
 
 /**
  * Bind label to current position
  * 
  * Resolves all forward references by backpatching jump offsets.
  * 
- * @param label_id Label index from aria_asm_new_label
+ * @param label_id Label index from npk_asm_new_label
  */
-void aria_asm_bind_label(Assembler* asm_ctx, int label_id);
+void npk_asm_bind_label(Assembler* asm_ctx, int label_id);
 
 // =============================================================================
 // x86-64 Instruction Emission
@@ -379,7 +379,7 @@ void aria_asm_bind_label(Assembler* asm_ctx, int label_id);
  * @param dst Destination register (64-bit)
  * @param value Immediate value
  */
-void aria_asm_mov_r64_imm64(Assembler* asm_ctx, AsmRegister dst, int64_t value);
+void npk_asm_mov_r64_imm64(Assembler* asm_ctx, AsmRegister dst, int64_t value);
 
 /**
  * MOV reg64, reg64 - Move register to register
@@ -389,7 +389,7 @@ void aria_asm_mov_r64_imm64(Assembler* asm_ctx, AsmRegister dst, int64_t value);
  * @param dst Destination register
  * @param src Source register
  */
-void aria_asm_mov_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_mov_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * ADD reg64, reg64 - Add two registers
@@ -400,7 +400,7 @@ void aria_asm_mov_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
  * @param src Source register (second operand)
  * Result: dst = dst + src
  */
-void aria_asm_add_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_add_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * SUB reg64, reg64 - Subtract registers
@@ -411,7 +411,7 @@ void aria_asm_add_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
  * @param src Source register (second operand)
  * Result: dst = dst - src
  */
-void aria_asm_sub_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_sub_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * IMUL reg64, reg64 - Signed multiply
@@ -422,37 +422,37 @@ void aria_asm_sub_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
  * @param src Source register (second operand)
  * Result: dst = dst * src (lower 64 bits)
  */
-void aria_asm_imul_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_imul_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * RET - Return from function
  * 
  * Encoding: C3
  */
-void aria_asm_ret(Assembler* asm_ctx);
+void npk_asm_ret(Assembler* asm_ctx);
 
 /**
  * PUSH reg64 - Push register onto stack
  * 
  * Encoding: 50+rd (or REX.B + 50+rd for R8-R15)
  */
-void aria_asm_push_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_push_r64(Assembler* asm_ctx, AsmRegister reg);
 
 /**
  * POP reg64 - Pop register from stack
  * 
  * Encoding: 58+rd (or REX.B + 58+rd for R8-R15)
  */
-void aria_asm_pop_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_pop_r64(Assembler* asm_ctx, AsmRegister reg);
 
 /**
  * JMP label - Unconditional jump to label
  * 
  * Encoding: E9 cd (rel32)
  * 
- * @param label_id Target label from aria_asm_new_label
+ * @param label_id Target label from npk_asm_new_label
  */
-void aria_asm_jmp(Assembler* asm_ctx, int label_id);
+void npk_asm_jmp(Assembler* asm_ctx, int label_id);
 
 /**
  * JE label - Jump if equal (ZF=1)
@@ -461,7 +461,7 @@ void aria_asm_jmp(Assembler* asm_ctx, int label_id);
  * 
  * @param label_id Target label
  */
-void aria_asm_je(Assembler* asm_ctx, int label_id);
+void npk_asm_je(Assembler* asm_ctx, int label_id);
 
 /**
  * JNE label - Jump if not equal (ZF=0)
@@ -470,7 +470,7 @@ void aria_asm_je(Assembler* asm_ctx, int label_id);
  * 
  * @param label_id Target label
  */
-void aria_asm_jne(Assembler* asm_ctx, int label_id);
+void npk_asm_jne(Assembler* asm_ctx, int label_id);
 
 /**
  * CMP reg64, reg64 - Compare two registers
@@ -480,7 +480,7 @@ void aria_asm_jne(Assembler* asm_ctx, int label_id);
  * Sets flags based on (left - right).
  * Used before conditional jumps.
  */
-void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
+void npk_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
 
 // =============================================================================
 // Extended Integer Instructions (v0.7.2)
@@ -490,93 +490,93 @@ void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister righ
  * ADD reg64, imm32 - Add sign-extended 32-bit immediate to register
  * Encoding: REX.W + 81 /0 id
  */
-void aria_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
+void npk_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
 
 /**
  * SUB reg64, imm32 - Subtract sign-extended 32-bit immediate from register
  * Encoding: REX.W + 81 /5 id
  */
-void aria_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
+void npk_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value);
 
 /**
  * XOR reg64, reg64 - Bitwise exclusive OR
  * Encoding: REX.W + 31 /r
  */
-void aria_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * AND reg64, reg64 - Bitwise AND
  * Encoding: REX.W + 21 /r
  */
-void aria_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * OR reg64, reg64 - Bitwise OR
  * Encoding: REX.W + 09 /r
  */
-void aria_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * NOT reg64 - Bitwise complement
  * Encoding: REX.W + F7 /2
  */
-void aria_asm_not_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_not_r64(Assembler* asm_ctx, AsmRegister reg);
 
 /**
  * NEG reg64 - Two's complement negation
  * Encoding: REX.W + F7 /3
  */
-void aria_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg);
 
 /**
  * SHL reg64, imm8 - Shift left by immediate
  * Encoding: REX.W + C1 /4 ib
  */
-void aria_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+void npk_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
 
 /**
  * SHR reg64, imm8 - Logical shift right by immediate
  * Encoding: REX.W + C1 /5 ib
  */
-void aria_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+void npk_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
 
 /**
  * SAR reg64, imm8 - Arithmetic shift right by immediate
  * Encoding: REX.W + C1 /7 ib
  */
-void aria_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
+void npk_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count);
 
 /**
  * CMP reg64, imm32 - Compare register with sign-extended 32-bit immediate
  * Encoding: REX.W + 81 /7 id
  */
-void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value);
+void npk_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value);
 
 // Extended conditional jumps (v0.7.2)
 
 /** JL label - Jump if less (SF≠OF). Encoding: 0F 8C cd */
-void aria_asm_jl(Assembler* asm_ctx, int label_id);
+void npk_asm_jl(Assembler* asm_ctx, int label_id);
 
 /** JLE label - Jump if less or equal (ZF=1 or SF≠OF). Encoding: 0F 8E cd */
-void aria_asm_jle(Assembler* asm_ctx, int label_id);
+void npk_asm_jle(Assembler* asm_ctx, int label_id);
 
 /** JG label - Jump if greater (ZF=0 and SF=OF). Encoding: 0F 8F cd */
-void aria_asm_jg(Assembler* asm_ctx, int label_id);
+void npk_asm_jg(Assembler* asm_ctx, int label_id);
 
 /** JGE label - Jump if greater or equal (SF=OF). Encoding: 0F 8D cd */
-void aria_asm_jge(Assembler* asm_ctx, int label_id);
+void npk_asm_jge(Assembler* asm_ctx, int label_id);
 
 /** JB label - Jump if below (unsigned, CF=1). Encoding: 0F 82 cd */
-void aria_asm_jb(Assembler* asm_ctx, int label_id);
+void npk_asm_jb(Assembler* asm_ctx, int label_id);
 
 /** JBE label - Jump if below or equal (unsigned, CF=1 or ZF=1). Encoding: 0F 86 cd */
-void aria_asm_jbe(Assembler* asm_ctx, int label_id);
+void npk_asm_jbe(Assembler* asm_ctx, int label_id);
 
 /** JA label - Jump if above (unsigned, CF=0 and ZF=0). Encoding: 0F 87 cd */
-void aria_asm_ja(Assembler* asm_ctx, int label_id);
+void npk_asm_ja(Assembler* asm_ctx, int label_id);
 
 /** JAE label - Jump if above or equal (unsigned, CF=0). Encoding: 0F 83 cd */
-void aria_asm_jae(Assembler* asm_ctx, int label_id);
+void npk_asm_jae(Assembler* asm_ctx, int label_id);
 
 // =============================================================================
 // Memory Operations (v0.7.2)
@@ -587,19 +587,19 @@ void aria_asm_jae(Assembler* asm_ctx, int label_id);
  * Encoding: REX.W + 8B /r with ModR/M + optional SIB
  * offset=0: mod=00, nonzero: mod=01 (disp8) or mod=10 (disp32)
  */
-void aria_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+void npk_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
 
 /**
  * MOV [base + offset], reg64 - Store 64-bit value to memory
  * Encoding: REX.W + 89 /r with ModR/M + optional SIB
  */
-void aria_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+void npk_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
 
 /**
  * LEA reg64, [base + offset] - Load effective address
  * Encoding: REX.W + 8D /r with ModR/M + optional SIB
  */
-void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+void npk_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
 
 // =============================================================================
 // Stack Frame & Local Variables (v0.7.2)
@@ -610,13 +610,13 @@ void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base,
  * Emits MOV [RBP - slot_offset], reg
  * slot_offset should be positive (e.g., 8 for first local at [RBP-8])
  */
-void aria_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src);
+void npk_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src);
 
 /**
  * Load register from local variable slot on stack.
  * Emits MOV reg, [RBP - slot_offset]
  */
-void aria_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset);
+void npk_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset);
 
 // =============================================================================
 // CALL Instructions (v0.7.2)
@@ -627,20 +627,20 @@ void aria_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offs
  * Encoding: FF /2 with ModR/M mod=11
  * For R8-R15: REX.B prefix
  */
-void aria_asm_call_r64(Assembler* asm_ctx, AsmRegister target);
+void npk_asm_call_r64(Assembler* asm_ctx, AsmRegister target);
 
 /**
  * CALL label - Call function at label (rel32)
  * Encoding: E8 cd
  */
-void aria_asm_call_label(Assembler* asm_ctx, int label_id);
+void npk_asm_call_label(Assembler* asm_ctx, int label_id);
 
 /**
  * Load absolute 64-bit address into register then CALL it.
  * Convenience: MOV reg, addr; CALL reg
  * Uses R11 (caller-saved scratch) as target register.
  */
-void aria_asm_call_abs(Assembler* asm_ctx, void* func_ptr);
+void npk_asm_call_abs(Assembler* asm_ctx, void* func_ptr);
 
 // =============================================================================
 // SSE2 Floating-Point Instructions (v0.7.2)
@@ -650,50 +650,50 @@ void aria_asm_call_abs(Assembler* asm_ctx, void* func_ptr);
  * MOVSD xmm, xmm - Move scalar double
  * Encoding: F2 0F 10 /r (reg-to-reg)
  */
-void aria_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * MOVSD xmm, [base + offset] - Load scalar double from memory
  * Encoding: F2 0F 10 /r with ModR/M
  */
-void aria_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+void npk_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
 
 /**
  * MOVSD [base + offset], xmm - Store scalar double to memory
  * Encoding: F2 0F 11 /r with ModR/M
  */
-void aria_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+void npk_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
 
 /**
  * ADDSD xmm, xmm - Add scalar double
  * Encoding: F2 0F 58 /r
  */
-void aria_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * SUBSD xmm, xmm - Subtract scalar double
  * Encoding: F2 0F 5C /r
  */
-void aria_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * MULSD xmm, xmm - Multiply scalar double
  * Encoding: F2 0F 59 /r
  */
-void aria_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * DIVSD xmm, xmm - Divide scalar double
  * Encoding: F2 0F 5E /r
  */
-void aria_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * UCOMISD xmm, xmm - Unordered compare scalar double (sets EFLAGS)
  * Encoding: 66 0F 2E /r
  * Use JA/JAE/JB/JBE for unsigned comparisons after this.
  */
-void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
+void npk_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
 
 // =============================================================================
 // SSE Packed Float Instructions (v0.7.2)
@@ -703,45 +703,45 @@ void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right);
  * MOVAPS xmm, xmm - Move aligned packed single (128-bit)
  * Encoding: 0F 28 /r
  */
-void aria_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * MOVAPS xmm, [base + offset] - Load aligned packed single from memory
  * Encoding: 0F 28 /r with ModR/M
  * Memory address MUST be 16-byte aligned.
  */
-void aria_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
+void npk_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset);
 
 /**
  * MOVAPS [base + offset], xmm - Store aligned packed single to memory
  * Encoding: 0F 29 /r with ModR/M
  * Memory address MUST be 16-byte aligned.
  */
-void aria_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
+void npk_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src);
 
 /**
  * ADDPS xmm, xmm - Add packed single (4x float32)
  * Encoding: 0F 58 /r
  */
-void aria_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * MULPS xmm, xmm - Multiply packed single (4x float32)
  * Encoding: 0F 59 /r
  */
-void aria_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
+void npk_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src);
 
 /**
  * Execution variant: JIT function returning double via XMM0
  * Signature: double func(void)
  */
-double aria_asm_execute_f64(WildXGuard* guard);
+double npk_asm_execute_f64(WildXGuard* guard);
 
 /**
  * Execution variant: JIT function taking double arg (XMM0), returning double
  * Signature: double func(double)
  */
-double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1);
+double npk_asm_execute_f64_f64(WildXGuard* guard, double arg1);
 // =============================================================================
 
 /**
@@ -754,7 +754,7 @@ double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1);
  * 
  * @param stack_size Local variable space (bytes)
  */
-void aria_asm_prologue(Assembler* asm_ctx, size_t stack_size);
+void npk_asm_prologue(Assembler* asm_ctx, size_t stack_size);
 
 /**
  * Generate function epilogue (System V AMD64 ABI)
@@ -764,7 +764,7 @@ void aria_asm_prologue(Assembler* asm_ctx, size_t stack_size);
  *   POP RBP
  *   RET
  */
-void aria_asm_epilogue(Assembler* asm_ctx);
+void npk_asm_epilogue(Assembler* asm_ctx);
 
 // =============================================================================
 // Finalization and Execution
@@ -782,17 +782,17 @@ void aria_asm_epilogue(Assembler* asm_ctx);
  * @param asm_ctx Assembler instance
  * @return WildXGuard with executable code, or {NULL, 0, UNINITIALIZED} on error
  */
-WildXGuard aria_asm_finalize(Assembler* asm_ctx);
+WildXGuard npk_asm_finalize(Assembler* asm_ctx);
 
 /**
  * Execute JIT-compiled function with no arguments
  * 
  * Assumes function signature: int64_t func(void)
  * 
- * @param guard Sealed WildXGuard from aria_asm_finalize
+ * @param guard Sealed WildXGuard from npk_asm_finalize
  * @return Function return value (from RAX)
  */
-int64_t aria_asm_execute(WildXGuard* guard);
+int64_t npk_asm_execute(WildXGuard* guard);
 
 /**
  * Execute JIT function with one int64 argument
@@ -804,7 +804,7 @@ int64_t aria_asm_execute(WildXGuard* guard);
  * @param arg1 First argument (passed in RDI)
  * @return Function return value (from RAX)
  */
-int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1);
+int64_t npk_asm_execute_i64(WildXGuard* guard, int64_t arg1);
 
 /**
  * Execute JIT function with two int64 arguments
@@ -817,7 +817,7 @@ int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1);
  * @param arg2 Second argument (RSI)
  * @return Function return value (RAX)
  */
-int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2);
+int64_t npk_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2);
 
 // =============================================================================
 // Virtual Register API (v0.7.3 — Register Allocator)
@@ -833,7 +833,7 @@ int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2);
  *
  * @return Virtual register ID, or -1 on error
  */
-int aria_asm_vreg_new_gpr(Assembler* asm_ctx);
+int npk_asm_vreg_new_gpr(Assembler* asm_ctx);
 
 /**
  * Allocate a new virtual XMM register (for SSE2/SIMD).
@@ -841,17 +841,17 @@ int aria_asm_vreg_new_gpr(Assembler* asm_ctx);
  *
  * @return Virtual register ID, or -1 on error
  */
-int aria_asm_vreg_new_xmm(Assembler* asm_ctx);
+int npk_asm_vreg_new_xmm(Assembler* asm_ctx);
 
 /**
  * Query how many virtual registers have been allocated.
  */
-int aria_asm_vreg_count(const Assembler* asm_ctx);
+int npk_asm_vreg_count(const Assembler* asm_ctx);
 
 /**
  * Query how many spill slots were needed (available after finalize).
  */
-int aria_asm_spill_count(const Assembler* asm_ctx);
+int npk_asm_spill_count(const Assembler* asm_ctx);
 
 // =============================================================================
 // v0.7.4: Instruction Selection — New Encoders
@@ -861,19 +861,19 @@ int aria_asm_spill_count(const Assembler* asm_ctx);
  * TEST r64, r64 — Sets flags based on bitwise AND without storing result.
  * Used by instruction selection: CMP r, 0 → TEST r, r (shorter encoding).
  */
-void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2);
+void npk_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2);
 
 /**
  * INC r64 — Increment register by 1.
  * Used by instruction selection: ADD r, 1 → INC r (3 bytes vs 7 bytes).
  */
-void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg);
 
 /**
  * DEC r64 — Decrement register by 1.
  * Used by instruction selection: SUB r, 1 → DEC r (3 bytes vs 7 bytes).
  */
-void aria_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg);
+void npk_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg);
 
 // =============================================================================
 // v0.7.4: Peephole Optimizer Statistics
@@ -893,13 +893,13 @@ typedef struct {
  * Query peephole optimization statistics (available after finalize).
  * Returns zero-initialized stats if no vregs were used or not yet finalized.
  */
-PeepholeStats aria_asm_peephole_stats(const Assembler* asm_ctx);
+PeepholeStats npk_asm_peephole_stats(const Assembler* asm_ctx);
 
 /**
  * Query instruction selection statistics (available after finalize).
  * Returns zero-initialized stats if no vregs were used or not yet finalized.
  */
-InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx);
+InsnSelStats npk_asm_insn_sel_stats(const Assembler* asm_ctx);
 
 // =============================================================================
 // v0.7.4: Profiling — perf map integration
@@ -913,7 +913,7 @@ InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx);
  * @param code_size Size in bytes
  * @param name      Human-readable name for the function
  */
-void aria_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name);
+void npk_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name);
 
 // =============================================================================
 // v0.7.4: Architecture abstraction
@@ -929,12 +929,12 @@ typedef enum {
  * Query which architecture the assembler targets.
  * Currently always returns ASM_ARCH_X86_64.
  */
-AsmArch aria_asm_get_arch(void);
+AsmArch npk_asm_get_arch(void);
 
 /**
  * Query if a given architecture is supported for code generation.
  */
-bool aria_asm_arch_supported(AsmArch arch);
+bool npk_asm_arch_supported(AsmArch arch);
 
 #ifdef __cplusplus
 }

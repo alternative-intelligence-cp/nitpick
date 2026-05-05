@@ -12,18 +12,18 @@
  * - Optional disk persistence for startup performance
  * 
  * Usage:
- *   AriaCodeCache* cache = aria_code_cache_create(1000, 10 * 1024 * 1024); // 1000 entries, 10MB
+ *   AriaCodeCache* cache = npk_code_cache_create(1000, 10 * 1024 * 1024); // 1000 entries, 10MB
  *   
  *   // Before compilation, check cache
- *   uint64_t hash = aria_code_cache_hash_bytes(bytecode, size);
- *   AriaJITFunction* func = aria_code_cache_lookup(cache, hash);
+ *   uint64_t hash = npk_code_cache_hash_bytes(bytecode, size);
+ *   AriaJITFunction* func = npk_code_cache_lookup(cache, hash);
  *   if (func == NULL) {
  *       // Cache miss - compile and insert
  *       func = compile_function(...);
- *       aria_code_cache_insert(cache, hash, func, func_size);
+ *       npk_code_cache_insert(cache, hash, func, func_size);
  *   }
  *   
- *   aria_code_cache_destroy(cache);
+ *   npk_code_cache_destroy(cache);
  */
 
 #ifndef ARIA_CODE_CACHE_H
@@ -97,9 +97,9 @@ typedef struct AriaCodeCacheStats {
  * @return Cache handle or NULL on failure
  * 
  * Example:
- *   AriaCodeCache* cache = aria_code_cache_create(1000, 10 * 1024 * 1024);
+ *   AriaCodeCache* cache = npk_code_cache_create(1000, 10 * 1024 * 1024);
  */
-AriaCodeCache* aria_code_cache_create(size_t max_entries, size_t max_memory_bytes);
+AriaCodeCache* npk_code_cache_create(size_t max_entries, size_t max_memory_bytes);
 
 /**
  * Destroy code cache
@@ -109,7 +109,7 @@ AriaCodeCache* aria_code_cache_create(size_t max_entries, size_t max_memory_byte
  * 
  * @param cache Cache handle
  */
-void aria_code_cache_destroy(AriaCodeCache* cache);
+void npk_code_cache_destroy(AriaCodeCache* cache);
 
 // ============================================================================
 // Cache Operations
@@ -119,19 +119,19 @@ void aria_code_cache_destroy(AriaCodeCache* cache);
  * Lookup function in cache
  * 
  * @param cache Cache handle
- * @param hash Function hash (from aria_code_cache_hash_*)
+ * @param hash Function hash (from npk_code_cache_hash_*)
  * @return Cached function handle or NULL if not found
  * 
  * Updates last_access_time and access_count on hit.
  * 
  * Example:
- *   uint64_t hash = aria_code_cache_hash_bytes(bytecode, size);
- *   AriaCachedFunction* func = aria_code_cache_lookup(cache, hash);
+ *   uint64_t hash = npk_code_cache_hash_bytes(bytecode, size);
+ *   AriaCachedFunction* func = npk_code_cache_lookup(cache, hash);
  *   if (func != NULL) {
  *       // Cache hit - use func->function_ptr
  *   }
  */
-AriaCachedFunction* aria_code_cache_lookup(AriaCodeCache* cache, uint64_t hash);
+AriaCachedFunction* npk_code_cache_lookup(AriaCodeCache* cache, uint64_t hash);
 
 /**
  * Insert function into cache
@@ -148,10 +148,10 @@ AriaCachedFunction* aria_code_cache_lookup(AriaCodeCache* cache, uint64_t hash);
  * Takes ownership of function_ptr (caller should not free).
  * 
  * Example:
- *   aria_code_cache_insert(cache, hash, func_ptr, size, 0, 0); // ARA
- *   aria_code_cache_insert(cache, hash, func_ptr, size, 1, 2); // LLVM O2
+ *   npk_code_cache_insert(cache, hash, func_ptr, size, 0, 0); // ARA
+ *   npk_code_cache_insert(cache, hash, func_ptr, size, 1, 2); // LLVM O2
  */
-int aria_code_cache_insert(AriaCodeCache* cache, uint64_t hash, 
+int npk_code_cache_insert(AriaCodeCache* cache, uint64_t hash, 
                             void* function_ptr, size_t code_size,
                             int backend_type, int optimization_level);
 
@@ -165,7 +165,7 @@ int aria_code_cache_insert(AriaCodeCache* cache, uint64_t hash,
  * Removes specific function from cache.
  * Caller is responsible for freeing the function pointer if needed.
  */
-int aria_code_cache_evict(AriaCodeCache* cache, uint64_t hash);
+int npk_code_cache_evict(AriaCodeCache* cache, uint64_t hash);
 
 /**
  * Clear entire cache
@@ -175,7 +175,7 @@ int aria_code_cache_evict(AriaCodeCache* cache, uint64_t hash);
  * Removes all cached functions. Resets statistics.
  * Caller is responsible for freeing function pointers if needed.
  */
-void aria_code_cache_clear(AriaCodeCache* cache);
+void npk_code_cache_clear(AriaCodeCache* cache);
 
 // ============================================================================
 // Hash Functions
@@ -191,9 +191,9 @@ void aria_code_cache_clear(AriaCodeCache* cache);
  * Uses FNV-1a hash for speed and good distribution.
  * 
  * Example:
- *   uint64_t hash = aria_code_cache_hash_bytes(bytecode, bytecode_size);
+ *   uint64_t hash = npk_code_cache_hash_bytes(bytecode, bytecode_size);
  */
-uint64_t aria_code_cache_hash_bytes(const uint8_t* data, size_t size);
+uint64_t npk_code_cache_hash_bytes(const uint8_t* data, size_t size);
 
 /**
  * Hash string (for IR or function names)
@@ -202,9 +202,9 @@ uint64_t aria_code_cache_hash_bytes(const uint8_t* data, size_t size);
  * @return 64-bit hash
  * 
  * Example:
- *   uint64_t hash = aria_code_cache_hash_string(llvm_ir_text);
+ *   uint64_t hash = npk_code_cache_hash_string(llvm_ir_text);
  */
-uint64_t aria_code_cache_hash_string(const char* str);
+uint64_t npk_code_cache_hash_string(const char* str);
 
 /**
  * Combine hashes (for composite keys)
@@ -214,11 +214,11 @@ uint64_t aria_code_cache_hash_string(const char* str);
  * @return Combined hash
  * 
  * Example:
- *   uint64_t sig_hash = aria_code_cache_hash_string(function_signature);
- *   uint64_t body_hash = aria_code_cache_hash_bytes(bytecode, size);
- *   uint64_t key = aria_code_cache_combine_hashes(sig_hash, body_hash);
+ *   uint64_t sig_hash = npk_code_cache_hash_string(function_signature);
+ *   uint64_t body_hash = npk_code_cache_hash_bytes(bytecode, size);
+ *   uint64_t key = npk_code_cache_combine_hashes(sig_hash, body_hash);
  */
-uint64_t aria_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2);
+uint64_t npk_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2);
 
 // ============================================================================
 // Statistics
@@ -231,10 +231,10 @@ uint64_t aria_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2);
  * @return Statistics structure
  * 
  * Example:
- *   AriaCodeCacheStats stats = aria_code_cache_stats(cache);
+ *   AriaCodeCacheStats stats = npk_code_cache_stats(cache);
  *   printf("Hit rate: %.2f%%\n", stats.hit_rate * 100);
  */
-AriaCodeCacheStats aria_code_cache_stats(const AriaCodeCache* cache);
+AriaCodeCacheStats npk_code_cache_stats(const AriaCodeCache* cache);
 
 /**
  * Reset statistics counters
@@ -243,7 +243,7 @@ AriaCodeCacheStats aria_code_cache_stats(const AriaCodeCache* cache);
  * 
  * Resets hits, misses, evictions, inserts. Does not affect cached entries.
  */
-void aria_code_cache_reset_stats(AriaCodeCache* cache);
+void npk_code_cache_reset_stats(AriaCodeCache* cache);
 
 // ============================================================================
 // Persistence (Optional)
@@ -261,9 +261,9 @@ void aria_code_cache_reset_stats(AriaCodeCache* cache);
  * Saves hash→size mappings for preallocation on load.
  * 
  * Example:
- *   aria_code_cache_save(cache, "/tmp/aria_code_cache.db");
+ *   npk_code_cache_save(cache, "/tmp/npk_code_cache.db");
  */
-int aria_code_cache_save(const AriaCodeCache* cache, const char* path);
+int npk_code_cache_save(const AriaCodeCache* cache, const char* path);
 
 /**
  * Load cache from disk
@@ -275,7 +275,7 @@ int aria_code_cache_save(const AriaCodeCache* cache, const char* path);
  * Loads cache metadata. Functions will be recompiled on first use.
  * Useful for preallocating cache structure at startup.
  */
-int aria_code_cache_load(AriaCodeCache* cache, const char* path);
+int npk_code_cache_load(AriaCodeCache* cache, const char* path);
 
 // ============================================================================
 // Configuration
@@ -289,7 +289,7 @@ int aria_code_cache_load(AriaCodeCache* cache, const char* path);
  * 
  * Triggers eviction if current size exceeds new limit.
  */
-void aria_code_cache_set_max_entries(AriaCodeCache* cache, size_t max_entries);
+void npk_code_cache_set_max_entries(AriaCodeCache* cache, size_t max_entries);
 
 /**
  * Set maximum memory
@@ -299,7 +299,7 @@ void aria_code_cache_set_max_entries(AriaCodeCache* cache, size_t max_entries);
  * 
  * Triggers eviction if current memory exceeds new limit.
  */
-void aria_code_cache_set_max_memory(AriaCodeCache* cache, size_t max_memory_bytes);
+void npk_code_cache_set_max_memory(AriaCodeCache* cache, size_t max_memory_bytes);
 
 /**
  * Get maximum entries
@@ -307,7 +307,7 @@ void aria_code_cache_set_max_memory(AriaCodeCache* cache, size_t max_memory_byte
  * @param cache Cache handle
  * @return Maximum entries (0 = unlimited)
  */
-size_t aria_code_cache_get_max_entries(const AriaCodeCache* cache);
+size_t npk_code_cache_get_max_entries(const AriaCodeCache* cache);
 
 /**
  * Get maximum memory
@@ -315,7 +315,7 @@ size_t aria_code_cache_get_max_entries(const AriaCodeCache* cache);
  * @param cache Cache handle
  * @return Maximum memory bytes (0 = unlimited)
  */
-size_t aria_code_cache_get_max_memory(const AriaCodeCache* cache);
+size_t npk_code_cache_get_max_memory(const AriaCodeCache* cache);
 
 #ifdef __cplusplus
 }

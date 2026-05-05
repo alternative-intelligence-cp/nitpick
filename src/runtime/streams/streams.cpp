@@ -144,7 +144,7 @@ static char* get_timestamp(void) {
 // Text Stream Implementation
 // ============================================================================
 
-AriaTextStream* aria_text_stream_create(void* file, AriaStreamMode mode) {
+AriaTextStream* npk_text_stream_create(void* file, AriaStreamMode mode) {
     if (!file) return NULL;
     
     AriaTextStream* stream = (AriaTextStream*)malloc(sizeof(AriaTextStream));
@@ -171,7 +171,7 @@ AriaTextStream* aria_text_stream_create(void* file, AriaStreamMode mode) {
     return stream;
 }
 
-int64_t aria_text_stream_write(AriaTextStream* stream, const char* str) {
+int64_t npk_text_stream_write(AriaTextStream* stream, const char* str) {
     if (!stream || !str) return -1;
     
     size_t len = strlen(str);
@@ -191,7 +191,7 @@ int64_t aria_text_stream_write(AriaTextStream* stream, const char* str) {
         
         // If buffer is full, flush it
         if (buffer_space == 0) {
-            if (aria_text_stream_flush(stream) < 0) {
+            if (npk_text_stream_flush(stream) < 0) {
                 return -1;
             }
             buffer_space = stream->buffer_size;
@@ -206,7 +206,7 @@ int64_t aria_text_stream_write(AriaTextStream* stream, const char* str) {
         // Line-buffered: flush on newline
         if (stream->mode == ARIA_STREAM_LINE_BUFFERED) {
             if (memchr(str + written - to_copy, '\n', to_copy)) {
-                if (aria_text_stream_flush(stream) < 0) {
+                if (npk_text_stream_flush(stream) < 0) {
                     return -1;
                 }
             }
@@ -216,7 +216,7 @@ int64_t aria_text_stream_write(AriaTextStream* stream, const char* str) {
     return (int64_t)written;
 }
 
-int64_t aria_text_stream_printf(AriaTextStream* stream, const char* format, ...) {
+int64_t npk_text_stream_printf(AriaTextStream* stream, const char* format, ...) {
     if (!stream || !format) return -1;
     
     va_list args;
@@ -245,13 +245,13 @@ int64_t aria_text_stream_printf(AriaTextStream* stream, const char* format, ...)
     va_end(args);
     
     // Write to stream
-    int64_t result = aria_text_stream_write(stream, buffer);
+    int64_t result = npk_text_stream_write(stream, buffer);
     free(buffer);
     
     return result;
 }
 
-char* aria_text_stream_read_line(AriaTextStream* stream) {
+char* npk_text_stream_read_line(AriaTextStream* stream) {
     if (!stream) return NULL;
     
     size_t capacity = 128;
@@ -293,7 +293,7 @@ char* aria_text_stream_read_line(AriaTextStream* stream) {
     return line;
 }
 
-char* aria_text_stream_read_all(AriaTextStream* stream) {
+char* npk_text_stream_read_all(AriaTextStream* stream) {
     if (!stream) return NULL;
     
     // Try to get file size via seeking (works for regular files)
@@ -344,7 +344,7 @@ char* aria_text_stream_read_all(AriaTextStream* stream) {
     return buffer;
 }
 
-int aria_text_stream_flush(AriaTextStream* stream) {
+int npk_text_stream_flush(AriaTextStream* stream) {
     if (!stream) return -1;
     
     // Write buffered data
@@ -360,16 +360,16 @@ int aria_text_stream_flush(AriaTextStream* stream) {
     return fflush(stream->file);
 }
 
-bool aria_text_stream_eof(AriaTextStream* stream) {
+bool npk_text_stream_eof(AriaTextStream* stream) {
     if (!stream) return true;
     return stream->is_eof || feof(stream->file);
 }
 
-void aria_text_stream_set_mode(AriaTextStream* stream, AriaStreamMode mode) {
+void npk_text_stream_set_mode(AriaTextStream* stream, AriaStreamMode mode) {
     if (!stream) return;
     
     // Flush before changing mode
-    aria_text_stream_flush(stream);
+    npk_text_stream_flush(stream);
     
     stream->mode = mode;
     
@@ -388,10 +388,10 @@ void aria_text_stream_set_mode(AriaTextStream* stream, AriaStreamMode mode) {
     }
 }
 
-void aria_text_stream_close(AriaTextStream* stream) {
+void npk_text_stream_close(AriaTextStream* stream) {
     if (!stream) return;
     
-    aria_text_stream_flush(stream);
+    npk_text_stream_flush(stream);
     
     if (stream->owns_file && stream->file) {
         fclose(stream->file);
@@ -408,7 +408,7 @@ void aria_text_stream_close(AriaTextStream* stream) {
 // Binary Stream Implementation
 // ============================================================================
 
-AriaBinaryStream* aria_binary_stream_create(void* file, size_t buffer_size) {
+AriaBinaryStream* npk_binary_stream_create(void* file, size_t buffer_size) {
     if (!file) return NULL;
     
     AriaBinaryStream* stream = (AriaBinaryStream*)malloc(sizeof(AriaBinaryStream));
@@ -433,7 +433,7 @@ AriaBinaryStream* aria_binary_stream_create(void* file, size_t buffer_size) {
     return stream;
 }
 
-int64_t aria_binary_stream_write(AriaBinaryStream* stream, const void* data, size_t size) {
+int64_t npk_binary_stream_write(AriaBinaryStream* stream, const void* data, size_t size) {
     if (!stream || !data) return -1;
     
     // Unbuffered: write directly
@@ -452,7 +452,7 @@ int64_t aria_binary_stream_write(AriaBinaryStream* stream, const void* data, siz
         
         // If buffer is full, flush it
         if (buffer_space == 0) {
-            if (aria_binary_stream_flush(stream) < 0) {
+            if (npk_binary_stream_flush(stream) < 0) {
                 return -1;
             }
             buffer_space = stream->buffer_size;
@@ -468,7 +468,7 @@ int64_t aria_binary_stream_write(AriaBinaryStream* stream, const void* data, siz
     return (int64_t)written;
 }
 
-int64_t aria_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t size) {
+int64_t npk_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t size) {
     if (!stream || !buffer) return -1;
     
     size_t bytes_read = fread(buffer, 1, size, stream->file);
@@ -480,7 +480,7 @@ int64_t aria_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t s
     return (int64_t)bytes_read;
 }
 
-void* aria_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out) {
+void* npk_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out) {
     if (!stream || !size_out) return NULL;
     
     // Get file size
@@ -510,7 +510,7 @@ void* aria_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out) {
     return buffer;
 }
 
-int aria_binary_stream_flush(AriaBinaryStream* stream) {
+int npk_binary_stream_flush(AriaBinaryStream* stream) {
     if (!stream) return -1;
     
     // Write buffered data
@@ -526,15 +526,15 @@ int aria_binary_stream_flush(AriaBinaryStream* stream) {
     return fflush(stream->file);
 }
 
-bool aria_binary_stream_eof(AriaBinaryStream* stream) {
+bool npk_binary_stream_eof(AriaBinaryStream* stream) {
     if (!stream) return true;
     return stream->is_eof || feof(stream->file);
 }
 
-void aria_binary_stream_close(AriaBinaryStream* stream) {
+void npk_binary_stream_close(AriaBinaryStream* stream) {
     if (!stream) return;
     
-    aria_binary_stream_flush(stream);
+    npk_binary_stream_flush(stream);
     
     if (stream->owns_file && stream->file) {
         fclose(stream->file);
@@ -551,7 +551,7 @@ void aria_binary_stream_close(AriaBinaryStream* stream) {
 // Debug Session Implementation
 // ============================================================================
 
-AriaDebugSession* aria_debug_session_create(const char* session_name) {
+AriaDebugSession* npk_debug_session_create(const char* session_name) {
     if (!session_name) return NULL;
     
     AriaDebugSession* session = (AriaDebugSession*)malloc(sizeof(AriaDebugSession));
@@ -565,12 +565,12 @@ AriaDebugSession* aria_debug_session_create(const char* session_name) {
     
     session->min_level = ARIA_LOG_DEBUG;
     session->timestamps_enabled = true;
-    session->output = aria_get_stddbg();
+    session->output = npk_get_stddbg();
     
     return session;
 }
 
-void aria_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const char* message) {
+void npk_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const char* message) {
     if (!session || !message) return;
     
     // Filter by level
@@ -585,16 +585,16 @@ void aria_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const
     const char* level_name = get_log_level_name(level);
     
     if (timestamp) {
-        aria_text_stream_printf(session->output, "[%s] [%s] [%s] %s\n",
+        npk_text_stream_printf(session->output, "[%s] [%s] [%s] %s\n",
             timestamp, level_name, session->session_name, message);
         free(timestamp);
     } else {
-        aria_text_stream_printf(session->output, "[%s] [%s] %s\n",
+        npk_text_stream_printf(session->output, "[%s] [%s] %s\n",
             level_name, session->session_name, message);
     }
 }
 
-void aria_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, const char* format, ...) {
+void npk_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, const char* format, ...) {
     if (!session || !format) return;
     
     // Filter by level
@@ -624,21 +624,21 @@ void aria_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, cons
     va_end(args);
     
     // Log the message
-    aria_debug_session_log(session, level, message);
+    npk_debug_session_log(session, level, message);
     free(message);
 }
 
-void aria_debug_session_set_min_level(AriaDebugSession* session, AriaLogLevel min_level) {
+void npk_debug_session_set_min_level(AriaDebugSession* session, AriaLogLevel min_level) {
     if (!session) return;
     session->min_level = min_level;
 }
 
-void aria_debug_session_set_timestamps(AriaDebugSession* session, bool enabled) {
+void npk_debug_session_set_timestamps(AriaDebugSession* session, bool enabled) {
     if (!session) return;
     session->timestamps_enabled = enabled;
 }
 
-void aria_debug_session_close(AriaDebugSession* session) {
+void npk_debug_session_close(AriaDebugSession* session) {
     if (!session) return;
     
     if (session->session_name) {
@@ -652,60 +652,60 @@ void aria_debug_session_close(AriaDebugSession* session) {
 // Global Stream Initialization
 // ============================================================================
 
-void aria_streams_init(void) {
+void npk_streams_init(void) {
     if (g_streams_initialized) return;
     
     // Initialize standard text streams (FD 0, 1, 2)
-    g_stdin = aria_text_stream_create(stdin, ARIA_STREAM_LINE_BUFFERED);
-    g_stdout = aria_text_stream_create(stdout, ARIA_STREAM_LINE_BUFFERED);
-    g_stderr = aria_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
+    g_stdin = npk_text_stream_create(stdin, ARIA_STREAM_LINE_BUFFERED);
+    g_stdout = npk_text_stream_create(stdout, ARIA_STREAM_LINE_BUFFERED);
+    g_stderr = npk_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
     
     // Initialize six-stream I/O (FD 3, 4, 5)
     // FD 3: stddbg (debug output) - defaults to stderr if not redirected
     FILE* fd3 = open_reserved_fd(3, "w", STDERR_FILENO);
     if (fd3) {
-        g_stddbg = aria_text_stream_create(fd3, ARIA_STREAM_UNBUFFERED);
+        g_stddbg = npk_text_stream_create(fd3, ARIA_STREAM_UNBUFFERED);
         g_stddbg->owns_file = true;  // We created it, we close it
     } else {
         // Fallback to stderr
-        g_stddbg = aria_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
+        g_stddbg = npk_text_stream_create(stderr, ARIA_STREAM_UNBUFFERED);
     }
     
     // FD 4: stddati (binary data input) - defaults to /dev/null if not redirected
     FILE* fd4 = open_reserved_fd(4, "r", -1);
     if (fd4) {
-        g_stddati = aria_binary_stream_create(fd4, BINARY_BUFFER_SIZE);
+        g_stddati = npk_binary_stream_create(fd4, BINARY_BUFFER_SIZE);
         g_stddati->owns_file = true;
     } else {
         // Fallback to stdin (non-ideal, but safe)
-        g_stddati = aria_binary_stream_create(stdin, BINARY_BUFFER_SIZE);
+        g_stddati = npk_binary_stream_create(stdin, BINARY_BUFFER_SIZE);
     }
     
     // FD 5: stddato (binary data output) - defaults to /dev/null if not redirected
     FILE* fd5 = open_reserved_fd(5, "w", -1);
     if (fd5) {
-        g_stddato = aria_binary_stream_create(fd5, BINARY_BUFFER_SIZE);
+        g_stddato = npk_binary_stream_create(fd5, BINARY_BUFFER_SIZE);
         g_stddato->owns_file = true;
     } else {
         // Fallback to stdout (non-ideal, but safe)
-        g_stddato = aria_binary_stream_create(stdout, BINARY_BUFFER_SIZE);
+        g_stddato = npk_binary_stream_create(stdout, BINARY_BUFFER_SIZE);
     }
     
     g_streams_initialized = true;
 }
 
-void aria_streams_cleanup(void) {
+void npk_streams_cleanup(void) {
     if (!g_streams_initialized) return;
     
     // Flush and close text streams (but don't fclose the underlying FILE*)
-    if (g_stdin) aria_text_stream_close(g_stdin);
-    if (g_stdout) aria_text_stream_close(g_stdout);
-    if (g_stderr) aria_text_stream_close(g_stderr);
-    if (g_stddbg) aria_text_stream_close(g_stddbg);
+    if (g_stdin) npk_text_stream_close(g_stdin);
+    if (g_stdout) npk_text_stream_close(g_stdout);
+    if (g_stderr) npk_text_stream_close(g_stderr);
+    if (g_stddbg) npk_text_stream_close(g_stddbg);
     
     // Flush and close binary streams
-    if (g_stddati) aria_binary_stream_close(g_stddati);
-    if (g_stddato) aria_binary_stream_close(g_stddato);
+    if (g_stddati) npk_binary_stream_close(g_stddati);
+    if (g_stddato) npk_binary_stream_close(g_stddato);
     
     g_stdin = NULL;
     g_stdout = NULL;
@@ -721,33 +721,33 @@ void aria_streams_cleanup(void) {
 // Global Stream Accessors
 // ============================================================================
 
-AriaTextStream* aria_get_stdin(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaTextStream* npk_get_stdin(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stdin;
 }
 
-AriaTextStream* aria_get_stdout(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaTextStream* npk_get_stdout(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stdout;
 }
 
-AriaTextStream* aria_get_stderr(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaTextStream* npk_get_stderr(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stderr;
 }
 
-AriaTextStream* aria_get_stddbg(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaTextStream* npk_get_stddbg(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stddbg;
 }
 
-AriaBinaryStream* aria_get_stddati(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaBinaryStream* npk_get_stddati(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stddati;
 }
 
-AriaBinaryStream* aria_get_stddato(void) {
-    if (!g_streams_initialized) aria_streams_init();
+AriaBinaryStream* npk_get_stddato(void) {
+    if (!g_streams_initialized) npk_streams_init();
     return g_stddato;
 }
 
@@ -755,11 +755,11 @@ AriaBinaryStream* aria_get_stddato(void) {
 // Convenience Functions - stdout
 // ============================================================================
 
-int64_t aria_stdout_write(const char* str) {
-    return aria_text_stream_write(aria_get_stdout(), str);
+int64_t npk_stdout_write(const char* str) {
+    return npk_text_stream_write(npk_get_stdout(), str);
 }
 
-int64_t aria_stdout_printf(const char* format, ...) {
+int64_t npk_stdout_printf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
@@ -782,25 +782,25 @@ int64_t aria_stdout_printf(const char* format, ...) {
     vsnprintf(buffer, size + 1, format, args);
     va_end(args);
     
-    int64_t result = aria_stdout_write(buffer);
+    int64_t result = npk_stdout_write(buffer);
     free(buffer);
     
     return result;
 }
 
-int aria_stdout_flush(void) {
-    return aria_text_stream_flush(aria_get_stdout());
+int npk_stdout_flush(void) {
+    return npk_text_stream_flush(npk_get_stdout());
 }
 
 // ============================================================================
 // Convenience Functions - stderr
 // ============================================================================
 
-int64_t aria_stderr_write(const char* str) {
-    return aria_text_stream_write(aria_get_stderr(), str);
+int64_t npk_stderr_write(const char* str) {
+    return npk_text_stream_write(npk_get_stderr(), str);
 }
 
-int64_t aria_stderr_printf(const char* format, ...) {
+int64_t npk_stderr_printf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
@@ -823,25 +823,25 @@ int64_t aria_stderr_printf(const char* format, ...) {
     vsnprintf(buffer, size + 1, format, args);
     va_end(args);
     
-    int64_t result = aria_stderr_write(buffer);
+    int64_t result = npk_stderr_write(buffer);
     free(buffer);
     
     return result;
 }
 
-int aria_stderr_flush(void) {
-    return aria_text_stream_flush(aria_get_stderr());
+int npk_stderr_flush(void) {
+    return npk_text_stream_flush(npk_get_stderr());
 }
 
 // ============================================================================
 // Convenience Functions - stddbg
 // ============================================================================
 
-int64_t aria_stddbg_write(const char* str) {
-    return aria_text_stream_write(aria_get_stddbg(), str);
+int64_t npk_stddbg_write(const char* str) {
+    return npk_text_stream_write(npk_get_stddbg(), str);
 }
 
-int64_t aria_stddbg_printf(const char* format, ...) {
+int64_t npk_stddbg_printf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
@@ -864,73 +864,73 @@ int64_t aria_stddbg_printf(const char* format, ...) {
     vsnprintf(buffer, size + 1, format, args);
     va_end(args);
     
-    int64_t result = aria_stddbg_write(buffer);
+    int64_t result = npk_stddbg_write(buffer);
     free(buffer);
     
     return result;
 }
 
-int aria_stddbg_flush(void) {
-    return aria_text_stream_flush(aria_get_stddbg());
+int npk_stddbg_flush(void) {
+    return npk_text_stream_flush(npk_get_stddbg());
 }
 
 // ============================================================================
 // Convenience Functions - stdin
 // ============================================================================
 
-char* aria_stdin_read_line(void) {
-    return aria_text_stream_read_line(aria_get_stdin());
+char* npk_stdin_read_line(void) {
+    return npk_text_stream_read_line(npk_get_stdin());
 }
 
-char* aria_stdin_read_all(void) {
-    return aria_text_stream_read_all(aria_get_stdin());
+char* npk_stdin_read_all(void) {
+    return npk_text_stream_read_all(npk_get_stdin());
 }
 
-bool aria_stdin_eof(void) {
-    return aria_text_stream_eof(aria_get_stdin());
+bool npk_stdin_eof(void) {
+    return npk_text_stream_eof(npk_get_stdin());
 }
 
 // ============================================================================
 // Convenience Functions - stddati
 // ============================================================================
 
-int64_t aria_stddati_read(void* buffer, size_t size) {
-    return aria_binary_stream_read(aria_get_stddati(), buffer, size);
+int64_t npk_stddati_read(void* buffer, size_t size) {
+    return npk_binary_stream_read(npk_get_stddati(), buffer, size);
 }
 
-void* aria_stddati_read_all(size_t* size_out) {
-    return aria_binary_stream_read_all(aria_get_stddati(), size_out);
+void* npk_stddati_read_all(size_t* size_out) {
+    return npk_binary_stream_read_all(npk_get_stddati(), size_out);
 }
 
-bool aria_stddati_eof(void) {
-    return aria_binary_stream_eof(aria_get_stddati());
+bool npk_stddati_eof(void) {
+    return npk_binary_stream_eof(npk_get_stddati());
 }
 
 // ============================================================================
 // Convenience Functions - stddato
 // ============================================================================
 
-int64_t aria_stddato_write(const void* data, size_t size) {
-    return aria_binary_stream_write(aria_get_stddato(), data, size);
+int64_t npk_stddato_write(const void* data, size_t size) {
+    return npk_binary_stream_write(npk_get_stddato(), data, size);
 }
 
-int aria_stddato_flush(void) {
-    return aria_binary_stream_flush(aria_get_stddato());
+int npk_stddato_flush(void) {
+    return npk_binary_stream_flush(npk_get_stddato());
 }
 
 // ============================================================================
 // Convenience Debug Logging
 // ============================================================================
 
-void aria_log_debug(const char* message) {
-    aria_stddbg_printf("[DEBUG] %s\n", message);
+void npk_log_debug(const char* message) {
+    npk_stddbg_printf("[DEBUG] %s\n", message);
 }
 
-void aria_log_debugf(const char* format, ...) {
+void npk_log_debugf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
-    aria_stddbg_write("[DEBUG] ");
+    npk_stddbg_write("[DEBUG] ");
     
     va_list args_copy;
     va_copy(args_copy, args);
@@ -941,24 +941,24 @@ void aria_log_debugf(const char* format, ...) {
         char* buffer = (char*)malloc(size + 1);
         if (buffer) {
             vsnprintf(buffer, size + 1, format, args);
-            aria_stddbg_write(buffer);
+            npk_stddbg_write(buffer);
             free(buffer);
         }
     }
     
-    aria_stddbg_write("\n");
+    npk_stddbg_write("\n");
     va_end(args);
 }
 
-void aria_log_info(const char* message) {
-    aria_stddbg_printf("[INFO] %s\n", message);
+void npk_log_info(const char* message) {
+    npk_stddbg_printf("[INFO] %s\n", message);
 }
 
-void aria_log_infof(const char* format, ...) {
+void npk_log_infof(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
-    aria_stddbg_write("[INFO] ");
+    npk_stddbg_write("[INFO] ");
     
     va_list args_copy;
     va_copy(args_copy, args);
@@ -969,24 +969,24 @@ void aria_log_infof(const char* format, ...) {
         char* buffer = (char*)malloc(size + 1);
         if (buffer) {
             vsnprintf(buffer, size + 1, format, args);
-            aria_stddbg_write(buffer);
+            npk_stddbg_write(buffer);
             free(buffer);
         }
     }
     
-    aria_stddbg_write("\n");
+    npk_stddbg_write("\n");
     va_end(args);
 }
 
-void aria_log_warn(const char* message) {
-    aria_stddbg_printf("[WARN] %s\n", message);
+void npk_log_warn(const char* message) {
+    npk_stddbg_printf("[WARN] %s\n", message);
 }
 
-void aria_log_warnf(const char* format, ...) {
+void npk_log_warnf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
-    aria_stddbg_write("[WARN] ");
+    npk_stddbg_write("[WARN] ");
     
     va_list args_copy;
     va_copy(args_copy, args);
@@ -997,24 +997,24 @@ void aria_log_warnf(const char* format, ...) {
         char* buffer = (char*)malloc(size + 1);
         if (buffer) {
             vsnprintf(buffer, size + 1, format, args);
-            aria_stddbg_write(buffer);
+            npk_stddbg_write(buffer);
             free(buffer);
         }
     }
     
-    aria_stddbg_write("\n");
+    npk_stddbg_write("\n");
     va_end(args);
 }
 
-void aria_log_error(const char* message) {
-    aria_stddbg_printf("[ERROR] %s\n", message);
+void npk_log_error(const char* message) {
+    npk_stddbg_printf("[ERROR] %s\n", message);
 }
 
-void aria_log_errorf(const char* format, ...) {
+void npk_log_errorf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
-    aria_stddbg_write("[ERROR] ");
+    npk_stddbg_write("[ERROR] ");
     
     va_list args_copy;
     va_copy(args_copy, args);
@@ -1025,24 +1025,24 @@ void aria_log_errorf(const char* format, ...) {
         char* buffer = (char*)malloc(size + 1);
         if (buffer) {
             vsnprintf(buffer, size + 1, format, args);
-            aria_stddbg_write(buffer);
+            npk_stddbg_write(buffer);
             free(buffer);
         }
     }
     
-    aria_stddbg_write("\n");
+    npk_stddbg_write("\n");
     va_end(args);
 }
 
-void aria_log_fatal(const char* message) {
-    aria_stddbg_printf("[FATAL] %s\n", message);
+void npk_log_fatal(const char* message) {
+    npk_stddbg_printf("[FATAL] %s\n", message);
 }
 
-void aria_log_fatalf(const char* format, ...) {
+void npk_log_fatalf(const char* format, ...) {
     va_list args;
     va_start(args, format);
     
-    aria_stddbg_write("[FATAL] ");
+    npk_stddbg_write("[FATAL] ");
     
     va_list args_copy;
     va_copy(args_copy, args);
@@ -1053,11 +1053,11 @@ void aria_log_fatalf(const char* format, ...) {
         char* buffer = (char*)malloc(size + 1);
         if (buffer) {
             vsnprintf(buffer, size + 1, format, args);
-            aria_stddbg_write(buffer);
+            npk_stddbg_write(buffer);
             free(buffer);
         }
     }
     
-    aria_stddbg_write("\n");
+    npk_stddbg_write("\n");
     va_end(args);
 }

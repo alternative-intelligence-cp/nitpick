@@ -196,7 +196,7 @@ public:
 
     // v0.4.3+: SMT-proven user stack fast mode
     // When true, Z3 has proven all pushes in this function are type-homogeneous.
-    // Codegen uses aria_ustack_*_fast() functions (no tags, no bounds checks).
+    // Codegen uses npk_ustack_*_fast() functions (no tags, no bounds checks).
     bool ustack_fast_mode = false;
 
     // v0.4.5: User hash table get destination type context

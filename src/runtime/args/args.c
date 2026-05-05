@@ -4,7 +4,7 @@
  * Stores argc/argv from main() and provides accessor functions
  * that Aria programs can call via extern declarations.
  *
- * The "aria_arg" function returns an AriaString* (heap-allocated)
+ * The "npk_arg" function returns an AriaString* (heap-allocated)
  * matching how the compiler represents extern string returns.
  */
 
@@ -21,17 +21,17 @@ typedef struct {
 static int32_t g_argc = 0;
 static char** g_argv = NULL;
 
-void aria_args_init(int32_t argc, char** argv) {
+void npk_args_init(int32_t argc, char** argv) {
     g_argc = argc;
     g_argv = argv;
 }
 
-int32_t aria_get_argc(void) {
+int32_t npk_get_argc(void) {
     return g_argc;
 }
 
 /* Returns argv[index] as an AriaString*, or empty string if OOB */
-AriaString* aria_arg(int32_t index) {
+AriaString* npk_arg(int32_t index) {
     AriaString* result = (AriaString*)malloc(sizeof(AriaString));
     if (!result) {
         return NULL;

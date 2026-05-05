@@ -47,9 +47,9 @@ static inline size_t align_forward(size_t ptr, size_t align) {
 /**
  * Allocate a new arena block
  */
-static aria_arena_block* allocate_block(size_t capacity) {
+static npk_arena_block* allocate_block(size_t capacity) {
     // Allocate block header
-    aria_arena_block* block = (aria_arena_block*)std::malloc(sizeof(aria_arena_block));
+    npk_arena_block* block = (npk_arena_block*)std::malloc(sizeof(npk_arena_block));
     if (!block) {
         return nullptr;
     }
@@ -70,7 +70,7 @@ static aria_arena_block* allocate_block(size_t capacity) {
 /**
  * Free a single block
  */
-static void free_block(aria_arena_block* block) {
+static void free_block(npk_arena_block* block) {
     if (!block) {
         return;
     }
@@ -83,11 +83,11 @@ static void free_block(aria_arena_block* block) {
 // Arena Lifecycle Functions
 // ============================================================================
 
-AriaArenaResult aria_arena_new(size_t initial_capacity) {
-    return aria_arena_new_with_block_size(initial_capacity, ARIA_ARENA_DEFAULT_BLOCK_SIZE);
+AriaArenaResult npk_arena_new(size_t initial_capacity) {
+    return npk_arena_new_with_block_size(initial_capacity, ARIA_ARENA_DEFAULT_BLOCK_SIZE);
 }
 
-AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t block_size) {
+AriaArenaResult npk_arena_new_with_block_size(size_t initial_capacity, size_t block_size) {
     AriaArenaResult result;
     result.arena = nullptr;
     result.requested_capacity = initial_capacity;
@@ -99,7 +99,7 @@ AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t b
     }
     
     // Allocate arena handle
-    aria_arena* arena = (aria_arena*)std::malloc(sizeof(aria_arena));
+    npk_arena* arena = (npk_arena*)std::malloc(sizeof(npk_arena));
     if (!arena) {
         result.error_code = ARIA_ARENA_ERR_OUT_OF_MEMORY;
         return result;
@@ -109,7 +109,7 @@ AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t b
     size_t first_block_size = std::max(block_size, initial_capacity);
     
     // Allocate first block
-    aria_arena_block* first_block = allocate_block(first_block_size);
+    npk_arena_block* first_block = allocate_block(first_block_size);
     if (!first_block) {
         std::free(arena);
         result.error_code = ARIA_ARENA_ERR_OUT_OF_MEMORY;
@@ -131,7 +131,7 @@ AriaArenaResult aria_arena_new_with_block_size(size_t initial_capacity, size_t b
     return result;
 }
 
-void aria_arena_reset(aria_arena* arena) {
+void npk_arena_reset(npk_arena* arena) {
     if (!arena) {
         return;
     }
@@ -143,14 +143,14 @@ void aria_arena_reset(aria_arena* arena) {
     // Default retention: 16 MB (enough for most workloads, not excessive)
     // - Small embedded systems: Won't OOM from spikes
     // - Desktop/server: Trivial amount of RAM
-    // - Can override with aria_arena_reset_limit() for custom policy
+    // - Can override with npk_arena_reset_limit() for custom policy
     const size_t DEFAULT_RETENTION_BYTES = 16 * 1024 * 1024;  // 16 MB
     
     // Delegate to limit-based reset
-    aria_arena_reset_limit(arena, DEFAULT_RETENTION_BYTES);
+    npk_arena_reset_limit(arena, DEFAULT_RETENTION_BYTES);
 }
 
-void aria_arena_reset_limit(aria_arena* arena, size_t max_retain) {
+void npk_arena_reset_limit(npk_arena* arena, size_t max_retain) {
     if (!arena) {
         return;
     }
@@ -162,15 +162,15 @@ void aria_arena_reset_limit(aria_arena* arena, size_t max_retain) {
     
     // Walk chain and free blocks beyond max_retain
     size_t bytes_retained = 0;
-    aria_arena_block* block = arena->head;
-    aria_arena_block* prev = nullptr;
+    npk_arena_block* block = arena->head;
+    npk_arena_block* prev = nullptr;
     
     while (block) {
         if (bytes_retained >= max_retain && prev) {
             // Free this block and all subsequent blocks
-            aria_arena_block* to_free = block;
+            npk_arena_block* to_free = block;
             while (to_free) {
-                aria_arena_block* next = to_free->next;
+                npk_arena_block* next = to_free->next;
                 free_block(to_free);
                 arena->num_blocks--;
                 arena->total_reserved_sys -= to_free->capacity;
@@ -188,15 +188,15 @@ void aria_arena_reset_limit(aria_arena* arena, size_t max_retain) {
     }
 }
 
-void aria_arena_destroy(aria_arena* arena) {
+void npk_arena_destroy(npk_arena* arena) {
     if (!arena) {
         return;
     }
     
     // Walk chain and free all blocks
-    aria_arena_block* block = arena->head;
+    npk_arena_block* block = arena->head;
     while (block) {
-        aria_arena_block* next = block->next;
+        npk_arena_block* next = block->next;
         free_block(block);
         block = next;
     }
@@ -209,14 +209,14 @@ void aria_arena_destroy(aria_arena* arena) {
 // Arena Allocation Functions
 // ============================================================================
 
-AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
+AriaAllocResult npk_arena_alloc(npk_arena* arena, size_t size, size_t align) {
     // Validate inputs
     if (!arena) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, align);
     }
     
     if (size == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, align);
     }
     
     // Default alignment to 8 bytes if not specified
@@ -226,7 +226,7 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
     
     // Validate alignment
     if (!is_power_of_2(align)) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, align);
     }
     
     // Calculate aligned offset in current block
@@ -239,7 +239,7 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
         arena->current_offset = aligned_offset + size;
         arena->total_allocated_user += size;
         
-        return aria_alloc_result_ok(ptr, size, align);
+        return npk_alloc_result_ok(ptr, size, align);
     }
     
     // COLD PATH - current block is full
@@ -247,9 +247,9 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
     // Large allocation optimization: dedicated block for size > block_size/2
     if (size > arena->default_block_size / ARIA_ARENA_LARGE_THRESHOLD_DIVISOR) {
         // Allocate dedicated block
-        aria_arena_block* large_block = allocate_block(size + align);
+        npk_arena_block* large_block = allocate_block(size + align);
         if (!large_block) {
-            return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
+            return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
         }
         
         // Insert after current block (don't advance current)
@@ -263,7 +263,7 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
         
         // Return aligned pointer from large block
         size_t large_aligned = align_forward(0, align);
-        return aria_alloc_result_ok(large_block->memory + large_aligned, size, align);
+        return npk_alloc_result_ok(large_block->memory + large_aligned, size, align);
     }
     
     // Standard growth: check for existing next block (reuse from previous cycle)
@@ -273,9 +273,9 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
         arena->current_offset = 0;
     } else {
         // Allocate new block
-        aria_arena_block* new_block = allocate_block(arena->default_block_size);
+        npk_arena_block* new_block = allocate_block(arena->default_block_size);
         if (!new_block) {
-            return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
+            return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
         }
         
         // Link new block
@@ -294,7 +294,7 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
     // Sanity check (should always fit in new block)
     if (aligned_offset + size > arena->current->capacity) {
         // This should never happen unless default_block_size is too small
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, align);
     }
     
     // Allocate from new block
@@ -302,27 +302,27 @@ AriaAllocResult aria_arena_alloc(aria_arena* arena, size_t size, size_t align) {
     arena->current_offset = aligned_offset + size;
     arena->total_allocated_user += size;
     
-    return aria_alloc_result_ok(ptr, size, align);
+    return npk_alloc_result_ok(ptr, size, align);
 }
 
-AriaAllocResult aria_arena_alloc_array(aria_arena* arena, size_t elem_size, size_t count, size_t align) {
+AriaAllocResult npk_arena_alloc_array(npk_arena* arena, size_t elem_size, size_t count, size_t align) {
     // Check for overflow
     if (elem_size == 0 || count == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, elem_size * count, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, elem_size * count, align);
     }
     
     if (count > SIZE_MAX / elem_size) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, elem_size * count, align);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, elem_size * count, align);
     }
     
     size_t total_size = elem_size * count;
-    return aria_arena_alloc(arena, total_size, align);
+    return npk_arena_alloc(arena, total_size, align);
 }
 
-AriaAllocResult aria_arena_alloc_zeroed(aria_arena* arena, size_t size, size_t align) {
-    AriaAllocResult result = aria_arena_alloc(arena, size, align);
+AriaAllocResult npk_arena_alloc_zeroed(npk_arena* arena, size_t size, size_t align) {
+    AriaAllocResult result = npk_arena_alloc(arena, size, align);
     
-    if (aria_alloc_result_is_ok(result)) {
+    if (npk_alloc_result_is_ok(result)) {
         std::memset(result.value, 0, size);
     }
     
@@ -333,7 +333,7 @@ AriaAllocResult aria_arena_alloc_zeroed(aria_arena* arena, size_t size, size_t a
 // Arena Query Functions
 // ============================================================================
 
-void aria_arena_get_stats(const aria_arena* arena, 
+void npk_arena_get_stats(const npk_arena* arena, 
                           size_t* total_allocated_user,
                           size_t* total_reserved_sys,
                           size_t* num_blocks) {
@@ -354,7 +354,7 @@ void aria_arena_get_stats(const aria_arena* arena,
     }
 }
 
-size_t aria_arena_remaining_capacity(const aria_arena* arena) {
+size_t npk_arena_remaining_capacity(const npk_arena* arena) {
     if (!arena || !arena->current) {
         return 0;
     }
@@ -367,7 +367,7 @@ size_t aria_arena_remaining_capacity(const aria_arena* arena) {
     return arena->current->capacity - arena->current_offset;
 }
 
-const char* aria_arena_error_message(AriaArenaError error) {
+const char* npk_arena_error_message(AriaArenaError error) {
     switch (error) {
         case ARIA_ARENA_OK:
             return "Success";

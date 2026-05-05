@@ -436,7 +436,7 @@ public:
 // ============================================================================
 // OptionalType - Optional type (T?)
 // ============================================================================
-// Reference: aria_specs.txt (NIL and optional types)
+// Reference: npk_specs.txt (NIL and optional types)
 // Represents a type that can be either a value of type T or NIL
 
 class OptionalType : public Type {

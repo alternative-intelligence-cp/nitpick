@@ -7,7 +7,7 @@
 // 2. AST Validator: Compares self-hosted parser output against C++ parser
 //    output for the same source code, reporting structural mismatches
 //
-// This file is compiled into aria_runtime AND includes the C++ frontend
+// This file is compiled into npk_runtime AND includes the C++ frontend
 // sources for lexer, parser, and AST classes (which are LLVM-free).
 // ═══════════════════════════════════════════════════════════════════════
 

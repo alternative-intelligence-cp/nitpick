@@ -1,22 +1,22 @@
 // Debug atomic operations - create, store, load, destroy
 
-extern func:aria_atomic_int32_create = wild ?*(int32:initial_value);
-extern func:aria_atomic_int32_destroy = void(wild ?*:atomic_ptr);
-extern func:aria_atomic_int32_store = void(wild ?*:atomic_ptr, int32:value, int32:order);
-extern func:aria_atomic_int32_load = int32(wild ?*:atomic_ptr, int32:order);
+extern func:npk_atomic_int32_create = wild ?*(int32:initial_value);
+extern func:npk_atomic_int32_destroy = void(wild ?*:atomic_ptr);
+extern func:npk_atomic_int32_store = void(wild ?*:atomic_ptr, int32:value, int32:order);
+extern func:npk_atomic_int32_load = int32(wild ?*:atomic_ptr, int32:order);
 
 func:main = int32() {
     // Create atomic with 0
-    wild ?->:ptr = aria_atomic_int32_create(0);
+    wild ?->:ptr = npk_atomic_int32_create(0);
     
     // Store 10
-    _ = aria_atomic_int32_store(ptr, 10, 4);
+    _ = npk_atomic_int32_store(ptr, 10, 4);
     
     // Load back - should be 10
-    int32:val = aria_atomic_int32_load(ptr, 4);
+    int32:val = npk_atomic_int32_load(ptr, 4);
     
     // Cleanup
-    _ = aria_atomic_int32_destroy(ptr);
+    _ = npk_atomic_int32_destroy(ptr);
     
     if (val == 10) {
         exit 0;  // SUCCESS

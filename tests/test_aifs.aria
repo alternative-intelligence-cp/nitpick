@@ -18,18 +18,18 @@ func:main = int32() {
     int32:failed = 0i32;
 
     // Create a temp directory and test files
-    string:tmpdir = "/tmp/aria_aifs_test";
+    string:tmpdir = "/tmp/npk_aifs_test";
 
-    drop system("rm -rf /tmp/aria_aifs_test");
-    drop system("mkdir -p /tmp/aria_aifs_test");
+    drop system("rm -rf /tmp/npk_aifs_test");
+    drop system("mkdir -p /tmp/npk_aifs_test");
 
     // Create test files with known content
-    drop system("echo 'test model data 12345' > /tmp/aria_aifs_test/model1.bin");
-    drop system("echo 'another model file' > /tmp/aria_aifs_test/model2.bin");
-    drop system("echo 'tensor weights here' > /tmp/aria_aifs_test/weights.bin");
+    drop system("echo 'test model data 12345' > /tmp/npk_aifs_test/model1.bin");
+    drop system("echo 'another model file' > /tmp/npk_aifs_test/model2.bin");
+    drop system("echo 'tensor weights here' > /tmp/npk_aifs_test/weights.bin");
 
     // ========== Test 1: Set/get tensor dtype ==========
-    string:f1 = "/tmp/aria_aifs_test/model1.bin";
+    string:f1 = "/tmp/npk_aifs_test/model1.bin";
     int32:r1 = raw AIFs.set_dtype(f1, "float32");
     if (r1 == 0i32) {
         drop println("PASS: set_dtype returned 0");
@@ -156,7 +156,7 @@ func:main = int32() {
     }
 
     // ========== Test 9: Verify checksum after modification (should fail) ==========
-    drop system("echo 'corrupted!' >> /tmp/aria_aifs_test/model1.bin");
+    drop system("echo 'corrupted!' >> /tmp/npk_aifs_test/model1.bin");
     int32:ver2 = raw AIFs.verify_checksum(f1);
     if (ver2 == 0i32) {
         drop println("PASS: verify_checksum = 0 (mismatch after modification)");
@@ -238,7 +238,7 @@ func:main = int32() {
     raw AIFs.close(sf);
 
     // ========== Test 14: Nonexistent file checksum ==========
-    int32:bad = raw AIFs.compute_checksum("/tmp/aria_aifs_test/nonexistent.bin");
+    int32:bad = raw AIFs.compute_checksum("/tmp/npk_aifs_test/nonexistent.bin");
     if (bad == 0i32 - 1i32) {
         drop println("PASS: compute_checksum nonexistent = -1");
         passed += 1i32;
@@ -248,7 +248,7 @@ func:main = int32() {
     }
 
     // ========== Test 15: Get checksum on file without one ==========
-    string:nosum = raw AIFs.get_checksum("/tmp/aria_aifs_test/model2.bin");
+    string:nosum = raw AIFs.get_checksum("/tmp/npk_aifs_test/model2.bin");
     if (nosum == "") {
         drop println("PASS: get_checksum on unannotated file = empty");
         passed += 1i32;
@@ -258,7 +258,7 @@ func:main = int32() {
     }
 
     // ========== Cleanup ==========
-    drop system("rm -rf /tmp/aria_aifs_test");
+    drop system("rm -rf /tmp/npk_aifs_test");
 
     // ========== Summary ==========
     drop println("");

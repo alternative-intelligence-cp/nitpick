@@ -39,17 +39,17 @@ extern "C" {
  * @param capacity  Maximum number of slots (must be > 0)
  * @return Opaque handle (as int64), or 0 on allocation failure
  */
-int64_t aria_ustack_new(int64_t capacity);
+int64_t npk_ustack_new(int64_t capacity);
 
 /**
  * Push a value onto the user stack.
  * Fatal on overflow or null handle — prints diagnostic and calls exit(1).
  *
- * @param handle    Stack handle from aria_ustack_new
+ * @param handle    Stack handle from npk_ustack_new
  * @param value     Value to push (all types widened to int64)
  * @param type_tag  Type tag (ARIA_USTACK_TAG_*)
  */
-void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag);
+void npk_ustack_push(int64_t handle, int64_t value, int64_t type_tag);
 
 /**
  * Pop the top value from the user stack.
@@ -59,7 +59,7 @@ void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag);
  * @param expected_tag  Expected type tag (ARIA_USTACK_TAG_*); -1 to skip
  * @return The value (as int64).
  */
-int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag);
+int64_t npk_ustack_pop(int64_t handle, int64_t expected_tag);
 
 /**
  * Peek at the top value without removing it.
@@ -69,7 +69,7 @@ int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag);
  * @param expected_tag  Expected type tag (ARIA_USTACK_TAG_*); -1 to skip
  * @return The value (as int64).
  */
-int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag);
+int64_t npk_ustack_peek(int64_t handle, int64_t expected_tag);
 
 /**
  * Return current number of elements on the stack.
@@ -77,7 +77,7 @@ int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag);
  * @param handle  Stack handle
  * @return Number of slots used, or 0 if handle is invalid
  */
-int64_t aria_ustack_size(int64_t handle);
+int64_t npk_ustack_size(int64_t handle);
 
 /**
  * Return stack capacity in bytes.
@@ -86,7 +86,7 @@ int64_t aria_ustack_size(int64_t handle);
  * @param handle  Stack handle
  * @return Capacity in bytes, or 0 if handle is invalid
  */
-int64_t aria_ustack_capacity_bytes(int64_t handle);
+int64_t npk_ustack_capacity_bytes(int64_t handle);
 
 /**
  * Return number of bytes currently used on the stack.
@@ -95,7 +95,7 @@ int64_t aria_ustack_capacity_bytes(int64_t handle);
  * @param handle  Stack handle
  * @return Bytes used, or 0 if handle is invalid
  */
-int64_t aria_ustack_bytes_used(int64_t handle);
+int64_t npk_ustack_bytes_used(int64_t handle);
 
 /**
  * Check if one more value can be pushed without overflow.
@@ -104,7 +104,7 @@ int64_t aria_ustack_bytes_used(int64_t handle);
  * @param handle  Stack handle
  * @return 1 if fits, 0 if full or handle is invalid
  */
-int64_t aria_ustack_fits(int64_t handle);
+int64_t npk_ustack_fits(int64_t handle);
 
 /**
  * Return the type tag of the top stack item.
@@ -113,14 +113,14 @@ int64_t aria_ustack_fits(int64_t handle);
  * @param handle  Stack handle
  * @return Type tag (ARIA_USTACK_TAG_*), or -1 if empty/invalid
  */
-int64_t aria_ustack_top_type(int64_t handle);
+int64_t npk_ustack_top_type(int64_t handle);
 
 /**
  * Destroy the user stack and free its memory.
  *
  * @param handle  Stack handle (safe to call with 0)
  */
-void aria_ustack_destroy(int64_t handle);
+void npk_ustack_destroy(int64_t handle);
 
 /* ═══════════════════════════════════════════════════════════════════════
  * SMT-Optimized Fast Variants (v0.4.3+)
@@ -131,13 +131,13 @@ void aria_ustack_destroy(int64_t handle);
  * validation — the SMT proof guarantees safety at compile time.
  * ═══════════════════════════════════════════════════════════════════════ */
 
-int64_t aria_ustack_new_fast(int64_t capacity);
-void    aria_ustack_destroy_fast(int64_t handle);
-void    aria_ustack_push_fast(int64_t handle, int64_t value);
-int64_t aria_ustack_pop_fast(int64_t handle);
-int64_t aria_ustack_peek_fast(int64_t handle);
-int64_t aria_ustack_bytes_used_fast(int64_t handle);
-int64_t aria_ustack_top_type_fast(int64_t handle);
+int64_t npk_ustack_new_fast(int64_t capacity);
+void    npk_ustack_destroy_fast(int64_t handle);
+void    npk_ustack_push_fast(int64_t handle, int64_t value);
+int64_t npk_ustack_pop_fast(int64_t handle);
+int64_t npk_ustack_peek_fast(int64_t handle);
+int64_t npk_ustack_bytes_used_fast(int64_t handle);
+int64_t npk_ustack_top_type_fast(int64_t handle);
 
 #ifdef __cplusplus
 }

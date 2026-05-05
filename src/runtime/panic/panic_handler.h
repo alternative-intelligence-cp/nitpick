@@ -15,12 +15,12 @@ typedef void (*HardwareSafetyCallback)(const char* panic_reason);
 
 // Register hardware safety callback
 // Should be called at application startup to register robot safety logic
-void aria_runtime_register_safety_callback(HardwareSafetyCallback callback);
+void npk_runtime_register_safety_callback(HardwareSafetyCallback callback);
 
 // Panic handlers called from Aria code
-void aria_runtime_panic_unwrap(const char* reason);
-void aria_runtime_panic(const char* reason);
-void aria_runtime_assert_failed(const char* expr, const char* file, int line);
+void npk_runtime_panic_unwrap(const char* reason);
+void npk_runtime_panic(const char* reason);
+void npk_runtime_assert_failed(const char* expr, const char* file, int line);
 
 #ifdef __cplusplus
 }

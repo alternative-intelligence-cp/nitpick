@@ -84,46 +84,46 @@ typedef struct AriaRingBuffer AriaRingBuffer;
  * @param capacity Buffer capacity (must be power of 2)
  * @return Ring buffer instance or NULL on failure
  */
-AriaRingBuffer* aria_ring_buffer_create(size_t capacity);
+AriaRingBuffer* npk_ring_buffer_create(size_t capacity);
 
 /**
  * Destroy a ring buffer
  */
-void aria_ring_buffer_destroy(AriaRingBuffer* rb);
+void npk_ring_buffer_destroy(AriaRingBuffer* rb);
 
 /**
  * Write data to ring buffer (producer)
  *
  * @return Bytes written (may be less than requested if buffer full)
  */
-size_t aria_ring_buffer_write(AriaRingBuffer* rb, const void* data, size_t len);
+size_t npk_ring_buffer_write(AriaRingBuffer* rb, const void* data, size_t len);
 
 /**
  * Read data from ring buffer (consumer)
  *
  * @return Bytes read (may be less than requested if buffer empty)
  */
-size_t aria_ring_buffer_read(AriaRingBuffer* rb, void* data, size_t len);
+size_t npk_ring_buffer_read(AriaRingBuffer* rb, void* data, size_t len);
 
 /**
  * Get available space for writing
  */
-size_t aria_ring_buffer_write_available(AriaRingBuffer* rb);
+size_t npk_ring_buffer_write_available(AriaRingBuffer* rb);
 
 /**
  * Get available data for reading
  */
-size_t aria_ring_buffer_read_available(AriaRingBuffer* rb);
+size_t npk_ring_buffer_read_available(AriaRingBuffer* rb);
 
 /**
  * Check if buffer is empty
  */
-bool aria_ring_buffer_is_empty(AriaRingBuffer* rb);
+bool npk_ring_buffer_is_empty(AriaRingBuffer* rb);
 
 /**
  * Check if buffer is full
  */
-bool aria_ring_buffer_is_full(AriaRingBuffer* rb);
+bool npk_ring_buffer_is_full(AriaRingBuffer* rb);
 
 // ============================================================================
 // Zero-Copy Transfer API
@@ -144,14 +144,14 @@ bool aria_ring_buffer_is_full(AriaRingBuffer* rb);
  * @param opts    Transfer options (NULL for defaults)
  * @return Transfer result with bytes transferred or error
  */
-AriaTransferResult aria_io_transfer(int fd_in, int fd_out, int64_t len,
+AriaTransferResult npk_io_transfer(int fd_in, int fd_out, int64_t len,
                                      const AriaTransferOptions* opts);
 
 /**
- * Simple wrapper for aria_io_transfer
+ * Simple wrapper for npk_io_transfer
  * Returns bytes transferred or negative error code
  */
-int64_t aria_io_splice(int fd_in, int fd_out, int64_t len);
+int64_t npk_io_splice(int fd_in, int fd_out, int64_t len);
 
 /**
  * Create an intermediate pipe for splice operations
@@ -161,7 +161,7 @@ int64_t aria_io_splice(int fd_in, int fd_out, int64_t len);
  * @param size     Target pipe buffer size (0 for system default)
  * @return 0 on success, negative error code on failure
  */
-int aria_create_splice_pipe(int pipe_fds[2], size_t size);
+int npk_create_splice_pipe(int pipe_fds[2], size_t size);
 
 /**
  * Resize a pipe's buffer capacity (Linux only)
@@ -170,7 +170,7 @@ int aria_create_splice_pipe(int pipe_fds[2], size_t size);
  * @param size New size in bytes
  * @return Actual new size, or negative error code
  */
-int64_t aria_resize_pipe(int fd, size_t size);
+int64_t npk_resize_pipe(int fd, size_t size);
 
 // ============================================================================
 // Active Pump API
@@ -202,22 +202,22 @@ typedef enum {
  * @param buffer_size  Ring buffer size (0 for default 64KB)
  * @return Pump handle or NULL on failure
  */
-AriaActivePump* aria_active_pump_create(int fd_in, int fd_out, size_t buffer_size);
+AriaActivePump* npk_active_pump_create(int fd_in, int fd_out, size_t buffer_size);
 
 /**
  * Get pump status
  */
-AriaPumpStatus aria_active_pump_status(AriaActivePump* pump);
+AriaPumpStatus npk_active_pump_status(AriaActivePump* pump);
 
 /**
  * Get bytes transferred so far
  */
-int64_t aria_active_pump_bytes_transferred(AriaActivePump* pump);
+int64_t npk_active_pump_bytes_transferred(AriaActivePump* pump);
 
 /**
  * Cancel the pump
  */
-void aria_active_pump_cancel(AriaActivePump* pump);
+void npk_active_pump_cancel(AriaActivePump* pump);
 
 /**
  * Wait for pump to complete
@@ -225,12 +225,12 @@ void aria_active_pump_cancel(AriaActivePump* pump);
  * @param timeout_ms Timeout in milliseconds (0 = infinite)
  * @return Final status
  */
-AriaPumpStatus aria_active_pump_wait(AriaActivePump* pump, uint32_t timeout_ms);
+AriaPumpStatus npk_active_pump_wait(AriaActivePump* pump, uint32_t timeout_ms);
 
 /**
  * Destroy the pump (cancels if still running)
  */
-void aria_active_pump_destroy(AriaActivePump* pump);
+void npk_active_pump_destroy(AriaActivePump* pump);
 
 // ============================================================================
 // Platform Detection
@@ -239,17 +239,17 @@ void aria_active_pump_destroy(AriaActivePump* pump);
 /**
  * Check if zero-copy splice is available on this platform
  */
-bool aria_splice_available(void);
+bool npk_splice_available(void);
 
 /**
  * Check if copy_file_range is available (Linux 4.5+)
  */
-bool aria_copy_file_range_available(void);
+bool npk_copy_file_range_available(void);
 
 /**
  * Get maximum pipe buffer size on this system
  */
-size_t aria_max_pipe_size(void);
+size_t npk_max_pipe_size(void);
 
 // ============================================================================
 // TBB Safety
@@ -261,7 +261,7 @@ size_t aria_max_pipe_size(void);
 /**
  * Check if value is a TBB error sentinel
  */
-static inline bool aria_is_tbb_err(int64_t value) {
+static inline bool npk_is_tbb_err(int64_t value) {
     return value == TBB64_ERR;
 }
 

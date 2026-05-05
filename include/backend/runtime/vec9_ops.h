@@ -56,59 +56,59 @@ typedef struct alignas(64) {
 // Construction and Initialization
 // ============================================================================
 
-vec9_tbb32 aria_vec9_tbb32_zero();
-vec9_tbb32 aria_vec9_tbb32_err();
-vec9_tbb32 aria_vec9_tbb32_from_array(const int32_t* arr);  // Takes 9 elements
+vec9_tbb32 npk_vec9_tbb32_zero();
+vec9_tbb32 npk_vec9_tbb32_err();
+vec9_tbb32 npk_vec9_tbb32_from_array(const int32_t* arr);  // Takes 9 elements
 
 // ============================================================================
 // Element Access
 // ============================================================================
 // Index: 0-8 (dimension 1-9)
 
-int32_t aria_vec9_tbb32_get(const vec9_tbb32* v, int idx);
-void aria_vec9_tbb32_set(vec9_tbb32* v, int idx, int32_t val);
+int32_t npk_vec9_tbb32_get(const vec9_tbb32* v, int idx);
+void npk_vec9_tbb32_set(vec9_tbb32* v, int idx, int32_t val);
 
 // ============================================================================
 // Vector Operations
 // ============================================================================
 
 // Addition (element-wise)
-vec9_tbb32 aria_vec9_tbb32_add(const vec9_tbb32* a, const vec9_tbb32* b);
+vec9_tbb32 npk_vec9_tbb32_add(const vec9_tbb32* a, const vec9_tbb32* b);
 
 // Subtraction (element-wise)
-vec9_tbb32 aria_vec9_tbb32_sub(const vec9_tbb32* a, const vec9_tbb32* b);
+vec9_tbb32 npk_vec9_tbb32_sub(const vec9_tbb32* a, const vec9_tbb32* b);
 
 // Scalar multiplication
-vec9_tbb32 aria_vec9_tbb32_scale(const vec9_tbb32* v, int32_t scalar);
+vec9_tbb32 npk_vec9_tbb32_scale(const vec9_tbb32* v, int32_t scalar);
 
 // Dot product
-int32_t aria_vec9_tbb32_dot(const vec9_tbb32* a, const vec9_tbb32* b);
+int32_t npk_vec9_tbb32_dot(const vec9_tbb32* a, const vec9_tbb32* b);
 
 // Magnitude squared (avoids sqrt for performance)
-int64_t aria_vec9_tbb32_mag_sq(const vec9_tbb32* v);
+int64_t npk_vec9_tbb32_mag_sq(const vec9_tbb32* v);
 
 // ============================================================================
 // Toroidal Operations (for 9D torus wrapping)
 // ============================================================================
 
 // Wrap coordinates to toroidal bounds [0, dim) for each dimension
-vec9_tbb32 aria_vec9_tbb32_wrap(const vec9_tbb32* v, const int32_t* dims);
+vec9_tbb32 npk_vec9_tbb32_wrap(const vec9_tbb32* v, const int32_t* dims);
 
 // Toroidal distance (geodesic on 9D torus)
-int64_t aria_vec9_tbb32_toroidal_dist_sq(const vec9_tbb32* a, const vec9_tbb32* b, const int32_t* dims);
+int64_t npk_vec9_tbb32_toroidal_dist_sq(const vec9_tbb32* a, const vec9_tbb32* b, const int32_t* dims);
 
 // ============================================================================
 // Safety Checks
 // ============================================================================
 
-int aria_vec9_tbb32_has_err(const vec9_tbb32* v);  // Returns 1 if any element is ERR
-int aria_vec9_tbb32_is_zero(const vec9_tbb32* v);  // Returns 1 if all elements are 0
+int npk_vec9_tbb32_has_err(const vec9_tbb32* v);  // Returns 1 if any element is ERR
+int npk_vec9_tbb32_is_zero(const vec9_tbb32* v);  // Returns 1 if all elements are 0
 
 // ============================================================================
 // String Conversion (for debugging)
 // ============================================================================
 
-int aria_vec9_tbb32_to_string(char* buffer, size_t size, const vec9_tbb32* v);
+int npk_vec9_tbb32_to_string(char* buffer, size_t size, const vec9_tbb32* v);
 
 #ifdef __cplusplus
 }

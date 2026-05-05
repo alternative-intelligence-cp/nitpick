@@ -1,4 +1,4 @@
-// aria_pch.h — Precompiled header for Aria compiler (v0.8.2)
+// npk_pch.h — Precompiled header for Aria compiler (v0.8.2)
 // Includes the heaviest LLVM and C++ stdlib headers to speed up builds.
 #pragma once
 

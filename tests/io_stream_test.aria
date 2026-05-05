@@ -18,7 +18,7 @@ use "stdlib/io.aria".*;
 func:main = int32() {
     int32:passed = 0i32;
     int32:failed = 0i32;
-    string:test_path = "/tmp/aria_io_stream_test.txt";
+    string:test_path = "/tmp/npk_io_stream_test.txt";
 
     println("=== stdlib/io.aria FileStream Test Suite ===");
 
@@ -78,7 +78,7 @@ func:main = int32() {
     drop seeker.close();
 
     // ── T04: flush ───────────────────────────────────────────────────────
-    FileStream:flusher = raw FileStream.open("/tmp/aria_io_flush_test.txt", "w");
+    FileStream:flusher = raw FileStream.open("/tmp/npk_io_flush_test.txt", "w");
     drop flusher.write("flush test data\n");
     int32:flush_ret = raw flusher.flush();
     if (flush_ret == 0i32) {
@@ -91,14 +91,14 @@ func:main = int32() {
     drop flusher.close();
 
     // ── T05: Multi-line write/read round-trip ────────────────────────────
-    FileStream:mwriter = raw FileStream.open("/tmp/aria_io_multiline.txt", "w");
+    FileStream:mwriter = raw FileStream.open("/tmp/npk_io_multiline.txt", "w");
     drop mwriter.write("line one\n");
     drop mwriter.write("line two\n");
     drop mwriter.write("line three\n");
     drop mwriter.close();
 
     // Read back
-    FileStream:mreader = raw FileStream.open("/tmp/aria_io_multiline.txt", "r");
+    FileStream:mreader = raw FileStream.open("/tmp/npk_io_multiline.txt", "r");
     string:l1 = raw mreader.readLine();
     string:l2 = raw mreader.readLine();
     string:l3 = raw mreader.readLine();
@@ -166,8 +166,8 @@ func:main = int32() {
 
     // ── T09: Cleanup test files ──────────────────────────────────────────
     int64:del1 = raw deleteFile(test_path);
-    int64:del2 = raw deleteFile("/tmp/aria_io_flush_test.txt");
-    int64:del3 = raw deleteFile("/tmp/aria_io_multiline.txt");
+    int64:del2 = raw deleteFile("/tmp/npk_io_flush_test.txt");
+    int64:del3 = raw deleteFile("/tmp/npk_io_multiline.txt");
     println("[PASS] T09 cleanup");
     passed = passed + 1i32;
 

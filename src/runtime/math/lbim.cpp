@@ -280,26 +280,26 @@ void sdiv_mod(uint64_t* quotient, uint64_t* remainder, const uint64_t* dividend,
 // int128 Division and Modulo
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_int128_t aria_lbim_udiv128(aria_int128_t dividend, aria_int128_t divisor) {
-    aria_int128_t quotient, remainder;
+extern "C" npk_int128_t npk_lbim_udiv128(npk_int128_t dividend, npk_int128_t divisor) {
+    npk_int128_t quotient, remainder;
     div_mod<2>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int128_t aria_lbim_umod128(aria_int128_t dividend, aria_int128_t divisor) {
-    aria_int128_t quotient, remainder;
+extern "C" npk_int128_t npk_lbim_umod128(npk_int128_t dividend, npk_int128_t divisor) {
+    npk_int128_t quotient, remainder;
     div_mod<2>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
 
-extern "C" aria_int128_t aria_lbim_sdiv128(aria_int128_t dividend, aria_int128_t divisor) {
-    aria_int128_t quotient, remainder;
+extern "C" npk_int128_t npk_lbim_sdiv128(npk_int128_t dividend, npk_int128_t divisor) {
+    npk_int128_t quotient, remainder;
     sdiv_mod<2>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int128_t aria_lbim_smod128(aria_int128_t dividend, aria_int128_t divisor) {
-    aria_int128_t quotient, remainder;
+extern "C" npk_int128_t npk_lbim_smod128(npk_int128_t dividend, npk_int128_t divisor) {
+    npk_int128_t quotient, remainder;
     sdiv_mod<2>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
@@ -308,26 +308,26 @@ extern "C" aria_int128_t aria_lbim_smod128(aria_int128_t dividend, aria_int128_t
 // int256 Division and Modulo
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_int256_t aria_lbim_udiv256(aria_int256_t dividend, aria_int256_t divisor) {
-    aria_int256_t quotient, remainder;
+extern "C" npk_int256_t npk_lbim_udiv256(npk_int256_t dividend, npk_int256_t divisor) {
+    npk_int256_t quotient, remainder;
     div_mod<4>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int256_t aria_lbim_umod256(aria_int256_t dividend, aria_int256_t divisor) {
-    aria_int256_t quotient, remainder;
+extern "C" npk_int256_t npk_lbim_umod256(npk_int256_t dividend, npk_int256_t divisor) {
+    npk_int256_t quotient, remainder;
     div_mod<4>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
 
-extern "C" aria_int256_t aria_lbim_sdiv256(aria_int256_t dividend, aria_int256_t divisor) {
-    aria_int256_t quotient, remainder;
+extern "C" npk_int256_t npk_lbim_sdiv256(npk_int256_t dividend, npk_int256_t divisor) {
+    npk_int256_t quotient, remainder;
     sdiv_mod<4>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int256_t aria_lbim_smod256(aria_int256_t dividend, aria_int256_t divisor) {
-    aria_int256_t quotient, remainder;
+extern "C" npk_int256_t npk_lbim_smod256(npk_int256_t dividend, npk_int256_t divisor) {
+    npk_int256_t quotient, remainder;
     sdiv_mod<4>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
@@ -336,26 +336,26 @@ extern "C" aria_int256_t aria_lbim_smod256(aria_int256_t dividend, aria_int256_t
 // int512 Division and Modulo
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_int512_t aria_lbim_udiv512(aria_int512_t dividend, aria_int512_t divisor) {
-    aria_int512_t quotient, remainder;
+extern "C" npk_int512_t npk_lbim_udiv512(npk_int512_t dividend, npk_int512_t divisor) {
+    npk_int512_t quotient, remainder;
     div_mod<8>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int512_t aria_lbim_umod512(aria_int512_t dividend, aria_int512_t divisor) {
-    aria_int512_t quotient, remainder;
+extern "C" npk_int512_t npk_lbim_umod512(npk_int512_t dividend, npk_int512_t divisor) {
+    npk_int512_t quotient, remainder;
     div_mod<8>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
 
-extern "C" aria_int512_t aria_lbim_sdiv512(aria_int512_t dividend, aria_int512_t divisor) {
-    aria_int512_t quotient, remainder;
+extern "C" npk_int512_t npk_lbim_sdiv512(npk_int512_t dividend, npk_int512_t divisor) {
+    npk_int512_t quotient, remainder;
     sdiv_mod<8>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return quotient;
 }
 
-extern "C" aria_int512_t aria_lbim_smod512(aria_int512_t dividend, aria_int512_t divisor) {
-    aria_int512_t quotient, remainder;
+extern "C" npk_int512_t npk_lbim_smod512(npk_int512_t dividend, npk_int512_t divisor) {
+    npk_int512_t quotient, remainder;
     sdiv_mod<8>(quotient.limbs, remainder.limbs, dividend.limbs, divisor.limbs);
     return remainder;
 }
@@ -365,8 +365,8 @@ extern "C" aria_int512_t aria_lbim_smod512(aria_int512_t dividend, aria_int512_t
 // RSA-4096, lattice-based crypto, and quantum-resistant key derivation
 // ═══════════════════════════════════════════════════════════════════════
 
-extern "C" aria_int1024_t aria_lbim_udiv1024(aria_int1024_t dividend, aria_int1024_t divisor) {
-    aria_int1024_t quotient, remainder;
+extern "C" npk_int1024_t npk_lbim_udiv1024(npk_int1024_t dividend, npk_int1024_t divisor) {
+    npk_int1024_t quotient, remainder;
     
     // TBB safety: check for ERR in inputs
     if (is_err_sentinel<16>(dividend.limbs) || is_err_sentinel<16>(divisor.limbs)) {
@@ -384,8 +384,8 @@ extern "C" aria_int1024_t aria_lbim_udiv1024(aria_int1024_t dividend, aria_int10
     return quotient;
 }
 
-extern "C" aria_int1024_t aria_lbim_umod1024(aria_int1024_t dividend, aria_int1024_t divisor) {
-    aria_int1024_t quotient, remainder;
+extern "C" npk_int1024_t npk_lbim_umod1024(npk_int1024_t dividend, npk_int1024_t divisor) {
+    npk_int1024_t quotient, remainder;
     
     // TBB safety: check for ERR in inputs
     if (is_err_sentinel<16>(dividend.limbs) || is_err_sentinel<16>(divisor.limbs)) {
@@ -403,8 +403,8 @@ extern "C" aria_int1024_t aria_lbim_umod1024(aria_int1024_t dividend, aria_int10
     return remainder;
 }
 
-extern "C" aria_int1024_t aria_lbim_sdiv1024(aria_int1024_t dividend, aria_int1024_t divisor) {
-    aria_int1024_t quotient, remainder;
+extern "C" npk_int1024_t npk_lbim_sdiv1024(npk_int1024_t dividend, npk_int1024_t divisor) {
+    npk_int1024_t quotient, remainder;
     
     // TBB safety: check for ERR in inputs
     if (is_err_sentinel<16>(dividend.limbs) || is_err_sentinel<16>(divisor.limbs)) {
@@ -422,8 +422,8 @@ extern "C" aria_int1024_t aria_lbim_sdiv1024(aria_int1024_t dividend, aria_int10
     return quotient;
 }
 
-extern "C" aria_int1024_t aria_lbim_smod1024(aria_int1024_t dividend, aria_int1024_t divisor) {
-    aria_int1024_t quotient, remainder;
+extern "C" npk_int1024_t npk_lbim_smod1024(npk_int1024_t dividend, npk_int1024_t divisor) {
+    npk_int1024_t quotient, remainder;
     
     // TBB safety: check for ERR in inputs
     if (is_err_sentinel<16>(dividend.limbs) || is_err_sentinel<16>(divisor.limbs)) {
@@ -528,8 +528,8 @@ void pow_impl(uint64_t* result, const uint64_t* base, uint64_t exp) {
 
 } // anonymous namespace (pow helpers)
 
-extern "C" aria_int128_t aria_lbim_pow128(aria_int128_t base, uint64_t exp) {
-    aria_int128_t result;
+extern "C" npk_int128_t npk_lbim_pow128(npk_int128_t base, uint64_t exp) {
+    npk_int128_t result;
     if (is_err_sentinel<2>(base.limbs)) {
         set_err_sentinel<2>(result.limbs);
         return result;
@@ -546,8 +546,8 @@ extern "C" aria_int128_t aria_lbim_pow128(aria_int128_t base, uint64_t exp) {
     return result;
 }
 
-extern "C" aria_int256_t aria_lbim_pow256(aria_int256_t base, uint64_t exp) {
-    aria_int256_t result;
+extern "C" npk_int256_t npk_lbim_pow256(npk_int256_t base, uint64_t exp) {
+    npk_int256_t result;
     if (is_err_sentinel<4>(base.limbs)) {
         set_err_sentinel<4>(result.limbs);
         return result;
@@ -563,8 +563,8 @@ extern "C" aria_int256_t aria_lbim_pow256(aria_int256_t base, uint64_t exp) {
     return result;
 }
 
-extern "C" aria_int512_t aria_lbim_pow512(aria_int512_t base, uint64_t exp) {
-    aria_int512_t result;
+extern "C" npk_int512_t npk_lbim_pow512(npk_int512_t base, uint64_t exp) {
+    npk_int512_t result;
     if (is_err_sentinel<8>(base.limbs)) {
         set_err_sentinel<8>(result.limbs);
         return result;
@@ -580,8 +580,8 @@ extern "C" aria_int512_t aria_lbim_pow512(aria_int512_t base, uint64_t exp) {
     return result;
 }
 
-extern "C" aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp) {
-    aria_int1024_t result;
+extern "C" npk_int1024_t npk_lbim_pow1024(npk_int1024_t base, uint64_t exp) {
+    npk_int1024_t result;
     if (is_err_sentinel<16>(base.limbs)) {
         set_err_sentinel<16>(result.limbs);
         return result;
@@ -605,104 +605,104 @@ extern "C" aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp) {
 
 // ----- int128 -----
 
-extern "C" aria_int128_t aria_lbim_and128(aria_int128_t a, aria_int128_t b) {
-    aria_int128_t r;
+extern "C" npk_int128_t npk_lbim_and128(npk_int128_t a, npk_int128_t b) {
+    npk_int128_t r;
     for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
     return r;
 }
 
-extern "C" aria_int128_t aria_lbim_or128(aria_int128_t a, aria_int128_t b) {
-    aria_int128_t r;
+extern "C" npk_int128_t npk_lbim_or128(npk_int128_t a, npk_int128_t b) {
+    npk_int128_t r;
     for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
     return r;
 }
 
-extern "C" aria_int128_t aria_lbim_xor128(aria_int128_t a, aria_int128_t b) {
-    aria_int128_t r;
+extern "C" npk_int128_t npk_lbim_xor128(npk_int128_t a, npk_int128_t b) {
+    npk_int128_t r;
     for (int i = 0; i < 2; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
     return r;
 }
 
-extern "C" aria_int128_t aria_lbim_not128(aria_int128_t a) {
-    aria_int128_t r;
+extern "C" npk_int128_t npk_lbim_not128(npk_int128_t a) {
+    npk_int128_t r;
     for (int i = 0; i < 2; ++i) r.limbs[i] = ~a.limbs[i];
     return r;
 }
 
 // ----- int256 -----
 
-extern "C" aria_int256_t aria_lbim_and256(aria_int256_t a, aria_int256_t b) {
-    aria_int256_t r;
+extern "C" npk_int256_t npk_lbim_and256(npk_int256_t a, npk_int256_t b) {
+    npk_int256_t r;
     for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
     return r;
 }
 
-extern "C" aria_int256_t aria_lbim_or256(aria_int256_t a, aria_int256_t b) {
-    aria_int256_t r;
+extern "C" npk_int256_t npk_lbim_or256(npk_int256_t a, npk_int256_t b) {
+    npk_int256_t r;
     for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
     return r;
 }
 
-extern "C" aria_int256_t aria_lbim_xor256(aria_int256_t a, aria_int256_t b) {
-    aria_int256_t r;
+extern "C" npk_int256_t npk_lbim_xor256(npk_int256_t a, npk_int256_t b) {
+    npk_int256_t r;
     for (int i = 0; i < 4; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
     return r;
 }
 
-extern "C" aria_int256_t aria_lbim_not256(aria_int256_t a) {
-    aria_int256_t r;
+extern "C" npk_int256_t npk_lbim_not256(npk_int256_t a) {
+    npk_int256_t r;
     for (int i = 0; i < 4; ++i) r.limbs[i] = ~a.limbs[i];
     return r;
 }
 
 // ----- int512 -----
 
-extern "C" aria_int512_t aria_lbim_and512(aria_int512_t a, aria_int512_t b) {
-    aria_int512_t r;
+extern "C" npk_int512_t npk_lbim_and512(npk_int512_t a, npk_int512_t b) {
+    npk_int512_t r;
     for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
     return r;
 }
 
-extern "C" aria_int512_t aria_lbim_or512(aria_int512_t a, aria_int512_t b) {
-    aria_int512_t r;
+extern "C" npk_int512_t npk_lbim_or512(npk_int512_t a, npk_int512_t b) {
+    npk_int512_t r;
     for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
     return r;
 }
 
-extern "C" aria_int512_t aria_lbim_xor512(aria_int512_t a, aria_int512_t b) {
-    aria_int512_t r;
+extern "C" npk_int512_t npk_lbim_xor512(npk_int512_t a, npk_int512_t b) {
+    npk_int512_t r;
     for (int i = 0; i < 8; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
     return r;
 }
 
-extern "C" aria_int512_t aria_lbim_not512(aria_int512_t a) {
-    aria_int512_t r;
+extern "C" npk_int512_t npk_lbim_not512(npk_int512_t a) {
+    npk_int512_t r;
     for (int i = 0; i < 8; ++i) r.limbs[i] = ~a.limbs[i];
     return r;
 }
 
 // ----- int1024 -----
 
-extern "C" aria_int1024_t aria_lbim_and1024(aria_int1024_t a, aria_int1024_t b) {
-    aria_int1024_t r;
+extern "C" npk_int1024_t npk_lbim_and1024(npk_int1024_t a, npk_int1024_t b) {
+    npk_int1024_t r;
     for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] & b.limbs[i];
     return r;
 }
 
-extern "C" aria_int1024_t aria_lbim_or1024(aria_int1024_t a, aria_int1024_t b) {
-    aria_int1024_t r;
+extern "C" npk_int1024_t npk_lbim_or1024(npk_int1024_t a, npk_int1024_t b) {
+    npk_int1024_t r;
     for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] | b.limbs[i];
     return r;
 }
 
-extern "C" aria_int1024_t aria_lbim_xor1024(aria_int1024_t a, aria_int1024_t b) {
-    aria_int1024_t r;
+extern "C" npk_int1024_t npk_lbim_xor1024(npk_int1024_t a, npk_int1024_t b) {
+    npk_int1024_t r;
     for (int i = 0; i < 16; ++i) r.limbs[i] = a.limbs[i] ^ b.limbs[i];
     return r;
 }
 
-extern "C" aria_int1024_t aria_lbim_not1024(aria_int1024_t a) {
-    aria_int1024_t r;
+extern "C" npk_int1024_t npk_lbim_not1024(npk_int1024_t a) {
+    npk_int1024_t r;
     for (int i = 0; i < 16; ++i) r.limbs[i] = ~a.limbs[i];
     return r;
 }
@@ -714,17 +714,17 @@ extern "C" aria_int1024_t aria_lbim_not1024(aria_int1024_t a) {
 // ═══════════════════════════════════════════════════════════════════════
 
 #define LBIM_SHIFT_IMPL(BITS, LIMBS) \
-extern "C" aria_int##BITS##_t aria_lbim_shl##BITS(aria_int##BITS##_t a, uint32_t s) { \
+extern "C" npk_int##BITS##_t npk_lbim_shl##BITS(npk_int##BITS##_t a, uint32_t s) { \
     if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
-    aria_int##BITS##_t r; shift_left<LIMBS>(r.limbs, a.limbs, s); return r; \
+    npk_int##BITS##_t r; shift_left<LIMBS>(r.limbs, a.limbs, s); return r; \
 } \
-extern "C" aria_int##BITS##_t aria_lbim_lshr##BITS(aria_int##BITS##_t a, uint32_t s) { \
+extern "C" npk_int##BITS##_t npk_lbim_lshr##BITS(npk_int##BITS##_t a, uint32_t s) { \
     if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
-    aria_int##BITS##_t r; shift_right_logical<LIMBS>(r.limbs, a.limbs, s); return r; \
+    npk_int##BITS##_t r; shift_right_logical<LIMBS>(r.limbs, a.limbs, s); return r; \
 } \
-extern "C" aria_int##BITS##_t aria_lbim_ashr##BITS(aria_int##BITS##_t a, uint32_t s) { \
+extern "C" npk_int##BITS##_t npk_lbim_ashr##BITS(npk_int##BITS##_t a, uint32_t s) { \
     if (is_err_sentinel<LIMBS>(a.limbs)) return a; \
-    aria_int##BITS##_t r; shift_right_arithmetic<LIMBS>(r.limbs, a.limbs, s); return r; \
+    npk_int##BITS##_t r; shift_right_arithmetic<LIMBS>(r.limbs, a.limbs, s); return r; \
 }
 
 LBIM_SHIFT_IMPL(128,  2)

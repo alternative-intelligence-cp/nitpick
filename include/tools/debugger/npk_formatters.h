@@ -75,7 +75,7 @@ private:
  * GC Pointer Synthetic Children Provider (Python-based, LLDB 20+)
  * 
  * Ported from C++ SBSyntheticValueProvider (removed in LLDB 20) to a Python
- * synthetic provider script embedded in aria_formatters.cpp. Registered via
+ * synthetic provider script embedded in npk_formatters.cpp. Registered via
  * SBTypeSynthetic::CreateWithClassName("GCPointerSyntheticProvider").
  * 
  * Provides synthetic children for gc_ptr<T> to expose:

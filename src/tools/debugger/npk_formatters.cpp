@@ -3,7 +3,7 @@
  * Phase 7.4.2: TBB Type Formatters
  */
 
-#include "tools/debugger/aria_formatters.h"
+#include "tools/debugger/npk_formatters.h"
 #include <sstream>
 #include <iomanip>
 

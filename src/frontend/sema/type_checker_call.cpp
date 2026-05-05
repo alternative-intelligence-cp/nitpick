@@ -2486,10 +2486,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // FILE I/O BUILTINS
         // ====================================================================
 
-        // aria_write_file_simple(path: int8*, content: int8*) -> int64
-        if (idExpr->name == "aria_write_file_simple") {
+        // npk_write_file_simple(path: int8*, content: int8*) -> int64
+        if (idExpr->name == "npk_write_file_simple") {
             if (expr->arguments.size() != 2) {
-                addError("aria_write_file_simple() requires exactly two arguments (path, content)", expr);
+                addError("npk_write_file_simple() requires exactly two arguments (path, content)", expr);
                 return typeSystem->getErrorType();
             }
             Type* arg1Type = inferType(expr->arguments[0].get());
@@ -2500,10 +2500,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("int64");
         }
 
-        // aria_file_exists(path: int8*) -> bool
-        if (idExpr->name == "aria_file_exists") {
+        // npk_file_exists(path: int8*) -> bool
+        if (idExpr->name == "npk_file_exists") {
             if (expr->arguments.size() != 1) {
-                addError("aria_file_exists() requires exactly one argument (path)", expr);
+                addError("npk_file_exists() requires exactly one argument (path)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
@@ -2513,10 +2513,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("bool");
         }
 
-        // aria_delete_file_simple(path: int8*) -> int64
-        if (idExpr->name == "aria_delete_file_simple") {
+        // npk_delete_file_simple(path: int8*) -> int64
+        if (idExpr->name == "npk_delete_file_simple") {
             if (expr->arguments.size() != 1) {
-                addError("aria_delete_file_simple() requires exactly one argument (path)", expr);
+                addError("npk_delete_file_simple() requires exactly one argument (path)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());
@@ -2526,10 +2526,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("int64");
         }
 
-        // aria_read_file_simple(path: int8*) -> string
-        if (idExpr->name == "aria_read_file_simple") {
+        // npk_read_file_simple(path: int8*) -> string
+        if (idExpr->name == "npk_read_file_simple") {
             if (expr->arguments.size() != 1) {
-                addError("aria_read_file_simple() requires exactly one argument (path)", expr);
+                addError("npk_read_file_simple() requires exactly one argument (path)", expr);
                 return typeSystem->getErrorType();
             }
             Type* argType = inferType(expr->arguments[0].get());

@@ -7,9 +7,9 @@ use "thread.aria".*;
 use "string_convert.aria".*;
 
 // Reply channel helpers (extern — accessible from lambdas)
-extern func:aria_libc_set_reply_channel = void(int64:ch);
-extern func:aria_libc_get_reply_channel = int64();
-extern func:aria_libc_reply = int32(int64:value);
+extern func:npk_libc_set_reply_channel = void(int64:ch);
+extern func:npk_libc_get_reply_channel = int64();
+extern func:npk_libc_reply = int32(int64:value);
 
 // Global ack channel for actor replies
 int64:ack_ch = 0i64;
@@ -25,11 +25,11 @@ func:main = int32() {
 
     // Setup ack channel for actor replies
     ack_ch = raw Channel.create(64i32);
-    aria_libc_set_reply_channel(ack_ch);
+    npk_libc_set_reply_channel(ack_ch);
 
     // Actor handler: echo each message to reply channel
     (int64)(int64):echo_handler = int64(int64:msg) {
-        aria_libc_reply(msg);
+        npk_libc_reply(msg);
         pass 0i64;
     };
 

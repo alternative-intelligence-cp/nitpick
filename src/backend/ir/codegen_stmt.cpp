@@ -196,16 +196,16 @@ llvm::Type* StmtCodegen::getLLVMTypeFromString(const std::string& type_name) {
     
     // String - AriaString struct { i8* data, i64 length }
     if (type_name == "string") {
-        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
-        if (!aria_string_type) {
+        llvm::StructType* npk_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
+        if (!npk_string_type) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            aria_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
+            npk_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         // Return pointer to AriaString struct (strings are heap-allocated)
-        return llvm::PointerType::get(aria_string_type, 0);
+        return llvm::PointerType::get(npk_string_type, 0);
     }
     
     // Pointer types with @ suffix (e.g., "int8@", "string@", "int64@")
@@ -237,13 +237,13 @@ llvm::Type* StmtCodegen::getLLVMType(Type* type) {
 // ============================================================================
 
 /**
- * Get or declare aria_gc_alloc runtime function
- * Signature: void* aria_gc_alloc(i64 size)
+ * Get or declare npk_gc_alloc runtime function
+ * Signature: void* npk_gc_alloc(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
     llvm::Function* func = module->getFunction("npk_gc_alloc");
     if (!func) {
-        // Declare: void* aria_gc_alloc(i64 size)
+        // Declare: void* npk_gc_alloc(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
             {llvm::Type::getInt64Ty(context)},                          // i64 size param
@@ -260,14 +260,14 @@ llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
 }
 
 /**
- * Get or declare aria_gc_free runtime function
- * Signature: void aria_gc_free(void* ptr)
- * AUDIT FIX BUG-10: Matching deallocator for aria_gc_alloc
+ * Get or declare npk_gc_free runtime function
+ * Signature: void npk_gc_free(void* ptr)
+ * AUDIT FIX BUG-10: Matching deallocator for npk_gc_alloc
  */
 llvm::Function* StmtCodegen::getOrDeclareGCFree() {
     llvm::Function* func = module->getFunction("npk_gc_free");
     if (!func) {
-        // Declare: void aria_gc_free(void* ptr)
+        // Declare: void npk_gc_free(void* ptr)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),                              // void return
             {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)}, // void* ptr param
@@ -284,8 +284,8 @@ llvm::Function* StmtCodegen::getOrDeclareGCFree() {
 }
 
 /**
- * Get or declare aria_gc_safepoint runtime function (v0.8.1)
- * Signature: void aria_gc_safepoint(void)
+ * Get or declare npk_gc_safepoint runtime function (v0.8.1)
+ * Signature: void npk_gc_safepoint(void)
  * Inserted at loop back-edges for GC safepoint polling.
  */
 llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
@@ -308,12 +308,12 @@ llvm::Function* StmtCodegen::getOrDeclareGCSafepoint() {
 
 /**
  * Get or declare aria.alloc runtime function (wild memory)
- * Signature: void* aria_alloc(i64 size)
+ * Signature: void* npk_alloc(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
     llvm::Function* func = module->getFunction("npk_alloc");
     if (!func) {
-        // Declare: void* aria_alloc(i64 size)
+        // Declare: void* npk_alloc(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
             {llvm::Type::getInt64Ty(context)},                          // i64 size param
@@ -330,13 +330,13 @@ llvm::Function* StmtCodegen::getOrDeclareWildAlloc() {
 }
 
 /**
- * Get or declare aria_alloc_exec runtime function (wildx executable memory)
- * Signature: void* aria_alloc_exec(i64 size)
+ * Get or declare npk_alloc_exec runtime function (wildx executable memory)
+ * Signature: void* npk_alloc_exec(i64 size)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
     llvm::Function* func = module->getFunction("npk_alloc_exec");
     if (!func) {
-        // Declare: void* aria_alloc_exec(i64 size)
+        // Declare: void* npk_alloc_exec(i64 size)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
             {llvm::Type::getInt64Ty(context)},                          // i64 size param
@@ -354,12 +354,12 @@ llvm::Function* StmtCodegen::getOrDeclareWildXAlloc() {
 
 /**
  * Get or declare aria.free runtime function
- * Signature: void aria_free(void* ptr)
+ * Signature: void npk_free(void* ptr)
  */
 llvm::Function* StmtCodegen::getOrDeclareWildFree() {
     llvm::Function* func = module->getFunction("npk_free");
     if (!func) {
-        // Declare: void aria_free(void* ptr)
+        // Declare: void npk_free(void* ptr)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),                              // void return
             {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)}, // void* ptr param
@@ -537,28 +537,28 @@ void StmtCodegen::addNVVMKernelMetadata(llvm::Function* func) {
  * 
  * Supports four allocation strategies based on keywords:
  * 1. stack: Fast LIFO allocation via alloca (explicit or default for primitives)
- * 2. gc: Garbage collected heap via aria_gc_alloc (default for objects)
+ * 2. gc: Garbage collected heap via npk_gc_alloc (default for objects)
  * 3. wild: Manual heap via aria.alloc/aria.free (opt-out of GC)
- * 4. wildx: Executable memory via aria_alloc_exec (JIT code generation)
+ * 4. wildx: Executable memory via npk_alloc_exec (JIT code generation)
  * 
  * Example Aria code:
  *   i32:x = 42;                    // Default (stack for primitive)
  *   stack i32:y = 100;             // Explicit stack
  *   gc obj:data = {a:1};           // GC-managed object
  *   wild int64@:ptr = aria.alloc(8); // Manual memory
- *   wildx void@:code = aria_alloc_exec(1024); // Executable memory
+ *   wildx void@:code = npk_alloc_exec(1024); // Executable memory
  * 
  * Generated LLVM IR (stack):
  *   %x = alloca i32
  *   store i32 42, i32* %x
  * 
  * Generated LLVM IR (gc):
- *   %0 = call i8* @aria_gc_alloc(i64 16)
+ *   %0 = call i8* @npk_gc_alloc(i64 16)
  *   %x = bitcast i8* %0 to i32*
  *   store i32 42, i32* %x
  * 
  * Generated LLVM IR (wild):
- *   %0 = call i8* @aria_alloc(i64 8)
+ *   %0 = call i8* @npk_alloc(i64 8)
  *   %ptr = bitcast i8* %0 to i64*
  * 
  * Reference: research_021 (GC), research_022 (Wild/WildX)
@@ -620,7 +620,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         
     } else if (stmt->isGC) {
         // GC heap allocation (explicit gc keyword)
-        // Call aria_gc_alloc runtime function
+        // Call npk_gc_alloc runtime function
         llvm::Function* gc_alloc = getOrDeclareGCAlloc();
         
         // Calculate size: Get type size in bytes
@@ -628,7 +628,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         uint64_t type_size = data_layout.getTypeAllocSize(var_type);
         llvm::Value* size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), type_size);
         
-        // Call aria_gc_alloc(size) -> returns void* (i8*)
+        // Call npk_gc_alloc(size) -> returns void* (i8*)
         llvm::Value* raw_ptr = builder.CreateCall(gc_alloc, {size}, "gc_alloc");
         
         // Bitcast void* to appropriate pointer type
@@ -648,7 +648,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         uint64_t type_size = data_layout.getTypeAllocSize(var_type);
         llvm::Value* size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), type_size);
         
-        // Call aria_alloc(size) -> returns void* (i8*)
+        // Call npk_alloc(size) -> returns void* (i8*)
         llvm::Value* raw_ptr = builder.CreateCall(wild_alloc, {size}, "wild_alloc");
         
         // Bitcast void* to appropriate pointer type
@@ -658,7 +658,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
             stmt->varName
         );
     }
-    // Note: wildx allocation would be handled via explicit aria_alloc_exec() calls in user code,
+    // Note: wildx allocation would be handled via explicit npk_alloc_exec() calls in user code,
     // not via variable declarations (it's for runtime code generation, not regular variables)
     
     if (!var_ptr) {
@@ -736,7 +736,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                         if (init_value->getType()->isFloatTy()) {
                             doubleVal = builder.CreateFPExt(init_value, builder.getDoubleTy(), "f32_to_f64");
                         }
-                        // Call aria_fix256_from_f64(fix256* sret, double)
+                        // Call npk_fix256_from_f64(fix256* sret, double)
                         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context),
@@ -758,7 +758,7 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
                     } else if (init_value->getType()->isIntegerTy()) {
                         // Convert to i64
                         llvm::Value* i64Val = builder.CreateSExtOrTrunc(init_value, builder.getInt64Ty(), "int_to_i64");
-                        // Call aria_fix256_from_i64(fix256* sret, int64_t)
+                        // Call npk_fix256_from_i64(fix256* sret, int64_t)
                         llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context),

@@ -277,7 +277,7 @@ private:
      * Map Aria type to LLVM type
      * Reference: research_012-017 for type specifications
      */
-    llvm::Type* mapType(Type* aria_type);
+    llvm::Type* mapType(Type* npk_type);
     
     /**
      * Map type name string to LLVM Type
@@ -324,7 +324,7 @@ private:
      * Map Aria type to DWARF debug type
      * Creates typedef for TBB types to enable custom formatters
      */
-    llvm::DIType* mapDebugType(Type* aria_type);
+    llvm::DIType* mapDebugType(Type* npk_type);
     
     /**
      * Push a new lexical scope onto the debug scope stack

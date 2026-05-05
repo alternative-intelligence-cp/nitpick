@@ -81,7 +81,7 @@ static_assert(sizeof(ObjHeader) == 8, "ObjHeader must be 64 bits");
  * Thread Safety: Safe for concurrent use with thread-local allocation
  * buffers (TLABs). Falls back to synchronized allocation on TLAB exhaustion.
  */
-void* aria_gc_alloc(size_t size, uint16_t type_id);
+void* npk_gc_alloc(size_t size, uint16_t type_id);
 
 /**
  * Pin a GC object to prevent relocation
@@ -95,13 +95,13 @@ void* aria_gc_alloc(size_t size, uint16_t type_id);
  * 
  * @param ptr Pointer to GC object (must not be NULL)
  * 
- * Usage: wild T@:ptr = #gc_obj  // Compiler calls aria_gc_pin(gc_obj)
+ * Usage: wild T@:ptr = #gc_obj  // Compiler calls npk_gc_pin(gc_obj)
  * 
  * Safety: The # operator is the only safe way to convert a GC reference
  * to a wild pointer. The compiler enforces that pinned objects are not
  * unpinned while wild references exist (Appendage Theory).
  */
-void aria_gc_pin(void* ptr);
+void npk_gc_pin(void* ptr);
 
 /**
  * Unpin a GC object (allow relocation again)
@@ -115,7 +115,7 @@ void aria_gc_pin(void* ptr);
  * remain pinned until reclaimed. Future optimization: reference counting
  * of wild pointers to enable automatic unpinning.
  */
-void aria_gc_unpin(void* ptr);
+void npk_gc_unpin(void* ptr);
 
 // =============================================================================
 // GC Trigger and Control
@@ -133,7 +133,7 @@ void aria_gc_unpin(void* ptr);
  * Semantics: Stop-the-world collection. All mutator threads are paused
  * at safepoints until the collection completes.
  */
-void aria_gc_collect(bool full_collection);
+void npk_gc_collect(bool full_collection);
 
 /**
  * Get GC statistics
@@ -159,7 +159,7 @@ typedef struct {
     uint64_t last_pause_time_ns;   // Most recent STW pause time
 } GCStats;
 
-void aria_gc_get_stats(GCStats* stats);
+void npk_gc_get_stats(GCStats* stats);
 
 // =============================================================================
 // Shadow Stack API (Root Tracking)
@@ -186,7 +186,7 @@ void aria_gc_get_stats(GCStats* stats);
  * 
  * Compiler Injection: At function prologue
  */
-void aria_shadow_stack_push_frame(void);
+void npk_shadow_stack_push_frame(void);
 
 /**
  * Pop the current shadow stack frame
@@ -196,7 +196,7 @@ void aria_shadow_stack_push_frame(void);
  * 
  * Compiler Injection: At function epilogue (all exit blocks)
  */
-void aria_shadow_stack_pop_frame(void);
+void npk_shadow_stack_pop_frame(void);
 
 /**
  * Register a root in the current frame
@@ -208,14 +208,14 @@ void aria_shadow_stack_pop_frame(void);
  * 
  * Example Lowering:
  *   obj:x = ...;  // Aria source
- *   void* x = aria_gc_alloc(...);  // LLVM IR
- *   aria_shadow_stack_add_root(&x);  // Root registration
+ *   void* x = npk_gc_alloc(...);  // LLVM IR
+ *   npk_shadow_stack_add_root(&x);  // Root registration
  * 
  * Note: For dyn variables (which can change type at runtime), roots
  * are registered/deregistered dynamically as the variable transitions
  * between reference and primitive types.
  */
-void aria_shadow_stack_add_root(void** root_addr);
+void npk_shadow_stack_add_root(void** root_addr);
 
 /**
  * Remove a root from the current frame
@@ -225,7 +225,7 @@ void aria_shadow_stack_add_root(void** root_addr);
  * 
  * @param root_addr Address of the stack variable to deregister
  */
-void aria_shadow_stack_remove_root(void** root_addr);
+void npk_shadow_stack_remove_root(void** root_addr);
 
 // =============================================================================
 // Write Barrier API (Generational GC Support)
@@ -248,11 +248,11 @@ void aria_shadow_stack_remove_root(void** root_addr);
  * Compiler Injection:
  *   obj.field = value;  // Aria source
  *   *field_addr = value;  // LLVM store
- *   aria_gc_write_barrier(obj, value);  // Barrier
+ *   npk_gc_write_barrier(obj, value);  // Barrier
  * 
  * Optimization: For !is_nursery(obj), the barrier is a no-op at runtime.
  */
-void aria_gc_write_barrier(void* obj, void* ref);
+void npk_gc_write_barrier(void* obj, void* ref);
 
 // =============================================================================
 // Internal Utilities (for testing/debugging)
@@ -267,7 +267,7 @@ void aria_gc_write_barrier(void* obj, void* ref);
  * Warning: Internal function. Direct header manipulation can corrupt
  * GC state. Only use for debugging or testing.
  */
-ObjHeader* aria_gc_get_header(void* ptr);
+ObjHeader* npk_gc_get_header(void* ptr);
 
 /**
  * Check if a pointer is in the GC heap
@@ -277,7 +277,7 @@ ObjHeader* aria_gc_get_header(void* ptr);
  * 
  * Useful for assertions and debugging.
  */
-bool aria_gc_is_heap_pointer(void* ptr);
+bool npk_gc_is_heap_pointer(void* ptr);
 
 // =============================================================================
 // GC Initialization and Shutdown
@@ -287,30 +287,30 @@ bool aria_gc_is_heap_pointer(void* ptr);
  * Initialize the garbage collector
  * 
  * Must be called before any GC allocations. Typically invoked by
- * the runtime startup code (aria_main initialization).
+ * the runtime startup code (npk_main initialization).
  * 
  * @param nursery_size Initial nursery size (bytes, default: 4MB)
  * @param old_gen_threshold Major GC trigger threshold (bytes, default: 64MB)
  * 
  * This function is idempotent (safe to call multiple times).
  */
-void aria_gc_init(size_t nursery_size, size_t old_gen_threshold);
+void npk_gc_init(size_t nursery_size, size_t old_gen_threshold);
 
 /**
  * Shutdown the garbage collector
  * 
  * Frees all GC heap memory. Called at process exit.
  * 
- * Warning: After shutdown, aria_gc_alloc will fail. Only call this
+ * Warning: After shutdown, npk_gc_alloc will fail. Only call this
  * during final cleanup.
  */
-void aria_gc_shutdown(void);
+void npk_gc_shutdown(void);
 
 /**
  * @brief Release GC-visible memory (coroutine frames, etc.) back to free store.
- * @param ptr Pointer previously allocated with malloc/aria_gc_alloc.
+ * @param ptr Pointer previously allocated with malloc/npk_gc_alloc.
  */
-void aria_gc_free(void* ptr);
+void npk_gc_free(void* ptr);
 
 // =============================================================================
 // v0.8.0: GC Configuration & Statistics
@@ -320,14 +320,14 @@ void aria_gc_free(void* ptr);
  * Enable printing GC statistics at program exit (via atexit).
  * Called by --gc-stats compiler flag injection.
  */
-void aria_gc_enable_stats_at_exit(uint8_t enable);
+void npk_gc_enable_stats_at_exit(uint8_t enable);
 
 /**
  * Set maximum total heap size. Allocations that would exceed this
  * limit trigger major GC; if still over limit, return NULL.
  * Set to 0 for unlimited (default).
  */
-void aria_gc_set_max_heap(uint64_t max_bytes);
+void npk_gc_set_max_heap(uint64_t max_bytes);
 
 /**
  * Finalizer callback type.
@@ -344,7 +344,7 @@ typedef void (*AriaFinalizer)(void* obj);
  * @param type_id Runtime type identifier
  * @param finalizer Function to call on object death
  */
-void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
+void npk_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
 
 /**
  * Register type layout for reference tracing.
@@ -355,7 +355,7 @@ void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer);
  *                    where GC-managed pointers are stored
  * @param num_refs Number of entries in ref_offsets
  */
-void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
+void npk_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs);
 
 // =============================================================================
 // v0.8.1: Concurrent Collection & Safepoints
@@ -367,7 +367,7 @@ void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, s
  * using SATB (snapshot-at-the-beginning) write barrier.
  * Default: disabled (STW mark).
  */
-void aria_gc_enable_concurrent(uint8_t enable);
+void npk_gc_enable_concurrent(uint8_t enable);
 
 /**
  * GC safepoint poll.
@@ -375,7 +375,7 @@ void aria_gc_enable_concurrent(uint8_t enable);
  * If the GC is requesting a STW pause, blocks until released.
  * When no collection is pending, this is a single atomic load (fast path).
  */
-void aria_gc_safepoint(void);
+void npk_gc_safepoint(void);
 
 /**
  * v0.8.4: Register a JIT-allocated root for GC tracking.
@@ -385,15 +385,15 @@ void aria_gc_safepoint(void);
  * @param root_addr Address of a pointer variable that may point to a GC object.
  *                  The GC will read *root_addr during mark phase.
  */
-void aria_gc_register_jit_root(void** root_addr);
+void npk_gc_register_jit_root(void** root_addr);
 
 /**
  * v0.8.4: Unregister a JIT-allocated root.
  * Call when the JIT module is unloaded or the root is no longer needed.
  * 
- * @param root_addr Address previously registered with aria_gc_register_jit_root.
+ * @param root_addr Address previously registered with npk_gc_register_jit_root.
  */
-void aria_gc_unregister_jit_root(void** root_addr);
+void npk_gc_unregister_jit_root(void** root_addr);
 
 #ifdef __cplusplus
 }

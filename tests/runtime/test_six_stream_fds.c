@@ -4,14 +4,14 @@
 
 int main() {
     // Initialize six-stream I/O
-    aria_streams_init();
+    npk_streams_init();
     
     // Test 1: Write to each stream
     printf("=== Six-Stream I/O Test ===\n");
     
-    aria_stdout_write("1. This is stdout (FD 1)\n");
-    aria_stderr_write("2. This is stderr (FD 2)\n");
-    aria_stddbg_write("3. This is stddbg (FD 3)\n");
+    npk_stdout_write("1. This is stdout (FD 1)\n");
+    npk_stderr_write("2. This is stderr (FD 2)\n");
+    npk_stddbg_write("3. This is stddbg (FD 3)\n");
     
     // Test 2: Verify FD numbers
     printf("\n=== FD Verification ===\n");
@@ -26,18 +26,18 @@ int main() {
     
     // Test 3: Write debug messages
     printf("\n=== Debug Output Test ===\n");
-    aria_stddbg_printf("[DEBUG] Integer: %d\n", 42);
-    aria_stddbg_printf("[DEBUG] String: %s\n", "Hello from FD 3!");
-    aria_stddbg_printf("[DEBUG] Float: %.2f\n", 3.14159);
+    npk_stddbg_printf("[DEBUG] Integer: %d\n", 42);
+    npk_stddbg_printf("[DEBUG] String: %s\n", "Hello from FD 3!");
+    npk_stddbg_printf("[DEBUG] Float: %.2f\n", 3.14159);
     
     // Test 4: Binary streams (write test data)
     printf("\n=== Binary Stream Test ===\n");
     const char test_data[] = "BINARY_DATA_TEST";
-    int64_t written = aria_stddato_write(test_data, sizeof(test_data));
+    int64_t written = npk_stddato_write(test_data, sizeof(test_data));
     printf("Wrote %ld bytes to stddato (FD 5)\n", written);
     
     // Cleanup
-    aria_streams_cleanup();
+    npk_streams_cleanup();
     
     printf("\n=== Test Complete ===\n");
     return 0;

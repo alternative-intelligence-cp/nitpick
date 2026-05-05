@@ -8,7 +8,7 @@ func:main = int32() {
     // Test 1: Write a file
     print("Test 1: Writing file...\n");
     string:content = "Hello, Aria!\n";
-    int64:write_result = raw writeFile("/tmp/aria_test.txt", content);
+    int64:write_result = raw writeFile("/tmp/npk_test.txt", content);
     if (write_result != 0i64) {
         print("FAIL: Could not write file\n");
         exit 1i32;
@@ -17,7 +17,7 @@ func:main = int32() {
 
     // Test 2: Check file exists
     print("Test 2: Checking file exists...\n");
-    bool:exists_result = raw fileExists("/tmp/aria_test.txt");
+    bool:exists_result = raw fileExists("/tmp/npk_test.txt");
     if (!exists_result) {
         print("FAIL: File does not exist after write\n");
         exit 1i32;
@@ -26,7 +26,7 @@ func:main = int32() {
 
     // Test 3: Get file size
     print("Test 3: Getting file size...\n");
-    int64:size_result = raw fileSize("/tmp/aria_test.txt");
+    int64:size_result = raw fileSize("/tmp/npk_test.txt");
     if (size_result < 0i64) {
         print("FAIL: fileSize returned error\n");
         exit 1i32;
@@ -35,13 +35,13 @@ func:main = int32() {
 
     // Test 4: Read the file
     print("Test 4: Reading file...\n");
-    string:read_content = raw readFile("/tmp/aria_test.txt");
+    string:read_content = raw readFile("/tmp/npk_test.txt");
     print("File content: ");
     print(read_content);
 
     // Test 5: Delete the file
     print("Test 5: Deleting file...\n");
-    int64:delete_result = raw deleteFile("/tmp/aria_test.txt");
+    int64:delete_result = raw deleteFile("/tmp/npk_test.txt");
     if (delete_result != 0i64) {
         print("FAIL: Could not delete file\n");
         exit 1i32;
@@ -50,7 +50,7 @@ func:main = int32() {
 
     // Test 6: Verify file is gone
     print("Test 6: Verifying file deleted...\n");
-    bool:exists2_result = raw fileExists("/tmp/aria_test.txt");
+    bool:exists2_result = raw fileExists("/tmp/npk_test.txt");
     if (exists2_result) {
         print("FAIL: File still exists after delete\n");
         exit 1i32;

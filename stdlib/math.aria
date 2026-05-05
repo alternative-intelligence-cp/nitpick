@@ -14,14 +14,14 @@
 //         0 direct extern calls; backed by libaria_libc_math.so
 
 // ── aria-libc math shim (replaces direct libm / runtime externs) ─────────────
-extern "aria_libc_math" {
-    func:aria_libc_math_fmod     = flt64(flt64:x, flt64:y);
-    func:aria_libc_math_hypot    = flt64(flt64:x, flt64:y);
-    func:aria_libc_math_copysign = flt64(flt64:mag, flt64:sgn);
-    func:aria_libc_math_fma      = flt64(flt64:a, flt64:b, flt64:c);
-    func:aria_libc_math_isnan    = int32(flt64:x);
-    func:aria_libc_math_isinf    = int32(flt64:x);
-    func:aria_libc_math_isfinite = int32(flt64:x);
+extern "npk_libc_math" {
+    func:npk_libc_math_fmod     = flt64(flt64:x, flt64:y);
+    func:npk_libc_math_hypot    = flt64(flt64:x, flt64:y);
+    func:npk_libc_math_copysign = flt64(flt64:mag, flt64:sgn);
+    func:npk_libc_math_fma      = flt64(flt64:a, flt64:b, flt64:c);
+    func:npk_libc_math_isnan    = int32(flt64:x);
+    func:npk_libc_math_isinf    = int32(flt64:x);
+    func:npk_libc_math_isfinite = int32(flt64:x);
 }
 
 // ── Type:Math — static math utilities ────────────────────────────────────────
@@ -33,21 +33,21 @@ Type:Math = {
     // Uses aria-libc math shim (C isnan) because Aria's != with
     // fcmp une still has edge cases for signaling NaN
     func:is_nan = bool(flt64:x) {
-        int32:r = aria_libc_math_isnan(x);
+        int32:r = npk_libc_math_isnan(x);
         if (r != 0i32) { pass true; }
         pass false;
     };
 
     // is_inf(x) — true if x is +/- infinity
     func:is_inf = bool(flt64:x) {
-        int32:r = aria_libc_math_isinf(x);
+        int32:r = npk_libc_math_isinf(x);
         if (r != 0i32) { pass true; }
         pass false;
     };
 
     // is_finite(x) — true if x is neither NaN nor infinity
     func:is_finite = bool(flt64:x) {
-        int32:r = aria_libc_math_isfinite(x);
+        int32:r = npk_libc_math_isfinite(x);
         if (r != 0i32) { pass true; }
         pass false;
     };
@@ -124,7 +124,7 @@ Type:Math = {
 
     // wrap(value, max_val) — wrap value into [0, max_val)
     func:wrap = flt64(flt64:value, flt64:max_val) {
-        flt64:result = aria_libc_math_fmod(value, max_val);
+        flt64:result = npk_libc_math_fmod(value, max_val);
         if (result < 0.0) { pass result + max_val; }
         pass result;
     };
@@ -168,25 +168,25 @@ Type:Math = {
 
     // fmod(x, y) — floating-point remainder
     func:fmod_f64 = flt64(flt64:x, flt64:y) {
-        flt64:r = aria_libc_math_fmod(x, y);
+        flt64:r = npk_libc_math_fmod(x, y);
         pass r;
     };
 
     // hypot(x, y) — sqrt(x*x + y*y) without overflow
     func:hypot_f64 = flt64(flt64:x, flt64:y) {
-        flt64:r = aria_libc_math_hypot(x, y);
+        flt64:r = npk_libc_math_hypot(x, y);
         pass r;
     };
 
     // copysign(magnitude, sign) — magnitude with sign's sign bit
     func:copysign_f64 = flt64(flt64:magnitude, flt64:sign_val) {
-        flt64:r = aria_libc_math_copysign(magnitude, sign_val);
+        flt64:r = npk_libc_math_copysign(magnitude, sign_val);
         pass r;
     };
 
     // fma(x, y, z) — fused multiply-add: x*y + z (single rounding)
     func:fma_f64 = flt64(flt64:x, flt64:y, flt64:z) {
-        flt64:r = aria_libc_math_fma(x, y, z);
+        flt64:r = npk_libc_math_fma(x, y, z);
         pass r;
     };
 

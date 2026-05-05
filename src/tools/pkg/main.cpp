@@ -212,14 +212,14 @@ int cmdSearch(PackageInstaller& installer, const std::vector<std::string>& args)
     
     // Find registry.json — check common locations
     std::string registry_path;
-    const char* aria_registry = getenv("ARIA_REGISTRY");
-    if (aria_registry) {
-        registry_path = aria_registry;
+    const char* npk_registry = getenv("ARIA_REGISTRY");
+    if (npk_registry) {
+        registry_path = npk_registry;
     } else {
         // Check relative to executable or common install locations
         std::vector<std::string> candidates = {
-            "aria_ecosystem/aria_package_repository/registry.json",
-            "../aria_ecosystem/aria_package_repository/registry.json",
+            "npk_ecosystem/npk_package_repository/registry.json",
+            "../npk_ecosystem/npk_package_repository/registry.json",
             std::string(getenv("HOME") ? getenv("HOME") : "") + "/.aria/registry/registry.json",
         };
         for (const auto& path : candidates) {

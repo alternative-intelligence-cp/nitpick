@@ -73,7 +73,7 @@ typedef struct {
  * @param arg Argument to pass to thread function
  * @return Result containing thread handle on success
  */
-AriaResult* aria_thread_create(AriaThreadFunc func, void* arg);
+AriaResult* npk_thread_create(AriaThreadFunc func, void* arg);
 
 /**
  * Create a new thread with specific options.
@@ -83,7 +83,7 @@ AriaResult* aria_thread_create(AriaThreadFunc func, void* arg);
  * @param options Thread configuration options
  * @return Result containing thread handle on success
  */
-AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg, 
+AriaResult* npk_thread_create_with_options(AriaThreadFunc func, void* arg, 
                                              const AriaThreadOptions* options);
 
 /**
@@ -94,7 +94,7 @@ AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg,
  * @param ret_val Pointer to store thread return value (can be NULL)
  * @return Result indicating success or error
  */
-AriaResult* aria_thread_join(AriaThread* thread, void** ret_val);
+AriaResult* npk_thread_join(AriaThread* thread, void** ret_val);
 
 /**
  * Detach a thread, allowing it to run independently.
@@ -104,14 +104,14 @@ AriaResult* aria_thread_join(AriaThread* thread, void** ret_val);
  * @param thread Thread handle to detach
  * @return Result indicating success or error
  */
-AriaResult* aria_thread_detach(AriaThread* thread);
+AriaResult* npk_thread_detach(AriaThread* thread);
 
 /**
  * Get the current thread's ID.
  * 
  * @return Current thread identifier
  */
-AriaThreadId aria_thread_current_id(void);
+AriaThreadId npk_thread_current_id(void);
 
 /**
  * Get a thread's ID from its handle.
@@ -119,7 +119,7 @@ AriaThreadId aria_thread_current_id(void);
  * @param thread Thread handle
  * @return Thread identifier
  */
-AriaThreadId aria_thread_get_id(AriaThread* thread);
+AriaThreadId npk_thread_get_id(AriaThread* thread);
 
 /**
  * Compare two thread IDs for equality.
@@ -128,27 +128,27 @@ AriaThreadId aria_thread_get_id(AriaThread* thread);
  * @param tid2 Second thread ID
  * @return true if IDs refer to the same thread
  */
-bool aria_thread_id_equal(AriaThreadId tid1, AriaThreadId tid2);
+bool npk_thread_id_equal(AriaThreadId tid1, AriaThreadId tid2);
 
 /**
  * Yield the CPU to other threads.
  * Hints to the scheduler that this thread is willing to give up its timeslice.
  */
-void aria_thread_yield(void);
+void npk_thread_yield(void);
 
 /**
  * Sleep for a specified duration.
  * 
  * @param nanoseconds Duration to sleep in nanoseconds
  */
-void aria_thread_sleep_ns(uint64_t nanoseconds);
+void npk_thread_sleep_ns(uint64_t nanoseconds);
 
 /**
  * Set the current thread's name (for debugging).
  * 
  * @param name Thread name (max 15 characters on Linux)
  */
-void aria_thread_set_name(const char* name);
+void npk_thread_set_name(const char* name);
 
 /* ============================================================================
  * Mutex Synchronization
@@ -174,7 +174,7 @@ typedef enum {
  * @param type Mutex type (normal or recursive)
  * @return Result containing mutex handle on success
  */
-AriaResult* aria_mutex_create(AriaMutexType type);
+AriaResult* npk_mutex_create(AriaMutexType type);
 
 /**
  * Destroy a mutex.
@@ -183,7 +183,7 @@ AriaResult* aria_mutex_create(AriaMutexType type);
  * @param mutex Mutex to destroy
  * @return Result indicating success or error
  */
-AriaResult* aria_mutex_destroy(AriaMutex* mutex);
+AriaResult* npk_mutex_destroy(AriaMutex* mutex);
 
 /**
  * Lock a mutex (blocking).
@@ -192,7 +192,7 @@ AriaResult* aria_mutex_destroy(AriaMutex* mutex);
  * @param mutex Mutex to lock
  * @return Result indicating success or error
  */
-AriaResult* aria_mutex_lock(AriaMutex* mutex);
+AriaResult* npk_mutex_lock(AriaMutex* mutex);
 
 /**
  * Try to lock a mutex (non-blocking).
@@ -201,7 +201,7 @@ AriaResult* aria_mutex_lock(AriaMutex* mutex);
  * @param mutex Mutex to lock
  * @return Result with success=true if locked, success=false if already locked
  */
-AriaResult* aria_mutex_trylock(AriaMutex* mutex);
+AriaResult* npk_mutex_trylock(AriaMutex* mutex);
 
 /**
  * Unlock a mutex.
@@ -210,7 +210,7 @@ AriaResult* aria_mutex_trylock(AriaMutex* mutex);
  * @param mutex Mutex to unlock
  * @return Result indicating success or error
  */
-AriaResult* aria_mutex_unlock(AriaMutex* mutex);
+AriaResult* npk_mutex_unlock(AriaMutex* mutex);
 
 /* ============================================================================
  * Condition Variables
@@ -227,7 +227,7 @@ typedef struct AriaCondVar AriaCondVar;
  * 
  * @return Result containing condition variable handle on success
  */
-AriaResult* aria_condvar_create(void);
+AriaResult* npk_condvar_create(void);
 
 /**
  * Destroy a condition variable.
@@ -235,7 +235,7 @@ AriaResult* aria_condvar_create(void);
  * @param condvar Condition variable to destroy
  * @return Result indicating success or error
  */
-AriaResult* aria_condvar_destroy(AriaCondVar* condvar);
+AriaResult* npk_condvar_destroy(AriaCondVar* condvar);
 
 /**
  * Wait on a condition variable.
@@ -246,7 +246,7 @@ AriaResult* aria_condvar_destroy(AriaCondVar* condvar);
  * @param mutex Mutex to unlock while waiting (must be locked by caller)
  * @return Result indicating success or error
  */
-AriaResult* aria_condvar_wait(AriaCondVar* condvar, AriaMutex* mutex);
+AriaResult* npk_condvar_wait(AriaCondVar* condvar, AriaMutex* mutex);
 
 /**
  * Wait on a condition variable with timeout.
@@ -256,7 +256,7 @@ AriaResult* aria_condvar_wait(AriaCondVar* condvar, AriaMutex* mutex);
  * @param timeout_ns Timeout in nanoseconds
  * @return Result with success=true if signaled, success=false if timeout
  */
-AriaResult* aria_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex, 
+AriaResult* npk_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex, 
                                     uint64_t timeout_ns);
 
 /**
@@ -265,7 +265,7 @@ AriaResult* aria_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex,
  * @param condvar Condition variable to signal
  * @return Result indicating success or error
  */
-AriaResult* aria_condvar_signal(AriaCondVar* condvar);
+AriaResult* npk_condvar_signal(AriaCondVar* condvar);
 
 /**
  * Wake up all threads waiting on a condition variable.
@@ -273,7 +273,7 @@ AriaResult* aria_condvar_signal(AriaCondVar* condvar);
  * @param condvar Condition variable to broadcast
  * @return Result indicating success or error
  */
-AriaResult* aria_condvar_broadcast(AriaCondVar* condvar);
+AriaResult* npk_condvar_broadcast(AriaCondVar* condvar);
 
 /* ============================================================================
  * Thread-Local Storage
@@ -296,7 +296,7 @@ typedef void (*AriaThreadLocalDestructor)(void* value);
  * @param destructor Optional destructor called when thread exits (can be NULL)
  * @return Result containing TLS key on success
  */
-AriaResult* aria_thread_local_create(AriaThreadLocalDestructor destructor);
+AriaResult* npk_thread_local_create(AriaThreadLocalDestructor destructor);
 
 /**
  * Destroy a thread-local storage key.
@@ -304,7 +304,7 @@ AriaResult* aria_thread_local_create(AriaThreadLocalDestructor destructor);
  * @param key TLS key to destroy
  * @return Result indicating success or error
  */
-AriaResult* aria_thread_local_destroy(AriaThreadLocal* key);
+AriaResult* npk_thread_local_destroy(AriaThreadLocal* key);
 
 /**
  * Get the value associated with a TLS key for the current thread.
@@ -312,7 +312,7 @@ AriaResult* aria_thread_local_destroy(AriaThreadLocal* key);
  * @param key TLS key
  * @return Stored value (or NULL if not set)
  */
-void* aria_thread_local_get(AriaThreadLocal* key);
+void* npk_thread_local_get(AriaThreadLocal* key);
 
 /**
  * Set the value associated with a TLS key for the current thread.
@@ -321,7 +321,7 @@ void* aria_thread_local_get(AriaThreadLocal* key);
  * @param value Value to store
  * @return Result indicating success or error
  */
-AriaResult* aria_thread_local_set(AriaThreadLocal* key, void* value);
+AriaResult* npk_thread_local_set(AriaThreadLocal* key, void* value);
 
 /* ============================================================================
  * Read-Write Locks
@@ -338,7 +338,7 @@ typedef struct AriaRWLock AriaRWLock;
  * 
  * @return Result containing RW lock handle on success
  */
-AriaResult* aria_rwlock_create(void);
+AriaResult* npk_rwlock_create(void);
 
 /**
  * Destroy a read-write lock.
@@ -346,7 +346,7 @@ AriaResult* aria_rwlock_create(void);
  * @param rwlock RW lock to destroy
  * @return Result indicating success or error
  */
-AriaResult* aria_rwlock_destroy(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_destroy(AriaRWLock* rwlock);
 
 /**
  * Acquire a read lock (shared access).
@@ -355,7 +355,7 @@ AriaResult* aria_rwlock_destroy(AriaRWLock* rwlock);
  * @param rwlock RW lock to lock for reading
  * @return Result indicating success or error
  */
-AriaResult* aria_rwlock_rdlock(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_rdlock(AriaRWLock* rwlock);
 
 /**
  * Try to acquire a read lock (non-blocking).
@@ -363,7 +363,7 @@ AriaResult* aria_rwlock_rdlock(AriaRWLock* rwlock);
  * @param rwlock RW lock to lock for reading
  * @return Result with success=true if locked, success=false if unavailable
  */
-AriaResult* aria_rwlock_tryrdlock(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_tryrdlock(AriaRWLock* rwlock);
 
 /**
  * Acquire a write lock (exclusive access).
@@ -372,7 +372,7 @@ AriaResult* aria_rwlock_tryrdlock(AriaRWLock* rwlock);
  * @param rwlock RW lock to lock for writing
  * @return Result indicating success or error
  */
-AriaResult* aria_rwlock_wrlock(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_wrlock(AriaRWLock* rwlock);
 
 /**
  * Try to acquire a write lock (non-blocking).
@@ -380,7 +380,7 @@ AriaResult* aria_rwlock_wrlock(AriaRWLock* rwlock);
  * @param rwlock RW lock to lock for writing
  * @return Result with success=true if locked, success=false if unavailable
  */
-AriaResult* aria_rwlock_trywrlock(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_trywrlock(AriaRWLock* rwlock);
 
 /**
  * Release a read or write lock.
@@ -388,7 +388,7 @@ AriaResult* aria_rwlock_trywrlock(AriaRWLock* rwlock);
  * @param rwlock RW lock to unlock
  * @return Result indicating success or error
  */
-AriaResult* aria_rwlock_unlock(AriaRWLock* rwlock);
+AriaResult* npk_rwlock_unlock(AriaRWLock* rwlock);
 
 /* ============================================================================
  * Barriers
@@ -406,7 +406,7 @@ typedef struct AriaBarrier AriaBarrier;
  * @param count Number of threads that must reach the barrier
  * @return Result containing barrier handle on success
  */
-AriaResult* aria_barrier_create(uint32_t count);
+AriaResult* npk_barrier_create(uint32_t count);
 
 /**
  * Destroy a barrier.
@@ -414,7 +414,7 @@ AriaResult* aria_barrier_create(uint32_t count);
  * @param barrier Barrier to destroy
  * @return Result indicating success or error
  */
-AriaResult* aria_barrier_destroy(AriaBarrier* barrier);
+AriaResult* npk_barrier_destroy(AriaBarrier* barrier);
 
 /**
  * Wait at a barrier.
@@ -423,7 +423,7 @@ AriaResult* aria_barrier_destroy(AriaBarrier* barrier);
  * @param barrier Barrier to wait at
  * @return Result indicating success or error
  */
-AriaResult* aria_barrier_wait(AriaBarrier* barrier);
+AriaResult* npk_barrier_wait(AriaBarrier* barrier);
 
 /* ============================================================================
  * Hardware Information
@@ -434,7 +434,7 @@ AriaResult* aria_barrier_wait(AriaBarrier* barrier);
  * 
  * @return Number of hardware threads
  */
-uint32_t aria_thread_hardware_concurrency(void);
+uint32_t npk_thread_hardware_concurrency(void);
 
 #ifdef __cplusplus
 }
