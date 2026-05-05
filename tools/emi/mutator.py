@@ -1,0 +1,375 @@
+#!/usr/bin/env python3
+"""
+EMI Mutation Engine for Nitpick (npkc)
+
+Equivalence Modulo Inputs (EMI) testing: given a seed program that compiles and
+produces a known exit code, generate semantically equivalent variants by:
+
+  1. Dead-code injection    — insert unreachable blocks that cannot affect output
+  2. Identity expressions   — wrap values in arithmetic identities (x+0, x*1, x-0)
+  3. Statement reordering   — swap adjacent independent variable declarations
+  4. Redundant assignments  — insert "x = x;" for mutable bindings
+  5. No-op block insertion  — insert empty or trivially-safe fixed-binding blocks
+
+If any variant produces a different exit code or stdout → miscompile found.
+
+Design constraints:
+  - Works at the source-text level (no AST required)
+  - Conservative: only mutations that are provably semantics-preserving
+  - Nitpick-aware: respects func:main/func:failsafe structure, fixed vs mutable,
+    exit vs pass, println() string-only constraint
+"""
+
+import re
+import random
+from typing import List, Tuple, Optional
+from dataclasses import dataclass, field
+from enum import Enum, auto
+
+
+class MutationType(Enum):
+    DEAD_CODE_INJECT   = auto()
+    IDENTITY_EXPR      = auto()
+    STMT_REORDER       = auto()
+    REDUNDANT_ASSIGN   = auto()
+    NOOP_BLOCK         = auto()
+
+
+@dataclass
+class Mutation:
+    kind: MutationType
+    description: str
+
+
+@dataclass
+class Variant:
+    source: str
+    mutations: List[Mutation] = field(default_factory=list)
+    seed_path: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Source-level helpers
+# ---------------------------------------------------------------------------
+
+# Matches a mutable int32/int64/tbb32/tbb8/tbb16/tbb64 declaration:
+#   int32:name = expr;
+_MUTABLE_DECL_RE = re.compile(
+    r'^(\s*)(int8|int16|int32|int64|uint8|uint16|uint32|uint64|tbb8|tbb16|tbb32|tbb64)'
+    r'(:[\w]+\s*=\s*[^;]+;)',
+    re.MULTILINE
+)
+
+# Matches a simple integer literal used as an rvalue (not in strings, not in exit)
+_INT_LITERAL_RE = re.compile(r'\b(\d+)\b')
+
+# Dead-code block templates — these are provably unreachable
+_DEAD_BLOCKS = [
+    # if (0 == 1) block (never executes) — parens required in Nitpick
+    lambda indent, body: f"{indent}if (0 == 1) {{\n{indent}    {body}\n{indent}}}",
+]
+
+_DEAD_BLOCK_BODIES = [
+    'fixed int32:_dead = 0;',
+    'fixed int32:_dead = 42;',
+    'fixed int32:_dead = 1 + 1;',
+]
+
+# Identity wrappers: given an integer expression string, wrap it
+_IDENTITIES = [
+    lambda e: f"({e} + 0)",
+    lambda e: f"({e} - 0)",
+    lambda e: f"({e} * 1)",
+    lambda e: f"(0 + {e})",
+    lambda e: f"(1 * {e})",
+]
+
+
+# ---------------------------------------------------------------------------
+# Core mutation functions
+# ---------------------------------------------------------------------------
+
+def _inject_dead_code(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """Insert an unreachable if-block at a random safe insertion point inside func:main."""
+    # Find lines inside func:main body (after the opening brace, before exit/pass)
+    lines = source.split('\n')
+    main_start = None
+    main_end = None
+    brace_depth = 0
+    in_main = False
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth > 0 and main_start is None:
+                main_start = i + 1
+            if brace_depth == 0 and main_start is not None:
+                main_end = i
+                break
+
+    if main_start is None or main_end is None or main_end - main_start < 2:
+        return None
+
+    # Pick an insertion point that isn't the last line (before exit)
+    insert_candidates = [
+        i for i in range(main_start, main_end - 1)
+        if not re.search(r'\bexit\b|\bpass\b|\bfail\b', lines[i])
+        and lines[i].strip() != ''
+        and not lines[i].strip().startswith('//')
+    ]
+    if not insert_candidates:
+        return None
+
+    insert_at = rng.choice(insert_candidates)
+    indent = re.match(r'^(\s*)', lines[insert_at]).group(1)
+    body = rng.choice(_DEAD_BLOCK_BODIES)
+    template = rng.choice(_DEAD_BLOCKS)
+    dead_block = template(indent, body)
+
+    new_lines = lines[:insert_at] + [dead_block] + lines[insert_at:]
+    return (
+        '\n'.join(new_lines),
+        Mutation(MutationType.DEAD_CODE_INJECT,
+                 f"inserted dead block at line {insert_at}")
+    )
+
+
+def _apply_identity_expr(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    Wrap a simple integer literal in an arithmetic identity inside a mutable
+    variable declaration. Avoids println() arguments (string-only constraint).
+    """
+    # Find all mutable int declarations in main
+    lines = source.split('\n')
+    candidates = []
+    in_main = False
+    brace_depth = 0
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth == 0 and in_main:
+                in_main = False
+            # Only touch mutable int declarations (not fixed, not println, not exit)
+            if (in_main and brace_depth > 0
+                    and _MUTABLE_DECL_RE.match(line)
+                    and 'println' not in line
+                    and 'exit' not in line
+                    and 'fixed' not in line):
+                candidates.append(i)
+
+    if not candidates:
+        return None
+
+    target_line_idx = rng.choice(candidates)
+    line = lines[target_line_idx]
+
+    # Find the rvalue portion (after '=')
+    eq_pos = line.find('=')
+    if eq_pos == -1:
+        return None
+    rvalue = line[eq_pos + 1:].rstrip().rstrip(';').strip()
+
+    # Only wrap simple integer literals to be safe
+    if not re.fullmatch(r'\d+', rvalue):
+        return None
+
+    wrapper = rng.choice(_IDENTITIES)
+    new_rvalue = wrapper(rvalue)
+    new_line = line[:eq_pos + 1] + ' ' + new_rvalue + ';'
+    lines[target_line_idx] = new_line
+
+    return (
+        '\n'.join(lines),
+        Mutation(MutationType.IDENTITY_EXPR,
+                 f"wrapped literal '{rvalue}' with identity on line {target_line_idx}")
+    )
+
+
+def _reorder_adjacent_decls(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    Swap two adjacent independent mutable variable declarations inside func:main.
+    They are independent if neither references the other's variable name.
+    """
+    lines = source.split('\n')
+    in_main = False
+    brace_depth = 0
+    decl_lines = []
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth == 0:
+                in_main = False
+            if in_main and brace_depth > 0 and _MUTABLE_DECL_RE.match(line):
+                decl_lines.append(i)
+
+    # Find adjacent pairs that are truly independent
+    adjacent_pairs = []
+    for j in range(len(decl_lines) - 1):
+        a, b = decl_lines[j], decl_lines[j + 1]
+        if b != a + 1:
+            continue  # not adjacent
+        # Extract variable names
+        ma = re.search(r':(\w+)\s*=', lines[a])
+        mb = re.search(r':(\w+)\s*=', lines[b])
+        if not ma or not mb:
+            continue
+        name_a = ma.group(1)
+        name_b = mb.group(1)
+        rvalue_a = lines[a][lines[a].find('=') + 1:]
+        rvalue_b = lines[b][lines[b].find('=') + 1:]
+        # Independent: b's rvalue doesn't use a's name, a's rvalue doesn't use b's name
+        if re.search(r'\b' + re.escape(name_a) + r'\b', rvalue_b):
+            continue
+        if re.search(r'\b' + re.escape(name_b) + r'\b', rvalue_a):
+            continue
+        adjacent_pairs.append((a, b))
+
+    if not adjacent_pairs:
+        return None
+
+    a, b = rng.choice(adjacent_pairs)
+    lines[a], lines[b] = lines[b], lines[a]
+
+    return (
+        '\n'.join(lines),
+        Mutation(MutationType.STMT_REORDER,
+                 f"swapped independent declarations at lines {a} and {b}")
+    )
+
+
+def _insert_redundant_assign(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    After a mutable variable declaration, insert a redundant self-assignment: x = x;
+    This is semantically a no-op for all types.
+    """
+    lines = source.split('\n')
+    in_main = False
+    brace_depth = 0
+    candidates = []
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth == 0:
+                in_main = False
+            if in_main and brace_depth > 0 and _MUTABLE_DECL_RE.match(line):
+                m = re.search(r':(\w+)\s*=', line)
+                if m:
+                    candidates.append((i, m.group(1)))
+
+    if not candidates:
+        return None
+
+    insert_after, varname = rng.choice(candidates)
+    indent = re.match(r'^(\s*)', lines[insert_after]).group(1)
+    redund = f"{indent}{varname} = {varname};"
+
+    new_lines = lines[:insert_after + 1] + [redund] + lines[insert_after + 1:]
+    return (
+        '\n'.join(new_lines),
+        Mutation(MutationType.REDUNDANT_ASSIGN,
+                 f"inserted redundant '{varname} = {varname};' after line {insert_after}")
+    )
+
+
+def _insert_noop_block(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """Insert a no-op fixed-binding block inside func:main. Scoped, no side effects."""
+    lines = source.split('\n')
+    main_start = None
+    main_end = None
+    brace_depth = 0
+    in_main = False
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth > 0 and main_start is None:
+                main_start = i + 1
+            if brace_depth == 0 and main_start is not None:
+                main_end = i
+                break
+
+    if main_start is None or main_end is None or main_end - main_start < 2:
+        return None
+
+    insert_candidates = [
+        i for i in range(main_start, main_end - 1)
+        if not re.search(r'\bexit\b|\bpass\b', lines[i])
+        and lines[i].strip() != ''
+        and not lines[i].strip().startswith('//')
+    ]
+    if not insert_candidates:
+        return None
+
+    insert_at = rng.choice(insert_candidates)
+    indent = re.match(r'^(\s*)', lines[insert_at]).group(1)
+    val = rng.randint(0, 127)
+    noop = f"{indent}{{\n{indent}    fixed int32:_noop = {val};\n{indent}}}"
+
+    new_lines = lines[:insert_at] + [noop] + lines[insert_at:]
+    return (
+        '\n'.join(new_lines),
+        Mutation(MutationType.NOOP_BLOCK,
+                 f"inserted no-op block at line {insert_at}")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+_MUTATORS = [
+    _inject_dead_code,
+    _apply_identity_expr,
+    _reorder_adjacent_decls,
+    _insert_redundant_assign,
+    _insert_noop_block,
+]
+
+
+def generate_variants(source: str, seed_path: str, count: int,
+                      rng: random.Random, max_mutations_per_variant: int = 3) -> List[Variant]:
+    """
+    Generate up to `count` distinct EMI variants from `source`.
+    Each variant applies 1..max_mutations_per_variant mutations.
+    Returns only variants whose source differs from the original.
+    """
+    variants: List[Variant] = []
+    seen: set = set()
+    seen.add(source)
+    attempts = 0
+    max_attempts = count * 10
+
+    while len(variants) < count and attempts < max_attempts:
+        attempts += 1
+        current = source
+        applied: List[Mutation] = []
+        n_mutations = rng.randint(1, max_mutations_per_variant)
+
+        mutator_pool = list(_MUTATORS)
+        rng.shuffle(mutator_pool)
+
+        for mutator in mutator_pool[:n_mutations]:
+            result = mutator(current, rng)
+            if result is not None:
+                current, mut = result
+                applied.append(mut)
+
+        if current not in seen and applied:
+            seen.add(current)
+            v = Variant(source=current, mutations=applied, seed_path=seed_path)
+            variants.append(v)
+
+    return variants
