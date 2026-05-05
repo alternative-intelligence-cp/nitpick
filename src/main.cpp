@@ -214,7 +214,7 @@ void print_help() {
     std::cout << "  -c                Compile library (no failsafe required)\n";
     std::cout << "  --shared          Compile to shared library (.so)\n";
     std::cout << "  --static          Link as fully static executable\n";
-    std::cout << "  -g                Emit DWARF debug info (for aria-dap)\n";
+    std::cout << "  -g                Emit DWARF debug info (for npk-dap)\n";
     std::cout << "  -O<level>         Optimization level (0-3)\n";
     std::cout << "  -v, --verbose     Verbose output\n\n";
     std::cout << "Verification Options (Z3 SMT Solver):\n";

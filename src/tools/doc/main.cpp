@@ -8,7 +8,7 @@
 namespace fs = std::filesystem;
 
 void print_usage(const char* program_name) {
-    std::cout << "aria-doc - Aria Documentation Generator\n\n";
+    std::cout << "npk-doc - Aria Documentation Generator\n\n";
     std::cout << "Usage: " << program_name << " [OPTIONS] <files...>\n\n";
     std::cout << "Options:\n";
     std::cout << "  -o, --output DIR        Output directory (default: ./docs)\n";
@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
     }
     
     if (verbose) {
-        std::cout << "aria-doc - Aria Documentation Generator\n";
+        std::cout << "npk-doc - Aria Documentation Generator\n";
         std::cout << "========================================\n\n";
         std::cout << "Input files (" << npk_files.size() << "):\n";
         for (const auto& file : npk_files) {

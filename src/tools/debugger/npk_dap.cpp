@@ -6,7 +6,7 @@
  * Communicates via stdin/stdout using JSON-RPC messages.
  * 
  * Usage:
- *   aria-dap
+ *   npk-dap
  * 
  * Typically launched by VS Code or other DAP-compatible editors.
  */

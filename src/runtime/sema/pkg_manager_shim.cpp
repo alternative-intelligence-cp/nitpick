@@ -458,7 +458,7 @@ int32_t pkg_pack(const char* pkg_dir, const char* output_dir) {
         if (!parse_toml_metadata(toml_path, md)) return -3;
         if (!validate_pkg_name(md.name)) return -4;
 
-        std::string filename = md.name + "-" + md.version + ".aria-pkg";
+        std::string filename = md.name + "-" + md.version + ".npk-pkg";
         std::string out_path = od + "/" + filename;
 
         std::string abs = fs::canonical(pd).string();

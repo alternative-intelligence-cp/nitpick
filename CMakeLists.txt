@@ -583,9 +583,9 @@ set_source_files_properties(
 target_precompile_headers(npkc_testing REUSE_FROM npkc)
 message(STATUS "Precompiled headers enabled for npkc (LLVM + stdlib, CXX only)")
 
-# LSP server executable (Phase 7.3)
-add_executable(aria-ls src/tools/lsp/aria-ls.cpp 
-    ${TOOLS_SOURCES} 
+# LSP server executable
+add_executable(npk-ls src/tools/lsp/npk-ls.cpp
+    ${TOOLS_SOURCES}
     ${DIAGNOSTICS_SOURCES}
     ${LEXER_SOURCES}
     ${PARSER_SOURCES}
@@ -593,38 +593,37 @@ add_executable(aria-ls src/tools/lsp/aria-ls.cpp
     ${SEMA_SOURCES}
 )
 # LSP server needs lexer, parser, diagnostics, and sema for type checking
-target_link_libraries(aria-ls ${llvm_libs})
+target_link_libraries(npk-ls ${llvm_libs})
 
-# DAP server executable (Phase 7.4.3)
+# DAP server executable
 if(LLDB_FOUND)
-    add_executable(aria-dap 
+    add_executable(npk-dap
         src/tools/debugger/npk_dap.cpp
         ${DEBUGGER_SOURCES}
     )
-    target_include_directories(aria-dap PRIVATE ${LLDB_INCLUDE_DIRS})
-    target_link_libraries(aria-dap ${LLDB_LIBRARY})
-    
-    message(STATUS "Building DAP server: aria-dap")
-    message(STATUS "LLDB include dirs for aria-dap: ${LLDB_INCLUDE_DIRS}")
+    target_include_directories(npk-dap PRIVATE ${LLDB_INCLUDE_DIRS})
+    target_link_libraries(npk-dap ${LLDB_LIBRARY})
+
+    message(STATUS "Building DAP server: npk-dap")
+    message(STATUS "LLDB include dirs for npk-dap: ${LLDB_INCLUDE_DIRS}")
 else()
     message(STATUS "LLDB not found - DAP server will not be built")
 endif()
 
-# Package manager executable (Phase 7.5)
-add_executable(aria-pkg
+# Package manager executable
+add_executable(npk-pkg
     src/tools/pkg/main.cpp
     ${PKG_SOURCES}
 )
-target_link_libraries(aria-pkg)
-# Primary binary is npkpkg; aria-pkg is a compat symlink
-set_target_properties(aria-pkg PROPERTIES OUTPUT_NAME "npkpkg")
+target_link_libraries(npk-pkg)
+set_target_properties(npk-pkg PROPERTIES OUTPUT_NAME "npkpkg")
 
-# Documentation generator executable (Phase 7.6)
-add_executable(aria-doc
+# Documentation generator executable
+add_executable(npk-doc
     src/tools/doc/main.cpp
     ${DOC_SOURCES}
 )
-target_link_libraries(aria-doc)
+target_link_libraries(npk-doc)
 
 # ============================================================================
 # Testing
@@ -642,8 +641,8 @@ endif()
 # ============================================================================
 
 install(TARGETS npkc DESTINATION bin)
-install(TARGETS aria-pkg DESTINATION bin)
-install(TARGETS aria-doc DESTINATION bin)
+install(TARGETS npk-pkg DESTINATION bin)
+install(TARGETS npk-doc DESTINATION bin)
 install(DIRECTORY lib/std DESTINATION lib/nitpick)
 
 # ============================================================================

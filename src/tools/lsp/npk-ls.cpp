@@ -1,5 +1,5 @@
 /**
- * aria-ls - Aria Language Server
+ * npk-ls - Aria Language Server
  * 
  * LSP server executable that provides IDE features for Aria.
  * Communicates with editors via stdin/stdout using JSON-RPC 2.0.

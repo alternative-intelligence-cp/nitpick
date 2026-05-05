@@ -250,7 +250,7 @@ sudo apt install libhttplib-dev
 
 # Build with web UI support
 cmake -DENABLE_WEB_UI=ON -S . -B build
-cmake --build build --target aria-dap
+cmake --build build --target npk-dap
             </div>
         </div>
     </div>

@@ -62,7 +62,7 @@ struct RegistryEntry {
 
 /**
  * PackageInstaller handles extraction, validation, and installation
- * of .aria-pkg packages to ~/.aria/packages/
+ * of .npk-pkg packages to ~/.aria/packages/
  */
 class PackageInstaller {
 public:
@@ -70,7 +70,7 @@ public:
     ~PackageInstaller();
     
     /**
-     * Install a package from a local .aria-pkg file
+     * Install a package from a local .npk-pkg file
      */
     bool installPackage(const std::string& pkg_path);
     
@@ -110,10 +110,10 @@ public:
                                                const std::string& registry_path);
     
     /**
-     * Create a .aria-pkg tarball from a package directory.
+     * Create a .npk-pkg tarball from a package directory.
      * The directory must contain an aria-package.toml.
      * @param pkg_dir Path to the package source directory
-     * @param output_dir Directory to write the .aria-pkg file (default: current dir)
+     * @param output_dir Directory to write the .npk-pkg file (default: current dir)
      * @return true if packing succeeded
      */
     bool packPackage(const std::string& pkg_dir, const std::string& output_dir = ".");
