@@ -12,7 +12,7 @@
 
 int main(int argc, char** argv) {
     try {
-        aria::lsp::Server server;
+        npk::lsp::Server server;
         server.run();
         return 0;
     } catch (const std::exception& e) {

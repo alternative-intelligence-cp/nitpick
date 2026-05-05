@@ -18,7 +18,7 @@
 #include <regex>
 #include <cmath>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 /**
@@ -120,6 +120,6 @@ public:
 bool RegisterAriaFormatters(lldb::SBDebugger& debugger);
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DEBUGGER_FORMATTERS_H

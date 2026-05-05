@@ -33,7 +33,7 @@
 #include <iostream>
 #include <set>
 
-namespace aria {
+namespace npk {
 
 // Human-readable expression pretty-printer for contract diagnostics (v0.5.2)
 static std::string prettyExpr(ASTNode* node) {
@@ -5228,4 +5228,4 @@ VerifyResult Z3Verifier::proveRecursionBounded(
     return VerifyResult::UNKNOWN;
 }
 
-} // namespace aria
+} // namespace npk

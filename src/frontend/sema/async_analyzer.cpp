@@ -1,7 +1,7 @@
 #include "frontend/sema/async_analyzer.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 AsyncSemanticAnalyzer::AsyncSemanticAnalyzer()
@@ -201,4 +201,4 @@ void AsyncSemanticAnalyzer::analyzeAwaitExpr(AwaitExpr* awaitExpr) {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

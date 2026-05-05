@@ -16,7 +16,7 @@
 #include <memory>
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 // Forward declarations
 class ASTNode;  // ASTNode is in aria namespace
@@ -636,6 +636,6 @@ public:
     bool isSuffixSigned(const std::string& suffix);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_IR_GENERATOR_H

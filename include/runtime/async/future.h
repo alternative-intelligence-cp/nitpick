@@ -12,7 +12,7 @@
 #include <cstring>
 #include <exception> // For std::terminate
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 /**
@@ -223,6 +223,6 @@ public:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_FUTURE_H

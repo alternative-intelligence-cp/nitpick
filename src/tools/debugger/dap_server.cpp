@@ -13,7 +13,7 @@
 
 // Note: Fully qualify nlohmann::nlohmann::json to avoid conflicts with LLDB's internal JSON types
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 // ============================================================================
@@ -1370,4 +1370,4 @@ void DAPServer::handleAriaMemoryMap(const DAPMessage& request, DAPMessage& respo
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

@@ -16,7 +16,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // ============================================================================
@@ -577,4 +577,4 @@ double aria_flt512_to_double(const flt512* f) {
 } // extern "C"
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

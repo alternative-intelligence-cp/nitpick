@@ -25,7 +25,7 @@
 #include <cstddef>
 #include <string>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // ============================================================================
@@ -252,6 +252,6 @@ extern "C" {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_HIGHPREC_FLOAT_H

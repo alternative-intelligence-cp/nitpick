@@ -5,7 +5,7 @@
 #include <chrono>
 #include <atomic>
 
-using namespace aria::lsp;
+using namespace npk::lsp;
 
 TEST_CASE(WorkQueue_push_and_pop) {
     WorkQueue queue;

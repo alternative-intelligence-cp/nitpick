@@ -13,7 +13,7 @@
 #include <unordered_map>
 
 // Forward declarations
-namespace aria {
+namespace npk {
     class ASTNode;
     class LiteralExpr;
     class IdentifierExpr;
@@ -39,7 +39,7 @@ namespace aria {
     }
 }
 
-namespace aria {
+namespace npk {
 namespace backend {
 
 // Forward declaration for circular dependency
@@ -397,10 +397,10 @@ public:
      * @param codegen ExprCodegen instance
      * @return LLVM value of the expression
      */
-    static llvm::Value* codegenExpressionNode(aria::ASTNode* node, ExprCodegen* codegen);
+    static llvm::Value* codegenExpressionNode(npk::ASTNode* node, ExprCodegen* codegen);
 };
 
 } // namespace backend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_CODEGEN_EXPR_H

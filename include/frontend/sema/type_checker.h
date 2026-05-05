@@ -14,7 +14,7 @@
 #include <memory>
 #include <map>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -1035,7 +1035,7 @@ public:
     /**
      * Validate that the required failsafe() function exists
      * 
-     * Every Aria program must define a failsafe(int32) function
+     * Every Nitpick program must define a failsafe(int32) function
      * for handling unrecoverable errors. This enforces accountability
      * for error handling - an empty failsafe is valid but documented.
      * 
@@ -1045,7 +1045,7 @@ public:
     
     /**
      * Validate that func:main is defined in the program.
-     * Every Aria program must define a main() function as the entry point.
+     * Every Nitpick program must define a main() function as the entry point.
      * 
      * Returns: true if main() is defined with correct signature
      */
@@ -1105,6 +1105,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_TYPE_CHECKER_H

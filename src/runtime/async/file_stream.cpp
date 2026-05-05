@@ -4,7 +4,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Result structure for file read operations (same as in io_uring.cpp)
@@ -135,4 +135,4 @@ void FileStream::close() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

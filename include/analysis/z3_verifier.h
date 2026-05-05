@@ -6,7 +6,7 @@
 #include <vector>
 #include <map>
 
-namespace aria {
+namespace npk {
 
 class ASTNode;
 class RulesDeclStmt;
@@ -513,6 +513,6 @@ private:
     void deleteSolver(Z3_solver solver);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_Z3_VERIFIER_H

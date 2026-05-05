@@ -143,10 +143,10 @@ static std::string safe_str(const char* s) {
 // The self-hosted parser stores operator token type as int_val.
 // Since token type numbering matches the C++ TokenType enum, direct cast.
 // ═══════════════════════════════════════════════════════════════════════
-static aria::frontend::Token make_op_token(int64_t op_code, int line, int col) {
-    auto tt = static_cast<aria::frontend::TokenType>(op_code);
-    std::string lexeme = aria::frontend::tokenTypeToString(tt);
-    return aria::frontend::Token(tt, lexeme, line, col);
+static npk::frontend::Token make_op_token(int64_t op_code, int line, int col) {
+    auto tt = static_cast<npk::frontend::TokenType>(op_code);
+    std::string lexeme = npk::frontend::tokenTypeToString(tt);
+    return npk::frontend::Token(tt, lexeme, line, col);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -186,13 +186,13 @@ static std::string token_type_to_suffix(int32_t token_type) {
 // ═══════════════════════════════════════════════════════════════════════
 // Forward declaration
 // ═══════════════════════════════════════════════════════════════════════
-static aria::ASTNodePtr convert_node(ASTNodeCompat* node);
+static npk::ASTNodePtr convert_node(ASTNodeCompat* node);
 
 // ═══════════════════════════════════════════════════════════════════════
 // AST CONVERTER: ASTNodeCompat → native C++ ASTNode
 // ═══════════════════════════════════════════════════════════════════════
 
-static aria::ASTNodePtr convert_literal(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_literal(ASTNodeCompat* n) {
     int line = n->line, col = n->col;
     int32_t lit_kind = n->bool_val;
     int32_t suffix_tok = n->flags;
@@ -200,183 +200,183 @@ static aria::ASTNodePtr convert_literal(ASTNodeCompat* n) {
 
     switch (lit_kind) {
         case CLIT_INT: {
-            auto lit = std::make_shared<aria::LiteralExpr>(n->int_val, line, col);
+            auto lit = std::make_shared<npk::LiteralExpr>(n->int_val, line, col);
             lit->explicit_type = explicit_type;
             return lit;
         }
         case CLIT_FLOAT: {
-            auto lit = std::make_shared<aria::LiteralExpr>(n->float_val, line, col);
+            auto lit = std::make_shared<npk::LiteralExpr>(n->float_val, line, col);
             lit->explicit_type = explicit_type;
             return lit;
         }
         case CLIT_STRING: {
-            auto lit = std::make_shared<aria::LiteralExpr>(safe_str(n->str_val), line, col);
+            auto lit = std::make_shared<npk::LiteralExpr>(safe_str(n->str_val), line, col);
             return lit;
         }
         case CLIT_BOOL: {
-            auto lit = std::make_shared<aria::LiteralExpr>(n->int_val != 0, line, col);
+            auto lit = std::make_shared<npk::LiteralExpr>(n->int_val != 0, line, col);
             return lit;
         }
         case CLIT_NULL: {
-            auto lit = std::make_shared<aria::LiteralExpr>(std::monostate{}, line, col);
+            auto lit = std::make_shared<npk::LiteralExpr>(std::monostate{}, line, col);
             return lit;
         }
         default: {
             // Unknown literal kind — fallback to null
-            return std::make_shared<aria::LiteralExpr>(std::monostate{}, line, col);
+            return std::make_shared<npk::LiteralExpr>(std::monostate{}, line, col);
         }
     }
 }
 
-static aria::ASTNodePtr convert_identifier(ASTNodeCompat* n) {
-    return std::make_shared<aria::IdentifierExpr>(safe_str(n->str_val), n->line, n->col);
+static npk::ASTNodePtr convert_identifier(ASTNodeCompat* n) {
+    return std::make_shared<npk::IdentifierExpr>(safe_str(n->str_val), n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_binary_op(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_binary_op(ASTNodeCompat* n) {
     // children[0] = left, children[1] = right
     // int_val = operator token type
-    aria::ASTNodePtr left = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr right = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr left = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr right = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
     auto op = make_op_token(n->int_val, n->line, n->col);
-    return std::make_shared<aria::BinaryExpr>(left, op, right, n->line, n->col);
+    return std::make_shared<npk::BinaryExpr>(left, op, right, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_unary_op(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_unary_op(ASTNodeCompat* n) {
     // children[0] = operand, int_val = operator token, str_val = "pre"|"post"
-    aria::ASTNodePtr operand = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr operand = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
     auto op = make_op_token(n->int_val, n->line, n->col);
     bool isPostfix = (safe_str(n->str_val) == "post");
-    return std::make_shared<aria::UnaryExpr>(op, operand, isPostfix, n->line, n->col);
+    return std::make_shared<npk::UnaryExpr>(op, operand, isPostfix, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_call(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_call(ASTNodeCompat* n) {
     // Self-hosted parser: children[0] = callee, children[1..N] = arguments
-    aria::ASTNodePtr callee = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    std::vector<aria::ASTNodePtr> args;
+    npk::ASTNodePtr callee = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    std::vector<npk::ASTNodePtr> args;
     for (int64_t i = 1; i < n->child_count; ++i) {
         args.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    return std::make_shared<aria::CallExpr>(callee, args, n->line, n->col);
+    return std::make_shared<npk::CallExpr>(callee, args, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_index(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_index(ASTNodeCompat* n) {
     // children[0] = array, children[1] = index
-    aria::ASTNodePtr arr = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr idx = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    return std::make_shared<aria::IndexExpr>(arr, idx, n->line, n->col);
+    npk::ASTNodePtr arr = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr idx = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    return std::make_shared<npk::IndexExpr>(arr, idx, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_member_access(ASTNodeCompat* n, bool isPtr) {
+static npk::ASTNodePtr convert_member_access(ASTNodeCompat* n, bool isPtr) {
     // children[0] = object, str_val = member name
-    aria::ASTNodePtr obj = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::MemberAccessExpr>(obj, safe_str(n->str_val), isPtr, false, n->line, n->col);
+    npk::ASTNodePtr obj = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::MemberAccessExpr>(obj, safe_str(n->str_val), isPtr, false, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_assignment(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_assignment(ASTNodeCompat* n) {
     // The C++ parser treats assignments as BinaryOp (lowest precedence),
     // so convert to BinaryExpr for compatibility.
     // children[0] = target, children[1] = value, int_val = operator token
-    aria::ASTNodePtr target = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr value = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr target = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr value = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
     auto op = make_op_token(n->int_val, n->line, n->col);
-    return std::make_shared<aria::BinaryExpr>(target, op, value, n->line, n->col);
+    return std::make_shared<npk::BinaryExpr>(target, op, value, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_cast(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_cast(ASTNodeCompat* n) {
     // children[0] = target type, children[1] = expression
     // flags & CFLAG_UNCHECKED_CAST = unchecked
-    aria::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr expr = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr expr = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
     std::string targetType;
     if (typeNode) {
-        auto* simple = dynamic_cast<aria::SimpleType*>(typeNode.get());
+        auto* simple = dynamic_cast<npk::SimpleType*>(typeNode.get());
         if (simple) targetType = simple->typeName;
     }
     bool unchecked = (n->flags & CFLAG_UNCHECKED_CAST) != 0;
-    return std::make_shared<aria::CastExpr>(expr, typeNode, targetType, unchecked, n->line, n->col);
+    return std::make_shared<npk::CastExpr>(expr, typeNode, targetType, unchecked, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_array_literal(ASTNodeCompat* n) {
-    std::vector<aria::ASTNodePtr> elements;
+static npk::ASTNodePtr convert_array_literal(ASTNodeCompat* n) {
+    std::vector<npk::ASTNodePtr> elements;
     for (int64_t i = 0; i < n->child_count; ++i) {
         elements.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    return std::make_shared<aria::ArrayLiteralExpr>(elements, n->line, n->col);
+    return std::make_shared<npk::ArrayLiteralExpr>(elements, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_range(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_range(ASTNodeCompat* n) {
     // children[0] = start, children[1] = end
     // bool_val or flags indicates exclusive
-    aria::ASTNodePtr start = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr end = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr start = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr end = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
     bool exclusive = (n->bool_val != 0);
-    return std::make_shared<aria::RangeExpr>(start, end, exclusive, n->line, n->col);
+    return std::make_shared<npk::RangeExpr>(start, end, exclusive, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_ternary(ASTNodeCompat* n) {
-    aria::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr tval = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    aria::ASTNodePtr fval = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
-    return std::make_shared<aria::TernaryExpr>(cond, tval, fval, n->line, n->col);
+static npk::ASTNodePtr convert_ternary(ASTNodeCompat* n) {
+    npk::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr tval = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr fval = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
+    return std::make_shared<npk::TernaryExpr>(cond, tval, fval, n->line, n->col);
 }
 
 // ─── Type Annotations ───────────────────────────────────────────────
-static aria::ASTNodePtr convert_type_annotation(ASTNodeCompat* n) {
-    return std::make_shared<aria::SimpleType>(safe_str(n->str_val), n->line, n->col);
+static npk::ASTNodePtr convert_type_annotation(ASTNodeCompat* n) {
+    return std::make_shared<npk::SimpleType>(safe_str(n->str_val), n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_pointer_type(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_pointer_type(ASTNodeCompat* n) {
     // children[0] = base type, str_val = "->" or "*"
-    aria::ASTNodePtr base = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    auto pt = std::make_shared<aria::PointerType>(base, n->line, n->col);
+    npk::ASTNodePtr base = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    auto pt = std::make_shared<npk::PointerType>(base, n->line, n->col);
     pt->isNative = (safe_str(n->str_val) == "->");
     return pt;
 }
 
-static aria::ASTNodePtr convert_array_type(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_array_type(ASTNodeCompat* n) {
     // children[0] = element type, children[1] = size (optional)
-    aria::ASTNodePtr elem = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr size = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    return std::make_shared<aria::ArrayType>(elem, size, n->line, n->col);
+    npk::ASTNodePtr elem = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr size = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    return std::make_shared<npk::ArrayType>(elem, size, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_generic_type(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_generic_type(ASTNodeCompat* n) {
     // str_val = base name, children = type arguments
-    std::vector<aria::ASTNodePtr> typeArgs;
+    std::vector<npk::ASTNodePtr> typeArgs;
     for (int64_t i = 0; i < n->child_count; ++i) {
         typeArgs.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    return std::make_shared<aria::GenericType>(safe_str(n->str_val), typeArgs, n->line, n->col);
+    return std::make_shared<npk::GenericType>(safe_str(n->str_val), typeArgs, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_optional_type(ASTNodeCompat* n) {
-    aria::ASTNodePtr wrapped = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::OptionalTypeNode>(wrapped, n->line, n->col);
+static npk::ASTNodePtr convert_optional_type(ASTNodeCompat* n) {
+    npk::ASTNodePtr wrapped = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::OptionalTypeNode>(wrapped, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_safe_ref_type(ASTNodeCompat* n) {
-    aria::ASTNodePtr base = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::SafeRefType>(base, n->line, n->col);
+static npk::ASTNodePtr convert_safe_ref_type(ASTNodeCompat* n) {
+    npk::ASTNodePtr base = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::SafeRefType>(base, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_function_type(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_function_type(ASTNodeCompat* n) {
     // children[0] = return type, children[1..N] = param types
-    aria::ASTNodePtr ret = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    std::vector<aria::ASTNodePtr> params;
+    npk::ASTNodePtr ret = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    std::vector<npk::ASTNodePtr> params;
     for (int64_t i = 1; i < n->child_count; ++i) {
         params.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    return std::make_shared<aria::FunctionType>(ret, params, n->line, n->col);
+    return std::make_shared<npk::FunctionType>(ret, params, n->line, n->col);
 }
 
 // ─── Statements ─────────────────────────────────────────────────────
-static aria::ASTNodePtr convert_var_decl(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_var_decl(ASTNodeCompat* n) {
     // str_val = name, flags = modifiers, children[0] = type, children[1] = init (optional)
     std::string name = safe_str(n->str_val);
-    aria::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr init = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr init = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
 
-    auto decl = std::make_shared<aria::VarDeclStmt>(typeNode, name, init, n->line, n->col);
+    auto decl = std::make_shared<npk::VarDeclStmt>(typeNode, name, init, n->line, n->col);
 
     // Decode flags
     if (n->flags & CFLAG_PUB)   decl->isWild = false; // pub doesn't set wild
@@ -393,15 +393,15 @@ static aria::ASTNodePtr convert_var_decl(ASTNodeCompat* n) {
     return decl;
 }
 
-static aria::ASTNodePtr convert_parameter(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_parameter(ASTNodeCompat* n) {
     // str_val = name, children[0] = type, children[1] = default value (optional)
-    aria::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr defVal = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    auto param = std::make_shared<aria::ParameterNode>(typeNode, safe_str(n->str_val), defVal, n->line, n->col);
+    npk::ASTNodePtr typeNode = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr defVal = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    auto param = std::make_shared<npk::ParameterNode>(typeNode, safe_str(n->str_val), defVal, n->line, n->col);
     return param;
 }
 
-static aria::ASTNodePtr convert_func_decl(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_func_decl(ASTNodeCompat* n) {
     // str_val = name, flags = modifiers
     // children[0] = return type (NT_TYPE_ANNOTATION)
     // children[1..N-2] = parameters (NT_PARAMETER)
@@ -411,10 +411,10 @@ static aria::ASTNodePtr convert_func_decl(ASTNodeCompat* n) {
     bool isAsync  = (n->flags & CFLAG_ASYNC)  != 0;
     bool isPub    = (n->flags & CFLAG_PUB)    != 0;
 
-    aria::ASTNodePtr retType = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr retType = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
 
-    std::vector<aria::ASTNodePtr> params;
-    aria::ASTNodePtr body = nullptr;
+    std::vector<npk::ASTNodePtr> params;
+    npk::ASTNodePtr body = nullptr;
 
     if (isExtern) {
         // Extern: all children after [0] are parameters, no body
@@ -431,160 +431,160 @@ static aria::ASTNodePtr convert_func_decl(ASTNodeCompat* n) {
         }
     }
 
-    auto func = std::make_shared<aria::FuncDeclStmt>(name, retType, params, body, n->line, n->col);
+    auto func = std::make_shared<npk::FuncDeclStmt>(name, retType, params, body, n->line, n->col);
     func->isExtern = isExtern;
     func->isAsync  = isAsync;
     func->isPublic = isPub;
     return func;
 }
 
-static aria::ASTNodePtr convert_struct_decl(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_struct_decl(ASTNodeCompat* n) {
     // str_val = name, children = fields (NT_VAR_DECL)
-    std::vector<aria::ASTNodePtr> fields;
+    std::vector<npk::ASTNodePtr> fields;
     for (int64_t i = 0; i < n->child_count; ++i) {
         fields.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    auto decl = std::make_shared<aria::StructDeclStmt>(safe_str(n->str_val), fields, n->line, n->col);
+    auto decl = std::make_shared<npk::StructDeclStmt>(safe_str(n->str_val), fields, n->line, n->col);
     return decl;
 }
 
-static aria::ASTNodePtr convert_enum_decl(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_enum_decl(ASTNodeCompat* n) {
     // str_val = name, children = variant nodes (NT_VAR_DECL with name + value)
     std::map<std::string, int64_t> variants;
     for (int64_t i = 0; i < n->child_count; ++i) {
         auto* child = (ASTNodeCompat*)n->children[i];
         variants[safe_str(child->str_val)] = child->int_val;
     }
-    return std::make_shared<aria::EnumDeclStmt>(safe_str(n->str_val), variants, n->line, n->col);
+    return std::make_shared<npk::EnumDeclStmt>(safe_str(n->str_val), variants, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_block(ASTNodeCompat* n) {
-    std::vector<aria::ASTNodePtr> stmts;
+static npk::ASTNodePtr convert_block(ASTNodeCompat* n) {
+    std::vector<npk::ASTNodePtr> stmts;
     for (int64_t i = 0; i < n->child_count; ++i) {
         auto s = convert_node((ASTNodeCompat*)n->children[i]);
         if (s) stmts.push_back(s);
     }
-    return std::make_shared<aria::BlockStmt>(stmts, n->line, n->col);
+    return std::make_shared<npk::BlockStmt>(stmts, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_expression_stmt(ASTNodeCompat* n) {
-    aria::ASTNodePtr expr = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::ExpressionStmt>(expr, n->line, n->col);
+static npk::ASTNodePtr convert_expression_stmt(ASTNodeCompat* n) {
+    npk::ASTNodePtr expr = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::ExpressionStmt>(expr, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_pass(ASTNodeCompat* n) {
-    aria::ASTNodePtr val = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::PassStmt>(val, n->line, n->col);
+static npk::ASTNodePtr convert_pass(ASTNodeCompat* n) {
+    npk::ASTNodePtr val = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::PassStmt>(val, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_fail(ASTNodeCompat* n) {
-    aria::ASTNodePtr code = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::FailStmt>(code, n->line, n->col);
+static npk::ASTNodePtr convert_fail(ASTNodeCompat* n) {
+    npk::ASTNodePtr code = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::FailStmt>(code, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_return(ASTNodeCompat* n) {
-    aria::ASTNodePtr val = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::ReturnStmt>(val, n->line, n->col);
+static npk::ASTNodePtr convert_return(ASTNodeCompat* n) {
+    npk::ASTNodePtr val = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::ReturnStmt>(val, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_break(ASTNodeCompat* n) {
-    return std::make_shared<aria::BreakStmt>(safe_str(n->str_val), n->line, n->col);
+static npk::ASTNodePtr convert_break(ASTNodeCompat* n) {
+    return std::make_shared<npk::BreakStmt>(safe_str(n->str_val), n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_continue(ASTNodeCompat* n) {
-    return std::make_shared<aria::ContinueStmt>(safe_str(n->str_val), n->line, n->col);
+static npk::ASTNodePtr convert_continue(ASTNodeCompat* n) {
+    return std::make_shared<npk::ContinueStmt>(safe_str(n->str_val), n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_defer(ASTNodeCompat* n) {
-    aria::ASTNodePtr blk = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    return std::make_shared<aria::DeferStmt>(blk, n->line, n->col);
+static npk::ASTNodePtr convert_defer(ASTNodeCompat* n) {
+    npk::ASTNodePtr blk = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    return std::make_shared<npk::DeferStmt>(blk, n->line, n->col);
 }
 
 // ─── Control Flow ───────────────────────────────────────────────────
-static aria::ASTNodePtr convert_if(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_if(ASTNodeCompat* n) {
     // children[0] = condition, children[1] = then, children[2] = else (optional)
-    aria::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr then_b = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    aria::ASTNodePtr else_b = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
-    return std::make_shared<aria::IfStmt>(cond, then_b, else_b, n->line, n->col);
+    npk::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr then_b = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr else_b = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
+    return std::make_shared<npk::IfStmt>(cond, then_b, else_b, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_while(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_while(ASTNodeCompat* n) {
     // children[0] = condition, children[1] = body
-    aria::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    return std::make_shared<aria::WhileStmt>(cond, body, n->line, n->col);
+    npk::ASTNodePtr cond = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    return std::make_shared<npk::WhileStmt>(cond, body, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_for(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_for(ASTNodeCompat* n) {
     // Range-based: str_val = iterator name, children[0] = collection, children[1] = body
     std::string iterName = safe_str(n->str_val);
-    aria::ASTNodePtr collection = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr collection = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
 
     // Create as range-based for
-    auto stmt = aria::ForStmt::createRangeBased(iterName, "", collection, body, n->line, n->col);
-    return std::shared_ptr<aria::ForStmt>(stmt.release());
+    auto stmt = npk::ForStmt::createRangeBased(iterName, "", collection, body, n->line, n->col);
+    return std::shared_ptr<npk::ForStmt>(stmt.release());
 }
 
-static aria::ASTNodePtr convert_loop(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_loop(ASTNodeCompat* n) {
     // children[0] = start, children[1] = limit, children[2] = step, children[3] = body
-    aria::ASTNodePtr start = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr limit = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    aria::ASTNodePtr step  = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
-    aria::ASTNodePtr body  = (n->child_count > 3) ? convert_node((ASTNodeCompat*)n->children[3]) : nullptr;
-    return std::make_shared<aria::LoopStmt>(start, limit, step, body, n->line, n->col);
+    npk::ASTNodePtr start = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr limit = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    npk::ASTNodePtr step  = (n->child_count > 2) ? convert_node((ASTNodeCompat*)n->children[2]) : nullptr;
+    npk::ASTNodePtr body  = (n->child_count > 3) ? convert_node((ASTNodeCompat*)n->children[3]) : nullptr;
+    return std::make_shared<npk::LoopStmt>(start, limit, step, body, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_pick(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_pick(ASTNodeCompat* n) {
     // children[0] = selector, children[1..N] = cases
-    aria::ASTNodePtr selector = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    std::vector<aria::ASTNodePtr> cases;
+    npk::ASTNodePtr selector = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    std::vector<npk::ASTNodePtr> cases;
     for (int64_t i = 1; i < n->child_count; ++i) {
         cases.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    return std::make_shared<aria::PickStmt>(selector, cases, n->line, n->col);
+    return std::make_shared<npk::PickStmt>(selector, cases, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_pick_case(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_pick_case(ASTNodeCompat* n) {
     // str_val = label, children[0] = pattern, children[1] = body
-    aria::ASTNodePtr pattern = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
-    aria::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
-    return std::make_shared<aria::PickCase>(safe_str(n->str_val), pattern, body, false, n->line, n->col);
+    npk::ASTNodePtr pattern = (n->child_count > 0) ? convert_node((ASTNodeCompat*)n->children[0]) : nullptr;
+    npk::ASTNodePtr body = (n->child_count > 1) ? convert_node((ASTNodeCompat*)n->children[1]) : nullptr;
+    return std::make_shared<npk::PickCase>(safe_str(n->str_val), pattern, body, false, n->line, n->col);
 }
 
 // ─── Modules ────────────────────────────────────────────────────────
-static aria::ASTNodePtr convert_use(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_use(ASTNodeCompat* n) {
     // str_val = module path
     std::vector<std::string> path;
     path.push_back(safe_str(n->str_val));
-    return std::make_shared<aria::UseStmt>(path, n->line, n->col);
+    return std::make_shared<npk::UseStmt>(path, n->line, n->col);
 }
 
-static aria::ASTNodePtr convert_extern(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_extern(ASTNodeCompat* n) {
     // children = extern declarations (usually FUNC_DECL with FLAG_EXTERN)
-    std::vector<aria::ASTNodePtr> decls;
+    std::vector<npk::ASTNodePtr> decls;
     for (int64_t i = 0; i < n->child_count; ++i) {
         decls.push_back(convert_node((ASTNodeCompat*)n->children[i]));
     }
-    auto ext = std::make_shared<aria::ExternStmt>("", n->line, n->col);
+    auto ext = std::make_shared<npk::ExternStmt>("", n->line, n->col);
     ext->declarations = decls;
     return ext;
 }
 
-static aria::ASTNodePtr convert_program(ASTNodeCompat* n) {
-    std::vector<aria::ASTNodePtr> decls;
+static npk::ASTNodePtr convert_program(ASTNodeCompat* n) {
+    std::vector<npk::ASTNodePtr> decls;
     for (int64_t i = 0; i < n->child_count; ++i) {
         auto child = convert_node((ASTNodeCompat*)n->children[i]);
         if (child) decls.push_back(child);
     }
-    return std::make_shared<aria::ProgramNode>(decls, n->line, n->col);
+    return std::make_shared<npk::ProgramNode>(decls, n->line, n->col);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
 // Main converter dispatch
 // ═══════════════════════════════════════════════════════════════════════
-static aria::ASTNodePtr convert_node(ASTNodeCompat* n) {
+static npk::ASTNodePtr convert_node(ASTNodeCompat* n) {
     if (!n) return nullptr;
 
     switch (n->type) {
@@ -673,9 +673,9 @@ static void serialize_compat(ASTNodeCompat* n, std::ostringstream& out, int dept
 }
 
 // Serialize native ASTNode to canonical string for comparison
-static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int depth);
+static void serialize_native(npk::ASTNode* n, std::ostringstream& out, int depth);
 
-static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int depth) {
+static void serialize_native(npk::ASTNode* n, std::ostringstream& out, int depth) {
     if (!n) { out << "(null)"; return; }
 
     int type_code = static_cast<int>(n->type);
@@ -683,8 +683,8 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
 
     // Extract relevant fields based on node type
     switch (n->type) {
-        case aria::ASTNode::NodeType::LITERAL: {
-            auto* lit = dynamic_cast<aria::LiteralExpr*>(n);
+        case npk::ASTNode::NodeType::LITERAL: {
+            auto* lit = dynamic_cast<npk::LiteralExpr*>(n);
             if (lit) {
                 std::visit([&out](auto&& arg) {
                     using T = std::decay_t<decltype(arg)>;
@@ -702,13 +702,13 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::IDENTIFIER: {
-            auto* id = dynamic_cast<aria::IdentifierExpr*>(n);
+        case npk::ASTNode::NodeType::IDENTIFIER: {
+            auto* id = dynamic_cast<npk::IdentifierExpr*>(n);
             if (id) out << " s=\"" << id->name << "\"";
             break;
         }
-        case aria::ASTNode::NodeType::BINARY_OP: {
-            auto* bin = dynamic_cast<aria::BinaryExpr*>(n);
+        case npk::ASTNode::NodeType::BINARY_OP: {
+            auto* bin = dynamic_cast<npk::BinaryExpr*>(n);
             if (bin) {
                 out << " op=" << static_cast<int>(bin->op.type);
                 out << " ";
@@ -718,8 +718,8 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::UNARY_OP: {
-            auto* un = dynamic_cast<aria::UnaryExpr*>(n);
+        case npk::ASTNode::NodeType::UNARY_OP: {
+            auto* un = dynamic_cast<npk::UnaryExpr*>(n);
             if (un) {
                 out << " op=" << static_cast<int>(un->op.type);
                 out << " ";
@@ -727,8 +727,8 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::CALL: {
-            auto* call = dynamic_cast<aria::CallExpr*>(n);
+        case npk::ASTNode::NodeType::CALL: {
+            auto* call = dynamic_cast<npk::CallExpr*>(n);
             if (call) {
                 out << " ";
                 serialize_native(call->callee.get(), out, depth + 1);
@@ -739,8 +739,8 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::VAR_DECL: {
-            auto* v = dynamic_cast<aria::VarDeclStmt*>(n);
+        case npk::ASTNode::NodeType::VAR_DECL: {
+            auto* v = dynamic_cast<npk::VarDeclStmt*>(n);
             if (v) {
                 out << " s=\"" << v->varName << "\"";
                 if (v->typeNode) { out << " "; serialize_native(v->typeNode.get(), out, depth + 1); }
@@ -748,8 +748,8 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::FUNC_DECL: {
-            auto* f = dynamic_cast<aria::FuncDeclStmt*>(n);
+        case npk::ASTNode::NodeType::FUNC_DECL: {
+            auto* f = dynamic_cast<npk::FuncDeclStmt*>(n);
             if (f) {
                 out << " s=\"" << f->funcName << "\"";
                 if (f->returnType) { out << " "; serialize_native(f->returnType.get(), out, depth + 1); }
@@ -758,53 +758,53 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::STRUCT_DECL: {
-            auto* s = dynamic_cast<aria::StructDeclStmt*>(n);
+        case npk::ASTNode::NodeType::STRUCT_DECL: {
+            auto* s = dynamic_cast<npk::StructDeclStmt*>(n);
             if (s) {
                 out << " s=\"" << s->structName << "\"";
                 for (auto& ff : s->fields) { out << " "; serialize_native(ff.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::PARAMETER: {
-            auto* p = dynamic_cast<aria::ParameterNode*>(n);
+        case npk::ASTNode::NodeType::PARAMETER: {
+            auto* p = dynamic_cast<npk::ParameterNode*>(n);
             if (p) {
                 out << " s=\"" << p->paramName << "\"";
                 if (p->typeNode) { out << " "; serialize_native(p->typeNode.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::BLOCK: {
-            auto* blk = dynamic_cast<aria::BlockStmt*>(n);
+        case npk::ASTNode::NodeType::BLOCK: {
+            auto* blk = dynamic_cast<npk::BlockStmt*>(n);
             if (blk) {
                 for (auto& s : blk->statements) { out << " "; serialize_native(s.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::PROGRAM: {
-            auto* prog = dynamic_cast<aria::ProgramNode*>(n);
+        case npk::ASTNode::NodeType::PROGRAM: {
+            auto* prog = dynamic_cast<npk::ProgramNode*>(n);
             if (prog) {
                 for (auto& d : prog->declarations) { out << " "; serialize_native(d.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::PASS: {
-            auto* p = dynamic_cast<aria::PassStmt*>(n);
+        case npk::ASTNode::NodeType::PASS: {
+            auto* p = dynamic_cast<npk::PassStmt*>(n);
             if (p && p->value) { out << " "; serialize_native(p->value.get(), out, depth + 1); }
             break;
         }
-        case aria::ASTNode::NodeType::FAIL: {
-            auto* f = dynamic_cast<aria::FailStmt*>(n);
+        case npk::ASTNode::NodeType::FAIL: {
+            auto* f = dynamic_cast<npk::FailStmt*>(n);
             if (f && f->errorCode) { out << " "; serialize_native(f->errorCode.get(), out, depth + 1); }
             break;
         }
-        case aria::ASTNode::NodeType::RETURN: {
-            auto* r = dynamic_cast<aria::ReturnStmt*>(n);
+        case npk::ASTNode::NodeType::RETURN: {
+            auto* r = dynamic_cast<npk::ReturnStmt*>(n);
             if (r && r->value) { out << " "; serialize_native(r->value.get(), out, depth + 1); }
             break;
         }
-        case aria::ASTNode::NodeType::IF: {
-            auto* i = dynamic_cast<aria::IfStmt*>(n);
+        case npk::ASTNode::NodeType::IF: {
+            auto* i = dynamic_cast<npk::IfStmt*>(n);
             if (i) {
                 if (i->condition) { out << " "; serialize_native(i->condition.get(), out, depth + 1); }
                 if (i->thenBranch) { out << " "; serialize_native(i->thenBranch.get(), out, depth + 1); }
@@ -812,26 +812,26 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::WHILE: {
-            auto* w = dynamic_cast<aria::WhileStmt*>(n);
+        case npk::ASTNode::NodeType::WHILE: {
+            auto* w = dynamic_cast<npk::WhileStmt*>(n);
             if (w) {
                 if (w->condition) { out << " "; serialize_native(w->condition.get(), out, depth + 1); }
                 if (w->body) { out << " "; serialize_native(w->body.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::TYPE_ANNOTATION: {
-            auto* ta = dynamic_cast<aria::SimpleType*>(n);
+        case npk::ASTNode::NodeType::TYPE_ANNOTATION: {
+            auto* ta = dynamic_cast<npk::SimpleType*>(n);
             if (ta) out << " s=\"" << ta->typeName << "\"";
             break;
         }
-        case aria::ASTNode::NodeType::POINTER_TYPE: {
-            auto* pt = dynamic_cast<aria::PointerType*>(n);
+        case npk::ASTNode::NodeType::POINTER_TYPE: {
+            auto* pt = dynamic_cast<npk::PointerType*>(n);
             if (pt && pt->baseType) { out << " "; serialize_native(pt->baseType.get(), out, depth + 1); }
             break;
         }
-        case aria::ASTNode::NodeType::ASSIGNMENT: {
-            auto* a = dynamic_cast<aria::AssignmentExpr*>(n);
+        case npk::ASTNode::NodeType::ASSIGNMENT: {
+            auto* a = dynamic_cast<npk::AssignmentExpr*>(n);
             if (a) {
                 out << " op=" << static_cast<int>(a->op.type);
                 if (a->target) { out << " "; serialize_native(a->target.get(), out, depth + 1); }
@@ -839,25 +839,25 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
             }
             break;
         }
-        case aria::ASTNode::NodeType::INDEX: {
-            auto* ix = dynamic_cast<aria::IndexExpr*>(n);
+        case npk::ASTNode::NodeType::INDEX: {
+            auto* ix = dynamic_cast<npk::IndexExpr*>(n);
             if (ix) {
                 if (ix->array) { out << " "; serialize_native(ix->array.get(), out, depth + 1); }
                 if (ix->index) { out << " "; serialize_native(ix->index.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::MEMBER_ACCESS:
-        case aria::ASTNode::NodeType::POINTER_MEMBER: {
-            auto* ma = dynamic_cast<aria::MemberAccessExpr*>(n);
+        case npk::ASTNode::NodeType::MEMBER_ACCESS:
+        case npk::ASTNode::NodeType::POINTER_MEMBER: {
+            auto* ma = dynamic_cast<npk::MemberAccessExpr*>(n);
             if (ma) {
                 out << " s=\"" << ma->member << "\"";
                 if (ma->object) { out << " "; serialize_native(ma->object.get(), out, depth + 1); }
             }
             break;
         }
-        case aria::ASTNode::NodeType::EXPRESSION_STMT: {
-            auto* es = dynamic_cast<aria::ExpressionStmt*>(n);
+        case npk::ASTNode::NodeType::EXPRESSION_STMT: {
+            auto* es = dynamic_cast<npk::ExpressionStmt*>(n);
             if (es && es->expression) { out << " "; serialize_native(es->expression.get(), out, depth + 1); }
             break;
         }
@@ -872,7 +872,7 @@ static void serialize_native(aria::ASTNode* n, std::ostringstream& out, int dept
 // ═══════════════════════════════════════════════════════════════════════
 // Structural comparison: count mismatches between compat and native ASTs
 // ═══════════════════════════════════════════════════════════════════════
-static int compare_trees(ASTNodeCompat* compat, aria::ASTNode* native, int depth = 0) {
+static int compare_trees(ASTNodeCompat* compat, npk::ASTNode* native, int depth = 0) {
     if (!compat && !native) return 0;
     if (!compat || !native) return 1;
 
@@ -888,22 +888,22 @@ static int compare_trees(ASTNodeCompat* compat, aria::ASTNode* native, int depth
     // Compare names for named nodes
     switch (compat->type) {
         case CNT_IDENTIFIER: {
-            auto* id = dynamic_cast<aria::IdentifierExpr*>(native);
+            auto* id = dynamic_cast<npk::IdentifierExpr*>(native);
             if (id && safe_str(compat->str_val) != id->name) mismatches++;
             break;
         }
         case CNT_FUNC_DECL: {
-            auto* f = dynamic_cast<aria::FuncDeclStmt*>(native);
+            auto* f = dynamic_cast<npk::FuncDeclStmt*>(native);
             if (f && safe_str(compat->str_val) != f->funcName) mismatches++;
             break;
         }
         case CNT_VAR_DECL: {
-            auto* v = dynamic_cast<aria::VarDeclStmt*>(native);
+            auto* v = dynamic_cast<npk::VarDeclStmt*>(native);
             if (v && safe_str(compat->str_val) != v->varName) mismatches++;
             break;
         }
         case CNT_TYPE_ANNOTATION: {
-            auto* ta = dynamic_cast<aria::SimpleType*>(native);
+            auto* ta = dynamic_cast<npk::SimpleType*>(native);
             if (ta && safe_str(compat->str_val) != ta->typeName) mismatches++;
             break;
         }
@@ -917,7 +917,7 @@ static int compare_trees(ASTNodeCompat* compat, aria::ASTNode* native, int depth
 // Stored state for pipeline operations
 // ═══════════════════════════════════════════════════════════════════════
 struct PipelineState {
-    std::shared_ptr<aria::ASTNode> native_ast;
+    std::shared_ptr<npk::ASTNode> native_ast;
     std::vector<std::string> errors;
 };
 
@@ -970,10 +970,10 @@ void pipeline_free(void* state_ptr) {
 // Parse source with C++ parser, convert to canonical string
 AriaString* pipeline_cpp_parse_to_string(const char* source) {
     std::string src(source);
-    aria::frontend::Lexer lexer(src);
+    npk::frontend::Lexer lexer(src);
     auto tokens = lexer.tokenize();
 
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     auto ast = parser.parse();
 
     if (!ast) {
@@ -1012,9 +1012,9 @@ int32_t pipeline_validate(const char* source, void* compat_root) {
 
     // Parse with C++ parser
     std::string src(source);
-    aria::frontend::Lexer lexer(src);
+    npk::frontend::Lexer lexer(src);
     auto tokens = lexer.tokenize();
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     auto cpp_ast = parser.parse();
     if (!cpp_ast) return -2;
 
@@ -1039,9 +1039,9 @@ int32_t pipeline_validate_deep(const char* source, void* compat_root) {
 
     // Serialize C++ AST
     std::string src(source);
-    aria::frontend::Lexer lexer(src);
+    npk::frontend::Lexer lexer(src);
     auto tokens = lexer.tokenize();
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     auto cpp_ast = parser.parse();
     if (!cpp_ast) return 0;
 

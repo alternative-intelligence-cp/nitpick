@@ -12,7 +12,7 @@
 #include "tools/debugger/dap_server.h"
 #include <nlohmann/json.hpp>
 
-using namespace aria::debugger;
+using namespace npk::debugger;
 using json = nlohmann::json;
 
 // Test DAP message structure

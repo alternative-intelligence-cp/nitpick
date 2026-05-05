@@ -13,7 +13,7 @@
 #include <map>
 #include <functional>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 /**
@@ -315,6 +315,6 @@ public:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_GC_INTEGRATION_H

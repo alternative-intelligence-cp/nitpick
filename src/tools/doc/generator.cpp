@@ -7,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-namespace aria {
+namespace npk {
 namespace doc {
 
 DocGenerator::DocGenerator()
@@ -548,4 +548,4 @@ std::string DocGenerator::generate_item_list(const std::vector<std::shared_ptr<D
 }
 
 } // namespace doc
-} // namespace aria
+} // namespace npk

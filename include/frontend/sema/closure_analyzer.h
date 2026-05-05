@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -148,6 +148,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_CLOSURE_ANALYZER_H

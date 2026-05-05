@@ -10,7 +10,7 @@
 #include <memory>
 #include "runtime/async/future.h"
 
-namespace aria {
+namespace npk {
 namespace runtime {
 namespace async_io {
 
@@ -74,6 +74,6 @@ std::shared_ptr<Future> with_timeout(std::shared_ptr<Future> future, uint64_t mi
 
 } // namespace async_io
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_IO_H

@@ -93,10 +93,10 @@ extern "C" {
 #include "llvm/Transforms/Coroutines/CoroCleanup.h"
 
 // Version information
-#define ARIA_VERSION_MAJOR 0
-#define ARIA_VERSION_MINOR 8
-#define ARIA_VERSION_PATCH 2
-#define ARIA_VERSION "0.8.4"
+#define NPK_VERSION_MAJOR 0
+#define NPK_VERSION_MINOR 8
+#define NPK_VERSION_PATCH 2
+#define NPK_VERSION "0.8.4"
 
 // Compiler options
 struct CompilerOptions {
@@ -189,7 +189,7 @@ void initialize_wasm_targets() {
  * Print version information
  */
 void print_version() {
-    std::cout << "Nitpick Compiler (npkc) version " << ARIA_VERSION << "\n";
+    std::cout << "Nitpick Compiler (npkc) version " << NPK_VERSION << "\n";
     std::cout << "Built with LLVM " << LLVM_VERSION_STRING << "\n";
     std::cout << "(ariac is a compatibility alias for npkc)\n";
 }
@@ -546,10 +546,10 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
 /**
  * Read source file
  */
-bool read_source_file(const std::string& filename, std::string& source, aria::DiagnosticEngine& diags) {
+bool read_source_file(const std::string& filename, std::string& source, npk::DiagnosticEngine& diags) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        diags.fatal(aria::SourceLocation(filename, 0, 0), "could not open source file");
+        diags.fatal(npk::SourceLocation(filename, 0, 0), "could not open source file");
         diags.addNote("check that the file exists and you have read permissions");
         return false;
     }
@@ -578,12 +578,12 @@ bool emit_dependencies(
     const std::string& source,
     const std::string& filename,
     const CompilerOptions& opts,
-    aria::DiagnosticEngine& diags
+    npk::DiagnosticEngine& diags
 ) {
     // Phase 0: Preprocessing
     std::string preprocessed_source = source;
     try {
-        aria::frontend::Preprocessor preprocessor;
+        npk::frontend::Preprocessor preprocessor;
         preprocessed_source = preprocessor.process(source, filename);
     } catch (const std::exception& e) {
         // Output error as JSON
@@ -596,7 +596,7 @@ bool emit_dependencies(
     }
 
     // Phase 1: Lexical Analysis
-    aria::frontend::Lexer lexer(preprocessed_source);
+    npk::frontend::Lexer lexer(preprocessed_source);
     auto tokens = lexer.tokenize();
 
     if (!lexer.getErrors().empty()) {
@@ -609,7 +609,7 @@ bool emit_dependencies(
     }
 
     // Phase 2: Parsing
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     auto module_node = parser.parse();
 
     if (!module_node || parser.hasErrors()) {
@@ -629,7 +629,7 @@ bool emit_dependencies(
     }
 
     // Create module loader to discover and resolve imports
-    aria::sema::ModuleLoader module_loader(project_root);
+    npk::sema::ModuleLoader module_loader(project_root);
 
     // Get absolute path for the source file
     std::string abs_filename = filename;
@@ -645,7 +645,7 @@ bool emit_dependencies(
     std::cout << "  \"imports\": [";
 
     // Cast to ProgramNode to access declarations
-    auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+    auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
     if (!program) {
         std::cout << "{\n";
         std::cout << "  \"source\": \"" << filename << "\",\n";
@@ -658,7 +658,7 @@ bool emit_dependencies(
     // Scan for use statements in the AST declarations
     bool first = true;
     for (const auto& decl : program->declarations) {
-        if (auto* use_stmt = dynamic_cast<aria::UseStmt*>(decl.get())) {
+        if (auto* use_stmt = dynamic_cast<npk::UseStmt*>(decl.get())) {
             // Resolve the import to a file path
             std::string resolved_path = module_loader.getResolver().resolveImport(use_stmt, filename);
 
@@ -778,8 +778,8 @@ llvm::Module* compile_to_module(
     const std::string& source,
     const std::string& filename,
     const CompilerOptions& opts,
-    aria::IRGenerator& ir_gen,
-    aria::DiagnosticEngine& diags
+    npk::IRGenerator& ir_gen,
+    npk::DiagnosticEngine& diags
 ) {
     // Phase 0: Preprocessing (Aria macros)
     std::string preprocessed_source = source;
@@ -789,10 +789,10 @@ llvm::Module* compile_to_module(
     }
     
     try {
-        aria::frontend::Preprocessor preprocessor;
+        npk::frontend::Preprocessor preprocessor;
         preprocessed_source = preprocessor.process(source, filename);
     } catch (const std::exception& e) {
-        diags.error(aria::SourceLocation(filename, 0, 0), 
+        diags.error(npk::SourceLocation(filename, 0, 0), 
                    std::string("Preprocessor error: ") + e.what());
         return nullptr;
     }
@@ -808,7 +808,7 @@ llvm::Module* compile_to_module(
         std::cout << "Phase 1: Lexical analysis...\n";
     }
     
-    aria::frontend::Lexer lexer(preprocessed_source);
+    npk::frontend::Lexer lexer(preprocessed_source);
     auto tokens = lexer.tokenize();
     
     if (!lexer.getErrors().empty()) {
@@ -840,7 +840,7 @@ llvm::Module* compile_to_module(
                 message = err.substr(error_pos + 7);  // Skip "Error: "
             }
             
-            diags.error(aria::SourceLocation(filename, line, column), message);
+            diags.error(npk::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
@@ -858,7 +858,7 @@ llvm::Module* compile_to_module(
         std::cout << "Phase 2: Parsing...\n";
     }
     
-    aria::Parser parser(tokens);
+    npk::Parser parser(tokens);
     auto module_node = parser.parse();
     
     if (!module_node || parser.hasErrors()) {
@@ -890,7 +890,7 @@ llvm::Module* compile_to_module(
                 message = err.substr(newline_pos + 1);
             }
             
-            diags.error(aria::SourceLocation(filename, line, column), message);
+            diags.error(npk::SourceLocation(filename, line, column), message);
         }
         return nullptr;
     }
@@ -907,14 +907,14 @@ llvm::Module* compile_to_module(
     }
     
     // Create type system and symbol table
-    aria::sema::TypeSystem type_system;
-    aria::sema::SymbolTable symbol_table;
+    npk::sema::TypeSystem type_system;
+    npk::sema::SymbolTable symbol_table;
     
     // Create generic resolver and monomorphizer (Session 13: pass TypeSystem for struct specialization)
-    aria::sema::GenericResolver generic_resolver;
+    npk::sema::GenericResolver generic_resolver;
     generic_resolver.setSymbolTable(&symbol_table);  // Task 4: Enable trait constraint checking
     generic_resolver.setTypeSystem(&type_system);    // Enable type resolution in generics
-    aria::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
+    npk::sema::Monomorphizer monomorphizer(&generic_resolver, &type_system);
     
     // Module system: Normalize input filename to absolute path for correct resolution
     std::string absolute_filename;
@@ -938,7 +938,7 @@ llvm::Module* compile_to_module(
     }
     
     // Create module loader for handling use statements
-    aria::sema::ModuleLoader module_loader(project_root);
+    npk::sema::ModuleLoader module_loader(project_root);
     
     // Add compiler installation directory to search paths for stdlib
     // First try to find where this executable is located
@@ -974,7 +974,7 @@ llvm::Module* compile_to_module(
     }
     
     // Type checker with generic support and module loading (use absolute path)
-    aria::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, absolute_filename);
+    npk::sema::TypeChecker type_checker(&type_system, &symbol_table, &generic_resolver, &monomorphizer, &module_loader, absolute_filename);
     
     // Run type checking on entire module (activates generic specialization)
     type_checker.check(module_node.get());
@@ -984,20 +984,20 @@ llvm::Module* compile_to_module(
     // generated before function bodies that call them.
     const auto& syntheticNodes = type_checker.getSyntheticNodes();
     if (!syntheticNodes.empty()) {
-        if (module_node->type == aria::ASTNode::NodeType::PROGRAM) {
-            auto* program = static_cast<aria::ProgramNode*>(module_node.get());
+        if (module_node->type == npk::ASTNode::NodeType::PROGRAM) {
+            auto* program = static_cast<npk::ProgramNode*>(module_node.get());
             // Find the first FUNC_DECL and insert before it
             auto it = program->declarations.begin();
             for (; it != program->declarations.end(); ++it) {
-                if (*it && (*it)->type == aria::ASTNode::NodeType::FUNC_DECL) break;
+                if (*it && (*it)->type == npk::ASTNode::NodeType::FUNC_DECL) break;
             }
             program->declarations.insert(it, syntheticNodes.begin(), syntheticNodes.end());
             if (opts.verbose) {
                 std::cout << "  Injected " << syntheticNodes.size()
                          << " synthetic derive node(s) into AST\n";
             }
-        } else if (module_node->type == aria::ASTNode::NodeType::BLOCK) {
-            auto* block = static_cast<aria::BlockStmt*>(module_node.get());
+        } else if (module_node->type == npk::ASTNode::NodeType::BLOCK) {
+            auto* block = static_cast<npk::BlockStmt*>(module_node.get());
             for (const auto& node : syntheticNodes) {
                 block->statements.push_back(node);
             }
@@ -1006,14 +1006,14 @@ llvm::Module* compile_to_module(
     
     if (type_checker.hasErrors()) {
         for (const auto& err : type_checker.getErrors()) {
-            diags.error(aria::SourceLocation(filename, 0, 0), err);
+            diags.error(npk::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
     }
     
     // Print type checker warnings (v0.4.3) — non-fatal
     for (const auto& warn : type_checker.getWarnings()) {
-        diags.warning(aria::SourceLocation(filename, 0, 0), warn);
+        diags.warning(npk::SourceLocation(filename, 0, 0), warn);
     }
     
     // Validate that the mandatory failsafe() function exists
@@ -1021,7 +1021,7 @@ llvm::Module* compile_to_module(
     // Libraries (-c flag) are exempt as they're components, not final programs
     if (!opts.build_library && !type_checker.validateFailsafeExists()) {
         for (const auto& err : type_checker.getErrors()) {
-            diags.error(aria::SourceLocation(filename, 0, 0), err);
+            diags.error(npk::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
     }
@@ -1031,7 +1031,7 @@ llvm::Module* compile_to_module(
     // Libraries (-c flag) are exempt as they're components, not final programs
     if (!opts.build_library && !type_checker.validateMainExists()) {
         for (const auto& err : type_checker.getErrors()) {
-            diags.error(aria::SourceLocation(filename, 0, 0), err);
+            diags.error(npk::SourceLocation(filename, 0, 0), err);
         }
         return nullptr;
     }
@@ -1041,7 +1041,7 @@ llvm::Module* compile_to_module(
     for (const auto& [path, loaded_module] : loaded_modules) {
         if (loaded_module && loaded_module->ast) {
             // Skip modules already type-checked during import processing
-            if (loaded_module->state == aria::sema::ModuleState::CHECKED) {
+            if (loaded_module->state == npk::sema::ModuleState::CHECKED) {
                 if (opts.verbose) {
                     std::cout << "  Skipping already-checked module: " << path << "\n";
                 }
@@ -1053,14 +1053,14 @@ llvm::Module* compile_to_module(
             }
             // Create a separate type checker for each module
             // (They share the same type system but have separate symbol tables)
-            aria::sema::TypeChecker module_type_checker(&type_system, loaded_module->moduleInfo->getSymbolTable(), 
+            npk::sema::TypeChecker module_type_checker(&type_system, loaded_module->moduleInfo->getSymbolTable(), 
                                                         &generic_resolver, &monomorphizer, &module_loader, path);
             module_type_checker.check(loaded_module->ast.get());
-            loaded_module->state = aria::sema::ModuleState::CHECKED;
+            loaded_module->state = npk::sema::ModuleState::CHECKED;
             
             if (module_type_checker.hasErrors()) {
                 for (const auto& err : module_type_checker.getErrors()) {
-                    diags.error(aria::SourceLocation(path, 0, 0), err);
+                    diags.error(npk::SourceLocation(path, 0, 0), err);
                 }
                 return nullptr;
             }
@@ -1070,34 +1070,34 @@ llvm::Module* compile_to_module(
     // Report symbol table warnings (e.g., shadowing)
     if (symbol_table.hasWarnings()) {
         for (const auto& warn : symbol_table.getWarnings()) {
-            diags.warning(aria::SourceLocation(filename, 0, 0), warn);
+            diags.warning(npk::SourceLocation(filename, 0, 0), warn);
         }
     }
     
     // Dead branch elimination sets — declared outside #ifdef so they're available to codegen
-    std::set<aria::ASTNode*> dead_branch_true_set;
-    std::set<aria::ASTNode*> dead_branch_false_set;
+    std::set<npk::ASTNode*> dead_branch_true_set;
+    std::set<npk::ASTNode*> dead_branch_false_set;
 
     // Bounds check elimination set — declared outside #ifdef so it's available to codegen
-    std::set<aria::ASTNode*> bounds_safe_set;
+    std::set<npk::ASTNode*> bounds_safe_set;
 
     // Overflow check elimination set — declared outside #ifdef so it's available to codegen
-    std::set<aria::ASTNode*> overflow_safe_set;
+    std::set<npk::ASTNode*> overflow_safe_set;
 
     // Null check elimination set — declared outside #ifdef so it's available to codegen
-    std::set<aria::ASTNode*> null_check_safe_set;
+    std::set<npk::ASTNode*> null_check_safe_set;
 
     // Division-by-zero elimination set — declared outside #ifdef so it's available to codegen (v0.14.4)
-    std::set<aria::ASTNode*> div_safe_set;
+    std::set<npk::ASTNode*> div_safe_set;
 
     // Loop invariant hoisting map — declared outside #ifdef so it's available to codegen
-    std::map<aria::ASTNode*, std::vector<aria::ASTNode*>> loop_hoist_map;
+    std::map<npk::ASTNode*, std::vector<npk::ASTNode*>> loop_hoist_map;
 
     // Limit check elimination set — declared outside #ifdef so it's available to codegen
-    std::set<aria::ASTNode*> limit_check_safe_set;
+    std::set<npk::ASTNode*> limit_check_safe_set;
 
     // Defaults fallback elimination set — declared outside #ifdef so it's available to codegen
-    std::set<aria::ASTNode*> defaults_safe_set;
+    std::set<npk::ASTNode*> defaults_safe_set;
 
 #ifdef ARIA_HAS_Z3
     // Phase 3.25: Z3 SMT Verification (static contract verification)
@@ -1116,7 +1116,7 @@ llvm::Module* compile_to_module(
             }
         }
         
-        aria::Z3Verifier z3v(opts.smt_timeout);
+        npk::Z3Verifier z3v(opts.smt_timeout);
         z3v.setTypeSystem(&type_system);
         z3v.setVerbose(opts.verbose);
         
@@ -1128,14 +1128,14 @@ llvm::Module* compile_to_module(
         
         // Verify Rules consistency (check for contradictory constraints)
         for (const auto& [name, rules_ptr] : rules_table) {
-            std::vector<aria::VerifyOutcome> cons_outcomes;
+            std::vector<npk::VerifyOutcome> cons_outcomes;
             z3v.verifyRulesConsistency(name, cons_outcomes);
             for (const auto& out : cons_outcomes) {
-                if (out.result == aria::VerifyResult::DISPROVEN) {
-                    diags.error(aria::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
+                if (out.result == npk::VerifyResult::DISPROVEN) {
+                    diags.error(npk::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
                                 "[z3] " + out.detail);
-                } else if (out.result == aria::VerifyResult::UNKNOWN && opts.verbose) {
-                    diags.warning(aria::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
+                } else if (out.result == npk::VerifyResult::UNKNOWN && opts.verbose) {
+                    diags.warning(npk::SourceLocation(filename, rules_ptr->line, rules_ptr->column),
                                   "[z3] Could not determine consistency of Rules '" + name + "'");
                 }
             }
@@ -1143,14 +1143,14 @@ llvm::Module* compile_to_module(
         
         // Walk AST to find limit<> variable declarations with literal initializers
         // and verify them against their Rules constraints
-        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
         if (program) {
             // Recursive lambda to walk statements
-            std::function<void(aria::ASTNode*)> walkNode = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkNode = [&](npk::ASTNode* node) {
                 if (!node) return;
                 
-                if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
-                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<npk::VarDeclStmt*>(node);
                     if (!var->limitRulesName.empty() && var->initializer) {
                         int64_t intVal = 0;
                         double floatVal = 0.0;
@@ -1158,8 +1158,8 @@ llvm::Module* compile_to_module(
                         bool isFloat = false;
                         
                         // Direct literal
-                        if (var->initializer->type == aria::ASTNode::NodeType::LITERAL) {
-                            auto* lit = static_cast<aria::LiteralExpr*>(var->initializer.get());
+                        if (var->initializer->type == npk::ASTNode::NodeType::LITERAL) {
+                            auto* lit = static_cast<npk::LiteralExpr*>(var->initializer.get());
                             if (std::holds_alternative<int64_t>(lit->value)) {
                                 intVal = std::get<int64_t>(lit->value);
                                 isInt = true;
@@ -1169,11 +1169,11 @@ llvm::Module* compile_to_module(
                             }
                         }
                         // Negative literal (unary minus on literal)
-                        else if (var->initializer->type == aria::ASTNode::NodeType::UNARY_OP) {
-                            auto* unary = static_cast<aria::UnaryExpr*>(var->initializer.get());
-                            if (unary->op.type == aria::frontend::TokenType::TOKEN_MINUS &&
-                                unary->operand && unary->operand->type == aria::ASTNode::NodeType::LITERAL) {
-                                auto* lit = static_cast<aria::LiteralExpr*>(unary->operand.get());
+                        else if (var->initializer->type == npk::ASTNode::NodeType::UNARY_OP) {
+                            auto* unary = static_cast<npk::UnaryExpr*>(var->initializer.get());
+                            if (unary->op.type == npk::frontend::TokenType::TOKEN_MINUS &&
+                                unary->operand && unary->operand->type == npk::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<npk::LiteralExpr*>(unary->operand.get());
                                 if (std::holds_alternative<int64_t>(lit->value)) {
                                     intVal = -std::get<int64_t>(lit->value);
                                     isInt = true;
@@ -1185,28 +1185,28 @@ llvm::Module* compile_to_module(
                         }
                         
                         if (isInt) {
-                            std::vector<aria::VerifyOutcome> outcomes;
+                            std::vector<npk::VerifyOutcome> outcomes;
                             z3v.verifyLimitInt(var->limitRulesName, intVal, outcomes,
                                                var->line, var->column);
                             for (const auto& out : outcomes) {
-                                if (out.result == aria::VerifyResult::DISPROVEN) {
-                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                if (out.result == npk::VerifyResult::DISPROVEN) {
+                                    diags.error(npk::SourceLocation(filename, out.line, out.column),
                                                 "[z3] " + out.detail);
-                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
-                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                } else if (opts.verify_report && out.result == npk::VerifyResult::PROVEN) {
+                                    diags.note(npk::SourceLocation(filename, out.line, out.column),
                                                "[z3] " + out.detail);
                                 }
                             }
                         } else if (isFloat) {
-                            std::vector<aria::VerifyOutcome> outcomes;
+                            std::vector<npk::VerifyOutcome> outcomes;
                             z3v.verifyLimitFloat(var->limitRulesName, floatVal, outcomes,
                                                  var->line, var->column);
                             for (const auto& out : outcomes) {
-                                if (out.result == aria::VerifyResult::DISPROVEN) {
-                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                if (out.result == npk::VerifyResult::DISPROVEN) {
+                                    diags.error(npk::SourceLocation(filename, out.line, out.column),
                                                 "[z3] " + out.detail);
-                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
-                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                } else if (opts.verify_report && out.result == npk::VerifyResult::PROVEN) {
+                                    diags.note(npk::SourceLocation(filename, out.line, out.column),
                                                "[z3] " + out.detail);
                                 }
                             }
@@ -1215,21 +1215,21 @@ llvm::Module* compile_to_module(
                 }
                 
                 // Recurse into child nodes
-                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
-                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<npk::ProgramNode*>(node);
                     for (const auto& decl : prog->declarations) {
                         walkNode(decl.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(node);
                     if (func->body) walkNode(func->body.get());
-                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(node);
                     for (const auto& stmt : block->statements) {
                         walkNode(stmt.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
-                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<npk::TypeDeclStmt*>(node);
                     if (typeDecl->createFunc) walkNode(typeDecl->createFunc.get());
                     if (typeDecl->destroyFunc) walkNode(typeDecl->destroyFunc.get());
                     for (const auto& method : typeDecl->methods) {
@@ -1248,23 +1248,23 @@ llvm::Module* compile_to_module(
                 std::cout << "  Phase 2: Verifying function contracts...\n";
             }
             
-            std::function<void(aria::ASTNode*)> walkContracts = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkContracts = [&](npk::ASTNode* node) {
                 if (!node) return;
                 
-                if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(node);
                     if (!func->preconditions.empty() || !func->postconditions.empty()) {
-                        std::vector<aria::VerifyOutcome> outcomes;
+                        std::vector<npk::VerifyOutcome> outcomes;
                         z3v.verifyFunctionContract(func, outcomes);
                         for (const auto& out : outcomes) {
-                            if (out.result == aria::VerifyResult::DISPROVEN) {
-                                diags.error(aria::SourceLocation(filename, out.line, out.column),
+                            if (out.result == npk::VerifyResult::DISPROVEN) {
+                                diags.error(npk::SourceLocation(filename, out.line, out.column),
                                             "[z3-contract] " + out.detail);
-                            } else if (out.result == aria::VerifyResult::UNKNOWN && opts.verbose) {
-                                diags.note(aria::SourceLocation(filename, out.line, out.column),
+                            } else if (out.result == npk::VerifyResult::UNKNOWN && opts.verbose) {
+                                diags.note(npk::SourceLocation(filename, out.line, out.column),
                                            "[z3-contract] " + out.detail);
-                            } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
-                                diags.note(aria::SourceLocation(filename, out.line, out.column),
+                            } else if (opts.verify_report && out.result == npk::VerifyResult::PROVEN) {
+                                diags.note(npk::SourceLocation(filename, out.line, out.column),
                                            "[z3-contract] " + out.detail);
                             }
                         }
@@ -1274,18 +1274,18 @@ llvm::Module* compile_to_module(
                 }
                 
                 // Recurse into containers
-                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
-                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<npk::ProgramNode*>(node);
                     for (const auto& decl : prog->declarations) {
                         walkContracts(decl.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(node);
                     for (const auto& stmt : block->statements) {
                         walkContracts(stmt.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
-                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<npk::TypeDeclStmt*>(node);
                     if (typeDecl->createFunc) walkContracts(typeDecl->createFunc.get());
                     if (typeDecl->destroyFunc) walkContracts(typeDecl->destroyFunc.get());
                     for (const auto& method : typeDecl->methods) {
@@ -1306,12 +1306,12 @@ llvm::Module* compile_to_module(
         // v0.14.3: requires verify-level >= 2 (standard)
         if (opts.verify_contracts && program && opts.verify_level != 1) {
             // Build lookup tables
-            std::map<std::string, aria::FuncDeclStmt*> contract_funcs;  // has requires
-            std::map<std::string, aria::FuncDeclStmt*> ensures_funcs;   // has ensures
-            std::map<std::string, aria::FuncDeclStmt*> all_funcs;       // all functions
+            std::map<std::string, npk::FuncDeclStmt*> contract_funcs;  // has requires
+            std::map<std::string, npk::FuncDeclStmt*> ensures_funcs;   // has ensures
+            std::map<std::string, npk::FuncDeclStmt*> all_funcs;       // all functions
             for (const auto& decl : program->declarations) {
-                if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                     all_funcs[func->funcName] = func;
                     if (!func->preconditions.empty()) {
                         contract_funcs[func->funcName] = func;
@@ -1328,17 +1328,17 @@ llvm::Module* compile_to_module(
                 }
 
                 for (const auto& decl : program->declarations) {
-                    if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                    auto* caller = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                    auto* caller = static_cast<npk::FuncDeclStmt*>(decl.get());
                     if (!caller->body) continue;
 
                     // Collect caller's Rules-constrained variables
-                    std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> callerVarRules;
+                    std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>> callerVarRules;
 
                     // From parameters
                     for (auto& param : caller->parameters) {
-                        if (param->type == aria::ASTNode::NodeType::PARAMETER) {
-                            auto* pn = static_cast<aria::ParameterNode*>(param.get());
+                        if (param->type == npk::ASTNode::NodeType::PARAMETER) {
+                            auto* pn = static_cast<npk::ParameterNode*>(param.get());
                             // Check if type implies a Rules constraint
                             if (pn->typeNode) {
                                 std::string tname = pn->typeNode->toString();
@@ -1349,8 +1349,8 @@ llvm::Module* compile_to_module(
                             }
                         }
                         // Also check VarDecl-style params with limit<>
-                        if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
-                            auto* vd = static_cast<aria::VarDeclStmt*>(param.get());
+                        if (param->type == npk::ASTNode::NodeType::VAR_DECL) {
+                            auto* vd = static_cast<npk::VarDeclStmt*>(param.get());
                             if (!vd->limitRulesName.empty()) {
                                 auto it = rules_table.find(vd->limitRulesName);
                                 if (it != rules_table.end()) {
@@ -1361,37 +1361,37 @@ llvm::Module* compile_to_module(
                     }
 
                     // Walk body for CALL expressions and limit<> locals
-                    std::vector<std::pair<std::string, aria::FuncDeclStmt*>> ensuresFacts;
-                    std::function<void(aria::ASTNode*)> walkCalls;
-                    walkCalls = [&](aria::ASTNode* node) {
+                    std::vector<std::pair<std::string, npk::FuncDeclStmt*>> ensuresFacts;
+                    std::function<void(npk::ASTNode*)> walkCalls;
+                    walkCalls = [&](npk::ASTNode* node) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::CALL: {
-                                auto* call = static_cast<aria::CallExpr*>(node);
+                                auto* call = static_cast<npk::CallExpr*>(node);
                                 if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                                    auto* ident = static_cast<aria::IdentifierExpr*>(
+                                    auto* ident = static_cast<npk::IdentifierExpr*>(
                                         call->callee.get());
                                     auto it = contract_funcs.find(ident->name);
                                     if (it != contract_funcs.end()) {
-                                        aria::FuncDeclStmt* callee = it->second;
-                                        std::vector<aria::ASTNode*> args;
+                                        npk::FuncDeclStmt* callee = it->second;
+                                        std::vector<npk::ASTNode*> args;
                                         for (auto& arg : call->arguments) {
                                             args.push_back(arg.get());
                                         }
-                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        std::vector<npk::VerifyOutcome> outcomes;
                                         z3v.verifyCallSiteContract(
                                             callee, caller, args, callerVarRules,
                                             ensuresFacts,
                                             outcomes, call->line, call->column);
 
                                         for (const auto& out : outcomes) {
-                                            if (out.result == aria::VerifyResult::DISPROVEN) {
+                                            if (out.result == npk::VerifyResult::DISPROVEN) {
                                                 std::cerr << filename << ":"
                                                           << out.line << ":" << out.column
                                                           << ": error: [contract] " << out.detail << "\n";
-                                            } else if (out.result == aria::VerifyResult::PROVEN) {
+                                            } else if (out.result == npk::VerifyResult::PROVEN) {
                                                 if (opts.verify_report || opts.verbose) {
                                                     std::cout << "  [contract] " << out.detail << "\n";
                                                 }
@@ -1404,26 +1404,26 @@ llvm::Module* compile_to_module(
                                 // v0.5.3: Rules narrowing check for any function
                                 // with Rules-constrained parameters
                                 if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                                    auto* ident = static_cast<aria::IdentifierExpr*>(
+                                    auto* ident = static_cast<npk::IdentifierExpr*>(
                                         call->callee.get());
                                     auto fit = all_funcs.find(ident->name);
                                     if (fit != all_funcs.end()) {
-                                        aria::FuncDeclStmt* callee = fit->second;
-                                        std::vector<aria::ASTNode*> args;
+                                        npk::FuncDeclStmt* callee = fit->second;
+                                        std::vector<npk::ASTNode*> args;
                                         for (auto& arg : call->arguments) {
                                             args.push_back(arg.get());
                                         }
-                                        std::vector<aria::VerifyOutcome> narrowOutcomes;
+                                        std::vector<npk::VerifyOutcome> narrowOutcomes;
                                         z3v.verifyRulesNarrowing(
                                             callee, args, callerVarRules,
                                             narrowOutcomes, call->line, call->column);
 
                                         for (const auto& out : narrowOutcomes) {
-                                            if (out.result == aria::VerifyResult::DISPROVEN) {
+                                            if (out.result == npk::VerifyResult::DISPROVEN) {
                                                 std::cerr << filename << ":"
                                                           << out.line << ":" << out.column
                                                           << ": error: [narrowing] " << out.detail << "\n";
-                                            } else if (out.result == aria::VerifyResult::PROVEN) {
+                                            } else if (out.result == npk::VerifyResult::PROVEN) {
                                                 if (opts.verify_report || opts.verbose) {
                                                     std::cout << "  [narrowing] " << out.detail << "\n";
                                                 }
@@ -1441,23 +1441,23 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::VAR_DECL: {
-                                auto* vd = static_cast<aria::VarDeclStmt*>(node);
+                                auto* vd = static_cast<npk::VarDeclStmt*>(node);
                                 if (!vd->limitRulesName.empty()) {
                                     auto it = rules_table.find(vd->limitRulesName);
                                     if (it != rules_table.end()) {
                                         callerVarRules[vd->varName] = {it->second, vd->typeName};
 
                                         // v0.5.3: Check if Rules excludes null
-                                        std::vector<aria::VerifyOutcome> nullOutcomes;
+                                        std::vector<npk::VerifyOutcome> nullOutcomes;
                                         z3v.proveRulesExcludesNull(
                                             vd->limitRulesName, vd->typeName,
                                             nullOutcomes, vd->line, vd->column);
                                         for (const auto& out : nullOutcomes) {
-                                            if (out.result == aria::VerifyResult::PROVEN) {
+                                            if (out.result == npk::VerifyResult::PROVEN) {
                                                 if (opts.verify_report || opts.verbose) {
                                                     std::cout << "  [null-safety] " << out.detail << "\n";
                                                 }
-                                            } else if (out.result == aria::VerifyResult::DISPROVEN) {
+                                            } else if (out.result == npk::VerifyResult::DISPROVEN) {
                                                 if (opts.verbose) {
                                                     std::cout << "  [null-safety] " << out.detail << "\n";
                                                 }
@@ -1468,19 +1468,19 @@ llvm::Module* compile_to_module(
                                 // Track ensures-derived facts from call initializers
                                 // Unwrap raw/drop wrappers: raw f(x) → CALL("raw",[CALL("f",...)])
                                 if (vd->initializer && vd->initializer->type == NT::CALL) {
-                                    aria::ASTNode* initNode = vd->initializer.get();
-                                    auto* call = static_cast<aria::CallExpr*>(initNode);
+                                    npk::ASTNode* initNode = vd->initializer.get();
+                                    auto* call = static_cast<npk::CallExpr*>(initNode);
                                     // Unwrap raw/drop wrappers
                                     if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                                        auto* wrapIdent = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                                        auto* wrapIdent = static_cast<npk::IdentifierExpr*>(call->callee.get());
                                         if ((wrapIdent->name == "raw" || wrapIdent->name == "drop") &&
                                             !call->arguments.empty() &&
                                             call->arguments[0]->type == NT::CALL) {
-                                            call = static_cast<aria::CallExpr*>(call->arguments[0].get());
+                                            call = static_cast<npk::CallExpr*>(call->arguments[0].get());
                                         }
                                     }
                                     if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                                        auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                                        auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
                                         auto eit = ensures_funcs.find(ident->name);
                                         if (eit != ensures_funcs.end()) {
                                             ensuresFacts.push_back({vd->varName, eit->second});
@@ -1492,13 +1492,13 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* blk = static_cast<aria::BlockStmt*>(node);
+                                auto* blk = static_cast<npk::BlockStmt*>(node);
                                 for (auto& s : blk->statements) walkCalls(s.get());
                                 break;
                             }
 
                             case NT::IF: {
-                                auto* s = static_cast<aria::IfStmt*>(node);
+                                auto* s = static_cast<npk::IfStmt*>(node);
                                 if (s->condition) walkCalls(s->condition.get());
                                 walkCalls(s->thenBranch.get());
                                 walkCalls(s->elseBranch.get());
@@ -1506,11 +1506,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 if (!s->invariants.empty()) {
-                                    std::vector<aria::ASTNode*> invPtrs;
+                                    std::vector<npk::ASTNode*> invPtrs;
                                     for (auto& inv : s->invariants) invPtrs.push_back(inv.get());
-                                    std::vector<aria::VerifyOutcome> invOutcomes;
+                                    std::vector<npk::VerifyOutcome> invOutcomes;
                                     z3v.verifyLoopInvariant(caller, invPtrs, invOutcomes, s->line, s->column);
                                 }
                                 if (s->condition) walkCalls(s->condition.get());
@@ -1519,11 +1519,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 if (!s->invariants.empty()) {
-                                    std::vector<aria::ASTNode*> invPtrs;
+                                    std::vector<npk::ASTNode*> invPtrs;
                                     for (auto& inv : s->invariants) invPtrs.push_back(inv.get());
-                                    std::vector<aria::VerifyOutcome> invOutcomes;
+                                    std::vector<npk::VerifyOutcome> invOutcomes;
                                     z3v.verifyLoopInvariant(caller, invPtrs, invOutcomes, s->line, s->column);
                                 }
                                 walkCalls(s->body.get());
@@ -1531,11 +1531,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 if (!s->invariants.empty()) {
-                                    std::vector<aria::ASTNode*> invPtrs;
+                                    std::vector<npk::ASTNode*> invPtrs;
                                     for (auto& inv : s->invariants) invPtrs.push_back(inv.get());
-                                    std::vector<aria::VerifyOutcome> invOutcomes;
+                                    std::vector<npk::VerifyOutcome> invOutcomes;
                                     z3v.verifyLoopInvariant(caller, invPtrs, invOutcomes, s->line, s->column);
                                 }
                                 walkCalls(s->body.get());
@@ -1543,11 +1543,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 if (!s->invariants.empty()) {
-                                    std::vector<aria::ASTNode*> invPtrs;
+                                    std::vector<npk::ASTNode*> invPtrs;
                                     for (auto& inv : s->invariants) invPtrs.push_back(inv.get());
-                                    std::vector<aria::VerifyOutcome> invOutcomes;
+                                    std::vector<npk::VerifyOutcome> invOutcomes;
                                     z3v.verifyLoopInvariant(caller, invPtrs, invOutcomes, s->line, s->column);
                                 }
                                 walkCalls(s->body.get());
@@ -1555,11 +1555,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 if (!s->invariants.empty()) {
-                                    std::vector<aria::ASTNode*> invPtrs;
+                                    std::vector<npk::ASTNode*> invPtrs;
                                     for (auto& inv : s->invariants) invPtrs.push_back(inv.get());
-                                    std::vector<aria::VerifyOutcome> invOutcomes;
+                                    std::vector<npk::VerifyOutcome> invOutcomes;
                                     z3v.verifyLoopInvariant(caller, invPtrs, invOutcomes, s->line, s->column);
                                 }
                                 walkCalls(s->body.get());
@@ -1569,37 +1569,37 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkCalls(s->expression.get());
                                 break;
                             }
 
                             case NT::RETURN: {
-                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                auto* s = static_cast<npk::ReturnStmt*>(node);
                                 if (s->value) walkCalls(s->value.get());
                                 break;
                             }
 
                             case NT::PASS: {
-                                auto* s = static_cast<aria::PassStmt*>(node);
+                                auto* s = static_cast<npk::PassStmt*>(node);
                                 if (s->value) walkCalls(s->value.get());
                                 break;
                             }
 
                             case NT::FAIL: {
-                                auto* s = static_cast<aria::FailStmt*>(node);
+                                auto* s = static_cast<npk::FailStmt*>(node);
                                 if (s->errorCode) walkCalls(s->errorCode.get());
                                 break;
                             }
 
                             case NT::PICK: {
                                 // v0.5.3: Pick exhaustiveness via SMT
-                                auto* pick = static_cast<aria::PickStmt*>(node);
+                                auto* pick = static_cast<npk::PickStmt*>(node);
                                 // Collect patterns for exhaustiveness check
-                                std::vector<aria::ASTNode*> patterns;
+                                std::vector<npk::ASTNode*> patterns;
                                 bool hasUnreachable = false;
                                 for (auto& c : pick->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     if (pc->is_unreachable) {
                                         hasUnreachable = true;
                                     } else if (pc->pattern) {
@@ -1609,18 +1609,18 @@ llvm::Module* compile_to_module(
                                 // Only check if there's no unreachable marker
                                 // (unreachable means programmer asserts it can't happen)
                                 if (!hasUnreachable && !patterns.empty()) {
-                                    std::vector<aria::VerifyOutcome> pickOutcomes;
+                                    std::vector<npk::VerifyOutcome> pickOutcomes;
                                     z3v.provePickExhaustiveness(
                                         pick->selector.get(), patterns,
                                         callerVarRules, pickOutcomes,
                                         pick->line, pick->column);
 
                                     for (const auto& out : pickOutcomes) {
-                                        if (out.result == aria::VerifyResult::DISPROVEN) {
+                                        if (out.result == npk::VerifyResult::DISPROVEN) {
                                             std::cerr << filename << ":"
                                                       << out.line << ":" << out.column
                                                       << ": warning: [exhaustiveness] " << out.detail << "\n";
-                                        } else if (out.result == aria::VerifyResult::PROVEN) {
+                                        } else if (out.result == npk::VerifyResult::PROVEN) {
                                             if (opts.verify_report || opts.verbose) {
                                                 std::cout << "  [exhaustiveness] " << out.detail << "\n";
                                             }
@@ -1632,7 +1632,7 @@ llvm::Module* compile_to_module(
                                 // Recurse into selector and case bodies
                                 walkCalls(pick->selector.get());
                                 for (auto& c : pick->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     walkCalls(pc->body.get());
                                 }
                                 break;
@@ -1657,18 +1657,18 @@ llvm::Module* compile_to_module(
             }
 
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body) continue;
 
                 // Build paramRules for this function
-                std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> paramRules;
+                std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>> paramRules;
 
                 // Collect parameter names for body scanning
                 std::set<std::string> paramNameSet;
                 for (auto& param : func->parameters) {
-                    if (param->type == aria::ASTNode::NodeType::PARAMETER) {
-                        auto* pn = static_cast<aria::ParameterNode*>(param.get());
+                    if (param->type == npk::ASTNode::NodeType::PARAMETER) {
+                        auto* pn = static_cast<npk::ParameterNode*>(param.get());
                         paramNameSet.insert(pn->paramName);
                         if (pn->typeNode) {
                             std::string tname = pn->typeNode->toString();
@@ -1678,8 +1678,8 @@ llvm::Module* compile_to_module(
                             }
                         }
                     }
-                    if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
-                        auto* vd = static_cast<aria::VarDeclStmt*>(param.get());
+                    if (param->type == npk::ASTNode::NodeType::VAR_DECL) {
+                        auto* vd = static_cast<npk::VarDeclStmt*>(param.get());
                         paramNameSet.insert(vd->varName);
                         if (!vd->limitRulesName.empty()) {
                             auto it = rules_table.find(vd->limitRulesName);
@@ -1693,14 +1693,14 @@ llvm::Module* compile_to_module(
                 // Also scan function body for limit<> VarDecls referencing parameters.
                 // e.g. limit<Percentage> int32:safe_x = x; where x is a parameter
                 // This maps the limit<> variable to the callee's Rules + its base type
-                if (func->body && func->body->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* blk = static_cast<aria::BlockStmt*>(func->body.get());
+                if (func->body && func->body->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* blk = static_cast<npk::BlockStmt*>(func->body.get());
                     for (auto& s : blk->statements) {
-                        if (s->type == aria::ASTNode::NodeType::VAR_DECL) {
-                            auto* vd = static_cast<aria::VarDeclStmt*>(s.get());
+                        if (s->type == npk::ASTNode::NodeType::VAR_DECL) {
+                            auto* vd = static_cast<npk::VarDeclStmt*>(s.get());
                             if (!vd->limitRulesName.empty() && vd->initializer &&
-                                vd->initializer->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                auto* init = static_cast<aria::IdentifierExpr*>(vd->initializer.get());
+                                vd->initializer->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                auto* init = static_cast<npk::IdentifierExpr*>(vd->initializer.get());
                                 if (paramNameSet.count(init->name)) {
                                     auto it = rules_table.find(vd->limitRulesName);
                                     if (it != rules_table.end()) {
@@ -1716,13 +1716,13 @@ llvm::Module* compile_to_module(
                 if (paramRules.empty()) continue;
 
                 int64_t inferredMin = 0, inferredMax = 0;
-                std::vector<aria::VerifyOutcome> boundsOutcomes;
+                std::vector<npk::VerifyOutcome> boundsOutcomes;
                 z3v.inferReturnBounds(
                     func, paramRules, inferredMin, inferredMax,
                     boundsOutcomes, func->line, func->column);
 
                 for (const auto& out : boundsOutcomes) {
-                    if (out.result == aria::VerifyResult::PROVEN) {
+                    if (out.result == npk::VerifyResult::PROVEN) {
                         if (opts.verify_report || opts.verbose) {
                             std::cout << "  [bounds] " << out.detail << "\n";
                         }
@@ -1743,10 +1743,10 @@ llvm::Module* compile_to_module(
             }
 
             // Build function lookup
-            std::map<std::string, aria::FuncDeclStmt*> all_funcs_2d;
+            std::map<std::string, npk::FuncDeclStmt*> all_funcs_2d;
             for (const auto& decl : program->declarations) {
-                if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                     all_funcs_2d[func->funcName] = func;
                 }
             }
@@ -1756,27 +1756,27 @@ llvm::Module* compile_to_module(
                 if (!func->body) continue;
 
                 // Find aria_thread_create calls in this function
-                std::vector<aria::FuncDeclStmt*> threadFuncs;
-                std::function<void(aria::ASTNode*)> findSpawns;
-                findSpawns = [&](aria::ASTNode* node) {
+                std::vector<npk::FuncDeclStmt*> threadFuncs;
+                std::function<void(npk::ASTNode*)> findSpawns;
+                findSpawns = [&](npk::ASTNode* node) {
                     if (!node) return;
-                    if (node->type == aria::ASTNode::NodeType::CALL) {
-                        auto* call = static_cast<aria::CallExpr*>(node);
-                        if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                            auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                    if (node->type == npk::ASTNode::NodeType::CALL) {
+                        auto* call = static_cast<npk::CallExpr*>(node);
+                        if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                            auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
                             if ((ident->name == "aria_thread_create" ||
                                  ident->name == "aria_shim_thread_spawn" ||
                                  ident->name == "aria_libc_thread_spawn") &&
                                 !call->arguments.empty()) {
                                 // First argument is the thread function (may be @func or bare func)
-                                aria::ASTNode* arg0 = call->arguments[0].get();
+                                npk::ASTNode* arg0 = call->arguments[0].get();
                                 // Unwrap address-of operator (@func)
-                                if (arg0->type == aria::ASTNode::NodeType::UNARY_OP) {
-                                    auto* unary = static_cast<aria::UnaryExpr*>(arg0);
+                                if (arg0->type == npk::ASTNode::NodeType::UNARY_OP) {
+                                    auto* unary = static_cast<npk::UnaryExpr*>(arg0);
                                     if (unary->operand) arg0 = unary->operand.get();
                                 }
-                                if (arg0->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                    auto* tfIdent = static_cast<aria::IdentifierExpr*>(arg0);
+                                if (arg0->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                    auto* tfIdent = static_cast<npk::IdentifierExpr*>(arg0);
                                     auto tfIt = all_funcs_2d.find(tfIdent->name);
                                     if (tfIt != all_funcs_2d.end()) {
                                         threadFuncs.push_back(tfIt->second);
@@ -1785,37 +1785,37 @@ llvm::Module* compile_to_module(
                             }
                         }
                         for (auto& arg : call->arguments) findSpawns(arg.get());
-                    } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                        auto* blk = static_cast<npk::BlockStmt*>(node);
                         for (auto& s : blk->statements) findSpawns(s.get());
-                    } else if (node->type == aria::ASTNode::NodeType::IF) {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::IF) {
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         findSpawns(s->thenBranch.get());
                         findSpawns(s->elseBranch.get());
-                    } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
-                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::EXPRESSION_STMT) {
+                        auto* s = static_cast<npk::ExpressionStmt*>(node);
                         findSpawns(s->expression.get());
-                    } else if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
-                        auto* s = static_cast<aria::VarDeclStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                        auto* s = static_cast<npk::VarDeclStmt*>(node);
                         if (s->initializer) findSpawns(s->initializer.get());
-                    } else if (node->type == aria::ASTNode::NodeType::WHILE) {
-                        auto* s = static_cast<aria::WhileStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::WHILE) {
+                        auto* s = static_cast<npk::WhileStmt*>(node);
                         findSpawns(s->body.get());
-                    } else if (node->type == aria::ASTNode::NodeType::FOR) {
-                        auto* s = static_cast<aria::ForStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::FOR) {
+                        auto* s = static_cast<npk::ForStmt*>(node);
                         findSpawns(s->body.get());
                     }
                 };
                 findSpawns(func->body.get());
 
                 if (!threadFuncs.empty()) {
-                    std::vector<aria::VerifyOutcome> raceOutcomes;
+                    std::vector<npk::VerifyOutcome> raceOutcomes;
                     z3v.verifyDataRaceFreedom(
                         func, threadFuncs, all_funcs_2d,
                         raceOutcomes, func->line, func->column);
 
                     for (const auto& out : raceOutcomes) {
-                        if (out.result == aria::VerifyResult::DISPROVEN) {
+                        if (out.result == npk::VerifyResult::DISPROVEN) {
                             std::cerr << "  [race] " << out.detail << " (line "
                                       << out.line << ")\n";
                         } else if (opts.verify_report || opts.verbose) {
@@ -1826,11 +1826,11 @@ llvm::Module* compile_to_module(
             }
 
             // Verify deadlock freedom across all functions
-            std::vector<aria::VerifyOutcome> dlOutcomes;
+            std::vector<npk::VerifyOutcome> dlOutcomes;
             z3v.verifyDeadlockFreedom(all_funcs_2d, dlOutcomes, 0, 0);
 
             for (const auto& out : dlOutcomes) {
-                if (out.result == aria::VerifyResult::DISPROVEN) {
+                if (out.result == npk::VerifyResult::DISPROVEN) {
                     std::cerr << "  [deadlock] " << out.detail << "\n";
                 } else if (opts.verify_report || opts.verbose) {
                     std::cout << "  [deadlock] " << out.detail << "\n";
@@ -1847,24 +1847,24 @@ llvm::Module* compile_to_module(
             }
 
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body) continue;
 
                 // Build paramRules for this function
-                std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> paramRules;
-                std::map<std::string, aria::FuncDeclStmt*> funcMap;
+                std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>> paramRules;
+                std::map<std::string, npk::FuncDeclStmt*> funcMap;
 
                 for (const auto& d : program->declarations) {
-                    if (d->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                        auto* f = static_cast<aria::FuncDeclStmt*>(d.get());
+                    if (d->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                        auto* f = static_cast<npk::FuncDeclStmt*>(d.get());
                         funcMap[f->funcName] = f;
                     }
                 }
 
                 for (auto& param : func->parameters) {
-                    if (param->type == aria::ASTNode::NodeType::PARAMETER) {
-                        auto* pn = static_cast<aria::ParameterNode*>(param.get());
+                    if (param->type == npk::ASTNode::NodeType::PARAMETER) {
+                        auto* pn = static_cast<npk::ParameterNode*>(param.get());
                         if (pn->typeNode) {
                             std::string tname = pn->typeNode->toString();
                             auto it = rules_table.find(tname);
@@ -1873,8 +1873,8 @@ llvm::Module* compile_to_module(
                             }
                         }
                     }
-                    if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
-                        auto* vd = static_cast<aria::VarDeclStmt*>(param.get());
+                    if (param->type == npk::ASTNode::NodeType::VAR_DECL) {
+                        auto* vd = static_cast<npk::VarDeclStmt*>(param.get());
                         if (!vd->limitRulesName.empty()) {
                             auto it = rules_table.find(vd->limitRulesName);
                             if (it != rules_table.end()) {
@@ -1887,18 +1887,18 @@ llvm::Module* compile_to_module(
                 // Also scan function body for limit<> VarDecls referencing parameters
                 std::set<std::string> paramNameSet2e;
                 for (auto& param : func->parameters) {
-                    if (param->type == aria::ASTNode::NodeType::PARAMETER) {
-                        paramNameSet2e.insert(static_cast<aria::ParameterNode*>(param.get())->paramName);
+                    if (param->type == npk::ASTNode::NodeType::PARAMETER) {
+                        paramNameSet2e.insert(static_cast<npk::ParameterNode*>(param.get())->paramName);
                     }
-                    if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
-                        paramNameSet2e.insert(static_cast<aria::VarDeclStmt*>(param.get())->varName);
+                    if (param->type == npk::ASTNode::NodeType::VAR_DECL) {
+                        paramNameSet2e.insert(static_cast<npk::VarDeclStmt*>(param.get())->varName);
                     }
                 }
-                if (func->body && func->body->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* blk = static_cast<aria::BlockStmt*>(func->body.get());
+                if (func->body && func->body->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* blk = static_cast<npk::BlockStmt*>(func->body.get());
                     for (auto& s : blk->statements) {
-                        if (s->type == aria::ASTNode::NodeType::VAR_DECL) {
-                            auto* vd = static_cast<aria::VarDeclStmt*>(s.get());
+                        if (s->type == npk::ASTNode::NodeType::VAR_DECL) {
+                            auto* vd = static_cast<npk::VarDeclStmt*>(s.get());
                             if (!vd->limitRulesName.empty()) {
                                 auto it = rules_table.find(vd->limitRulesName);
                                 if (it != rules_table.end()) {
@@ -1912,44 +1912,44 @@ llvm::Module* compile_to_module(
                 // Phase 18: Use-after-free — scan for wild pointers in this function
                 // Look for variables that are freed and then possibly used
                 std::set<std::string> freedVars;
-                std::function<void(aria::ASTNode*)> findFrees;
-                findFrees = [&](aria::ASTNode* node) {
+                std::function<void(npk::ASTNode*)> findFrees;
+                findFrees = [&](npk::ASTNode* node) {
                     if (!node) return;
-                    if (node->type == aria::ASTNode::NodeType::CALL) {
-                        auto* call = static_cast<aria::CallExpr*>(node);
-                        if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                            auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                    if (node->type == npk::ASTNode::NodeType::CALL) {
+                        auto* call = static_cast<npk::CallExpr*>(node);
+                        if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                            auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
                             if ((ident->name == "free" || ident->name == "aria_free" ||
                                  ident->name == "_release" || ident->name == "_destroy") &&
                                 !call->arguments.empty() &&
-                                call->arguments[0]->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                auto* arg = static_cast<aria::IdentifierExpr*>(call->arguments[0].get());
+                                call->arguments[0]->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                auto* arg = static_cast<npk::IdentifierExpr*>(call->arguments[0].get());
                                 freedVars.insert(arg->name);
                             }
                         }
                         for (auto& arg : call->arguments) findFrees(arg.get());
-                    } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                        auto* blk = static_cast<npk::BlockStmt*>(node);
                         for (auto& s : blk->statements) findFrees(s.get());
-                    } else if (node->type == aria::ASTNode::NodeType::IF) {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::IF) {
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         findFrees(s->thenBranch.get());
                         findFrees(s->elseBranch.get());
-                    } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
-                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                    } else if (node->type == npk::ASTNode::NodeType::EXPRESSION_STMT) {
+                        auto* s = static_cast<npk::ExpressionStmt*>(node);
                         findFrees(s->expression.get());
                     }
                 };
                 findFrees(func->body.get());
 
                 for (const auto& varName : freedVars) {
-                    std::vector<aria::VerifyOutcome> uafOutcomes;
+                    std::vector<npk::VerifyOutcome> uafOutcomes;
                     z3v.proveNoUseAfterFree(
                         func, varName, paramRules,
                         uafOutcomes, func->line, func->column);
 
                     for (const auto& out : uafOutcomes) {
-                        if (out.result == aria::VerifyResult::DISPROVEN) {
+                        if (out.result == npk::VerifyResult::DISPROVEN) {
                             std::cerr << "  [uaf] " << out.detail << " (line "
                                       << out.line << ")\n";
                         } else if (opts.verify_report || opts.verbose) {
@@ -1960,13 +1960,13 @@ llvm::Module* compile_to_module(
 
                 // Phase 19: Recursion bounding
                 if (!paramRules.empty()) {
-                    std::vector<aria::VerifyOutcome> recOutcomes;
+                    std::vector<npk::VerifyOutcome> recOutcomes;
                     z3v.proveRecursionBounded(
                         func, funcMap, paramRules,
                         recOutcomes, func->line, func->column);
 
                     for (const auto& out : recOutcomes) {
-                        if (out.result == aria::VerifyResult::UNKNOWN) {
+                        if (out.result == npk::VerifyResult::UNKNOWN) {
                             if (opts.verbose) {
                                 std::cout << "  [recursion] " << out.detail << "\n";
                             }
@@ -1985,16 +1985,16 @@ llvm::Module* compile_to_module(
                 std::cout << "  Phase 3: Verifying integer overflow safety...\n";
             }
             
-            std::function<void(aria::ASTNode*)> walkOverflow = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkOverflow = [&](npk::ASTNode* node) {
                 if (!node) return;
                 
-                if (node->type == aria::ASTNode::NodeType::BINARY_OP) {
-                    auto* binary = static_cast<aria::BinaryExpr*>(node);
+                if (node->type == npk::ASTNode::NodeType::BINARY_OP) {
+                    auto* binary = static_cast<npk::BinaryExpr*>(node);
                     char op = 0;
                     switch (binary->op.type) {
-                        case aria::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
-                        case aria::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
-                        case aria::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
+                        case npk::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
+                        case npk::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
+                        case npk::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
                         default: break;
                     }
                     
@@ -2004,19 +2004,19 @@ llvm::Module* compile_to_module(
                         bool lhsConst = false, rhsConst = false;
                         int bitWidth = 32;
                         
-                        auto extractInt = [](aria::ASTNode* n, int64_t& val) -> bool {
+                        auto extractInt = [](npk::ASTNode* n, int64_t& val) -> bool {
                             if (!n) return false;
-                            if (n->type == aria::ASTNode::NodeType::LITERAL) {
-                                auto* lit = static_cast<aria::LiteralExpr*>(n);
+                            if (n->type == npk::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<npk::LiteralExpr*>(n);
                                 if (std::holds_alternative<int64_t>(lit->value)) {
                                     val = std::get<int64_t>(lit->value);
                                     return true;
                                 }
-                            } else if (n->type == aria::ASTNode::NodeType::UNARY_OP) {
-                                auto* un = static_cast<aria::UnaryExpr*>(n);
-                                if (un->op.type == aria::frontend::TokenType::TOKEN_MINUS &&
-                                    un->operand && un->operand->type == aria::ASTNode::NodeType::LITERAL) {
-                                    auto* lit = static_cast<aria::LiteralExpr*>(un->operand.get());
+                            } else if (n->type == npk::ASTNode::NodeType::UNARY_OP) {
+                                auto* un = static_cast<npk::UnaryExpr*>(n);
+                                if (un->op.type == npk::frontend::TokenType::TOKEN_MINUS &&
+                                    un->operand && un->operand->type == npk::ASTNode::NodeType::LITERAL) {
+                                    auto* lit = static_cast<npk::LiteralExpr*>(un->operand.get());
                                     if (std::holds_alternative<int64_t>(lit->value)) {
                                         val = -std::get<int64_t>(lit->value);
                                         return true;
@@ -2031,16 +2031,16 @@ llvm::Module* compile_to_module(
                         
                         if (lhsConst && rhsConst) {
                             // Both constants: check with tight ranges
-                            std::vector<aria::VerifyOutcome> outcomes;
+                            std::vector<npk::VerifyOutcome> outcomes;
                             z3v.verifyNoOverflow(op, bitWidth, true,
                                                  lhsVal, lhsVal, rhsVal, rhsVal,
                                                  outcomes, binary->line, binary->column);
                             for (const auto& out : outcomes) {
-                                if (out.result == aria::VerifyResult::DISPROVEN) {
-                                    diags.error(aria::SourceLocation(filename, out.line, out.column),
+                                if (out.result == npk::VerifyResult::DISPROVEN) {
+                                    diags.error(npk::SourceLocation(filename, out.line, out.column),
                                                 "[z3-overflow] " + out.detail);
-                                } else if (opts.verify_report && out.result == aria::VerifyResult::PROVEN) {
-                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                } else if (opts.verify_report && out.result == npk::VerifyResult::PROVEN) {
+                                    diags.note(npk::SourceLocation(filename, out.line, out.column),
                                                "[z3-overflow] " + out.detail);
                                 }
                             }
@@ -2054,37 +2054,37 @@ llvm::Module* compile_to_module(
                 }
                 
                 // Generic recursion
-                if (node->type == aria::ASTNode::NodeType::PROGRAM) {
-                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<npk::ProgramNode*>(node);
                     for (const auto& decl : prog->declarations) {
                         walkOverflow(decl.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(node);
                     if (func->body) walkOverflow(func->body.get());
-                } else if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(node);
                     for (const auto& stmt : block->statements) {
                         walkOverflow(stmt.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
-                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<npk::TypeDeclStmt*>(node);
                     if (typeDecl->createFunc) walkOverflow(typeDecl->createFunc.get());
                     if (typeDecl->destroyFunc) walkOverflow(typeDecl->destroyFunc.get());
                     for (const auto& method : typeDecl->methods) {
                         walkOverflow(method.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
-                    auto* exprStmt = static_cast<aria::ExpressionStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* exprStmt = static_cast<npk::ExpressionStmt*>(node);
                     if (exprStmt->expression) walkOverflow(exprStmt->expression.get());
-                } else if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
-                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<npk::VarDeclStmt*>(node);
                     if (var->initializer) walkOverflow(var->initializer.get());
-                } else if (node->type == aria::ASTNode::NodeType::RETURN) {
-                    auto* ret = static_cast<aria::ReturnStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::RETURN) {
+                    auto* ret = static_cast<npk::ReturnStmt*>(node);
                     if (ret->value) walkOverflow(ret->value.get());
-                } else if (node->type == aria::ASTNode::NodeType::PASS) {
-                    auto* pass = static_cast<aria::PassStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::PASS) {
+                    auto* pass = static_cast<npk::PassStmt*>(node);
                     if (pass->value) walkOverflow(pass->value.get());
                 }
             };
@@ -2114,17 +2114,17 @@ llvm::Module* compile_to_module(
             };
 
             // Per-function: collect variable types, find apush calls, determine tags
-            std::function<void(aria::ASTNode*, std::map<std::string, std::string>&,
+            std::function<void(npk::ASTNode*, std::map<std::string, std::string>&,
                               std::vector<int64_t>&, bool&)>
-            collectPushTags = [&](aria::ASTNode* node,
+            collectPushTags = [&](npk::ASTNode* node,
                                   std::map<std::string, std::string>& varTypes,
                                   std::vector<int64_t>& tags,
                                   bool& hasAstack) {
                 if (!node) return;
 
                 // Track variable declarations
-                if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
-                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<npk::VarDeclStmt*>(node);
                     if (!var->typeName.empty()) {
                         varTypes[var->varName] = var->typeName;
                     }
@@ -2133,10 +2133,10 @@ llvm::Module* compile_to_module(
                 }
 
                 // Check for astack()/apush() calls
-                if (node->type == aria::ASTNode::NodeType::CALL) {
-                    auto* call = static_cast<aria::CallExpr*>(node);
-                    if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                        auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                if (node->type == npk::ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<npk::CallExpr*>(node);
+                    if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                        auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
                         if (ident->name == "astack") {
                             hasAstack = true;
                         } else if (ident->name == "apush" && call->arguments.size() == 1) {
@@ -2144,36 +2144,36 @@ llvm::Module* compile_to_module(
                             int64_t tag = -1;
 
                             // Literal argument
-                            if (arg->type == aria::ASTNode::NodeType::LITERAL) {
-                                auto* lit = static_cast<aria::LiteralExpr*>(arg);
+                            if (arg->type == npk::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<npk::LiteralExpr*>(arg);
                                 if (std::holds_alternative<int64_t>(lit->value)) tag = 3; // int64
                                 else if (std::holds_alternative<double>(lit->value)) tag = 5; // flt64
                                 else if (std::holds_alternative<bool>(lit->value)) tag = 6; // bool
                                 else if (std::holds_alternative<std::string>(lit->value)) tag = 7; // string
                             }
                             // Variable reference
-                            else if (arg->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                auto* varRef = static_cast<aria::IdentifierExpr*>(arg);
+                            else if (arg->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                auto* varRef = static_cast<npk::IdentifierExpr*>(arg);
                                 auto vit = varTypes.find(varRef->name);
                                 if (vit != varTypes.end()) {
                                     tag = ariaTypeToTag(vit->second);
                                 }
                             }
                             // Binary expression — recursively find a typed variable
-                            else if (arg->type == aria::ASTNode::NodeType::BINARY_OP) {
+                            else if (arg->type == npk::ASTNode::NodeType::BINARY_OP) {
                                 // Walk leftmost chain to find an identifier whose type we know
-                                std::function<int64_t(aria::ASTNode*)> inferBinType = [&](aria::ASTNode* n) -> int64_t {
+                                std::function<int64_t(npk::ASTNode*)> inferBinType = [&](npk::ASTNode* n) -> int64_t {
                                     if (!n) return -1;
-                                    if (n->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                        auto* id = static_cast<aria::IdentifierExpr*>(n);
+                                    if (n->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                        auto* id = static_cast<npk::IdentifierExpr*>(n);
                                         auto vit = varTypes.find(id->name);
                                         if (vit != varTypes.end()) return ariaTypeToTag(vit->second);
-                                    } else if (n->type == aria::ASTNode::NodeType::LITERAL) {
-                                        auto* lit = static_cast<aria::LiteralExpr*>(n);
+                                    } else if (n->type == npk::ASTNode::NodeType::LITERAL) {
+                                        auto* lit = static_cast<npk::LiteralExpr*>(n);
                                         if (std::holds_alternative<int64_t>(lit->value)) return 3;
                                         if (std::holds_alternative<double>(lit->value)) return 5;
-                                    } else if (n->type == aria::ASTNode::NodeType::BINARY_OP) {
-                                        auto* bin = static_cast<aria::BinaryExpr*>(n);
+                                    } else if (n->type == npk::ASTNode::NodeType::BINARY_OP) {
+                                        auto* bin = static_cast<npk::BinaryExpr*>(n);
                                         int64_t lt = inferBinType(bin->left.get());
                                         if (lt >= 0) return lt;
                                         return inferBinType(bin->right.get());
@@ -2198,28 +2198,28 @@ llvm::Module* compile_to_module(
                 }
 
                 // Recurse into containers
-                if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(node);
                     for (const auto& s : block->statements) {
                         collectPushTags(s.get(), varTypes, tags, hasAstack);
                     }
-                } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
-                    auto* es = static_cast<aria::ExpressionStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* es = static_cast<npk::ExpressionStmt*>(node);
                     if (es->expression) collectPushTags(es->expression.get(), varTypes, tags, hasAstack);
-                } else if (node->type == aria::ASTNode::NodeType::WHILE) {
-                    auto* ws = static_cast<aria::WhileStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::WHILE) {
+                    auto* ws = static_cast<npk::WhileStmt*>(node);
                     if (ws->condition) collectPushTags(ws->condition.get(), varTypes, tags, hasAstack);
                     if (ws->body) collectPushTags(ws->body.get(), varTypes, tags, hasAstack);
-                } else if (node->type == aria::ASTNode::NodeType::IF) {
-                    auto* is = static_cast<aria::IfStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::IF) {
+                    auto* is = static_cast<npk::IfStmt*>(node);
                     if (is->condition) collectPushTags(is->condition.get(), varTypes, tags, hasAstack);
                     if (is->thenBranch) collectPushTags(is->thenBranch.get(), varTypes, tags, hasAstack);
                     if (is->elseBranch) collectPushTags(is->elseBranch.get(), varTypes, tags, hasAstack);
-                } else if (node->type == aria::ASTNode::NodeType::RETURN) {
-                    auto* ret = static_cast<aria::ReturnStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::RETURN) {
+                    auto* ret = static_cast<npk::ReturnStmt*>(node);
                     if (ret->value) collectPushTags(ret->value.get(), varTypes, tags, hasAstack);
-                } else if (node->type == aria::ASTNode::NodeType::FOR) {
-                    auto* fs = static_cast<aria::ForStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::FOR) {
+                    auto* fs = static_cast<npk::ForStmt*>(node);
                     if (fs->initializer) collectPushTags(fs->initializer.get(), varTypes, tags, hasAstack);
                     if (fs->condition) collectPushTags(fs->condition.get(), varTypes, tags, hasAstack);
                     if (fs->update) collectPushTags(fs->update.get(), varTypes, tags, hasAstack);
@@ -2228,16 +2228,16 @@ llvm::Module* compile_to_module(
             };
 
             // Walk top-level functions (including main)
-            std::function<void(aria::ASTNode*)> walkUStack = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkUStack = [&](npk::ASTNode* node) {
                 if (!node) return;
-                if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(node);
                     if (!func->body) return;
 
                     std::map<std::string, std::string> varTypes;
                     // Seed with parameter types
                     for (const auto& param : func->parameters) {
-                        auto* pnode = static_cast<aria::ParameterNode*>(param.get());
+                        auto* pnode = static_cast<npk::ParameterNode*>(param.get());
                         if (pnode->typeNode) {
                             varTypes[pnode->paramName] = pnode->typeNode->toString();
                         }
@@ -2258,12 +2258,12 @@ llvm::Module* compile_to_module(
 
                         if (allKnown) {
                             // Ask Z3 to formally verify homogeneity
-                            std::vector<aria::VerifyOutcome> outcomes;
-                            aria::VerifyResult result = z3v.verifyUStackHomogeneous(
+                            std::vector<npk::VerifyOutcome> outcomes;
+                            npk::VerifyResult result = z3v.verifyUStackHomogeneous(
                                 pushTags, firstTag, outcomes,
                                 func->line, func->column);
 
-                            if (result == aria::VerifyResult::PROVEN) {
+                            if (result == npk::VerifyResult::PROVEN) {
                                 ustack_opt_funcs.insert(func->funcName);
                                 if (opts.verbose || opts.verify_report) {
                                     std::cout << "  [z3-smt-opt] " << func->funcName
@@ -2273,19 +2273,19 @@ llvm::Module* compile_to_module(
                             }
                             for (const auto& out : outcomes) {
                                 if (opts.verify_report) {
-                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                    diags.note(npk::SourceLocation(filename, out.line, out.column),
                                                "[z3-smt-opt] " + out.detail);
                                 }
                             }
                         }
                     }
-                } else if (node->type == aria::ASTNode::NodeType::PROGRAM) {
-                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<npk::ProgramNode*>(node);
                     for (const auto& decl : prog->declarations) {
                         walkUStack(decl.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
-                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<npk::TypeDeclStmt*>(node);
                     for (const auto& method : typeDecl->methods) {
                         walkUStack(method.get());
                     }
@@ -2303,17 +2303,17 @@ llvm::Module* compile_to_module(
             // Collect value type tags from ahset() calls; if all are the same
             // type, Z3 proves homogeneity and we can use tag-free fast paths.
 
-            std::function<void(aria::ASTNode*, std::map<std::string, std::string>&,
+            std::function<void(npk::ASTNode*, std::map<std::string, std::string>&,
                               std::vector<int64_t>&, bool&)>
-            collectSetTags = [&](aria::ASTNode* node,
+            collectSetTags = [&](npk::ASTNode* node,
                                  std::map<std::string, std::string>& varTypes,
                                  std::vector<int64_t>& tags,
                                  bool& hasAhash) {
                 if (!node) return;
 
                 // Track variable declarations
-                if (node->type == aria::ASTNode::NodeType::VAR_DECL) {
-                    auto* var = static_cast<aria::VarDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<npk::VarDeclStmt*>(node);
                     if (!var->typeName.empty()) {
                         varTypes[var->varName] = var->typeName;
                     }
@@ -2322,10 +2322,10 @@ llvm::Module* compile_to_module(
                 }
 
                 // Check for ahash()/ahset() calls
-                if (node->type == aria::ASTNode::NodeType::CALL) {
-                    auto* call = static_cast<aria::CallExpr*>(node);
-                    if (call->callee && call->callee->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                        auto* ident = static_cast<aria::IdentifierExpr*>(call->callee.get());
+                if (node->type == npk::ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<npk::CallExpr*>(node);
+                    if (call->callee && call->callee->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                        auto* ident = static_cast<npk::IdentifierExpr*>(call->callee.get());
                         if (ident->name == "ahash") {
                             hasAhash = true;
                         } else if (ident->name == "ahset" && call->arguments.size() == 3) {
@@ -2334,35 +2334,35 @@ llvm::Module* compile_to_module(
                             int64_t tag = -1;
 
                             // Literal argument
-                            if (arg->type == aria::ASTNode::NodeType::LITERAL) {
-                                auto* lit = static_cast<aria::LiteralExpr*>(arg);
+                            if (arg->type == npk::ASTNode::NodeType::LITERAL) {
+                                auto* lit = static_cast<npk::LiteralExpr*>(arg);
                                 if (std::holds_alternative<int64_t>(lit->value)) tag = 3; // int64
                                 else if (std::holds_alternative<double>(lit->value)) tag = 5; // flt64
                                 else if (std::holds_alternative<bool>(lit->value)) tag = 6; // bool
                                 else if (std::holds_alternative<std::string>(lit->value)) tag = 7; // string
                             }
                             // Variable reference
-                            else if (arg->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                auto* varRef = static_cast<aria::IdentifierExpr*>(arg);
+                            else if (arg->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                auto* varRef = static_cast<npk::IdentifierExpr*>(arg);
                                 auto vit = varTypes.find(varRef->name);
                                 if (vit != varTypes.end()) {
                                     tag = ariaTypeToTag(vit->second);
                                 }
                             }
                             // Binary expression — recursively find a typed variable
-                            else if (arg->type == aria::ASTNode::NodeType::BINARY_OP) {
-                                std::function<int64_t(aria::ASTNode*)> inferBinType = [&](aria::ASTNode* n) -> int64_t {
+                            else if (arg->type == npk::ASTNode::NodeType::BINARY_OP) {
+                                std::function<int64_t(npk::ASTNode*)> inferBinType = [&](npk::ASTNode* n) -> int64_t {
                                     if (!n) return -1;
-                                    if (n->type == aria::ASTNode::NodeType::IDENTIFIER) {
-                                        auto* id = static_cast<aria::IdentifierExpr*>(n);
+                                    if (n->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                                        auto* id = static_cast<npk::IdentifierExpr*>(n);
                                         auto vit = varTypes.find(id->name);
                                         if (vit != varTypes.end()) return ariaTypeToTag(vit->second);
-                                    } else if (n->type == aria::ASTNode::NodeType::LITERAL) {
-                                        auto* lit = static_cast<aria::LiteralExpr*>(n);
+                                    } else if (n->type == npk::ASTNode::NodeType::LITERAL) {
+                                        auto* lit = static_cast<npk::LiteralExpr*>(n);
                                         if (std::holds_alternative<int64_t>(lit->value)) return 3;
                                         if (std::holds_alternative<double>(lit->value)) return 5;
-                                    } else if (n->type == aria::ASTNode::NodeType::BINARY_OP) {
-                                        auto* bin = static_cast<aria::BinaryExpr*>(n);
+                                    } else if (n->type == npk::ASTNode::NodeType::BINARY_OP) {
+                                        auto* bin = static_cast<npk::BinaryExpr*>(n);
                                         int64_t lt = inferBinType(bin->left.get());
                                         if (lt >= 0) return lt;
                                         return inferBinType(bin->right.get());
@@ -2387,28 +2387,28 @@ llvm::Module* compile_to_module(
                 }
 
                 // Recurse into containers
-                if (node->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(node);
                     for (const auto& s : block->statements) {
                         collectSetTags(s.get(), varTypes, tags, hasAhash);
                     }
-                } else if (node->type == aria::ASTNode::NodeType::EXPRESSION_STMT) {
-                    auto* es = static_cast<aria::ExpressionStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::EXPRESSION_STMT) {
+                    auto* es = static_cast<npk::ExpressionStmt*>(node);
                     if (es->expression) collectSetTags(es->expression.get(), varTypes, tags, hasAhash);
-                } else if (node->type == aria::ASTNode::NodeType::WHILE) {
-                    auto* ws = static_cast<aria::WhileStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::WHILE) {
+                    auto* ws = static_cast<npk::WhileStmt*>(node);
                     if (ws->condition) collectSetTags(ws->condition.get(), varTypes, tags, hasAhash);
                     if (ws->body) collectSetTags(ws->body.get(), varTypes, tags, hasAhash);
-                } else if (node->type == aria::ASTNode::NodeType::IF) {
-                    auto* is = static_cast<aria::IfStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::IF) {
+                    auto* is = static_cast<npk::IfStmt*>(node);
                     if (is->condition) collectSetTags(is->condition.get(), varTypes, tags, hasAhash);
                     if (is->thenBranch) collectSetTags(is->thenBranch.get(), varTypes, tags, hasAhash);
                     if (is->elseBranch) collectSetTags(is->elseBranch.get(), varTypes, tags, hasAhash);
-                } else if (node->type == aria::ASTNode::NodeType::RETURN) {
-                    auto* ret = static_cast<aria::ReturnStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::RETURN) {
+                    auto* ret = static_cast<npk::ReturnStmt*>(node);
                     if (ret->value) collectSetTags(ret->value.get(), varTypes, tags, hasAhash);
-                } else if (node->type == aria::ASTNode::NodeType::FOR) {
-                    auto* fs = static_cast<aria::ForStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::FOR) {
+                    auto* fs = static_cast<npk::ForStmt*>(node);
                     if (fs->initializer) collectSetTags(fs->initializer.get(), varTypes, tags, hasAhash);
                     if (fs->condition) collectSetTags(fs->condition.get(), varTypes, tags, hasAhash);
                     if (fs->update) collectSetTags(fs->update.get(), varTypes, tags, hasAhash);
@@ -2417,15 +2417,15 @@ llvm::Module* compile_to_module(
             };
 
             // Walk top-level functions for uhash homogeneity
-            std::function<void(aria::ASTNode*)> walkUHash = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkUHash = [&](npk::ASTNode* node) {
                 if (!node) return;
-                if (node->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                    auto* func = static_cast<aria::FuncDeclStmt*>(node);
+                if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* func = static_cast<npk::FuncDeclStmt*>(node);
                     if (!func->body) return;
 
                     std::map<std::string, std::string> varTypes;
                     for (const auto& param : func->parameters) {
-                        auto* pnode = static_cast<aria::ParameterNode*>(param.get());
+                        auto* pnode = static_cast<npk::ParameterNode*>(param.get());
                         if (pnode->typeNode) {
                             varTypes[pnode->paramName] = pnode->typeNode->toString();
                         }
@@ -2444,12 +2444,12 @@ llvm::Module* compile_to_module(
                         }
 
                         if (allKnown) {
-                            std::vector<aria::VerifyOutcome> outcomes;
-                            aria::VerifyResult result = z3v.verifyUHashHomogeneous(
+                            std::vector<npk::VerifyOutcome> outcomes;
+                            npk::VerifyResult result = z3v.verifyUHashHomogeneous(
                                 setTags, firstTag, outcomes,
                                 func->line, func->column);
 
-                            if (result == aria::VerifyResult::PROVEN) {
+                            if (result == npk::VerifyResult::PROVEN) {
                                 uhash_opt_funcs.insert(func->funcName);
                                 if (opts.verbose || opts.verify_report) {
                                     std::cout << "  [z3-smt-opt] " << func->funcName
@@ -2459,19 +2459,19 @@ llvm::Module* compile_to_module(
                             }
                             for (const auto& out : outcomes) {
                                 if (opts.verify_report) {
-                                    diags.note(aria::SourceLocation(filename, out.line, out.column),
+                                    diags.note(npk::SourceLocation(filename, out.line, out.column),
                                                "[z3-smt-opt] " + out.detail);
                                 }
                             }
                         }
                     }
-                } else if (node->type == aria::ASTNode::NodeType::PROGRAM) {
-                    auto* prog = static_cast<aria::ProgramNode*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    auto* prog = static_cast<npk::ProgramNode*>(node);
                     for (const auto& decl : prog->declarations) {
                         walkUHash(decl.get());
                     }
-                } else if (node->type == aria::ASTNode::NodeType::TYPE_DECL) {
-                    auto* typeDecl = static_cast<aria::TypeDeclStmt*>(node);
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* typeDecl = static_cast<npk::TypeDeclStmt*>(node);
                     for (const auto& method : typeDecl->methods) {
                         walkUHash(method.get());
                     }
@@ -2490,36 +2490,36 @@ llvm::Module* compile_to_module(
         // For each IF statement whose condition involves Rules-constrained variables,
         // use Z3 to prove whether the condition is always true or always false.
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 4.25: Dead branch elimination analysis...\n";
                 }
 
                 // Collect all Rules declarations (name → RulesDeclStmt*)
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
                 if (!all_rules.empty() || opts.smt_opt) {
-                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+                    using VarRulesMap = std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>>;
 
                     // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
-                    aria::RangeAnalyzer* currentRA = nullptr;
+                    npk::RangeAnalyzer* currentRA = nullptr;
 
                     // Recursive walker: collect constrained var decls, probe IF conditions
-                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForDeadBranches;
-                    walkForDeadBranches = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                    std::function<void(npk::ASTNode*, VarRulesMap&)> walkForDeadBranches;
+                    walkForDeadBranches = [&](npk::ASTNode* node, VarRulesMap& varRules) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::VAR_DECL: {
-                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                auto* var = static_cast<npk::VarDeclStmt*>(node);
                                 if (!var->limitRulesName.empty()) {
                                     auto it = all_rules.find(var->limitRulesName);
                                     if (it != all_rules.end()) {
@@ -2531,7 +2531,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::IF: {
-                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                auto* ifStmt = static_cast<npk::IfStmt*>(node);
                                 // v0.14.1: Merge explicit Rules + inferred ranges
                                 VarRulesMap mergedRules = varRules;
                                 if (currentRA) {
@@ -2539,13 +2539,13 @@ llvm::Module* compile_to_module(
                                     if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                 }
                                 if (!mergedRules.empty() && ifStmt->condition) {
-                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    std::vector<npk::VerifyOutcome> outcomes;
                                     auto result = z3v.proveDeadBranch(
                                         ifStmt->condition.get(), mergedRules, outcomes,
                                         ifStmt->line, ifStmt->column);
-                                    if (result == aria::VerifyResult::PROVEN) {
+                                    if (result == npk::VerifyResult::PROVEN) {
                                         dead_branch_true_set.insert(ifStmt);
-                                    } else if (result == aria::VerifyResult::DISPROVEN) {
+                                    } else if (result == npk::VerifyResult::DISPROVEN) {
                                         dead_branch_false_set.insert(ifStmt);
                                     }
                                 }
@@ -2556,21 +2556,21 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                auto* block = static_cast<npk::BlockStmt*>(node);
                                 for (auto& stmt : block->statements)
                                     walkForDeadBranches(stmt.get(), varRules);
                                 break;
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 walkForDeadBranches(s->condition.get(), varRules);
                                 walkForDeadBranches(s->body.get(), varRules);
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 walkForDeadBranches(s->initializer.get(), varRules);
                                 walkForDeadBranches(s->condition.get(), varRules);
                                 walkForDeadBranches(s->update.get(), varRules);
@@ -2580,7 +2580,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 walkForDeadBranches(s->start.get(), varRules);
                                 walkForDeadBranches(s->limit.get(), varRules);
                                 walkForDeadBranches(s->step.get(), varRules);
@@ -2589,7 +2589,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 walkForDeadBranches(s->limit.get(), varRules);
                                 walkForDeadBranches(s->step.get(), varRules);
                                 walkForDeadBranches(s->body.get(), varRules);
@@ -2597,7 +2597,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 walkForDeadBranches(s->condition.get(), varRules);
                                 walkForDeadBranches(s->body.get(), varRules);
                                 walkForDeadBranches(s->then_block.get(), varRules);
@@ -2606,10 +2606,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::PICK: {
-                                auto* s = static_cast<aria::PickStmt*>(node);
+                                auto* s = static_cast<npk::PickStmt*>(node);
                                 walkForDeadBranches(s->selector.get(), varRules);
                                 for (auto& c : s->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     walkForDeadBranches(pc->pattern.get(), varRules);
                                     walkForDeadBranches(pc->body.get(), varRules);
                                 }
@@ -2617,13 +2617,13 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::DEFER: {
-                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                auto* s = static_cast<npk::DeferStmt*>(node);
                                 walkForDeadBranches(s->block.get(), varRules);
                                 break;
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkForDeadBranches(s->expression.get(), varRules);
                                 break;
                             }
@@ -2634,12 +2634,12 @@ llvm::Module* compile_to_module(
                     };
 
                     for (const auto& decl : program->declarations) {
-                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
                         // v0.14.1: Run range analysis for flow-sensitive inference
-                        aria::RangeAnalyzer ra;
+                        npk::RangeAnalyzer ra;
                         ra.analyzeFunction(func);
                         currentRA = &ra;
 
@@ -2668,39 +2668,39 @@ llvm::Module* compile_to_module(
         // and the array has a compile-time known size, use Z3 to prove the index is
         // always in [0, N). If proven, the runtime bounds check is skipped.
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 4.5: Bounds check elimination analysis...\n";
                 }
 
                 // Collect all Rules declarations
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
                 if (!all_rules.empty() || opts.smt_opt) {
-                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+                    using VarRulesMap = std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>>;
 
                     // Map variable names to their array sizes (for fixed-size arrays)
                     using ArraySizeMap = std::map<std::string, int64_t>;
 
                     // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
-                    aria::RangeAnalyzer* currentRA = nullptr;
+                    npk::RangeAnalyzer* currentRA = nullptr;
 
                     // Recursive walker: collect constrained vars + array decls, probe INDEX exprs
-                    std::function<void(aria::ASTNode*, VarRulesMap&, ArraySizeMap&)> walkForBoundsCheck;
-                    walkForBoundsCheck = [&](aria::ASTNode* node, VarRulesMap& varRules, ArraySizeMap& arraySizes) {
+                    std::function<void(npk::ASTNode*, VarRulesMap&, ArraySizeMap&)> walkForBoundsCheck;
+                    walkForBoundsCheck = [&](npk::ASTNode* node, VarRulesMap& varRules, ArraySizeMap& arraySizes) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::VAR_DECL: {
-                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                auto* var = static_cast<npk::VarDeclStmt*>(node);
                                 // Track Rules-constrained variables
                                 if (!var->limitRulesName.empty()) {
                                     auto it = all_rules.find(var->limitRulesName);
@@ -2710,10 +2710,10 @@ llvm::Module* compile_to_module(
                                 }
                                 // Track fixed-size array declarations
                                 if (var->typeNode && var->typeNode->type == NT::ARRAY_TYPE) {
-                                    auto* arrType = static_cast<aria::ArrayType*>(var->typeNode.get());
+                                    auto* arrType = static_cast<npk::ArrayType*>(var->typeNode.get());
                                     if (!arrType->isDynamic && arrType->sizeExpr) {
                                         if (arrType->sizeExpr->type == NT::LITERAL) {
-                                            auto* lit = static_cast<aria::LiteralExpr*>(arrType->sizeExpr.get());
+                                            auto* lit = static_cast<npk::LiteralExpr*>(arrType->sizeExpr.get());
                                             if (auto* intVal = std::get_if<int64_t>(&lit->value)) {
                                                 arraySizes[var->varName] = *intVal;
                                             }
@@ -2722,7 +2722,7 @@ llvm::Module* compile_to_module(
                                 }
                                 // Also detect arrays from array literal initializers
                                 if (var->initializer && var->initializer->type == NT::ARRAY_LITERAL) {
-                                    auto* arrLit = static_cast<aria::ArrayLiteralExpr*>(var->initializer.get());
+                                    auto* arrLit = static_cast<npk::ArrayLiteralExpr*>(var->initializer.get());
                                     arraySizes[var->varName] = static_cast<int64_t>(arrLit->elements.size());
                                 }
                                 walkForBoundsCheck(var->initializer.get(), varRules, arraySizes);
@@ -2730,10 +2730,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::INDEX: {
-                                auto* indexExpr = static_cast<aria::IndexExpr*>(node);
+                                auto* indexExpr = static_cast<npk::IndexExpr*>(node);
                                 // Check if array is known fixed-size
                                 if (indexExpr->array->type == NT::IDENTIFIER) {
-                                    auto* ident = static_cast<aria::IdentifierExpr*>(indexExpr->array.get());
+                                    auto* ident = static_cast<npk::IdentifierExpr*>(indexExpr->array.get());
                                     auto sizeIt = arraySizes.find(ident->name);
                                     if (sizeIt != arraySizes.end()) {
                                         // v0.14.1: Merge explicit Rules + inferred ranges
@@ -2743,12 +2743,12 @@ llvm::Module* compile_to_module(
                                             if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                         }
                                         if (!mergedRules.empty()) {
-                                            std::vector<aria::VerifyOutcome> outcomes;
+                                            std::vector<npk::VerifyOutcome> outcomes;
                                             auto result = z3v.proveBoundsInRange(
                                                 indexExpr->index.get(), sizeIt->second,
                                                 mergedRules, outcomes,
                                                 indexExpr->line, indexExpr->column);
-                                            if (result == aria::VerifyResult::PROVEN) {
+                                            if (result == npk::VerifyResult::PROVEN) {
                                                 bounds_safe_set.insert(indexExpr);
                                             }
                                         }
@@ -2760,7 +2760,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::IF: {
-                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                auto* ifStmt = static_cast<npk::IfStmt*>(node);
                                 walkForBoundsCheck(ifStmt->condition.get(), varRules, arraySizes);
                                 walkForBoundsCheck(ifStmt->thenBranch.get(), varRules, arraySizes);
                                 walkForBoundsCheck(ifStmt->elseBranch.get(), varRules, arraySizes);
@@ -2768,21 +2768,21 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                auto* block = static_cast<npk::BlockStmt*>(node);
                                 for (auto& stmt : block->statements)
                                     walkForBoundsCheck(stmt.get(), varRules, arraySizes);
                                 break;
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->body.get(), varRules, arraySizes);
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 walkForBoundsCheck(s->initializer.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->update.get(), varRules, arraySizes);
@@ -2792,7 +2792,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 walkForBoundsCheck(s->start.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->limit.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->step.get(), varRules, arraySizes);
@@ -2801,7 +2801,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 walkForBoundsCheck(s->limit.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->step.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->body.get(), varRules, arraySizes);
@@ -2809,7 +2809,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 walkForBoundsCheck(s->condition.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->body.get(), varRules, arraySizes);
                                 walkForBoundsCheck(s->then_block.get(), varRules, arraySizes);
@@ -2818,10 +2818,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::PICK: {
-                                auto* s = static_cast<aria::PickStmt*>(node);
+                                auto* s = static_cast<npk::PickStmt*>(node);
                                 walkForBoundsCheck(s->selector.get(), varRules, arraySizes);
                                 for (auto& c : s->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     walkForBoundsCheck(pc->pattern.get(), varRules, arraySizes);
                                     walkForBoundsCheck(pc->body.get(), varRules, arraySizes);
                                 }
@@ -2829,13 +2829,13 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::DEFER: {
-                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                auto* s = static_cast<npk::DeferStmt*>(node);
                                 walkForBoundsCheck(s->block.get(), varRules, arraySizes);
                                 break;
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkForBoundsCheck(s->expression.get(), varRules, arraySizes);
                                 break;
                             }
@@ -2846,12 +2846,12 @@ llvm::Module* compile_to_module(
                     };
 
                     for (const auto& decl : program->declarations) {
-                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
                         // v0.14.1: Run range analysis for flow-sensitive inference
-                        aria::RangeAnalyzer ra;
+                        npk::RangeAnalyzer ra;
                         ra.analyzeFunction(func);
                         currentRA = &ra;
 
@@ -2874,35 +2874,35 @@ llvm::Module* compile_to_module(
         // Rules constraints, use Z3 to prove no overflow is possible. If proven,
         // codegen uses plain add/sub/mul instead of generateSafeAdd/Sub/Mul.
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 4.75: Overflow check elimination analysis...\n";
                 }
 
                 // Collect all Rules declarations
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
                 if (!all_rules.empty() || opts.smt_opt) {
-                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+                    using VarRulesMap = std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>>;
 
                     // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
-                    aria::RangeAnalyzer* currentRA = nullptr;
+                    npk::RangeAnalyzer* currentRA = nullptr;
 
-                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForOverflowCheck;
-                    walkForOverflowCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                    std::function<void(npk::ASTNode*, VarRulesMap&)> walkForOverflowCheck;
+                    walkForOverflowCheck = [&](npk::ASTNode* node, VarRulesMap& varRules) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::VAR_DECL: {
-                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                auto* var = static_cast<npk::VarDeclStmt*>(node);
                                 if (!var->limitRulesName.empty()) {
                                     auto it = all_rules.find(var->limitRulesName);
                                     if (it != all_rules.end()) {
@@ -2914,12 +2914,12 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BINARY_OP: {
-                                auto* binary = static_cast<aria::BinaryExpr*>(node);
+                                auto* binary = static_cast<npk::BinaryExpr*>(node);
                                 char op = 0;
                                 switch (binary->op.type) {
-                                    case aria::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
-                                    case aria::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
-                                    case aria::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
+                                    case npk::frontend::TokenType::TOKEN_PLUS:  op = '+'; break;
+                                    case npk::frontend::TokenType::TOKEN_MINUS: op = '-'; break;
+                                    case npk::frontend::TokenType::TOKEN_STAR:  op = '*'; break;
                                     default: break;
                                 }
                                 if (op != 0) {
@@ -2930,12 +2930,12 @@ llvm::Module* compile_to_module(
                                         if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                     }
                                     if (!mergedRules.empty()) {
-                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        std::vector<npk::VerifyOutcome> outcomes;
                                         auto result = z3v.proveNoOverflowFromRules(
                                             op, binary->left.get(), binary->right.get(),
                                             mergedRules, outcomes,
                                             binary->line, binary->column);
-                                        if (result == aria::VerifyResult::PROVEN) {
+                                        if (result == npk::VerifyResult::PROVEN) {
                                             overflow_safe_set.insert(binary);
                                         }
                                     }
@@ -2946,7 +2946,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::IF: {
-                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                auto* ifStmt = static_cast<npk::IfStmt*>(node);
                                 walkForOverflowCheck(ifStmt->condition.get(), varRules);
                                 walkForOverflowCheck(ifStmt->thenBranch.get(), varRules);
                                 walkForOverflowCheck(ifStmt->elseBranch.get(), varRules);
@@ -2954,21 +2954,21 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                auto* block = static_cast<npk::BlockStmt*>(node);
                                 for (auto& stmt : block->statements)
                                     walkForOverflowCheck(stmt.get(), varRules);
                                 break;
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 walkForOverflowCheck(s->condition.get(), varRules);
                                 walkForOverflowCheck(s->body.get(), varRules);
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 walkForOverflowCheck(s->initializer.get(), varRules);
                                 walkForOverflowCheck(s->condition.get(), varRules);
                                 walkForOverflowCheck(s->update.get(), varRules);
@@ -2978,7 +2978,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 walkForOverflowCheck(s->start.get(), varRules);
                                 walkForOverflowCheck(s->limit.get(), varRules);
                                 walkForOverflowCheck(s->step.get(), varRules);
@@ -2987,7 +2987,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 walkForOverflowCheck(s->limit.get(), varRules);
                                 walkForOverflowCheck(s->step.get(), varRules);
                                 walkForOverflowCheck(s->body.get(), varRules);
@@ -2995,7 +2995,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 walkForOverflowCheck(s->condition.get(), varRules);
                                 walkForOverflowCheck(s->body.get(), varRules);
                                 walkForOverflowCheck(s->then_block.get(), varRules);
@@ -3004,10 +3004,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::PICK: {
-                                auto* s = static_cast<aria::PickStmt*>(node);
+                                auto* s = static_cast<npk::PickStmt*>(node);
                                 walkForOverflowCheck(s->selector.get(), varRules);
                                 for (auto& c : s->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     walkForOverflowCheck(pc->pattern.get(), varRules);
                                     walkForOverflowCheck(pc->body.get(), varRules);
                                 }
@@ -3015,25 +3015,25 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::DEFER: {
-                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                auto* s = static_cast<npk::DeferStmt*>(node);
                                 walkForOverflowCheck(s->block.get(), varRules);
                                 break;
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkForOverflowCheck(s->expression.get(), varRules);
                                 break;
                             }
 
                             case NT::RETURN: {
-                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                auto* s = static_cast<npk::ReturnStmt*>(node);
                                 walkForOverflowCheck(s->value.get(), varRules);
                                 break;
                             }
 
                             case NT::PASS: {
-                                auto* s = static_cast<aria::PassStmt*>(node);
+                                auto* s = static_cast<npk::PassStmt*>(node);
                                 walkForOverflowCheck(s->value.get(), varRules);
                                 break;
                             }
@@ -3044,12 +3044,12 @@ llvm::Module* compile_to_module(
                     };
 
                     for (const auto& decl : program->declarations) {
-                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
                         // v0.14.1: Run range analysis for flow-sensitive inference
-                        aria::RangeAnalyzer ra;
+                        npk::RangeAnalyzer ra;
                         ra.analyzeFunction(func);
                         currentRA = &ra;
 
@@ -3073,33 +3073,33 @@ llvm::Module* compile_to_module(
         // the safe variant with the zero-check select.
         // Reuses proveNonNullFromRules (which proves expr != 0).
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 4.85: Division-by-zero check elimination analysis...\n";
                 }
 
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
                 if (!all_rules.empty() || opts.smt_opt) {
-                    using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+                    using VarRulesMap = std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>>;
 
-                    aria::RangeAnalyzer* currentRA = nullptr;
+                    npk::RangeAnalyzer* currentRA = nullptr;
 
-                    std::function<void(aria::ASTNode*, VarRulesMap&)> walkForDivCheck;
-                    walkForDivCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                    std::function<void(npk::ASTNode*, VarRulesMap&)> walkForDivCheck;
+                    walkForDivCheck = [&](npk::ASTNode* node, VarRulesMap& varRules) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::VAR_DECL: {
-                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                auto* var = static_cast<npk::VarDeclStmt*>(node);
                                 if (!var->limitRulesName.empty()) {
                                     auto it = all_rules.find(var->limitRulesName);
                                     if (it != all_rules.end()) {
@@ -3111,11 +3111,11 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BINARY_OP: {
-                                auto* binary = static_cast<aria::BinaryExpr*>(node);
-                                bool isDiv = binary->op.type == aria::frontend::TokenType::TOKEN_SLASH;
-                                bool isMod = binary->op.type == aria::frontend::TokenType::TOKEN_PERCENT;
-                                bool isDivEq = binary->op.type == aria::frontend::TokenType::TOKEN_SLASH_EQUAL;
-                                bool isModEq = binary->op.type == aria::frontend::TokenType::TOKEN_PERCENT_EQUAL;
+                                auto* binary = static_cast<npk::BinaryExpr*>(node);
+                                bool isDiv = binary->op.type == npk::frontend::TokenType::TOKEN_SLASH;
+                                bool isMod = binary->op.type == npk::frontend::TokenType::TOKEN_PERCENT;
+                                bool isDivEq = binary->op.type == npk::frontend::TokenType::TOKEN_SLASH_EQUAL;
+                                bool isModEq = binary->op.type == npk::frontend::TokenType::TOKEN_PERCENT_EQUAL;
                                 if (isDiv || isMod || isDivEq || isModEq) {
                                     // Prove the right operand (divisor) is never zero
                                     VarRulesMap mergedRules = varRules;
@@ -3124,11 +3124,11 @@ llvm::Module* compile_to_module(
                                         if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                     }
                                     if (!mergedRules.empty()) {
-                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        std::vector<npk::VerifyOutcome> outcomes;
                                         auto result = z3v.proveNonNullFromRules(
                                             binary->right.get(), mergedRules, outcomes,
                                             binary->line, binary->column);
-                                        if (result == aria::VerifyResult::PROVEN) {
+                                        if (result == npk::VerifyResult::PROVEN) {
                                             div_safe_set.insert(binary);
                                         }
                                     }
@@ -3139,7 +3139,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::IF: {
-                                auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                                auto* ifStmt = static_cast<npk::IfStmt*>(node);
                                 walkForDivCheck(ifStmt->condition.get(), varRules);
                                 walkForDivCheck(ifStmt->thenBranch.get(), varRules);
                                 walkForDivCheck(ifStmt->elseBranch.get(), varRules);
@@ -3147,21 +3147,21 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* block = static_cast<aria::BlockStmt*>(node);
+                                auto* block = static_cast<npk::BlockStmt*>(node);
                                 for (auto& stmt : block->statements)
                                     walkForDivCheck(stmt.get(), varRules);
                                 break;
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 walkForDivCheck(s->condition.get(), varRules);
                                 walkForDivCheck(s->body.get(), varRules);
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 walkForDivCheck(s->initializer.get(), varRules);
                                 walkForDivCheck(s->condition.get(), varRules);
                                 walkForDivCheck(s->update.get(), varRules);
@@ -3171,7 +3171,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 walkForDivCheck(s->start.get(), varRules);
                                 walkForDivCheck(s->limit.get(), varRules);
                                 walkForDivCheck(s->step.get(), varRules);
@@ -3180,7 +3180,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 walkForDivCheck(s->limit.get(), varRules);
                                 walkForDivCheck(s->step.get(), varRules);
                                 walkForDivCheck(s->body.get(), varRules);
@@ -3188,7 +3188,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 walkForDivCheck(s->condition.get(), varRules);
                                 walkForDivCheck(s->body.get(), varRules);
                                 walkForDivCheck(s->then_block.get(), varRules);
@@ -3197,10 +3197,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::PICK: {
-                                auto* s = static_cast<aria::PickStmt*>(node);
+                                auto* s = static_cast<npk::PickStmt*>(node);
                                 walkForDivCheck(s->selector.get(), varRules);
                                 for (auto& c : s->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     walkForDivCheck(pc->pattern.get(), varRules);
                                     walkForDivCheck(pc->body.get(), varRules);
                                 }
@@ -3208,25 +3208,25 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::DEFER: {
-                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                auto* s = static_cast<npk::DeferStmt*>(node);
                                 walkForDivCheck(s->block.get(), varRules);
                                 break;
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkForDivCheck(s->expression.get(), varRules);
                                 break;
                             }
 
                             case NT::RETURN: {
-                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                auto* s = static_cast<npk::ReturnStmt*>(node);
                                 walkForDivCheck(s->value.get(), varRules);
                                 break;
                             }
 
                             case NT::PASS: {
-                                auto* s = static_cast<aria::PassStmt*>(node);
+                                auto* s = static_cast<npk::PassStmt*>(node);
                                 walkForDivCheck(s->value.get(), varRules);
                                 break;
                             }
@@ -3237,11 +3237,11 @@ llvm::Module* compile_to_module(
                     };
 
                     for (const auto& decl : program->declarations) {
-                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
 
-                        aria::RangeAnalyzer ra;
+                        npk::RangeAnalyzer ra;
                         ra.analyzeFunction(func);
                         currentRA = &ra;
 
@@ -3266,38 +3266,38 @@ llvm::Module* compile_to_module(
         //    provably non-null source (non-NIL literal, address-of, Rules-
         //    constrained variable), subsequent ?? checks are dead.
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 5.0: Null check elimination analysis...\n";
                 }
 
                 // Collect all Rules declarations
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
-                using VarRulesMap = std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>>;
+                using VarRulesMap = std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>>;
 
                 // v0.14.1: Range analyzer for flow-sensitive inference (set per-function)
-                aria::RangeAnalyzer* currentRA = nullptr;
+                npk::RangeAnalyzer* currentRA = nullptr;
 
                 // Track variables provably non-null via dataflow
                 // (initialized from non-NIL literal, address-of, or Rules-constrained source)
                 std::set<std::string> non_null_vars;
 
                 // Helper: check if an expression is provably non-null
-                auto isNonNullExpr = [&](aria::ASTNode* expr) -> bool {
+                auto isNonNullExpr = [&](npk::ASTNode* expr) -> bool {
                     if (!expr) return false;
-                    using NT = aria::ASTNode::NodeType;
+                    using NT = npk::ASTNode::NodeType;
 
                     // Literal (non-NIL, non-NULL, non-unknown) → non-null
                     if (expr->type == NT::LITERAL) {
-                        auto* lit = static_cast<aria::LiteralExpr*>(expr);
+                        auto* lit = static_cast<npk::LiteralExpr*>(expr);
                         // Check it's not a zero integer literal
                         if (std::holds_alternative<int64_t>(lit->value)) {
                             return std::get<int64_t>(lit->value) != 0;
@@ -3308,7 +3308,7 @@ llvm::Module* compile_to_module(
 
                     // NIL/NULL identifier → null
                     if (expr->type == NT::IDENTIFIER) {
-                        auto* ident = static_cast<aria::IdentifierExpr*>(expr);
+                        auto* ident = static_cast<npk::IdentifierExpr*>(expr);
                         if (ident->name == "NIL" || ident->name == "NULL"
                             || ident->name == "unknown") return false;
                         // Variable previously proven non-null → non-null
@@ -3318,8 +3318,8 @@ llvm::Module* compile_to_module(
 
                     // Address-of (@) always produces non-null pointer
                     if (expr->type == NT::UNARY_OP) {
-                        auto* unary = static_cast<aria::UnaryExpr*>(expr);
-                        if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                        auto* unary = static_cast<npk::UnaryExpr*>(expr);
+                        if (unary->op.type == npk::frontend::TokenType::TOKEN_AT) {
                             return true;  // @ always non-null
                         }
                     }
@@ -3328,14 +3328,14 @@ llvm::Module* compile_to_module(
                     return false;
                 };
 
-                std::function<void(aria::ASTNode*, VarRulesMap&)> walkForNullCheck;
-                walkForNullCheck = [&](aria::ASTNode* node, VarRulesMap& varRules) {
+                std::function<void(npk::ASTNode*, VarRulesMap&)> walkForNullCheck;
+                walkForNullCheck = [&](npk::ASTNode* node, VarRulesMap& varRules) {
                     if (!node) return;
-                    using NT = aria::ASTNode::NodeType;
+                    using NT = npk::ASTNode::NodeType;
 
                     switch (node->type) {
                         case NT::VAR_DECL: {
-                            auto* var = static_cast<aria::VarDeclStmt*>(node);
+                            auto* var = static_cast<npk::VarDeclStmt*>(node);
                             // Track Rules-constrained variables (for Z3 proofs)
                             if (!var->limitRulesName.empty()) {
                                 auto it = all_rules.find(var->limitRulesName);
@@ -3362,11 +3362,11 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::UNWRAP: {
-                            auto* unwrap = static_cast<aria::UnwrapExpr*>(node);
+                            auto* unwrap = static_cast<npk::UnwrapExpr*>(node);
 
                             // Dataflow proof: if the result expression is a known non-null variable
                             if (unwrap->result && unwrap->result->type == NT::IDENTIFIER) {
-                                auto* ident = static_cast<aria::IdentifierExpr*>(unwrap->result.get());
+                                auto* ident = static_cast<npk::IdentifierExpr*>(unwrap->result.get());
                                 if (non_null_vars.count(ident->name)) {
                                     null_check_safe_set.insert(node);
                                     walkForNullCheck(unwrap->result.get(), varRules);
@@ -3377,8 +3377,8 @@ llvm::Module* compile_to_module(
 
                             // Dataflow proof: if result is address-of (@), always non-null
                             if (unwrap->result && unwrap->result->type == NT::UNARY_OP) {
-                                auto* unary = static_cast<aria::UnaryExpr*>(unwrap->result.get());
-                                if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                                auto* unary = static_cast<npk::UnaryExpr*>(unwrap->result.get());
+                                if (unary->op.type == npk::frontend::TokenType::TOKEN_AT) {
                                     null_check_safe_set.insert(node);
                                     walkForNullCheck(unwrap->result.get(), varRules);
                                     walkForNullCheck(unwrap->defaultValue.get(), varRules);
@@ -3395,12 +3395,12 @@ llvm::Module* compile_to_module(
                                     if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                 }
                                 if (!mergedRules.empty()) {
-                                    std::vector<aria::VerifyOutcome> outcomes;
+                                    std::vector<npk::VerifyOutcome> outcomes;
                                     auto result = z3v.proveNonNullFromRules(
                                         unwrap->result.get(),
                                         mergedRules, outcomes,
                                         unwrap->line, unwrap->column);
-                                    if (result == aria::VerifyResult::PROVEN) {
+                                    if (result == npk::VerifyResult::PROVEN) {
                                         null_check_safe_set.insert(node);
                                     }
                                 }
@@ -3411,20 +3411,20 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::BINARY_OP: {
-                            auto* binary = static_cast<aria::BinaryExpr*>(node);
+                            auto* binary = static_cast<npk::BinaryExpr*>(node);
                             // Check NULL_COALESCE binary op (?? token)
-                            if (binary->op.type == aria::frontend::TokenType::TOKEN_NULL_COALESCE) {
+                            if (binary->op.type == npk::frontend::TokenType::TOKEN_NULL_COALESCE) {
                                 // Dataflow proof: known non-null variable
                                 if (binary->left && binary->left->type == NT::IDENTIFIER) {
-                                    auto* ident = static_cast<aria::IdentifierExpr*>(binary->left.get());
+                                    auto* ident = static_cast<npk::IdentifierExpr*>(binary->left.get());
                                     if (non_null_vars.count(ident->name)) {
                                         null_check_safe_set.insert(node);
                                     }
                                 }
                                 // Dataflow proof: address-of (@)
                                 else if (binary->left && binary->left->type == NT::UNARY_OP) {
-                                    auto* unary = static_cast<aria::UnaryExpr*>(binary->left.get());
-                                    if (unary->op.type == aria::frontend::TokenType::TOKEN_AT) {
+                                    auto* unary = static_cast<npk::UnaryExpr*>(binary->left.get());
+                                    if (unary->op.type == npk::frontend::TokenType::TOKEN_AT) {
                                         null_check_safe_set.insert(node);
                                     }
                                 }
@@ -3436,12 +3436,12 @@ llvm::Module* compile_to_module(
                                         if (inferred) currentRA->mergeInferred(mergedRules, *inferred);
                                     }
                                     if (!mergedRules.empty()) {
-                                        std::vector<aria::VerifyOutcome> outcomes;
+                                        std::vector<npk::VerifyOutcome> outcomes;
                                         auto result = z3v.proveNonNullFromRules(
                                             binary->left.get(),
                                             mergedRules, outcomes,
                                             binary->line, binary->column);
-                                        if (result == aria::VerifyResult::PROVEN) {
+                                        if (result == npk::VerifyResult::PROVEN) {
                                             null_check_safe_set.insert(node);
                                         }
                                     }
@@ -3453,7 +3453,7 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::IF: {
-                            auto* ifStmt = static_cast<aria::IfStmt*>(node);
+                            auto* ifStmt = static_cast<npk::IfStmt*>(node);
                             walkForNullCheck(ifStmt->condition.get(), varRules);
                             walkForNullCheck(ifStmt->thenBranch.get(), varRules);
                             walkForNullCheck(ifStmt->elseBranch.get(), varRules);
@@ -3461,21 +3461,21 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::BLOCK: {
-                            auto* block = static_cast<aria::BlockStmt*>(node);
+                            auto* block = static_cast<npk::BlockStmt*>(node);
                             for (auto& stmt : block->statements)
                                 walkForNullCheck(stmt.get(), varRules);
                             break;
                         }
 
                         case NT::WHILE: {
-                            auto* s = static_cast<aria::WhileStmt*>(node);
+                            auto* s = static_cast<npk::WhileStmt*>(node);
                             walkForNullCheck(s->condition.get(), varRules);
                             walkForNullCheck(s->body.get(), varRules);
                             break;
                         }
 
                         case NT::FOR: {
-                            auto* s = static_cast<aria::ForStmt*>(node);
+                            auto* s = static_cast<npk::ForStmt*>(node);
                             walkForNullCheck(s->initializer.get(), varRules);
                             walkForNullCheck(s->condition.get(), varRules);
                             walkForNullCheck(s->update.get(), varRules);
@@ -3485,7 +3485,7 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::LOOP: {
-                            auto* s = static_cast<aria::LoopStmt*>(node);
+                            auto* s = static_cast<npk::LoopStmt*>(node);
                             walkForNullCheck(s->start.get(), varRules);
                             walkForNullCheck(s->limit.get(), varRules);
                             walkForNullCheck(s->step.get(), varRules);
@@ -3494,7 +3494,7 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::TILL: {
-                            auto* s = static_cast<aria::TillStmt*>(node);
+                            auto* s = static_cast<npk::TillStmt*>(node);
                             walkForNullCheck(s->limit.get(), varRules);
                             walkForNullCheck(s->step.get(), varRules);
                             walkForNullCheck(s->body.get(), varRules);
@@ -3502,7 +3502,7 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::WHEN: {
-                            auto* s = static_cast<aria::WhenStmt*>(node);
+                            auto* s = static_cast<npk::WhenStmt*>(node);
                             walkForNullCheck(s->condition.get(), varRules);
                             walkForNullCheck(s->body.get(), varRules);
                             walkForNullCheck(s->then_block.get(), varRules);
@@ -3511,10 +3511,10 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::PICK: {
-                            auto* s = static_cast<aria::PickStmt*>(node);
+                            auto* s = static_cast<npk::PickStmt*>(node);
                             walkForNullCheck(s->selector.get(), varRules);
                             for (auto& c : s->cases) {
-                                auto* pc = static_cast<aria::PickCase*>(c.get());
+                                auto* pc = static_cast<npk::PickCase*>(c.get());
                                 walkForNullCheck(pc->pattern.get(), varRules);
                                 walkForNullCheck(pc->body.get(), varRules);
                             }
@@ -3522,25 +3522,25 @@ llvm::Module* compile_to_module(
                         }
 
                         case NT::DEFER: {
-                            auto* s = static_cast<aria::DeferStmt*>(node);
+                            auto* s = static_cast<npk::DeferStmt*>(node);
                             walkForNullCheck(s->block.get(), varRules);
                             break;
                         }
 
                         case NT::EXPRESSION_STMT: {
-                            auto* s = static_cast<aria::ExpressionStmt*>(node);
+                            auto* s = static_cast<npk::ExpressionStmt*>(node);
                             walkForNullCheck(s->expression.get(), varRules);
                             break;
                         }
 
                         case NT::RETURN: {
-                            auto* s = static_cast<aria::ReturnStmt*>(node);
+                            auto* s = static_cast<npk::ReturnStmt*>(node);
                             walkForNullCheck(s->value.get(), varRules);
                             break;
                         }
 
                         case NT::PASS: {
-                            auto* s = static_cast<aria::PassStmt*>(node);
+                            auto* s = static_cast<npk::PassStmt*>(node);
                             walkForNullCheck(s->value.get(), varRules);
                             break;
                         }
@@ -3551,12 +3551,12 @@ llvm::Module* compile_to_module(
                 };
 
                 for (const auto& decl : program->declarations) {
-                    if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                    auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                     if (!func->body) continue;
 
                     // v0.14.1: Run range analysis for flow-sensitive inference
-                    aria::RangeAnalyzer ra;
+                    npk::RangeAnalyzer ra;
                     ra.analyzeFunction(func);
                     currentRA = &ra;
 
@@ -3583,51 +3583,51 @@ llvm::Module* compile_to_module(
             }
 
             // Helper: collect all variables modified (assigned to) inside a subtree
-            std::function<void(aria::ASTNode*, std::set<std::string>&)> collectModifiedVars;
-            collectModifiedVars = [&](aria::ASTNode* node, std::set<std::string>& modified) {
+            std::function<void(npk::ASTNode*, std::set<std::string>&)> collectModifiedVars;
+            collectModifiedVars = [&](npk::ASTNode* node, std::set<std::string>& modified) {
                 if (!node) return;
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
                 switch (node->type) {
                     case NT::ASSIGNMENT: {
-                        auto* assign = static_cast<aria::AssignmentExpr*>(node);
+                        auto* assign = static_cast<npk::AssignmentExpr*>(node);
                         if (assign->target && assign->target->type == NT::IDENTIFIER) {
-                            auto* ident = static_cast<aria::IdentifierExpr*>(assign->target.get());
+                            auto* ident = static_cast<npk::IdentifierExpr*>(assign->target.get());
                             modified.insert(ident->name);
                         }
                         collectModifiedVars(assign->value.get(), modified);
                         break;
                     }
                     case NT::BLOCK: {
-                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        auto* block = static_cast<npk::BlockStmt*>(node);
                         for (auto& s : block->statements)
                             collectModifiedVars(s.get(), modified);
                         break;
                     }
                     case NT::EXPRESSION_STMT: {
-                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        auto* s = static_cast<npk::ExpressionStmt*>(node);
                         collectModifiedVars(s->expression.get(), modified);
                         break;
                     }
                     case NT::IF: {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         collectModifiedVars(s->condition.get(), modified);
                         collectModifiedVars(s->thenBranch.get(), modified);
                         collectModifiedVars(s->elseBranch.get(), modified);
                         break;
                     }
                     case NT::VAR_DECL: {
-                        auto* var = static_cast<aria::VarDeclStmt*>(node);
+                        auto* var = static_cast<npk::VarDeclStmt*>(node);
                         collectModifiedVars(var->initializer.get(), modified);
                         break;
                     }
                     case NT::WHILE: {
-                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        auto* s = static_cast<npk::WhileStmt*>(node);
                         collectModifiedVars(s->condition.get(), modified);
                         collectModifiedVars(s->body.get(), modified);
                         break;
                     }
                     case NT::FOR: {
-                        auto* s = static_cast<aria::ForStmt*>(node);
+                        auto* s = static_cast<npk::ForStmt*>(node);
                         collectModifiedVars(s->initializer.get(), modified);
                         collectModifiedVars(s->condition.get(), modified);
                         collectModifiedVars(s->update.get(), modified);
@@ -3636,7 +3636,7 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::LOOP: {
-                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        auto* s = static_cast<npk::LoopStmt*>(node);
                         collectModifiedVars(s->start.get(), modified);
                         collectModifiedVars(s->limit.get(), modified);
                         collectModifiedVars(s->step.get(), modified);
@@ -3644,14 +3644,14 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::TILL: {
-                        auto* s = static_cast<aria::TillStmt*>(node);
+                        auto* s = static_cast<npk::TillStmt*>(node);
                         collectModifiedVars(s->limit.get(), modified);
                         collectModifiedVars(s->step.get(), modified);
                         collectModifiedVars(s->body.get(), modified);
                         break;
                     }
                     case NT::WHEN: {
-                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        auto* s = static_cast<npk::WhenStmt*>(node);
                         collectModifiedVars(s->condition.get(), modified);
                         collectModifiedVars(s->body.get(), modified);
                         collectModifiedVars(s->then_block.get(), modified);
@@ -3659,30 +3659,30 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::BINARY_OP: {
-                        auto* s = static_cast<aria::BinaryExpr*>(node);
+                        auto* s = static_cast<npk::BinaryExpr*>(node);
                         collectModifiedVars(s->left.get(), modified);
                         collectModifiedVars(s->right.get(), modified);
                         break;
                     }
                     case NT::UNARY_OP: {
-                        auto* s = static_cast<aria::UnaryExpr*>(node);
+                        auto* s = static_cast<npk::UnaryExpr*>(node);
                         collectModifiedVars(s->operand.get(), modified);
                         break;
                     }
                     case NT::CALL: {
-                        auto* s = static_cast<aria::CallExpr*>(node);
+                        auto* s = static_cast<npk::CallExpr*>(node);
                         collectModifiedVars(s->callee.get(), modified);
                         for (auto& arg : s->arguments)
                             collectModifiedVars(arg.get(), modified);
                         break;
                     }
                     case NT::RETURN: {
-                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        auto* s = static_cast<npk::ReturnStmt*>(node);
                         collectModifiedVars(s->value.get(), modified);
                         break;
                     }
                     case NT::PASS: {
-                        auto* s = static_cast<aria::PassStmt*>(node);
+                        auto* s = static_cast<npk::PassStmt*>(node);
                         collectModifiedVars(s->value.get(), modified);
                         break;
                     }
@@ -3693,28 +3693,28 @@ llvm::Module* compile_to_module(
 
             // Helper: check if an expression is loop-invariant
             // (all referenced identifiers are NOT in the modified set)
-            std::function<bool(aria::ASTNode*, const std::set<std::string>&)> isLoopInvariantExpr;
-            isLoopInvariantExpr = [&](aria::ASTNode* expr,
+            std::function<bool(npk::ASTNode*, const std::set<std::string>&)> isLoopInvariantExpr;
+            isLoopInvariantExpr = [&](npk::ASTNode* expr,
                                       const std::set<std::string>& modified) -> bool {
                 if (!expr) return true;
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
                 switch (expr->type) {
                     case NT::LITERAL: return true;
                     case NT::IDENTIFIER: {
-                        auto* ident = static_cast<aria::IdentifierExpr*>(expr);
+                        auto* ident = static_cast<npk::IdentifierExpr*>(expr);
                         return modified.count(ident->name) == 0;
                     }
                     case NT::BINARY_OP: {
-                        auto* bin = static_cast<aria::BinaryExpr*>(expr);
+                        auto* bin = static_cast<npk::BinaryExpr*>(expr);
                         return isLoopInvariantExpr(bin->left.get(), modified) &&
                                isLoopInvariantExpr(bin->right.get(), modified);
                     }
                     case NT::UNARY_OP: {
-                        auto* un = static_cast<aria::UnaryExpr*>(expr);
+                        auto* un = static_cast<npk::UnaryExpr*>(expr);
                         return isLoopInvariantExpr(un->operand.get(), modified);
                     }
                     case NT::UNWRAP: {
-                        auto* uw = static_cast<aria::UnwrapExpr*>(expr);
+                        auto* uw = static_cast<npk::UnwrapExpr*>(expr);
                         return isLoopInvariantExpr(uw->result.get(), modified) &&
                                isLoopInvariantExpr(uw->defaultValue.get(), modified);
                     }
@@ -3724,18 +3724,18 @@ llvm::Module* compile_to_module(
             };
 
             // Process a loop: collect modified vars, find hoistable VarDecls
-            auto processLoop = [&](aria::ASTNode* loopNode, aria::ASTNode* body,
+            auto processLoop = [&](npk::ASTNode* loopNode, npk::ASTNode* body,
                                    const std::set<std::string>& extraModified) {
                 // Collect variables modified inside the loop body
                 std::set<std::string> modified = extraModified;
                 collectModifiedVars(body, modified);
 
                 // Walk direct body statements to find hoistable VarDecls
-                if (body && body->type == aria::ASTNode::NodeType::BLOCK) {
-                    auto* block = static_cast<aria::BlockStmt*>(body);
+                if (body && body->type == npk::ASTNode::NodeType::BLOCK) {
+                    auto* block = static_cast<npk::BlockStmt*>(body);
                     for (auto& stmt : block->statements) {
-                        if (stmt->type == aria::ASTNode::NodeType::VAR_DECL) {
-                            auto* var = static_cast<aria::VarDeclStmt*>(stmt.get());
+                        if (stmt->type == npk::ASTNode::NodeType::VAR_DECL) {
+                            auto* var = static_cast<npk::VarDeclStmt*>(stmt.get());
                             if (var->initializer &&
                                 isLoopInvariantExpr(var->initializer.get(), modified)) {
                                 loop_hoist_map[loopNode].push_back(stmt.get());
@@ -3746,21 +3746,21 @@ llvm::Module* compile_to_module(
             };
 
             // Walk function bodies to find loops
-            std::function<void(aria::ASTNode*)> walkForLoopHoist;
-            walkForLoopHoist = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> walkForLoopHoist;
+            walkForLoopHoist = [&](npk::ASTNode* node) {
                 if (!node) return;
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
 
                 switch (node->type) {
                     case NT::WHILE: {
-                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        auto* s = static_cast<npk::WhileStmt*>(node);
                         std::set<std::string> extra;
                         processLoop(node, s->body.get(), extra);
                         walkForLoopHoist(s->body.get());
                         break;
                     }
                     case NT::FOR: {
-                        auto* s = static_cast<aria::ForStmt*>(node);
+                        auto* s = static_cast<npk::ForStmt*>(node);
                         std::set<std::string> extra;
                         if (s->isRangeBased) {
                             extra.insert(s->iteratorName);
@@ -3770,7 +3770,7 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::LOOP: {
-                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        auto* s = static_cast<npk::LoopStmt*>(node);
                         std::set<std::string> extra;
                         extra.insert("$");
                         processLoop(node, s->body.get(), extra);
@@ -3778,7 +3778,7 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::TILL: {
-                        auto* s = static_cast<aria::TillStmt*>(node);
+                        auto* s = static_cast<npk::TillStmt*>(node);
                         std::set<std::string> extra;
                         extra.insert("$");
                         processLoop(node, s->body.get(), extra);
@@ -3786,33 +3786,33 @@ llvm::Module* compile_to_module(
                         break;
                     }
                     case NT::WHEN: {
-                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        auto* s = static_cast<npk::WhenStmt*>(node);
                         std::set<std::string> extra;
                         processLoop(node, s->body.get(), extra);
                         walkForLoopHoist(s->body.get());
                         break;
                     }
                     case NT::BLOCK: {
-                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        auto* block = static_cast<npk::BlockStmt*>(node);
                         for (auto& s : block->statements)
                             walkForLoopHoist(s.get());
                         break;
                     }
                     case NT::IF: {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         walkForLoopHoist(s->thenBranch.get());
                         walkForLoopHoist(s->elseBranch.get());
                         break;
                     }
                     case NT::DEFER: {
-                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        auto* s = static_cast<npk::DeferStmt*>(node);
                         walkForLoopHoist(s->block.get());
                         break;
                     }
                     case NT::PICK: {
-                        auto* s = static_cast<aria::PickStmt*>(node);
+                        auto* s = static_cast<npk::PickStmt*>(node);
                         for (auto& c : s->cases) {
-                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            auto* pc = static_cast<npk::PickCase*>(c.get());
                             walkForLoopHoist(pc->body.get());
                         }
                         break;
@@ -3823,8 +3823,8 @@ llvm::Module* compile_to_module(
             };
 
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body) continue;
                 walkForLoopHoist(func->body.get());
             }
@@ -3844,26 +3844,26 @@ llvm::Module* compile_to_module(
         // pass arguments already constrained by Rules that subsume R, the limit
         // check inside the callee is proven redundant.
         if (opts.smt_opt) {
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 5.5: Rules<T> propagation analysis...\n";
                 }
 
                 // Collect all Rules declarations
-                std::map<std::string, aria::RulesDeclStmt*> all_rules;
+                std::map<std::string, npk::RulesDeclStmt*> all_rules;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::RULES_DECL) {
-                        auto* rules = static_cast<aria::RulesDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::RULES_DECL) {
+                        auto* rules = static_cast<npk::RulesDeclStmt*>(decl.get());
                         all_rules[rules->rulesName] = rules;
                     }
                 }
 
                 // Collect all function declarations
-                std::map<std::string, aria::FuncDeclStmt*> all_funcs;
+                std::map<std::string, npk::FuncDeclStmt*> all_funcs;
                 for (const auto& decl : program->declarations) {
-                    if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    if (decl->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         all_funcs[func->funcName] = func;
                     }
                 }
@@ -3873,7 +3873,7 @@ llvm::Module* compile_to_module(
                     size_t paramIndex;
                     std::string rulesName;
                     std::string typeName;
-                    aria::VarDeclStmt* varDecl;
+                    npk::VarDeclStmt* varDecl;
                 };
 
                 // funcName → vector of requirements (limit checks tied to parameters)
@@ -3887,25 +3887,25 @@ llvm::Module* compile_to_module(
                     // Map parameter names → indices
                     std::map<std::string, size_t> paramNameToIndex;
                     for (size_t i = 0; i < func->parameters.size(); ++i) {
-                        auto* param = static_cast<aria::ParameterNode*>(
+                        auto* param = static_cast<npk::ParameterNode*>(
                             func->parameters[i].get());
                         paramNameToIndex[param->paramName] = i;
                     }
 
                     // Walk top-level statements in function body
-                    auto* block = dynamic_cast<aria::BlockStmt*>(func->body.get());
+                    auto* block = dynamic_cast<npk::BlockStmt*>(func->body.get());
                     if (!block) continue;
 
                     for (const auto& stmt : block->statements) {
-                        if (stmt->type != aria::ASTNode::NodeType::VAR_DECL) continue;
-                        auto* var = static_cast<aria::VarDeclStmt*>(stmt.get());
+                        if (stmt->type != npk::ASTNode::NodeType::VAR_DECL) continue;
+                        auto* var = static_cast<npk::VarDeclStmt*>(stmt.get());
                         if (var->limitRulesName.empty()) continue;
                         if (!var->initializer) continue;
 
                         // Check if initializer is a bare identifier referencing a parameter
-                        if (var->initializer->type != aria::ASTNode::NodeType::IDENTIFIER)
+                        if (var->initializer->type != npk::ASTNode::NodeType::IDENTIFIER)
                             continue;
-                        auto* ident = static_cast<aria::IdentifierExpr*>(
+                        auto* ident = static_cast<npk::IdentifierExpr*>(
                             var->initializer.get());
                         auto pIt = paramNameToIndex.find(ident->name);
                         if (pIt == paramNameToIndex.end()) continue;
@@ -3934,14 +3934,14 @@ llvm::Module* compile_to_module(
                     std::map<std::string, std::vector<CallSiteInfo>> call_sites;
 
                     // Recursive walker to find call sites and track variable constraints
-                    std::function<void(aria::ASTNode*, VarConstraintMap&)> findCallSites;
-                    findCallSites = [&](aria::ASTNode* node, VarConstraintMap& varConstraints) {
+                    std::function<void(npk::ASTNode*, VarConstraintMap&)> findCallSites;
+                    findCallSites = [&](npk::ASTNode* node, VarConstraintMap& varConstraints) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::VAR_DECL: {
-                                auto* var = static_cast<aria::VarDeclStmt*>(node);
+                                auto* var = static_cast<npk::VarDeclStmt*>(node);
                                 if (!var->limitRulesName.empty()) {
                                     varConstraints[var->varName] = var->limitRulesName;
                                 }
@@ -3950,9 +3950,9 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::CALL: {
-                                auto* call = static_cast<aria::CallExpr*>(node);
+                                auto* call = static_cast<npk::CallExpr*>(node);
                                 if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                                    auto* callee = static_cast<aria::IdentifierExpr*>(
+                                    auto* callee = static_cast<npk::IdentifierExpr*>(
                                         call->callee.get());
                                     if (callee_reqs.count(callee->name)) {
                                         CallSiteInfo info;
@@ -3960,7 +3960,7 @@ llvm::Module* compile_to_module(
                                         info.column = call->column;
                                         for (size_t i = 0; i < call->arguments.size(); ++i) {
                                             if (call->arguments[i]->type == NT::IDENTIFIER) {
-                                                auto* argIdent = static_cast<aria::IdentifierExpr*>(
+                                                auto* argIdent = static_cast<npk::IdentifierExpr*>(
                                                     call->arguments[i].get());
                                                 auto cIt = varConstraints.find(argIdent->name);
                                                 if (cIt != varConstraints.end()) {
@@ -3977,20 +3977,20 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* b = static_cast<aria::BlockStmt*>(node);
+                                auto* b = static_cast<npk::BlockStmt*>(node);
                                 for (auto& s : b->statements)
                                     findCallSites(s.get(), varConstraints);
                                 break;
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 findCallSites(s->expression.get(), varConstraints);
                                 break;
                             }
 
                             case NT::IF: {
-                                auto* s = static_cast<aria::IfStmt*>(node);
+                                auto* s = static_cast<npk::IfStmt*>(node);
                                 findCallSites(s->condition.get(), varConstraints);
                                 findCallSites(s->thenBranch.get(), varConstraints);
                                 findCallSites(s->elseBranch.get(), varConstraints);
@@ -3998,14 +3998,14 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 findCallSites(s->condition.get(), varConstraints);
                                 findCallSites(s->body.get(), varConstraints);
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 findCallSites(s->initializer.get(), varConstraints);
                                 findCallSites(s->condition.get(), varConstraints);
                                 findCallSites(s->update.get(), varConstraints);
@@ -4014,7 +4014,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 findCallSites(s->start.get(), varConstraints);
                                 findCallSites(s->limit.get(), varConstraints);
                                 findCallSites(s->step.get(), varConstraints);
@@ -4023,7 +4023,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 findCallSites(s->limit.get(), varConstraints);
                                 findCallSites(s->step.get(), varConstraints);
                                 findCallSites(s->body.get(), varConstraints);
@@ -4031,7 +4031,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 findCallSites(s->condition.get(), varConstraints);
                                 findCallSites(s->body.get(), varConstraints);
                                 findCallSites(s->then_block.get(), varConstraints);
@@ -4040,10 +4040,10 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::PICK: {
-                                auto* s = static_cast<aria::PickStmt*>(node);
+                                auto* s = static_cast<npk::PickStmt*>(node);
                                 findCallSites(s->selector.get(), varConstraints);
                                 for (auto& c : s->cases) {
-                                    auto* pc = static_cast<aria::PickCase*>(c.get());
+                                    auto* pc = static_cast<npk::PickCase*>(c.get());
                                     findCallSites(pc->pattern.get(), varConstraints);
                                     findCallSites(pc->body.get(), varConstraints);
                                 }
@@ -4051,19 +4051,19 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::DEFER: {
-                                auto* s = static_cast<aria::DeferStmt*>(node);
+                                auto* s = static_cast<npk::DeferStmt*>(node);
                                 findCallSites(s->block.get(), varConstraints);
                                 break;
                             }
 
                             case NT::RETURN: {
-                                auto* s = static_cast<aria::ReturnStmt*>(node);
+                                auto* s = static_cast<npk::ReturnStmt*>(node);
                                 findCallSites(s->value.get(), varConstraints);
                                 break;
                             }
 
                             case NT::PASS: {
-                                auto* s = static_cast<aria::PassStmt*>(node);
+                                auto* s = static_cast<npk::PassStmt*>(node);
                                 findCallSites(s->value.get(), varConstraints);
                                 break;
                             }
@@ -4075,8 +4075,8 @@ llvm::Module* compile_to_module(
 
                     // Walk every function body to collect call sites
                     for (const auto& decl : program->declarations) {
-                        if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                        auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                        auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                         if (!func->body) continue;
                         VarConstraintMap varConstraints;
                         findCallSites(func->body.get(), varConstraints);
@@ -4102,11 +4102,11 @@ llvm::Module* compile_to_module(
                                 if (callerRules == req.rulesName) continue;
 
                                 // Different Rules names — Z3 subsumption check
-                                std::vector<aria::VerifyOutcome> outcomes;
+                                std::vector<npk::VerifyOutcome> outcomes;
                                 auto result = z3v.proveRulesSubsumption(
                                     callerRules, req.rulesName, req.typeName,
                                     outcomes, site.line, site.column);
-                                if (result != aria::VerifyResult::PROVEN) {
+                                if (result != npk::VerifyResult::PROVEN) {
                                     allSatisfied = false;
                                     break;
                                 }
@@ -4131,10 +4131,10 @@ llvm::Module* compile_to_module(
         // local Rules constraints, and verify with Z3.
         int assert_static_soft_disproven = 0;  // don't count toward abort
         {
-            std::set<aria::ASTNode*> assert_static_proven_set;
+            std::set<npk::ASTNode*> assert_static_proven_set;
             bool prove_failed = false;
 
-            auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+            auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
             if (program) {
                 if (opts.verbose) {
                     std::cout << "Phase 6: User assertion verification...\n";
@@ -4148,8 +4148,8 @@ llvm::Module* compile_to_module(
                 int verify_func_current = 0;
                 if (opts.verbose) {
                     for (const auto& decl : program->declarations) {
-                        if (decl->type == aria::ASTNode::NodeType::FUNC_DECL) {
-                            auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                        if (decl->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                            auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                             if (func->body) verify_func_total++;
                         }
                     }
@@ -4158,8 +4158,8 @@ llvm::Module* compile_to_module(
                 // For each function, collect Rules-constrained variables from parameters
                 // and local VarDecls, then check proves within the function body.
                 for (const auto& decl : program->declarations) {
-                    if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                    auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                    if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                    auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                     if (!func->body) continue;
 
                     // v0.14.3: Progress reporting
@@ -4170,12 +4170,12 @@ llvm::Module* compile_to_module(
                     }
 
                     // Build varRules map: variable name → (RulesDeclStmt*, typeName)
-                    std::map<std::string, std::pair<aria::RulesDeclStmt*, std::string>> varRules;
+                    std::map<std::string, std::pair<npk::RulesDeclStmt*, std::string>> varRules;
 
                     // Collect from function parameters
                     for (auto& param : func->parameters) {
-                        if (param->type == aria::ASTNode::NodeType::VAR_DECL) {
-                            auto* vd = static_cast<aria::VarDeclStmt*>(param.get());
+                        if (param->type == npk::ASTNode::NodeType::VAR_DECL) {
+                            auto* vd = static_cast<npk::VarDeclStmt*>(param.get());
                             if (!vd->limitRulesName.empty()) {
                                 auto it = rules_table.find(vd->limitRulesName);
                                 if (it != rules_table.end()) {
@@ -4187,16 +4187,16 @@ llvm::Module* compile_to_module(
 
                     // Walk the function body to find prove/assert_static and
                     // also collect VarDecl with limit<> types
-                    std::function<void(aria::ASTNode*)> walkBody;
-                    walkBody = [&](aria::ASTNode* node) {
+                    std::function<void(npk::ASTNode*)> walkBody;
+                    walkBody = [&](npk::ASTNode* node) {
                         if (!node) return;
-                        using NT = aria::ASTNode::NodeType;
+                        using NT = npk::ASTNode::NodeType;
 
                         switch (node->type) {
                             case NT::PROVE: {
                                 prove_count++;
-                                auto* ps = static_cast<aria::ProveStmt*>(node);
-                                std::vector<aria::VerifyOutcome> outcomes;
+                                auto* ps = static_cast<npk::ProveStmt*>(node);
+                                std::vector<npk::VerifyOutcome> outcomes;
                                 auto result = z3v.proveUserAssertion(
                                     ps->condition.get(), varRules, outcomes,
                                     ps->line, ps->column);
@@ -4205,16 +4205,16 @@ llvm::Module* compile_to_module(
                                     if (opts.prove_report || opts.verbose) {
                                         std::cout << "  prove(" << out.conditionText << ") at line "
                                                   << out.line << ": ";
-                                        if (out.result == aria::VerifyResult::PROVEN)
+                                        if (out.result == npk::VerifyResult::PROVEN)
                                             std::cout << "PROVEN\n";
-                                        else if (out.result == aria::VerifyResult::DISPROVEN)
+                                        else if (out.result == npk::VerifyResult::DISPROVEN)
                                             std::cout << "DISPROVEN — " << out.detail << "\n";
                                         else
                                             std::cout << "UNKNOWN — " << out.detail << "\n";
                                     }
                                 }
 
-                                if (result != aria::VerifyResult::PROVEN) {
+                                if (result != npk::VerifyResult::PROVEN) {
                                     // prove failure is a compiler error
                                     std::string msg = "prove() failed";
                                     if (!outcomes.empty()) {
@@ -4230,8 +4230,8 @@ llvm::Module* compile_to_module(
 
                             case NT::ASSERT_STATIC: {
                                 assert_static_count++;
-                                auto* as = static_cast<aria::AssertStaticStmt*>(node);
-                                std::vector<aria::VerifyOutcome> outcomes;
+                                auto* as = static_cast<npk::AssertStaticStmt*>(node);
+                                std::vector<npk::VerifyOutcome> outcomes;
                                 auto result = z3v.proveUserAssertion(
                                     as->condition.get(), varRules, outcomes,
                                     as->line, as->column);
@@ -4240,16 +4240,16 @@ llvm::Module* compile_to_module(
                                     if (opts.prove_report || opts.verbose) {
                                         std::cout << "  assert_static(" << out.conditionText << ") at line "
                                                   << out.line << ": ";
-                                        if (out.result == aria::VerifyResult::PROVEN)
+                                        if (out.result == npk::VerifyResult::PROVEN)
                                             std::cout << "PROVEN (erased)\n";
-                                        else if (out.result == aria::VerifyResult::DISPROVEN)
+                                        else if (out.result == npk::VerifyResult::DISPROVEN)
                                             std::cout << "WARNING — " << out.detail << " (runtime fallback)\n";
                                         else
                                             std::cout << "WARNING — " << out.detail << " (runtime fallback)\n";
                                     }
                                 }
 
-                                if (result == aria::VerifyResult::PROVEN) {
+                                if (result == npk::VerifyResult::PROVEN) {
                                     assert_static_proven_set.insert(node);
                                 } else {
                                     assert_static_soft_disproven++;
@@ -4267,7 +4267,7 @@ llvm::Module* compile_to_module(
 
                             case NT::VAR_DECL: {
                                 // Collect limit<Rules> local variables
-                                auto* vd = static_cast<aria::VarDeclStmt*>(node);
+                                auto* vd = static_cast<npk::VarDeclStmt*>(node);
                                 if (!vd->limitRulesName.empty()) {
                                     auto it = rules_table.find(vd->limitRulesName);
                                     if (it != rules_table.end()) {
@@ -4280,45 +4280,45 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::BLOCK: {
-                                auto* blk = static_cast<aria::BlockStmt*>(node);
+                                auto* blk = static_cast<npk::BlockStmt*>(node);
                                 for (auto& s : blk->statements)
                                     walkBody(s.get());
                                 break;
                             }
 
                             case NT::IF: {
-                                auto* s = static_cast<aria::IfStmt*>(node);
+                                auto* s = static_cast<npk::IfStmt*>(node);
                                 walkBody(s->thenBranch.get());
                                 walkBody(s->elseBranch.get());
                                 break;
                             }
 
                             case NT::WHILE: {
-                                auto* s = static_cast<aria::WhileStmt*>(node);
+                                auto* s = static_cast<npk::WhileStmt*>(node);
                                 walkBody(s->body.get());
                                 break;
                             }
 
                             case NT::FOR: {
-                                auto* s = static_cast<aria::ForStmt*>(node);
+                                auto* s = static_cast<npk::ForStmt*>(node);
                                 walkBody(s->body.get());
                                 break;
                             }
 
                             case NT::LOOP: {
-                                auto* s = static_cast<aria::LoopStmt*>(node);
+                                auto* s = static_cast<npk::LoopStmt*>(node);
                                 walkBody(s->body.get());
                                 break;
                             }
 
                             case NT::TILL: {
-                                auto* s = static_cast<aria::TillStmt*>(node);
+                                auto* s = static_cast<npk::TillStmt*>(node);
                                 walkBody(s->body.get());
                                 break;
                             }
 
                             case NT::WHEN: {
-                                auto* s = static_cast<aria::WhenStmt*>(node);
+                                auto* s = static_cast<npk::WhenStmt*>(node);
                                 walkBody(s->body.get());
                                 walkBody(s->then_block.get());
                                 walkBody(s->end_block.get());
@@ -4326,7 +4326,7 @@ llvm::Module* compile_to_module(
                             }
 
                             case NT::EXPRESSION_STMT: {
-                                auto* s = static_cast<aria::ExpressionStmt*>(node);
+                                auto* s = static_cast<npk::ExpressionStmt*>(node);
                                 walkBody(s->expression.get());
                                 break;
                             }
@@ -4359,8 +4359,8 @@ llvm::Module* compile_to_module(
             const auto& sum = z3v.getSummary();
             std::cout << "\n=== Prove/Assert Report ===\n";
             for (auto& out : sum.outcomes) {
-                std::string status = (out.result == aria::VerifyResult::PROVEN) ? "PROVEN" :
-                    (out.result == aria::VerifyResult::DISPROVEN) ? "DISPROVEN" : "UNKNOWN";
+                std::string status = (out.result == npk::VerifyResult::PROVEN) ? "PROVEN" :
+                    (out.result == npk::VerifyResult::DISPROVEN) ? "DISPROVEN" : "UNKNOWN";
                 std::cout << "  [" << status << "] " << out.conditionText;
                 if (out.line > 0) std::cout << " (line " << out.line << ")";
                 if (!out.detail.empty()) std::cout << " — " << out.detail;
@@ -4406,7 +4406,7 @@ llvm::Module* compile_to_module(
         std::cout << "Phase 3.5: Borrow checking...\n";
     }
     
-    aria::sema::BorrowChecker borrow_checker;
+    npk::sema::BorrowChecker borrow_checker;
     if (opts.borrow_debug) {
         borrow_checker.setBorrowDebug(true);
     }
@@ -4418,14 +4418,14 @@ llvm::Module* compile_to_module(
     if (!borrow_errors.empty()) {
         bool has_errors = false;
         for (const auto& err : borrow_errors) {
-            aria::SourceLocation loc(filename, err.line, err.column);
+            npk::SourceLocation loc(filename, err.line, err.column);
             std::string msg = err.code.empty() ? err.message : "[" + err.code + "] " + err.message;
             
             switch (err.severity) {
-                case aria::sema::BorrowSeverity::WARNING:
+                case npk::sema::BorrowSeverity::WARNING:
                     diags.warning(loc, msg);
                     break;
-                case aria::sema::BorrowSeverity::HINT:
+                case npk::sema::BorrowSeverity::HINT:
                     diags.note(loc, msg);
                     break;
                 default:
@@ -4436,7 +4436,7 @@ llvm::Module* compile_to_module(
             
             // Print related information if available
             if (err.related_line >= 0) {
-                aria::SourceLocation related_loc(filename, err.related_line, err.related_column);
+                npk::SourceLocation related_loc(filename, err.related_line, err.related_column);
                 diags.note(related_loc, err.related_message);
             }
             
@@ -4457,7 +4457,7 @@ llvm::Module* compile_to_module(
             std::cout << "Phase 3.75: Result<T> elision analysis...\n";
         }
 
-        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
         if (program) {
             // Per-function analysis data
             struct FuncInfo {
@@ -4469,29 +4469,29 @@ llvm::Module* compile_to_module(
             // Step 1: Identify all user-defined functions (with bodies, excluding main/failsafe)
             std::set<std::string> user_func_names;
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body || func->funcName == "main" || func->funcName == "failsafe") continue;
                 if (!func->genericParams.empty()) continue;
                 user_func_names.insert(func->funcName);
             }
 
             // Step 2: Recursive AST walker to detect fail/sys/calls
-            std::function<void(aria::ASTNode*, FuncInfo&)> analyzeNode;
-            analyzeNode = [&](aria::ASTNode* node, FuncInfo& info) {
+            std::function<void(npk::ASTNode*, FuncInfo&)> analyzeNode;
+            analyzeNode = [&](npk::ASTNode* node, FuncInfo& info) {
                 if (!node) return;
                 // Early exit: already proven fallible on both axes
                 if (info.has_fail && info.has_sys_call) return;
 
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
                 switch (node->type) {
                     case NT::FAIL:
                         info.has_fail = true;
                         return;
 
                     case NT::CALL: {
-                        auto* call = static_cast<aria::CallExpr*>(node);
-                        if (auto* ident = dynamic_cast<aria::IdentifierExpr*>(call->callee.get())) {
+                        auto* call = static_cast<npk::CallExpr*>(node);
+                        if (auto* ident = dynamic_cast<npk::IdentifierExpr*>(call->callee.get())) {
                             if (ident->name == "sys" || ident->name == "sys!!" || ident->name == "sys!!!") {
                                 info.has_sys_call = true;
                             } else if (user_func_names.count(ident->name)) {
@@ -4505,13 +4505,13 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::BLOCK: {
-                        auto* block = static_cast<aria::BlockStmt*>(node);
+                        auto* block = static_cast<npk::BlockStmt*>(node);
                         for (auto& stmt : block->statements) analyzeNode(stmt.get(), info);
                         return;
                     }
 
                     case NT::IF: {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         analyzeNode(s->condition.get(), info);
                         analyzeNode(s->thenBranch.get(), info);
                         analyzeNode(s->elseBranch.get(), info);
@@ -4519,14 +4519,14 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::WHILE: {
-                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        auto* s = static_cast<npk::WhileStmt*>(node);
                         analyzeNode(s->condition.get(), info);
                         analyzeNode(s->body.get(), info);
                         return;
                     }
 
                     case NT::FOR: {
-                        auto* s = static_cast<aria::ForStmt*>(node);
+                        auto* s = static_cast<npk::ForStmt*>(node);
                         analyzeNode(s->initializer.get(), info);
                         analyzeNode(s->condition.get(), info);
                         analyzeNode(s->update.get(), info);
@@ -4536,7 +4536,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::LOOP: {
-                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        auto* s = static_cast<npk::LoopStmt*>(node);
                         analyzeNode(s->start.get(), info);
                         analyzeNode(s->limit.get(), info);
                         analyzeNode(s->step.get(), info);
@@ -4545,7 +4545,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::TILL: {
-                        auto* s = static_cast<aria::TillStmt*>(node);
+                        auto* s = static_cast<npk::TillStmt*>(node);
                         analyzeNode(s->limit.get(), info);
                         analyzeNode(s->step.get(), info);
                         analyzeNode(s->body.get(), info);
@@ -4553,7 +4553,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::WHEN: {
-                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        auto* s = static_cast<npk::WhenStmt*>(node);
                         analyzeNode(s->condition.get(), info);
                         analyzeNode(s->body.get(), info);
                         analyzeNode(s->then_block.get(), info);
@@ -4562,10 +4562,10 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::PICK: {
-                        auto* s = static_cast<aria::PickStmt*>(node);
+                        auto* s = static_cast<npk::PickStmt*>(node);
                         analyzeNode(s->selector.get(), info);
                         for (auto& c : s->cases) {
-                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            auto* pc = static_cast<npk::PickCase*>(c.get());
                             analyzeNode(pc->pattern.get(), info);
                             analyzeNode(pc->body.get(), info);
                         }
@@ -4573,70 +4573,70 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::DEFER: {
-                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        auto* s = static_cast<npk::DeferStmt*>(node);
                         analyzeNode(s->block.get(), info);
                         return;
                     }
 
                     case NT::EXPRESSION_STMT: {
-                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        auto* s = static_cast<npk::ExpressionStmt*>(node);
                         analyzeNode(s->expression.get(), info);
                         return;
                     }
 
                     case NT::VAR_DECL: {
-                        auto* s = static_cast<aria::VarDeclStmt*>(node);
+                        auto* s = static_cast<npk::VarDeclStmt*>(node);
                         analyzeNode(s->initializer.get(), info);
                         return;
                     }
 
                     case NT::RETURN: {
-                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        auto* s = static_cast<npk::ReturnStmt*>(node);
                         analyzeNode(s->value.get(), info);
                         return;
                     }
 
                     case NT::PASS: {
-                        auto* s = static_cast<aria::PassStmt*>(node);
+                        auto* s = static_cast<npk::PassStmt*>(node);
                         analyzeNode(s->value.get(), info);
                         return;
                     }
 
                     case NT::BINARY_OP: {
-                        auto* s = static_cast<aria::BinaryExpr*>(node);
+                        auto* s = static_cast<npk::BinaryExpr*>(node);
                         analyzeNode(s->left.get(), info);
                         analyzeNode(s->right.get(), info);
                         return;
                     }
 
                     case NT::UNARY_OP: {
-                        auto* s = static_cast<aria::UnaryExpr*>(node);
+                        auto* s = static_cast<npk::UnaryExpr*>(node);
                         analyzeNode(s->operand.get(), info);
                         return;
                     }
 
                     case NT::LAMBDA: {
-                        auto* s = static_cast<aria::LambdaExpr*>(node);
+                        auto* s = static_cast<npk::LambdaExpr*>(node);
                         analyzeNode(s->body.get(), info);
                         return;
                     }
 
                     case NT::INDEX: {
-                        auto* s = static_cast<aria::IndexExpr*>(node);
+                        auto* s = static_cast<npk::IndexExpr*>(node);
                         analyzeNode(s->array.get(), info);
                         analyzeNode(s->index.get(), info);
                         return;
                     }
 
                     case NT::ASSIGNMENT: {
-                        auto* s = static_cast<aria::AssignmentExpr*>(node);
+                        auto* s = static_cast<npk::AssignmentExpr*>(node);
                         analyzeNode(s->target.get(), info);
                         analyzeNode(s->value.get(), info);
                         return;
                     }
 
                     case NT::TERNARY: {
-                        auto* s = static_cast<aria::TernaryExpr*>(node);
+                        auto* s = static_cast<npk::TernaryExpr*>(node);
                         analyzeNode(s->condition.get(), info);
                         analyzeNode(s->trueValue.get(), info);
                         analyzeNode(s->falseValue.get(), info);
@@ -4645,43 +4645,43 @@ llvm::Module* compile_to_module(
 
                     case NT::MEMBER_ACCESS:
                     case NT::POINTER_MEMBER: {
-                        auto* s = static_cast<aria::MemberAccessExpr*>(node);
+                        auto* s = static_cast<npk::MemberAccessExpr*>(node);
                         analyzeNode(s->object.get(), info);
                         return;
                     }
 
                     case NT::TEMPLATE_LITERAL: {
-                        auto* s = static_cast<aria::TemplateLiteralExpr*>(node);
+                        auto* s = static_cast<npk::TemplateLiteralExpr*>(node);
                         for (auto& interp : s->interpolations) analyzeNode(interp.get(), info);
                         return;
                     }
 
                     case NT::ARRAY_LITERAL: {
-                        auto* s = static_cast<aria::ArrayLiteralExpr*>(node);
+                        auto* s = static_cast<npk::ArrayLiteralExpr*>(node);
                         for (auto& elem : s->elements) analyzeNode(elem.get(), info);
                         return;
                     }
 
                     case NT::OBJECT_LITERAL: {
-                        auto* s = static_cast<aria::ObjectLiteralExpr*>(node);
+                        auto* s = static_cast<npk::ObjectLiteralExpr*>(node);
                         for (auto& field : s->fields) analyzeNode(field.value.get(), info);
                         return;
                     }
 
                     case NT::CAST: {
-                        auto* s = static_cast<aria::CastExpr*>(node);
+                        auto* s = static_cast<npk::CastExpr*>(node);
                         analyzeNode(s->expression.get(), info);
                         return;
                     }
 
                     case NT::AWAIT: {
-                        auto* s = static_cast<aria::AwaitExpr*>(node);
+                        auto* s = static_cast<npk::AwaitExpr*>(node);
                         analyzeNode(s->operand.get(), info);
                         return;
                     }
 
                     case NT::DEFAULTS: {
-                        auto* s = static_cast<aria::DefaultsExpr*>(node);
+                        auto* s = static_cast<npk::DefaultsExpr*>(node);
                         analyzeNode(s->expr.get(), info);
                         analyzeNode(s->fallback.get(), info);
                         return;
@@ -4695,8 +4695,8 @@ llvm::Module* compile_to_module(
             // Step 3: Analyze each user function
             std::map<std::string, FuncInfo> func_info;
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body || func->funcName == "main" || func->funcName == "failsafe") continue;
                 if (!func->genericParams.empty()) continue;
 
@@ -4758,24 +4758,24 @@ llvm::Module* compile_to_module(
     // If the sub-expression of a DefaultsExpr only calls infallible functions
     // (those in result_elide_set), the fallback path is dead code.
     if (!result_elide_set.empty()) {
-        auto* program = dynamic_cast<aria::ProgramNode*>(module_node.get());
+        auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
         if (program) {
             if (opts.verbose) {
                 std::cout << "Phase 5.75: Defaults fallback elimination...\n";
             }
 
             // Check if an expression tree contains only infallible calls
-            std::function<bool(aria::ASTNode*)> isInfallibleExpr;
-            isInfallibleExpr = [&](aria::ASTNode* node) -> bool {
+            std::function<bool(npk::ASTNode*)> isInfallibleExpr;
+            isInfallibleExpr = [&](npk::ASTNode* node) -> bool {
                 if (!node) return true;
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
 
                 switch (node->type) {
                     case NT::CALL: {
-                        auto* call = static_cast<aria::CallExpr*>(node);
+                        auto* call = static_cast<npk::CallExpr*>(node);
                         // Check callee name
                         if (call->callee && call->callee->type == NT::IDENTIFIER) {
-                            auto* ident = static_cast<aria::IdentifierExpr*>(
+                            auto* ident = static_cast<npk::IdentifierExpr*>(
                                 call->callee.get());
                             if (!result_elide_set.count(ident->name)) {
                                 return false;  // Fallible call
@@ -4791,13 +4791,13 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::BINARY_OP: {
-                        auto* bin = static_cast<aria::BinaryExpr*>(node);
+                        auto* bin = static_cast<npk::BinaryExpr*>(node);
                         return isInfallibleExpr(bin->left.get()) &&
                                isInfallibleExpr(bin->right.get());
                     }
 
                     case NT::UNARY_OP: {
-                        auto* un = static_cast<aria::UnaryExpr*>(node);
+                        auto* un = static_cast<npk::UnaryExpr*>(node);
                         return isInfallibleExpr(un->operand.get());
                     }
 
@@ -4811,13 +4811,13 @@ llvm::Module* compile_to_module(
                         return true;
 
                     case NT::INDEX: {
-                        auto* idx = static_cast<aria::IndexExpr*>(node);
+                        auto* idx = static_cast<npk::IndexExpr*>(node);
                         return isInfallibleExpr(idx->array.get()) &&
                                isInfallibleExpr(idx->index.get());
                     }
 
                     case NT::MEMBER_ACCESS: {
-                        auto* mem = static_cast<aria::MemberAccessExpr*>(node);
+                        auto* mem = static_cast<npk::MemberAccessExpr*>(node);
                         return isInfallibleExpr(mem->object.get());
                     }
 
@@ -4827,14 +4827,14 @@ llvm::Module* compile_to_module(
             };
 
             // Walk AST to find DefaultsExpr nodes
-            std::function<void(aria::ASTNode*)> findDefaults;
-            findDefaults = [&](aria::ASTNode* node) {
+            std::function<void(npk::ASTNode*)> findDefaults;
+            findDefaults = [&](npk::ASTNode* node) {
                 if (!node) return;
-                using NT = aria::ASTNode::NodeType;
+                using NT = npk::ASTNode::NodeType;
 
                 switch (node->type) {
                     case NT::DEFAULTS: {
-                        auto* def = static_cast<aria::DefaultsExpr*>(node);
+                        auto* def = static_cast<npk::DefaultsExpr*>(node);
                         if (isInfallibleExpr(def->expr.get())) {
                             defaults_safe_set.insert(node);
                         }
@@ -4844,26 +4844,26 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::VAR_DECL: {
-                        auto* var = static_cast<aria::VarDeclStmt*>(node);
+                        auto* var = static_cast<npk::VarDeclStmt*>(node);
                         findDefaults(var->initializer.get());
                         break;
                     }
 
                     case NT::BLOCK: {
-                        auto* blk = static_cast<aria::BlockStmt*>(node);
+                        auto* blk = static_cast<npk::BlockStmt*>(node);
                         for (auto& s : blk->statements)
                             findDefaults(s.get());
                         break;
                     }
 
                     case NT::EXPRESSION_STMT: {
-                        auto* s = static_cast<aria::ExpressionStmt*>(node);
+                        auto* s = static_cast<npk::ExpressionStmt*>(node);
                         findDefaults(s->expression.get());
                         break;
                     }
 
                     case NT::IF: {
-                        auto* s = static_cast<aria::IfStmt*>(node);
+                        auto* s = static_cast<npk::IfStmt*>(node);
                         findDefaults(s->condition.get());
                         findDefaults(s->thenBranch.get());
                         findDefaults(s->elseBranch.get());
@@ -4871,14 +4871,14 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::WHILE: {
-                        auto* s = static_cast<aria::WhileStmt*>(node);
+                        auto* s = static_cast<npk::WhileStmt*>(node);
                         findDefaults(s->condition.get());
                         findDefaults(s->body.get());
                         break;
                     }
 
                     case NT::FOR: {
-                        auto* s = static_cast<aria::ForStmt*>(node);
+                        auto* s = static_cast<npk::ForStmt*>(node);
                         findDefaults(s->initializer.get());
                         findDefaults(s->condition.get());
                         findDefaults(s->update.get());
@@ -4887,7 +4887,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::LOOP: {
-                        auto* s = static_cast<aria::LoopStmt*>(node);
+                        auto* s = static_cast<npk::LoopStmt*>(node);
                         findDefaults(s->start.get());
                         findDefaults(s->limit.get());
                         findDefaults(s->step.get());
@@ -4896,7 +4896,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::TILL: {
-                        auto* s = static_cast<aria::TillStmt*>(node);
+                        auto* s = static_cast<npk::TillStmt*>(node);
                         findDefaults(s->limit.get());
                         findDefaults(s->step.get());
                         findDefaults(s->body.get());
@@ -4904,7 +4904,7 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::WHEN: {
-                        auto* s = static_cast<aria::WhenStmt*>(node);
+                        auto* s = static_cast<npk::WhenStmt*>(node);
                         findDefaults(s->condition.get());
                         findDefaults(s->body.get());
                         findDefaults(s->then_block.get());
@@ -4913,10 +4913,10 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::PICK: {
-                        auto* s = static_cast<aria::PickStmt*>(node);
+                        auto* s = static_cast<npk::PickStmt*>(node);
                         findDefaults(s->selector.get());
                         for (auto& c : s->cases) {
-                            auto* pc = static_cast<aria::PickCase*>(c.get());
+                            auto* pc = static_cast<npk::PickCase*>(c.get());
                             findDefaults(pc->pattern.get());
                             findDefaults(pc->body.get());
                         }
@@ -4924,25 +4924,25 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::DEFER: {
-                        auto* s = static_cast<aria::DeferStmt*>(node);
+                        auto* s = static_cast<npk::DeferStmt*>(node);
                         findDefaults(s->block.get());
                         break;
                     }
 
                     case NT::RETURN: {
-                        auto* s = static_cast<aria::ReturnStmt*>(node);
+                        auto* s = static_cast<npk::ReturnStmt*>(node);
                         findDefaults(s->value.get());
                         break;
                     }
 
                     case NT::PASS: {
-                        auto* s = static_cast<aria::PassStmt*>(node);
+                        auto* s = static_cast<npk::PassStmt*>(node);
                         findDefaults(s->value.get());
                         break;
                     }
 
                     case NT::CALL: {
-                        auto* call = static_cast<aria::CallExpr*>(node);
+                        auto* call = static_cast<npk::CallExpr*>(node);
                         findDefaults(call->callee.get());
                         for (auto& arg : call->arguments)
                             findDefaults(arg.get());
@@ -4950,20 +4950,20 @@ llvm::Module* compile_to_module(
                     }
 
                     case NT::BINARY_OP: {
-                        auto* bin = static_cast<aria::BinaryExpr*>(node);
+                        auto* bin = static_cast<npk::BinaryExpr*>(node);
                         findDefaults(bin->left.get());
                         findDefaults(bin->right.get());
                         break;
                     }
 
                     case NT::UNARY_OP: {
-                        auto* un = static_cast<aria::UnaryExpr*>(node);
+                        auto* un = static_cast<npk::UnaryExpr*>(node);
                         findDefaults(un->operand.get());
                         break;
                     }
 
                     case NT::UNWRAP: {
-                        auto* uw = static_cast<aria::UnwrapExpr*>(node);
+                        auto* uw = static_cast<npk::UnwrapExpr*>(node);
                         findDefaults(uw->result.get());
                         findDefaults(uw->defaultValue.get());
                         break;
@@ -4975,8 +4975,8 @@ llvm::Module* compile_to_module(
             };
 
             for (const auto& decl : program->declarations) {
-                if (decl->type != aria::ASTNode::NodeType::FUNC_DECL) continue;
-                auto* func = static_cast<aria::FuncDeclStmt*>(decl.get());
+                if (decl->type != npk::ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<npk::FuncDeclStmt*>(decl.get());
                 if (!func->body) continue;
                 findDefaults(func->body.get());
             }
@@ -5114,11 +5114,11 @@ llvm::Module* compile_to_module(
             try {
                 auto module_value = ir_gen.codegen(loaded_module->ast.get());
                 if (!module_value) {
-                    diags.error(aria::SourceLocation(path, 0, 0), "Module IR generation failed");
+                    diags.error(npk::SourceLocation(path, 0, 0), "Module IR generation failed");
                     return nullptr;
                 }
             } catch (const std::exception& e) {
-                diags.error(aria::SourceLocation(path, 0, 0),
+                diags.error(npk::SourceLocation(path, 0, 0),
                            std::string("IR generation error: ") + e.what());
                 return nullptr;
             }
@@ -5133,11 +5133,11 @@ llvm::Module* compile_to_module(
         auto value = ir_gen.codegen(module_node.get());
 
         if (!value) {
-            diags.error(aria::SourceLocation(filename, 0, 0), "IR generation failed");
+            diags.error(npk::SourceLocation(filename, 0, 0), "IR generation failed");
             return nullptr;
         }
     } catch (const std::exception& e) {
-        diags.error(aria::SourceLocation(filename, 0, 0),
+        diags.error(npk::SourceLocation(filename, 0, 0),
                    std::string("IR generation error: ") + e.what());
         return nullptr;
     }
@@ -5154,7 +5154,7 @@ llvm::Module* compile_to_module(
                 std::cout << "  Generated " << generated << " specialization(s)\n";
             }
         } catch (const std::exception& e) {
-            diags.error(aria::SourceLocation(filename, 0, 0),
+            diags.error(npk::SourceLocation(filename, 0, 0),
                        std::string("Specialization IR error: ") + e.what());
             return nullptr;
         }
@@ -6118,7 +6118,7 @@ int main(int argc, char** argv) {
     }
 
     if (opts.verbose) {
-        std::cout << "Aria Compiler " << ARIA_VERSION << "\n";
+        std::cout << "Nitpick Compiler (npkc) " << NPK_VERSION << "\n";
         std::cout << "Input files (" << opts.input_files.size() << "):" << "\n";
         for (const auto& file : opts.input_files) {
             std::cout << "  " << file << "\n";
@@ -6135,7 +6135,7 @@ int main(int argc, char** argv) {
     }
 
     // Create diagnostic engine
-    aria::DiagnosticEngine diags;
+    npk::DiagnosticEngine diags;
 
     // For --dump-tokens or --dump-ast, only process first file
     if (opts.dump_tokens || opts.dump_ast) {
@@ -6144,7 +6144,7 @@ int main(int argc, char** argv) {
             diags.printAll();
             return 1;
         }
-        aria::IRGenerator ir_gen(opts.input_files[0], opts.debug_info);
+        npk::IRGenerator ir_gen(opts.input_files[0], opts.debug_info);
         llvm::Module* module = compile_to_module(source, opts.input_files[0], opts, ir_gen, diags);
         // compile_to_module returns nullptr for early exits (dump modes)
         if (diags.hasErrors()) {
@@ -6172,7 +6172,7 @@ int main(int argc, char** argv) {
     }
 
     // Compile each input file into a separate module
-    std::vector<std::unique_ptr<aria::IRGenerator>> ir_generators;
+    std::vector<std::unique_ptr<npk::IRGenerator>> ir_generators;
     std::vector<llvm::Module*> modules;
     // v0.8.2: Incremental compilation — owned contexts for cache-loaded modules
     std::vector<std::unique_ptr<llvm::LLVMContext>> cached_contexts;
@@ -6206,7 +6206,7 @@ int main(int argc, char** argv) {
         }
         
         // Create IR generator (must stay alive)
-        ir_generators.push_back(std::make_unique<aria::IRGenerator>(input_file, opts.debug_info));
+        ir_generators.push_back(std::make_unique<npk::IRGenerator>(input_file, opts.debug_info));
         
         // Compile to LLVM module
         llvm::Module* module = compile_to_module(source, input_file, opts, *ir_generators.back(), diags);

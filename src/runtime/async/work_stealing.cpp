@@ -17,7 +17,7 @@ extern "C" {
     bool __aria_coro_done(void*);
 }
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // ============================================================================
@@ -315,4 +315,4 @@ WorkerThread* WorkStealingExecutor::select_worker() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

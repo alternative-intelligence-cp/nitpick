@@ -3,7 +3,7 @@
 #include <sstream>
 #include <fstream>
 
-using namespace aria;
+using namespace npk;
 
 // ============================================================================
 // Diagnostic System Tests

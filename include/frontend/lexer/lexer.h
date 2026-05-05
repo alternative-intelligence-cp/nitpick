@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // ============================================================================
@@ -169,6 +169,6 @@ private:
 };
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LEXER_H

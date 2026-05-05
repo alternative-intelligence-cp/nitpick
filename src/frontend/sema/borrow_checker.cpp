@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -770,11 +770,11 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
             case ParamOwnership::BORROW_MUT: {
                 // Callee expects $$m. The parameter declaration carries the
                 // mutable-borrow contract; the call site must pass a normal,
-                // addressable identifier. Dollar-prefixed borrow expressions are not Aria syntax.
+                // addressable identifier. Dollar-prefixed borrow expressions are not Nitpick syntax.
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
                     addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects a mutable borrow ($$m), but dollar-borrow syntax is not Aria syntax",
+                        param_name + "' expects a mutable borrow ($$m), but dollar-borrow syntax is not Nitpick syntax",
                         arg.get(),
                         "hint: pass the addressable variable directly; keep $$m on the parameter declaration");
                     tagCode("ARIA-020");
@@ -827,7 +827,7 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
                     addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects immutable borrow ($$i), but dollar-borrow syntax is not Aria syntax",
+                        param_name + "' expects immutable borrow ($$i), but dollar-borrow syntax is not Nitpick syntax",
                         arg.get(),
                         "hint: pass the value directly; keep $$i on the parameter declaration");
                     tagCode("ARIA-020");
@@ -2811,7 +2811,7 @@ void BorrowChecker::checkUnaryExpr(UnaryExpr* expr) {
     checkExpression(expr->operand.get());
     
     // Pin operations are handled at variable declaration. Dollar-borrow
-    // expressions are intentionally not Aria syntax.
+    // expressions are intentionally not Nitpick syntax.
 }
 
 void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
@@ -3782,4 +3782,4 @@ void BorrowChecker::dumpBorrowState(std::ostream& out, const std::string& func_n
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

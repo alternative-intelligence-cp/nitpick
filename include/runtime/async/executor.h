@@ -17,7 +17,7 @@ extern "C" {
     void aria_gc_free(void* ptr);
 }
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Forward declarations
@@ -186,6 +186,6 @@ public:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_EXECUTOR_H

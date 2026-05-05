@@ -6,7 +6,7 @@
 
 namespace fs = std::filesystem;
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 ModuleResolver::ModuleResolver(const std::string& rootPath)
@@ -347,4 +347,4 @@ std::vector<std::string> ModuleResolver::readAriaPath() {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

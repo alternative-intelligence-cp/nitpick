@@ -146,10 +146,10 @@ int main(int argc, char* argv[]) {
     }
     
     // Parse source files
-    aria::doc::DocParser parser;
+    npk::doc::DocParser parser;
     parser.set_verbose(verbose);
     
-    std::shared_ptr<aria::doc::Module> module;
+    std::shared_ptr<npk::doc::Module> module;
     
     if (aria_files.size() == 1) {
         // Single file
@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
     }
     
     // Generate documentation
-    aria::doc::DocGenerator generator;
+    npk::doc::DocGenerator generator;
     generator.set_verbose(verbose);
     generator.set_document_private(document_private);
     

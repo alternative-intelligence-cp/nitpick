@@ -20,7 +20,7 @@
 #include <unordered_set>   // B6 fix: std::unordered_set for identifier collection
 #include "debug_log.h"
 
-namespace aria {
+namespace npk {
 using namespace sema;  // Now inside aria namespace
 
 IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
@@ -2329,11 +2329,11 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     return builder.getInt32Ty();
 }
 
-} // namespace aria
+} // namespace npk
 
 // Define methods outside namespace to avoid ambiguity
 
-llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
+llvm::Value* npk::IRGenerator::codegen(npk::ASTNode* node) {
     if (!node) {
         return nullptr;
     }
@@ -2402,15 +2402,15 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     return func;
 }
 
-llvm::Module* aria::IRGenerator::getModule() {
+llvm::Module* npk::IRGenerator::getModule() {
     return module.get();
 }
 
-std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
+std::unique_ptr<llvm::Module> npk::IRGenerator::takeModule() {
     return std::move(module);
 }
 
-void aria::IRGenerator::dump() {
+void npk::IRGenerator::dump() {
     module->print(llvm::outs(), nullptr);
 }
 
@@ -2418,7 +2418,7 @@ void aria::IRGenerator::dump() {
 // Generic Function Code Generation
 // =============================================================================
 
-size_t aria::IRGenerator::codegenSpecializedFunctions(
+size_t npk::IRGenerator::codegenSpecializedFunctions(
     const std::vector<sema::Specialization*>& specializations) {
     
     if (specializations.empty()) {
@@ -2709,7 +2709,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 // v0.2.36: Split specialization into declare + codegen for trait bounds support
 // =============================================================================
 
-void aria::IRGenerator::declareSpecializedFunctions(
+void npk::IRGenerator::declareSpecializedFunctions(
     const std::vector<sema::Specialization*>& specializations) {
     
     for (const auto* spec : specializations) {
@@ -2750,7 +2750,7 @@ void aria::IRGenerator::declareSpecializedFunctions(
     }
 }
 
-size_t aria::IRGenerator::codegenSpecializedBodies(
+size_t npk::IRGenerator::codegenSpecializedBodies(
     const std::vector<sema::Specialization*>& specializations) {
     
     // Delegate to the full implementation which handles both passes
@@ -2762,7 +2762,7 @@ size_t aria::IRGenerator::codegenSpecializedBodies(
 // Module Declaration Processing (Recursive)
 // =============================================================================
 
-void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
+void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
                                                     const std::string& modulePrefix) {
     // -------------------------------------------------------------------------
     // GLOBAL PRE-PASS: Create LLVM GlobalVariables for all module-level VAR_DECL
@@ -3748,7 +3748,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // FUNCTION_TYPE params: register as "func_ptr:retType" so closure
                         // call path in codegen_expr recognizes them as callable fat pointers
                         if (param->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
-                            aria::FunctionType* fnType = static_cast<aria::FunctionType*>(param->typeNode.get());
+                            npk::FunctionType* fnType = static_cast<npk::FunctionType*>(param->typeNode.get());
                             std::string retStr = fnType->returnType ? fnType->returnType->toString() : "void";
                             var_aria_types[param->paramName] = "func_ptr:" + retStr;
                         } else {
@@ -3760,12 +3760,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // CRITICAL FIX: Register parameter type in value_types map
                         // This enables member access on struct parameters (e.g., self.field, result.value)
                         
-                        // PHASE 4 FIX: Try to resolve as aria::sema::Type first
-                        aria::sema::Type* paramType = nullptr;
+                        // PHASE 4 FIX: Try to resolve as npk::sema::Type first
+                        npk::sema::Type* paramType = nullptr;
                         
                         // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
                         if (typeStr.find("vec") != std::string::npos) {
-                            aria::sema::Type* componentType = type_system->getPrimitiveType("flt64");
+                            npk::sema::Type* componentType = type_system->getPrimitiveType("flt64");
                             int dimension = 2;
                             if (typeStr.find("vec2") != std::string::npos) dimension = 2;
                             else if (typeStr.find("vec3") != std::string::npos) dimension = 3;
@@ -3787,7 +3787,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             if (end != std::string::npos && end > start) {
                                 std::string innerTypeStr = typeStr.substr(start, end - start);
                                 ARIA_DBG_STREAM << "[DEBUG] Result inner type: " << innerTypeStr << std::endl;
-                                aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                                npk::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
                                 if (!innerType) {
                                     innerType = type_system->getStructType(innerTypeStr);
                                 }
@@ -4224,7 +4224,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 // Statement Code Generation
 // =============================================================================
 
-llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
+llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
     if (!stmt) {
         return nullptr;
     }
@@ -4414,7 +4414,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 int col = ret->column;
                                 throw std::runtime_error(
                                     "Line " + std::to_string(line) + ", Column " + std::to_string(col) + 
-                                    ": 'return' cannot return a bare value in an Aria function. "
+                                    ": 'return' cannot return a bare value in a Nitpick function. "
                                     "Use pass(value) for success or fail(error) for errors. "
                                     "'return' is only valid with an already-constructed Result object "
                                     "or a Result{val:..., err:..., is_error:...} literal.");
@@ -4467,7 +4467,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // ================================================================
             if (varDecl->typeNode &&
                 varDecl->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
-                aria::FunctionType* funcPtrType = static_cast<aria::FunctionType*>(varDecl->typeNode.get());
+                npk::FunctionType* funcPtrType = static_cast<npk::FunctionType*>(varDecl->typeNode.get());
 
                 // Allocate fat pointer {ptr, ptr} on stack
                 llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
@@ -4979,7 +4979,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     if (end != std::string::npos && end > start) {
                         std::string innerTypeStr = actualTypeName.substr(start, end - start);
                         ARIA_DBG_STREAM << "[DEBUG VARDECL] Result inner type: " << innerTypeStr << std::endl;
-                        aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                        npk::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
                         if (!innerType) {
                             innerType = type_system->getStructType(innerTypeStr);
                         }
@@ -7175,7 +7175,7 @@ skip_comparison:
 // Expression Code Generation
 // =============================================================================
 
-llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
+llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
     if (!expr) {
         return nullptr;
     }
@@ -7236,15 +7236,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 if (is_float) {
                     // High-precision float literal - use FLT128 if many digits
-                    aria::semantic::FloatPrecision precision;
+                    npk::semantic::FloatPrecision precision;
                     if (raw.length() > 17) {  // More digits than float64 can represent
-                        precision = aria::semantic::FloatPrecision::FLT128;
+                        precision = npk::semantic::FloatPrecision::FLT128;
                     } else {
-                        precision = aria::semantic::FloatPrecision::FLT64;
+                        precision = npk::semantic::FloatPrecision::FLT64;
                     }
                     
                     // Convert using LiteralConverter
-                    auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
+                    auto apfloat_opt = npk::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
                     if (apfloat_opt) {
                         llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
                         return result;
@@ -7261,7 +7261,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     
                     // Convert using LiteralConverter
-                    auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
+                    auto apint_opt = npk::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
                     if (apint_opt) {
                         llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
                         return result;
@@ -12754,7 +12754,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
 // Debug Info Generation (Phase 7.4.1)
 // =============================================================================
 
-void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
+void npk::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
     if (!debug_enabled || !di_builder) {
         return;
     }
@@ -12765,7 +12765,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.12",  // Producer
+        "Nitpick Compiler (npkc)",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
@@ -12775,7 +12775,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_scope_stack.push_back(di_compile_unit);
 }
 
-void aria::IRGenerator::finalizeDebugInfo() {
+void npk::IRGenerator::finalizeDebugInfo() {
     if (!debug_enabled || !di_builder) {
         return;
     }
@@ -12784,7 +12784,7 @@ void aria::IRGenerator::finalizeDebugInfo() {
     di_builder->finalize();
 }
 
-void aria::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
+void npk::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
     if (!debug_enabled || di_scope_stack.empty()) {
         return;
     }
@@ -12800,7 +12800,7 @@ void aria::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
     builder.SetCurrentDebugLocation(llvm::DebugLoc(loc));
 }
 
-void aria::IRGenerator::clearDebugLocation() {
+void npk::IRGenerator::clearDebugLocation() {
     if (!debug_enabled) {
         return;
     }
@@ -12808,7 +12808,7 @@ void aria::IRGenerator::clearDebugLocation() {
     builder.SetCurrentDebugLocation(llvm::DebugLoc());
 }
 
-void aria::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
+void npk::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
     if (!debug_enabled) {
         return;
     }
@@ -12816,7 +12816,7 @@ void aria::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
     di_scope_stack.push_back(scope);
 }
 
-void aria::IRGenerator::popDebugScope() {
+void npk::IRGenerator::popDebugScope() {
     if (!debug_enabled || di_scope_stack.size() <= 1) {
         return;  // Never pop the compile unit
     }
@@ -12824,7 +12824,7 @@ void aria::IRGenerator::popDebugScope() {
     di_scope_stack.pop_back();
 }
 
-llvm::DIScope* aria::IRGenerator::getCurrentDebugScope() {
+llvm::DIScope* npk::IRGenerator::getCurrentDebugScope() {
     if (!debug_enabled || di_scope_stack.empty()) {
         return nullptr;
     }
@@ -12832,7 +12832,7 @@ llvm::DIScope* aria::IRGenerator::getCurrentDebugScope() {
     return di_scope_stack.back();
 }
 
-llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
+llvm::DIType* npk::IRGenerator::mapDebugType(Type* aria_type) {
     if (!debug_enabled || !aria_type) {
         return nullptr;
     }
@@ -12972,7 +12972,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
 // Defer Statement Support
 // =============================================================================
 
-void aria::IRGenerator::executeScopeDefers() {
+void npk::IRGenerator::executeScopeDefers() {
     if (defer_stack.empty()) {
         return;
     }
@@ -13000,7 +13000,7 @@ void aria::IRGenerator::executeScopeDefers() {
     executing_defers = was_executing;
 }
 
-void aria::IRGenerator::executeFunctionDefers() {
+void npk::IRGenerator::executeFunctionDefers() {
     // Don't emit defer code after a terminator (e.g., exit's unreachable)
     if (builder.GetInsertBlock()->getTerminator()) {
         return;
@@ -13028,7 +13028,7 @@ void aria::IRGenerator::executeFunctionDefers() {
 // PHASE 4: Zero Implicit Conversion - Type Suffix Helpers
 // =============================================================================
 
-llvm::Type* aria::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) {
+llvm::Type* npk::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) {
     // Unsigned integers
     if (suffix == "u8") return builder.getInt8Ty();
     if (suffix == "u16") return builder.getInt16Ty();
@@ -13095,7 +13095,7 @@ llvm::Type* aria::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) 
     return nullptr;
 }
 
-bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
+bool npk::IRGenerator::isSuffixSigned(const std::string& suffix) {
     // Signed prefixes
     if (suffix[0] == 'i') return true;  // i8, i16, i32, i64, i128, i256, ...
     if (suffix.substr(0, 3) == "tbb") return true;  // tbb8, tbb16, tbb32, tbb64
@@ -13113,7 +13113,7 @@ bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
 // dyn Trait dispatch infrastructure (v0.2.36)
 // ============================================================================
 
-llvm::StructType* aria::IRGenerator::getDynFatPtrType() {
+llvm::StructType* npk::IRGenerator::getDynFatPtrType() {
     llvm::StructType* dynTy = llvm::StructType::getTypeByName(context, "struct.DynTraitObj");
     if (!dynTy) {
         llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
@@ -13122,7 +13122,7 @@ llvm::StructType* aria::IRGenerator::getDynFatPtrType() {
     return dynTy;
 }
 
-llvm::Function* aria::IRGenerator::generateVtableThunk(
+llvm::Function* npk::IRGenerator::generateVtableThunk(
     const std::string& traitName,
     const std::string& typeName,
     const TraitMethodInfo& method) {
@@ -13208,7 +13208,7 @@ llvm::Function* aria::IRGenerator::generateVtableThunk(
 // Evaluates rule conditions at runtime by binding $ to the value,
 // codegen'ing each condition expression, and branching to failsafe on violation.
 
-void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc) {
+void npk::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc) {
     auto it = rules_table.find(rulesName);
     if (it == rules_table.end()) return;
     

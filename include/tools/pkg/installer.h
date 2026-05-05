@@ -6,7 +6,7 @@
 #include <optional>
 #include <memory>
 
-namespace aria {
+namespace npk {
 namespace pkg {
 
 /**
@@ -178,6 +178,6 @@ private:
 };
 
 } // namespace pkg
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TOOLS_PKG_INSTALLER_H

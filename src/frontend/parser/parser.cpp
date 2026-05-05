@@ -5,10 +5,10 @@
 #include <iostream>
 #include <cctype>
 
-using namespace aria;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::frontend;
 
-namespace aria {
+namespace npk {
 
 // Operator precedence table (higher = tighter binding)
 const std::unordered_map<TokenType, int> Parser::precedence = {
@@ -207,7 +207,7 @@ void Parser::error(const std::string& message) {
     if (message.find("Expected ';'") != std::string::npos) {
         // Check if they forgot ; after }
         if (current > 0 && tokens[current - 1].type == TokenType::TOKEN_RIGHT_BRACE) {
-            ss << "\n  Hint: In Aria, closing braces need a semicolon: '};' not just '}'";
+            ss << "\n  Hint: In Nitpick, closing braces need a semicolon: '};' not just '}'";
         }
     } else if (message.find("Expected expression") != std::string::npos) {
         // Common: using = instead of == in conditions
@@ -216,13 +216,13 @@ void Parser::error(const std::string& message) {
         }
         // Common: using C-style type declaration
         if (token.type == TokenType::TOKEN_IDENTIFIER && token.lexeme == "int") {
-            ss << "\n  Hint: Aria integer types include a width: int32, int64, etc.";
+            ss << "\n  Hint: Nitpick integer types include a width: int32, int64, etc.";
         }
     } else if (message.find("Expected type") != std::string::npos || 
                message.find("Expected return type") != std::string::npos) {
         // Hint about Aria's type:name syntax
         if (token.type == TokenType::TOKEN_COLON) {
-            ss << "\n  Hint: Aria uses Type:name syntax, e.g. int32:x, not name: Type";
+            ss << "\n  Hint: Nitpick uses Type:name syntax, e.g. int32:x, not name: Type";
         }
     }
     
@@ -2145,7 +2145,7 @@ ASTNodePtr Parser::parseLambda() {
     // Parse body - must be a block { ... }
     // No arrow operator in Aria!
     if (!check(TokenType::TOKEN_LEFT_BRACE)) {
-        error("Expected '{' for lambda body (no arrow operator in Aria)");
+        error("Expected '{' for lambda body (no arrow operator in Nitpick)");
         return nullptr;
     }
     advance(); // consume '{' -- parseBlock() requires '{' already consumed
@@ -6009,4 +6009,4 @@ const std::vector<std::string>& Parser::getErrors() const {
     return errors;
 }
 
-} // namespace aria
+} // namespace npk

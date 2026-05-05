@@ -6,8 +6,8 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"
 
-using namespace aria;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::frontend;
 
 // Helper to parse expression from source
 ASTNodePtr parseExpr(const std::string& source) {

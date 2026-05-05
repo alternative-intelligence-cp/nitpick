@@ -12,8 +12,8 @@
 #include <llvm/IR/Type.h>
 #include <llvm/Support/raw_ostream.h>
 
-using namespace aria;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::sema;
 
 // Test that IR generator can be created
 TEST_CASE(ir_generator_construction) {

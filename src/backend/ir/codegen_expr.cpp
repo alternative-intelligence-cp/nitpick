@@ -18,10 +18,10 @@
 #include <cmath>  // For ldexp in fix256_from_float
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::frontend;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::frontend;
+using namespace npk::backend;
+using namespace npk::sema;
 
 ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
@@ -363,7 +363,7 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
     }
 
     // Unknown type - throw error instead of defaulting
-    throw std::runtime_error("Unknown Aria type: " + typeName);
+    throw std::runtime_error("Unknown Nitpick type: " + typeName);
 }
 
 // Helper: Get size of Aria type in bytes
@@ -1433,15 +1433,15 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         
         if (is_float) {
             // High-precision float literal - for now use FLT128 if many digits, else FLT64
-            aria::semantic::FloatPrecision precision;
+            npk::semantic::FloatPrecision precision;
             if (raw.length() > 17) {  // More digits than float64 can represent
-                precision = aria::semantic::FloatPrecision::FLT128;
+                precision = npk::semantic::FloatPrecision::FLT128;
             } else {
-                precision = aria::semantic::FloatPrecision::FLT64;
+                precision = npk::semantic::FloatPrecision::FLT64;
             }
             
             // Convert using LiteralConverter
-            auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
+            auto apfloat_opt = npk::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
             if (apfloat_opt) {
                 llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
@@ -1464,7 +1464,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             }
             
             // Convert using LiteralConverter
-            auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
+            auto apint_opt = npk::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
             if (apint_opt) {
                 llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";

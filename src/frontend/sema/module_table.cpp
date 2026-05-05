@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -402,4 +402,4 @@ std::string ModuleTable::toString() const {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

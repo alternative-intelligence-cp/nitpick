@@ -10,7 +10,7 @@
 #include <string>
 
 // Forward declarations
-namespace aria {
+namespace npk {
     class VarDeclStmt;
     class FuncDeclStmt;
     class IfStmt;
@@ -41,7 +41,7 @@ namespace aria {
     }
 }
 
-namespace aria {
+namespace npk {
 namespace backend {
 
 // Forward declaration for expression codegen
@@ -349,6 +349,6 @@ public:
 };
 
 } // namespace backend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_CODEGEN_STMT_H

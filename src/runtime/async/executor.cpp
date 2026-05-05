@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 Task::TaskId Executor::spawn(Task::CoroutineHandle handle) {
@@ -124,4 +124,4 @@ void Executor::markReady(Task::TaskId id) {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

@@ -9,7 +9,7 @@
 #include <cstring>
 #include <memory>
 
-using namespace aria::adap;
+using namespace npk::adap;
 
 extern "C" {
 

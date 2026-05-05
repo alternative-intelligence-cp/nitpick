@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace aria {
+namespace npk {
 namespace sema {
 namespace tc_helpers {
 
@@ -205,4 +205,4 @@ inline bool integerFitsInType(int64_t value, const std::string& type_name) {
 
 } // namespace tc_helpers
 } // namespace sema
-} // namespace aria
+} // namespace npk

@@ -12,13 +12,13 @@
 #include <variant>
 
 // Forward declarations to avoid circular dependency
-namespace aria {
+namespace npk {
     class FuncDeclStmt;
     class ParameterNode;
     class ReturnStmt;
 }
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // Forward declarations
@@ -319,6 +319,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_CONST_EVALUATOR_H

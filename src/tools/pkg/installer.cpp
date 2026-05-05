@@ -30,7 +30,7 @@ std::string shell_escape(const std::string& s) {
 }
 } // anonymous namespace
 
-namespace aria {
+namespace npk {
 namespace pkg {
 
 PackageInstaller::PackageInstaller() {
@@ -1084,4 +1084,4 @@ std::vector<RegistryEntry> PackageInstaller::listRemotePackages(const std::strin
 }
 
 } // namespace pkg
-} // namespace aria
+} // namespace npk

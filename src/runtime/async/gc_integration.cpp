@@ -6,7 +6,7 @@
 #include <cstring>
 #include <chrono>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Global instance
@@ -171,7 +171,7 @@ void GCCoroAllocator::shutdown_gc() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 // ============================================================================
 // C API
@@ -180,27 +180,27 @@ void GCCoroAllocator::shutdown_gc() {
 extern "C" {
 
 void* __aria_coro_alloc_gc(size_t size, uint64_t task_id) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     return allocator->allocate_frame(size, task_id);
 }
 
 void __aria_coro_free_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->free_frame(frame);
 }
 
 void __aria_coro_suspend_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->suspend_frame(frame);
 }
 
 void __aria_coro_resume_gc(void* frame) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->resume_frame(frame);
 }
 
 void __aria_coro_add_root_gc(void* frame, void** root) {
-    auto* allocator = aria::runtime::get_global_coro_allocator();
+    auto* allocator = npk::runtime::get_global_coro_allocator();
     allocator->add_gc_root(frame, root);
 }
 

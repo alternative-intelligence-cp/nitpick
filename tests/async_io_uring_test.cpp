@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-using namespace aria::runtime;
+using namespace npk::runtime;
 
 // Result structure for file read operations (matches io_uring.cpp)
 struct ReadResult {

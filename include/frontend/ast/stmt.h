@@ -5,7 +5,7 @@
 #include "expr.h"
 #include <map>
 
-namespace aria {
+namespace npk {
 
 /**
  * Attribute — represents #[name(arg1, arg2, ...)] on a declaration
@@ -790,6 +790,6 @@ public:
     std::string toString() const override;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_STMT_H

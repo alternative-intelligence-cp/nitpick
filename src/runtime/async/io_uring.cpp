@@ -13,7 +13,7 @@
 #include <fcntl.h>
 #include <cstring>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // ============================================================================
@@ -679,4 +679,4 @@ void ThreadPoolBackend::submit_task(std::function<void()> task) {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

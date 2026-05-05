@@ -6,9 +6,9 @@
 #include <llvm/IR/Value.h>
 #include "frontend/sema/type.h"
 
-namespace aria {
+namespace npk {
 
-using Type = aria::sema::Type;
+using Type = npk::sema::Type;
 
 /**
  * @brief TBBCodegen - Safe Balanced Ternary arithmetic code generation
@@ -146,6 +146,6 @@ private:
     unsigned getTBBBitWidth(Type* type);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TBB_CODEGEN_H

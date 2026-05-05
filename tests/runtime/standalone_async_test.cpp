@@ -6,7 +6,7 @@
 #include <iostream>
 #include <cassert>
 
-using namespace aria::runtime;
+using namespace npk::runtime;
 
 // Mock coroutine for testing
 struct MockCoroState {

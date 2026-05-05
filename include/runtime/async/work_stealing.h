@@ -20,7 +20,7 @@
 #include <sched.h>
 #endif
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 /**
@@ -309,6 +309,6 @@ private:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_WORK_STEALING_H

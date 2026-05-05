@@ -16,9 +16,9 @@
 #include <stdexcept>
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::backend;
+using namespace npk::sema;
 
 StmtCodegen::StmtCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
@@ -2768,7 +2768,7 @@ void StmtCodegen::codegenReturn(ReturnStmt* stmt) {
                 // Bare value in a Result-returning function — error
                 throw std::runtime_error(
                     "Line " + std::to_string(stmt->line) + ", Column " + std::to_string(stmt->column) +
-                    ": 'return' cannot return a bare value in an Aria function. "
+                    ": 'return' cannot return a bare value in a Nitpick function. "
                     "Use pass(value) for success, fail(error) for errors, "
                     "or Result{val:..., err:..., is_error:...} for explicit construction.");
             }

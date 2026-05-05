@@ -28,7 +28,7 @@
 #include <thread>
 #include <mutex>
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 // Forward declare DAPServer (optional, only when LLDB available)
@@ -134,6 +134,6 @@ private:
 };
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_DEBUGGER_WEB_SERVER_H

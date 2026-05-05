@@ -7,7 +7,7 @@
 #include "frontend/sema/type.h"
 #include "frontend/ast/stmt.h"  // For PickStmt and PickCase
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -250,6 +250,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_EXHAUSTIVENESS_H

@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
-using namespace aria::runtime;
+using namespace npk::runtime;
 
 // Global executor instance
 static Executor* globalExecutor = nullptr;

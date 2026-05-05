@@ -21,7 +21,7 @@
 #include <string>
 #include <algorithm>
 
-using aria::frontend::TokenType;
+using npk::frontend::TokenType;
 
 // ═══════════════════════════════════════════════════════════════════════
 // AriaString helper (same pattern as lex/json/toml helpers)

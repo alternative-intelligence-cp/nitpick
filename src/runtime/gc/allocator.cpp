@@ -23,7 +23,7 @@
 #include <algorithm>
 #include <sys/mman.h>  // For mmap (nursery allocation)
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // =============================================================================
@@ -480,4 +480,4 @@ void aria_gc_unregister_jit_root(void** root_addr) {
 } // extern "C"
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

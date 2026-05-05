@@ -19,10 +19,10 @@
 #include <cmath>
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::frontend;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::frontend;
+using namespace npk::backend;
+using namespace npk::sema;
 
 /**
  * Generate code for binary operations

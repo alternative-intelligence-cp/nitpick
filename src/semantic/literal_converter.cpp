@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace aria {
+namespace npk {
 namespace semantic {
 
 using FloatPrecision = FloatPrecision;  // Already defined in header
@@ -285,4 +285,4 @@ std::optional<llvm::APFloat> LiteralConverter::handleSpecialFloat(
 }
 
 } // namespace semantic
-} // namespace aria
+} // namespace npk

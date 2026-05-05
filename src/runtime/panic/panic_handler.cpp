@@ -19,7 +19,7 @@
 #include <setjmp.h>
 #include "runtime/async/future.h"
 
-namespace aria {
+namespace npk {
 namespace panic {
 
 // Hardware safety callback type
@@ -116,7 +116,7 @@ static void execute_defer_blocks() {
 struct AsyncTaskContext {
     bool active;                          // Are we in an async task?
     jmp_buf recovery_point;               // longjmp target for task-local panic
-    aria::runtime::Future* task_future;   // The task's result Future
+    npk::runtime::Future* task_future;   // The task's result Future
 };
 
 static thread_local AsyncTaskContext tl_async_ctx = {false, {}, nullptr};
@@ -124,7 +124,7 @@ static thread_local AsyncTaskContext tl_async_ctx = {false, {}, nullptr};
 // Enter async task context (called by executor/thread pool before running a task)
 extern "C" void aria_async_task_enter(void* future_ptr) {
     tl_async_ctx.active = true;
-    tl_async_ctx.task_future = static_cast<aria::runtime::Future*>(future_ptr);
+    tl_async_ctx.task_future = static_cast<npk::runtime::Future*>(future_ptr);
 }
 
 // Get pointer to recovery jmp_buf (caller uses setjmp on the returned buffer)
@@ -297,4 +297,4 @@ extern "C" void aria_panic_overflow(const char* message) {
 }
 
 } // namespace panic
-} // namespace aria
+} // namespace npk

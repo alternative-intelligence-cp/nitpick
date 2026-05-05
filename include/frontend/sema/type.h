@@ -7,7 +7,7 @@
 #include <map>
 #include <unordered_map>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // Forward declarations
@@ -743,6 +743,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_TYPE_H

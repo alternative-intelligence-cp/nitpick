@@ -7,8 +7,8 @@
 #include <mutex>
 #include <unordered_map>
 
-using namespace aria::runtime;
-using namespace aria::runtime::async_io;
+using namespace npk::runtime;
+using namespace npk::runtime::async_io;
 
 // Registry to keep shared_ptrs alive while C API handles exist.
 // Entries are removed when aria_future_destroy() is called.

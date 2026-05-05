@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <filesystem>
 
-using namespace aria::pkg;
+using namespace npk::pkg;
 
 void printUsage(const char* program_name) {
     std::cout << "Nitpick Package Manager (npkpkg) v0.3.0\n\n";

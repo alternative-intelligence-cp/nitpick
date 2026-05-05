@@ -15,7 +15,7 @@
 #include <set>
 #include <cmath>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 using namespace tc_helpers;
@@ -1622,4 +1622,4 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
 
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 /**
@@ -119,6 +119,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_FRONTEND_SEMA_DEFINITE_ASSIGNMENT_H

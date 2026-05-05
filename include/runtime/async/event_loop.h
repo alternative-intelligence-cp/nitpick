@@ -12,7 +12,7 @@
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Forward declarations
@@ -190,6 +190,6 @@ private:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_EVENT_LOOP_H

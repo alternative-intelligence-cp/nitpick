@@ -19,10 +19,10 @@
 #include <cmath>
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::frontend;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::frontend;
+using namespace npk::backend;
+using namespace npk::sema;
 
 /**
  * Generate code for function calls
@@ -748,10 +748,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // Extract lane count from integer literal
-        if (expr->arguments[1]->type != aria::ASTNode::NodeType::LITERAL) {
+        if (expr->arguments[1]->type != npk::ASTNode::NodeType::LITERAL) {
             throw std::runtime_error("simd_broadcast() lane count must be a compile-time integer literal");
         }
-        aria::LiteralExpr* laneCountLit = static_cast<aria::LiteralExpr*>(expr->arguments[1].get());
+        npk::LiteralExpr* laneCountLit = static_cast<npk::LiteralExpr*>(expr->arguments[1].get());
         if (!std::holds_alternative<int64_t>(laneCountLit->value)) {
             throw std::runtime_error("simd_broadcast() lane count must be an integer");
         }
@@ -795,10 +795,10 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         }
         
         // Extract lane count from literal
-        if (expr->arguments[1]->type != aria::ASTNode::NodeType::LITERAL) {
+        if (expr->arguments[1]->type != npk::ASTNode::NodeType::LITERAL) {
             throw std::runtime_error("simd_load() lane count must be a compile-time integer literal");
         }
-        aria::LiteralExpr* laneCountLit = static_cast<aria::LiteralExpr*>(expr->arguments[1].get());
+        npk::LiteralExpr* laneCountLit = static_cast<npk::LiteralExpr*>(expr->arguments[1].get());
         if (!std::holds_alternative<int64_t>(laneCountLit->value)) {
             throw std::runtime_error("simd_load() lane count must be an integer");
         }
@@ -7716,7 +7716,7 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                 // Case (b): String variable → identifier with var_aria_types["name"] == "string"
                 if (!needs_data_extraction && i < expr->arguments.size()) {
                     ASTNode* arg_node = expr->arguments[i].get();
-                    if (arg_node->type == aria::ASTNode::NodeType::IDENTIFIER) {
+                    if (arg_node->type == npk::ASTNode::NodeType::IDENTIFIER) {
                         IdentifierExpr* ident = static_cast<IdentifierExpr*>(arg_node);
                         auto type_it = var_aria_types.find(ident->name);
                         if (type_it != var_aria_types.end() && type_it->second == "string") {

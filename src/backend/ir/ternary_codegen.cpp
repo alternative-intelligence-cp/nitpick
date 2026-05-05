@@ -27,7 +27,7 @@
 #include <llvm/IR/DerivedTypes.h>
 #include "debug_log.h"
 
-namespace aria {
+namespace npk {
 
 TernaryCodegen::TernaryCodegen(llvm::LLVMContext& context, llvm::IRBuilder<>& builder)
     : context(context), builder(builder), module(nullptr) {}
@@ -596,4 +596,4 @@ llvm::IntegerType* TernaryCodegen::getTernaryLLVMType(Type* type) {
     return builder.getIntNTy(2);
 }
 
-} // namespace aria
+} // namespace npk

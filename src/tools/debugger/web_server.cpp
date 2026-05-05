@@ -14,7 +14,7 @@
 // We'll use a simple embedded HTTP server approach
 // For production, this would integrate cpp-httplib or similar
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 WebServer::WebServer(DAPServer* dap_server, int port, const std::string& host)
@@ -276,4 +276,4 @@ std::string WebServer::getMimeType(const std::string& path) {
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

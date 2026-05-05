@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 namespace doc {
 
 // Helper: Trim whitespace from string
@@ -571,4 +571,4 @@ std::vector<std::shared_ptr<DocumentedItem>> DocParser::extract_members(
 }
 
 } // namespace doc
-} // namespace aria
+} // namespace npk

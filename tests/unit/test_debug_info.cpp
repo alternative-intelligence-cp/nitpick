@@ -10,7 +10,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/DebugInfoMetadata.h>
 
-using namespace aria;
+using namespace npk;
 using namespace sema;
 
 TEST_CASE(debug_info_initialization) {

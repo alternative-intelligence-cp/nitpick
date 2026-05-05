@@ -13,7 +13,7 @@
 #ifdef LLDB_FOUND
 #include "tools/debugger/aria_formatters.h"
 #include <lldb/API/LLDB.h>
-using namespace aria::debugger;
+using namespace npk::debugger;
 #endif
 
 TEST_CASE(tbb_formatter_err_sentinels) {

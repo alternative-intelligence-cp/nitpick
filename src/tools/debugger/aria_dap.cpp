@@ -15,7 +15,7 @@
 #include <iostream>
 #include <csignal>
 
-using namespace aria::debugger;
+using namespace npk::debugger;
 
 // Global server instance for signal handling
 DAPServer* g_server = nullptr;

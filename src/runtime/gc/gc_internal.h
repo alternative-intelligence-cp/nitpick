@@ -28,7 +28,7 @@
 #include <thread>
 #include <chrono>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // =============================================================================
@@ -338,6 +338,6 @@ private:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_GC_INTERNAL_H

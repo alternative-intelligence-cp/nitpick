@@ -8,9 +8,9 @@
 #include <llvm/IR/Function.h>
 #include "frontend/sema/type.h"
 
-namespace aria {
+namespace npk {
 
-using Type = aria::sema::Type;
+using Type = npk::sema::Type;
 
 /**
  * @brief TernaryCodegen - Balanced ternary and nonary arithmetic code generation
@@ -181,6 +181,6 @@ private:
     llvm::Value* clampToRange(llvm::Value* value, Type* type);
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TERNARY_CODEGEN_H

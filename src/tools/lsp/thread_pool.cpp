@@ -1,7 +1,7 @@
 #include "tools/lsp/thread_pool.h"
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 ThreadPool::ThreadPool(size_t worker_count)
@@ -96,4 +96,4 @@ size_t ThreadPool::determine_worker_count() {
 }
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk

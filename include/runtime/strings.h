@@ -41,6 +41,10 @@ typedef struct {
     int64_t length;     // Length in bytes (NOT characters)
 } AriaString;
 
+// Transition alias: NpkString is the new canonical name; AriaString kept for
+// compatibility with existing user code and Phase 6 C API migration.
+typedef AriaString NpkString;
+
 // ═══════════════════════════════════════════════════════════════════════
 // String Creation
 // ═══════════════════════════════════════════════════════════════════════

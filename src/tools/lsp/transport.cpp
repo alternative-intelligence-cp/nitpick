@@ -5,7 +5,7 @@
 #include <cstring>
 #include <unistd.h>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 Transport::Transport() {
@@ -193,4 +193,4 @@ json Transport::makeNotification(const std::string& method, const json& params) 
 }
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk

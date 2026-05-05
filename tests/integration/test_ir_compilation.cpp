@@ -24,8 +24,8 @@
 #include <llvm/Transforms/Utils.h>
 #include <llvm/Support/raw_ostream.h>
 
-using namespace aria;
-using namespace aria::backend;
+using namespace npk;
+using namespace npk::backend;
 
 // ============================================================================
 // Helper Functions
