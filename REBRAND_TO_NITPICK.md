@@ -94,15 +94,18 @@ Local worktree folder names left unchanged (renaming them would break build path
 | `aria_community` | `nitpick-community` |
 | `ariax` | `nitpicker` |
 
-### Phase 3 — Tooling aliases (compiler / build / pkg)
-Additive only — no removals in this phase.
+### Phase 3 — Tooling aliases (compiler / build / pkg) ✅
+All changes additive — no compat aliases removed yet.
 
-- [ ] 3a: Install `npkc` as primary binary; symlink `ariac` as compat alias.
-- [ ] 3b: Compiler accepts `.npk` source files alongside `.aria`.
-- [ ] 3c: `npkbld` build tool alias added; old `aria-make` name kept as compat.
-- [ ] 3d: `npkpkg` package manager alias added.
-- [ ] 3e: CMake project name changed from `Aria`/`ariac` to `Nitpick`/`npkc`.
-- [ ] 3f: `--version` output, banner text, and error headers updated to Nitpick.
+- [x] 3a: `npkc` is now the primary binary (`OUTPUT_NAME "npkc"`); `ariac` symlink installed via CMake install rule.
+- [x] 3b: Compiler accepts `.npk` source files alongside `.aria` (`module_resolver`, `module_table`, `module_resolver_shim`, `doc` tool all updated).
+- [x] 3c: `npkbld` is now the primary `aria-make` binary (`OUTPUT_NAME "npkbld"`).
+- [x] 3d: `npkpkg` is now the primary `aria-pkg` binary (`OUTPUT_NAME "npkpkg"`); `aria-pkg` compat symlink via CMake install rule.
+- [x] 3e: CMake `project()` name changed from `aria` to `nitpick`.
+- [x] 3f: `--version` output: "Nitpick Compiler (npkc)"; help text uses `npkc` and `.npk` examples; `.aria` transition note included.
+
+Commits: `293b070` (nitpick/dev-0.18.x), `56327b9` (nitpick-build/main)
+CTest: 8/8 passed after changes.
 
 ### Phase 4 — Docs and examples migration
 Risk: low — no binary impact.
