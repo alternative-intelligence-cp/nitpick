@@ -75,12 +75,13 @@ Proposed mapping:
 - [ ] Clean up dirty worktrees in `aria-libc`, `aria-tools`, `ariax`
       (README/logo commits were made but unrelated changes are still parked).
 
-### Phase 2 — Repository renames on GitHub
-After dirty worktrees are committed or parked. Rename in place to preserve
-history, issues, tags, releases, and GitHub redirect behavior.
+### Phase 2 — Repository renames on GitHub ✅
+All 11 repos renamed in place on GitHub. History, issues, tags, releases, and
+GitHub redirects preserved. Local remotes updated in each `.git/config`.
+Local worktree folder names left unchanged (renaming them would break build paths).
 
-| Current repo | Target repo |
-|--------------|-------------|
+| Old | New |
+|-----|-----|
 | `aria` | `nitpick` |
 | `aria-docs` | `nitpick-docs` |
 | `aria-packages` | `nitpick-packages` |
@@ -91,9 +92,7 @@ history, issues, tags, releases, and GitHub redirect behavior.
 | `aria-packages-apt` | `nitpick-packages-apt` |
 | `aria-specialist` | `nitpick-specialist` |
 | `aria_community` | `nitpick-community` |
-| `ariax` | `nitpicker` (OS workstream — can run in parallel) |
-
-After renames: run `git remote set-url origin <new-url>` in each local worktree.
+| `ariax` | `nitpicker` |
 
 ### Phase 3 — Tooling aliases (compiler / build / pkg)
 Additive only — no removals in this phase.
