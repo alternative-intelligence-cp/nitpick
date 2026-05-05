@@ -1,0 +1,29 @@
+// Test ternary and nonary literals
+func:main = int32() {
+    // Balanced ternary literals (0t prefix)
+    int64:tern_zero = 0t0;        // 0
+    int64:tern_one = 0t1;         // 1
+    int64:tern_neg_one = 0tT;     // -1
+    int64:tern_two = 0t1T;        // 1*3 + (-1)*1 = 2
+    int64:tern_six = 0t1T0;       // 1*9 + (-1)*3 + 0*1 = 6
+    
+    // Balanced nonary literals (0n prefix)
+    int64:non_zero = 0n0;         // 0
+    int64:non_one = 0n1;          // 1
+    int64:non_four = 0n4;         // 4
+    int64:non_neg_one = 0nA;      // -1
+    int64:non_neg_four = 0nD;     // -4
+    int64:non_mixed = 0n2A;       // 2*9 + (-1)*1 = 17
+    
+    // Verify they work in expressions
+    int64:sum = tern_two + non_mixed;  // 2 + 17 = 19
+    
+    drop println("✓ Ternary and nonary literals work!");
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

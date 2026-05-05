@@ -1,0 +1,48 @@
+// Test basic uint128 operations
+// Part of Phase 3.1: Extended Precision Integers
+
+func:main = int32() {
+    // Test uint128 variables with proper literal suffixes
+    uint128:a = 1000000000000000u128;
+    uint128:b = 2000000000000000u128;
+    uint128:zero = 0u128;
+
+    // Test basic arithmetic
+    uint128:sum = a + b;
+    uint128:diff = b - a;  // b > a to avoid underflow
+    uint128:prod = a * 2u128;
+    uint128:quot = b / a;
+
+    // Test comparisons
+    bool:eq = (a == b);
+    bool:ne = (a != b);
+    bool:lt = (a < b);
+    bool:gt = (a > b);
+
+    // Verify results
+    uint128:expected_sum = 3000000000000000u128;
+    uint128:expected_diff = 1000000000000000u128;
+    
+    if (sum != expected_sum) {
+        int32:one = 1;
+        exit one;
+    }
+    
+    if (diff != expected_diff) {
+        int32:one = 1;
+        exit one;
+    }
+    
+    if (!lt) {
+        int32:one = 1;
+        exit one;
+    }
+
+    int32:ret = 0;
+    exit ret;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

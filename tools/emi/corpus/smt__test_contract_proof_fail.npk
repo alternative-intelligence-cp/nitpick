@@ -1,0 +1,26 @@
+// Test: v0.14.0 — Contract proof failure (deliberately wrong ensures)
+// These ensures clauses should be DISPROVEN with counterexamples.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Wrong ensures: $ > a is not always true when a + b could be <= a
+func:wrong_ensures = int32(int32:a, int32:b)
+    requires a > 0i32, a < 100i32
+    ensures $ > a
+{
+    pass(a + b);
+};
+
+// Wrong ensures: claims result is always positive, but a - b can be negative
+func:bad_subtract = int32(int32:a, int32:b)
+    requires a > 0i32, a < 100i32, b > 0i32, b < 100i32
+    ensures $ > 0i32
+{
+    pass(a - b);
+};
+
+func:main = int32() {
+    exit 0;
+};

@@ -1,0 +1,36 @@
+// Quick test: Safe navigation operator (?.)
+// Should allow chaining through optional/nullable types
+
+func:failsafe = int32(tbb32:err) {
+    print("ERROR");
+    exit 1;
+};
+
+struct:User = {
+    int32:id;
+    int32:age;
+};
+
+func:main = int32() {
+    print("Testing safe navigation (?.)");
+    
+    // Test 1: Optional with value
+    User?:user1 = User{id: 1, age: 25};
+    
+    // Test 2: Optional without value  
+    User?:user2 = NIL;
+    
+    // Try safe navigation with ? operator
+    int32:age1 = user1?.age ? 0;  // Should be 25
+    int32:age2 = user2?.age ? 0;  // Should be 0 (NIL case)
+    
+    if (age1 == 25) {
+        print("✓ Safe nav worked for User value");
+    }
+    
+    if (age2 == 0) {
+        print("✓ Safe nav worked for NIL");
+    }
+    
+    exit 0;
+};

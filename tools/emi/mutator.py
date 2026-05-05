@@ -89,9 +89,43 @@ _IDENTITIES = [
 # Core mutation functions
 # ---------------------------------------------------------------------------
 
+def _safe_insertion_points(lines: list, main_start: int, main_end: int) -> list:
+    """
+    Return line indices inside func:main where it is safe to insert a new statement.
+    A line is safe if:
+      - paren depth is 0 (not inside a multi-line call or initializer)
+      - bracket depth is 0 (not inside a multi-line array literal)
+      - brace depth is exactly 1 (direct statement in func:main body, not inside
+        a nested struct literal, if-body, or inner scope block)
+      - the line ends with ';' (complete statement)
+      - it isn't an exit/pass/fail line
+      - it isn't blank or a comment
+    """
+    paren_depth   = 0
+    bracket_depth = 0
+    brace_depth   = 1   # we start already inside func:main's opening brace
+    safe = []
+    for i in range(main_start, main_end - 1):
+        line = lines[i]
+        # Check depths BEFORE processing current line (state entering this line).
+        # This correctly excludes closing-delimiter lines like `15.0];` or `};`.
+        if (paren_depth == 0
+                and bracket_depth == 0
+                and brace_depth == 1
+                and not re.search(r'\bexit\b|\bpass\b|\bfail\b', line)
+                and line.strip() != ''
+                and not line.strip().startswith('//')
+                and line.strip().endswith(';')):
+            safe.append(i)
+        # Update depths after the check
+        paren_depth   += line.count('(') - line.count(')')
+        bracket_depth += line.count('[') - line.count(']')
+        brace_depth   += line.count('{') - line.count('}')
+    return safe
+
+
 def _inject_dead_code(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
     """Insert an unreachable if-block at a random safe insertion point inside func:main."""
-    # Find lines inside func:main body (after the opening brace, before exit/pass)
     lines = source.split('\n')
     main_start = None
     main_end = None
@@ -112,13 +146,7 @@ def _inject_dead_code(source: str, rng: random.Random) -> Optional[Tuple[str, Mu
     if main_start is None or main_end is None or main_end - main_start < 2:
         return None
 
-    # Pick an insertion point that isn't the last line (before exit)
-    insert_candidates = [
-        i for i in range(main_start, main_end - 1)
-        if not re.search(r'\bexit\b|\bpass\b|\bfail\b', lines[i])
-        and lines[i].strip() != ''
-        and not lines[i].strip().startswith('//')
-    ]
+    insert_candidates = _safe_insertion_points(lines, main_start, main_end)
     if not insert_candidates:
         return None
 
@@ -154,9 +182,10 @@ def _apply_identity_expr(source: str, rng: random.Random) -> Optional[Tuple[str,
             brace_depth += line.count('{') - line.count('}')
             if brace_depth == 0 and in_main:
                 in_main = False
-            # Only touch mutable int declarations (not fixed, not println, not exit)
+            # Only touch mutable int32/int64 declarations (not smaller types — identity
+            # expressions produce int32 and would cause a type error on int8/int16/uint*)
             if (in_main and brace_depth > 0
-                    and _MUTABLE_DECL_RE.match(line)
+                    and re.match(r'^\s*(int32|int64):', line)
                     and 'println' not in line
                     and 'exit' not in line
                     and 'fixed' not in line):
@@ -210,7 +239,15 @@ def _reorder_adjacent_decls(source: str, rng: random.Random) -> Optional[Tuple[s
             if in_main and brace_depth > 0 and _MUTABLE_DECL_RE.match(line):
                 decl_lines.append(i)
 
-    # Find adjacent pairs that are truly independent
+    # A rvalue is pure if it contains only literals, arithmetic operators, parens,
+    # and no identifiers that could be variables/calls with side effects.
+    # We conservatively allow only: digits, spaces, +/-/*/parens, and nothing else.
+    def _is_pure_literal_expr(rvalue: str) -> bool:
+        stripped = rvalue.strip().rstrip(';').strip()
+        # Allow only: digits, spaces, basic arithmetic, parens
+        return bool(re.fullmatch(r'[\d\s+\-*/()]+', stripped))
+
+    # Find adjacent pairs that are truly independent with pure rvalues
     adjacent_pairs = []
     for j in range(len(decl_lines) - 1):
         a, b = decl_lines[j], decl_lines[j + 1]
@@ -225,6 +262,9 @@ def _reorder_adjacent_decls(source: str, rng: random.Random) -> Optional[Tuple[s
         name_b = mb.group(1)
         rvalue_a = lines[a][lines[a].find('=') + 1:]
         rvalue_b = lines[b][lines[b].find('=') + 1:]
+        # Both rvalues must be pure literal expressions (no calls, no side effects)
+        if not _is_pure_literal_expr(rvalue_a) or not _is_pure_literal_expr(rvalue_b):
+            continue
         # Independent: b's rvalue doesn't use a's name, a's rvalue doesn't use b's name
         if re.search(r'\b' + re.escape(name_a) + r'\b', rvalue_b):
             continue
@@ -304,12 +344,7 @@ def _insert_noop_block(source: str, rng: random.Random) -> Optional[Tuple[str, M
     if main_start is None or main_end is None or main_end - main_start < 2:
         return None
 
-    insert_candidates = [
-        i for i in range(main_start, main_end - 1)
-        if not re.search(r'\bexit\b|\bpass\b', lines[i])
-        and lines[i].strip() != ''
-        and not lines[i].strip().startswith('//')
-    ]
+    insert_candidates = _safe_insertion_points(lines, main_start, main_end)
     if not insert_candidates:
         return None
 

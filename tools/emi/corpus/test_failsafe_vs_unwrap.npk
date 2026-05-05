@@ -1,0 +1,69 @@
+// Test comparing unwrap (?) and emphatic unwrap (?!) operators
+// Both operators have identical behavior in terms of code generation
+// The difference is SEMANTIC: intent and expectations
+//
+// ? operator: "maybe use default" - uncertainty expected
+// ?! operator: "this MUST succeed" - failure is exceptional
+//
+// From a type/runtime perspective, they are identical
+// The difference is philosophical/documentary
+
+// Helpers to create Results
+func:make_ok_result = int32() {
+    pass 10i32;
+};
+
+func:make_err_result = int32() {
+    fail 1;
+};
+
+// Test: Both operators behave identically
+func:test_identical_behavior = int32() {
+    Result<int32>:ok_result = make_ok_result();
+    Result<int32>:err_result = make_err_result();
+    
+    // Test with Ok result
+    int32:unwrap_ok = ok_result ? 42i32;
+    int32:failsafe_ok = ok_result ?! 42i32;
+    
+    if (!(unwrap_ok == failsafe_ok && unwrap_ok == 10i32)) {
+        pass 1i32;  // Ok case differs
+    }
+    
+    // Test with Err result
+    int32:unwrap_err = err_result ? 42i32;
+    int32:failsafe_err = err_result ?! 42i32;
+    
+    if (!(unwrap_err == failsafe_err && unwrap_err == 42i32)) {
+        pass 2i32;  // Err case differs
+    }
+    
+    pass 0i32;  // All behaviors match
+};
+
+// Demonstration: When to use ? vs ?!
+// This is commentary, not executable code behavior
+
+// Use ? when:
+// - Failures are expected as part of normal operation
+// - The operation is exploratory or uncertain
+// - Example: trying to parse user input, looking up optional data
+// Result<int32>:parsed = parseInput(userString) ? 0i32;
+
+// Use ?! when:
+// - The operation MUST succeed for the program to be correct
+// - Failure indicates a serious bug or system error
+// - The default is an emergency fallback, not a normal case
+// - Example: loading critical configuration that should always exist
+// Result<Config>:config = loadConfig() ?! emergencyDefaults;
+
+func:main = int32() {
+    Result<int32>:t = test_identical_behavior();
+    int32:result = t ? 1i32;
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,174 @@
+// ============================================================================
+// ENERGY CONSERVATION SIMULATION — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Simulate Nikola's core physics loop in miniature.
+//
+// Nikola's UFIE requires |ΔH/H| < 0.01% over 10,000 simulation steps.
+// The Störmer-Verlet (leapfrog) integrator is symplectic: it preserves
+// the Hamiltonian's structure. If Aria's arithmetic introduces drift,
+// the system will either:
+//   - Gain energy → "Epileptic Resonance" → field values → ∞
+//   - Lose energy → "Amnesia" → information dissolves
+//
+// This test implements a simplified 1D harmonic oscillator using
+// Störmer-Verlet integration and checks energy conservation.
+// H = 0.5 * v^2 + 0.5 * omega^2 * x^2 = constant
+// ============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+
+    // ========================================================================
+    // SIMULATION 1: Simple harmonic oscillator — Störmer-Verlet
+    // x'' = -omega^2 * x
+    // Exact solution: x(t) = cos(omega*t), v(t) = -omega*sin(omega*t)
+    // Hamiltonian: H = 0.5*v^2 + 0.5*omega^2*x^2
+    // ========================================================================
+    flt64:omega = 1.0;               // Angular frequency
+    flt64:omega_sq = omega * omega;   // omega^2
+    flt64:dt = 0.001;                 // 1ms timestep (Nikola's actual rate)
+    flt64:half_dt = dt * 0.5;
+
+    // Initial conditions: x=1, v=0 (cosine wave)
+    flt64:x = 1.0;
+    flt64:v = 0.0;
+    flt64:half = 0.5;
+
+    // Compute initial energy
+    flt64:H0 = half * v * v + half * omega_sq * x * x;
+
+    // Track max energy deviation
+    flt64:max_drift = 0.0;
+    flt64:zero = 0.0;
+
+    // Run for 10,000 steps (10 seconds at 1000 Hz)
+    till(10000, 1) {
+        // Störmer-Verlet (Leapfrog) integration:
+        // 1. Half-step velocity
+        flt64:ax = zero - omega_sq * x;  // acceleration = -omega^2 * x
+        v = v + half_dt * ax;
+
+        // 2. Full-step position
+        x = x + dt * v;
+
+        // 3. Half-step velocity (with new position)
+        flt64:ax_new = zero - omega_sq * x;
+        v = v + half_dt * ax_new;
+
+        // Compute Hamiltonian
+        flt64:H = half * v * v + half * omega_sq * x * x;
+
+        // Track relative energy drift
+        flt64:drift = (H - H0) / H0;
+        // Take absolute value manually
+        if (drift < zero) {
+            drift = zero - drift;
+        }
+        if (drift > max_drift) {
+            max_drift = drift;
+        }
+    }
+
+    // ========================================================================
+    // VERIFY: Energy drift must be < 0.01% (Nikola's hard requirement)
+    // ========================================================================
+    flt64:threshold = 0.0001;  // 0.01%
+    if (max_drift > threshold) {
+        print("FAIL: Energy drift exceeds 0.01% threshold\n");
+        print("Max drift observed over 10,000 steps\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // VERIFY: Position after full period should be near initial
+    // After T = 2*pi/omega ≈ 6283 steps, x should return near 1.0
+    // After 10000 steps (t=10s), x = cos(10) ≈ -0.8391
+    // ========================================================================
+    flt64:expected_x = -0.8390715290764524;  // cos(10)
+    flt64:x_err = x - expected_x;
+    if (x_err < zero) {
+        x_err = zero - x_err;
+    }
+    // Allow small error from discrete integration (dt=1ms over 10s)
+    flt64:pos_tol = 0.01;  // 1% position tolerance for discretization
+    if (x_err > pos_tol) {
+        print("FAIL: Position after 10000 steps too far from cos(10)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // SIMULATION 2: Energy conservation with varying magnitude
+    // Test that large and small values don't cause drift
+    // ========================================================================
+    flt64:x2 = 1000.0;  // Large amplitude
+    flt64:v2 = 0.0;
+    flt64:H0_2 = half * omega_sq * x2 * x2;  // 500000.0
+    flt64:max_drift2 = 0.0;
+
+    till(5000, 1) {
+        flt64:ax2 = zero - omega_sq * x2;
+        v2 = v2 + half_dt * ax2;
+        x2 = x2 + dt * v2;
+        flt64:ax2_new = zero - omega_sq * x2;
+        v2 = v2 + half_dt * ax2_new;
+
+        flt64:H2 = half * v2 * v2 + half * omega_sq * x2 * x2;
+        flt64:drift2 = (H2 - H0_2) / H0_2;
+        if (drift2 < zero) {
+            drift2 = zero - drift2;
+        }
+        if (drift2 > max_drift2) {
+            max_drift2 = drift2;
+        }
+    }
+
+    if (max_drift2 > threshold) {
+        print("FAIL: Large-amplitude energy drift exceeds 0.01%\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // SIMULATION 3: Energy conservation with tiny amplitude
+    // Risk: Subnormal numbers in wavefunction damping
+    // ========================================================================
+    flt64:x3 = 1.0e-10;  // Very small amplitude
+    flt64:v3 = 0.0;
+    flt64:H0_3 = half * omega_sq * x3 * x3;
+    flt64:max_drift3 = 0.0;
+
+    till(5000, 1) {
+        flt64:ax3 = zero - omega_sq * x3;
+        v3 = v3 + half_dt * ax3;
+        x3 = x3 + dt * v3;
+        flt64:ax3_new = zero - omega_sq * x3;
+        v3 = v3 + half_dt * ax3_new;
+
+        flt64:H3 = half * v3 * v3 + half * omega_sq * x3 * x3;
+        flt64:drift3 = (H3 - H0_3) / H0_3;
+        if (drift3 < zero) {
+            drift3 = zero - drift3;
+        }
+        if (drift3 > max_drift3) {
+            max_drift3 = drift3;
+        }
+    }
+
+    if (max_drift3 > threshold) {
+        print("FAIL: Small-amplitude energy drift exceeds 0.01%\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("ENERGY CONSERVATION: ALL TESTS PASSED\n");
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    print("FAILSAFE triggered in energy conservation tests\n");
+    exit 1;
+};

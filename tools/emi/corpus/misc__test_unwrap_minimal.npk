@@ -1,0 +1,19 @@
+// Absolutely minimal test of unwrap operator
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:get_number = int32(int32:val) {
+    pass val;
+};
+
+func:main = int32() {
+    // Test unwrap with explicit default
+    int32:x = 42i32;
+    int32:result = get_number(x) ? 0i32;
+    
+    // Should be 42 if unwrap works
+    if (result == 42i32) {
+        exit 0;
+    }
+    exit 1;
+};

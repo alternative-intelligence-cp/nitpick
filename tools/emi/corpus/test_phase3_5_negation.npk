@@ -1,0 +1,53 @@
+// Phase 3.5 Test: Boolean negation and direct boolean conditions
+// Tests all the new syntactic sugar for Result checking
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail -1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Test 1: Negation with parentheses (concise!)
+    if (!(r.is_error)) {
+        int32:x1 = r.value;  // SAFE
+    }
+    
+    // Test 2: Direct boolean (truthiness-like but with actual bool)
+    Result<int32>:r2 = divide(10i32, 0i32);  // Will error
+    if (r2.is_error) {
+        int64:code = r2.error;  // SAFE
+    }
+    
+    // Test 3: Negation in while loop
+    Result<int32>:r3 = divide(20i32, 4i32);
+    while (!(r3.is_error)) {
+        int32:x3 = r3.value;  // SAFE
+        break;  // Avoid infinite loop
+    }
+    
+    // Test 4: Direct bool in while
+    Result<int32>:r4 = divide(15i32, 0i32);
+    while (r4.is_error) {
+        int64:e4 = r4.error;  // SAFE
+        break;
+    }
+    
+    // Test 5: In else branch
+    Result<int32>:r5 = divide(25i32, 5i32);
+    if (r5.is_error) {
+        // Error path
+    } else {
+        int32:x5 = r5.value;  // SAFE - else knows !is_error
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

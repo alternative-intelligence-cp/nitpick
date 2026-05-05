@@ -1,0 +1,52 @@
+// Minimal atomic test
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+extern func:npk_atomic_int32_create = wild int8*(int32:initial_value);
+extern func:npk_atomic_int32_destroy = NIL(wild int8*:atomic_ptr);
+extern func:npk_atomic_int32_store = NIL(wild int8*:atomic_ptr, int32:value, int32:order);
+extern func:npk_atomic_int32_load = int32(wild int8*:atomic_ptr, int32:order);
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+
+Type:AtomicInt32 = {
+
+    func:create = AtomicInt32(int32:initial) {
+        wild int8->:raw_ptr = npk_atomic_int32_create(initial);
+        AtomicInt32:atomic = AtomicInt32{ptr_val: ptr_to_int64(raw_ptr)};
+        pass atomic;
+    };
+    
+    func:destroy = NIL(AtomicInt32:self) {
+        _ = npk_atomic_int32_destroy(int64_to_ptr(self.ptr_val));
+        pass NIL;
+    };
+    
+    func:store = NIL(AtomicInt32:self, int32:value, int32:order) {
+        _ = npk_atomic_int32_store(int64_to_ptr(self.ptr_val), value, order);
+        pass NIL;
+    };
+    
+    func:load = int32(AtomicInt32:self, int32:order) {
+        int64:pval = self.ptr_val;
+        wild int8->:ptr_raw = int64_to_ptr(pval);
+        int32:result = npk_atomic_int32_load(ptr_raw, order);
+        pass result;
+    };
+
+    struct:interface = {
+        int64:ptr_val;
+    };
+};
+
+func:main = int32() {
+    AtomicInt32:counter = raw instance<AtomicInt32>(0i32);
+    _ = counter.store(42i32, 5i32);
+    int32:loaded_val = raw counter.load(5i32);
+    _ = counter.destroy();
+    
+    if (loaded_val == 42i32) {
+        exit 0;  // SUCCESS
+    } else {
+        exit 1i32;  // FAIL
+    }
+};

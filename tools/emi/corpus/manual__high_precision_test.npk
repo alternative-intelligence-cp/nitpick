@@ -1,0 +1,24 @@
+// Test high-precision literal detection and validation
+// This tests the String-as-Truth architecture for literal parsing
+
+func:main = int32() {
+    // Test 1: Regular precision (should work)
+    flt64:pi_regular = 3.14159;
+    int64:answer = 42;
+
+    // Test 2: High-precision float literals (f128 suffix for >17 digit precision)
+    // These have many digits and should be detected by the type checker
+    flt128:pi_high = 3.141592653589793238462643383279502884197f128;
+    flt128:e_high = 2.718281828459045235360287471352662497757f128;
+
+    // Test 3: High-precision integer literals (i128 suffix required for values > INT64_MAX)
+    int128:large_num = 9223372036854775808i128;   // 2^63 (just over int64::max)
+    int128:huge_num = 170141183460469231731687303715884105727i128;  // Near int128::max
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

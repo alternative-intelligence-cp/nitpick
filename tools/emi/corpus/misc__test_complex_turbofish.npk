@@ -1,0 +1,36 @@
+// Test turbofish syntax with Numeric trait constraint
+// Verifies that ::<T> instantiation works with trait-bounded generics
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+// Generic function with Numeric trait bound
+func<T: Numeric>:add_pair = *T(*T:a, *T:b) {
+    *T:result = a + b;
+    pass result;
+};
+
+func<T: Numeric>:mul_pair = *T(*T:a, *T:b) {
+    *T:result = a * b;
+    pass result;
+};
+
+pub func:main = int32() {
+    // Turbofish with int64
+    int64:x = 10;
+    int64:y = 20;
+    int64:sum = raw add_pair::<int64>(x, y);
+    
+    // Turbofish with int32
+    int32:a = 5i32;
+    int32:b = 6i32;
+    int32:prod = raw mul_pair::<int32>(a, b);
+    
+    // sum = 30, prod = 30
+    // Verify both are 30
+    if (sum == 30) {
+        if (prod == 30i32) {
+            exit 0;
+        }
+    }
+    exit 1;
+};

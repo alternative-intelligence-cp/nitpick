@@ -1,0 +1,34 @@
+// Test: Atomic<T> type constraints - valid types
+// Phase 2.2: This tests that atomic<T> accepts lock-free compatible types
+
+struct:TestAtomic = {
+    // Test type declarations with atomic<T>
+    // These should all be accepted by the type checker
+    
+    atomic<int8>:a1;
+    atomic<int16>:a2;
+    atomic<int32>:a3;
+    atomic<int64>:a4;
+    
+    atomic<uint8>:u1;
+    atomic<uint16>:u2;
+    atomic<uint32>:u3;
+    atomic<uint64>:u4;
+    
+    atomic<bool>:b1;
+    
+    atomic<tbb8>:t1;
+    atomic<tbb16>:t2;
+    atomic<tbb32>:t3;
+    atomic<tbb64>:t4;
+};
+
+func:main = int32() {
+    println("Type constraints validated - all atomic types accepted");
+    return 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,84 @@
+/// Test arrow operator for pointer member access
+/// Randy's design: -> literally points at the member
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Person = {
+    int32:age;
+    int32:id;
+};
+
+/// Test 1: Arrow operator with stack-allocated struct
+func:test_arrow_basic = int32() {
+    // Create Point with proper initialization
+    stack int32:ten = 10;
+    stack int32:twenty = 20;
+    stack Point:p = Point{x: ten, y: twenty};
+    
+    // Get pointer to it
+    stack Point->:ptr = @p;
+    
+    // Access through pointer with ->
+    int32:x_val = ptr->x;  // -> to follow pointer to member
+    int32:y_val = ptr->y;
+    
+    pass 0;
+};
+
+/// Test 2: Modify through arrow operator
+func:test_arrow_modify = int32() {
+    stack int32:init_age = 25;
+    stack int32:init_id = 1001;
+    stack Person:person = Person{age: init_age, id: init_id};
+    
+    stack Person->:ptr = @person;
+    
+    // Modify through pointer
+    stack int32:new_age = 26;
+    stack int32:new_id = 1002;
+    ptr->age = new_age;
+    ptr->id = new_id;
+    
+    // Verify changes visible through original
+    int32:check_age = person.age;  // Should be 26
+    int32:check_id = person.id;    // Should be 1002
+    
+    pass 0;
+};
+
+/// Test 3: Read, modify, read again through pointer
+func:test_arrow_cycle = int32() {
+    stack int32:five = 5;
+    stack int32:fifteen = 15;
+    stack Point:p = Point{x: five, y: fifteen};
+    
+    stack Point->:ptr = @p;
+    
+    // Read
+    int32:orig_x = ptr->x;  // 5
+    
+    // Modify
+    stack int32:hundred = 100;
+    ptr->x = hundred;
+    
+    // Read again
+    int32:new_x = ptr->x;  // 100
+    
+    pass 0;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_arrow_basic();
+    int32:r2 = raw test_arrow_modify();
+    int32:r3 = raw test_arrow_cycle();
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

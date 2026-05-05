@@ -1,0 +1,37 @@
+// Test basic const functionality
+// Should compile and run successfully
+
+// Simple const declarations
+const int64:MAX_SIZE = 1024;
+const int32:BUFFER_SIZE = 512;
+const bool:DEBUG = true;
+const flt64:PI = 3.14159;
+
+// Const expressions
+const int64:DOUBLE_SIZE = MAX_SIZE * 2;
+const int64:HALF_SIZE = MAX_SIZE / 2;
+const int64:SUM = MAX_SIZE + BUFFER_SIZE;
+
+// Using const in function
+func:test_const = int64() {
+    int64:size = MAX_SIZE;
+    
+    if (DEBUG) {
+        size = DOUBLE_SIZE;
+    }
+    
+    if (size > BUFFER_SIZE) {
+        pass 1;
+    }
+    pass 0;
+};
+
+func:main = int32() {
+    int32:zero = 0;
+    exit zero;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

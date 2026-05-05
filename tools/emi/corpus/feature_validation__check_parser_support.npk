@@ -1,0 +1,39 @@
+// Quick test to see what the parser supports
+// Arrays, structs, member access, indexing
+
+func:test_array = int64() {
+    // Can we declare arrays?
+    int64[5]:nums = [1i64, 2i64, 3i64, 4i64, 5i64];
+    
+    // Can we index them?
+    int64:val = nums[2];
+    
+    pass val;
+};
+
+// Can we define structs?
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:test_struct = int32() {
+    // Can we create struct instances?
+    Point:p = Point{x: 10, y: 20};
+    
+    // Can we access members?
+    int32:x_val = p.x;
+    
+    pass x_val;
+};
+
+func:main = int32() {
+    int64:a = raw test_array();
+    int32:s = raw test_struct();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

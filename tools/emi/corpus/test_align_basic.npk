@@ -1,0 +1,37 @@
+// P0: Basic alignment attribute test
+// Tests #[align(N)] for cache line aligned variables
+
+func:main = int32() {
+    // Test 1: Basic 64-byte cache line alignment
+    #[align(64)]
+    flt64[16]:cache_aligned = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
+                              8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0];
+    
+    // Test 2: 32-byte SIMD alignment for AVX
+    #[align(32)]
+    int32[8]:simd_vector = [1, 2, 3, 4, 5, 6, 7, 8];
+    
+    // Test 3: 16-byte alignment for SSE
+    #[align(16)]
+    flt32[4]:sse_vector = [1.0f32, 2.0f32, 3.0f32, 4.0f32];
+    
+    // Test 4: Verify values are preserved after alignment
+    flt64:sum = cache_aligned[0] + cache_aligned[15];
+    int32:simd_sum = simd_vector[0] + simd_vector[7];
+    
+    // Success if values are correct
+    if (sum == 15.0) {
+        if (simd_sum == 9) {
+            int32:success = 0;
+            exit success;
+        }
+    }
+    
+    int32:err = 1;
+    exit err;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

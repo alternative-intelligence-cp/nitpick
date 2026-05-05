@@ -1,0 +1,28 @@
+// More comprehensive string return tests
+
+func:get_hello = string() {
+    pass "hello";
+};
+
+func:get_world = string() {
+    pass "world";
+};
+
+func:concat_them = string() {
+    string:a = get_hello() ? "";
+    string:b = get_world() ? "";
+    string:result = string_concat(a, " ");
+    result = string_concat(result, b);
+    pass result;
+};
+
+func:main = int32() {
+    string:msg = concat_them() ? "";
+    drop println(msg);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

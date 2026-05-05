@@ -1,0 +1,37 @@
+// Test 1: Safe Widening Casts (Always Succeed)
+// These casts widen the bit-width with matching signedness
+
+func:test_int_widening = int32() {
+    // Signed integer widening
+    int8:small = 42i8;
+    int16:medium = @cast<int16>(small);
+    int32:large = @cast<int32>(medium);
+    int64:huge = @cast<int64>(large);
+    
+    // Unsigned integer widening
+    uint8:u_small = 100u8;
+    uint16:u_medium = @cast<uint16>(u_small);
+    uint32:u_large = @cast<uint32>(u_medium);
+    uint64:u_huge = @cast<uint64>(u_large);
+    
+    pass 0i32;
+};
+
+func:test_float_widening = int32() {
+    // Float widening (f32 -> f64)
+    flt32:small_f = 3.14f32;
+    flt64:large_f = @cast<flt64>(small_f);
+    
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:result1 = raw test_int_widening();
+    int32:result2 = raw test_float_widening();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,18 @@
+// Test Type.MEMBER without explicit () - should auto-call
+// Validates that Counter.nextId (no parens) desugars to Counter_nextId()
+
+func:Counter_nextId = int32() {
+    pass 42i32;
+};
+
+func:test_static_no_parens = int32() {
+    // This should transform to Counter_nextId() automatically
+    int32:id = raw Counter.nextId;
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

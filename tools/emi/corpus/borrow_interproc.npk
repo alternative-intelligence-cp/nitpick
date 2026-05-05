@@ -1,0 +1,151 @@
+// Inter-Procedural Borrow Analysis Tests (v0.6.0)
+// Tests: function ownership annotations, cross-function borrow tracking,
+//        parameter registration, callee summary caching
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+// ============================================================================
+// Test 1: Immutable borrow parameter ($$i) — function accepts borrowed value
+// The borrow checker registers params and tracks them within the function body
+// ============================================================================
+func:read_value = int32($$i int32:ref) {
+    // ref is registered as an immutable borrow parameter
+    // Using it in the function body is allowed
+    pass ref;
+};
+
+func:test_immutable_param = int32() {
+    int32:x = 42;
+    int32:result = raw read_value(x);
+    pass result;
+};
+
+// ============================================================================
+// Test 2: Mutable borrow parameter ($$m) — function can modify borrowed value
+// ============================================================================
+func:mutate_value = int32($$m int32:ref) {
+    ref = ref + 1;
+    pass ref;
+};
+
+func:test_mutable_param = int32() {
+    int32:x = 10;
+    int32:result = raw mutate_value(x);
+    pass result;
+};
+
+// ============================================================================
+// Test 3: Multiple parameters with different ownership
+// ============================================================================
+func:combine = int32($$i int32:a, $$i int32:b) {
+    int32:result = (a + b);
+    pass result;
+};
+
+func:test_multi_params = int32() {
+    int32:x = 10;
+    int32:y = 20;
+    int32:result = raw combine(x, y);
+    pass result;
+};
+
+// ============================================================================
+// Test 4: Copy parameter (default) — no borrow tracking needed
+// ============================================================================
+func:take_value = int32(int32:val) {
+    pass val;
+};
+
+func:test_copy_param = int32() {
+    int32:x = 100;
+    int32:r1 = raw take_value(x);
+    // x is still valid (copy semantics)
+    int32:r2 = raw take_value(x);
+    int32:zero = 0;
+    pass zero;
+};
+
+// ============================================================================
+// Test 5: Cross-function call chain — borrow passed through multiple functions
+// ============================================================================
+func:inner_reader = int32($$i int32:val) {
+    pass val;
+};
+
+func:outer_reader = int32($$i int32:ref) {
+    // Pass the borrowed parameter to another function
+    int32:result = raw inner_reader(ref);
+    pass result;
+};
+
+func:test_borrow_chain = int32() {
+    int32:x = 77;
+    int32:result = raw outer_reader(x);
+    pass result;
+};
+
+// ============================================================================
+// Test 6: Borrow released after callee returns — can borrow again
+// ============================================================================
+func:use_once = int32($$i int32:val) {
+    pass val;
+};
+
+func:test_borrow_release = int32() {
+    int32:x = 50;
+    int32:r1 = raw use_once(x);
+    // After call returns, borrow is released
+    // Can borrow again
+    int32:r2 = raw use_once(x);
+    int32:zero = 0;
+    pass zero;
+};
+
+// ============================================================================
+// Test 7: Mixed $$i and $$m parameters
+// ============================================================================
+func:read_and_compute = int32($$i int32:source, $$m int32:dest) {
+    dest = source + dest;
+    pass dest;
+};
+
+func:test_mixed_borrows = int32() {
+    int32:a = 5;
+    int32:b = 10;
+    int32:result = raw read_and_compute(a, b);
+    pass result;
+};
+
+// ============================================================================
+// Test 8: Recursive function with borrow parameter
+// ============================================================================
+func:countdown = int32($$i int32:n) {
+    if (n == 0) {
+        pass 0;
+    }
+    int32:one = 1;
+    int32:prev = (n - one);
+    int32:result = raw countdown(prev);
+    pass result;
+};
+
+func:test_recursive_borrow = int32() {
+    int32:start = 5;
+    int32:result = raw countdown(start);
+    pass result;
+};
+
+// ============================================================================
+// main — run all passing tests
+// ============================================================================
+func:main = int32() {
+    drop test_immutable_param();
+    drop test_mutable_param();
+    drop test_multi_params();
+    drop test_copy_param();
+    drop test_borrow_chain();
+    drop test_borrow_release();
+    drop test_mixed_borrows();
+    drop test_recursive_borrow();
+    exit 0;
+};

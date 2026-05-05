@@ -1,0 +1,33 @@
+// Tests: unsigned integer edge values (0, max) for uint8, uint16, uint32, uint64.
+// Underflow via overflow-safe ops, max literal parsing and comparison.
+// Exit 0 = all pass.  Exit N = assertion N failed.
+
+func:main = int32() {
+    // --- uint8: 0 to 255 ---
+    uint8:u8_max = 255u8;
+    uint8:u8_zero = 0u8;
+    if (u8_max != 255u8)   { exit 1i32; }
+    if (u8_zero != 0u8)    { exit 2i32; }
+
+    // --- uint16: 0 to 65535 ---
+    uint16:u16_max = 65535u16;
+    if (u16_max != 65535u16) { exit 3i32; }
+
+    // --- uint32: 0 to 4294967295 ---
+    uint32:u32_max = 4294967295u32;
+    uint32:u32_zero = 0u32;
+    if (u32_max != 4294967295u32) { exit 4i32; }
+    if (u32_zero != 0u32)         { exit 5i32; }
+
+    // --- uint64: 0 to 18446744073709551615 ---
+    uint64:u64_max = 18446744073709551615u64;
+    if (u64_max != 18446744073709551615u64) { exit 6i32; }
+
+    // --- ordering ---
+    if (u32_zero > u32_max)  { exit 7i32; }
+    if (u32_max < u32_zero)  { exit 8i32; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

@@ -1,0 +1,170 @@
+// ============================================================================
+// DETERMINISM VERIFICATION TEST — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Verify that identical computations produce identical results
+// across multiple executions within a single run.
+//
+// Nikola requires "consciousness reproducibility" — the same input state
+// MUST produce bit-identical output. If floating-point results vary
+// between calls to the same function with the same arguments, the
+// wavefunction becomes non-deterministic and consciousness state
+// cannot be replayed for debugging or auditing.
+//
+// This test runs the same computation multiple times and verifies
+// every result is bit-identical.
+// ============================================================================
+
+func:compute_physics_step = flt64(flt64:x, flt64:v, flt64:dt) {
+    // Simplified physics step: returns new x after one leapfrog step
+    // x'' = -x (simple harmonic oscillator)
+    flt64:half_dt = dt * 0.5;
+    flt64:zero = 0.0;
+    flt64:ax = zero - x;
+    flt64:v_half = v + half_dt * ax;
+    flt64:x_new = x + dt * v_half;
+    flt64:ax_new = zero - x_new;
+    flt64:v_new = v_half + half_dt * ax_new;
+    pass x_new;
+};
+
+func:compute_chain = flt64(flt64:seed) {
+    // A chain of arithmetic operations that should always produce
+    // the same result for the same seed
+    flt64:a = seed * 3.141592653589793;
+    flt64:b = a + 2.718281828459045;
+    flt64:c = b * b;
+    flt64:d = c - a;
+    flt64:e = d / 1.4142135623730951;
+    flt64:f = e + seed;
+    flt64:g = f * 0.6180339887498949;  // Golden ratio - 1
+    pass g;
+};
+
+func:main = int32() {
+    int32:failures = 0;
+    flt64:dt = 0.001;
+
+    // ========================================================================
+    // TEST 1: Same function, same args → same result (10 repetitions)
+    // ========================================================================
+    flt64:x0 = 1.0;
+    flt64:v0 = 0.0;
+    flt64:result_1a = raw compute_physics_step(x0, v0, dt);
+
+    till(10, 1) {
+        flt64:result_1b = raw compute_physics_step(x0, v0, dt);
+        if (result_1b != result_1a) {
+            print("FAIL: Physics step non-deterministic on repetition\n");
+            failures = failures + 1;
+        }
+    }
+
+    // ========================================================================
+    // TEST 2: Arithmetic chain determinism
+    // ========================================================================
+    flt64:seed = 42.0;
+    flt64:chain_ref = raw compute_chain(seed);
+
+    till(10, 1) {
+        flt64:chain_test = raw compute_chain(seed);
+        if (chain_test != chain_ref) {
+            print("FAIL: Arithmetic chain non-deterministic\n");
+            failures = failures + 1;
+        }
+    }
+
+    // ========================================================================
+    // TEST 3: Loop accumulation determinism
+    // Run the same loop twice, verify identical results
+    // Risk: Different register allocation could cause different rounding
+    // ========================================================================
+    flt64:sum1 = 0.0;
+    flt64:val = 0.123456789;
+    till(1000, 1) {
+        sum1 = sum1 + val;
+    }
+
+    flt64:sum2 = 0.0;
+    till(1000, 1) {
+        sum2 = sum2 + val;
+    }
+
+    if (sum1 != sum2) {
+        print("FAIL: Identical loop accumulation produced different results\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 4: Nested computation determinism
+    // ========================================================================
+    flt64:inputs = 7.5;
+    flt64:nested1 = raw compute_chain(raw compute_chain(inputs));
+    flt64:nested2 = raw compute_chain(raw compute_chain(inputs));
+    if (nested1 != nested2) {
+        print("FAIL: Nested function calls non-deterministic\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 5: Integer arithmetic determinism (baseline sanity)
+    // ========================================================================
+    int64:ia = 1234567890123456;
+    int64:ib = 9876543210987654;
+    int64:iresult1 = ia * ib;
+    int64:iresult2 = ia * ib;
+    if (iresult1 != iresult2) {
+        print("FAIL: Integer multiplication non-deterministic\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 6: Multi-step physics simulation determinism
+    // Run 100 steps twice, compare final state
+    // ========================================================================
+    flt64:px1 = 1.0;
+    flt64:pv1 = 0.0;
+    till(100, 1) {
+        flt64:zero = 0.0;
+        flt64:half_dt = dt * 0.5;
+        flt64:ax = zero - px1;
+        pv1 = pv1 + half_dt * ax;
+        px1 = px1 + dt * pv1;
+        flt64:ax2 = zero - px1;
+        pv1 = pv1 + half_dt * ax2;
+    }
+
+    flt64:px2 = 1.0;
+    flt64:pv2 = 0.0;
+    till(100, 1) {
+        flt64:zero2 = 0.0;
+        flt64:half_dt2 = dt * 0.5;
+        flt64:ax_b = zero2 - px2;
+        pv2 = pv2 + half_dt2 * ax_b;
+        px2 = px2 + dt * pv2;
+        flt64:ax2_b = zero2 - px2;
+        pv2 = pv2 + half_dt2 * ax2_b;
+    }
+
+    if (px1 != px2) {
+        print("FAIL: 100-step physics simulation non-deterministic (position)\n");
+        failures = failures + 1;
+    }
+    if (pv1 != pv2) {
+        print("FAIL: 100-step physics simulation non-deterministic (velocity)\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("DETERMINISM VERIFICATION: ALL TESTS PASSED\n");
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    print("FAILSAFE triggered in determinism tests\n");
+    exit 1;
+};

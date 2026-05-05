@@ -1,0 +1,35 @@
+// Simplified test for emphatic unwrap operator (?!)
+// Test that ?! works identically to ? for Result types
+
+func:failsafe = int32(tbb32:err) {
+    print("Failsafe triggered!");
+    exit 1;
+};
+
+func:make_error = int32() {
+    fail 1i32;  // Returns an error Result
+};
+
+func:make_success = int32(int32:val) {
+    pass val;  // Returns a success Result with value
+};
+
+func:main = int32() {
+    // Test 1: Error case - both ? and ?! should return default (42)
+    int32:unwrap_err = make_error() ? 42i32;
+    int32:failsafe_err = make_error() ?! 42i32;
+    
+    if (!(unwrap_err == 42i32 && failsafe_err == 42i32)) {
+        return 1i32;  // Error case differs
+    }
+    
+    // Test 2: Success case - both should return value (10)
+    int32:unwrap_ok = make_success(10i32) ? 42i32;
+    int32:failsafe_ok = make_success(10i32) ?! 42i32;
+    
+    if (!(unwrap_ok == 10i32 && failsafe_ok == 10i32)) {
+        return 2i32;  // Success case differs
+    }
+    
+    return 0i32;  // All tests passed!
+};

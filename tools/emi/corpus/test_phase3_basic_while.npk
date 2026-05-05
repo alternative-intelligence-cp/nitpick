@@ -1,0 +1,33 @@
+// Phase 3 Test: Basic while loop with Result
+// Should PASS: while loop condition provides knowledge to body
+
+func:get_result = int32(int32:x) {
+    if (x < 0i32) {
+        fail -1i32;
+    }
+    pass x * 2i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = get_result(42i32);
+    
+    // While loop: body knows condition is true
+    while (r.is_error == false) {
+        // SAFE: loop condition guarantees r.is_error == false
+        int32:x = r.value;
+        
+        // Break to avoid infinite loop
+        break;
+    }
+    
+    // After loop: conservative - don't know final state
+    // This should ERROR (conservative merge)
+    // int32:y = r.value;  // Would error
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

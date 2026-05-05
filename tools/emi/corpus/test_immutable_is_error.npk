@@ -1,0 +1,26 @@
+// Expected: COMPILER ERROR
+// Test: Phase 1.5 - Immutable .is_error Enforcement
+// This should FAIL to compile - trying to modify .is_error without 'wild'
+
+func:get_value = int64() {
+    pass 42i64;
+};
+
+func:main = int32() {
+    // Create a Result variable (without 'wild' modifier)
+    // Note: Can't use Result<int64> syntax until generics work
+    // For now, just testing that functions implicitly return Result types
+    
+    // This test will need to wait until we can declare Result<T> variables
+    // For now, document the expected behavior:
+    // 
+    // Result<int64>:r = get_value();
+    // r.is_error = true;  // Should ERROR: Cannot modify .is_error
+    
+    exit(0);
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit(1);
+};

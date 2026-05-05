@@ -1,0 +1,36 @@
+// Test balanced ternary types (Session 15)
+// Expected: All ternary type declarations and basic operations work
+
+func:main = int32() {
+    // Trit: Single balanced ternary digit (-1, 0, 1)
+    trit:zero = 0;
+    trit:positive = 1;
+    trit:negative = -1;
+    
+    // Tryte: 10 trits packed in uint16
+    tryte:data = 0;
+    
+    // Nit: Single nonary digit (-4 to 4)
+    nit:n_zero = 0;
+    nit:n_positive = 4;
+    nit:n_negative = -4;
+    
+    // Nyte: 5 nits packed in uint16
+    nyte:n_data = 0;
+    
+    // Test basic arithmetic with trit
+    trit:sum = positive + zero;   // 1 + 0 = 1
+    trit:diff = positive - negative;  // 1 - (-1) = 2 (overflow in trit!)
+    
+    // Test that variables were created correctly
+    if (zero == 0 && positive == 1 && negative == -1) {
+        exit 0;  // Success
+    }
+    
+    exit 1;  // Failure
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

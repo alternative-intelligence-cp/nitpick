@@ -1,0 +1,50 @@
+// P1-2 Phase 4: SIMD Arithmetic Operations Test
+// Tests only arithmetic (comparisons need more work)
+
+func:test_simd_arithmetic = int32(
+    simd<int32, 4>:a,
+    simd<int32, 4>:b,
+    simd<int64, 8>:c,
+    simd<int64, 8>:d
+) {
+    // SIMD + SIMD (element-wise addition)
+    simd<int32, 4>:sum = a + b;
+    
+    // SIMD * SIMD (element-wise multiplication)
+    simd<int64, 8>:product = c * d;
+    
+    // SIMD - SIMD (element-wise subtraction)
+    simd<int32, 4>:diff = a - b;
+    
+    // SIMD / SIMD (element-wise division)
+    simd<int64, 8>:quot = c / d;
+    
+    pass 0i32;
+};
+
+func:test_simd_scalar_ops = int32(
+    simd<int32, 4>:vec,
+    int32:scalar,
+    simd<int64, 8>:vec_long,
+    int64:scalar_long
+) {
+    // Scalar + SIMD (broadcast scalar to all lanes)
+    simd<int32, 4>:broadcast1 = scalar + vec;
+    
+    // SIMD + Scalar (broadcast scalar)
+    simd<int32, 4>:broadcast2 = vec + scalar;
+    
+    // SIMD * Scalar (scale all lanes)
+    simd<int64, 8>:scaled = vec_long * scalar_long;
+    
+    pass 0i32;
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling stub for test
+    exit 1;
+};

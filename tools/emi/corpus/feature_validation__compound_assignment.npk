@@ -1,0 +1,34 @@
+// Compound assignment operators test
+
+func:test_compound = int32() {
+    int32:x = 10;
+    x = x + 5;      // 15
+    x = x * 2;      // 30
+    x = x - 10;     // 20
+    pass x;
+};
+
+func:test_compound_ops = int32() {
+    int32:y = 100;
+    y += 50;        // 150
+    y -= 30;        // 120
+    y *= 2;         // 240
+    y /= 4;         // 60
+    y %= 7;         // 4
+    pass y;
+};
+
+func:main = int32() {
+    int32:a = raw test_compound();
+    int32:b = raw test_compound_ops();
+    int32:total = a + b;
+    if (total == 24) {
+        exit 0;
+    }
+    exit 1;    // 20 + 4 = 24
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

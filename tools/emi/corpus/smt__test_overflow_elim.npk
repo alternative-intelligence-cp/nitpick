@@ -1,0 +1,67 @@
+// Test: Overflow Check Elimination (Phase 4.75)
+// Compile: ariac --smt-opt -v test_overflow_elim.aria -o test_overflow_elim
+// Expected: Some overflow checks eliminated for constrained operands,
+//           others retained for unconstrained operands.
+
+// Rules: small positive range — addition cannot overflow int32
+Rules:SmallPos = { $ >= 0, $ <= 1000 };
+
+// Rules: wider range — multiplication CAN overflow int32
+Rules:WideRange = { $ >= 0, $ <= 100000 };
+
+// Rules: tiny range — all ops safe
+Rules:Tiny = { $ >= 0, $ <= 10 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:test_add_safe = int32() {
+    // Both operands constrained to [0, 1000] → add max 2000, no overflow
+    limit<SmallPos> int32:a = 500;
+    limit<SmallPos> int32:b = 300;
+    int32:result = a + b;
+    pass result;
+};
+
+func:test_mul_safe = int32() {
+    // Both operands in [0, 10] → mul max 100, no overflow
+    limit<Tiny> int32:x = 5;
+    limit<Tiny> int32:y = 7;
+    int32:product = x * y;
+    pass product;
+};
+
+func:test_sub_safe = int32() {
+    // Both in [0, 1000] → sub min -1000, max 1000, no overflow
+    limit<SmallPos> int32:p = 800;
+    limit<SmallPos> int32:q = 200;
+    int32:diff = p - q;
+    pass diff;
+};
+
+func:test_no_rules = int32() {
+    // No Rules → overflow check must be KEPT
+    int32:u = 999999;
+    int32:v = 888888;
+    int32:sum = u + v;
+    pass sum;
+};
+
+func:test_wide_mul = int32() {
+    // WideRange [0, 100000] × [0, 100000] = up to 10^10 — OVERFLOWS int32!
+    // Overflow check must be KEPT
+    limit<WideRange> int32:m = 50000;
+    limit<WideRange> int32:n = 50000;
+    int32:big = m * n;
+    pass big;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_add_safe();
+    int32:r2 = raw test_mul_safe();
+    int32:r3 = raw test_sub_safe();
+    int32:r4 = raw test_no_rules();
+    int32:r5 = raw test_wide_mul();
+    exit 0;
+};

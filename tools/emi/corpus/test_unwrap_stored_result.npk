@@ -1,0 +1,19 @@
+// Simpler test: just unwrap a stored Result
+
+func:get_five = int32() {
+    pass 5i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = get_five();
+    int32:x = r ? 999i32;  // Unwrap stored Result
+    if (x == 5i32) {
+        exit 0;  // Success
+    }
+    exit 1;  // Failure
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

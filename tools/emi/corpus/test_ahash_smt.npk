@@ -1,0 +1,59 @@
+// test_ahash_smt.aria — Test Z3 SMT-optimized uhash fast path (v0.4.5)
+// When compiled with --verify, Z3 should prove homogeneity and enable fast path.
+// All ahset() calls use int64 values only → tag 3 throughout.
+
+func:failsafe = int32(tbb32:err) {
+    println("FAILSAFE triggered");
+    exit 1;
+};
+
+// Helper that only uses int64 values — should be SMT-eligible
+func:build_scores = int64(int64:table) {
+    ahset(table, "alice", 95i64);
+    ahset(table, "bob", 87i64);
+    ahset(table, "carol", 91i64);
+    ahset(table, "dave", 78i64);
+
+    int64:total = ahget(table, "alice");
+    int64:b = ahget(table, "bob");
+    int64:c = ahget(table, "carol");
+    int64:d = ahget(table, "dave");
+
+    int64:sum = total + b + c + d;
+    pass sum;
+};
+
+func:main = int32() {
+    // Create table and populate via helper
+    int64:ht = ahash(4096);
+    int64:result = raw build_scores(ht);
+
+    if (result == 351i64) {
+        println("PASS: SMT-eligible hash sum correct (351)");
+    } else {
+        println("FAIL: unexpected sum");
+    }
+
+    // Also set some values in main — all int64 → main should also qualify
+    ahset(ht, "eve", 100i64);
+    ahset(ht, "frank", 200i64);
+
+    int64:e = ahget(ht, "eve");
+    int64:f = ahget(ht, "frank");
+
+    if (e + f == 300i64) {
+        println("PASS: main scope int64 hash correct");
+    } else {
+        println("FAIL: main scope hash mismatch");
+    }
+
+    // Verify count
+    int64:cnt = ahcount(ht);
+    if (cnt == 6i64) {
+        println("PASS: total key count is 6");
+    } else {
+        println("FAIL: unexpected key count");
+    }
+
+    return 0;
+};

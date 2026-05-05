@@ -1,0 +1,36 @@
+// Test emphatic unwrap operator (?!) - Simple verification
+
+// Helper: returns an error Result
+func:get_error = int32() {
+    fail 1;
+};
+
+// Helper: returns a success Result with value 10
+func:get_success = int32() {
+    pass 10i32;
+};
+
+func:main = int32() {
+    // Test 1: Error case should use default
+    Result<int32>:err_result = get_error();
+    int32:val1 = err_result ?! 42i32;
+    
+    if (!(val1 == 42i32)) {
+        exit 1i32;  // Failure: error case should yield default
+    }
+    
+    // Test 2: Success case should yield actual value
+    Result<int32>:ok_result = get_success();
+    int32:val2 = ok_result ?! 99i32;
+    
+    if (!(val2 == 10i32)) {
+        exit 2i32;  // Failure: success case should yield unwrapped value
+    }
+    
+    exit 0;  // All tests passed
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

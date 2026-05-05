@@ -1,0 +1,36 @@
+// Test: prove() builtin — compile-time Z3 assertions (v0.5.1)
+// prove(condition) asks Z3 to prove the condition at compile time.
+// If proven, the statement is erased (zero runtime cost).
+// If not provable, compilation fails.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Rules for testing prove() with constrained variables
+Rules:Percentage = { $ >= 0, $ <= 100 };
+Rules:SmallPositive = { $ > 0, $ < 50 };
+
+func:check_bounds = NIL(int32:x) {
+    // Constrain x with Percentage Rules
+    limit<Percentage> int32:pct = x;
+    // These should all be provable under Percentage constraints
+    prove(pct >= 0);
+    prove(pct <= 100);
+    prove(pct < 101);
+    pass(NIL);
+};
+
+func:check_small = NIL(int32:x) {
+    // Constrain with SmallPositive: 1..49
+    limit<SmallPositive> int32:val = x;
+    prove(val > 0);
+    prove(val < 50);
+    prove(val >= 1);
+    prove(val <= 49);
+    pass(NIL);
+};
+
+func:main = int32() {
+    exit 0;
+};

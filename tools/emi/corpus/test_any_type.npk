@@ -1,0 +1,21 @@
+// Test any type — type-erased opaque pointer with runtime-checked access
+// Tests: declaration, get::<T>(), set::<T>(val), resolve::<T>()
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test 1: Declare an any variable
+    any:box = 42i64;
+    
+    // Test 2: Read with get::<T>()
+    int64:val = box.get::<int64>();
+    
+    // Test 3: Write with set::<T>(value)
+    box.set::<int64>(100i64);
+    
+    // Test 4: Resolve — consuming transform to concrete pointer
+    int64->:ptr = box.resolve::<int64>();
+    
+    println("any type basic tests passed!");
+    exit 0;
+};

@@ -1,0 +1,29 @@
+func:failsafe = int32(tbb32:err) {
+    println("failsafe");
+    exit 1;
+};
+
+func:main = int32() {
+    int32:x = 42i32;
+    int32:y = 99i32;
+    
+    // Two immutable borrows of x — allowed (N immutable OK)
+    $$i int32:ref1 = x;
+    $$i int32:ref2 = x;
+    
+    // One mutable borrow of y — allowed (no other borrows on y)
+    $$m int32:mref = y;
+    
+    // Read through borrows — should see original values
+    // ref1 + ref2 should both be 42, mref should be 99
+    int32:sum = ref1 + ref2 + mref;
+    
+    // Modify through mutable borrow
+    mref = 100i32;
+    
+    // y should now be 100 (modified through mref)
+    int32:result = y + ref1;
+    
+    println("borrow test passed");
+    exit 0;
+};

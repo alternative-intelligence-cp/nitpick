@@ -1,0 +1,35 @@
+/// Test arrow operator for struct member access through pointer
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    // Create a Point with initialization
+    stack int32:init_x = 10;
+    stack int32:init_y = 20;
+    stack Point:p = Point{x: init_x, y: init_y};
+    
+    // Get pointer to it
+    stack Point->:ptr = @p;
+    
+    // Access members through pointer with ->
+    int32:x_val = ptr->x;
+    int32:y_val = ptr->y;
+    
+    // Modify through pointer
+    ptr->x = 100;
+    ptr->y = 200;
+    
+    // Verify changes
+    int32:new_x = p.x;  // Should be 100
+    int32:new_y = p.y;  // Should be 200
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

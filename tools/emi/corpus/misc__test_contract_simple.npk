@@ -1,0 +1,17 @@
+// Simple contract test
+
+func:divide = int32(int32:a, int32:b)
+  requires b != 0
+{
+    pass a / b;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:r = raw divide(10, 2);
+    if (r == 5) {
+        exit 0;
+    }
+    exit 1;
+};

@@ -1,0 +1,28 @@
+// Comprehensive test of generic struct instantiation fix
+// Tests complex<T> with multiple types
+
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    // Test with int32
+    complex<int32>:z1;
+    z1.real = 42;
+    z1.imag = 17;
+    
+    // Test with int64
+    complex<int64>:z2;
+    z2.real = 1000000;
+    z2.imag = 2000000;
+    
+    // Test with flt64
+    complex<flt64>:z3;
+    z3.real = 3.14;
+    z3.imag = 2.71;
+    
+    exit 0;
+};

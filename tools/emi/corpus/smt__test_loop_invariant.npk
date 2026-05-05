@@ -1,0 +1,21 @@
+// Test: Loop invariant parsing (v0.5.2)
+// Verifies that while loops accept invariant clauses
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:sum_to_n = int32(int32:n) requires n >= 0 {
+    int32:i = 0i32;
+    int32:s = 0i32;
+    while (i < n) invariant s >= 0, i >= 0 {
+        s += i;
+        i += 1i32;
+    }
+    pass(s);
+};
+
+func:main = int32() {
+    int32:r = raw sum_to_n(10);
+    exit 0;
+};

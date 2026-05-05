@@ -1,0 +1,93 @@
+// test_rules_multitype.aria — v0.2.44 Rules<T1,T2,...> Multi-Type Parameters
+extern func:puts = int32(string:s);
+
+// Rules that works for multiple numeric types
+Rules<int8,int16,int32,flt64>:small_range = {
+    $ >= -10,
+    $ < 101
+};
+
+// Rules for int32 and int64
+Rules<int32,int64>:positive_wide = {
+    $ > 0
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: multi-type rule violation!");
+    exit 1;
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Multi-type rule with int32
+    // ----------------------------------------------------------
+    limit<small_range> int32:a = 50;
+    if (a == 50) {
+        drop puts("PASS: Test 1 — Rules multi-type with int32");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 1");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 2: Multi-type rule with int16
+    // ----------------------------------------------------------
+    limit<small_range> int16:b = 42;
+    if (b == 42) {
+        drop puts("PASS: Test 2 — Rules multi-type with int16");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 2");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 3: Multi-type rule with flt64
+    // ----------------------------------------------------------
+    limit<small_range> flt64:c = 99.5;
+    if (c > 99.0) {
+        drop puts("PASS: Test 3 — Rules multi-type with flt64");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 3");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 4: positive_wide with int64
+    // ----------------------------------------------------------
+    limit<positive_wide> int64:d = 1000000;
+    if (d > 0) {
+        drop puts("PASS: Test 4 — Rules multi-type int32,int64 with int64");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 4");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 5: positive_wide with int32
+    // ----------------------------------------------------------
+    limit<positive_wide> int32:e = 7;
+    if (e == 7) {
+        drop puts("PASS: Test 5 — Rules multi-type int32,int64 with int32");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 5");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Results
+    // ----------------------------------------------------------
+    if (failed > 0i32) {
+        drop puts("SOME TESTS FAILED");
+        exit 1;
+    }
+    drop puts("All multi-type rules tests passed!");
+    exit 0;
+};

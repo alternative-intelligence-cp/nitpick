@@ -1,0 +1,35 @@
+// Test: Does unwrap operator play nicely with Result enforcement?
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail -1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    // Scenario 1: Unwrap then don't access .value (unwrap should count as a check)
+    Result<int32>:r1 = divide(10i32, 2i32);
+    int32:val1 = r1 ? 999i32;
+    // r1 was "consumed" by unwrap - can we access .value now? (currently unclear)
+    
+    // Scenario 2: Check, then unwrap (redundant but valid)
+    Result<int32>:r2 = divide(20i32, 4i32);
+    if (!(r2.is_error)) {
+        int32:val2 = r2 ? 0i32;  // Should work - already checked
+    }
+    
+    // Scenario 3: Unwrap without storing Result (always been fine)
+    int32:val3 = divide(30i32, 5i32) ? 0i32;
+    
+    int32:total = val1 + val3;  // 5 + 6 = 11
+    if (total == 11i32) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

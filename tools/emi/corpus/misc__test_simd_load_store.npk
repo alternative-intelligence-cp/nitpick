@@ -1,0 +1,104 @@
+// Test simd_load() and simd_store() - array operations
+// Signatures:
+//   simd_load(T*:ptr, int32:lanes) -> simd<T, lanes>
+//   simd_store(T*:ptr, simd<T, lanes>:vec) -> void
+
+func:failsafe = int32(tbb32:err) {
+    // Empty failsafe for tests
+    exit 1;
+};
+
+// Test basic load from array
+func:test_simd_load_basic = int32(int32->:arr_ptr) {
+    // Load 4 int32 values from array
+    simd<int32, 4>:vec = simd_load(arr_ptr, 4);
+    
+    // Sum all elements
+    int32:sum = simd_sum(vec);
+    pass sum;
+};
+
+// Test basic store to array
+func:test_simd_store_basic = NIL(int32->:arr_ptr, simd<int32, 4>:vec) {
+    // Store 4 int32 values to array
+    simd_store(arr_ptr, vec);
+};
+
+// Test load, modify, store pattern
+func:test_load_modify_store = NIL(int32->:arr_ptr) {
+    // Load from array
+    simd<int32, 4>:vec = simd_load(arr_ptr, 4);
+    
+    // Modify: multiply all elements by 2
+    simd<int32, 4>:multiplier = simd_broadcast(2i32, 4);
+    simd<int32, 4>:doubled = vec * multiplier;
+    
+    // Store back to array
+    simd_store(arr_ptr, doubled);
+};
+
+// Test float SIMD load/store
+func:test_float_load_store = float32(float32->:arr_ptr) {
+    // Load 4 float32 values
+    simd<float32, 4>:vec = simd_load(arr_ptr, 4);
+    
+    // Add 1.0 to each element
+    simd<float32, 4>:one = simd_broadcast(1.0f32, 4);
+    simd<float32, 4>:incremented = vec + one;
+    
+    // Store back
+    simd_store(arr_ptr, incremented);
+    
+    // Return sum of modified values
+    float32:sum = simd_sum(incremented);
+    pass sum;
+};
+
+// Test different lane counts
+func:test_different_lanes = NIL(int32->:arr_ptr) {
+    // Load 2 lanes
+    simd<int32, 2>:simd2 = simd_load(arr_ptr, 2);
+    
+    // Load 8 lanes (from different offset - would need pointer arithmetic in real code)
+    simd<int32, 8>:simd8 = simd_load(arr_ptr, 8);
+    
+    println("test_different_lanes passed");
+};
+
+// Test SIMD array copy
+func:test_simd_copy = NIL(int32->:src_ptr, int32->:dst_ptr) {
+    // Copy 4 elements using SIMD
+    simd<int32, 4>:vec = simd_load(src_ptr, 4);
+    simd_store(dst_ptr, vec);
+};
+
+// Test SIMD array fill
+func:test_simd_fill = NIL(float32->:arr_ptr, float32:fill_value) {
+    // Create vector with all lanes = fill_value
+    simd<float32, 4>:fill_vec = simd_broadcast(fill_value, 4);
+    
+    // Store to array (fills 4 elements)
+    simd_store(arr_ptr, fill_vec);
+};
+
+// Test conditional store using select
+func:test_conditional_store = NIL(int32->:arr_ptr, int32:threshold) {
+    // Load values
+    simd<int32, 4>:vec = simd_load(arr_ptr, 4);
+    
+    // Create threshold vector
+    simd<int32, 4>:thresh_vec = simd_broadcast(threshold, 4);
+    
+    // Create mask: values > threshold
+    simd<bool, 4>:mask = vec > thresh_vec;
+    
+    // Clamp values: if > threshold, use threshold
+    simd<int32, 4>:clamped = simd_select(mask, thresh_vec, vec);
+    
+    // Store clamped values back
+    simd_store(arr_ptr, clamped);
+};
+
+func:main = int32() {
+    exit 0;
+};

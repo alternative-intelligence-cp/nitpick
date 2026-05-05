@@ -1,0 +1,39 @@
+// Expected: COMPILER ERROR - allocator ownership semantics or unimplemented syntax
+// Quick test to verify allocator builtins are registered and callable
+// Tests basic compilation and linking of all 19 allocator builtins
+
+func:main = int32() {
+    // Arena builtins (6)
+    int64:arena_handle = arena_new(4096);
+    int64:arena_ptr = arena_alloc(arena_handle, 64);
+    arena_reset(arena_handle);
+    int64:arena_allocated = arena_get_allocated(arena_handle);
+    int64:arena_reserved = arena_get_reserved(arena_handle);
+    arena_destroy(arena_handle);
+    
+    // Pool builtins (7)
+    // pool_new(block_size, initial_capacity_in_bytes)
+    // With block_size=32, capacity=1024 gives us 32 blocks
+    int64:pool_handle = pool_new(32, 1024);
+    int64:pool_ptr = pool_alloc(pool_handle);
+    pool_free(pool_handle, pool_ptr);
+    pool_reset(pool_handle);
+    int64:pool_total = pool_get_total_blocks(pool_handle);
+    int64:pool_used = pool_get_used_blocks(pool_handle);
+    pool_destroy(pool_handle);
+    
+    // Slab builtins (6)
+    int64:slab_handle = slab_new(64, 4096);
+    int64:slab_ptr = slab_alloc(slab_handle);
+    slab_free(slab_handle, slab_ptr);
+    int64:slab_total = slab_get_total_objects(slab_handle);
+    int64:slab_allocated = slab_get_allocated_objects(slab_handle);
+    slab_destroy(slab_handle);
+    
+    return 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

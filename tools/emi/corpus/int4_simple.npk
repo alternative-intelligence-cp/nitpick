@@ -1,0 +1,51 @@
+// Test int4/uint4 (nibble) types
+// int4: -8 to +7 (4-bit signed)
+// uint4: 0 to 15 (4-bit unsigned)
+
+func:test_int4 = int32() {
+    // Create int4 values through operations to avoid literal type issues
+    int4:one = 1;  // Try with 1 which might work
+    int4:a = one + one + one;  // 3
+    int4:b = a + one;          // 4
+    int4:sum = a + b;          // 7
+    int4:diff = b - a;         // 1
+    
+    // Test int4 comparisons
+    if (a > b) { int32:err = 1; pass err; }  // 3 !> 4
+    if (b < a) { int32:err = 2; pass err; }  // 4 !< 3
+    
+    int32:success = 0;
+    pass success;
+};
+
+func:test_uint4 = int32() {
+    // Test uint4 (nibbles) - useful for BCD and hex digits
+    uint4:x = 9;    // Max BCD digit
+    uint4:y = 15;   // Max nibble value (0xF)
+    
+    // Arithmetic
+    uint4:sum = x + y;   // Wraps
+    
+    // Comparisons
+    if (x > y) { int32:err = 1; pass err; }  // 9 !> 15
+    if (y < x) { int32:err = 2; pass err; }  // 15 !< 9
+    
+    int32:success = 0;
+    pass success;
+};
+
+func:main = int32() {
+    int32:result1 = raw test_int4();
+    if (result1 != 0) { exit result1; }
+    
+    int32:result2 = raw test_uint4();
+    if (result2 != 0) { exit result2; }
+    
+    int32:success = 0;
+    exit success;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

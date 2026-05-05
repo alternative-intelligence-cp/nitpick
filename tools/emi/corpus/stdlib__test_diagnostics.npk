@@ -1,0 +1,266 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Diagnostics Engine — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria diagnostics engine.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Severity level constants
+const int32:DIAG_NOTE    = 0i32;
+const int32:DIAG_WARNING = 1i32;
+const int32:DIAG_ERROR   = 2i32;
+const int32:DIAG_FATAL   = 3i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:diag_new = wild int8*();
+extern func:diag_free = int32(wild int8*:state);
+extern func:diag_set_warnings_as_errors = int32(wild int8*:state, int32:enabled);
+extern func:diag_get_warnings_as_errors = int32(wild int8*:state);
+extern func:diag_report = int32(wild int8*:state, int32:level, string:filename,
+                                 int32:line_num, int32:col_num, int32:length,
+                                 string:msg);
+extern func:diag_add_note = int32(wild int8*:state, string:note_text);
+extern func:diag_add_suggestion = int32(wild int8*:state, string:sug_text);
+extern func:diag_count = int32(wild int8*:state);
+extern func:diag_error_count = int32(wild int8*:state);
+extern func:diag_warning_count = int32(wild int8*:state);
+extern func:diag_has_errors = int32(wild int8*:state);
+extern func:diag_has_warnings = int32(wild int8*:state);
+extern func:diag_get_level = int32(wild int8*:state, int32:index);
+extern func:diag_get_message = string(wild int8*:state, int32:index);
+extern func:diag_get_filename = string(wild int8*:state, int32:index);
+extern func:diag_get_line = int32(wild int8*:state, int32:index);
+extern func:diag_get_col = int32(wild int8*:state, int32:index);
+extern func:diag_get_note_count = int32(wild int8*:state, int32:index);
+extern func:diag_get_note = string(wild int8*:state, int32:diag_idx, int32:note_idx);
+extern func:diag_get_suggestion_count = int32(wild int8*:state, int32:index);
+extern func:diag_get_suggestion = string(wild int8*:state, int32:diag_idx, int32:sug_idx);
+extern func:diag_clear = int32(wild int8*:state);
+
+
+// ═══ Test 1: Report error and check counts ══════════════════════════
+pub func:test_report_error = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "main.aria", 10i32, 5i32, 3i32, "unexpected token");
+    int32:ec = diag_error_count(state);
+    int32:total = diag_count(state);
+    int32:result = 1i32;
+    if (ec == 1i32 && total == 1i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Report warning and check counts ════════════════════════
+pub func:test_report_warning = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_WARNING, "lib.aria", 20i32, 1i32, 1i32, "unused variable");
+    int32:wc = diag_warning_count(state);
+    int32:ec = diag_error_count(state);
+    int32:result = 1i32;
+    if (wc == 1i32 && ec == 0i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Extract diagnostic message ═════════════════════════════
+pub func:test_get_message = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "test.aria", 5i32, 10i32, 1i32, "type mismatch");
+    string:msg = diag_get_message(state, 0i32);
+    int32:result = 1i32;
+    if (msg == "type mismatch") {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 4: Extract source location ════════════════════════════════
+pub func:test_get_location = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "module.aria", 42i32, 15i32, 7i32, "undeclared identifier");
+    string:fname = diag_get_filename(state, 0i32);
+    int32:ln = diag_get_line(state, 0i32);
+    int32:cl = diag_get_col(state, 0i32);
+    int32:result = 1i32;
+    if (fname == "module.aria" && ln == 42i32 && cl == 15i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 5: has_errors false when only warnings ════════════════════
+pub func:test_has_errors_false = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_WARNING, "w.aria", 1i32, 1i32, 1i32, "minor issue");
+    int32:he = diag_has_errors(state);
+    int32:hw = diag_has_warnings(state);
+    int32:result = 1i32;
+    if (he == 0i32 && hw == 1i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Warnings as errors mode ════════════════════════════════
+pub func:test_warnings_as_errors = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_set_warnings_as_errors(state, 1i32);
+    _ = diag_report(state, DIAG_WARNING, "strict.aria", 5i32, 1i32, 1i32, "will become error");
+    int32:ec = diag_error_count(state);
+    int32:wc = diag_warning_count(state);
+    int32:level = diag_get_level(state, 0i32);
+    int32:result = 1i32;
+    if (ec == 1i32 && wc == 0i32 && level == DIAG_ERROR) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Add note to diagnostic ═════════════════════════════════
+pub func:test_add_note = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "n.aria", 1i32, 1i32, 1i32, "bad call");
+    _ = diag_add_note(state, "function declared here");
+    int32:nc = diag_get_note_count(state, 0i32);
+    string:note_text = diag_get_note(state, 0i32, 0i32);
+    int32:result = 1i32;
+    if (nc == 1i32 && note_text == "function declared here") {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 8: Add suggestion to diagnostic ═══════════════════════════
+pub func:test_add_suggestion = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "s.aria", 1i32, 1i32, 1i32, "missing semicolon");
+    _ = diag_add_suggestion(state, "add ';' after expression");
+    int32:sc = diag_get_suggestion_count(state, 0i32);
+    string:sug_text = diag_get_suggestion(state, 0i32, 0i32);
+    int32:result = 1i32;
+    if (sc == 1i32 && sug_text == "add ';' after expression") {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 9: Clear resets all state ═════════════════════════════════
+pub func:test_clear = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "a.aria", 1i32, 1i32, 1i32, "err1");
+    _ = diag_report(state, DIAG_WARNING, "b.aria", 2i32, 1i32, 1i32, "warn1");
+    _ = diag_clear(state);
+    int32:total = diag_count(state);
+    int32:ec = diag_error_count(state);
+    int32:wc = diag_warning_count(state);
+    int32:result = 1i32;
+    if (total == 0i32 && ec == 0i32 && wc == 0i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Multiple diagnostics correct counts ═══════════════════
+pub func:test_multiple_diags = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_ERROR, "m.aria", 1i32, 1i32, 1i32, "error one");
+    _ = diag_report(state, DIAG_ERROR, "m.aria", 2i32, 1i32, 1i32, "error two");
+    _ = diag_report(state, DIAG_WARNING, "m.aria", 3i32, 1i32, 1i32, "warn one");
+    _ = diag_report(state, DIAG_NOTE, "m.aria", 4i32, 1i32, 1i32, "info one");
+    int32:total = diag_count(state);
+    int32:ec = diag_error_count(state);
+    int32:wc = diag_warning_count(state);
+    int32:result = 1i32;
+    if (total == 4i32 && ec == 2i32 && wc == 1i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 11: FATAL counts as error ═════════════════════════════════
+pub func:test_fatal_counts_as_error = int32() {
+    wild int8->:state = diag_new();
+    _ = diag_report(state, DIAG_FATAL, "crash.aria", 1i32, 1i32, 1i32, "out of memory");
+    int32:ec = diag_error_count(state);
+    int32:he = diag_has_errors(state);
+    int32:level = diag_get_level(state, 0i32);
+    int32:result = 1i32;
+    if (ec == 1i32 && he == 1i32 && level == DIAG_FATAL) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Fresh state is clean ══════════════════════════════════
+pub func:test_fresh_state = int32() {
+    wild int8->:state = diag_new();
+    int32:total = diag_count(state);
+    int32:ec = diag_error_count(state);
+    int32:wc = diag_warning_count(state);
+    int32:he = diag_has_errors(state);
+    int32:hw = diag_has_warnings(state);
+    int32:result = 1i32;
+    if (total == 0i32 && ec == 0i32 && wc == 0i32 && he == 0i32 && hw == 0i32) {
+        result = 0i32;
+    }
+    _ = diag_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_report_error();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_report_warning();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_get_message();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_get_location();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_has_errors_false();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_warnings_as_errors();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_add_note();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_add_suggestion();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_clear();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_multiple_diags();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_fatal_counts_as_error();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_fresh_state();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

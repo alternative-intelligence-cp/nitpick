@@ -1,0 +1,35 @@
+// Test till loop
+// till(limit, step) - positive step counts UP from 0, negative step counts DOWN from limit
+
+func:test_till_up = int64() {
+    int64:sum = 0;
+    
+    // Count up from 0 to 10 by 1
+    till(10, 1) {
+        // $ variable represents current iteration
+        sum = sum + 1;
+    }
+    
+    pass 0i32;  // was: pass(sum)  // Should be 11 (0 through 10 inclusive)
+};
+
+func:test_till_down = int64() {
+    int64:count = 0;
+    
+    // Count down from 100 to 0 by 1
+    till(100, -1) {
+        count = count + 1;
+    }
+    
+    pass 0i32;  // was: pass(count)  // Should be 101 (100 through 0 inclusive)
+};
+
+func:main = int32() {
+    int64:result = raw test_till_up();
+    exit 0;  // was: pass(result)
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

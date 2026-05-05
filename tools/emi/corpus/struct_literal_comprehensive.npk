@@ -1,0 +1,62 @@
+// Comprehensive struct literal syntax test
+
+func:failsafe = int32(tbb32:err) {
+    print("ERROR");
+    exit 1;
+};
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Person = {
+    int32:age;
+    int32:id;
+};
+
+struct:Vec3 = {
+    int64:x;
+    int64:y;
+    int64:z;
+};
+
+func:main = int32() {
+    print("=== Struct Literal Syntax Test ===");
+    
+    // Test 1: Basic named field syntax
+    print("\n1. Named field syntax");
+    Point:p1 = Point{x: 10, y: 20};
+    print("  ✓ Point{x: 10, y: 20} compiles");
+    
+    // Test 2: Variables as field values
+    print("\n2. Variables as field values");
+    int32:age_val = 25;
+    int32:id_val = 1001;
+    Person:person = Person{age: age_val, id: id_val};
+    print("  ✓ Person{age: var1, id: var2} compiles");
+    
+    // Test 3: Expressions as field values
+    print("\n3. Expressions as field values");
+    Point:p2 = Point{x: 5 + 5, y: 10 * 2};
+    print("  ✓ Point{x: expr1, y: expr2} compiles");
+    
+    // Test 4: Three-field struct
+    print("\n4. Three-field struct");
+    Vec3:v = Vec3{x: 1, y: 2, z: 3};
+    print("  ✓ Vec3{x: 1, y: 2, z: 3} compiles");
+    
+    // Test 5: Struct with stack allocation
+    print("\n5. Stack-allocated struct");
+    stack Point:p3 = Point{x: 100, y: 200};
+    print("  ✓ stack Point{x: 100, y: 200} compiles");
+    
+    // Test 6: Multiple structs of same type
+    print("\n6. Multiple instances");
+    Point:origin = Point{x: 0, y: 0};
+    Point:max_point = Point{x: 9999, y: 9999};
+    print("  ✓ Multiple Point instances work");
+    
+    print("\n=== All struct literal tests passed ===");
+    exit 0;
+};

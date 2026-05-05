@@ -1,0 +1,115 @@
+// test_complex_type.aria
+// Test: Complex number arithmetic using Type Oriented Programming
+// This demonstrates the Type system with real mathematical operations
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+Type:Complex = {
+    // Constructor: Create complex number from real and imaginary parts
+
+    func:create = Complex(flt64:real, flt64:imag) {
+        Complex:c = Complex{r: real, i: imag};
+        pass c;
+    };
+    
+    // Accessor methods - demonstrate self.field access
+    func:real = flt64(Complex:self) {
+        pass self.r;
+    };
+    
+    func:imag = flt64(Complex:self) {
+        pass self.i;
+    };
+    
+    // Arithmetic operations using UFCS
+    func:add = Complex(Complex:self, Complex:other) {
+        flt64:new_r = self.r + other.r;
+        flt64:new_i = self.i + other.i;
+        Complex:result = Complex{r: new_r, i: new_i};
+        pass result;
+    };
+    
+    func:subtract = Complex(Complex:self, Complex:other) {
+        flt64:new_r = self.r - other.r;
+        flt64:new_i = self.i - other.i;
+        Complex:result = Complex{r: new_r, i: new_i};
+        pass result;
+    };
+    
+    func:multiply = Complex(Complex:self, Complex:other) {
+        // (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+        flt64:new_r = (self.r * other.r) - (self.i * other.i);
+        flt64:new_i = (self.r * other.i) + (self.i * other.r);
+        Complex:result = Complex{r: new_r, i: new_i};
+        pass result;
+    };
+    
+    // Complex conjugate: a + bi → a - bi
+    func:conjugate = Complex(Complex:self) {
+        flt64:new_i = 0.0 - self.i;  // Negate imaginary part
+        Complex:result = Complex{r: self.r, i: new_i};
+        pass result;
+    };
+    
+    // Scale by real number
+    func:scale = Complex(Complex:self, flt64:scalar) {
+        flt64:new_r = self.r * scalar;
+        flt64:new_i = self.i * scalar;
+        Complex:result = Complex{r: new_r, i: new_i};
+        pass result;
+    };
+    
+    // Static factory methods
+    func:zero = Complex() {
+        Complex:result = Complex{r: 0.0, i: 0.0};
+        pass result;
+    };
+    
+    func:one = Complex() {
+        Complex:result = Complex{r: 1.0, i: 0.0};
+        pass result;
+    };
+    
+    func:i = Complex() {
+        Complex:result = Complex{r: 0.0, i: 1.0};
+        pass result;
+    };
+    
+    // Public interface - real and imaginary components
+    struct:interface = {
+        flt64:r;
+        flt64:i;
+    };
+};
+
+// Test the Complex Type with UFCS
+func:main = int32() {
+    // Create complex numbers using instance<Type> syntax
+    Complex:z1 = raw instance<Complex>(3.0, 4.0);   // 3 + 4i
+    Complex:z2 = raw instance<Complex>(1.0, 2.0);   // 1 + 2i
+    
+    // Test accessor methods (self.field access)
+    flt64:r1 = raw z1.real();  // UFCS: → Complex_real(z1)
+    flt64:i1 = raw z1.imag();  // UFCS: → Complex_imag(z1)
+    
+    // Test addition: (3+4i) + (1+2i) = (4+6i)
+    Complex:sum = raw z1.add(z2);  // UFCS: → Complex_add(z1, z2)
+    flt64:sum_r = raw sum.real();
+    flt64:sum_i = raw sum.imag();
+    
+    // Test multiplication: (3+4i) * (1+2i) = (3-8) + (6+4)i = -5 + 10i
+    Complex:prod = raw z1.multiply(z2);  // UFCS: → Complex_multiply(z1, z2)
+    
+    // Test conjugate: conj(3+4i) = 3-4i
+    Complex:conj = raw z1.conjugate();  // UFCS: → Complex_conjugate(z1)
+    
+    // Test static methods
+    Complex:zero = raw Complex.zero();  // → Complex_zero()
+    Complex:one = raw Complex.one();    // → Complex_one()
+    Complex:imag_unit = raw Complex.i(); // → Complex_i()
+    
+    // Test scaling: 2 * (3+4i) = 6+8i
+    Complex:scaled = raw z1.scale(2.0);  // UFCS: → Complex_scale(z1, 2.0)
+    
+    exit 0;  // Success!
+};

@@ -1,0 +1,103 @@
+// Comprehensive NIL and Optional Type Testing
+// Tests NIL vs NULL distinction and optional type behavior
+
+func:main = int32() {
+    print("=== NIL and Optional Type Tests ===");
+    
+    // Test 1: Optional type declarations with NIL
+    print("Test 1: Optional type declarations");
+    int64?:opt_value = NIL;
+    string?:opt_name = NIL;
+    bool?:opt_flag = NIL;
+    
+    // Test 2: Optional type with value
+    print("Test 2: Optional with value");
+    int64?:num = 42;
+    string?:str = "hello";
+    bool?:flag = true;
+    
+    // Test 3: NIL comparison
+    print("Test 3: NIL comparison");
+    int64?:empty = NIL;
+    if (empty == NIL) {
+        print("NIL comparison works");
+    }
+    
+    // Test 4: Null coalescing with NIL
+    print("Test 4: Null coalescing with NIL");
+    int64?:maybe_val = NIL;
+    int64:default_val = maybe_val ?? 100;  // Should get 100
+    if (default_val == 100) {
+        print("Null coalescing with NIL works");
+    }
+    
+    // Test 5: Null coalescing with value
+    print("Test 5: Null coalescing with value");
+    int64?:has_val = 55;
+    int64:result = has_val ?? 999;  // Should get 55
+    if (result == 55) {
+        print("Null coalescing with value works");
+    }
+    
+    // Test 6: Optional return from function
+    print("Test 6: Optional function return");
+    int64?:opt_result = get_optional_value(true);
+    int64:unwrapped = opt_result ?? 0;
+    if (unwrapped == 123) {
+        print("Optional function return works");
+    }
+    
+    // Test 7: Optional return NIL
+    print("Test 7: Optional function return NIL");
+    int64?:opt_nil = get_optional_value(false);
+    int64:default_unwrap = opt_nil ?? 456;
+    if (default_unwrap == 456) {
+        print("Optional NIL return works");
+    }
+    
+    // Test 8: Chained null coalescing
+    print("Test 8: Chained null coalescing");
+    int64?:first = NIL;
+    int64?:second = NIL;
+    int64?:third = 789;
+    int64:final_val = first ?? second ?? third ?? 0;
+    if (final_val == 789) {
+        print("Chained null coalescing works");
+    }
+    
+    // Test 9: NULL vs NIL distinction (pointers vs optionals)
+    print("Test 9: NULL vs NIL distinction");
+    int64->:ptr = NULL;  // NULL for pointers
+    int64?:opt = NIL;   // NIL for optionals
+    // These are different types and should not be interchangeable
+    
+    // Test 10: Optional boolean
+    print("Test 10: Optional boolean");
+    bool?:maybe_true = true;
+    bool?:maybe_false = false;
+    bool?:maybe_nil = NIL;
+    
+    bool:t = maybe_true ?? false;
+    bool:f = maybe_false ?? true;   // Gets false from optional
+    bool:n = maybe_nil ?? true;     // Gets default true
+    
+    if (t == true && f == false && n == true) {
+        print("Optional boolean works");
+    }
+    
+    print("=== All NIL/Optional tests complete ===");
+    exit 0;
+};
+
+// Helper function that returns optional value
+func:get_optional_value = int64?(bool:should_return) {
+    if (should_return) {
+        pass 123;
+    }
+    pass NIL;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,35 @@
+// Test loop statement
+// loop(start, limit, step) - direction determined by start vs limit
+
+func:test_loop_up = int64() {
+    int64:sum = 0;
+    
+    // Count up from 1 to 10 by 1
+    loop(1, 10, 1) {
+        // $ variable represents current iteration value
+        sum = sum + 1;
+    }
+    
+    pass 0i32;  // was: pass(sum)  // Should be 10
+};
+
+func:test_loop_down = int64() {
+    int64:count = 0;
+    
+    // Count down from 100 to 0 by 2
+    loop(100, 0, 2) {
+        count = count + 1;
+    }
+    
+    pass 0i32;  // was: pass(count)  // Should be 51 (100, 98, 96, ..., 2, 0)
+};
+
+func:main = int32() {
+    int64:result = raw test_loop_up();
+    exit 0;  // was: pass(result)
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

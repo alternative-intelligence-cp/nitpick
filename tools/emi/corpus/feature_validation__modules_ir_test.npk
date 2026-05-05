@@ -1,0 +1,53 @@
+// Comprehensive module IR generation test
+// Tests: nested modules, qualified names, public/private visibility
+
+pub mod math {
+    pub func:add = int64(int64:a, int64:b) {
+        pass a + b;
+    };
+    
+    pub func:multiply = int64(int64:a, int64:b) {
+        pass a * b;
+    };
+    
+    // Private helper
+    func:helper = int64(int64:x) {
+        pass x + 10;
+    };
+}
+
+pub mod utils {
+    pub func:double = int64(int64:x) {
+        pass x * 2;
+    };
+}
+
+// Nested modules
+pub mod network {
+    pub mod http {
+        pub func:get = int64(int64:port) {
+            pass port;
+        };
+        
+        pub func:post = int64(int64:port) {
+            pass port + 1;
+        };
+    }
+    
+    pub mod tcp {
+        pub func:connect = int64(int64:port) {
+            pass port + 100;
+        };
+    }
+}
+
+func:main = int32() {
+    // Test that module functions exist
+    // (We can't call them yet without proper symbol resolution)
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

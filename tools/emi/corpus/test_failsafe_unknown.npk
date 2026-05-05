@@ -1,0 +1,62 @@
+// Test emphatic unwrap operator (?!) - Error propagation
+// Tests that ?! correctly handles error Results
+// Success Results should unwrap to their value, error Results yield the default
+
+// Helper: Creates a success Result with unknown-like behavior via error handling  
+func:make_error_result = int32() {
+    fail 1;
+};
+
+// Helper: Creates a success Result with value 42
+func:make_success_result = int32() {
+    pass 42i32;
+};
+
+// Test: ?! with error result uses default value  
+func:test_error_propagation = int32() {
+    Result<int32>:r = make_error_result();
+    
+    // Apply ?!: since Result is error, use default 99
+    int32:result = r ?! 99i32;
+    
+    // Should be 99 (the default, since r is an error)
+    if (result == 99i32) {
+        pass 0i32;  // CORRECT: default used for error result
+    }
+    pass 1i32;  // WRONG: did not get expected default
+};
+
+// Test: ?! with success result unwraps to value
+func:test_success_propagation = int32() {
+    Result<int32>:r = make_success_result();
+    
+    // Apply ?!: since Result is Ok, unwrap to actual value
+    int32:result = r ?! 99i32;
+    
+    // Should be 42 (the actual value)
+    if (result == 42i32) {
+        pass 0i32;  // CORRECT: actual value unwrapped
+    }
+    pass 1i32;  // WRONG: did not get actual value
+};
+
+func:main = int32() {
+    Result<int32>:t1 = test_error_propagation();
+    int32:r1 = t1 ? 1i32;
+    if (!(r1 == 0i32)) {
+        exit 1i32;  // error propagation test failed
+    }
+    
+    Result<int32>:t2 = test_success_propagation();
+    int32:r2 = t2 ? 1i32;
+    if (!(r2 == 0i32)) {
+        exit 2i32;  // success propagation test failed
+    }
+    
+    exit 0;  // All tests passed
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

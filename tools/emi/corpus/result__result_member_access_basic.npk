@@ -1,0 +1,30 @@
+// Test basic Result type member access
+// Tests .is_error, .value, and .error members
+
+func:file_read = int64() {
+    pass 42i64;
+};
+
+func:file_read_error = int64() {
+    fail 1i64;
+};
+
+func:main = int32() {
+    // Test accessing success result
+    Result<int64>:r1 = file_read();
+    if (!r1.is_error) {
+        int64:data = r1.value;  // OK: checked is_error first
+    } else {
+        int64:err = r1.error;
+    }
+
+    // Test accessing error result
+    Result<int64>:r2 = file_read_error();
+    if (r2.is_error) {
+        int64:code = r2.error;  // OK: checked is_error first
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

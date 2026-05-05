@@ -1,0 +1,69 @@
+// Correctness test: nested structs (struct containing another struct)
+// Verifies: nested field write/read, multiple levels, independent instances
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+struct:Point2D = {
+    int32:x;
+    int32:y;
+};
+
+struct:Rect = {
+    Point2D:origin;
+    Point2D:size;
+};
+
+struct:Window = {
+    Rect:bounds;
+    int32:z_order;
+};
+
+func:main = int32() {
+
+    // --- Test 1: Two-level nesting: Rect contains Point2D ---
+    Rect:r;
+    r.origin.x = 10i32;
+    r.origin.y = 20i32;
+    r.size.x   = 800i32;
+    r.size.y   = 600i32;
+
+    if (r.origin.x != 10i32)  { exit 1i32; }
+    if (r.origin.y != 20i32)  { exit 2i32; }
+    if (r.size.x   != 800i32) { exit 3i32; }
+    if (r.size.y   != 600i32) { exit 4i32; }
+
+    // --- Test 2: Three-level nesting: Window contains Rect contains Point2D ---
+    Window:win;
+    win.bounds.origin.x = 100i32;
+    win.bounds.origin.y = 200i32;
+    win.bounds.size.x   = 1280i32;
+    win.bounds.size.y   = 720i32;
+    win.z_order         = 3i32;
+
+    if (win.bounds.origin.x != 100i32)  { exit 5i32; }
+    if (win.bounds.origin.y != 200i32)  { exit 6i32; }
+    if (win.bounds.size.x   != 1280i32) { exit 7i32; }
+    if (win.bounds.size.y   != 720i32)  { exit 8i32; }
+    if (win.z_order         != 3i32)    { exit 9i32; }
+
+    // --- Test 3: Two independent Rect instances don't share state ---
+    Rect:r2;
+    r2.origin.x = 0i32;
+    r2.origin.y = 0i32;
+    r2.size.x   = 320i32;
+    r2.size.y   = 240i32;
+
+    // r still has its old values
+    if (r.origin.x != 10i32)  { exit 10i32; }
+    if (r.origin.y != 20i32)  { exit 11i32; }
+    // r2 has its own values
+    if (r2.origin.x != 0i32)  { exit 12i32; }
+    if (r2.size.x   != 320i32) { exit 13i32; }
+
+    // --- Test 4: Overwrite nested field; verify sibling unchanged ---
+    r.origin.x = 99i32;
+    if (r.origin.x != 99i32) { exit 14i32; }
+    if (r.origin.y != 20i32) { exit 15i32; }  // sibling y unchanged
+
+    exit 0;
+};

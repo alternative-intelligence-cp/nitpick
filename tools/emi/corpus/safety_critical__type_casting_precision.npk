@@ -1,0 +1,166 @@
+// ============================================================================
+// TYPE CASTING PRECISION TEST SUITE — Safety-Critical for Nikola AGI
+// ============================================================================
+// Purpose: Verify that type conversions preserve values correctly.
+//
+// Nikola uses mixed precision:
+//   - flt32 for SoA cache-efficient storage
+//   - flt64 for physics accumulation
+//   - fix256 for deterministic safety-critical paths (future)
+//   - int64 for grid indexing
+//
+// A bad cast anywhere in this pipeline corrupts the wavefunction.
+// ============================================================================
+
+func:main = int32() {
+    int32:failures = 0;
+    flt64:zero = 0.0;
+
+    // ========================================================================
+    // TEST 1: int32 → flt64 → int32 round-trip (exact for small values)
+    // Risk: Grid coordinate conversion in 9D toroidal addressing
+    // ========================================================================
+    int32:grid_coord = 12345;
+    flt64:as_float = grid_coord => flt64;
+    int32:back_to_int = as_float => int32;
+    if (back_to_int != grid_coord) {
+        print("FAIL: int32 -> flt64 -> int32 round-trip lost value\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 2: int64 → flt64 precision boundary
+    // flt64 has 53-bit mantissa, so int64 values > 2^53 lose precision
+    // Risk: Large array indices in 19,683-node grid
+    // ========================================================================
+    int64:exact_int = 9007199254740992;  // 2^53 (exact in flt64)
+    flt64:exact_float = exact_int => flt64;
+    int64:exact_back = exact_float => int64;
+    if (exact_back != exact_int) {
+        print("FAIL: 2^53 should survive int64 -> flt64 -> int64\n");
+        failures = failures + 1;
+    }
+
+    // 2^53 + 1 should NOT survive (documents expected behavior)
+    int64:inexact_int = 9007199254740993;  // 2^53 + 1
+    flt64:inexact_float = inexact_int => flt64;
+    int64:inexact_back = inexact_float => int64;
+    // This SHOULD fail — documenting that Aria handles it correctly
+    // by NOT silently succeeding when precision is genuinely lost
+
+    // ========================================================================
+    // TEST 3: int8 → int64 widening (sign extension)
+    // Risk: Negative coordinates in toroidal indexing (−4 to +4 per dim)
+    // ========================================================================
+    int8:neg_byte = -42i8;
+    int64:widened = neg_byte => int64;
+    if (widened != -42) {
+        print("FAIL: int8(-42) -> int64 sign extension broken\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 4: int64 → int8 narrowing (value preservation when in range)
+    // Risk: Coordinate downcasting for compact storage
+    // ========================================================================
+    int64:small_val = 100;
+    int8:narrowed = small_val => int8;
+    if (narrowed != 100i8) {
+        print("FAIL: int64(100) -> int8 lost value\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 5: flt64 → int32 truncation
+    // Risk: Converting continuous values to grid positions
+    // ========================================================================
+    flt64:pi = 3.141592653589793;
+    int32:truncated = pi => int32;
+    if (truncated != 3) {
+        print("FAIL: flt64(pi) -> int32 should truncate to 3\n");
+        failures = failures + 1;
+    }
+
+    flt64:neg_pi = -3.141592653589793;
+    int32:neg_truncated = neg_pi => int32;
+    if (neg_truncated != -3) {
+        print("FAIL: flt64(-pi) -> int32 should truncate to -3\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 6: int8 → int32 → int64 → int32 → int8 chain
+    // Risk: Multi-step conversion pipeline loses information
+    // ========================================================================
+    int8:chain_start = 77i8;
+    int32:step1 = chain_start => int32;
+    int64:step2 = step1 => int64;
+    int32:step3 = step2 => int32;
+    int8:chain_end = step3 => int8;
+    if (chain_end != chain_start) {
+        print("FAIL: i8->i32->i64->i32->i8 lost value\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 7: Negative int → flt64 → int (sign preservation)
+    // Risk: Negative toroidal coordinates in wrapping math
+    // ========================================================================
+    int64:neg_val = -99999;
+    flt64:neg_float = neg_val => flt64;
+    int64:neg_back = neg_float => int64;
+    if (neg_back != neg_val) {
+        print("FAIL: int64(-99999) -> flt64 -> int64 lost sign/value\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 8: uint64 → flt64 (large positive values)
+    // Risk: Morton-128 Hilbert curve indices use uint64
+    // ========================================================================
+    uint64:morton = 12345678901234;
+    flt64:morton_f = morton => flt64;
+    uint64:morton_back = morton_f => uint64;
+    if (morton_back != morton) {
+        print("FAIL: uint64 -> flt64 -> uint64 round-trip failed\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 9: Zero casting
+    // Risk: Zero-crossings in wavefunction are physically meaningful
+    // ========================================================================
+    int32:zero_int = 0;
+    flt64:zero_float = zero_int => flt64;
+    int32:zero_back = zero_float => int32;
+    if (zero_back != 0) {
+        print("FAIL: 0 did not survive int32 -> flt64 -> int32\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // TEST 10: Cast does not modify source
+    // Risk: Cast as side-effect would corrupt in-situ grid data
+    // ========================================================================
+    int32:source_val = 42;
+    flt64:cast_result = source_val => flt64;
+    // source_val must still be 42
+    if (source_val != 42) {
+        print("FAIL: Cast modified source variable\n");
+        failures = failures + 1;
+    }
+
+    // ========================================================================
+    // RESULT
+    // ========================================================================
+    if (failures == 0) {
+        print("TYPE CASTING PRECISION: ALL TESTS PASSED\n");
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    print("FAILSAFE triggered in type casting tests\n");
+    exit 1;
+};

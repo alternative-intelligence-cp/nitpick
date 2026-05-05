@@ -1,0 +1,199 @@
+// Borrow Precision Tests (v0.6.1)
+// Tests: pick/when borrow flow, index disjointness, return borrow validation
+// These tests verify that programs which SHOULD pass are not falsely flagged.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+// ============================================================================
+// Test 1: Pick statement — borrows in different arms don't conflict
+// Each arm is independent; borrows from one arm shouldn't leak into another.
+// ============================================================================
+func:classify = int32(int32:x) {
+    int32:result = 0;
+    pick(x) {
+        (1) {
+            result = 10;
+        },
+        (2) {
+            result = 20;
+        },
+        (*) {
+            result = 99;
+        }
+    }
+    pass result;
+};
+
+func:test_pick_basic = int32() {
+    int32:val = raw classify(2);
+    pass val;
+};
+
+// ============================================================================
+// Test 2: Pick with function calls in different arms
+// ============================================================================
+func:double_it = int32(int32:x) {
+    int32:result = (x + x);
+    pass result;
+};
+
+func:triple_it = int32(int32:x) {
+    int32:two = 2;
+    int32:result = (x + (x + x));
+    pass result;
+};
+
+func:test_pick_calls = int32() {
+    int32:x = 5;
+    int32:result = 0;
+    pick(x) {
+        (5) {
+            result = raw double_it(x);
+        },
+        (*) {
+            result = raw triple_it(x);
+        }
+    }
+    pass result;
+};
+
+// ============================================================================
+// Test 3: When loop — basic borrow tracking across iterations
+// ============================================================================
+func:test_when_loop = int32() {
+    int32:count = 5;
+    int32:sum = 0;
+    when(count > 0) {
+        sum = (sum + count);
+        int32:one = 1;
+        count = (count - one);
+    }
+    pass sum;
+};
+
+// ============================================================================
+// Test 4: When loop with then/end blocks
+// ============================================================================
+func:test_when_then_end = int32() {
+    int32:n = 3;
+    int32:result = 0;
+    when(n > 0) {
+        int32:one = 1;
+        n = (n - one);
+        result = (result + n);
+    } then {
+        result = (result + 100);
+    } end {
+        result = 999;
+    }
+    pass result;
+};
+
+// ============================================================================
+// Test 5: Copy parameter through pick — borrow not consumed
+// ============================================================================
+func:get_value = int32(int32:selector, int32:a, int32:b) {
+    int32:result = 0;
+    pick(selector) {
+        (1) {
+            result = a;
+        },
+        (2) {
+            result = b;
+        },
+        (*) {
+            result = (a + b);
+        }
+    }
+    pass result;
+};
+
+func:test_pick_params = int32() {
+    int32:val = raw get_value(1, 10, 20);
+    pass val;
+};
+
+// ============================================================================
+// Test 6: Borrow parameter with pick — $$i param used in different arms
+// ============================================================================
+func:pick_borrow = int32($$i int32:val, int32:selector) {
+    int32:result = 0;
+    pick(selector) {
+        (1) {
+            result = val;
+        },
+        (*) {
+            result = (val + val);
+        }
+    }
+    pass result;
+};
+
+func:test_pick_borrow = int32() {
+    int32:x = 42;
+    int32:r = raw pick_borrow(x, 1);
+    pass r;
+};
+
+// ============================================================================
+// Test 7: Nested pick statements
+// ============================================================================
+func:nested_pick = int32(int32:a, int32:b) {
+    int32:result = 0;
+    pick(a) {
+        (1) {
+            pick(b) {
+                (1) { result = 11; },
+                (*) { result = 10; }
+            }
+        },
+        (2) {
+            result = 20;
+        },
+        (*) {
+            result = 99;
+        }
+    }
+    pass result;
+};
+
+func:test_nested_pick = int32() {
+    int32:val = raw nested_pick(1, 1);
+    pass val;
+};
+
+// ============================================================================
+// Test 8: When loop with $$i borrow parameter
+// Borrow param used across loop iterations (immutable — no conflict)
+// ============================================================================
+func:loop_with_borrow = int32($$i int32:cap) {
+    int32:count = cap;
+    int32:sum = 0;
+    when(count > 0) {
+        sum = (sum + count);
+        int32:one = 1;
+        count = (count - one);
+    }
+    pass sum;
+};
+
+func:test_when_borrow = int32() {
+    int32:n = 4;
+    int32:result = raw loop_with_borrow(n);
+    pass result;
+};
+
+// ============================================================================
+// main — run all precision tests
+// ============================================================================
+func:main = int32() {
+    drop test_pick_basic();
+    drop test_pick_calls();
+    drop test_when_loop();
+    drop test_when_then_end();
+    drop test_pick_params();
+    drop test_pick_borrow();
+    drop test_nested_pick();
+    drop test_when_borrow();
+    exit 0;
+};

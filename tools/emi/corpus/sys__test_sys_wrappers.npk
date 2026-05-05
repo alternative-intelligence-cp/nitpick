@@ -1,0 +1,51 @@
+// test_sys_wrappers.aria — Proof-of-concept pure-Aria wrappers using sys()
+// These demonstrate writing I/O wrappers without any C/libc dependency.
+
+// ============================================================================
+// Pure-Aria write wrapper — write bytes to a file descriptor
+// ============================================================================
+func:sys_write = int64(int64:fd, string:buf, int64:len) {
+    Result<int64>:r = sys(WRITE, fd, buf, len);
+    int64:written = r ? -1i64;
+    pass written;
+};
+
+// ============================================================================
+// Pure-Aria getpid wrapper
+// ============================================================================
+func:sys_getpid = int64() {
+    Result<int64>:r = sys(GETPID);
+    int64:pid = r ? -1i64;
+    pass pid;
+};
+
+// ============================================================================
+// Pure-Aria close wrapper
+// ============================================================================
+func:sys_close = int64(int64:fd) {
+    Result<int64>:r = sys(CLOSE, fd);
+    int64:ret = r ? -1i64;
+    pass ret;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Use the pure-Aria wrappers (no libc involved!)
+    
+    // Write to stdout via wrapper
+    int64:n = sys_write(1i64, "Written via pure-Aria sys_write!\n", 33i64) ?! 0i64;
+    
+    // Get PID via wrapper
+    int64:pid = sys_getpid() ?! 0i64;
+    
+    // Write via direct sys() too
+    Result<int64>:w = sys(WRITE, 1i64, "Direct sys(WRITE) works too!\n", 29i64);
+    int64:w2 = w ? 0i64;
+    
+    println("Proof-of-concept wrappers work!");
+    
+    exit 0;
+};

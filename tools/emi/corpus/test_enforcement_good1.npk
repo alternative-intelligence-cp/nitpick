@@ -1,0 +1,20 @@
+// Test Phase 1: Proper .is_error check before .value access
+func:get_number = int64() {
+    pass 42i64;
+};
+
+func:main = int32() {
+    Result<int64>:r1 = get_number();
+    
+    // Check .is_error before accessing .value - should work!
+    if (r1.is_error == false) {
+        int64:x = r1.value;
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

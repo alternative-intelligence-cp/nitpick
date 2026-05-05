@@ -1,0 +1,37 @@
+// WASM Test 4: Functions and recursion
+// Expected output:
+// PASS: function call
+// PASS: recursion
+
+func:factorial = int64(int64:n) {
+    if (n <= 1i64) {
+        pass 1i64;
+    }
+    int64:sub = n - 1i64;
+    int64:rec = raw factorial(sub);
+    int64:result = n * rec;
+    pass result;
+};
+
+func:add = int32(int32:a, int32:b) {
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:main = int32() {
+    // Function calls
+    int32:result = raw add(3, 7);
+    if (result == 10) {
+        println("PASS: function call");
+    }
+
+    // Recursion
+    int64:fact5 = raw factorial(5i64);
+    if (fact5 == 120i64) {
+        println("PASS: recursion");
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

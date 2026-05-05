@@ -1,0 +1,18 @@
+func:expect_i64 = int64(int64:x) { pass x; };
+func:main = int32() {
+    // Suffixed literal — should always work
+    int64:r1 = raw expect_i64(42i64);
+    print("suffixed i64: ok");
+    
+    // Assignment: unsuffixed literal to int64 var
+    int64:v = 42;
+    print("assign literal->i64: ok");
+    
+    // Pass the int64 variable
+    int64:r2 = raw expect_i64(v);
+    print("i64 var->i64 param: ok");
+    
+    // What about flt64 param with flt32?
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };

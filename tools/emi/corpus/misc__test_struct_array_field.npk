@@ -1,0 +1,32 @@
+// Test: Array fields in structs
+// Expected: Should compile and access array field
+// Bug: Type checker doesn't see array field
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+struct:WatchPoint = {
+    int32:id;
+    int32:active;
+};
+
+struct:Container = {
+    int32:count;
+    WatchPoint[16]:watches;
+};
+
+func:main = int32() {
+    // Try default init to avoid literal issue
+    Container:c;
+    
+    // Now try to access the array field
+    c.watches[0].active = 1i32;
+    
+    // Read back
+    int32:val = c.watches[0].active;
+    
+    // Verify correct value
+    if (val == 1i32) {
+        exit 0;  // success
+    }
+    exit 42i32;  // val was wrong
+};

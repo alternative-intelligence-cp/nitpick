@@ -1,0 +1,32 @@
+// Generic Struct Basic Test
+// Tests basic generic struct instantiation and usage
+
+// Generic Box struct that holds a single value of type T
+struct<T>:Box = {
+    *T:value;
+};
+
+// Generic MyResult struct with two type parameters
+struct<T, E>:MyResult = {
+    *T:value;
+    *E:error;
+    bool:is_ok;
+};
+
+func:main = int32() {
+    // Instantiate Box with int64
+    Box<int64>:intBox;
+    
+    // Instantiate Box with string
+    Box<string>:strBox;
+    
+    // Instantiate MyResult with int64 and string
+    MyResult<int64, string>:result;
+    
+    return 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

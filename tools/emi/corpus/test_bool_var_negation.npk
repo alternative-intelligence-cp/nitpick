@@ -1,0 +1,30 @@
+// Test: What type does r.is_error have?
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail -1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Use pick for compiler-enforced .is_error check
+    pick(r.is_error) {
+        (false) {
+            // KNOWN_SUCCESS: can access .value
+            int32:x = r.value;
+            drop x;
+            exit 0;
+        },
+        (true) {
+            exit 1i32;
+        }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

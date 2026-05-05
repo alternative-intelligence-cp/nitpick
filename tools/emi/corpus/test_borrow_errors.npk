@@ -1,0 +1,50 @@
+// Borrow error test cases — each section tests a different error
+// Uncomment one at a time to test each error individually
+
+func:failsafe = int32(tbb32:err) {
+    println("failsafe");
+    exit 1;
+};
+
+// Test 1: mutable borrow when immutable borrow exists (1-mut-XOR-N-immut rule)
+// func:main = int32() {
+//     int32:x = 42i32;
+//     $$i int32:ref = x;
+//     $$m int32:mref = x;    // ERROR: cannot borrow 'x' as mutable
+//     exit(0);
+// };
+
+// Test 2: assign through immutable borrow
+// func:main = int32() {
+//     int32:x = 42i32;
+//     $$i int32:ref = x;
+//     ref = 99i32;           // ERROR: cannot assign through immutable borrow
+//     exit(0);
+// };
+
+// Test 3: borrow from literal (must borrow from named variable)
+// func:main = int32() {
+//     $$i int32:ref = 42i32; // ERROR: must borrow from a named variable
+//     exit(0);
+// };
+
+// Test 4: two mutable borrows of same variable
+// func:main = int32() {
+//     int32:x = 42i32;
+//     $$m int32:m1 = x;
+//     $$m int32:m2 = x;     // ERROR: cannot borrow 'x' as mutable (already borrowed)
+//     exit(0);
+// };
+
+// Test 5: borrow + wild conflict
+// func:main = int32() {
+//     int32:x = 42i32;
+//     $$i wild int32:ref = x; // ERROR: borrow cannot be combined with wild
+//     exit(0);
+// };
+
+// Default (compiles): just verifies the file parses
+func:main = int32() {
+    println("borrow error tests — uncomment to test each error");
+    exit 0;
+};

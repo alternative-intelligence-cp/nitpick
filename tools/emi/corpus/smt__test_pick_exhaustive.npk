@@ -1,0 +1,28 @@
+// Test: Pick exhaustiveness via SMT (v0.5.3, Phase 13)
+// Verify that pick cases cover all values in a Rules-constrained domain.
+
+Rules<int32>:SmallRange = { $ >= 1, $ <= 5 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:classify = int32(int32:x) {
+    limit<SmallRange> int32:val = x;
+    int32:out = 0;
+    // This pick covers all values 1..5 in the SmallRange domain
+    pick(val) {
+        (1) { out = 10; },
+        (2) { out = 20; },
+        (3) { out = 30; },
+        (4) { out = 40; },
+        (5) { out = 50; }
+    }
+    pass out;
+};
+
+func:main = int32() {
+    limit<SmallRange> int32:val = 3;
+    int32:result = raw classify(val);
+    exit 0;
+};

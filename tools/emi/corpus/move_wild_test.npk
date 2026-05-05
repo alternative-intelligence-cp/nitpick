@@ -1,0 +1,36 @@
+/**
+ * move_wild_test.aria — Positive test: move() transfers wild pointer ownership
+ *
+ * Tests:
+ *   1. move() transfers ownership to a new variable
+ *   2. The new owner can be freed (no double-free, no leak)
+ *   3. Multiple sequential moves work correctly
+ *
+ * Companion negative test: move_wild_negative.aria
+ *   - Verifies borrow checker REJECTS use-after-move at compile time
+ */
+
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test 1: basic move transfers ownership
+    wild int8->:buffer = malloc(100i64);
+    wild int8->:moved_buffer = move(buffer);
+    free(moved_buffer);  // correct owner frees — no leak, no double-free
+
+    // Test 2: chain of moves
+    wild int8->:a = malloc(64i64);
+    wild int8->:b = move(a);
+    wild int8->:c = move(b);
+    free(c);  // final owner frees
+
+    // Test 3: move in a larger allocation
+    wild int8->:big = malloc(1024i64);
+    wild int8->:big_owner = move(big);
+    free(big_owner);
+
+    exit 0;
+};

@@ -1,0 +1,20 @@
+// Minimal test that int4/uint4 types exist and generate correct IR
+// This tests type infrastructure without requiring literal support
+
+func:main = int32() {
+    // Declare variables to prove types exist and map to correct LLVM types
+    // The IR should show i4 allocations
+    int4:i4_var;    // Should generate: alloca i4
+    uint4:u4_var;   // Should generate: alloca i4
+    int2:i2_var;    // Should generate: alloca i2
+    uint2:u2_var;   // Should generate: alloca i2
+    
+    // Success - types compile
+    int32:success = 0;
+    exit success;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};
