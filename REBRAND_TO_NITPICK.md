@@ -12,13 +12,14 @@ explicit correctness over convenience theater.
 
 ## Naming Direction
 
-| Current | Planned / Proposed |
-|---------|--------------------|
+| Current | Decided |
+|---------|---------|
 | Aria | Nitpick |
-| `ariac` | `npkc` — Nitpick compiler |
+| `ariac` | `npkc` — Nitpick compiler (follows gcc/rustc/etc. `c`-suffix convention) |
 | `.aria` | `.npk` |
-| `aria_make` / `aria-make` | `npkb` or `npkbld` — final spelling TBD |
-| `aria-pkg` | Nitpick package manager name TBD |
+| `aria_make` / `aria-make` | `npkbld` — Nitpick build tool |
+| `aria-pkg` / package manager | `npkpkg` — Nitpick package manager |
+| AriaX (distro) | **Nitpicker** — raccoon mascot carries over; separate branding workstream |
 
 Compatibility aliases should remain during the transition wherever practical.
 The goal is to make the new name obvious without breaking existing users in one
@@ -62,46 +63,100 @@ Proposed mapping:
 
 ## Phases
 
-### Phase 0 — Freeze the Aria milestone
-
+### Phase 0 — Freeze the Aria milestone ✅
 - [x] Finish and tag `v0.18.0` as the final Aria-named K semantics milestone.
 - [x] Add an audit file documenting what is complete and what remains future work.
 
-### Phase 1 — Public transition notices
-
+### Phase 1 — Public transition notices (mostly done)
 - [x] Add a prominent rebrand notice to the main `aria` README.
 - [x] Add prominent rebrand notices to all satellite repo READMEs.
 - [x] Add local README logo assets using `assets/nitpick_logo.png`.
-- [ ] Add website/front-page notices.
-- [ ] Add package-manager notices once package naming is decided.
+- [ ] Add website front-page notice (ailp-website).
+- [ ] Clean up dirty worktrees in `aria-libc`, `aria-tools`, `ariax`
+      (README/logo commits were made but unrelated changes are still parked).
 
-### Phase 2 — Repository names
+### Phase 2 — Repository renames on GitHub
+After dirty worktrees are committed or parked. Rename in place to preserve
+history, issues, tags, releases, and GitHub redirect behavior.
 
-- [ ] Confirm final repo mapping.
-- [ ] Rename GitHub repositories in place where possible.
-- [ ] Verify GitHub redirects and update local remotes.
-- [ ] Archive or freeze any legacy-only repos that should not continue under Nitpick.
+| Current repo | Target repo |
+|--------------|-------------|
+| `aria` | `nitpick` |
+| `aria-docs` | `nitpick-docs` |
+| `aria-packages` | `nitpick-packages` |
+| `aria-libc` | `nitpick-libc` |
+| `aria-tools` | `nitpick-tools` |
+| `aria-make` | `nitpick-build` |
+| `aria-lang` | `nitpick-lang` |
+| `aria-packages-apt` | `nitpick-packages-apt` |
+| `aria-specialist` | `nitpick-specialist` |
+| `aria_community` | `nitpick-community` |
+| `ariax` | `nitpicker` (OS workstream — can run in parallel) |
 
-### Phase 3 — Tooling aliases
+After renames: run `git remote set-url origin <new-url>` in each local worktree.
 
-- [ ] Add `npkc` while keeping `ariac` as a compatibility alias.
-- [ ] Add `.npk` file-extension support while keeping `.aria` accepted during migration.
-- [ ] Decide and implement the build tool name (`npkb` vs `npkbld`).
-- [ ] Add package-manager naming/alias strategy.
+### Phase 3 — Tooling aliases (compiler / build / pkg)
+Additive only — no removals in this phase.
 
-### Phase 4 — Source and documentation migration
+- [ ] 3a: Install `npkc` as primary binary; symlink `ariac` as compat alias.
+- [ ] 3b: Compiler accepts `.npk` source files alongside `.aria`.
+- [ ] 3c: `npkbld` build tool alias added; old `aria-make` name kept as compat.
+- [ ] 3d: `npkpkg` package manager alias added.
+- [ ] 3e: CMake project name changed from `Aria`/`ariac` to `Nitpick`/`npkc`.
+- [ ] 3f: `--version` output, banner text, and error headers updated to Nitpick.
 
-- [ ] Rename user-facing docs from Aria to Nitpick.
-- [ ] Rename examples and file extensions.
-- [ ] Rename package prefixes where appropriate.
-- [ ] Rename source-level identifiers only after compatibility and docs are planned.
+### Phase 4 — Docs and examples migration
+Risk: low — no binary impact.
+
+- [ ] 4a: Guide chapters in `nitpick-docs` renamed Aria → Nitpick.
+- [ ] 4b: Example source files renamed from `.aria` to `.npk`.
+- [ ] 4c: Test suite `.aria` files renamed to `.npk`; CMakeLists updated.
+- [ ] 4d: README walkthroughs updated to use `npkc`, `npkbld`, `npkpkg`.
+
+### Phase 5 — Source identifier migration
+Risk: medium — per-module, not a mass rename.
+
+- [ ] 5a: Internal C++ diagnostic messages and strings updated (Aria → Nitpick).
+- [ ] 5b: `AriaString` aliased to `NpkString`; `AriaString` kept as compat typedef.
+- [ ] 5c: Non-ABI-visible internal identifiers (class names, namespaces) renamed.
+
+### Phase 6 — aria-libc C API rename (highest-risk phase)
+Generated compiler output and user-facing headers both call `aria_*` symbols.
+Must use a shim strategy — not an atomic rename.
+
+- [ ] 6a: Add `npk_*` aliases for all `aria_*` public symbols in a shim header.
+- [ ] 6b: Update compiler codegen to emit `npk_*` calls.
+- [ ] 6c: Update libc source to use `npk_*` as primary names.
+- [ ] 6d: Deprecation window: keep `aria_*` shims for at least one minor release.
+- [ ] 6e: Remove `aria_*` shims after bake time.
+
+### Phase 7 — Drop legacy compat aliases
+Only after sufficient bake time per alias.
+
+- [ ] Remove `.aria` extension acceptance from compiler.
+- [ ] Remove `ariac` symlink/alias.
+- [ ] Remove `aria_*` libc shims.
+- [ ] Final cleanup of remaining `aria`-prefixed identifiers.
+
+---
+
+## Nitpicker OS (ariax) — Parallel Workstream
+
+Does not block the compiler/language rebrand. Key tasks:
+
+- [ ] Rename `ariax` repo to `nitpicker` on GitHub.
+- [ ] Update OS build scripts, branding configs, and skel files to Nitpicker name.
+- [ ] Export a Nitpicker-specific logo variant from `aria-docs/pics/nitpik_logo.xcf`
+      if needed (transparent background, boot splash, etc.).
+- [ ] Update installer/welcome text and desktop defaults.
+- [ ] Decide if Nitpicker gets its own website section or sub-domain.
 
 ## Do Not Do Yet
 
-- Do not mass-rename source code blindly.
-- Do not break `.aria`, `ariac`, or package compatibility before aliases exist.
-- Do not rename dirty repositories until in-flight unrelated work is committed,
-  parked, or explicitly preserved.
+- Do not mass-rename source code or C API symbols before the Phase 6 shim strategy is in place.
+- Do not break `.aria`, `ariac`, or `aria_*` compatibility before aliases exist.
+- Do not rename dirty repositories until in-flight work is committed or parked.
+- Do not start Phase 6 (libc C API rename) until Phases 3–5 are stable.
 
 ## First-pass README Notice
 
