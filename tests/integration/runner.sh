@@ -1,6 +1,6 @@
 #!/bin/bash
-# Aria Integration Test Runner
-# Compiles .aria files and checks output
+# Nitpick Integration Test Runner
+# Compiles .npk files and checks output
 
 set -e
 
@@ -16,15 +16,19 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 # Check if ariac compiler exists
-ARIAC="../build/ariac"
+ARIAC="../build/npkc"
 if [ ! -f "$ARIAC" ]; then
-    echo -e "${YELLOW}Warning: ariac compiler not found at $ARIAC${NC}"
+    # Also try legacy compat path
+    ARIAC="../build/ariac"
+fi
+if [ ! -f "$ARIAC" ]; then
+    echo -e "${YELLOW}Warning: npkc compiler not found at $ARIAC${NC}"
     echo -e "${YELLOW}Integration tests will be skipped until lexer is complete${NC}"
     exit 0
 fi
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Aria Integration Test Suite${NC}"
+echo -e "${GREEN}Nitpick Integration Test Suite${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -32,7 +36,7 @@ echo ""
 run_test() {
     local test_file=$1
     local expected_output=$2
-    local test_name=$(basename "$test_file" .aria)
+    local test_name=$(basename "$test_file" .npk)
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
@@ -46,14 +50,14 @@ run_test() {
     echo -e "${YELLOW}Running: $test_name${NC}"
     
     # Compile the test file
-    if ! $ARIAC "$test_file" -o "/tmp/${test_name}" 2>/tmp/ariac_error.log; then
+    if ! $ARIAC "$test_file" -o "/tmp/${test_name}" 2>/tmp/npkc_error.log; then
         if $is_negative; then
             echo -e "${GREEN}✓ PASS: $test_name (correctly rejected)${NC}"
             PASSED_TESTS=$((PASSED_TESTS + 1))
             return 0
         fi
         echo -e "${RED}✗ FAIL: Compilation failed${NC}"
-        cat /tmp/ariac_error.log
+        cat /tmp/npkc_error.log
         FAILED_TESTS=$((FAILED_TESTS + 1))
         return 1
     fi
@@ -93,7 +97,7 @@ echo -e "${YELLOW}Tests will run when compiler is complete${NC}"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Integration Test Summary${NC}"
+echo -e "${GREEN}Nitpick Integration Test Summary${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo "Total:  $TOTAL_TESTS"
 echo -e "${GREEN}Passed: $PASSED_TESTS${NC}"
