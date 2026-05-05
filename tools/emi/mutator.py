@@ -33,6 +33,10 @@ class MutationType(Enum):
     STMT_REORDER       = auto()
     REDUNDANT_ASSIGN   = auto()
     NOOP_BLOCK         = auto()
+    # Phase 3: Synthesis mutations
+    SYNTH_DEAD_FUNC    = auto()  # dead helper function at file scope
+    SYNTH_DEAD_STRUCT  = auto()  # dead struct definition at file scope
+    COMPLEX_DEAD_BLOCK = auto()  # complex multi-step arithmetic in dead block
 
 
 @dataclass
@@ -362,6 +366,199 @@ def _insert_noop_block(source: str, rng: random.Random) -> Optional[Tuple[str, M
 
 
 # ---------------------------------------------------------------------------
+# Phase 3: Synthesis mutations
+# ---------------------------------------------------------------------------
+
+def _find_toplevel_insert_pos(source: str) -> Optional[int]:
+    """
+    Return the character offset of the start of 'func:main = ' in source.
+    We insert synthesized top-level declarations (structs, functions) here so
+    they appear at file scope but before func:main.
+    """
+    m = re.search(r'^func:main\s*=', source, re.MULTILINE)
+    return m.start() if m else None
+
+
+def _synth_dead_func(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    Inject a synthesized dead helper function at file scope (never called from
+    func:main).  Exercises: function-definition parsing, type checking, register
+    allocation, and function-table building — all with a fresh, compiler-unseen
+    name.
+
+    Shape:
+        func:_emi_deadN = int32() {
+            int32:_da = K1;
+            int32:_db = K2;
+            int32:_dc = _da + _db;
+            int32:_dd = _dc - K3;
+            pass _dd;
+        };
+    """
+    pos = _find_toplevel_insert_pos(source)
+    if pos is None:
+        return None
+
+    n = rng.randint(10000, 99999)
+    k1 = rng.randint(1, 200)
+    k2 = rng.randint(1, 200)
+    k3 = rng.randint(1, 200)
+
+    # Synthesize 3-5 arithmetic steps
+    ops = ['+', '-', '+', '-', '+']
+    rng.shuffle(ops)
+    num_steps = rng.randint(3, 5)
+
+    lines = [
+        f"func:_emi_dead{n} = int32() {{",
+        f"    int32:_da = {k1};",
+        f"    int32:_db = {k2};",
+        f"    int32:_dc = _da {ops[0]} _db;",
+    ]
+    if num_steps >= 4:
+        lines.append(f"    int32:_dd = _dc {ops[1]} {k3};")
+        last = "_dd"
+    else:
+        last = "_dc"
+    if num_steps >= 5:
+        k4 = rng.randint(1, 200)
+        lines.append(f"    int32:_de = {last} {ops[2]} {k4};")
+        last = "_de"
+    lines.append(f"    pass {last};")
+    lines.append("};")
+    lines.append("")  # blank line after
+
+    dead_func = "\n".join(lines) + "\n"
+    new_source = source[:pos] + dead_func + source[pos:]
+    return (
+        new_source,
+        Mutation(MutationType.SYNTH_DEAD_FUNC,
+                 f"injected dead function _emi_dead{n} ({num_steps} steps)")
+    )
+
+
+def _synth_dead_struct(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    Inject a synthesized dead struct definition at file scope (never instantiated
+    in live code).  Exercises: struct-layout code, field-index calculation, and
+    name-table building.
+
+    Generates 2-4 fields with randomly shuffled int32/int64 types — the shuffle
+    constitutes the 'field reordering' called for by the Phase 3 spec.
+
+    Shape:
+        struct:_EmiDeadN = {
+            int32:_fa;
+            int64:_fb;
+            int32:_fc;
+        };
+    """
+    pos = _find_toplevel_insert_pos(source)
+    if pos is None:
+        return None
+
+    n = rng.randint(10000, 99999)
+    num_fields = rng.randint(2, 4)
+
+    # Field type pool — shuffle gives random layout (the 'reordering')
+    type_pool = ['int32', 'int64', 'int32', 'int64']
+    rng.shuffle(type_pool)
+    field_names = ['_fa', '_fb', '_fc', '_fd']
+
+    fields = "\n".join(
+        f"    {type_pool[i]}:{field_names[i]};"
+        for i in range(num_fields)
+    )
+
+    dead_struct = f"struct:_EmiDead{n} = {{\n{fields}\n}};\n\n"
+    new_source = source[:pos] + dead_struct + source[pos:]
+    return (
+        new_source,
+        Mutation(MutationType.SYNTH_DEAD_STRUCT,
+                 f"injected dead struct _EmiDead{n} ({num_fields} fields)")
+    )
+
+
+def _complex_dead_block(source: str, rng: random.Random) -> Optional[Tuple[str, Mutation]]:
+    """
+    Inject a multi-statement dead arithmetic block inside func:main.
+
+    Unlike the simpler DEAD_CODE_INJECT (single-line body), this generates a
+    chain of 3-5 int32 operations — stressing constant-folding, dead-code
+    elimination, and the compiler's handling of sequential dependent assignments
+    inside unreachable branches.
+
+    Shape:
+        if (0 == 1) {
+            int32:_cbN_1 = K1;
+            int32:_cbN_2 = K2;
+            int32:_cbN_3 = _cbN_1 + _cbN_2;
+            int32:_cbN_4 = _cbN_3 - K3;
+            int32:_cbN_5 = _cbN_4 + K4;
+        }
+
+    Variable names include a random N to avoid clashes when multiple mutations
+    are applied to the same source.
+    """
+    lines = source.split('\n')
+    main_start = None
+    main_end = None
+    brace_depth = 0
+    in_main = False
+
+    for i, line in enumerate(lines):
+        if re.search(r'func:main\s*=', line):
+            in_main = True
+        if in_main:
+            brace_depth += line.count('{') - line.count('}')
+            if brace_depth > 0 and main_start is None:
+                main_start = i + 1
+            if brace_depth == 0 and main_start is not None:
+                main_end = i
+                break
+
+    if main_start is None or main_end is None or main_end - main_start < 2:
+        return None
+
+    insert_candidates = _safe_insertion_points(lines, main_start, main_end)
+    if not insert_candidates:
+        return None
+
+    insert_at = rng.choice(insert_candidates)
+    indent = re.match(r'^(\s*)', lines[insert_at]).group(1)
+    inner = indent + "    "
+
+    n  = rng.randint(10000, 99999)
+    k1 = rng.randint(1, 100)
+    k2 = rng.randint(1, 100)
+    k3 = rng.randint(1, 100)
+    k4 = rng.randint(1, 100)
+    ops = ['+', '-', '+', '-']
+    rng.shuffle(ops)
+    num_steps = rng.randint(3, 5)
+
+    body_lines = [
+        f"{inner}int32:_cb{n}_1 = {k1};",
+        f"{inner}int32:_cb{n}_2 = {k2};",
+        f"{inner}int32:_cb{n}_3 = _cb{n}_1 {ops[0]} _cb{n}_2;",
+    ]
+    if num_steps >= 4:
+        body_lines.append(f"{inner}int32:_cb{n}_4 = _cb{n}_3 {ops[1]} {k3};")
+    if num_steps >= 5:
+        body_lines.append(f"{inner}int32:_cb{n}_5 = _cb{n}_4 {ops[2]} {k4};")
+
+    body = "\n".join(body_lines)
+    dead_block = f"{indent}if (0 == 1) {{\n{body}\n{indent}}}"
+
+    new_lines = lines[:insert_at] + [dead_block] + lines[insert_at:]
+    return (
+        '\n'.join(new_lines),
+        Mutation(MutationType.COMPLEX_DEAD_BLOCK,
+                 f"inserted complex dead block at line {insert_at} ({num_steps} steps, id={n})")
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -371,6 +568,10 @@ _MUTATORS = [
     _reorder_adjacent_decls,
     _insert_redundant_assign,
     _insert_noop_block,
+    # Phase 3: synthesis mutations
+    _synth_dead_func,
+    _synth_dead_struct,
+    _complex_dead_block,
 ]
 
 
