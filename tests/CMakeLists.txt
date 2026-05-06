@@ -124,3 +124,24 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.npk")
         DEPENDS module_loading_diamond
     )
 endif()
+
+# ============================================================================
+# KLEE Symbolic Execution (v0.18.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tools/klee/aria_klee.sh")
+    add_test(
+        NAME klee_symbolic_execution
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tools/klee/aria_klee.sh
+            --test-dir ${CMAKE_SOURCE_DIR}/tools/klee/tests
+            --out-dir  ${CMAKE_BINARY_DIR}/klee-results
+            --timeout  60
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools/klee
+    )
+    set_tests_properties(klee_symbolic_execution PROPERTIES
+        TIMEOUT 300
+        LABELS "symbolic;klee;v0.18.4"
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc;STUBS_BC=${CMAKE_SOURCE_DIR}/tools/klee/aria_rt_stubs.bc"
+    )
+endif()
