@@ -1,0 +1,21 @@
+// CWE-252: Unchecked Return Value — BAD (compile-time rejection)
+//
+// In C: ignoring a function's return value is legal and common (silent failure).
+// In Aria: all non-extern functions return Result<T>. Assigning directly to
+//          a base type is a COMPILE ERROR — silent unwrap is forbidden.
+//
+// Compiler error: "Cannot silently unwrap Result<int32>"
+// This file must NOT compile — that is the passing condition.
+
+func:get_value = int32() {
+    pass 42;
+};
+
+func:main = int32() {
+    int32:v = get_value();   // ERROR: Cannot silently unwrap Result<int32>
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

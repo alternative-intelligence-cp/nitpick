@@ -1,0 +1,19 @@
+// CWE-191: Integer Underflow — GOOD demonstration
+//
+// Safe arithmetic: subtraction stays within tbb32 range.
+// Expected: exits 0 (no underflow, no ERR state)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:one = 1;
+    tbb32:y = x - one;       // 99, well within range
+
+    pick(y) {
+        (ERR) { exit 1; },   // should not reach here
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

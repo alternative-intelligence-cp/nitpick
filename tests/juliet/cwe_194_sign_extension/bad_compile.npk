@@ -1,0 +1,18 @@
+// CWE-194: Unexpected Sign Extension — BAD (compile-time rejection)
+//
+// In C: assigning a signed int to an unsigned int (or vice versa) is implicit,
+//       silently producing unexpected values (e.g., -1 becomes 0xFFFFFFFF).
+// In Aria: implicit signed/unsigned conversion is a COMPILE ERROR.
+//          "Cannot initialize variable of type 'uint32' with value of type 'int32'"
+//
+// This file must NOT compile — that is the passing condition.
+
+func:main = int32() {
+    int32:neg = -1;
+    uint32:u = neg;          // ERROR: Cannot initialize uint32 with int32
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,23 @@
+// CWE-369: Divide by Zero — GOOD demonstration
+//
+// Guard the divisor before dividing: safe pattern in Aria.
+// Expected: exits 0 (guarded division, no ERR state)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:d = 5;
+
+    // Guard: ensure divisor is not zero before dividing
+    if (d == 0) { exit 1; }
+
+    tbb32:y = x / d;         // 20, safe division
+
+    pick(y) {
+        (ERR) { exit 1; },   // should not reach here
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,19 @@
+// CWE-190: Integer Overflow — GOOD demonstration
+//
+// Safe arithmetic: value stays within tbb32 range.
+// Expected: exits 0 (no overflow, no ERR state)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:one = 1;
+    tbb32:y = x + one;       // 101, well within range
+
+    pick(y) {
+        (ERR) { exit 1; },   // should not reach here
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

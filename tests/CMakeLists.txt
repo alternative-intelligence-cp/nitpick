@@ -145,3 +145,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tools/klee/aria_klee.sh")
         ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc;STUBS_BC=${CMAKE_SOURCE_DIR}/tools/klee/aria_rt_stubs.bc"
     )
 endif()
+
+# ============================================================================
+# Juliet CWE Test Suite (v0.18.5)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/juliet/run_juliet.sh")
+    add_test(
+        NAME juliet_cwe_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/juliet/run_juliet.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/juliet
+    )
+    set_tests_properties(juliet_cwe_tests PROPERTIES
+        TIMEOUT 300
+        LABELS "security;juliet;cwe;v0.18.5"
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
+    )
+endif()

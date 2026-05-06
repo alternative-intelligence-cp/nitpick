@@ -1,0 +1,21 @@
+// CWE-369: Divide by Zero — BAD demonstration
+//
+// In C: integer division by zero is undefined behavior (usually SIGFPE/crash).
+// In Aria: tbb32 division by zero transitions to sticky ERR sentinel — no crash.
+//
+// Expected: exits 1 (divide-by-zero caught = prevention confirmed)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:d = 0;
+    tbb32:y = x / d;         // division by zero → ERR (no SIGFPE)
+
+    pick(y) {
+        (ERR) { exit 1; },   // div-by-zero was caught — prevention confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

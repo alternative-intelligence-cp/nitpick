@@ -1,0 +1,15 @@
+// CWE-194: Unexpected Sign Extension — GOOD demonstration
+//
+// Using consistent types avoids implicit signed/unsigned conversion.
+// Expected: exits 0 (no type mismatch, no silent bit-pattern change)
+
+func:main = int32() {
+    int32:neg = -1;
+    int32:same = neg;        // same type — no sign extension issue
+    if (same != -1) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,23 @@
+// CWE-416: Use After Free — BAD (compile-time rejection)
+//
+// In C: using a pointer after free() is undefined behavior — dangling pointer.
+//       Often exploitable for arbitrary code execution.
+// In Aria: the compiler tracks ownership and rejects use-after-free at compile time
+//          with error ARIA-022 "Use after free: variable was already freed".
+//
+// Compiler error: ARIA-022 "Use after free"
+// This file must NOT compile — that is the passing condition.
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    free(buf);
+    wild ?->:alias = buf;    // ERROR: ARIA-022 Use after free
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
