@@ -2,7 +2,7 @@
  * ffi.cpp
  * C FFI bindings for adap library
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "adap/dap_protocol.hpp"

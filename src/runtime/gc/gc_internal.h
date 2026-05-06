@@ -1,8 +1,8 @@
 /**
- * Aria GC Internal Implementation
+ * Nitpick GC Internal Implementation
  * 
  * This header defines the internal data structures and algorithms
- * for the Aria Garbage Collection System. It should not be included
+ * for the Nitpick Garbage Collection System. It should not be included
  * by user code.
  * 
  * Architecture:

@@ -1,7 +1,7 @@
 /**
- * Aria Compiler Driver
+ * Nitpick Compiler Driver
  * 
- * Main entry point for the Aria compiler (ariac).
+ * Main entry point for the Nitpick compiler (npkc).
  * Handles command-line arguments, orchestrates compilation pipeline,
  * and produces executables or intermediate outputs.
  * 
@@ -33,7 +33,7 @@
 #include <sys/wait.h>  // For waitpid, WIFEXITED, WEXITSTATUS
 #include <filesystem> // For absolute path resolution
 
-// Aria compiler components
+// Nitpick compiler components
 #include "frontend/preprocessor/preprocessor.h"  // NEW: Phase 0
 #include "frontend/lexer/lexer.h"
 #include "frontend/parser/parser.h"
@@ -191,7 +191,7 @@ void initialize_wasm_targets() {
 void print_version() {
     std::cout << "Nitpick Compiler (npkc) version " << NPK_VERSION << "\n";
     std::cout << "Built with LLVM " << LLVM_VERSION_STRING << "\n";
-    std::cout << "(ariac is a compatibility alias for npkc)\n";
+    std::cout << "(ariac was a compatibility alias — use npkc)\n";
 }
 
 /**
@@ -288,7 +288,7 @@ void print_help() {
 bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
     if (argc < 2) {
         std::cerr << "Error: No input file specified\n";
-        std::cerr << "Run 'ariac --help' for usage information\n";
+        std::cerr << "Run 'npkc --help' for usage information\n";
         return false;
     }
 
@@ -5960,18 +5960,18 @@ bool link_wasm(const std::string& object_file, const std::string& output_file, c
 
     pid_t pid = fork();
     if (pid == -1) {
-        std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+        std::cerr << "npkc: fork failed: " << strerror(errno) << "\n";
         return false;
     }
     if (pid == 0) {
         execvp("wasm-ld", argv_vec.data());
-        std::cerr << "ariac: execvp(wasm-ld): " << strerror(errno) << "\n";
+        std::cerr << "npkc: execvp(wasm-ld): " << strerror(errno) << "\n";
         std::cerr << "Install wasm-ld: sudo apt install lld\n";
         _exit(127);
     }
     int wstatus = 0;
     if (waitpid(pid, &wstatus, 0) == -1) {
-        std::cerr << "ariac: waitpid failed: " << strerror(errno) << "\n";
+        std::cerr << "npkc: waitpid failed: " << strerror(errno) << "\n";
         return false;
     }
 
@@ -6088,18 +6088,18 @@ bool link_executable(const std::string& object_file, const std::string& output_f
 
     pid_t pid = fork();
     if (pid == -1) {
-        std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+        std::cerr << "npkc: fork failed: " << strerror(errno) << "\n";
         return false;
     }
     if (pid == 0) {
         // Child: exec clang++ directly — no shell involved
         execvp("clang++", argv_vec.data());
-        std::cerr << "ariac: execvp(clang++): " << strerror(errno) << "\n";
+        std::cerr << "npkc: execvp(clang++): " << strerror(errno) << "\n";
         _exit(127);
     }
     int wstatus = 0;
     if (waitpid(pid, &wstatus, 0) == -1) {
-        std::cerr << "ariac: waitpid failed: " << strerror(errno) << "\n";
+        std::cerr << "npkc: waitpid failed: " << strerror(errno) << "\n";
         return false;
     }
     return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
@@ -6351,12 +6351,12 @@ int main(int argc, char** argv) {
 
         pid_t pid = fork();
         if (pid == -1) {
-            std::cerr << "ariac: fork failed: " << strerror(errno) << "\n";
+            std::cerr << "npkc: fork failed: " << strerror(errno) << "\n";
             return 1;
         }
         if (pid == 0) {
             execvp("clang++", argv_vec.data());
-            std::cerr << "ariac: execvp(clang++): " << strerror(errno) << "\n";
+            std::cerr << "npkc: execvp(clang++): " << strerror(errno) << "\n";
             _exit(127);
         }
         int wstatus = 0;

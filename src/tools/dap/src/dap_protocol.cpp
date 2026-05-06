@@ -2,7 +2,7 @@
  * dap_protocol.cpp
  * Implementation of the DAP protocol library
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "adap/dap_protocol.hpp"

@@ -6,7 +6,7 @@
  *
  * ARIA-007: TelemetryDaemon - Ecosystem Integration
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "runtime/telemetry.h"

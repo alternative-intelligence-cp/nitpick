@@ -42,7 +42,7 @@ Server::~Server() {
 }
 
 void Server::run() {
-    std::cerr << "Aria Language Server starting..." << std::endl;
+    std::cerr << "Nitpick Language Server starting..." << std::endl;
     
     // Main message loop
     while (state_.load() != ServerState::EXITED) {
@@ -57,7 +57,7 @@ void Server::run() {
         dispatch_message(msg_opt.value());
     }
     
-    std::cerr << "Aria Language Server exiting..." << std::endl;
+    std::cerr << "Nitpick Language Server exiting..." << std::endl;
 }
 
 void Server::dispatch_message(const JsonRpcMessage& msg) {

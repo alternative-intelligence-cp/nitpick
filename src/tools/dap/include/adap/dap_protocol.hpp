@@ -11,7 +11,7 @@
  * - TBB-safe counters
  * - Extensible handler registration
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #ifndef ARIA_ADAP_DAP_PROTOCOL_HPP

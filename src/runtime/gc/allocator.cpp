@@ -1,7 +1,7 @@
 /**
- * Aria GC Allocator Implementation
+ * Nitpick GC Allocator Implementation
  * 
- * This file implements the memory allocation logic for the Aria
+ * This file implements the memory allocation logic for the Nitpick
  * Garbage Collection System. It provides the npk_gc_alloc function
  * and the Nursery allocator infrastructure.
  * 

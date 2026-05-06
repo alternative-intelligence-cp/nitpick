@@ -200,11 +200,11 @@ make
 ./test_adap
 ```
 
-## Integration with Aria Compiler
+## Integration with Nitpick Compiler
 
-The adap library is used by the Aria debugger (`aria debug`) to provide
-IDE integration via DAP. See the aria compiler documentation for details.
+The adap library is used by the Nitpick debugger (`npkc debug`) to provide
+IDE integration via DAP. See the Nitpick compiler documentation for details.
 
 ## License
 
-Copyright (c) 2025 Aria Language Project
+Copyright (c) 2025 Nitpick Language Project

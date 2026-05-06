@@ -9,7 +9,7 @@
  *
  * ARIA-005: ZeroCopyBridge - Ecosystem Integration
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "runtime/zero_copy_bridge.h"

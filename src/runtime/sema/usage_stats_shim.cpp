@@ -81,7 +81,7 @@ void* us_new() {
     s->os_name  = "unknown";
     s->cpu_arch = "unknown";
 #endif
-    s->compiler_ver = "ariac-0.15.1";
+    s->compiler_ver = "npkc-0.18.7";
     return s;
 }
 
