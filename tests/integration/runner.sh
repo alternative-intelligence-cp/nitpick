@@ -15,14 +15,14 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 
-# Check if ariac compiler exists
-ARIAC="../build/npkc"
-if [ ! -f "$ARIAC" ]; then
+# Check if npkc compiler exists
+NPKC="../build/npkc"
+if [ ! -f "$NPKC" ]; then
     # Also try legacy compat path
-    ARIAC="../build/ariac"
+    NPKC="../build/npkc"
 fi
-if [ ! -f "$ARIAC" ]; then
-    echo -e "${YELLOW}Warning: npkc compiler not found at $ARIAC${NC}"
+if [ ! -f "$NPKC" ]; then
+    echo -e "${YELLOW}Warning: npkc compiler not found at $NPKC${NC}"
     echo -e "${YELLOW}Integration tests will be skipped until lexer is complete${NC}"
     exit 0
 fi
@@ -50,7 +50,7 @@ run_test() {
     echo -e "${YELLOW}Running: $test_name${NC}"
     
     # Compile the test file
-    if ! $ARIAC "$test_file" -o "/tmp/${test_name}" 2>/tmp/npkc_error.log; then
+    if ! $NPKC "$test_file" -o "/tmp/${test_name}" 2>/tmp/npkc_error.log; then
         if $is_negative; then
             echo -e "${GREEN}✓ PASS: $test_name (correctly rejected)${NC}"
             PASSED_TESTS=$((PASSED_TESTS + 1))

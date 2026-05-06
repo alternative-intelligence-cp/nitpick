@@ -13,7 +13,7 @@ failed=0
 
 # Test 1: Basic types (should succeed)
 echo "━━━ Test 1: Basic Typed Literals ━━━"
-if ./build/ariac tests/zero_conversion/test_basic_types.aria -o /tmp/aria_test1 &>/dev/null; then
+if ./build/npkc tests/zero_conversion/test_basic_types.npk -o /tmp/aria_test1 &>/dev/null; then
     echo "✅ PASS - All basic types compile correctly"
     ((passed++))
 else
@@ -24,7 +24,7 @@ echo
 
 # Test 2: Overflow detection (should fail compilation)
 echo "━━━ Test 2: Overflow Detection ━━━"
-if ./build/ariac tests/zero_conversion/test_overflow_detection.aria -o /tmp/aria_test2 2>&1 | grep -q "out of range"; then
+if ./build/npkc tests/zero_conversion/test_overflow_detection.npk -o /tmp/aria_test2 2>&1 | grep -q "out of range"; then
     echo "✅ PASS - Overflow detection caught errors correctly"
     echo "   Found errors: int8 overflow, uint8 overflow, int16 overflow"
     ((passed++))
@@ -36,7 +36,7 @@ echo
 
 # Test 3: Edge cases (should succeed)
 echo "━━━ Test 3: Edge Cases & Boundary Values ━━━"
-if ./build/ariac tests/zero_conversion/test_edge_cases.aria -o /tmp/aria_test3 &>/dev/null; then
+if ./build/npkc tests/zero_conversion/test_edge_cases.npk -o /tmp/aria_test3 &>/dev/null; then
     echo "✅ PASS - Min/max values for all types work correctly"
     ((passed++))
 else
@@ -47,7 +47,7 @@ echo
 
 # Test 4: IR type verification
 echo "━━━ Test 4: LLVM IR Type Precision ━━━"
-./build/ariac tests/zero_conversion/test_ir_generation.aria --emit-llvm -o /tmp/aria_test4.ll &>/dev/null
+./build/npkc tests/zero_conversion/test_ir_generation.npk --emit-llvm -o /tmp/aria_test4.ll &>/dev/null
 if grep -q "store i8" /tmp/aria_test4.ll && \
    grep -q "store i16" /tmp/aria_test4.ll && \
    grep -q "store i32" /tmp/aria_test4.ll && \
@@ -65,7 +65,7 @@ echo
 
 # Test 5: Stdlib integration
 echo "━━━ Test 5: Stdlib Integration ━━━"
-if ./build/ariac tests/zero_conversion/test_stdlib_integration.aria -o /tmp/aria_test5 &>/dev/null; then
+if ./build/npkc tests/zero_conversion/test_stdlib_integration.npk -o /tmp/aria_test5 &>/dev/null; then
     echo "✅ PASS - Stdlib functions work with typed literals"
     ((passed++))
 else

@@ -4,7 +4,7 @@
 
 set -e  # Exit on first error
 
-ARIA_BIN="../../build/ariac"
+ARIA_BIN="../../build/npkc"
 TEST_DIR="$(cd "$(dirname "$0")" && pwd)"
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -32,7 +32,7 @@ fi
 # Function to run a single test
 run_test() {
     local test_file=$1
-    local test_name=$(basename "$test_file" .aria)
+    local test_name=$(basename "$test_file" .npk)
     
     TOTAL_COUNT=$((TOTAL_COUNT + 1))
     
@@ -69,9 +69,9 @@ run_test() {
     fi
 }
 
-# Run ALL .aria test files in the stdlib directory
+# Run ALL .npk test files in the stdlib directory
 echo -e "${YELLOW}=== Running All Stdlib Tests ===${NC}"
-for test_file in *.aria; do
+for test_file in *.npk; do
     [ -f "$test_file" ] && run_test "$test_file"
 done
 echo

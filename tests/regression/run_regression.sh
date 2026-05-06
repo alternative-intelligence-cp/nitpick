@@ -2,7 +2,7 @@
 # Regression test runner for Aria compiler
 # Tests bugs confirmed resolved in v0.2.3
 
-ARIAC="$(dirname "$0")/../../build/ariac"
+NPKC="$(dirname "$0")/../../build/npkc"
 DIR="$(dirname "$0")"
 PASS=0
 FAIL=0
@@ -10,12 +10,12 @@ TOTAL=0
 
 run_test() {
     local test_file="$1"
-    local test_name="$(basename "$test_file" .aria)"
+    local test_name="$(basename "$test_file" .npk)"
     local output_bin="/tmp/aria_regtest_${test_name}"
     TOTAL=$((TOTAL + 1))
 
     # Compile
-    if "$ARIAC" "$test_file" -o "$output_bin" 2>/dev/null; then
+    if "$NPKC" "$test_file" -o "$output_bin" 2>/dev/null; then
         # Run (if binary was produced)
         if [ -f "$output_bin" ]; then
             if "$output_bin" 2>/dev/null; then
@@ -39,7 +39,7 @@ run_test() {
 echo "=== Aria Regression Tests ==="
 echo ""
 
-for f in "$DIR"/test_*.aria; do
+for f in "$DIR"/test_*.npk; do
     run_test "$f"
 done
 

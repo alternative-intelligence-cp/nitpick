@@ -1,9 +1,9 @@
 #!/bin/bash
 # WASM Test Runner for Aria Compiler
-# Compiles each .aria file in tests/wasm/ to WASM and runs with wasmtime
+# Compiles each .npk file in tests/wasm/ to WASM and runs with wasmtime
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ARIAC="$SCRIPT_DIR/../../build/ariac"
+NPKC="$SCRIPT_DIR/../../build/npkc"
 WASMTIME="${WASMTIME:-wasmtime}"
 TEST_DIR="$SCRIPT_DIR"
 TMPDIR="${TMPDIR:-/tmp}"
@@ -12,8 +12,8 @@ FAIL=0
 SKIP=0
 
 # Check prerequisites
-if [ ! -x "$ARIAC" ]; then
-    echo "ERROR: ariac not found at $ARIAC"
+if [ ! -x "$NPKC" ]; then
+    echo "ERROR: npkc not found at $NPKC"
     echo "Build with: cd build && cmake .. && make -j\$(nproc)"
     exit 1
 fi
@@ -28,13 +28,13 @@ if ! command -v "$WASMTIME" &>/dev/null; then
 fi
 
 echo "=== Aria WASM Test Suite ==="
-echo "Compiler: $ARIAC"
+echo "Compiler: $NPKC"
 echo "Runtime:  $WASMTIME"
 echo ""
 
-for src in "$TEST_DIR"/*.aria; do
+for src in "$TEST_DIR"/*.npk; do
     [ -f "$src" ] || continue
-    name="$(basename "$src" .aria)"
+    name="$(basename "$src" .npk)"
     wasm="$TMPDIR/aria_wasm_test_${name}.wasm"
 
     # Extract expected output from comments
@@ -43,7 +43,7 @@ for src in "$TEST_DIR"/*.aria; do
     printf "%-30s " "$name..."
 
     # Compile
-    compile_out=$("$ARIAC" "$src" --emit-wasm -o "$wasm" 2>&1)
+    compile_out=$("$NPKC" "$src" --emit-wasm -o "$wasm" 2>&1)
     if [ $? -ne 0 ]; then
         echo "FAIL (compile error)"
         echo "  $compile_out" | head -5

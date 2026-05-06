@@ -16,17 +16,17 @@ echo
 
 # Get build directory
 BUILD_DIR="${BUILD_DIR:-$(pwd)/build}"
-ARIAC="$BUILD_DIR/ariac"
+NPKC="$BUILD_DIR/npkc"
 ARIA_DOC="$BUILD_DIR/aria-doc"
 ARIA_LSP="$BUILD_DIR/aria-lsp"
 
 # Check tools exist
 echo "Checking Aria toolchain..."
-if [ ! -f "$ARIAC" ]; then
-    echo "❌ ariac not found at $ARIAC"
+if [ ! -f "$NPKC" ]; then
+    echo "❌ npkc not found at $NPKC"
     exit 1
 fi
-echo "✓ ariac found"
+echo "✓ npkc found"
 
 if [ ! -f "$ARIA_DOC" ]; then
     echo "⚠ aria-doc not found (non-critical)"
@@ -53,17 +53,17 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # Create hello world
-cat > hello.aria << 'EOF'
+cat > hello.npk << 'EOF'
 func:main = int32() {
     pass(42);
 };
 EOF
 
-echo "✓ Created hello.aria"
+echo "✓ Created hello.npk"
 
 # Compile
 echo "Compiling..."
-"$ARIAC" hello.aria -o hello
+"$NPKC" hello.npk -o hello
 echo "✓ Compiled successfully"
 
 # Run
@@ -97,7 +97,7 @@ cd "$TEMP_DIR"
 mkdir -p src lib
 
 # Create library module
-cat > lib/math.aria << 'EOF'
+cat > lib/math.npk << 'EOF'
 /// Mathematical utilities
 pub fn add(a: int32, b: int32) -> int32 {
     return a + b;
@@ -112,10 +112,10 @@ pub fn square(x: int32) -> int32 {
 }
 EOF
 
-echo "✓ Created lib/math.aria"
+echo "✓ Created lib/math.npk"
 
 # Create helper module
-cat > lib/utils.aria << 'EOF'
+cat > lib/utils.npk << 'EOF'
 use math;
 
 pub fn sum_of_squares(a: int32, b: int32) -> int32 {
@@ -123,10 +123,10 @@ pub fn sum_of_squares(a: int32, b: int32) -> int32 {
 }
 EOF
 
-echo "✓ Created lib/utils.aria"
+echo "✓ Created lib/utils.npk"
 
 # Create main program
-cat > src/main.aria << 'EOF'
+cat > src/main.npk << 'EOF'
 use utils;
 
 fn main() -> int32 {
@@ -135,11 +135,11 @@ fn main() -> int32 {
 }
 EOF
 
-echo "✓ Created src/main.aria"
+echo "✓ Created src/main.npk"
 
 # Compile
 echo "Compiling..."
-"$ARIAC" src/main.aria lib/utils.aria lib/math.aria -o calculator
+"$NPKC" src/main.npk lib/utils.npk lib/math.npk -o calculator
 echo "✓ Compiled successfully"
 
 # Run
@@ -170,18 +170,18 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # Create file with error
-cat > error_test.aria << 'EOF'
+cat > error_test.npk << 'EOF'
 fn main() -> int32 {
     let x = undefined_variable;
     return x;
 }
 EOF
 
-echo "✓ Created error_test.aria"
+echo "✓ Created error_test.npk"
 
 # Compile (should fail)
 echo "Compiling (expecting error)..."
-if "$ARIAC" error_test.aria -o error_test 2>error_output.txt; then
+if "$NPKC" error_test.npk -o error_test 2>error_output.txt; then
     echo "❌ Compilation should have failed"
     cd /
     rm -rf "$TEMP_DIR"
@@ -224,7 +224,7 @@ TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
 # Create test program
-cat > optimize.aria << 'EOF'
+cat > optimize.npk << 'EOF'
 fn compute() -> int32 {
     let a = 10;
     let b = 20;
@@ -238,11 +238,11 @@ fn main() -> int32 {
 }
 EOF
 
-echo "✓ Created optimize.aria"
+echo "✓ Created optimize.npk"
 
 # Compile with -O0
 echo "Compiling with -O0..."
-"$ARIAC" optimize.aria -O0 -o optimize_O0
+"$NPKC" optimize.npk -O0 -o optimize_O0
 echo "✓ Compiled with -O0"
 
 ./optimize_O0
@@ -258,7 +258,7 @@ fi
 
 # Compile with -O2
 echo "Compiling with -O2..."
-"$ARIAC" optimize.aria -O2 -o optimize_O2
+"$NPKC" optimize.npk -O2 -o optimize_O2
 echo "✓ Compiled with -O2"
 
 ./optimize_O2
@@ -286,17 +286,17 @@ echo "-----------------------------------"
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-cat > simple.aria << 'EOF'
+cat > simple.npk << 'EOF'
 fn main() -> int32 {
     return 123;
 }
 EOF
 
-echo "✓ Created simple.aria"
+echo "✓ Created simple.npk"
 
 # Generate LLVM IR
 echo "Generating LLVM IR..."
-"$ARIAC" simple.aria --emit-llvm -o simple.ll
+"$NPKC" simple.npk --emit-llvm -o simple.ll
 if [ -f simple.ll ]; then
     echo "✓ LLVM IR generated"
 else
@@ -308,7 +308,7 @@ fi
 
 # Generate assembly
 echo "Generating assembly..."
-"$ARIAC" simple.aria -S -o simple.s
+"$NPKC" simple.npk -S -o simple.s
 if [ -f simple.s ]; then
     echo "✓ Assembly generated"
 else
@@ -333,7 +333,7 @@ if [ -f "$ARIA_DOC" ]; then
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
     
-    cat > documented.aria << 'EOF'
+    cat > documented.npk << 'EOF'
 /// A utility function that adds two numbers
 /// @param a The first number
 /// @param b The second number
@@ -343,11 +343,11 @@ pub fn add(a: int32, b: int32) -> int32 {
 }
 EOF
     
-    echo "✓ Created documented.aria"
+    echo "✓ Created documented.npk"
     
     # Generate docs
     echo "Generating documentation..."
-    "$ARIA_DOC" documented.aria -o docs/
+    "$ARIA_DOC" documented.npk -o docs/
     if [ -f docs/index.html ]; then
         echo "✓ Documentation generated"
     else
@@ -376,7 +376,7 @@ mkdir -p calculator/{src,lib}
 cd calculator
 
 # Create operations library
-cat > lib/operations.aria << 'EOF'
+cat > lib/operations.npk << 'EOF'
 pub fn add(a: int32, b: int32) -> int32 {
     return a + b;
 }
@@ -397,10 +397,10 @@ pub fn divide(a: int32, b: int32) -> int32 {
 }
 EOF
 
-echo "✓ Created lib/operations.aria"
+echo "✓ Created lib/operations.npk"
 
 # Create main calculator
-cat > src/calculator.aria << 'EOF'
+cat > src/calculator.npk << 'EOF'
 use operations;
 
 fn main() -> int32 {
@@ -412,11 +412,11 @@ fn main() -> int32 {
 }
 EOF
 
-echo "✓ Created src/calculator.aria"
+echo "✓ Created src/calculator.npk"
 
 # Compile
 echo "Compiling calculator..."
-"$ARIAC" src/calculator.aria lib/operations.aria -o calculator
+"$NPKC" src/calculator.npk lib/operations.npk -o calculator
 echo "✓ Compiled successfully"
 
 # Run

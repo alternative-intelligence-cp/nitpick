@@ -124,10 +124,10 @@ class PropertyTester:
         Initialize property tester.
 
         Args:
-            compiler_path: Path to ariac compiler
+            compiler_path: Path to npkc compiler
             build_dir: Build directory for artifacts
             timeout_seconds: Max time for compilation/execution
-            keep_artifacts: Keep generated .aria files
+            keep_artifacts: Keep generated .npk files
             verbose: Print detailed output
         """
         self.compiler_path = compiler_path
@@ -161,7 +161,7 @@ class PropertyTester:
             (success, output, time_ms)
         """
         prog_hash = self._hash_program(source)
-        source_file = os.path.join(self.build_dir, f"test_{seed}_{prog_hash}.aria")
+        source_file = os.path.join(self.build_dir, f"test_{seed}_{prog_hash}.npk")
         output_file = os.path.join(self.build_dir, f"test_{seed}_{prog_hash}")
 
         # Write source
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     from aria_generator import AriaGenerator, AdversarialGenerator
 
     # Find compiler
-    compiler = os.path.expanduser("~/._____RANDY_____/REPOS/aria/build/ariac")
+    compiler = os.path.expanduser("~/._____RANDY_____/REPOS/aria/build/npkc")
 
     if not os.path.exists(compiler):
         print(f"Compiler not found at {compiler}")

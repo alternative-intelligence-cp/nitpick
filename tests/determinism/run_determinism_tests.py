@@ -22,7 +22,7 @@ import statistics
 SCRIPT_DIR = Path(__file__).parent
 ARIA_ROOT = SCRIPT_DIR.parent.parent
 BUILD_DIR = ARIA_ROOT / "build"
-ARIAC = BUILD_DIR / "ariac"
+NPKC = BUILD_DIR / "npkc"
 
 @dataclass
 class TestResult:
@@ -49,11 +49,11 @@ def run_command(cmd: List[str], timeout: int = 60) -> Tuple[int, str, str]:
 
 def compile_aria(source: Path, output: Path) -> bool:
     """Compile an Aria source file."""
-    if not ARIAC.exists():
-        print(f"ERROR: Compiler not found at {ARIAC}")
+    if not NPKC.exists():
+        print(f"ERROR: Compiler not found at {NPKC}")
         return False
 
-    cmd = [str(ARIAC), str(source), "-o", str(output)]
+    cmd = [str(NPKC), str(source), "-o", str(output)]
     code, stdout, stderr = run_command(cmd, timeout=30)
 
     if code != 0:
@@ -168,9 +168,9 @@ def run_all_tests(quick: bool = False) -> Dict:
     results = []
 
     # Find Aria test files
-    aria_files = list(SCRIPT_DIR.glob("*.aria"))
+    aria_files = list(SCRIPT_DIR.glob("*.npk"))
     if not aria_files:
-        print("No .aria test files found!")
+        print("No .npk test files found!")
         return {"passed": 0, "total": 0, "results": []}
 
     print(f"Found {len(aria_files)} test files")
@@ -266,8 +266,8 @@ def main():
     print("=" * 60)
     print()
 
-    if not ARIAC.exists():
-        print(f"ERROR: Aria compiler not found at {ARIAC}")
+    if not NPKC.exists():
+        print(f"ERROR: Aria compiler not found at {NPKC}")
         print("Please build the compiler first: cd build && make")
         return 1
 

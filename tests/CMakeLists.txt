@@ -21,10 +21,10 @@ add_test(NAME test_runner_minimal COMMAND test_runner)
 # Integration Tests
 # ============================================================================
 
-# Find all .aria files in integration directory
+# Find all .npk files in integration directory
 file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.npk")
 
-# Add integration test runner if we have .aria files
+# Add integration test runner if we have .npk files
 if(INTEGRATION_TESTS)
     add_test(
         NAME integration_tests

@@ -16,7 +16,7 @@ using namespace sema;
 TEST_CASE(debug_info_initialization) {
     IRGenerator gen("test_module", true);  // Enable debug
     
-    gen.initDebugInfo("test.aria", "/tmp");
+    gen.initDebugInfo("test.npk", "/tmp");
     
     llvm::Module* mod = gen.getModule();
     ASSERT(mod != nullptr, "Module should not be null");
@@ -37,7 +37,7 @@ TEST_CASE(debug_info_disabled) {
     IRGenerator gen("test_module", false);  // Disable debug
     
     // Should not crash when debug is disabled
-    gen.initDebugInfo("test.aria", "/tmp");
+    gen.initDebugInfo("test.npk", "/tmp");
     gen.setDebugLocation(1, 1);
     gen.clearDebugLocation();
     gen.finalizeDebugInfo();
@@ -48,7 +48,7 @@ TEST_CASE(debug_info_disabled) {
 
 TEST_CASE(debug_type_mapping_tbb) {
     IRGenerator gen("test_module", true);
-    gen.initDebugInfo("test.aria", "/tmp");
+    gen.initDebugInfo("test.npk", "/tmp");
     
     // Create TBB types
     auto tbb8 = std::make_unique<PrimitiveType>("tbb8", 8, true);
@@ -69,7 +69,7 @@ TEST_CASE(debug_type_mapping_tbb) {
 
 TEST_CASE(debug_location_tracking) {
     IRGenerator gen("test_module", true);
-    gen.initDebugInfo("test.aria", "/tmp");
+    gen.initDebugInfo("test.npk", "/tmp");
     
     // Set debug locations
     gen.setDebugLocation(10, 5);
@@ -84,7 +84,7 @@ TEST_CASE(debug_location_tracking) {
 
 TEST_CASE(debug_scope_stack) {
     IRGenerator gen("test_module", true);
-    gen.initDebugInfo("test.aria", "/tmp");
+    gen.initDebugInfo("test.npk", "/tmp");
     
     // Push/pop scopes (simulate function/block scopes)
     // We can't easily test this without creating actual functions,

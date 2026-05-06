@@ -21,7 +21,7 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Verify build
-if [ ! -f "./build/ariac" ]; then
+if [ ! -f "./build/npkc" ]; then
     echo -e "${YELLOW}⚠️  Compiler not found. Building...${NC}"
     ./build.sh
 fi
@@ -35,7 +35,7 @@ fi
 # Show runtime info
 RUNTIME_SIZE=$(ls -lh ./build/libaria_runtime.a | awk '{print $5}')
 RUNTIME_DATE=$(ls -l ./build/libaria_runtime.a | awk '{print $6, $7, $8}')
-echo -e "${GREEN}✓${NC} Compiler:  ./build/ariac"
+echo -e "${GREEN}✓${NC} Compiler:  ./build/npkc"
 echo -e "${GREEN}✓${NC} Runtime:   ./build/libaria_runtime.a ($RUNTIME_SIZE, $RUNTIME_DATE)"
 echo ""
 

@@ -9,7 +9,7 @@ echo "Phase 5.5: Three-Valued Logic Test Suite"
 echo "=========================================="
 echo ""
 
-COMPILER="./build/ariac"
+COMPILER="./build/npkc"
 PASSED=0
 FAILED=0
 
@@ -39,20 +39,20 @@ run_test() {
 }
 
 echo "=== Identity Checks ==="
-run_test "tests/test_unknown_comparisons.aria" 3 "unknown == unknown → true"
-run_test "tests/test_unknown_neq.aria" 2 "unknown != unknown → false"
-run_test "tests/test_unknown_lt_unknown.aria" 2 "unknown < unknown → false"
+run_test "tests/test_unknown_comparisons.npk" 3 "unknown == unknown → true"
+run_test "tests/test_unknown_neq.npk" 2 "unknown != unknown → false"
+run_test "tests/test_unknown_lt_unknown.npk" 2 "unknown < unknown → false"
 
 echo ""
 echo "=== Propagation (Mixed Comparisons) ==="
-run_test "tests/test_unknown_eq_value2.aria" 3 "unknown == 5 → unknown"
-run_test "tests/test_unknown_neq_value.aria" 3 "unknown != 7 → unknown"
-run_test "tests/test_unknown_gt.aria" 3 "unknown > 0 → unknown"
+run_test "tests/test_unknown_eq_value2.npk" 3 "unknown == 5 → unknown"
+run_test "tests/test_unknown_neq_value.npk" 3 "unknown != 7 → unknown"
+run_test "tests/test_unknown_gt.npk" 3 "unknown > 0 → unknown"
 
 echo ""
 echo "=== Phase 5.4 Regression Tests ==="
-run_test "tests/test_pick_simple.aria" 42 "Basic pick statement"
-run_test "tests/test_pick_unknown_simple.aria" 42 "Pick with unknown pattern"
+run_test "tests/test_pick_simple.npk" 42 "Basic pick statement"
+run_test "tests/test_pick_unknown_simple.npk" 42 "Pick with unknown pattern"
 
 echo ""
 echo "=========================================="

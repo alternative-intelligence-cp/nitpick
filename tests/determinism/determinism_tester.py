@@ -23,7 +23,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # Configuration
 ARIA_ROOT = Path(__file__).parent.parent.parent
 BUILD_DIR = ARIA_ROOT / "build"
-ARIAC = BUILD_DIR / "ariac"
+NPKC = BUILD_DIR / "npkc"
 TESTS_DIR = Path(__file__).parent
 
 @dataclass
@@ -57,7 +57,7 @@ class DeterminismTester:
 
     def compile_test(self, aria_file: Path, output: Path) -> bool:
         """Compile an Aria test program."""
-        cmd = [str(ARIAC), str(aria_file), "-o", str(output)]
+        cmd = [str(NPKC), str(aria_file), "-o", str(output)]
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=30)
             return result.returncode == 0
@@ -387,9 +387,9 @@ def main():
     if args.file:
         test_files = [args.file]
     else:
-        test_files = list(TESTS_DIR.glob("*.aria"))
+        test_files = list(TESTS_DIR.glob("*.npk"))
         if not test_files:
-            print("No .aria test files found in determinism directory")
+            print("No .npk test files found in determinism directory")
             print("Creating sample test files...")
             # Will be created by companion script
             return 1

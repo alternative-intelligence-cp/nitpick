@@ -5,15 +5,15 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARIA_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ARIAC="$ARIA_ROOT/build/ariac"
+NPKC="$ARIA_ROOT/build/npkc"
 
 echo "==================================================================="
 echo "   ARIA CAST EXPRESSION TESTS"
 echo "==================================================================="
 echo ""
 
-if [ ! -f "$ARIAC" ]; then
-    echo "❌ Error: ariac compiler not found at $ARIAC"
+if [ ! -f "$NPKC" ]; then
+    echo "❌ Error: npkc compiler not found at $NPKC"
     echo "Please build the compiler first: cmake --build build"
     exit 1
 fi
@@ -22,14 +22,14 @@ PASSED=0
 FAILED=0
 TOTAL=0
 
-for test_file in "$SCRIPT_DIR"/*.aria; do
-    test_name=$(basename "$test_file" .aria)
+for test_file in "$SCRIPT_DIR"/*.npk; do
+    test_name=$(basename "$test_file" .npk)
     TOTAL=$((TOTAL + 1))
     
     echo -n "[$TOTAL] Testing $test_name... "
     
     # Compile the test
-    if "$ARIAC" "$test_file" -o "/tmp/cast_test_$test_name" 2>/dev/null; then
+    if "$NPKC" "$test_file" -o "/tmp/cast_test_$test_name" 2>/dev/null; then
         # Run the test
         if "/tmp/cast_test_$test_name" >/dev/null 2>&1; then
             echo "✅ PASS"

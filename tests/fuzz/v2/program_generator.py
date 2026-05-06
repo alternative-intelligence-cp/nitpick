@@ -586,7 +586,7 @@ class AriaGenerator:
         if variant == 'safe_noarg':
             sc = random.choice(safe_noarg)
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
@@ -598,7 +598,7 @@ class AriaGenerator:
         elif variant == 'safe_write':
             msg = f"fuzz_{random.randint(0, 9999)}"
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f'    Result<int64>:w = sys(WRITE, 1i64, "{msg}\\n", {len(msg) + 1}i64);\n'
                 f"    int64:bytes = w ? 0i64;\n"
@@ -614,7 +614,7 @@ class AriaGenerator:
                 body += f"    Result<int64>:r{i} = sys({sc});\n"
                 body += f"    int64:v{i} = r{i} ? -1i64;\n"
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"{body}"
                 f"    exit 0;\n"
@@ -625,7 +625,7 @@ class AriaGenerator:
         elif variant == 'full_noarg':
             sc = random.choice(full_noarg)
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:r = sys!!({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
@@ -643,7 +643,7 @@ class AriaGenerator:
             }
             nr = syscall_numbers[sc]
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"    int64:val = sys!!!({nr}i64);\n"
                 f"    exit 0;\n"
@@ -654,7 +654,7 @@ class AriaGenerator:
         elif variant == 'result_unwrap':
             sc = random.choice(safe_noarg)
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:main = int32() {{\n"
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
@@ -669,7 +669,7 @@ class AriaGenerator:
         elif variant == 'wrapper_func':
             sc = random.choice(safe_noarg)
             prog = (
-                f'use "sys.aria".*;\n\n'
+                f'use "sys.npk".*;\n\n'
                 f"func:get_val = int64() {{\n"
                 f"    Result<int64>:r = sys({sc});\n"
                 f"    int64:val = r ? -1i64;\n"
@@ -1598,7 +1598,7 @@ class TypeExhaustiveGenerator:
             bin_ops = [op for op in self.operators.get_binary_operators(typ.category)
                        if op.symbol not in ('/', '%')]
             for op in bin_ops:
-                name = f"type_exhaustive_{typ.name}_{op.name}.aria"
+                name = f"type_exhaustive_{typ.name}_{op.name}.npk"
                 code = self._gen_operator_test(typ, op)
                 tests.append((name, code))
         

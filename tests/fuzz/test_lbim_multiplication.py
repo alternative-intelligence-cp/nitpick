@@ -27,14 +27,14 @@ func:main = int32() {{
     int256:a = {a_str};
     int256:b = {b_str};
     int256:result = a * b;
-    test_file = f"/tmp/mult_test_{case_num}.aria"
+    test_file = f"/tmp/mult_test_{case_num}.npk"
     with open(test_file, "w") as f:
         f.write(aria_code)
 
     try:
         # Compile
         compile_result = subprocess.run(
-            ["./ariac", test_file, "-o", f"/tmp/mult_test_{case_num}"],
+            ["./npkc", test_file, "-o", f"/tmp/mult_test_{case_num}"],
             cwd="/home/randy/._____RANDY_____/REPOS/aria/build",
             capture_output=True,
             timeout=5,
@@ -175,8 +175,8 @@ def main():
     # Check compiler exists
     import os
 
-    if not os.path.exists("/home/randy/._____RANDY_____/REPOS/aria/build/ariac"):
-        print("ERROR: Compiler not found at build/ariac")
+    if not os.path.exists("/home/randy/._____RANDY_____/REPOS/aria/build/npkc"):
+        print("ERROR: Compiler not found at build/npkc")
         print("Run: cd ~/._____RANDY_____/REPOS/aria && ./build.sh")
         sys.exit(1)
 

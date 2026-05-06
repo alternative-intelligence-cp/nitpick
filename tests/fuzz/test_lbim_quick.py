@@ -19,12 +19,12 @@ func:main = int32() {{
 }};
 """
     
-    with open('/tmp/test_mult.aria', 'w') as f:
+    with open('/tmp/test_mult.npk', 'w') as f:
         f.write(aria_code)
     
     # Compile
     result = subprocess.run(
-        ['./build/ariac', '/tmp/test_mult.aria', '-o', '/tmp/test_mult'],
+        ['./build/npkc', '/tmp/test_mult.npk', '-o', '/tmp/test_mult'],
         capture_output=True,
         timeout=5
     )

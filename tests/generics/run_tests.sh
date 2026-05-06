@@ -6,14 +6,14 @@ echo "  Phase 4.5: Generics & Templates"
 echo "======================================"
 echo
 
-ARIA_COMPILER="./build/ariac"
+ARIA_COMPILER="./build/npkc"
 TEST_DIR="tests/generics"
 PASS=0
 FAIL=0
 
 run_test() {
     local test_file=$1
-    local test_name=$(basename "$test_file" .aria)
+    local test_name=$(basename "$test_file" .npk)
     
     echo -n "Testing $test_name... "
     
@@ -41,9 +41,9 @@ run_test() {
 }
 
 # Run all generic tests
-run_test "$TEST_DIR/test_identity.aria"
-run_test "$TEST_DIR/test_swap.aria"
-run_test "$TEST_DIR/test_multi_param.aria"
+run_test "$TEST_DIR/test_identity.npk"
+run_test "$TEST_DIR/test_swap.npk"
+run_test "$TEST_DIR/test_multi_param.npk"
 
 echo
 echo "======================================"
