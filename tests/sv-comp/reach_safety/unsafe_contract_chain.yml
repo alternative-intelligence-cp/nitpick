@@ -1,0 +1,9 @@
+format_version: '2.0'
+input_files: 'unsafe_contract_chain.npk'
+properties:
+  - property_file: reach_safety.prp
+    expected_verdict: false
+options:
+  verdict_strategy: z3verify
+  verify_flags: '--verify-contracts --verify-report'
+description: "Two-level contract chain. Inner call (safe_div) proven; outer call (compute) from main violates divisor > 0."

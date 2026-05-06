@@ -162,3 +162,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/juliet/run_juliet.sh")
         ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
     )
 endif()
+
+# ============================================================================
+# SV-COMP Benchmark Suite (v0.18.6)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh")
+    add_test(
+        NAME svcomp_benchmarks
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/sv-comp
+    )
+    set_tests_properties(svcomp_benchmarks PROPERTIES
+        TIMEOUT 300
+        LABELS "security;svcomp;v0.18.6"
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
+    )
+endif()

@@ -1,0 +1,29 @@
+// SV-COMP ReachSafety equivalent: unsafe division (CWE-369 analog)
+//
+// C analog: division without divisor guard — b can be zero
+// Property: error label reachable (precondition violation possible)
+// Aria: function requires(b != 0) called with unconstrained symbolic b.
+//       Z3 finds: b = 0 violates the precondition → FALSE verdict.
+//
+// Expected verdict: false   Strategy: z3verify (--verify-contracts)
+// Z3 result: Disproven >= 1 (contract violation found)
+
+func:safe_div = tbb32(tbb32:a, tbb32:b) requires (b != 0) {
+    tbb32:r = a / b;
+    pass r;
+};
+
+func:main = int32() {
+    tbb32:a = unknown;
+    tbb32:b = unknown;
+    // No guard on b — b could be 0, violating safe_div's precondition
+    tbb32:res = raw safe_div(a, b);
+    pick(res) {
+        (ERR) { exit 1; },
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

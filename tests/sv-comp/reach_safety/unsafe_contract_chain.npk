@@ -1,0 +1,36 @@
+// SV-COMP ReachSafety equivalent: unsafe contract chain
+//
+// Two-level contract chain. The outer function's requires matches the inner call
+// (safe_div's b != 0 is covered by compute's divisor > 0). However, main calls
+// compute with unconstrained symbolic inputs — Z3 finds the outer violation.
+//
+// Demonstrates: Z3 propagates contract chains (inner call proven), but
+// catches the outermost call site where no precondition is enforced.
+//
+// Expected verdict: false   Strategy: z3verify (--verify-contracts)
+
+func:safe_div = tbb32(tbb32:a, tbb32:b) requires (b != 0) {
+    tbb32:r = a / b;
+    pass r;
+};
+
+func:compute = tbb32(tbb32:a, tbb32:divisor) requires (divisor > 0) {
+    // divisor > 0 implies divisor != 0 — inner call is proven safe
+    tbb32:r = raw safe_div(a, divisor);
+    pass r;
+};
+
+func:main = int32() {
+    tbb32:a = unknown;
+    tbb32:b = unknown;
+    // No guard: b could be 0 or negative, violating compute's requires(divisor > 0)
+    tbb32:res = raw compute(a, b);
+    pick(res) {
+        (ERR) { exit 1; },
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

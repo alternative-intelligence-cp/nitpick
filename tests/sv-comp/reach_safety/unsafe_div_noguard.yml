@@ -1,0 +1,9 @@
+format_version: '2.0'
+input_files: 'unsafe_div_noguard.npk'
+properties:
+  - property_file: reach_safety.prp
+    expected_verdict: false
+options:
+  verdict_strategy: z3verify
+  verify_flags: '--verify-contracts --verify-report'
+description: "Division function requires(b != 0) called without guard. Z3 finds: b=0 violates precondition."

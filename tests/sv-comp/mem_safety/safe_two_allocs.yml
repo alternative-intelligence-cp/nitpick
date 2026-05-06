@@ -1,0 +1,9 @@
+format_version: '2.0'
+input_files: 'safe_two_allocs.npk'
+properties:
+  - property_file: mem_safety.prp
+    expected_verdict: true
+options:
+  verdict_strategy: z3verify
+  verify_flags: '--verify-memory --verify-report'
+description: "Two independent malloc+free pairs. Z3 proves both lifetimes are clean."

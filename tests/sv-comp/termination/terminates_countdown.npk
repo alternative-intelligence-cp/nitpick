@@ -1,0 +1,27 @@
+// SV-COMP Termination equivalent: countdown via fixed loop
+//
+// C analog: Termination-MainControlFlow/loops/countdown.c
+// Property: LTL(F end) — program always terminates
+// Aria: Countdown from 10 to 1 via fixed index. The reverse iteration is
+//       computed as (10 - idx), guaranteed to reach 0 within 10 steps.
+//
+// Expected verdict: true   Strategy: runtime (exits 0 — terminates)
+
+func:main = int32() {
+    tbb32:countdown = 10;
+    tbb32:idx = 0;
+    tbb32:one = 1;
+
+    loop(0, 10, 1) {
+        countdown = countdown - one;
+        idx = idx + one;
+    }
+
+    // countdown = 0 after 10 steps — correct termination
+    if (countdown != 0) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

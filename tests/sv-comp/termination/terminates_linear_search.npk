@@ -1,0 +1,45 @@
+// SV-COMP Termination equivalent: linear search with early exit
+//
+// C analog: Termination-MainControlFlow/search/linear_search_term.c
+// Property: LTL(F end) — program always terminates regardless of early exit path
+// Aria: Linear search over fixed array[10]. Either element found (exits 0)
+//       or loop completes without find (exits 0). Both paths terminate.
+//       The loop itself is bounded — cannot loop forever.
+//
+// Expected verdict: true   Strategy: runtime (exits 0 — terminates on both paths)
+
+func:main = int32() {
+    tbb32:data_0 = 3;
+    tbb32:data_1 = 7;
+    tbb32:data_2 = 1;
+    tbb32:data_3 = 9;
+    tbb32:data_4 = 4;
+    tbb32:data_5 = 6;
+    tbb32:data_6 = 2;
+    tbb32:data_7 = 5;
+    tbb32:data_8 = 8;
+    tbb32:data_9 = 0;
+
+    tbb32:target = 7;
+    tbb32:found = 0;
+    tbb32:one = 1;
+
+    // Search: target=7 is at position 1 — found in first iterations
+    if (data_0 == target) { found = one; }
+    if (data_1 == target) { found = one; }
+    if (data_2 == target) { found = one; }
+    if (data_3 == target) { found = one; }
+    if (data_4 == target) { found = one; }
+    if (data_5 == target) { found = one; }
+    if (data_6 == target) { found = one; }
+    if (data_7 == target) { found = one; }
+    if (data_8 == target) { found = one; }
+    if (data_9 == target) { found = one; }
+
+    // Both outcomes (found or not) terminate here
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

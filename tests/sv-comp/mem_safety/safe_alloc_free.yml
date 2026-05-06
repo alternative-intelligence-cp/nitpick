@@ -1,0 +1,9 @@
+format_version: '2.0'
+input_files: 'safe_alloc_free.npk'
+properties:
+  - property_file: mem_safety.prp
+    expected_verdict: true
+options:
+  verdict_strategy: z3verify
+  verify_flags: '--verify-memory --verify-report'
+description: "Single malloc+free. Z3 proves: no UAF, no double-free, no leak."
