@@ -1,0 +1,26 @@
+// bug064: loop() with int32 variables for start, limit, AND step
+// Ensures all three operands are unified to a common type in codegen.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+// loop with int32 variables for all three bounds
+func:sum_even = int32(int32:from, int32:to, int32:by) {
+    int32:sum = 0;
+    loop(from, to, by) {
+        sum = (sum + $);
+    }
+    pass sum;
+};
+
+func:main = int32() {
+    int32:a = 0;
+    int32:b = 6;
+    int32:c = 2;
+    // loop(0, 6, 2) → $ = 0, 2, 4 → sum = 6
+    int32:result = raw sum_even(a, b, c);
+
+    // result - 6 = 0
+    int32:expected = 6;
+    int32:diff = (result - expected);
+    exit diff;
+};

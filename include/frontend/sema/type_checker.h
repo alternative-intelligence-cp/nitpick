@@ -102,6 +102,10 @@ private:
     // Current function name (for exit() restriction to main/failsafe)
     std::string currentFunctionName;
     
+    // Stack of $ loop counter type names (pushed when entering a loop, popped on exit)
+    // Allows inferIdentifier("$") to return the correct type for nested loops.
+    std::vector<std::string> loop_dollar_type_;
+    
     // Current module path (for resolving relative imports)
     std::string currentModulePath;
     

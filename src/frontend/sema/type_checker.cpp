@@ -555,10 +555,13 @@ Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
     }
     
     // Special case: $ is the implicit iteration variable in till/loop constructs
-    // Its type is determined by the loop parameters (usually int64)
+    // Its type is determined by the loop parameters.
+    // loop_dollar_type_ is set by checkLoopStmt/checkTillStmt to the actual counter type.
     if (expr->name == "$") {
-        // For type checking purposes, assume int64
-        // The actual type will be determined by the loop parameters during IR generation
+        if (!loop_dollar_type_.empty()) {
+            return typeSystem->getPrimitiveType(loop_dollar_type_.back());
+        }
+        // Fallback: int64 for backwards compatibility
         return typeSystem->getPrimitiveType("int64");
     }
 

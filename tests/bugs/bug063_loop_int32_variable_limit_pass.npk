@@ -1,0 +1,25 @@
+// bug063: loop() with int32 variable as limit
+// Previously: LLVM module verification failed — ICmp i64 vs i32 type mismatch
+// Fix: ir_generator.cpp codegenLoop now widens all operands to the same integer
+//      width before building the PHI and ICmp instructions.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+// loop with int32 variable limit — should compile and run correctly
+func:count_to_n = int32(int32:n) {
+    int32:sum = 0;
+    loop(0, n, 1) {
+        sum = (sum + 1);
+    }
+    pass sum;
+};
+
+func:main = int32() {
+    int32:five = 5;
+    int32:result = raw count_to_n(five);
+
+    // result should be 5
+    int32:expected = 5;
+    int32:diff = (result - expected);
+    exit diff;
+};

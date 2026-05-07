@@ -1738,8 +1738,18 @@ void StmtCodegen::codegenTill(TillStmt* stmt) {
         throw std::runtime_error("Failed to generate code for till limit or step");
     }
     
-    // Get the type for $ (same as limit type)
+    // Unify integer types: widen limit/step to the widest integer width
     llvm::Type* counter_type = limit_value->getType();
+    if (step_value->getType()->isIntegerTy() && counter_type->isIntegerTy() &&
+        step_value->getType()->getIntegerBitWidth() > counter_type->getIntegerBitWidth()) {
+        counter_type = step_value->getType();
+    }
+    auto castTillInt = [&](llvm::Value* v, const char* name) -> llvm::Value* {
+        if (v->getType() == counter_type) return v;
+        return builder.CreateIntCast(v, counter_type, true, name);
+    };
+    limit_value = castTillInt(limit_value, "till.limit");
+    step_value  = castTillInt(step_value,  "till.step");
     
     // Create basic blocks for the loop
     llvm::BasicBlock* cond_block = llvm::BasicBlock::Create(context, "till.cond", func);
@@ -1874,8 +1884,22 @@ void StmtCodegen::codegenLoop(LoopStmt* stmt) {
         throw std::runtime_error("Failed to generate code for loop start, limit, or step");
     }
     
-    // Get the type for $ (same as start type)
+    // Unify integer types: widen start/limit/step to the widest integer width
+    // so that e.g. loop(0, int32_var, 1) doesn't produce i64 vs i32 ICmp mismatch.
     llvm::Type* counter_type = start_value->getType();
+    auto widestInt = [](llvm::Type* a, llvm::Type* b) -> llvm::Type* {
+        if (!a->isIntegerTy() || !b->isIntegerTy()) return a;
+        return a->getIntegerBitWidth() >= b->getIntegerBitWidth() ? a : b;
+    };
+    counter_type = widestInt(counter_type, limit_value->getType());
+    counter_type = widestInt(counter_type, step_value->getType());
+    auto castInt = [&](llvm::Value* v, const char* name) -> llvm::Value* {
+        if (v->getType() == counter_type) return v;
+        return builder.CreateIntCast(v, counter_type, true, name);
+    };
+    start_value = castInt(start_value, "loop.start");
+    limit_value = castInt(limit_value, "loop.limit");
+    step_value  = castInt(step_value,  "loop.step");
     
     // Create basic blocks for the loop
     llvm::BasicBlock* cond_block = llvm::BasicBlock::Create(context, "loop.cond", func);
