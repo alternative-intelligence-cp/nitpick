@@ -1,0 +1,24 @@
+// bug073: ahget on a missing key returns sentinel 0 — must not segfault
+// Previously: "ahget(map, "missing_key") segfaults"
+// Fix: npk_uhash_get returns 0 when key is not found (no null dereference)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:ht = ahash(64);
+    ahset(ht, "present", 42i64);
+
+    // Access a key that exists
+    int64:found = ahget(ht, "present");
+
+    // Access a key that does NOT exist — should return 0, not crash
+    int64:missing = ahget(ht, "absent");
+
+    // found == 42, missing == 0 → diff should be 42
+    // exit 0 only when both are correct
+    int64:valid = 1i64;
+    if (found != 42i64) { valid = 0i64; }
+    if (missing != 0i64) { valid = 0i64; }
+    if (valid == 1i64) { exit 0; }
+    exit 1;
+};

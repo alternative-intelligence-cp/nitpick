@@ -1,0 +1,22 @@
+// bug074: @func_name passed as direct call argument — must compile and run
+// Previously: "type checker mismatch when @func_name used as call argument"
+// Fix: already resolved prior to v0.19.3 (trampoline wrapper handles arg position)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:add = int32(int32:a, int32:b) {
+    pass (a + b);
+};
+
+func:apply = int32((int32)(int32, int32):fn, int32:x, int32:y) {
+    int32:r = fn(x, y) ? -1i32;
+    pass r;
+};
+
+func:main = int32() {
+    // Pass @add as direct call argument — the bug was a false type error here
+    int32:result = raw apply(@add, 3i32, 4i32);
+    // Expected: 3 + 4 = 7; exit 0 if correct
+    int32:diff = (result - 7i32);
+    exit diff;
+};

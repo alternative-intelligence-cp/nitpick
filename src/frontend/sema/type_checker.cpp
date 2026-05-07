@@ -1023,12 +1023,30 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
         // SIMD types should have been handled above - if we get here with SIMD, it's already returned
         // So this check is only for primitives and LBIM
         if (!leftPrim && !leftIsLBIM && !leftIsSIMD) {
-            addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + leftType->toString() + "'", sourceNode);
+            // BUG-001 fix: give an actionable hint when Result<T> is used directly in arithmetic
+            if (leftType->getKind() == TypeKind::RESULT) {
+                auto* resType = static_cast<ResultType*>(leftType);
+                std::string inner = resType->getValueType() ? resType->getValueType()->toString() : "T";
+                addError("Cannot use Result<" + inner + "> as " + inner + " in arithmetic\n"
+                         "  Help: Unwrap first with '?!' (e.g., expr ?! default_val) or 'raw' keyword",
+                         sourceNode);
+            } else {
+                addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + leftType->toString() + "'", sourceNode);
+            }
             return typeSystem->getErrorType();
         }
         
         if (!rightPrim && !rightIsLBIM && !rightIsSIMD) {
-            addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + rightType->toString() + "'", sourceNode);
+            // BUG-001 fix: give an actionable hint when Result<T> is used directly in arithmetic
+            if (rightType->getKind() == TypeKind::RESULT) {
+                auto* resType = static_cast<ResultType*>(rightType);
+                std::string inner = resType->getValueType() ? resType->getValueType()->toString() : "T";
+                addError("Cannot use Result<" + inner + "> as " + inner + " in arithmetic\n"
+                         "  Help: Unwrap first with '?!' (e.g., expr ?! default_val) or 'raw' keyword",
+                         sourceNode);
+            } else {
+                addError("Arithmetic operators require numeric types (int*, uint*, flt*, tbb*), got '" + rightType->toString() + "'", sourceNode);
+            }
             return typeSystem->getErrorType();
         }
         

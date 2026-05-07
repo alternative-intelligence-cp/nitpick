@@ -1,0 +1,20 @@
+// bug072: non-pub helper called from pub func — must compile and run correctly
+// Previously: "func:_helper called from pub func: crashes codegen"
+// Fix: already resolved prior to v0.19.3 (intra-module calls work regardless of pub)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:_helper = int32(int32:x) {
+    pass (x + 1i32);
+};
+
+pub func:compute = int32(int32:n) {
+    pass raw _helper(n);
+};
+
+func:main = int32() {
+    int32:r = raw compute(9i32);
+    // Expected: 9 + 1 = 10; exit 0 if correct
+    int32:diff = (r - 10i32);
+    exit diff;
+};

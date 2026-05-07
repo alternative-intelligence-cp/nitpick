@@ -1,0 +1,50 @@
+// bug077: large pick() statement with 30+ arms must not crash the compiler
+// Previously: "large functions with many if/pick arms can segfault codegen"
+// Fix: already resolved prior to v0.19.3 (no fixed-size structure overflows)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:classify = int32(int32:n) {
+    int32:r = 0i32;
+    pick (n) {
+        (1i32) { r = 1i32; },
+        (2i32) { r = 2i32; },
+        (3i32) { r = 3i32; },
+        (4i32) { r = 4i32; },
+        (5i32) { r = 5i32; },
+        (6i32) { r = 6i32; },
+        (7i32) { r = 7i32; },
+        (8i32) { r = 8i32; },
+        (9i32) { r = 9i32; },
+        (10i32) { r = 10i32; },
+        (11i32) { r = 11i32; },
+        (12i32) { r = 12i32; },
+        (13i32) { r = 13i32; },
+        (14i32) { r = 14i32; },
+        (15i32) { r = 15i32; },
+        (16i32) { r = 16i32; },
+        (17i32) { r = 17i32; },
+        (18i32) { r = 18i32; },
+        (19i32) { r = 19i32; },
+        (20i32) { r = 20i32; },
+        (21i32) { r = 21i32; },
+        (22i32) { r = 22i32; },
+        (23i32) { r = 23i32; },
+        (24i32) { r = 24i32; },
+        (25i32) { r = 25i32; },
+        (26i32) { r = 26i32; },
+        (27i32) { r = 27i32; },
+        (28i32) { r = 28i32; },
+        (29i32) { r = 29i32; },
+        (30i32) { r = 30i32; },
+        (*) { r = -1i32; }
+    }
+    pass r;
+};
+
+func:main = int32() {
+    int32:r = raw classify(25i32);
+    // Expected: r == 25; exit 0 if correct
+    int32:diff = (r - 25i32);
+    exit diff;
+};
