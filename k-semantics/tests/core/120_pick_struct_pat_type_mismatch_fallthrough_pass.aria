@@ -1,0 +1,26 @@
+// expect-exit: 99
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Vec3 = {
+    int32:x;
+    int32:y;
+    int32:z;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Point:p = Point{x: 10, y: 20};
+    int32:r = 0;
+    pick (p) {
+        (Vec3 { x, y, z }) { r = x; },
+        (*) { r = 99; }
+    }
+    exit r;
+};
