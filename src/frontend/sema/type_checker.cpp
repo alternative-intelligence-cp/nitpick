@@ -1186,6 +1186,21 @@ Type* TypeChecker::checkBinaryOperator(frontend::TokenType op, Type* leftType, T
             return typeSystem->getSimdType(boolType, simdType->getLaneCount());
         }
         
+        // Struct types do not support comparison operators — reject with a clear error
+        // before the types-match check passes silently and ICmp generates invalid IR
+        if (leftType->getKind() == TypeKind::STRUCT || rightType->getKind() == TypeKind::STRUCT) {
+            std::string opStr = (op == TokenType::TOKEN_EQUAL_EQUAL ? "==" :
+                                 op == TokenType::TOKEN_BANG_EQUAL   ? "!=" :
+                                 op == TokenType::TOKEN_LESS          ? "<"  :
+                                 op == TokenType::TOKEN_LESS_EQUAL    ? "<=" :
+                                 op == TokenType::TOKEN_GREATER       ? ">"  : ">=");
+            std::string structName = (leftType->getKind() == TypeKind::STRUCT)
+                                     ? leftType->toString() : rightType->toString();
+            addError("Operator '" + opStr + "' is not defined for struct type '" + structName +
+                     "'. Implement an equality method on the struct instead.", sourceNode);
+            return typeSystem->getErrorType();
+        }
+
         // Special case: Allow exotic types (balanced, numeric) to be compared with integer literals
         // Example: trit:a = 1; if (a == 0) { ... }
         bool exoticIntLiteralComparison = false;

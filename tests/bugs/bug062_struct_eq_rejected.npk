@@ -1,0 +1,11 @@
+// bug062: struct == struct should produce a clear type error, not invalid LLVM IR
+// Expected: COMPILER ERROR containing "is not defined for struct type"
+
+struct:Point = { int32:x; int32:y; };
+func:main = int32() {
+    Point:a = Point{ x: 1i32, y: 2i32 };
+    Point:b = Point{ x: 1i32, y: 2i32 };
+    bool:eq = (a == b);
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
