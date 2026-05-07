@@ -1,0 +1,14 @@
+// expect-exit: 42
+
+func:helper = int32(int32:x) { pass x + 2; };
+
+func:compute = int32(int32:n) { pass raw helper(n); };
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:r = raw compute(40);
+    exit r;
+};

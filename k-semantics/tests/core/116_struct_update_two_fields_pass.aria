@@ -1,0 +1,16 @@
+// expect-exit: 30
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Point:p = Point{x: 1, y: 2};
+    Point:q = Point{...p, x: 10, y: 20};
+    exit q.x + q.y;
+};

@@ -1,8 +1,8 @@
 requires "domains.md"
 
-// Aria v0.18.0 — executable semantics seed.
+// Nitpick v0.19.4 — executable semantics (extends v0.18.0 nucleus).
 //
-// Scope of this first definition:
+// v0.18.0 scope:
 //   - mandatory func:main / func:failsafe envelope
 //   - zero-, one-, and two-argument helper functions returning through pass/fail
 //   - isolated helper call frames for parameters and local bindings
@@ -23,8 +23,13 @@ requires "domains.md"
 //   - bounded loop(start, end, step) with implicit $ iterator
 //   - if/else, pick/fall, comparisons, and exit semantics
 //
-// This file is intentionally a small golden-oracle nucleus, not a full Aria
-// definition. Later v0.18.x slices should extend it module-by-module.
+// v0.19.4 additions:
+//   - dynamic-index borrow paths: DynIndexPath/DynIndexAlias, conservative
+//     array-level conflict tracking (any dyn borrow on H blocks all other borrows on H)
+//   - struct update syntax: S{ ...base, field: val } and S{ ...base, f1: v1, f2: v2 }
+//   - struct field patterns in pick: (TypeName { F1, F2 }) { body }
+//   - lambda (anonymous function) variables: (RT)(P):x = RT(P) { pass E; };
+//   - non-pub helper functions and loop variable scope (K already correct; tests added)
 
 module ARIA-SYNTAX
   imports INT-SYNTAX
@@ -39,9 +44,11 @@ module ARIA-SYNTAX
      syntax BorrowPath ::= "FieldPath" "(" Id "," Id ")"
                          | "NestedFieldPath" "(" Id "," Id "," Id ")"
                          | "IndexPath" "(" Id "," Int ")"
+                         | "DynIndexPath" "(" Id "," Int ")"
      syntax BorrowAlias ::= "FieldAlias" "(" Id "," Id ")"
                           | "NestedFieldAlias" "(" Id "," Id "," Id ")"
                           | "IndexAlias" "(" Id "," Int ")"
+                          | "DynIndexAlias" "(" Id "," Int ")"
 
   syntax Val ::= Int
                | Bool
@@ -57,6 +64,8 @@ module ARIA-SYNTAX
                | "PTRLOC" "(" Int ")"
                | "PINPTRLOC" "(" Int ")"
                | "PINPATHLOC" "(" Int ")"
+               | "Lambda1" "(" BorrowInfo "," Type "," Id "," Type "," Exp ")"
+               | "Lambda2" "(" BorrowInfo "," Type "," Id "," BorrowInfo "," Type "," Id "," Type "," Exp ")"
 
   syntax KResult ::= Val
 
@@ -76,6 +85,8 @@ module ARIA-SYNTAX
                | Id "{" Id ":" Exp "}" [strict(3), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "}" [strict(3, 5), avoid]
                | Id "{" Id ":" Exp "," Id ":" Exp "," Id ":" Exp "}" [strict(3, 5, 7), avoid]
+               | Id "{" "..." Id "," Id ":" Exp "}" [strict(4), avoid]
+               | Id "{" "..." Id "," Id ":" Exp "," Id ":" Exp "}" [strict(4, 6), avoid]
                | Exp "[" Exp "]" [strict, avoid]
                | Exp "." Id [strict(1), avoid]
                | Exp "->" Id [strict(1), avoid]
@@ -106,6 +117,9 @@ module ARIA-SYNTAX
                 | BorrowMode Type ":" Id "=" Id "." Id ";"
                 | BorrowMode Type ":" Id "=" Id "." Id "." Id ";"
                 | BorrowMode Type ":" Id "=" Id "[" Int "]" ";"
+                | BorrowMode Type ":" Id "=" Id "[" Id "]" ";"
+                | "(" Type ")" "(" Type ")" ":" Id "=" Type "(" Param ")" "{" "pass" Exp ";" "}" ";"
+                | "(" Type ")" "(" Type "," Type ")" ":" Id "=" Type "(" Param "," Param ")" "{" "pass" Exp ";" "}" ";"
                 | Id "=" Exp ";" [strict(2)]
                 | Id "[" Exp "]" "=" Exp ";" [strict(2, 3)]
                 | "<-" Exp "=" Exp ";" [strict(1, 2)]
@@ -127,6 +141,8 @@ module ARIA-SYNTAX
      syntax Stmts ::= List{Stmt, ""}
 
      syntax PickPattern ::= Exp | "*"
+                          | Id "{" Id "," Id "}"          [symbol(structPat2)]
+                          | Id "{" Id "," Id "," Id "}"  [symbol(structPat3)]
      syntax PickCase    ::= "(" PickPattern ")" Block
                                                         | Id ":" "(" PickPattern ")" Block
      syntax PickCases   ::= List{PickCase, ","}
@@ -380,14 +396,19 @@ module ARIA
   syntax Val ::= argumentValue(Val) [function]
   syntax Bool ::= acceptsBorrowArg(BorrowInfo, Val) [function]
                 | isImmutableBorrowVar(Id, Map) [function]
+                | isStructVal(Val) [function]
+                | isLambdaVal(Val) [function]
                           | hasBorrowOnHost(Id, Set) [function]
                           | hasBorrowOnFieldPath(Id, Id, Set) [function]
                           | hasBorrowOnNestedPath(Id, Id, Id, Set) [function]
                                           | hasBorrowOnIndexPath(Id, Int, Set) [function]
+                                          | hasDynBorrowOnArray(Id, Set) [function]
      syntax Int ::= envLoc(Map, Id) [function]
   syntax Val ::= fieldValue(Map, Int, Id) [function]
                          | nestedFieldValue(Map, Int, Id, Id) [function]
                                          | arrayValue(Map, Int, Int) [function]
+                         | storeGet(Map, Int) [function]
+  syntax Int ::= extractInt(Val) [function]
   syntax Map ::= paramBorrowMap(Id, BorrowInfo) [function]
                | callParamStore(Map, Type, BorrowInfo, Int, Val) [function]
                | callWritebacks(BorrowInfo, Val) [function]
@@ -429,11 +450,19 @@ module ARIA
   rule isImmutableBorrowVar(X:Id, (X |-> MutBorrow _:Map)) => false
   rule isImmutableBorrowVar(_:Id, _:Map) => false [owise]
 
+  rule isStructVal(StructVal(_:Id, _:Map)) => true
+  rule isStructVal(_:Val) => false [owise]
+
+  rule isLambdaVal(Lambda1(_:BorrowInfo, _:Type, _:Id, _:Type, _:Exp)) => true
+  rule isLambdaVal(Lambda2(_:BorrowInfo, _:Type, _:Id, _:BorrowInfo, _:Type, _:Id, _:Type, _:Exp)) => true
+  rule isLambdaVal(_:Val) => false [owise]
+
      rule hasBorrowOnHost(_:Id, .Set) => false
      rule hasBorrowOnHost(H:Id, SetItem(H) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(FieldPath(H, _:Id)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(NestedFieldPath(H, _:Id, _:Id)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(IndexPath(H, _:Int)) _:Set) => true
+     rule hasBorrowOnHost(H:Id, SetItem(DynIndexPath(H, _:Int)) _:Set) => true
      rule hasBorrowOnHost(H:Id, SetItem(_:KItem) REST:Set) => hasBorrowOnHost(H, REST) [owise]
 
      rule hasBorrowOnFieldPath(_:Id, _:Id, .Set) => false
@@ -450,10 +479,22 @@ module ARIA
      rule hasBorrowOnIndexPath(H:Id, I:Int, SetItem(IndexPath(H, I)) _:Set) => true
      rule hasBorrowOnIndexPath(H:Id, I:Int, SetItem(_:KItem) REST:Set) => hasBorrowOnIndexPath(H, I, REST) [owise]
 
+     syntax Bool ::= "hasDynBorrowOnArray" "(" Id "," Set ")" [function]
+     rule hasDynBorrowOnArray(_:Id, .Set) => false
+     rule hasDynBorrowOnArray(H:Id, SetItem(DynIndexPath(H, _:Int)) _:Set) => true
+     rule hasDynBorrowOnArray(H:Id, SetItem(_:KItem) REST:Set) => hasDynBorrowOnArray(H, REST) [owise]
+
      rule envLoc((H:Id |-> L:Int _:Map), H) => L
      rule fieldValue((L:Int |-> StructVal(_:Id, (F:Id |-> V:Val _:Map)) _:Map), L, F) => V
      rule nestedFieldValue((L:Int |-> StructVal(_:Id, (F1:Id |-> StructVal(_:Id, (F2:Id |-> V:Val _:Map)) _:Map)) _:Map), L, F1, F2) => V
      rule arrayValue((L:Int |-> ArrayVal((I:Int |-> V:Val _:Map)) _:Map), L, I) => V
+
+     // storeGet: map lookup without M[K] syntax (avoids parse ambiguity in function args)
+     rule storeGet((L:Int |-> V:Val _:Map), L) => V
+     // extractInt: extract bare Int from typed value (for array index from int32/int64 variable)
+     rule extractInt(I32(I:Int)) => I
+     rule extractInt(I64(I:Int)) => I
+     rule extractInt(I:Int) => I
 
   rule <k> $$i T:Type : X:Id = H:Id ; => .K ... </k>
        <env> Env => Env [ X <- Env [ H ] ] </env>
@@ -527,6 +568,7 @@ module ARIA
            <imm-borrow-hosts> Imm => Imm SetItem(IndexPath(H, I)) </imm-borrow-hosts>
            <mut-borrow-hosts> Mut </mut-borrow-hosts>
       requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(hasBorrowOnIndexPath(H, I, Mut))
+       andBool notBool(hasDynBorrowOnArray(H, Mut))
 
   rule <k> $$m T:Type : X:Id = H:Id [ I:Int ] ; => .K ... </k>
            <env> Env => Env [ X <- L ] </env>
@@ -540,6 +582,40 @@ module ARIA
            <pinned-hosts> Pinned </pinned-hosts>
       requires H in_keys(Env) andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
        andBool notBool(hasBorrowOnIndexPath(H, I, Mut)) andBool notBool(hasBorrowOnIndexPath(H, I, Imm))
+       andBool notBool(hasDynBorrowOnArray(H, Mut)) andBool notBool(hasDynBorrowOnArray(H, Imm))
+
+  // -------------------------------------------------------------------------
+  // Dynamic-index borrow paths: $$i/$$m T:X = H[Idx] where Idx is a variable
+  // Conservative model: any dynamic borrow on H conflicts with any other borrow on H.
+  // -------------------------------------------------------------------------
+
+  rule <k> $$i T:Type : X:Id = H:Id [ Idx:Id ] ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, arrayValue(Store, envLoc(Env, H), extractInt(storeGet(Store, envLoc(Env, Idx))))) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- ImmBorrow ] </borrow-vars>
+           <imm-borrow-hosts> Imm => Imm SetItem(DynIndexPath(H, extractInt(storeGet(Store, envLoc(Env, Idx))))) </imm-borrow-hosts>
+           <mut-borrow-hosts> Mut </mut-borrow-hosts>
+      requires H in_keys(Env) andBool Idx in_keys(Env)
+       andBool notBool(H in Mut)
+       andBool notBool(hasDynBorrowOnArray(H, Mut))
+       andBool notBool(hasBorrowOnHost(H, Mut)) [priority(25)]
+
+  rule <k> $$m T:Type : X:Id = H:Id [ Idx:Id ] ; => .K ... </k>
+           <env> Env => Env [ X <- L ] </env>
+           <types> Types => Types [ X <- T ] </types>
+           <store> Store => Store [ L <- normalizeValue(T, arrayValue(Store, envLoc(Env, H), extractInt(storeGet(Store, envLoc(Env, Idx))))) ] </store>
+           <next-loc> L => L +Int 1 </next-loc>
+           <borrow-vars> BorrowVars => BorrowVars [ X <- MutBorrow ] </borrow-vars>
+           <borrow-aliases> Aliases => Aliases [ X <- DynIndexAlias(H, extractInt(storeGet(Store, envLoc(Env, Idx)))) ] </borrow-aliases>
+           <mut-borrow-hosts> Mut => Mut SetItem(DynIndexPath(H, extractInt(storeGet(Store, envLoc(Env, Idx))))) </mut-borrow-hosts>
+           <imm-borrow-hosts> Imm </imm-borrow-hosts>
+           <pinned-hosts> Pinned </pinned-hosts>
+      requires H in_keys(Env) andBool Idx in_keys(Env)
+       andBool notBool(H in Mut) andBool notBool(H in Imm) andBool notBool(H in Pinned)
+       andBool notBool(hasDynBorrowOnArray(H, Mut)) andBool notBool(hasDynBorrowOnArray(H, Imm))
+       andBool notBool(hasBorrowOnHost(H, Mut)) andBool notBool(hasBorrowOnHost(H, Imm)) [priority(25)]
 
   rule <k> $$i _:Type : _:Id = H:Id ; ~> _ => FS </k>
        <env> Env </env>
@@ -596,7 +672,8 @@ module ARIA
                           <mut-borrow-hosts> Mut </mut-borrow-hosts>
                           <failsafe> FS </failsafe>
                           <failsafe-triggered> _ => true </failsafe-triggered>
-                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnIndexPath(H, I, Mut) [priority(25)]
+                     requires notBool(H in_keys(Env)) orBool H in Mut orBool hasBorrowOnIndexPath(H, I, Mut)
+                               orBool hasDynBorrowOnArray(H, Mut) [priority(25)]
 
                 rule <k> $$m _:Type : _:Id = H:Id [ I:Int ] ; ~> _ => FS </k>
                           <env> Env </env>
@@ -606,7 +683,30 @@ module ARIA
                           <failsafe> FS </failsafe>
                           <failsafe-triggered> _ => true </failsafe-triggered>
                      requires notBool(H in_keys(Env)) orBool H in Mut orBool H in Imm orBool H in Pinned
-                               orBool hasBorrowOnIndexPath(H, I, Mut) orBool hasBorrowOnIndexPath(H, I, Imm) [priority(25)]
+                               orBool hasBorrowOnIndexPath(H, I, Mut) orBool hasBorrowOnIndexPath(H, I, Imm)
+                               orBool hasDynBorrowOnArray(H, Mut) orBool hasDynBorrowOnArray(H, Imm) [priority(25)]
+
+                // DynIndex borrow failsafe rules
+                rule <k> $$i _:Type : _:Id = H:Id [ Idx:Id ] ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool notBool(Idx in_keys(Env))
+                               orBool H in Mut orBool hasDynBorrowOnArray(H, Mut)
+                               orBool hasBorrowOnHost(H, Mut) [priority(24)]
+
+                rule <k> $$m _:Type : _:Id = H:Id [ Idx:Id ] ; ~> _ => FS </k>
+                          <env> Env </env>
+                          <mut-borrow-hosts> Mut </mut-borrow-hosts>
+                          <imm-borrow-hosts> Imm </imm-borrow-hosts>
+                          <pinned-hosts> Pinned </pinned-hosts>
+                          <failsafe> FS </failsafe>
+                          <failsafe-triggered> _ => true </failsafe-triggered>
+                     requires notBool(H in_keys(Env)) orBool notBool(Idx in_keys(Env))
+                               orBool H in Mut orBool H in Imm orBool H in Pinned
+                               orBool hasDynBorrowOnArray(H, Mut) orBool hasDynBorrowOnArray(H, Imm)
+                               orBool hasBorrowOnHost(H, Mut) orBool hasBorrowOnHost(H, Imm) [priority(24)]
 
      // -------------------------------------------------------------------------
      // Fixed two-element arrays and literal index paths
@@ -822,6 +922,62 @@ module ARIA
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires X in Fixed [priority(25)]
+
+  // -------------------------------------------------------------------------
+  // Struct update expressions: S{ ...base, field: val }
+  // Reads base variable's StructVal, returns new StructVal with field(s) updated.
+  // -------------------------------------------------------------------------
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct1(T, F) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct2(T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct2(_:Type, _:Id, T, F) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(T, F, _:Type, _:Id, _:Type, _:Id) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, T, F, _:Type, _:Id) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F:Id : V:Val } => StructVal(S, Fields [ F <- normalizeValue(T, V) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, _:Type, _:Id, T, F) ... </structs>
+
+  // Two-field struct update
+  rule <k> S:Id { ... H:Id , F1:Id : V1:Val , F2:Id : V2:Val } => StructVal(S, Fields [ F1 <- normalizeValue(T1, V1) ] [ F2 <- normalizeValue(T2, V2) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct2(T1, F1, T2, F2) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F1:Id : V1:Val , F2:Id : V2:Val } => StructVal(S, Fields [ F1 <- normalizeValue(T1, V1) ] [ F2 <- normalizeValue(T2, V2) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(T1, F1, T2, F2, _:Type, _:Id) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F1:Id : V1:Val , F2:Id : V2:Val } => StructVal(S, Fields [ F1 <- normalizeValue(T1, V1) ] [ F2 <- normalizeValue(T2, V2) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(T1, F1, _:Type, _:Id, T2, F2) ... </structs>
+
+  rule <k> S:Id { ... H:Id , F1:Id : V1:Val , F2:Id : V2:Val } => StructVal(S, Fields [ F1 <- normalizeValue(T1, V1) ] [ F2 <- normalizeValue(T2, V2) ]) ... </k>
+       <env> ... H |-> L ... </env>
+       <store> ... L |-> StructVal(S, Fields) ... </store>
+       <structs> ... S |-> Struct3(_:Type, _:Id, T1, F1, T2, F2) ... </structs>
 
   rule <k> PTRLOC(L:Int) -> F:Id = V:Val ; => .K ... </k>
        <store> ... L |-> (StructVal(S, Fields) => StructVal(S, Fields [ F <- normalizeValue(T, V) ])) ... </store>
@@ -1292,6 +1448,94 @@ module ARIA
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
 
+  // -------------------------------------------------------------------------
+  // Lambda variable declarations and invocation (v0.19.4)
+  // Function pointer variables: (RT)(P):x = RT(P) { pass E; };
+  // These store a Lambda1/Lambda2 Val in a local variable; calling x(arg)
+  // dispatches through invokeLambda, which uses the same call-frame mechanism
+  // as named helper functions.
+  // -------------------------------------------------------------------------
+
+  syntax KItem ::= "invokeLambda"  "(" Val "," Val ")"
+                 | "invokeLambda2" "(" Val "," Val "," Val ")"
+
+  // 1-param lambda declaration
+  rule <k> ( RT:Type ) ( _:Type ) : X:Id = _:Type ( P:Param ) { pass E:Exp ; } ; => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <store> Store => Store [ L <- Lambda1(paramBorrow(P), paramType(P), paramName(P), RT, E) ] </store>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  // 2-param lambda declaration
+  rule <k> ( RT:Type ) ( _:Type , _:Type ) : X:Id = _:Type ( P1:Param , P2:Param ) { pass E:Exp ; } ; => .K ... </k>
+       <env> Env => Env [ X <- L ] </env>
+       <store> Store => Store [ L <- Lambda2(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), RT, E) ] </store>
+       <next-loc> L => L +Int 1 </next-loc>
+
+  // Dispatch: call through a lambda variable (1-arg)
+  // Use env+store cell pattern to bind the lambda value — avoids M[K] in function args
+  rule <k> X:Id ( A:Val ) => invokeLambda(LV, A) ... </k>
+       <env> ... X |-> XL:Int ... </env>
+       <store> ... XL |-> LV:Val ... </store>
+    requires isLambdaVal(LV) [priority(100)]
+
+  // Dispatch: call through a lambda variable (2-arg)
+  rule <k> X:Id ( A1:Val , A2:Val ) => invokeLambda2(LV, A1, A2) ... </k>
+       <env> ... X |-> XL:Int ... </env>
+       <store> ... XL |-> LV:Val ... </store>
+    requires isLambdaVal(LV) [priority(100)]
+
+  // Invoke 1-param lambda — set up call frame and evaluate body
+  rule <k> invokeLambda(Lambda1(B:BorrowInfo, PT:Type, PX:Id, RT:Type, E:Exp), A:Val) =>
+           E ~> finishCallPassFrame(RT, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
+       <env> Env => PX |-> callParamLoc(Next, B, A) </env>
+       <types> Types => PX |-> PT </types>
+       <store> Store => callParamStore(Store, PT, B, Next, A) </store>
+       <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX, B) </borrow-vars>
+       <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> Next => Next +Int 1 </next-loc>
+    requires acceptsBorrowArg(B, A)
+
+  // Invoke 1-param lambda failsafe (borrow mismatch)
+  rule <k> invokeLambda(Lambda1(B:BorrowInfo, _:Type, _:Id, _:Type, _:Exp), A:Val) ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B, A))
+
+  // Invoke 2-param lambda — set up call frame and evaluate body
+  rule <k> invokeLambda2(Lambda2(B1:BorrowInfo, PT1:Type, PX1:Id, B2:BorrowInfo, PT2:Type, PX2:Id, RT:Type, E:Exp), A1:Val, A2:Val) =>
+           E ~> finishCallPassFrame(RT, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
+       <env> Env => (PX1 |-> callParamLoc(Next, B1, A1) PX2 |-> callParamLoc(Next +Int 1, B2, A2)) </env>
+       <types> Types => (PX1 |-> PT1 PX2 |-> PT2) </types>
+       <store> Store => callParamStore(callParamStore(Store, PT1, B1, Next, A1), PT2, B2, Next +Int 1, A2) </store>
+       <limits> Limits => .Map </limits>
+       <mem-modes> Modes => .Map </mem-modes>
+       <stack-live> Stack => .Set </stack-live>
+       <gc-live> GC => .Set </gc-live>
+       <wild-live> Wild => .Set </wild-live>
+       <borrow-vars> BorrowVars => paramBorrowMap(PX1, B1) paramBorrowMap(PX2, B2) </borrow-vars>
+       <borrow-aliases> BorrowAliases => .Map </borrow-aliases>
+       <imm-borrow-hosts> ImmHosts => .Set </imm-borrow-hosts>
+       <mut-borrow-hosts> MutHosts => .Set </mut-borrow-hosts>
+       <pinned-hosts> PinnedHosts => .Set </pinned-hosts>
+       <fixed-vars> Fixed => .Set </fixed-vars>
+       <next-loc> Next => Next +Int 2 </next-loc>
+    requires acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2)
+
+  // Invoke 2-param lambda failsafe (borrow mismatch)
+  rule <k> invokeLambda2(Lambda2(B1:BorrowInfo, _:Type, _:Id, B2:BorrowInfo, _:Type, _:Id, _:Type, _:Exp), A1:Val, A2:Val) ~> _ => FS </k>
+       <failsafe> FS </failsafe>
+       <failsafe-triggered> _ => true </failsafe-triggered>
+    requires notBool(acceptsBorrowArg(B1, A1) andBool acceptsBorrowArg(B2, A2))
+
   rule <k> V:Val ~> finishCallPass(T) => Result(NIL, normalizeValue(T, V), false) ... </k>
   rule <k> V:Val ~> finishCallFail => Result(V, NIL, true) ... </k>
 
@@ -1473,6 +1717,17 @@ module ARIA
                     <store> ... AL |-> (_:Val => normalizeValue(T, V)) HL |-> (ArrayVal(Items) => ArrayVal(Items [ I <- normalizeValue(T, V) ])) ... </store>
                     <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
                     <borrow-aliases> ... X |-> IndexAlias(H, I) ... </borrow-aliases>
+                    <fixed-vars> Fixed </fixed-vars>
+                    <pinned-hosts> PinnedHosts </pinned-hosts>
+               requires notBool(X in Fixed) andBool notBool(X in PinnedHosts) andBool I in_keys(Items)
+
+     // DynIndexAlias writeback: same as IndexAlias but tagged as DynIndexAlias
+     rule <k> X:Id = V:Val ; => .K ... </k>
+                    <env> ... X |-> AL H |-> HL ... </env>
+                    <types> ... X |-> T ... </types>
+                    <store> ... AL |-> (_:Val => normalizeValue(T, V)) HL |-> (ArrayVal(Items) => ArrayVal(Items [ I <- normalizeValue(T, V) ])) ... </store>
+                    <borrow-vars> ... X |-> MutBorrow ... </borrow-vars>
+                    <borrow-aliases> ... X |-> DynIndexAlias(H, I) ... </borrow-aliases>
                     <fixed-vars> Fixed </fixed-vars>
                     <pinned-hosts> PinnedHosts </pinned-hosts>
                requires notBool(X in Fixed) andBool notBool(X in PinnedHosts) andBool I in_keys(Items)
@@ -1673,6 +1928,36 @@ module ARIA
 
      rule <k> selectPick(V:Val, (P:Exp) B:Block , REST:PickCases, ALL:PickCases) => P ~> finishPickCase(V, B, REST, ALL) ... </k>
      rule <k> selectPick(V:Val, _:Id : (P:Exp) B:Block , REST:PickCases, ALL:PickCases) => P ~> finishPickCase(V, B, REST, ALL) ... </k>
+
+     // 2-field struct pattern match
+     rule <k> selectPick(StructVal(S:Id, ((F1:Id |-> V1:Val) (F2:Id |-> V2:Val) _:Map)), (S2:Id { F1 , F2 }) { SS:Stmts } , _:PickCases, ALL:PickCases) =>
+              enterBlock ~> int32:F1 = V1; int32:F2 = V2; SS ~> leaveBlock ~> endPick(ALL) ... </k>
+       requires S ==K S2
+
+     // 2-field struct pattern no-match (wrong type name)
+     rule <k> selectPick(StructVal(S:Id, Fields:Map), (S2:Id { _:Id , _:Id }) _:Block , REST:PickCases, ALL:PickCases) =>
+              selectPick(StructVal(S, Fields), REST, ALL) ... </k>
+       requires S =/=K S2
+
+     // non-struct value — skip 2-field struct pattern case
+     rule <k> selectPick(V:Val, (_:Id { _:Id , _:Id }) _:Block , REST:PickCases, ALL:PickCases) =>
+              selectPick(V, REST, ALL) ... </k>
+       requires notBool(isStructVal(V))
+
+     // 3-field struct pattern match
+     rule <k> selectPick(StructVal(S:Id, ((F1:Id |-> V1:Val) (F2:Id |-> V2:Val) (F3:Id |-> V3:Val) _:Map)), (S2:Id { F1 , F2 , F3 }) { SS:Stmts } , _:PickCases, ALL:PickCases) =>
+              enterBlock ~> int32:F1 = V1; int32:F2 = V2; int32:F3 = V3; SS ~> leaveBlock ~> endPick(ALL) ... </k>
+       requires S ==K S2
+
+     // 3-field struct pattern no-match (wrong type name)
+     rule <k> selectPick(StructVal(S:Id, Fields:Map), (S2:Id { _:Id , _:Id , _:Id }) _:Block , REST:PickCases, ALL:PickCases) =>
+              selectPick(StructVal(S, Fields), REST, ALL) ... </k>
+       requires S =/=K S2
+
+     // non-struct value — skip 3-field struct pattern case
+     rule <k> selectPick(V:Val, (_:Id { _:Id , _:Id , _:Id }) _:Block , REST:PickCases, ALL:PickCases) =>
+              selectPick(V, REST, ALL) ... </k>
+       requires notBool(isStructVal(V))
 
      rule <k> P:Val ~> finishPickCase(V:Val, B:Block, _:PickCases, ALL:PickCases) => B ~> endPick(ALL) ... </k>
           requires pickMatches(V, P)

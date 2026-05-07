@@ -1,0 +1,19 @@
+// expect-exit: 30
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Point:p = Point{x: 10, y: 20};
+    int32:r = 0;
+    pick (p) {
+        (Point { x, y }) { r = x + y; }
+    }
+    exit r;
+};
