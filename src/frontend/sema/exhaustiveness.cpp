@@ -156,6 +156,12 @@ ExhaustivenessAnalyzer::Analysis ExhaustivenessAnalyzer::analyze(
                 return result;
             }
             
+            // v0.19.1: Struct destructure pattern covers the entire domain
+            if (!pickCase->struct_pat_type.empty()) {
+                result.isExhaustive = true;
+                return result;
+            }
+
             // Check for wildcard (*) - represented as string literal "*"
             if (pickCase->pattern && pickCase->pattern->type == ASTNode::NodeType::LITERAL) {
                 LiteralExpr* lit = static_cast<LiteralExpr*>(pickCase->pattern.get());
@@ -256,6 +262,12 @@ CoverageSet ExhaustivenessAnalyzer::extractCoverage(
         // Check for unreachable case (!)
         if (pickCase->is_unreachable) {
             continue;  // Unreachable doesn't contribute to coverage
+        }
+        
+        // v0.19.1: Struct destructure pattern always matches — treat as wildcard
+        if (!pickCase->struct_pat_type.empty()) {
+            coverage.addDefault();
+            continue;
         }
         
         analyzePattern(pickCase->pattern.get(), coverage, domain);

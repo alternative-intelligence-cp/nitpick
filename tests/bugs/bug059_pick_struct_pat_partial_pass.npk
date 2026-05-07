@@ -1,0 +1,25 @@
+// bug059: pick struct field destructuring — partial destructure (only x)
+// Expected exit: 10 (only x bound, y ignored via _)
+
+struct:Color = {
+    int32:r;
+    int32:g;
+    int32:b;
+};
+
+func:main = int32() {
+    Color:c = Color{ r: 10i32, g: 20i32, b: 30i32 };
+    int32:result = 0i32;
+
+    pick(c) {
+        (Color{ r, _, _ }) {
+            result = r;
+        }
+    }
+
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

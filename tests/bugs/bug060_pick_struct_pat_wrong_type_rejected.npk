@@ -1,0 +1,27 @@
+// bug060: pick struct field pattern — wrong type should be rejected
+// Expected: compile error (selector is Color, pattern expects Point)
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Color = {
+    int32:r;
+    int32:g;
+    int32:b;
+};
+
+func:main = int32() {
+    Color:c = Color{ r: 1i32, g: 2i32, b: 3i32 };
+    pick(c) {
+        (Point{ x, y }) {
+            exit x;
+        }
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

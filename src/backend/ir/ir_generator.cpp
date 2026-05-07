@@ -6085,15 +6085,18 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                 
                 // Check for wildcard pattern (*)
                 bool is_wildcard = false;
-                if (pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
+                if (pick_case->pattern && pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
                     IdentifierExpr* ident = static_cast<IdentifierExpr*>(pick_case->pattern.get());
                     if (ident->name == "*") {
                         is_wildcard = true;
                     }
                 }
-                
-                if (is_wildcard) {
-                    // Wildcard always matches
+
+                // v0.19.1: Struct destructure pattern — always matches, binds fields
+                bool is_struct_pat = !pick_case->struct_pat_type.empty();
+
+                if (is_wildcard || is_struct_pat) {
+                    // Wildcard / struct pattern always matches
                     builder.CreateBr(body_block);
                 } else {
                     // Generate pattern value
@@ -6172,6 +6175,35 @@ skip_comparison:
                 // Body block: execute case body
                 body_block->insertInto(func);
                 builder.SetInsertPoint(body_block);
+
+                // v0.19.1: Struct destructure — bind fields as locals before body
+                std::vector<std::string> struct_bound_fields;
+                if (is_struct_pat && !pick_case->struct_pat_fields.empty()) {
+                    // Get the LLVM struct type — named by the bare struct name (not "struct.X")
+                    llvm::StructType* llvm_st = llvm::StructType::getTypeByName(
+                        context, pick_case->struct_pat_type);
+                    // Get the semantic struct type for field index lookup
+                    Type* sema_type = type_system->getStructType(pick_case->struct_pat_type);
+                    StructType* sema_st = sema_type ? static_cast<StructType*>(sema_type) : nullptr;
+                    if (llvm_st && sema_st) {
+                        for (const std::string& fieldName : pick_case->struct_pat_fields) {
+                            if (fieldName == "_") continue;
+                            int fIdx = sema_st->getFieldIndex(fieldName);
+                            if (fIdx < 0 || (unsigned)fIdx >= llvm_st->getNumElements()) continue;
+                            llvm::Type* fldTy = llvm_st->getElementType((unsigned)fIdx);
+                            // Extract field value from the loaded struct
+                            llvm::Value* fldVal = builder.CreateExtractValue(
+                                selector, (unsigned)fIdx, fieldName + ".extracted");
+                            // Alloca + store so the binding behaves like a local variable
+                            llvm::Value* fldAlloca = builder.CreateAlloca(fldTy, nullptr, fieldName);
+                            builder.CreateStore(fldVal, fldAlloca);
+                            // Save previous binding (if any) to restore after body
+                            named_values[fieldName] = fldAlloca;
+                            struct_bound_fields.push_back(fieldName);
+                        }
+                    }
+                }
+
                 codegenStatement(pick_case->body.get());
                 
                 // Branch to end if no terminator

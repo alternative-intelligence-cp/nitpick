@@ -564,6 +564,9 @@ public:
     ASTNodePtr pattern;        // Pattern expression: (< 10), (9), (*), (!), etc.
     ASTNodePtr body;           // Case body block
     bool is_unreachable;       // True if pattern is (!)
+    // v0.19.1: Struct field destructuring pattern (TypeName { field1, field2 })
+    std::string struct_pat_type;               // Non-empty = struct destructure pattern
+    std::vector<std::string> struct_pat_fields; // Field names to bind ("_" = ignored)
     
     PickCase(const std::string& lbl, ASTNodePtr patt, ASTNodePtr b, bool unreachable = false,
              int line = 0, int column = 0)

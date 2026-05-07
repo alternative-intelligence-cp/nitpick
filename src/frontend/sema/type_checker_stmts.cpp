@@ -4734,7 +4734,7 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         
         // Check if selector is .is_error field access on a Result variable
         // If so, and pattern is a boolean literal, propagate knowledge
-        if (stmt->selector->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        if (pickCase->pattern && stmt->selector->type == ASTNode::NodeType::MEMBER_ACCESS) {
             MemberAccessExpr* memberAccess = static_cast<MemberAccessExpr*>(stmt->selector.get());
             if (memberAccess->member == "is_error") {
                 // Get the Result variable name
@@ -4764,6 +4764,44 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         
         // Check case body with derived knowledge
         currentResultState = caseState;
+
+        // v0.19.1: Struct destructure pattern — validate type and bind fields
+        if (!pickCase->struct_pat_type.empty()) {
+            // Verify selector type is the correct struct type
+            Type* selType = inferType(stmt->selector.get());
+            if (selType && selType->getKind() == TypeKind::STRUCT) {
+                const StructType* selST = static_cast<const StructType*>(selType);
+                if (selST->getName() != pickCase->struct_pat_type) {
+                    addError("Struct pattern type '" + pickCase->struct_pat_type +
+                             "' does not match selector type '" + selST->getName() + "'",
+                             caseNode.get());
+                } else {
+                    // Enter a scope so field bindings are cleaned up after the body
+                    symbolTable->enterScope(ScopeKind::BLOCK, "pick_struct_pat");
+                    for (const std::string& fieldName : pickCase->struct_pat_fields) {
+                        if (fieldName == "_") continue; // ignored placeholder
+                        const StructType::Field* fld = selST->getField(fieldName);
+                        if (!fld) {
+                            addError("Unknown field '" + fieldName + "' in struct '" +
+                                     pickCase->struct_pat_type + "'", caseNode.get());
+                        } else {
+                            symbolTable->defineSymbol(fieldName, SymbolKind::VARIABLE, fld->type);
+                        }
+                    }
+                    if (pickCase->body) {
+                        checkStatement(pickCase->body.get());
+                    }
+                    symbolTable->exitScope();
+                    // Save state and continue to next case
+                    caseStates.push_back(currentResultState);
+                    continue;
+                }
+            } else if (selType && selType->getKind() != TypeKind::ERROR) {
+                addError("Struct pattern requires a struct selector, got '" +
+                         selType->toString() + "'", caseNode.get());
+            }
+        }
+
         if (pickCase->body) {
             checkStatement(pickCase->body.get());
         }

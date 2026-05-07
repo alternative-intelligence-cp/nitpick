@@ -5520,9 +5520,44 @@ ASTNodePtr Parser::parsePickStatement() {
             is_unreachable = true;
         }
         
+        // v0.19.1: Check for struct destructure pattern: TypeName { field1, field2 }
+        // Detection: identifier (uppercase start) immediately followed by '{'
+        std::string struct_pat_type;
+        std::vector<std::string> struct_pat_fields;
+        bool is_struct_pattern = false;
+        if (!is_unreachable && check(TokenType::TOKEN_IDENTIFIER)) {
+            const std::string& lexeme = peek().lexeme;
+            if (!lexeme.empty() && std::isupper((unsigned char)lexeme[0])) {
+                size_t savedPos = current;
+                Token typeToken = advance();
+                if (check(TokenType::TOKEN_LEFT_BRACE)) {
+                    advance(); // consume '{'
+                    is_struct_pattern = true;
+                    struct_pat_type = typeToken.lexeme;
+                    // Parse comma-separated field names
+                    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+                        if (check(TokenType::TOKEN_IDENTIFIER)) {
+                            Token fieldToken = advance();
+                            struct_pat_fields.push_back(fieldToken.lexeme);
+                        } else {
+                            error("Expected field name or '_' in struct pattern");
+                            break;
+                        }
+                        if (!match(TokenType::TOKEN_COMMA)) break;
+                    }
+                    if (!match(TokenType::TOKEN_RIGHT_BRACE)) {
+                        error("Expected '}' to close struct pattern");
+                    }
+                } else {
+                    // Not a struct pattern — backtrack
+                    current = savedPos;
+                }
+            }
+        }
+
         // Parse pattern (expression or wildcard *)
         ASTNodePtr pattern = nullptr;
-        if (!is_unreachable) {
+        if (!is_unreachable && !is_struct_pattern) {
             if (match(TokenType::TOKEN_STAR)) {
                 // Wildcard '*' - represented as string literal
                 // Use std::string to force string constructor (not bool from const char*)
@@ -5558,8 +5593,11 @@ ASTNodePtr Parser::parsePickStatement() {
         }
         
         // Create PickCase node
-        cases.push_back(std::make_shared<PickCase>(label, pattern, body, is_unreachable,
-                                                     pickToken.line, pickToken.column));
+        auto pickCaseNode = std::make_shared<PickCase>(label, pattern, body, is_unreachable,
+                                                        pickToken.line, pickToken.column);
+        pickCaseNode->struct_pat_type = struct_pat_type;
+        pickCaseNode->struct_pat_fields = struct_pat_fields;
+        cases.push_back(pickCaseNode);
         
         // Cases are comma-separated
         if (!match(TokenType::TOKEN_COMMA)) {
