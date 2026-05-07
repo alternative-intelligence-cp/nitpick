@@ -372,6 +372,7 @@ public:
     
     std::vector<Field> fields;
     std::string type_name;  // Empty for dynamic obj, set for struct constructors
+    std::string base_name;  // v0.19.1: set for struct update syntax: TypeName{ ...base, field: expr }
     
     ObjectLiteralExpr(const std::vector<Field>& flds, 
                       const std::string& typeName = "",

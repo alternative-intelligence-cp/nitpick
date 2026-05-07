@@ -1590,6 +1590,18 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             advance(); // consume '{'
             
             std::vector<ObjectLiteralExpr::Field> fields;
+            std::string baseName; // v0.19.1: struct update syntax: TypeName{ ...base, field: expr }
+            
+            // Check for spread: TypeName{ ...base, ... }
+            if (check(TokenType::TOKEN_DOT_DOT_DOT)) {
+                advance(); // consume '...'
+                Token baseToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected base variable name after '...' in struct update");
+                baseName = baseToken.lexeme;
+                // Optional comma after base before field overrides
+                if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+                    consume(TokenType::TOKEN_COMMA, "Expected ',' after base name in struct update");
+                }
+            }
             
             while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
                 // Parse field name
@@ -1617,12 +1629,14 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
             
             // Create ObjectLiteralExpr with type_name set
-            return std::make_shared<ObjectLiteralExpr>(
+            auto objLitExpr = std::make_shared<ObjectLiteralExpr>(
                 fields,
                 typeName,  // Set type name for struct literals
                 token.line,
                 token.column
             );
+            objLitExpr->base_name = baseName;
+            return objLitExpr;
         }
         
         // Check for turbofish syntax: ::<T, U> followed by function call

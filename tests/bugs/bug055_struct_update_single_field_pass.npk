@@ -1,0 +1,17 @@
+// bug055: Struct update syntax — copy with single field override
+// Point{ ...p, y: newval } — x copied, y overridden
+// Expected: exits 10 (q.x)
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Point:p = Point{ x: 10i32, y: 20i32 };
+    Point:q = Point{ ...p, y: 99i32 };
+    if (q.x != 10i32) { exit 1; }
+    if (q.y != 99i32) { exit 2; }
+    if (p.x != 10i32) { exit 3; }
+    if (p.y != 20i32) { exit 4; }
+    exit q.x;
+};

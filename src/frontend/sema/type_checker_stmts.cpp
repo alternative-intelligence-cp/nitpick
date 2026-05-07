@@ -1312,11 +1312,35 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 const std::vector<StructType::Field>& structFields = structType->getFields();
                 
                 // Check field count matches
-                if (objLit->fields.size() != structFields.size()) {
+                // v0.19.1: struct update syntax allows fewer fields when base_name is set
+                if (objLit->base_name.empty() && objLit->fields.size() != structFields.size()) {
                     addError("Object literal has " + std::to_string(objLit->fields.size()) + 
                             " fields, but struct '" + structType->getName() + 
                             "' requires " + std::to_string(structFields.size()) + " fields", stmt);
                     return;
+                }
+                if (!objLit->base_name.empty()) {
+                    // Verify base variable exists in scope and is the correct struct type
+                    Symbol* baseSym = symbolTable->resolveSymbol(objLit->base_name);
+                    if (!baseSym || !baseSym->type) {
+                        addError("Unknown base variable '" + objLit->base_name + "' in struct update", stmt);
+                        return;
+                    }
+                    Type* baseType = baseSym->type;
+                    if (baseType->getKind() != TypeKind::STRUCT ||
+                        static_cast<const StructType*>(baseType)->getName() != structType->getName()) {
+                        addError("Base variable '" + objLit->base_name + "' must be of type '" +
+                                 structType->getName() + "'", stmt);
+                        return;
+                    }
+                    // Verify all override field names are valid
+                    for (const auto& litField : objLit->fields) {
+                        if (structType->getFieldIndex(litField.name) < 0) {
+                            addError("Unknown field '" + litField.name + "' in struct update of '" +
+                                     structType->getName() + "'", stmt);
+                            return;
+                        }
+                    }
                 }
                 
                 // Validate each field's type

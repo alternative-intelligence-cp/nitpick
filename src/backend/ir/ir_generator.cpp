@@ -11530,6 +11530,28 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
             // Allocate space for the struct on the stack
             llvm::AllocaInst* struct_alloca = builder.CreateAlloca(struct_type, nullptr, "struct.tmp");
             
+            // v0.19.1: Struct update syntax — if base_name is set, copy base first,
+            // then apply field overrides stored in objLit->fields.
+            if (!objLit->base_name.empty()) {
+                auto base_it = named_values.find(objLit->base_name);
+                if (base_it != named_values.end()) {
+                    llvm::Value* base_var = base_it->second;
+                    // base_var is an alloca holding the struct value — get its size and memcpy
+                    llvm::DataLayout dl = module->getDataLayout();
+                    uint64_t struct_size = dl.getTypeAllocSize(struct_type);
+                    // Load base struct value and store into new alloca (field-by-field for correctness)
+                    llvm::StructType* st_cast = llvm::cast<llvm::StructType>(struct_type);
+                    for (unsigned fi = 0; fi < st_cast->getNumElements(); ++fi) {
+                        llvm::Type* ft = st_cast->getElementType(fi);
+                        llvm::Value* src_ptr = builder.CreateStructGEP(struct_type, base_var, fi, "base.fld.src");
+                        llvm::Value* dst_ptr = builder.CreateStructGEP(struct_type, struct_alloca, fi, "base.fld.dst");
+                        llvm::Value* fval = builder.CreateLoad(ft, src_ptr, "base.fld.val");
+                        builder.CreateStore(fval, dst_ptr);
+                    }
+                    (void)struct_size;
+                }
+            }
+            
             // Initialize each field
             // Fields are in objLit->fields (std::vector<Field>)
             for (size_t i = 0; i < objLit->fields.size(); ++i) {

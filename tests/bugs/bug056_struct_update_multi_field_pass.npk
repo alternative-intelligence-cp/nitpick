@@ -1,0 +1,21 @@
+// bug056: Struct update syntax — copy with multiple field overrides
+// Color{ ...c1, g: 0, b: 0 } — r copied, g and b overridden
+// Expected: exits 100 (c3.r)
+struct:Color = {
+    int32:r;
+    int32:g;
+    int32:b;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Color:c1 = Color{ r: 100i32, g: 150i32, b: 200i32 };
+    Color:c2 = Color{ ...c1, r: 255i32 };
+    if (c2.r != 255i32) { exit 1; }
+    if (c2.g != 150i32) { exit 2; }
+    if (c2.b != 200i32) { exit 3; }
+    Color:c3 = Color{ ...c1, g: 0i32, b: 0i32 };
+    if (c3.r != 100i32) { exit 4; }
+    if (c3.g != 0i32)   { exit 5; }
+    if (c3.b != 0i32)   { exit 6; }
+    exit c3.r;
+};
