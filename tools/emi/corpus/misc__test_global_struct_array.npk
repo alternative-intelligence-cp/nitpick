@@ -1,0 +1,24 @@
+// Test: Global array with structs
+// Testing the exact case from P0.2 priorities
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+struct:WatchPoint = {
+    int32:id;
+    int32:active;
+};
+
+// Global array of structs
+WatchPoint[16]:_watches;
+
+func:main = int32() {
+    // Initialize first element
+    _watches[0].id = 1i32;
+    _watches[0].active = 1i32;
+    
+    // Initialize second element
+    _watches[1].id = 2i32;
+    _watches[1].active = 0i32;
+    
+    exit 0;
+};

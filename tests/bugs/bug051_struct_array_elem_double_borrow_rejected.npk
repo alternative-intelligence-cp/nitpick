@@ -1,0 +1,20 @@
+// bug051: $$m borrowing the same struct array element twice — must be rejected
+// v0.19.0 Phase 3 — struct array mixed borrow interaction
+// Expected: compile error ARIA-023
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+struct:Pair = {
+    int32:a;
+    int32[4]:buf;
+};
+
+func:main = int32() {
+    Pair:p;
+    p.buf[0] = 10i32;
+
+    $$m int32:r0  = p.buf[0];
+    $$m int32:r0b = p.buf[0];  // ERROR: same slot already borrowed (ARIA-023)
+
+    exit 0;
+};

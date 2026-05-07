@@ -1,0 +1,58 @@
+// stdlib/pipe.aria — IPC pipe pairs (v0.10.0 — ported to aria-libc)
+//
+// Inter-process communication via POSIX pipes.
+// Import with: use "pipe.aria".*;
+//
+// v0.10.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_process.so
+
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "npk_libc_process" {
+    func:npk_libc_process_pipe          = int32();
+    func:npk_libc_process_pipe_read_fd  = int64();
+    func:npk_libc_process_pipe_write_fd = int64();
+    func:npk_libc_process_pipe_write_i64 = int32(int64:fd, int64:val);
+    func:npk_libc_process_pipe_read_i64  = int64(int64:fd);
+    func:npk_libc_process_pipe_close     = int32(int64:fd);
+}
+
+Type:Pipe = {
+    // create() — create a pipe pair, returns read fd.
+    // Write fd available via Pipe.write_fd() immediately after.
+    func:create = int64() {
+        int32:status = npk_libc_process_pipe();
+        if (status != 0i32) { pass 0i64 - 1i64; }
+        pass npk_libc_process_pipe_read_fd();
+    };
+
+    // write_fd() — get the write end fd from last create() call
+    func:write_fd = int64() {
+        pass npk_libc_process_pipe_write_fd();
+    };
+
+    func:destroy = int32(int64:read_fd) {
+        int32:r1 = npk_libc_process_pipe_close(read_fd);
+        pass r1;
+    };
+
+    func:write_int64 = int32(int64:fd, int64:value) {
+        pass npk_libc_process_pipe_write_i64(fd, value);
+    };
+
+    func:read_int64 = int64(int64:fd) {
+        pass npk_libc_process_pipe_read_i64(fd);
+    };
+
+    func:close_write = int32(int64:fd) {
+        pass npk_libc_process_pipe_close(fd);
+    };
+
+    func:close_read = int32(int64:fd) {
+        pass npk_libc_process_pipe_close(fd);
+    };
+
+    struct:interface = {
+        int64:read_fd;
+        int64:write_fd;
+    };
+};

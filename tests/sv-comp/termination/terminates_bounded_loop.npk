@@ -1,0 +1,26 @@
+// SV-COMP Termination equivalent: bounded_loop
+//
+// C analog: Termination-MainControlFlow/loops/simple_bounded.c
+// Property: LTL(F end) — program always terminates
+// Aria: loop(0, 100, 1) has fixed upper bound. Termination is guaranteed
+//       by the loop construct itself — it cannot iterate infinitely.
+//       This is a structural property of Aria's loop() syntax.
+//
+// Expected verdict: true   Strategy: runtime (exits 0 — terminates)
+
+func:main = int32() {
+    tbb32:sum = 0;
+    tbb32:one = 1;
+
+    loop(0, 100, 1) {
+        sum = sum + one;
+    }
+
+    // sum = 100 after 100 iterations
+    if (sum != 100) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

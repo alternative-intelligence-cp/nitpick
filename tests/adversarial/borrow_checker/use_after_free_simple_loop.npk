@@ -1,0 +1,30 @@
+/**
+ * Test: Use-After-Free in Simple Loop
+ * Expected: COMPILER ERROR - use of freed variable
+ * Why Critical: Basic loop-carried dependency, must catch
+ *
+ * On iteration 1: p is ALLOCATED, use is OK, free makes it FREED
+ * On iteration 2: p is FREED, use must ERROR
+ */
+
+func:test = NIL() {
+    wild void->p = @extern("npk_alloc", 10);
+    int32:i = 0;
+
+    while (i < 2) {
+        wild int8->ptr = @cast<wild int8@>(p);
+        ptr@ = 42;  // Should error on iteration 2 (use after free)
+        @extern("npk_free", p);
+        i = i + 1;
+    }
+};
+
+func:main = int32() {
+    test();
+    return 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,18 @@
+// Test that should NOT overflow
+func:main = int32() {
+    tbb8:x = 10;
+    tbb8:y = 20;
+    tbb8:sum = x + y;  // Should be 30, NOT ERR
+    
+    tbb8:expected = 30;
+    
+    if (sum == expected) {
+        exit 0;  // Success
+    }
+    
+    exit 1;  // Failed
+};
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

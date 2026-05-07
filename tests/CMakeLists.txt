@@ -21,10 +21,10 @@ add_test(NAME test_runner_minimal COMMAND test_runner)
 # Integration Tests
 # ============================================================================
 
-# Find all .aria files in integration directory
-file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.aria")
+# Find all .npk files in integration directory
+file(GLOB INTEGRATION_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/integration/*.npk")
 
-# Add integration test runner if we have .aria files
+# Add integration test runner if we have .npk files
 if(INTEGRATION_TESTS)
     add_test(
         NAME integration_tests
@@ -100,11 +100,11 @@ endif()
 # ============================================================================
 
 # Diamond import test: A→B→D, A→C→D — verifies module cache deduplication
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.aria")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.npk")
     add_test(
         NAME module_loading_diamond
-        COMMAND ${CMAKE_BINARY_DIR}/ariac
-            ${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.aria
+        COMMAND ${CMAKE_BINARY_DIR}/npkc
+            ${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.npk
             -o ${CMAKE_BINARY_DIR}/test_diamond
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/module_loading
     )
@@ -122,5 +122,60 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/module_loading/diamond_test.aria")
         TIMEOUT 10
         LABELS "module_loading"
         DEPENDS module_loading_diamond
+    )
+endif()
+
+# ============================================================================
+# KLEE Symbolic Execution (v0.18.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tools/klee/aria_klee.sh")
+    add_test(
+        NAME klee_symbolic_execution
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tools/klee/aria_klee.sh
+            --test-dir ${CMAKE_SOURCE_DIR}/tools/klee/tests
+            --out-dir  ${CMAKE_BINARY_DIR}/klee-results
+            --timeout  60
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools/klee
+    )
+    set_tests_properties(klee_symbolic_execution PROPERTIES
+        TIMEOUT 300
+        LABELS "symbolic;klee;v0.18.4"
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc;STUBS_BC=${CMAKE_SOURCE_DIR}/tools/klee/aria_rt_stubs.bc"
+    )
+endif()
+
+# ============================================================================
+# Juliet CWE Test Suite (v0.18.5)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/juliet/run_juliet.sh")
+    add_test(
+        NAME juliet_cwe_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/juliet/run_juliet.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/juliet
+    )
+    set_tests_properties(juliet_cwe_tests PROPERTIES
+        TIMEOUT 300
+        LABELS "security;juliet;cwe;v0.18.5"
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
+    )
+endif()
+
+# ============================================================================
+# SV-COMP Benchmark Suite (v0.18.6)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh")
+    add_test(
+        NAME svcomp_benchmarks
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/sv-comp
+    )
+    set_tests_properties(svcomp_benchmarks PROPERTIES
+        TIMEOUT 300
+        LABELS "security;svcomp;v0.18.6"
+        ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
     )
 endif()

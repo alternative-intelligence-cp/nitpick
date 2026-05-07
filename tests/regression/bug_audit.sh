@@ -1,7 +1,7 @@
 #!/bin/bash
 # v0.16.0-1 Bug Audit — Test all 13 active bugs from META/ARIA/BUGS
 cd /home/randy/Workspace/REPOS/aria
-ARIAC=build/ariac
+NPKC=build/npkc
 DIR=tests/regression
 mkdir -p "$DIR"
 
@@ -11,7 +11,7 @@ test_compile_run() {
     local name="$1" file="$2"
     rm -f a.out
     local cout
-    cout=$($ARIAC "$file" -o a.out 2>&1)
+    cout=$($NPKC "$file" -o a.out 2>&1)
     local crc=$?
     local errors=$(echo "$cout" | grep -c "error:")
     
@@ -41,19 +41,19 @@ test_compile_run() {
 echo "================================================================"
 echo "B1: Non-pub helper from pub function"
 echo "================================================================"
-cat > "$DIR/b1_test.aria" << 'EOF'
+cat > "$DIR/b1_test.npk" << 'EOF'
 func:helper = int64() { pass 42; };
 pub func:caller = int64() { int64:x = raw helper(); pass x; };
 func:main = int32() { int64:val = raw caller(); exit 0; };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B1" "$DIR/b1_test.aria"
+test_compile_run "B1" "$DIR/b1_test.npk"
 b1=$?
 
 echo "================================================================"
 echo "B2: Large function many if-blocks (20 vars, 20 ifs)"
 echo "================================================================"
-cat > "$DIR/b2_test.aria" << 'ENDTEST'
+cat > "$DIR/b2_test.npk" << 'ENDTEST'
 func:main = int32() {
     int64:a=1; int64:b=2; int64:c=3; int64:d=4; int64:e=5;
     int64:f=6; int64:g=7; int64:h=8; int64:i=9; int64:j=10;
@@ -84,27 +84,27 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 ENDTEST
-test_compile_run "B2" "$DIR/b2_test.aria"
+test_compile_run "B2" "$DIR/b2_test.npk"
 b2=$?
 
 echo "================================================================"
 echo "B3: Nested module calls (pub→pub cross-module) GC OOM"
 echo "================================================================"
-cat > "$DIR/b3_mod.aria" << 'EOF'
+cat > "$DIR/b3_mod.npk" << 'EOF'
 pub func:mod_func = int64(int64:x) { pass x + 1; };
 EOF
-cat > "$DIR/b3_test.aria" << 'EOF'
-use "tests/regression/b3_mod.aria".*;
+cat > "$DIR/b3_test.npk" << 'EOF'
+use "tests/regression/b3_mod.npk".*;
 func:main = int32() { int64:val = 10; int64:r = raw mod_func(val); exit 0; };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B3" "$DIR/b3_test.aria"
+test_compile_run "B3" "$DIR/b3_test.npk"
 b3=$?
 
 echo "================================================================"
 echo "B4: ahget missing key segfault"
 echo "================================================================"
-cat > "$DIR/b4_test.aria" << 'EOF'
+cat > "$DIR/b4_test.npk" << 'EOF'
 func:failsafe = int32(tbb32:err) { exit 1; };
 func:main = int32() {
     int64:ht = ahash(4096);
@@ -114,13 +114,13 @@ func:main = int32() {
     exit 0;
 };
 EOF
-test_compile_run "B4" "$DIR/b4_test.aria"
+test_compile_run "B4" "$DIR/b4_test.npk"
 b4=$?
 
 echo "================================================================"
 echo "B5: Extern pointer return corrupts struct fields"
 echo "================================================================"
-cat > "$DIR/b5_test.aria" << 'EOF'
+cat > "$DIR/b5_test.npk" << 'EOF'
 extern func:malloc = wild int8*(int64:size);
 extern func:free = void(wild int8*:ptr);
 func:main = int32() {
@@ -131,13 +131,13 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B5" "$DIR/b5_test.aria"
+test_compile_run "B5" "$DIR/b5_test.npk"
 b5=$?
 
 echo "================================================================"
 echo "B8: Variables before loop() inaccessible after"
 echo "================================================================"
-cat > "$DIR/b8_test.aria" << 'EOF'
+cat > "$DIR/b8_test.npk" << 'EOF'
 func:main = int32() {
     int64:x = 10;
     loop(0, 3, 1) {
@@ -150,13 +150,13 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B8" "$DIR/b8_test.aria"
+test_compile_run "B8" "$DIR/b8_test.npk"
 b8=$?
 
 echo "================================================================"
 echo "B10: @cast on local func result produces garbage"
 echo "================================================================"
-cat > "$DIR/b10_test.aria" << 'EOF'
+cat > "$DIR/b10_test.npk" << 'EOF'
 func:get_num = int64() { pass 100; };
 func:main = int32() {
     int64:tmp = raw get_num();
@@ -166,13 +166,13 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B10" "$DIR/b10_test.aria"
+test_compile_run "B10" "$DIR/b10_test.npk"
 b10=$?
 
 echo "================================================================"
 echo "B12: fixed with arithmetic evaluates to 0"
 echo "================================================================"
-cat > "$DIR/b12_test.aria" << 'EOF'
+cat > "$DIR/b12_test.npk" << 'EOF'
 fixed int64:MY_CONST = 5 + 3;
 func:main = int32() {
     if (MY_CONST == 8i64) { exit 0; }
@@ -180,17 +180,17 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B12" "$DIR/b12_test.aria"
+test_compile_run "B12" "$DIR/b12_test.npk"
 b12=$?
 
 echo "================================================================"
 echo "B13: Negative constants imported via use are zeroed"
 echo "================================================================"
-cat > "$DIR/b13_mod.aria" << 'EOF'
+cat > "$DIR/b13_mod.npk" << 'EOF'
 pub func:get_neg_val = int64() { int64:v = 0 - 42; pass v; };
 EOF
-cat > "$DIR/b13_test.aria" << 'EOF'
-use "tests/regression/b13_mod.aria".*;
+cat > "$DIR/b13_test.npk" << 'EOF'
+use "tests/regression/b13_mod.npk".*;
 func:main = int32() {
     int64:v = raw get_neg_val();
     int64:expected = 0 - 42;
@@ -199,7 +199,7 @@ func:main = int32() {
 };
 func:failsafe = int32(tbb32:err) { exit 1; };
 EOF
-test_compile_run "B13" "$DIR/b13_test.aria"
+test_compile_run "B13" "$DIR/b13_test.npk"
 b13=$?
 
 echo ""

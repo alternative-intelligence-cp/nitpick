@@ -1,0 +1,90 @@
+// P1-4 Design by Contract - Working Test Suite
+// Tests requires and ensures clauses with simple functions
+
+// Test 1: Simple precondition
+func:divide = int32(int32:a, int32:b)
+  requires b != 0
+{
+    pass a / b;
+};
+
+// Test 2: Multiple preconditions (comma-separated)
+func:sqrt_approx = int32(int32:n)
+  requires n >= 0,
+           n < 1000
+{
+    pass n / 2;  // Dummy implementation
+};
+
+// Test 3: Simple postcondition
+// Note: 'result' keyword for postconditions needs type system support
+// For now we just test parsing
+func:get_positive = int32(int32:value)
+  ensures result >= 0
+{
+    if (value < 0) {
+        pass 1;
+    }
+    pass value;
+};
+
+// Test 4: Both preconditions and postconditions
+func:clamp = int32(int32:value, int32:min, int32:max)
+  requires min <= max
+  ensures result >= min,
+          result <= max
+{
+    if (value < min) {
+        pass min;
+    }
+    if (value > max) {
+        pass max;
+    }
+    pass value;
+};
+
+// Test 5: Complex condition with logical operators
+func:validate_range = int32(int32:x, int32:y)
+  requires x >= 0,
+           y >= 0,
+           x + y < 100
+{
+    pass x + y;
+};
+
+// Test 6: Postcondition with expression
+func:double_it = int32(int32:n)
+  ensures result >= 0
+{
+    pass n * 2;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test divide with precondition
+    Result<int32>:r1 = divide(10, 2);
+    if (r1.is_error) {
+        exit -1;
+    }
+    
+    // Test sqrt with multiple preconditions
+    Result<int32>:r2 = sqrt_approx(16);
+    if (r2.is_error) {
+        exit -2;
+    }
+    
+    // Test clamp with both pre and post
+    Result<int32>:r3 = clamp(15, 0, 10);
+    if (r3.is_error) {
+        exit -3;
+    }
+    
+    // Test validate_range
+    Result<int32>:r4 = validate_range(5, 10);
+    if (r4.is_error) {
+        exit -4;
+    }
+    
+    exit 0;  // Success
+};

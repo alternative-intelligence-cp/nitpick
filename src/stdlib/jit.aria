@@ -10,113 +10,113 @@
 // =============================================================================
 
 // WildX Allocator
-extern "C" func:aria_alloc_exec = wildx void@(int64:size);
-extern "C" func:aria_free_exec = void(wildx void@:guard);
-extern "C" func:aria_mem_protect_exec = int32(wildx void@:guard);
+extern "C" func:npk_alloc_exec = wildx void@(int64:size);
+extern "C" func:npk_free_exec = void(wildx void@:guard);
+extern "C" func:npk_mem_protect_exec = int32(wildx void@:guard);
 
 // Assembler Context
-extern "C" func:aria_asm_create = wild void@();
-extern "C" func:aria_asm_destroy = void(wild void@:asm_ctx);
-extern "C" func:aria_asm_has_error = bool(wild void@:asm_ctx);
-extern "C" func:aria_asm_get_error = string@(wild void@:asm_ctx);
+extern "C" func:npk_asm_create = wild void@();
+extern "C" func:npk_asm_destroy = void(wild void@:asm_ctx);
+extern "C" func:npk_asm_has_error = bool(wild void@:asm_ctx);
+extern "C" func:npk_asm_get_error = string@(wild void@:asm_ctx);
 
 // Label Management
-extern "C" func:aria_asm_new_label = int32(wild void@:asm_ctx);
-extern "C" func:aria_asm_bind_label = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_new_label = int32(wild void@:asm_ctx);
+extern "C" func:npk_asm_bind_label = void(wild void@:asm_ctx, int32:label_id);
 
 // Instruction Emission
-extern "C" func:aria_asm_mov_reg_imm = void(wild void@:asm_ctx, int32:dst_reg, int64:value);
-extern "C" func:aria_asm_mov_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
-extern "C" func:aria_asm_add_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
-extern "C" func:aria_asm_sub_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
-extern "C" func:aria_asm_ret = void(wild void@:asm_ctx);
-extern "C" func:aria_asm_jmp = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_mov_reg_imm = void(wild void@:asm_ctx, int32:dst_reg, int64:value);
+extern "C" func:npk_asm_mov_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:npk_asm_add_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:npk_asm_sub_reg_reg = void(wild void@:asm_ctx, int32:dst_reg, int32:src_reg);
+extern "C" func:npk_asm_ret = void(wild void@:asm_ctx);
+extern "C" func:npk_asm_jmp = void(wild void@:asm_ctx, int32:label_id);
 
 // Extended Integer Instructions (v0.7.2)
-extern "C" func:aria_asm_add_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
-extern "C" func:aria_asm_sub_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
-extern "C" func:aria_asm_xor_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_and_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_or_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_not_r64 = void(wild void@:asm_ctx, int32:reg);
-extern "C" func:aria_asm_neg_r64 = void(wild void@:asm_ctx, int32:reg);
-extern "C" func:aria_asm_shl_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
-extern "C" func:aria_asm_shr_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
-extern "C" func:aria_asm_sar_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
-extern "C" func:aria_asm_cmp_r64_imm32 = void(wild void@:asm_ctx, int32:reg, int32:value);
-extern "C" func:aria_asm_imul_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_cmp_r64_r64 = void(wild void@:asm_ctx, int32:left, int32:right);
+extern "C" func:npk_asm_add_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
+extern "C" func:npk_asm_sub_r64_imm32 = void(wild void@:asm_ctx, int32:dst, int32:value);
+extern "C" func:npk_asm_xor_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_and_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_or_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_not_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:npk_asm_neg_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:npk_asm_shl_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:npk_asm_shr_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:npk_asm_sar_r64_imm8 = void(wild void@:asm_ctx, int32:reg, int32:count);
+extern "C" func:npk_asm_cmp_r64_imm32 = void(wild void@:asm_ctx, int32:reg, int32:value);
+extern "C" func:npk_asm_imul_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_cmp_r64_r64 = void(wild void@:asm_ctx, int32:left, int32:right);
 
 // Extended Conditional Jumps (v0.7.2)
-extern "C" func:aria_asm_je = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jne = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jl = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jle = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jg = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jge = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jb = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jbe = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_ja = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_jae = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_je = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jne = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jl = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jle = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jg = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jge = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jb = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jbe = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_ja = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_jae = void(wild void@:asm_ctx, int32:label_id);
 
 // Memory Operations (v0.7.2)
-extern "C" func:aria_asm_mov_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
-extern "C" func:aria_asm_mov_mem_r64 = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
-extern "C" func:aria_asm_lea_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
-extern "C" func:aria_asm_store_local = void(wild void@:asm_ctx, int32:slot_offset, int32:src);
-extern "C" func:aria_asm_load_local = void(wild void@:asm_ctx, int32:dst, int32:slot_offset);
+extern "C" func:npk_asm_mov_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:npk_asm_mov_mem_r64 = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:npk_asm_lea_r64_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:npk_asm_store_local = void(wild void@:asm_ctx, int32:slot_offset, int32:src);
+extern "C" func:npk_asm_load_local = void(wild void@:asm_ctx, int32:dst, int32:slot_offset);
 
 // CALL Instructions (v0.7.2)
-extern "C" func:aria_asm_call_r64 = void(wild void@:asm_ctx, int32:target);
-extern "C" func:aria_asm_call_label = void(wild void@:asm_ctx, int32:label_id);
-extern "C" func:aria_asm_call_abs = void(wild void@:asm_ctx, wild void@:func_ptr);
+extern "C" func:npk_asm_call_r64 = void(wild void@:asm_ctx, int32:target);
+extern "C" func:npk_asm_call_label = void(wild void@:asm_ctx, int32:label_id);
+extern "C" func:npk_asm_call_abs = void(wild void@:asm_ctx, wild void@:func_ptr);
 
 // Function Prologue/Epilogue
-extern "C" func:aria_asm_prologue = void(wild void@:asm_ctx, int64:stack_size);
-extern "C" func:aria_asm_epilogue = void(wild void@:asm_ctx);
+extern "C" func:npk_asm_prologue = void(wild void@:asm_ctx, int64:stack_size);
+extern "C" func:npk_asm_epilogue = void(wild void@:asm_ctx);
 
 // SSE2 Floating-Point (v0.7.2)
-extern "C" func:aria_asm_movsd_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_movsd_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
-extern "C" func:aria_asm_movsd_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
-extern "C" func:aria_asm_addsd = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_subsd = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_mulsd = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_divsd = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_ucomisd = void(wild void@:asm_ctx, int32:left, int32:right);
+extern "C" func:npk_asm_movsd_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_movsd_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:npk_asm_movsd_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:npk_asm_addsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_subsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_mulsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_divsd = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_ucomisd = void(wild void@:asm_ctx, int32:left, int32:right);
 
 // SSE Packed Float (v0.7.2)
-extern "C" func:aria_asm_movaps_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_movaps_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
-extern "C" func:aria_asm_movaps_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
-extern "C" func:aria_asm_addps = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_mulps = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_movaps_xmm_xmm = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_movaps_xmm_mem = void(wild void@:asm_ctx, int32:dst, int32:base, int32:offset);
+extern "C" func:npk_asm_movaps_mem_xmm = void(wild void@:asm_ctx, int32:base, int32:offset, int32:src);
+extern "C" func:npk_asm_addps = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_mulps = void(wild void@:asm_ctx, int32:dst, int32:src);
 
 // Virtual Register Allocator (v0.7.3)
-extern "C" func:aria_asm_vreg_new_gpr = int32(wild void@:asm_ctx);
-extern "C" func:aria_asm_vreg_new_xmm = int32(wild void@:asm_ctx);
-extern "C" func:aria_asm_vreg_count = int32(wild void@:asm_ctx);
-extern "C" func:aria_asm_spill_count = int32(wild void@:asm_ctx);
+extern "C" func:npk_asm_vreg_new_gpr = int32(wild void@:asm_ctx);
+extern "C" func:npk_asm_vreg_new_xmm = int32(wild void@:asm_ctx);
+extern "C" func:npk_asm_vreg_count = int32(wild void@:asm_ctx);
+extern "C" func:npk_asm_spill_count = int32(wild void@:asm_ctx);
 
 // Optimization & Architecture (v0.7.4)
-extern "C" func:aria_asm_test_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
-extern "C" func:aria_asm_inc_r64 = void(wild void@:asm_ctx, int32:reg);
-extern "C" func:aria_asm_dec_r64 = void(wild void@:asm_ctx, int32:reg);
-extern "C" func:aria_asm_perf_map_register = void(wild void@:name, wildx void@:guard, int64:code_size);
-extern "C" func:aria_asm_get_arch = int32();
-extern "C" func:aria_asm_arch_supported = bool(int32:arch);
+extern "C" func:npk_asm_test_r64_r64 = void(wild void@:asm_ctx, int32:dst, int32:src);
+extern "C" func:npk_asm_inc_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:npk_asm_dec_r64 = void(wild void@:asm_ctx, int32:reg);
+extern "C" func:npk_asm_perf_map_register = void(wild void@:name, wildx void@:guard, int64:code_size);
+extern "C" func:npk_asm_get_arch = int32();
+extern "C" func:npk_asm_arch_supported = bool(int32:arch);
 
 // Architecture Constants (v0.7.4)
 int32:ARCH_X86_64  = 0;
 int32:ARCH_AARCH64 = 1;
 
 // Finalization and Execution
-extern "C" func:aria_asm_finalize = wildx void@(wild void@:asm_ctx);
-extern "C" func:aria_asm_execute = int64(wildx void@:guard);
-extern "C" func:aria_asm_execute_i64 = int64(wildx void@:guard, int64:arg1);
-extern "C" func:aria_asm_execute_i64_i64 = int64(wildx void@:guard, int64:arg1, int64:arg2);
-extern "C" func:aria_asm_execute_f64 = flt64(wildx void@:guard);
-extern "C" func:aria_asm_execute_f64_f64 = flt64(wildx void@:guard, flt64:arg1);
+extern "C" func:npk_asm_finalize = wildx void@(wild void@:asm_ctx);
+extern "C" func:npk_asm_execute = int64(wildx void@:guard);
+extern "C" func:npk_asm_execute_i64 = int64(wildx void@:guard, int64:arg1);
+extern "C" func:npk_asm_execute_i64_i64 = int64(wildx void@:guard, int64:arg1, int64:arg2);
+extern "C" func:npk_asm_execute_f64 = flt64(wildx void@:guard);
+extern "C" func:npk_asm_execute_f64_f64 = flt64(wildx void@:guard, flt64:arg1);
 
 // =============================================================================
 // Register Constants (x86-64)
@@ -192,7 +192,7 @@ struct Assembler {
  * Create new assembler instance
  */
 func:asm_new = Assembler() {
-    wild void@:ctx = aria_asm_create();
+    wild void@:ctx = npk_asm_create();
     
     if (ctx == NULL) {
         Assembler:asm = Assembler{ctx: NULL, has_error: true};
@@ -208,7 +208,7 @@ func:asm_new = Assembler() {
  */
 func:asm_destroy = NIL(Assembler:asm) {
     if (asm.ctx != NULL) {
-        aria_asm_destroy(asm.ctx);
+        npk_asm_destroy(asm.ctx);
     }
     pass(NIL);
 };
@@ -220,7 +220,7 @@ func:asm_check_error = bool(Assembler:asm) {
     if (asm.ctx == NULL) {
         pass(true);
     }
-    pass(aria_asm_has_error(asm.ctx));
+    pass(npk_asm_has_error(asm.ctx));
 };
 
 /**
@@ -230,14 +230,14 @@ func:asm_get_error_msg = string@(Assembler:asm) {
     if (asm.ctx == NULL) {
         pass("Assembler not initialized");
     }
-    pass(aria_asm_get_error(asm.ctx));
+    pass(npk_asm_get_error(asm.ctx));
 };
 
 /**
  * Emit MOV instruction: dst = value
  */
 func:asm_mov = NIL(Assembler:asm, int32:dst, int64:value) {
-    aria_asm_mov_reg_imm(asm.ctx, dst, value);
+    npk_asm_mov_reg_imm(asm.ctx, dst, value);
     pass(NIL);
 };
 
@@ -245,7 +245,7 @@ func:asm_mov = NIL(Assembler:asm, int32:dst, int64:value) {
  * Emit MOV instruction: dst = src
  */
 func:asm_mov_reg = NIL(Assembler:asm, int32:dst, int32:src) {
-    aria_asm_mov_reg_reg(asm.ctx, dst, src);
+    npk_asm_mov_reg_reg(asm.ctx, dst, src);
     pass(NIL);
 };
 
@@ -253,7 +253,7 @@ func:asm_mov_reg = NIL(Assembler:asm, int32:dst, int32:src) {
  * Emit ADD instruction: dst += src
  */
 func:asm_add = NIL(Assembler:asm, int32:dst, int32:src) {
-    aria_asm_add_reg_reg(asm.ctx, dst, src);
+    npk_asm_add_reg_reg(asm.ctx, dst, src);
     pass(NIL);
 };
 
@@ -261,7 +261,7 @@ func:asm_add = NIL(Assembler:asm, int32:dst, int32:src) {
  * Emit SUB instruction: dst -= src
  */
 func:asm_sub = NIL(Assembler:asm, int32:dst, int32:src) {
-    aria_asm_sub_reg_reg(asm.ctx, dst, src);
+    npk_asm_sub_reg_reg(asm.ctx, dst, src);
     pass(NIL);
 };
 
@@ -269,7 +269,7 @@ func:asm_sub = NIL(Assembler:asm, int32:dst, int32:src) {
  * Emit RET instruction
  */
 func:asm_return = NIL(Assembler:asm) {
-    aria_asm_ret(asm.ctx);
+    npk_asm_ret(asm.ctx);
     pass(NIL);
 };
 
@@ -277,14 +277,14 @@ func:asm_return = NIL(Assembler:asm) {
  * Create new label for jumps
  */
 func:asm_label = int32(Assembler:asm) {
-    pass(aria_asm_new_label(asm.ctx));
+    pass(npk_asm_new_label(asm.ctx));
 };
 
 /**
  * Bind label to current position
  */
 func:asm_bind = NIL(Assembler:asm, int32:label_id) {
-    aria_asm_bind_label(asm.ctx, label_id);
+    npk_asm_bind_label(asm.ctx, label_id);
     pass(NIL);
 };
 
@@ -292,7 +292,7 @@ func:asm_bind = NIL(Assembler:asm, int32:label_id) {
  * Emit JMP instruction to label
  */
 func:asm_jump = NIL(Assembler:asm, int32:label_id) {
-    aria_asm_jmp(asm.ctx, label_id);
+    npk_asm_jmp(asm.ctx, label_id);
     pass(NIL);
 };
 
@@ -301,35 +301,35 @@ func:asm_jump = NIL(Assembler:asm, int32:label_id) {
  * Returns WildX guard with executable memory
  */
 func:asm_finalize = wildx void@(Assembler:asm) {
-    pass(aria_asm_finalize(asm.ctx));
+    pass(npk_asm_finalize(asm.ctx));
 };
 
 /**
  * Execute JIT-compiled function with no arguments
  */
 func:asm_call = int64(wildx void@:guard) {
-    pass(aria_asm_execute(guard));
+    pass(npk_asm_execute(guard));
 };
 
 /**
  * Execute JIT-compiled function with one int64 argument
  */
 func:asm_call_i64 = int64(wildx void@:guard, int64:arg) {
-    pass(aria_asm_execute_i64(guard, arg));
+    pass(npk_asm_execute_i64(guard, arg));
 };
 
 /**
  * Execute JIT-compiled function with two int64 arguments
  */
 func:asm_call_i64_i64 = int64(wildx void@:guard, int64:a, int64:b) {
-    pass(aria_asm_execute_i64_i64(guard, a, b));
+    pass(npk_asm_execute_i64_i64(guard, a, b));
 };
 
 /**
  * Free executable memory
  */
 func:asm_free = NIL(wildx void@:guard) {
-    aria_free_exec(guard);
+    npk_free_exec(guard);
     pass(NIL);
 };
 
@@ -342,7 +342,7 @@ func:asm_free = NIL(wildx void@:guard) {
  * Commonly used instead of CMP r, 0 (shorter encoding)
  */
 func:asm_test = NIL(Assembler:asm, int32:dst, int32:src) {
-    aria_asm_test_r64_r64(asm.ctx, dst, src);
+    npk_asm_test_r64_r64(asm.ctx, dst, src);
     pass(NIL);
 };
 
@@ -351,7 +351,7 @@ func:asm_test = NIL(Assembler:asm, int32:dst, int32:src) {
  * Shorter encoding than ADD reg, 1
  */
 func:asm_inc = NIL(Assembler:asm, int32:reg) {
-    aria_asm_inc_r64(asm.ctx, reg);
+    npk_asm_inc_r64(asm.ctx, reg);
     pass(NIL);
 };
 
@@ -360,7 +360,7 @@ func:asm_inc = NIL(Assembler:asm, int32:reg) {
  * Shorter encoding than SUB reg, 1
  */
 func:asm_dec = NIL(Assembler:asm, int32:reg) {
-    aria_asm_dec_r64(asm.ctx, reg);
+    npk_asm_dec_r64(asm.ctx, reg);
     pass(NIL);
 };
 
@@ -369,7 +369,7 @@ func:asm_dec = NIL(Assembler:asm, int32:reg) {
  * Creates /tmp/perf-<pid>.map entry on Linux
  */
 func:asm_perf_register = NIL(wild void@:name, wildx void@:guard, int64:code_size) {
-    aria_asm_perf_map_register(name, guard, code_size);
+    npk_asm_perf_map_register(name, guard, code_size);
     pass(NIL);
 };
 
@@ -377,12 +377,12 @@ func:asm_perf_register = NIL(wild void@:name, wildx void@:guard, int64:code_size
  * Get current architecture (ARCH_X86_64 or ARCH_AARCH64)
  */
 func:asm_arch = int32() {
-    pass(aria_asm_get_arch());
+    pass(npk_asm_get_arch());
 };
 
 /**
  * Check if an architecture is supported on this build
  */
 func:asm_arch_ok = bool(int32:arch) {
-    pass(aria_asm_arch_supported(arch));
+    pass(npk_asm_arch_supported(arch));
 };

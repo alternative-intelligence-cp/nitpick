@@ -4,7 +4,7 @@
 
 set -e
 
-ARIAC="./build/ariac"
+NPKC="./build/npkc"
 TEST_DIR="tests/stdlib/compile"
 PASSED=0
 FAILED=0
@@ -25,25 +25,25 @@ mkdir -p "$TEST_DIR"
 # Helper: Test that a stdlib module compiles
 test_module() {
     local module="$1"
-    local test_file="$TEST_DIR/test_$module.aria"
+    local test_file="$TEST_DIR/test_$module.npk"
     
     echo -n "Testing $module... "
     
     # Check if file exists
-    if [ ! -f "lib/std/$module.aria" ]; then
+    if [ ! -f "lib/std/$module.npk" ]; then
         echo -e "${YELLOW}SKIP${NC} (module not found)"
         return
     fi
     
     # Try to compile just the syntax (no linking)
-    if $ARIAC "lib/std/$module.aria" -S -o "$TEST_DIR/$module.s" 2>/dev/null; then
+    if $NPKC "lib/std/$module.npk" -S -o "$TEST_DIR/$module.s" 2>/dev/null; then
         echo -e "${GREEN}PASS${NC}"
         ((PASSED++))
     else
         echo -e "${RED}FAIL${NC}"
         ((FAILED++))
         # Show errors
-        $ARIAC "lib/std/$module.aria" -S -o "$TEST_DIR/$module.s" 2>&1 | head -10
+        $NPKC "lib/std/$module.npk" -S -o "$TEST_DIR/$module.s" 2>&1 | head -10
     fi
 }
 

@@ -1,7 +1,7 @@
-/* Call Aria shared library from C
+/* Call Nitpick shared library from C
  *
  * Build:
- *   ariac mathlib.aria --shared -o libmathlib.so
+ *   npkc mathlib.npk --shared -o libmathlib.so
  *   gcc use_from_c.c -L. -lmathlib -Wl,-rpath,. -o use_from_c
  *   ./use_from_c
  */

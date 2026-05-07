@@ -5,12 +5,12 @@
 #include <chrono>
 #include <atomic>
 
-using namespace aria::lsp;
+using namespace npk::lsp;
 
 TEST_CASE(WorkQueue_push_and_pop) {
     WorkQueue queue;
     
-    Task task(TaskType::DID_CHANGE, TaskPriority::CRITICAL, "file.aria", []() {
+    Task task(TaskType::DID_CHANGE, TaskPriority::CRITICAL, "file.npk", []() {
         return json{{"result", "success"}};
     });
     
@@ -53,7 +53,7 @@ TEST_CASE(WorkQueue_priority_ordering) {
 TEST_CASE(WorkQueue_debouncing) {
     WorkQueue queue;
     
-    std::string uri = "file://test.aria";
+    std::string uri = "file://test.npk";
     
     // Push multiple didChange tasks for same file
     Task task1(TaskType::DID_CHANGE, TaskPriority::CRITICAL, uri, []() { 
@@ -84,7 +84,7 @@ TEST_CASE(WorkQueue_debouncing) {
 TEST_CASE(WorkQueue_cancellation_by_request_ID) {
     WorkQueue queue;
     
-    Task task(TaskType::HOVER, TaskPriority::HIGH, "file.aria", []() {
+    Task task(TaskType::HOVER, TaskPriority::HIGH, "file.npk", []() {
         return json{{"result", "hover info"}};
     });
     task.request_id = json(42);

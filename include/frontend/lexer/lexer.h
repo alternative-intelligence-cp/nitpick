@@ -5,13 +5,13 @@
 #include <string>
 #include <vector>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // ============================================================================
 // Lexer Class - Tokenizes Aria source code
 // ============================================================================
-// Reference: aria_specs.txt
+// Reference: npk_specs.txt
 // Converts raw source text into a stream of tokens for the parser
 
 class Lexer {
@@ -169,6 +169,6 @@ private:
 };
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LEXER_H

@@ -1,0 +1,35 @@
+// Test: Pick statement with Result<T> enforcement
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail 1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Use pick to match on is_error status
+    // Each branch should get proper Result knowledge
+    pick(r.is_error) {
+        (false) {
+            // In this branch, we KNOW r.is_error == false
+            // So we can access r.value without further checking
+            if (r.value == 5i32) {
+                exit 0;  // Success - KNOWN_SUCCESS
+            }
+            exit 1;
+        },
+        (true) {
+            // In this branch, we KNOW r.is_error == true
+            // So we can access r.error without checking
+            exit 1i32;  // Just return error code
+        }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

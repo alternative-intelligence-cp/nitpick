@@ -1,0 +1,25 @@
+// CWE-190 (ERR Propagation): Error Stickiness — BAD demonstration
+//
+// In C: INT_MAX + 1 wraps to INT_MIN, and INT_MIN * 0 = 0 (error hidden!).
+// In Aria: tbb32 ERR is sticky — ERR * 0 = ERR, not 0.
+//          The original arithmetic error cannot be masked by subsequent operations.
+//
+// Expected: exits 1 (ERR propagated through multiplication by zero = prevention confirmed)
+
+func:main = int32() {
+    tbb32:x = 2147483647;    // INT_MAX for tbb32
+    tbb32:one = 1;
+    tbb32:y = x + one;       // overflow → ERR
+    tbb32:zero = 0;
+    tbb32:z = y * zero;      // ERR * 0 = ERR (not 0 — sticky!)
+
+    // In C, z would be 0 here (error hidden). In Aria, z is ERR.
+    pick(z) {
+        (ERR) { exit 1; },   // ERR propagated correctly — prevention confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

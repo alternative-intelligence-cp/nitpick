@@ -1,0 +1,22 @@
+// P1-5 Phase 3: Test Dimensional Type Support
+// Tests that fix256 works with explicit construction
+// Dimensional syntax (fix256<Joules>) deferred to future release
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:test_dimensional_types = int32() {
+    // Test: fix256 construction via explicit conversion
+    fix256:plain_value = fix256_from_float(100.0);
+    
+    // Dimensional type syntax deferred:
+    //fix256<Joules>:energy = fix256_from_float(100.0);
+    //fix256<Meters>:distance = fix256_from_float(10.0);
+    //fix256<Newtons>:force = fix256_from_float(50.0);
+    
+    pass 0;
+};
+
+func:main = int32() {
+    int32:res = raw test_dimensional_types();
+    exit 0;
+};

@@ -1,0 +1,48 @@
+// WASM Test 2: Integer arithmetic and control flow
+// Expected output:
+// PASS: addition
+// PASS: multiplication
+// PASS: comparison
+// PASS: if-else
+// PASS: while loop
+
+func:main = int32() {
+    // Addition
+    int32:a = 42;
+    int32:b = 58;
+    int32:sum = a + b;
+    if (sum == 100) {
+        println("PASS: addition");
+    }
+
+    // Multiplication
+    int32:product = 6 * 7;
+    if (product == 42) {
+        println("PASS: multiplication");
+    }
+
+    // Comparison
+    bool:lt = (a < b);
+    if (lt) {
+        println("PASS: comparison");
+    }
+
+    // If-else
+    int32:x = 10;
+    if (x > 5) {
+        println("PASS: if-else");
+    }
+
+    // While loop
+    int32:count = 0;
+    while (count < 5) {
+        count = count + 1;
+    }
+    if (count == 5) {
+        println("PASS: while loop");
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

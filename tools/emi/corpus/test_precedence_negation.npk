@@ -1,0 +1,25 @@
+// Test: Operator precedence for !r.is_error
+
+func:test_value = int32(bool:should_succeed) {
+    if (should_succeed) {
+        pass 0i32;
+    }
+    fail 1i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = test_value(true);
+    
+    // This SHOULD work: !r.is_error means !(r.is_error)
+    // If it parses as (!r).is_error, it will fail
+    if (!r.is_error) {
+        exit r.value;
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

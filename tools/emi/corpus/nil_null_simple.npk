@@ -1,0 +1,42 @@
+// Simple NIL/NULL comparison test
+func:main = int32() {
+    print("=== Testing NIL Comparisons ===");
+    
+    // Test 1: NIL with optional types
+    print("Test 1: NIL comparisons with optional int64");
+    int64?:opt1 = 100;
+    int64?:opt2 = 200;
+    
+    // These should now compile without errors
+    if (opt1 == NIL) {
+        print("ERROR: opt1 should not be NIL");
+    } else {
+        print("OK: opt1 is not NIL");
+    }
+    
+    if (opt2 != NIL) {
+        print("OK: opt2 is not NIL");
+    }
+    
+    // Test 2: NIL with optional string
+    print("Test 2: NIL comparisons with optional string");
+    string?:str1 = "hello";
+    
+    if (str1 == NIL) {
+        print("ERROR: str1 should not be NIL");
+    } else {
+        print("OK: str1 is not NIL");
+    }
+    
+    if (str1 != NIL) {
+        print("OK: str1 is not NIL");
+    }
+    
+    print("=== Tests complete ===");
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

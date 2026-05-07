@@ -44,7 +44,7 @@ extern const double ARIA_MATH_NAN;       // Not a Number (IEEE 754)
  * @param x Input value
  * @return |x|
  */
-double aria_math_abs(double x);
+double npk_math_abs(double x);
 
 /**
  * Absolute value for integers.
@@ -52,7 +52,7 @@ double aria_math_abs(double x);
  * @param x Input value
  * @return |x|
  */
-int64_t aria_math_abs_i64(int64_t x);
+int64_t npk_math_abs_i64(int64_t x);
 
 /**
  * Minimum of two values.
@@ -61,7 +61,7 @@ int64_t aria_math_abs_i64(int64_t x);
  * @param b Second value
  * @return min(a, b)
  */
-double aria_math_min(double a, double b);
+double npk_math_min(double a, double b);
 
 /**
  * Maximum of two values.
@@ -70,7 +70,7 @@ double aria_math_min(double a, double b);
  * @param b Second value
  * @return max(a, b)
  */
-double aria_math_max(double a, double b);
+double npk_math_max(double a, double b);
 
 /**
  * Minimum of two integers.
@@ -79,7 +79,7 @@ double aria_math_max(double a, double b);
  * @param b Second value
  * @return min(a, b)
  */
-int64_t aria_math_min_i64(int64_t a, int64_t b);
+int64_t npk_math_min_i64(int64_t a, int64_t b);
 
 /**
  * Maximum of two integers.
@@ -88,7 +88,7 @@ int64_t aria_math_min_i64(int64_t a, int64_t b);
  * @param b Second value
  * @return max(a, b)
  */
-int64_t aria_math_max_i64(int64_t a, int64_t b);
+int64_t npk_math_max_i64(int64_t a, int64_t b);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Power and Root Functions
@@ -101,7 +101,7 @@ int64_t aria_math_max_i64(int64_t a, int64_t b);
  * @param x Input value (must be >= 0)
  * @return √x or NaN if x < 0
  */
-double aria_math_sqrt(double x);
+double npk_math_sqrt(double x);
 
 /**
  * Power function: x^y.
@@ -110,7 +110,7 @@ double aria_math_sqrt(double x);
  * @param y Exponent
  * @return x^y
  */
-double aria_math_pow(double x, double y);
+double npk_math_pow(double x, double y);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Exponential and Logarithmic Functions
@@ -122,7 +122,7 @@ double aria_math_pow(double x, double y);
  * @param x Exponent
  * @return e^x
  */
-double aria_math_exp(double x);
+double npk_math_exp(double x);
 
 /**
  * Natural logarithm: ln(x).
@@ -131,7 +131,7 @@ double aria_math_exp(double x);
  * @param x Input value (must be > 0)
  * @return ln(x) or NaN if x <= 0
  */
-double aria_math_log(double x);
+double npk_math_log(double x);
 
 /**
  * Base-10 logarithm: log₁₀(x).
@@ -140,7 +140,7 @@ double aria_math_log(double x);
  * @param x Input value (must be > 0)
  * @return log₁₀(x) or NaN if x <= 0
  */
-double aria_math_log10(double x);
+double npk_math_log10(double x);
 
 /**
  * Base-2 logarithm: log₂(x).
@@ -149,7 +149,7 @@ double aria_math_log10(double x);
  * @param x Input value (must be > 0)
  * @return log₂(x) or NaN if x <= 0
  */
-double aria_math_log2(double x);
+double npk_math_log2(double x);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Trigonometric Functions
@@ -161,7 +161,7 @@ double aria_math_log2(double x);
  * @param x Angle in radians
  * @return sin(x)
  */
-double aria_math_sin(double x);
+double npk_math_sin(double x);
 
 /**
  * Cosine function.
@@ -169,7 +169,7 @@ double aria_math_sin(double x);
  * @param x Angle in radians
  * @return cos(x)
  */
-double aria_math_cos(double x);
+double npk_math_cos(double x);
 
 /**
  * Tangent function.
@@ -177,7 +177,7 @@ double aria_math_cos(double x);
  * @param x Angle in radians
  * @return tan(x)
  */
-double aria_math_tan(double x);
+double npk_math_tan(double x);
 
 /**
  * Arc sine (inverse sine).
@@ -186,7 +186,7 @@ double aria_math_tan(double x);
  * @param x Input value (must be in [-1, 1])
  * @return arcsin(x) in radians, or NaN if |x| > 1
  */
-double aria_math_asin(double x);
+double npk_math_asin(double x);
 
 /**
  * Arc cosine (inverse cosine).
@@ -195,7 +195,7 @@ double aria_math_asin(double x);
  * @param x Input value (must be in [-1, 1])
  * @return arccos(x) in radians, or NaN if |x| > 1
  */
-double aria_math_acos(double x);
+double npk_math_acos(double x);
 
 /**
  * Arc tangent (inverse tangent).
@@ -203,7 +203,7 @@ double aria_math_acos(double x);
  * @param x Input value
  * @return arctan(x) in radians
  */
-double aria_math_atan(double x);
+double npk_math_atan(double x);
 
 /**
  * Two-argument arc tangent: atan2(y, x).
@@ -213,7 +213,7 @@ double aria_math_atan(double x);
  * @param x X coordinate
  * @return Angle in radians in range [-π, π]
  */
-double aria_math_atan2(double y, double x);
+double npk_math_atan2(double y, double x);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Rounding and Truncation Functions
@@ -225,7 +225,7 @@ double aria_math_atan2(double y, double x);
  * @param x Input value
  * @return ⌊x⌋
  */
-double aria_math_floor(double x);
+double npk_math_floor(double x);
 
 /**
  * Ceiling function: smallest integer >= x.
@@ -233,7 +233,7 @@ double aria_math_floor(double x);
  * @param x Input value
  * @return ⌈x⌉
  */
-double aria_math_ceil(double x);
+double npk_math_ceil(double x);
 
 /**
  * Round to nearest integer.
@@ -242,7 +242,7 @@ double aria_math_ceil(double x);
  * @param x Input value
  * @return Rounded value
  */
-double aria_math_round(double x);
+double npk_math_round(double x);
 
 /**
  * Truncate toward zero.
@@ -250,7 +250,7 @@ double aria_math_round(double x);
  * @param x Input value
  * @return Integer part of x
  */
-double aria_math_trunc(double x);
+double npk_math_trunc(double x);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Utility Functions
@@ -262,7 +262,7 @@ double aria_math_trunc(double x);
  * @param x Value to check
  * @return true if x is NaN, false otherwise
  */
-bool aria_math_is_nan(double x);
+bool npk_math_is_nan(double x);
 
 /**
  * Check if value is infinite.
@@ -270,7 +270,7 @@ bool aria_math_is_nan(double x);
  * @param x Value to check
  * @return true if x is +∞ or -∞, false otherwise
  */
-bool aria_math_is_inf(double x);
+bool npk_math_is_inf(double x);
 
 /**
  * Check if value is finite (not NaN or infinite).
@@ -278,7 +278,7 @@ bool aria_math_is_inf(double x);
  * @param x Value to check
  * @return true if x is finite, false otherwise
  */
-bool aria_math_is_finite(double x);
+bool npk_math_is_finite(double x);
 
 #ifdef __cplusplus
 }

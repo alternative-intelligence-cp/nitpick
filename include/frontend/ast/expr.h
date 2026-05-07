@@ -5,11 +5,11 @@
 #include "frontend/token.h"
 #include <variant>
 
-namespace aria {
+namespace npk {
 
 // Import Token from frontend namespace for convenience
-using aria::frontend::Token;
-using aria::frontend::TokenType;
+using npk::frontend::Token;
+using npk::frontend::TokenType;
 
 /**
  * Literal expression node
@@ -318,7 +318,7 @@ public:
  * Cast expression node
  * Represents: @cast<TargetType>(expr) for checked casts, @cast_unchecked<T>(expr) for unchecked
  * 
- * Explicit type conversions in Aria's zero-implicit-conversion type system:
+ * Explicit type conversions in Nitpick's zero-implicit-conversion type system:
  * 
  * SAFE CASTS (widening - always succeed):
  *   @cast<int64>(int8_val)  // i8 → i64 (fits in range)
@@ -372,6 +372,7 @@ public:
     
     std::vector<Field> fields;
     std::string type_name;  // Empty for dynamic obj, set for struct constructors
+    std::string base_name;  // v0.19.1: set for struct update syntax: TypeName{ ...base, field: expr }
     
     ObjectLiteralExpr(const std::vector<Field>& flds, 
                       const std::string& typeName = "",
@@ -567,6 +568,6 @@ public:
     std::string toString() const override;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_EXPR_H

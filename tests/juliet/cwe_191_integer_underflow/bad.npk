@@ -1,0 +1,21 @@
+// CWE-191: Integer Underflow — BAD demonstration
+//
+// In C: INT_MIN - 1 wraps silently (undefined behavior).
+// In Aria: tbb32 underflow transitions to sticky ERR sentinel immediately.
+//
+// Expected: exits 1 (underflow caught = prevention confirmed)
+
+func:main = int32() {
+    tbb32:x = -2147483647;   // INT_MIN for tbb32 (ERR = -2147483648, so this is min valid)
+    tbb32:one = 1;
+    tbb32:y = x - one;       // underflow → ERR
+
+    pick(y) {
+        (ERR) { exit 1; },   // underflow was caught — prevention confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

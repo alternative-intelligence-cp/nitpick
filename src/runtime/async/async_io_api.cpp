@@ -7,11 +7,11 @@
 #include <mutex>
 #include <unordered_map>
 
-using namespace aria::runtime;
-using namespace aria::runtime::async_io;
+using namespace npk::runtime;
+using namespace npk::runtime::async_io;
 
 // Registry to keep shared_ptrs alive while C API handles exist.
-// Entries are removed when aria_future_destroy() is called.
+// Entries are removed when npk_future_destroy() is called.
 namespace {
     std::mutex future_registry_mtx;
     std::unordered_map<Future*, std::shared_ptr<Future>> future_registry;
@@ -24,9 +24,9 @@ namespace {
     }
 }
 
-// Called by aria_future_destroy (in runtime_api.cpp) to release shared_ptr.
+// Called by npk_future_destroy (in runtime_api.cpp) to release shared_ptr.
 // Returns true if handle was in the registry and released.
-extern "C" bool aria_future_release_check(void* handle) {
+extern "C" bool npk_future_release_check(void* handle) {
     if (!handle) return false;
     std::lock_guard<std::mutex> lock(future_registry_mtx);
     return future_registry.erase(static_cast<Future*>(handle)) > 0;
@@ -34,36 +34,36 @@ extern "C" bool aria_future_release_check(void* handle) {
 
 extern "C" {
 
-AriaFutureHandle aria_read_file_async(const char* path) {
+AriaFutureHandle npk_read_file_async(const char* path) {
     if (!path) return nullptr;
     return register_future(read_file_async(std::string(path)));
 }
 
-AriaFutureHandle aria_write_file_async(const char* path, const char* content) {
+AriaFutureHandle npk_write_file_async(const char* path, const char* content) {
     if (!path || !content) return nullptr;
     return register_future(write_file_async(std::string(path), std::string(content)));
 }
 
-AriaFutureHandle aria_append_file_async(const char* path, const char* content) {
+AriaFutureHandle npk_append_file_async(const char* path, const char* content) {
     if (!path || !content) return nullptr;
     return register_future(append_file_async(std::string(path), std::string(content)));
 }
 
-AriaFutureHandle aria_file_exists_async(const char* path) {
+AriaFutureHandle npk_file_exists_async(const char* path) {
     if (!path) return nullptr;
     return register_future(file_exists_async(std::string(path)));
 }
 
-AriaFutureHandle aria_delete_file_async(const char* path) {
+AriaFutureHandle npk_delete_file_async(const char* path) {
     if (!path) return nullptr;
     return register_future(delete_file_async(std::string(path)));
 }
 
-AriaFutureHandle aria_sleep_async(uint64_t milliseconds) {
+AriaFutureHandle npk_sleep_async(uint64_t milliseconds) {
     return register_future(sleep_async(milliseconds));
 }
 
-AriaFutureHandle aria_join_all(AriaFutureHandle* futures, size_t count) {
+AriaFutureHandle npk_join_all(AriaFutureHandle* futures, size_t count) {
     if (!futures || count == 0) return nullptr;
     
     // Convert handles back to shared_ptrs
@@ -85,7 +85,7 @@ AriaFutureHandle aria_join_all(AriaFutureHandle* futures, size_t count) {
     return register_future(result);
 }
 
-AriaFutureHandle aria_race(AriaFutureHandle* futures, size_t count) {
+AriaFutureHandle npk_race(AriaFutureHandle* futures, size_t count) {
     if (!futures || count == 0) return nullptr;
     
     std::vector<std::shared_ptr<Future>> shared_futs;
@@ -106,7 +106,7 @@ AriaFutureHandle aria_race(AriaFutureHandle* futures, size_t count) {
     return register_future(result);
 }
 
-AriaFutureHandle aria_with_timeout(AriaFutureHandle future, uint64_t milliseconds) {
+AriaFutureHandle npk_with_timeout(AriaFutureHandle future, uint64_t milliseconds) {
     if (!future) return nullptr;
     
     std::shared_ptr<Future> fut;

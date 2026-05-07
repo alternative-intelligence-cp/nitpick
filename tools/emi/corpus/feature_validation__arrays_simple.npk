@@ -1,0 +1,48 @@
+// Test: Session 9 - Basic Arrays and Array Literals
+// Purpose: Validate array type declaration, literals, and indexing
+// Expected: Exit code 42 (all tests pass)
+
+func:main = int32() {
+    // Test 1: Fixed-size array with literal initialization
+    int64[3]:arr1 = [10i64, 20i64, 30i64];
+    
+    // Test 2: Array indexing - read first element
+    int64:first = arr1[0];
+    if (first != 10) {
+        exit 1;  // FAIL: first element should be 10
+    }
+    
+    // Test 3: Array indexing - read middle element
+    int64:middle = arr1[1];
+    if (middle != 20) {
+        exit 2;  // FAIL: second element should be 20
+    }
+    
+    // Test 4: Array indexing - read last element
+    int64:last = arr1[2];
+    if (last != 30) {
+        exit 3;  // FAIL: third element should be 30
+    }
+    
+    // Test 5: Dynamic-size array with literal
+    int64[4]:arr2 = [100i64, 200i64, 300i64, 400i64];
+    int64:val = arr2[3];
+    if (val != 400) {
+        exit 4;  // FAIL: fourth element should be 400
+    }
+    
+    // Test 6: Array with single element
+    int64[1]:single = [42i64];
+    int64:answer = single[0];
+    if (answer != 42) {
+        exit 5;  // FAIL: single element should be 42
+    }
+    
+    // All tests passed!
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

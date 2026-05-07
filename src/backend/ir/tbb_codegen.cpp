@@ -1,9 +1,9 @@
 #include "backend/ir/tbb_codegen.h"
 #include <stdexcept>
 
-namespace aria {
+namespace npk {
 
-using namespace aria::sema;
+using namespace npk::sema;
 
 TBBCodegen::TBBCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr)
     : context(ctx), builder(bldr) {}
@@ -464,4 +464,4 @@ llvm::Value* TBBCodegen::generateWiden(llvm::Value* srcVal, Type* srcType, Type*
     return builder.CreateSelect(isErr, dstSentinel, widened, "tbb_widen");
 }
 
-} // namespace aria
+} // namespace npk

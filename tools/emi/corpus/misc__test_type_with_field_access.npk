@@ -1,0 +1,50 @@
+// Comprehensive test: Type system with UFCS and struct field access
+// This demonstrates that the struct parameter field access bug fix enables
+// the entire Type Oriented Programming system to work correctly
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+Type:Counter = {
+    // Constructor
+
+    func:create = Counter(int32:start) {
+        Counter:c = Counter{value: start, is_active: 1i32};
+        pass c;
+    };
+    
+    // Instance methods using UFCS (counter.getValue() → Counter_getValue(counter))
+    func:getValue = int32(Counter:self) {
+        // This tests self.field access (the bug we just fixed!)
+        pass self.value;
+    };
+    
+    func:isActive = int32(Counter:self) {
+        pass self.is_active;
+    };
+    
+    // Static method
+    func:version = int32() {
+        pass 1i32;
+    };
+    
+    // Public fields
+    struct:interface = {
+        int32:value;
+        int32:is_active;
+    };
+};
+
+func:main = int32() {
+    // Create counter with value 100
+    Counter:c = raw instance<Counter>(100i32);
+    
+    // Test UFCS method calls
+    int32:val = raw c.getValue();        // → Counter_getValue(c)
+    int32:active = raw c.isActive();     // → Counter_isActive(c)
+    
+    // Test static method
+    int32:ver = raw Counter.version();   // → Counter_version()
+    
+    // Success - Type system is fully functional!
+    exit 0;
+};

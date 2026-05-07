@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-namespace aria {
+namespace npk {
 
 // ============================================================================
 // WarningConfig Implementation
@@ -361,7 +361,7 @@ void WarningAnalyzer::analyzeImplicitConversions(const ASTNode* ast) {
         return;
     }
     
-    // Aria follows Zero Implicit Conversion Policy — all conversions must be explicit.
+    // Nitpick follows Zero Implicit Conversion Policy — all conversions must be explicit.
     // This pass is a safety net: if any implicit conversions slip through sema,
     // they would be caught here. Currently a no-op since sema enforces this.
     // Future: walk binary expressions and assignments to verify type consistency.
@@ -507,4 +507,4 @@ WarningType WarningFlagParser::stringToWarningType(const std::string& name) {
     return static_cast<WarningType>(-1); // Unknown warning type
 }
 
-} // namespace aria
+} // namespace npk

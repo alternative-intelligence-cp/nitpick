@@ -1,0 +1,78 @@
+// Test: unknown arithmetic propagation (compile-time literals)
+// Phase 5.3: Arithmetic with unknown literal produces unknown
+
+func:test_addition = int32() {
+    // unknown + 5 should be unknown
+    int32:x = unknown + 5i32;
+    
+    if (x == unknown) {
+        pass 1i32;  // Success
+    } else {
+        pass 0i32;  // Failure
+    }
+};
+
+func:test_subtraction = int32() {
+    // 10 - unknown should be unknown
+    int32:y = 10i32 - unknown;
+    
+    if (y == unknown) {
+        pass 2i32;  // Success
+    } else {
+        pass 0i32;  // Failure
+    }
+};
+
+func:test_multiplication = int32() {
+    // unknown * 3 should be unknown
+    int32:a = unknown * 3i32;
+    
+    if (a == unknown) {
+        pass 3i32;  // Success
+    } else {
+        pass 0i32;  // Failure
+    }
+};
+
+func:test_division = int32() {
+    // unknown / 2 should be unknown
+    int32:b = unknown / 2i32;
+    
+    if (b == unknown) {
+        pass 4i32;  // Success
+    } else {
+        pass 0i32;  // Failure
+    }
+};
+
+func:test_both_unknown = int32() {
+    // unknown + unknown should be unknown
+    int32:c = unknown + unknown;
+    
+    if (c == unknown) {
+        pass 5i32;  // Success
+    } else {
+        pass 0i32;  // Failure
+    }
+};
+
+func:main = int32() {
+    int32:test1 = raw test_addition();          // Should be 1
+    int32:test2 = raw test_subtraction();       // Should be 2
+    int32:test3 = raw test_multiplication();    // Should be 3
+    int32:test4 = raw test_division();          // Should be 4
+    int32:test5 = raw test_both_unknown();      // Should be 5
+    
+    int32:total = test1 + test2 + test3 + test4 + test5;
+    
+    if (total == 15i32) {
+        exit 0i32;  // All tests passed!
+    } else {
+        exit total;  // Return partial sum (debug which tests passed)
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

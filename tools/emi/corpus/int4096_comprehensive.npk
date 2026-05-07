@@ -1,0 +1,52 @@
+func:main = int32() {
+    // Test equality
+    int4096:a = 5;
+    int4096:b = 5;
+    if (a != b) {
+        return 1;  // FAIL: equality broken
+    }
+    
+    // Test addition  
+    int4096:c = 100;
+    int4096:d = 50;
+    int4096:sum = c + d;
+    int4096:expected_sum = 150;
+    if (sum != expected_sum) {
+        return 2;  // FAIL: addition broken
+    }
+    
+    // Test subtraction
+    int4096:diff = c - d;
+    int4096:expected_diff = 50;
+    if (diff != expected_diff) {
+        return 3;  // FAIL: subtraction broken
+    }
+    
+    // Test multiplication
+    int4096:prod = c * d;
+    int4096:expected_prod = 5000;
+    if (prod != expected_prod) {
+        return 4;  // FAIL: multiplication broken
+    }
+    
+    // Test division
+    int4096:quot = c / d;
+    int4096:expected_quot = 2;
+    if (quot != expected_quot) {
+        return 5;  // FAIL: division broken
+    }
+    
+    // Test modulo
+    int4096:rem = c % d;
+    int4096:expected_rem = 0;
+    if (rem != expected_rem) {
+        return 6;  // FAIL: modulo broken
+    }
+    
+    return 0;  // ALL TESTS PASSED
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,25 @@
+// P1-2 Phase 2 Test: SIMD with Integer Literal Lane Counts
+// Test simd<T, N> with proper integer literals (parser improvements complete!)
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+    exit 1;
+};
+
+func:main = int32() {
+    // SIMD declarations with integer literals (no workaround needed!)
+    simd<int32, 4>:vec_a;       // 4-lane int32 vector (SSE)
+    simd<int64, 8>:vec_b;       // 8-lane int64 vector (AVX-512)
+    simd<fix256, 16>:vec_c;     // 16-lane fix256 vector
+    
+    // Also test various lane counts
+    simd<int32, 2>:vec_small;   // 2 lanes
+    simd<int64, 32>:vec_large;  // 32 lanes
+    
+    // TODO: Once operations are implemented:
+    // vec_a = simd_broadcast(10);
+    // vec_c = vec_a + vec_b;
+    
+    // Success - if we get here, integer literals work!
+    return 0;
+};

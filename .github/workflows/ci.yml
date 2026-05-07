@@ -1,10 +1,10 @@
-name: Aria CI
+name: Nitpick CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, 'dev*']
   pull_request:
-    branches: [main, dev]
+    branches: [main, 'dev*']
 
 jobs:
   build-and-test:
@@ -43,19 +43,19 @@ jobs:
         run: cmake --build build_ci -j$(nproc)
 
       - name: Verify version
-        run: ./build_ci/ariac --version
+        run: ./build_ci/npkc --version
 
       - name: Run regression tests
         run: |
-          # The regression runner expects build/ariac and runtime library
+          # The regression runner expects build/npkc and runtime library
           mkdir -p build
-          cp build_ci/ariac build/ariac
+          cp build_ci/npkc build/npkc
           cp build_ci/libaria_runtime.a build/libaria_runtime.a
           bash tests/regression/run_regression.sh
 
       - name: Build .deb package
         run: |
-          cp build_ci/ariac build/ariac
-          if [ -f build_ci/aria-ls ]; then cp build_ci/aria-ls build/aria-ls; fi
-          bash debian/build-deb.sh ${{ github.ref_name == 'main' && '0.2.5' || '0.2.5-dev' }}
+          cp build_ci/npkc build/npkc
+          if [ -f build_ci/npk-ls ]; then cp build_ci/npk-ls build/npk-ls; fi
+          bash debian/build-deb.sh ${{ github.ref_name == 'main' && '0.19.1' || '0.19.1-dev' }}
         continue-on-error: true

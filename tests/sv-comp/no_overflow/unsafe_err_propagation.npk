@@ -1,0 +1,28 @@
+// SV-COMP NoOverflows equivalent: ERR propagation through arithmetic chain
+//
+// C analog: c/NoOverflows-Main/ overflow masked by subsequent operation
+// Property: LTL(G! overflow) — VIOLATED; overflow cascades through chain
+// Aria: ERR is sticky — overflow in one operation propagates to all subsequent
+//       operations. ERR * 0 = ERR (not 0). The original violation is not maskable.
+//
+// Key difference from C: In C, INT_MIN * 0 = 0 (overflow error silently hidden).
+//                        In Aria, ERR * 0 = ERR (overflow error always visible).
+//
+// Expected verdict: false   Strategy: runtime (exits 1 = ERR propagated, not masked)
+
+func:main = int32() {
+    tbb32:x = 2147483647;    // INT_MAX
+    tbb32:one = 1;
+    tbb32:y = x + one;       // overflow → ERR
+    tbb32:zero = 0;
+    tbb32:z = y * zero;      // ERR * 0 = ERR (sticky — not 0!)
+
+    pick(z) {
+        (ERR) { exit 1; },   // ERR propagated correctly — chain violation confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

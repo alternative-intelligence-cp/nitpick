@@ -12,7 +12,7 @@ static const int N = ARIA_INT2048_LIMBS;
 // ----------------------------------------------------------------------
 // Helper: Check for Zero
 // ----------------------------------------------------------------------
-static bool is_zero(const aria_int2048_t* val) {
+static bool is_zero(const npk_int2048_t* val) {
     for (int i = 0; i < N; ++i) {
         if (val->limbs[i] != 0) return false;
     }
@@ -22,7 +22,7 @@ static bool is_zero(const aria_int2048_t* val) {
 // ----------------------------------------------------------------------
 // Helper: Is Negative (Check sign bit of MSB)
 // ----------------------------------------------------------------------
-static bool is_negative(const aria_int2048_t* val) {
+static bool is_negative(const npk_int2048_t* val) {
     return (val->limbs[N - 1] & (1ULL << 63)) != 0;
 }
 
@@ -54,8 +54,8 @@ static void set_err_sentinel(uint64_t* limbs) {
 // ----------------------------------------------------------------------
 // Helper: Two's Complement Negation
 // ----------------------------------------------------------------------
-static aria_int2048_t negate(aria_int2048_t a) {
-    aria_int2048_t result;
+static npk_int2048_t negate(npk_int2048_t a) {
+    npk_int2048_t result;
     uint64_t carry = 1;
     for (int i = 0; i < N; ++i) {
         uint64_t val = ~a.limbs[i];
@@ -69,15 +69,15 @@ static aria_int2048_t negate(aria_int2048_t a) {
 // ----------------------------------------------------------------------
 // Addition (Ripple Carry)
 // ----------------------------------------------------------------------
-extern "C" aria_int2048_t aria_lbim_add2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" npk_int2048_t npk_lbim_add2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<32>(a->limbs) || is_err_sentinel<32>(b->limbs)) {
-        aria_int2048_t err;
+        npk_int2048_t err;
         set_err_sentinel<32>(err.limbs);
         return err;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     unsigned __int128 carry = 0;
     
     // Explicit loop for safety verification.
@@ -94,15 +94,15 @@ extern "C" aria_int2048_t aria_lbim_add2048(const aria_int2048_t* a, const aria_
 // ----------------------------------------------------------------------
 // Subtraction (Ripple Borrow)
 // ----------------------------------------------------------------------
-extern "C" aria_int2048_t aria_lbim_sub2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" npk_int2048_t npk_lbim_sub2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<32>(a->limbs) || is_err_sentinel<32>(b->limbs)) {
-        aria_int2048_t err;
+        npk_int2048_t err;
         set_err_sentinel<32>(err.limbs);
         return err;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     uint64_t borrow = 0;
     
     for (int i = 0; i < N; ++i) {
@@ -131,15 +131,15 @@ extern "C" aria_int2048_t aria_lbim_sub2048(const aria_int2048_t* a, const aria_
 // ----------------------------------------------------------------------
 // Multiplication (Schoolbook O(N^2))
 // ----------------------------------------------------------------------
-extern "C" aria_int2048_t aria_lbim_mul2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" npk_int2048_t npk_lbim_mul2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<32>(a->limbs) || is_err_sentinel<32>(b->limbs)) {
-        aria_int2048_t err;
+        npk_int2048_t err;
         set_err_sentinel<32>(err.limbs);
         return err;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     std::memset(&result, 0, sizeof(result));
     
     for (int i = 0; i < N; ++i) {
@@ -163,7 +163,7 @@ extern "C" aria_int2048_t aria_lbim_mul2048(const aria_int2048_t* a, const aria_
 // Comparison Logic
 // ----------------------------------------------------------------------
 
-extern "C" int32_t aria_lbim_ucmp2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" int32_t npk_lbim_ucmp2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     for (int i = N - 1; i >= 0; --i) {
         if (a->limbs[i] > b->limbs[i]) return 1;
         if (a->limbs[i] < b->limbs[i]) return -1;
@@ -171,7 +171,7 @@ extern "C" int32_t aria_lbim_ucmp2048(const aria_int2048_t* a, const aria_int204
     return 0;
 }
 
-extern "C" int32_t aria_lbim_scmp2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" int32_t npk_lbim_scmp2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     // Check signs
     bool neg_a = is_negative(a);
     bool neg_b = is_negative(b);
@@ -184,12 +184,12 @@ extern "C" int32_t aria_lbim_scmp2048(const aria_int2048_t* a, const aria_int204
     // For both positive: standard unsigned comparison
     // For both negative: unsigned comparison still works correctly
     // because more negative numbers have smaller bit patterns in two's complement
-    return aria_lbim_ucmp2048(a, b);
+    return npk_lbim_ucmp2048(a, b);
 }
 
-extern "C" bool aria_lbim_eq2048(const aria_int2048_t* a, const aria_int2048_t* b) {
+extern "C" bool npk_lbim_eq2048(const npk_int2048_t* a, const npk_int2048_t* b) {
     // Use memcmp for potentially faster vectorization by the compiler
-    return std::memcmp(a, b, sizeof(aria_int2048_t)) == 0;
+    return std::memcmp(a, b, sizeof(npk_int2048_t)) == 0;
 }
 
 // ----------------------------------------------------------------------
@@ -197,7 +197,7 @@ extern "C" bool aria_lbim_eq2048(const aria_int2048_t* a, const aria_int2048_t* 
 // ----------------------------------------------------------------------
 
 // Helper: Count Leading Zeros across the 2048-bit struct
-static int count_leading_zeros_2048(const aria_int2048_t* val) {
+static int count_leading_zeros_2048(const npk_int2048_t* val) {
     for (int i = N - 1; i >= 0; --i) {
         if (val->limbs[i] != 0) {
             // __builtin_clzll is undefined for 0, so we check.
@@ -209,8 +209,8 @@ static int count_leading_zeros_2048(const aria_int2048_t* val) {
 }
 
 // Internal Unsigned Division / Modulo
-static void divmod2048_unsigned(aria_int2048_t dividend, aria_int2048_t divisor, 
-                                aria_int2048_t* quot, aria_int2048_t* rem) {
+static void divmod2048_unsigned(npk_int2048_t dividend, npk_int2048_t divisor, 
+                                npk_int2048_t* quot, npk_int2048_t* rem) {
     // 1. Handle Division by Zero
     if (is_zero(&divisor)) {
         // ARIA SAFETY: Division by zero returns ERR sentinel (fail-hard policy)
@@ -221,7 +221,7 @@ static void divmod2048_unsigned(aria_int2048_t dividend, aria_int2048_t divisor,
     }
 
     // 2. Handle Divisor > Dividend
-    if (aria_lbim_ucmp2048(&dividend, &divisor) < 0) {
+    if (npk_lbim_ucmp2048(&dividend, &divisor) < 0) {
         if (quot) std::memset(quot, 0, sizeof(*quot));
         if (rem) *rem = dividend;
         return;
@@ -229,8 +229,8 @@ static void divmod2048_unsigned(aria_int2048_t dividend, aria_int2048_t divisor,
 
     // 3. Bit-wise Long Division
     // This is O(bits^2) worst case but very simple to verify.
-    aria_int2048_t q; std::memset(&q, 0, sizeof(q));
-    aria_int2048_t r; std::memset(&r, 0, sizeof(r));
+    npk_int2048_t q; std::memset(&q, 0, sizeof(q));
+    npk_int2048_t r; std::memset(&r, 0, sizeof(r));
     
     // Optimize: only scan relevant bits
     int dividend_bits = 2048 - count_leading_zeros_2048(&dividend);
@@ -251,8 +251,8 @@ static void divmod2048_unsigned(aria_int2048_t dividend, aria_int2048_t divisor,
         }
         
         // If r >= divisor, subtract divisor and set bit in quotient
-        if (aria_lbim_ucmp2048(&r, &divisor) >= 0) {
-            r = aria_lbim_sub2048(&r, &divisor);
+        if (npk_lbim_ucmp2048(&r, &divisor) >= 0) {
+            r = npk_lbim_sub2048(&r, &divisor);
             // Set i-th bit of q
             q.limbs[i / 64] |= (1ULL << (i % 64));
         }
@@ -262,27 +262,27 @@ static void divmod2048_unsigned(aria_int2048_t dividend, aria_int2048_t divisor,
     if (rem) *rem = r;
 }
 
-extern "C" aria_int2048_t aria_lbim_udiv2048(const aria_int2048_t* dividend, const aria_int2048_t* divisor) {
-    aria_int2048_t q;
+extern "C" npk_int2048_t npk_lbim_udiv2048(const npk_int2048_t* dividend, const npk_int2048_t* divisor) {
+    npk_int2048_t q;
     divmod2048_unsigned(*dividend, *divisor, &q, nullptr);
     return q;
 }
 
-extern "C" aria_int2048_t aria_lbim_umod2048(const aria_int2048_t* dividend, const aria_int2048_t* divisor) {
-    aria_int2048_t r;
+extern "C" npk_int2048_t npk_lbim_umod2048(const npk_int2048_t* dividend, const npk_int2048_t* divisor) {
+    npk_int2048_t r;
     divmod2048_unsigned(*dividend, *divisor, nullptr, &r);
     return r;
 }
 
-extern "C" aria_int2048_t aria_lbim_sdiv2048(const aria_int2048_t* dividend, const aria_int2048_t* divisor) {
+extern "C" npk_int2048_t npk_lbim_sdiv2048(const npk_int2048_t* dividend, const npk_int2048_t* divisor) {
     bool neg_d = is_negative(dividend);
     bool neg_v = is_negative(divisor);
     
     // Convert to absolute
-    aria_int2048_t abs_d = neg_d ? negate(*dividend) : *dividend;
-    aria_int2048_t abs_v = neg_v ? negate(*divisor) : *divisor;
+    npk_int2048_t abs_d = neg_d ? negate(*dividend) : *dividend;
+    npk_int2048_t abs_v = neg_v ? negate(*divisor) : *divisor;
     
-    aria_int2048_t q = aria_lbim_udiv2048(&abs_d, &abs_v);
+    npk_int2048_t q = npk_lbim_udiv2048(&abs_d, &abs_v);
     
     // If signs differ, quotient is negative
     if (neg_d != neg_v) {
@@ -291,14 +291,14 @@ extern "C" aria_int2048_t aria_lbim_sdiv2048(const aria_int2048_t* dividend, con
     return q;
 }
 
-extern "C" aria_int2048_t aria_lbim_smod2048(const aria_int2048_t* dividend, const aria_int2048_t* divisor) {
+extern "C" npk_int2048_t npk_lbim_smod2048(const npk_int2048_t* dividend, const npk_int2048_t* divisor) {
     bool neg_d = is_negative(dividend);
     bool neg_v = is_negative(divisor);
     
-    aria_int2048_t abs_d = neg_d ? negate(*dividend) : *dividend;
-    aria_int2048_t abs_v = neg_v ? negate(*divisor) : *divisor;
+    npk_int2048_t abs_d = neg_d ? negate(*dividend) : *dividend;
+    npk_int2048_t abs_v = neg_v ? negate(*divisor) : *divisor;
     
-    aria_int2048_t r = aria_lbim_umod2048(&abs_d, &abs_v);
+    npk_int2048_t r = npk_lbim_umod2048(&abs_d, &abs_v);
     
     // Remainder sign follows the dividend (standard C99 behavior)
     if (neg_d) {
@@ -311,32 +311,32 @@ extern "C" aria_int2048_t aria_lbim_smod2048(const aria_int2048_t* dividend, con
 // Bitwise Operations
 // ----------------------------------------------------------------------
 
-extern "C" aria_int2048_t aria_lbim_and2048(aria_int2048_t a, aria_int2048_t b) {
-    aria_int2048_t result;
+extern "C" npk_int2048_t npk_lbim_and2048(npk_int2048_t a, npk_int2048_t b) {
+    npk_int2048_t result;
     for (int i = 0; i < N; ++i) {
         result.limbs[i] = a.limbs[i] & b.limbs[i];
     }
     return result;
 }
 
-extern "C" aria_int2048_t aria_lbim_or2048(aria_int2048_t a, aria_int2048_t b) {
-    aria_int2048_t result;
+extern "C" npk_int2048_t npk_lbim_or2048(npk_int2048_t a, npk_int2048_t b) {
+    npk_int2048_t result;
     for (int i = 0; i < N; ++i) {
         result.limbs[i] = a.limbs[i] | b.limbs[i];
     }
     return result;
 }
 
-extern "C" aria_int2048_t aria_lbim_xor2048(aria_int2048_t a, aria_int2048_t b) {
-    aria_int2048_t result;
+extern "C" npk_int2048_t npk_lbim_xor2048(npk_int2048_t a, npk_int2048_t b) {
+    npk_int2048_t result;
     for (int i = 0; i < N; ++i) {
         result.limbs[i] = a.limbs[i] ^ b.limbs[i];
     }
     return result;
 }
 
-extern "C" aria_int2048_t aria_lbim_not2048(aria_int2048_t a) {
-    aria_int2048_t result;
+extern "C" npk_int2048_t npk_lbim_not2048(npk_int2048_t a) {
+    npk_int2048_t result;
     for (int i = 0; i < N; ++i) {
         result.limbs[i] = ~a.limbs[i];
     }
@@ -347,13 +347,13 @@ extern "C" aria_int2048_t aria_lbim_not2048(aria_int2048_t a) {
 // Shift Operations
 // ----------------------------------------------------------------------
 
-extern "C" aria_int2048_t aria_lbim_shl2048(aria_int2048_t a, uint32_t shift) {
+extern "C" npk_int2048_t npk_lbim_shl2048(npk_int2048_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<32>(a.limbs)) {
         return a;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     std::memset(&result, 0, sizeof(result));
     
     if (shift >= 2048) {
@@ -382,13 +382,13 @@ extern "C" aria_int2048_t aria_lbim_shl2048(aria_int2048_t a, uint32_t shift) {
     return result;
 }
 
-extern "C" aria_int2048_t aria_lbim_lshr2048(aria_int2048_t a, uint32_t shift) {
+extern "C" npk_int2048_t npk_lbim_lshr2048(npk_int2048_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<32>(a.limbs)) {
         return a;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     std::memset(&result, 0, sizeof(result));
     
     if (shift >= 2048) {
@@ -417,13 +417,13 @@ extern "C" aria_int2048_t aria_lbim_lshr2048(aria_int2048_t a, uint32_t shift) {
     return result;
 }
 
-extern "C" aria_int2048_t aria_lbim_ashr2048(aria_int2048_t a, uint32_t shift) {
+extern "C" npk_int2048_t npk_lbim_ashr2048(npk_int2048_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<32>(a.limbs)) {
         return a;
     }
     
-    aria_int2048_t result;
+    npk_int2048_t result;
     
     // Check if negative
     bool is_neg = is_negative(&a);
@@ -439,7 +439,7 @@ extern "C" aria_int2048_t aria_lbim_ashr2048(aria_int2048_t a, uint32_t shift) {
     }
     
     // Perform logical right shift
-    result = aria_lbim_lshr2048(a, shift);
+    result = npk_lbim_lshr2048(a, shift);
     
     // Sign extend if negative
     if (is_neg) {
@@ -491,7 +491,7 @@ static AriaString* alloc_aria_string(const char* cstr) {
 /**
  * Convert uint2048 to decimal string (division by 10 repeatedly)
  */
-extern "C" AriaString* aria_format_uint2048(const aria_int2048_t* val) {
+extern "C" AriaString* npk_format_uint2048(const npk_int2048_t* val) {
     if (!val) return alloc_aria_string("(null)");
     
     // Check for zero
@@ -505,20 +505,20 @@ extern "C" AriaString* aria_format_uint2048(const aria_int2048_t* val) {
     if (is_zero_val) return alloc_aria_string("0");
     
     // Copy value for modification
-    aria_int2048_t work = *val;
+    npk_int2048_t work = *val;
     
     // Build string in reverse
     std::string result;
     result.reserve(700);  // 2048 bits ≈ 617 decimal digits max
     
-    aria_int2048_t ten;
+    npk_int2048_t ten;
     memset(&ten, 0, sizeof(ten));
     ten.limbs[0] = 10;
     
     // Repeatedly divide by 10, collecting remainders
     while (!is_zero(&work)) {
-        aria_int2048_t quotient = aria_lbim_udiv2048(&work, &ten);
-        aria_int2048_t remainder = aria_lbim_umod2048(&work, &ten);
+        npk_int2048_t quotient = npk_lbim_udiv2048(&work, &ten);
+        npk_int2048_t remainder = npk_lbim_umod2048(&work, &ten);
         
         // Remainder is guaranteed to be < 10, so it fits in limbs[0]
         char digit = '0' + (char)(remainder.limbs[0] & 0xFF);
@@ -536,7 +536,7 @@ extern "C" AriaString* aria_format_uint2048(const aria_int2048_t* val) {
 /**
  * Convert int2048 to decimal string (handle sign, then delegate to unsigned)
  */
-extern "C" AriaString* aria_format_int2048(const aria_int2048_t* val) {
+extern "C" AriaString* npk_format_int2048(const npk_int2048_t* val) {
     if (!val) return alloc_aria_string("(null)");
     
     // Check for negative (MSB of top limb set)
@@ -544,8 +544,8 @@ extern "C" AriaString* aria_format_int2048(const aria_int2048_t* val) {
     
     if (negative) {
         // Negate and format as unsigned, then prepend '-'
-        aria_int2048_t abs_val = negate(*val);
-        AriaString* abs_str = aria_format_uint2048(&abs_val);
+        npk_int2048_t abs_val = negate(*val);
+        AriaString* abs_str = npk_format_uint2048(&abs_val);
         if (!abs_str) return nullptr;
         
         // Prepend '-'
@@ -568,7 +568,7 @@ extern "C" AriaString* aria_format_int2048(const aria_int2048_t* val) {
         return abs_str;
     } else {
         // Positive - format as unsigned
-        return aria_format_uint2048(val);
+        return npk_format_uint2048(val);
     }
 }
 // ══════════════════════════════════════════════════════════════════════════════
@@ -578,7 +578,7 @@ extern "C" AriaString* aria_format_int2048(const aria_int2048_t* val) {
 static const int N4096 = ARIA_INT4096_LIMBS;
 
 // Helper: Check for Zero
-static bool is_zero_4096(const aria_int4096_t* val) {
+static bool is_zero_4096(const npk_int4096_t* val) {
     for (int i = 0; i < N4096; ++i) {
         if (val->limbs[i] != 0) return false;
     }
@@ -586,13 +586,13 @@ static bool is_zero_4096(const aria_int4096_t* val) {
 }
 
 // Helper: Is Negative
-static bool is_negative_4096(const aria_int4096_t* val) {
+static bool is_negative_4096(const npk_int4096_t* val) {
     return (val->limbs[N4096 - 1] & (1ULL << 63)) != 0;
 }
 
 // Helper: Two's Complement Negation
-static aria_int4096_t negate_4096(aria_int4096_t a) {
-    aria_int4096_t result;
+static npk_int4096_t negate_4096(npk_int4096_t a) {
+    npk_int4096_t result;
     uint64_t carry = 1;
     for (int i = 0; i < N4096; ++i) {
         uint64_t val = ~a.limbs[i];
@@ -604,15 +604,15 @@ static aria_int4096_t negate_4096(aria_int4096_t a) {
 }
 
 // Addition
-extern "C" aria_int4096_t aria_lbim_add4096(const aria_int4096_t* a, const aria_int4096_t* b) {
+extern "C" npk_int4096_t npk_lbim_add4096(const npk_int4096_t* a, const npk_int4096_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<64>(a->limbs) || is_err_sentinel<64>(b->limbs)) {
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
     
-    aria_int4096_t result;
+    npk_int4096_t result;
     unsigned __int128 carry = 0;
     
     for (int i = 0; i < N4096; ++i) {
@@ -625,15 +625,15 @@ extern "C" aria_int4096_t aria_lbim_add4096(const aria_int4096_t* a, const aria_
 }
 
 // Subtraction
-extern "C" aria_int4096_t aria_lbim_sub4096(const aria_int4096_t* a, const aria_int4096_t* b) {
+extern "C" npk_int4096_t npk_lbim_sub4096(const npk_int4096_t* a, const npk_int4096_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<64>(a->limbs) || is_err_sentinel<64>(b->limbs)) {
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
     
-    aria_int4096_t result;
+    npk_int4096_t result;
     unsigned __int128 borrow = 0;
     
     for (int i = 0; i < N4096; ++i) {
@@ -646,15 +646,15 @@ extern "C" aria_int4096_t aria_lbim_sub4096(const aria_int4096_t* a, const aria_
 }
 
 // Multiplication
-extern "C" aria_int4096_t aria_lbim_mul4096(const aria_int4096_t* a, const aria_int4096_t* b) {
+extern "C" npk_int4096_t npk_lbim_mul4096(const npk_int4096_t* a, const npk_int4096_t* b) {
     // ARIA SAFETY: Propagate ERR sentinel (fail-hard policy)
     if (is_err_sentinel<64>(a->limbs) || is_err_sentinel<64>(b->limbs)) {
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
     
-    aria_int4096_t result;
+    npk_int4096_t result;
     memset(&result, 0, sizeof(result));
     
     for (int i = 0; i < N4096; ++i) {
@@ -672,8 +672,8 @@ extern "C" aria_int4096_t aria_lbim_mul4096(const aria_int4096_t* a, const aria_
 }
 
 // Unsigned Division
-extern "C" aria_int4096_t aria_lbim_udiv4096(const aria_int4096_t* dividend, const aria_int4096_t* divisor) {
-    aria_int4096_t quotient;
+extern "C" npk_int4096_t npk_lbim_udiv4096(const npk_int4096_t* dividend, const npk_int4096_t* divisor) {
+    npk_int4096_t quotient;
     memset(&quotient, 0, sizeof(quotient));
     
     if (is_zero_4096(divisor)) {
@@ -682,57 +682,57 @@ extern "C" aria_int4096_t aria_lbim_udiv4096(const aria_int4096_t* dividend, con
         return quotient;
     }
     
-    aria_int4096_t remainder = *dividend;
-    aria_int4096_t current_divisor = *divisor;
+    npk_int4096_t remainder = *dividend;
+    npk_int4096_t current_divisor = *divisor;
     
     int shift = 0;
     while (!is_negative_4096(&current_divisor) && shift < 4096) {
-        aria_int4096_t temp = aria_lbim_shl4096(current_divisor, 1);
+        npk_int4096_t temp = npk_lbim_shl4096(current_divisor, 1);
         if (is_negative_4096(&temp)) break;
         current_divisor = temp;
         shift++;
     }
     
     for (int i = 0; i <= shift; ++i) {
-        aria_int4096_t sub_result = aria_lbim_sub4096(&remainder, &current_divisor);
+        npk_int4096_t sub_result = npk_lbim_sub4096(&remainder, &current_divisor);
         if (!is_negative_4096(&sub_result)) {
             remainder = sub_result;
-            aria_int4096_t bit_val;
+            npk_int4096_t bit_val;
             memset(&bit_val, 0, sizeof(bit_val));
             bit_val.limbs[0] = 1;
-            bit_val = aria_lbim_shl4096(bit_val, shift - i);
-            quotient = aria_lbim_add4096(&quotient, &bit_val);
+            bit_val = npk_lbim_shl4096(bit_val, shift - i);
+            quotient = npk_lbim_add4096(&quotient, &bit_val);
         }
-        current_divisor = aria_lbim_lshr4096(current_divisor, 1);
+        current_divisor = npk_lbim_lshr4096(current_divisor, 1);
     }
     
     return quotient;
 }
 
 // Unsigned Remainder
-extern "C" aria_int4096_t aria_lbim_urem4096(const aria_int4096_t* dividend, const aria_int4096_t* divisor) {
+extern "C" npk_int4096_t npk_lbim_urem4096(const npk_int4096_t* dividend, const npk_int4096_t* divisor) {
     if (is_zero_4096(divisor)) {
         // ARIA SAFETY: Division by zero returns ERR sentinel (fail-hard policy)
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
     
-    aria_int4096_t quotient = aria_lbim_udiv4096(dividend, divisor);
-    aria_int4096_t product = aria_lbim_mul4096(&quotient, divisor);
-    return aria_lbim_sub4096(dividend, &product);
+    npk_int4096_t quotient = npk_lbim_udiv4096(dividend, divisor);
+    npk_int4096_t product = npk_lbim_mul4096(&quotient, divisor);
+    return npk_lbim_sub4096(dividend, &product);
 }
 
 // Unsigned Modulo (same as remainder for unsigned)
-extern "C" aria_int4096_t aria_lbim_umod4096(const aria_int4096_t* a, const aria_int4096_t* b) {
-    return aria_lbim_urem4096(a, b);
+extern "C" npk_int4096_t npk_lbim_umod4096(const npk_int4096_t* a, const npk_int4096_t* b) {
+    return npk_lbim_urem4096(a, b);
 }
 
 // Signed Division
-extern "C" aria_int4096_t aria_lbim_sdiv4096(const aria_int4096_t* dividend, const aria_int4096_t* divisor) {
+extern "C" npk_int4096_t npk_lbim_sdiv4096(const npk_int4096_t* dividend, const npk_int4096_t* divisor) {
     if (is_zero_4096(divisor)) {
         // ARIA SAFETY: Division by zero returns ERR sentinel (fail-hard policy)
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
@@ -740,10 +740,10 @@ extern "C" aria_int4096_t aria_lbim_sdiv4096(const aria_int4096_t* dividend, con
     bool dividend_neg = is_negative_4096(dividend);
     bool divisor_neg = is_negative_4096(divisor);
     
-    aria_int4096_t abs_dividend = dividend_neg ? negate_4096(*dividend) : *dividend;
-    aria_int4096_t abs_divisor = divisor_neg ? negate_4096(*divisor) : *divisor;
+    npk_int4096_t abs_dividend = dividend_neg ? negate_4096(*dividend) : *dividend;
+    npk_int4096_t abs_divisor = divisor_neg ? negate_4096(*divisor) : *divisor;
     
-    aria_int4096_t quotient = aria_lbim_udiv4096(&abs_dividend, &abs_divisor);
+    npk_int4096_t quotient = npk_lbim_udiv4096(&abs_dividend, &abs_divisor);
     
     if (dividend_neg != divisor_neg) {
         quotient = negate_4096(quotient);
@@ -753,20 +753,20 @@ extern "C" aria_int4096_t aria_lbim_sdiv4096(const aria_int4096_t* dividend, con
 }
 
 // Signed Remainder
-extern "C" aria_int4096_t aria_lbim_srem4096(const aria_int4096_t* dividend, const aria_int4096_t* divisor) {
+extern "C" npk_int4096_t npk_lbim_srem4096(const npk_int4096_t* dividend, const npk_int4096_t* divisor) {
     if (is_zero_4096(divisor)) {
         // ARIA SAFETY: Division by zero returns ERR sentinel (fail-hard policy)
-        aria_int4096_t err;
+        npk_int4096_t err;
         set_err_sentinel<64>(err.limbs);
         return err;
     }
     
     bool dividend_neg = is_negative_4096(dividend);
     
-    aria_int4096_t abs_dividend = dividend_neg ? negate_4096(*dividend) : *dividend;
-    aria_int4096_t abs_divisor = is_negative_4096(divisor) ? negate_4096(*divisor) : *divisor;
+    npk_int4096_t abs_dividend = dividend_neg ? negate_4096(*dividend) : *dividend;
+    npk_int4096_t abs_divisor = is_negative_4096(divisor) ? negate_4096(*divisor) : *divisor;
     
-    aria_int4096_t remainder = aria_lbim_urem4096(&abs_dividend, &abs_divisor);
+    npk_int4096_t remainder = npk_lbim_urem4096(&abs_dividend, &abs_divisor);
     
     if (dividend_neg) {
         remainder = negate_4096(remainder);
@@ -776,13 +776,13 @@ extern "C" aria_int4096_t aria_lbim_srem4096(const aria_int4096_t* dividend, con
 }
 
 // Signed Modulo (alias for srem - C99 behavior)
-extern "C" aria_int4096_t aria_lbim_smod4096(const aria_int4096_t* dividend, const aria_int4096_t* divisor) {
-    return aria_lbim_srem4096(dividend, divisor);
+extern "C" npk_int4096_t npk_lbim_smod4096(const npk_int4096_t* dividend, const npk_int4096_t* divisor) {
+    return npk_lbim_srem4096(dividend, divisor);
 }
 
 // Bitwise AND
-extern "C" aria_int4096_t aria_lbim_and4096(aria_int4096_t a, aria_int4096_t b) {
-    aria_int4096_t result;
+extern "C" npk_int4096_t npk_lbim_and4096(npk_int4096_t a, npk_int4096_t b) {
+    npk_int4096_t result;
     for (int i = 0; i < N4096; ++i) {
         result.limbs[i] = a.limbs[i] & b.limbs[i];
     }
@@ -790,8 +790,8 @@ extern "C" aria_int4096_t aria_lbim_and4096(aria_int4096_t a, aria_int4096_t b) 
 }
 
 // Bitwise OR
-extern "C" aria_int4096_t aria_lbim_or4096(aria_int4096_t a, aria_int4096_t b) {
-    aria_int4096_t result;
+extern "C" npk_int4096_t npk_lbim_or4096(npk_int4096_t a, npk_int4096_t b) {
+    npk_int4096_t result;
     for (int i = 0; i < N4096; ++i) {
         result.limbs[i] = a.limbs[i] | b.limbs[i];
     }
@@ -799,8 +799,8 @@ extern "C" aria_int4096_t aria_lbim_or4096(aria_int4096_t a, aria_int4096_t b) {
 }
 
 // Bitwise XOR
-extern "C" aria_int4096_t aria_lbim_xor4096(aria_int4096_t a, aria_int4096_t b) {
-    aria_int4096_t result;
+extern "C" npk_int4096_t npk_lbim_xor4096(npk_int4096_t a, npk_int4096_t b) {
+    npk_int4096_t result;
     for (int i = 0; i < N4096; ++i) {
         result.limbs[i] = a.limbs[i] ^ b.limbs[i];
     }
@@ -808,8 +808,8 @@ extern "C" aria_int4096_t aria_lbim_xor4096(aria_int4096_t a, aria_int4096_t b) 
 }
 
 // Bitwise NOT
-extern "C" aria_int4096_t aria_lbim_not4096(aria_int4096_t a) {
-    aria_int4096_t result;
+extern "C" npk_int4096_t npk_lbim_not4096(npk_int4096_t a) {
+    npk_int4096_t result;
     for (int i = 0; i < N4096; ++i) {
         result.limbs[i] = ~a.limbs[i];
     }
@@ -817,13 +817,13 @@ extern "C" aria_int4096_t aria_lbim_not4096(aria_int4096_t a) {
 }
 
 // Left Shift
-extern "C" aria_int4096_t aria_lbim_shl4096(aria_int4096_t a, uint32_t shift) {
+extern "C" npk_int4096_t npk_lbim_shl4096(npk_int4096_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<64>(a.limbs)) {
         return a;
     }
     
-    aria_int4096_t result;
+    npk_int4096_t result;
     memset(&result, 0, sizeof(result));
     
     if (shift >= 4096) return result;
@@ -845,13 +845,13 @@ extern "C" aria_int4096_t aria_lbim_shl4096(aria_int4096_t a, uint32_t shift) {
 }
 
 // Logical Right Shift
-extern "C" aria_int4096_t aria_lbim_lshr4096(aria_int4096_t a, uint32_t shift) {
+extern "C" npk_int4096_t npk_lbim_lshr4096(npk_int4096_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<64>(a.limbs)) {
         return a;
     }
     
-    aria_int4096_t result;
+    npk_int4096_t result;
     memset(&result, 0, sizeof(result));
     
     if (shift >= 4096) return result;
@@ -873,13 +873,13 @@ extern "C" aria_int4096_t aria_lbim_lshr4096(aria_int4096_t a, uint32_t shift) {
 }
 
 // Arithmetic Right Shift
-extern "C" aria_int4096_t aria_lbim_ashr4096(aria_int4096_t a, uint32_t shift) {
+extern "C" npk_int4096_t npk_lbim_ashr4096(npk_int4096_t a, uint32_t shift) {
     // ARIA SAFETY: Preserve ERR sentinel through shifts (fail-hard policy)
     if (is_err_sentinel<64>(a.limbs)) {
         return a;
     }
     
-    aria_int4096_t result = aria_lbim_lshr4096(a, shift);
+    npk_int4096_t result = npk_lbim_lshr4096(a, shift);
     
     if (is_negative_4096(&a)) {
         uint32_t limb_shift = shift / 64;
@@ -898,7 +898,7 @@ extern "C" aria_int4096_t aria_lbim_ashr4096(aria_int4096_t a, uint32_t shift) {
 }
 
 // Unsigned Compare
-extern "C" int32_t aria_lbim_ucmp4096(const aria_int4096_t* a, const aria_int4096_t* b) {
+extern "C" int32_t npk_lbim_ucmp4096(const npk_int4096_t* a, const npk_int4096_t* b) {
     for (int i = N4096 - 1; i >= 0; --i) {
         if (a->limbs[i] > b->limbs[i]) return 1;
         if (a->limbs[i] < b->limbs[i]) return -1;
@@ -907,26 +907,26 @@ extern "C" int32_t aria_lbim_ucmp4096(const aria_int4096_t* a, const aria_int409
 }
 
 // Signed Compare
-extern "C" int32_t aria_lbim_scmp4096(const aria_int4096_t* a, const aria_int4096_t* b) {
+extern "C" int32_t npk_lbim_scmp4096(const npk_int4096_t* a, const npk_int4096_t* b) {
     bool a_neg = is_negative_4096(a);
     bool b_neg = is_negative_4096(b);
     
     if (a_neg && !b_neg) return -1;
     if (!a_neg && b_neg) return 1;
     
-    return aria_lbim_ucmp4096(a, b);
+    return npk_lbim_ucmp4096(a, b);
 }
 
 // Equality
-extern "C" bool aria_lbim_eq4096(const aria_int4096_t* a, const aria_int4096_t* b) {
-    return aria_lbim_ucmp4096(a, b) == 0;
+extern "C" bool npk_lbim_eq4096(const npk_int4096_t* a, const npk_int4096_t* b) {
+    return npk_lbim_ucmp4096(a, b) == 0;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 4096-BIT FORMATTERS
 // ══════════════════════════════════════════════════════════════════════════════
 
-extern "C" AriaString* aria_format_uint4096(const aria_int4096_t* val) {
+extern "C" AriaString* npk_format_uint4096(const npk_int4096_t* val) {
     if (!val) return alloc_aria_string("(null)");
     
     // Check for zero
@@ -934,18 +934,18 @@ extern "C" AriaString* aria_format_uint4096(const aria_int4096_t* val) {
         return alloc_aria_string("0");
     }
     
-    aria_int4096_t work = *val;
+    npk_int4096_t work = *val;
     std::string result;
     result.reserve(1300);  // 4096 bits ≈ 1233 decimal digits max
     
-    aria_int4096_t ten;
+    npk_int4096_t ten;
     memset(&ten, 0, sizeof(ten));
     ten.limbs[0] = 10;
     
     // Repeatedly divide by 10, collecting remainders
     while (!is_zero_4096(&work)) {
-        aria_int4096_t quotient = aria_lbim_udiv4096(&work, &ten);
-        aria_int4096_t remainder = aria_lbim_umod4096(&work, &ten);
+        npk_int4096_t quotient = npk_lbim_udiv4096(&work, &ten);
+        npk_int4096_t remainder = npk_lbim_umod4096(&work, &ten);
         
         char digit = '0' + (char)(remainder.limbs[0] & 0xFF);
         result.push_back(digit);
@@ -957,14 +957,14 @@ extern "C" AriaString* aria_format_uint4096(const aria_int4096_t* val) {
     return alloc_aria_string(result.c_str());
 }
 
-extern "C" AriaString* aria_format_int4096(const aria_int4096_t* val) {
+extern "C" AriaString* npk_format_int4096(const npk_int4096_t* val) {
     if (!val) return alloc_aria_string("(null)");
     
     bool negative = is_negative_4096(val);
     
     if (negative) {
-        aria_int4096_t abs_val = negate_4096(*val);
-        AriaString* abs_str = aria_format_uint4096(&abs_val);
+        npk_int4096_t abs_val = negate_4096(*val);
+        AriaString* abs_str = npk_format_uint4096(&abs_val);
         
         // Prepend '-' sign
         size_t new_len = abs_str->length + 1;
@@ -979,6 +979,6 @@ extern "C" AriaString* aria_format_int4096(const aria_int4096_t* val) {
         
         return abs_str;
     } else {
-        return aria_format_uint4096(val);
+        return npk_format_uint4096(val);
     }
 }

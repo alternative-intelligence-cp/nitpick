@@ -1,0 +1,245 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Visibility Checker — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria visibility checker using mock objects.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Visibility level constants
+const int32:VIS_PRIVATE  = 0i32;
+const int32:VIS_PUBLIC   = 1i32;
+const int32:VIS_PACKAGE  = 2i32;
+const int32:VIS_SUPER    = 3i32;
+
+// ─── Mock creation externs (visibility_shim.cpp) ─────────────────────
+extern func:vc_null_ptr = wild int8*();
+extern func:vc_test_make_symbol = wild int8*(string:name, int32:is_public);
+extern func:vc_test_symbol_free = int32(wild int8*:sym);
+extern func:vc_test_make_module = wild int8*(string:name, string:path, wild int8*:parent);
+extern func:vc_test_module_free = int32(wild int8*:mp);
+
+// ─── Test-aware extraction externs ───────────────────────────────────
+extern func:vc_test_symbol_is_public = int32(wild int8*:sym);
+extern func:vc_test_symbol_get_name = string(wild int8*:sym);
+extern func:vc_test_module_get_path = string(wild int8*:mp);
+extern func:vc_test_modules_same = int32(wild int8*:m1, wild int8*:m2);
+extern func:vc_test_module_get_parent = wild int8*(wild int8*:mp);
+extern func:vc_test_module_is_null = int32(wild int8*:mp);
+
+// ─── State management ────────────────────────────────────────────────
+extern func:vc_new = wild int8*(wild int8*:module_table);
+extern func:vc_free = int32(wild int8*:state);
+extern func:vc_add_error = int32(wild int8*:state, string:msg);
+extern func:vc_error_count = int32(wild int8*:state);
+extern func:vc_get_error = string(wild int8*:state, int32:index);
+extern func:vc_clear_errors = int32(wild int8*:state);
+
+
+// ═══ Test 1: PUBLIC visibility always allows access ══════════════════
+pub func:test_public_access = int32() {
+    wild int8->:mod_a = vc_test_make_module("mod_a", "/src/mod_a.aria", vc_null_ptr());
+    wild int8->:mod_b = vc_test_make_module("mod_b", "/src/mod_b.aria", vc_null_ptr());
+    int32:same_ab = vc_test_modules_same(mod_a, mod_b);
+    int32:result = 1i32;
+    if (VIS_PUBLIC == 1i32 && same_ab == 0i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(mod_a);
+    _ = vc_test_module_free(mod_b);
+    pass result;
+};
+
+// ═══ Test 2: PRIVATE visibility — same module allowed ════════════════
+pub func:test_private_same_module = int32() {
+    wild int8->:mod_a = vc_test_make_module("mod_a", "/src/mod_a.aria", vc_null_ptr());
+    int32:same = vc_test_modules_same(mod_a, mod_a);
+    int32:result = 1i32;
+    if (same == 1i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(mod_a);
+    pass result;
+};
+
+// ═══ Test 3: PRIVATE visibility — different module denied ════════════
+pub func:test_private_different_module = int32() {
+    wild int8->:mod_a = vc_test_make_module("mod_a", "/src/mod_a.aria", vc_null_ptr());
+    wild int8->:mod_b = vc_test_make_module("mod_b", "/src/mod_b.aria", vc_null_ptr());
+    int32:same = vc_test_modules_same(mod_a, mod_b);
+    int32:result = 1i32;
+    if (same == 0i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(mod_a);
+    _ = vc_test_module_free(mod_b);
+    pass result;
+};
+
+// ═══ Test 4: Symbol isPublic extraction ══════════════════════════════
+pub func:test_symbol_is_public = int32() {
+    wild int8->:pub_sym = vc_test_make_symbol("my_func", 1i32);
+    wild int8->:priv_sym = vc_test_make_symbol("helper", 0i32);
+    int32:pub_check = vc_test_symbol_is_public(pub_sym);
+    int32:priv_check = vc_test_symbol_is_public(priv_sym);
+    int32:result = 1i32;
+    if (pub_check == 1i32 && priv_check == 0i32) {
+        result = 0i32;
+    }
+    _ = vc_test_symbol_free(pub_sym);
+    _ = vc_test_symbol_free(priv_sym);
+    pass result;
+};
+
+// ═══ Test 5: Symbol name extraction ══════════════════════════════════
+pub func:test_symbol_get_name = int32() {
+    wild int8->:sym = vc_test_make_symbol("calculate", 1i32);
+    string:name = vc_test_symbol_get_name(sym);
+    int32:result = 1i32;
+    if (name == "calculate") {
+        result = 0i32;
+    }
+    _ = vc_test_symbol_free(sym);
+    pass result;
+};
+
+// ═══ Test 6: Module path extraction ══════════════════════════════════
+pub func:test_module_get_path = int32() {
+    wild int8->:mp = vc_test_make_module("io", "/src/io.aria", vc_null_ptr());
+    string:path = vc_test_module_get_path(mp);
+    int32:result = 1i32;
+    if (path == "/src/io.aria") {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(mp);
+    pass result;
+};
+
+// ═══ Test 7: Null module detection ═══════════════════════════════════
+pub func:test_null_module = int32() {
+    int32:is_null = vc_test_module_is_null(vc_null_ptr());
+    int32:result = 1i32;
+    if (is_null == 1i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 8: Non-null module detection ═══════════════════════════════
+pub func:test_nonnull_module = int32() {
+    wild int8->:mp = vc_test_make_module("test", "/test.aria", vc_null_ptr());
+    int32:is_null = vc_test_module_is_null(mp);
+    int32:result = 1i32;
+    if (is_null == 0i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(mp);
+    pass result;
+};
+
+// ═══ Test 9: Parent module relationship ══════════════════════════════
+pub func:test_parent_module = int32() {
+    wild int8->:par = vc_test_make_module("std", "/src/std.aria", vc_null_ptr());
+    wild int8->:child = vc_test_make_module("io", "/src/std/io.aria", par);
+    // get_parent returns a reference, not a new allocation
+    int32:is_same = vc_test_modules_same(vc_test_module_get_parent(child), par);
+    int32:result = 1i32;
+    if (is_same == 1i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(child);
+    _ = vc_test_module_free(par);
+    pass result;
+};
+
+// ═══ Test 10: No parent (root module) ════════════════════════════════
+pub func:test_no_parent = int32() {
+    wild int8->:root = vc_test_make_module("main", "/src/main.aria", vc_null_ptr());
+    // get_parent returns null for root — pass inline, no wild variable needed
+    int32:is_null = vc_test_module_is_null(vc_test_module_get_parent(root));
+    int32:result = 1i32;
+    if (is_null == 1i32) {
+        result = 0i32;
+    }
+    _ = vc_test_module_free(root);
+    pass result;
+};
+
+// ═══ Test 11: Error collection in state ══════════════════════════════
+pub func:test_error_collection = int32() {
+    wild int8->:state = vc_new(vc_null_ptr());
+    _ = vc_add_error(state, "first error");
+    _ = vc_add_error(state, "second error");
+    int32:count = vc_error_count(state);
+    int32:result = 1i32;
+    if (count == 2i32) {
+        string:err0 = vc_get_error(state, 0i32);
+        string:err1 = vc_get_error(state, 1i32);
+        if (err0 == "first error" && err1 == "second error") {
+            _ = vc_clear_errors(state);
+            int32:after = vc_error_count(state);
+            if (after == 0i32) {
+                result = 0i32;
+            }
+        }
+    }
+    _ = vc_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Null symbol isPublic returns 0 ═════════════════════════
+pub func:test_null_symbol = int32() {
+    int32:result_check = vc_test_symbol_is_public(vc_null_ptr());
+    int32:result = 1i32;
+    if (result_check == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+
+// ═══ Main — run all tests ════════════════════════════════════════════
+
+func:main = int32() {
+    int32:r = 0i32;
+
+    r = raw test_public_access();
+    if (r != 0i32) { exit 1; }
+
+    r = raw test_private_same_module();
+    if (r != 0i32) { exit 2; }
+
+    r = raw test_private_different_module();
+    if (r != 0i32) { exit 3; }
+
+    r = raw test_symbol_is_public();
+    if (r != 0i32) { exit 4; }
+
+    r = raw test_symbol_get_name();
+    if (r != 0i32) { exit 5; }
+
+    r = raw test_module_get_path();
+    if (r != 0i32) { exit 6; }
+
+    r = raw test_null_module();
+    if (r != 0i32) { exit 7; }
+
+    r = raw test_nonnull_module();
+    if (r != 0i32) { exit 8; }
+
+    r = raw test_parent_module();
+    if (r != 0i32) { exit 9; }
+
+    r = raw test_no_parent();
+    if (r != 0i32) { exit 10; }
+
+    r = raw test_error_collection();
+    if (r != 0i32) { exit 11; }
+
+    r = raw test_null_symbol();
+    if (r != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

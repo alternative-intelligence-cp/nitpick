@@ -22,7 +22,7 @@
 
 // Single-argument print for null-terminated C strings
 // Used by core print() builtin for simple string literals
-extern "C" int64_t aria_print_cstr(const char* str) {
+extern "C" int64_t npk_print_cstr(const char* str) {
     if (!str) return -1;
     size_t len = strlen(str);
     if (len == 0) return 0;
@@ -31,7 +31,7 @@ extern "C" int64_t aria_print_cstr(const char* str) {
 }
 
 // println: print string + newline (convenience wrapper)
-extern "C" int64_t aria_println_cstr(const char* str) {
+extern "C" int64_t npk_println_cstr(const char* str) {
     if (!str) return -1;
     size_t len = strlen(str);
     ssize_t bytes = 0;
@@ -52,7 +52,7 @@ extern "C" int64_t aria_println_cstr(const char* str) {
 }
 
 // Two-argument version for stdlib use (length-aware)
-void aria_print(const char* str, int64_t len) {
+void npk_print(const char* str, int64_t len) {
     if (!str || len <= 0) return;
     
     // Write to stdout (fd 1)
@@ -60,12 +60,12 @@ void aria_print(const char* str, int64_t len) {
     (void)written;  // Ignore errors for basic print
 }
 
-void aria_println(const char* str, int64_t len) {
-    aria_print(str, len);
+void npk_println(const char* str, int64_t len) {
+    npk_print(str, len);
     write(STDOUT_FILENO, "\n", 1);
 }
 
-void aria_eprint(const char* str, int64_t len) {
+void npk_eprint(const char* str, int64_t len) {
     if (!str || len <= 0) return;
     
     // Write to stderr (fd 2)
@@ -73,12 +73,12 @@ void aria_eprint(const char* str, int64_t len) {
     (void)written;
 }
 
-void aria_eprintln(const char* str, int64_t len) {
-    aria_eprint(str, len);
+void npk_eprintln(const char* str, int64_t len) {
+    npk_eprint(str, len);
     write(STDERR_FILENO, "\n", 1);
 }
 
-void aria_debug(const char* str, int64_t len) {
+void npk_debug(const char* str, int64_t len) {
     if (!str || len <= 0) return;
     
     // Write to stddbg (fd 3)
@@ -86,8 +86,8 @@ void aria_debug(const char* str, int64_t len) {
     (void)written;
 }
 
-void aria_debugln(const char* str, int64_t len) {
-    aria_debug(str, len);
+void npk_debugln(const char* str, int64_t len) {
+    npk_debug(str, len);
     write(3, "\n", 1);
 }
 
@@ -95,44 +95,44 @@ void aria_debugln(const char* str, int64_t len) {
 // Memory Functions (std.mem)
 // ============================================================================
 
-void* aria_std_gc_alloc(int64_t size) {
+void* npk_std_gc_alloc(int64_t size) {
     if (size <= 0) return NULL;
     // Type ID 0 means generic/unknown type (conservative scanning)
-    return aria_gc_alloc((size_t)size, 0);
+    return npk_gc_alloc((size_t)size, 0);
 }
 
-void* aria_std_alloc(int64_t size) {
+void* npk_std_alloc(int64_t size) {
     if (size <= 0) return NULL;
-    return aria_alloc((size_t)size);
+    return npk_alloc((size_t)size);
 }
 
-void aria_std_free(void* ptr) {
-    aria_free(ptr);
+void npk_std_free(void* ptr) {
+    npk_free(ptr);
 }
 
-void* aria_std_alloc_exec(int64_t size) {
+void* npk_std_alloc_exec(int64_t size) {
     if (size <= 0) return NULL;
-    WildXGuard guard = aria_alloc_exec((size_t)size);
+    WildXGuard guard = npk_alloc_exec((size_t)size);
     // Return just the pointer (caller is responsible for sealing/cleanup)
     return guard.ptr;
 }
 
-void aria_std_free_exec(void* ptr) {
+void npk_std_free_exec(void* ptr) {
     if (!ptr) return;
     // For simplicity, use regular free (wildx pages are just mmapped memory)
-    aria_free(ptr);
+    npk_free(ptr);
 }
 
 // ============================================================================
 // String Functions (std.string)
 // ============================================================================
 
-int64_t aria_cstr_length(const char* str) {
+int64_t npk_cstr_length(const char* str) {
     if (!str) return 0;
     return (int64_t)strlen(str);
 }
 
-int32_t aria_string_compare(const char* s1, const char* s2) {
+int32_t npk_string_compare(const char* s1, const char* s2) {
     if (!s1 && !s2) return 0;
     if (!s1) return -1;
     if (!s2) return 1;
@@ -141,7 +141,7 @@ int32_t aria_string_compare(const char* s1, const char* s2) {
     return (int32_t)result;
 }
 
-char* aria_cstr_concat(const char* s1, const char* s2) {
+char* npk_cstr_concat(const char* s1, const char* s2) {
     if (!s1 && !s2) return NULL;
     if (!s1) s1 = "";
     if (!s2) s2 = "";
@@ -151,7 +151,7 @@ char* aria_cstr_concat(const char* s1, const char* s2) {
     size_t total = len1 + len2 + 1;  // +1 for null terminator
     
     // Allocate on GC heap (type_id 0 for strings)
-    char* result = (char*)aria_gc_alloc(total, 0);
+    char* result = (char*)npk_gc_alloc(total, 0);
     if (!result) return NULL;
     
     // Copy strings
@@ -166,7 +166,7 @@ char* aria_cstr_concat(const char* s1, const char* s2) {
 // Math Functions (std.math)
 // ============================================================================
 
-int64_t aria_math_abs_i64(int64_t x) {
+int64_t npk_math_abs_i64(int64_t x) {
     // Handle INT64_MIN specially (abs would overflow)
     if (x == INT64_MIN) {
         return INT64_MAX;  // Best we can do without TBB
@@ -174,23 +174,23 @@ int64_t aria_math_abs_i64(int64_t x) {
     return (x < 0) ? -x : x;
 }
 
-double aria_math_abs_f64(double x) {
+double npk_math_abs_f64(double x) {
     return fabs(x);
 }
 
-double aria_math_sqrt(double x) {
+double npk_math_sqrt(double x) {
     return sqrt(x);
 }
 
-double aria_math_pow(double x, double y) {
+double npk_math_pow(double x, double y) {
     return pow(x, y);
 }
 
-int64_t aria_math_min_i64(int64_t a, int64_t b) {
+int64_t npk_math_min_i64(int64_t a, int64_t b) {
     return (a < b) ? a : b;
 }
 
-int64_t aria_math_max_i64(int64_t a, int64_t b) {
+int64_t npk_math_max_i64(int64_t a, int64_t b) {
     return (a > b) ? a : b;
 }
 
@@ -198,11 +198,11 @@ int64_t aria_math_max_i64(int64_t a, int64_t b) {
 // Math Constants
 // ============================================================================
 
-double aria_math_pi(void) {
+double npk_math_pi(void) {
     return 3.141592653589793238462643383279502884;
 }
 
-double aria_math_e(void) {
+double npk_math_e(void) {
     return 2.718281828459045235360287471352662498;
 }
 
@@ -215,36 +215,36 @@ double aria_math_e(void) {
 #include <time.h>   // nanosleep
 
 // Clear the terminal screen and move cursor to home position.
-extern "C" void aria_term_clear(void) {
+extern "C" void npk_term_clear(void) {
     // ESC[2J  = erase display,  ESC[H = cursor home
     write(STDOUT_FILENO, "\033[2J\033[H", 7);
 }
 
 // Hide the terminal cursor (reduces flicker during animation).
-extern "C" void aria_term_hide_cursor(void) {
+extern "C" void npk_term_hide_cursor(void) {
     write(STDOUT_FILENO, "\033[?25l", 6);
 }
 
 // Restore the terminal cursor.
-extern "C" void aria_term_show_cursor(void) {
+extern "C" void npk_term_show_cursor(void) {
     write(STDOUT_FILENO, "\033[?25h", 6);
 }
 
 // Write a raw byte buffer of `len` bytes to stdout.
 // Used to flush a full frame buffer in a single syscall.
-extern "C" void aria_write_bytes(const char* buf, int64_t len) {
+extern "C" void npk_write_bytes(const char* buf, int64_t len) {
     if (!buf || len <= 0) return;
     ssize_t written = write(STDOUT_FILENO, buf, (size_t)len);
     (void)written;
 }
 
 // Flush stdout (for stdio-buffered output paths).
-extern "C" void aria_flush_stdout(void) {
+extern "C" void npk_flush_stdout(void) {
     fflush(stdout);
 }
 
 // Sleep for the given number of milliseconds.
-extern "C" void aria_sleep_ms(int64_t ms) {
+extern "C" void npk_sleep_ms(int64_t ms) {
     if (ms <= 0) return;
     struct timespec ts;
     ts.tv_sec  = (time_t)(ms / 1000);

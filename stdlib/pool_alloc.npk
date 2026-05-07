@@ -1,0 +1,107 @@
+// stdlib/pool_alloc.aria — Pool allocator (v0.10.0 — ported to aria-libc)
+//
+// Fixed-size block allocation with free list.
+// Import with: use "pool_alloc.aria".*;
+//
+// Pool layout (5 int64 header + data buffer + free-list buffer):
+//   slot 0 = block_size   (bytes per block)
+//   slot 1 = block_count  (total blocks)
+//   slot 2 = data_ptr     (pointer to data buffer)
+//   slot 3 = free_ptr     (pointer to free-list stack)
+//   slot 4 = free_top     (index into free-list stack, -1 = empty)
+//
+// v0.10.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_mem.so
+
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "npk_libc_mem" {
+    func:npk_libc_mem_malloc      = int64(int64:size);
+    func:npk_libc_mem_calloc      = int64(int64:count, int64:size);
+    func:npk_libc_mem_free        = void(int64:ptr);
+    func:npk_libc_mem_read_i64    = int64(int64:ptr, int64:offset);
+    func:npk_libc_mem_write_i64   = void(int64:ptr, int64:offset, int64:val);
+}
+
+// Header size: 5 int64 slots = 40 bytes
+int64:POOL_HDR = 40i64;
+
+Type:PoolAlloc = {
+    // create(block_size, block_count) — create a pool
+    func:create = int64(int64:block_size, int64:block_count) {
+        int64:hdr = npk_libc_mem_malloc(POOL_HDR);
+        if (hdr == 0i64) { pass 0i64; }
+        int64:data = npk_libc_mem_calloc(block_count, block_size);
+        if (data == 0i64) { npk_libc_mem_free(hdr); pass 0i64; }
+        int64:flist = npk_libc_mem_malloc(block_count * 8i64);
+        if (flist == 0i64) { npk_libc_mem_free(data); npk_libc_mem_free(hdr); pass 0i64; }
+
+        npk_libc_mem_write_i64(hdr, 0i64, block_size);
+        npk_libc_mem_write_i64(hdr, 8i64, block_count);
+        npk_libc_mem_write_i64(hdr, 16i64, data);
+        npk_libc_mem_write_i64(hdr, 24i64, flist);
+        npk_libc_mem_write_i64(hdr, 32i64, block_count - 1i64);
+
+        // Fill free list: [0, 1, 2, ..., block_count-1]
+        loop(0i64, block_count, 1i64) {
+            npk_libc_mem_write_i64(flist, $ * 8i64, $);
+        }
+        pass hdr;
+    };
+
+    // destroy(pool) — free pool and all buffers
+    func:destroy = int32(int64:pool) {
+        int64:data  = npk_libc_mem_read_i64(pool, 16i64);
+        int64:flist = npk_libc_mem_read_i64(pool, 24i64);
+        npk_libc_mem_free(data);
+        npk_libc_mem_free(flist);
+        npk_libc_mem_free(pool);
+        pass 0i32;
+    };
+
+    // get(pool) — allocate a block, returns block index (-1 if exhausted)
+    func:get = int64(int64:pool) {
+        int64:top = npk_libc_mem_read_i64(pool, 32i64);
+        if (top < 0i64) { pass 0i64 - 1i64; }
+        int64:flist = npk_libc_mem_read_i64(pool, 24i64);
+        int64:idx = npk_libc_mem_read_i64(flist, top * 8i64);
+        npk_libc_mem_write_i64(pool, 32i64, top - 1i64);
+        pass idx;
+    };
+
+    // put(pool, block_index) — return a block to the pool
+    func:put = int32(int64:pool, int64:block_index) {
+        int64:top = npk_libc_mem_read_i64(pool, 32i64);
+        int64:flist = npk_libc_mem_read_i64(pool, 24i64);
+        int64:new_top = top + 1i64;
+        npk_libc_mem_write_i64(flist, new_top * 8i64, block_index);
+        npk_libc_mem_write_i64(pool, 32i64, new_top);
+        pass 0i32;
+    };
+
+    // write_int64(pool, block_index, offset, value)
+    func:write_int64 = int32(int64:pool, int64:block_index, int64:offset, int64:value) {
+        int64:bsz  = npk_libc_mem_read_i64(pool, 0i64);
+        int64:data = npk_libc_mem_read_i64(pool, 16i64);
+        int64:byte_addr = block_index * bsz + offset;
+        npk_libc_mem_write_i64(data, byte_addr, value);
+        pass 0i32;
+    };
+
+    // read_int64(pool, block_index, offset)
+    func:read_int64 = int64(int64:pool, int64:block_index, int64:offset) {
+        int64:bsz  = npk_libc_mem_read_i64(pool, 0i64);
+        int64:data = npk_libc_mem_read_i64(pool, 16i64);
+        int64:byte_addr = block_index * bsz + offset;
+        pass npk_libc_mem_read_i64(data, byte_addr);
+    };
+
+    // available(pool) — number of free blocks
+    func:available = int64(int64:pool) {
+        int64:top = npk_libc_mem_read_i64(pool, 32i64);
+        pass top + 1i64;
+    };
+
+    struct:interface = {
+        int64:handle;
+    };
+};

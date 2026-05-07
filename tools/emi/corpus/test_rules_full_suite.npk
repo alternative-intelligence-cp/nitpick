@@ -1,0 +1,161 @@
+// test_rules_full_suite.aria — v0.2.44 Full Rules<T> Feature Suite
+// Tests: array indexing, multi-type, null/nil, cascading, string, struct
+extern func:puts = int32(string:s);
+
+// ============================================================
+// Rules Declarations — All v0.2.41-v0.2.44 features
+// ============================================================
+
+// Basic numeric (v0.2.41)
+Rules<int32>:r_positive = {
+    $ > 0
+};
+
+// Multi-type params (v0.2.44)
+Rules<int32,int64>:r_positive_wide = {
+    $ > 0
+};
+
+// Cascading + typed (v0.2.42)
+Rules<int32>:r_small_positive = {
+    limit<r_positive>,
+    $ < 100
+};
+
+// Array indexing + length (v0.2.44)
+Rules<int32[]>:r_arr_check = {
+    $[0] > 0,
+    $.length >= 2
+};
+
+// String rules (v0.2.43)
+Rules<string>:r_non_empty = {
+    $.length > 0
+};
+
+// NIL check (v0.2.44)
+Rules<int32>:r_not_nil = {
+    $ != NIL
+};
+
+// Multi-type with float (v0.2.44)
+Rules<int32,flt64>:r_bounded = {
+    $ >= 0,
+    $ <= 1000
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: rule violation in full suite!");
+    exit 1;
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // Test 1: Basic positive
+    limit<r_positive> int32:a = 42;
+    if (a == 42) {
+        drop puts("PASS: Test 1 — basic positive");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 1");
+        failed += 1i32;
+    }
+
+    // Test 2: Multi-type with int64
+    limit<r_positive_wide> int64:b = 100;
+    if (b > 0) {
+        drop puts("PASS: Test 2 — multi-type int64");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 2");
+        failed += 1i32;
+    }
+
+    // Test 3: Multi-type with int32
+    limit<r_positive_wide> int32:b2 = 50;
+    if (b2 > 0i32) {
+        drop puts("PASS: Test 3 — multi-type int32");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 3");
+        failed += 1i32;
+    }
+
+    // Test 4: Cascading rules
+    limit<r_small_positive> int32:c = 42;
+    if (c > 0i32) {
+        drop puts("PASS: Test 4 — cascading rules");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 4");
+        failed += 1i32;
+    }
+
+    // Test 5: Array indexing
+    limit<r_arr_check> int32[4]:d = [10, 20, 30, 40];
+    if (d[0] == 10) {
+        drop puts("PASS: Test 5 — array $[0] > 0");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 5");
+        failed += 1i32;
+    }
+
+    // Test 6: Array length
+    limit<r_arr_check> int32[3]:e = [5, 6, 7];
+    if (e[0] == 5) {
+        drop puts("PASS: Test 6 — array $.length >= 2");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 6");
+        failed += 1i32;
+    }
+
+    // Test 7: String non-empty
+    limit<r_non_empty> string:f = "hello";
+    drop puts(f);
+    drop puts("PASS: Test 7 — string $.length > 0");
+    passed += 1i32;
+
+    // Test 8: NIL check
+    limit<r_not_nil> int32:g = 1;
+    if (g == 1) {
+        drop puts("PASS: Test 8 — $ != NIL");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 8");
+        failed += 1i32;
+    }
+
+    // Test 9: Multi-type bounded with flt64
+    limit<r_bounded> flt64:h = 500.5;
+    if (h > 0.0) {
+        drop puts("PASS: Test 9 — multi-type flt64 bounded");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 9");
+        failed += 1i32;
+    }
+
+    // Test 10: Multi-type bounded with int32
+    limit<r_bounded> int32:j = 999;
+    if (j > 0i32) {
+        drop puts("PASS: Test 10 — multi-type int32 bounded");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 10");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Results
+    // ----------------------------------------------------------
+    if (failed > 0i32) {
+        drop puts("SOME TESTS FAILED");
+        exit 1;
+    }
+    drop puts("All full suite rules tests passed! (10/10)");
+    exit 0;
+};

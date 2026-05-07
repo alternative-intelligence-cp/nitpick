@@ -1,0 +1,42 @@
+// Test exact pattern from test_int64_toString
+
+func:int64_toString = string(int64:value) {
+    // Special case: zero
+    if (value == 0) {
+        pass "0";
+    }
+    
+    // Build result string by extracting digits
+    string:result = "";
+    int64:remaining = value;
+    
+    // Extract digits from right to left
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        
+        // Convert digit to character
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        
+        // Prepend digit to result
+        result = string_concat(digit_char, result);
+    }
+    
+    pass result;
+};
+
+func:main = int32() {
+    // Test with just one call
+    int64:zero = 0;
+    string:zero_str = raw int64_toString(zero);
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

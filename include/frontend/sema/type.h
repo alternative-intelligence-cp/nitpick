@@ -7,7 +7,7 @@
 #include <map>
 #include <unordered_map>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // Forward declarations
@@ -436,7 +436,7 @@ public:
 // ============================================================================
 // OptionalType - Optional type (T?)
 // ============================================================================
-// Reference: aria_specs.txt (NIL and optional types)
+// Reference: npk_specs.txt (NIL and optional types)
 // Represents a type that can be either a value of type T or NIL
 
 class OptionalType : public Type {
@@ -743,6 +743,6 @@ public:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SEMA_TYPE_H

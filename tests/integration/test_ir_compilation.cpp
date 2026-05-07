@@ -24,8 +24,8 @@
 #include <llvm/Transforms/Utils.h>
 #include <llvm/Support/raw_ostream.h>
 
-using namespace aria;
-using namespace aria::backend;
+using namespace npk;
+using namespace npk::backend;
 
 // ============================================================================
 // Helper Functions
@@ -388,7 +388,7 @@ TEST_CASE(ir_compilation_external_function_declaration) {
     llvm::Module module("extern_test", context);
     llvm::IRBuilder<> builder(context);
     
-    // Declare external function (like aria_gc_alloc)
+    // Declare external function (like npk_gc_alloc)
     llvm::FunctionType* alloc_type = llvm::FunctionType::get(
         builder.getPtrTy(),
         {builder.getInt64Ty()},
@@ -397,7 +397,7 @@ TEST_CASE(ir_compilation_external_function_declaration) {
     llvm::Function* alloc_func = llvm::Function::Create(
         alloc_type,
         llvm::Function::ExternalLinkage,
-        "aria_gc_alloc",
+        "npk_gc_alloc",
         &module
     );
     

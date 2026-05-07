@@ -37,32 +37,32 @@ void test_full_lifecycle() {
     
     // Create arena for neurons (size=24 bytes, capacity=4)
     printf("Creating arena for Neuron (24 bytes, 4 slots)...\n");
-    int64_t arena_ptr = aria_gen_arena_create_builtin(sizeof(Neuron), 4);
+    int64_t arena_ptr = npk_gen_arena_create_builtin(sizeof(Neuron), 4);
     assert(arena_ptr != 0);
     printf("✅ Arena created at %p\n", (void*)arena_ptr);
     
-    aria_gen_arena* arena = (aria_gen_arena*)(uintptr_t)arena_ptr;
+    npk_gen_arena* arena = (npk_gen_arena*)(uintptr_t)arena_ptr;
     
     // Allocate first neuron
     printf("\nAllocating neuron 1 {id:100, activation:0.8}...\n");
     Neuron n1 = {.id = 100, .activation = 0.8, .threshold = 0.5};
-    aria_handle h1;
-    int32_t err1 = aria_gen_arena_alloc_handle(arena_ptr, &n1, &h1);
+    npk_handle h1;
+    int32_t err1 = npk_gen_arena_alloc_handle(arena_ptr, &n1, &h1);
     assert(err1 == ARIA_GEN_ARENA_OK);
     printf("✅  Handle: {index:%zu, generation:%u}\n", h1.index, h1.generation);
     
     // Allocate second neuron
     printf("\nAllocating neuron 2 {id:200, activation:0.6}...\n");
     Neuron n2 = {.id = 200, .activation = 0.6, .threshold = 0.7};
-    aria_handle h2;
-    int32_t err2 = aria_gen_arena_alloc_handle(arena_ptr, &n2, &h2);
+    npk_handle h2;
+    int32_t err2 = npk_gen_arena_alloc_handle(arena_ptr, &n2, &h2);
     assert(err2 == ARIA_GEN_ARENA_OK);
     printf("✅ Handle: {index:%zu, generation:%u}\n", h2.index, h2.generation);
     
     // Get neurons from handles
     printf("\n--- Getting neurons from handles ---\n");
     int32_t get_err1 = 0;
-    int64_t n1_ptr = aria_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &get_err1);
+    int64_t n1_ptr = npk_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &get_err1);
     assert(get_err1 == ARIA_GEN_ARENA_OK);
     assert(n1_ptr != 0);
     
@@ -72,7 +72,7 @@ void test_full_lifecycle() {
     assert(retrieved1->activation == 0.8);
     
     int32_t get_err2 = 0;
-    int64_t n2_ptr = aria_gen_arena_get_ptr(arena_ptr, h2.index, h2.generation, &get_err2);
+    int64_t n2_ptr = npk_gen_arena_get_ptr(arena_ptr, h2.index, h2.generation, &get_err2);
     assert(get_err2 == ARIA_GEN_ARENA_OK);
     
     Neuron* retrieved2 = (Neuron*)(uintptr_t)n2_ptr;
@@ -81,14 +81,14 @@ void test_full_lifecycle() {
     
     // Free first neuron
     printf("\n--- Freeing neuron 1 ---\n");
-    int32_t free_err1 = aria_gen_arena_free_handle(arena_ptr, h1.index, h1.generation);
+    int32_t free_err1 = npk_gen_arena_free_handle(arena_ptr, h1.index, h1.generation);
     assert(free_err1 == ARIA_GEN_ARENA_OK);
     printf("✅ Neuron 1 freed (handle now stale)\n");
     
     // Try to get freed neuron (SHOULD FAIL - this is the safety guarantee!)
     printf("\n--- Attempting to get freed neuron (USE-AFTER-FREE TEST) ---\n");
     int32_t stale_err = 0;
-    int64_t stale_ptr = aria_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &stale_err);
+    int64_t stale_ptr = npk_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &stale_err);
     
     if (stale_err == ARIA_GEN_ARENA_ERR_STALE_HANDLE) {
         printf("✅ ✅ ✅ STALE HANDLE DETECTED! Use-after-free PREVENTED! ✅  ✅ ✅\n");
@@ -102,7 +102,7 @@ void test_full_lifecycle() {
     
     // Cleanup
     printf("\n--- Cleanup ---\n");
-    aria_gen_arena_destroy_builtin(arena_ptr);
+    npk_gen_arena_destroy_builtin(arena_ptr);
     printf("✅ Arena destroyed\n");
 }
 
@@ -110,28 +110,28 @@ void test_slot_recycling() {
     printf("\n\nTEST 2: Slot Recycling with Generation Increment\n");
     printf("================================================================\n");
     
-    int64_t arena_ptr = aria_gen_arena_create_builtin(sizeof(Neuron), 2);
-    aria_gen_arena* arena = (aria_gen_arena*)(uintptr_t)arena_ptr;
+    int64_t arena_ptr = npk_gen_arena_create_builtin(sizeof(Neuron), 2);
+    npk_gen_arena* arena = (npk_gen_arena*)(uintptr_t)arena_ptr;
     
     // Allocate neuron
     printf("Allocating neuron at slot 0...\n");
     Neuron n1 = {.id = 1, .activation = 0.5, .threshold = 0.5};
-    aria_handle h1;
-    aria_gen_arena_alloc_handle(arena_ptr, &n1, &h1);
+    npk_handle h1;
+    npk_gen_arena_alloc_handle(arena_ptr, &n1, &h1);
     printf("✅ Handle 1: {index:%zu, generation:%u}\n", h1.index, h1.generation);
     assert(h1.index == 0);
     assert(h1.generation == 1);
     
     // Free neuron
     printf("\nFreeing neuron...\n");
-    aria_gen_arena_free_handle(arena_ptr, h1.index, h1.generation);
+    npk_gen_arena_free_handle(arena_ptr, h1.index, h1.generation);
     printf("✅ Slot 0 freed (generation incremented)\n");
     
     // Allocate new neuron (should reuse slot 0 with generation 2)
     printf("\nAllocating new neuron (should reuse slot 0)...\n");
     Neuron n2 = {.id = 2, .activation = 0.9, .threshold = 0.3};
-    aria_handle h2;
-    aria_gen_arena_alloc_handle(arena_ptr, &n2, &h2);
+    npk_handle h2;
+    npk_gen_arena_alloc_handle(arena_ptr, &n2, &h2);
     printf(" ✅ Handle 2: {index:%zu, generation:%u}\n", h2.index, h2.generation);
     assert(h2.index == 0);  // Same slot!
     assert(h2.generation == 2);  // But different generation!
@@ -139,20 +139,20 @@ void test_slot_recycling() {
     // Old handle is stale
     printf("\nTesting old handle h1 (should be stale)...\n");
     int32_t stale_err = 0;
-    aria_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &stale_err);
+    npk_gen_arena_get_ptr(arena_ptr, h1.index, h1.generation, &stale_err);
     assert(stale_err == ARIA_GEN_ARENA_ERR_STALE_HANDLE);
     printf("✅ Old handle STALE (generation mismatch: %u != %u)\n", h1.generation, h2.generation);
     
     // New handle works
     printf("\nTesting new handle h2 (should work)...\n");
     int32_t valid_err = 0;
-    int64_t n2_ptr = aria_gen_arena_get_ptr(arena_ptr, h2.index, h2.generation, &valid_err);
+    int64_t n2_ptr = npk_gen_arena_get_ptr(arena_ptr, h2.index, h2.generation, &valid_err);
     assert(valid_err == ARIA_GEN_ARENA_OK);
     Neuron* retrieved = (Neuron*)(uintptr_t)n2_ptr;
     printf("✅ New handle VALID: id=%ld, activation=%.2f\n", retrieved->id, retrieved->activation);
     assert(retrieved->id == 2);
     
-    aria_gen_arena_destroy_builtin(arena_ptr);
+    npk_gen_arena_destroy_builtin(arena_ptr);
     printf("✅ Test complete\n");
 }
 
@@ -160,17 +160,17 @@ void test_statistics() {
     printf("\n\nTEST 3: Arena Statistics\n");
     printf("================================================================\n");
     
-    int64_t arena_ptr = aria_gen_arena_create_builtin(sizeof(Neuron), 4);
+    int64_t arena_ptr = npk_gen_arena_create_builtin(sizeof(Neuron), 4);
     
     // Allocate 3 neurons
     Neuron n = {.id = 1, .activation = 0.5, .threshold = 0.5};
-    aria_handle h1, h2, h3;
-    aria_gen_arena_alloc_handle(arena_ptr, &n, &h1);
-    aria_gen_arena_alloc_handle(arena_ptr, &n, &h2);
-    aria_gen_arena_alloc_handle(arena_ptr, &n, &h3);
+    npk_handle h1, h2, h3;
+    npk_gen_arena_alloc_handle(arena_ptr, &n, &h1);
+    npk_gen_arena_alloc_handle(arena_ptr, &n, &h2);
+    npk_gen_arena_alloc_handle(arena_ptr, &n, &h3);
     
     AriaGenArenaStats stats;
-    aria_gen_arena_stats_builtin(arena_ptr, &stats);
+    npk_gen_arena_stats_builtin(arena_ptr, &stats);
     
     printf("Capacity: %zu\n", stats.capacity);
     printf("Count (occupied): %zu\n", stats.count);
@@ -184,8 +184,8 @@ void test_statistics() {
     assert(stats.total_allocs == 3);
     
     // Free one and check stats
-    aria_gen_arena_free_handle(arena_ptr, h2.index, h2.generation);
-    aria_gen_arena_stats_builtin(arena_ptr, &stats);
+    npk_gen_arena_free_handle(arena_ptr, h2.index, h2.generation);
+    npk_gen_arena_stats_builtin(arena_ptr, &stats);
     
     printf("\nAfter freeing 1 neuron:\n");
     printf("Count: %zu\n", stats.count);
@@ -200,7 +200,7 @@ void test_statistics() {
     
     printf("✅ Statistics tracking accurate\n");
     
-    aria_gen_arena_destroy_builtin(arena_ptr);
+    npk_gen_arena_destroy_builtin(arena_ptr);
 }
 
 int main() {

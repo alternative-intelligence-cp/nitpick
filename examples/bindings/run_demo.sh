@@ -2,9 +2,9 @@
 # Build and test cross-language bindings example
 set -e
 
-ARIAC="../../build/ariac"
-echo "=== Building Aria shared library ==="
-$ARIAC mathlib.aria --shared -o libmathlib.so
+NPKC="../../build/npkc"
+echo "=== Building Nitpick shared library ==="
+$NPKC mathlib.npk --shared -o libmathlib.so
 echo "Built libmathlib.so"
 nm -D libmathlib.so | grep " T "
 echo

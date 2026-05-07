@@ -1,7 +1,7 @@
 #include "frontend/ast/stmt.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 
 std::string VarDeclStmt::toString() const {
     std::ostringstream oss;
@@ -461,4 +461,4 @@ std::string ProgramNode::toString() const {
     return oss.str();
 }
 
-} // namespace aria
+} // namespace npk

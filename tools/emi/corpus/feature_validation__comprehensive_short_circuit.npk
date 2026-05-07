@@ -1,0 +1,169 @@
+// Comprehensive Short-Circuit Evaluation Tests
+// Tests proper short-circuit behavior for && and || operators  
+// Simplified version - tests truth tables without side effects
+
+func:main = int32() {
+    // =================================================================
+    // TEST 1: && truth table
+    // =================================================================
+    // false && false = false
+    if ((1 == 0) && (2 == 0)) {
+        exit 1;  // Should not execute
+    }
+    
+    // false && true = false
+    if ((1 == 0) && (1 == 1)) {
+        exit 2;  // Should not execute
+    }
+    
+    // true && false = false
+    if ((1 == 1) && (1 == 0)) {
+        exit 3;  // Should not execute
+    }
+    
+    // true && true = true
+    if ((1 == 1) && (2 == 2)) {
+        // Should execute - this is correct
+    } else {
+        exit 4;  // ERROR: Should have been true
+    }
+    
+    // =================================================================
+    // TEST 2: || truth table
+    // =================================================================
+    // false || false = false
+    if ((1 == 0) || (2 == 0)) {
+        exit 5;  // Should not execute
+    }
+    
+    // false || true = true
+    if ((1 == 0) || (1 == 1)) {
+        // Should execute - this is correct
+    } else {
+        exit 6;  // ERROR: Should have been true
+    }
+    
+    // true || false = true
+    if ((1 == 1) || (1 == 0)) {
+        // Should execute - this is correct
+    } else {
+        exit 7;  // ERROR: Should have been true
+    }
+    
+    // true || true = true
+    if ((1 == 1) || (2 == 2)) {
+        // Should execute - this is correct
+    } else {
+        exit 8;  // ERROR: Should have been true
+    }
+    
+    // =================================================================
+    // TEST 3: Chained && (all must be true)
+    // =================================================================
+    if ((1 == 1) && (2 == 2) && (3 == 3)) {
+        // All true - should execute
+    } else {
+        exit 9;  // ERROR
+    }
+    
+    if ((1 == 0) && (2 == 2) && (3 == 3)) {
+        exit 10;  // First false - should not execute
+    }
+    
+    if ((1 == 1) && (2 == 0) && (3 == 3)) {
+        exit 11;  // Middle false - should not execute
+    }
+    
+    if ((1 == 1) && (2 == 2) && (3 == 0)) {
+        exit 12;  // Last false - should not execute
+    }
+    
+    // =================================================================
+    // TEST 4: Chained || (any can be true)
+    // =================================================================
+    if ((1 == 0) || (2 == 0) || (3 == 3)) {
+        // Third is true - should execute
+    } else {
+        exit 13;  // ERROR
+    }
+    
+    if ((1 == 1) || (2 == 0) || (3 == 0)) {
+        // First is true - should execute
+    } else {
+        exit 14;  // ERROR
+    }
+    
+    if ((1 == 0) || (2 == 2) || (3 == 0)) {
+        // Middle is true - should execute
+    } else {
+        exit 15;  // ERROR
+    }
+    
+    if ((1 == 0) || (2 == 0) || (3 == 0)) {
+        exit 16;  // All false - should not execute
+    }
+    
+    // =================================================================
+    // TEST 5: Nested && and ||
+    // =================================================================
+    // (true && true) || false
+    if (((1 == 1) && (2 == 2)) || (3 == 0)) {
+        // Should execute
+    } else {
+        exit 17;  // ERROR
+    }
+    
+    // (false && true) || true
+    if (((1 == 0) && (2 == 2)) || (3 == 3)) {
+        // Should execute (right side of || is true)
+    } else {
+        exit 18;  // ERROR
+    }
+    
+    // true && (false || true)
+    if ((1 == 1) && ((2 == 0) || (3 == 3))) {
+        // Should execute
+    } else {
+        exit 19;  // ERROR
+    }
+    
+    // false || (true && true)
+    if ((1 == 0) || ((2 == 2) && (3 == 3))) {
+        // Should execute (right side of || is true)
+    } else {
+        exit 20;  // ERROR
+    }
+    
+    // =================================================================
+    // TEST 6: Complex nested conditions
+    // =================================================================
+    if ((10 > 0) && (20 < 30)) {
+        // true && true = true - should execute
+    } else {
+        exit 21;  // ERROR
+    }
+    
+    if ((10 > 20) && (20 < 30)) {
+        exit 22;  // false && true = false - should not execute
+    }
+    
+    if ((10 > 0) || (20 > 30)) {
+        // true || false = true - should execute
+    } else {
+        exit 23;  // ERROR
+    }
+    
+    if ((10 > 20) || (20 > 30)) {
+        exit 24;  // false || false = false - should not execute
+    }
+    
+    // =================================================================
+    // Success!
+    // =================================================================
+    exit 0;  // All tests passed
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

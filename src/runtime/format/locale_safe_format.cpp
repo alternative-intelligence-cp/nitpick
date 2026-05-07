@@ -30,7 +30,7 @@ extern "C" {
  * @param value Double value to format
  * @return Number of characters written (excluding null terminator)
  */
-int aria_snprintf_c_locale(char* buffer, uint64_t size, const char* format, double value) {
+int npk_snprintf_c_locale(char* buffer, uint64_t size, const char* format, double value) {
     // Save current locale
     char* old_locale = setlocale(LC_NUMERIC, NULL);
     

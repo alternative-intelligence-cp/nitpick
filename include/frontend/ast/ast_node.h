@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace aria {
+namespace npk {
 
 /**
  * Base class for all Abstract Syntax Tree (AST) nodes.
@@ -133,9 +133,9 @@ public:
 // Smart pointer typedef for convenience
 using ASTNodePtr = std::shared_ptr<ASTNode>;
 
-} // namespace aria
+} // namespace npk
 
 // Stream output operator for NodeType (for testing)
-std::ostream& operator<<(std::ostream& os, aria::ASTNode::NodeType type);
+std::ostream& operator<<(std::ostream& os, npk::ASTNode::NodeType type);
 
 #endif // ARIA_AST_NODE_H

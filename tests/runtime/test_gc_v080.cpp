@@ -50,21 +50,21 @@ static int tests_passed = 0;
 // ── Helper: Reset GC between tests ─────────────────────────────────────
 
 static void reset_gc() {
-    aria_gc_shutdown();
-    aria_gc_init(0, 0);  // Default sizes
+    npk_gc_shutdown();
+    npk_gc_init(0, 0);  // Default sizes
 }
 
 // ── 1. Basic Allocation ────────────────────────────────────────────────
 
 TEST(basic_alloc) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
+    void* ptr = npk_gc_alloc(64, 1);
     ASSERT_TRUE(ptr != nullptr);
 }
 
 TEST(alloc_is_zeroed) {
     reset_gc();
-    uint8_t* ptr = (uint8_t*)aria_gc_alloc(128, 1);
+    uint8_t* ptr = (uint8_t*)npk_gc_alloc(128, 1);
     bool all_zero = (ptr != nullptr);
     for (int i = 0; i < 128 && all_zero; i++) {
         if (ptr[i] != 0) { all_zero = false; }
@@ -74,37 +74,37 @@ TEST(alloc_is_zeroed) {
 
 TEST(alloc_multiple) {
     reset_gc();
-    void* a = aria_gc_alloc(32, 1);
-    void* b = aria_gc_alloc(32, 1);
-    void* c = aria_gc_alloc(32, 1);
+    void* a = npk_gc_alloc(32, 1);
+    void* b = npk_gc_alloc(32, 1);
+    void* c = npk_gc_alloc(32, 1);
     ASSERT_TRUE(a != nullptr && b != nullptr && c != nullptr && a != b && b != c);
 }
 
 TEST(alloc_is_heap_pointer) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ASSERT_TRUE(aria_gc_is_heap_pointer(ptr));
+    void* ptr = npk_gc_alloc(64, 1);
+    ASSERT_TRUE(npk_gc_is_heap_pointer(ptr));
 }
 
 TEST(stack_is_not_heap_pointer) {
     reset_gc();
     int x = 42;
-    ASSERT_TRUE(!aria_gc_is_heap_pointer(&x));
+    ASSERT_TRUE(!npk_gc_is_heap_pointer(&x));
 }
 
 // ── 2. Object Header ──────────────────────────────────────────────────
 
 TEST(header_is_nursery) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 42);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 42);
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_TRUE(h != nullptr && h->is_nursery == 1 && h->type_id == 42);
 }
 
 TEST(header_not_pinned_by_default) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_EQ((long)h->pinned_bit, 0L);
 }
 
@@ -112,27 +112,27 @@ TEST(header_not_pinned_by_default) {
 
 TEST(pin_sets_bit) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    aria_gc_pin(ptr);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    npk_gc_pin(ptr);
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_EQ((long)h->pinned_bit, 1L);
 }
 
 TEST(unpin_clears_bit) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    aria_gc_pin(ptr);
-    aria_gc_unpin(ptr);
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    npk_gc_pin(ptr);
+    npk_gc_unpin(ptr);
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_EQ((long)h->pinned_bit, 0L);
 }
 
 TEST(pin_idempotent) {
     reset_gc();
-    void* ptr = aria_gc_alloc(64, 1);
-    aria_gc_pin(ptr);
-    aria_gc_pin(ptr);  // Should not crash or double-count
-    ObjHeader* h = aria_gc_get_header(ptr);
+    void* ptr = npk_gc_alloc(64, 1);
+    npk_gc_pin(ptr);
+    npk_gc_pin(ptr);  // Should not crash or double-count
+    ObjHeader* h = npk_gc_get_header(ptr);
     ASSERT_EQ((long)h->pinned_bit, 1L);
 }
 
@@ -140,26 +140,26 @@ TEST(pin_idempotent) {
 
 TEST(shadow_stack_push_pop) {
     reset_gc();
-    aria_shadow_stack_push_frame();
-    void* ptr = aria_gc_alloc(64, 1);
-    aria_shadow_stack_add_root((void**)&ptr);
-    aria_shadow_stack_remove_root((void**)&ptr);
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_push_frame();
+    void* ptr = npk_gc_alloc(64, 1);
+    npk_shadow_stack_add_root((void**)&ptr);
+    npk_shadow_stack_remove_root((void**)&ptr);
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(true);  // No crash
 }
 
 TEST(shadow_stack_nested_frames) {
     reset_gc();
-    aria_shadow_stack_push_frame();
-    void* a = aria_gc_alloc(64, 1);
-    aria_shadow_stack_add_root((void**)&a);
+    npk_shadow_stack_push_frame();
+    void* a = npk_gc_alloc(64, 1);
+    npk_shadow_stack_add_root((void**)&a);
     
-    aria_shadow_stack_push_frame();
-    void* b = aria_gc_alloc(64, 1);
-    aria_shadow_stack_add_root((void**)&b);
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_push_frame();
+    void* b = npk_gc_alloc(64, 1);
+    npk_shadow_stack_add_root((void**)&b);
+    npk_shadow_stack_pop_frame();
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(a != nullptr && b != nullptr);
 }
 
@@ -167,32 +167,32 @@ TEST(shadow_stack_nested_frames) {
 
 TEST(minor_gc_no_crash) {
     reset_gc();
-    aria_gc_collect(false);
+    npk_gc_collect(false);
     ASSERT_TRUE(true);
 }
 
 TEST(minor_gc_rooted_survives) {
     reset_gc();
-    aria_shadow_stack_push_frame();
-    void* ptr = aria_gc_alloc(64, 1);
+    npk_shadow_stack_push_frame();
+    void* ptr = npk_gc_alloc(64, 1);
     memset(ptr, 0xAB, 64);  // Write recognizable pattern
-    aria_shadow_stack_add_root((void**)&ptr);
+    npk_shadow_stack_add_root((void**)&ptr);
     
-    aria_gc_collect(false);  // Minor GC
+    npk_gc_collect(false);  // Minor GC
     
     // ptr may have been relocated but root was updated
     uint8_t* bytes = (uint8_t*)ptr;
     bool pattern_intact = (bytes[0] == 0xAB && bytes[63] == 0xAB);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(pattern_intact);
 }
 
 TEST(minor_gc_updates_stats) {
     reset_gc();
-    aria_gc_collect(false);
+    npk_gc_collect(false);
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_GE((long)stats.num_minor_collections, 1L);
 }
 
@@ -200,15 +200,15 @@ TEST(minor_gc_updates_stats) {
 
 TEST(major_gc_no_crash) {
     reset_gc();
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     ASSERT_TRUE(true);
 }
 
 TEST(major_gc_updates_stats) {
     reset_gc();
-    aria_gc_collect(true);
+    npk_gc_collect(true);
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_GE((long)stats.num_major_collections, 1L);
 }
 
@@ -216,70 +216,70 @@ TEST(major_gc_updates_stats) {
 
 TEST(alloc_burst_triggers_gc) {
     // Use small nursery to trigger GC quickly
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);  // 4KB nursery
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);  // 4KB nursery
     
-    aria_shadow_stack_push_frame();
-    void* survivor = aria_gc_alloc(32, 1);
-    aria_shadow_stack_add_root((void**)&survivor);
+    npk_shadow_stack_push_frame();
+    void* survivor = npk_gc_alloc(32, 1);
+    npk_shadow_stack_add_root((void**)&survivor);
     
     // Allocate until nursery must have been collected
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;  // Unrooted — will be collected
     }
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     bool gc_happened = stats.num_minor_collections > 0;
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(gc_happened);
 }
 
 TEST(alloc_burst_survivor_intact) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);  // 4KB nursery
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);  // 4KB nursery
     
-    aria_shadow_stack_push_frame();
-    uint8_t* survivor = (uint8_t*)aria_gc_alloc(16, 1);
+    npk_shadow_stack_push_frame();
+    uint8_t* survivor = (uint8_t*)npk_gc_alloc(16, 1);
     memset(survivor, 0xCD, 16);
-    aria_shadow_stack_add_root((void**)&survivor);
+    npk_shadow_stack_add_root((void**)&survivor);
     
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     bool intact = (survivor[0] == 0xCD && survivor[15] == 0xCD);
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(intact);
 }
 
 // ── 8. Pinned Object Survives Minor GC ────────────────────────────────
 
 TEST(pinned_survives_minor_gc) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);
     
-    aria_shadow_stack_push_frame();
-    uint8_t* pinned = (uint8_t*)aria_gc_alloc(16, 1);
+    npk_shadow_stack_push_frame();
+    uint8_t* pinned = (uint8_t*)npk_gc_alloc(16, 1);
     memset(pinned, 0xEF, 16);
-    aria_gc_pin(pinned);
-    aria_shadow_stack_add_root((void**)&pinned);
+    npk_gc_pin(pinned);
+    npk_shadow_stack_add_root((void**)&pinned);
     
     // Fill nursery to trigger minor GC
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     // Pinned object should still be at same address and intact
-    ObjHeader* h = aria_gc_get_header(pinned);
+    ObjHeader* h = npk_gc_get_header(pinned);
     bool ok = (pinned[0] == 0xEF && pinned[15] == 0xEF && h->pinned_bit == 1);
     
-    aria_gc_unpin(pinned);
-    aria_shadow_stack_pop_frame();
+    npk_gc_unpin(pinned);
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(ok);
 }
 
@@ -287,9 +287,9 @@ TEST(pinned_survives_minor_gc) {
 
 TEST(write_barrier_no_crash) {
     reset_gc();
-    void* a = aria_gc_alloc(64, 1);
-    void* b = aria_gc_alloc(64, 1);
-    aria_gc_write_barrier(a, b);
+    void* a = npk_gc_alloc(64, 1);
+    void* b = npk_gc_alloc(64, 1);
+    npk_gc_write_barrier(a, b);
     ASSERT_TRUE(true);
 }
 
@@ -298,19 +298,19 @@ TEST(write_barrier_no_crash) {
 TEST(stats_track_allocation) {
     reset_gc();
     GCStats before, after;
-    aria_gc_get_stats(&before);
+    npk_gc_get_stats(&before);
     
-    aria_gc_alloc(256, 1);
+    npk_gc_alloc(256, 1);
     
-    aria_gc_get_stats(&after);
+    npk_gc_get_stats(&after);
     ASSERT_TRUE(after.total_allocated > before.total_allocated);
 }
 
 TEST(stats_nursery_size_correct) {
-    aria_gc_shutdown();
-    aria_gc_init(2 * 1024 * 1024, 0);  // 2MB nursery
+    npk_gc_shutdown();
+    npk_gc_init(2 * 1024 * 1024, 0);  // 2MB nursery
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     ASSERT_EQ((long)stats.nursery_size, (long)(2 * 1024 * 1024));
 }
 
@@ -324,7 +324,7 @@ static void test_finalizer(void* obj) {
 
 TEST(finalizer_registered) {
     reset_gc();
-    aria_gc_register_finalizer(99, test_finalizer);
+    npk_gc_register_finalizer(99, test_finalizer);
     ASSERT_TRUE(true);  // No crash
 }
 
@@ -333,74 +333,74 @@ TEST(finalizer_registered) {
 TEST(type_layout_registered) {
     reset_gc();
     size_t offsets[] = {0, 8};
-    aria_gc_register_type_layout(50, offsets, 2);
+    npk_gc_register_type_layout(50, offsets, 2);
     ASSERT_TRUE(true);  // No crash
 }
 
 // ── 13. Max Heap Enforcement ──────────────────────────────────────────
 
 TEST(max_heap_allows_under_limit) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);
-    aria_gc_set_max_heap(10 * 1024 * 1024);  // 10MB
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);
+    npk_gc_set_max_heap(10 * 1024 * 1024);  // 10MB
     
-    void* ptr = aria_gc_alloc(64, 1);
+    void* ptr = npk_gc_alloc(64, 1);
     ASSERT_TRUE(ptr != nullptr);
 }
 
 // ── 14. Cross-Generation References ──────────────────────────────────
 
 TEST(cross_gen_ref_with_barrier) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 1024 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 1024 * 1024);
     
-    aria_shadow_stack_push_frame();
+    npk_shadow_stack_push_frame();
     
     // Allocate obj A and root it
-    void** obj_a = (void**)aria_gc_alloc(64, 1);
-    aria_shadow_stack_add_root((void**)&obj_a);
+    void** obj_a = (void**)npk_gc_alloc(64, 1);
+    npk_shadow_stack_add_root((void**)&obj_a);
     
     // Trigger minor GC to promote A to old gen
     for (int i = 0; i < 200; i++) {
-        void* tmp = aria_gc_alloc(32, 1);
+        void* tmp = npk_gc_alloc(32, 1);
         (void)tmp;
     }
     
     // Now allocate B in nursery
-    void* obj_b = aria_gc_alloc(32, 2);
-    aria_shadow_stack_add_root((void**)&obj_b);
+    void* obj_b = npk_gc_alloc(32, 2);
+    npk_shadow_stack_add_root((void**)&obj_b);
     
     // A (old gen) -> B (nursery) reference with write barrier
     obj_a[0] = obj_b;
-    aria_gc_write_barrier(obj_a, obj_b);
+    npk_gc_write_barrier(obj_a, obj_b);
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(true);  // No crash = correct barrier behavior
 }
 
 // ── 15. Repeated GC Cycles ───────────────────────────────────────────
 
 TEST(repeated_gc_cycles_stable) {
-    aria_gc_shutdown();
-    aria_gc_init(4096, 64 * 1024);
+    npk_gc_shutdown();
+    npk_gc_init(4096, 64 * 1024);
     
-    aria_shadow_stack_push_frame();
-    void* anchor = aria_gc_alloc(16, 1);
-    aria_shadow_stack_add_root((void**)&anchor);
+    npk_shadow_stack_push_frame();
+    void* anchor = npk_gc_alloc(16, 1);
+    npk_shadow_stack_add_root((void**)&anchor);
     
     for (int cycle = 0; cycle < 10; cycle++) {
         for (int i = 0; i < 100; i++) {
-            void* tmp = aria_gc_alloc(32, 1);
+            void* tmp = npk_gc_alloc(32, 1);
             (void)tmp;
         }
-        aria_gc_collect(cycle % 3 == 0);  // Mixed minor/major cycles
+        npk_gc_collect(cycle % 3 == 0);  // Mixed minor/major cycles
     }
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     bool stable = stats.num_minor_collections > 0 && stats.total_allocated > 0;
     
-    aria_shadow_stack_pop_frame();
+    npk_shadow_stack_pop_frame();
     ASSERT_TRUE(stable);
 }
 
@@ -409,10 +409,10 @@ TEST(repeated_gc_cycles_stable) {
 TEST(null_safety) {
     reset_gc();
     // None of these should crash
-    aria_gc_pin(nullptr);
-    aria_gc_unpin(nullptr);
-    aria_gc_write_barrier(nullptr, nullptr);
-    ASSERT_TRUE(!aria_gc_is_heap_pointer(nullptr));
+    npk_gc_pin(nullptr);
+    npk_gc_unpin(nullptr);
+    npk_gc_write_barrier(nullptr, nullptr);
+    ASSERT_TRUE(!npk_gc_is_heap_pointer(nullptr));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -492,6 +492,6 @@ int main() {
     }
     printf("═══════════════════════════════════════════════════════════\n");
     
-    aria_gc_shutdown();
+    npk_gc_shutdown();
     return (tests_passed == tests_run) ? 0 : 1;
 }

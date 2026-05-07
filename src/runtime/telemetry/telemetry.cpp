@@ -6,7 +6,7 @@
  *
  * ARIA-007: TelemetryDaemon - Ecosystem Integration
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "runtime/telemetry.h"
@@ -111,7 +111,7 @@ static void async_flush_thread(AriaTelemetryWriter* writer) {
     }
 }
 
-AriaTelemetryWriter* aria_telemetry_writer_create(int fd, size_t buffer_size, bool async) {
+AriaTelemetryWriter* npk_telemetry_writer_create(int fd, size_t buffer_size, bool async) {
     AriaTelemetryWriter* writer = new(std::nothrow) AriaTelemetryWriter();
     if (!writer) return nullptr;
 
@@ -136,7 +136,7 @@ AriaTelemetryWriter* aria_telemetry_writer_create(int fd, size_t buffer_size, bo
     return writer;
 }
 
-void aria_telemetry_writer_destroy(AriaTelemetryWriter* writer) {
+void npk_telemetry_writer_destroy(AriaTelemetryWriter* writer) {
     if (!writer) return;
 
     // Signal shutdown
@@ -150,13 +150,13 @@ void aria_telemetry_writer_destroy(AriaTelemetryWriter* writer) {
     }
 
     // Flush any remaining buffered data
-    aria_telemetry_flush(writer);
+    npk_telemetry_flush(writer);
 
     free(writer->buffer);
     delete writer;
 }
 
-void aria_telemetry_flush(AriaTelemetryWriter* writer) {
+void npk_telemetry_flush(AriaTelemetryWriter* writer) {
     if (!writer) return;
 
     std::lock_guard<std::mutex> lock(writer->buffer_mutex);
@@ -189,11 +189,11 @@ void aria_telemetry_flush(AriaTelemetryWriter* writer) {
     }
 }
 
-AriaTelemetryWriter* aria_telemetry_get_writer(void) {
+AriaTelemetryWriter* npk_telemetry_get_writer(void) {
     std::lock_guard<std::mutex> lock(g_global_writer_mutex);
 
     if (!g_global_writer) {
-        g_global_writer = aria_telemetry_writer_create(STDDBG_FD, 0, true);
+        g_global_writer = npk_telemetry_writer_create(STDDBG_FD, 0, true);
     }
 
     return g_global_writer;
@@ -203,11 +203,11 @@ AriaTelemetryWriter* aria_telemetry_get_writer(void) {
 // Low-Level Emission
 // ============================================================================
 
-int aria_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_t len) {
+int npk_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_t len) {
     if (!json) return -1;
 
     if (!writer) {
-        writer = aria_telemetry_get_writer();
+        writer = npk_telemetry_get_writer();
         if (!writer) return -1;
     }
 
@@ -253,14 +253,14 @@ int aria_telemetry_emit_raw(AriaTelemetryWriter* writer, const char* json, size_
     return 0;
 }
 
-int aria_telemetry_emit(AriaTelemetryWriter* writer,
+int npk_telemetry_emit(AriaTelemetryWriter* writer,
                          const char* source,
                          const char* event,
                          const char* payload) {
     if (!source || !event) return -1;
 
     char json[MAX_JSON_LINE_SIZE];
-    int64_t ts = aria_telemetry_timestamp_ns();
+    int64_t ts = npk_telemetry_timestamp_ns();
 
     int len;
     if (payload && payload[0] != '\0') {
@@ -277,10 +277,10 @@ int aria_telemetry_emit(AriaTelemetryWriter* writer,
         return -1;  // Truncated
     }
 
-    return aria_telemetry_emit_raw(writer, json, len);
+    return npk_telemetry_emit_raw(writer, json, len);
 }
 
-int aria_telemetry_log(AriaTelemetryWriter* writer,
+int npk_telemetry_log(AriaTelemetryWriter* writer,
                         AriaTelemetryLevel level,
                         const char* source,
                         const char* message) {
@@ -289,28 +289,28 @@ int aria_telemetry_log(AriaTelemetryWriter* writer,
     char payload[MAX_JSON_LINE_SIZE];
     char escaped_msg[MAX_JSON_LINE_SIZE];
 
-    aria_json_escape(message, escaped_msg, sizeof(escaped_msg));
+    npk_json_escape(message, escaped_msg, sizeof(escaped_msg));
 
     snprintf(payload, sizeof(payload),
         "{\"level\":\"%s\",\"message\":\"%s\"}",
-        aria_telemetry_level_string(level), escaped_msg);
+        npk_telemetry_level_string(level), escaped_msg);
 
-    return aria_telemetry_emit(writer, source, "log", payload);
+    return npk_telemetry_emit(writer, source, "log", payload);
 }
 
 // ============================================================================
 // Metric Emission
 // ============================================================================
 
-int aria_telemetry_counter(AriaTelemetryWriter* writer,
+int npk_telemetry_counter(AriaTelemetryWriter* writer,
                             const char* source,
                             const char* name,
                             int64_t value) {
     if (!source || !name) return -1;
 
     // TBB safety check
-    if (aria_telem_is_tbb_err(value)) {
-        return aria_telemetry_log(writer, ARIA_TELEM_ERROR, source,
+    if (npk_telem_is_tbb_err(value)) {
+        return npk_telemetry_log(writer, ARIA_TELEM_ERROR, source,
             "TBB overflow in counter metric");
     }
 
@@ -319,17 +319,17 @@ int aria_telemetry_counter(AriaTelemetryWriter* writer,
         "{\"type\":\"counter\",\"name\":\"%s\",\"value\":%lld}",
         name, (long long)value);
 
-    return aria_telemetry_emit(writer, source, "metric", payload);
+    return npk_telemetry_emit(writer, source, "metric", payload);
 }
 
-int aria_telemetry_gauge(AriaTelemetryWriter* writer,
+int npk_telemetry_gauge(AriaTelemetryWriter* writer,
                           const char* source,
                           const char* name,
                           int64_t value) {
     if (!source || !name) return -1;
 
-    if (aria_telem_is_tbb_err(value)) {
-        return aria_telemetry_log(writer, ARIA_TELEM_ERROR, source,
+    if (npk_telem_is_tbb_err(value)) {
+        return npk_telemetry_log(writer, ARIA_TELEM_ERROR, source,
             "TBB overflow in gauge metric");
     }
 
@@ -338,17 +338,17 @@ int aria_telemetry_gauge(AriaTelemetryWriter* writer,
         "{\"type\":\"gauge\",\"name\":\"%s\",\"value\":%lld}",
         name, (long long)value);
 
-    return aria_telemetry_emit(writer, source, "metric", payload);
+    return npk_telemetry_emit(writer, source, "metric", payload);
 }
 
-int aria_telemetry_histogram(AriaTelemetryWriter* writer,
+int npk_telemetry_histogram(AriaTelemetryWriter* writer,
                               const char* source,
                               const char* name,
                               int64_t value) {
     if (!source || !name) return -1;
 
-    if (aria_telem_is_tbb_err(value)) {
-        return aria_telemetry_log(writer, ARIA_TELEM_ERROR, source,
+    if (npk_telem_is_tbb_err(value)) {
+        return npk_telemetry_log(writer, ARIA_TELEM_ERROR, source,
             "TBB overflow in histogram metric");
     }
 
@@ -357,7 +357,7 @@ int aria_telemetry_histogram(AriaTelemetryWriter* writer,
         "{\"type\":\"histogram\",\"name\":\"%s\",\"value\":%lld}",
         name, (long long)value);
 
-    return aria_telemetry_emit(writer, source, "metric", payload);
+    return npk_telemetry_emit(writer, source, "metric", payload);
 }
 
 // ============================================================================
@@ -374,7 +374,7 @@ struct AriaSpan {
     bool has_error;
 };
 
-AriaSpan* aria_span_start(AriaTelemetryWriter* writer,
+AriaSpan* npk_span_start(AriaTelemetryWriter* writer,
                            const char* source,
                            const char* operation) {
     if (!source || !operation) return nullptr;
@@ -382,10 +382,10 @@ AriaSpan* aria_span_start(AriaTelemetryWriter* writer,
     AriaSpan* span = new(std::nothrow) AriaSpan();
     if (!span) return nullptr;
 
-    span->writer = writer ? writer : aria_telemetry_get_writer();
+    span->writer = writer ? writer : npk_telemetry_get_writer();
     span->source = source;
     span->operation = operation;
-    span->start_time_ns = aria_telemetry_timestamp_ns();
+    span->start_time_ns = npk_telemetry_timestamp_ns();
     span->has_error = false;
 
     // Emit span start event
@@ -394,33 +394,33 @@ AriaSpan* aria_span_start(AriaTelemetryWriter* writer,
         "{\"operation\":\"%s\",\"start_time_ns\":%lld}",
         operation, (long long)span->start_time_ns);
 
-    aria_telemetry_emit(span->writer, source, "span_start", payload);
+    npk_telemetry_emit(span->writer, source, "span_start", payload);
 
     return span;
 }
 
-void aria_span_set_attribute(AriaSpan* span, const char* key, const char* value) {
+void npk_span_set_attribute(AriaSpan* span, const char* key, const char* value) {
     if (!span || !key || !value) return;
     span->attributes.emplace_back(key, value);
 }
 
-void aria_span_set_attribute_int(AriaSpan* span, const char* key, int64_t value) {
+void npk_span_set_attribute_int(AriaSpan* span, const char* key, int64_t value) {
     if (!span || !key) return;
     char buf[32];
     snprintf(buf, sizeof(buf), "%lld", (long long)value);
     span->attributes.emplace_back(key, buf);
 }
 
-void aria_span_set_error(AriaSpan* span, const char* message) {
+void npk_span_set_error(AriaSpan* span, const char* message) {
     if (!span || !message) return;
     span->has_error = true;
     span->error_message = message;
 }
 
-void aria_span_end(AriaSpan* span) {
+void npk_span_end(AriaSpan* span) {
     if (!span) return;
 
-    int64_t end_time_ns = aria_telemetry_timestamp_ns();
+    int64_t end_time_ns = npk_telemetry_timestamp_ns();
     int64_t duration_ns = end_time_ns - span->start_time_ns;
 
     // Build payload
@@ -437,7 +437,7 @@ void aria_span_end(AriaSpan* span) {
     // Add error message if present
     if (span->has_error && !span->error_message.empty()) {
         char escaped[1024];
-        aria_json_escape(span->error_message.c_str(), escaped, sizeof(escaped));
+        npk_json_escape(span->error_message.c_str(), escaped, sizeof(escaped));
         pos += snprintf(payload + pos, sizeof(payload) - pos,
             ",\"error_message\":\"%s\"", escaped);
     }
@@ -451,8 +451,8 @@ void aria_span_end(AriaSpan* span) {
                 pos += snprintf(payload + pos, sizeof(payload) - pos, ",");
             }
             char escaped_key[256], escaped_val[256];
-            aria_json_escape(attr.first.c_str(), escaped_key, sizeof(escaped_key));
-            aria_json_escape(attr.second.c_str(), escaped_val, sizeof(escaped_val));
+            npk_json_escape(attr.first.c_str(), escaped_key, sizeof(escaped_key));
+            npk_json_escape(attr.second.c_str(), escaped_val, sizeof(escaped_val));
             pos += snprintf(payload + pos, sizeof(payload) - pos,
                 "\"%s\":\"%s\"", escaped_key, escaped_val);
             first = false;
@@ -462,7 +462,7 @@ void aria_span_end(AriaSpan* span) {
 
     pos += snprintf(payload + pos, sizeof(payload) - pos, "}");
 
-    aria_telemetry_emit(span->writer, span->source.c_str(), "span_end", payload);
+    npk_telemetry_emit(span->writer, span->source.c_str(), "span_end", payload);
 
     delete span;
 }
@@ -471,7 +471,7 @@ void aria_span_end(AriaSpan* span) {
 // Session Stats
 // ============================================================================
 
-int aria_telemetry_session_stats(AriaTelemetryWriter* writer,
+int npk_telemetry_session_stats(AriaTelemetryWriter* writer,
                                   const char* source,
                                   const AriaSessionStats* stats) {
     if (!source || !stats) return -1;
@@ -499,7 +499,7 @@ int aria_telemetry_session_stats(AriaTelemetryWriter* writer,
         (long long)stats->average_throughput,
         (long long)stats->compression_ratio);
 
-    return aria_telemetry_emit(writer, source, "session_stats", payload);
+    return npk_telemetry_emit(writer, source, "session_stats", payload);
 }
 
 // ============================================================================
@@ -590,7 +590,7 @@ static void consumer_thread(AriaTelemetryConsumer* consumer) {
     }
 }
 
-AriaTelemetryConsumer* aria_telemetry_consumer_create(int fd,
+AriaTelemetryConsumer* npk_telemetry_consumer_create(int fd,
                                                        AriaTelemetryCallback callback,
                                                        void* userdata) {
     if (!callback) return nullptr;
@@ -608,7 +608,7 @@ AriaTelemetryConsumer* aria_telemetry_consumer_create(int fd,
     return consumer;
 }
 
-int aria_telemetry_consumer_start(AriaTelemetryConsumer* consumer) {
+int npk_telemetry_consumer_start(AriaTelemetryConsumer* consumer) {
     if (!consumer) return -1;
     if (consumer->running.load(std::memory_order_acquire)) return -1;
 
@@ -618,7 +618,7 @@ int aria_telemetry_consumer_start(AriaTelemetryConsumer* consumer) {
     return 0;
 }
 
-void aria_telemetry_consumer_stop(AriaTelemetryConsumer* consumer) {
+void npk_telemetry_consumer_stop(AriaTelemetryConsumer* consumer) {
     if (!consumer) return;
 
     consumer->running.store(false, std::memory_order_release);
@@ -628,19 +628,19 @@ void aria_telemetry_consumer_stop(AriaTelemetryConsumer* consumer) {
     }
 }
 
-void aria_telemetry_consumer_destroy(AriaTelemetryConsumer* consumer) {
+void npk_telemetry_consumer_destroy(AriaTelemetryConsumer* consumer) {
     if (!consumer) return;
 
-    aria_telemetry_consumer_stop(consumer);
+    npk_telemetry_consumer_stop(consumer);
     delete consumer;
 }
 
-int64_t aria_telemetry_consumer_event_count(AriaTelemetryConsumer* consumer) {
+int64_t npk_telemetry_consumer_event_count(AriaTelemetryConsumer* consumer) {
     if (!consumer) return 0;
     return consumer->event_count.load(std::memory_order_acquire);
 }
 
-int64_t aria_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer) {
+int64_t npk_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer) {
     if (!consumer) return 0;
     return consumer->error_count.load(std::memory_order_acquire);
 }
@@ -649,7 +649,7 @@ int64_t aria_telemetry_consumer_error_count(AriaTelemetryConsumer* consumer) {
 // Utility Functions
 // ============================================================================
 
-int64_t aria_telemetry_timestamp_ns(void) {
+int64_t npk_telemetry_timestamp_ns(void) {
 #ifdef _WIN32
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
@@ -667,7 +667,7 @@ int64_t aria_telemetry_timestamp_ns(void) {
 #endif
 }
 
-size_t aria_json_escape(const char* input, char* output, size_t outlen) {
+size_t npk_json_escape(const char* input, char* output, size_t outlen) {
     if (!input || !output || outlen == 0) return 0;
 
     size_t in_pos = 0;
@@ -720,7 +720,7 @@ done:
     return out_pos;
 }
 
-const char* aria_telemetry_level_string(AriaTelemetryLevel level) {
+const char* npk_telemetry_level_string(AriaTelemetryLevel level) {
     switch (level) {
         case ARIA_TELEM_DEBUG: return "debug";
         case ARIA_TELEM_INFO:  return "info";

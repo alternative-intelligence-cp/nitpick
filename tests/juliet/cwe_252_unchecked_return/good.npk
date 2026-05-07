@@ -1,0 +1,19 @@
+// CWE-252: Unchecked Return Value — GOOD demonstration
+//
+// Aria forces explicit acknowledgment of Result<T>. Use 'raw' to assert
+// the call cannot fail (explicit programmer responsibility), or check .is_error.
+// Expected: exits 0 (explicit handling, no silent discard)
+
+func:get_value = int32() {
+    pass 42;
+};
+
+func:main = int32() {
+    int32:v = raw get_value();   // 'raw' explicitly asserts no error — safe, intentional
+    if (v != 42) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

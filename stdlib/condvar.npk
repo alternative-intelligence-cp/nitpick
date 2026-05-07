@@ -1,0 +1,66 @@
+// stdlib/condvar.aria — Condition variables (v0.11.0 — ported to aria-libc)
+//
+// Condition variables for thread synchronization
+// Import with: use "condvar.aria".*;
+//
+// v0.11.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_thread.so
+//
+// Usage:
+//   int64:cv = CondVar.create();
+//   int64:mtx = Mutex.create();
+//   // Producer:
+//   Mutex.lock(mtx);
+//   // ... modify shared state ...
+//   CondVar.signal(cv);
+//   Mutex.unlock(mtx);
+//   // Consumer:
+//   Mutex.lock(mtx);
+//   CondVar.wait(cv, mtx);  // atomically unlocks mtx, waits, re-locks
+//   // ... use shared state ...
+//   Mutex.unlock(mtx);
+
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "npk_libc_thread" {
+    func:npk_libc_condvar_create    = int64();
+    func:npk_libc_condvar_wait      = int32(int64:cv_handle, int64:mutex_handle);
+    func:npk_libc_condvar_timedwait = int32(int64:cv_handle, int64:mutex_handle, int64:timeout_ns);
+    func:npk_libc_condvar_signal    = int32(int64:handle);
+    func:npk_libc_condvar_broadcast = int32(int64:handle);
+    func:npk_libc_condvar_destroy   = int32(int64:handle);
+}
+
+Type:CondVar = {
+    // Create a condition variable. Returns handle or -1.
+    func:create = int64() {
+        pass npk_libc_condvar_create();
+    };
+
+    // Wait on condition variable. Must hold mutex_handle.
+    // Atomically unlocks mutex, blocks until signaled, re-locks mutex.
+    // Returns 0 on success, -1 on error.
+    func:wait = int32(int64:cv_handle, int64:mutex_handle) {
+        pass npk_libc_condvar_wait(cv_handle, mutex_handle);
+    };
+
+    // Wait with timeout in nanoseconds.
+    // Returns 1 if signaled, 0 if timed out, -1 on error.
+    func:timedwait = int32(int64:cv_handle, int64:mutex_handle, int64:timeout_ns) {
+        pass npk_libc_condvar_timedwait(cv_handle, mutex_handle, timeout_ns);
+    };
+
+    // Wake one waiting thread. Returns 0 on success, -1 on error.
+    func:signal = int32(int64:handle) {
+        pass npk_libc_condvar_signal(handle);
+    };
+
+    // Wake all waiting threads. Returns 0 on success, -1 on error.
+    func:broadcast = int32(int64:handle) {
+        pass npk_libc_condvar_broadcast(handle);
+    };
+
+    // Destroy condition variable. Returns 0 on success, -1 on error.
+    func:destroy = int32(int64:handle) {
+        pass npk_libc_condvar_destroy(handle);
+    };
+};

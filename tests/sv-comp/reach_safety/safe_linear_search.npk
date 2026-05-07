@@ -1,0 +1,31 @@
+// SV-COMP ReachSafety equivalent: linear_search
+//
+// C analog: loops/linear_search.c
+// Property: error label unreachable — target value is always within the array range
+// Aria: searches positions 0..9 for target=7. Target is in range, always found.
+//       The "not found" error exit is structurally unreachable.
+//
+// Expected verdict: true   Strategy: runtime (exits 0)
+
+func:main = int32() {
+    tbb32:target = 7;
+    tbb32:found = 0;
+    tbb32:i = 0;
+    tbb32:one = 1;
+
+    // Simulate linear search over positions 0..9
+    loop(0, 10, 1) {
+        if (i == target) {
+            found = found + one;
+        }
+        i = i + one;
+    }
+
+    // target = 7 is in [0, 9] — always found
+    if (found == 0) { exit 99; }  // UNREACHABLE: i=7 fires during the loop
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

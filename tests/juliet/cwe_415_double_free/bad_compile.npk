@@ -1,0 +1,23 @@
+// CWE-415: Double Free — BAD (compile-time rejection)
+//
+// In C: calling free() on the same pointer twice is undefined behavior
+//       (typically heap corruption, crash, or exploitable).
+// In Aria: the compiler tracks ownership and rejects double-free at compile time
+//          with error ARIA-022 "Double free of variable".
+//
+// Compiler errors: ARIA-022 (use-after-free + double-free)
+// This file must NOT compile — that is the passing condition.
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    free(buf);
+    free(buf);   // ERROR: ARIA-022 Double free of variable 'buf'
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -55,11 +55,11 @@ struct NetServer {
 };
 
 static AriaString* make_aria_string(const char* data, int64_t length) {
-    char* buf = (char*)aria_gc_alloc(length + 1, 0);
+    char* buf = (char*)npk_gc_alloc(length + 1, 0);
     if (!buf) std::abort();
     if (length > 0) memcpy(buf, data, length);
     buf[length] = '\0';
-    AriaString* s = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    AriaString* s = (AriaString*)npk_gc_alloc(sizeof(AriaString), 0);
     if (!s) std::abort();
     s->data = buf;
     s->length = length;

@@ -3,7 +3,7 @@
 #include <sstream>
 #include <fstream>
 
-using namespace aria;
+using namespace npk;
 
 // ============================================================================
 // Diagnostic System Tests
@@ -11,7 +11,7 @@ using namespace aria;
 
 TEST_CASE(create_error_diagnostic) {
         DiagnosticEngine engine;
-        SourceLocation loc("test.aria", 10, 5, 3);
+        SourceLocation loc("test.npk", 10, 5, 3);
         
         engine.error(loc, "unexpected token ';'");
         
@@ -22,7 +22,7 @@ TEST_CASE(create_error_diagnostic) {
 
 TEST_CASE(create_warning_diagnostic) {
         DiagnosticEngine engine;
-        SourceLocation loc("test.aria", 15, 12, 5);
+        SourceLocation loc("test.npk", 15, 12, 5);
         
         engine.warning(loc, "unused variable 'count'");
         
@@ -34,9 +34,9 @@ TEST_CASE(create_warning_diagnostic) {
 TEST_CASE(multiple_diagnostics) {
         DiagnosticEngine engine;
         
-        engine.error(SourceLocation("test.aria", 10, 5), "error 1");
-        engine.error(SourceLocation("test.aria", 20, 10), "error 2");
-        engine.warning(SourceLocation("test.aria", 30, 15), "warning 1");
+        engine.error(SourceLocation("test.npk", 10, 5), "error 1");
+        engine.error(SourceLocation("test.npk", 20, 10), "error 2");
+        engine.warning(SourceLocation("test.npk", 30, 15), "warning 1");
         
         ASSERT_EQ(engine.errorCount(), 2, "Should have 2 errors");
         ASSERT_EQ(engine.warningCount(), 1, "Should have 1 warning");
@@ -46,7 +46,7 @@ TEST_CASE(multiple_diagnostics) {
 TEST_CASE(diagnostic_notes_and_suggestions) {
         DiagnosticEngine engine;
         
-        engine.error(SourceLocation("test.aria", 10, 5), "type mismatch");
+        engine.error(SourceLocation("test.npk", 10, 5), "type mismatch");
         engine.addNote("expected 'int32' but got 'string'");
         engine.addSuggestion("convert the value using 'int32(value)'");
         
@@ -60,7 +60,7 @@ TEST_CASE(warnings_as_errors) {
         DiagnosticEngine engine;
         engine.setWarningsAsErrors(true);
         
-        engine.warning(SourceLocation("test.aria", 10, 5), "unused variable");
+        engine.warning(SourceLocation("test.npk", 10, 5), "unused variable");
         
         ASSERT(engine.hasErrors(), "Warning should be treated as error");
         ASSERT_EQ(engine.errorCount(), 1, "Should have 1 error");
@@ -70,8 +70,8 @@ TEST_CASE(warnings_as_errors) {
 TEST_CASE(clear_diagnostics) {
         DiagnosticEngine engine;
         
-        engine.error(SourceLocation("test.aria", 10, 5), "error");
-        engine.warning(SourceLocation("test.aria", 20, 10), "warning");
+        engine.error(SourceLocation("test.npk", 10, 5), "error");
+        engine.warning(SourceLocation("test.npk", 20, 10), "warning");
         
         ASSERT(engine.hasErrors(), "Should have errors before clear");
         
@@ -85,10 +85,10 @@ TEST_CASE(clear_diagnostics) {
 TEST_CASE(diagnostic_levels) {
         DiagnosticEngine engine;
         
-        engine.note(SourceLocation("test.aria", 10, 5), "informational note");
-        engine.warning(SourceLocation("test.aria", 20, 10), "warning message");
-        engine.error(SourceLocation("test.aria", 30, 15), "error message");
-        engine.fatal(SourceLocation("test.aria", 40, 20), "fatal error");
+        engine.note(SourceLocation("test.npk", 10, 5), "informational note");
+        engine.warning(SourceLocation("test.npk", 20, 10), "warning message");
+        engine.error(SourceLocation("test.npk", 30, 15), "error message");
+        engine.fatal(SourceLocation("test.npk", 40, 20), "fatal error");
         
         const auto& diags = engine.diagnostics();
         ASSERT_EQ(diags[0]->level(), DiagnosticLevel::NOTE, "First should be NOTE");
@@ -98,9 +98,9 @@ TEST_CASE(diagnostic_levels) {
 }
 
 TEST_CASE(source_location) {
-        SourceLocation loc("test.aria", 42, 15, 7);
+        SourceLocation loc("test.npk", 42, 15, 7);
         
-        ASSERT_EQ(loc.filename, "test.aria", "Filename should match");
+        ASSERT_EQ(loc.filename, "test.npk", "Filename should match");
         ASSERT_EQ(loc.line, 42, "Line should be 42");
         ASSERT_EQ(loc.column, 15, "Column should be 15");
     ASSERT_EQ(loc.length, 7, "Length should be 7");

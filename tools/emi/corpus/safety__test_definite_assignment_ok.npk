@@ -1,0 +1,18 @@
+// Test 1: Unconditional assignment (should compile)
+// Reading after unconditional assignment should be OK
+
+func:main = int32() {
+    int64:x;
+    x = 42;
+    // OK: x is definitely assigned — use in comparison
+    if (x == 42i64) {
+        exit 0;
+    } else {
+        exit 1i32;
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

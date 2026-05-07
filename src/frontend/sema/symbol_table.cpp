@@ -3,7 +3,7 @@
 #include <sstream>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -244,4 +244,4 @@ std::string SymbolTable::toString() const {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

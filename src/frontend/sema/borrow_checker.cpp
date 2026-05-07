@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -770,11 +770,11 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
             case ParamOwnership::BORROW_MUT: {
                 // Callee expects $$m. The parameter declaration carries the
                 // mutable-borrow contract; the call site must pass a normal,
-                // addressable identifier. Dollar-prefixed borrow expressions are not Aria syntax.
+                // addressable identifier. Dollar-prefixed borrow expressions are not Nitpick syntax.
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
                     addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects a mutable borrow ($$m), but dollar-borrow syntax is not Aria syntax",
+                        param_name + "' expects a mutable borrow ($$m), but dollar-borrow syntax is not Nitpick syntax",
                         arg.get(),
                         "hint: pass the addressable variable directly; keep $$m on the parameter declaration");
                     tagCode("ARIA-020");
@@ -827,7 +827,7 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                 if (arg->type == ASTNode::NodeType::UNARY_OP) {
                     addErrorWithSuggestion(
                         "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects immutable borrow ($$i), but dollar-borrow syntax is not Aria syntax",
+                        param_name + "' expects immutable borrow ($$i), but dollar-borrow syntax is not Nitpick syntax",
                         arg.get(),
                         "hint: pass the value directly; keep $$i on the parameter declaration");
                     tagCode("ARIA-020");
@@ -1561,7 +1561,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             auto* call = static_cast<CallExpr*>(stmt->initializer.get());
             if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
                 auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
-                if ((callee->name == "alloc" || callee->name == "aria_alloc" ||
+                if ((callee->name == "alloc" || callee->name == "npk_alloc" ||
                      callee->name == "malloc") &&
                     !call->arguments.empty()) {
                     ASTNode* sizeArg = call->arguments[0].get();
@@ -1575,7 +1575,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                     }
                 }
                 // v0.6.3: Also extract size from realloc(ptr, new_size)
-                if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+                if ((callee->name == "realloc" || callee->name == "npk_realloc") &&
                     call->arguments.size() >= 2) {
                     ASTNode* sizeArg = call->arguments[1].get();
                     if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
@@ -2576,7 +2576,7 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
 
 // Known deallocator function names
 static const std::unordered_set<std::string> KNOWN_DEALLOCATORS = {
-    "free", "aria.free", "aria_free",
+    "free", "aria.free", "npk_free",
     "deallocate", "dealloc",
     "release", "destroy",
     "close", "aria.close",
@@ -2811,7 +2811,7 @@ void BorrowChecker::checkUnaryExpr(UnaryExpr* expr) {
     checkExpression(expr->operand.get());
     
     // Pin operations are handled at variable declaration. Dollar-borrow
-    // expressions are intentionally not Aria syntax.
+    // expressions are intentionally not Nitpick syntax.
 }
 
 void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
@@ -2893,7 +2893,7 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
 
         // v0.6.3: Realloc borrow invalidation
         // realloc(ptr, new_size) may move memory — invalidate all borrows of ptr
-        if ((callee->name == "realloc" || callee->name == "aria_realloc") &&
+        if ((callee->name == "realloc" || callee->name == "npk_realloc") &&
             expr->arguments.size() >= 2) {
             ASTNode* ptrArg = expr->arguments[0].get();
             if (ptrArg && ptrArg->type == ASTNode::NodeType::IDENTIFIER) {
@@ -3782,4 +3782,4 @@ void BorrowChecker::dumpBorrowState(std::ostream& out, const std::string& func_n
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

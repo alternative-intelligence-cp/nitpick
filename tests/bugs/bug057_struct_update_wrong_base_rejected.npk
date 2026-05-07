@@ -1,0 +1,17 @@
+// bug057: Struct update syntax — wrong base type must be rejected
+// Point{ ...c, y: 5 } where c is a Color — should produce type error
+// Expected: COMPILE ERROR (base variable type mismatch)
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+struct:Color = {
+    int32:r;
+    int32:g;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Color:c = Color{ r: 1i32, g: 2i32 };
+    Point:p = Point{ ...c, y: 5i32 };
+    exit 0;
+};

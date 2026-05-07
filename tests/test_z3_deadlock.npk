@@ -1,0 +1,70 @@
+// test_z3_deadlock.aria — v0.11.0 Deadlock Freedom Tests (ported to aria-libc)
+// Compile with: ariac test_z3_deadlock.aria --verify-concurrency --verify-report
+//
+// Tests Z3 detection of lock ordering cycles that could cause deadlock.
+
+use "mutex.aria".*;
+
+extern func:puts = int32(string:s);
+extern func:npk_libc_mutex_create = int64(int32:mutex_type);
+extern func:npk_libc_mutex_lock = int32(int64:handle);
+extern func:npk_libc_mutex_unlock = int32(int64:handle);
+extern func:npk_libc_mutex_destroy = int32(int64:handle);
+
+int64:mtx_a = 0i64;
+int64:mtx_b = 0i64;
+
+// ============================================================
+// Test 1: DEADLOCK — Cyclic lock ordering (A→B then B→A)
+// Should detect deadlock potential
+// ============================================================
+func:lock_ab = NIL() {
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
+};
+
+func:lock_ba = NIL() {
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_unlock(mtx_a);
+    drop npk_libc_mutex_unlock(mtx_b);
+};
+
+// ============================================================
+// Test 2: SAFE — Consistent lock ordering (A→B always)
+// Should prove deadlock-free
+// ============================================================
+func:lock_ab_consistent_1 = NIL() {
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
+};
+
+func:lock_ab_consistent_2 = NIL() {
+    drop npk_libc_mutex_lock(mtx_a);
+    drop npk_libc_mutex_lock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_b);
+    drop npk_libc_mutex_unlock(mtx_a);
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE");
+    exit 1;
+};
+
+func:main = int32() {
+    drop puts("=== Deadlock Freedom Tests ===");
+    mtx_a = npk_libc_mutex_create(0i32);
+    mtx_b = npk_libc_mutex_create(0i32);
+    drop lock_ab();
+    drop lock_ba();
+    drop lock_ab_consistent_1();
+    drop lock_ab_consistent_2();
+    drop npk_libc_mutex_destroy(mtx_a);
+    drop npk_libc_mutex_destroy(mtx_b);
+    drop puts("=== Done ===");
+    exit 0;
+};

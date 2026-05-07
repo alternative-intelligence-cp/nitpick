@@ -1,0 +1,46 @@
+/**
+ * Simple Test: Can we use wild pointers at module scope?
+ */
+
+// =============================================================================
+// Test: Wild Pointer Globals
+// =============================================================================
+
+struct:WatchPoint = {
+    int64:last_value;
+    string:label;
+    bool:active;
+};
+
+// Global wild pointer (uninitialized)
+wild WatchPoint->:_watches;
+int32:_watch_count = 0;
+
+// External C functions
+extern "libc" {
+    func:malloc = void*(int64:size);
+    func:free = void(void*:ptr);
+}
+
+func:test_wild_globals = NIL() {
+    drop println("Testing wild pointer globals...");
+    
+    // Calculate size for 16 watchpoints
+    int64:size = 16 * 32;  // Approximate size (16 structs * ~32 bytes each)
+    
+    // Allocate (malloc returns void* which we can't directly assign to wild void->)
+    // So we'll just test that we CAN have a wild global
+    drop println("✓ wild pointer global compiled successfully");
+    
+    pass NIL;
+};
+
+func:main = int32() {
+    drop test_wild_globals();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop println("Failsafe triggered");
+    exit 1;
+};

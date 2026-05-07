@@ -1,0 +1,74 @@
+// P1-2 Phase 4: SIMD Vectorized Operations Test
+// Tests arithmetic and comparison operations on SIMD types
+// NOTE: Variables are uninitialized - this test focuses on IR generation, not runtime
+
+func:test_simd_arithmetic = int32(
+    simd<int32, 4>:a,
+    simd<int32, 4>:b,
+    simd<int64, 8>:c,
+    simd<int64, 8>:d
+) {
+    // Test 1: SIMD + SIMD (element-wise addition)
+    simd<int32, 4>:sum = a + b;
+    
+    // Test 2: SIMD * SIMD (element-wise multiplication)
+    simd<int64, 8>:product = c * d;
+    
+    // Test 3: SIMD - SIMD (element-wise subtraction)
+    simd<int32, 4>:diff = a - b;
+    
+    // Test 4: SIMD / SIMD (element-wise division)
+    simd<int64, 8>:quot = c / d;
+    
+    pass 0i32;
+};
+
+func:test_simd_scalar_ops = int32(
+    simd<int32, 4>:vec,
+    int32:scalar,
+    simd<int64, 8>:vec_long,
+    int64:scalar_long
+) {
+    // Test 5: Scalar + SIMD (broadcast scalar to all lanes)
+    simd<int32, 4>:broadcast1 = scalar + vec;
+    
+    // Test 6: SIMD + Scalar (broadcast scalar)
+    simd<int32, 4>:broadcast2 = vec + scalar;
+    
+    // Test 7: SIMD * Scalar (scale all lanes)
+    simd<int64, 8>:scaled = vec_long * scalar_long;
+    
+    pass 0i32;
+};
+
+func:test_simd_comparisons = int32(
+    simd<int32, 4>:a,
+    simd<int32, 4>:b,
+    int32:threshold,
+    simd<int64, 8>:c,
+    simd<int64, 8>:d,
+    int64:lim
+) {
+    // Test 8: SIMD < SIMD (element-wise, returns mask)
+    simd<bool, 4>:mask_lt = a < b;
+    
+    // Test 9: SIMD > Scalar (broadcast, returns mask)
+    simd<bool, 4>:mask_gt = a > threshold;
+    
+    // Test 10: SIMD == SIMD (element-wise equality)
+    simd<bool, 4>:mask_eq = a == b;
+    
+    // Test 11: Scalar <= SIMD (broadcast comparison)
+    simd<bool, 8>:mask_le = lim <= c;
+    
+    pass 0i32;
+};
+
+func:main = int32() {
+    return 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling stub for test
+    exit 1;
+};

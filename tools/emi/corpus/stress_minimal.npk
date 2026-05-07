@@ -1,0 +1,18 @@
+// Minimal stress test - one function at a time
+
+func:simple_check = int32(bool:should_succeed) {
+    if (should_succeed) {
+        pass 0i32;
+    }
+    fail 1i32;
+};
+
+func:main = int32() {
+    int32:r = raw simple_check(true);
+    exit r;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,31 @@
+// Test: Null Check Elimination Fast-Path (v0.14.4)
+// Compile: ariac --verify --smt-opt -v test_fastpath_null.aria -o test_fastpath_null
+// Expected: Null checks eliminated for expressions where Rules prove value is never 0/null.
+// Verify via --emit-llvm that null check branches are absent.
+
+Rules:AlwaysPositive = { $ >= 1, $ <= 100 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Rules-constrained variable is never 0 — null check dead
+func:test_nonnull = int32() {
+    limit<AlwaysPositive> int32:x = 42;
+    int32:result = x;
+    pass result;
+};
+
+// Test 2: Multiple constrained variables
+func:test_multi_nonnull = int32() {
+    limit<AlwaysPositive> int32:a = 10;
+    limit<AlwaysPositive> int32:b = 20;
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_nonnull();
+    int32:r2 = raw test_multi_nonnull();
+    exit 0;
+};

@@ -1,0 +1,25 @@
+// SV-COMP MemSafety equivalent: two independent allocations
+//
+// C analog: MemSafety-Heap/two_malloc_free.c
+// Property: all three MemSafety sub-properties hold for both allocations
+// Aria: two independent buffers, each freed exactly once in correct order.
+//       Z3 --verify-memory proves both lifecycle sequences are clean.
+//
+// Expected verdict: true   Strategy: z3verify (--verify-memory)
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf_a = malloc(32i64);
+    wild ?->:buf_b = malloc(64i64);
+
+    // Both buffers are valid here — proper use window
+    free(buf_a);     // buf_a freed once
+    free(buf_b);     // buf_b freed once — independent, no cross-contamination
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

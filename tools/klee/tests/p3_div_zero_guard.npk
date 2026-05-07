@@ -1,0 +1,32 @@
+// Phase 3: Division safety — symbolic divisor covers the zero-divide path.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int32:num = 0;
+    int32:den = 0;
+    drop klee_make_symbolic(@num, 4, 0);
+    drop klee_make_symbolic(@den, 4, 0);
+
+    // Guard: never divide by zero
+    int32:zero = 0;
+    if (den == zero) {
+        exit 2;  // Safe exit path, not a violation
+    }
+
+    int32:result = num / den;
+
+    // Verify: if num and den are equal and non-zero, result == 1
+    int32:one = 1;
+    if (den != zero) {
+        if (num == den) {
+            if (result != one) { exit 1; }
+        }
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

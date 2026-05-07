@@ -55,16 +55,16 @@ class FuzzStats:
 class AriaFullStackFuzzer:
     """Fuzzer that exercises the complete compilation and execution pipeline."""
     
-    def __init__(self, ariac_path: str = "./build/ariac", 
+    def __init__(self, ariac_path: str = "./build/npkc", 
                  runtime_lib: str = "./build/libaria_runtime.a"):
-        self.ariac = Path(ariac_path)
+        self.npkc = Path(ariac_path)
         self.runtime_lib = Path(runtime_lib)
         self.stats = FuzzStats()
         self.stats.start_time = time.time()
         
         # Verify compiler and runtime exist
-        if not self.ariac.exists():
-            raise FileNotFoundError(f"Compiler not found: {self.ariac}")
+        if not self.npkc.exists():
+            raise FileNotFoundError(f"Compiler not found: {self.npkc}")
         if not self.runtime_lib.exists():
             raise FileNotFoundError(f"Runtime library not found: {self.runtime_lib}")
     
@@ -78,7 +78,7 @@ class AriaFullStackFuzzer:
         return f"{random.randint(lo, hi)}i64"
 
     # ------------------------------------------------------------------ #
-    #  GENERATORS — each returns a complete, valid .aria program string   #
+    #  GENERATORS — each returns a complete, valid .npk program string   #
     # ------------------------------------------------------------------ #
 
     def generate_basic_program(self) -> str:
@@ -442,7 +442,7 @@ func:main = int32() {{
         sc = random.choice(safe_calls)
 
         if variant == 'safe':
-            return f"""use "sys.aria".*;
+            return f"""use "sys.npk".*;
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:r = sys({sc});
     int64:val = r ? -1i64;
@@ -450,14 +450,14 @@ func:main = int32() {{
 }};"""
         elif variant == 'safe_write':
             msg = f"fuzz{random.randint(0,9999)}"
-            return f"""use "sys.aria".*;
+            return f"""use "sys.npk".*;
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:w = sys(WRITE, 1i64, "{msg}\n", {len(msg)+1}i64);
     int64:bytes = w ? 0i64;
     exit 0;
 }};"""
         elif variant == 'full':
-            return f"""use "sys.aria".*;
+            return f"""use "sys.npk".*;
 {self.FAILSAFE}func:main = int32() {{
     Result<int64>:r = sys!!({sc});
     int64:val = r ? -1i64;
@@ -467,13 +467,13 @@ func:main = int32() {{
             nr_map = {'GETPID': 39, 'GETPPID': 110, 'GETTID': 186,
                       'GETUID': 102, 'GETGID': 104, 'GETEUID': 107, 'GETEGID': 108}
             nr = nr_map[sc]
-            return f"""use "sys.aria".*;
+            return f"""use "sys.npk".*;
 {self.FAILSAFE}func:main = int32() {{
     int64:val = sys!!!({nr}i64);
     exit 0;
 }};"""
         else:  # wrapper
-            return f"""use "sys.aria".*;
+            return f"""use "sys.npk".*;
 func:get_val = int64() {{
     Result<int64>:r = sys({sc});
     int64:v = r ? -1i64;
@@ -523,7 +523,7 @@ func:get_val = int64() {{
 
     def test_program(self, source: str, run_executable: bool = False) -> TestResult:
         """Compile, link, and optionally run a program."""
-        test_file = Path(f"/tmp/fuzz_{os.getpid()}.aria")
+        test_file = Path(f"/tmp/fuzz_{os.getpid()}.npk")
         output_file = Path(f"/tmp/fuzz_{os.getpid()}_out")
         
         try:
@@ -532,7 +532,7 @@ func:get_val = int64() {{
             
             # Compile and link
             result = subprocess.run(
-                [str(self.ariac), str(test_file), "-o", str(output_file)],
+                [str(self.npkc), str(test_file), "-o", str(output_file)],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -599,7 +599,7 @@ func:get_val = int64() {{
         print("=" * 70)
         print("ARIA FULL-STACK FUZZING CAMPAIGN")
         print("=" * 70)
-        print(f"Compiler: {self.ariac}")
+        print(f"Compiler: {self.npkc}")
         print(f"Runtime:  {self.runtime_lib}")
         print(f"Iterations: {iterations}")
         print(f"Execute: {'YES' if run_executables else 'NO'}")
@@ -696,14 +696,14 @@ def main():
                        help='Number of tests to run')
     parser.add_argument('--execute', action='store_true',
                        help='Actually run the generated executables')
-    parser.add_argument('--ariac', default='./build/ariac',
-                       help='Path to ariac compiler')
+    parser.add_argument('--npkc', default='./build/npkc',
+                       help='Path to npkc compiler')
     parser.add_argument('--runtime', default='./build/libaria_runtime.a',
                        help='Path to runtime library')
     args = parser.parse_args()
     
     try:
-        fuzzer = AriaFullStackFuzzer(args.ariac, args.runtime)
+        fuzzer = AriaFullStackFuzzer(args.npkc, args.runtime)
         exit_code = fuzzer.run_campaign(args.iterations, args.execute)
         sys.exit(exit_code)
     except FileNotFoundError as e:

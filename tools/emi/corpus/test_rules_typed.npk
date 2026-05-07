@@ -1,0 +1,131 @@
+// test_rules_typed.aria — v0.2.42 Rules<T> Type Parameterization Tests
+// Tests: typed rules, type matching, backward compat, multi-type params
+
+extern func:puts = int32(string:s);
+
+// ============================================================
+// Typed Rules Declarations
+// ============================================================
+
+// Rules with single type parameter
+Rules<int32>:r_int32_positive = {
+    $ > 0
+};
+
+// NOTE: uint8 values >127 trigger a pre-existing sext/signed comparison issue
+// in the codegen (not a Rules<T> issue). Using value within signed i8 range.
+Rules<uint8>:r_byte_range = {
+    $ > 0,
+    $ < 100
+};
+
+Rules<flt64>:r_unit_range = {
+    $ >= 0.0,
+    $ <= 1.0
+};
+
+// Rules without type params (backward compat — any numeric)
+Rules:r_any_positive = {
+    $ > 0
+};
+
+// Rules with cascading + type param
+Rules<int32>:r_int32_special = {
+    limit<r_int32_positive>,
+    $ < 1000
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: limit violation detected!");
+    exit 1;
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Rules<int32> with matching int32 type
+    // ----------------------------------------------------------
+    limit<r_int32_positive> int32:a = 42;
+    if (a == 42) {
+        drop puts("PASS: Test 1 — Rules<int32> with int32 value");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 1 — Rules<int32> with int32 value");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 2: Rules<uint8> with matching uint8 type
+    // ----------------------------------------------------------
+    limit<r_byte_range> uint8:b = 50u8;
+    if (b == 50u8) {
+        drop puts("PASS: Test 2 — Rules<uint8> with uint8 value");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 2 — Rules<uint8> with uint8 value");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 3: Rules<flt64> with matching flt64 type
+    // ----------------------------------------------------------
+    limit<r_unit_range> flt64:c = 0.5;
+    if (c == 0.5) {
+        drop puts("PASS: Test 3 — Rules<flt64> with flt64 value");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 3 — Rules<flt64> with flt64 value");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 4: Untyped rules (backward compat) — works with any numeric
+    // ----------------------------------------------------------
+    limit<r_any_positive> int32:d = 10;
+    if (d == 10) {
+        drop puts("PASS: Test 4 — untyped rules backward compat (int32)");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 4 — untyped rules backward compat (int32)");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 5: Untyped rules with flt64 (backward compat)
+    // ----------------------------------------------------------
+    limit<r_any_positive> flt64:e = 3.14;
+    if (e == 3.14) {
+        drop puts("PASS: Test 5 — untyped rules backward compat (flt64)");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 5 — untyped rules backward compat (flt64)");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 6: Typed cascading rules — int32 with cascaded int32 rule
+    // ----------------------------------------------------------
+    limit<r_int32_special> int32:f = 500;
+    if (f == 500) {
+        drop puts("PASS: Test 6 — typed cascading rules");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 6 — typed cascading rules");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Summary
+    // ----------------------------------------------------------
+    drop puts("");
+    drop puts("=== Rules<T> Test Summary ===");
+    if (failed == 0i32) {
+        drop puts("All tests passed!");
+    } else {
+        drop puts("Some tests FAILED!");
+    }
+
+    return 0;
+};

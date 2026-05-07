@@ -5,10 +5,10 @@
 #include <iomanip>
 #include <filesystem>
 
-using namespace aria::pkg;
+using namespace npk::pkg;
 
 void printUsage(const char* program_name) {
-    std::cout << "Aria Package Manager v0.3.0\n\n";
+    std::cout << "Nitpick Package Manager (npkpkg) v0.3.0\n\n";
     std::cout << "Usage: " << program_name << " <command> [options]\n\n";
     std::cout << "Commands:\n";
     std::cout << "  install <path|name>  Install from file, directory, or remote registry\n";
@@ -18,13 +18,13 @@ void printUsage(const char* program_name) {
     std::cout << "  info <name>          Show information about an installed package\n";
     std::cout << "  search [query]       Search the package registry (or list all)\n";
     std::cout << "  update               Update the remote package registry cache\n";
-    std::cout << "  pack [dir]           Pack a directory into a .aria-pkg tarball\n";
+    std::cout << "  pack [dir]           Pack a directory into a .npk-pkg tarball\n";
     std::cout << "  init                 Initialize ~/.aria/packages/ directory structure\n";
     std::cout << "  help                 Show this help message\n\n";
     std::cout << "Examples:\n";
     std::cout << "  " << program_name << " update                    # fetch latest registry\n";
     std::cout << "  " << program_name << " install aria-http          # install from registry\n";
-    std::cout << "  " << program_name << " install ./math-utils-1.0.0.aria-pkg\n";
+    std::cout << "  " << program_name << " install ./math-utils-1.0.0.npk-pkg\n";
     std::cout << "  " << program_name << " install ./my-package/\n";
     std::cout << "  " << program_name << " search math\n";
     std::cout << "  " << program_name << " list --remote\n";
@@ -37,7 +37,7 @@ void printUsage(const char* program_name) {
 int cmdInstall(PackageInstaller& installer, const std::vector<std::string>& args) {
     if (args.size() < 2) {
         std::cerr << "Error: install command requires a package path or name\n";
-        std::cerr << "Usage: aria-pkg install <path|name>\n";
+        std::cerr << "Usage: npk-pkg install <path|name>\n";
         return 1;
     }
     
@@ -53,9 +53,9 @@ int cmdInstall(PackageInstaller& installer, const std::vector<std::string>& args
         }
     }
     
-    // Check if it's a .aria-pkg file
+    // Check if it's a .npk-pkg file
     if (fs::exists(pkg_path) && 
-        (pkg_path.size() > 9 && pkg_path.substr(pkg_path.size() - 9) == ".aria-pkg")) {
+        (pkg_path.size() > 9 && pkg_path.substr(pkg_path.size() - 9) == ".npk-pkg")) {
         if (installer.installPackage(pkg_path)) {
             return 0;
         } else {
@@ -83,7 +83,7 @@ int cmdInstall(PackageInstaller& installer, const std::vector<std::string>& args
 int cmdRemove(PackageInstaller& installer, const std::vector<std::string>& args) {
     if (args.size() < 2) {
         std::cerr << "Error: remove command requires a package name\n";
-        std::cerr << "Usage: aria-pkg remove <name>\n";
+        std::cerr << "Usage: npk-pkg remove <name>\n";
         return 1;
     }
     
@@ -112,7 +112,7 @@ int cmdList(PackageInstaller& installer, const std::vector<std::string>& args) {
         auto packages = installer.listRemotePackages(query);
         if (packages.empty()) {
             if (!installer.hasRemoteCache()) {
-                std::cout << "No cached registry. Run 'aria-pkg update' first.\n";
+                std::cout << "No cached registry. Run 'npk-pkg update' first.\n";
             } else if (query.empty()) {
                 std::cout << "No packages found in remote registry.\n";
             } else {
@@ -138,7 +138,7 @@ int cmdList(PackageInstaller& installer, const std::vector<std::string>& args) {
                       << desc << std::endl;
         }
         std::cout << "\nFound " << packages.size() << " package(s).\n";
-        std::cout << "Install with: aria-pkg install <name>\n";
+        std::cout << "Install with: npk-pkg install <name>\n";
         return 0;
     }
     
@@ -146,7 +146,7 @@ int cmdList(PackageInstaller& installer, const std::vector<std::string>& args) {
     
     if (packages.empty()) {
         std::cout << "No packages installed.\n";
-        std::cout << "Install a package with: aria-pkg install <path>\n";
+        std::cout << "Install a package with: npk-pkg install <path>\n";
         return 0;
     }
     
@@ -169,7 +169,7 @@ int cmdList(PackageInstaller& installer, const std::vector<std::string>& args) {
 int cmdInfo(PackageInstaller& installer, const std::vector<std::string>& args) {
     if (args.size() < 2) {
         std::cerr << "Error: info command requires a package name\n";
-        std::cerr << "Usage: aria-pkg info <name>\n";
+        std::cerr << "Usage: npk-pkg info <name>\n";
         return 1;
     }
     
@@ -200,7 +200,7 @@ int cmdInfo(PackageInstaller& installer, const std::vector<std::string>& args) {
 int cmdInit(PackageInstaller& installer, const std::vector<std::string>& args) {
     if (installer.initializePackageDirectory()) {
         std::cout << "\nPackage directory structure created successfully.\n";
-        std::cout << "You can now install packages with: aria-pkg install <path>\n";
+        std::cout << "You can now install packages with: npk-pkg install <path>\n";
         return 0;
     } else {
         return 1;
@@ -212,14 +212,14 @@ int cmdSearch(PackageInstaller& installer, const std::vector<std::string>& args)
     
     // Find registry.json — check common locations
     std::string registry_path;
-    const char* aria_registry = getenv("ARIA_REGISTRY");
-    if (aria_registry) {
-        registry_path = aria_registry;
+    const char* npk_registry = getenv("ARIA_REGISTRY");
+    if (npk_registry) {
+        registry_path = npk_registry;
     } else {
         // Check relative to executable or common install locations
         std::vector<std::string> candidates = {
-            "aria_ecosystem/aria_package_repository/registry.json",
-            "../aria_ecosystem/aria_package_repository/registry.json",
+            "npk_ecosystem/npk_package_repository/registry.json",
+            "../npk_ecosystem/npk_package_repository/registry.json",
             std::string(getenv("HOME") ? getenv("HOME") : "") + "/.aria/registry/registry.json",
         };
         for (const auto& path : candidates) {

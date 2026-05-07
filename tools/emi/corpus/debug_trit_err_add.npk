@@ -1,0 +1,42 @@
+// Debug: Test trit ERR propagation in addition
+
+func:main = int32() {
+    trit:err_trit = -128;  // TRIT_ERR sentinel
+    trit:one = 1;
+    
+    println("=== Trit ERR Addition Test ===");
+    
+    // Check initial values
+    if (err_trit == -128) {
+        println("✓ err_trit is -128");
+    } else {
+        println("✗ err_trit is NOT -128");
+    }
+    
+    if (one == 1) {
+        println("✓ one is 1");
+    } else {
+        println("✗ one is NOT 1");
+    }
+    
+    // Perform addition
+    trit:result = err_trit + one;
+    
+    // Check result
+    if (result == -128) {
+        println("✓ result is -128 (ERR propagated)");
+    } else if (result == 1) {
+        println("✗ result is 1 (ERR healed!)");
+    } else if (result == 0) {
+        println("✗ result is 0 (wrapped?)");
+    } else {
+        println("✗ result is something else");
+    }
+    
+    return 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

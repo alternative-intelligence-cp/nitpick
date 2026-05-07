@@ -1,0 +1,22 @@
+// CWE-190 (ERR Propagation): Error Stickiness — GOOD demonstration
+//
+// Safe arithmetic where no overflow occurs: ERR is never set,
+// and multiplication by zero correctly yields 0 (not a hidden error).
+// Expected: exits 0 (clean computation, z = 0 as expected)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:one = 1;
+    tbb32:y = x + one;       // 101, no overflow
+    tbb32:zero = 0;
+    tbb32:z = y * zero;      // 101 * 0 = 0 (correct, no hidden error)
+
+    pick(z) {
+        (ERR) { exit 1; },   // should not reach here
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

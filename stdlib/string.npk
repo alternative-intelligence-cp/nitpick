@@ -1,0 +1,454 @@
+// stdlib/string.aria
+// String Manipulation Module (v0.9.1 — ported to aria-libc)
+//
+// Provides string operations not available as built-in intrinsics.
+// Import with: use "stdlib/string.aria".*;
+//
+// Built-in intrinsics (available WITHOUT import):
+//   string_length, string_is_empty, string_equals, string_concat,
+//   string_contains, string_starts_with, string_ends_with, string_index_of,
+//   string_substring, string_repeat, string_trim, string_trim_start,
+//   string_trim_end, string_to_upper, string_to_lower, string_pad_left,
+//   string_pad_right, string_from_int, string_from_char
+//
+// This module adds:
+//   str_replace(s, old, new)           → string   replace all occurrences
+//   str_replace_first(s, old, new)     → string   replace first occurrence
+//   str_count(s, sub)                  → int64    count occurrences
+//   str_byte_at(s, idx)               → int64    byte value at index (-1 OOB)
+//   str_char_at(s, idx)               → string   single-char at index
+//   str_reverse(s)                    → string   reverse bytes (ASCII)
+//   str_to_int(s)                     → int64    parse to int64
+//   str_split(s, delim)               → int64    split by delimiter (handle)
+//   str_split_count(h)                → int64    number of parts
+//   str_split_get(h, i)               → string   get i-th part
+//   str_split_free(h)                 → NIL      free split handle
+//   str_join(h, delim)                → string   join parts with delimiter
+//
+// v0.9.1: Ported from 18 inline extern func to aria-libc shims + builtins.
+//         0 direct extern calls; backed by libaria_libc_string.so
+//         and libaria_libc_mem.so
+
+// ═══════════════════════════════════════════════════════════════════════
+// aria-libc string shim — byte-level string access & construction
+// ═══════════════════════════════════════════════════════════════════════
+extern "npk_libc_string" {
+    func:npk_libc_string_byte_at     = int32(string:s, int64:idx);
+    func:npk_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
+    func:npk_libc_string_from_buf    = string(int64:buf, int64:offset, int64:len);
+    func:npk_libc_string_atoi        = int64(string:s);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// aria-libc mem shim — buffer allocation & byte-level memory access
+// ═══════════════════════════════════════════════════════════════════════
+extern "npk_libc_mem" {
+    func:npk_libc_mem_malloc     = int64(int64:size);
+    func:npk_libc_mem_free       = void(int64:ptr);
+    func:npk_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
+    func:npk_libc_mem_write_i64  = void(int64:ptr, int64:offset, int64:val);
+    func:npk_libc_mem_read_i64   = int64(int64:ptr, int64:offset);
+    func:npk_libc_mem_copy       = void(int64:dst, int64:src, int64:n);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Internal: check if bytes match at position
+// ═══════════════════════════════════════════════════════════════════════
+func:str_match_at = bool(string:haystack, int64:pos, string:needle, int64:h_len, int64:n_len) {
+    int64:i = 0i64;
+    while (i < n_len) {
+        int32:hb = npk_libc_string_byte_at(haystack, pos + i);
+        int32:nb = npk_libc_string_byte_at(needle, i);
+        if (hb != nb) {
+            pass false;
+        }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_count — count non-overlapping occurrences
+// ═══════════════════════════════════════════════════════════════════════
+func:str_count = int64(string:haystack, string:needle) {
+    int64:h_len = string_length(haystack);
+    int64:n_len = string_length(needle);
+    if (n_len == 0i64) { pass 0i64; }
+    if (n_len > h_len) { pass 0i64; }
+
+    int64:count = 0i64;
+    int64:i = 0i64;
+    int64:lim = h_len - n_len;
+    while (i <= lim) {
+        bool:m = raw str_match_at(haystack, i, needle, h_len, n_len);
+        if (m == true) {
+            count = count + 1i64;
+            i = i + n_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+    pass count;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_replace — replace all non-overlapping occurrences
+// ═══════════════════════════════════════════════════════════════════════
+func:str_replace = string(string:src, string:old_s, string:new_s) {
+    int64:src_len = string_length(src);
+    int64:old_len = string_length(old_s);
+    int64:new_len = string_length(new_s);
+
+    if (old_len == 0i64) {
+        string:copy = string_substring(src, 0i64, src_len);
+        pass copy;
+    }
+
+    // Count occurrences to know result size
+    int64:count = raw str_count(src, old_s);
+    if (count == 0i64) {
+        string:copy = string_substring(src, 0i64, src_len);
+        pass copy;
+    }
+
+    // Allocate result buffer
+    int64:result_len = src_len + count * (new_len - old_len);
+    int64:buf = npk_libc_mem_malloc(result_len + 1i64);
+
+    int64:pos = 0i64;
+    int64:i = 0i64;
+    int64:lim = src_len - old_len;
+    while (i < src_len) {
+        if (i <= lim) {
+            bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
+            if (m == true) {
+                // Copy replacement
+                if (new_len > 0i64) {
+                    drop npk_libc_string_copy_to_buf(buf, pos, new_s, 0i64, new_len);
+                    pos = pos + new_len;
+                }
+                i = i + old_len;
+            } else {
+                // Copy original byte
+                int32:b = npk_libc_string_byte_at(src, i);
+                drop npk_libc_mem_write_byte(buf, pos, b);
+                pos = pos + 1i64;
+                i = i + 1i64;
+            }
+        } else {
+            // Past lim, just copy remaining bytes
+            int32:b = npk_libc_string_byte_at(src, i);
+            drop npk_libc_mem_write_byte(buf, pos, b);
+            pos = pos + 1i64;
+            i = i + 1i64;
+        }
+    }
+    drop npk_libc_mem_write_byte(buf, result_len, 0i32);
+
+    string:result = npk_libc_string_from_buf(buf, 0i64, result_len);
+    drop npk_libc_mem_free(buf);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_replace_first — replace first occurrence only
+// ═══════════════════════════════════════════════════════════════════════
+func:str_replace_first = string(string:src, string:old_s, string:new_s) {
+    int64:src_len = string_length(src);
+    int64:old_len = string_length(old_s);
+    int64:new_len = string_length(new_s);
+
+    if (old_len == 0i64) {
+        string:copy = string_substring(src, 0i64, src_len);
+        pass copy;
+    }
+
+    // Find first occurrence
+    int64:found = 0i64 - 1i64;
+    int64:lim = src_len - old_len;
+    int64:i = 0i64;
+    while (i <= lim) {
+        bool:m = raw str_match_at(src, i, old_s, src_len, old_len);
+        if (m == true) {
+            found = i;
+            i = lim + 1i64;
+        } else {
+            i = i + 1i64;
+        }
+    }
+
+    if (found == 0i64 - 1i64) {
+        string:copy = string_substring(src, 0i64, src_len);
+        pass copy;
+    }
+
+    // Build result: prefix + new_s + suffix
+    int64:result_len = src_len + (new_len - old_len);
+    int64:buf = npk_libc_mem_malloc(result_len + 1i64);
+
+    // Copy prefix
+    if (found > 0i64) {
+        drop npk_libc_string_copy_to_buf(buf, 0i64, src, 0i64, found);
+    }
+    // Copy replacement
+    if (new_len > 0i64) {
+        drop npk_libc_string_copy_to_buf(buf, found, new_s, 0i64, new_len);
+    }
+    // Copy suffix
+    int64:suffix_start = found + old_len;
+    int64:suffix_len = src_len - suffix_start;
+    if (suffix_len > 0i64) {
+        drop npk_libc_string_copy_to_buf(buf, found + new_len, src, suffix_start, suffix_len);
+    }
+    drop npk_libc_mem_write_byte(buf, result_len, 0i32);
+
+    string:result = npk_libc_string_from_buf(buf, 0i64, result_len);
+    drop npk_libc_mem_free(buf);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_byte_at — byte value at index (-1 on OOB)
+// ═══════════════════════════════════════════════════════════════════════
+func:str_byte_at = int64(string:s, int64:idx) {
+    int64:len = string_length(s);
+    if (idx < 0i64) { pass 0i64 - 1i64; }
+    if (idx >= len) { pass 0i64 - 1i64; }
+    int32:b = npk_libc_string_byte_at(s, idx);
+    pass @cast<int64>(b);
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_char_at — single-character string at index
+// ═══════════════════════════════════════════════════════════════════════
+func:str_char_at = string(string:s, int64:idx) {
+    int64:len = string_length(s);
+    if (idx < 0i64) { pass ""; }
+    if (idx >= len) { pass ""; }
+    string:ch = string_substring(s, idx, idx + 1i64);
+    pass ch;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_reverse — reverse bytes (ASCII)
+// ═══════════════════════════════════════════════════════════════════════
+func:str_reverse = string(string:s) {
+    int64:len = string_length(s);
+    if (len <= 1i64) {
+        string:copy = string_substring(s, 0i64, len);
+        pass copy;
+    }
+
+    int64:buf = npk_libc_mem_malloc(len + 1i64);
+
+    int64:i = 0i64;
+    while (i < len) {
+        int32:b = npk_libc_string_byte_at(s, len - 1i64 - i);
+        drop npk_libc_mem_write_byte(buf, i, b);
+        i = i + 1i64;
+    }
+    drop npk_libc_mem_write_byte(buf, len, 0i32);
+
+    string:result = npk_libc_string_from_buf(buf, 0i64, len);
+    drop npk_libc_mem_free(buf);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_to_int — parse string to int64
+// ═══════════════════════════════════════════════════════════════════════
+func:str_to_int = int64(string:s) {
+    int64:r = npk_libc_string_atoi(s);
+    pass r;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split — split string by delimiter
+//
+// Split handle layout (int64 pointer to allocated memory):
+//   offset 0: parts_array_ptr (int64)
+//   offset 8: count (int64)
+// Parts array: for each part i:
+//   offset i*16 + 0: buffer_ptr (int64) — copy of part bytes
+//   offset i*16 + 8: length (int64)
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split = int64(string:s, string:delim) {
+    int64:s_len = string_length(s);
+    int64:d_len = string_length(delim);
+
+    // Allocate split handle (2 int64s = 16 bytes)
+    int64:h = npk_libc_mem_malloc(16i64);
+    drop npk_libc_mem_write_i64(h, 0i64, 0i64);
+    drop npk_libc_mem_write_i64(h, 8i64, 0i64);
+
+    // Empty string → 0 parts
+    if (s_len == 0i64) {
+        pass h;
+    }
+
+    // Empty delimiter → split into individual chars
+    if (d_len == 0i64) {
+        int64:parts = npk_libc_mem_malloc(s_len * 16i64);
+        int64:ci = 0i64;
+        while (ci < s_len) {
+            int64:part_buf = npk_libc_mem_malloc(2i64);
+            int32:byte_val = npk_libc_string_byte_at(s, ci);
+            drop npk_libc_mem_write_byte(part_buf, 0i64, byte_val);
+            drop npk_libc_mem_write_byte(part_buf, 1i64, 0i32);
+            drop npk_libc_mem_write_i64(parts, ci * 16i64, part_buf);
+            drop npk_libc_mem_write_i64(parts, ci * 16i64 + 8i64, 1i64);
+            ci = ci + 1i64;
+        }
+        drop npk_libc_mem_write_i64(h, 0i64, parts);
+        drop npk_libc_mem_write_i64(h, 8i64, s_len);
+        pass h;
+    }
+
+    // Count occurrences of delimiter to find number of parts
+    int64:count = 1i64;
+    int64:i = 0i64;
+    int64:lim = s_len - d_len;
+    while (i <= lim) {
+        bool:m = raw str_match_at(s, i, delim, s_len, d_len);
+        if (m == true) {
+            count = count + 1i64;
+            i = i + d_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+
+    // Allocate parts array
+    int64:parts = npk_libc_mem_malloc(count * 16i64);
+
+    // Fill parts
+    int64:part_idx = 0i64;
+    int64:start = 0i64;
+    i = 0i64;
+    while (i <= lim) {
+        bool:m = raw str_match_at(s, i, delim, s_len, d_len);
+        if (m == true) {
+            int64:plen = i - start;
+            int64:pbuf = npk_libc_mem_malloc(plen + 1i64);
+            if (plen > 0i64) {
+                drop npk_libc_string_copy_to_buf(pbuf, 0i64, s, start, plen);
+            }
+            drop npk_libc_mem_write_byte(pbuf, plen, 0i32);
+            drop npk_libc_mem_write_i64(parts, part_idx * 16i64, pbuf);
+            drop npk_libc_mem_write_i64(parts, part_idx * 16i64 + 8i64, plen);
+            part_idx = part_idx + 1i64;
+            start = i + d_len;
+            i = i + d_len;
+        } else {
+            i = i + 1i64;
+        }
+    }
+    // Final part
+    int64:final_len = s_len - start;
+    int64:final_buf = npk_libc_mem_malloc(final_len + 1i64);
+    if (final_len > 0i64) {
+        drop npk_libc_string_copy_to_buf(final_buf, 0i64, s, start, final_len);
+    }
+    drop npk_libc_mem_write_byte(final_buf, final_len, 0i32);
+    drop npk_libc_mem_write_i64(parts, part_idx * 16i64, final_buf);
+    drop npk_libc_mem_write_i64(parts, part_idx * 16i64 + 8i64, final_len);
+
+    drop npk_libc_mem_write_i64(h, 0i64, parts);
+    drop npk_libc_mem_write_i64(h, 8i64, count);
+
+    pass h;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_count — number of parts in split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_count = int64(int64:h) {
+    int64:count = npk_libc_mem_read_i64(h, 8i64);
+    pass count;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_get — get i-th part from split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_get = string(int64:h, int64:idx) {
+    int64:parts = npk_libc_mem_read_i64(h, 0i64);
+    int64:part_buf = npk_libc_mem_read_i64(parts, idx * 16i64);
+    int64:part_len = npk_libc_mem_read_i64(parts, idx * 16i64 + 8i64);
+    string:result = npk_libc_string_from_buf(part_buf, 0i64, part_len);
+    pass result;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_split_free — free all memory in split handle
+// ═══════════════════════════════════════════════════════════════════════
+func:str_split_free = NIL(int64:h) {
+    if (h == 0i64) { pass NIL; }
+    int64:count = npk_libc_mem_read_i64(h, 8i64);
+    int64:parts = npk_libc_mem_read_i64(h, 0i64);
+    if (parts != 0i64) {
+        int64:fi = 0i64;
+        while (fi < count) {
+            int64:part_buf = npk_libc_mem_read_i64(parts, fi * 16i64);
+            if (part_buf != 0i64) {
+                drop npk_libc_mem_free(part_buf);
+            }
+            fi = fi + 1i64;
+        }
+        drop npk_libc_mem_free(parts);
+    }
+    drop npk_libc_mem_free(h);
+    pass NIL;
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// str_join — join split parts with delimiter
+// ═══════════════════════════════════════════════════════════════════════
+func:str_join = string(int64:h, string:delim) {
+    int64:count = npk_libc_mem_read_i64(h, 8i64);
+
+    if (count == 0i64) {
+        pass "";
+    }
+
+    int64:d_len = string_length(delim);
+    int64:parts = npk_libc_mem_read_i64(h, 0i64);
+
+    // Calculate total length
+    int64:total = 0i64;
+    int64:i = 0i64;
+    while (i < count) {
+        int64:plen = npk_libc_mem_read_i64(parts, i * 16i64 + 8i64);
+        total = total + plen;
+        i = i + 1i64;
+    }
+    if (d_len > 0i64) {
+        total = total + d_len * (count - 1i64);
+    }
+
+    // Allocate result buffer
+    int64:buf = npk_libc_mem_malloc(total + 1i64);
+
+    // Build result
+    int64:pos = 0i64;
+    i = 0i64;
+    while (i < count) {
+        if (i > 0i64) {
+            if (d_len > 0i64) {
+                drop npk_libc_string_copy_to_buf(buf, pos, delim, 0i64, d_len);
+                pos = pos + d_len;
+            }
+        }
+        int64:part_buf = npk_libc_mem_read_i64(parts, i * 16i64);
+        int64:part_len = npk_libc_mem_read_i64(parts, i * 16i64 + 8i64);
+        if (part_len > 0i64) {
+            drop npk_libc_mem_copy(buf + pos, part_buf, part_len);
+        }
+        pos = pos + part_len;
+        i = i + 1i64;
+    }
+    drop npk_libc_mem_write_byte(buf, total, 0i32);
+
+    string:result = npk_libc_string_from_buf(buf, 0i64, total);
+    drop npk_libc_mem_free(buf);
+    pass result;
+};

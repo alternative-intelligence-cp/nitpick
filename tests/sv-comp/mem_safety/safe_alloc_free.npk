@@ -1,0 +1,24 @@
+// SV-COMP MemSafety equivalent: memsafety-heap (single allocation)
+//
+// C analog: MemSafety-Heap/malloc_and_free.c
+// Property: valid-free (no double/invalid free), valid-deref (no UAF),
+//           valid-memtrack (no leaks)
+// Aria: allocates buffer, uses it, frees exactly once.
+//       Z3 --verify-memory proves: no UAF, no double-free, no leak.
+//
+// Expected verdict: true   Strategy: z3verify (--verify-memory)
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    // Use buf (before free) — valid dereference window
+    free(buf);           // freed exactly once — valid-free satisfied
+    exit 0;
+    // buf goes out of scope after free — no leak (valid-memtrack satisfied)
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

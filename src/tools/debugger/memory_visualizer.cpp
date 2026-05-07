@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 MemoryVisualizer::MemoryVisualizer(lldb::SBTarget target, lldb::SBProcess process)
@@ -289,7 +289,7 @@ GCStatistics MemoryVisualizer::getGCStatistics() {
     GCStatistics stats = {};
     
     // Try to read GC runtime statistics from well-known symbols
-    // These would be exported by the Aria GC runtime
+    // These would be exported by the Nitpick GC runtime
     
     // Query nursery stats
     lldb::SBValue nursery_size_val = m_target.FindFirstGlobalVariable("__aria_gc_nursery_size");
@@ -463,4 +463,4 @@ bool MemoryVisualizer::readMemorySafe(lldb::addr_t address, void* buffer, size_t
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

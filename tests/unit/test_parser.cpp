@@ -6,8 +6,8 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/type.h"
 
-using namespace aria;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::frontend;
 
 // Helper to parse expression from source
 ASTNodePtr parseExpr(const std::string& source) {
@@ -2043,7 +2043,7 @@ TEST_CASE(parser_use_wildcard) {
 }
 
 TEST_CASE(parser_use_file_path_relative) {
-    auto program = parseStmt("use \"./utils.aria\";");
+    auto program = parseStmt("use \"./utils.npk\";");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -2053,12 +2053,12 @@ TEST_CASE(parser_use_file_path_relative) {
     ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
     ASSERT(useStmt->isFilePath, "Should be a file path");
     ASSERT_EQ(useStmt->path.size(), 1, "Path should have 1 element");
-    ASSERT_EQ(useStmt->path[0], "./utils.aria", "Path should be ./utils.aria");
+    ASSERT_EQ(useStmt->path[0], "./utils.npk", "Path should be ./utils.npk");
     ASSERT(useStmt->alias.empty(), "Should not have alias");
 }
 
 TEST_CASE(parser_use_file_path_parent) {
-    auto program = parseStmt("use \"../shared/crypto.aria\";");
+    auto program = parseStmt("use \"../shared/crypto.npk\";");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -2067,7 +2067,7 @@ TEST_CASE(parser_use_file_path_parent) {
     auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
     ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
     ASSERT(useStmt->isFilePath, "Should be a file path");
-    ASSERT_EQ(useStmt->path[0], "../shared/crypto.aria", "Path should be ../shared/crypto.aria");
+    ASSERT_EQ(useStmt->path[0], "../shared/crypto.npk", "Path should be ../shared/crypto.npk");
 }
 
 TEST_CASE(parser_use_file_path_absolute) {
@@ -2084,7 +2084,7 @@ TEST_CASE(parser_use_file_path_absolute) {
 }
 
 TEST_CASE(parser_use_with_alias_file) {
-    auto program = parseStmt("use \"./utils.aria\" as utils;");
+    auto program = parseStmt("use \"./utils.npk\" as utils;");
     auto prog = getProgram(program);
     
     ASSERT(prog != nullptr, "Program should not be null");
@@ -2093,7 +2093,7 @@ TEST_CASE(parser_use_with_alias_file) {
     auto useStmt = std::dynamic_pointer_cast<UseStmt>(stmt);
     ASSERT(useStmt != nullptr, "Cast to UseStmt should succeed");
     ASSERT(useStmt->isFilePath, "Should be a file path");
-    ASSERT_EQ(useStmt->path[0], "./utils.aria", "Path should be ./utils.aria");
+    ASSERT_EQ(useStmt->path[0], "./utils.npk", "Path should be ./utils.npk");
     ASSERT_EQ(useStmt->alias, "utils", "Alias should be utils");
 }
 

@@ -1,0 +1,40 @@
+// stdlib/process.aria — Process utilities (v0.10.0 — ported to aria-libc)
+//
+// Provides process info and system command execution.
+// Import with: use "process.aria".*;
+//
+// v0.10.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_process.so + libaria_libc_mem.so
+
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern "npk_libc_process" {
+    func:npk_libc_process_getpid  = int64();
+    func:npk_libc_process_getppid = int64();
+    func:npk_libc_process_system  = int32(string:cmd);
+}
+
+extern "npk_libc_mem" {
+    func:npk_libc_mem_getenv = string(string:name);
+}
+
+Type:Process = {
+    func:getpid = int64() {
+        pass npk_libc_process_getpid();
+    };
+
+    func:getppid = int64() {
+        pass npk_libc_process_getppid();
+    };
+
+    func:system = int32(string:cmd) {
+        pass npk_libc_process_system(cmd);
+    };
+
+    func:getenv = string(string:name) {
+        pass npk_libc_mem_getenv(name);
+    };
+
+    struct:interface = {
+        int64:pid;
+    };
+};

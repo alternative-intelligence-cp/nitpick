@@ -20,7 +20,7 @@ run_test() {
     echo "Desc: $test_desc"
     echo "Expected: $expected"
     
-    result=$(./build/ariac "$test_file" 2>&1)
+    result=$(./build/npkc "$test_file" 2>&1)
     exit_code=$?
     
     if [ "$expected" = "SUCCESS" ]; then
@@ -47,22 +47,22 @@ run_test() {
 }
 
 # Run Phase 3 tests
-run_test "tests/test_phase3_basic_while.aria" \
+run_test "tests/test_phase3_basic_while.npk" \
          "While Loop - Basic" \
          "SUCCESS" \
          "Loop body knows condition state; can access .value inside while (!r.is_error)"
 
-run_test "tests/test_phase3_while_exit_knowledge.aria" \
+run_test "tests/test_phase3_while_exit_knowledge.npk" \
          "While Loop - Exit Knowledge" \
          "SUCCESS" \
          "After loop exits, we know inverted condition; can access .error after while (!r.is_error)"
 
-run_test "tests/test_phase3_for_loop.aria" \
+run_test "tests/test_phase3_for_loop.npk" \
          "For Loop - Range-Based" \
          "SUCCESS" \
          "Range-based for loops are conservative; state preserved across loop"
 
-run_test "tests/test_phase3_nested_if.aria" \
+run_test "tests/test_phase3_nested_if.npk" \
          "Nested If Statements" \
          "SUCCESS" \
          "State propagates through nested if branches; can access .value at all levels"

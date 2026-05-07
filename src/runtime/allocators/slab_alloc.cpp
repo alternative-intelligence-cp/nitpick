@@ -39,7 +39,7 @@ static inline size_t align_up(size_t value, size_t alignment) {
 /**
  * Check if pointer is within slab's memory range
  */
-static bool slab_contains(const aria_slab* slab, const void* ptr) {
+static bool slab_contains(const npk_slab* slab, const void* ptr) {
     uintptr_t addr = (uintptr_t)ptr;
     uintptr_t start = (uintptr_t)slab->memory + slab->color_offset;
     uintptr_t end = start + (slab->num_objects * slab->object_size);
@@ -52,14 +52,14 @@ static bool slab_contains(const aria_slab* slab, const void* ptr) {
  * Walks all slab lists to find the owning slab.
  * This is O(num_slabs) but typically small (<10 slabs per cache).
  */
-static aria_slab* find_slab_for_pointer(aria_slab_cache* cache, const void* ptr) {
+static npk_slab* find_slab_for_pointer(npk_slab_cache* cache, const void* ptr) {
     // Check active slab first (most likely)
     if (cache->active_slab && slab_contains(cache->active_slab, ptr)) {
         return cache->active_slab;
     }
     
     // Check partial list
-    aria_slab* slab = cache->partial_list;
+    npk_slab* slab = cache->partial_list;
     while (slab) {
         if (slab_contains(slab, ptr)) {
             return slab;
@@ -91,8 +91,8 @@ static aria_slab* find_slab_for_pointer(aria_slab_cache* cache, const void* ptr)
 /**
  * Remove slab from its current list
  */
-static void unlink_slab(aria_slab_cache* cache, aria_slab* slab) {
-    aria_slab** list_head = NULL;
+static void unlink_slab(npk_slab_cache* cache, npk_slab* slab) {
+    npk_slab** list_head = NULL;
     
     switch (slab->state) {
         case ARIA_SLAB_EMPTY:
@@ -114,7 +114,7 @@ static void unlink_slab(aria_slab_cache* cache, aria_slab* slab) {
     if (*list_head == slab) {
         *list_head = slab->next;
     } else {
-        aria_slab* curr = *list_head;
+        npk_slab* curr = *list_head;
         while (curr && curr->next != slab) {
             curr = curr->next;
         }
@@ -129,8 +129,8 @@ static void unlink_slab(aria_slab_cache* cache, aria_slab* slab) {
 /**
  * Add slab to appropriate list based on its state
  */
-static void link_slab(aria_slab_cache* cache, aria_slab* slab) {
-    aria_slab** list_head = NULL;
+static void link_slab(npk_slab_cache* cache, npk_slab* slab) {
+    npk_slab** list_head = NULL;
     
     switch (slab->state) {
         case ARIA_SLAB_EMPTY:
@@ -156,7 +156,7 @@ static void link_slab(aria_slab_cache* cache, aria_slab* slab) {
 /**
  * Update slab state based on usage
  */
-static void update_slab_state(aria_slab_cache* cache, aria_slab* slab) {
+static void update_slab_state(npk_slab_cache* cache, npk_slab* slab) {
     AriaSlabState old_state = slab->state;
     AriaSlabState new_state;
     
@@ -181,9 +181,9 @@ static void update_slab_state(aria_slab_cache* cache, aria_slab* slab) {
  * Applies slab coloring to reduce cache conflicts.
  * Constructs all objects if constructor provided.
  */
-static aria_slab* allocate_slab(aria_slab_cache* cache) {
+static npk_slab* allocate_slab(npk_slab_cache* cache) {
     // Allocate slab header
-    aria_slab* slab = (aria_slab*)malloc(sizeof(aria_slab));
+    npk_slab* slab = (npk_slab*)malloc(sizeof(npk_slab));
     if (!slab) {
         return NULL;
     }
@@ -239,7 +239,7 @@ static aria_slab* allocate_slab(aria_slab_cache* cache) {
 /**
  * Free a slab and call destructors on objects
  */
-static void free_slab(aria_slab_cache* cache, aria_slab* slab) {
+static void free_slab(npk_slab_cache* cache, npk_slab* slab) {
     if (!slab) {
         return;
     }
@@ -261,12 +261,12 @@ static void free_slab(aria_slab_cache* cache, aria_slab* slab) {
 // Lifecycle Functions
 // ============================================================================
 
-AriaSlabResult aria_slab_cache_new(
+AriaSlabResult npk_slab_cache_new(
     size_t object_size,
     size_t slab_size,
     size_t alignment,
-    aria_slab_ctor ctor,
-    aria_slab_dtor dtor
+    npk_slab_ctor ctor,
+    npk_slab_dtor dtor
 ) {
     AriaSlabResult result = {NULL, ARIA_SLAB_OK, slab_size, object_size};
     
@@ -283,14 +283,14 @@ AriaSlabResult aria_slab_cache_new(
     }
     
     // Allocate cache
-    aria_slab_cache* cache = (aria_slab_cache*)malloc(sizeof(aria_slab_cache));
+    npk_slab_cache* cache = (npk_slab_cache*)malloc(sizeof(npk_slab_cache));
     if (!cache) {
         result.error_code = ARIA_SLAB_ERR_OUT_OF_MEMORY;
         return result;
     }
     
     // Initialize cache
-    memset(cache, 0, sizeof(aria_slab_cache));
+    memset(cache, 0, sizeof(npk_slab_cache));
     cache->object_size = object_size;
     cache->slab_size = slab_size;
     cache->alignment = alignment > 0 ? alignment : DEFAULT_ALIGNMENT;
@@ -315,18 +315,18 @@ AriaSlabResult aria_slab_cache_new(
     return result;
 }
 
-void aria_slab_cache_destroy(aria_slab_cache* cache) {
+void npk_slab_cache_destroy(npk_slab_cache* cache) {
     if (!cache) {
         return;
     }
     
     // Free all slabs in all lists
-    aria_slab* slab;
+    npk_slab* slab;
     
     // Free partial list
     slab = cache->partial_list;
     while (slab) {
-        aria_slab* next = slab->next;
+        npk_slab* next = slab->next;
         free_slab(cache, slab);
         slab = next;
     }
@@ -334,7 +334,7 @@ void aria_slab_cache_destroy(aria_slab_cache* cache) {
     // Free full list
     slab = cache->full_list;
     while (slab) {
-        aria_slab* next = slab->next;
+        npk_slab* next = slab->next;
         free_slab(cache, slab);
         slab = next;
     }
@@ -342,7 +342,7 @@ void aria_slab_cache_destroy(aria_slab_cache* cache) {
     // Free empty list
     slab = cache->empty_list;
     while (slab) {
-        aria_slab* next = slab->next;
+        npk_slab* next = slab->next;
         free_slab(cache, slab);
         slab = next;
     }
@@ -355,12 +355,12 @@ void aria_slab_cache_destroy(aria_slab_cache* cache) {
 // Allocation Functions
 // ============================================================================
 
-AriaAllocResult aria_slab_cache_alloc(aria_slab_cache* cache) {
+AriaAllocResult npk_slab_cache_alloc(npk_slab_cache* cache) {
     AriaAllocResult result = {NULL, ARIA_ALLOC_OK, cache->object_size, cache->alignment};
     
     // FAST PATH: Try active slab first
     if (cache->active_slab && cache->active_slab->freelist_head) {
-        aria_slab* slab = cache->active_slab;
+        npk_slab* slab = cache->active_slab;
         
         // Pop from freelist
         FreeNode* node = (FreeNode*)slab->freelist_head;
@@ -381,7 +381,7 @@ AriaAllocResult aria_slab_cache_alloc(aria_slab_cache* cache) {
     }
     
     // SLOW PATH: Need to find or allocate a slab
-    aria_slab* slab = NULL;
+    npk_slab* slab = NULL;
     
     // Try to get a partial slab
     if (cache->partial_list) {
@@ -430,13 +430,13 @@ AriaAllocResult aria_slab_cache_alloc(aria_slab_cache* cache) {
     return result;
 }
 
-void aria_slab_cache_free(aria_slab_cache* cache, void* ptr) {
+void npk_slab_cache_free(npk_slab_cache* cache, void* ptr) {
     if (!cache || !ptr) {
         return;
     }
     
     // Find owning slab
-    aria_slab* slab = find_slab_for_pointer(cache, ptr);
+    npk_slab* slab = find_slab_for_pointer(cache, ptr);
     if (!slab) {
         // Invalid pointer (not from this cache)
         return;
@@ -463,16 +463,16 @@ void aria_slab_cache_free(aria_slab_cache* cache, void* ptr) {
     }
 }
 
-size_t aria_slab_cache_shrink(aria_slab_cache* cache) {
+size_t npk_slab_cache_shrink(npk_slab_cache* cache) {
     if (!cache) {
         return 0;
     }
     
     size_t freed_count = 0;
-    aria_slab* slab = cache->empty_list;
+    npk_slab* slab = cache->empty_list;
     
     while (slab) {
-        aria_slab* next = slab->next;
+        npk_slab* next = slab->next;
         
         // Only free if truly empty (no used objects)
         if (slab->used_objects == 0) {
@@ -495,8 +495,8 @@ size_t aria_slab_cache_shrink(aria_slab_cache* cache) {
 // Query Functions
 // ============================================================================
 
-void aria_slab_cache_get_stats(
-    const aria_slab_cache* cache,
+void npk_slab_cache_get_stats(
+    const npk_slab_cache* cache,
     size_t* total_slabs,
     size_t* total_objects,
     size_t* allocated_objects,
@@ -532,7 +532,7 @@ void aria_slab_cache_get_stats(
 // Error Messages
 // ============================================================================
 
-const char* aria_slab_error_message(AriaSlabError error) {
+const char* npk_slab_error_message(AriaSlabError error) {
     switch (error) {
         case ARIA_SLAB_OK:
             return "Success";

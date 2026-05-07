@@ -1,0 +1,28 @@
+/**
+ * Determinism Test: Nested Loops
+ * Tests that nested loop results are deterministic
+ */
+
+func:main = int32() {
+    int64:outer = 0;
+    int64:outer_count = 3;
+
+    while (outer < outer_count) {
+        int64:inner = 0;
+        int64:inner_count = 3;
+
+        while (inner < inner_count) {
+            int64:product = (outer * inner);
+            inner = (inner + 1);
+        }
+
+        outer = (outer + 1);
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

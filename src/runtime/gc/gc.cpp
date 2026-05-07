@@ -1,5 +1,5 @@
 /**
- * Aria GC Core Implementation — v0.8.1
+ * Nitpick GC Core Implementation — v0.8.1
  * 
  * This file implements the main garbage collection algorithms:
  * - Minor GC: Copying collector for nursery (with pinning support)
@@ -20,7 +20,7 @@
 #include <iostream>
 #include <cstring>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // =============================================================================
@@ -192,7 +192,7 @@ void* GCState::alloc(size_t size, uint16_t type_id) {
             major_gc();
             current_total = stats.nursery_used + stats.old_gen_used;
             if (current_total + size > max_heap) {
-                std::cerr << "Aria GC: Max heap limit exceeded (" << max_heap << " bytes)\n";
+                std::cerr << "Nitpick GC: Max heap limit exceeded (" << max_heap << " bytes)\n";
                 return nullptr;
             }
         }
@@ -211,7 +211,7 @@ void* GCState::alloc(size_t size, uint16_t type_id) {
     }
     
     // Out of memory
-    std::cerr << "Aria GC: Out of memory!\n";
+    std::cerr << "Nitpick GC: Out of memory!\n";
     return nullptr;
 }
 
@@ -1128,4 +1128,4 @@ void GCState::unlock_for_fork() {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

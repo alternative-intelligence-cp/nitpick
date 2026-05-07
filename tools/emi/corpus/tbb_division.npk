@@ -1,0 +1,21 @@
+// Test TBB division by zero (Session 14 Part 2)
+// Expected: Division by zero should return ERR
+
+func:main = int32() {
+    tbb8:x = 100;
+    tbb8:zero = 0;
+    tbb8:result = x / zero;  // Should be ERR (-128)
+    
+    tbb8:err = -128;
+    
+    if (result == err) {
+        exit 0;  // Success: Division by zero returns ERR
+    }
+    
+    exit 1;  // Failure
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

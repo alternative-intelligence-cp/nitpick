@@ -33,8 +33,8 @@ extern "C" {
 // Forward Declarations
 // ============================================================================
 
-typedef struct aria_slab aria_slab;
-typedef struct aria_slab_cache aria_slab_cache;
+typedef struct npk_slab npk_slab;
+typedef struct npk_slab_cache npk_slab_cache;
 
 // ============================================================================
 // Constructor/Destructor Function Pointers
@@ -46,7 +46,7 @@ typedef struct aria_slab_cache aria_slab_cache;
  * @param obj Pointer to object memory
  * @param size Size of object (for validation)
  */
-typedef void (*aria_slab_ctor)(void* obj, size_t size);
+typedef void (*npk_slab_ctor)(void* obj, size_t size);
 
 /**
  * Object destructor - called when slab is destroyed (NOT on free)
@@ -54,7 +54,7 @@ typedef void (*aria_slab_ctor)(void* obj, size_t size);
  * @param obj Pointer to object memory
  * @param size Size of object
  */
-typedef void (*aria_slab_dtor)(void* obj, size_t size);
+typedef void (*npk_slab_dtor)(void* obj, size_t size);
 
 // ============================================================================
 // Error Codes
@@ -78,7 +78,7 @@ typedef enum {
  * Result type for slab cache creation
  */
 typedef struct {
-    aria_slab_cache* cache;        // Slab cache handle (NULL on error)
+    npk_slab_cache* cache;        // Slab cache handle (NULL on error)
     AriaSlabError error_code;      // Error code
     size_t requested_slab_size;    // Requested slab size
     size_t object_size;            // Fixed object size
@@ -103,8 +103,8 @@ typedef enum {
  * Manages a single page or multi-page allocation.
  * Uses intrusive free list (like Pool) but tracks state for cache optimization.
  */
-struct aria_slab {
-    aria_slab* next;           // Next slab in partial/full/empty list
+struct npk_slab {
+    npk_slab* next;           // Next slab in partial/full/empty list
     void* memory;              // Slab memory region
     void* freelist_head;       // Head of free object list (intrusive)
     
@@ -132,14 +132,14 @@ struct aria_slab {
  * 4. First free from FULL moves it to PARTIAL
  * 5. Last free from PARTIAL moves it to EMPTY
  */
-struct aria_slab_cache {
+struct npk_slab_cache {
     // Slab lists
-    aria_slab* partial_list;   // Slabs with free objects
-    aria_slab* full_list;      // Slabs with no free objects
-    aria_slab* empty_list;     // Slabs with all objects free
+    npk_slab* partial_list;   // Slabs with free objects
+    npk_slab* full_list;      // Slabs with no free objects
+    npk_slab* empty_list;     // Slabs with all objects free
     
     // Currently active slab (fast path)
-    aria_slab* active_slab;    // Slab for current allocations
+    npk_slab* active_slab;    // Slab for current allocations
     
     // Configuration
     size_t object_size;        // Fixed size of each object
@@ -149,8 +149,8 @@ struct aria_slab_cache {
     size_t color_next;         // Next color offset to use
     
     // Constructor/destructor
-    aria_slab_ctor ctor;       // Object constructor (can be NULL)
-    aria_slab_dtor dtor;       // Object destructor (can be NULL)
+    npk_slab_ctor ctor;       // Object constructor (can be NULL)
+    npk_slab_dtor dtor;       // Object destructor (can be NULL)
     
     // Statistics
     size_t total_slabs;        // Total slabs created
@@ -175,7 +175,7 @@ struct aria_slab_cache {
  * 
  * Example:
  *   // Simple slab (no constructor)
- *   AriaSlabResult result = aria_slab_cache_new(sizeof(Node), 4096, 0, NULL, NULL);
+ *   AriaSlabResult result = npk_slab_cache_new(sizeof(Node), 4096, 0, NULL, NULL);
  *   
  *   // Slab with initialization
  *   void init_mutex(void* obj, size_t size) {
@@ -186,16 +186,16 @@ struct aria_slab_cache {
  *       Mutex* m = (Mutex*)obj;
  *       pthread_mutex_destroy(&m->lock);
  *   }
- *   AriaSlabResult result = aria_slab_cache_new(
+ *   AriaSlabResult result = npk_slab_cache_new(
  *       sizeof(Mutex), 4096, 0, init_mutex, destroy_mutex
  *   );
  */
-AriaSlabResult aria_slab_cache_new(
+AriaSlabResult npk_slab_cache_new(
     size_t object_size,
     size_t slab_size,
     size_t alignment,
-    aria_slab_ctor ctor,
-    aria_slab_dtor dtor
+    npk_slab_ctor ctor,
+    npk_slab_dtor dtor
 );
 
 /**
@@ -208,7 +208,7 @@ AriaSlabResult aria_slab_cache_new(
  * 
  * Complexity: O(num_slabs + allocated_objects)
  */
-void aria_slab_cache_destroy(aria_slab_cache* cache);
+void npk_slab_cache_destroy(npk_slab_cache* cache);
 
 // ============================================================================
 // Allocation Functions
@@ -239,7 +239,7 @@ void aria_slab_cache_destroy(aria_slab_cache* cache);
  * - New slab allocation: ~100-200ns (includes coloring + construction)
  * - Constructor amortization: Constructor cost / object_lifetime
  */
-AriaAllocResult aria_slab_cache_alloc(aria_slab_cache* cache);
+AriaAllocResult npk_slab_cache_alloc(npk_slab_cache* cache);
 
 /**
  * Free an object back to the slab cache
@@ -260,7 +260,7 @@ AriaAllocResult aria_slab_cache_alloc(aria_slab_cache* cache);
  * 
  * Complexity: O(1) if object is from active_slab, O(num_slabs) otherwise
  */
-void aria_slab_cache_free(aria_slab_cache* cache, void* ptr);
+void npk_slab_cache_free(npk_slab_cache* cache, void* ptr);
 
 /**
  * Shrink cache by freeing empty slabs
@@ -275,7 +275,7 @@ void aria_slab_cache_free(aria_slab_cache* cache, void* ptr);
  * 
  * Complexity: O(empty_slabs * objects_per_slab)
  */
-size_t aria_slab_cache_shrink(aria_slab_cache* cache);
+size_t npk_slab_cache_shrink(npk_slab_cache* cache);
 
 // ============================================================================
 // Query Functions
@@ -291,8 +291,8 @@ size_t aria_slab_cache_shrink(aria_slab_cache* cache);
  * @param free_objects Out: Objects available for allocation or NULL
  * @param total_capacity Out: Total bytes reserved from system or NULL
  */
-void aria_slab_cache_get_stats(
-    const aria_slab_cache* cache,
+void npk_slab_cache_get_stats(
+    const npk_slab_cache* cache,
     size_t* total_slabs,
     size_t* total_objects,
     size_t* allocated_objects,
@@ -303,14 +303,14 @@ void aria_slab_cache_get_stats(
 /**
  * Get object size for this cache
  */
-static inline size_t aria_slab_cache_object_size(const aria_slab_cache* cache) {
+static inline size_t npk_slab_cache_object_size(const npk_slab_cache* cache) {
     return cache->object_size;
 }
 
 /**
  * Get slab size for this cache
  */
-static inline size_t aria_slab_cache_slab_size(const aria_slab_cache* cache) {
+static inline size_t npk_slab_cache_slab_size(const npk_slab_cache* cache) {
     return cache->slab_size;
 }
 
@@ -321,21 +321,21 @@ static inline size_t aria_slab_cache_slab_size(const aria_slab_cache* cache) {
 /**
  * Check if slab cache creation succeeded
  */
-static inline bool aria_slab_result_is_ok(AriaSlabResult result) {
+static inline bool npk_slab_result_is_ok(AriaSlabResult result) {
     return result.error_code == ARIA_SLAB_OK && result.cache != NULL;
 }
 
 /**
  * Check if slab cache creation failed
  */
-static inline bool aria_slab_result_is_err(AriaSlabResult result) {
+static inline bool npk_slab_result_is_err(AriaSlabResult result) {
     return result.error_code != ARIA_SLAB_OK || result.cache == NULL;
 }
 
 /**
  * Get error message for slab error code
  */
-const char* aria_slab_error_message(AriaSlabError error);
+const char* npk_slab_error_message(AriaSlabError error);
 
 #ifdef __cplusplus
 }

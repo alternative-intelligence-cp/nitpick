@@ -45,7 +45,7 @@ static AriaString hs_make_string(const char* s) {
 
 // Ensure FDs 3-5 are open. Opens to /dev/null if not.
 // Returns 0 on success, -1 on error.
-int32_t aria_shim_hexstream_init(void) {
+int32_t npk_shim_hexstream_init(void) {
     for (int fd = STDDBG; fd <= STDDATO; fd++) {
         if (fcntl(fd, F_GETFD) == -1) {
             // FD not open — open /dev/null
@@ -64,7 +64,7 @@ int32_t aria_shim_hexstream_init(void) {
 }
 
 // Redirect a hexstream FD to a file
-int32_t aria_shim_hexstream_redirect_to_file(int32_t fd, const char* path) {
+int32_t npk_shim_hexstream_redirect_to_file(int32_t fd, const char* path) {
     if (fd < STDDBG || fd > STDDATO) return -1;
     int newfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (newfd < 0) return -1;
@@ -77,7 +77,7 @@ int32_t aria_shim_hexstream_redirect_to_file(int32_t fd, const char* path) {
 }
 
 // Redirect a hexstream FD to read from a file
-int32_t aria_shim_hexstream_redirect_from_file(int32_t fd, const char* path) {
+int32_t npk_shim_hexstream_redirect_from_file(int32_t fd, const char* path) {
     if (fd < STDDBG || fd > STDDATO) return -1;
     int newfd = open(path, O_RDONLY);
     if (newfd < 0) return -1;
@@ -94,7 +94,7 @@ int32_t aria_shim_hexstream_redirect_from_file(int32_t fd, const char* path) {
 // ============================================================================
 
 // Write a string to a hexstream FD
-int32_t aria_shim_hexstream_write(int32_t fd, const char* data) {
+int32_t npk_shim_hexstream_write(int32_t fd, const char* data) {
     if (fd < STDDBG || fd > STDDATO) return -1;
     size_t len = strlen(data);
     ssize_t n = write(fd, data, len);
@@ -102,7 +102,7 @@ int32_t aria_shim_hexstream_write(int32_t fd, const char* data) {
 }
 
 // Write a string + newline to stddbg (FD 3)
-int32_t aria_shim_hexstream_debug(const char* msg) {
+int32_t npk_shim_hexstream_debug(const char* msg) {
     size_t len = strlen(msg);
     write(STDDBG, msg, len);
     write(STDDBG, "\n", 1);
@@ -110,7 +110,7 @@ int32_t aria_shim_hexstream_debug(const char* msg) {
 }
 
 // Write an int64 as 8 bytes to a data stream
-int32_t aria_shim_hexstream_write_int64(int32_t fd, int64_t value) {
+int32_t npk_shim_hexstream_write_int64(int32_t fd, int64_t value) {
     if (fd < STDDBG || fd > STDDATO) return -1;
     ssize_t n = write(fd, &value, sizeof(int64_t));
     return (n == sizeof(int64_t)) ? 0 : -1;
@@ -121,7 +121,7 @@ int32_t aria_shim_hexstream_write_int64(int32_t fd, int64_t value) {
 // ============================================================================
 
 // Read a line from a hexstream FD (up to limit bytes)
-AriaString aria_shim_hexstream_read_line(int32_t fd) {
+AriaString npk_shim_hexstream_read_line(int32_t fd) {
     if (fd < STDDBG || fd > STDDATO) return hs_make_string("");
     char buf[4096];
     int pos = 0;
@@ -136,7 +136,7 @@ AriaString aria_shim_hexstream_read_line(int32_t fd) {
 }
 
 // Read 8 bytes as int64 from a data stream
-int64_t aria_shim_hexstream_read_int64(int32_t fd) {
+int64_t npk_shim_hexstream_read_int64(int32_t fd) {
     if (fd < STDDBG || fd > STDDATO) return -1;
     int64_t value;
     ssize_t n = read(fd, &value, sizeof(int64_t));
@@ -148,13 +148,13 @@ int64_t aria_shim_hexstream_read_int64(int32_t fd) {
 // ============================================================================
 
 // Check if a hexstream FD is open
-int32_t aria_shim_hexstream_is_open(int32_t fd) {
+int32_t npk_shim_hexstream_is_open(int32_t fd) {
     if (fd < STDDBG || fd > STDDATO) return 0;
     return (fcntl(fd, F_GETFD) != -1) ? 1 : 0;
 }
 
 // Get the FD number for a named stream
-int32_t aria_shim_hexstream_fd(const char* name) {
+int32_t npk_shim_hexstream_fd(const char* name) {
     if (strcmp(name, "stddbg") == 0)  return STDDBG;
     if (strcmp(name, "stddati") == 0) return STDDATI;
     if (strcmp(name, "stddato") == 0) return STDDATO;

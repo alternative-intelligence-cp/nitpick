@@ -1,8 +1,8 @@
 /**
- * Aria GC Allocator Implementation
+ * Nitpick GC Allocator Implementation
  * 
- * This file implements the memory allocation logic for the Aria
- * Garbage Collection System. It provides the aria_gc_alloc function
+ * This file implements the memory allocation logic for the Nitpick
+ * Garbage Collection System. It provides the npk_gc_alloc function
  * and the Nursery allocator infrastructure.
  * 
  * Allocation Strategy:
@@ -23,7 +23,7 @@
 #include <algorithm>
 #include <sys/mman.h>  // For mmap (nursery allocation)
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // =============================================================================
@@ -330,62 +330,62 @@ void CardTable::clear() {
 
 extern "C" {
 
-void* aria_gc_alloc(size_t size, uint16_t type_id) {
+void* npk_gc_alloc(size_t size, uint16_t type_id) {
     return GCState::instance().alloc(size, type_id);
 }
 
-void aria_gc_pin(void* ptr) {
+void npk_gc_pin(void* ptr) {
     GCState::instance().pin(ptr);
 }
 
-void aria_gc_unpin(void* ptr) {
+void npk_gc_unpin(void* ptr) {
     GCState::instance().unpin(ptr);
 }
 
-void aria_gc_collect(bool full_collection) {
+void npk_gc_collect(bool full_collection) {
     GCState::instance().collect(full_collection);
 }
 
-void aria_gc_get_stats(GCStats* stats) {
+void npk_gc_get_stats(GCStats* stats) {
     GCState::instance().get_stats(stats);
 }
 
-void aria_shadow_stack_push_frame(void) {
+void npk_shadow_stack_push_frame(void) {
     GCState::instance().push_frame();
 }
 
-void aria_shadow_stack_pop_frame(void) {
+void npk_shadow_stack_pop_frame(void) {
     GCState::instance().pop_frame();
 }
 
-void aria_shadow_stack_add_root(void** root_addr) {
+void npk_shadow_stack_add_root(void** root_addr) {
     GCState::instance().add_root(root_addr);
 }
 
-void aria_shadow_stack_remove_root(void** root_addr) {
+void npk_shadow_stack_remove_root(void** root_addr) {
     GCState::instance().remove_root(root_addr);
 }
 
-void aria_gc_write_barrier(void* obj, void* ref) {
+void npk_gc_write_barrier(void* obj, void* ref) {
     GCState::instance().write_barrier(obj, ref);
 }
 
-ObjHeader* aria_gc_get_header(void* ptr) {
+ObjHeader* npk_gc_get_header(void* ptr) {
     return GCState::instance().get_header(ptr);
 }
 
-bool aria_gc_is_heap_pointer(void* ptr) {
+bool npk_gc_is_heap_pointer(void* ptr) {
     return GCState::instance().is_heap_pointer(ptr);
 }
 
-void aria_gc_init(size_t nursery_size, size_t old_gen_threshold) {
+void npk_gc_init(size_t nursery_size, size_t old_gen_threshold) {
     GCState::instance().init(nursery_size, old_gen_threshold);
     
-    // Register fork safety handlers so aria_fork() doesn't deadlock
+    // Register fork safety handlers so npk_fork() doesn't deadlock
     // on GC mutexes held by concurrent mark/sweep threads
     static bool gc_atfork_registered = false;
     if (!gc_atfork_registered) {
-        aria_atfork_register(
+        npk_atfork_register(
             []() { GCState::instance().lock_for_fork(); },
             []() { GCState::instance().unlock_for_fork(); },
             []() { GCState::instance().unlock_for_fork(); }
@@ -394,11 +394,11 @@ void aria_gc_init(size_t nursery_size, size_t old_gen_threshold) {
     }
 }
 
-void aria_gc_shutdown(void) {
+void npk_gc_shutdown(void) {
     GCState::instance().shutdown();
 }
 
-void aria_gc_free(void* ptr) {
+void npk_gc_free(void* ptr) {
     // Release GC-visible memory (coroutine frames etc.) back to free store
     if (ptr) {
         ::free(ptr);
@@ -411,11 +411,11 @@ void aria_gc_free(void* ptr) {
 
 static bool gc_stats_at_exit_enabled = false;
 
-static void aria_gc_print_stats_at_exit(void) {
+static void npk_gc_print_stats_at_exit(void) {
     if (!gc_stats_at_exit_enabled) return;
     
     GCStats stats;
-    aria_gc_get_stats(&stats);
+    npk_gc_get_stats(&stats);
     
     fprintf(stderr, "\n[GC STATS] ═══════════════════════════════════════\n");
     fprintf(stderr, "[GC STATS] Nursery:    %zu / %zu bytes (%.1f%% used)\n",
@@ -440,44 +440,44 @@ static void aria_gc_print_stats_at_exit(void) {
     fprintf(stderr, "[GC STATS] ═══════════════════════════════════════\n");
 }
 
-void aria_gc_enable_stats_at_exit(uint8_t enable) {
+void npk_gc_enable_stats_at_exit(uint8_t enable) {
     if (enable && !gc_stats_at_exit_enabled) {
         gc_stats_at_exit_enabled = true;
-        atexit(aria_gc_print_stats_at_exit);
+        atexit(npk_gc_print_stats_at_exit);
     } else if (!enable) {
         gc_stats_at_exit_enabled = false;
     }
 }
 
-void aria_gc_set_max_heap(uint64_t max_bytes) {
+void npk_gc_set_max_heap(uint64_t max_bytes) {
     GCState::instance().set_max_heap(max_bytes);
 }
 
-void aria_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer) {
+void npk_gc_register_finalizer(uint16_t type_id, AriaFinalizer finalizer) {
     GCState::instance().register_finalizer(type_id, finalizer);
 }
 
-void aria_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs) {
+void npk_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, size_t num_refs) {
     GCState::instance().register_type_layout(type_id, ref_offsets, num_refs);
 }
 
-void aria_gc_enable_concurrent(uint8_t enable) {
+void npk_gc_enable_concurrent(uint8_t enable) {
     GCState::instance().enable_concurrent(enable != 0);
 }
 
-void aria_gc_safepoint(void) {
+void npk_gc_safepoint(void) {
     GCState::instance().safepoint();
 }
 
-void aria_gc_register_jit_root(void** root_addr) {
+void npk_gc_register_jit_root(void** root_addr) {
     GCState::instance().register_jit_root(root_addr);
 }
 
-void aria_gc_unregister_jit_root(void** root_addr) {
+void npk_gc_unregister_jit_root(void** root_addr) {
     GCState::instance().unregister_jit_root(root_addr);
 }
 
 } // extern "C"
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

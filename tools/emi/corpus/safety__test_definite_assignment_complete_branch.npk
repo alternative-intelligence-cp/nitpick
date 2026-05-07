@@ -1,0 +1,25 @@
+// Test 4: Assignment in both branches (should compile)
+// Variable assigned in all paths should be OK
+
+func:main = int32() {
+    int64:x;
+    bool:condition = true;
+    
+    if (condition) {
+        x = 42;
+    } else {
+        x = 100;
+    }
+    
+    // OK: x is definitely assigned — use in comparison
+    if (x > 0i64) {
+        exit 0;
+    } else {
+        exit 1i32;
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

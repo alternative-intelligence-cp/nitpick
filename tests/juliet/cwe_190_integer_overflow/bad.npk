@@ -1,0 +1,22 @@
+// CWE-190: Integer Overflow or Wraparound — BAD demonstration
+//
+// In C: INT_MAX + 1 wraps silently to INT_MIN (undefined behavior in practice).
+// In Aria: tbb32 overflow transitions to sticky ERR sentinel immediately.
+// The ERR state is detected and handled — no silent data corruption.
+//
+// Expected: exits 1 (overflow caught = prevention confirmed)
+
+func:main = int32() {
+    tbb32:x = 2147483647;    // INT_MAX for tbb32
+    tbb32:one = 1;
+    tbb32:y = x + one;       // overflow → ERR (not silent wraparound)
+
+    pick(y) {
+        (ERR) { exit 1; },   // overflow was caught — prevention confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

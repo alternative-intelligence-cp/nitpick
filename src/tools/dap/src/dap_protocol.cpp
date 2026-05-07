@@ -2,7 +2,7 @@
  * dap_protocol.cpp
  * Implementation of the DAP protocol library
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #include "adap/dap_protocol.hpp"
@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace aria::adap {
+namespace npk::adap {
 
 // =============================================================================
 // JSON Value Implementation
@@ -769,4 +769,4 @@ void DAPServer::handle_disconnect(const Request& req, Response& resp) {
     shutdown_ = true;
 }
 
-}  // namespace aria::adap
+}  // namespace npk::adap

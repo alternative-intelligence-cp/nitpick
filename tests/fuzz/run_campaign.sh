@@ -16,8 +16,8 @@ ARIA_ROOT="$SCRIPT_DIR/../.."
 BUILD_DIR="$ARIA_ROOT/build"
 
 # Check compiler exists
-if [ ! -f "$BUILD_DIR/ariac" ]; then
-    echo "ERROR: Compiler not found at $BUILD_DIR/ariac"
+if [ ! -f "$BUILD_DIR/npkc" ]; then
+    echo "ERROR: Compiler not found at $BUILD_DIR/npkc"
     echo "Please build first: cd $ARIA_ROOT && mkdir -p build && cd build && cmake .. && make"
     exit 1
 fi
@@ -30,7 +30,7 @@ echo "PHASE 4.2: ADVERSARIAL FUZZING CAMPAIGN"
 echo "=============================================="
 echo "Duration: ${DURATION} hours"
 echo "Start time: $(date)"
-echo "Compiler: $BUILD_DIR/ariac"
+echo "Compiler: $BUILD_DIR/npkc"
 echo "Corpus: $SCRIPT_DIR/corpus/"
 echo "Crashes: $SCRIPT_DIR/crashes/"
 echo "----------------------------------------------"

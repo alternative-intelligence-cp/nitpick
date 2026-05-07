@@ -1,0 +1,41 @@
+// Test: Bitwise NOT (~) vs Logical NOT (!)
+// Verify distinct operators behave correctly
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Bitwise NOT: Flips all bits
+    // Requires unsigned types for clarity
+    uint32:val1 = 0u32;          // 0b00000000000000000000000000000000
+    uint32:not1 = ~val1;         // 0b11111111111111111111111111111111 = 4294967295
+    
+    if (not1 == 4294967295u32) {
+        // Success: ~0 = MAX_UINT32 (all bits set)
+        exit 0;
+    }
+    
+    uint32:val2 = 4294967295u32; // 0b11111111111111111111111111111111 (all bits set)
+    uint32:not2 = ~val2;         // 0b00000000000000000000000000000000 = 0
+    
+    if (not2 == 0u32) {
+        // Success: ~(MAX_UINT32) = 0 (all bits cleared)
+        exit 0;
+    }
+    
+    uint32:val3 = 5u32;          // 0b00000000000000000000000000000101
+    uint32:not3 = ~val3;         // 0b11111111111111111111111111111010 = 4294967290
+    
+    if (not3 == 4294967290u32) {
+        // Success: ~5 = 4294967290
+        exit 0;
+    }
+    
+    // Logical NOT: Boolean negation
+    // Note: In Aria, we can't use ! on integers directly for truthiness
+    // ! requires comparison first
+    
+    // Test failed
+    exit 1i32;
+};

@@ -52,16 +52,16 @@ typedef struct {
 // ============================================================================
 
 // Create 9D tensor with specified dimensions
-ttensor_tbb32 aria_ttensor_tbb32_create(const int32_t dims[9]);
-ttensor_tbb32 aria_ttensor_tbb32_create_err(void);
-void aria_ttensor_tbb32_destroy(ttensor_tbb32* t);
+ttensor_tbb32 npk_ttensor_tbb32_create(const int32_t dims[9]);
+ttensor_tbb32 npk_ttensor_tbb32_create_err(void);
+void npk_ttensor_tbb32_destroy(ttensor_tbb32* t);
 
 // ============================================================================
 // Initialization
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_zero(const int32_t dims[9]);
-ttensor_tbb32 aria_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t* data);
+ttensor_tbb32 npk_ttensor_tbb32_zero(const int32_t dims[9]);
+ttensor_tbb32 npk_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t* data);
 
 // ============================================================================
 // Toroidal Indexing
@@ -69,32 +69,32 @@ ttensor_tbb32 aria_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t
 
 // Convert 9D coordinates to flat index with toroidal wrapping
 // Returns -1 on ERR
-int64_t aria_ttensor_tbb32_toroidal_index(const ttensor_tbb32* t, const int32_t coords[9]);
+int64_t npk_ttensor_tbb32_toroidal_index(const ttensor_tbb32* t, const int32_t coords[9]);
 
 // Wrap coordinates to valid range [0, dim) for each dimension
-void aria_ttensor_tbb32_wrap_coords(const ttensor_tbb32* t, const int32_t in[9], int32_t out[9]);
+void npk_ttensor_tbb32_wrap_coords(const ttensor_tbb32* t, const int32_t in[9], int32_t out[9]);
 
 // ============================================================================
 // Element Access
 // ============================================================================
 
 // Get element at 9D coordinates (with toroidal wrapping)
-int32_t aria_ttensor_tbb32_get(const ttensor_tbb32* t, const int32_t coords[9]);
+int32_t npk_ttensor_tbb32_get(const ttensor_tbb32* t, const int32_t coords[9]);
 
 // Set element at 9D coordinates (with toroidal wrapping)
-void aria_ttensor_tbb32_set(ttensor_tbb32* t, const int32_t coords[9], int32_t value);
+void npk_ttensor_tbb32_set(ttensor_tbb32* t, const int32_t coords[9], int32_t value);
 
 // ============================================================================
 // Safety Checks
 // ============================================================================
 
-bool aria_ttensor_tbb32_has_err(const ttensor_tbb32* t);
-bool aria_ttensor_tbb32_is_zero(const ttensor_tbb32* t);
+bool npk_ttensor_tbb32_has_err(const ttensor_tbb32* t);
+bool npk_ttensor_tbb32_is_zero(const ttensor_tbb32* t);
 
 // Circuit Breaker: Check if ERR density exceeds threshold
 // Returns true if density > threshold (triggers emergency shutdown)
 // Threshold: fraction of total elements (e.g., 0.01 = 1%)
-bool aria_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold);
+bool npk_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold);
 
 // ============================================================================
 // Toroidal Distance
@@ -102,7 +102,7 @@ bool aria_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold)
 
 // Compute toroidal distance between two points in 9D space
 // Uses geodesic (shortest path with wrap-around)
-int64_t aria_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t, 
+int64_t npk_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t, 
                                                  const int32_t a[9], 
                                                  const int32_t b[9]);
 
@@ -112,7 +112,7 @@ int64_t aria_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t,
 
 // Compute wave value at point from 9 emitters in toroidal space
 // wave_value[point] = sum_i amplitude[i] * decay(toroidal_distance(point, emitter[i]))
-ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
+ttensor_tbb32 npk_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
                                                     const int32_t emitters[9][9],
                                                     const int32_t amplitudes[9],
                                                     float decay_factor);
@@ -126,7 +126,7 @@ ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
 // axis: 0-8 (which dimension to scan along)
 // state: input state tensor (updated in-place)
 // gate: gating values (0 = forget, 1 = remember)
-ttensor_tbb32 aria_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
+ttensor_tbb32 npk_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
                                             ttensor_tbb32* state,
                                             const ttensor_tbb32* gate,
                                             int32_t axis);
@@ -135,10 +135,10 @@ ttensor_tbb32 aria_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
 // Arithmetic Operations
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_add(const ttensor_tbb32* a, const ttensor_tbb32* b);
-ttensor_tbb32 aria_ttensor_tbb32_sub(const ttensor_tbb32* a, const ttensor_tbb32* b);
-ttensor_tbb32 aria_ttensor_tbb32_mul_elementwise(const ttensor_tbb32* a, const ttensor_tbb32* b);
-ttensor_tbb32 aria_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar);
+ttensor_tbb32 npk_ttensor_tbb32_add(const ttensor_tbb32* a, const ttensor_tbb32* b);
+ttensor_tbb32 npk_ttensor_tbb32_sub(const ttensor_tbb32* a, const ttensor_tbb32* b);
+ttensor_tbb32 npk_ttensor_tbb32_mul_elementwise(const ttensor_tbb32* a, const ttensor_tbb32* b);
+ttensor_tbb32 npk_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar);
 
 // ============================================================================
 // 9D Convolution (for wave processing)
@@ -146,18 +146,18 @@ ttensor_tbb32 aria_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar);
 
 // Convolve tensor with 9D kernel (toroidal boundary conditions)
 // kernel_size: size of kernel along each dimension (must be odd)
-ttensor_tbb32 aria_ttensor_tbb32_convolve(const ttensor_tbb32* input,
+ttensor_tbb32 npk_ttensor_tbb32_convolve(const ttensor_tbb32* input,
                                           const ttensor_tbb32* kernel);
 
 // ============================================================================
 // Utility
 // ============================================================================
 
-const char* aria_ttensor_tbb32_to_string(const ttensor_tbb32* t);
-bool aria_ttensor_tbb32_equal(const ttensor_tbb32* a, const ttensor_tbb32* b);
+const char* npk_ttensor_tbb32_to_string(const ttensor_tbb32* t);
+bool npk_ttensor_tbb32_equal(const ttensor_tbb32* a, const ttensor_tbb32* b);
 
 // Print tensor dimensions and statistics
-void aria_ttensor_tbb32_print_stats(const ttensor_tbb32* t);
+void npk_ttensor_tbb32_print_stats(const ttensor_tbb32* t);
 
 #ifdef __cplusplus
 }

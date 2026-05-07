@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 
-namespace aria {
+namespace npk {
 namespace doc {
 
 /**
@@ -78,6 +78,6 @@ private:
 };
 
 } // namespace doc
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_TOOLS_DOC_GENERATOR_H

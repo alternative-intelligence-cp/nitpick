@@ -1,0 +1,41 @@
+// Test: v0.14.0 — Contract proof completion (basic straight-line functions)
+// Verifies that ensures clauses are proven from requires + function body.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Simple identity — ensures $ == a should be proven
+func:identity = int32(int32:a)
+    ensures $ == a
+{
+    pass(a);
+};
+
+// Addition with known result — ensures $ == a + b
+func:add = int32(int32:a, int32:b)
+    ensures $ == a + b
+{
+    pass(a + b);
+};
+
+// Requires constrains input, ensures follows from body
+func:double_positive = int32(int32:x)
+    requires x > 0i32, x < 1000i32
+    ensures $ > 0i32
+{
+    pass(x + x);
+};
+
+// Local variable assignment, then return
+func:with_local = int32(int32:a, int32:b)
+    requires a > 0i32, b > 0i32, a < 100i32, b < 100i32
+    ensures $ > 1i32
+{
+    int32:sum = a + b;
+    pass(sum);
+};
+
+func:main = int32() {
+    exit 0;
+};

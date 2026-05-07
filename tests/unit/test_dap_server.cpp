@@ -12,7 +12,7 @@
 #include "tools/debugger/dap_server.h"
 #include <nlohmann/json.hpp>
 
-using namespace aria::debugger;
+using namespace npk::debugger;
 using json = nlohmann::json;
 
 // Test DAP message structure
@@ -35,12 +35,12 @@ TEST_CASE(dap_message_lifecycle) {
 TEST_CASE(dap_breakpoint_info) {
     Breakpoint bp;
     bp.id = 42;
-    bp.source_path = "/path/to/file.aria";
+    bp.source_path = "/path/to/file.npk";
     bp.line = 10;
     bp.verified = true;
     
     ASSERT(bp.id == 42, "Breakpoint ID");
-    ASSERT(bp.source_path == "/path/to/file.aria", "Breakpoint source path");
+    ASSERT(bp.source_path == "/path/to/file.npk", "Breakpoint source path");
     ASSERT(bp.line == 10, "Breakpoint line");
     ASSERT(bp.verified == true, "Breakpoint verified");
 }
@@ -50,7 +50,7 @@ TEST_CASE(dap_stack_frame_info) {
     StackFrame frame;
     frame.id = 0;
     frame.name = "main";
-    frame.source_path = "/path/to/main.aria";
+    frame.source_path = "/path/to/main.npk";
     frame.line = 5;
     frame.column = 1;
     
@@ -154,7 +154,7 @@ TEST_CASE(dap_breakpoint_request) {
     json request;
     request["command"] = "setBreakpoints";
     request["arguments"] = {
-        {"source", {{"path", "/path/to/file.aria"}}},
+        {"source", {{"path", "/path/to/file.npk"}}},
         {"breakpoints", json::array({
             {{"line", 10}},
             {{"line", 20}},
@@ -162,7 +162,7 @@ TEST_CASE(dap_breakpoint_request) {
         })}
     };
     
-    ASSERT(request["arguments"]["source"]["path"] == "/path/to/file.aria", "Source path");
+    ASSERT(request["arguments"]["source"]["path"] == "/path/to/file.npk", "Source path");
     ASSERT(request["arguments"]["breakpoints"].is_array(), "Breakpoints is array");
     ASSERT(request["arguments"]["breakpoints"].size() == 3, "Three breakpoints");
     ASSERT(request["arguments"]["breakpoints"][0]["line"] == 10, "First breakpoint line");
@@ -178,14 +178,14 @@ TEST_CASE(dap_stack_trace_response) {
             {
                 {"id", 0},
                 {"name", "main"},
-                {"source", {{"path", "/path/to/main.aria"}}},
+                {"source", {{"path", "/path/to/main.npk"}}},
                 {"line", 15},
                 {"column", 5}
             },
             {
                 {"id", 1},
                 {"name", "foo"},
-                {"source", {{"path", "/path/to/utils.aria"}}},
+                {"source", {{"path", "/path/to/utils.npk"}}},
                 {"line", 42},
                 {"column", 10}
             }

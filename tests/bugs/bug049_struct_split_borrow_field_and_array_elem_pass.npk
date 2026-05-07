@@ -1,0 +1,24 @@
+// bug049: $$m split borrow of struct scalar field + struct array element
+// Both are disjoint paths — must compile and both write-backs must apply.
+// v0.19.0 Phase 3 — struct array mixed borrow interaction
+// Expected exit code: 8  (p.a=3 + p.buf[1]=5 → 3+5=8)
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+struct:Pair = {
+    int32:a;
+    int32[4]:buf;
+};
+
+func:main = int32() {
+    Pair:p;
+    p.a = 10i32;
+    p.buf[1] = 2i32;
+
+    $$m int32:ra = p.a;
+    $$m int32:rb = p.buf[1];
+    ra = 3i32;
+    rb = 5i32;
+
+    exit p.a + p.buf[1];
+};

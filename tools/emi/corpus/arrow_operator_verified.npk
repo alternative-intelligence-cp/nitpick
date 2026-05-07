@@ -1,0 +1,33 @@
+/// Test arrow operator with proper struct initialization
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    // Create Point with proper initialization syntax
+    stack Point:p = Point{ x: 10, y: 20 };
+    
+    // Get pointer to it
+    stack Point->:ptr = @p;
+    
+    // Test 1: Read through arrow operator
+    int32:x_val = ptr->x;  // Should be 10
+    int32:y_val = ptr->y;  // Should be 20
+    
+    // Test 2: Modify through arrow operator
+    ptr->x = 100;
+    ptr->y = 200;
+    
+    // Test 3: Verify changes visible through original variable
+    int32:check_x = p.x;  // Should be 100
+    int32:check_y = p.y;  // Should be 200
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,23 @@
+// Test to prove unwrap is working
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:add = int32(int32:a, int32:b) {
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:main = int32() {
+    // Test 1: Simple unwrap
+    int32:result1 = add(10i32, 20i32) ? 0i32;  // Should be 30
+    
+    // Test 2: Reassignment with unwrap
+    int32:x = add(100i32, 200i32) ? 0i32;  // Should be 300
+    x = add(1i32, 1i32) ? 0i32;            // Should be 2
+    
+    // Return final value (should be 2)
+    if (x == 2i32) {
+        exit 0;
+    }
+    exit 1;
+};

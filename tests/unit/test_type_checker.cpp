@@ -7,9 +7,9 @@
 #include "frontend/ast/type.h"
 #include "frontend/token.h"
 
-using namespace aria;
-using namespace aria::sema;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::sema;
+using namespace npk::frontend;
 
 // ============================================================================
 // Type Checker Tests - Phase 3.2.2
@@ -560,7 +560,7 @@ TEST_CASE(type_checker_var_decl_with_initializer) {
     
     // int64:x = 42;
     auto init = std::make_unique<LiteralExpr>(int64_t(42));
-    aria::VarDeclStmt stmt("int64", "x", std::move(init));
+    npk::VarDeclStmt stmt("int64", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -585,7 +585,7 @@ TEST_CASE(type_checker_var_decl_without_initializer) {
     TypeChecker checker(&types, &symbols);
     
     // int64:x;
-    aria::VarDeclStmt stmt("int64", "x", nullptr);
+    npk::VarDeclStmt stmt("int64", "x", nullptr);
     
     checker.checkStatement(&stmt);
     
@@ -603,7 +603,7 @@ TEST_CASE(type_checker_var_decl_type_mismatch) {
     
     // int64:x = "hello";  // Type mismatch!
     auto init = std::make_unique<LiteralExpr>(std::string("hello"));
-    aria::VarDeclStmt stmt("int64", "x", std::move(init));
+    npk::VarDeclStmt stmt("int64", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -616,7 +616,7 @@ TEST_CASE(type_checker_const_var_without_initializer) {
     TypeChecker checker(&types, &symbols);
     
     // const int64:x;  // Error: const must have initializer
-    aria::VarDeclStmt stmt("int64", "x", nullptr);
+    npk::VarDeclStmt stmt("int64", "x", nullptr);
     stmt.isConst = true;
     
     checker.checkStatement(&stmt);
@@ -694,7 +694,7 @@ TEST_CASE(type_checker_return_void_function) {
     checker.setCurrentFunctionReturnType(voidType);
     
     // return;
-    aria::ReturnStmt stmt(nullptr);
+    npk::ReturnStmt stmt(nullptr);
     
     checker.checkStatement(&stmt);
     
@@ -712,7 +712,7 @@ TEST_CASE(type_checker_return_void_with_value) {
     
     // return 42;  // Error: void function cannot return value!
     auto value = std::make_unique<LiteralExpr>(int64_t(42));
-    aria::ReturnStmt stmt(std::move(value));
+    npk::ReturnStmt stmt(std::move(value));
     
     checker.checkStatement(&stmt);
     
@@ -729,7 +729,7 @@ TEST_CASE(type_checker_return_non_void_without_value) {
     checker.setCurrentFunctionReturnType(intType);
     
     // return;  // Error: non-void function must return value!
-    aria::ReturnStmt stmt(nullptr);
+    npk::ReturnStmt stmt(nullptr);
     
     checker.checkStatement(&stmt);
     
@@ -747,7 +747,7 @@ TEST_CASE(type_checker_return_correct_type) {
     
     // return 42;
     auto value = std::make_unique<LiteralExpr>(int64_t(42));
-    aria::ReturnStmt stmt(std::move(value));
+    npk::ReturnStmt stmt(std::move(value));
     
     checker.checkStatement(&stmt);
     
@@ -765,7 +765,7 @@ TEST_CASE(type_checker_return_wrong_type) {
     
     // return "hello";  // Type mismatch!
     auto value = std::make_unique<LiteralExpr>(std::string("hello"));
-    aria::ReturnStmt stmt(std::move(value));
+    npk::ReturnStmt stmt(std::move(value));
     
     checker.checkStatement(&stmt);
     
@@ -779,9 +779,9 @@ TEST_CASE(type_checker_if_condition_bool) {
     
     // if (true) { }
     auto cond = std::make_unique<LiteralExpr>(true);
-    auto thenBlock = std::make_unique<aria::BlockStmt>();
+    auto thenBlock = std::make_unique<npk::BlockStmt>();
     
-    aria::IfStmt stmt(std::move(cond), std::move(thenBlock));
+    npk::IfStmt stmt(std::move(cond), std::move(thenBlock));
     
     checker.checkStatement(&stmt);
     
@@ -795,9 +795,9 @@ TEST_CASE(type_checker_if_condition_non_bool) {
     
     // if (42) { }  // Error: condition must be bool!
     auto cond = std::make_unique<LiteralExpr>(int64_t(42));
-    auto thenBlock = std::make_unique<aria::BlockStmt>();
+    auto thenBlock = std::make_unique<npk::BlockStmt>();
     
-    aria::IfStmt stmt(std::move(cond), std::move(thenBlock));
+    npk::IfStmt stmt(std::move(cond), std::move(thenBlock));
     
     checker.checkStatement(&stmt);
     
@@ -811,9 +811,9 @@ TEST_CASE(type_checker_while_condition_bool) {
     
     // while (true) { }
     auto cond = std::make_unique<LiteralExpr>(true);
-    auto body = std::make_unique<aria::BlockStmt>();
+    auto body = std::make_unique<npk::BlockStmt>();
     
-    aria::WhileStmt stmt(std::move(cond), std::move(body));
+    npk::WhileStmt stmt(std::move(cond), std::move(body));
     
     checker.checkStatement(&stmt);
     
@@ -827,9 +827,9 @@ TEST_CASE(type_checker_while_condition_non_bool) {
     
     // while (42) { }  // Error: condition must be bool!
     auto cond = std::make_unique<LiteralExpr>(int64_t(42));
-    auto body = std::make_unique<aria::BlockStmt>();
+    auto body = std::make_unique<npk::BlockStmt>();
     
-    aria::WhileStmt stmt(std::move(cond), std::move(body));
+    npk::WhileStmt stmt(std::move(cond), std::move(body));
     
     checker.checkStatement(&stmt);
     
@@ -846,7 +846,7 @@ TEST_CASE(type_checker_for_condition_bool) {
     
     // Initializer: int64:i = 0
     auto init_val = std::make_unique<LiteralExpr>(int64_t(0));
-    auto init = std::make_unique<aria::VarDeclStmt>("int64", "i", std::move(init_val));
+    auto init = std::make_unique<npk::VarDeclStmt>("int64", "i", std::move(init_val));
     
     // Condition: i < 10
     symbols.defineSymbol("i", SymbolKind::VARIABLE, intType);  // Pre-define for condition checking
@@ -864,9 +864,9 @@ TEST_CASE(type_checker_for_condition_bool) {
     Token eqOp(TokenType::TOKEN_EQUAL, "=", 1, 1);
     auto update = std::make_unique<BinaryExpr>(std::move(i2), eqOp, std::move(addExpr));
     
-    auto body = std::make_unique<aria::BlockStmt>();
+    auto body = std::make_unique<npk::BlockStmt>();
     
-    aria::ForStmt stmt(std::move(init), std::move(cond), std::move(update), std::move(body));
+    npk::ForStmt stmt(std::move(init), std::move(cond), std::move(update), std::move(body));
     
     checker.checkStatement(&stmt);
     
@@ -883,16 +883,16 @@ TEST_CASE(type_checker_block_with_scoping) {
     //   int64:y = 20;
     // }
     auto x_init = std::make_unique<LiteralExpr>(int64_t(10));
-    auto x_decl = std::make_unique<aria::VarDeclStmt>("int64", "x", std::move(x_init));
+    auto x_decl = std::make_unique<npk::VarDeclStmt>("int64", "x", std::move(x_init));
     
     auto y_init = std::make_unique<LiteralExpr>(int64_t(20));
-    auto y_decl = std::make_unique<aria::VarDeclStmt>("int64", "y", std::move(y_init));
+    auto y_decl = std::make_unique<npk::VarDeclStmt>("int64", "y", std::move(y_init));
     
     std::vector<ASTNodePtr> stmts;
     stmts.push_back(std::move(x_decl));
     stmts.push_back(std::move(y_decl));
     
-    aria::BlockStmt block(std::move(stmts));
+    npk::BlockStmt block(std::move(stmts));
     
     checker.checkStatement(&block);
     
@@ -910,7 +910,7 @@ TEST_CASE(type_checker_tbb8_valid_value) {
     
     // tbb8:x = 100;  // Valid: within [-127, +127]
     auto init = std::make_unique<LiteralExpr>(int64_t(100));
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -924,7 +924,7 @@ TEST_CASE(type_checker_tbb8_err_sentinel_warning) {
     
     // tbb8:x = -128;  // Warning: ERR sentinel value
     auto init = std::make_unique<LiteralExpr>(int64_t(-128));
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -938,7 +938,7 @@ TEST_CASE(type_checker_tbb8_out_of_range_positive) {
     
     // tbb8:x = 200;  // Error: out of range (max is +127)
     auto init = std::make_unique<LiteralExpr>(int64_t(200));
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -952,7 +952,7 @@ TEST_CASE(type_checker_tbb8_out_of_range_negative) {
     
     // tbb8:x = -200;  // Error: out of range (min is -127, -128 is ERR)
     auto init = std::make_unique<LiteralExpr>(int64_t(-200));
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -966,7 +966,7 @@ TEST_CASE(type_checker_tbb16_valid_value) {
     
     // tbb16:x = 10000;  // Valid: within [-32767, +32767]
     auto init = std::make_unique<LiteralExpr>(int64_t(10000));
-    aria::VarDeclStmt stmt("tbb16", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb16", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -980,7 +980,7 @@ TEST_CASE(type_checker_tbb16_err_sentinel_warning) {
     
     // tbb16:x = -32768;  // Warning: ERR sentinel value
     auto init = std::make_unique<LiteralExpr>(int64_t(-32768));
-    aria::VarDeclStmt stmt("tbb16", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb16", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -994,7 +994,7 @@ TEST_CASE(type_checker_tbb16_out_of_range) {
     
     // tbb16:x = 40000;  // Error: out of range (max is +32767)
     auto init = std::make_unique<LiteralExpr>(int64_t(40000));
-    aria::VarDeclStmt stmt("tbb16", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb16", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1011,7 +1011,7 @@ TEST_CASE(type_checker_tbb_no_coercion_from_int) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, intType);
     
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1028,7 +1028,7 @@ TEST_CASE(type_checker_tbb_no_coercion_to_int) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, tbbType);
     
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("int64", "x", std::move(init));
+    npk::VarDeclStmt stmt("int64", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1048,7 +1048,7 @@ TEST_CASE(type_checker_tbb_widening_rejected) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, tbb8Type);
 
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("tbb16", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb16", "x", std::move(init));
 
     checker.checkStatement(&stmt);
 
@@ -1081,7 +1081,7 @@ TEST_CASE(type_checker_tbb32_valid_value) {
     
     // tbb32:x = 1000000;  // Valid
     auto init = std::make_unique<LiteralExpr>(int64_t(1000000));
-    aria::VarDeclStmt stmt("tbb32", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb32", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1099,7 +1099,7 @@ TEST_CASE(type_checker_trit_valid_negative) {
     
     // trit:x = -1;  // Valid: trit must be -1, 0, or 1
     auto init = std::make_unique<LiteralExpr>(int64_t(-1));
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1113,7 +1113,7 @@ TEST_CASE(type_checker_trit_valid_zero) {
     
     // trit:x = 0;  // Valid
     auto init = std::make_unique<LiteralExpr>(int64_t(0));
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1127,7 +1127,7 @@ TEST_CASE(type_checker_trit_valid_positive) {
     
     // trit:x = 1;  // Valid
     auto init = std::make_unique<LiteralExpr>(int64_t(1));
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1141,7 +1141,7 @@ TEST_CASE(type_checker_trit_invalid_positive) {
     
     // trit:x = 2;  // Error: trit must be -1, 0, or 1
     auto init = std::make_unique<LiteralExpr>(int64_t(2));
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1155,7 +1155,7 @@ TEST_CASE(type_checker_trit_invalid_negative) {
     
     // trit:x = -2;  // Error: trit must be -1, 0, or 1
     auto init = std::make_unique<LiteralExpr>(int64_t(-2));
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1169,7 +1169,7 @@ TEST_CASE(type_checker_nit_valid_min) {
     
     // nit:x = -4;  // Valid: nit must be -4 to +4
     auto init = std::make_unique<LiteralExpr>(int64_t(-4));
-    aria::VarDeclStmt stmt("nit", "x", std::move(init));
+    npk::VarDeclStmt stmt("nit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1183,7 +1183,7 @@ TEST_CASE(type_checker_nit_valid_zero) {
     
     // nit:x = 0;  // Valid
     auto init = std::make_unique<LiteralExpr>(int64_t(0));
-    aria::VarDeclStmt stmt("nit", "x", std::move(init));
+    npk::VarDeclStmt stmt("nit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1197,7 +1197,7 @@ TEST_CASE(type_checker_nit_valid_max) {
     
     // nit:x = 4;  // Valid
     auto init = std::make_unique<LiteralExpr>(int64_t(4));
-    aria::VarDeclStmt stmt("nit", "x", std::move(init));
+    npk::VarDeclStmt stmt("nit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1211,7 +1211,7 @@ TEST_CASE(type_checker_nit_invalid_positive) {
     
     // nit:x = 5;  // Error: nit must be -4 to +4
     auto init = std::make_unique<LiteralExpr>(int64_t(5));
-    aria::VarDeclStmt stmt("nit", "x", std::move(init));
+    npk::VarDeclStmt stmt("nit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1225,7 +1225,7 @@ TEST_CASE(type_checker_nit_invalid_negative) {
     
     // nit:x = -5;  // Error: nit must be -4 to +4
     auto init = std::make_unique<LiteralExpr>(int64_t(-5));
-    aria::VarDeclStmt stmt("nit", "x", std::move(init));
+    npk::VarDeclStmt stmt("nit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1239,7 +1239,7 @@ TEST_CASE(type_checker_tryte_valid_value) {
     
     // tryte:x = 1000;  // Valid: within [-29524, +29524]
     auto init = std::make_unique<LiteralExpr>(int64_t(1000));
-    aria::VarDeclStmt stmt("tryte", "x", std::move(init));
+    npk::VarDeclStmt stmt("tryte", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1253,7 +1253,7 @@ TEST_CASE(type_checker_tryte_out_of_range_positive) {
     
     // tryte:x = 30000;  // Error: out of range (max is +29524)
     auto init = std::make_unique<LiteralExpr>(int64_t(30000));
-    aria::VarDeclStmt stmt("tryte", "x", std::move(init));
+    npk::VarDeclStmt stmt("tryte", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1267,7 +1267,7 @@ TEST_CASE(type_checker_tryte_out_of_range_negative) {
     
     // tryte:x = -30000;  // Error: out of range (min is -29524)
     auto init = std::make_unique<LiteralExpr>(int64_t(-30000));
-    aria::VarDeclStmt stmt("tryte", "x", std::move(init));
+    npk::VarDeclStmt stmt("tryte", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1281,7 +1281,7 @@ TEST_CASE(type_checker_nyte_valid_value) {
     
     // nyte:x = -5000;  // Valid: within [-29524, +29524]
     auto init = std::make_unique<LiteralExpr>(int64_t(-5000));
-    aria::VarDeclStmt stmt("nyte", "x", std::move(init));
+    npk::VarDeclStmt stmt("nyte", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1295,7 +1295,7 @@ TEST_CASE(type_checker_nyte_out_of_range_positive) {
     
     // nyte:x = 30000;  // Error: out of range (max is +29524)
     auto init = std::make_unique<LiteralExpr>(int64_t(30000));
-    aria::VarDeclStmt stmt("nyte", "x", std::move(init));
+    npk::VarDeclStmt stmt("nyte", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1312,7 +1312,7 @@ TEST_CASE(type_checker_balanced_no_coercion_from_int) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, int64Type);
     
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("trit", "x", std::move(init));
+    npk::VarDeclStmt stmt("trit", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1329,7 +1329,7 @@ TEST_CASE(type_checker_balanced_no_coercion_to_int) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, tritType);
     
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("int64", "x", std::move(init));
+    npk::VarDeclStmt stmt("int64", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     
@@ -1346,7 +1346,7 @@ TEST_CASE(type_checker_balanced_no_coercion_to_tbb) {
     symbols.defineSymbol("y", SymbolKind::VARIABLE, tritType);
     
     auto init = std::make_unique<IdentifierExpr>("y");
-    aria::VarDeclStmt stmt("tbb8", "x", std::move(init));
+    npk::VarDeclStmt stmt("tbb8", "x", std::move(init));
     
     checker.checkStatement(&stmt);
     

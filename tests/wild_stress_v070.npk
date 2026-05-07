@@ -1,0 +1,154 @@
+// Expected: ARIA-014 (2 intentional leaks in test_get_size and test_realloc_then_get_size)
+// Wild Allocator Stress Test (v0.7.0)
+// Tests: per-allocation size headers, alloc/free cycles, realloc, get_size
+//
+// Compile: ariac tests/wild_stress_v070.aria --wild-stats -o /tmp/test_wild_stress
+// Guard:   ariac tests/wild_stress_v070.aria --wild-stats --guard-pages -o /tmp/test_wild_stress
+
+extern func:puts = int32(string:s);
+extern func:npk_alloc = wild ?*(int64:size);
+extern func:npk_free = void(wild ?*:ptr);
+extern func:npk_realloc = wild ?*(wild ?*:ptr, int64:new_size);
+extern func:npk_alloc_get_size = int64(wild ?*:ptr);
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: wild stress test crashed");
+    exit 99;
+};
+
+// ============================================================================
+// Test 1: Rapid alloc/free cycles — no leaks expected
+// ============================================================================
+func:test_rapid_alloc_free = NIL() {
+    wild ?->:a = npk_alloc(64i64);
+    npk_free(a);
+    wild ?->:b = npk_alloc(128i64);
+    npk_free(b);
+    wild ?->:c = npk_alloc(256i64);
+    npk_free(c);
+    wild ?->:d = npk_alloc(512i64);
+    npk_free(d);
+    wild ?->:e = npk_alloc(1024i64);
+    npk_free(e);
+    wild ?->:f = npk_alloc(4096i64);
+    npk_free(f);
+    wild ?->:g = npk_alloc(8192i64);
+    npk_free(g);
+    wild ?->:h = npk_alloc(16384i64);
+    npk_free(h);
+    drop puts("  [PASS] rapid alloc/free cycles");
+};
+
+// ============================================================================
+// Test 2: Multiple concurrent allocations — all freed
+// ============================================================================
+func:test_concurrent_allocs = NIL() {
+    wild ?->:a = npk_alloc(100i64);
+    wild ?->:b = npk_alloc(200i64);
+    wild ?->:c = npk_alloc(300i64);
+    wild ?->:d = npk_alloc(400i64);
+    wild ?->:e = npk_alloc(500i64);
+    npk_free(e);
+    npk_free(d);
+    npk_free(c);
+    npk_free(b);
+    npk_free(a);
+    drop puts("  [PASS] concurrent allocs with reverse free");
+};
+
+// ============================================================================
+// Test 3: Interleaved alloc/free
+// ============================================================================
+func:test_interleaved = NIL() {
+    wild ?->:a = npk_alloc(64i64);
+    wild ?->:b = npk_alloc(128i64);
+    npk_free(a);
+    wild ?->:c = npk_alloc(256i64);
+    npk_free(b);
+    wild ?->:d = npk_alloc(512i64);
+    npk_free(c);
+    npk_free(d);
+    drop puts("  [PASS] interleaved alloc/free");
+};
+
+// ============================================================================
+// Test 4: Realloc — grow
+// ============================================================================
+func:test_realloc_grow = NIL() {
+    wild ?->:buf = npk_alloc(32i64);
+    wild ?->:buf2 = npk_realloc(buf, 64i64);
+    wild ?->:buf3 = npk_realloc(buf2, 128i64);
+    wild ?->:buf4 = npk_realloc(buf3, 256i64);
+    wild ?->:buf5 = npk_realloc(buf4, 512i64);
+    npk_free(buf5);
+    drop puts("  [PASS] realloc grow chain");
+};
+
+// ============================================================================
+// Test 5: Realloc — shrink
+// ============================================================================
+func:test_realloc_shrink = NIL() {
+    wild ?->:buf = npk_alloc(4096i64);
+    wild ?->:buf2 = npk_realloc(buf, 2048i64);
+    wild ?->:buf3 = npk_realloc(buf2, 1024i64);
+    wild ?->:buf4 = npk_realloc(buf3, 512i64);
+    npk_free(buf4);
+    drop puts("  [PASS] realloc shrink chain");
+};
+
+// ============================================================================
+// Test 6: Large allocation
+// ============================================================================
+func:test_large_alloc = NIL() {
+    wild ?->:big = npk_alloc(1048576i64);
+    npk_free(big);
+    drop puts("  [PASS] large allocation (1MB)");
+};
+
+// ============================================================================
+// Test 7: Small allocation
+// ============================================================================
+func:test_small_alloc = NIL() {
+    wild ?->:tiny = npk_alloc(1i64);
+    npk_free(tiny);
+    drop puts("  [PASS] small allocation (1 byte)");
+};
+
+// ============================================================================
+// Test 8: Size tracking via npk_alloc_get_size (consumes pointer — leak expected)
+// ============================================================================
+func:test_get_size = NIL() {
+    wild ?->:buf = npk_alloc(256i64);
+    int64:sz = npk_alloc_get_size(buf);
+    drop puts("  [PASS] npk_alloc_get_size returned size (1 leak expected)");
+};
+
+// ============================================================================
+// Test 9: Alloc, realloc, get_size (consumes — leak expected)
+// ============================================================================
+func:test_realloc_then_get_size = NIL() {
+    wild ?->:buf = npk_alloc(64i64);
+    wild ?->:buf2 = npk_realloc(buf, 512i64);
+    int64:sz = npk_alloc_get_size(buf2);
+    drop puts("  [PASS] realloc + get_size (1 leak expected)");
+};
+
+// ============================================================================
+// Main: run all stress tests
+// ============================================================================
+func:main = int32() {
+    drop puts("Wild Allocator Stress Tests (v0.7.0)");
+    drop puts("=====================================");
+    drop test_rapid_alloc_free();
+    drop test_concurrent_allocs();
+    drop test_interleaved();
+    drop test_realloc_grow();
+    drop test_realloc_shrink();
+    drop test_large_alloc();
+    drop test_small_alloc();
+    drop test_get_size();
+    drop test_realloc_then_get_size();
+    drop puts("=====================================");
+    drop puts("All wild stress tests passed!");
+    exit 0;
+};

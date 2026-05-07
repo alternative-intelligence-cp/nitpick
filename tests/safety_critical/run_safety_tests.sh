@@ -5,12 +5,12 @@
 # Runs all safety-critical tests, compiles + executes + validates.
 # Returns non-zero if ANY test fails.
 #
-# Usage: bash run_safety_tests.sh [path-to-ariac]
+# Usage: bash run_safety_tests.sh [path-to-npkc]
 # ============================================================================
 
 set -euo pipefail
 
-ARIAC="${1:-../../build/ariac}"
+NPKC="${1:-../../build/npkc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -23,19 +23,19 @@ FAILED_TESTS=""
 echo "============================================================"
 echo " NIKOLA SAFETY-CRITICAL VALIDATION SUITE"
 echo " Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-echo " Compiler: $(realpath "$ARIAC" 2>/dev/null || echo "$ARIAC")"
+echo " Compiler: $(realpath "$NPKC" 2>/dev/null || echo "$NPKC")"
 echo "============================================================"
 echo ""
 
-for test_file in *.aria; do
+for test_file in *.npk; do
     TOTAL=$((TOTAL + 1))
-    test_name="${test_file%.aria}"
+    test_name="${test_file%.npk}"
     binary="./${test_name}"
     
     echo -n "  [$TOTAL] $test_name ... "
     
     # Compile
-    if ! "$ARIAC" "$test_file" -o "$binary" 2>/tmp/ariac_stderr_$$.txt; then
+    if ! "$NPKC" "$test_file" -o "$binary" 2>/tmp/ariac_stderr_$$.txt; then
         echo "COMPILE FAIL"
         cat /tmp/ariac_stderr_$$.txt | head -5
         COMPILE_FAIL=$((COMPILE_FAIL + 1))

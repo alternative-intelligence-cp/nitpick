@@ -1,0 +1,23 @@
+// Simple generics test with correct type syntax
+// This tests that type checker activates generic specialization
+
+// Generic identity function: takes T, returns T
+func<T>:identity = *T(*T:value) {
+    pass value;
+};
+
+// Main function that calls the generic
+func:main = int32() {
+    // Call identity with int32 - should trigger specialization
+    int32:x = identity(42) ? -1i32;
+
+    // Call identity with int64 - should trigger second specialization
+    int64:y = identity(100i64) ? -1i64;
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

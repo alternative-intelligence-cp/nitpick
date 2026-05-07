@@ -1,0 +1,21 @@
+// Test Type with method
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+Type:Counter = {
+
+    func:create = Counter(int32:initial) {
+        Counter:c = Counter{value: initial};
+        pass c;
+    };
+    
+    struct:interface = {
+        int32:value;
+    };
+};
+
+func:main = int32() {
+    // Test instance<T>() → Counter_create(42i32)
+    Counter:c = raw instance<Counter>(42i32);
+    exit 0;
+};

@@ -1,0 +1,21 @@
+// Test: Pick statement with unknown pattern (simple)
+// Phase 5.4: Runtime pattern matching on unknown
+
+func:main = int32() {
+    // Test 1: unknown value matches unknown pattern
+    int32:x = unknown;
+    
+    pick(x) {
+        (unknown) {
+            exit 0i32;  // Should match and return 42
+        },
+        (*) {
+            exit 1i32;   // Should not reach
+        }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,122 @@
+// StringBuilder - Efficient string building with heap-allocated buffer
+// Uses aria-libc mem/string shims for actual buffer management
+// Supports UFCS method chaining: sb.append("Hello").append(" World").build()
+
+// ═══════════════════════════════════════════════════════════════════════
+// aria-libc shims
+// ═══════════════════════════════════════════════════════════════════════
+extern "npk_libc_mem" {
+    func:npk_libc_mem_malloc     = int64(int64:size);
+    func:npk_libc_mem_realloc    = int64(int64:ptr, int64:size);
+    func:npk_libc_mem_free       = void(int64:ptr);
+    func:npk_libc_mem_write_byte = void(int64:ptr, int64:offset, int32:val);
+    func:npk_libc_mem_copy       = void(int64:dst, int64:src, int64:n);
+};
+
+extern "npk_libc_string" {
+    func:npk_libc_string_byte_at  = int32(string:s, int64:idx);
+    func:npk_libc_string_from_buf = string(int64:buf, int64:offset, int64:len);
+    func:npk_libc_string_copy_to_buf = void(int64:dst, int64:dst_off, string:src, int64:src_off, int64:len);
+};
+
+struct:StringBuilder = {
+    int64:buf;             // int64 handle to heap buffer
+    int64:capacity;        // Allocated buffer capacity
+    int64:length;          // Current string length in buffer
+};
+
+// Create a new StringBuilder with initial capacity
+func:StringBuilder_new = StringBuilder(int64:initial_capacity) {
+    int64:cap = initial_capacity;
+    failsafe {
+        cap = 64i64;
+    };
+    int64:buf = npk_libc_mem_malloc(cap);
+    StringBuilder:sb = {
+        buf,
+        cap,
+        0i64
+    };
+    pass sb;
+};
+
+// Grow the buffer if needed to fit additional bytes
+func:StringBuilder_ensure_capacity = StringBuilder(StringBuilder:sb, int64:additional) {
+    int64:needed = sb.length + additional;
+    failsafe {
+        pass sb;
+    };
+    int64:cap = sb.capacity;
+    int64:buf = sb.buf;
+    when (needed > cap) {
+        // Double capacity until it fits
+        when (cap < needed) {
+            cap = cap * 2i64;
+        };
+        buf = npk_libc_mem_realloc(buf, cap);
+    };
+    StringBuilder:result = { buf, cap, sb.length };
+    pass result;
+};
+
+// Append a string to the builder
+func:StringBuilder_append = StringBuilder(StringBuilder:sb, string:str) {
+    int64:str_len = string_length(str);
+    failsafe {
+        pass sb;
+    };
+    StringBuilder:grown = StringBuilder_ensure_capacity(sb, str_len) ? sb;
+    // Copy string bytes into buffer at current length offset
+    drop npk_libc_string_copy_to_buf(grown.buf, grown.length, str, 0i64, str_len);
+    int64:new_len = grown.length + str_len;
+    StringBuilder:result = { grown.buf, grown.capacity, new_len };
+    pass result;
+};
+
+// Append a single byte to the builder
+func:StringBuilder_append_byte = StringBuilder(StringBuilder:sb, int32:byte) {
+    failsafe {
+        pass sb;
+    };
+    StringBuilder:grown = StringBuilder_ensure_capacity(sb, 1i64) ? sb;
+    drop npk_libc_mem_write_byte(grown.buf, grown.length, byte);
+    int64:new_len = grown.length + 1i64;
+    StringBuilder:result = { grown.buf, grown.capacity, new_len };
+    pass result;
+};
+
+// Build the final string from accumulated buffer contents
+func:StringBuilder_build = string(StringBuilder:sb) {
+    failsafe {
+        pass "";
+    };
+    string:result = npk_libc_string_from_buf(sb.buf, 0i64, sb.length);
+    pass result;
+};
+
+// Free the StringBuilder's buffer
+func:StringBuilder_free = NIL(StringBuilder:sb) {
+    drop npk_libc_mem_free(sb.buf);
+    pass NIL;
+};
+
+// Test StringBuilder with UFCS method chaining
+func:main = int32() {
+    // Create initial StringBuilder (use default on error)
+    StringBuilder:empty = { 0i64, 64i64, 0i64 };
+    StringBuilder:sb = StringBuilder_new(1024i64) ? empty;
+
+    // Demonstrate UFCS method chaining with unwrap operator
+    sb = sb.append("Hello") ? sb;
+    sb = sb.append(" ") ? sb;
+    sb = sb.append("World") ? sb;
+
+    // Build final result
+    string:result = sb.build() ? "default";
+    drop print(result);
+
+    // Clean up
+    drop sb.free();
+
+    pass 0i32;
+};

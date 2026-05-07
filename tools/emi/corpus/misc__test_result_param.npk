@@ -1,0 +1,18 @@
+// P1-4 Contract Type Checking - Success Test
+// Test that 'result' as parameter name works correctly
+
+func:result_as_param = int32(int32:result)
+  requires result > 0
+{
+    pass result * 2;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:r = raw result_as_param(5);
+    if (r == 10) {
+        exit 0;
+    }
+    exit 1;
+};

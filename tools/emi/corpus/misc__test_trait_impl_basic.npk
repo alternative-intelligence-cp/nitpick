@@ -1,0 +1,22 @@
+// Basic trait + impl test: define a trait, implement it, call mangled function
+
+trait:Describable = {
+    func:describe = int32(int32:self);
+};
+
+impl:Describable:for:int32 = {
+    func:describe = int32(int32:self) {
+        pass self + 100;
+    };
+};
+
+pub func:main = int32() {
+    int32:x = 5;
+    int32:result = raw int32_describe(x);
+    if (result == 105) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

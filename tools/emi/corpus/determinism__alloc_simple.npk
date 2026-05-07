@@ -1,0 +1,35 @@
+// Determinism Test: Simple Allocation (no deref)
+// Tests that allocation/free cycle is deterministic
+
+func:main = int32() {
+    // Allocate memory
+    int64:size1 = 1024;
+    wild int8->:ptr1 = alloc(size1);
+
+    int64:size2 = 2048;
+    wild int8->:ptr2 = alloc(size2);
+
+    int64:size3 = 512;
+    wild int8->:ptr3 = alloc(size3);
+
+    // Print sizes (deterministic)
+    print("1024");
+    print("2048");
+    print("512");
+
+    // Free in order
+    free(ptr1);
+    free(ptr2);
+    free(ptr3);
+
+    // Final output
+    int64:done = 42;
+    print("done");
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

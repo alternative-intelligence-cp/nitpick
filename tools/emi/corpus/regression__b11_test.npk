@@ -1,0 +1,13 @@
+func:add_one = int32(int32:x) { pass x + 1i32; };
+func:apply = int32((int32)(int32):f, int32:val) { int32:r = f(val) ? -1i32; pass r; };
+func:main = int32() {
+    // Workaround: assign to variable first
+    (int32)(int32):fp = @add_one;
+    int32:r1 = apply(fp, 10i32) ? -1i32;
+    if (r1 != 11i32) { exit 1i32; }
+    // Bug trigger: pass @add_one directly as argument
+    int32:r2 = apply(@add_one, 20i32) ? -1i32;
+    if (r2 != 21i32) { exit 2i32; }
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 99; };

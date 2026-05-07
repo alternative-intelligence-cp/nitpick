@@ -1,0 +1,15 @@
+// CWE-196: Unsigned to Signed Conversion Error — GOOD demonstration
+//
+// Use the appropriate type for the value range; no implicit narrowing.
+// Expected: exits 0 (consistent types, no truncation)
+
+func:main = int32() {
+    int32:value = 42;        // use correct type for the range
+    int32:other = value;     // same type — no conversion issue
+    if (other != 42) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

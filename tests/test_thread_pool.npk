@@ -1,0 +1,49 @@
+use "thread.aria".*;
+use "thread_pool.aria".*;
+use "atomic.aria".*;
+
+extern func:npk_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    println("=== Thread Pool Tests ===");
+    
+    // Test 1: Create pool and get worker count
+    int64:pool = raw ThreadPool.create(4i32);
+    int32:wc = raw ThreadPool.worker_count(pool);
+    if (wc == 4i32) { println(" [PASS] create pool with 4 workers"); }
+    if (wc != 4i32) { println(" [FAIL] create pool - wrong worker count"); }
+    
+    // Test 2: Submit 100 tasks with atomic counter
+    AtomicInt32:counter = raw AtomicInt32.create(0i32);
+    
+    (int64)(int64):inc_task = int64(int64:atom_handle) {
+        npk_shim_atomic_int32_fetch_add(atom_handle, 1i32, 0i32);
+        pass 0i64;
+    };
+    
+    for(int32:i = 0i32; i < 100i32; i += 1i32) {
+        raw ThreadPool.submit(pool, inc_task, counter.handle);
+    }
+    
+    raw ThreadPool.wait_idle(pool);
+    
+    int32:final_count = raw AtomicInt32.load(counter, 0i32);
+    if (final_count == 100i32) { println(" [PASS] 100 tasks completed atomically"); }
+    if (final_count != 100i32) { println(" [FAIL] expected 100, got wrong count"); }
+    
+    // Test 3: Verify pending is 0 after wait
+    int64:pending = raw ThreadPool.pending_tasks(pool);
+    if (pending == 0) { println(" [PASS] no pending tasks after wait"); }
+    if (pending != 0) { println(" [FAIL] pending tasks remain"); }
+    
+    // Test 4: Shutdown
+    raw ThreadPool.shutdown(pool);
+    println(" [PASS] pool shutdown");
+    
+    raw AtomicInt32.destroy(counter);
+    
+    println("=== Thread Pool Tests Done ===");
+    exit 0;
+};

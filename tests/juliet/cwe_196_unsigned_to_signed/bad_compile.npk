@@ -1,0 +1,18 @@
+// CWE-196: Unsigned to Signed Conversion Error — BAD (compile-time rejection)
+//
+// In C: assigning a uint64 to int32 silently truncates and may flip sign,
+//       producing a completely wrong value with no warning by default.
+// In Aria: implicit narrowing/cross-sign conversion is a COMPILE ERROR.
+//          "Cannot initialize variable of type 'int32' with value of type 'uint64'"
+//
+// This file must NOT compile — that is the passing condition.
+
+func:main = int32() {
+    uint64:large = 9999999999;
+    int32:small = large;     // ERROR: Cannot initialize int32 with uint64 (truncation + sign change)
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

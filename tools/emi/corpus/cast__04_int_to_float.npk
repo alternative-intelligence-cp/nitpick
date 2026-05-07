@@ -1,0 +1,37 @@
+// Test 4: Integer to Float Conversions
+
+func:test_signed_to_float = int32() {
+    // Signed integers to floats
+    int8:small = 42i8;
+    flt32:f32_val = @cast<flt32>(small);
+    
+    int32:medium = 1000i32;
+    flt64:f64_val = @cast<flt64>(medium);
+    
+    int64:large = 1000000i64;
+    flt64:big_float = @cast<flt64>(large);
+    
+    pass 0i32;
+};
+
+func:test_unsigned_to_float = int32() {
+    // Unsigned integers to floats
+    uint8:u_small = 100u8;
+    flt32:f1 = @cast<flt32>(u_small);
+    
+    uint32:u_medium = 50000u32;
+    flt64:f2 = @cast<flt64>(u_medium);
+    
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_signed_to_float();
+    int32:r2 = raw test_unsigned_to_float();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

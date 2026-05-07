@@ -6,7 +6,7 @@
 
 namespace fs = std::filesystem;
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 ModuleResolver::ModuleResolver(const std::string& rootPath)
@@ -113,7 +113,7 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
             }
         }
         
-        addError("File path '" + filePath + "' does not exist or is not a .aria file");
+        addError("File path '" + filePath + "' does not exist or is not a .npk file");
         return "";
     }
     
@@ -167,7 +167,8 @@ bool ModuleResolver::isValidAriaFile(const std::string& path) {
     
     try {
         fs::path p(path);
-        return fs::exists(p) && fs::is_regular_file(p) && p.extension() == ".aria";
+        return fs::exists(p) && fs::is_regular_file(p) &&
+               p.extension() == ".npk";
     } catch (...) {
         return false;
     }
@@ -252,21 +253,21 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
                                           const std::vector<std::string>& components) {
     if (components.empty()) return "";
     
-    // Try pattern 1: <base>/path/to/module.aria
-    // Example: std.io -> /usr/lib/aria/std/io.aria
-    std::string filePath = buildPath(baseDir, components, ".aria");
-    if (isValidAriaFile(filePath)) {
-        return filePath;
+    // Try pattern 1: <base>/path/to/module.npk
+    // Example: std.io -> /usr/lib/nitpick/std/io.npk
+    std::string filePathNpk = buildPath(baseDir, components, ".npk");
+    if (isValidAriaFile(filePathNpk)) {
+        return filePathNpk;
     }
-    
-    // Try pattern 2: <base>/path/to/module/mod.aria
-    // Example: std.io -> /usr/lib/aria/std/io/mod.aria
+
+    // Try pattern 2: <base>/path/to/module/mod.npk
+    // Example: std.io -> /usr/lib/nitpick/std/io/mod.npk
     // research_028 Section 3.2 step 3
     std::vector<std::string> modComponents = components;
     modComponents.push_back("mod");
-    std::string modPath = buildPath(baseDir, modComponents, ".aria");
-    if (isValidAriaFile(modPath)) {
-        return modPath;
+    std::string modPathNpk = buildPath(baseDir, modComponents, ".npk");
+    if (isValidAriaFile(modPathNpk)) {
+        return modPathNpk;
     }
     
     return "";
@@ -338,4 +339,4 @@ std::vector<std::string> ModuleResolver::readAriaPath() {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

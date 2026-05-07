@@ -1,7 +1,7 @@
 #include "frontend/ast/type.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 
 std::string SimpleType::toString() const {
     return typeName;
@@ -95,4 +95,4 @@ std::string FunctionType::toString() const {
     return oss.str();
 }
 
-} // namespace aria
+} // namespace npk

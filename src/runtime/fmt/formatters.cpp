@@ -159,7 +159,7 @@ AriaString* format_large_int(std::vector<uint64_t> limbs, bool is_signed) {
 
 extern "C" {
 
-AriaString* aria_format_tbb8(int8_t val) {
+AriaString* npk_format_tbb8(int8_t val) {
     // 0x80 (-128) is the ERR sentinel
     if (val == static_cast<int8_t>(0x80)) {
         return alloc_aria_string("ERR");
@@ -169,7 +169,7 @@ AriaString* aria_format_tbb8(int8_t val) {
     return alloc_aria_string(buf);
 }
 
-AriaString* aria_format_tbb16(int16_t val) {
+AriaString* npk_format_tbb16(int16_t val) {
     // 0x8000 (-32768) is the ERR sentinel
     if (val == static_cast<int16_t>(0x8000)) {
         return alloc_aria_string("ERR");
@@ -179,7 +179,7 @@ AriaString* aria_format_tbb16(int16_t val) {
     return alloc_aria_string(buf);
 }
 
-AriaString* aria_format_tbb32(int32_t val) {
+AriaString* npk_format_tbb32(int32_t val) {
     // 0x80000000 (INT32_MIN) is the ERR sentinel
     if (val == static_cast<int32_t>(0x80000000)) {
         return alloc_aria_string("ERR");
@@ -189,7 +189,7 @@ AriaString* aria_format_tbb32(int32_t val) {
     return alloc_aria_string(buf);
 }
 
-AriaString* aria_format_tbb64(int64_t val) {
+AriaString* npk_format_tbb64(int64_t val) {
     // 0x8000000000000000 (INT64_MIN) is the ERR sentinel
     if (val == static_cast<int64_t>(0x8000000000000000ULL)) {
         return alloc_aria_string("ERR");
@@ -205,12 +205,12 @@ AriaString* aria_format_tbb64(int64_t val) {
 
 /**
  * Convert int64 to string in a deterministic, locale-independent way
- * Signature: int64_t aria_int64_to_str(int64_t value, char* buffer)
+ * Signature: int64_t npk_int64_to_str(int64_t value, char* buffer)
  * @param value The int64 value to convert
  * @param buffer Pre-allocated buffer (must be at least 24 bytes for "-9223372036854775808\0")
  * @return Length of the string (excluding null terminator)
  */
-int64_t aria_int64_to_str(int64_t value, char* buffer) {
+int64_t npk_int64_to_str(int64_t value, char* buffer) {
     if (!buffer) return 0;
     
     char* p = buffer;
@@ -259,12 +259,12 @@ int64_t aria_int64_to_str(int64_t value, char* buffer) {
 
 /**
  * Convert flt64 to string in a deterministic, locale-independent way
- * Signature: int64_t aria_flt64_to_str(double value, char* buffer)
+ * Signature: int64_t npk_flt64_to_str(double value, char* buffer)
  * @param value The double value to convert
  * @param buffer Pre-allocated buffer (must be at least 64 bytes)
  * @return Length of the string (excluding null terminator)
  */
-int64_t aria_flt64_to_str(double value, char* buffer) {
+int64_t npk_flt64_to_str(double value, char* buffer) {
     if (!buffer) return 0;
     
     // Use snprintf with fixed precision for deterministic output
@@ -284,31 +284,31 @@ int64_t aria_flt64_to_str(double value, char* buffer) {
 // LBIM Large Integer Formatters
 // ============================================================================
 
-AriaString* aria_format_int128(const aria_int128_t* val) {
+AriaString* npk_format_int128(const npk_int128_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {val->limbs[0], val->limbs[1]};
     return format_large_int(limbs, true);
 }
 
-AriaString* aria_format_uint128(const aria_int128_t* val) {
+AriaString* npk_format_uint128(const npk_int128_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {val->limbs[0], val->limbs[1]};
     return format_large_int(limbs, false);
 }
 
-AriaString* aria_format_int256(const aria_int256_t* val) {
+AriaString* npk_format_int256(const npk_int256_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {val->limbs[0], val->limbs[1], val->limbs[2], val->limbs[3]};
     return format_large_int(limbs, true);
 }
 
-AriaString* aria_format_uint256(const aria_int256_t* val) {
+AriaString* npk_format_uint256(const npk_int256_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {val->limbs[0], val->limbs[1], val->limbs[2], val->limbs[3]};
     return format_large_int(limbs, false);
 }
 
-AriaString* aria_format_int512(const aria_int512_t* val) {
+AriaString* npk_format_int512(const npk_int512_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {
         val->limbs[0], val->limbs[1], val->limbs[2], val->limbs[3],
@@ -317,7 +317,7 @@ AriaString* aria_format_int512(const aria_int512_t* val) {
     return format_large_int(limbs, true);
 }
 
-AriaString* aria_format_uint512(const aria_int512_t* val) {
+AriaString* npk_format_uint512(const npk_int512_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {
         val->limbs[0], val->limbs[1], val->limbs[2], val->limbs[3],
@@ -326,7 +326,7 @@ AriaString* aria_format_uint512(const aria_int512_t* val) {
     return format_large_int(limbs, false);
 }
 
-AriaString* aria_format_int1024(const aria_int1024_t* val) {
+AriaString* npk_format_int1024(const npk_int1024_t* val) {
     if (!val) return alloc_aria_string("null");
     
     // Check for ERR sentinel: high limb = 0x8000000000000000, all others = 0
@@ -350,7 +350,7 @@ AriaString* aria_format_int1024(const aria_int1024_t* val) {
     return format_large_int(limbs, true);
 }
 
-AriaString* aria_format_uint1024(const aria_int1024_t* val) {
+AriaString* npk_format_uint1024(const npk_int1024_t* val) {
     if (!val) return alloc_aria_string("null");
     std::vector<uint64_t> limbs = {
         val->limbs[0], val->limbs[1], val->limbs[2], val->limbs[3],
@@ -361,7 +361,7 @@ AriaString* aria_format_uint1024(const aria_int1024_t* val) {
     return format_large_int(limbs, false);
 }
 
-AriaString* aria_format_fix256(const aria_fix256_t* val) {
+AriaString* npk_format_fix256(const npk_fix256_t* val) {
     if (!val) return alloc_aria_string("null");
     
     // Check for ERR sentinel: limbs[3] = 0x8000000000000000, all others = 0
@@ -378,7 +378,7 @@ AriaString* aria_format_fix256(const aria_fix256_t* val) {
     bool is_negative = (val->limbs[3] & 0x8000000000000000ULL) != 0;
     
     // Work with absolute value for formatting
-    aria_fix256_t abs_val = *val;
+    npk_fix256_t abs_val = *val;
     if (is_negative) {
         // Two's complement negation: invert and add 1
         for (int i = 0; i < 4; ++i) {
@@ -442,7 +442,7 @@ AriaString* aria_format_fix256(const aria_fix256_t* val) {
 // Exotic Type Formatters (Balanced Ternary/Nonary)
 // ============================================================================
 
-AriaString* aria_format_trit(int8_t val) {
+AriaString* npk_format_trit(int8_t val) {
     // Check for ERR sentinel (trit uses tbb8 representation)
     if (val == -128) return alloc_aria_string("ERR");
     
@@ -453,7 +453,7 @@ AriaString* aria_format_trit(int8_t val) {
     return alloc_aria_string("?");
 }
 
-AriaString* aria_format_tryte(uint16_t val) {
+AriaString* npk_format_tryte(uint16_t val) {
     // Check for ERR sentinel (0xFFFF)
     if (val == 0xFFFF) return alloc_aria_string("ERR");
     
@@ -496,7 +496,7 @@ AriaString* aria_format_tryte(uint16_t val) {
     return alloc_aria_string(result);
 }
 
-AriaString* aria_format_nit(int8_t val) {
+AriaString* npk_format_nit(int8_t val) {
     // Balanced nonary digit: -4 to 4
     // Positive: 0, 1, 2, 3, 4
     // Negative: A (-1), B (-2), C (-3), D (-4)
@@ -514,7 +514,7 @@ AriaString* aria_format_nit(int8_t val) {
     }
 }
 
-AriaString* aria_format_nyte(uint16_t val) {
+AriaString* npk_format_nyte(uint16_t val) {
     // Check for ERR sentinel (0xFFFF)
     if (val == 0xFFFF) return alloc_aria_string("ERR");
     
@@ -568,13 +568,13 @@ AriaString* aria_format_nyte(uint16_t val) {
 // Standard Type Formatters
 // ============================================================================
 
-AriaString* aria_format_int64(int64_t val) {
+AriaString* npk_format_int64(int64_t val) {
     char buf[32];
     snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(val));
     return alloc_aria_string(buf);
 }
 
-AriaString* aria_format_float64(double val) {
+AriaString* npk_format_float64(double val) {
     char buf[64];
     snprintf(buf, sizeof(buf), "%g", val);
     return alloc_aria_string(buf);

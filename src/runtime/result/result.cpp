@@ -15,7 +15,7 @@
 // Result Construction Functions
 // ============================================================================
 
-AriaResultPtr aria_result_ok_ptr(void* value) {
+AriaResultPtr npk_result_ok_ptr(void* value) {
     AriaResultPtr result;
     result.value = value;
     result.error = NULL;
@@ -23,7 +23,7 @@ AriaResultPtr aria_result_ok_ptr(void* value) {
     return result;
 }
 
-AriaResultPtr aria_result_err_ptr(AriaError* error) {
+AriaResultPtr npk_result_err_ptr(AriaError* error) {
     AriaResultPtr result;
     result.value = NULL;
     result.error = error;
@@ -31,7 +31,7 @@ AriaResultPtr aria_result_err_ptr(AriaError* error) {
     return result;
 }
 
-AriaResultI64 aria_result_ok_i64(int64_t value) {
+AriaResultI64 npk_result_ok_i64(int64_t value) {
     AriaResultI64 result;
     result.value = value;
     result.error = NULL;
@@ -39,7 +39,7 @@ AriaResultI64 aria_result_ok_i64(int64_t value) {
     return result;
 }
 
-AriaResultI64 aria_result_err_i64(AriaError* error) {
+AriaResultI64 npk_result_err_i64(AriaError* error) {
     AriaResultI64 result;
     result.value = 0;
     result.error = error;
@@ -47,7 +47,7 @@ AriaResultI64 aria_result_err_i64(AriaError* error) {
     return result;
 }
 
-AriaResultF64 aria_result_ok_f64(double value) {
+AriaResultF64 npk_result_ok_f64(double value) {
     AriaResultF64 result;
     result.value = value;
     result.error = NULL;
@@ -55,7 +55,7 @@ AriaResultF64 aria_result_ok_f64(double value) {
     return result;
 }
 
-AriaResultF64 aria_result_err_f64(AriaError* error) {
+AriaResultF64 npk_result_err_f64(AriaError* error) {
     AriaResultF64 result;
     result.value = 0.0;
     result.error = error;
@@ -63,7 +63,7 @@ AriaResultF64 aria_result_err_f64(AriaError* error) {
     return result;
 }
 
-AriaResultBool aria_result_ok_bool(bool value) {
+AriaResultBool npk_result_ok_bool(bool value) {
     AriaResultBool result;
     result.value = value;
     result.error = NULL;
@@ -71,7 +71,7 @@ AriaResultBool aria_result_ok_bool(bool value) {
     return result;
 }
 
-AriaResultBool aria_result_err_bool(AriaError* error) {
+AriaResultBool npk_result_err_bool(AriaError* error) {
     AriaResultBool result;
     result.value = false;
     result.error = error;
@@ -79,14 +79,14 @@ AriaResultBool aria_result_err_bool(AriaError* error) {
     return result;
 }
 
-AriaResultVoid aria_result_ok_void(void) {
+AriaResultVoid npk_result_ok_void(void) {
     AriaResultVoid result;
     result.error = NULL;
     result.is_error = false;
     return result;
 }
 
-AriaResultVoid aria_result_err_void(AriaError* error) {
+AriaResultVoid npk_result_err_void(AriaError* error) {
     AriaResultVoid result;
     result.error = error;
     result.is_error = true;
@@ -97,9 +97,9 @@ AriaResultVoid aria_result_err_void(AriaError* error) {
 // Error Construction Functions
 // ============================================================================
 
-AriaError* aria_error_new(int32_t code, const char* message, const char* file, int32_t line) {
+AriaError* npk_error_new(int32_t code, const char* message, const char* file, int32_t line) {
     // Allocate error on GC heap (type_id 0 for generic)
-    AriaError* error = (AriaError*)aria_gc_alloc(sizeof(AriaError), 0);
+    AriaError* error = (AriaError*)npk_gc_alloc(sizeof(AriaError), 0);
     if (!error) {
         return NULL;  // OOM - caller must handle
     }
@@ -110,7 +110,7 @@ AriaError* aria_error_new(int32_t code, const char* message, const char* file, i
     // Copy message to GC heap
     if (message) {
         size_t len = strlen(message);
-        char* msg_copy = (char*)aria_gc_alloc(len + 1, 0);
+        char* msg_copy = (char*)npk_gc_alloc(len + 1, 0);
         if (msg_copy) {
             memcpy(msg_copy, message, len);
             msg_copy[len] = '\0';
@@ -125,7 +125,7 @@ AriaError* aria_error_new(int32_t code, const char* message, const char* file, i
     // Copy file path to GC heap
     if (file) {
         size_t len = strlen(file);
-        char* file_copy = (char*)aria_gc_alloc(len + 1, 0);
+        char* file_copy = (char*)npk_gc_alloc(len + 1, 0);
         if (file_copy) {
             memcpy(file_copy, file, len);
             file_copy[len] = '\0';
@@ -140,71 +140,71 @@ AriaError* aria_error_new(int32_t code, const char* message, const char* file, i
     return error;
 }
 
-AriaError* aria_error_msg(const char* message) {
-    return aria_error_new(ARIA_ERR_UNKNOWN, message, NULL, 0);
+AriaError* npk_error_msg(const char* message) {
+    return npk_error_new(ARIA_ERR_UNKNOWN, message, NULL, 0);
 }
 
 // ============================================================================
 // Result Query Functions
 // ============================================================================
 
-bool aria_result_is_ok_ptr(AriaResultPtr result) {
+bool npk_result_is_ok_ptr(AriaResultPtr result) {
     return !result.is_error;
 }
 
-bool aria_result_is_ok_i64(AriaResultI64 result) {
+bool npk_result_is_ok_i64(AriaResultI64 result) {
     return !result.is_error;
 }
 
-bool aria_result_is_ok_f64(AriaResultF64 result) {
+bool npk_result_is_ok_f64(AriaResultF64 result) {
     return !result.is_error;
 }
 
-bool aria_result_is_ok_bool(AriaResultBool result) {
+bool npk_result_is_ok_bool(AriaResultBool result) {
     return !result.is_error;
 }
 
-bool aria_result_is_ok_void(AriaResultVoid result) {
+bool npk_result_is_ok_void(AriaResultVoid result) {
     return !result.is_error;
 }
 
-bool aria_result_is_err_ptr(AriaResultPtr result) {
+bool npk_result_is_err_ptr(AriaResultPtr result) {
     return result.is_error;
 }
 
-bool aria_result_is_err_i64(AriaResultI64 result) {
+bool npk_result_is_err_i64(AriaResultI64 result) {
     return result.is_error;
 }
 
-bool aria_result_is_err_f64(AriaResultF64 result) {
+bool npk_result_is_err_f64(AriaResultF64 result) {
     return result.is_error;
 }
 
-bool aria_result_is_err_bool(AriaResultBool result) {
+bool npk_result_is_err_bool(AriaResultBool result) {
     return result.is_error;
 }
 
-bool aria_result_is_err_void(AriaResultVoid result) {
+bool npk_result_is_err_void(AriaResultVoid result) {
     return result.is_error;
 }
 
-AriaError* aria_result_get_error_ptr(AriaResultPtr result) {
+AriaError* npk_result_get_error_ptr(AriaResultPtr result) {
     return result.is_error ? (AriaError*)result.error : NULL;
 }
 
-AriaError* aria_result_get_error_i64(AriaResultI64 result) {
+AriaError* npk_result_get_error_i64(AriaResultI64 result) {
     return result.is_error ? (AriaError*)result.error : NULL;
 }
 
-AriaError* aria_result_get_error_f64(AriaResultF64 result) {
+AriaError* npk_result_get_error_f64(AriaResultF64 result) {
     return result.is_error ? (AriaError*)result.error : NULL;
 }
 
-AriaError* aria_result_get_error_bool(AriaResultBool result) {
+AriaError* npk_result_get_error_bool(AriaResultBool result) {
     return result.is_error ? (AriaError*)result.error : NULL;
 }
 
-AriaError* aria_result_get_error_void(AriaResultVoid result) {
+AriaError* npk_result_get_error_void(AriaResultVoid result) {
     return result.is_error ? (AriaError*)result.error : NULL;
 }
 
@@ -212,7 +212,7 @@ AriaError* aria_result_get_error_void(AriaResultVoid result) {
 // Unwrap Functions
 // ============================================================================
 
-void* aria_result_unwrap_ptr(AriaResultPtr result) {
+void* npk_result_unwrap_ptr(AriaResultPtr result) {
     if (result.is_error) {
         AriaError* err = (AriaError*)result.error;
         fprintf(stderr, "PANIC: Attempted to unwrap error result\n");
@@ -227,7 +227,7 @@ void* aria_result_unwrap_ptr(AriaResultPtr result) {
     return result.value;
 }
 
-int64_t aria_result_unwrap_i64(AriaResultI64 result) {
+int64_t npk_result_unwrap_i64(AriaResultI64 result) {
     if (result.is_error) {
         AriaError* err = (AriaError*)result.error;
         fprintf(stderr, "PANIC: Attempted to unwrap error result\n");
@@ -242,7 +242,7 @@ int64_t aria_result_unwrap_i64(AriaResultI64 result) {
     return result.value;
 }
 
-double aria_result_unwrap_f64(AriaResultF64 result) {
+double npk_result_unwrap_f64(AriaResultF64 result) {
     if (result.is_error) {
         AriaError* err = (AriaError*)result.error;
         fprintf(stderr, "PANIC: Attempted to unwrap error result\n");
@@ -257,7 +257,7 @@ double aria_result_unwrap_f64(AriaResultF64 result) {
     return result.value;
 }
 
-bool aria_result_unwrap_bool(AriaResultBool result) {
+bool npk_result_unwrap_bool(AriaResultBool result) {
     if (result.is_error) {
         AriaError* err = (AriaError*)result.error;
         fprintf(stderr, "PANIC: Attempted to unwrap error result\n");
@@ -276,19 +276,19 @@ bool aria_result_unwrap_bool(AriaResultBool result) {
 // Unwrap-or Functions
 // ============================================================================
 
-void* aria_result_unwrap_or_ptr(AriaResultPtr result, void* default_value) {
+void* npk_result_unwrap_or_ptr(AriaResultPtr result, void* default_value) {
     return result.is_error ? default_value : result.value;
 }
 
-int64_t aria_result_unwrap_or_i64(AriaResultI64 result, int64_t default_value) {
+int64_t npk_result_unwrap_or_i64(AriaResultI64 result, int64_t default_value) {
     return result.is_error ? default_value : result.value;
 }
 
-double aria_result_unwrap_or_f64(AriaResultF64 result, double default_value) {
+double npk_result_unwrap_or_f64(AriaResultF64 result, double default_value) {
     return result.is_error ? default_value : result.value;
 }
 
-bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value) {
+bool npk_result_unwrap_or_bool(AriaResultBool result, bool default_value) {
     return result.is_error ? default_value : result.value;
 }
 
@@ -296,7 +296,7 @@ bool aria_result_unwrap_or_bool(AriaResultBool result, bool default_value) {
 // Allocation Result Functions (Phase 4.2)
 // ============================================================================
 
-AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align) {
+AriaAllocResult npk_alloc_result_ok(void* ptr, size_t size, size_t align) {
     AriaAllocResult result;
     result.value = ptr;
     result.error_code = ARIA_ALLOC_OK;
@@ -305,7 +305,7 @@ AriaAllocResult aria_alloc_result_ok(void* ptr, size_t size, size_t align) {
     return result;
 }
 
-AriaAllocResult aria_alloc_result_err(AriaAllocError error, size_t size, size_t align) {
+AriaAllocResult npk_alloc_result_err(AriaAllocError error, size_t size, size_t align) {
     AriaAllocResult result;
     result.value = NULL;
     result.error_code = error;
@@ -314,15 +314,15 @@ AriaAllocResult aria_alloc_result_err(AriaAllocError error, size_t size, size_t 
     return result;
 }
 
-bool aria_alloc_result_is_ok(AriaAllocResult result) {
+bool npk_alloc_result_is_ok(AriaAllocResult result) {
     return result.error_code == ARIA_ALLOC_OK;
 }
 
-bool aria_alloc_result_is_err(AriaAllocResult result) {
+bool npk_alloc_result_is_err(AriaAllocResult result) {
     return result.error_code != ARIA_ALLOC_OK;
 }
 
-const char* aria_alloc_error_message(AriaAllocError error) {
+const char* npk_alloc_error_message(AriaAllocError error) {
     switch (error) {
         case ARIA_ALLOC_OK:
             return "Success";

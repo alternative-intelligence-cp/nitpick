@@ -1,0 +1,115 @@
+// Test basic int8/uint8 operations
+// int8: -128 to +127
+// uint8: 0 to 255
+
+func:main = int32() {
+    // Test int8 basic values
+    int8:min_i8 = -128;
+    int8:max_i8 = 127;
+    int8:zero_i8 = 0;
+    
+    // Test uint8 basic values
+    uint8:min_u8 = 0;
+    uint8:max_u8 = 255;
+    uint8:half_u8 = 128;
+    
+    // Test int8 arithmetic
+    int8:a = 10;
+    int8:b = 20;
+    int8:sum_i8 = a + b;         // 30
+    int8:diff_i8 = b - a;        // 10
+    int8:prod_i8 = a * 3;        // 30
+    int8:quot_i8 = b / 2;        // 10
+    
+    // Validate int8 arithmetic
+    if (sum_i8 != 30) { exit 1; }
+    if (diff_i8 != 10) { exit 2; }
+    if (prod_i8 != 30) { exit 3; }
+    if (quot_i8 != 10) { exit 4; }
+    
+    // Test uint8 arithmetic
+    uint8:x = 100;
+    uint8:y = 50;
+    uint8:sum_u8 = x + y;        // 150
+    uint8:diff_u8 = x - y;       // 50
+    uint8:prod_u8 = y * 3;       // 150
+    uint8:quot_u8 = x / 2;       // 50
+    
+    // Validate uint8 arithmetic
+    if (sum_u8 != 150) { exit 5; }
+    if (diff_u8 != 50) { exit 6; }
+    if (prod_u8 != 150) { exit 7; }
+    if (quot_u8 != 50) { exit 8; }
+    
+    // Test int8 comparisons
+    int8:c = -10;
+    int8:d = 5;
+    if (c >= d) { exit 9; }     // -10 < 5
+    if (d <= c) { exit 10; }    // 5 > -10
+    if (c == d) { exit 11; }    // -10 != 5
+    if (c > d) { exit 12; }     // -10 < 5
+    
+    // Test uint8 comparisons
+    uint8:m = 200;
+    uint8:n = 100;
+    if (m < n) { exit 13; }     // 200 > 100
+    if (n > m) { exit 14; }     // 100 < 200
+    if (m == n) { exit 15; }    // 200 != 100
+    if (m <= n) { exit 16; }    // 200 > 100
+    
+    // Test int8 overflow (wraps or traps depending on design)
+    int8:overflow_test = 127;
+    int8:overflow_result = overflow_test + 1;  // Should wrap to -128 or trap
+    
+    // Test uint8 overflow (wraps)
+    uint8:uoverflow_test = 255;
+    uint8:uoverflow_result = uoverflow_test + 1;  // Should wrap to 0
+    if (uoverflow_result != 0) { exit 17; }
+    
+    // Test binary literals with bytes
+    uint8:byte1 = 0b11111111;    // 255
+    uint8:byte2 = 0b10101010;    // 170
+    uint8:byte3 = 0b01010101;    // 85
+    
+    if (byte1 != 255) { exit 18; }
+    if (byte2 != 170) { exit 19; }
+    if (byte3 != 85) { exit 20; }
+    
+    // Test hex literals with bytes
+    uint8:hex1 = 0xFF;           // 255
+    uint8:hex2 = 0xAA;           // 170
+    uint8:hex3 = 0x55;           // 85
+    
+    if (hex1 != 255) { exit 21; }
+    if (hex2 != 170) { exit 22; }
+    if (hex3 != 85) { exit 23; }
+    
+    // Test ASCII values
+    uint8:ascii_A = 65;          // 'A'
+    uint8:ascii_Z = 90;          // 'Z'
+    uint8:ascii_0 = 48;          // '0'
+    uint8:ascii_9 = 57;          // '9'
+    
+    if (ascii_A != 65) { exit 24; }
+    if (ascii_Z != 90) { exit 25; }
+    if (ascii_0 != 48) { exit 26; }
+    if (ascii_9 != 57) { exit 27; }
+    
+    // Test byte array (simulating IP address)
+    uint8:ip0 = 192;
+    uint8:ip1 = 168;
+    uint8:ip2 = 1;
+    uint8:ip3 = 1;
+    
+    if (ip0 != 192) { exit 28; }
+    if (ip1 != 168) { exit 29; }
+    if (ip2 != 1) { exit 30; }
+    if (ip3 != 1) { exit 31; }
+    
+    exit 0;  // All tests passed!
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

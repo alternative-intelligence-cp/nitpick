@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -69,7 +69,7 @@ TypeSubstitution GenericResolver::inferTypeArgs(
         else if (param->typeNode &&
                  param->typeNode->type == ASTNode::NodeType::GENERIC_TYPE &&
                  argType->getKind() == TypeKind::STRUCT && typeSystem) {
-            auto* genericTypeNode = static_cast<aria::GenericType*>(param->typeNode.get());
+            auto* genericTypeNode = static_cast<npk::GenericType*>(param->typeNode.get());
             auto* structType = static_cast<StructType*>(argType);
             std::string argName = structType->getName();
             std::string baseName = genericTypeNode->baseName;
@@ -773,12 +773,12 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
         }
 
         case ASTNode::NodeType::GENERIC_TYPE: {
-            aria::GenericType* genericType = static_cast<aria::GenericType*>(node);
+            npk::GenericType* genericType = static_cast<npk::GenericType*>(node);
             std::vector<ASTNodePtr> clonedArgs;
             for (const auto& arg : genericType->typeArgs) {
                 clonedArgs.push_back(cloneAST(arg.get()));
             }
-            return std::make_shared<aria::GenericType>(
+            return std::make_shared<npk::GenericType>(
                 genericType->baseName, clonedArgs,
                 genericType->line, genericType->column);
         }
@@ -1016,7 +1016,7 @@ ASTNodePtr Monomorphizer::substituteTypeNode(ASTNode* typeNode,
         }
         
         case ASTNode::NodeType::GENERIC_TYPE: {
-            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            npk::GenericType* genericType = static_cast<npk::GenericType*>(typeNode);
             
             // Recursively substitute type arguments
             std::vector<ASTNodePtr> newTypeArgs;
@@ -1029,37 +1029,37 @@ ASTNodePtr Monomorphizer::substituteTypeNode(ASTNode* typeNode,
                 }
             }
             
-            return std::make_shared<aria::GenericType>(genericType->baseName, newTypeArgs,
+            return std::make_shared<npk::GenericType>(genericType->baseName, newTypeArgs,
                                                   typeNode->line, typeNode->column);
         }
         
         case ASTNode::NodeType::ARRAY_TYPE: {
-            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            npk::ArrayType* arrayType = static_cast<npk::ArrayType*>(typeNode);
             ASTNodePtr elemType = substituteTypeNode(arrayType->elementType.get(), substitution);
             ASTNodePtr sizeExpr = arrayType->sizeExpr ? cloneAST(arrayType->sizeExpr.get()) : nullptr;
-            auto result = std::make_shared<aria::ArrayType>(
+            auto result = std::make_shared<npk::ArrayType>(
                 elemType ? elemType : cloneAST(arrayType->elementType.get()),
                 sizeExpr, typeNode->line, typeNode->column);
             return result;
         }
         
         case ASTNode::NodeType::POINTER_TYPE: {
-            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            npk::PointerType* ptrType = static_cast<npk::PointerType*>(typeNode);
             if (ptrType->isErased) {
-                auto result = std::make_shared<aria::PointerType>(nullptr, typeNode->line, typeNode->column);
+                auto result = std::make_shared<npk::PointerType>(nullptr, typeNode->line, typeNode->column);
                 result->isErased = true;
                 return result;
             }
             ASTNodePtr baseType = substituteTypeNode(ptrType->baseType.get(), substitution);
-            return std::make_shared<aria::PointerType>(
+            return std::make_shared<npk::PointerType>(
                 baseType ? baseType : cloneAST(ptrType->baseType.get()),
                 typeNode->line, typeNode->column);
         }
         
         case ASTNode::NodeType::OPTIONAL_TYPE: {
-            aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+            npk::OptionalTypeNode* optType = static_cast<npk::OptionalTypeNode*>(typeNode);
             ASTNodePtr wrappedType = substituteTypeNode(optType->wrappedType.get(), substitution);
-            return std::make_shared<aria::OptionalTypeNode>(
+            return std::make_shared<npk::OptionalTypeNode>(
                 wrappedType ? wrappedType : cloneAST(optType->wrappedType.get()),
                 typeNode->line, typeNode->column);
         }
@@ -1228,4 +1228,4 @@ StructDeclStmt* Monomorphizer::cloneStructAndSubstitute(
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

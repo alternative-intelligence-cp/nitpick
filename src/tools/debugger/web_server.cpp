@@ -14,7 +14,7 @@
 // We'll use a simple embedded HTTP server approach
 // For production, this would integrate cpp-httplib or similar
 
-namespace aria {
+namespace npk {
 namespace debugger {
 
 WebServer::WebServer(DAPServer* dap_server, int port, const std::string& host)
@@ -250,7 +250,7 @@ sudo apt install libhttplib-dev
 
 # Build with web UI support
 cmake -DENABLE_WEB_UI=ON -S . -B build
-cmake --build build --target aria-dap
+cmake --build build --target npk-dap
             </div>
         </div>
     </div>
@@ -276,4 +276,4 @@ std::string WebServer::getMimeType(const std::string& path) {
 }
 
 } // namespace debugger
-} // namespace aria
+} // namespace npk

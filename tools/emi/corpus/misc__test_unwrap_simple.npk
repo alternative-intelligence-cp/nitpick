@@ -1,0 +1,21 @@
+// Simple test: Does ? operator work for unwrapping?
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:get_number = int32(int32:val) {
+    pass val;
+};
+
+func:main = int32() {
+    // Test 1: Initial assignment with unwrap
+    int32:x = get_number(42i32) ? 0i32;
+    
+    // Test 2: Reassignment with unwrap
+    x = get_number(100i32) ? 0i32;
+    
+    // If unwrap works, should return 100
+    if (x == 100i32) {
+        exit 0;
+    }
+    exit 1;
+};

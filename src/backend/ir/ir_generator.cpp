@@ -20,12 +20,12 @@
 #include <unordered_set>   // B6 fix: std::unordered_set for identifier collection
 #include "debug_log.h"
 
-namespace aria {
+namespace npk {
 using namespace sema;  // Now inside aria namespace
 
 IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
     : context(), 
-      module(std::make_unique<llvm::Module>(module_name.empty() ? "aria_module" : module_name, context)),
+      module(std::make_unique<llvm::Module>(module_name.empty() ? "npk_module" : module_name, context)),
       builder(context),
       type_system(nullptr),
       tbb_codegen(context, builder),
@@ -41,7 +41,7 @@ IRGenerator::IRGenerator(const std::string& module_name, bool enable_debug)
       current_async_result_type(nullptr),
       current_func_decl(nullptr) {
     // Set source filename for better debug info
-    module->setSourceFileName(module_name.empty() ? "aria_module" : module_name);
+    module->setSourceFileName(module_name.empty() ? "npk_module" : module_name);
 
     // Set module reference for TernaryCodegen to declare runtime intrinsics
     // (ARIA-013: Balanced Ternary and Nonary Intrinsics)
@@ -82,22 +82,27 @@ llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) 
 
     if (expr->type == ASTNode::NodeType::INDEX) {
         IndexExpr* index = static_cast<IndexExpr*>(expr);
-        if (!index->array || index->array->type != ASTNode::NodeType::IDENTIFIER) {
+        if (!index->array) {
             return nullptr;
         }
 
-        IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(index->array.get());
-        auto root_it = named_values.find(root_ident->name);
-        if (root_it == named_values.end()) {
+        // v0.19.0 Phase 3: resolve the array base recursively so that
+        // struct-field array borrows (e.g. pair.buf[0]) work correctly.
+        Type* base_aria_type = nullptr;
+        llvm::Value* array_ptr = getBorrowAliasPointer(index->array.get(), &base_aria_type);
+        if (!array_ptr) {
             return nullptr;
         }
 
-        llvm::Value* array_ptr = root_it->second;
+        // Determine the LLVM element type of the array being indexed.
         llvm::Type* array_llvm_type = nullptr;
         if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
             array_llvm_type = alloca_inst->getAllocatedType();
         } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(array_ptr)) {
             array_llvm_type = global->getValueType();
+        } else if (base_aria_type) {
+            // The base is a GEP result (e.g. struct field ptr) — map through Aria type.
+            array_llvm_type = mapType(base_aria_type);
         }
 
         if (!array_llvm_type || !array_llvm_type->isArrayTy()) {
@@ -117,13 +122,17 @@ llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) 
             index_value
         };
         llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
-            array_llvm_type, array_ptr, gep_indices, root_ident->name + ".borrow.elem.ptr");
+            array_llvm_type, array_ptr, gep_indices, "borrow.elem.ptr");
 
         Type* elem_aria_type = nullptr;
-        auto value_type_it = value_types.find(array_ptr);
-        if (value_type_it != value_types.end() && value_type_it->second &&
-            value_type_it->second->getKind() == TypeKind::ARRAY) {
-            elem_aria_type = static_cast<sema::ArrayType*>(value_type_it->second)->getElementType();
+        if (base_aria_type && base_aria_type->getKind() == TypeKind::ARRAY) {
+            elem_aria_type = static_cast<sema::ArrayType*>(base_aria_type)->getElementType();
+        } else {
+            auto value_type_it = value_types.find(array_ptr);
+            if (value_type_it != value_types.end() && value_type_it->second &&
+                value_type_it->second->getKind() == TypeKind::ARRAY) {
+                elem_aria_type = static_cast<sema::ArrayType*>(value_type_it->second)->getElementType();
+            }
         }
 
         if (elem_aria_type) {
@@ -387,13 +396,13 @@ void IRGenerator::setCurrentModuleName(const std::string& module_name) {
     current_module_name = module_name;
 }
 
-llvm::Type* IRGenerator::mapType(Type* aria_type) {
-    if (!aria_type) {
+llvm::Type* IRGenerator::mapType(Type* npk_type) {
+    if (!npk_type) {
         return builder.getVoidTy();
     }
     
     // Check cache first
-    std::string type_name = aria_type->toString();
+    std::string type_name = npk_type->toString();
     auto it = type_map.find(type_name);
     if (it != type_map.end()) {
         return it->second;
@@ -402,9 +411,9 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
     llvm::Type* llvm_type = nullptr;
     
     // Map based on type kind
-    switch (aria_type->getKind()) {
+    switch (npk_type->getKind()) {
         case TypeKind::PRIMITIVE: {
-            auto* prim = static_cast<PrimitiveType*>(aria_type);
+            auto* prim = static_cast<PrimitiveType*>(npk_type);
             std::string prim_name = prim->getName();
             
             // NIL type: Unit type (empty struct) for "no value"
@@ -519,7 +528,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         }
         
         case TypeKind::POINTER: {
-            auto* ptr_type = static_cast<sema::PointerType*>(aria_type);
+            auto* ptr_type = static_cast<sema::PointerType*>(npk_type);
             llvm::Type* pointee = mapType(ptr_type->getPointeeType());
             (void)pointee;  // LLVM opaque pointers don't use pointee type directly
             // LLVM uses opaque pointers in newer versions
@@ -528,7 +537,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         }
         
         case TypeKind::ARRAY: {
-            auto* arr_type = static_cast<sema::ArrayType*>(aria_type);
+            auto* arr_type = static_cast<sema::ArrayType*>(npk_type);
             llvm::Type* elem_type = mapType(arr_type->getElementType());
             if (arr_type->getSize() > 0) {
                 // Fixed-size array
@@ -543,7 +552,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::VECTOR: {
             // Vector types (vec2, vec3, vec9, etc.) - SIMD vectors
             // Reference: research_015
-            auto* vec_type = static_cast<VectorType*>(aria_type);
+            auto* vec_type = static_cast<VectorType*>(npk_type);
             llvm::Type* component_type = mapType(vec_type->getComponentType());
             int dimension = vec_type->getDimension();
             
@@ -565,7 +574,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             // P1-2 Phase 3: Map to LLVM vector types <N x element_type>
             // Example: simd<int32, 4> → <4 x i32> (SSE)
             //          simd<int64, 8> → <8 x i64> (AVX-512)
-            auto* simd_type = static_cast<SimdType*>(aria_type);
+            auto* simd_type = static_cast<SimdType*>(npk_type);
             llvm::Type* element_type = mapType(simd_type->getElementType());
             size_t lane_count = simd_type->getLaneCount();
             
@@ -578,7 +587,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::FUNCTION: {
             // Function types: func(params) -> return
             // Reference: research_016
-            auto* func_type = static_cast<sema::FunctionType*>(aria_type);
+            auto* func_type = static_cast<sema::FunctionType*>(npk_type);
             
             // Map return type
             llvm::Type* return_type = mapType(func_type->getReturnType());
@@ -601,7 +610,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::STRUCT: {
             // Struct types with fields
             // Reference: research_015
-            auto* struct_type = static_cast<StructType*>(aria_type);
+            auto* struct_type = static_cast<StructType*>(npk_type);
             
             // Check if this struct type already exists in the LLVM module
             // (avoids creating duplicate types when called from pre-pass and main-pass)
@@ -631,7 +640,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::UNION: {
             // Union types - represented as struct with largest variant + tag
             // Reference: research_015
-            auto* union_type = static_cast<UnionType*>(aria_type);
+            auto* union_type = static_cast<UnionType*>(npk_type);
             
             // Find largest variant type
             llvm::Type* largest_type = builder.getInt8Ty();  // Minimum size
@@ -664,7 +673,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
             // Result type for error handling: result<T>
             // Runtime layout: { T value, void* error, bool is_error }
             // Reference: include/runtime/result.h (AriaResultPtr, AriaResultI64, etc.)
-            auto* result_type = static_cast<ResultType*>(aria_type);
+            auto* result_type = static_cast<ResultType*>(npk_type);
             
             llvm::Type* value_type = mapType(result_type->getValueType());
             
@@ -681,9 +690,9 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         case TypeKind::HANDLE: {
             // Handle type for generational arena: Handle<T>
             // Runtime layout: { size_t index, uint32_t generation }
-            // Reference: include/runtime/gen_arena.h (aria_handle)
+            // Reference: include/runtime/gen_arena.h (npk_handle)
             // P1-3 Phase 3: Handle operations & generation checks
-            auto* handle_type = static_cast<HandleType*>(aria_type);
+            auto* handle_type = static_cast<HandleType*>(npk_type);
             (void)handle_type;
             
             std::vector<llvm::Type*> handle_fields = {
@@ -705,7 +714,7 @@ llvm::Type* IRGenerator::mapType(Type* aria_type) {
         
         case TypeKind::OPTIONAL: {
             // Optional<T>: { i1 hasValue, T value }
-            auto* opt = static_cast<OptionalType*>(aria_type);
+            auto* opt = static_cast<OptionalType*>(npk_type);
             llvm::Type* wrapped = mapType(opt->getWrappedType());
             llvm_type = llvm::StructType::get(context, {builder.getInt1Ty(), wrapped});
             break;
@@ -1082,14 +1091,14 @@ llvm::Value* IRGenerator::generateLBIMSLT(llvm::Value* L, llvm::Value* R, unsign
         L = promoteToLBIMStruct(L, R->getType());
 
     if (numLimbs > 16) {
-        // Use runtime function: int32_t aria_lbim_scmpN(const aria_intN_t* a, const aria_intN_t* b)
+        // Use runtime function: int32_t npk_lbim_scmpN(const npk_intN_t* a, const npk_intN_t* b)
         llvm::Type* structType = L->getType();
         llvm::Type* ptrType = llvm::PointerType::get(structType, 0);
         
         std::string funcName;
         switch (numLimbs) {
-            case 32: funcName = "aria_lbim_scmp2048"; break;
-            case 64: funcName = "aria_lbim_scmp4096"; break;
+            case 32: funcName = "npk_lbim_scmp2048"; break;
+            case 64: funcName = "npk_lbim_scmp4096"; break;
             default:
                 llvm::errs() << "LBIM slt: unsupported limb count " << numLimbs << "\n";
                 return builder.getInt1(false);
@@ -1350,7 +1359,7 @@ llvm::Value* IRGenerator::generateLBIMMul(llvm::Value* L, llvm::Value* R, unsign
 
 llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
     // LBIM signed division by calling runtime intrinsic
-    // Uses aria_lbim_sdivN where N is the bit width (128/256/512/1024/2048/4096)
+    // Uses npk_lbim_sdivN where N is the bit width (128/256/512/1024/2048/4096)
     //
     // BUG-027 FIX: Match the C ABI for each runtime function:
     //   int128-int1024 (lbim.cpp): takes structs by value → use sret + byval
@@ -1370,12 +1379,12 @@ llvm::Value* IRGenerator::generateLBIMDiv(llvm::Value* L, llvm::Value* R, unsign
     // Determine the runtime function name based on number of limbs
     std::string funcName;
     switch (numLimbs) {
-        case 2: funcName = "aria_lbim_sdiv128"; break;
-        case 4: funcName = "aria_lbim_sdiv256"; break;
-        case 8: funcName = "aria_lbim_sdiv512"; break;
-        case 16: funcName = "aria_lbim_sdiv1024"; break;
-        case 32: funcName = "aria_lbim_sdiv2048"; break;
-        case 64: funcName = "aria_lbim_sdiv4096"; break;
+        case 2: funcName = "npk_lbim_sdiv128"; break;
+        case 4: funcName = "npk_lbim_sdiv256"; break;
+        case 8: funcName = "npk_lbim_sdiv512"; break;
+        case 16: funcName = "npk_lbim_sdiv1024"; break;
+        case 32: funcName = "npk_lbim_sdiv2048"; break;
+        case 64: funcName = "npk_lbim_sdiv4096"; break;
         default:
             llvm::errs() << "LBIM div: unsupported limb count " << numLimbs << "\n";
             return llvm::UndefValue::get(structType);
@@ -1437,12 +1446,12 @@ llvm::Value* IRGenerator::generateLBIMMod(llvm::Value* L, llvm::Value* R, unsign
 
     std::string funcName;
     switch (numLimbs) {
-        case 2: funcName = "aria_lbim_smod128"; break;
-        case 4: funcName = "aria_lbim_smod256"; break;
-        case 8: funcName = "aria_lbim_smod512"; break;
-        case 16: funcName = "aria_lbim_smod1024"; break;
-        case 32: funcName = "aria_lbim_smod2048"; break;
-        case 64: funcName = "aria_lbim_smod4096"; break;
+        case 2: funcName = "npk_lbim_smod128"; break;
+        case 4: funcName = "npk_lbim_smod256"; break;
+        case 8: funcName = "npk_lbim_smod512"; break;
+        case 16: funcName = "npk_lbim_smod1024"; break;
+        case 32: funcName = "npk_lbim_smod2048"; break;
+        case 64: funcName = "npk_lbim_smod4096"; break;
         default:
             llvm::errs() << "LBIM mod: unsupported limb count " << numLimbs << "\n";
             return llvm::UndefValue::get(structType);
@@ -1524,7 +1533,7 @@ llvm::Value* IRGenerator::generateLBIMXor(llvm::Value* L, llvm::Value* R, unsign
 }
 
 llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsigned numLimbs) {
-    // LBIM left shift via runtime call: aria_lbim_shlN(struct, uint32_t)
+    // LBIM left shift via runtime call: npk_lbim_shlN(struct, uint32_t)
     llvm::Type* structType = L->getType();
     llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
     llvm::Type* voidType = builder.getVoidTy();
@@ -1532,7 +1541,7 @@ llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsign
     bool usePointers = (numLimbs > 16);
 
     unsigned bits = numLimbs * 64;
-    std::string funcName = "aria_lbim_shl" + std::to_string(bits);
+    std::string funcName = "npk_lbim_shl" + std::to_string(bits);
 
     // ABI: void func(ptr sret, ptr a, i32 shift)
     llvm::FunctionType* funcType = llvm::FunctionType::get(
@@ -1584,7 +1593,7 @@ llvm::Value* IRGenerator::generateLBIMShl(llvm::Value* L, llvm::Value* R, unsign
 }
 
 llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsigned numLimbs, bool isArithmetic) {
-    // LBIM right shift via runtime call: aria_lbim_lshrN or aria_lbim_ashrN
+    // LBIM right shift via runtime call: npk_lbim_lshrN or npk_lbim_ashrN
     llvm::Type* structType = L->getType();
     llvm::Type* ptrType = llvm::PointerType::getUnqual(structType);
     llvm::Type* voidType = builder.getVoidTy();
@@ -1592,7 +1601,7 @@ llvm::Value* IRGenerator::generateLBIMShr(llvm::Value* L, llvm::Value* R, unsign
     bool usePointers = (numLimbs > 16);
 
     unsigned bits = numLimbs * 64;
-    std::string funcName = (isArithmetic ? "aria_lbim_ashr" : "aria_lbim_lshr") + std::to_string(bits);
+    std::string funcName = (isArithmetic ? "npk_lbim_ashr" : "npk_lbim_lshr") + std::to_string(bits);
 
     llvm::FunctionType* funcType = llvm::FunctionType::get(
         voidType, {ptrType, ptrType, i32Type}, false);
@@ -2153,13 +2162,13 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // String type - represented as pointer to AriaString struct {char* data, int64 length}
     // BUGFIX (Feb 2026): Was returning i8*, but AriaString is a struct - caused corruption
     if (type_name == "string") {
-        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* ariaStringType = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!ariaStringType) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            ariaStringType = llvm::StructType::create(context, fields, "struct.AriaString");
+            ariaStringType = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         return llvm::PointerType::get(ariaStringType, 0);
     }
@@ -2241,9 +2250,9 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     // Check for custom types (structs, unions, etc.) if TypeSystem is available
     if (type_system) {
         // Look up struct type by exact name first
-        Type* aria_type = type_system->getStructType(type_name);
-        if (aria_type) {
-            return mapType(aria_type);
+        Type* npk_type = type_system->getStructType(type_name);
+        if (npk_type) {
+            return mapType(npk_type);
         }
         
         // Handle generic type names: "Name<arg1, arg2>" -> mangled "Name_arg1_arg2"
@@ -2275,9 +2284,9 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
                 }
             }
             
-            aria_type = type_system->getStructType(mangledName);
-            if (aria_type) {
-                return mapType(aria_type);
+            npk_type = type_system->getStructType(mangledName);
+            if (npk_type) {
+                return mapType(npk_type);
             }
         }
     }
@@ -2329,11 +2338,11 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
     return builder.getInt32Ty();
 }
 
-} // namespace aria
+} // namespace npk
 
 // Define methods outside namespace to avoid ambiguity
 
-llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
+llvm::Value* npk::IRGenerator::codegen(npk::ASTNode* node) {
     if (!node) {
         return nullptr;
     }
@@ -2402,15 +2411,15 @@ llvm::Value* aria::IRGenerator::codegen(aria::ASTNode* node) {
     return func;
 }
 
-llvm::Module* aria::IRGenerator::getModule() {
+llvm::Module* npk::IRGenerator::getModule() {
     return module.get();
 }
 
-std::unique_ptr<llvm::Module> aria::IRGenerator::takeModule() {
+std::unique_ptr<llvm::Module> npk::IRGenerator::takeModule() {
     return std::move(module);
 }
 
-void aria::IRGenerator::dump() {
+void npk::IRGenerator::dump() {
     module->print(llvm::outs(), nullptr);
 }
 
@@ -2418,7 +2427,7 @@ void aria::IRGenerator::dump() {
 // Generic Function Code Generation
 // =============================================================================
 
-size_t aria::IRGenerator::codegenSpecializedFunctions(
+size_t npk::IRGenerator::codegenSpecializedFunctions(
     const std::vector<sema::Specialization*>& specializations) {
     
     if (specializations.empty()) {
@@ -2594,8 +2603,8 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
                     std::string typeStr = param->typeNode ? param->typeNode->toString() : "int32";
                     llvm::DIType* di_type = nullptr;
                     if (type_system) {
-                        auto* aria_type_for_debug = type_system->getPrimitiveType(typeStr);
-                        if (aria_type_for_debug) di_type = mapDebugType(aria_type_for_debug);
+                        auto* npk_type_for_debug = type_system->getPrimitiveType(typeStr);
+                        if (npk_type_for_debug) di_type = mapDebugType(npk_type_for_debug);
                     }
                     if (!di_type) {
                         unsigned bits = arg.getType()->getPrimitiveSizeInBits();
@@ -2709,7 +2718,7 @@ size_t aria::IRGenerator::codegenSpecializedFunctions(
 // v0.2.36: Split specialization into declare + codegen for trait bounds support
 // =============================================================================
 
-void aria::IRGenerator::declareSpecializedFunctions(
+void npk::IRGenerator::declareSpecializedFunctions(
     const std::vector<sema::Specialization*>& specializations) {
     
     for (const auto* spec : specializations) {
@@ -2750,7 +2759,7 @@ void aria::IRGenerator::declareSpecializedFunctions(
     }
 }
 
-size_t aria::IRGenerator::codegenSpecializedBodies(
+size_t npk::IRGenerator::codegenSpecializedBodies(
     const std::vector<sema::Specialization*>& specializations) {
     
     // Delegate to the full implementation which handles both passes
@@ -2762,7 +2771,7 @@ size_t aria::IRGenerator::codegenSpecializedBodies(
 // Module Declaration Processing (Recursive)
 // =============================================================================
 
-void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
+void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_ptr<ASTNode>>& declarations,
                                                     const std::string& modulePrefix) {
     // -------------------------------------------------------------------------
     // GLOBAL PRE-PASS: Create LLVM GlobalVariables for all module-level VAR_DECL
@@ -2797,12 +2806,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             } else if (std::holds_alternative<std::string>(lit->value)) {
                 const std::string& s = std::get<std::string>(lit->value);
                 if (s != "unknown" && s != "ERR") {
-                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                     if (!ariaStrType) {
                         ariaStrType = llvm::StructType::create(context,
                             {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                              llvm::Type::getInt64Ty(context)},
-                            "struct.AriaString");
+                            "struct.NpkString");
                     }
                     llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
                     llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
@@ -3277,12 +3286,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                     // String global: create a constant AriaString and use its address as init.
                     const std::string& s = std::get<std::string>(lit->value);
                     if (s != "unknown" && s != "ERR") {
-                        llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                        llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                         if (!ariaStrType) {
                             ariaStrType = llvm::StructType::create(context,
                                 {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                  llvm::Type::getInt64Ty(context)},
-                                "struct.AriaString");
+                                "struct.NpkString");
                         }
                         llvm::Constant* strData = llvm::ConstantDataArray::getString(context, s, true);
                         llvm::GlobalVariable* strDataGV = new llvm::GlobalVariable(
@@ -3548,28 +3557,28 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
             
             // Initialize GC for main function before any user code runs
             if (funcDecl->funcName == "main") {
-                // Declare aria_gc_init(size_t nursery_size, size_t old_gen_threshold)
+                // Declare npk_gc_init(size_t nursery_size, size_t old_gen_threshold)
                 llvm::FunctionType* gc_init_type = llvm::FunctionType::get(
                     builder.getVoidTy(),
                     {builder.getInt64Ty(), builder.getInt64Ty()},
                     false
                 );
                 llvm::Function* gc_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_gc_init", gc_init_type).getCallee()
+                    module->getOrInsertFunction("npk_gc_init", gc_init_type).getCallee()
                 );
                 
-                // Call aria_gc_init(0, 0) to use default sizes (4MB nursery, 64MB old gen)
+                // Call npk_gc_init(0, 0) to use default sizes (4MB nursery, 64MB old gen)
                 builder.CreateCall(gc_init, {builder.getInt64(0), builder.getInt64(0)});
 
                 // v0.2.7: Initialize command-line argument storage
-                // aria_args_init(int32_t argc, char** argv)
+                // npk_args_init(int32_t argc, char** argv)
                 llvm::FunctionType* args_init_type = llvm::FunctionType::get(
                     builder.getVoidTy(),
                     {builder.getInt32Ty(), builder.getPtrTy()},
                     false
                 );
                 llvm::Function* args_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_args_init", args_init_type).getCallee()
+                    module->getOrInsertFunction("npk_args_init", args_init_type).getCallee()
                 );
                 // main's first two LLVM args are always argc (i32) and argv (ptr)
                 auto main_arg_iter = func->arg_begin();
@@ -3578,12 +3587,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                 builder.CreateCall(args_init, {argc_val, argv_val});
 
                 // v0.2.7: Initialize six-stream I/O (FDs 0-5)
-                // aria_streams_init(void)
+                // npk_streams_init(void)
                 llvm::FunctionType* streams_init_type = llvm::FunctionType::get(
                     builder.getVoidTy(), false
                 );
                 llvm::Function* streams_init = llvm::dyn_cast<llvm::Function>(
-                    module->getOrInsertFunction("aria_streams_init", streams_init_type).getCallee()
+                    module->getOrInsertFunction("npk_streams_init", streams_init_type).getCallee()
                 );
                 builder.CreateCall(streams_init, {});
             }
@@ -3748,7 +3757,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // FUNCTION_TYPE params: register as "func_ptr:retType" so closure
                         // call path in codegen_expr recognizes them as callable fat pointers
                         if (param->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
-                            aria::FunctionType* fnType = static_cast<aria::FunctionType*>(param->typeNode.get());
+                            npk::FunctionType* fnType = static_cast<npk::FunctionType*>(param->typeNode.get());
                             std::string retStr = fnType->returnType ? fnType->returnType->toString() : "void";
                             var_aria_types[param->paramName] = "func_ptr:" + retStr;
                         } else {
@@ -3760,12 +3769,12 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                         // CRITICAL FIX: Register parameter type in value_types map
                         // This enables member access on struct parameters (e.g., self.field, result.value)
                         
-                        // PHASE 4 FIX: Try to resolve as aria::sema::Type first
-                        aria::sema::Type* paramType = nullptr;
+                        // PHASE 4 FIX: Try to resolve as npk::sema::Type first
+                        npk::sema::Type* paramType = nullptr;
                         
                         // Check for vector types FIRST (before primitives, since getPrimitiveType creates entries!)
                         if (typeStr.find("vec") != std::string::npos) {
-                            aria::sema::Type* componentType = type_system->getPrimitiveType("flt64");
+                            npk::sema::Type* componentType = type_system->getPrimitiveType("flt64");
                             int dimension = 2;
                             if (typeStr.find("vec2") != std::string::npos) dimension = 2;
                             else if (typeStr.find("vec3") != std::string::npos) dimension = 3;
@@ -3787,7 +3796,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
                             if (end != std::string::npos && end > start) {
                                 std::string innerTypeStr = typeStr.substr(start, end - start);
                                 ARIA_DBG_STREAM << "[DEBUG] Result inner type: " << innerTypeStr << std::endl;
-                                aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                                npk::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
                                 if (!innerType) {
                                     innerType = type_system->getStructType(innerTypeStr);
                                 }
@@ -4224,7 +4233,7 @@ void aria::IRGenerator::processModuleDeclarations(const std::vector<std::shared_
 // Statement Code Generation
 // =============================================================================
 
-llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
+llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
     if (!stmt) {
         return nullptr;
     }
@@ -4414,7 +4423,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 int col = ret->column;
                                 throw std::runtime_error(
                                     "Line " + std::to_string(line) + ", Column " + std::to_string(col) + 
-                                    ": 'return' cannot return a bare value in an Aria function. "
+                                    ": 'return' cannot return a bare value in a Nitpick function. "
                                     "Use pass(value) for success or fail(error) for errors. "
                                     "'return' is only valid with an already-constructed Result object "
                                     "or a Result{val:..., err:..., is_error:...} literal.");
@@ -4467,7 +4476,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             // ================================================================
             if (varDecl->typeNode &&
                 varDecl->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
-                aria::FunctionType* funcPtrType = static_cast<aria::FunctionType*>(varDecl->typeNode.get());
+                npk::FunctionType* funcPtrType = static_cast<npk::FunctionType*>(varDecl->typeNode.get());
 
                 // Allocate fat pointer {ptr, ptr} on stack
                 llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
@@ -4629,10 +4638,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         envStructType = llvm::StructType::create(context, envFieldTypes,
                             "_env_" + varDecl->varName);
 
-                        // Heap-allocate env via aria_gc_alloc so it survives scope
+                        // Heap-allocate env via npk_gc_alloc so it survives scope
                         const llvm::DataLayout& dl = module->getDataLayout();
                         uint64_t envSize = dl.getTypeAllocSize(envStructType);
-                        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+                        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("npk_gc_alloc",
                             llvm::FunctionType::get(
                                 llvm::PointerType::get(context, 0),
                                 {llvm::Type::getInt64Ty(context)},
@@ -4901,9 +4910,9 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (debug_enabled && di_builder && getCurrentDebugScope()) {
                 llvm::DIType* di_type = nullptr;
                 if (type_system) {
-                    auto* aria_type_for_debug = type_system->getPrimitiveType(actualTypeName);
-                    if (aria_type_for_debug) {
-                        di_type = mapDebugType(aria_type_for_debug);
+                    auto* npk_type_for_debug = type_system->getPrimitiveType(actualTypeName);
+                    if (npk_type_for_debug) {
+                        di_type = mapDebugType(npk_type_for_debug);
                     }
                 }
                 if (!di_type) {
@@ -4931,7 +4940,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             
             // Track the Aria type of this alloca (needed for member access, vectors, and TBB overflow detection)
             if (type_system) {
-                Type* aria_type = nullptr;
+                Type* npk_type = nullptr;
                 
                 // Check for pointer types before primitives, since getPrimitiveType()
                 // accepts arbitrary strings and would otherwise turn "Point@" into
@@ -4941,14 +4950,14 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     std::string baseTypeName = actualTypeName.substr(0, actualTypeName.size() - 1);
                     Type* pointeeType = nullptr;
                     if (baseTypeName == "?") {
-                        aria_type = type_system->getErasedPointerType();
+                        npk_type = type_system->getErasedPointerType();
                     } else {
                         pointeeType = type_system->getStructType(baseTypeName);
                         if (!pointeeType) {
                             pointeeType = type_system->getPrimitiveType(baseTypeName);
                         }
                         if (pointeeType) {
-                            aria_type = type_system->getPointerType(pointeeType);
+                            npk_type = type_system->getPointerType(pointeeType);
                         }
                     }
                 }
@@ -4967,7 +4976,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     else if (actualTypeName[0] == 'i') componentType = type_system->getPrimitiveType("int32");
                     else if (actualTypeName[0] == 'v') componentType = type_system->getPrimitiveType("flt64");
                     
-                    aria_type = type_system->getVectorType(componentType, dimension);
+                    npk_type = type_system->getVectorType(componentType, dimension);
                 }
                 // CRITICAL FIX: Check for Result<T> BEFORE struct/primitive
                 // getPrimitiveType() accepts any string, so "Result<int32>" would wrongly become PRIMITIVE
@@ -4979,15 +4988,15 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                     if (end != std::string::npos && end > start) {
                         std::string innerTypeStr = actualTypeName.substr(start, end - start);
                         ARIA_DBG_STREAM << "[DEBUG VARDECL] Result inner type: " << innerTypeStr << std::endl;
-                        aria::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
+                        npk::sema::Type* innerType = type_system->getPrimitiveType(innerTypeStr);
                         if (!innerType) {
                             innerType = type_system->getStructType(innerTypeStr);
                         }
                         if (innerType) {
                             ARIA_DBG_STREAM << "[DEBUG VARDECL] Found inner type, calling getResultType()" << std::endl;
-                            aria_type = type_system->getResultType(innerType);
-                            if (aria_type) {
-                                ARIA_DBG_STREAM << "[DEBUG VARDECL] getResultType() returned type with kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
+                            npk_type = type_system->getResultType(innerType);
+                            if (npk_type) {
+                                ARIA_DBG_STREAM << "[DEBUG VARDECL] getResultType() returned type with kind: " << static_cast<int>(npk_type->getKind()) << std::endl;
                             } else {
                                 ARIA_DBG_STREAM << "[DEBUG VARDECL] ERROR: getResultType() returned nullptr!" << std::endl;
                             }
@@ -5003,13 +5012,13 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                         baseType = type_system->getPrimitiveType(baseTypeName);
                     }
                     if (baseType) {
-                        aria_type = type_system->getOptionalType(baseType);
+                        npk_type = type_system->getOptionalType(baseType);
                     }
                 } else {
                     // Not a vector or Result, try struct then primitive
-                    aria_type = type_system->getStructType(actualTypeName);
+                    npk_type = type_system->getStructType(actualTypeName);
                     // If direct lookup fails, try mangled generic name: Vec<int8> -> Vec_int8
-                    if (!aria_type && actualTypeName.find('<') != std::string::npos) {
+                    if (!npk_type && actualTypeName.find('<') != std::string::npos) {
                         size_t lt = actualTypeName.find('<');
                         std::string baseName = actualTypeName.substr(0, lt);
                         std::string argsStr = actualTypeName.substr(lt + 1);
@@ -5027,22 +5036,22 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                 arg = arg.substr(s, e - s + 1);
                             mangledName += "_" + arg;
                         }
-                        aria_type = type_system->getStructType(mangledName);
+                        npk_type = type_system->getStructType(mangledName);
                     }
-                    if (!aria_type) {
-                        aria_type = type_system->getPrimitiveType(actualTypeName);
+                    if (!npk_type) {
+                        npk_type = type_system->getPrimitiveType(actualTypeName);
                     }
                 }
                 
-                if (aria_type) {
-                    value_types[alloca] = aria_type;
-                    ARIA_DBG_STREAM << "[DEBUG VARDECL] Registered value_types for '" << varDecl->varName << "' with type kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
+                if (npk_type) {
+                    value_types[alloca] = npk_type;
+                    ARIA_DBG_STREAM << "[DEBUG VARDECL] Registered value_types for '" << varDecl->varName << "' with type kind: " << static_cast<int>(npk_type->getKind()) << std::endl;
                 }
             }
             
             // CRITICAL FIX: Also track type name for exotic type routing
             // ExprCodegen::getExprExoticTypeName() checks var_aria_types to route
-            // modulo operations to runtime functions (aria_tryte_mod, aria_nyte_mod)
+            // modulo operations to runtime functions (npk_tryte_mod, npk_nyte_mod)
             var_aria_types[varDecl->varName] = actualTypeName;
             ARIA_DBG_STREAM << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
             
@@ -5257,7 +5266,86 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                             if (auto* srcAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
                                 srcElemType = srcAlloca->getAllocatedType();
                             }
-                            
+
+                            // v0.19.0: Multi-dimensional array initializer.
+                            // ARRAY_LITERAL codegen for [[r0...], [r1...], ...] produces a flat
+                            // alloca of pointer-sized slots, one ptr per row (each ptr points to
+                            // an inner flat alloca of the row's scalar elements).  When the
+                            // destination element type is itself an array type we must dereference
+                            // each row pointer and copy its scalar elements into the proper
+                            // [0, row, col] GEP slot of the typed destination alloca.
+                            if (elemType->isArrayTy() && srcElemType->isPointerTy()) {
+                                auto* innerArrType = llvm::cast<llvm::ArrayType>(elemType);
+                                llvm::Type* innerElemType = innerArrType->getElementType();
+                                uint64_t innerNumElems = innerArrType->getNumElements();
+
+                                // Discover the actual element type stored by the inner alloca
+                                // (integer literals without suffix produce i64, not i32).
+                                // Walk GEP+store chains into the outer alloca to find the first
+                                // inner alloca and query its allocated type.
+                                llvm::Type* innerSrcElemType = innerElemType; // fallback
+                                if (auto* outerAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
+                                    for (auto* outerUser : outerAlloca->users()) {
+                                        if (auto* gep = llvm::dyn_cast<llvm::GetElementPtrInst>(outerUser)) {
+                                            for (auto* gepUser : gep->users()) {
+                                                if (auto* si = llvm::dyn_cast<llvm::StoreInst>(gepUser)) {
+                                                    if (auto* inner = llvm::dyn_cast<llvm::AllocaInst>(
+                                                            si->getValueOperand())) {
+                                                        innerSrcElemType = inner->getAllocatedType();
+                                                        goto found_inner_type;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    found_inner_type:;
+                                }
+
+                                for (uint64_t i = 0; i < numElems; ++i) {
+                                    // Load inner row pointer from outer flat alloca slot i
+                                    llvm::Value* rowPtrLoc = builder.CreateGEP(
+                                        srcElemType, initVal,
+                                        llvm::ConstantInt::get(builder.getInt64Ty(), i),
+                                        "arr2d.row.src");
+                                    llvm::Value* rowPtr = builder.CreateLoad(
+                                        llvm::PointerType::get(context, 0), rowPtrLoc,
+                                        "arr2d.row.ptr");
+                                    // Copy each scalar element from the inner alloca
+                                    for (uint64_t j = 0; j < innerNumElems; ++j) {
+                                        llvm::Value* innerSrcPtr = builder.CreateGEP(
+                                            innerSrcElemType, rowPtr,
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), j),
+                                            "arr2d.elem.src");
+                                        llvm::Value* innerElemVal = builder.CreateLoad(
+                                            innerSrcElemType, innerSrcPtr, "arr2d.elem.val");
+                                        // Cast source element type to destination element type
+                                        if (innerSrcElemType != innerElemType) {
+                                            if (innerSrcElemType->isIntegerTy() && innerElemType->isIntegerTy()) {
+                                                unsigned srcBits = innerSrcElemType->getIntegerBitWidth();
+                                                unsigned dstBits = innerElemType->getIntegerBitWidth();
+                                                if (srcBits > dstBits)
+                                                    innerElemVal = builder.CreateTrunc(
+                                                        innerElemVal, innerElemType, "arr2d.trunc");
+                                                else
+                                                    innerElemVal = builder.CreateSExt(
+                                                        innerElemVal, innerElemType, "arr2d.sext");
+                                            } else if (innerSrcElemType->isFloatingPointTy() &&
+                                                       innerElemType->isFloatingPointTy()) {
+                                                innerElemVal = builder.CreateFPCast(
+                                                    innerElemVal, innerElemType, "arr2d.fpcast");
+                                            }
+                                        }
+                                        std::vector<llvm::Value*> dstIdx = {
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), i),
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), j)
+                                        };
+                                        llvm::Value* dstPtr = builder.CreateInBoundsGEP(
+                                            varType, alloca, dstIdx, "arr2d.elem.dst");
+                                        builder.CreateStore(innerElemVal, dstPtr);
+                                    }
+                                }
+                            } else {
                             for (uint64_t i = 0; i < numElems; ++i) {
                                 // Load element i from the tmp flat alloca using SOURCE type
                                 llvm::Value* srcPtr = builder.CreateGEP(
@@ -5290,6 +5378,7 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                                     varType, alloca, destIdx, "arr.init.dst");
                                 builder.CreateStore(elem, destPtr);
                             }
+                            } // end flat-copy else
                         } else {
                             builder.CreateStore(initVal, alloca);
                         }
@@ -5453,10 +5542,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (!builder.GetInsertBlock()->getTerminator()) {
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -5576,10 +5665,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 builder.CreateStore(nextVal, iteratorVar);
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -5725,10 +5814,10 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -5996,15 +6085,18 @@ llvm::Value* aria::IRGenerator::codegenStatement(ASTNode* stmt) {
                 
                 // Check for wildcard pattern (*)
                 bool is_wildcard = false;
-                if (pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
+                if (pick_case->pattern && pick_case->pattern->type == ASTNode::NodeType::IDENTIFIER) {
                     IdentifierExpr* ident = static_cast<IdentifierExpr*>(pick_case->pattern.get());
                     if (ident->name == "*") {
                         is_wildcard = true;
                     }
                 }
-                
-                if (is_wildcard) {
-                    // Wildcard always matches
+
+                // v0.19.1: Struct destructure pattern — always matches, binds fields
+                bool is_struct_pat = !pick_case->struct_pat_type.empty();
+
+                if (is_wildcard || is_struct_pat) {
+                    // Wildcard / struct pattern always matches
                     builder.CreateBr(body_block);
                 } else {
                     // Generate pattern value
@@ -6083,6 +6175,35 @@ skip_comparison:
                 // Body block: execute case body
                 body_block->insertInto(func);
                 builder.SetInsertPoint(body_block);
+
+                // v0.19.1: Struct destructure — bind fields as locals before body
+                std::vector<std::string> struct_bound_fields;
+                if (is_struct_pat && !pick_case->struct_pat_fields.empty()) {
+                    // Get the LLVM struct type — named by the bare struct name (not "struct.X")
+                    llvm::StructType* llvm_st = llvm::StructType::getTypeByName(
+                        context, pick_case->struct_pat_type);
+                    // Get the semantic struct type for field index lookup
+                    Type* sema_type = type_system->getStructType(pick_case->struct_pat_type);
+                    StructType* sema_st = sema_type ? static_cast<StructType*>(sema_type) : nullptr;
+                    if (llvm_st && sema_st) {
+                        for (const std::string& fieldName : pick_case->struct_pat_fields) {
+                            if (fieldName == "_") continue;
+                            int fIdx = sema_st->getFieldIndex(fieldName);
+                            if (fIdx < 0 || (unsigned)fIdx >= llvm_st->getNumElements()) continue;
+                            llvm::Type* fldTy = llvm_st->getElementType((unsigned)fIdx);
+                            // Extract field value from the loaded struct
+                            llvm::Value* fldVal = builder.CreateExtractValue(
+                                selector, (unsigned)fIdx, fieldName + ".extracted");
+                            // Alloca + store so the binding behaves like a local variable
+                            llvm::Value* fldAlloca = builder.CreateAlloca(fldTy, nullptr, fieldName);
+                            builder.CreateStore(fldVal, fldAlloca);
+                            // Save previous binding (if any) to restore after body
+                            named_values[fieldName] = fldAlloca;
+                            struct_bound_fields.push_back(fieldName);
+                        }
+                    }
+                }
+
                 codegenStatement(pick_case->body.get());
                 
                 // Branch to end if no terminator
@@ -6552,10 +6673,10 @@ skip_comparison:
             counterPhi->addIncoming(nextVal, incBB);
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -6654,10 +6775,10 @@ skip_comparison:
             counterPhi->addIncoming(nextVal, incBB);
             // v0.8.1: GC safepoint at loop back-edge
             {
-                llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                 if (!safepoint_fn) {
                     llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                    safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                 }
                 builder.CreateCall(safepoint_fn);
             }
@@ -6731,10 +6852,10 @@ skip_comparison:
                 builder.CreateStore(builder.getInt1(true), completedFlag);
                 // v0.8.1: GC safepoint at loop back-edge
                 {
-                    llvm::Function* safepoint_fn = module->getFunction("aria_gc_safepoint");
+                    llvm::Function* safepoint_fn = module->getFunction("npk_gc_safepoint");
                     if (!safepoint_fn) {
                         llvm::FunctionType* sp_ty = llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false);
-                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "aria_gc_safepoint", module.get());
+                        safepoint_fn = llvm::Function::Create(sp_ty, llvm::Function::ExternalLinkage, "npk_gc_safepoint", module.get());
                     }
                     builder.CreateCall(safepoint_fn);
                 }
@@ -7175,7 +7296,7 @@ skip_comparison:
 // Expression Code Generation
 // =============================================================================
 
-llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
+llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
     if (!expr) {
         return nullptr;
     }
@@ -7236,15 +7357,15 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 
                 if (is_float) {
                     // High-precision float literal - use FLT128 if many digits
-                    aria::semantic::FloatPrecision precision;
+                    npk::semantic::FloatPrecision precision;
                     if (raw.length() > 17) {  // More digits than float64 can represent
-                        precision = aria::semantic::FloatPrecision::FLT128;
+                        precision = npk::semantic::FloatPrecision::FLT128;
                     } else {
-                        precision = aria::semantic::FloatPrecision::FLT64;
+                        precision = npk::semantic::FloatPrecision::FLT64;
                     }
                     
                     // Convert using LiteralConverter
-                    auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
+                    auto apfloat_opt = npk::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
                     if (apfloat_opt) {
                         llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
                         return result;
@@ -7261,7 +7382,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     
                     // Convert using LiteralConverter
-                    auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
+                    auto apint_opt = npk::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
                     if (apint_opt) {
                         llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
                         return result;
@@ -7333,13 +7454,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 );
                 
                 // Get or create AriaString struct type
-                llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
-                if (!aria_string_type) {
+                llvm::StructType* npk_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
+                if (!npk_string_type) {
                     std::vector<llvm::Type*> fields = {
                         llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                         llvm::Type::getInt64Ty(context)
                     };
-                    aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+                    npk_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
                 }
                 
                 // Create a global AriaString struct constant
@@ -7347,11 +7468,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     llvm::ConstantExpr::getPointerCast(str_gv, llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
                     builder.getInt64(str.length())
                 };
-                llvm::Constant* string_struct = llvm::ConstantStruct::get(aria_string_type, struct_values);
+                llvm::Constant* string_struct = llvm::ConstantStruct::get(npk_string_type, struct_values);
                 
                 llvm::GlobalVariable* string_gv = new llvm::GlobalVariable(
                     *module,
-                    aria_string_type,
+                    npk_string_type,
                     true,  // isConstant
                     llvm::GlobalValue::PrivateLinkage,
                     string_struct,
@@ -7686,9 +7807,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
                     
                     if (isNumericType && primType) {
-                        // Numeric type negation - call aria_*_neg runtime function
+                        // Numeric type negation - call npk_*_neg runtime function
                         std::string typeName = primType->getName();
-                        std::string funcName = "aria_" + typeName + "_neg";
+                        std::string funcName = "npk_" + typeName + "_neg";
                         
                         ARIA_DBG_STREAM << "[DEBUG] Generated numeric negation call: " << funcName << std::endl;
                         
@@ -8193,12 +8314,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     }
 
                     sema::PointerType* ptr_type = static_cast<sema::PointerType*>(pointer_aria_type);
-                    Type* aria_type = ptr_type->getPointeeType();
-                    if (!aria_type || aria_type->getKind() != TypeKind::STRUCT) {
+                    Type* npk_type = ptr_type->getPointeeType();
+                    if (!npk_type || npk_type->getKind() != TypeKind::STRUCT) {
                         return nullptr;
                     }
 
-                    StructType* struct_type = static_cast<StructType*>(aria_type);
+                    StructType* struct_type = static_cast<StructType*>(npk_type);
                     int field_index = -1;
                     Type* field_type = nullptr;
                     const auto& fields = struct_type->getFields();
@@ -8451,12 +8572,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return nullptr;  // No type information
                     }
                     
-                    Type* aria_type = type_it->second;
+                    Type* npk_type = type_it->second;
                     
                     // Only handle struct types for now
-                    if (aria_type->getKind() == TypeKind::VECTOR) {
+                    if (npk_type->getKind() == TypeKind::VECTOR) {
                         // Vector component assignment (.x, .y, .z, .w)
-                        VectorType* vec_type = static_cast<VectorType*>(aria_type);
+                        VectorType* vec_type = static_cast<VectorType*>(npk_type);
                         int dimension = vec_type->getDimension();
 
                         int component_index = -1;
@@ -8487,11 +8608,11 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return rhs;
                     }
                     
-                    if (aria_type->getKind() != TypeKind::STRUCT) {
+                    if (npk_type->getKind() != TypeKind::STRUCT) {
                         return nullptr;
                     }
                     
-                    StructType* struct_type = static_cast<StructType*>(aria_type);
+                    StructType* struct_type = static_cast<StructType*>(npk_type);
                     
                     // Find the field index
                     int field_index = -1;
@@ -9437,19 +9558,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
             }
 
-            // Helper lambda: call aria_string_compare_str and return i32 result (-1/0/1)
+            // Helper lambda: call npk_string_compare_str and return i32 result (-1/0/1)
             auto emitStringCompare = [&]() -> llvm::Value* {
-                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                 if (!ariaStrType) {
                     ariaStrType = llvm::StructType::create(context,
                         {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                          llvm::Type::getInt64Ty(context)},
-                        "struct.AriaString");
+                        "struct.NpkString");
                 }
                 llvm::FunctionType* cmpFT = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(context),
                     {ariaStrType, ariaStrType}, false);
-                llvm::FunctionCallee cmpFn = module->getOrInsertFunction("aria_string_compare_str", cmpFT);
+                llvm::FunctionCallee cmpFn = module->getOrInsertFunction("npk_string_compare_str", cmpFT);
                 llvm::Value* lStr = L->getType()->isPointerTy()
                     ? builder.CreateLoad(ariaStrType, L, "str.cmp.lhs")
                     : L;
@@ -9544,9 +9665,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type addition
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_add";
+                        std::string funcName = "npk_" + typeName + "_add";
                         
-                        // frac types use sret/pointer ABI: void aria_frac32_add(Frac32*, const Frac32*, const Frac32*)
+                        // frac types use sret/pointer ABI: void npk_frac32_add(Frac32*, const Frac32*, const Frac32*)
                         if (typeName.find("frac") == 0) {
                             llvm::Type* fracType = L->getType();
                             llvm::Type* ptrType = llvm::PointerType::getUnqual(context);
@@ -9587,7 +9708,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee addFunc = module->getOrInsertFunction(
-                            "aria_fix256_add", funcType);
+                            "npk_fix256_add", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.add_r");
@@ -9638,18 +9759,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             if (std::holds_alternative<std::string>(lit->value)) rightIsStr = true;
                         }
                         if (leftIsStr || rightIsStr) {
-                            ARIA_DBG_STREAM << "[STRING +] Emitting aria_string_concat_simple call" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            ARIA_DBG_STREAM << "[STRING +] Emitting npk_string_concat_simple call" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::Type* strPtrTy = llvm::PointerType::get(ariaStrType, 0);
                             llvm::FunctionType* concatFT = llvm::FunctionType::get(
                                 strPtrTy, {strPtrTy, strPtrTy}, false);
-                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("aria_string_concat_simple", concatFT);
+                            llvm::FunctionCallee concatFn = module->getOrInsertFunction("npk_string_concat_simple", concatFT);
                             // L and R are already AriaString* pointers
                             return builder.CreateCall(concatFn, {L, R}, "str.concat");
                         }
@@ -9727,7 +9848,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type subtraction
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_sub";
+                        std::string funcName = "npk_" + typeName + "_sub";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -9785,7 +9906,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee subFunc = module->getOrInsertFunction(
-                            "aria_fix256_sub", funcType);
+                            "npk_fix256_sub", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.sub_r");
@@ -9897,7 +10018,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type multiplication
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_mul";
+                        std::string funcName = "npk_" + typeName + "_mul";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -9939,7 +10060,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee mulFunc = module->getOrInsertFunction(
-                            "aria_fix256_mul", funcType);
+                            "npk_fix256_mul", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.mul_r");
@@ -10023,7 +10144,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Generate runtime function call for numeric type division
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_div";
+                        std::string funcName = "npk_" + typeName + "_div";
                         
                         // frac types use sret/pointer ABI
                         if (typeName.find("frac") == 0) {
@@ -10065,7 +10186,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             llvm::Type::getVoidTy(context), {ptrType, ptrType, ptrType}, false);
                         llvm::FunctionCallee divFunc = module->getOrInsertFunction(
-                            "aria_fix256_div", funcType);
+                            "npk_fix256_div", funcType);
                         llvm::Value* resultAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_ret");
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.div_r");
@@ -10125,7 +10246,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         return result;
                     }
                     // CRITICAL FIX: Balanced ternary/nonary modulo (tryte/nyte)
-                    // Must use ternary_codegen which calls aria_tryte_mod/aria_nyte_mod
+                    // Must use ternary_codegen which calls npk_tryte_mod/npk_nyte_mod
                     // instead of native srem (which breaks homomorphism on biased values)
                     if (isTernary && ternaryType) {
                         ARIA_DBG_STREAM << "[DEBUG MODULO] Using TERNARY codegen for type: " << ternaryType->toString() << std::endl;
@@ -10197,7 +10318,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
-                            "aria_fix256_eq", funcType);
+                            "npk_fix256_eq", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.eq_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10229,7 +10350,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10248,7 +10369,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* zero = llvm::ConstantInt::get(i32Type, 0);
                         return builder.CreateICmpEQ(cmpResult, zero, "eq_result");
                     }
-                    // STRING EQUALITY: detect string types and call aria_string_equals
+                    // STRING EQUALITY: detect string types and call npk_string_equals
                     // Pointer equality for strings gives wrong results — two literals with the
                     // same content but different addresses would compare as unequal.
                     {
@@ -10287,18 +10408,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                         if (leftIsString || rightIsString) {
-                            ARIA_DBG_STREAM << "[STRING ==] Emitting aria_string_equals call" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            ARIA_DBG_STREAM << "[STRING ==] Emitting npk_string_equals call" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::FunctionType* eqFT = llvm::FunctionType::get(
                                 llvm::Type::getInt1Ty(context),
                                 {ariaStrType, ariaStrType}, false);
-                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("npk_string_equals", eqFT);
                             // Load AriaString value from pointer (both sides are ptr to AriaString)
                             llvm::Value* lStr = L->getType()->isPointerTy()
                                 ? builder.CreateLoad(ariaStrType, L, "str.lhs")
@@ -10380,7 +10501,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee eqFunc = module->getOrInsertFunction(
-                            "aria_fix256_eq", funcType);
+                            "npk_fix256_eq", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ne_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10410,7 +10531,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10437,7 +10558,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                     }
-                    // STRING INEQUALITY: use aria_string_equals and negate
+                    // STRING INEQUALITY: use npk_string_equals and negate
                     {
                         bool leftIsString = false, rightIsString = false;
                         if (leftType && leftType->isPrimitive() &&
@@ -10471,18 +10592,18 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                             }
                         }
                         if (leftIsString || rightIsString) {
-                            ARIA_DBG_STREAM << "[STRING !=] Emitting aria_string_equals + negate" << std::endl;
-                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                            ARIA_DBG_STREAM << "[STRING !=] Emitting npk_string_equals + negate" << std::endl;
+                            llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                             if (!ariaStrType) {
                                 ariaStrType = llvm::StructType::create(context,
                                     {llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                                      llvm::Type::getInt64Ty(context)},
-                                    "struct.AriaString");
+                                    "struct.NpkString");
                             }
                             llvm::FunctionType* eqFT = llvm::FunctionType::get(
                                 llvm::Type::getInt1Ty(context),
                                 {ariaStrType, ariaStrType}, false);
-                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("aria_string_equals", eqFT);
+                            llvm::FunctionCallee eqFn = module->getOrInsertFunction("npk_string_equals", eqFT);
                             llvm::Value* lStr = L->getType()->isPointerTy()
                                 ? builder.CreateLoad(ariaStrType, L, "str.lhs")
                                 : L;
@@ -10554,7 +10675,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee ltFunc = module->getOrInsertFunction(
-                            "aria_fix256_lt", funcType);
+                            "npk_fix256_lt", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.lt_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10568,7 +10689,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10657,7 +10778,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee leFunc = module->getOrInsertFunction(
-                            "aria_fix256_le", funcType);
+                            "npk_fix256_le", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.le_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10671,7 +10792,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10761,7 +10882,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee gtFunc = module->getOrInsertFunction(
-                            "aria_fix256_gt", funcType);
+                            "npk_fix256_gt", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.gt_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10775,7 +10896,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10864,7 +10985,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee geFunc = module->getOrInsertFunction(
-                            "aria_fix256_ge", funcType);
+                            "npk_fix256_ge", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.ge_r");
                         builder.CreateStore(L, leftAlloca);
@@ -10878,7 +10999,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (isNumericType && numericType) {
                         PrimitiveType* prim = static_cast<PrimitiveType*>(numericType);
                         std::string typeName = prim->getName();
-                        std::string funcName = "aria_" + typeName + "_cmp";
+                        std::string funcName = "npk_" + typeName + "_cmp";
                         
                         llvm::Type* i32Type = llvm::Type::getInt32Ty(context);
                         llvm::Type* numericLLVMType = L->getType();
@@ -10927,7 +11048,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // SPACESHIP OPERATOR (<=>)
                 // Three-way comparison: returns -1 if left < right, 0 if equal, 1 if left > right
                 case frontend::TokenType::TOKEN_SPACESHIP: {
-                    // String spaceship: returns -1/0/1 directly from aria_string_compare_str
+                    // String spaceship: returns -1/0/1 directly from npk_string_compare_str
                     if (isStringOp) {
                         llvm::Value* cmp = emitStringCompare();
                         return builder.CreateSExt(cmp, llvm::Type::getInt64Ty(context), "str.spaceship");
@@ -10952,7 +11073,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::FunctionType* funcType = llvm::FunctionType::get(
                             i32Type, {ptrType, ptrType}, false);
                         llvm::FunctionCallee cmpFunc = module->getOrInsertFunction(
-                            "aria_fix256_cmp", funcType);
+                            "npk_fix256_cmp", funcType);
                         llvm::Value* leftAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_l");
                         llvm::Value* rightAlloca = builder.CreateAlloca(fix256Type, nullptr, "fix256.cmp_r");
                         builder.CreateStore(L, leftAlloca);
@@ -11441,6 +11562,28 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             // Allocate space for the struct on the stack
             llvm::AllocaInst* struct_alloca = builder.CreateAlloca(struct_type, nullptr, "struct.tmp");
             
+            // v0.19.1: Struct update syntax — if base_name is set, copy base first,
+            // then apply field overrides stored in objLit->fields.
+            if (!objLit->base_name.empty()) {
+                auto base_it = named_values.find(objLit->base_name);
+                if (base_it != named_values.end()) {
+                    llvm::Value* base_var = base_it->second;
+                    // base_var is an alloca holding the struct value — get its size and memcpy
+                    llvm::DataLayout dl = module->getDataLayout();
+                    uint64_t struct_size = dl.getTypeAllocSize(struct_type);
+                    // Load base struct value and store into new alloca (field-by-field for correctness)
+                    llvm::StructType* st_cast = llvm::cast<llvm::StructType>(struct_type);
+                    for (unsigned fi = 0; fi < st_cast->getNumElements(); ++fi) {
+                        llvm::Type* ft = st_cast->getElementType(fi);
+                        llvm::Value* src_ptr = builder.CreateStructGEP(struct_type, base_var, fi, "base.fld.src");
+                        llvm::Value* dst_ptr = builder.CreateStructGEP(struct_type, struct_alloca, fi, "base.fld.dst");
+                        llvm::Value* fval = builder.CreateLoad(ft, src_ptr, "base.fld.val");
+                        builder.CreateStore(fval, dst_ptr);
+                    }
+                    (void)struct_size;
+                }
+            }
+            
             // Initialize each field
             // Fields are in objLit->fields (std::vector<Field>)
             for (size_t i = 0; i < objLit->fields.size(); ++i) {
@@ -11610,17 +11753,17 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             sema::PointerType* ptr_type = static_cast<sema::PointerType*>(pointer_aria_type);
-            Type* aria_type = ptr_type->getPointeeType();
+            Type* npk_type = ptr_type->getPointeeType();
             
             // Now handle the member access on the dereferenced pointer
             // (same logic as MEMBER_ACCESS case)
             
             // Handle struct member access
-            if (aria_type->getKind() != TypeKind::STRUCT) {
+            if (npk_type->getKind() != TypeKind::STRUCT) {
                 return nullptr;  // Not pointing to a struct
             }
             
-            StructType* struct_type = static_cast<StructType*>(aria_type);
+            StructType* struct_type = static_cast<StructType*>(npk_type);
             
             // Find the field index
             int field_index = -1;
@@ -11716,12 +11859,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             
             ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Found type info!" << std::endl;
             
-            Type* aria_type = type_it->second;
-            ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Type kind: " << static_cast<int>(aria_type->getKind()) << std::endl;
+            Type* npk_type = type_it->second;
+            ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Type kind: " << static_cast<int>(npk_type->getKind()) << std::endl;
             
             // Handle vector member access (.x, .y, .z)
-            if (aria_type->getKind() == TypeKind::VECTOR) {
-                VectorType* vec_type = static_cast<VectorType*>(aria_type);
+            if (npk_type->getKind() == TypeKind::VECTOR) {
+                VectorType* vec_type = static_cast<VectorType*>(npk_type);
                 int dimension = vec_type->getDimension();
                 
                 // Map component name to index
@@ -11750,7 +11893,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // PHASE 4: Handle Result<T> member access (.value, .error, .is_error)
-            if (aria_type->getKind() == TypeKind::RESULT) {
+            if (npk_type->getKind() == TypeKind::RESULT) {
                 ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Handling Result type member access" << std::endl;
                 
                 // Result<T> is represented as LLVM struct { T value, ptr error, i1 is_error }
@@ -11774,7 +11917,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     // Result is stored in memory (e.g., local variable)
                     // Load it first, then extract
                     // Get the Result struct type from the type system
-                    llvm::Type* result_llvm_type = mapType(aria_type);
+                    llvm::Type* result_llvm_type = mapType(npk_type);
                     llvm::Value* result_val = builder.CreateLoad(result_llvm_type, object_ptr, "result");
                     llvm::Value* field = builder.CreateExtractValue(result_val, field_index, member->member);
                     // .error field is ptr (inttoptr of error code in fail()) — convert back to int32
@@ -11794,8 +11937,8 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // Handle optional type member access (safe navigation ?.)
-            if (aria_type->getKind() == TypeKind::OPTIONAL) {
-                OptionalType* opt_type = static_cast<OptionalType*>(aria_type);
+            if (npk_type->getKind() == TypeKind::OPTIONAL) {
+                OptionalType* opt_type = static_cast<OptionalType*>(npk_type);
                 Type* inner_type = opt_type->getWrappedType();
                 
                 if (inner_type->getKind() != TypeKind::STRUCT) {
@@ -11821,7 +11964,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 // Load the optional struct { i1, InnerStruct }
-                llvm::Type* opt_llvm_type = mapType(aria_type);
+                llvm::Type* opt_llvm_type = mapType(npk_type);
                 llvm::Value* opt_val = builder.CreateLoad(opt_llvm_type, object_ptr, "opt.load");
                 
                 // Extract hasValue flag (field 0)
@@ -11866,19 +12009,19 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             
             // v0.2.43: Handle string member access ($.length)
             // Strings are PrimitiveType("string") but backed by AriaString = {ptr, i64}
-            if (aria_type->getKind() == TypeKind::PRIMITIVE && aria_type->toString() == "string") {
+            if (npk_type->getKind() == TypeKind::PRIMITIVE && npk_type->toString() == "string") {
                 if (member->member == "length") {
                     // Load the string pointer from the alloca
                     llvm::Value* strPtr = builder.CreateLoad(
                         llvm::PointerType::get(context, 0), object_ptr, "str.ptr");
                     // Get or create AriaString struct type
-                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+                    llvm::StructType* ariaStrType = llvm::StructType::getTypeByName(context, "struct.NpkString");
                     if (!ariaStrType) {
                         std::vector<llvm::Type*> fields = {
                             llvm::PointerType::get(context, 0),
                             builder.getInt64Ty()
                         };
-                        ariaStrType = llvm::StructType::create(context, fields, "struct.AriaString");
+                        ariaStrType = llvm::StructType::create(context, fields, "struct.NpkString");
                     }
                     // GEP to field 1 (length) and load
                     llvm::Value* lenPtr = builder.CreateStructGEP(ariaStrType, strPtr, 1, "str.len.ptr");
@@ -11889,7 +12032,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // v0.2.44: Handle array member access ($.length for array types)
-            if (aria_type->getKind() == TypeKind::ARRAY) {
+            if (npk_type->getKind() == TypeKind::ARRAY) {
                 if (member->member == "length") {
                     // Get array size from the LLVM alloca type
                     if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(object_ptr)) {
@@ -11900,7 +12043,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     // Fallback: get from Aria type system
-                    sema::ArrayType* arrType = static_cast<sema::ArrayType*>(aria_type);
+                    sema::ArrayType* arrType = static_cast<sema::ArrayType*>(npk_type);
                     int size = arrType->getSize();
                     if (size >= 0) {
                         return llvm::ConstantInt::get(builder.getInt64Ty(), static_cast<uint64_t>(size));
@@ -11913,13 +12056,13 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
             }
             
             // Handle struct member access
-            if (aria_type->getKind() != TypeKind::STRUCT) {
+            if (npk_type->getKind() != TypeKind::STRUCT) {
                 // Not a struct type
-                ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Not a struct or Result type, kind=" << static_cast<int>(aria_type->getKind()) << std::endl;
+                ARIA_DBG_STREAM << "[DEBUG MEMBER_ACCESS] Not a struct or Result type, kind=" << static_cast<int>(npk_type->getKind()) << std::endl;
                 return nullptr;
             }
             
-            StructType* struct_type = static_cast<StructType*>(aria_type);
+            StructType* struct_type = static_cast<StructType*>(npk_type);
             
             // Find the field index
             int field_index = -1;
@@ -11981,25 +12124,39 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Array slicing: arr[start..end] or arr[start...end]
                 RangeExpr* rangeExpr = static_cast<RangeExpr*>(indexExpr->index.get());
                 
-                // Generate code for the array (should be a pointer)
+                // v0.19.0 Phase 4: resolve array pointer and element type generically.
+                // Handles both fixed-size arrays (alloca [N x T]) and dynamic/pointer arrays.
                 llvm::Value* array_ptr = nullptr;
-                
+                llvm::Type* elem_type = builder.getInt64Ty(); // default fallback
+                uint64_t elem_size_bytes = 8;
+
+                auto resolveArrayBase = [&](llvm::Value* var) {
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                        llvm::Type* at = allocaInst->getAllocatedType();
+                        if (at->isPointerTy()) {
+                            // Dynamic array — load the pointer stored in the alloca
+                            array_ptr = builder.CreateLoad(at, var, "arr.dyn.ptr");
+                        } else if (at->isArrayTy()) {
+                            // Fixed-size array alloca: treat its address as a flat element pointer
+                            elem_type = llvm::cast<llvm::ArrayType>(at)->getElementType();
+                            array_ptr = var;  // GEP base is the alloca itself
+                        } else {
+                            array_ptr = var;
+                        }
+                        if (elem_type->isSized()) {
+                            elem_size_bytes = module->getDataLayout().getTypeAllocSize(elem_type);
+                        }
+                    } else {
+                        array_ptr = var;
+                    }
+                };
+
                 // Get array pointer
                 if (indexExpr->array->type == ASTNode::NodeType::IDENTIFIER) {
                     IdentifierExpr* ident = static_cast<IdentifierExpr*>(indexExpr->array.get());
                     auto it = named_values.find(ident->name);
                     if (it != named_values.end()) {
-                        llvm::Value* var = it->second;
-                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
-                            llvm::Type* allocated_type = allocaInst->getAllocatedType();
-                            if (allocated_type->isPointerTy()) {
-                                array_ptr = builder.CreateLoad(allocated_type, var, ident->name + ".ptr");
-                            } else {
-                                array_ptr = var;
-                            }
-                        } else {
-                            array_ptr = var;
-                        }
+                        resolveArrayBase(it->second);
                     }
                 } else {
                     array_ptr = codegenExpression(indexExpr->array.get());
@@ -12034,11 +12191,12 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 // Get element type (assume int64 for now - should track this properly)
-                llvm::Type* elem_type = builder.getInt64Ty();
+                // elem_type and elem_size_bytes were already resolved during array base resolution above.
                 
                 // Allocate memory for the new slice
                 // Call malloc(length * sizeof(element))
-                llvm::Value* elem_size = llvm::ConstantInt::get(builder.getInt64Ty(), 8); // sizeof(int64)
+                llvm::Value* elem_size = llvm::ConstantInt::get(builder.getInt64Ty(),
+                    static_cast<uint64_t>(elem_size_bytes));
                 llvm::Value* byte_count = builder.CreateMul(length, elem_size, "slice.bytes");
                 
                 llvm::Function* malloc_func = module->getFunction("malloc");
@@ -12460,6 +12618,9 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (at != var_aria_types.end()) {
                         std::string t = at->second;
                         if (!t.empty() && t.back() == '@') t.pop_back();
+                        // Strip "[]" dynamic array suffix — var holds ptr to elements of T
+                        if (t.size() >= 2 && t.substr(t.size() - 2) == "[]")
+                            t = t.substr(0, t.size() - 2);
                         if      (t == "int8"  || t == "i8")  elem_type = builder.getInt8Ty();
                         else if (t == "int16" || t == "i16") elem_type = builder.getInt16Ty();
                         else if (t == "int32" || t == "i32") elem_type = builder.getInt32Ty();
@@ -12754,7 +12915,7 @@ llvm::Value* aria::IRGenerator::codegenExpression(ASTNode* expr) {
 // Debug Info Generation (Phase 7.4.1)
 // =============================================================================
 
-void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
+void npk::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
     if (!debug_enabled || !di_builder) {
         return;
     }
@@ -12765,7 +12926,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_compile_unit = di_builder->createCompileUnit(
         llvm::dwarf::DW_LANG_C,  // Use C for now (could register DW_LANG_Aria later)
         di_file,
-        "Aria Compiler v0.2.12",  // Producer
+        "Nitpick Compiler (npkc)",  // Producer
         false,                    // isOptimized
         "",                       // Flags
         0                         // Runtime version
@@ -12775,7 +12936,7 @@ void aria::IRGenerator::initDebugInfo(const std::string& filename, const std::st
     di_scope_stack.push_back(di_compile_unit);
 }
 
-void aria::IRGenerator::finalizeDebugInfo() {
+void npk::IRGenerator::finalizeDebugInfo() {
     if (!debug_enabled || !di_builder) {
         return;
     }
@@ -12784,7 +12945,7 @@ void aria::IRGenerator::finalizeDebugInfo() {
     di_builder->finalize();
 }
 
-void aria::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
+void npk::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
     if (!debug_enabled || di_scope_stack.empty()) {
         return;
     }
@@ -12800,7 +12961,7 @@ void aria::IRGenerator::setDebugLocation(unsigned line, unsigned column) {
     builder.SetCurrentDebugLocation(llvm::DebugLoc(loc));
 }
 
-void aria::IRGenerator::clearDebugLocation() {
+void npk::IRGenerator::clearDebugLocation() {
     if (!debug_enabled) {
         return;
     }
@@ -12808,7 +12969,7 @@ void aria::IRGenerator::clearDebugLocation() {
     builder.SetCurrentDebugLocation(llvm::DebugLoc());
 }
 
-void aria::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
+void npk::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
     if (!debug_enabled) {
         return;
     }
@@ -12816,7 +12977,7 @@ void aria::IRGenerator::pushDebugScope(llvm::DIScope* scope) {
     di_scope_stack.push_back(scope);
 }
 
-void aria::IRGenerator::popDebugScope() {
+void npk::IRGenerator::popDebugScope() {
     if (!debug_enabled || di_scope_stack.size() <= 1) {
         return;  // Never pop the compile unit
     }
@@ -12824,7 +12985,7 @@ void aria::IRGenerator::popDebugScope() {
     di_scope_stack.pop_back();
 }
 
-llvm::DIScope* aria::IRGenerator::getCurrentDebugScope() {
+llvm::DIScope* npk::IRGenerator::getCurrentDebugScope() {
     if (!debug_enabled || di_scope_stack.empty()) {
         return nullptr;
     }
@@ -12832,13 +12993,13 @@ llvm::DIScope* aria::IRGenerator::getCurrentDebugScope() {
     return di_scope_stack.back();
 }
 
-llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
-    if (!debug_enabled || !aria_type) {
+llvm::DIType* npk::IRGenerator::mapDebugType(Type* npk_type) {
+    if (!debug_enabled || !npk_type) {
         return nullptr;
     }
     
     // Check cache first
-    std::string type_name = aria_type->toString();
+    std::string type_name = npk_type->toString();
     auto it = di_type_map.find(type_name);
     if (it != di_type_map.end()) {
         return it->second;
@@ -12846,9 +13007,9 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
     
     llvm::DIType* di_type = nullptr;
     
-    switch (aria_type->getKind()) {
+    switch (npk_type->getKind()) {
         case TypeKind::PRIMITIVE: {
-            auto* prim = static_cast<PrimitiveType*>(aria_type);
+            auto* prim = static_cast<PrimitiveType*>(npk_type);
             std::string name = prim->getName();
             unsigned bit_width = prim->getBitWidth();
             
@@ -12905,7 +13066,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
         }
         
         case TypeKind::POINTER: {
-            auto* ptr_type = static_cast<sema::PointerType*>(aria_type);
+            auto* ptr_type = static_cast<sema::PointerType*>(npk_type);
             llvm::DIType* pointee = mapDebugType(ptr_type->getPointeeType());
             
             // Check for memory qualifier (gc vs wild)
@@ -12923,7 +13084,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
         }
         
         case TypeKind::ARRAY: {
-            auto* arr_type = static_cast<sema::ArrayType*>(aria_type);
+            auto* arr_type = static_cast<sema::ArrayType*>(npk_type);
             llvm::DIType* elem_type = mapDebugType(arr_type->getElementType());
             
             if (arr_type->getSize() > 0) {
@@ -12972,7 +13133,7 @@ llvm::DIType* aria::IRGenerator::mapDebugType(Type* aria_type) {
 // Defer Statement Support
 // =============================================================================
 
-void aria::IRGenerator::executeScopeDefers() {
+void npk::IRGenerator::executeScopeDefers() {
     if (defer_stack.empty()) {
         return;
     }
@@ -13000,7 +13161,7 @@ void aria::IRGenerator::executeScopeDefers() {
     executing_defers = was_executing;
 }
 
-void aria::IRGenerator::executeFunctionDefers() {
+void npk::IRGenerator::executeFunctionDefers() {
     // Don't emit defer code after a terminator (e.g., exit's unreachable)
     if (builder.GetInsertBlock()->getTerminator()) {
         return;
@@ -13028,7 +13189,7 @@ void aria::IRGenerator::executeFunctionDefers() {
 // PHASE 4: Zero Implicit Conversion - Type Suffix Helpers
 // =============================================================================
 
-llvm::Type* aria::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) {
+llvm::Type* npk::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) {
     // Unsigned integers
     if (suffix == "u8") return builder.getInt8Ty();
     if (suffix == "u16") return builder.getInt16Ty();
@@ -13095,7 +13256,7 @@ llvm::Type* aria::IRGenerator::getLLVMTypeFromSuffix(const std::string& suffix) 
     return nullptr;
 }
 
-bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
+bool npk::IRGenerator::isSuffixSigned(const std::string& suffix) {
     // Signed prefixes
     if (suffix[0] == 'i') return true;  // i8, i16, i32, i64, i128, i256, ...
     if (suffix.substr(0, 3) == "tbb") return true;  // tbb8, tbb16, tbb32, tbb64
@@ -13113,7 +13274,7 @@ bool aria::IRGenerator::isSuffixSigned(const std::string& suffix) {
 // dyn Trait dispatch infrastructure (v0.2.36)
 // ============================================================================
 
-llvm::StructType* aria::IRGenerator::getDynFatPtrType() {
+llvm::StructType* npk::IRGenerator::getDynFatPtrType() {
     llvm::StructType* dynTy = llvm::StructType::getTypeByName(context, "struct.DynTraitObj");
     if (!dynTy) {
         llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
@@ -13122,7 +13283,7 @@ llvm::StructType* aria::IRGenerator::getDynFatPtrType() {
     return dynTy;
 }
 
-llvm::Function* aria::IRGenerator::generateVtableThunk(
+llvm::Function* npk::IRGenerator::generateVtableThunk(
     const std::string& traitName,
     const std::string& typeName,
     const TraitMethodInfo& method) {
@@ -13208,7 +13369,7 @@ llvm::Function* aria::IRGenerator::generateVtableThunk(
 // Evaluates rule conditions at runtime by binding $ to the value,
 // codegen'ing each condition expression, and branching to failsafe on violation.
 
-void aria::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc) {
+void npk::IRGenerator::emitLimitChecks(const std::string& rulesName, llvm::Value* value, llvm::Function* currentFunc) {
     auto it = rules_table.find(rulesName);
     if (it == rules_table.end()) return;
     

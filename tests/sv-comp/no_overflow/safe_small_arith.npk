@@ -1,0 +1,22 @@
+// SV-COMP NoOverflows equivalent: safe small arithmetic
+//
+// C analog: c/NoOverflows-Main/bitvector/
+// Property: LTL(G! overflow) — signed integer arithmetic never overflows
+// Aria: TBB type arithmetic on small values; Z3 --verify-overflow proves
+//       the values are well within tbb32 range, no ERR transition possible.
+//
+// Expected verdict: true   Strategy: z3verify (--verify-overflow)
+
+func:main = int32() {
+    tbb32:x = 100;
+    tbb32:y = 200;
+    tbb32:z = x + y;     // 300, far below INT_MAX — no overflow possible
+    pick(z) {
+        (ERR) { exit 1; },
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

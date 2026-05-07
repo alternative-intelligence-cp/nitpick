@@ -1,0 +1,104 @@
+// test_hexstream.aria — Hexstream tests
+use "../stdlib/hexstream.aria".*;
+
+func:failsafe = int32(tbb32:err_code) {
+    println("FAILSAFE triggered");
+    exit(1);
+};
+
+func:main = int32() {
+    // init — ensures FDs 3-5 are open
+    int32:r = raw Hexstream.init();
+    if (r != 0i32) {
+        println("FAIL: init");
+        exit(1);
+    }
+    println("OK: init");
+
+    // is_open checks
+    int32:o3 = raw Hexstream.is_open(3i32);
+    int32:o4 = raw Hexstream.is_open(4i32);
+    int32:o5 = raw Hexstream.is_open(5i32);
+    if (o3 != 1i32) {
+        println("FAIL: fd 3 not open");
+        exit(1);
+    }
+    if (o4 != 1i32) {
+        println("FAIL: fd 4 not open");
+        exit(1);
+    }
+    if (o5 != 1i32) {
+        println("FAIL: fd 5 not open");
+        exit(1);
+    }
+    println("OK: is_open fds 3-5");
+
+    // fd name lookup
+    int32:dbg_fd = raw Hexstream.fd("stddbg");
+    if (dbg_fd != 3i32) {
+        println("FAIL: fd stddbg != 3");
+        exit(1);
+    }
+    int32:dati_fd = raw Hexstream.fd("stddati");
+    if (dati_fd != 4i32) {
+        println("FAIL: fd stddati != 4");
+        exit(1);
+    }
+    int32:dato_fd = raw Hexstream.fd("stddato");
+    if (dato_fd != 5i32) {
+        println("FAIL: fd stddato != 5");
+        exit(1);
+    }
+    println("OK: fd name lookup");
+
+    // redirect fd 5 to a temp file, write, then verify
+    int32:rr = raw Hexstream.redirect_to_file(5i32, "/tmp/npk_hex_test.txt");
+    if (rr != 0i32) {
+        println("FAIL: redirect_to_file");
+        exit(1);
+    }
+    println("OK: redirect_to_file");
+
+    // write a string to fd 5
+    int32:wr = raw Hexstream.send(5i32, "hello hexstream\n");
+    if (wr < 0i32) {
+        println("FAIL: send");
+        exit(1);
+    }
+    println("OK: send");
+
+    // write int64 to fd 5
+    int32:wi = raw Hexstream.write_int64(5i32, 42i64);
+    if (wi < 0i32) {
+        println("FAIL: write_int64");
+        exit(1);
+    }
+    println("OK: write_int64");
+
+    // debug write goes to fd 3
+    drop raw Hexstream.dbg("debug test message");
+    println("OK: dbg");
+
+    // redirect fd 4 from the file we just wrote
+    int32:rf = raw Hexstream.redirect_from_file(4i32, "/tmp/npk_hex_test.txt");
+    if (rf != 0i32) {
+        println("FAIL: redirect_from_file");
+        exit(1);
+    }
+    println("OK: redirect_from_file");
+
+    // read the string back from fd 4
+    string:line = raw Hexstream.read_line(4i32);
+    println("OK: read_line");
+
+    // read the int64 back
+    int64:val = raw Hexstream.read_int64(4i32);
+    if (val != 42i64) {
+        println("FAIL: read_int64 != 42");
+        exit(1);
+    }
+    println("OK: read_int64");
+
+    println("PASS: all hexstream tests passed");
+    exit(0);
+};

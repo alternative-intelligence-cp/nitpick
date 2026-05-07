@@ -1,0 +1,24 @@
+// bug050: $$m split borrow of two distinct struct array elements
+// pair.buf[0] and pair.buf[1] are disjoint — both must be allowed.
+// v0.19.0 Phase 3 — struct array mixed borrow interaction
+// Expected exit code: 7  (p.buf[0]=3, p.buf[1]=4 → 3+4=7)
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+struct:Pair = {
+    int32:a;
+    int32[4]:buf;
+};
+
+func:main = int32() {
+    Pair:p;
+    p.buf[0] = 1i32;
+    p.buf[1] = 1i32;
+
+    $$m int32:r0 = p.buf[0];
+    $$m int32:r1 = p.buf[1];
+    r0 = 3i32;
+    r1 = 4i32;
+
+    exit p.buf[0] + p.buf[1];
+};

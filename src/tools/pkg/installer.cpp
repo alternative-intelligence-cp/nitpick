@@ -30,7 +30,7 @@ std::string shell_escape(const std::string& s) {
 }
 } // anonymous namespace
 
-namespace aria {
+namespace npk {
 namespace pkg {
 
 PackageInstaller::PackageInstaller() {
@@ -77,7 +77,7 @@ bool PackageInstaller::initializePackageDirectory() {
 
 bool PackageInstaller::extractPackage(const std::string& pkg_path, std::string& temp_dir) {
     // Create temporary directory
-    char temp_template[] = "/tmp/aria-pkg-XXXXXX";
+    char temp_template[] = "/tmp/npk-pkg-XXXXXX";
     char* temp_result = mkdtemp(temp_template);
     if (!temp_result) {
         std::cerr << "Failed to create temporary directory" << std::endl;
@@ -765,7 +765,7 @@ bool PackageInstaller::packPackage(const std::string& pkg_dir, const std::string
         return false;
     }
     
-    std::string filename = metadata.name + "-" + metadata.version + ".aria-pkg";
+    std::string filename = metadata.name + "-" + metadata.version + ".npk-pkg";
     std::string output_path = output_dir + "/" + filename;
     
     // Create tarball
@@ -941,7 +941,7 @@ bool PackageInstaller::installRemotePackage(const std::string& name,
     
     if (!fs::exists(pkg_dir)) {
         std::cerr << "Package not found: " << name << std::endl;
-        std::cerr << "Run 'aria-pkg search " << name << "' to find available packages.\n";
+        std::cerr << "Run 'npk-pkg search " << name << "' to find available packages.\n";
         return false;
     }
     
@@ -961,7 +961,7 @@ std::vector<RegistryEntry> PackageInstaller::listRemotePackages(const std::strin
     std::vector<RegistryEntry> results;
     
     if (!fs::exists(registry_path)) {
-        std::cerr << "No cached registry. Run 'aria-pkg update' first.\n";
+        std::cerr << "No cached registry. Run 'npk-pkg update' first.\n";
         return results;
     }
     
@@ -1084,4 +1084,4 @@ std::vector<RegistryEntry> PackageInstaller::listRemotePackages(const std::strin
 }
 
 } // namespace pkg
-} // namespace aria
+} // namespace npk

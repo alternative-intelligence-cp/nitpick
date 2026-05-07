@@ -1,0 +1,27 @@
+// Test: Dyn trait dispatch — multiple implementors
+// Verifies dynamic dispatch through trait with different concrete types
+
+trait:Sized = {
+    func:size = int32(int32:self);
+};
+
+impl:Sized:for:int32 = {
+    func:size = int32(int32:self) {
+        pass 4;
+    };
+};
+
+func:get_size = int32(dyn Sized:item) {
+    pass item.size();
+};
+
+pub func:main = int32() {
+    int32:x = 42i32;
+    int32:result = raw get_size(x);
+    if (result == 4i32) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

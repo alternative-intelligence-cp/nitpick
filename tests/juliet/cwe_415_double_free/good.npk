@@ -1,0 +1,17 @@
+// CWE-415: Double Free — GOOD demonstration
+//
+// Proper allocation and single free: buf is freed exactly once.
+// Expected: exits 0 (clean ownership lifecycle, no double-free)
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    free(buf);   // freed exactly once — ownership transferred and consumed
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

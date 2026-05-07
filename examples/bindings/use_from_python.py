@@ -1,7 +1,7 @@
-"""Call Aria shared library from Python via ctypes.
+"""Call Nitpick shared library from Python via ctypes.
 
 Build the shared library first:
-    ariac mathlib.aria --shared -o libmathlib.so
+    npkc mathlib.npk --shared -o libmathlib.so
 
 Then run:
     python3 use_from_python.py

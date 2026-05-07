@@ -1,0 +1,29 @@
+// SV-COMP NoOverflows equivalent: bounded loop accumulator
+//
+// C analog: c/NoOverflows-Main/loops/ loop accumulation
+// Property: LTL(G! overflow) — accumulated sum never overflows
+// Aria: sum of first 10 natural numbers = 55, far within tbb32 range.
+//       Z3 --verify-overflow proves the loop accumulation is safe.
+//
+// Expected verdict: true   Strategy: z3verify (--verify-overflow)
+
+func:main = int32() {
+    tbb32:sum = 0;
+    tbb32:i = 0;
+    tbb32:one = 1;
+
+    // Sum 0+1+2+...+9 = 45, well within tbb32 range
+    loop(0, 10, 1) {
+        sum = sum + i;
+        i = i + one;
+    }
+
+    pick(sum) {
+        (ERR) { exit 1; },
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

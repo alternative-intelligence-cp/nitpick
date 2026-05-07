@@ -4,7 +4,7 @@
 
 set -e
 
-ARIA_COMPILER="./build/ariac"
+ARIA_COMPILER="./build/npkc"
 TEST_DIR="tests/borrow"
 PASSED=0
 FAILED=0
@@ -14,8 +14,8 @@ echo "║        ARIA BORROW CHECKER TEST SUITE                     ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-for test_file in "$TEST_DIR"/*.aria; do
-    test_name=$(basename "$test_file" .aria)
+for test_file in "$TEST_DIR"/*.npk; do
+    test_name=$(basename "$test_file" .npk)
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Running: $test_name"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

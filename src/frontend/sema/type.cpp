@@ -1,7 +1,7 @@
 #include "frontend/sema/type.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -1360,4 +1360,4 @@ DimensionalType* TypeSystem::getDimensionalType(Type* baseType, const std::strin
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

@@ -1,0 +1,27 @@
+// Test function that returns string
+
+func:digit_to_string = string(int64:digit) {
+    string:result = "";
+    
+    if (digit == 0) { result = "0"; }
+    if (digit == 1) { result = "1"; }
+    if (digit == 2) { result = "2"; }
+    if (digit == 3) { result = "3"; }
+    if (digit == 4) { result = "4"; }
+    if (digit == 5) { result = "5"; }
+    
+    pass result;
+};
+
+func:main = int32() {
+    int64:val = 3;
+    string:d = raw digit_to_string(val);
+    string:text = string_concat(d, " is the digit");
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,19 @@
+// Test: Rules + null interaction (v0.5.3, Phase 14)
+// Verify that Rules constraints that exclude 0 prove non-null.
+
+Rules<int32>:Positive = { $ > 0 };
+Rules<int32>:MaybeZero = { $ >= 0 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Positive excludes 0 → should prove non-null
+    limit<Positive> int32:val = 42;
+
+    // MaybeZero allows 0 → should NOT prove non-null
+    limit<MaybeZero> int32:val2 = 0;
+
+    exit 0;
+};

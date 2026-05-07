@@ -5,13 +5,13 @@
 #include <cstdint>
 #include <ostream>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // ============================================================================
 // TokenType Enum - Complete token classification
 // ============================================================================
-// Reference: aria_specs.txt, research_012 (types), research_002 (TBB)
+// Reference: npk_specs.txt, research_012 (types), research_002 (TBB)
 // All possible tokens in Aria language
 
 enum class TokenType {
@@ -480,11 +480,11 @@ struct Token {
 std::string tokenTypeToString(TokenType type);
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk
 
 // Stream operator for TokenType (for test output)
-inline std::ostream& operator<<(std::ostream& os, aria::frontend::TokenType type) {
-    return os << aria::frontend::tokenTypeToString(type);
+inline std::ostream& operator<<(std::ostream& os, npk::frontend::TokenType type) {
+    return os << npk::frontend::tokenTypeToString(type);
 }
 
 #endif // ARIA_TOKEN_H

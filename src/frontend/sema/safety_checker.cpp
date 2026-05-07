@@ -9,7 +9,7 @@
 #include <sstream>
 #include <regex>
 
-namespace aria {
+namespace npk {
 
 SafetyChecker::SafetyChecker(SafetyLevel level) 
     : safety_level(level) {}
@@ -148,7 +148,7 @@ void SafetyChecker::checkFuncDecl(FuncDeclStmt* func) {
         bool acknowledged = hasAcknowledgment(func->line);
         addIssue(
             UnsafeOperation::FFI_EXTERN,
-            "extern function bypasses Aria safety guarantees",
+            "extern function bypasses Nitpick safety guarantees",
             "validate all FFI inputs and outputs at the boundary",
             func->line,
             func->column
@@ -424,7 +424,7 @@ std::string SafetyChecker::getHelpText(UnsafeOperation op) const {
         case UnsafeOperation::POINTER_OPS:
             return "pointer operations bypass bounds checking - ensure validity manually";
         case UnsafeOperation::FFI_EXTERN:
-            return "extern functions bypass Aria safety - validate all FFI boundaries";
+            return "extern functions bypass Nitpick safety - validate all FFI boundaries";
         case UnsafeOperation::WILDX_EXECUTABLE:
             return "executable memory has security implications - ensure proper validation";
         case UnsafeOperation::POINTER_CAST:
@@ -436,4 +436,4 @@ std::string SafetyChecker::getHelpText(UnsafeOperation op) const {
     }
 }
 
-} // namespace aria
+} // namespace npk

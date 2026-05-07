@@ -11,7 +11,7 @@
  * - TBB-safe counters
  * - Extensible handler registration
  *
- * Copyright (c) 2025 Aria Language Project
+ * Copyright (c) 2025 Nitpick Language Project
  */
 
 #ifndef ARIA_ADAP_DAP_PROTOCOL_HPP
@@ -26,7 +26,7 @@
 #include <optional>
 #include <variant>
 
-namespace aria::adap {
+namespace npk::adap {
 
 // =============================================================================
 // TBB Types
@@ -452,6 +452,6 @@ void aria_dap_free_string(char* str);
 
 }  // extern "C"
 
-}  // namespace aria::adap
+}  // namespace npk::adap
 
 #endif // ARIA_ADAP_DAP_PROTOCOL_HPP

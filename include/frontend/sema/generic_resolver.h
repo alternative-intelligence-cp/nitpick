@@ -13,11 +13,11 @@
 #include <memory>
 
 // Forward declarations
-namespace aria {
+namespace npk {
     struct GenericParamInfo;  // Defined in frontend/ast/stmt.h
 }
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -392,6 +392,6 @@ private:
 };
 
 } // namespace sema
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_GENERIC_RESOLVER_H

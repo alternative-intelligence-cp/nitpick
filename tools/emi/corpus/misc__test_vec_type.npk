@@ -1,0 +1,27 @@
+// Test Vec<T> type parsing
+// P0 feature test for Nikola 0.1.0
+
+// Initialize a vec struct (zeroed for now, real constructor comes next)
+func:init_vec = Vec<int32>() {
+    Vec<int32>:v;
+    // Zero-initialize all fields
+    v.data = NULL;
+    v.length = 0;
+    v.capacity = 0;
+    v.element_size = 4; // sizeof(int32)
+    v.type_id = 1; // int32 type ID
+    pass v;
+};
+
+func:main = int32() {
+    Vec<int32>:my_vec = raw init_vec();
+    
+    // Verify the struct was created
+    int64:len = my_vec.length;
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

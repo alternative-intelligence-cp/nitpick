@@ -31,11 +31,11 @@ def find_compiler() -> str:
     """Find the Aria compiler"""
     # Try common locations
     candidates = [
-        os.path.expanduser("~/._____RANDY_____/REPOS/aria/build/ariac"),
-        os.path.expanduser("~/aria/build/ariac"),
-        "./build/ariac",
-        "../build/ariac",
-        "../../build/ariac",
+        os.path.expanduser("~/._____RANDY_____/REPOS/aria/build/npkc"),
+        os.path.expanduser("~/aria/build/npkc"),
+        "./build/npkc",
+        "../build/npkc",
+        "../../build/npkc",
     ]
 
     for path in candidates:
@@ -45,7 +45,7 @@ def find_compiler() -> str:
     # Try to find via which
     import subprocess
     try:
-        result = subprocess.run(["which", "ariac"], capture_output=True, text=True)
+        result = subprocess.run(["which", "npkc"], capture_output=True, text=True)
         if result.returncode == 0:
             return result.stdout.strip()
     except:
@@ -216,13 +216,13 @@ def main():
 
     # Options
     parser.add_argument("--compiler", type=str, default=None,
-                       help="Path to ariac compiler")
+                       help="Path to npkc compiler")
     parser.add_argument("--output", type=str, default=None,
                        help="Output file for results (JSON)")
     parser.add_argument("--verbose", "-v", action="store_true",
                        help="Verbose output")
     parser.add_argument("--keep-artifacts", action="store_true",
-                       help="Keep generated .aria files")
+                       help="Keep generated .npk files")
     parser.add_argument("--timeout", type=float, default=10.0,
                        help="Timeout per compilation (seconds)")
     parser.add_argument("--seed", type=int, default=None,
@@ -235,7 +235,7 @@ def main():
     # Find compiler
     compiler = args.compiler or find_compiler()
     if not compiler or not os.path.isfile(compiler):
-        print("ERROR: Cannot find Aria compiler (ariac)")
+        print("ERROR: Cannot find Aria compiler (npkc)")
         print("Please specify path with --compiler or build the compiler first.")
         sys.exit(1)
 

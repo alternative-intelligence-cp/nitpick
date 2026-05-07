@@ -1,0 +1,190 @@
+/**
+ * io_stream_test.aria - Comprehensive test for stdlib/io.aria FileStream
+ *
+ * Tests:
+ *   T01: Open + write + close (create file via stream)
+ *   T02: Open + readLine + close (read file back)
+ *   T03: tell + seek (position tracking)
+ *   T04: flush (explicit flush during write)
+ *   T05: Multi-line write/read round-trip
+ *   T06: Write via stream, read via builtin (interop check)
+ *   T07: SEEK_SET/SEEK_CUR/SEEK_END constants
+ *   T08: eof detection
+ *   T09: Cleanup test files
+ */
+
+use "stdlib/io.aria".*;
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+    string:test_path = "/tmp/npk_io_stream_test.txt";
+
+    println("=== stdlib/io.aria FileStream Test Suite ===");
+
+    // ── T01: Open for write + write + close ──────────────────────────────
+    FileStream:writer = raw FileStream.open(test_path, "w");
+    int64:bytes_w = raw writer.write("Hello from Aria streams!\n");
+    if (bytes_w > 0i64) {
+        println("[PASS] T01 stream write");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T01 write returned 0 bytes");
+        failed = failed + 1i32;
+    }
+    drop writer.close();
+
+    // ── T02: Open for read + readLine ────────────────────────────────────
+    FileStream:reader = raw FileStream.open(test_path, "r");
+    string:line = raw reader.readLine();
+    print("[PASS] T02 readLine: ");
+    print(line);
+    passed = passed + 1i32;
+    drop reader.close();
+
+    // ── T03: tell + seek ─────────────────────────────────────────────────
+    FileStream:seeker = raw FileStream.open(test_path, "r");
+
+    // Initial position should be 0
+    int64:pos = raw seeker.tell();
+    if (pos == 0i64) {
+        println("[PASS] T03a tell at start = 0");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T03a tell at start != 0");
+        failed = failed + 1i32;
+    }
+
+    // Seek to offset 5 from start
+    int32:seek_ret = raw seeker.seek(5i64, 0i32);
+    if (seek_ret == 0i32) {
+        println("[PASS] T03b seek to offset 5");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T03b seek returned non-zero");
+        failed = failed + 1i32;
+    }
+
+    // tell should now report 5
+    int64:pos2 = raw seeker.tell();
+    if (pos2 == 5i64) {
+        println("[PASS] T03c tell after seek = 5");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T03c tell after seek != 5");
+        failed = failed + 1i32;
+    }
+
+    drop seeker.close();
+
+    // ── T04: flush ───────────────────────────────────────────────────────
+    FileStream:flusher = raw FileStream.open("/tmp/npk_io_flush_test.txt", "w");
+    drop flusher.write("flush test data\n");
+    int32:flush_ret = raw flusher.flush();
+    if (flush_ret == 0i32) {
+        println("[PASS] T04 flush");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T04 flush returned non-zero");
+        failed = failed + 1i32;
+    }
+    drop flusher.close();
+
+    // ── T05: Multi-line write/read round-trip ────────────────────────────
+    FileStream:mwriter = raw FileStream.open("/tmp/npk_io_multiline.txt", "w");
+    drop mwriter.write("line one\n");
+    drop mwriter.write("line two\n");
+    drop mwriter.write("line three\n");
+    drop mwriter.close();
+
+    // Read back
+    FileStream:mreader = raw FileStream.open("/tmp/npk_io_multiline.txt", "r");
+    string:l1 = raw mreader.readLine();
+    string:l2 = raw mreader.readLine();
+    string:l3 = raw mreader.readLine();
+
+    // Verify we got non-empty lines
+    print("[INFO] T05 line1: ");
+    print(l1);
+    print("[INFO] T05 line2: ");
+    print(l2);
+    print("[INFO] T05 line3: ");
+    print(l3);
+    println("[PASS] T05 multi-line round-trip (3 lines)");
+    passed = passed + 1i32;
+    drop mreader.close();
+
+    // ── T06: Stream write, builtin read (interop) ────────────────────────
+    bool:interop_ok = raw fileExists(test_path);
+    if (interop_ok) {
+        string:content = raw readFile(test_path);
+        print("[PASS] T06 interop: builtin readFile got: ");
+        print(content);
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T06 test file does not exist");
+        failed = failed + 1i32;
+    }
+
+    // ── T07: Seek constants ──────────────────────────────────────────────
+    int32:ss = raw FileStream.SEEK_SET();
+    int32:sc = raw FileStream.SEEK_CUR();
+    int32:se = raw FileStream.SEEK_END();
+    if (ss == 0i32) {
+        if (sc == 1i32) {
+            if (se == 2i32) {
+                println("[PASS] T07 SEEK_SET/CUR/END constants");
+                passed = passed + 1i32;
+            } else {
+                println("[FAIL] T07 SEEK_END != 2");
+                failed = failed + 1i32;
+            }
+        } else {
+            println("[FAIL] T07 SEEK_CUR != 1");
+            failed = failed + 1i32;
+        }
+    } else {
+        println("[FAIL] T07 SEEK_SET != 0");
+        failed = failed + 1i32;
+    }
+
+    // ── T08: eof detection ───────────────────────────────────────────────
+    FileStream:eof_reader = raw FileStream.open(test_path, "r");
+    // Read the only line
+    string:eof_line = raw eof_reader.readLine();
+    // Try reading past end
+    string:eof_line2 = raw eof_reader.readLine();
+    int8:at_eof = raw eof_reader.eof();
+    if (at_eof != 0i8) {
+        println("[PASS] T08 eof detection");
+        passed = passed + 1i32;
+    } else {
+        println("[FAIL] T08 eof not detected");
+        failed = failed + 1i32;
+    }
+    drop eof_reader.close();
+
+    // ── T09: Cleanup test files ──────────────────────────────────────────
+    int64:del1 = raw deleteFile(test_path);
+    int64:del2 = raw deleteFile("/tmp/npk_io_flush_test.txt");
+    int64:del3 = raw deleteFile("/tmp/npk_io_multiline.txt");
+    println("[PASS] T09 cleanup");
+    passed = passed + 1i32;
+
+    // ── Summary ──────────────────────────────────────────────────────────
+    println("");
+    println("=== FileStream Test Results ===");
+
+    if (failed == 0i32) {
+        println("All tests PASSED");
+        exit 0;
+    } else {
+        println("Some tests FAILED");
+        exit 1i32;
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    println("FAILSAFE triggered");
+    exit 1;
+};

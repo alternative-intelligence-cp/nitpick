@@ -1,0 +1,129 @@
+// Feature: Generics / Templates (Zero-Cost Abstractions via Monomorphization)
+// Research: docs/gemini/responses/research_027_generics_templates.txt
+// Spec: docs/info/npk_specs.txt lines 348-398
+// Status: ❌ NOT IMPLEMENTED - This test will NOT compile until parser supports generics
+//
+// Expected behavior when complete:
+// - Parser recognizes func<T> syntax
+// - Parser recognizes *T usage in function bodies
+// - Generic functions monomorphize for each concrete type
+// - Type inference works for simple cases
+// - Explicit type parameters work
+//
+// Current state: Parser will fail with syntax errors on generic syntax
+
+// Test 1: Basic generic identity function
+func<T>:identity = *T(*T:value) {
+    pass value;
+};
+
+// Test 2: Generic max function with comparison
+func<T>:max = *T(*T:a, *T:b) {
+    if (a > b) {
+        pass a;
+    }
+    pass b;
+};
+
+// Test 3: Multiple generic parameters
+func<T,U>:pair = int64(*T:first, *U:second) {
+    // Just return success for now
+    pass 0;
+};
+
+// Test 4: Generic array operation (arrays not implemented yet - skip)
+// func<T>:first_elem = result(*T[]:arr, int64:len) {
+//     if (len > 0) {
+//         pass(arr[0]);
+//     }
+//     fail(1);
+// };
+
+// Test 5: Using generics with type inference (turbofish not implemented yet)
+func:test_explicit = int64() {
+    // Identity with int8
+    int8:x1 = 42i8;
+    int8:val1 = raw identity(x1);
+
+    // Max with int64
+    int64:bigger = max(100i64, 200i64);
+
+    if (val1 == 42i8) {
+        if (bigger == 200i64) {
+            pass 0i64;
+        }
+    }
+    pass 1i64;
+};
+
+// Test 6: Type inference
+func:test_inference = int64() {
+    // Compiler should infer T=int8
+    int8:result1 = max(10i8, 20i8);
+
+    // Compiler should infer T=int64
+    int64:result3 = identity(12345678i64) ? -1i64;
+
+    if (result1 == 20i8) {
+        if (result3 == 12345678i64) {
+            pass 0i64;
+        }
+    }
+    pass 1i64;
+};
+
+// Test 7: Generic with array (arrays not fully implemented - commented out) (arrays not fully implemented - commented out)
+// func:test_array = result() {
+//     int32[3]:numbers;
+//     numbers[0] = 10;
+//     numbers[1] = 20;
+//     numbers[2] = 30;
+//     
+//     int32:first = first_elem::<int32>(numbers, 3) ? 0;
+//     
+//     if (first == 10) {
+//         pass(0);
+//     }
+//     fail(1);
+// };
+
+// Main test runner
+func:main = int32() {
+    // Test explicit type parameters
+    int64:r1 = test_explicit() ? -1i64;
+    if (r1 != 0i64) {
+        exit 1i32;
+    }
+
+    // Test type inference
+    int64:r2 = test_inference() ? -1i64;
+    if (r2 != 0i64) {
+        exit 2i32;
+    }
+
+    exit 0;
+};
+
+// EXPECTED COMPILATION RESULT (current state):
+// ❌ WILL FAIL with errors like:
+//    - "Unexpected token '<'"
+//    - "Expected expression, found '<'"
+//    - "Unknown token in function declaration"
+//
+// EXPECTED COMPILATION RESULT (when generics implemented):
+// ✅ SHOULD COMPILE successfully
+// ✅ SHOULD RUN and return exit code 0 (all tests pass)
+//
+// This test validates:
+// 1. Generic function declaration syntax
+// 2. Generic type parameter usage with * prefix
+// 3. Multiple type parameters
+// 4. Explicit type arguments
+// 5. Type inference
+// 6. Generic functions with arrays
+// 7. Monomorphization (each instantiation is separate compiled code)
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

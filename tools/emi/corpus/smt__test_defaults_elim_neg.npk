@@ -1,0 +1,26 @@
+// Negative test: Defaults/?| fallback elimination (Phase 5.75)
+// When the sub-expression calls a FALLIBLE function (uses fail),
+// the fallback path must be PRESERVED — it is reachable.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// FALLIBLE function — uses fail, so the Result can be ERR
+func:risky_div = int32(int32:x, int32:y) {
+    if (x == 0) {
+        fail 1;
+    }
+    int32:result = y / x;
+    pass result;
+};
+
+func:main = int32() {
+    // risky_div is fallible — fallback must NOT be eliminated
+    int32:a = risky_div(2i32, 10i32) ?| 0i32;
+
+    // Nested: inner fallible call — outer fallback also preserved
+    int32:b = risky_div(1i32, risky_div(3i32, 9i32) ?| 0i32) ?| 0i32;
+
+    exit 0;
+};

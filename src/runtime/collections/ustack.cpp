@@ -26,7 +26,7 @@ struct AriaUStack {
  * Creation / Destruction
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern "C" int64_t aria_ustack_new(int64_t capacity) {
+extern "C" int64_t npk_ustack_new(int64_t capacity) {
     if (capacity <= 0) {
         return 0;
     }
@@ -56,7 +56,7 @@ extern "C" int64_t aria_ustack_new(int64_t capacity) {
     return reinterpret_cast<int64_t>(stk);
 }
 
-extern "C" void aria_ustack_destroy(int64_t handle) {
+extern "C" void npk_ustack_destroy(int64_t handle) {
     if (handle == 0) return;
 
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
@@ -70,7 +70,7 @@ extern "C" void aria_ustack_destroy(int64_t handle) {
  * Push / Pop / Peek
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern "C" void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag) {
+extern "C" void npk_ustack_push(int64_t handle, int64_t value, int64_t type_tag) {
     if (handle == 0) {
         fprintf(stderr, "aria: user stack error — push on null handle (missing astack() in scope?)\n");
         exit(1);
@@ -90,7 +90,7 @@ extern "C" void aria_ustack_push(int64_t handle, int64_t value, int64_t type_tag
     stk->size++;
 }
 
-extern "C" int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag) {
+extern "C" int64_t npk_ustack_pop(int64_t handle, int64_t expected_tag) {
     if (handle == 0) {
         fprintf(stderr, "aria: user stack error — pop on null handle\n");
         exit(1);
@@ -126,7 +126,7 @@ extern "C" int64_t aria_ustack_pop(int64_t handle, int64_t expected_tag) {
     return value;
 }
 
-extern "C" int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag) {
+extern "C" int64_t npk_ustack_peek(int64_t handle, int64_t expected_tag) {
     if (handle == 0) {
         fprintf(stderr, "aria: user stack error — peek on null handle\n");
         exit(1);
@@ -165,31 +165,31 @@ extern "C" int64_t aria_ustack_peek(int64_t handle, int64_t expected_tag) {
  * Query
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern "C" int64_t aria_ustack_size(int64_t handle) {
+extern "C" int64_t npk_ustack_size(int64_t handle) {
     if (handle == 0) return 0;
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     return stk->size;
 }
 
-extern "C" int64_t aria_ustack_capacity_bytes(int64_t handle) {
+extern "C" int64_t npk_ustack_capacity_bytes(int64_t handle) {
     if (handle == 0) return 0;
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     return stk->data_bytes;
 }
 
-extern "C" int64_t aria_ustack_bytes_used(int64_t handle) {
+extern "C" int64_t npk_ustack_bytes_used(int64_t handle) {
     if (handle == 0) return 0;
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     return stk->size * 16;  /* 16 bytes per slot (value + tag) */
 }
 
-extern "C" int64_t aria_ustack_fits(int64_t handle) {
+extern "C" int64_t npk_ustack_fits(int64_t handle) {
     if (handle == 0) return 0;
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     return (stk->size < stk->capacity) ? 1 : 0;
 }
 
-extern "C" int64_t aria_ustack_top_type(int64_t handle) {
+extern "C" int64_t npk_ustack_top_type(int64_t handle) {
     if (handle == 0) return -1;
     AriaUStack* stk = reinterpret_cast<AriaUStack*>(handle);
     if (stk->size <= 0) return -1;
@@ -213,7 +213,7 @@ struct AriaUStackFast {
     int64_t  data_bytes; /* mmap region size for munmap */
 };
 
-extern "C" int64_t aria_ustack_new_fast(int64_t capacity) {
+extern "C" int64_t npk_ustack_new_fast(int64_t capacity) {
     if (capacity <= 0) return 0;
 
     AriaUStackFast* stk = static_cast<AriaUStackFast*>(malloc(sizeof(AriaUStackFast)));
@@ -236,7 +236,7 @@ extern "C" int64_t aria_ustack_new_fast(int64_t capacity) {
     return reinterpret_cast<int64_t>(stk);
 }
 
-extern "C" void aria_ustack_destroy_fast(int64_t handle) {
+extern "C" void npk_ustack_destroy_fast(int64_t handle) {
     if (handle == 0) return;
     AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
     if (stk->data) {
@@ -245,27 +245,27 @@ extern "C" void aria_ustack_destroy_fast(int64_t handle) {
     free(stk);
 }
 
-extern "C" void aria_ustack_push_fast(int64_t handle, int64_t value) {
+extern "C" void npk_ustack_push_fast(int64_t handle, int64_t value) {
     AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
     stk->data[stk->size++] = value;
 }
 
-extern "C" int64_t aria_ustack_pop_fast(int64_t handle) {
+extern "C" int64_t npk_ustack_pop_fast(int64_t handle) {
     AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
     return stk->data[--stk->size];
 }
 
-extern "C" int64_t aria_ustack_peek_fast(int64_t handle) {
+extern "C" int64_t npk_ustack_peek_fast(int64_t handle) {
     AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
     return stk->data[stk->size - 1];
 }
 
-extern "C" int64_t aria_ustack_bytes_used_fast(int64_t handle) {
+extern "C" int64_t npk_ustack_bytes_used_fast(int64_t handle) {
     AriaUStackFast* stk = reinterpret_cast<AriaUStackFast*>(handle);
     return stk->size * 8;  /* 8 bytes per slot (value only, no tag) */
 }
 
-extern "C" int64_t aria_ustack_top_type_fast(int64_t handle) {
+extern "C" int64_t npk_ustack_top_type_fast(int64_t handle) {
     (void)handle;
     return -1;  /* Fast mode has no type tags — Z3 proved homogeneity */
 }

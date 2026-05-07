@@ -1,0 +1,23 @@
+// SV-COMP MemSafety equivalent: double-free (BAD)
+//
+// C analog: MemSafety-Heap/double_free.c
+// Property: valid-free — VIOLATED (double free is undefined behavior in C)
+// Aria: compiler rejects this at compile time with ARIA-022.
+//       No binary produced; the heap corruption is structurally impossible.
+//
+// Expected verdict: false   Strategy: compile_reject
+// Compiler error: ARIA-022 "Double free of variable 'buf'"
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    free(buf);
+    free(buf);    // ARIA-022: double free — compile rejected
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

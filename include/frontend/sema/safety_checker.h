@@ -15,7 +15,7 @@
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/expr.h"
 
-namespace aria {
+namespace npk {
 
 /**
  * Safety levels for compilation
@@ -127,6 +127,6 @@ private:
     std::string getHelpText(UnsafeOperation op) const;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_SAFETY_CHECKER_H

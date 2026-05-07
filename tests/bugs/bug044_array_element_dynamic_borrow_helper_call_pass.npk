@@ -1,0 +1,19 @@
+// BUG-044: Dynamic-index $$m borrow writes back through alias after a helper call.
+// Expected: exits 77
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:helper = int32(int32:x) {
+    pass x + 1;
+};
+
+func:main = int32() {
+    int32[3]:arr = [10, 20, 30];
+    int32:i = 2;
+    $$m int32:elem = arr[i];
+    elem = 77;
+    drop helper(arr[0]);
+    exit arr[2];
+};

@@ -28,19 +28,19 @@ extern "C" {
 
 typedef struct {
     uint64_t limbs[2];
-} aria_int128_t;
+} npk_int128_t;
 
 typedef struct {
     uint64_t limbs[4];
-} aria_int256_t;
+} npk_int256_t;
 
 typedef struct {
     uint64_t limbs[8];
-} aria_int512_t;
+} npk_int512_t;
 
 typedef struct {
     uint64_t limbs[16];
-} aria_int1024_t;
+} npk_int1024_t;
 
 // ═══════════════════════════════════════════════════════════════════════
 // int128 Division and Modulo
@@ -50,23 +50,23 @@ typedef struct {
  * Unsigned division for int128: quotient = dividend / divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int128_t aria_lbim_udiv128(aria_int128_t dividend, aria_int128_t divisor);
+npk_int128_t npk_lbim_udiv128(npk_int128_t dividend, npk_int128_t divisor);
 
 /**
  * Unsigned modulo for int128: remainder = dividend % divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int128_t aria_lbim_umod128(aria_int128_t dividend, aria_int128_t divisor);
+npk_int128_t npk_lbim_umod128(npk_int128_t dividend, npk_int128_t divisor);
 
 /**
  * Signed division for int128
  */
-aria_int128_t aria_lbim_sdiv128(aria_int128_t dividend, aria_int128_t divisor);
+npk_int128_t npk_lbim_sdiv128(npk_int128_t dividend, npk_int128_t divisor);
 
 /**
  * Signed modulo for int128
  */
-aria_int128_t aria_lbim_smod128(aria_int128_t dividend, aria_int128_t divisor);
+npk_int128_t npk_lbim_smod128(npk_int128_t dividend, npk_int128_t divisor);
 
 // ═══════════════════════════════════════════════════════════════════════
 // int256 Division and Modulo
@@ -76,23 +76,23 @@ aria_int128_t aria_lbim_smod128(aria_int128_t dividend, aria_int128_t divisor);
  * Unsigned division for int256: quotient = dividend / divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int256_t aria_lbim_udiv256(aria_int256_t dividend, aria_int256_t divisor);
+npk_int256_t npk_lbim_udiv256(npk_int256_t dividend, npk_int256_t divisor);
 
 /**
  * Unsigned modulo for int256: remainder = dividend % divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int256_t aria_lbim_umod256(aria_int256_t dividend, aria_int256_t divisor);
+npk_int256_t npk_lbim_umod256(npk_int256_t dividend, npk_int256_t divisor);
 
 /**
  * Signed division for int256
  */
-aria_int256_t aria_lbim_sdiv256(aria_int256_t dividend, aria_int256_t divisor);
+npk_int256_t npk_lbim_sdiv256(npk_int256_t dividend, npk_int256_t divisor);
 
 /**
  * Signed modulo for int256
  */
-aria_int256_t aria_lbim_smod256(aria_int256_t dividend, aria_int256_t divisor);
+npk_int256_t npk_lbim_smod256(npk_int256_t dividend, npk_int256_t divisor);
 
 // ═══════════════════════════════════════════════════════════════════════
 // int512 Division and Modulo
@@ -102,23 +102,23 @@ aria_int256_t aria_lbim_smod256(aria_int256_t dividend, aria_int256_t divisor);
  * Unsigned division for int512: quotient = dividend / divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int512_t aria_lbim_udiv512(aria_int512_t dividend, aria_int512_t divisor);
+npk_int512_t npk_lbim_udiv512(npk_int512_t dividend, npk_int512_t divisor);
 
 /**
  * Unsigned modulo for int512: remainder = dividend % divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int512_t aria_lbim_umod512(aria_int512_t dividend, aria_int512_t divisor);
+npk_int512_t npk_lbim_umod512(npk_int512_t dividend, npk_int512_t divisor);
 
 /**
  * Signed division for int512
  */
-aria_int512_t aria_lbim_sdiv512(aria_int512_t dividend, aria_int512_t divisor);
+npk_int512_t npk_lbim_sdiv512(npk_int512_t dividend, npk_int512_t divisor);
 
 /**
  * Signed modulo for int512
  */
-aria_int512_t aria_lbim_smod512(aria_int512_t dividend, aria_int512_t divisor);
+npk_int512_t npk_lbim_smod512(npk_int512_t dividend, npk_int512_t divisor);
 
 // ═══════════════════════════════════════════════════════════════════════
 // int1024 Division and Modulo (ARIA-025: Post-quantum cryptography)
@@ -128,48 +128,48 @@ aria_int512_t aria_lbim_smod512(aria_int512_t dividend, aria_int512_t divisor);
  * Unsigned division for int1024: quotient = dividend / divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int1024_t aria_lbim_udiv1024(aria_int1024_t dividend, aria_int1024_t divisor);
+npk_int1024_t npk_lbim_udiv1024(npk_int1024_t dividend, npk_int1024_t divisor);
 
 /**
  * Unsigned modulo for int1024: remainder = dividend % divisor
  * Returns zero if divisor is zero (TBB safety: caller handles ERR)
  */
-aria_int1024_t aria_lbim_umod1024(aria_int1024_t dividend, aria_int1024_t divisor);
+npk_int1024_t npk_lbim_umod1024(npk_int1024_t dividend, npk_int1024_t divisor);
 
 /**
  * Signed division for int1024
  */
-aria_int1024_t aria_lbim_sdiv1024(aria_int1024_t dividend, aria_int1024_t divisor);
+npk_int1024_t npk_lbim_sdiv1024(npk_int1024_t dividend, npk_int1024_t divisor);
 
 /**
  * Signed modulo for int1024
  */
-aria_int1024_t aria_lbim_smod1024(aria_int1024_t dividend, aria_int1024_t divisor);
+npk_int1024_t npk_lbim_smod1024(npk_int1024_t dividend, npk_int1024_t divisor);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Bitwise Operations (int128/256/512/1024)
 // Sign-independent: same function for int* and uint* variants.
 // ═══════════════════════════════════════════════════════════════════════
 
-aria_int128_t  aria_lbim_and128 (aria_int128_t  a, aria_int128_t  b);
-aria_int128_t  aria_lbim_or128  (aria_int128_t  a, aria_int128_t  b);
-aria_int128_t  aria_lbim_xor128 (aria_int128_t  a, aria_int128_t  b);
-aria_int128_t  aria_lbim_not128 (aria_int128_t  a);
+npk_int128_t  npk_lbim_and128 (npk_int128_t  a, npk_int128_t  b);
+npk_int128_t  npk_lbim_or128  (npk_int128_t  a, npk_int128_t  b);
+npk_int128_t  npk_lbim_xor128 (npk_int128_t  a, npk_int128_t  b);
+npk_int128_t  npk_lbim_not128 (npk_int128_t  a);
 
-aria_int256_t  aria_lbim_and256 (aria_int256_t  a, aria_int256_t  b);
-aria_int256_t  aria_lbim_or256  (aria_int256_t  a, aria_int256_t  b);
-aria_int256_t  aria_lbim_xor256 (aria_int256_t  a, aria_int256_t  b);
-aria_int256_t  aria_lbim_not256 (aria_int256_t  a);
+npk_int256_t  npk_lbim_and256 (npk_int256_t  a, npk_int256_t  b);
+npk_int256_t  npk_lbim_or256  (npk_int256_t  a, npk_int256_t  b);
+npk_int256_t  npk_lbim_xor256 (npk_int256_t  a, npk_int256_t  b);
+npk_int256_t  npk_lbim_not256 (npk_int256_t  a);
 
-aria_int512_t  aria_lbim_and512 (aria_int512_t  a, aria_int512_t  b);
-aria_int512_t  aria_lbim_or512  (aria_int512_t  a, aria_int512_t  b);
-aria_int512_t  aria_lbim_xor512 (aria_int512_t  a, aria_int512_t  b);
-aria_int512_t  aria_lbim_not512 (aria_int512_t  a);
+npk_int512_t  npk_lbim_and512 (npk_int512_t  a, npk_int512_t  b);
+npk_int512_t  npk_lbim_or512  (npk_int512_t  a, npk_int512_t  b);
+npk_int512_t  npk_lbim_xor512 (npk_int512_t  a, npk_int512_t  b);
+npk_int512_t  npk_lbim_not512 (npk_int512_t  a);
 
-aria_int1024_t aria_lbim_and1024(aria_int1024_t a, aria_int1024_t b);
-aria_int1024_t aria_lbim_or1024 (aria_int1024_t a, aria_int1024_t b);
-aria_int1024_t aria_lbim_xor1024(aria_int1024_t a, aria_int1024_t b);
-aria_int1024_t aria_lbim_not1024(aria_int1024_t a);
+npk_int1024_t npk_lbim_and1024(npk_int1024_t a, npk_int1024_t b);
+npk_int1024_t npk_lbim_or1024 (npk_int1024_t a, npk_int1024_t b);
+npk_int1024_t npk_lbim_xor1024(npk_int1024_t a, npk_int1024_t b);
+npk_int1024_t npk_lbim_not1024(npk_int1024_t a);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Exponentiation (int128/256/512/1024)
@@ -177,10 +177,10 @@ aria_int1024_t aria_lbim_not1024(aria_int1024_t a);
 // Returns ERR sentinel on overflow or if base is ERR.
 // ═══════════════════════════════════════════════════════════════════════
 
-aria_int128_t  aria_lbim_pow128 (aria_int128_t  base, uint64_t exp);
-aria_int256_t  aria_lbim_pow256 (aria_int256_t  base, uint64_t exp);
-aria_int512_t  aria_lbim_pow512 (aria_int512_t  base, uint64_t exp);
-aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp);
+npk_int128_t  npk_lbim_pow128 (npk_int128_t  base, uint64_t exp);
+npk_int256_t  npk_lbim_pow256 (npk_int256_t  base, uint64_t exp);
+npk_int512_t  npk_lbim_pow512 (npk_int512_t  base, uint64_t exp);
+npk_int1024_t npk_lbim_pow1024(npk_int1024_t base, uint64_t exp);
 
 // ═══════════════════════════════════════════════════════════════════════
 // Shift Operations (int128/256/512/1024)
@@ -188,21 +188,21 @@ aria_int1024_t aria_lbim_pow1024(aria_int1024_t base, uint64_t exp);
 // ERR sentinel is preserved through shifts.
 // ═══════════════════════════════════════════════════════════════════════
 
-aria_int128_t  aria_lbim_shl128  (aria_int128_t  a, uint32_t shift);
-aria_int128_t  aria_lbim_lshr128 (aria_int128_t  a, uint32_t shift);
-aria_int128_t  aria_lbim_ashr128 (aria_int128_t  a, uint32_t shift);
+npk_int128_t  npk_lbim_shl128  (npk_int128_t  a, uint32_t shift);
+npk_int128_t  npk_lbim_lshr128 (npk_int128_t  a, uint32_t shift);
+npk_int128_t  npk_lbim_ashr128 (npk_int128_t  a, uint32_t shift);
 
-aria_int256_t  aria_lbim_shl256  (aria_int256_t  a, uint32_t shift);
-aria_int256_t  aria_lbim_lshr256 (aria_int256_t  a, uint32_t shift);
-aria_int256_t  aria_lbim_ashr256 (aria_int256_t  a, uint32_t shift);
+npk_int256_t  npk_lbim_shl256  (npk_int256_t  a, uint32_t shift);
+npk_int256_t  npk_lbim_lshr256 (npk_int256_t  a, uint32_t shift);
+npk_int256_t  npk_lbim_ashr256 (npk_int256_t  a, uint32_t shift);
 
-aria_int512_t  aria_lbim_shl512  (aria_int512_t  a, uint32_t shift);
-aria_int512_t  aria_lbim_lshr512 (aria_int512_t  a, uint32_t shift);
-aria_int512_t  aria_lbim_ashr512 (aria_int512_t  a, uint32_t shift);
+npk_int512_t  npk_lbim_shl512  (npk_int512_t  a, uint32_t shift);
+npk_int512_t  npk_lbim_lshr512 (npk_int512_t  a, uint32_t shift);
+npk_int512_t  npk_lbim_ashr512 (npk_int512_t  a, uint32_t shift);
 
-aria_int1024_t aria_lbim_shl1024 (aria_int1024_t a, uint32_t shift);
-aria_int1024_t aria_lbim_lshr1024(aria_int1024_t a, uint32_t shift);
-aria_int1024_t aria_lbim_ashr1024(aria_int1024_t a, uint32_t shift);
+npk_int1024_t npk_lbim_shl1024 (npk_int1024_t a, uint32_t shift);
+npk_int1024_t npk_lbim_lshr1024(npk_int1024_t a, uint32_t shift);
+npk_int1024_t npk_lbim_ashr1024(npk_int1024_t a, uint32_t shift);
 
 #ifdef __cplusplus
 }

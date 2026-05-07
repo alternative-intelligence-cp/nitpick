@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 EventLoop::EventLoop() 
@@ -260,4 +260,4 @@ uint64_t EventLoop::get_timestamp_ms() const {
 }
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

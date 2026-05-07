@@ -123,20 +123,20 @@ static void* thread_wrapper(void* arg) {
 }
 #endif
 
-AriaResult* aria_thread_create(AriaThreadFunc func, void* arg) {
+AriaResult* npk_thread_create(AriaThreadFunc func, void* arg) {
     AriaThreadOptions default_options = {0};
-    return aria_thread_create_with_options(func, arg, &default_options);
+    return npk_thread_create_with_options(func, arg, &default_options);
 }
 
-AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg,
+AriaResult* npk_thread_create_with_options(AriaThreadFunc func, void* arg,
                                              const AriaThreadOptions* options) {
     if (!func) {
-        return aria_result_err("Thread function cannot be NULL");
+        return npk_result_err("Thread function cannot be NULL");
     }
 
     AriaThread* thread = (AriaThread*)calloc(1, sizeof(AriaThread));
     if (!thread) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
     thread->func = func;
@@ -157,7 +157,7 @@ AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg,
 
     if (thread->handle == NULL) {
         free(thread);
-        return aria_result_err(get_error_message("CreateThread"));
+        return npk_result_err(get_error_message("CreateThread"));
     }
 
     if (options->priority >= 0) {
@@ -186,7 +186,7 @@ AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg,
 
     if (result != 0) {
         free(thread);
-        return aria_result_err(get_error_message("pthread_create"));
+        return npk_result_err(get_error_message("pthread_create"));
     }
 
     if (options->name) {
@@ -200,26 +200,26 @@ AriaResult* aria_thread_create_with_options(AriaThreadFunc func, void* arg,
     thread->joined = false;
 #endif
 
-    return aria_result_ok(thread, sizeof(AriaThread));
+    return npk_result_ok(thread, sizeof(AriaThread));
 }
 
-AriaResult* aria_thread_join(AriaThread* thread, void** ret_val) {
+AriaResult* npk_thread_join(AriaThread* thread, void** ret_val) {
     if (!thread) {
-        return aria_result_err("Thread handle cannot be NULL");
+        return npk_result_err("Thread handle cannot be NULL");
     }
 
     if (thread->detached) {
-        return aria_result_err("Cannot join a detached thread");
+        return npk_result_err("Cannot join a detached thread");
     }
 
 #ifdef _WIN32
     if (thread->handle == NULL) {
-        return aria_result_err("Thread handle is invalid");
+        return npk_result_err("Thread handle is invalid");
     }
 
     DWORD wait_result = WaitForSingleObject(thread->handle, INFINITE);
     if (wait_result != WAIT_OBJECT_0) {
-        return aria_result_err(get_error_message("WaitForSingleObject"));
+        return npk_result_err(get_error_message("WaitForSingleObject"));
     }
 
     if (ret_val) {
@@ -231,13 +231,13 @@ AriaResult* aria_thread_join(AriaThread* thread, void** ret_val) {
 
 #else // POSIX
     if (thread->joined) {
-        return aria_result_err("Thread already joined");
+        return npk_result_err("Thread already joined");
     }
 
     void* return_value = NULL;
     int result = pthread_join(thread->handle, &return_value);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_join"));
+        return npk_result_err(get_error_message("pthread_join"));
     }
 
     thread->joined = true;
@@ -248,16 +248,16 @@ AriaResult* aria_thread_join(AriaThread* thread, void** ret_val) {
 #endif
 
     free(thread);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_thread_detach(AriaThread* thread) {
+AriaResult* npk_thread_detach(AriaThread* thread) {
     if (!thread) {
-        return aria_result_err("Thread handle cannot be NULL");
+        return npk_result_err("Thread handle cannot be NULL");
     }
 
     if (thread->detached) {
-        return aria_result_err("Thread already detached");
+        return npk_result_err("Thread already detached");
     }
 
 #ifdef _WIN32
@@ -268,15 +268,15 @@ AriaResult* aria_thread_detach(AriaThread* thread) {
 #else
     int result = pthread_detach(thread->handle);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_detach"));
+        return npk_result_err(get_error_message("pthread_detach"));
     }
 #endif
 
     thread->detached = true;
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaThreadId aria_thread_current_id(void) {
+AriaThreadId npk_thread_current_id(void) {
     AriaThreadId tid;
 #ifdef _WIN32
     tid.id = GetCurrentThreadId();
@@ -286,7 +286,7 @@ AriaThreadId aria_thread_current_id(void) {
     return tid;
 }
 
-AriaThreadId aria_thread_get_id(AriaThread* thread) {
+AriaThreadId npk_thread_get_id(AriaThread* thread) {
     AriaThreadId tid;
     if (!thread) {
         tid.id = 0;
@@ -300,11 +300,11 @@ AriaThreadId aria_thread_get_id(AriaThread* thread) {
     return tid;
 }
 
-bool aria_thread_id_equal(AriaThreadId tid1, AriaThreadId tid2) {
+bool npk_thread_id_equal(AriaThreadId tid1, AriaThreadId tid2) {
     return tid1.id == tid2.id;
 }
 
-void aria_thread_yield(void) {
+void npk_thread_yield(void) {
 #ifdef _WIN32
     SwitchToThread();
 #else
@@ -312,7 +312,7 @@ void aria_thread_yield(void) {
 #endif
 }
 
-void aria_thread_sleep_ns(uint64_t nanoseconds) {
+void npk_thread_sleep_ns(uint64_t nanoseconds) {
 #ifdef _WIN32
     DWORD milliseconds = (DWORD)(nanoseconds / 1000000);
     if (milliseconds == 0 && nanoseconds > 0) {
@@ -327,7 +327,7 @@ void aria_thread_sleep_ns(uint64_t nanoseconds) {
 #endif
 }
 
-void aria_thread_set_name(const char* name) {
+void npk_thread_set_name(const char* name) {
     if (!name) return;
 
 #ifdef _WIN32
@@ -344,10 +344,10 @@ void aria_thread_set_name(const char* name) {
  * Mutex Synchronization
  * ============================================================================ */
 
-AriaResult* aria_mutex_create(AriaMutexType type) {
+AriaResult* npk_mutex_create(AriaMutexType type) {
     AriaMutex* mutex = (AriaMutex*)calloc(1, sizeof(AriaMutex));
     if (!mutex) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
     mutex->type = type;
@@ -370,16 +370,16 @@ AriaResult* aria_mutex_create(AriaMutexType type) {
 
     if (result != 0) {
         free(mutex);
-        return aria_result_err(get_error_message("pthread_mutex_init"));
+        return npk_result_err(get_error_message("pthread_mutex_init"));
     }
 #endif
 
-    return aria_result_ok(mutex, sizeof(AriaMutex));
+    return npk_result_ok(mutex, sizeof(AriaMutex));
 }
 
-AriaResult* aria_mutex_destroy(AriaMutex* mutex) {
+AriaResult* npk_mutex_destroy(AriaMutex* mutex) {
     if (!mutex) {
-        return aria_result_err("Mutex handle cannot be NULL");
+        return npk_result_err("Mutex handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -387,17 +387,17 @@ AriaResult* aria_mutex_destroy(AriaMutex* mutex) {
 #else
     int result = pthread_mutex_destroy(&mutex->mutex);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_mutex_destroy"));
+        return npk_result_err(get_error_message("pthread_mutex_destroy"));
     }
 #endif
 
     free(mutex);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_mutex_lock(AriaMutex* mutex) {
+AriaResult* npk_mutex_lock(AriaMutex* mutex) {
     if (!mutex) {
-        return aria_result_err("Mutex handle cannot be NULL");
+        return npk_result_err("Mutex handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -405,39 +405,39 @@ AriaResult* aria_mutex_lock(AriaMutex* mutex) {
 #else
     int result = pthread_mutex_lock(&mutex->mutex);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_mutex_lock"));
+        return npk_result_err(get_error_message("pthread_mutex_lock"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_mutex_trylock(AriaMutex* mutex) {
+AriaResult* npk_mutex_trylock(AriaMutex* mutex) {
     if (!mutex) {
-        return aria_result_err("Mutex handle cannot be NULL");
+        return npk_result_err("Mutex handle cannot be NULL");
     }
 
 #ifdef _WIN32
     BOOL acquired = TryEnterCriticalSection(&mutex->cs);
     if (!acquired) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
 #else
     int result = pthread_mutex_trylock(&mutex->mutex);
     if (result == EBUSY) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_mutex_trylock"));
+        return npk_result_err(get_error_message("pthread_mutex_trylock"));
     }
 #endif
 
-    return aria_result_ok((void*)1, 1); // success=true indicates lock acquired
+    return npk_result_ok((void*)1, 1); // success=true indicates lock acquired
 }
 
-AriaResult* aria_mutex_unlock(AriaMutex* mutex) {
+AriaResult* npk_mutex_unlock(AriaMutex* mutex) {
     if (!mutex) {
-        return aria_result_err("Mutex handle cannot be NULL");
+        return npk_result_err("Mutex handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -445,21 +445,21 @@ AriaResult* aria_mutex_unlock(AriaMutex* mutex) {
 #else
     int result = pthread_mutex_unlock(&mutex->mutex);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_mutex_unlock"));
+        return npk_result_err(get_error_message("pthread_mutex_unlock"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
 /* ============================================================================
  * Condition Variables
  * ============================================================================ */
 
-AriaResult* aria_condvar_create(void) {
+AriaResult* npk_condvar_create(void) {
     AriaCondVar* condvar = (AriaCondVar*)calloc(1, sizeof(AriaCondVar));
     if (!condvar) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
 #ifdef _WIN32
@@ -468,16 +468,16 @@ AriaResult* aria_condvar_create(void) {
     int result = pthread_cond_init(&condvar->cond, NULL);
     if (result != 0) {
         free(condvar);
-        return aria_result_err(get_error_message("pthread_cond_init"));
+        return npk_result_err(get_error_message("pthread_cond_init"));
     }
 #endif
 
-    return aria_result_ok(condvar, sizeof(AriaCondVar));
+    return npk_result_ok(condvar, sizeof(AriaCondVar));
 }
 
-AriaResult* aria_condvar_destroy(AriaCondVar* condvar) {
+AriaResult* npk_condvar_destroy(AriaCondVar* condvar) {
     if (!condvar) {
-        return aria_result_err("Condition variable handle cannot be NULL");
+        return npk_result_err("Condition variable handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -485,38 +485,38 @@ AriaResult* aria_condvar_destroy(AriaCondVar* condvar) {
 #else
     int result = pthread_cond_destroy(&condvar->cond);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_cond_destroy"));
+        return npk_result_err(get_error_message("pthread_cond_destroy"));
     }
 #endif
 
     free(condvar);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_condvar_wait(AriaCondVar* condvar, AriaMutex* mutex) {
+AriaResult* npk_condvar_wait(AriaCondVar* condvar, AriaMutex* mutex) {
     if (!condvar || !mutex) {
-        return aria_result_err("Condition variable and mutex handles cannot be NULL");
+        return npk_result_err("Condition variable and mutex handles cannot be NULL");
     }
 
 #ifdef _WIN32
     BOOL result = SleepConditionVariableCS(&condvar->cv, &mutex->cs, INFINITE);
     if (!result) {
-        return aria_result_err(get_error_message("SleepConditionVariableCS"));
+        return npk_result_err(get_error_message("SleepConditionVariableCS"));
     }
 #else
     int result = pthread_cond_wait(&condvar->cond, &mutex->mutex);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_cond_wait"));
+        return npk_result_err(get_error_message("pthread_cond_wait"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex,
+AriaResult* npk_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex,
                                     uint64_t timeout_ns) {
     if (!condvar || !mutex) {
-        return aria_result_err("Condition variable and mutex handles cannot be NULL");
+        return npk_result_err("Condition variable and mutex handles cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -524,9 +524,9 @@ AriaResult* aria_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex,
     BOOL result = SleepConditionVariableCS(&condvar->cv, &mutex->cs, timeout_ms);
     if (!result) {
         if (GetLastError() == ERROR_TIMEOUT) {
-            return aria_result_ok((void*)0, 0); // success=false indicates timeout
+            return npk_result_ok((void*)0, 0); // success=false indicates timeout
         }
-        return aria_result_err(get_error_message("SleepConditionVariableCS"));
+        return npk_result_err(get_error_message("SleepConditionVariableCS"));
     }
 #else
     struct timespec abstime;
@@ -543,19 +543,19 @@ AriaResult* aria_condvar_timedwait(AriaCondVar* condvar, AriaMutex* mutex,
 
     int result = pthread_cond_timedwait(&condvar->cond, &mutex->mutex, &abstime);
     if (result == ETIMEDOUT) {
-        return aria_result_ok((void*)0, 0); // success=false indicates timeout
+        return npk_result_ok((void*)0, 0); // success=false indicates timeout
     }
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_cond_timedwait"));
+        return npk_result_err(get_error_message("pthread_cond_timedwait"));
     }
 #endif
 
-    return aria_result_ok((void*)1, 1); // success=true indicates signaled
+    return npk_result_ok((void*)1, 1); // success=true indicates signaled
 }
 
-AriaResult* aria_condvar_signal(AriaCondVar* condvar) {
+AriaResult* npk_condvar_signal(AriaCondVar* condvar) {
     if (!condvar) {
-        return aria_result_err("Condition variable handle cannot be NULL");
+        return npk_result_err("Condition variable handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -563,16 +563,16 @@ AriaResult* aria_condvar_signal(AriaCondVar* condvar) {
 #else
     int result = pthread_cond_signal(&condvar->cond);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_cond_signal"));
+        return npk_result_err(get_error_message("pthread_cond_signal"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_condvar_broadcast(AriaCondVar* condvar) {
+AriaResult* npk_condvar_broadcast(AriaCondVar* condvar) {
     if (!condvar) {
-        return aria_result_err("Condition variable handle cannot be NULL");
+        return npk_result_err("Condition variable handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -580,21 +580,21 @@ AriaResult* aria_condvar_broadcast(AriaCondVar* condvar) {
 #else
     int result = pthread_cond_broadcast(&condvar->cond);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_cond_broadcast"));
+        return npk_result_err(get_error_message("pthread_cond_broadcast"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
 /* ============================================================================
  * Thread-Local Storage
  * ============================================================================ */
 
-AriaResult* aria_thread_local_create(AriaThreadLocalDestructor destructor) {
+AriaResult* npk_thread_local_create(AriaThreadLocalDestructor destructor) {
     AriaThreadLocal* tls = (AriaThreadLocal*)calloc(1, sizeof(AriaThreadLocal));
     if (!tls) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
     tls->destructor = destructor;
@@ -603,22 +603,22 @@ AriaResult* aria_thread_local_create(AriaThreadLocalDestructor destructor) {
     tls->key = TlsAlloc();
     if (tls->key == TLS_OUT_OF_INDEXES) {
         free(tls);
-        return aria_result_err(get_error_message("TlsAlloc"));
+        return npk_result_err(get_error_message("TlsAlloc"));
     }
 #else
     int result = pthread_key_create(&tls->key, destructor);
     if (result != 0) {
         free(tls);
-        return aria_result_err(get_error_message("pthread_key_create"));
+        return npk_result_err(get_error_message("pthread_key_create"));
     }
 #endif
 
-    return aria_result_ok(tls, sizeof(AriaThreadLocal));
+    return npk_result_ok(tls, sizeof(AriaThreadLocal));
 }
 
-AriaResult* aria_thread_local_destroy(AriaThreadLocal* tls) {
+AriaResult* npk_thread_local_destroy(AriaThreadLocal* tls) {
     if (!tls) {
-        return aria_result_err("TLS key handle cannot be NULL");
+        return npk_result_err("TLS key handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -626,15 +626,15 @@ AriaResult* aria_thread_local_destroy(AriaThreadLocal* tls) {
 #else
     int result = pthread_key_delete(tls->key);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_key_delete"));
+        return npk_result_err(get_error_message("pthread_key_delete"));
     }
 #endif
 
     free(tls);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-void* aria_thread_local_get(AriaThreadLocal* tls) {
+void* npk_thread_local_get(AriaThreadLocal* tls) {
     if (!tls) {
         return NULL;
     }
@@ -646,33 +646,33 @@ void* aria_thread_local_get(AriaThreadLocal* tls) {
 #endif
 }
 
-AriaResult* aria_thread_local_set(AriaThreadLocal* tls, void* value) {
+AriaResult* npk_thread_local_set(AriaThreadLocal* tls, void* value) {
     if (!tls) {
-        return aria_result_err("TLS key handle cannot be NULL");
+        return npk_result_err("TLS key handle cannot be NULL");
     }
 
 #ifdef _WIN32
     if (!TlsSetValue(tls->key, value)) {
-        return aria_result_err(get_error_message("TlsSetValue"));
+        return npk_result_err(get_error_message("TlsSetValue"));
     }
 #else
     int result = pthread_setspecific(tls->key, value);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_setspecific"));
+        return npk_result_err(get_error_message("pthread_setspecific"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
 /* ============================================================================
  * Read-Write Locks
  * ============================================================================ */
 
-AriaResult* aria_rwlock_create(void) {
+AriaResult* npk_rwlock_create(void) {
     AriaRWLock* rwlock = (AriaRWLock*)calloc(1, sizeof(AriaRWLock));
     if (!rwlock) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
 #ifdef _WIN32
@@ -695,16 +695,16 @@ AriaResult* aria_rwlock_create(void) {
     
     if (result != 0) {
         free(rwlock);
-        return aria_result_err(get_error_message("pthread_rwlock_init"));
+        return npk_result_err(get_error_message("pthread_rwlock_init"));
     }
 #endif
 
-    return aria_result_ok(rwlock, sizeof(AriaRWLock));
+    return npk_result_ok(rwlock, sizeof(AriaRWLock));
 }
 
-AriaResult* aria_rwlock_destroy(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_destroy(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -712,17 +712,17 @@ AriaResult* aria_rwlock_destroy(AriaRWLock* rwlock) {
 #else
     int result = pthread_rwlock_destroy(&rwlock->lock);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_destroy"));
+        return npk_result_err(get_error_message("pthread_rwlock_destroy"));
     }
 #endif
 
     free(rwlock);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_rwlock_rdlock(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_rdlock(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -730,39 +730,39 @@ AriaResult* aria_rwlock_rdlock(AriaRWLock* rwlock) {
 #else
     int result = pthread_rwlock_rdlock(&rwlock->lock);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_rdlock"));
+        return npk_result_err(get_error_message("pthread_rwlock_rdlock"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_rwlock_tryrdlock(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_tryrdlock(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
     BOOL acquired = TryAcquireSRWLockShared(&rwlock->lock);
     if (!acquired) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
 #else
     int result = pthread_rwlock_tryrdlock(&rwlock->lock);
     if (result == EBUSY) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_tryrdlock"));
+        return npk_result_err(get_error_message("pthread_rwlock_tryrdlock"));
     }
 #endif
 
-    return aria_result_ok((void*)1, 1); // success=true indicates lock acquired
+    return npk_result_ok((void*)1, 1); // success=true indicates lock acquired
 }
 
-AriaResult* aria_rwlock_wrlock(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_wrlock(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -770,39 +770,39 @@ AriaResult* aria_rwlock_wrlock(AriaRWLock* rwlock) {
 #else
     int result = pthread_rwlock_wrlock(&rwlock->lock);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_wrlock"));
+        return npk_result_err(get_error_message("pthread_rwlock_wrlock"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_rwlock_trywrlock(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_trywrlock(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
     BOOL acquired = TryAcquireSRWLockExclusive(&rwlock->lock);
     if (!acquired) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
 #else
     int result = pthread_rwlock_trywrlock(&rwlock->lock);
     if (result == EBUSY) {
-        return aria_result_ok((void*)0, 0); // success=false indicates lock held
+        return npk_result_ok((void*)0, 0); // success=false indicates lock held
     }
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_trywrlock"));
+        return npk_result_err(get_error_message("pthread_rwlock_trywrlock"));
     }
 #endif
 
-    return aria_result_ok((void*)1, 1); // success=true indicates lock acquired
+    return npk_result_ok((void*)1, 1); // success=true indicates lock acquired
 }
 
-AriaResult* aria_rwlock_unlock(AriaRWLock* rwlock) {
+AriaResult* npk_rwlock_unlock(AriaRWLock* rwlock) {
     if (!rwlock) {
-        return aria_result_err("RW lock handle cannot be NULL");
+        return npk_result_err("RW lock handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -813,25 +813,25 @@ AriaResult* aria_rwlock_unlock(AriaRWLock* rwlock) {
 #else
     int result = pthread_rwlock_unlock(&rwlock->lock);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_rwlock_unlock"));
+        return npk_result_err(get_error_message("pthread_rwlock_unlock"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
 /* ============================================================================
  * Barriers
  * ============================================================================ */
 
-AriaResult* aria_barrier_create(uint32_t count) {
+AriaResult* npk_barrier_create(uint32_t count) {
     if (count == 0) {
-        return aria_result_err("Barrier count must be greater than zero");
+        return npk_result_err("Barrier count must be greater than zero");
     }
 
     AriaBarrier* barrier = (AriaBarrier*)calloc(1, sizeof(AriaBarrier));
     if (!barrier) {
-        return aria_result_err("Out of memory");
+        return npk_result_err("Out of memory");
     }
 
 #ifdef _WIN32
@@ -840,16 +840,16 @@ AriaResult* aria_barrier_create(uint32_t count) {
     int result = pthread_barrier_init(&barrier->barrier, NULL, count);
     if (result != 0) {
         free(barrier);
-        return aria_result_err(get_error_message("pthread_barrier_init"));
+        return npk_result_err(get_error_message("pthread_barrier_init"));
     }
 #endif
 
-    return aria_result_ok(barrier, sizeof(AriaBarrier));
+    return npk_result_ok(barrier, sizeof(AriaBarrier));
 }
 
-AriaResult* aria_barrier_destroy(AriaBarrier* barrier) {
+AriaResult* npk_barrier_destroy(AriaBarrier* barrier) {
     if (!barrier) {
-        return aria_result_err("Barrier handle cannot be NULL");
+        return npk_result_err("Barrier handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -857,17 +857,17 @@ AriaResult* aria_barrier_destroy(AriaBarrier* barrier) {
 #else
     int result = pthread_barrier_destroy(&barrier->barrier);
     if (result != 0) {
-        return aria_result_err(get_error_message("pthread_barrier_destroy"));
+        return npk_result_err(get_error_message("pthread_barrier_destroy"));
     }
 #endif
 
     free(barrier);
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
-AriaResult* aria_barrier_wait(AriaBarrier* barrier) {
+AriaResult* npk_barrier_wait(AriaBarrier* barrier) {
     if (!barrier) {
-        return aria_result_err("Barrier handle cannot be NULL");
+        return npk_result_err("Barrier handle cannot be NULL");
     }
 
 #ifdef _WIN32
@@ -875,18 +875,18 @@ AriaResult* aria_barrier_wait(AriaBarrier* barrier) {
 #else
     int result = pthread_barrier_wait(&barrier->barrier);
     if (result != 0 && result != PTHREAD_BARRIER_SERIAL_THREAD) {
-        return aria_result_err(get_error_message("pthread_barrier_wait"));
+        return npk_result_err(get_error_message("pthread_barrier_wait"));
     }
 #endif
 
-    return aria_result_ok(NULL, 0);
+    return npk_result_ok(NULL, 0);
 }
 
 /* ============================================================================
  * Hardware Information
  * ============================================================================ */
 
-uint32_t aria_thread_hardware_concurrency(void) {
+uint32_t npk_thread_hardware_concurrency(void) {
 #ifdef _WIN32
     SYSTEM_INFO sysinfo;
     GetSystemInfo(&sysinfo);

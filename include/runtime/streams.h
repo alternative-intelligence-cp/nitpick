@@ -64,19 +64,19 @@ typedef enum {
  * Global text stream handles (initialized on first use)
  * 
  * Usage:
- *   aria_stdout_write("Hello, World!");
- *   aria_stderr_write("Error occurred");
- *   aria_stddbg_write("Debug: x = 42");
- *   char* line = aria_stdin_read_line();
+ *   npk_stdout_write("Hello, World!");
+ *   npk_stderr_write("Error occurred");
+ *   npk_stddbg_write("Debug: x = 42");
+ *   char* line = npk_stdin_read_line();
  */
 
 // Get global stream instances
-AriaTextStream* aria_get_stdin(void);
-AriaTextStream* aria_get_stdout(void);
-AriaTextStream* aria_get_stderr(void);
-AriaTextStream* aria_get_stddbg(void);
-AriaBinaryStream* aria_get_stddati(void);
-AriaBinaryStream* aria_get_stddato(void);
+AriaTextStream* npk_get_stdin(void);
+AriaTextStream* npk_get_stdout(void);
+AriaTextStream* npk_get_stderr(void);
+AriaTextStream* npk_get_stddbg(void);
+AriaBinaryStream* npk_get_stddati(void);
+AriaBinaryStream* npk_get_stddato(void);
 
 // ============================================================================
 // Text Stream API
@@ -89,7 +89,7 @@ AriaBinaryStream* aria_get_stddato(void);
  * @param mode Buffering mode
  * @return New text stream, or NULL on error
  */
-AriaTextStream* aria_text_stream_create(void* file, AriaStreamMode mode);
+AriaTextStream* npk_text_stream_create(void* file, AriaStreamMode mode);
 
 /**
  * Write a string to a text stream
@@ -98,7 +98,7 @@ AriaTextStream* aria_text_stream_create(void* file, AriaStreamMode mode);
  * @param str The null-terminated string to write
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_text_stream_write(AriaTextStream* stream, const char* str);
+int64_t npk_text_stream_write(AriaTextStream* stream, const char* str);
 
 /**
  * Write formatted output to a text stream (printf-style)
@@ -108,7 +108,7 @@ int64_t aria_text_stream_write(AriaTextStream* stream, const char* str);
  * @param ... Format arguments
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_text_stream_printf(AriaTextStream* stream, const char* format, ...);
+int64_t npk_text_stream_printf(AriaTextStream* stream, const char* format, ...);
 
 /**
  * Read a line from a text stream (up to and including newline)
@@ -116,7 +116,7 @@ int64_t aria_text_stream_printf(AriaTextStream* stream, const char* format, ...)
  * @param stream The stream to read from
  * @return Allocated string containing the line (caller must free), or NULL on EOF/error
  */
-char* aria_text_stream_read_line(AriaTextStream* stream);
+char* npk_text_stream_read_line(AriaTextStream* stream);
 
 /**
  * Read all remaining text from a stream
@@ -124,7 +124,7 @@ char* aria_text_stream_read_line(AriaTextStream* stream);
  * @param stream The stream to read from
  * @return Allocated string with all content (caller must free), or NULL on error
  */
-char* aria_text_stream_read_all(AriaTextStream* stream);
+char* npk_text_stream_read_all(AriaTextStream* stream);
 
 /**
  * Flush buffered output to the underlying stream
@@ -132,7 +132,7 @@ char* aria_text_stream_read_all(AriaTextStream* stream);
  * @param stream The stream to flush
  * @return 0 on success, -1 on error
  */
-int aria_text_stream_flush(AriaTextStream* stream);
+int npk_text_stream_flush(AriaTextStream* stream);
 
 /**
  * Check if stream is at end-of-file
@@ -140,7 +140,7 @@ int aria_text_stream_flush(AriaTextStream* stream);
  * @param stream The stream to check
  * @return true if at EOF, false otherwise
  */
-bool aria_text_stream_eof(AriaTextStream* stream);
+bool npk_text_stream_eof(AriaTextStream* stream);
 
 /**
  * Set buffering mode for a text stream
@@ -148,38 +148,38 @@ bool aria_text_stream_eof(AriaTextStream* stream);
  * @param stream The stream to configure
  * @param mode New buffering mode
  */
-void aria_text_stream_set_mode(AriaTextStream* stream, AriaStreamMode mode);
+void npk_text_stream_set_mode(AriaTextStream* stream, AriaStreamMode mode);
 
 /**
  * Close and free a text stream
  * 
  * @param stream The stream to close
  */
-void aria_text_stream_close(AriaTextStream* stream);
+void npk_text_stream_close(AriaTextStream* stream);
 
 // ============================================================================
 // Convenience Functions for Global Streams
 // ============================================================================
 
 // stdout operations
-int64_t aria_stdout_write(const char* str);
-int64_t aria_stdout_printf(const char* format, ...);
-int aria_stdout_flush(void);
+int64_t npk_stdout_write(const char* str);
+int64_t npk_stdout_printf(const char* format, ...);
+int npk_stdout_flush(void);
 
 // stderr operations
-int64_t aria_stderr_write(const char* str);
-int64_t aria_stderr_printf(const char* format, ...);
-int aria_stderr_flush(void);
+int64_t npk_stderr_write(const char* str);
+int64_t npk_stderr_printf(const char* format, ...);
+int npk_stderr_flush(void);
 
 // stddbg operations
-int64_t aria_stddbg_write(const char* str);
-int64_t aria_stddbg_printf(const char* format, ...);
-int aria_stddbg_flush(void);
+int64_t npk_stddbg_write(const char* str);
+int64_t npk_stddbg_printf(const char* format, ...);
+int npk_stddbg_flush(void);
 
 // stdin operations
-char* aria_stdin_read_line(void);
-char* aria_stdin_read_all(void);
-bool aria_stdin_eof(void);
+char* npk_stdin_read_line(void);
+char* npk_stdin_read_all(void);
+bool npk_stdin_eof(void);
 
 // ============================================================================
 // Binary Stream API
@@ -192,7 +192,7 @@ bool aria_stdin_eof(void);
  * @param buffer_size Size of internal buffer (0 for unbuffered)
  * @return New binary stream, or NULL on error
  */
-AriaBinaryStream* aria_binary_stream_create(void* file, size_t buffer_size);
+AriaBinaryStream* npk_binary_stream_create(void* file, size_t buffer_size);
 
 /**
  * Write binary data to a stream
@@ -202,7 +202,7 @@ AriaBinaryStream* aria_binary_stream_create(void* file, size_t buffer_size);
  * @param size Number of bytes to write
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_binary_stream_write(AriaBinaryStream* stream, const void* data, size_t size);
+int64_t npk_binary_stream_write(AriaBinaryStream* stream, const void* data, size_t size);
 
 /**
  * Read binary data from a stream
@@ -212,7 +212,7 @@ int64_t aria_binary_stream_write(AriaBinaryStream* stream, const void* data, siz
  * @param size Number of bytes to read
  * @return Number of bytes actually read, or -1 on error
  */
-int64_t aria_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t size);
+int64_t npk_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t size);
 
 /**
  * Read all remaining binary data from a stream
@@ -221,7 +221,7 @@ int64_t aria_binary_stream_read(AriaBinaryStream* stream, void* buffer, size_t s
  * @param size_out Pointer to store the size of returned data
  * @return Allocated buffer with data (caller must free), or NULL on error
  */
-void* aria_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out);
+void* npk_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out);
 
 /**
  * Flush buffered binary data to the underlying stream
@@ -229,7 +229,7 @@ void* aria_binary_stream_read_all(AriaBinaryStream* stream, size_t* size_out);
  * @param stream The stream to flush
  * @return 0 on success, -1 on error
  */
-int aria_binary_stream_flush(AriaBinaryStream* stream);
+int npk_binary_stream_flush(AriaBinaryStream* stream);
 
 /**
  * Check if binary stream is at end-of-file
@@ -237,27 +237,27 @@ int aria_binary_stream_flush(AriaBinaryStream* stream);
  * @param stream The stream to check
  * @return true if at EOF, false otherwise
  */
-bool aria_binary_stream_eof(AriaBinaryStream* stream);
+bool npk_binary_stream_eof(AriaBinaryStream* stream);
 
 /**
  * Close and free a binary stream
  * 
  * @param stream The stream to close
  */
-void aria_binary_stream_close(AriaBinaryStream* stream);
+void npk_binary_stream_close(AriaBinaryStream* stream);
 
 // ============================================================================
 // Convenience Functions for Global Binary Streams
 // ============================================================================
 
 // stddati (binary input) operations
-int64_t aria_stddati_read(void* buffer, size_t size);
-void* aria_stddati_read_all(size_t* size_out);
-bool aria_stddati_eof(void);
+int64_t npk_stddati_read(void* buffer, size_t size);
+void* npk_stddati_read_all(size_t* size_out);
+bool npk_stddati_eof(void);
 
 // stddato (binary output) operations
-int64_t aria_stddato_write(const void* data, size_t size);
-int aria_stddato_flush(void);
+int64_t npk_stddato_write(const void* data, size_t size);
+int npk_stddato_flush(void);
 
 // ============================================================================
 // Debug Session API (Structured Logging)
@@ -272,7 +272,7 @@ int aria_stddato_flush(void);
  * @param session_name Name/identifier for this logging session
  * @return New debug session, or NULL on error
  */
-AriaDebugSession* aria_debug_session_create(const char* session_name);
+AriaDebugSession* npk_debug_session_create(const char* session_name);
 
 /**
  * Log a message to a debug session
@@ -281,7 +281,7 @@ AriaDebugSession* aria_debug_session_create(const char* session_name);
  * @param level Log level (debug, info, warn, error, fatal)
  * @param message The log message
  */
-void aria_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const char* message);
+void npk_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const char* message);
 
 /**
  * Log a formatted message to a debug session (printf-style)
@@ -291,7 +291,7 @@ void aria_debug_session_log(AriaDebugSession* session, AriaLogLevel level, const
  * @param format Format string
  * @param ... Format arguments
  */
-void aria_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, const char* format, ...);
+void npk_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, const char* format, ...);
 
 /**
  * Set minimum log level for a session
@@ -301,7 +301,7 @@ void aria_debug_session_logf(AriaDebugSession* session, AriaLogLevel level, cons
  * @param session The debug session
  * @param min_level Minimum level to log
  */
-void aria_debug_session_set_min_level(AriaDebugSession* session, AriaLogLevel min_level);
+void npk_debug_session_set_min_level(AriaDebugSession* session, AriaLogLevel min_level);
 
 /**
  * Enable/disable timestamp prefixes for log messages
@@ -309,14 +309,14 @@ void aria_debug_session_set_min_level(AriaDebugSession* session, AriaLogLevel mi
  * @param session The debug session
  * @param enabled true to enable timestamps, false to disable
  */
-void aria_debug_session_set_timestamps(AriaDebugSession* session, bool enabled);
+void npk_debug_session_set_timestamps(AriaDebugSession* session, bool enabled);
 
 /**
  * Close and free a debug session
  * 
  * @param session The session to close
  */
-void aria_debug_session_close(AriaDebugSession* session);
+void npk_debug_session_close(AriaDebugSession* session);
 
 // ============================================================================
 // Convenience Debug Functions (using default stddbg)
@@ -325,32 +325,32 @@ void aria_debug_session_close(AriaDebugSession* session);
 /**
  * Log to stddbg at debug level
  */
-void aria_log_debug(const char* message);
-void aria_log_debugf(const char* format, ...);
+void npk_log_debug(const char* message);
+void npk_log_debugf(const char* format, ...);
 
 /**
  * Log to stddbg at info level
  */
-void aria_log_info(const char* message);
-void aria_log_infof(const char* format, ...);
+void npk_log_info(const char* message);
+void npk_log_infof(const char* format, ...);
 
 /**
  * Log to stddbg at warn level
  */
-void aria_log_warn(const char* message);
-void aria_log_warnf(const char* format, ...);
+void npk_log_warn(const char* message);
+void npk_log_warnf(const char* format, ...);
 
 /**
  * Log to stddbg at error level
  */
-void aria_log_error(const char* message);
-void aria_log_errorf(const char* format, ...);
+void npk_log_error(const char* message);
+void npk_log_errorf(const char* format, ...);
 
 /**
  * Log to stddbg at fatal level
  */
-void aria_log_fatal(const char* message);
-void aria_log_fatalf(const char* format, ...);
+void npk_log_fatal(const char* message);
+void npk_log_fatalf(const char* format, ...);
 
 // ============================================================================
 // Stream Initialization and Cleanup
@@ -362,7 +362,7 @@ void aria_log_fatalf(const char* format, ...);
  * This is called automatically on first use of any global stream,
  * but can be called explicitly for initialization control.
  */
-void aria_streams_init(void);
+void npk_streams_init(void);
 
 /**
  * Cleanup the global stream system
@@ -370,7 +370,7 @@ void aria_streams_init(void);
  * Flushes and closes all global streams. Should be called before
  * program exit to ensure all buffered data is written.
  */
-void aria_streams_cleanup(void);
+void npk_streams_cleanup(void);
 
 #ifdef __cplusplus
 }

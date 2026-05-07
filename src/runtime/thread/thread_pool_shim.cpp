@@ -6,7 +6,7 @@
  * directly for maximum control.
  *
  * Same handle pattern as thread_shim / atomic_shim.
- * All functions prefixed with aria_shim_pool_*.
+ * All functions prefixed with npk_shim_pool_*.
  */
 
 #include <pthread.h>
@@ -147,7 +147,7 @@ static int64_t alloc_pool_slot(ThreadPool* p) {
  * If num_workers <= 0, uses a default of 4.
  * Returns pool handle (>= 0) on success, -1 on error.
  */
-int64_t aria_shim_pool_create(int32_t num_workers) {
+int64_t npk_shim_pool_create(int32_t num_workers) {
     if (num_workers <= 0) num_workers = 4;
     if (num_workers > MAX_POOL_WORKERS) num_workers = MAX_POOL_WORKERS;
 
@@ -182,7 +182,7 @@ int64_t aria_shim_pool_create(int32_t num_workers) {
  * Submit a task to the pool. func is an Aria method_ptr (extracted from fat pointer).
  * Returns 0 on success, -1 on error.
  */
-int32_t aria_shim_pool_submit(int64_t handle, void* func, int64_t arg) {
+int32_t npk_shim_pool_submit(int64_t handle, void* func, int64_t arg) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     if (!func) return -1;
     ThreadPool* pool = g_pools[handle];
@@ -194,7 +194,7 @@ int32_t aria_shim_pool_submit(int64_t handle, void* func, int64_t arg) {
  * Shutdown the pool: signal workers to stop, wait for all to finish.
  * Returns 0 on success, -1 on error.
  */
-int32_t aria_shim_pool_shutdown(int64_t handle) {
+int32_t npk_shim_pool_shutdown(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     ThreadPool* pool = g_pools[handle];
     if (!pool->alive) return -1;
@@ -223,7 +223,7 @@ int32_t aria_shim_pool_shutdown(int64_t handle) {
 /**
  * Get the number of tasks currently being executed.
  */
-int64_t aria_shim_pool_active_tasks(int64_t handle) {
+int64_t npk_shim_pool_active_tasks(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     return __sync_fetch_and_add(&g_pools[handle]->active_tasks, 0);
 }
@@ -231,7 +231,7 @@ int64_t aria_shim_pool_active_tasks(int64_t handle) {
 /**
  * Get the number of pending tasks in the queue.
  */
-int64_t aria_shim_pool_pending_tasks(int64_t handle) {
+int64_t npk_shim_pool_pending_tasks(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     ThreadPool* pool = g_pools[handle];
     pthread_mutex_lock(&pool->queue.lock);
@@ -243,7 +243,7 @@ int64_t aria_shim_pool_pending_tasks(int64_t handle) {
 /**
  * Get the number of worker threads.
  */
-int32_t aria_shim_pool_worker_count(int64_t handle) {
+int32_t npk_shim_pool_worker_count(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     return g_pools[handle]->num_workers;
 }
@@ -252,7 +252,7 @@ int32_t aria_shim_pool_worker_count(int64_t handle) {
  * Wait until all submitted tasks have been processed.
  * Polls queue count + active tasks, sleeping briefly between checks.
  */
-int32_t aria_shim_pool_wait_idle(int64_t handle) {
+int32_t npk_shim_pool_wait_idle(int64_t handle) {
     if (handle < 0 || handle >= MAX_POOLS || !g_pools[handle]) return -1;
     ThreadPool* pool = g_pools[handle];
     while (1) {

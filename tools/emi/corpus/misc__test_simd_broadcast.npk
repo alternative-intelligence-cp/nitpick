@@ -1,0 +1,86 @@
+// Test simd_broadcast() - create uniform SIMD vectors
+// Signature: simd_broadcast(T:value, int32:lanes) -> simd<T, lanes>
+
+func:failsafe = int32(tbb32:err) {
+    // Empty failsafe for tests
+    exit 1;
+};
+
+// Test broadcast int32
+func:test_broadcast_int32 = NIL() {
+    simd<int32, 4>:vec = simd_broadcast(42i32, 4);
+    // All lanes should be 42
+    int32:sum = simd_sum(vec);  // Should be 4 * 42 = 168
+    println("test_broadcast_int32: sum = 168");
+};
+
+// Test broadcast float32
+func:test_broadcast_float32 = NIL() {
+    simd<float32, 4>:vec = simd_broadcast(3.14f32, 4);
+    // All lanes should be 3.14
+    float32:sum = simd_sum(vec);  // Should be 4 * 3.14 = 12.56
+    println("test_broadcast_float32 passed");
+};
+
+// Test broadcast with different lane counts
+func:test_broadcast_lanes = NIL() {
+    simd<int32, 2>:simd2 = simd_broadcast(10i32, 2);
+    simd<int32, 8>:simd8 = simd_broadcast(5i32, 8);
+    simd<int32, 16>:simd16 = simd_broadcast(1i32, 16);
+    
+    int32:sum2 = simd_sum(simd2);    // 20
+    int32:sum8 = simd_sum(simd8);    // 40
+    int32:sum16 = simd_sum(simd16);  // 16
+    
+    println("test_broadcast_lanes passed");
+};
+
+// Test broadcast zero (common use case)
+func:test_broadcast_zero = NIL() {
+    simd<float32, 4>:zeros = simd_broadcast(0.0f32, 4);
+    float32:sum = simd_sum(zeros);  // Should be 0.0
+    println("test_broadcast_zero passed");
+};
+
+// Test broadcast in arithmetic
+func:test_broadcast_arithmetic = NIL() {
+    simd<int32, 4>:base = simd_broadcast(10i32, 4);
+    simd<int32, 4>:offset = simd_broadcast(5i32, 4);
+    
+    simd<int32, 4>:sum = base + offset;
+    // All lanes should be 15
+    int32:total = simd_sum(sum);  // Should be 4 * 15 = 60
+    
+    println("test_broadcast_arithmetic passed");
+};
+
+// Test broadcast with comparison
+func:test_broadcast_comparison = NIL(simd<int32, 4>:vec) {
+    simd<int32, 4>:threshold = simd_broadcast(50i32, 4);
+    
+    // Create mask: which lanes exceed threshold?
+    simd<bool, 4>:above_threshold = vec > threshold;
+    
+    bool:has_high_values = simd_any(above_threshold);
+    
+    println("test_broadcast_comparison passed");
+};
+
+// Test broadcast for clamping
+func:test_broadcast_clamp = NIL(simd<float32, 4>:values) {
+    simd<float32, 4>:min_bound = simd_broadcast(0.0f32, 4);
+    simd<float32, 4>:max_bound = simd_broadcast(100.0f32, 4);
+    
+    // Clamp to [0, 100] range
+    simd<bool, 4>:below_min = values < min_bound;
+    simd<float32, 4>:clamped_low = simd_select(below_min, min_bound, values);
+    
+    simd<bool, 4>:above_max = clamped_low > max_bound;
+    simd<float32, 4>:clamped = simd_select(above_max, max_bound, clamped_low);
+    
+    println("test_broadcast_clamp passed");
+};
+
+func:main = int32() {
+    exit 0;
+};

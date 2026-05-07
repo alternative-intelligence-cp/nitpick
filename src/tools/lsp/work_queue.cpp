@@ -1,7 +1,7 @@
 #include "tools/lsp/work_queue.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 void WorkQueue::push(Task task) {
@@ -82,4 +82,4 @@ std::string WorkQueue::make_key(TaskType type, const std::string& uri) const {
 }
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk

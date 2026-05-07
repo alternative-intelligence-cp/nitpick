@@ -16,7 +16,7 @@
 #include <set>
 #include <cmath>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 using namespace tc_helpers;
@@ -162,7 +162,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
     switch (typeNode->type) {
         case ASTNode::NodeType::TYPE_ANNOTATION: {
             // Simple type: int32, string, etc.
-            aria::SimpleType* simpleType = static_cast<aria::SimpleType*>(typeNode);
+            npk::SimpleType* simpleType = static_cast<npk::SimpleType*>(typeNode);
             
             // Handle vector types specially (vec2, vec3)
             // Default to flt64 components to match float literal inference
@@ -248,7 +248,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                     std::string lower = simpleType->typeName;
                     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
                     if (lower == suggestion || lower == "nil") {
-                        errorMsg += " (Aria types are lowercase)";
+                        errorMsg += " (Nitpick types are lowercase)";
                     }
                 }
                 addError(errorMsg, typeNode);
@@ -258,7 +258,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::ARRAY_TYPE: {
             // Array type: int32[], int32[10], etc.
-            aria::ArrayType* arrayType = static_cast<aria::ArrayType*>(typeNode);
+            npk::ArrayType* arrayType = static_cast<npk::ArrayType*>(typeNode);
             
             // Resolve element type
             Type* elementType = resolveTypeNode(arrayType->elementType.get());
@@ -311,7 +311,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::POINTER_TYPE: {
             // Pointer type: int32@, string@, ?@ (erased), etc.
-            aria::PointerType* ptrType = static_cast<aria::PointerType*>(typeNode);
+            npk::PointerType* ptrType = static_cast<npk::PointerType*>(typeNode);
             
             // ARIA-P3: ?-> / ?* — type-erased pointer
             // baseType is null; create an erased sema PointerType directly.
@@ -332,7 +332,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // Safe reference type: int32$, string$, etc.
             // For now, treat safe references as pointer types in the type system
             // The borrow checker will enforce the safety rules
-            aria::SafeRefType* safeRefType = static_cast<aria::SafeRefType*>(typeNode);
+            npk::SafeRefType* safeRefType = static_cast<npk::SafeRefType*>(typeNode);
             
             // Resolve base type
             Type* baseType = resolveTypeNode(safeRefType->baseType.get());
@@ -346,7 +346,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::OPTIONAL_TYPE: {
             // Optional type: int64?, string?, etc.
-            aria::OptionalTypeNode* optType = static_cast<aria::OptionalTypeNode*>(typeNode);
+            npk::OptionalTypeNode* optType = static_cast<npk::OptionalTypeNode*>(typeNode);
             
             // Resolve wrapped type
             Type* wrappedType = resolveTypeNode(optType->wrappedType.get());
@@ -359,7 +359,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
         
         case ASTNode::NodeType::GENERIC_TYPE: {
             // Generic type instantiation: Box<int64>, Result<int32, string>, etc.
-            aria::GenericType* genericType = static_cast<aria::GenericType*>(typeNode);
+            npk::GenericType* genericType = static_cast<npk::GenericType*>(typeNode);
             
             // Phase 3.4: Generic Struct Instantiation (Session 13)
             // Resolve all type arguments
@@ -425,11 +425,11 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
                 // Support two formats:
                 // 1. Plain integer: "4", "8", "16" (Phase 2: parser handles this)
                 // 2. Identifier format: "N4", "N8", "N16" (Phase 1 workaround, still supported)
-                aria::ASTNode* laneCountNode = genericType->typeArgs[1].get();
+                npk::ASTNode* laneCountNode = genericType->typeArgs[1].get();
                 size_t laneCount = 0;
                 
                 if (laneCountNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
-                    aria::SimpleType* laneCountType = static_cast<aria::SimpleType*>(laneCountNode);
+                    npk::SimpleType* laneCountType = static_cast<npk::SimpleType*>(laneCountNode);
                     std::string laneCountStr = laneCountType->typeName;
                     
                     // Check for "N<number>" format (e.g., "N4", "N8", "N16") - Phase 1 workaround
@@ -627,9 +627,9 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
             // - DimensionName is a registered dimension (Joules, Meters, etc.)
             if (genericType->typeArgs.size() == 1) {
                 // Check if the type argument is a simple identifier (potential dimension name)
-                aria::ASTNode* typeArgNode = genericType->typeArgs[0].get();
+                npk::ASTNode* typeArgNode = genericType->typeArgs[0].get();
                 if (typeArgNode->type == ASTNode::NodeType::TYPE_ANNOTATION) {
-                    aria::SimpleType* simpleTypeArg = static_cast<aria::SimpleType*>(typeArgNode);
+                    npk::SimpleType* simpleTypeArg = static_cast<npk::SimpleType*>(typeArgNode);
                     std::string potentialDimensionName = simpleTypeArg->typeName;
                     
                     // Check if this is a registered dimension
@@ -787,12 +787,31 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                      "$$i/$$m must reference an existing variable", stmt);
             return;
         }
-        auto isLiteralIndexBorrowInitializer = [](ASTNode* node) -> bool {
+        // v0.19.0 Phase 3: recursively check that a node is addressable storage.
+        // Handles: identifier, struct field access (member), array element (index),
+        // and chains thereof (e.g. pair.buf[0], matrix[i][j]).
+        std::function<bool(ASTNode*)> isAddressableBase = [&](ASTNode* n) -> bool {
+            if (!n) return false;
+            switch (n->type) {
+                case ASTNode::NodeType::IDENTIFIER:    return true;
+                case ASTNode::NodeType::MEMBER_ACCESS: {
+                    auto* m = static_cast<MemberAccessExpr*>(n);
+                    return isAddressableBase(m->object.get());
+                }
+                case ASTNode::NodeType::INDEX: {
+                    auto* ix = static_cast<IndexExpr*>(n);
+                    return isAddressableBase(ix->array.get());
+                }
+                default: return false;
+            }
+        };
+
+        auto isLiteralIndexBorrowInitializer = [&](ASTNode* node) -> bool {
             if (!node || node->type != ASTNode::NodeType::INDEX) {
                 return false;
             }
             auto* indexExpr = static_cast<IndexExpr*>(node);
-            if (!indexExpr->array || indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+            if (!isAddressableBase(indexExpr->array.get())) {
                 return false;
             }
             if (!indexExpr->index || indexExpr->index->type != ASTNode::NodeType::LITERAL) {
@@ -802,13 +821,28 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return std::holds_alternative<int64_t>(literal->value);
         };
 
-        // Borrow initializer must be addressable storage. Start conservatively:
-        // variables, struct fields, and direct literal-index fixed-array slots.
+        // v0.19.0: Allow dynamic-index borrow initializers (arr[i]) — the index
+        // may be any expression, not just a literal. The borrow checker maps these
+        // to [*] paths and rejects conflicting borrows conservatively (ARIA-023).
+        auto isDynamicIndexBorrowInitializer = [&](ASTNode* node) -> bool {
+            if (!node || node->type != ASTNode::NodeType::INDEX) {
+                return false;
+            }
+            auto* indexExpr = static_cast<IndexExpr*>(node);
+            if (!isAddressableBase(indexExpr->array.get())) {
+                return false;
+            }
+            return indexExpr->index != nullptr;
+        };
+
+        // Borrow initializer must be addressable storage: a named variable,
+        // struct field, literal-index array element, or dynamic-index array element.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
             stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
-            !isLiteralIndexBorrowInitializer(stmt->initializer.get())) {
+            !isLiteralIndexBorrowInitializer(stmt->initializer.get()) &&
+            !isDynamicIndexBorrowInitializer(stmt->initializer.get())) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "
-                     "(a named variable, struct field, or direct literal-index array element)", stmt);
+                     "(a named variable, struct field, or array element)", stmt);
             return;
         }
     }
@@ -867,7 +901,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                     std::string lower = stmt->typeName;
                     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
                     if (lower == suggestion || lower == "nil") {
-                        errorMsg += " (Aria types are lowercase)";
+                        errorMsg += " (Nitpick types are lowercase)";
                     }
                 }
                 addError(errorMsg, stmt);
@@ -1278,11 +1312,35 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                 const std::vector<StructType::Field>& structFields = structType->getFields();
                 
                 // Check field count matches
-                if (objLit->fields.size() != structFields.size()) {
+                // v0.19.1: struct update syntax allows fewer fields when base_name is set
+                if (objLit->base_name.empty() && objLit->fields.size() != structFields.size()) {
                     addError("Object literal has " + std::to_string(objLit->fields.size()) + 
                             " fields, but struct '" + structType->getName() + 
                             "' requires " + std::to_string(structFields.size()) + " fields", stmt);
                     return;
+                }
+                if (!objLit->base_name.empty()) {
+                    // Verify base variable exists in scope and is the correct struct type
+                    Symbol* baseSym = symbolTable->resolveSymbol(objLit->base_name);
+                    if (!baseSym || !baseSym->type) {
+                        addError("Unknown base variable '" + objLit->base_name + "' in struct update", stmt);
+                        return;
+                    }
+                    Type* baseType = baseSym->type;
+                    if (baseType->getKind() != TypeKind::STRUCT ||
+                        static_cast<const StructType*>(baseType)->getName() != structType->getName()) {
+                        addError("Base variable '" + objLit->base_name + "' must be of type '" +
+                                 structType->getName() + "'", stmt);
+                        return;
+                    }
+                    // Verify all override field names are valid
+                    for (const auto& litField : objLit->fields) {
+                        if (structType->getFieldIndex(litField.name) < 0) {
+                            addError("Unknown field '" + litField.name + "' in struct update of '" +
+                                     structType->getName() + "'", stmt);
+                            return;
+                        }
+                    }
                 }
                 
                 // Validate each field's type
@@ -1790,7 +1848,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // ARIA-026 FIX: FFI Safety - Ban string return types from extern functions
     if (!stmt->body && valueType->toString() == "str") {  // No body = extern function
         addError("FFI Safety Violation: Cannot return 'str' from extern function '" + 
-                 stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                 stmt->funcName + "'. Nitpick strings are fat pointers {data, len} incompatible " +
                  "with C char*. Use 'wild int8*' for C strings and convert with string_from_cstr().", 
                  stmt);
     }
@@ -1880,7 +1938,7 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
             // This corrupts actuator force limits and sensor readings in robotic control.
             if (!stmt->body && paramType->toString() == "str") {  // No body = extern function
                 addError("FFI Safety Violation: Cannot pass 'str' type to extern function '" + 
-                         stmt->funcName + "'. Aria strings are fat pointers {data, len} incompatible " +
+                         stmt->funcName + "'. Nitpick strings are fat pointers {data, len} incompatible " +
                          "with C char*. Use 'wild int8*' for C strings and convert with string_to_cstr().", 
                          param.get());
             }
@@ -4676,7 +4734,7 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         
         // Check if selector is .is_error field access on a Result variable
         // If so, and pattern is a boolean literal, propagate knowledge
-        if (stmt->selector->type == ASTNode::NodeType::MEMBER_ACCESS) {
+        if (pickCase->pattern && stmt->selector->type == ASTNode::NodeType::MEMBER_ACCESS) {
             MemberAccessExpr* memberAccess = static_cast<MemberAccessExpr*>(stmt->selector.get());
             if (memberAccess->member == "is_error") {
                 // Get the Result variable name
@@ -4706,6 +4764,44 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         
         // Check case body with derived knowledge
         currentResultState = caseState;
+
+        // v0.19.1: Struct destructure pattern — validate type and bind fields
+        if (!pickCase->struct_pat_type.empty()) {
+            // Verify selector type is the correct struct type
+            Type* selType = inferType(stmt->selector.get());
+            if (selType && selType->getKind() == TypeKind::STRUCT) {
+                const StructType* selST = static_cast<const StructType*>(selType);
+                if (selST->getName() != pickCase->struct_pat_type) {
+                    addError("Struct pattern type '" + pickCase->struct_pat_type +
+                             "' does not match selector type '" + selST->getName() + "'",
+                             caseNode.get());
+                } else {
+                    // Enter a scope so field bindings are cleaned up after the body
+                    symbolTable->enterScope(ScopeKind::BLOCK, "pick_struct_pat");
+                    for (const std::string& fieldName : pickCase->struct_pat_fields) {
+                        if (fieldName == "_") continue; // ignored placeholder
+                        const StructType::Field* fld = selST->getField(fieldName);
+                        if (!fld) {
+                            addError("Unknown field '" + fieldName + "' in struct '" +
+                                     pickCase->struct_pat_type + "'", caseNode.get());
+                        } else {
+                            symbolTable->defineSymbol(fieldName, SymbolKind::VARIABLE, fld->type);
+                        }
+                    }
+                    if (pickCase->body) {
+                        checkStatement(pickCase->body.get());
+                    }
+                    symbolTable->exitScope();
+                    // Save state and continue to next case
+                    caseStates.push_back(currentResultState);
+                    continue;
+                }
+            } else if (selType && selType->getKind() != TypeKind::ERROR) {
+                addError("Struct pattern requires a struct selector, got '" +
+                         selType->toString() + "'", caseNode.get());
+            }
+        }
+
         if (pickCase->body) {
             checkStatement(pickCase->body.get());
         }
@@ -4995,7 +5091,7 @@ bool TypeChecker::validateFailsafeExists() {
     Symbol* failsafeSymbol = symbolTable->resolveSymbol("failsafe");
     
     if (!failsafeSymbol) {
-        addError("Every Aria program must define a 'func:failsafe = int32(tbb32:err)' function. "
+        addError("Every Nitpick program must define a 'func:failsafe = int32(tbb32:err)' function. "
                  "failsafe is one of two program endpoints (with main). "
                  "It handles error exits via 'exit <code>' where code > 0.", nullptr);
         return false;
@@ -5018,7 +5114,7 @@ bool TypeChecker::validateMainExists() {
     Symbol* mainSymbol = symbolTable->resolveSymbol("main");
     
     if (!mainSymbol) {
-        addError("Every Aria program must define a 'func:main = int32()' function. "
+        addError("Every Nitpick program must define a 'func:main = int32()' function. "
                  "main is one of two program endpoints (with failsafe). "
                  "It is the entry point and must call 'exit <code>' where code 0 = success.", nullptr);
         return false;
@@ -5572,4 +5668,4 @@ void TypeChecker::processAttributes(FuncDeclStmt* stmt) {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

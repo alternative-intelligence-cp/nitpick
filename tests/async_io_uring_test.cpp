@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-using namespace aria::runtime;
+using namespace npk::runtime;
 
 // Result structure for file read operations (matches io_uring.cpp)
 struct ReadResult {
@@ -37,7 +37,7 @@ void test_basic_read_write() {
     std::cout << "  ✓ io_uring initialized" << std::endl;
     
     // Test data
-    std::string test_path = "/tmp/aria_iouring_test.txt";
+    std::string test_path = "/tmp/npk_iouring_test.txt";
     std::string test_content = "Hello from io_uring! This is a test of async file I/O.";
     std::vector<uint8_t> write_data(test_content.begin(), test_content.end());
     
@@ -127,7 +127,7 @@ void test_multiple_operations() {
     std::vector<std::string> paths;
     
     for (int i = 0; i < num_files; i++) {
-        std::string path = "/tmp/aria_iouring_test_" + std::to_string(i) + ".txt";
+        std::string path = "/tmp/npk_iouring_test_" + std::to_string(i) + ".txt";
         paths.push_back(path);
         
         std::string content = "Test file " + std::to_string(i) + " content";
@@ -198,7 +198,7 @@ void test_stat_unlink() {
     std::cout << "  ✓ io_uring initialized" << std::endl;
     
     // Create a test file first
-    std::string test_path = "/tmp/aria_stat_test.txt";
+    std::string test_path = "/tmp/npk_stat_test.txt";
     std::string content = "Test file for stat/unlink";
     std::vector<uint8_t> data(content.begin(), content.end());
     
@@ -284,7 +284,7 @@ void test_statistics() {
     std::cout << "    Pending: " << stats["pending"] << std::endl;
     
     // Perform an operation
-    std::string test_path = "/tmp/aria_stats_test.txt";
+    std::string test_path = "/tmp/npk_stats_test.txt";
     std::string content = "Statistics test";
     std::vector<uint8_t> data(content.begin(), content.end());
     
@@ -327,7 +327,7 @@ void test_open_close() {
     }
     std::cout << "  ✓ io_uring initialized" << std::endl;
     
-    const std::string test_path = "/tmp/aria_test_open.txt";
+    const std::string test_path = "/tmp/npk_test_open.txt";
     
     // Create a test file first using write
     std::string content = "Test content for open/close";
@@ -404,7 +404,7 @@ void test_file_stream() {
     }
     std::cout << "  ✓ io_uring initialized" << std::endl;
     
-    const std::string test_path = "/tmp/aria_test_stream.txt";
+    const std::string test_path = "/tmp/npk_test_stream.txt";
     const std::string test_content = "Hello FileStream! Testing async byte-by-byte reading.";
     
     // Create a test file

@@ -128,7 +128,7 @@ static void enforce_limits(AriaCodeCache* cache) {
 static const uint64_t FNV_OFFSET_BASIS = 14695981039346656037ULL;
 static const uint64_t FNV_PRIME = 1099511628211ULL;
 
-uint64_t aria_code_cache_hash_bytes(const uint8_t* data, size_t size) {
+uint64_t npk_code_cache_hash_bytes(const uint8_t* data, size_t size) {
     if (!data || size == 0) return 0;
     
     uint64_t hash = FNV_OFFSET_BASIS;
@@ -139,7 +139,7 @@ uint64_t aria_code_cache_hash_bytes(const uint8_t* data, size_t size) {
     return hash;
 }
 
-uint64_t aria_code_cache_hash_string(const char* str) {
+uint64_t npk_code_cache_hash_string(const char* str) {
     if (!str) return 0;
     
     uint64_t hash = FNV_OFFSET_BASIS;
@@ -151,7 +151,7 @@ uint64_t aria_code_cache_hash_string(const char* str) {
     return hash;
 }
 
-uint64_t aria_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2) {
+uint64_t npk_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2) {
     // XOR and multiply for good mixing
     uint64_t combined = hash1 ^ hash2;
     combined *= FNV_PRIME;
@@ -162,7 +162,7 @@ uint64_t aria_code_cache_combine_hashes(uint64_t hash1, uint64_t hash2) {
 // Cache Lifecycle
 // ============================================================================
 
-AriaCodeCache* aria_code_cache_create(size_t max_entries, size_t max_memory_bytes) {
+AriaCodeCache* npk_code_cache_create(size_t max_entries, size_t max_memory_bytes) {
     AriaCodeCache* cache = new AriaCodeCache();
     if (!cache) return nullptr;
     
@@ -178,7 +178,7 @@ AriaCodeCache* aria_code_cache_create(size_t max_entries, size_t max_memory_byte
     return cache;
 }
 
-void aria_code_cache_destroy(AriaCodeCache* cache) {
+void npk_code_cache_destroy(AriaCodeCache* cache) {
     if (!cache) return;
     delete cache;
 }
@@ -187,7 +187,7 @@ void aria_code_cache_destroy(AriaCodeCache* cache) {
 // Cache Operations
 // ============================================================================
 
-AriaCachedFunction* aria_code_cache_lookup(AriaCodeCache* cache, uint64_t hash) {
+AriaCachedFunction* npk_code_cache_lookup(AriaCodeCache* cache, uint64_t hash) {
     if (!cache) return nullptr;
     
     auto it = cache->entries.find(hash);
@@ -206,7 +206,7 @@ AriaCachedFunction* aria_code_cache_lookup(AriaCodeCache* cache, uint64_t hash) 
     return &it->second.function;
 }
 
-int aria_code_cache_insert(AriaCodeCache* cache, uint64_t hash,
+int npk_code_cache_insert(AriaCodeCache* cache, uint64_t hash,
                             void* function_ptr, size_t code_size,
                             int backend_type, int optimization_level) {
     if (!cache || !function_ptr) return -1;
@@ -266,7 +266,7 @@ int aria_code_cache_insert(AriaCodeCache* cache, uint64_t hash,
     return 0;
 }
 
-int aria_code_cache_evict(AriaCodeCache* cache, uint64_t hash) {
+int npk_code_cache_evict(AriaCodeCache* cache, uint64_t hash) {
     if (!cache) return -1;
     
     auto it = cache->entries.find(hash);
@@ -289,7 +289,7 @@ int aria_code_cache_evict(AriaCodeCache* cache, uint64_t hash) {
     return 0;
 }
 
-void aria_code_cache_clear(AriaCodeCache* cache) {
+void npk_code_cache_clear(AriaCodeCache* cache) {
     if (!cache) return;
     
     cache->entries.clear();
@@ -308,7 +308,7 @@ void aria_code_cache_clear(AriaCodeCache* cache) {
 // Statistics
 // ============================================================================
 
-AriaCodeCacheStats aria_code_cache_stats(const AriaCodeCache* cache) {
+AriaCodeCacheStats npk_code_cache_stats(const AriaCodeCache* cache) {
     AriaCodeCacheStats stats = {0};
     if (!cache) return stats;
     
@@ -330,7 +330,7 @@ AriaCodeCacheStats aria_code_cache_stats(const AriaCodeCache* cache) {
     return stats;
 }
 
-void aria_code_cache_reset_stats(AriaCodeCache* cache) {
+void npk_code_cache_reset_stats(AriaCodeCache* cache) {
     if (!cache) return;
     
     cache->total_hits = 0;
@@ -343,25 +343,25 @@ void aria_code_cache_reset_stats(AriaCodeCache* cache) {
 // Configuration
 // ============================================================================
 
-void aria_code_cache_set_max_entries(AriaCodeCache* cache, size_t max_entries) {
+void npk_code_cache_set_max_entries(AriaCodeCache* cache, size_t max_entries) {
     if (!cache) return;
     
     cache->max_entries = max_entries;
     enforce_limits(cache);
 }
 
-void aria_code_cache_set_max_memory(AriaCodeCache* cache, size_t max_memory_bytes) {
+void npk_code_cache_set_max_memory(AriaCodeCache* cache, size_t max_memory_bytes) {
     if (!cache) return;
     
     cache->max_memory_bytes = max_memory_bytes;
     enforce_limits(cache);
 }
 
-size_t aria_code_cache_get_max_entries(const AriaCodeCache* cache) {
+size_t npk_code_cache_get_max_entries(const AriaCodeCache* cache) {
     return cache ? cache->max_entries : 0;
 }
 
-size_t aria_code_cache_get_max_memory(const AriaCodeCache* cache) {
+size_t npk_code_cache_get_max_memory(const AriaCodeCache* cache) {
     return cache ? cache->max_memory_bytes : 0;
 }
 
@@ -374,7 +374,7 @@ size_t aria_code_cache_get_max_memory(const AriaCodeCache* cache) {
 static const uint32_t CACHE_MAGIC   = 0x41524343; // "ARCC"
 static const uint32_t CACHE_VERSION = 1;
 
-int aria_code_cache_save(const AriaCodeCache* cache, const char* path) {
+int npk_code_cache_save(const AriaCodeCache* cache, const char* path) {
     if (!cache || !path) return -1;
 
     FILE* fp = fopen(path, "wb");
@@ -400,7 +400,7 @@ int aria_code_cache_save(const AriaCodeCache* cache, const char* path) {
     return 0;
 }
 
-int aria_code_cache_load(AriaCodeCache* cache, const char* path) {
+int npk_code_cache_load(AriaCodeCache* cache, const char* path) {
     if (!cache || !path) return -1;
 
     FILE* fp = fopen(path, "rb");
@@ -453,10 +453,10 @@ int aria_code_cache_load(AriaCodeCache* cache, const char* path) {
         fn.optimization_level = opt_level;
 
         // Insert into cache (respecting limits)
-        aria_code_cache_insert(cache, hash, code_data, code_size,
+        npk_code_cache_insert(cache, hash, code_data, code_size,
                                backend_type, opt_level);
 
-        // Note: aria_code_cache_insert stores the pointer directly,
+        // Note: npk_code_cache_insert stores the pointer directly,
         // so do NOT free code_data here — ownership transferred.
     }
 

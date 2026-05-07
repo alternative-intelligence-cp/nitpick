@@ -1,0 +1,173 @@
+// DEPRECATED: This module uses direct extern FFI calls.
+// Future versions will migrate to aria-libc shims for ABI safety.
+// See: docs/STDLIB.md for migration status.
+
+// stdlib/atomic.aria
+// Lock-free atomic operations using Type Oriented Programming
+// Uses handle-based shim (atomic_shim.cpp) to avoid wild ?* optional wrapper ABI issue
+
+// Handle-based extern functions (implemented in runtime/atomic/atomic_shim.cpp)
+// All create functions return int64 handles, all operations take int64 handles
+extern func:npk_shim_atomic_int32_create = int64(int32:initial);
+extern func:npk_shim_atomic_int32_destroy = int32(int64:handle);
+extern func:npk_shim_atomic_int32_load = int32(int64:handle, int32:order);
+extern func:npk_shim_atomic_int32_store = int32(int64:handle, int32:value, int32:order);
+extern func:npk_shim_atomic_int32_fetch_add = int32(int64:handle, int32:value, int32:order);
+extern func:npk_shim_atomic_int32_fetch_sub = int32(int64:handle, int32:value, int32:order);
+extern func:npk_shim_atomic_int32_exchange = int32(int64:handle, int32:value, int32:order);
+
+extern func:npk_shim_atomic_int64_create = int64(int64:initial);
+extern func:npk_shim_atomic_int64_destroy = int32(int64:handle);
+extern func:npk_shim_atomic_int64_load = int64(int64:handle, int32:order);
+extern func:npk_shim_atomic_int64_store = int32(int64:handle, int64:value, int32:order);
+extern func:npk_shim_atomic_int64_fetch_add = int64(int64:handle, int64:value, int32:order);
+extern func:npk_shim_atomic_int64_fetch_sub = int64(int64:handle, int64:value, int32:order);
+extern func:npk_shim_atomic_int64_exchange = int64(int64:handle, int64:value, int32:order);
+
+extern func:npk_shim_atomic_bool_create = int64(int32:initial);
+extern func:npk_shim_atomic_bool_destroy = int32(int64:handle);
+extern func:npk_shim_atomic_bool_load = int32(int64:handle, int32:order);
+extern func:npk_shim_atomic_bool_store = int32(int64:handle, int32:value, int32:order);
+extern func:npk_shim_atomic_bool_exchange = int32(int64:handle, int32:value, int32:order);
+
+extern func:npk_shim_atomic_thread_fence = void(int32:order);
+extern func:npk_shim_atomic_signal_fence = void(int32:order);
+extern func:npk_shim_atomic_is_lock_free_int32 = int32();
+extern func:npk_shim_atomic_is_lock_free_int64 = int32();
+extern func:npk_shim_atomic_is_lock_free_bool = int32();
+
+// Type:AtomicInt32 - Zero-cost abstraction over C11 atomics (handle-based)
+Type:AtomicInt32 = {
+    func:create = AtomicInt32(int32:initial) {
+        AtomicInt32:atomic = AtomicInt32{handle: npk_shim_atomic_int32_create(initial)};
+        pass atomic;
+    };
+
+    func:destroy = int32(AtomicInt32:self) {
+        pass npk_shim_atomic_int32_destroy(self.handle);
+    };
+
+    func:load = int32(AtomicInt32:self, int32:order) {
+        pass npk_shim_atomic_int32_load(self.handle, order);
+    };
+
+    func:store = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass npk_shim_atomic_int32_store(self.handle, value, order);
+    };
+
+    func:add = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass npk_shim_atomic_int32_fetch_add(self.handle, value, order);
+    };
+
+    func:sub = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass npk_shim_atomic_int32_fetch_sub(self.handle, value, order);
+    };
+
+    func:exchange = int32(AtomicInt32:self, int32:value, int32:order) {
+        pass npk_shim_atomic_int32_exchange(self.handle, value, order);
+    };
+
+    func:RELAXED = int32() { pass 0i32; };
+    func:ACQUIRE = int32() { pass 2i32; };
+    func:RELEASE = int32() { pass 3i32; };
+    func:ACQ_REL = int32() { pass 4i32; };
+    func:SEQ_CST = int32() { pass 5i32; };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
+
+// Type:AtomicInt64 - 64-bit atomic integer (handle-based)
+Type:AtomicInt64 = {
+    func:create = AtomicInt64(int64:initial) {
+        AtomicInt64:atomic = AtomicInt64{handle: npk_shim_atomic_int64_create(initial)};
+        pass atomic;
+    };
+
+    func:destroy = int32(AtomicInt64:self) {
+        pass npk_shim_atomic_int64_destroy(self.handle);
+    };
+
+    func:load = int64(AtomicInt64:self, int32:order) {
+        pass npk_shim_atomic_int64_load(self.handle, order);
+    };
+
+    func:store = int32(AtomicInt64:self, int64:value, int32:order) {
+        pass npk_shim_atomic_int64_store(self.handle, value, order);
+    };
+
+    func:add = int64(AtomicInt64:self, int64:value, int32:order) {
+        pass npk_shim_atomic_int64_fetch_add(self.handle, value, order);
+    };
+
+    func:sub = int64(AtomicInt64:self, int64:value, int32:order) {
+        pass npk_shim_atomic_int64_fetch_sub(self.handle, value, order);
+    };
+
+    func:exchange = int64(AtomicInt64:self, int64:value, int32:order) {
+        pass npk_shim_atomic_int64_exchange(self.handle, value, order);
+    };
+
+    func:RELAXED = int32() { pass 0i32; };
+    func:ACQUIRE = int32() { pass 2i32; };
+    func:RELEASE = int32() { pass 3i32; };
+    func:ACQ_REL = int32() { pass 4i32; };
+    func:SEQ_CST = int32() { pass 5i32; };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
+
+// Type:AtomicBool - Atomic boolean (handle-based)
+Type:AtomicBool = {
+    func:create = AtomicBool(int32:initial) {
+        AtomicBool:atomic = AtomicBool{handle: npk_shim_atomic_bool_create(initial)};
+        pass atomic;
+    };
+
+    func:destroy = int32(AtomicBool:self) {
+        pass npk_shim_atomic_bool_destroy(self.handle);
+    };
+
+    func:load = int32(AtomicBool:self, int32:order) {
+        pass npk_shim_atomic_bool_load(self.handle, order);
+    };
+
+    func:store = int32(AtomicBool:self, int32:value, int32:order) {
+        pass npk_shim_atomic_bool_store(self.handle, value, order);
+    };
+
+    func:exchange = int32(AtomicBool:self, int32:value, int32:order) {
+        pass npk_shim_atomic_bool_exchange(self.handle, value, order);
+    };
+
+    func:RELAXED = int32() { pass 0i32; };
+    func:ACQUIRE = int32() { pass 2i32; };
+    func:RELEASE = int32() { pass 3i32; };
+    func:ACQ_REL = int32() { pass 4i32; };
+    func:SEQ_CST = int32() { pass 5i32; };
+
+    struct:interface = {
+        int64:handle;
+    };
+};
+
+// Standalone fence functions
+pub func:atomic_thread_fence = NIL(int32:order) {
+    npk_shim_atomic_thread_fence(order);
+    pass NIL;
+};
+
+pub func:atomic_signal_fence = NIL(int32:order) {
+    npk_shim_atomic_signal_fence(order);
+    pass NIL;
+};
+
+// Memory order constants (usable without a Type prefix)
+pub func:MEMORY_ORDER_RELAXED = int32() { pass 0i32; };
+pub func:MEMORY_ORDER_ACQUIRE = int32() { pass 2i32; };
+pub func:MEMORY_ORDER_RELEASE = int32() { pass 3i32; };
+pub func:MEMORY_ORDER_ACQ_REL = int32() { pass 4i32; };
+pub func:MEMORY_ORDER_SEQ_CST = int32() { pass 5i32; };

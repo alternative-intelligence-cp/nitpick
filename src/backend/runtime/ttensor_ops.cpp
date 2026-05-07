@@ -55,7 +55,7 @@ static inline int32_t wrap_coord(int32_t coord, int32_t dim) {
 // Construction/Destruction
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_create(const int32_t dims[9]) {
+ttensor_tbb32 npk_ttensor_tbb32_create(const int32_t dims[9]) {
     ttensor_tbb32 t;
     t.rank = 9;
     
@@ -132,7 +132,7 @@ ttensor_tbb32 aria_ttensor_tbb32_create(const int32_t dims[9]) {
     return t;
 }
 
-ttensor_tbb32 aria_ttensor_tbb32_create_err(void) {
+ttensor_tbb32 npk_ttensor_tbb32_create_err(void) {
     ttensor_tbb32 t;
     t.rank = TBB32_ERR;
     for (int i = 0; i < 9; i++) {
@@ -146,7 +146,7 @@ ttensor_tbb32 aria_ttensor_tbb32_create_err(void) {
     return t;
 }
 
-void aria_ttensor_tbb32_destroy(ttensor_tbb32* t) {
+void npk_ttensor_tbb32_destroy(ttensor_tbb32* t) {
     if (t && t->data && t->owns_data) {
         std::free(t->data);
         t->data = nullptr;
@@ -157,17 +157,17 @@ void aria_ttensor_tbb32_destroy(ttensor_tbb32* t) {
 // Initialization
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_zero(const int32_t dims[9]) {
-    ttensor_tbb32 t = aria_ttensor_tbb32_create(dims);
-    if (!aria_ttensor_tbb32_has_err(&t)) {
+ttensor_tbb32 npk_ttensor_tbb32_zero(const int32_t dims[9]) {
+    ttensor_tbb32 t = npk_ttensor_tbb32_create(dims);
+    if (!npk_ttensor_tbb32_has_err(&t)) {
         std::memset(t.data, 0, t.total_elements * sizeof(int32_t));
     }
     return t;
 }
 
-ttensor_tbb32 aria_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t* data) {
-    ttensor_tbb32 t = aria_ttensor_tbb32_create(dims);
-    if (!aria_ttensor_tbb32_has_err(&t)) {
+ttensor_tbb32 npk_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t* data) {
+    ttensor_tbb32 t = npk_ttensor_tbb32_create(dims);
+    if (!npk_ttensor_tbb32_has_err(&t)) {
         std::memcpy(t.data, data, t.total_elements * sizeof(int32_t));
         
         // Count ERR sentinels
@@ -186,8 +186,8 @@ ttensor_tbb32 aria_ttensor_tbb32_from_array(const int32_t dims[9], const int32_t
 // Toroidal Indexing
 // ============================================================================
 
-int64_t aria_ttensor_tbb32_toroidal_index(const ttensor_tbb32* t, const int32_t coords[9]) {
-    if (aria_ttensor_tbb32_has_err(t)) {
+int64_t npk_ttensor_tbb32_toroidal_index(const ttensor_tbb32* t, const int32_t coords[9]) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         return -1;
     }
     
@@ -209,7 +209,7 @@ int64_t aria_ttensor_tbb32_toroidal_index(const ttensor_tbb32* t, const int32_t 
     return index;
 }
 
-void aria_ttensor_tbb32_wrap_coords(const ttensor_tbb32* t, const int32_t in[9], int32_t out[9]) {
+void npk_ttensor_tbb32_wrap_coords(const ttensor_tbb32* t, const int32_t in[9], int32_t out[9]) {
     for (int i = 0; i < 9; i++) {
         out[i] = wrap_coord(in[i], t->dims[i]);
     }
@@ -219,8 +219,8 @@ void aria_ttensor_tbb32_wrap_coords(const ttensor_tbb32* t, const int32_t in[9],
 // Element Access
 // ============================================================================
 
-int32_t aria_ttensor_tbb32_get(const ttensor_tbb32* t, const int32_t coords[9]) {
-    int64_t index = aria_ttensor_tbb32_toroidal_index(t, coords);
+int32_t npk_ttensor_tbb32_get(const ttensor_tbb32* t, const int32_t coords[9]) {
+    int64_t index = npk_ttensor_tbb32_toroidal_index(t, coords);
     if (index < 0) {
         return TBB32_ERR;
     }
@@ -229,8 +229,8 @@ int32_t aria_ttensor_tbb32_get(const ttensor_tbb32* t, const int32_t coords[9]) 
     return data[index];
 }
 
-void aria_ttensor_tbb32_set(ttensor_tbb32* t, const int32_t coords[9], int32_t value) {
-    int64_t index = aria_ttensor_tbb32_toroidal_index(t, coords);
+void npk_ttensor_tbb32_set(ttensor_tbb32* t, const int32_t coords[9], int32_t value) {
+    int64_t index = npk_ttensor_tbb32_toroidal_index(t, coords);
     if (index < 0) {
         return;
     }
@@ -251,7 +251,7 @@ void aria_ttensor_tbb32_set(ttensor_tbb32* t, const int32_t coords[9], int32_t v
 // Safety Checks
 // ============================================================================
 
-bool aria_ttensor_tbb32_has_err(const ttensor_tbb32* t) {
+bool npk_ttensor_tbb32_has_err(const ttensor_tbb32* t) {
     if (!t) return true;
     
     if (is_err_tbb32(t->rank)) return true;
@@ -266,8 +266,8 @@ bool aria_ttensor_tbb32_has_err(const ttensor_tbb32* t) {
     return t->err_count > 0;
 }
 
-bool aria_ttensor_tbb32_is_zero(const ttensor_tbb32* t) {
-    if (aria_ttensor_tbb32_has_err(t)) {
+bool npk_ttensor_tbb32_is_zero(const ttensor_tbb32* t) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         return false;
     }
     
@@ -281,8 +281,8 @@ bool aria_ttensor_tbb32_is_zero(const ttensor_tbb32* t) {
     return true;
 }
 
-bool aria_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold) {
-    if (aria_ttensor_tbb32_has_err(t)) {
+bool npk_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         return true;  // Trigger shutdown on ERR tensor
     }
     
@@ -298,10 +298,10 @@ bool aria_ttensor_tbb32_circuit_breaker(const ttensor_tbb32* t, float threshold)
 // Toroidal Distance
 // ============================================================================
 
-int64_t aria_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t, 
+int64_t npk_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t, 
                                                  const int32_t a[9], 
                                                  const int32_t b[9]) {
-    if (aria_ttensor_tbb32_has_err(t)) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         return -1;
     }
     
@@ -337,16 +337,16 @@ int64_t aria_ttensor_tbb32_toroidal_distance_sq(const ttensor_tbb32* t,
 // Wave Interference Operations
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
+ttensor_tbb32 npk_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
                                                     const int32_t emitters[9][9],
                                                     const int32_t amplitudes[9],
                                                     float decay_factor) {
-    if (aria_ttensor_tbb32_has_err(base)) {
-        return aria_ttensor_tbb32_create_err();
+    if (npk_ttensor_tbb32_has_err(base)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_zero(base->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_zero(base->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -371,7 +371,7 @@ ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
         
         // Sum contributions from all 9 emitters
         for (int e = 0; e < 9; e++) {
-            int64_t dist_sq = aria_ttensor_tbb32_toroidal_distance_sq(base, coords, emitters[e]);
+            int64_t dist_sq = npk_ttensor_tbb32_toroidal_distance_sq(base, coords, emitters[e]);
             if (dist_sq < 0) continue;  // Skip on error
             
             float dist = sqrtf((float)dist_sq);
@@ -384,7 +384,7 @@ ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
                        (sum < TBB32_MIN_SAFE) ? TBB32_ERR : 
                        (int32_t)sum;
         
-        aria_ttensor_tbb32_set(&result, coords, value);
+        npk_ttensor_tbb32_set(&result, coords, value);
     }}}}}}}}}
     
     return result;
@@ -394,30 +394,30 @@ ttensor_tbb32 aria_ttensor_tbb32_wave_interference(const ttensor_tbb32* base,
 // Mamba SSM Integration
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
+ttensor_tbb32 npk_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
                                             ttensor_tbb32* state,
                                             const ttensor_tbb32* gate,
                                             int32_t axis) {
-    if (aria_ttensor_tbb32_has_err(input) || 
-        aria_ttensor_tbb32_has_err(state) || 
-        aria_ttensor_tbb32_has_err(gate)) {
-        return aria_ttensor_tbb32_create_err();
+    if (npk_ttensor_tbb32_has_err(input) || 
+        npk_ttensor_tbb32_has_err(state) || 
+        npk_ttensor_tbb32_has_err(gate)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
     if (axis < 0 || axis >= 9) {
-        return aria_ttensor_tbb32_create_err();
+        return npk_ttensor_tbb32_create_err();
     }
     
     // Check dimension compatibility
     for (int i = 0; i < 9; i++) {
         if (input->dims[i] != state->dims[i] || input->dims[i] != gate->dims[i]) {
-            return aria_ttensor_tbb32_create_err();
+            return npk_ttensor_tbb32_create_err();
         }
     }
     
     // Create output tensor
-    ttensor_tbb32 output = aria_ttensor_tbb32_create(input->dims);
-    if (aria_ttensor_tbb32_has_err(&output)) {
+    ttensor_tbb32 output = npk_ttensor_tbb32_create(input->dims);
+    if (npk_ttensor_tbb32_has_err(&output)) {
         return output;
     }
     
@@ -439,16 +439,16 @@ ttensor_tbb32 aria_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
     for (coords[7] = 0; coords[7] < input->dims[7]; coords[7]++) {
     for (coords[8] = 0; coords[8] < input->dims[8]; coords[8]++) {
         
-        int32_t input_val = aria_ttensor_tbb32_get(input, coords);
-        int32_t gate_val = aria_ttensor_tbb32_get(gate, coords);
-        int32_t state_val = aria_ttensor_tbb32_get(state, coords);
+        int32_t input_val = npk_ttensor_tbb32_get(input, coords);
+        int32_t gate_val = npk_ttensor_tbb32_get(gate, coords);
+        int32_t state_val = npk_ttensor_tbb32_get(state, coords);
         
         // state[t] = gate[t] * state[t-1] + input[t]
         int32_t gated_state = tbb32_mul(gate_val, state_val);
         int32_t new_state = tbb32_add(gated_state, input_val);
         
-        aria_ttensor_tbb32_set(&output, coords, new_state);
-        aria_ttensor_tbb32_set(state, coords, new_state);  // Update state
+        npk_ttensor_tbb32_set(&output, coords, new_state);
+        npk_ttensor_tbb32_set(state, coords, new_state);  // Update state
     }}}}}}}}}
     
     return output;
@@ -458,20 +458,20 @@ ttensor_tbb32 aria_ttensor_tbb32_mamba_scan(const ttensor_tbb32* input,
 // Arithmetic Operations
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_add(const ttensor_tbb32* a, const ttensor_tbb32* b) {
-    if (aria_ttensor_tbb32_has_err(a) || aria_ttensor_tbb32_has_err(b)) {
-        return aria_ttensor_tbb32_create_err();
+ttensor_tbb32 npk_ttensor_tbb32_add(const ttensor_tbb32* a, const ttensor_tbb32* b) {
+    if (npk_ttensor_tbb32_has_err(a) || npk_ttensor_tbb32_has_err(b)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
     // Check dimensions
     for (int i = 0; i < 9; i++) {
         if (a->dims[i] != b->dims[i]) {
-            return aria_ttensor_tbb32_create_err();
+            return npk_ttensor_tbb32_create_err();
         }
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_create(a->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_create(a->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -489,19 +489,19 @@ ttensor_tbb32 aria_ttensor_tbb32_add(const ttensor_tbb32* a, const ttensor_tbb32
     return result;
 }
 
-ttensor_tbb32 aria_ttensor_tbb32_sub(const ttensor_tbb32* a, const ttensor_tbb32* b) {
-    if (aria_ttensor_tbb32_has_err(a) || aria_ttensor_tbb32_has_err(b)) {
-        return aria_ttensor_tbb32_create_err();
+ttensor_tbb32 npk_ttensor_tbb32_sub(const ttensor_tbb32* a, const ttensor_tbb32* b) {
+    if (npk_ttensor_tbb32_has_err(a) || npk_ttensor_tbb32_has_err(b)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
     for (int i = 0; i < 9; i++) {
         if (a->dims[i] != b->dims[i]) {
-            return aria_ttensor_tbb32_create_err();
+            return npk_ttensor_tbb32_create_err();
         }
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_create(a->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_create(a->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -520,19 +520,19 @@ ttensor_tbb32 aria_ttensor_tbb32_sub(const ttensor_tbb32* a, const ttensor_tbb32
     return result;
 }
 
-ttensor_tbb32 aria_ttensor_tbb32_mul_elementwise(const ttensor_tbb32* a, const ttensor_tbb32* b) {
-    if (aria_ttensor_tbb32_has_err(a) || aria_ttensor_tbb32_has_err(b)) {
-        return aria_ttensor_tbb32_create_err();
+ttensor_tbb32 npk_ttensor_tbb32_mul_elementwise(const ttensor_tbb32* a, const ttensor_tbb32* b) {
+    if (npk_ttensor_tbb32_has_err(a) || npk_ttensor_tbb32_has_err(b)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
     for (int i = 0; i < 9; i++) {
         if (a->dims[i] != b->dims[i]) {
-            return aria_ttensor_tbb32_create_err();
+            return npk_ttensor_tbb32_create_err();
         }
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_create(a->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_create(a->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -550,13 +550,13 @@ ttensor_tbb32 aria_ttensor_tbb32_mul_elementwise(const ttensor_tbb32* a, const t
     return result;
 }
 
-ttensor_tbb32 aria_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar) {
-    if (aria_ttensor_tbb32_has_err(t) || is_err_tbb32(scalar)) {
-        return aria_ttensor_tbb32_create_err();
+ttensor_tbb32 npk_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar) {
+    if (npk_ttensor_tbb32_has_err(t) || is_err_tbb32(scalar)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_create(t->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_create(t->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -577,21 +577,21 @@ ttensor_tbb32 aria_ttensor_tbb32_scale(const ttensor_tbb32* t, int32_t scalar) {
 // 9D Convolution
 // ============================================================================
 
-ttensor_tbb32 aria_ttensor_tbb32_convolve(const ttensor_tbb32* input,
+ttensor_tbb32 npk_ttensor_tbb32_convolve(const ttensor_tbb32* input,
                                           const ttensor_tbb32* kernel) {
-    if (aria_ttensor_tbb32_has_err(input) || aria_ttensor_tbb32_has_err(kernel)) {
-        return aria_ttensor_tbb32_create_err();
+    if (npk_ttensor_tbb32_has_err(input) || npk_ttensor_tbb32_has_err(kernel)) {
+        return npk_ttensor_tbb32_create_err();
     }
     
     // Check kernel sizes are odd
     for (int i = 0; i < 9; i++) {
         if (kernel->dims[i] % 2 == 0) {
-            return aria_ttensor_tbb32_create_err();
+            return npk_ttensor_tbb32_create_err();
         }
     }
     
-    ttensor_tbb32 result = aria_ttensor_tbb32_zero(input->dims);
-    if (aria_ttensor_tbb32_has_err(&result)) {
+    ttensor_tbb32 result = npk_ttensor_tbb32_zero(input->dims);
+    if (npk_ttensor_tbb32_has_err(&result)) {
         return result;
     }
     
@@ -636,8 +636,8 @@ ttensor_tbb32 aria_ttensor_tbb32_convolve(const ttensor_tbb32* input,
                 in_coords[i] = out_coords[i] + k_coords[i] - kernel_half[i];
             }
             
-            int32_t input_val = aria_ttensor_tbb32_get(input, in_coords);
-            int32_t kernel_val = aria_ttensor_tbb32_get(kernel, k_coords);
+            int32_t input_val = npk_ttensor_tbb32_get(input, in_coords);
+            int32_t kernel_val = npk_ttensor_tbb32_get(kernel, k_coords);
             
             if (is_err_tbb32(input_val) || is_err_tbb32(kernel_val)) {
                 tainted = true;
@@ -659,7 +659,7 @@ ttensor_tbb32 aria_ttensor_tbb32_convolve(const ttensor_tbb32* input,
         
         if (tainted) break;
         
-        aria_ttensor_tbb32_set(&result, out_coords, tainted ? TBB32_ERR : sum);
+        npk_ttensor_tbb32_set(&result, out_coords, tainted ? TBB32_ERR : sum);
     }}}}}}}}}
     
     return result;
@@ -669,10 +669,10 @@ ttensor_tbb32 aria_ttensor_tbb32_convolve(const ttensor_tbb32* input,
 // Utility
 // ============================================================================
 
-const char* aria_ttensor_tbb32_to_string(const ttensor_tbb32* t) {
+const char* npk_ttensor_tbb32_to_string(const ttensor_tbb32* t) {
     static char buffer[1024];
     
-    if (aria_ttensor_tbb32_has_err(t)) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         snprintf(buffer, sizeof(buffer), "ttensor[ERR]");
         return buffer;
     }
@@ -686,9 +686,9 @@ const char* aria_ttensor_tbb32_to_string(const ttensor_tbb32* t) {
     return buffer;
 }
 
-bool aria_ttensor_tbb32_equal(const ttensor_tbb32* a, const ttensor_tbb32* b) {
-    bool a_err = aria_ttensor_tbb32_has_err(a);
-    bool b_err = aria_ttensor_tbb32_has_err(b);
+bool npk_ttensor_tbb32_equal(const ttensor_tbb32* a, const ttensor_tbb32* b) {
+    bool a_err = npk_ttensor_tbb32_has_err(a);
+    bool b_err = npk_ttensor_tbb32_has_err(b);
     
     if (a_err && b_err) return true;
     if (a_err || b_err) return false;
@@ -711,8 +711,8 @@ bool aria_ttensor_tbb32_equal(const ttensor_tbb32* a, const ttensor_tbb32* b) {
     return true;
 }
 
-void aria_ttensor_tbb32_print_stats(const ttensor_tbb32* t) {
-    if (aria_ttensor_tbb32_has_err(t)) {
+void npk_ttensor_tbb32_print_stats(const ttensor_tbb32* t) {
+    if (npk_ttensor_tbb32_has_err(t)) {
         printf("ttensor[ERR]\n");
         return;
     }

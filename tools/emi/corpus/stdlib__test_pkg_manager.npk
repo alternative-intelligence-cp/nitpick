@@ -1,0 +1,257 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Package Manager — v0.15.2
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria package manager:
+// TOML metadata parsing, name/version validation, directory init,
+// install, remove, list, and metadata field access.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:pkg_init_directory     = int32(string:root);
+extern func:pkg_dir_exists         = int32(string:root);
+extern func:pkg_parse_metadata     = int64(string:toml_path);
+extern func:pkg_free_metadata      = int32(int64:handle);
+extern func:pkg_metadata_name      = string(int64:handle);
+extern func:pkg_metadata_version   = string(int64:handle);
+extern func:pkg_metadata_description = string(int64:handle);
+extern func:pkg_metadata_license   = string(int64:handle);
+extern func:pkg_metadata_author_count = int32(int64:handle);
+extern func:pkg_metadata_author    = string(int64:handle, int32:idx);
+extern func:pkg_metadata_dep_count = int32(int64:handle);
+extern func:pkg_metadata_dep_name  = string(int64:handle, int32:idx);
+extern func:pkg_metadata_keyword_count = int32(int64:handle);
+extern func:pkg_metadata_category_count = int32(int64:handle);
+extern func:pkg_metadata_has_build = int32(int64:handle);
+extern func:pkg_metadata_build_type = string(int64:handle);
+extern func:pkg_validate_name      = int32(string:name);
+extern func:pkg_validate_version   = int32(string:version);
+extern func:pkg_install_from_dir   = int32(string:root, string:pkg_dir);
+extern func:pkg_remove             = int32(string:root, string:name);
+extern func:pkg_list_refresh       = int32(string:root);
+extern func:pkg_list_count         = int32();
+extern func:pkg_list_name          = string(int32:idx);
+extern func:pkg_list_version       = string(int32:idx);
+extern func:pkg_create_test_fixture = int64(string:base_dir);
+extern func:pkg_cleanup_test       = int64(string:path);
+
+// ─── Test paths ──────────────────────────────────────────────────────
+const string:TEST_ROOT    = "/tmp/npk_pkg_test_root";
+const string:TEST_PKG_DIR = "/tmp/npk_pkg_test_pkg";
+
+// ═══ Test 1: Initialize package directory ════════════════════════════
+pub func:test_init_dir = int32() {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    int32:rc = pkg_init_directory(TEST_ROOT);
+    int32:result = 1i32;
+    if (rc == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 2: Directory exists after init ═════════════════════════════
+pub func:test_dir_exists = int32() {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_init_directory(TEST_ROOT);
+    int32:exists = pkg_dir_exists(TEST_ROOT);
+    int32:result = 1i32;
+    if (exists == 1i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 3: Parse TOML metadata ═════════════════════════════════════
+pub func:test_parse_metadata = int32() {
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
+    int32:result = 1i32;
+    if (h >= 0i64) {
+        result = 0i32;
+    }
+    _ = pkg_free_metadata(h);
+    pass result;
+};
+
+// ═══ Test 4: Metadata name extracted ═════════════════════════════════
+pub func:test_metadata_name = int32() {
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
+    string:name = pkg_metadata_name(h);
+    int32:result = 1i32;
+    if (name == "test-hello") {
+        result = 0i32;
+    }
+    _ = pkg_free_metadata(h);
+    pass result;
+};
+
+// ═══ Test 5: Metadata version extracted ══════════════════════════════
+pub func:test_metadata_version = int32() {
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
+    string:ver = pkg_metadata_version(h);
+    int32:result = 1i32;
+    if (ver == "1.0.0") {
+        result = 0i32;
+    }
+    _ = pkg_free_metadata(h);
+    pass result;
+};
+
+// ═══ Test 6: Valid name passes ═══════════════════════════════════════
+pub func:test_valid_name = int32() {
+    int32:ok1 = pkg_validate_name("test-hello");
+    int32:ok2 = pkg_validate_name("aria-core");
+    int32:bad1 = pkg_validate_name("AB");
+    int32:bad2 = pkg_validate_name("1bad");
+    int32:result = 1i32;
+    if (ok1 == 1i32 && ok2 == 1i32 && bad1 == 0i32 && bad2 == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 7: Valid version passes ════════════════════════════════════
+pub func:test_valid_version = int32() {
+    int32:ok1 = pkg_validate_version("1.0.0");
+    int32:ok2 = pkg_validate_version("0.1.0");
+    int32:bad1 = pkg_validate_version("");
+    int32:bad2 = pkg_validate_version("noversion");
+    int32:result = 1i32;
+    if (ok1 == 1i32 && ok2 == 1i32 && bad1 == 0i32 && bad2 == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 8: Author count ════════════════════════════════════════════
+pub func:test_author_count = int32() {
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
+    int32:count = pkg_metadata_author_count(h);
+    int32:result = 1i32;
+    if (count == 1i32) {
+        result = 0i32;
+    }
+    _ = pkg_free_metadata(h);
+    pass result;
+};
+
+// ═══ Test 9: Dependency count ════════════════════════════════════════
+pub func:test_dep_count = int32() {
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int64:h = pkg_parse_metadata("/tmp/npk_pkg_test_pkg/aria-package.toml");
+    int32:count = pkg_metadata_dep_count(h);
+    int32:result = 1i32;
+    if (count == 1i32) {
+        result = 0i32;
+    }
+    _ = pkg_free_metadata(h);
+    pass result;
+};
+
+// ═══ Test 10: Install from directory ═════════════════════════════════
+pub func:test_install = int32() {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_init_directory(TEST_ROOT);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    int32:rc = pkg_install_from_dir(TEST_ROOT, TEST_PKG_DIR);
+    int32:result = 1i32;
+    if (rc == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 11: List installed packages ════════════════════════════════
+pub func:test_list_installed = int32() {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_init_directory(TEST_ROOT);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    _ = pkg_install_from_dir(TEST_ROOT, TEST_PKG_DIR);
+    int32:count = pkg_list_refresh(TEST_ROOT);
+    int32:result = 1i32;
+    if (count >= 1i32) {
+        string:name = pkg_list_name(0i32);
+        if (name == "test-hello") {
+            result = 0i32;
+        }
+    }
+    pass result;
+};
+
+// ═══ Test 12: Remove package ═════════════════════════════════════════
+pub func:test_remove = int32() {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    _ = pkg_init_directory(TEST_ROOT);
+    _ = pkg_create_test_fixture(TEST_PKG_DIR);
+    _ = pkg_install_from_dir(TEST_ROOT, TEST_PKG_DIR);
+    int32:rc = pkg_remove(TEST_ROOT, "test-hello");
+    int32:result = 1i32;
+    if (rc == 0i32) {
+        int32:count = pkg_list_refresh(TEST_ROOT);
+        if (count == 0i32) {
+            result = 0i32;
+        }
+    }
+    pass result;
+};
+
+// ═══ main / failsafe ═════════════════════════════════════════════════
+
+pub func:main = int32() {
+    int32:r1 = raw test_init_dir();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_dir_exists();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_parse_metadata();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_metadata_name();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_metadata_version();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_valid_name();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_valid_version();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_author_count();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_dep_count();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_install();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_list_installed();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_remove();
+    if (r12 != 0i32) { exit 12; }
+
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    _ = pkg_cleanup_test(TEST_ROOT);
+    _ = pkg_cleanup_test(TEST_PKG_DIR);
+    exit 99;
+};

@@ -1,0 +1,19 @@
+// Simple test: Does variable reassignment work in Aria?
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    // Test 1: Simple int reassignment
+    int32:x = 10i32;
+    x = 20i32;  // THIS IS THE KEY TEST!
+    x = 30i32;
+    x = 40i32;
+    
+    // If reassignment works, x should be 40
+    // If it doesn't work, we'd get a compiler error
+    
+    if (x == 40i32) {
+        exit 0;
+    }
+    exit 1;  // Return 0 if reassignment works
+};

@@ -1,0 +1,67 @@
+// test_rules_struct_field.aria — v0.2.43 Rules $.field Member Access Tests
+// Tests: Rules on struct types with $.field member access
+
+extern func:puts = int32(string:s);
+
+struct:Person = {
+    int32:age;
+    int32:score;
+};
+
+// Rules that checks a struct field via $.field
+Rules<Person>:r_adult = {
+    $.age >= 18
+};
+
+// Rules with multiple field conditions
+Rules<Person>:r_valid_student = {
+    $.age >= 5,
+    $.age <= 25,
+    $.score >= 0
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: limit violation detected!");
+    exit 1;
+};
+
+func:main = int32() {
+    int32:passed = 0i32;
+    int32:failed = 0i32;
+
+    // ----------------------------------------------------------
+    // Test 1: Rules<Person> with $.age >= 18 — valid adult
+    // ----------------------------------------------------------
+    stack Person:alice = Person{age: 30, score: 95};
+    limit<r_adult> Person:a = alice;
+    if (a.age == 30) {
+        drop puts("PASS: Test 1 — Rules<Person> $.age >= 18 with age=30");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 1");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Test 2: Rules with multiple field conditions — valid student
+    // ----------------------------------------------------------
+    stack Person:bob = Person{age: 20, score: 85};
+    limit<r_valid_student> Person:b = bob;
+    if (b.score == 85) {
+        drop puts("PASS: Test 2 — Rules<Person> multiple $.field conditions");
+        passed += 1i32;
+    } else {
+        drop puts("FAIL: Test 2");
+        failed += 1i32;
+    }
+
+    // ----------------------------------------------------------
+    // Results
+    // ----------------------------------------------------------
+    drop puts("--- Results ---");
+
+    if (failed > 0i32) {
+        exit 1;
+    }
+    exit 0;
+};

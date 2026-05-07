@@ -16,13 +16,13 @@ echo
 
 # Check if compiler is built
 BUILD_DIR="$(pwd)/build"
-if [ ! -f "$BUILD_DIR/ariac" ]; then
+if [ ! -f "$BUILD_DIR/npkc" ]; then
     echo "❌ Compiler not found. Please build first:"
     echo "   cmake --build build/"
     exit 1
 fi
 
-echo "✓ Compiler found at $BUILD_DIR/ariac"
+echo "✓ Compiler found at $BUILD_DIR/npkc"
 echo
 
 # Export BUILD_DIR for scripts
@@ -60,7 +60,7 @@ echo
 TEMP_DIR=$(mktemp -d)
 
 # Test 1: Syntax error
-cat > "$TEMP_DIR/syntax_error.aria" << 'EOF'
+cat > "$TEMP_DIR/syntax_error.npk" << 'EOF'
 fn main() -> int32 {
     let x = 42  // Missing semicolon
     return x;
@@ -68,7 +68,7 @@ fn main() -> int32 {
 EOF
 
 echo "Testing syntax error detection..."
-if "$BUILD_DIR/ariac" "$TEMP_DIR/syntax_error.aria" 2>&1 | grep -qi "error"; then
+if "$BUILD_DIR/npkc" "$TEMP_DIR/syntax_error.npk" 2>&1 | grep -qi "error"; then
     echo "✓ Syntax error detected"
 else
     echo "❌ Syntax error not detected"
@@ -77,14 +77,14 @@ else
 fi
 
 # Test 2: Type error
-cat > "$TEMP_DIR/type_error.aria" << 'EOF'
+cat > "$TEMP_DIR/type_error.npk" << 'EOF'
 fn main() -> int32 {
     return undefined_variable;
 }
 EOF
 
 echo "Testing undefined variable detection..."
-if "$BUILD_DIR/ariac" "$TEMP_DIR/type_error.aria" 2>&1 | grep -qi "error"; then
+if "$BUILD_DIR/npkc" "$TEMP_DIR/type_error.npk" 2>&1 | grep -qi "error"; then
     echo "✓ Undefined variable error detected"
 else
     echo "❌ Undefined variable error not detected"
@@ -94,8 +94,8 @@ fi
 
 # Test 3: Error message format (should include file:line)
 echo "Testing error message format..."
-ERROR_OUT=$("$BUILD_DIR/ariac" "$TEMP_DIR/type_error.aria" 2>&1 || true)
-if echo "$ERROR_OUT" | grep -q "\.aria:"; then
+ERROR_OUT=$("$BUILD_DIR/npkc" "$TEMP_DIR/type_error.npk" 2>&1 || true)
+if echo "$ERROR_OUT" | grep -q "\.npk:"; then
     echo "✓ Error messages include file:line format"
 else
     echo "⚠ Error messages may not include file:line format (check manually)"

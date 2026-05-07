@@ -79,7 +79,7 @@ static IOThreadPool& io_pool() {
 
 } // anonymous namespace
 
-namespace aria {
+namespace npk {
 namespace runtime {
 namespace async_io {
 
@@ -289,4 +289,4 @@ std::shared_ptr<Future> with_timeout(std::shared_ptr<Future> future, uint64_t mi
 
 } // namespace async_io
 } // namespace runtime
-} // namespace aria
+} // namespace npk

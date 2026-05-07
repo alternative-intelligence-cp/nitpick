@@ -1,0 +1,22 @@
+// Test: Simple unwrap operator
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail 0i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    // Unwrap with ? operator - provides default value on error
+    int32:result = divide(10i32, 2i32) ? 999i32;
+    if (result == 5i32) {
+        exit 0;  // Success
+    }
+    exit 1;  // Failure
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

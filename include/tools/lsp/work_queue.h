@@ -15,7 +15,7 @@
 
 using json = nlohmann::json;
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 /**
@@ -191,6 +191,6 @@ private:
 };
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LSP_WORK_QUEUE_H

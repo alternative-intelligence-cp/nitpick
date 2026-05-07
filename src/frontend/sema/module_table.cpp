@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-namespace aria {
+namespace npk {
 namespace sema {
 
 // ============================================================================
@@ -184,13 +184,15 @@ Module* ModuleTable::resolveImport(const std::string& importPath, Module* fromMo
             return existing;
         }
         
-        // Also try with .aria extension
+        // Try with .npk extension if not already present
         if (resolved.extension().empty()) {
-            fs::path withExt = resolved;
-            withExt.replace_extension(".aria");
-            existing = getModule(withExt.string());
-            if (existing) {
-                return existing;
+            for (const auto& ext : {".npk"}) {
+                fs::path withExt = resolved;
+                withExt.replace_extension(ext);
+                existing = getModule(withExt.string());
+                if (existing) {
+                    return existing;
+                }
             }
         }
         
@@ -400,4 +402,4 @@ std::string ModuleTable::toString() const {
 }
 
 } // namespace sema
-} // namespace aria
+} // namespace npk

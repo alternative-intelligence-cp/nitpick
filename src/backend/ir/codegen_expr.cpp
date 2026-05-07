@@ -18,10 +18,10 @@
 #include <cmath>  // For ldexp in fix256_from_float
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::frontend;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::frontend;
+using namespace npk::backend;
+using namespace npk::sema;
 
 ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
@@ -134,13 +134,13 @@ llvm::Type* ExprCodegen::getLLVMType(Type* type) {
     if (type_name == "str") {
         // str is a fat pointer: { i8* data, i64 length }
         // Return the struct type, not a single pointer
-        llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.AriaString");
+        llvm::StructType* strType = llvm::StructType::getTypeByName(context, "struct.NpkString");
         if (!strType) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            strType = llvm::StructType::create(context, fields, "struct.AriaString");
+            strType = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         
         return strType;
@@ -362,8 +362,27 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
         return llvm::PointerType::get(context, 0);
     }
 
+    // v0.19.0 Phase 4: Dynamic array types: T[] → opaque pointer (holds malloc'd memory)
+    // Fixed-size array types: T[N] → [N x T]
+    if (typeName.size() > 2 && typeName.back() == ']') {
+        size_t bracket = typeName.rfind('[');
+        if (bracket != std::string::npos) {
+            std::string elemStr = typeName.substr(0, bracket);
+            std::string sizeStr = typeName.substr(bracket + 1, typeName.size() - bracket - 2);
+            llvm::Type* elemLLVM = getLLVMTypeFromString(elemStr);
+            if (sizeStr.empty()) {
+                // Dynamic array T[] → pointer
+                return llvm::PointerType::get(context, 0);
+            } else {
+                // Fixed-size array T[N] → [N x T]
+                size_t n = std::stoull(sizeStr);
+                return llvm::ArrayType::get(elemLLVM, n);
+            }
+        }
+    }
+
     // Unknown type - throw error instead of defaulting
-    throw std::runtime_error("Unknown Aria type: " + typeName);
+    throw std::runtime_error("Unknown Nitpick type: " + typeName);
 }
 
 // Helper: Get size of Aria type in bytes
@@ -878,14 +897,14 @@ llvm::Value* ExprCodegen::generateNumericBinaryOp(const std::string& numericType
     }
     
     // For frac types: use sret/pointer ABI matching the C runtime
-    // Runtime: void aria_frac32_add(Frac32* result, const Frac32* a, const Frac32* b)
-    // Comparison: int32_t aria_frac32_cmp(const Frac32* a, const Frac32* b) → -1/0/1
+    // Runtime: void npk_frac32_add(Frac32* result, const Frac32* a, const Frac32* b)
+    // Comparison: int32_t npk_frac32_cmp(const Frac32* a, const Frac32* b) → -1/0/1
     if (numericType.find("frac") == 0) {
-        std::string runtimeFunc = "aria_" + numericType + opSuffix;
+        std::string runtimeFunc = "npk_" + numericType + opSuffix;
         llvm::StructType* fracType = llvm::cast<llvm::StructType>(left->getType());
         
         if (isComparison) {
-            // Comparison: int32_t aria_fracN_cmp(const FracN* a, const FracN* b)
+            // Comparison: int32_t npk_fracN_cmp(const FracN* a, const FracN* b)
             llvm::Function* cmp_func = module->getFunction(runtimeFunc);
             if (!cmp_func) {
                 llvm::Type* ptrType = llvm::PointerType::get(fracType, 0);
@@ -1020,46 +1039,46 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
     // Build function name based on type
     std::string funcName;
     
-    // fix256 uses aria_fix256_* functions (deterministic fixed-point)
+    // fix256 uses npk_fix256_* functions (deterministic fixed-point)
     if (lbimType == "fix256") {
-        funcName = "aria_fix256" + opSuffix;
+        funcName = "npk_fix256" + opSuffix;
     }
-    // Signed LBIM integers use aria_lbim_s* functions (signed division, etc.)
+    // Signed LBIM integers use npk_lbim_s* functions (signed division, etc.)
     else if (lbimType.find("int") == 0) {  // int128, int256, int512, int1024
         // Extract bit width: int1024 → 1024
         std::string bitWidth = lbimType.substr(3);
         
         // Use signed functions for division/modulo, unsigned for add/sub/mul
         if (op == frontend::TokenType::TOKEN_SLASH) {
-            funcName = "aria_lbim_sdiv" + bitWidth;
+            funcName = "npk_lbim_sdiv" + bitWidth;
         } else if (op == frontend::TokenType::TOKEN_PERCENT) {
-            funcName = "aria_lbim_smod" + bitWidth;
+            funcName = "npk_lbim_smod" + bitWidth;
         } else if (opSuffix == "_cmp") {
             // Signed comparison
-            funcName = "aria_lbim_scmp" + bitWidth;
+            funcName = "npk_lbim_scmp" + bitWidth;
         } else if (opSuffix == "_eq") {
             // Equality works same for signed/unsigned
-            funcName = "aria_lbim_eq" + bitWidth;
+            funcName = "npk_lbim_eq" + bitWidth;
         } else {
-            funcName = "aria_lbim" + opSuffix + bitWidth;
+            funcName = "npk_lbim" + opSuffix + bitWidth;
         }
     }
-    // Unsigned LBIM integers use aria_lbim_u* for div/mod
+    // Unsigned LBIM integers use npk_lbim_u* for div/mod
     else if (lbimType.find("uint") == 0) {  // uint128, uint256, uint512, uint1024
         std::string bitWidth = lbimType.substr(4);
         
         if (op == frontend::TokenType::TOKEN_SLASH) {
-            funcName = "aria_lbim_udiv" + bitWidth;
+            funcName = "npk_lbim_udiv" + bitWidth;
         } else if (op == frontend::TokenType::TOKEN_PERCENT) {
-            funcName = "aria_lbim_umod" + bitWidth;
+            funcName = "npk_lbim_umod" + bitWidth;
         } else if (opSuffix == "_cmp") {
             // Unsigned comparison
-            funcName = "aria_lbim_ucmp" + bitWidth;
+            funcName = "npk_lbim_ucmp" + bitWidth;
         } else if (opSuffix == "_eq") {
             // Equality works same for signed/unsigned
-            funcName = "aria_lbim_eq" + bitWidth;
+            funcName = "npk_lbim_eq" + bitWidth;
         } else {
-            funcName = "aria_lbim" + opSuffix + bitWidth;
+            funcName = "npk_lbim" + opSuffix + bitWidth;
         }
     }
     // LBIM float types: flt256/flt512 (software-emulated extended precision)
@@ -1067,11 +1086,11 @@ llvm::Value* ExprCodegen::generateLBIMBinaryOp(const std::string& lbimType,
         std::string bitWidth = lbimType.substr(3);  // "256" or "512"
 
         if (opSuffix == "_cmp") {
-            funcName = "aria_lbim_fcmp" + bitWidth;
+            funcName = "npk_lbim_fcmp" + bitWidth;
         } else if (opSuffix == "_eq") {
-            funcName = "aria_lbim_feq" + bitWidth;
+            funcName = "npk_lbim_feq" + bitWidth;
         } else {
-            funcName = "aria_lbim_f" + opSuffix.substr(1) + bitWidth;  // e.g. aria_lbim_fadd256
+            funcName = "npk_lbim_f" + opSuffix.substr(1) + bitWidth;  // e.g. npk_lbim_fadd256
         }
     }
     else {
@@ -1433,15 +1452,15 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         
         if (is_float) {
             // High-precision float literal - for now use FLT128 if many digits, else FLT64
-            aria::semantic::FloatPrecision precision;
+            npk::semantic::FloatPrecision precision;
             if (raw.length() > 17) {  // More digits than float64 can represent
-                precision = aria::semantic::FloatPrecision::FLT128;
+                precision = npk::semantic::FloatPrecision::FLT128;
             } else {
-                precision = aria::semantic::FloatPrecision::FLT64;
+                precision = npk::semantic::FloatPrecision::FLT64;
             }
             
             // Convert using LiteralConverter
-            auto apfloat_opt = aria::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
+            auto apfloat_opt = npk::semantic::LiteralConverter::convertFloatLiteral(raw, precision);
             if (apfloat_opt) {
                 llvm::Value* result = llvm::ConstantFP::get(context, *apfloat_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision float '" << raw << "' -> type: ";
@@ -1464,7 +1483,7 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             }
             
             // Convert using LiteralConverter
-            auto apint_opt = aria::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
+            auto apint_opt = npk::semantic::LiteralConverter::convertIntLiteral(raw, bit_width, is_signed);
             if (apint_opt) {
                 llvm::Value* result = llvm::ConstantInt::get(context, *apint_opt);
                 ARIA_DBG_STREAM << "[DEBUG] codegenLiteral: high-precision int '" << raw << "' -> type: ";
@@ -1582,13 +1601,13 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
         }
         
         // Get or create AriaString struct type
-        llvm::StructType* aria_string_type = llvm::StructType::getTypeByName(context, "struct.AriaString");
-        if (!aria_string_type) {
+        llvm::StructType* npk_string_type = llvm::StructType::getTypeByName(context, "struct.NpkString");
+        if (!npk_string_type) {
             std::vector<llvm::Type*> fields = {
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 llvm::Type::getInt64Ty(context)
             };
-            aria_string_type = llvm::StructType::create(context, fields, "struct.AriaString");
+            npk_string_type = llvm::StructType::create(context, fields, "struct.NpkString");
         }
         
         // Create a global AriaString struct constant
@@ -1596,11 +1615,11 @@ llvm::Value* ExprCodegen::codegenLiteral(LiteralExpr* expr) {
             llvm::ConstantExpr::getPointerCast(str_gv, llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0)),
             builder.getInt64(str.length())
         };
-        llvm::Constant* string_struct = llvm::ConstantStruct::get(aria_string_type, struct_values);
+        llvm::Constant* string_struct = llvm::ConstantStruct::get(npk_string_type, struct_values);
         
         llvm::GlobalVariable* string_gv = new llvm::GlobalVariable(
             *module,
-            aria_string_type,
+            npk_string_type,
             true,  // isConstant
             llvm::GlobalValue::PrivateLinkage,
             string_struct,
@@ -1721,7 +1740,7 @@ llvm::Value* ExprCodegen::codegenIdentifier(IdentifierExpr* expr) {
  * 1. Convert each string part to LLVM string constant
  * 2. Evaluate each interpolated expression
  * 3. Convert non-string expressions to strings (using sprintf for numbers)
- * 4. Concatenate all parts using aria_string_concat runtime function
+ * 4. Concatenate all parts using npk_string_concat runtime function
  */
 llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     if (!expr) {
@@ -1756,7 +1775,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         );
         
         // Allocate on stack
-        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "aria_str");
+        llvm::Value* ariaStr = builder.CreateAlloca(ariaStringType, nullptr, "npk_str");
         
         // Set data field
         llvm::Value* dataPtr = builder.CreateStructGEP(ariaStringType, ariaStr, 0, "data_ptr");
@@ -1767,10 +1786,10 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         builder.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), str.length()), lengthPtr);
         
         // Load and return the struct value
-        return builder.CreateLoad(ariaStringType, ariaStr, "aria_str_val");
+        return builder.CreateLoad(ariaStringType, ariaStr, "npk_str_val");
     };
     
-    // ARIA-026: SAFETY FIX - Use deterministic aria_int64_to_str instead of sprintf
+    // ARIA-026: SAFETY FIX - Use deterministic npk_int64_to_str instead of sprintf
     // Gemini Safety Audit Fix #3: Non-Deterministic Serialization
     // Risk: sprintf is locale-dependent, violates bit-identical requirement for AGI logs
     // Helper function: Convert int64 to string using deterministic runtime
@@ -1780,7 +1799,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         // if these helpers are ever used in return statements or stored in variables
         
         // Allocate 24-byte buffer on GC heap (sufficient for "-9223372036854775808\0")
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -1806,7 +1825,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(nullBB);
-        llvm::Function* panicOOM = module->getFunction("aria_panic_oom");
+        llvm::Function* panicOOM = module->getFunction("npk_panic_oom");
         if (!panicOOM) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
@@ -1816,7 +1835,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             panicOOM = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -1830,10 +1849,10 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         // Valid path: continue
         builder.SetInsertPoint(validBB);
         
-        // Declare aria_int64_to_str (deterministic, locale-independent runtime function)
-        // Signature: int64_t aria_int64_to_str(int64_t value, char* buffer)
+        // Declare npk_int64_to_str (deterministic, locale-independent runtime function)
+        // Signature: int64_t npk_int64_to_str(int64_t value, char* buffer)
         // Returns: length of resulting string (excluding null terminator)
-        llvm::Function* toStrFn = module->getFunction("aria_int64_to_str");
+        llvm::Function* toStrFn = module->getFunction("npk_int64_to_str");
         if (!toStrFn) {
             llvm::FunctionType* fnType = llvm::FunctionType::get(
                 llvm::Type::getInt64Ty(context),  // Returns length
@@ -1843,12 +1862,12 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             toStrFn = llvm::Function::Create(
                 fnType,
                 llvm::Function::ExternalLinkage,
-                "aria_int64_to_str",
+                "npk_int64_to_str",
                 module
             );
         }
         
-        // Call aria_int64_to_str(intVal, buffer)
+        // Call npk_int64_to_str(intVal, buffer)
         // Returns length directly - no need for strlen()
         // Widen to i64 if needed (e.g., int32 values)
         if (intVal->getType() != llvm::Type::getInt64Ty(context)) {
@@ -1877,7 +1896,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     auto floatToString = [this](llvm::Value* floatVal) -> llvm::Value* {
         // ARIA-026 FIX: Use GC heap instead of stack to prevent use-after-return
         // Allocate 64-byte buffer on GC heap (sufficient for floating point)
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -1903,7 +1922,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(nullBB);
-        llvm::Function* panicOOM = module->getFunction("aria_panic_oom");
+        llvm::Function* panicOOM = module->getFunction("npk_panic_oom");
         if (!panicOOM) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
@@ -1913,7 +1932,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             panicOOM = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -1940,9 +1959,9 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         );
         llvm::Value* formatPtr = builder.CreatePointerCast(formatGV, llvm::PointerType::get(context, 0));
         
-        // Declare aria_snprintf_c_locale (our deterministic wrapper)
+        // Declare npk_snprintf_c_locale (our deterministic wrapper)
         // This is a runtime function that forces C locale for formatting
-        llvm::Function* snprintfFn = module->getFunction("aria_snprintf_c_locale");
+        llvm::Function* snprintfFn = module->getFunction("npk_snprintf_c_locale");
         if (!snprintfFn) {
             llvm::FunctionType* snprintfType = llvm::FunctionType::get(
                 llvm::Type::getInt32Ty(context),
@@ -1955,7 +1974,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             snprintfFn = llvm::Function::Create(
                 snprintfType,
                 llvm::Function::ExternalLinkage,
-                "aria_snprintf_c_locale",
+                "npk_snprintf_c_locale",
                 module
             );
         }
@@ -1966,7 +1985,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             doubleVal = builder.CreateFPExt(floatVal, llvm::Type::getDoubleTy(context), "to_double");
         }
         
-        // Call aria_snprintf_c_locale(buffer, 64, "%.17g", doubleVal)
+        // Call npk_snprintf_c_locale(buffer, 64, "%.17g", doubleVal)
         // This always uses '.' as decimal separator regardless of system locale
         builder.CreateCall(snprintfFn, { bufferPtr, floatBufferSize, formatPtr, doubleVal });
         
@@ -2083,7 +2102,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         return builder.CreateLoad(ariaStringType, ariaStr, "ptr_str_val");
     };
     
-    // OPTIMIZED: Use aria_string_concat_n for O(n) instead of O(n²) concatenation
+    // OPTIMIZED: Use npk_string_concat_n for O(n) instead of O(n²) concatenation
     // The template literal structure is: parts[0], interp[0], parts[1], interp[1], parts[2], ...
     // Total segments = parts.size() + interpolations.size()
 
@@ -2100,7 +2119,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // FIX: Allocate on GC heap and return pointer (matches string literal behavior)
         // Allocate AriaString struct on GC heap
-        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAllocCallee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
@@ -2131,7 +2150,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         stringsArray = builder.CreateAlloca(arrayType, nullptr, "template_strings");
     } else {
         // Large template literals: use GC heap allocation
-        // ARIA-026 FIX: Must use aria_gc_alloc instead of aria_alloc so GC can see string refs
+        // ARIA-026 FIX: Must use npk_gc_alloc instead of npk_alloc so GC can see string refs
         // during construction. Wild memory would be invisible to GC -> mid-construction corruption.
         
         // Calculate size: totalSegments * sizeof(AriaString)
@@ -2141,16 +2160,16 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             totalSegments * 16  // sizeof(AriaString)
         );
         
-        // Call aria_gc_alloc (GC-visible memory) for temporary buffer
-        llvm::FunctionCallee aria_gc_alloc_callee = module->getOrInsertFunction("aria_gc_alloc",
+        // Call npk_gc_alloc (GC-visible memory) for temporary buffer
+        llvm::FunctionCallee npk_gc_alloc_callee = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(
                 llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),
                 {llvm::Type::getInt64Ty(context)},
                 false
             )
         );
-        llvm::Function* aria_gc_alloc = llvm::cast<llvm::Function>(aria_gc_alloc_callee.getCallee());
-        llvm::Value* heapMem = builder.CreateCall(aria_gc_alloc, { arraySize }, "heap_strings_gc");
+        llvm::Function* npk_gc_alloc = llvm::cast<llvm::Function>(npk_gc_alloc_callee.getCallee());
+        llvm::Value* heapMem = builder.CreateCall(npk_gc_alloc, { arraySize }, "heap_strings_gc");
         
         // ARIA-026 FIX: Add null check for GC allocation failure
         llvm::BasicBlock* currentBB = builder.GetInsertBlock();
@@ -2167,17 +2186,17 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Null path: panic
         builder.SetInsertPoint(gcNullBB);
-        llvm::Function* aria_panic_oom = module->getFunction("aria_panic_oom");
-        if (!aria_panic_oom) {
+        llvm::Function* npk_panic_oom = module->getFunction("npk_panic_oom");
+        if (!npk_panic_oom) {
             llvm::FunctionType* panicType = llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
                 { llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0) },
                 false
             );
-            aria_panic_oom = llvm::Function::Create(
+            npk_panic_oom = llvm::Function::Create(
                 panicType,
                 llvm::Function::ExternalLinkage,
-                "aria_panic_oom",
+                "npk_panic_oom",
                 module
             );
         }
@@ -2185,7 +2204,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             "Out of memory allocating template literal array",
             "gc_oom_msg"
         );
-        builder.CreateCall(aria_panic_oom, { panicMsg });
+        builder.CreateCall(npk_panic_oom, { panicMsg });
         builder.CreateUnreachable();
         
         // Valid path: continue
@@ -2227,7 +2246,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
 
             if (needsSpecialFormatter(ariaType)) {
                 // Use type-aware formatter from runtime/fmt/formatters.cpp
-                std::string formatterName = "aria_format_" + ariaType;
+                std::string formatterName = "npk_format_" + ariaType;
 
                 // Get or declare the formatter function
                 // For large structs (int256, etc.), pass by pointer per x86-64 ABI
@@ -2288,20 +2307,20 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         }
     }
 
-    // Declare aria_string_concat_n_simple runtime function
-    // AriaString* aria_string_concat_n_simple(AriaString* strings, int64_t count)
+    // Declare npk_string_concat_n_simple runtime function
+    // AriaString* npk_string_concat_n_simple(AriaString* strings, int64_t count)
     llvm::FunctionType* concatNType = llvm::FunctionType::get(
         llvm::PointerType::get(context, 0),  // Returns AriaString*
         { llvm::PointerType::get(context, 0), llvm::Type::getInt64Ty(context) },
         false
     );
 
-    llvm::Function* concatNFn = module->getFunction("aria_string_concat_n_simple");
+    llvm::Function* concatNFn = module->getFunction("npk_string_concat_n_simple");
     if (!concatNFn) {
         concatNFn = llvm::Function::Create(
             concatNType,
             llvm::Function::ExternalLinkage,
-            "aria_string_concat_n_simple",
+            "npk_string_concat_n_simple",
             module
         );
     }
@@ -2312,7 +2331,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
           llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 0) },
         "array_start");
 
-    // Call aria_string_concat_n_simple(strings, count)
+    // Call npk_string_concat_n_simple(strings, count)
     llvm::Value* count = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), totalSegments);
     llvm::Value* resultPtr = builder.CreateCall(concatNFn, { arrayPtr, count }, "concat_result");
 
@@ -2333,17 +2352,17 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
     
     // Null path: panic with OOM message
     builder.SetInsertPoint(nullCheckBB);
-    llvm::Function* aria_panic_oom = module->getFunction("aria_panic_oom");
-    if (!aria_panic_oom) {
+    llvm::Function* npk_panic_oom = module->getFunction("npk_panic_oom");
+    if (!npk_panic_oom) {
         llvm::FunctionType* panicType = llvm::FunctionType::get(
             llvm::Type::getVoidTy(context),
             { llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0) },
             false
         );
-        aria_panic_oom = llvm::Function::Create(
+        npk_panic_oom = llvm::Function::Create(
             panicType,
             llvm::Function::ExternalLinkage,
-            "aria_panic_oom",
+            "npk_panic_oom",
             module
         );
     }
@@ -2351,7 +2370,7 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
         "Out of memory in string concatenation (template literal)",
         "oom_msg"
     );
-    builder.CreateCall(aria_panic_oom, { panicMsg });
+    builder.CreateCall(npk_panic_oom, { panicMsg });
     builder.CreateUnreachable();
     
     // Valid path: continue with normal flow
@@ -2359,21 +2378,21 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
 
     // Cleanup: Free heap-allocated array if needed
     if (totalSegments > MAX_STACK_SEGMENTS) {
-        // Call aria_free on the heap-allocated array
-        llvm::FunctionCallee aria_free_callee = module->getOrInsertFunction("aria_wild_free",
+        // Call npk_free on the heap-allocated array
+        llvm::FunctionCallee npk_free_callee = module->getOrInsertFunction("npk_wild_free",
             llvm::FunctionType::get(
                 llvm::Type::getVoidTy(context),
                 {llvm::PointerType::get(context, 0)},
                 false
             )
         );
-        llvm::Function* aria_free = llvm::cast<llvm::Function>(aria_free_callee.getCallee());
+        llvm::Function* npk_free = llvm::cast<llvm::Function>(npk_free_callee.getCallee());
         llvm::Value* heapPtr = builder.CreateBitCast(
             stringsArray,
             llvm::PointerType::get(context, 0),
             "heap_ptr"
         );
-        builder.CreateCall(aria_free, { heapPtr });
+        builder.CreateCall(npk_free, { heapPtr });
     }
 
     // FIX: Return the AriaString* pointer directly (matches string literal behavior)

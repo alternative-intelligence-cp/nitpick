@@ -1,0 +1,25 @@
+// Test Phase 5.5: Three-valued logic for comparisons
+// Comparisons with unknown should propagate unknown (except self-comparison)
+
+func:main = int32() {
+    int32:x = unknown;
+    
+    // Test special case: unknown == unknown → TRUE (identity check)
+    // Should return exit code 3 if working correctly
+    pick(unknown == unknown) {
+        (true) {
+            exit 0i32;  // Should match here - CORRECT
+        },
+        (false) {
+            exit 1i32;  // Wrong
+        },
+        (unknown) {
+            exit 1i32;  // Wrong
+        }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

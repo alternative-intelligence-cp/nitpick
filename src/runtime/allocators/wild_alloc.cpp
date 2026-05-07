@@ -59,7 +59,7 @@ struct AllocatorState {
     std::atomic<size_t> num_wild_allocations{0};
     std::atomic<size_t> num_wild_frees{0};
     std::atomic<size_t> peak_wild_usage{0};
-    // v0.7.0: Guard page mode (set via aria_wild_enable_guard_pages)
+    // v0.7.0: Guard page mode (set via npk_wild_enable_guard_pages)
     std::atomic<bool> guard_pages_enabled{false};
 };
 
@@ -92,7 +92,7 @@ static size_t get_page_size() {
 }
 #endif
 
-void* aria_alloc(size_t size) {
+void* npk_alloc(size_t size) {
     if (size == 0) {
         return nullptr;
     }
@@ -193,7 +193,7 @@ void* aria_alloc(size_t size) {
     return header_to_user(header);
 }
 
-void aria_free(void* ptr) {
+void npk_free(void* ptr) {
     if (!ptr) {
         return;
     }
@@ -236,12 +236,12 @@ void aria_free(void* ptr) {
     g_alloc_state.num_wild_frees.fetch_add(1);
 }
 
-void* aria_realloc(void* ptr, size_t new_size) {
+void* npk_realloc(void* ptr, size_t new_size) {
     if (!ptr) {
-        return aria_alloc(new_size);
+        return npk_alloc(new_size);
     }
     if (new_size == 0) {
-        aria_free(ptr);
+        npk_free(ptr);
         return nullptr;
     }
 
@@ -257,11 +257,11 @@ void* aria_realloc(void* ptr, size_t new_size) {
 #ifdef __linux__
     if (old_magic & 0x1) {
         // Guard page mode: can't realloc mmap'd pages, alloc new + copy + free old
-        void* new_ptr = aria_alloc(new_size);
+        void* new_ptr = npk_alloc(new_size);
         if (!new_ptr) return nullptr;
         size_t copy_size = old_size < new_size ? old_size : new_size;
         std::memcpy(new_ptr, ptr, copy_size);
-        aria_free(ptr);
+        npk_free(ptr);
         return new_ptr;
     }
 #endif
@@ -307,7 +307,7 @@ void* aria_realloc(void* ptr, size_t new_size) {
 // Specialized Allocators
 // =============================================================================
 
-void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
+void* npk_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
     if (size == 0) {
         return nullptr;
     }
@@ -315,8 +315,8 @@ void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
     void* ptr = nullptr;
 
     if (alignment == 0 || alignment <= alignof(max_align_t)) {
-        // Default alignment: use aria_alloc which has headers
-        ptr = aria_alloc(size);
+        // Default alignment: use npk_alloc which has headers
+        ptr = npk_alloc(size);
     } else {
         // Custom alignment: allocate with header and over-allocate for alignment
         size_t total = HEADER_SIZE + alignment + size;
@@ -339,16 +339,16 @@ void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
         // We encode the offset from raw to header in the padding
         // Actually, for aligned allocs we need to store the raw pointer.
         // Use a different magic bit to signal "aligned" mode.
-        // Simpler: just use aria_alloc and accept default alignment.
-        // Let's take the simple approach: over-allocate via aria_alloc.
+        // Simpler: just use npk_alloc and accept default alignment.
+        // Let's take the simple approach: over-allocate via npk_alloc.
         std::free(raw); // Discard, use simpler approach
         
         // Allocate enough that we can align within the block
         size_t padded = size + alignment;
-        ptr = aria_alloc(padded);
+        ptr = npk_alloc(padded);
         if (!ptr) return nullptr;
         
-        // The returned pointer is already from aria_alloc (has header).
+        // The returned pointer is already from npk_alloc (has header).
         // For the user, just return it — alignment > max_align_t is rare
         // and the caller can handle the offset themselves.
     }
@@ -360,7 +360,7 @@ void* aria_alloc_buffer(size_t size, size_t alignment, bool zero_init) {
     return ptr;
 }
 
-char* aria_alloc_string(size_t size) {
+char* npk_alloc_string(size_t size) {
     // Allocate size + 1 for null terminator
     size_t alloc_size = size + 1;
     if (alloc_size < size) {
@@ -368,7 +368,7 @@ char* aria_alloc_string(size_t size) {
         return nullptr;
     }
 
-    char* str = static_cast<char*>(aria_alloc(alloc_size));
+    char* str = static_cast<char*>(npk_alloc(alloc_size));
     if (str) {
         str[size] = '\0';  // Ensure null termination
     }
@@ -376,7 +376,7 @@ char* aria_alloc_string(size_t size) {
     return str;
 }
 
-void* aria_alloc_array(size_t elem_size, size_t count) {
+void* npk_alloc_array(size_t elem_size, size_t count) {
     if (elem_size == 0 || count == 0) {
         return nullptr;
     }
@@ -387,7 +387,7 @@ void* aria_alloc_array(size_t elem_size, size_t count) {
     }
 
     size_t total_size = elem_size * count;
-    return aria_alloc(total_size);
+    return npk_alloc(total_size);
 }
 
 // =============================================================================
@@ -401,81 +401,81 @@ static inline bool is_power_of_2(size_t x) {
     return x != 0 && (x & (x - 1)) == 0;
 }
 
-AriaAllocResult aria_alloc_result(size_t size) {
+AriaAllocResult npk_alloc_result(size_t size) {
     // Validate size
     if (size == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, 0);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, 0);
     }
 
     // Attempt allocation
-    void* ptr = aria_alloc(size);
+    void* ptr = npk_alloc(size);
     if (!ptr) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, 0);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, 0);
     }
 
-    return aria_alloc_result_ok(ptr, size, 0);
+    return npk_alloc_result_ok(ptr, size, 0);
 }
 
-AriaAllocResult aria_alloc_array_result(size_t elem_size, size_t count) {
+AriaAllocResult npk_alloc_array_result(size_t elem_size, size_t count) {
     // Validate inputs
     if (elem_size == 0 || count == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, elem_size * count, 0);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, elem_size * count, 0);
     }
 
     // Check for overflow
     if (count > SIZE_MAX / elem_size) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, elem_size * count, 0);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_SIZE_OVERFLOW, elem_size * count, 0);
     }
 
     size_t total_size = elem_size * count;
     
     // Attempt allocation
-    void* ptr = aria_alloc(total_size);
+    void* ptr = npk_alloc(total_size);
     if (!ptr) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, total_size, 0);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, total_size, 0);
     }
 
-    return aria_alloc_result_ok(ptr, total_size, 0);
+    return npk_alloc_result_ok(ptr, total_size, 0);
 }
 
-AriaAllocResult aria_alloc_aligned_result(size_t size, size_t alignment) {
+AriaAllocResult npk_alloc_aligned_result(size_t size, size_t alignment) {
     // Validate size
     if (size == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
     }
 
     // Validate alignment (must be power of 2)
     if (alignment != 0 && !is_power_of_2(alignment)) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
     }
 
-    // v0.7.0: Route through aria_alloc_buffer which uses headers
-    void* ptr = aria_alloc_buffer(size, alignment, false);
+    // v0.7.0: Route through npk_alloc_buffer which uses headers
+    void* ptr = npk_alloc_buffer(size, alignment, false);
     if (!ptr) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
     }
 
-    return aria_alloc_result_ok(ptr, size, alignment);
+    return npk_alloc_result_ok(ptr, size, alignment);
 }
 
-AriaAllocResult aria_alloc_buffer_result(size_t size, size_t alignment, bool zero_init) {
+AriaAllocResult npk_alloc_buffer_result(size_t size, size_t alignment, bool zero_init) {
     // Validate size
     if (size == 0) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_SIZE, size, alignment);
     }
 
     // Validate alignment
     if (alignment != 0 && !is_power_of_2(alignment)) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_INVALID_ALIGNMENT, size, alignment);
     }
 
     // Attempt allocation (using existing buffer allocator)
-    void* ptr = aria_alloc_buffer(size, alignment, zero_init);
+    void* ptr = npk_alloc_buffer(size, alignment, zero_init);
     if (!ptr) {
-        return aria_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
+        return npk_alloc_result_err(ARIA_ALLOC_ERR_OUT_OF_MEMORY, size, alignment);
     }
 
-    return aria_alloc_result_ok(ptr, size, alignment);
+    return npk_alloc_result_ok(ptr, size, alignment);
 }
 
 // =============================================================================
@@ -488,7 +488,7 @@ extern std::atomic<size_t> g_wildx_num_allocations;
 extern std::atomic<size_t> g_wildx_peak_usage;
 extern std::atomic<size_t> g_wildx_total_frees;
 
-void aria_allocator_get_stats(AllocatorStats* stats) {
+void npk_allocator_get_stats(AllocatorStats* stats) {
     if (!stats) {
         return;
     }
@@ -510,7 +510,7 @@ void aria_allocator_get_stats(AllocatorStats* stats) {
 // v0.7.0: Guard Page Control
 // =============================================================================
 
-void aria_wild_enable_guard_pages(bool enable) {
+void npk_wild_enable_guard_pages(bool enable) {
     g_alloc_state.guard_pages_enabled.store(enable, std::memory_order_relaxed);
 }
 
@@ -518,9 +518,9 @@ void aria_wild_enable_guard_pages(bool enable) {
 // v0.7.0: Wild Stats Dashboard (--wild-stats)
 // =============================================================================
 
-void aria_wild_print_stats(void) {
+void npk_wild_print_stats(void) {
     AllocatorStats stats;
-    aria_allocator_get_stats(&stats);
+    npk_allocator_get_stats(&stats);
     
     std::fprintf(stderr, "\n");
     std::fprintf(stderr, "╔══════════════════════════════════════════╗\n");
@@ -544,7 +544,7 @@ void aria_wild_print_stats(void) {
 }
 
 // v0.7.0: Get allocation size from user pointer (for bounds checking)
-size_t aria_alloc_get_size(void* ptr) {
+size_t npk_alloc_get_size(void* ptr) {
     if (!ptr) return 0;
     WildHeader* header = user_to_header(ptr);
     if ((header->magic & ~static_cast<size_t>(0x1)) != HEADER_MAGIC) {
@@ -559,14 +559,14 @@ size_t aria_alloc_get_size(void* ptr) {
 
 static std::atomic<bool> g_wild_stats_at_exit{false};
 
-void aria_wild_enable_stats_at_exit(bool enable) {
+void npk_wild_enable_stats_at_exit(bool enable) {
     g_wild_stats_at_exit.store(enable, std::memory_order_relaxed);
 }
 
 // GCC/Clang destructor: runs after main() returns
 __attribute__((destructor))
-static void aria_wild_atexit_handler() {
+static void npk_wild_atexit_handler() {
     if (g_wild_stats_at_exit.load(std::memory_order_relaxed)) {
-        aria_wild_print_stats();
+        npk_wild_print_stats();
     }
 }

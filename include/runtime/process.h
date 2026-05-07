@@ -100,27 +100,27 @@ typedef struct {
  * 
  * Example:
  *   const char* args[] = {"--input", "data.txt", NULL};
- *   AriaResult* r = aria_spawn("./worker", args, NULL);
+ *   AriaResult* r = npk_spawn("./worker", args, NULL);
  *   if (r->err == NULL) {
  *       AriaProcessInfo* info = (AriaProcessInfo*)r->val;
- *       int exit_code = aria_process_wait(info->handle);
+ *       int exit_code = npk_process_wait(info->handle);
  *   }
  * 
  * @param command Path to executable
  * @param args NULL-terminated array of arguments (first arg is typically program name)
  * @param options Spawn options (NULL for defaults)
- * @return Result<AriaProcessInfo*> - caller must free with aria_result_free after using handle
+ * @return Result<AriaProcessInfo*> - caller must free with npk_result_free after using handle
  */
-AriaResult* aria_spawn(const char* command, const char** args, AriaSpawnOptions* options);
+AriaResult* npk_spawn(const char* command, const char** args, AriaSpawnOptions* options);
 
 /**
  * Create default spawn options
  * 
  * @return Newly allocated options with sensible defaults (caller must free)
  */
-AriaSpawnOptions* aria_spawn_options_create(void);
+AriaSpawnOptions* npk_spawn_options_create(void);
 
-// aria_spawn_options_free is internal to the runtime (static in process.cpp)
+// npk_spawn_options_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Process Control
@@ -134,7 +134,7 @@ AriaSpawnOptions* aria_spawn_options_create(void);
  * @param process The process to wait for
  * @return Exit code of the process, or -1 on error
  */
-int aria_process_wait(AriaProcess* process);
+int npk_process_wait(AriaProcess* process);
 
 /**
  * Check if a process is still running (non-blocking)
@@ -142,7 +142,7 @@ int aria_process_wait(AriaProcess* process);
  * @param process The process to check
  * @return true if running, false if exited or error
  */
-bool aria_process_is_running(AriaProcess* process);
+bool npk_process_is_running(AriaProcess* process);
 
 /**
  * Get the exit code of a process (if it has exited)
@@ -151,7 +151,7 @@ bool aria_process_is_running(AriaProcess* process);
  * @param exit_code Pointer to store exit code
  * @return true if process has exited and exit_code is valid, false otherwise
  */
-bool aria_process_get_exit_code(AriaProcess* process, int* exit_code);
+bool npk_process_get_exit_code(AriaProcess* process, int* exit_code);
 
 /**
  * Send a signal to a process (Unix) or terminate (Windows)
@@ -160,7 +160,7 @@ bool aria_process_get_exit_code(AriaProcess* process, int* exit_code);
  * @param signal Signal number (Unix SIGTERM, SIGKILL, etc.) or 0 for terminate (Windows)
  * @return 0 on success, -1 on error
  */
-int aria_process_kill(AriaProcess* process, int signal);
+int npk_process_kill(AriaProcess* process, int signal);
 
 /**
  * Get the process ID
@@ -168,9 +168,9 @@ int aria_process_kill(AriaProcess* process, int signal);
  * @param process The process
  * @return Process ID, or -1 on error
  */
-int64_t aria_process_get_pid(AriaProcess* process);
+int64_t npk_process_get_pid(AriaProcess* process);
 
-// aria_process_free is internal to the runtime (static in process.cpp)
+// npk_process_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Fork and Exec (Unix-style)
@@ -183,21 +183,21 @@ int64_t aria_process_get_pid(AriaProcess* process);
  * AriaForkInfo which indicates whether this is the parent or child.
  * 
  * Example:
- *   AriaResult* r = aria_fork();
+ *   AriaResult* r = npk_fork();
  *   if (r->err == NULL) {
  *       AriaForkInfo* info = (AriaForkInfo*)r->val;
  *       if (info->is_child) {
  *           // Child process code
- *           aria_exec("./child_program", args);
+ *           npk_exec("./child_program", args);
  *       } else {
  *           // Parent process code
  *           printf("Child PID: %lld\n", info->pid);
  *       }
  *   }
  * 
- * @return Result<AriaForkInfo*> - caller must free with aria_result_free
+ * @return Result<AriaForkInfo*> - caller must free with npk_result_free
  */
-AriaResult* aria_fork(void);
+AriaResult* npk_fork(void);
 
 /**
  * Replace current process with a new program
@@ -209,7 +209,7 @@ AriaResult* aria_fork(void);
  * @param args NULL-terminated array of arguments
  * @return -1 on error (does not return on success)
  */
-int aria_exec(const char* command, const char** args);
+int npk_exec(const char* command, const char** args);
 
 /**
  * Replace current process with a new program using environment
@@ -219,7 +219,7 @@ int aria_exec(const char* command, const char** args);
  * @param env NULL-terminated array of environment variables
  * @return -1 on error (does not return on success)
  */
-int aria_execve(const char* command, const char** args, const char** env);
+int npk_execve(const char* command, const char** args, const char** env);
 
 // ============================================================================
 // Pipe Communication
@@ -231,19 +231,19 @@ int aria_execve(const char* command, const char** args, const char** env);
  * Creates a unidirectional pipe with read and write ends.
  * 
  * Example:
- *   AriaResult* r = aria_pipe_create();
+ *   AriaResult* r = npk_pipe_create();
  *   if (r->err == NULL) {
  *       AriaPipe* pipe = (AriaPipe*)r->val;
  *       // Use pipe with spawn or manually
- *       aria_pipe_write(pipe, "data", 4);
+ *       npk_pipe_write(pipe, "data", 4);
  *       char buffer[100];
- *       aria_pipe_read(pipe, buffer, 100);
- *       aria_pipe_free(pipe);
+ *       npk_pipe_read(pipe, buffer, 100);
+ *       npk_pipe_free(pipe);
  *   }
  * 
- * @return Result<AriaPipe*> - caller must free with aria_pipe_free
+ * @return Result<AriaPipe*> - caller must free with npk_pipe_free
  */
-AriaResult* aria_pipe_create(void);
+AriaResult* npk_pipe_create(void);
 
 /**
  * Write data to a pipe
@@ -253,7 +253,7 @@ AriaResult* aria_pipe_create(void);
  * @param size Number of bytes to write
  * @return Number of bytes written, or -1 on error
  */
-int64_t aria_pipe_write(AriaPipe* pipe, const void* data, size_t size);
+int64_t npk_pipe_write(AriaPipe* pipe, const void* data, size_t size);
 
 /**
  * Read data from a pipe
@@ -263,7 +263,7 @@ int64_t aria_pipe_write(AriaPipe* pipe, const void* data, size_t size);
  * @param size Maximum number of bytes to read
  * @return Number of bytes read, 0 on EOF, or -1 on error
  */
-int64_t aria_pipe_read(AriaPipe* pipe, void* buffer, size_t size);
+int64_t npk_pipe_read(AriaPipe* pipe, void* buffer, size_t size);
 
 /**
  * Close the write end of a pipe
@@ -273,7 +273,7 @@ int64_t aria_pipe_read(AriaPipe* pipe, void* buffer, size_t size);
  * @param pipe The pipe
  * @return 0 on success, -1 on error
  */
-int aria_pipe_close_write(AriaPipe* pipe);
+int npk_pipe_close_write(AriaPipe* pipe);
 
 /**
  * Close the read end of a pipe
@@ -281,7 +281,7 @@ int aria_pipe_close_write(AriaPipe* pipe);
  * @param pipe The pipe
  * @return 0 on success, -1 on error
  */
-int aria_pipe_close_read(AriaPipe* pipe);
+int npk_pipe_close_read(AriaPipe* pipe);
 
 /**
  * Get the read file descriptor of a pipe
@@ -289,7 +289,7 @@ int aria_pipe_close_read(AriaPipe* pipe);
  * @param pipe The pipe
  * @return Read file descriptor, or -1 on error
  */
-int aria_pipe_get_read_fd(AriaPipe* pipe);
+int npk_pipe_get_read_fd(AriaPipe* pipe);
 
 /**
  * Get the write file descriptor of a pipe
@@ -297,9 +297,9 @@ int aria_pipe_get_read_fd(AriaPipe* pipe);
  * @param pipe The pipe
  * @return Write file descriptor, or -1 on error
  */
-int aria_pipe_get_write_fd(AriaPipe* pipe);
+int npk_pipe_get_write_fd(AriaPipe* pipe);
 
-// aria_pipe_free is internal to the runtime (static in process.cpp)
+// npk_pipe_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Process Information
@@ -310,18 +310,18 @@ int aria_pipe_get_write_fd(AriaPipe* pipe);
  * 
  * @return Current process ID
  */
-int64_t aria_get_current_pid(void);
+int64_t npk_get_current_pid(void);
 
 /**
  * Get the parent process ID
  * 
  * @return Parent process ID
  */
-int64_t aria_get_parent_pid(void);
+int64_t npk_get_parent_pid(void);
 
-// aria_process_info_free is internal to the runtime (static in process.cpp)
+// npk_process_info_free is internal to the runtime (static in process.cpp)
 
-// aria_fork_info_free is internal to the runtime (static in process.cpp)
+// npk_fork_info_free is internal to the runtime (static in process.cpp)
 
 // ============================================================================
 // Fork Safety — Atfork Callback Registration
@@ -337,7 +337,7 @@ typedef void (*AriaAtforkCallback)(void);
  *
  * Runtime subsystems (GC, thread pools, telemetry, etc.) should call this
  * during their initialization to register mutex acquire/release callbacks
- * that prevent deadlocks when aria_fork() is used.
+ * that prevent deadlocks when npk_fork() is used.
  *
  * - pre_fork:     Called in parent BEFORE fork — acquire subsystem locks
  * - parent_post:  Called in parent AFTER fork — release subsystem locks
@@ -345,7 +345,7 @@ typedef void (*AriaAtforkCallback)(void);
  *
  * @return 0 on success, -1 if registration table is full
  */
-int aria_atfork_register(AriaAtforkCallback pre_fork,
+int npk_atfork_register(AriaAtforkCallback pre_fork,
                          AriaAtforkCallback parent_post,
                          AriaAtforkCallback child_post);
 

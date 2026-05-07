@@ -1,0 +1,63 @@
+// Test for parameter scope collision bug fix
+// Before fix: Functions with same param names would get wrong types
+// After fix: Each function has its own parameter scope
+
+// Test 1: Same parameter name, different types (int vs int64)
+func:add_ints = int32(int32:value, int32:other) {
+    int32:result = value + other;
+    pass result;
+};
+
+func:add_longs = int64(int64:value, int64:other) {
+    int64:result = value + other;
+    pass result;
+};
+
+// Test 2: Same parameter name, different SIMD types
+func:process_int_simd = int32(simd<int32, 4>:data) {
+    int32:sum = simd_sum(data);
+    pass sum;
+};
+
+func:process_float_simd = float32(simd<float32, 4>:data) {
+    float32:sum = simd_sum(data);
+    pass sum;
+};
+
+// Test 3: Multiple functions with common parameter names
+func:func_a = int32(int32:x, int32:y) {
+    pass x + y;
+};
+
+func:func_b = int64(int64:x, int64:y) {
+    pass x - y;
+};
+
+func:func_c = int8(int8:x, int8:y) {
+    pass x + y;
+};
+
+// Test 4: Nested scopes - parameters should be isolated
+func:outer = int32(int32:param) {
+    int32:local = param + 10i32;
+    pass local;
+};
+
+func:inner = int32(int64:param) {
+    // Different type for 'param' - should not collide with outer
+    int32:result = 42i32;
+    pass result;
+};
+
+// Test 5: Complex types with same param names
+func:handle_array = int32(int32:count) {
+    pass count * 2i32;
+};
+
+func:handle_string = int32(int64:count) {
+    pass 100i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() { exit 0; };

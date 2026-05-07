@@ -37,7 +37,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 SCRIPT_DIR = Path(__file__).parent
 ARIA_ROOT = SCRIPT_DIR.parent.parent
 BUILD_DIR = ARIA_ROOT / "build"
-ARIAC = BUILD_DIR / "ariac"
+NPKC = BUILD_DIR / "npkc"
 CORPUS_DIR = SCRIPT_DIR / "corpus"
 CRASHES_DIR = SCRIPT_DIR / "crashes"
 COVERAGE_DIR = SCRIPT_DIR / "coverage"
@@ -384,7 +384,7 @@ class AriaFuzzer:
 
     def _load_corpus(self):
         """Load seed corpus from directory."""
-        for f in self.corpus_dir.glob("*.aria"):
+        for f in self.corpus_dir.glob("*.npk"):
             try:
                 self.corpus.append(f.read_text())
             except Exception:
@@ -455,7 +455,7 @@ class AriaFuzzer:
         input_hash = self._hash_input(source)
 
         # Write to temp file
-        tmp_file = Path(f"/tmp/fuzz_{input_hash}.aria")
+        tmp_file = Path(f"/tmp/fuzz_{input_hash}.npk")
         tmp_output = Path(f"/tmp/fuzz_{input_hash}")
 
         try:
@@ -465,7 +465,7 @@ class AriaFuzzer:
             start = time.perf_counter()
             try:
                 result = subprocess.run(
-                    [str(ARIAC), str(tmp_file), "-o", str(tmp_output)],
+                    [str(NPKC), str(tmp_file), "-o", str(tmp_output)],
                     capture_output=True,
                     timeout=COMPILE_TIMEOUT
                 )
@@ -515,7 +515,7 @@ class AriaFuzzer:
         crash_dir.mkdir(exist_ok=True)
 
         # Save source
-        (crash_dir / f"{crash_hash}.aria").write_text(source)
+        (crash_dir / f"{crash_hash}.npk").write_text(source)
 
         # Save metadata
         meta = {
@@ -646,8 +646,8 @@ def main():
                         help="Random seed for reproducibility")
     args = parser.parse_args()
 
-    if not ARIAC.exists():
-        print(f"ERROR: Compiler not found at {ARIAC}")
+    if not NPKC.exists():
+        print(f"ERROR: Compiler not found at {NPKC}")
         print("Please build the compiler first")
         return 1
 

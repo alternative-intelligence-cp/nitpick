@@ -35,11 +35,11 @@ if [ -n "$LATEST_LOG" ]; then
 fi
 
 # Check for new crashes
-NEW_CRASHES=$(find crashes/ -name "*.aria" -mmin -60 2>/dev/null | wc -l)
+NEW_CRASHES=$(find crashes/ -name "*.npk" -mmin -60 2>/dev/null | wc -l)
 if [ $NEW_CRASHES -gt 0 ]; then
     echo ""
     echo "⚠️  NEW CRASHES FOUND: $NEW_CRASHES in last hour"
-    find crashes/ -name "*.aria" -mmin -60 2>/dev/null
+    find crashes/ -name "*.npk" -mmin -60 2>/dev/null
 fi
 
 echo ""

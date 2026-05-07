@@ -6,7 +6,7 @@
 #include <thread>
 #include <functional>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 /**
@@ -101,6 +101,6 @@ private:
 };
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_LSP_THREAD_POOL_H

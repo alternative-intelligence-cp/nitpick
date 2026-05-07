@@ -1,0 +1,189 @@
+// Test: Incremental Solving & Performance (v0.14.3)
+// Compile: ariac --verify-level=3 -v test_perf_many_queries.aria -o test_perf_many_queries
+// Expected: 20+ functions verified, persistent solver reuses context across queries,
+// progress reporting shows function-by-function progress at level 3.
+// Level 1: only Rules consistency + user assertions.
+// Level 2: adds overflow checking + elimination passes.
+// Level 3: everything + per-function progress.
+
+Rules:Percentage = { $ >= 1, $ <= 100 };
+
+Rules:SmallInt = { $ >= 1, $ <= 50 };
+
+Rules:Positive = { $ >= 1, $ <= 1000000 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// --- Percentage functions ---
+
+func:clamp_percent = int32() {
+    limit<Percentage> int32:val = 50;
+    int32:result = val;
+    pass result;
+};
+
+func:add_percents = int32() {
+    limit<Percentage> int32:a = 25;
+    limit<Percentage> int32:b = 75;
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:scale_percent = int32() {
+    limit<Percentage> int32:p = 80;
+    limit<SmallInt> int32:factor = 10;
+    int32:scaled = p * factor;
+    pass scaled;
+};
+
+func:percent_to_fraction = int32() {
+    limit<Percentage> int32:p = 42;
+    int32:numerator = p;
+    int32:denominator = 100i32;
+    pass numerator;
+};
+
+func:invert_percent = int32() {
+    limit<Percentage> int32:p = 30;
+    int32:inv = 100i32 - p;
+    pass inv;
+};
+
+// --- SmallInt functions ---
+
+func:absolute_small = int32() {
+    limit<SmallInt> int32:x = 5;
+    int32:result = x * x;
+    pass result;
+};
+
+func:add_small_ints = int32() {
+    limit<SmallInt> int32:a = 20;
+    limit<SmallInt> int32:b = 15;
+    int32:sum = a + b;
+    pass sum;
+};
+
+func:shift_small = int32() {
+    limit<SmallInt> int32:x = 30;
+    int32:shifted = x + 1i32;
+    pass shifted;
+};
+
+func:small_squared = int32() {
+    limit<SmallInt> int32:x = 7;
+    int32:sq = x * x;
+    pass sq;
+};
+
+func:small_cubed = int32() {
+    limit<SmallInt> int32:a = 3;
+    int32:sq = a * a;
+    int32:cu = sq * a;
+    pass cu;
+};
+
+// --- Positive functions ---
+
+func:double_positive = int32() {
+    limit<Positive> int32:n = 100;
+    int32:doubled = n + n;
+    pass doubled;
+};
+
+func:triple_positive = int32() {
+    limit<Positive> int32:n = 50;
+    int32:tripled = n + n + n;
+    pass tripled;
+};
+
+func:positive_shift = int32() {
+    limit<Positive> int32:x = 999;
+    int32:shifted = x + 1i32;
+    pass shifted;
+};
+
+func:sum_two_positive = int32() {
+    limit<Positive> int32:a = 400;
+    limit<Positive> int32:b = 600;
+    int32:total = a + b;
+    pass total;
+};
+
+func:positive_decrement = int32() {
+    limit<Positive> int32:n = 500;
+    int32:dec = n - 1i32;
+    pass dec;
+};
+
+// --- Mixed Rules functions ---
+
+func:percent_of_positive = int32() {
+    limit<Percentage> int32:pct = 50;
+    limit<Positive> int32:val = 200;
+    int32:result = pct * val;
+    pass result;
+};
+
+func:adjust_by_small = int32() {
+    limit<Positive> int32:base_val = 1000;
+    limit<SmallInt> int32:adj = 25;
+    int32:result = base_val + adj;
+    pass result;
+};
+
+func:complex_calc = int32() {
+    limit<Percentage> int32:a = 50;
+    limit<SmallInt> int32:b = 10;
+    limit<Positive> int32:c = 100;
+    int32:step1 = a + b;
+    int32:step2 = step1 + c;
+    pass step2;
+};
+
+func:multi_add = int32() {
+    limit<SmallInt> int32:a = 10;
+    limit<SmallInt> int32:b = 20;
+    limit<SmallInt> int32:c = 5;
+    limit<SmallInt> int32:d = 15;
+    int32:ab = a + b;
+    int32:cd = c + d;
+    int32:total = ab + cd;
+    pass total;
+};
+
+func:chain_compute = int32() {
+    limit<Percentage> int32:p = 40;
+    int32:x = p + 10i32;
+    int32:y = x + 20i32;
+    int32:z = y + 30i32;
+    pass z;
+};
+
+// --- Literal-only functions (range inference) ---
+
+func:literal_chain = int32() {
+    int32:a = 1i32;
+    int32:b = 2i32;
+    int32:c = a + b;
+    int32:d = c + 3i32;
+    int32:e = d + 4i32;
+    pass e;
+};
+
+func:literal_multiply = int32() {
+    int32:x = 7i32;
+    int32:y = 8i32;
+    int32:z = x * y;
+    pass z;
+};
+
+func:main = int32() {
+    int32:r1 = raw clamp_percent();
+    int32:r2 = raw add_percents();
+    int32:r3 = raw literal_chain();
+    int32:r4 = raw literal_multiply();
+    exit 0;
+};

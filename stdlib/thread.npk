@@ -1,0 +1,81 @@
+// stdlib/thread.aria — Thread lifecycle management (v0.11.0 — ported to aria-libc)
+//
+// Thread creation, joining, sleeping, naming.
+// Import with: use "thread.aria".*;
+//
+// v0.11.0: Ported from inline extern func to aria-libc shims.
+//          0 direct extern calls; backed by libaria_libc_thread.so
+//
+// Usage:
+//   int64:t = Thread.spawn(worker, 42i64);
+//   Thread.join(t);
+//
+// The thread function must have signature: func:name = NIL(int64:arg) { ... };
+// Pass data via the int64 arg (use as index, counter, or ptr_to_int64 handle).
+
+// ── aria-libc shims ──────────────────────────────────────────────────────────
+extern func:npk_libc_thread_spawn = int64(wild ?*:func, int64:arg);
+
+extern "npk_libc_thread" {
+    func:npk_libc_thread_join                 = int32(int64:handle);
+    func:npk_libc_thread_detach               = int32(int64:handle);
+    func:npk_libc_thread_yield                = void();
+    func:npk_libc_thread_sleep_ns             = void(int64:ns);
+    func:npk_libc_thread_sleep_ms             = void(int64:ms);
+    func:npk_libc_thread_set_name             = void(string:name);
+    func:npk_libc_thread_hardware_concurrency = int32();
+    func:npk_libc_thread_current_id           = int64();
+}
+
+Type:Thread = {
+    // Spawn a new OS thread running func(arg).
+    // func must be a function with signature: func:name = NIL(int64:arg) { ... };
+    // Returns thread handle (>= 0) on success, -1 on failure.
+    func:spawn = int64(?->:func, int64:arg) {
+        pass npk_libc_thread_spawn(func, arg);
+    };
+
+    // Wait for thread to complete. Returns 0 on success, -1 on error.
+    func:join = int32(int64:handle) {
+        pass npk_libc_thread_join(handle);
+    };
+
+    // Detach thread (auto-cleanup on exit). Returns 0 on success, -1 on error.
+    func:detach = int32(int64:handle) {
+        pass npk_libc_thread_detach(handle);
+    };
+
+    // Yield CPU to other threads.
+    func:yield = NIL() {
+        npk_libc_thread_yield();
+        pass NIL;
+    };
+
+    // Sleep for nanoseconds.
+    func:sleep_ns = NIL(int64:ns) {
+        npk_libc_thread_sleep_ns(ns);
+        pass NIL;
+    };
+
+    // Sleep for milliseconds.
+    func:sleep_ms = NIL(int64:ms) {
+        npk_libc_thread_sleep_ms(ms);
+        pass NIL;
+    };
+
+    // Set current thread's name (for debuggers, max 15 chars).
+    func:set_name = NIL(string:name) {
+        npk_libc_thread_set_name(name);
+        pass NIL;
+    };
+
+    // Get number of hardware threads / CPU cores.
+    func:hardware_concurrency = int32() {
+        pass npk_libc_thread_hardware_concurrency();
+    };
+
+    // Get current thread's ID.
+    func:current_id = int64() {
+        pass npk_libc_thread_current_id();
+    };
+};

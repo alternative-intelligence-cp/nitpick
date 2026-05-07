@@ -1,0 +1,21 @@
+// bug048: $$m borrow of a scalar struct field leaves array fields accessible
+// v0.19.0 Phase 3 — struct array mixed borrow interaction
+// Expected exit code: 42
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+struct:Pair = {
+    int32:a;
+    int32[4]:buf;
+};
+
+func:main = int32() {
+    Pair:p;
+    p.a = 10i32;
+    p.buf[2] = 42i32;
+
+    $$m int32:ra = p.a;
+    ra = 99i32;
+
+    exit p.buf[2];
+};

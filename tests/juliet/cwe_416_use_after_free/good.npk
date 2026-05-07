@@ -1,0 +1,18 @@
+// CWE-416: Use After Free — GOOD demonstration
+//
+// buf is used only before free() — ownership is consumed properly.
+// Expected: exits 0 (clean allocation lifecycle, no use-after-free)
+
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+
+func:main = int32() {
+    wild ?->:buf = malloc(64i64);
+    // Use buf here (before free) — safe
+    free(buf);               // ownership consumed; buf not used again
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

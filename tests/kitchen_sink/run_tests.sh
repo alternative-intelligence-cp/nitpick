@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 BINARY_NAME="sink_test"
 BUILD_DIR="./bin"
 LOG_DIR="./logs"
-SRC_FILE="kitchen_sink.aria"
+SRC_FILE="kitchen_sink.npk"
 
 echo -e "${BLUE}=== Initializing Aria Test Environment ===${NC}"
 
@@ -28,7 +28,7 @@ rm -f $BUILD_DIR/$BINARY_NAME
 rm -f $LOG_DIR/*.log
 
 # 3. Compilation Step
-# We simulate calling 'aria_make' or the compiler 'ariac'
+# We simulate calling 'aria_make' or the compiler 'npkc'
 echo -e "${YELLOW}Compiling $SRC_FILE...${NC}"
 
 # MOCK COMMAND: Replace with your actual compiler command

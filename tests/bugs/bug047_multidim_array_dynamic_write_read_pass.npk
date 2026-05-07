@@ -1,0 +1,15 @@
+// BUG-047: Multi-dimensional array — declare uninitialised, write with dynamic
+// indices, then read back.  Exercises the multi-dim GEP read/write paths.
+// Expected: exits 42
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[3][4]:tbl;
+    int32:r = 1;
+    int32:c = 3;
+    tbl[r][c] = 42;
+    exit tbl[r][c];
+};

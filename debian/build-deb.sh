@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-deb.sh — Build Aria .deb package from pre-compiled binaries
+# build-deb.sh — Build Nitpick .deb package from pre-compiled binaries
 #
 # Usage: ./build-deb.sh [version]
 #
@@ -7,33 +7,26 @@
 # It does NOT recompile — run cmake build first.
 #
 # Prerequisites:
-#   - ariac and aria-ls built in build/ directory
-#   - aria-safety built in tools/aria-safety/
+#   - npkc and npk-ls built in build/ directory
 #   - dpkg-deb available
 
 set -euo pipefail
 
-VERSION="${1:-0.2.2}"
+VERSION="${1:-0.19.1}"
 ARCH="amd64"
-PKG="aria_${VERSION}-1_${ARCH}"
+PKG="nitpick_${VERSION}-1_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "Building aria ${VERSION} .deb package..."
+echo "Building nitpick ${VERSION} .deb package..."
 
 # Verify binaries exist
-for bin in "$REPO_ROOT/build/ariac" "$REPO_ROOT/build/aria-ls"; do
+for bin in "$REPO_ROOT/build/npkc" "$REPO_ROOT/build/npk-ls"; do
     if [ ! -f "$bin" ]; then
-        echo "Error: $bin not found. Build first with: cd build && cmake --build . --target ariac aria-ls"
+        echo "Error: $bin not found. Build first with: cd build && cmake --build . --target npkc npk-ls"
         exit 1
     fi
 done
-
-if [ ! -f "$REPO_ROOT/tools/aria-safety/aria-safety" ]; then
-    echo "Building aria-safety..."
-    cd "$REPO_ROOT/tools/aria-safety"
-    gcc -O2 -Wall -Wextra -std=c99 -o aria-safety aria_safety.c
-fi
 
 # Create package directory structure
 STAGING="$REPO_ROOT/build/$PKG"
@@ -46,25 +39,24 @@ mkdir -p "$STAGING/usr/lib/aria/packages"
 
 # DEBIAN/control
 cat > "$STAGING/DEBIAN/control" << EOF
-Package: aria
+Package: nitpick
 Version: ${VERSION}-1
 Architecture: ${ARCH}
-Maintainer: Aria Language Team <aria@ailp.dev>
+Maintainer: Nitpick Language Team <nitpick@ailp.dev>
 Depends: llvm-20, lld-20
-Suggests: aria-man-pages
+Suggests: nitpick-man-pages
 Section: devel
 Priority: optional
-Homepage: https://github.com/randyeramallthetime/aria
-Description: Aria programming language compiler and toolchain
- The Aria programming language compiler (ariac) and supporting tools.
- Includes ariac (LLVM 20 backend), aria-ls (LSP server),
- aria-safety (static audit), and ecosystem libraries.
+Homepage: https://github.com/alternative-intelligence-cp/nitpick
+Description: Nitpick programming language compiler and toolchain
+ The Nitpick programming language compiler (npkc) and supporting tools.
+ Includes npkc (LLVM 20 backend), npk-ls (LSP server),
+ and ecosystem libraries.
 EOF
 
 # Install binaries
-install -m 755 "$REPO_ROOT/build/ariac" "$STAGING/usr/bin/ariac"
-install -m 755 "$REPO_ROOT/build/aria-ls" "$STAGING/usr/bin/aria-ls"
-install -m 755 "$REPO_ROOT/tools/aria-safety/aria-safety" "$STAGING/usr/bin/aria-safety"
+install -m 755 "$REPO_ROOT/build/npkc" "$STAGING/usr/bin/npkc"
+install -m 755 "$REPO_ROOT/build/npk-ls" "$STAGING/usr/bin/npk-ls"
 
 # Install MCP server
 if [ -f "$REPO_ROOT/tools/aria-mcp/aria_mcp.py" ]; then
@@ -99,4 +91,4 @@ echo "Package built: build/${PKG}.deb"
 echo "Size: $(du -h "$REPO_ROOT/build/${PKG}.deb" | cut -f1)"
 echo ""
 echo "Install with: sudo dpkg -i build/${PKG}.deb"
-echo "Remove with:  sudo dpkg -r aria"
+echo "Remove with:  sudo dpkg -r nitpick"

@@ -1,0 +1,17 @@
+// bug053: Exclusive slice from fixed-size int32 array
+// int32[5] sliced with [0...3] → 3 elements (indices 0,1,2 = values 10,20,30)
+// Expected: exits 30 (sl[2])
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32[5]:nums;
+    nums[0] = 10i32;
+    nums[1] = 20i32;
+    nums[2] = 30i32;
+    nums[3] = 40i32;
+    nums[4] = 50i32;
+    int32[]:sl = nums[0...3];
+    if (sl[0] != 10i32) { exit 1; }
+    if (sl[1] != 20i32) { exit 2; }
+    if (sl[2] != 30i32) { exit 3; }
+    exit sl[2];
+};

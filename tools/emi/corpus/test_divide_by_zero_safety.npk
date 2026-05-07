@@ -1,0 +1,22 @@
+// Test Layer 1 Safety: Divide-by-zero returns Unknown instead of crashing
+
+// Required failsafe function
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Division by zero - should return Unknown (INT_MAX) instead of crashing
+    int32:zero = 0i32;
+    int32:result = 5i32 / zero;
+    
+    // Check if result is Unknown using ok()
+    // ok() returns 0 for Unknown, 1 for valid values
+    if (ok result == 0i32) {
+        // Successfully caught the Unknown value!
+        exit 0;  // Test passes
+    }
+    
+    // If we got here without checking, result would be Unknown (INT_MAX = 2147483647)
+    exit 1i32;  // Test should not reach here
+};

@@ -103,7 +103,7 @@ static int64_t uhash_find(AriaUHash* ht, const char* key) {
     return -1; /* Full table, not found */
 }
 
-extern "C" int64_t aria_uhash_new(int64_t capacity_bytes) {
+extern "C" int64_t npk_uhash_new(int64_t capacity_bytes) {
     AriaUHash* ht = static_cast<AriaUHash*>(malloc(sizeof(AriaUHash)));
     if (!ht) return 0;
 
@@ -122,7 +122,7 @@ extern "C" int64_t aria_uhash_new(int64_t capacity_bytes) {
     return reinterpret_cast<int64_t>(ht);
 }
 
-extern "C" void aria_uhash_destroy(int64_t handle) {
+extern "C" void npk_uhash_destroy(int64_t handle) {
     if (handle == 0) return;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     for (int64_t i = 0; i < ht->bucket_count; ++i) {
@@ -134,7 +134,7 @@ extern "C" void aria_uhash_destroy(int64_t handle) {
     free(ht);
 }
 
-extern "C" int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value,
+extern "C" int32_t npk_uhash_set(int64_t handle, const char* key, int64_t value,
                                    int64_t type_tag, int64_t value_size) {
     if (handle == 0) {
         fprintf(stderr, "aria: uhash error — set on null handle\n");
@@ -206,7 +206,7 @@ extern "C" int32_t aria_uhash_set(int64_t handle, const char* key, int64_t value
     return 0;
 }
 
-extern "C" int64_t aria_uhash_get(int64_t handle, const char* key, int64_t expected_tag) {
+extern "C" int64_t npk_uhash_get(int64_t handle, const char* key, int64_t expected_tag) {
     if (handle == 0) {
         fprintf(stderr, "aria: uhash error — get on null handle\n");
         exit(1);
@@ -228,7 +228,7 @@ extern "C" int64_t aria_uhash_get(int64_t handle, const char* key, int64_t expec
     return ht->buckets[idx].value;
 }
 
-extern "C" void* aria_uhash_keys(int64_t handle, int64_t* out_count) {
+extern "C" void* npk_uhash_keys(int64_t handle, int64_t* out_count) {
     if (handle == 0) {
         *out_count = 0;
         return nullptr;
@@ -273,20 +273,20 @@ extern "C" void* aria_uhash_keys(int64_t handle, int64_t* out_count) {
     return static_cast<void*>(result);
 }
 
-extern "C" int64_t aria_uhash_size(int64_t handle) {
+extern "C" int64_t npk_uhash_size(int64_t handle) {
     if (handle == 0) return 0;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     return ht->used_bytes;
 }
 
-extern "C" int64_t aria_uhash_fits(int64_t handle, int64_t value_size) {
+extern "C" int64_t npk_uhash_fits(int64_t handle, int64_t value_size) {
     if (handle == 0) return 0;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     if (ht->capacity_bytes <= 0) return 1; /* Unbounded — always fits */
     return (ht->used_bytes + value_size <= ht->capacity_bytes) ? 1 : 0;
 }
 
-extern "C" int32_t aria_uhash_type(int64_t handle, const char* key) {
+extern "C" int32_t npk_uhash_type(int64_t handle, const char* key) {
     if (handle == 0) return -1;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     int64_t idx = uhash_find(ht, key);
@@ -294,13 +294,13 @@ extern "C" int32_t aria_uhash_type(int64_t handle, const char* key) {
     return static_cast<int32_t>(ht->buckets[idx].type_tag);
 }
 
-extern "C" int64_t aria_uhash_count(int64_t handle) {
+extern "C" int64_t npk_uhash_count(int64_t handle) {
     if (handle == 0) return 0;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     return ht->entry_count;
 }
 
-extern "C" int32_t aria_uhash_delete(int64_t handle, const char* key) {
+extern "C" int32_t npk_uhash_delete(int64_t handle, const char* key) {
     if (handle == 0) return -1;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     int64_t idx = uhash_find(ht, key);
@@ -319,13 +319,13 @@ extern "C" int32_t aria_uhash_delete(int64_t handle, const char* key) {
     return 0; /* Success */
 }
 
-extern "C" int32_t aria_uhash_has(int64_t handle, const char* key) {
+extern "C" int32_t npk_uhash_has(int64_t handle, const char* key) {
     if (handle == 0) return 0;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
     return (uhash_find(ht, key) >= 0) ? 1 : 0;
 }
 
-extern "C" void aria_uhash_clear(int64_t handle) {
+extern "C" void npk_uhash_clear(int64_t handle) {
     if (handle == 0) return;
     AriaUHash* ht = reinterpret_cast<AriaUHash*>(handle);
 
@@ -354,50 +354,50 @@ extern "C" void aria_uhash_clear(int64_t handle) {
  * no tag computation at call sites).
  * ═══════════════════════════════════════════════════════════════════════ */
 
-extern "C" int64_t aria_uhash_new_fast(int64_t capacity_bytes) {
-    /* Identical to aria_uhash_new — same struct, interchangeable handle */
-    return aria_uhash_new(capacity_bytes);
+extern "C" int64_t npk_uhash_new_fast(int64_t capacity_bytes) {
+    /* Identical to npk_uhash_new — same struct, interchangeable handle */
+    return npk_uhash_new(capacity_bytes);
 }
 
-extern "C" void aria_uhash_destroy_fast(int64_t handle) {
-    aria_uhash_destroy(handle);
+extern "C" void npk_uhash_destroy_fast(int64_t handle) {
+    npk_uhash_destroy(handle);
 }
 
-extern "C" int32_t aria_uhash_set_fast(int64_t handle, const char* key, int64_t value,
+extern "C" int32_t npk_uhash_set_fast(int64_t handle, const char* key, int64_t value,
                                         int64_t value_size) {
     /* Delegate to regular set with type_tag = -1 (untagged) */
-    return aria_uhash_set(handle, key, value, -1, value_size);
+    return npk_uhash_set(handle, key, value, -1, value_size);
 }
 
-extern "C" int64_t aria_uhash_get_fast(int64_t handle, const char* key) {
+extern "C" int64_t npk_uhash_get_fast(int64_t handle, const char* key) {
     /* Delegate to regular get with expected_tag = -1 (skip type check) */
-    return aria_uhash_get(handle, key, -1);
+    return npk_uhash_get(handle, key, -1);
 }
 
-extern "C" void* aria_uhash_keys_fast(int64_t handle, int64_t* out_count) {
-    return aria_uhash_keys(handle, out_count);
+extern "C" void* npk_uhash_keys_fast(int64_t handle, int64_t* out_count) {
+    return npk_uhash_keys(handle, out_count);
 }
 
-extern "C" int64_t aria_uhash_size_fast(int64_t handle) {
-    return aria_uhash_size(handle);
+extern "C" int64_t npk_uhash_size_fast(int64_t handle) {
+    return npk_uhash_size(handle);
 }
 
-extern "C" int64_t aria_uhash_fits_fast(int64_t handle, int64_t value_size) {
-    return aria_uhash_fits(handle, value_size);
+extern "C" int64_t npk_uhash_fits_fast(int64_t handle, int64_t value_size) {
+    return npk_uhash_fits(handle, value_size);
 }
 
-extern "C" int64_t aria_uhash_count_fast(int64_t handle) {
-    return aria_uhash_count(handle);
+extern "C" int64_t npk_uhash_count_fast(int64_t handle) {
+    return npk_uhash_count(handle);
 }
 
-extern "C" int32_t aria_uhash_delete_fast(int64_t handle, const char* key) {
-    return aria_uhash_delete(handle, key);
+extern "C" int32_t npk_uhash_delete_fast(int64_t handle, const char* key) {
+    return npk_uhash_delete(handle, key);
 }
 
-extern "C" int32_t aria_uhash_has_fast(int64_t handle, const char* key) {
-    return aria_uhash_has(handle, key);
+extern "C" int32_t npk_uhash_has_fast(int64_t handle, const char* key) {
+    return npk_uhash_has(handle, key);
 }
 
-extern "C" void aria_uhash_clear_fast(int64_t handle) {
-    aria_uhash_clear(handle);
+extern "C" void npk_uhash_clear_fast(int64_t handle) {
+    npk_uhash_clear(handle);
 }

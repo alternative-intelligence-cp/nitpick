@@ -13,11 +13,11 @@
 
 // Forward declarations for cleanup functions
 extern "C" {
-    void aria_coro_destroy(void* handle);
-    void aria_gc_free(void* ptr);
+    void npk_coro_destroy(void* handle);
+    void npk_gc_free(void* ptr);
 }
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // Forward declarations
@@ -68,12 +68,12 @@ public:
     
     ~Task() {
         if (handle) {
-            aria_coro_destroy(handle);
+            npk_coro_destroy(handle);
             handle = nullptr;
         }
         
         if (resultStorage) {
-            aria_gc_free(resultStorage);
+            npk_gc_free(resultStorage);
             resultStorage = nullptr;
         }
     }
@@ -186,6 +186,6 @@ public:
 };
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_RUNTIME_ASYNC_EXECUTOR_H

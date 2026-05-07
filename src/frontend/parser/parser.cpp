@@ -5,10 +5,10 @@
 #include <iostream>
 #include <cctype>
 
-using namespace aria;
-using namespace aria::frontend;
+using namespace npk;
+using namespace npk::frontend;
 
-namespace aria {
+namespace npk {
 
 // Operator precedence table (higher = tighter binding)
 const std::unordered_map<TokenType, int> Parser::precedence = {
@@ -207,7 +207,7 @@ void Parser::error(const std::string& message) {
     if (message.find("Expected ';'") != std::string::npos) {
         // Check if they forgot ; after }
         if (current > 0 && tokens[current - 1].type == TokenType::TOKEN_RIGHT_BRACE) {
-            ss << "\n  Hint: In Aria, closing braces need a semicolon: '};' not just '}'";
+            ss << "\n  Hint: In Nitpick, closing braces need a semicolon: '};' not just '}'";
         }
     } else if (message.find("Expected expression") != std::string::npos) {
         // Common: using = instead of == in conditions
@@ -216,13 +216,13 @@ void Parser::error(const std::string& message) {
         }
         // Common: using C-style type declaration
         if (token.type == TokenType::TOKEN_IDENTIFIER && token.lexeme == "int") {
-            ss << "\n  Hint: Aria integer types include a width: int32, int64, etc.";
+            ss << "\n  Hint: Nitpick integer types include a width: int32, int64, etc.";
         }
     } else if (message.find("Expected type") != std::string::npos || 
                message.find("Expected return type") != std::string::npos) {
         // Hint about Aria's type:name syntax
         if (token.type == TokenType::TOKEN_COLON) {
-            ss << "\n  Hint: Aria uses Type:name syntax, e.g. int32:x, not name: Type";
+            ss << "\n  Hint: Nitpick uses Type:name syntax, e.g. int32:x, not name: Type";
         }
     }
     
@@ -1590,6 +1590,18 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             advance(); // consume '{'
             
             std::vector<ObjectLiteralExpr::Field> fields;
+            std::string baseName; // v0.19.1: struct update syntax: TypeName{ ...base, field: expr }
+            
+            // Check for spread: TypeName{ ...base, ... }
+            if (check(TokenType::TOKEN_DOT_DOT_DOT)) {
+                advance(); // consume '...'
+                Token baseToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected base variable name after '...' in struct update");
+                baseName = baseToken.lexeme;
+                // Optional comma after base before field overrides
+                if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+                    consume(TokenType::TOKEN_COMMA, "Expected ',' after base name in struct update");
+                }
+            }
             
             while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
                 // Parse field name
@@ -1617,12 +1629,14 @@ ASTNodePtr Parser::parsePostfix(ASTNodePtr expr) {
             consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
             
             // Create ObjectLiteralExpr with type_name set
-            return std::make_shared<ObjectLiteralExpr>(
+            auto objLitExpr = std::make_shared<ObjectLiteralExpr>(
                 fields,
                 typeName,  // Set type name for struct literals
                 token.line,
                 token.column
             );
+            objLitExpr->base_name = baseName;
+            return objLitExpr;
         }
         
         // Check for turbofish syntax: ::<T, U> followed by function call
@@ -2073,7 +2087,7 @@ ASTNodePtr Parser::parseTemplateLiteral() {
 /**
  * Parse lambda expressions (Closures - Phase 4.5.2)
  * 
- * Syntax (from aria_specs.txt):
+ * Syntax (from npk_specs.txt):
  * Lambda syntax is just: returnType(type:param, type:param) { body }
  * NO arrow operator (=>), NO special keywords
  * 
@@ -2145,7 +2159,7 @@ ASTNodePtr Parser::parseLambda() {
     // Parse body - must be a block { ... }
     // No arrow operator in Aria!
     if (!check(TokenType::TOKEN_LEFT_BRACE)) {
-        error("Expected '{' for lambda body (no arrow operator in Aria)");
+        error("Expected '{' for lambda body (no arrow operator in Nitpick)");
         return nullptr;
     }
     advance(); // consume '{' -- parseBlock() requires '{' already consumed
@@ -5506,9 +5520,44 @@ ASTNodePtr Parser::parsePickStatement() {
             is_unreachable = true;
         }
         
+        // v0.19.1: Check for struct destructure pattern: TypeName { field1, field2 }
+        // Detection: identifier (uppercase start) immediately followed by '{'
+        std::string struct_pat_type;
+        std::vector<std::string> struct_pat_fields;
+        bool is_struct_pattern = false;
+        if (!is_unreachable && check(TokenType::TOKEN_IDENTIFIER)) {
+            const std::string& lexeme = peek().lexeme;
+            if (!lexeme.empty() && std::isupper((unsigned char)lexeme[0])) {
+                size_t savedPos = current;
+                Token typeToken = advance();
+                if (check(TokenType::TOKEN_LEFT_BRACE)) {
+                    advance(); // consume '{'
+                    is_struct_pattern = true;
+                    struct_pat_type = typeToken.lexeme;
+                    // Parse comma-separated field names
+                    while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+                        if (check(TokenType::TOKEN_IDENTIFIER)) {
+                            Token fieldToken = advance();
+                            struct_pat_fields.push_back(fieldToken.lexeme);
+                        } else {
+                            error("Expected field name or '_' in struct pattern");
+                            break;
+                        }
+                        if (!match(TokenType::TOKEN_COMMA)) break;
+                    }
+                    if (!match(TokenType::TOKEN_RIGHT_BRACE)) {
+                        error("Expected '}' to close struct pattern");
+                    }
+                } else {
+                    // Not a struct pattern — backtrack
+                    current = savedPos;
+                }
+            }
+        }
+
         // Parse pattern (expression or wildcard *)
         ASTNodePtr pattern = nullptr;
-        if (!is_unreachable) {
+        if (!is_unreachable && !is_struct_pattern) {
             if (match(TokenType::TOKEN_STAR)) {
                 // Wildcard '*' - represented as string literal
                 // Use std::string to force string constructor (not bool from const char*)
@@ -5544,8 +5593,11 @@ ASTNodePtr Parser::parsePickStatement() {
         }
         
         // Create PickCase node
-        cases.push_back(std::make_shared<PickCase>(label, pattern, body, is_unreachable,
-                                                     pickToken.line, pickToken.column));
+        auto pickCaseNode = std::make_shared<PickCase>(label, pattern, body, is_unreachable,
+                                                        pickToken.line, pickToken.column);
+        pickCaseNode->struct_pat_type = struct_pat_type;
+        pickCaseNode->struct_pat_fields = struct_pat_fields;
+        cases.push_back(pickCaseNode);
         
         // Cases are comma-separated
         if (!match(TokenType::TOKEN_COMMA)) {
@@ -6009,4 +6061,4 @@ const std::vector<std::string>& Parser::getErrors() const {
     return errors;
 }
 
-} // namespace aria
+} // namespace npk

@@ -1,0 +1,13 @@
+// BUG-042: Immutable dynamic-index array element borrow allows reading the slot.
+// Expected: exits 20
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[3]:arr = [10, 20, 30];
+    int32:i = 1;
+    $$i int32:elem = arr[i];
+    exit elem;
+};

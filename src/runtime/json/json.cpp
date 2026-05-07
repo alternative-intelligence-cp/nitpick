@@ -10,7 +10,7 @@
  *  - Cleanup: json_free(handle)
  *
  * ABI: string params arrive as const char* (codegen extracts .data).
- *       string returns are AriaString* via aria_gc_alloc.
+ *       string returns are AriaString* via npk_gc_alloc.
  *       Opaque handles are void* (wild int8* in Aria).
  */
 
@@ -120,11 +120,11 @@ static JsonValue* json_value_clone(JsonValue* v) {
 
 // Helper: make AriaString from C string
 static AriaString* make_aria_string(const char* data, int64_t length) {
-    char* buf = (char*)aria_gc_alloc(length + 1, 0);
+    char* buf = (char*)npk_gc_alloc(length + 1, 0);
     if (!buf) std::abort();
     if (length > 0) memcpy(buf, data, length);
     buf[length] = '\0';
-    AriaString* s = (AriaString*)aria_gc_alloc(sizeof(AriaString), 0);
+    AriaString* s = (AriaString*)npk_gc_alloc(sizeof(AriaString), 0);
     if (!s) std::abort();
     s->data = buf;
     s->length = length;

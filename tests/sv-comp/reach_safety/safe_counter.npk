@@ -1,0 +1,23 @@
+// SV-COMP ReachSafety equivalent: count_up_to_n
+//
+// C analog (ReachSafety-Loops): loops/count_up_to_n.c
+// Property: error label (exit 99 / failsafe) is unreachable
+// Aria verdict: TRUE — loop terminates after exactly 10 iterations,
+//               i = 10 at loop exit, error branch never taken
+//
+// Expected verdict: true   Strategy: runtime (exits 0)
+
+func:main = int32() {
+    tbb32:i = 0;
+    tbb32:one = 1;
+    loop(0, 10, 1) {
+        i = i + one;
+    }
+    // i == 10 after 10 iterations — error branch unreachable
+    if (i != 10) { exit 99; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,9 @@
+extern func:malloc = wild int8*(int64:size);
+extern func:free = void(wild int8*:ptr);
+func:main = int32() {
+    int64:sz = 64;
+    wild int8->:ptr = malloc(sz);
+    free(ptr);
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };

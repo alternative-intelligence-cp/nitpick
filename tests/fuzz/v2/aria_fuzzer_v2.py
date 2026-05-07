@@ -173,7 +173,7 @@ class AriaFuzzer:
             if i % 20 == 0:
                 print(f"   Progress: {i}/{len(tests)} tests...")
             
-            self._test_program(code, f"exhaustive_{filename.replace('.aria', '')}")
+            self._test_program(code, f"exhaustive_{filename.replace('.npk', '')}")
         
         print(f"   ✅ Completed {len(tests)} exhaustive tests")
     
@@ -182,7 +182,7 @@ class AriaFuzzer:
         self.stats.total_generated += 1
         
         # Save to temporary file
-        temp_file = self.config.corpus_dir / f"{test_id}.aria"
+        temp_file = self.config.corpus_dir / f"{test_id}.npk"
         temp_file.write_text(code)
         
         # Compile it
@@ -252,7 +252,7 @@ class AriaFuzzer:
         
         self.crash_hashes.add(crash_hash)
         
-        crash_file = self.config.output_dir / 'crashes' / f"crash_{test_id}_{crash_hash}.aria"
+        crash_file = self.config.output_dir / 'crashes' / f"crash_{test_id}_{crash_hash}.npk"
         crash_file.write_text(code)
         
         # Save crash info
@@ -273,13 +273,13 @@ STDOUT:
     
     def _save_timeout(self, test_id: str, code: str):
         """Save a test that timed out."""
-        timeout_file = self.config.output_dir / 'crashes' / f"timeout_{test_id}.aria"
+        timeout_file = self.config.output_dir / 'crashes' / f"timeout_{test_id}.npk"
         timeout_file.write_text(code)
     
     def _save_valid(self, test_id: str, code: str):
         """Save a valid program (sample only to avoid filling disk)."""
         if random.random() < 0.01:  # Save 1% of valid programs
-            valid_file = self.config.output_dir / 'valid' / f"{test_id}.aria"
+            valid_file = self.config.output_dir / 'valid' / f"{test_id}.npk"
             valid_file.write_text(code)
 
 
@@ -301,7 +301,7 @@ def main():
     script_dir = Path(__file__).parent
     aria_root = script_dir.parent.parent.parent
     build_dir = aria_root / 'build'
-    compiler = build_dir / 'ariac'
+    compiler = build_dir / 'npkc'
     
     if not compiler.exists():
         print(f"❌ Compiler not found: {compiler}")

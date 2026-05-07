@@ -33,7 +33,7 @@ static int32_t peephole_optimize(RegAllocState* ra);
 // Code Buffer Implementation
 // =============================================================================
 
-CodeBuffer* aria_asm_buffer_create(size_t initial_capacity) {
+CodeBuffer* npk_asm_buffer_create(size_t initial_capacity) {
     CodeBuffer* buf = (CodeBuffer*)malloc(sizeof(CodeBuffer));
     if (!buf) return nullptr;
     
@@ -48,7 +48,7 @@ CodeBuffer* aria_asm_buffer_create(size_t initial_capacity) {
     return buf;
 }
 
-void aria_asm_buffer_destroy(CodeBuffer* buf) {
+void npk_asm_buffer_destroy(CodeBuffer* buf) {
     if (!buf) return;
     free(buf->data);
     free(buf);
@@ -73,12 +73,12 @@ static void buffer_ensure_capacity(CodeBuffer* buf, size_t needed) {
     buf->capacity = new_capacity;
 }
 
-void aria_asm_emit_byte(CodeBuffer* buf, uint8_t byte) {
+void npk_asm_emit_byte(CodeBuffer* buf, uint8_t byte) {
     buffer_ensure_capacity(buf, 1);
     buf->data[buf->size++] = byte;
 }
 
-void aria_asm_emit_i32(CodeBuffer* buf, int32_t value) {
+void npk_asm_emit_i32(CodeBuffer* buf, int32_t value) {
     buffer_ensure_capacity(buf, 4);
     uint8_t* ptr = buf->data + buf->size;
     ptr[0] = (value >> 0) & 0xFF;
@@ -88,7 +88,7 @@ void aria_asm_emit_i32(CodeBuffer* buf, int32_t value) {
     buf->size += 4;
 }
 
-void aria_asm_emit_i64(CodeBuffer* buf, int64_t value) {
+void npk_asm_emit_i64(CodeBuffer* buf, int64_t value) {
     buffer_ensure_capacity(buf, 8);
     uint8_t* ptr = buf->data + buf->size;
     for (int i = 0; i < 8; ++i) {
@@ -97,7 +97,7 @@ void aria_asm_emit_i64(CodeBuffer* buf, int64_t value) {
     buf->size += 8;
 }
 
-size_t aria_asm_buffer_offset(const CodeBuffer* buf) {
+size_t npk_asm_buffer_offset(const CodeBuffer* buf) {
     return buf->size;
 }
 
@@ -105,14 +105,14 @@ size_t aria_asm_buffer_offset(const CodeBuffer* buf) {
 // Label Management
 // =============================================================================
 
-AsmLabel aria_asm_label_create() {
+AsmLabel npk_asm_label_create() {
     AsmLabel label;
     label.position = -1;  // Unbound
     label.num_patches = 0;
     return label;
 }
 
-bool aria_asm_label_is_bound(const AsmLabel* label) {
+bool npk_asm_label_is_bound(const AsmLabel* label) {
     return label->position >= 0;
 }
 
@@ -120,11 +120,11 @@ bool aria_asm_label_is_bound(const AsmLabel* label) {
 // Assembler Core
 // =============================================================================
 
-Assembler* aria_asm_create() {
+Assembler* npk_asm_create() {
     Assembler* asm_ctx = (Assembler*)malloc(sizeof(Assembler));
     if (!asm_ctx) return nullptr;
     
-    asm_ctx->buffer = aria_asm_buffer_create(4096);  // 4KB initial capacity
+    asm_ctx->buffer = npk_asm_buffer_create(4096);  // 4KB initial capacity
     if (!asm_ctx->buffer) {
         free(asm_ctx);
         return nullptr;
@@ -138,9 +138,9 @@ Assembler* aria_asm_create() {
     return asm_ctx;
 }
 
-void aria_asm_destroy(Assembler* asm_ctx) {
+void npk_asm_destroy(Assembler* asm_ctx) {
     if (!asm_ctx) return;
-    aria_asm_buffer_destroy(asm_ctx->buffer);
+    npk_asm_buffer_destroy(asm_ctx->buffer);
     if (asm_ctx->regalloc) {
         free(asm_ctx->regalloc->ir);
         free(asm_ctx->regalloc);
@@ -148,11 +148,11 @@ void aria_asm_destroy(Assembler* asm_ctx) {
     free(asm_ctx);
 }
 
-bool aria_asm_has_error(const Assembler* asm_ctx) {
+bool npk_asm_has_error(const Assembler* asm_ctx) {
     return asm_ctx->error;
 }
 
-const char* aria_asm_get_error(const Assembler* asm_ctx) {
+const char* npk_asm_get_error(const Assembler* asm_ctx) {
     return asm_ctx->error_msg;
 }
 
@@ -165,18 +165,18 @@ static void set_error(Assembler* asm_ctx, const char* msg) {
 // Label Operations
 // =============================================================================
 
-int aria_asm_new_label(Assembler* asm_ctx) {
+int npk_asm_new_label(Assembler* asm_ctx) {
     if (asm_ctx->label_count >= MAX_LABELS) {
         set_error(asm_ctx, "Too many labels (MAX_LABELS exceeded)");
         return -1;
     }
     
     int label_id = asm_ctx->label_count++;
-    asm_ctx->labels[label_id] = aria_asm_label_create();
+    asm_ctx->labels[label_id] = npk_asm_label_create();
     return label_id;
 }
 
-void aria_asm_bind_label(Assembler* asm_ctx, int label_id) {
+void npk_asm_bind_label(Assembler* asm_ctx, int label_id) {
     if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_LABEL, label_id); return; }
     if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
         set_error(asm_ctx, "Invalid label ID");
@@ -184,13 +184,13 @@ void aria_asm_bind_label(Assembler* asm_ctx, int label_id) {
     }
     
     AsmLabel* label = &asm_ctx->labels[label_id];
-    if (aria_asm_label_is_bound(label)) {
+    if (npk_asm_label_is_bound(label)) {
         set_error(asm_ctx, "Label already bound");
         return;
     }
     
     // Bind label to current offset
-    label->position = (int32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+    label->position = (int32_t)npk_asm_buffer_offset(asm_ctx->buffer);
     
     // Backpatch all forward references
     for (uint32_t i = 0; i < label->num_patches; ++i) {
@@ -234,7 +234,7 @@ static void emit_rex(CodeBuffer* buf, bool w, int reg, int rm) {
     
     // Only emit if non-default or 64-bit mode
     if (rex != 0x40 || w) {
-        aria_asm_emit_byte(buf, rex);
+        npk_asm_emit_byte(buf, rex);
     }
 }
 
@@ -248,75 +248,75 @@ static void emit_rex(CodeBuffer* buf, bool w, int reg, int rm) {
  */
 static void emit_modrm(CodeBuffer* buf, uint8_t mod, int reg, int rm) {
     uint8_t modrm = (mod << 6) | ((reg & 0x07) << 3) | (rm & 0x07);
-    aria_asm_emit_byte(buf, modrm);
+    npk_asm_emit_byte(buf, modrm);
 }
 
 // =============================================================================
 // x86-64 Instruction Emission
 // =============================================================================
 
-void aria_asm_mov_r64_imm64(Assembler* asm_ctx, AsmRegister dst, int64_t value) {
+void npk_asm_mov_r64_imm64(Assembler* asm_ctx, AsmRegister dst, int64_t value) {
     if (needs_ir(asm_ctx)) { ir_queue_ri64(asm_ctx, JIT_OP_MOV_IMM64, (int32_t)dst, value); return; }
     int reg = (int)dst;
     
     // MOVABS: REX.W + B8+rd id
     emit_rex(asm_ctx->buffer, true, 0, reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xB8 + (reg & 0x07));
-    aria_asm_emit_i64(asm_ctx->buffer, value);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xB8 + (reg & 0x07));
+    npk_asm_emit_i64(asm_ctx->buffer, value);
 }
 
-void aria_asm_mov_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_mov_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_MOV_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     
     // MOV r64, r64: REX.W + 89 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x89);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x89);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);  // mod=11 (register direct)
 }
 
-void aria_asm_add_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_add_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_ADD_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     
     // ADD r64, r64: REX.W + 01 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x01);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x01);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
 }
 
-void aria_asm_sub_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_sub_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_SUB_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     
     // SUB r64, r64: REX.W + 29 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x29);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x29);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
 }
 
-void aria_asm_imul_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_imul_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_IMUL_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     
     // IMUL r64, r64: REX.W + 0F AF /r
     emit_rex(asm_ctx->buffer, true, dst_reg, src_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xAF);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xAF);
     emit_modrm(asm_ctx->buffer, 0x03, dst_reg, src_reg);
 }
 
-void aria_asm_ret(Assembler* asm_ctx) {
+void npk_asm_ret(Assembler* asm_ctx) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_RET, 0); return; }
     // RET: C3
-    aria_asm_emit_byte(asm_ctx->buffer, 0xC3);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xC3);
 }
 
-void aria_asm_push_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_push_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_PUSH, (int32_t)reg); return; }
     int reg_num = (int)reg;
     
@@ -324,10 +324,10 @@ void aria_asm_push_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (reg_num >= 8) {
         emit_rex(asm_ctx->buffer, false, 0, reg_num);
     }
-    aria_asm_emit_byte(asm_ctx->buffer, 0x50 + (reg_num & 0x07));
+    npk_asm_emit_byte(asm_ctx->buffer, 0x50 + (reg_num & 0x07));
 }
 
-void aria_asm_pop_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_pop_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_POP, (int32_t)reg); return; }
     int reg_num = (int)reg;
     
@@ -335,10 +335,10 @@ void aria_asm_pop_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (reg_num >= 8) {
         emit_rex(asm_ctx->buffer, false, 0, reg_num);
     }
-    aria_asm_emit_byte(asm_ctx->buffer, 0x58 + (reg_num & 0x07));
+    npk_asm_emit_byte(asm_ctx->buffer, 0x58 + (reg_num & 0x07));
 }
 
-void aria_asm_jmp(Assembler* asm_ctx, int label_id) {
+void npk_asm_jmp(Assembler* asm_ctx, int label_id) {
     if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JMP, label_id); return; }
     if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
         set_error(asm_ctx, "Invalid label ID for JMP");
@@ -348,25 +348,25 @@ void aria_asm_jmp(Assembler* asm_ctx, int label_id) {
     AsmLabel* label = &asm_ctx->labels[label_id];
     
     // JMP rel32: E9 cd
-    aria_asm_emit_byte(asm_ctx->buffer, 0xE9);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xE9);
     
-    if (aria_asm_label_is_bound(label)) {
+    if (npk_asm_label_is_bound(label)) {
         // Backward jump: calculate offset immediately
-        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+        uint32_t current = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
         int32_t offset = label->position - (int32_t)(current + 4);
-        aria_asm_emit_i32(asm_ctx->buffer, offset);
+        npk_asm_emit_i32(asm_ctx->buffer, offset);
     } else {
         // Forward jump: add patch site and emit placeholder
         if (label->num_patches >= MAX_PATCH_SITES) {
             set_error(asm_ctx, "Too many forward references to label");
             return;
         }
-        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
-        aria_asm_emit_i32(asm_ctx->buffer, 0);  // Placeholder
+        label->patch_sites[label->num_patches++] = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
+        npk_asm_emit_i32(asm_ctx->buffer, 0);  // Placeholder
     }
 }
 
-void aria_asm_je(Assembler* asm_ctx, int label_id) {
+void npk_asm_je(Assembler* asm_ctx, int label_id) {
     if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JE, label_id); return; }
     if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
         set_error(asm_ctx, "Invalid label ID for JE");
@@ -376,24 +376,24 @@ void aria_asm_je(Assembler* asm_ctx, int label_id) {
     AsmLabel* label = &asm_ctx->labels[label_id];
     
     // JE rel32: 0F 84 cd
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x84);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x84);
     
-    if (aria_asm_label_is_bound(label)) {
-        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+    if (npk_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
         int32_t offset = label->position - (int32_t)(current + 4);
-        aria_asm_emit_i32(asm_ctx->buffer, offset);
+        npk_asm_emit_i32(asm_ctx->buffer, offset);
     } else {
         if (label->num_patches >= MAX_PATCH_SITES) {
             set_error(asm_ctx, "Too many forward references to label");
             return;
         }
-        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
-        aria_asm_emit_i32(asm_ctx->buffer, 0);
+        label->patch_sites[label->num_patches++] = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
+        npk_asm_emit_i32(asm_ctx->buffer, 0);
     }
 }
 
-void aria_asm_jne(Assembler* asm_ctx, int label_id) {
+void npk_asm_jne(Assembler* asm_ctx, int label_id) {
     if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JNE, label_id); return; }
     if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
         set_error(asm_ctx, "Invalid label ID for JNE");
@@ -403,31 +403,31 @@ void aria_asm_jne(Assembler* asm_ctx, int label_id) {
     AsmLabel* label = &asm_ctx->labels[label_id];
     
     // JNE rel32: 0F 85 cd
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x85);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x85);
     
-    if (aria_asm_label_is_bound(label)) {
-        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+    if (npk_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
         int32_t offset = label->position - (int32_t)(current + 4);
-        aria_asm_emit_i32(asm_ctx->buffer, offset);
+        npk_asm_emit_i32(asm_ctx->buffer, offset);
     } else {
         if (label->num_patches >= MAX_PATCH_SITES) {
             set_error(asm_ctx, "Too many forward references to label");
             return;
         }
-        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
-        aria_asm_emit_i32(asm_ctx->buffer, 0);
+        label->patch_sites[label->num_patches++] = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
+        npk_asm_emit_i32(asm_ctx->buffer, 0);
     }
 }
 
-void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
+void npk_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_CMP_RR, (int32_t)left, (int32_t)right); return; }
     int left_reg = (int)left;
     int right_reg = (int)right;
     
     // CMP r64, r64: REX.W + 39 /r
     emit_rex(asm_ctx->buffer, true, right_reg, left_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x39);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x39);
     emit_modrm(asm_ctx->buffer, 0x03, right_reg, left_reg);
 }
 
@@ -435,143 +435,143 @@ void aria_asm_cmp_r64_r64(Assembler* asm_ctx, AsmRegister left, AsmRegister righ
 // Extended Integer Instructions (v0.7.2)
 // =============================================================================
 
-void aria_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
+void npk_asm_add_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_ADD_IMM32, (int32_t)dst, value); return; }
     int reg = (int)dst;
     // ADD r64, imm32: REX.W + 81 /0 id
     emit_rex(asm_ctx->buffer, true, 0, reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x81);
     emit_modrm(asm_ctx->buffer, 0x03, 0, reg);  // /0
-    aria_asm_emit_i32(asm_ctx->buffer, value);
+    npk_asm_emit_i32(asm_ctx->buffer, value);
 }
 
-void aria_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
+void npk_asm_sub_r64_imm32(Assembler* asm_ctx, AsmRegister dst, int32_t value) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_SUB_IMM32, (int32_t)dst, value); return; }
     int reg = (int)dst;
     // SUB r64, imm32: REX.W + 81 /5 id
     emit_rex(asm_ctx->buffer, true, 0, reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x81);
     emit_modrm(asm_ctx->buffer, 0x03, 5, reg);  // /5
-    aria_asm_emit_i32(asm_ctx->buffer, value);
+    npk_asm_emit_i32(asm_ctx->buffer, value);
 }
 
-void aria_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_xor_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_XOR_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     // XOR r64, r64: REX.W + 31 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x31);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x31);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
 }
 
-void aria_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_and_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_AND_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     // AND r64, r64: REX.W + 21 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x21);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x21);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
 }
 
-void aria_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_or_r64_r64(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_OR_RR, (int32_t)dst, (int32_t)src); return; }
     int dst_reg = (int)dst;
     int src_reg = (int)src;
     // OR r64, r64: REX.W + 09 /r
     emit_rex(asm_ctx->buffer, true, src_reg, dst_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x09);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x09);
     emit_modrm(asm_ctx->buffer, 0x03, src_reg, dst_reg);
 }
 
-void aria_asm_not_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_not_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_NOT, (int32_t)reg); return; }
     int r = (int)reg;
     // NOT r64: REX.W + F7 /2
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF7);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF7);
     emit_modrm(asm_ctx->buffer, 0x03, 2, r);  // /2
 }
 
-void aria_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_neg_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_NEG, (int32_t)reg); return; }
     int r = (int)reg;
     // NEG r64: REX.W + F7 /3
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF7);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF7);
     emit_modrm(asm_ctx->buffer, 0x03, 3, r);  // /3
 }
 
-void aria_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+void npk_asm_shl_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_SHL_IMM8, (int32_t)reg, count); return; }
     int r = (int)reg;
     // SHL r64, imm8: REX.W + C1 /4 ib
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xC1);
     emit_modrm(asm_ctx->buffer, 0x03, 4, r);  // /4
-    aria_asm_emit_byte(asm_ctx->buffer, count);
+    npk_asm_emit_byte(asm_ctx->buffer, count);
 }
 
-void aria_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+void npk_asm_shr_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_SHR_IMM8, (int32_t)reg, count); return; }
     int r = (int)reg;
     // SHR r64, imm8: REX.W + C1 /5 ib
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xC1);
     emit_modrm(asm_ctx->buffer, 0x03, 5, r);  // /5
-    aria_asm_emit_byte(asm_ctx->buffer, count);
+    npk_asm_emit_byte(asm_ctx->buffer, count);
 }
 
-void aria_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
+void npk_asm_sar_r64_imm8(Assembler* asm_ctx, AsmRegister reg, uint8_t count) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_SAR_IMM8, (int32_t)reg, count); return; }
     int r = (int)reg;
     // SAR r64, imm8: REX.W + C1 /7 ib
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xC1);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xC1);
     emit_modrm(asm_ctx->buffer, 0x03, 7, r);  // /7
-    aria_asm_emit_byte(asm_ctx->buffer, count);
+    npk_asm_emit_byte(asm_ctx->buffer, count);
 }
 
-void aria_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value) {
+void npk_asm_cmp_r64_imm32(Assembler* asm_ctx, AsmRegister reg, int32_t value) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_CMP_IMM32, (int32_t)reg, value); return; }
     int r = (int)reg;
     // CMP r64, imm32: REX.W + 81 /7 id
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x81);
     emit_modrm(asm_ctx->buffer, 0x03, 7, r);  // /7
-    aria_asm_emit_i32(asm_ctx->buffer, value);
+    npk_asm_emit_i32(asm_ctx->buffer, value);
 }
 
 // =============================================================================
 // v0.7.4: Instruction Selection — New Encoders
 // =============================================================================
 
-void aria_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2) {
+void npk_asm_test_r64_r64(Assembler* asm_ctx, AsmRegister r1, AsmRegister r2) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_TEST_RR, (int32_t)r1, (int32_t)r2); return; }
     int r1_reg = (int)r1;
     int r2_reg = (int)r2;
     // TEST r64, r64: REX.W + 85 /r
     emit_rex(asm_ctx->buffer, true, r2_reg, r1_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x85);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x85);
     emit_modrm(asm_ctx->buffer, 0x03, r2_reg, r1_reg);
 }
 
-void aria_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_inc_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_INC_R64, (int32_t)reg, 0); return; }
     int r = (int)reg;
     // INC r64: REX.W + FF /0
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xFF);
     emit_modrm(asm_ctx->buffer, 0x03, 0, r);
 }
 
-void aria_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg) {
+void npk_asm_dec_r64(Assembler* asm_ctx, AsmRegister reg) {
     if (needs_ir(asm_ctx)) { ir_queue_ri32(asm_ctx, JIT_OP_DEC_R64, (int32_t)reg, 0); return; }
     int r = (int)reg;
     // DEC r64: REX.W + FF /1
     emit_rex(asm_ctx->buffer, true, 0, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xFF);
     emit_modrm(asm_ctx->buffer, 0x03, 1, r);
 }
 
@@ -591,31 +591,31 @@ static void emit_jcc_rel32(Assembler* asm_ctx, uint8_t cc_opcode, int label_id, 
     AsmLabel* label = &asm_ctx->labels[label_id];
 
     // Jcc rel32: 0F xx cd
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, cc_opcode);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, cc_opcode);
 
-    if (aria_asm_label_is_bound(label)) {
-        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+    if (npk_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
         int32_t offset = label->position - (int32_t)(current + 4);
-        aria_asm_emit_i32(asm_ctx->buffer, offset);
+        npk_asm_emit_i32(asm_ctx->buffer, offset);
     } else {
         if (label->num_patches >= MAX_PATCH_SITES) {
             set_error(asm_ctx, "Too many forward references to label");
             return;
         }
-        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
-        aria_asm_emit_i32(asm_ctx->buffer, 0);
+        label->patch_sites[label->num_patches++] = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
+        npk_asm_emit_i32(asm_ctx->buffer, 0);
     }
 }
 
-void aria_asm_jl(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JL, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8C, label_id, "JL"); }
-void aria_asm_jle(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JLE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8E, label_id, "JLE"); }
-void aria_asm_jg(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JG, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8F, label_id, "JG"); }
-void aria_asm_jge(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JGE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8D, label_id, "JGE"); }
-void aria_asm_jb(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JB, label_id); return; } emit_jcc_rel32(asm_ctx, 0x82, label_id, "JB"); }
-void aria_asm_jbe(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JBE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x86, label_id, "JBE"); }
-void aria_asm_ja(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JA, label_id); return; } emit_jcc_rel32(asm_ctx, 0x87, label_id, "JA"); }
-void aria_asm_jae(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JAE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x83, label_id, "JAE"); }
+void npk_asm_jl(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JL, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8C, label_id, "JL"); }
+void npk_asm_jle(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JLE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8E, label_id, "JLE"); }
+void npk_asm_jg(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JG, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8F, label_id, "JG"); }
+void npk_asm_jge(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JGE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x8D, label_id, "JGE"); }
+void npk_asm_jb(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JB, label_id); return; } emit_jcc_rel32(asm_ctx, 0x82, label_id, "JB"); }
+void npk_asm_jbe(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JBE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x86, label_id, "JBE"); }
+void npk_asm_ja(Assembler* asm_ctx, int label_id)  { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JA, label_id); return; } emit_jcc_rel32(asm_ctx, 0x87, label_id, "JA"); }
+void npk_asm_jae(Assembler* asm_ctx, int label_id) { if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_JAE, label_id); return; } emit_jcc_rel32(asm_ctx, 0x83, label_id, "JAE"); }
 
 // =============================================================================
 // Memory Operations (v0.7.2)
@@ -641,49 +641,49 @@ static void emit_mem_operand(CodeBuffer* buf, int reg, int base, int32_t offset)
     if (base_lo == 4) {
         // RSP/R12: need SIB byte (base=RSP, index=none, scale=1)
         emit_modrm(buf, mod, reg, 4);    // r/m=100 means SIB follows
-        aria_asm_emit_byte(buf, 0x24);    // SIB: scale=00, index=100(none), base=100(RSP)
+        npk_asm_emit_byte(buf, 0x24);    // SIB: scale=00, index=100(none), base=100(RSP)
     } else {
         emit_modrm(buf, mod, reg, base_lo);
     }
 
     // Emit displacement
     if (mod == 0x01) {
-        aria_asm_emit_byte(buf, (uint8_t)(offset & 0xFF));
+        npk_asm_emit_byte(buf, (uint8_t)(offset & 0xFF));
     } else if (mod == 0x02) {
-        aria_asm_emit_i32(buf, offset);
+        npk_asm_emit_i32(buf, offset);
     }
 }
 
-void aria_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+void npk_asm_mov_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
     if (needs_ir(asm_ctx)) { ir_queue_mem(asm_ctx, JIT_OP_MOV_LOAD, (int32_t)dst, (int32_t)base, offset); return; }
     int dst_reg = (int)dst;
     int base_reg = (int)base;
 
     // MOV r64, [base + offset]: REX.W + 8B /r
     emit_rex(asm_ctx->buffer, true, dst_reg, base_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x8B);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x8B);
     emit_mem_operand(asm_ctx->buffer, dst_reg, base_reg, offset);
 }
 
-void aria_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+void npk_asm_mov_mem_r64(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_store(asm_ctx, JIT_OP_MOV_STORE, (int32_t)base, offset, (int32_t)src); return; }
     int src_reg = (int)src;
     int base_reg = (int)base;
 
     // MOV [base + offset], r64: REX.W + 89 /r
     emit_rex(asm_ctx->buffer, true, src_reg, base_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x89);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x89);
     emit_mem_operand(asm_ctx->buffer, src_reg, base_reg, offset);
 }
 
-void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+void npk_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
     if (needs_ir(asm_ctx)) { ir_queue_mem(asm_ctx, JIT_OP_LEA, (int32_t)dst, (int32_t)base, offset); return; }
     int dst_reg = (int)dst;
     int base_reg = (int)base;
 
     // LEA r64, [base + offset]: REX.W + 8D /r
     emit_rex(asm_ctx->buffer, true, dst_reg, base_reg);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x8D);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x8D);
     emit_mem_operand(asm_ctx->buffer, dst_reg, base_reg, offset);
 }
 
@@ -691,31 +691,31 @@ void aria_asm_lea_r64_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base,
 // Stack Frame & Local Variables (v0.7.2)
 // =============================================================================
 
-void aria_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src) {
+void npk_asm_store_local(Assembler* asm_ctx, uint32_t slot_offset, AsmRegister src) {
     if (needs_ir(asm_ctx)) {
         JitIR* insn = ir_append(asm_ctx);
         if (insn) { insn->opcode = JIT_OP_STORE_LOCAL; insn->offset = (int32_t)slot_offset; insn->src2 = (int32_t)src; }
         return;
     }
     // MOV [RBP - slot_offset], src
-    aria_asm_mov_mem_r64(asm_ctx, REG_RBP, -(int32_t)slot_offset, src);
+    npk_asm_mov_mem_r64(asm_ctx, REG_RBP, -(int32_t)slot_offset, src);
 }
 
-void aria_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset) {
+void npk_asm_load_local(Assembler* asm_ctx, AsmRegister dst, uint32_t slot_offset) {
     if (needs_ir(asm_ctx)) {
         JitIR* insn = ir_append(asm_ctx);
         if (insn) { insn->opcode = JIT_OP_LOAD_LOCAL; insn->dst = (int32_t)dst; insn->offset = (int32_t)slot_offset; }
         return;
     }
     // MOV dst, [RBP - slot_offset]
-    aria_asm_mov_r64_mem(asm_ctx, dst, REG_RBP, -(int32_t)slot_offset);
+    npk_asm_mov_r64_mem(asm_ctx, dst, REG_RBP, -(int32_t)slot_offset);
 }
 
 // =============================================================================
 // CALL Instructions (v0.7.2)
 // =============================================================================
 
-void aria_asm_call_r64(Assembler* asm_ctx, AsmRegister target) {
+void npk_asm_call_r64(Assembler* asm_ctx, AsmRegister target) {
     if (needs_ir(asm_ctx)) { ir_queue_r(asm_ctx, JIT_OP_CALL_REG, (int32_t)target); return; }
     int reg = (int)target;
 
@@ -723,11 +723,11 @@ void aria_asm_call_r64(Assembler* asm_ctx, AsmRegister target) {
     if (reg >= 8) {
         emit_rex(asm_ctx->buffer, false, 0, reg);  // REX.B for extended regs
     }
-    aria_asm_emit_byte(asm_ctx->buffer, 0xFF);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xFF);
     emit_modrm(asm_ctx->buffer, 0x03, 2, reg);  // mod=11, /2
 }
 
-void aria_asm_call_label(Assembler* asm_ctx, int label_id) {
+void npk_asm_call_label(Assembler* asm_ctx, int label_id) {
     if (needs_ir(asm_ctx)) { ir_queue_label(asm_ctx, JIT_OP_CALL_LABEL, label_id); return; }
     if (label_id < 0 || label_id >= (int)asm_ctx->label_count) {
         set_error(asm_ctx, "Invalid label ID for CALL");
@@ -737,28 +737,28 @@ void aria_asm_call_label(Assembler* asm_ctx, int label_id) {
     AsmLabel* label = &asm_ctx->labels[label_id];
 
     // CALL rel32: E8 cd
-    aria_asm_emit_byte(asm_ctx->buffer, 0xE8);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xE8);
 
-    if (aria_asm_label_is_bound(label)) {
-        uint32_t current = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
+    if (npk_asm_label_is_bound(label)) {
+        uint32_t current = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
         int32_t offset = label->position - (int32_t)(current + 4);
-        aria_asm_emit_i32(asm_ctx->buffer, offset);
+        npk_asm_emit_i32(asm_ctx->buffer, offset);
     } else {
         if (label->num_patches >= MAX_PATCH_SITES) {
             set_error(asm_ctx, "Too many forward references to label");
             return;
         }
-        label->patch_sites[label->num_patches++] = (uint32_t)aria_asm_buffer_offset(asm_ctx->buffer);
-        aria_asm_emit_i32(asm_ctx->buffer, 0);
+        label->patch_sites[label->num_patches++] = (uint32_t)npk_asm_buffer_offset(asm_ctx->buffer);
+        npk_asm_emit_i32(asm_ctx->buffer, 0);
     }
 }
 
-void aria_asm_call_abs(Assembler* asm_ctx, void* func_ptr) {
+void npk_asm_call_abs(Assembler* asm_ctx, void* func_ptr) {
     if (needs_ir(asm_ctx)) { ir_queue_ri64(asm_ctx, JIT_OP_CALL_ABS, 0, (int64_t)(uintptr_t)func_ptr); return; }
     // MOV R11, <64-bit address>
-    aria_asm_mov_r64_imm64(asm_ctx, REG_R11, (int64_t)(uintptr_t)func_ptr);
+    npk_asm_mov_r64_imm64(asm_ctx, REG_R11, (int64_t)(uintptr_t)func_ptr);
     // CALL R11
-    aria_asm_call_r64(asm_ctx, REG_R11);
+    npk_asm_call_r64(asm_ctx, REG_R11);
 }
 
 // =============================================================================
@@ -776,7 +776,7 @@ static void emit_rex_sse(CodeBuffer* buf, int xmm_reg, int xmm_rm) {
     if (xmm_reg >= 8) rex |= 0x04;  // REX.R
     if (xmm_rm >= 8)  rex |= 0x01;  // REX.B
     if (rex != 0x40) {
-        aria_asm_emit_byte(buf, rex);
+        npk_asm_emit_byte(buf, rex);
     }
 }
 
@@ -786,43 +786,43 @@ static void emit_rex_sse_mem(CodeBuffer* buf, int xmm_reg, int base_gpr) {
     if (xmm_reg >= 8) rex |= 0x04;  // REX.R
     if (base_gpr >= 8) rex |= 0x01;  // REX.B
     if (rex != 0x40) {
-        aria_asm_emit_byte(buf, rex);
+        npk_asm_emit_byte(buf, rex);
     }
 }
 
-void aria_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_movsd_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_MOVSD_RR, (int32_t)dst, (int32_t)src); return; }
     int d = xmm_num(dst);
     int s = xmm_num(src);
     // MOVSD xmm1, xmm2: F2 0F 10 /r
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF2);
     emit_rex_sse(asm_ctx->buffer, d, s);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x10);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x10);
     emit_modrm(asm_ctx->buffer, 0x03, d, s);
 }
 
-void aria_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+void npk_asm_movsd_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
     if (needs_ir(asm_ctx)) { ir_queue_mem(asm_ctx, JIT_OP_MOVSD_LOAD, (int32_t)dst, (int32_t)base, offset); return; }
     int d = xmm_num(dst);
     int b = (int)base;
     // MOVSD xmm, [base+offset]: F2 [REX] 0F 10 /r mem
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF2);
     emit_rex_sse_mem(asm_ctx->buffer, d, b);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x10);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x10);
     emit_mem_operand(asm_ctx->buffer, d, b, offset);
 }
 
-void aria_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+void npk_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_store(asm_ctx, JIT_OP_MOVSD_STORE, (int32_t)base, offset, (int32_t)src); return; }
     int s = xmm_num(src);
     int b = (int)base;
     // MOVSD [base+offset], xmm: F2 [REX] 0F 11 /r mem
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF2);
     emit_rex_sse_mem(asm_ctx->buffer, s, b);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x11);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x11);
     emit_mem_operand(asm_ctx->buffer, s, b, offset);
 }
 
@@ -830,42 +830,42 @@ void aria_asm_movsd_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset
 static void emit_sse2_sd_rr(Assembler* asm_ctx, uint8_t opcode, AsmRegister dst, AsmRegister src) {
     int d = xmm_num(dst);
     int s = xmm_num(src);
-    aria_asm_emit_byte(asm_ctx->buffer, 0xF2);
+    npk_asm_emit_byte(asm_ctx->buffer, 0xF2);
     emit_rex_sse(asm_ctx->buffer, d, s);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, opcode);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, opcode);
     emit_modrm(asm_ctx->buffer, 0x03, d, s);
 }
 
-void aria_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_addsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_ADDSD, (int32_t)dst, (int32_t)src); return; }
     emit_sse2_sd_rr(asm_ctx, 0x58, dst, src);
 }
 
-void aria_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_subsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_SUBSD, (int32_t)dst, (int32_t)src); return; }
     emit_sse2_sd_rr(asm_ctx, 0x5C, dst, src);
 }
 
-void aria_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_mulsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_MULSD, (int32_t)dst, (int32_t)src); return; }
     emit_sse2_sd_rr(asm_ctx, 0x59, dst, src);
 }
 
-void aria_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_divsd(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_DIVSD, (int32_t)dst, (int32_t)src); return; }
     emit_sse2_sd_rr(asm_ctx, 0x5E, dst, src);
 }
 
-void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
+void npk_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_UCOMISD, (int32_t)left, (int32_t)right); return; }
     int l = xmm_num(left);
     int r = xmm_num(right);
     // UCOMISD: 66 0F 2E /r
-    aria_asm_emit_byte(asm_ctx->buffer, 0x66);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x66);
     emit_rex_sse(asm_ctx->buffer, l, r);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x2E);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x2E);
     emit_modrm(asm_ctx->buffer, 0x03, l, r);
 }
 
@@ -873,36 +873,36 @@ void aria_asm_ucomisd(Assembler* asm_ctx, AsmRegister left, AsmRegister right) {
 // SSE Packed Float Instructions (v0.7.2)
 // =============================================================================
 
-void aria_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_movaps_xmm_xmm(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_MOVAPS_RR, (int32_t)dst, (int32_t)src); return; }
     int d = xmm_num(dst);
     int s = xmm_num(src);
     // MOVAPS xmm, xmm: [REX] 0F 28 /r
     emit_rex_sse(asm_ctx->buffer, d, s);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x28);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x28);
     emit_modrm(asm_ctx->buffer, 0x03, d, s);
 }
 
-void aria_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
+void npk_asm_movaps_xmm_mem(Assembler* asm_ctx, AsmRegister dst, AsmRegister base, int32_t offset) {
     if (needs_ir(asm_ctx)) { ir_queue_mem(asm_ctx, JIT_OP_MOVAPS_LOAD, (int32_t)dst, (int32_t)base, offset); return; }
     int d = xmm_num(dst);
     int b = (int)base;
     // MOVAPS xmm, [mem]: [REX] 0F 28 /r mem
     emit_rex_sse_mem(asm_ctx->buffer, d, b);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x28);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x28);
     emit_mem_operand(asm_ctx->buffer, d, b, offset);
 }
 
-void aria_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
+void npk_asm_movaps_mem_xmm(Assembler* asm_ctx, AsmRegister base, int32_t offset, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_store(asm_ctx, JIT_OP_MOVAPS_STORE, (int32_t)base, offset, (int32_t)src); return; }
     int s = xmm_num(src);
     int b = (int)base;
     // MOVAPS [mem], xmm: [REX] 0F 29 /r mem
     emit_rex_sse_mem(asm_ctx->buffer, s, b);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x29);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x29);
     emit_mem_operand(asm_ctx->buffer, s, b, offset);
 }
 
@@ -911,17 +911,17 @@ static void emit_sse_ps_rr(Assembler* asm_ctx, uint8_t opcode, AsmRegister dst, 
     int d = xmm_num(dst);
     int s = xmm_num(src);
     emit_rex_sse(asm_ctx->buffer, d, s);
-    aria_asm_emit_byte(asm_ctx->buffer, 0x0F);
-    aria_asm_emit_byte(asm_ctx->buffer, opcode);
+    npk_asm_emit_byte(asm_ctx->buffer, 0x0F);
+    npk_asm_emit_byte(asm_ctx->buffer, opcode);
     emit_modrm(asm_ctx->buffer, 0x03, d, s);
 }
 
-void aria_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_addps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_ADDPS, (int32_t)dst, (int32_t)src); return; }
     emit_sse_ps_rr(asm_ctx, 0x58, dst, src);
 }
 
-void aria_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
+void npk_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
     if (needs_ir(asm_ctx)) { ir_queue_rr(asm_ctx, JIT_OP_MULPS, (int32_t)dst, (int32_t)src); return; }
     emit_sse_ps_rr(asm_ctx, 0x59, dst, src);
 }
@@ -930,13 +930,13 @@ void aria_asm_mulps(Assembler* asm_ctx, AsmRegister dst, AsmRegister src) {
 // Floating-Point Execution Variants (v0.7.2)
 // =============================================================================
 
-double aria_asm_execute_f64(WildXGuard* guard) {
+double npk_asm_execute_f64(WildXGuard* guard) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return 0.0;
     }
 
     if (guard->code_hash != 0) {
-        uint64_t current = aria_wildx_verify_hash(guard);
+        uint64_t current = npk_wildx_verify_hash(guard);
         if (current != guard->code_hash) {
             return 0.0;  // Tampered
         }
@@ -947,13 +947,13 @@ double aria_asm_execute_f64(WildXGuard* guard) {
     return func();
 }
 
-double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1) {
+double npk_asm_execute_f64_f64(WildXGuard* guard, double arg1) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return 0.0;
     }
 
     if (guard->code_hash != 0) {
-        uint64_t current = aria_wildx_verify_hash(guard);
+        uint64_t current = npk_wildx_verify_hash(guard);
         if (current != guard->code_hash) {
             return 0.0;  // Tampered
         }
@@ -968,38 +968,38 @@ double aria_asm_execute_f64_f64(WildXGuard* guard, double arg1) {
 // High-Level Code Generation
 // =============================================================================
 
-void aria_asm_prologue(Assembler* asm_ctx, size_t stack_size) {
+void npk_asm_prologue(Assembler* asm_ctx, size_t stack_size) {
     if (needs_ir(asm_ctx)) { ir_queue_ri64(asm_ctx, JIT_OP_PROLOGUE, 0, (int64_t)stack_size); return; }
     // PUSH RBP
-    aria_asm_push_r64(asm_ctx, REG_RBP);
+    npk_asm_push_r64(asm_ctx, REG_RBP);
     
     // MOV RBP, RSP
-    aria_asm_mov_r64_r64(asm_ctx, REG_RBP, REG_RSP);
+    npk_asm_mov_r64_r64(asm_ctx, REG_RBP, REG_RSP);
     
     // SUB RSP, stack_size (if needed)
     if (stack_size > 0) {
         // For simplicity, use SUB RSP, imm32 (REX.W + 81 /5 id)
         emit_rex(asm_ctx->buffer, true, 0, REG_RSP);
-        aria_asm_emit_byte(asm_ctx->buffer, 0x81);
+        npk_asm_emit_byte(asm_ctx->buffer, 0x81);
         emit_modrm(asm_ctx->buffer, 0x03, 5, REG_RSP);  // opcode extension /5
-        aria_asm_emit_i32(asm_ctx->buffer, (int32_t)stack_size);
+        npk_asm_emit_i32(asm_ctx->buffer, (int32_t)stack_size);
     }
 }
 
-void aria_asm_epilogue(Assembler* asm_ctx) {
+void npk_asm_epilogue(Assembler* asm_ctx) {
     if (needs_ir(asm_ctx)) {
         ir_queue_r(asm_ctx, JIT_OP_EPILOGUE, 0);
         ir_queue_r(asm_ctx, JIT_OP_RET, 0);  // Epilogue includes ret semantically
         return;
     }
     // MOV RSP, RBP
-    aria_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
+    npk_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
     
     // POP RBP
-    aria_asm_pop_r64(asm_ctx, REG_RBP);
+    npk_asm_pop_r64(asm_ctx, REG_RBP);
     
     // RET
-    aria_asm_ret(asm_ctx);
+    npk_asm_ret(asm_ctx);
 }
 
 // =============================================================================
@@ -1108,7 +1108,7 @@ static void ir_queue_store(Assembler* asm_ctx, JitOpcode op, int32_t base, int32
 // Virtual Register API (v0.7.3)
 // =============================================================================
 
-int aria_asm_vreg_new_gpr(Assembler* asm_ctx) {
+int npk_asm_vreg_new_gpr(Assembler* asm_ctx) {
     RegAllocState* ra = ensure_regalloc(asm_ctx);
     if (!ra) return -1;
 
@@ -1121,7 +1121,7 @@ int aria_asm_vreg_new_gpr(Assembler* asm_ctx) {
     return ra->next_gpr_vreg++;
 }
 
-int aria_asm_vreg_new_xmm(Assembler* asm_ctx) {
+int npk_asm_vreg_new_xmm(Assembler* asm_ctx) {
     RegAllocState* ra = ensure_regalloc(asm_ctx);
     if (!ra) return -1;
 
@@ -1134,13 +1134,13 @@ int aria_asm_vreg_new_xmm(Assembler* asm_ctx) {
     return ra->next_xmm_vreg++;
 }
 
-int aria_asm_vreg_count(const Assembler* asm_ctx) {
+int npk_asm_vreg_count(const Assembler* asm_ctx) {
     if (!asm_ctx->regalloc) return 0;
     return (asm_ctx->regalloc->next_gpr_vreg - VREG_GPR_BASE) +
            (asm_ctx->regalloc->next_xmm_vreg - VREG_XMM_BASE);
 }
 
-int aria_asm_spill_count(const Assembler* asm_ctx) {
+int npk_asm_spill_count(const Assembler* asm_ctx) {
     if (!asm_ctx->regalloc) return 0;
     return asm_ctx->regalloc->spill_count;
 }
@@ -1606,12 +1606,12 @@ static int32_t resolve_reg_ex(Assembler* asm_ctx, int32_t reg, bool is_def,
             if (ra->ranges[i].reg_class == REG_CLASS_XMM) {
                 scratch = scratch_xmm;
                 if (!is_def) {
-                    aria_asm_movsd_xmm_mem(asm_ctx, (AsmRegister)scratch, REG_RBP, -slot);
+                    npk_asm_movsd_xmm_mem(asm_ctx, (AsmRegister)scratch, REG_RBP, -slot);
                 }
             } else {
                 scratch = scratch_gpr;
                 if (!is_def) {
-                    aria_asm_mov_r64_mem(asm_ctx, (AsmRegister)scratch, REG_RBP, -slot);
+                    npk_asm_mov_r64_mem(asm_ctx, (AsmRegister)scratch, REG_RBP, -slot);
                 }
             }
             return scratch;
@@ -1639,9 +1639,9 @@ static void spill_if_needed(Assembler* asm_ctx, int32_t orig_vreg, int32_t resol
         if (ra->ranges[i].vreg == orig_vreg && ra->ranges[i].phys < 0) {
             int32_t slot = ra->ranges[i].spill_slot;
             if (ra->ranges[i].reg_class == REG_CLASS_XMM) {
-                aria_asm_movsd_mem_xmm(asm_ctx, REG_RBP, -slot, (AsmRegister)resolved_reg);
+                npk_asm_movsd_mem_xmm(asm_ctx, REG_RBP, -slot, (AsmRegister)resolved_reg);
             } else {
-                aria_asm_mov_mem_r64(asm_ctx, REG_RBP, -slot, (AsmRegister)resolved_reg);
+                npk_asm_mov_mem_r64(asm_ctx, REG_RBP, -slot, (AsmRegister)resolved_reg);
             }
             break;
         }
@@ -1664,12 +1664,12 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
                 // when value fits in unsigned 32-bit (zero-extends to 64-bit)
                 if (insn->imm64 >= 0 && insn->imm64 <= (int64_t)0xFFFFFFFF) {
                     if (d >= 8) emit_rex(asm_ctx->buffer, false, 0, d);
-                    aria_asm_emit_byte(asm_ctx->buffer, 0xB8 + (d & 0x07));
-                    aria_asm_emit_i32(asm_ctx->buffer, (int32_t)insn->imm64);
+                    npk_asm_emit_byte(asm_ctx->buffer, 0xB8 + (d & 0x07));
+                    npk_asm_emit_i32(asm_ctx->buffer, (int32_t)insn->imm64);
                     ra->insn_sel.mov_imm64_narrowed++;
                     ra->insn_sel.total_selected++;
                 } else {
-                    aria_asm_mov_r64_imm64(asm_ctx, (AsmRegister)d, insn->imm64);
+                    npk_asm_mov_r64_imm64(asm_ctx, (AsmRegister)d, insn->imm64);
                 }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
@@ -1677,61 +1677,61 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
             case JIT_OP_MOV_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_mov_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_mov_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_ADD_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);  // read-modify-write
-                aria_asm_add_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_add_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_SUB_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_sub_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_sub_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_IMUL_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_imul_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_imul_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_XOR_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_xor_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_xor_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_AND_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_and_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_and_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_OR_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_or_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_or_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_NOT: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_not_r64(asm_ctx, (AsmRegister)d);
+                npk_asm_not_r64(asm_ctx, (AsmRegister)d);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_NEG: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_neg_r64(asm_ctx, (AsmRegister)d);
+                npk_asm_neg_r64(asm_ctx, (AsmRegister)d);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
@@ -1739,23 +1739,23 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
                 // v0.7.4 instruction selection: ADD r, 1 → INC; small imm → imm8 form
                 if (insn->offset == 1) {
-                    aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                    npk_asm_inc_r64(asm_ctx, (AsmRegister)d);
                     ra->insn_sel.add_to_inc++;
                     ra->insn_sel.total_selected++;
                 } else if (insn->offset == -1) {
-                    aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                    npk_asm_dec_r64(asm_ctx, (AsmRegister)d);
                     ra->insn_sel.sub_to_dec++;
                     ra->insn_sel.total_selected++;
                 } else if (insn->offset >= -128 && insn->offset <= 127) {
                     // ADD r/m64, imm8: REX.W + 83 /0 ib (4 bytes vs 7)
                     emit_rex(asm_ctx->buffer, true, 0, d);
-                    aria_asm_emit_byte(asm_ctx->buffer, 0x83);
+                    npk_asm_emit_byte(asm_ctx->buffer, 0x83);
                     emit_modrm(asm_ctx->buffer, 0x03, 0, d);
-                    aria_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
+                    npk_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
                     ra->insn_sel.imm32_to_imm8++;
                     ra->insn_sel.total_selected++;
                 } else {
-                    aria_asm_add_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                    npk_asm_add_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
                 }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
@@ -1764,23 +1764,23 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
                 // v0.7.4 instruction selection: SUB r, 1 → DEC; small imm → imm8 form
                 if (insn->offset == 1) {
-                    aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                    npk_asm_dec_r64(asm_ctx, (AsmRegister)d);
                     ra->insn_sel.sub_to_dec++;
                     ra->insn_sel.total_selected++;
                 } else if (insn->offset == -1) {
-                    aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                    npk_asm_inc_r64(asm_ctx, (AsmRegister)d);
                     ra->insn_sel.add_to_inc++;
                     ra->insn_sel.total_selected++;
                 } else if (insn->offset >= -128 && insn->offset <= 127) {
                     // SUB r/m64, imm8: REX.W + 83 /5 ib (4 bytes vs 7)
                     emit_rex(asm_ctx->buffer, true, 0, d);
-                    aria_asm_emit_byte(asm_ctx->buffer, 0x83);
+                    npk_asm_emit_byte(asm_ctx->buffer, 0x83);
                     emit_modrm(asm_ctx->buffer, 0x03, 5, d);
-                    aria_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
+                    npk_asm_emit_byte(asm_ctx->buffer, (uint8_t)(insn->offset & 0xFF));
                     ra->insn_sel.imm32_to_imm8++;
                     ra->insn_sel.total_selected++;
                 } else {
-                    aria_asm_sub_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                    npk_asm_sub_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
                 }
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
@@ -1789,157 +1789,157 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
                 // v0.7.4 instruction selection: CMP r, 0 → TEST r, r
                 if (insn->offset == 0) {
-                    aria_asm_test_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)d);
+                    npk_asm_test_r64_r64(asm_ctx, (AsmRegister)d, (AsmRegister)d);
                     ra->insn_sel.cmp_zero_to_test++;
                     ra->insn_sel.total_selected++;
                 } else {
-                    aria_asm_cmp_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
+                    npk_asm_cmp_r64_imm32(asm_ctx, (AsmRegister)d, insn->offset);
                 }
                 break;
             }
             case JIT_OP_SHL_IMM8: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_shl_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
+                npk_asm_shl_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_SHR_IMM8: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_shr_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
+                npk_asm_shr_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_SAR_IMM8: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_sar_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
+                npk_asm_sar_r64_imm8(asm_ctx, (AsmRegister)d, (uint8_t)insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_CMP_RR: {
                 int32_t l = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t r = resolve_reg2(asm_ctx, insn->src1, false);
-                aria_asm_cmp_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
+                npk_asm_cmp_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
                 break;
             }
             case JIT_OP_TEST_RR: {
                 int32_t l = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t r = resolve_reg2(asm_ctx, insn->src1, false);
-                aria_asm_test_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
+                npk_asm_test_r64_r64(asm_ctx, (AsmRegister)l, (AsmRegister)r);
                 break;
             }
             case JIT_OP_INC_R64: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, true);
-                aria_asm_inc_r64(asm_ctx, (AsmRegister)d);
+                npk_asm_inc_r64(asm_ctx, (AsmRegister)d);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_DEC_R64: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, true);
-                aria_asm_dec_r64(asm_ctx, (AsmRegister)d);
+                npk_asm_dec_r64(asm_ctx, (AsmRegister)d);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOV_LOAD: {
                 int32_t b = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_mov_r64_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
+                npk_asm_mov_r64_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOV_STORE: {
                 int32_t b = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t s = resolve_reg2(asm_ctx, insn->src2, false);
-                aria_asm_mov_mem_r64(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
+                npk_asm_mov_mem_r64(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
                 break;
             }
             case JIT_OP_LEA: {
                 int32_t b = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_lea_r64_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
+                npk_asm_lea_r64_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_STORE_LOCAL: {
                 int32_t s = resolve_reg(asm_ctx, insn->src2, false);
-                aria_asm_store_local(asm_ctx, (uint32_t)insn->offset, (AsmRegister)s);
+                npk_asm_store_local(asm_ctx, (uint32_t)insn->offset, (AsmRegister)s);
                 break;
             }
             case JIT_OP_LOAD_LOCAL: {
                 int32_t d = resolve_reg(asm_ctx, insn->dst, true);
-                aria_asm_load_local(asm_ctx, (AsmRegister)d, (uint32_t)insn->offset);
+                npk_asm_load_local(asm_ctx, (AsmRegister)d, (uint32_t)insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_PUSH: {
                 int32_t r = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_push_r64(asm_ctx, (AsmRegister)r);
+                npk_asm_push_r64(asm_ctx, (AsmRegister)r);
                 break;
             }
             case JIT_OP_POP: {
                 int32_t r = resolve_reg(asm_ctx, insn->dst, true);
-                aria_asm_pop_r64(asm_ctx, (AsmRegister)r);
+                npk_asm_pop_r64(asm_ctx, (AsmRegister)r);
                 spill_if_needed(asm_ctx, insn->dst, r);
                 break;
             }
             case JIT_OP_RET:
                 if (ra->auto_frame) {
                     // Frame teardown: mov rsp, rbp; pop rbp (no ret yet)
-                    aria_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
-                    aria_asm_pop_r64(asm_ctx, REG_RBP);
+                    npk_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
+                    npk_asm_pop_r64(asm_ctx, REG_RBP);
                     // Restore callee-saved registers (reverse order)
                     for (int c = ra->csr_save_count - 1; c >= 0; c--) {
-                        aria_asm_pop_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
+                        npk_asm_pop_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
                     }
                 }
-                aria_asm_ret(asm_ctx);
+                npk_asm_ret(asm_ctx);
                 break;
             case JIT_OP_JMP:
-                aria_asm_jmp(asm_ctx, insn->offset);
+                npk_asm_jmp(asm_ctx, insn->offset);
                 break;
-            case JIT_OP_JE:  aria_asm_je(asm_ctx, insn->offset); break;
-            case JIT_OP_JNE: aria_asm_jne(asm_ctx, insn->offset); break;
-            case JIT_OP_JL:  aria_asm_jl(asm_ctx, insn->offset); break;
-            case JIT_OP_JLE: aria_asm_jle(asm_ctx, insn->offset); break;
-            case JIT_OP_JG:  aria_asm_jg(asm_ctx, insn->offset); break;
-            case JIT_OP_JGE: aria_asm_jge(asm_ctx, insn->offset); break;
-            case JIT_OP_JB:  aria_asm_jb(asm_ctx, insn->offset); break;
-            case JIT_OP_JBE: aria_asm_jbe(asm_ctx, insn->offset); break;
-            case JIT_OP_JA:  aria_asm_ja(asm_ctx, insn->offset); break;
-            case JIT_OP_JAE: aria_asm_jae(asm_ctx, insn->offset); break;
+            case JIT_OP_JE:  npk_asm_je(asm_ctx, insn->offset); break;
+            case JIT_OP_JNE: npk_asm_jne(asm_ctx, insn->offset); break;
+            case JIT_OP_JL:  npk_asm_jl(asm_ctx, insn->offset); break;
+            case JIT_OP_JLE: npk_asm_jle(asm_ctx, insn->offset); break;
+            case JIT_OP_JG:  npk_asm_jg(asm_ctx, insn->offset); break;
+            case JIT_OP_JGE: npk_asm_jge(asm_ctx, insn->offset); break;
+            case JIT_OP_JB:  npk_asm_jb(asm_ctx, insn->offset); break;
+            case JIT_OP_JBE: npk_asm_jbe(asm_ctx, insn->offset); break;
+            case JIT_OP_JA:  npk_asm_ja(asm_ctx, insn->offset); break;
+            case JIT_OP_JAE: npk_asm_jae(asm_ctx, insn->offset); break;
             case JIT_OP_LABEL:
-                aria_asm_bind_label(asm_ctx, insn->offset);
+                npk_asm_bind_label(asm_ctx, insn->offset);
                 break;
             case JIT_OP_CALL_REG: {
                 int32_t r = resolve_reg(asm_ctx, insn->dst, false);
-                aria_asm_call_r64(asm_ctx, (AsmRegister)r);
+                npk_asm_call_r64(asm_ctx, (AsmRegister)r);
                 break;
             }
             case JIT_OP_CALL_LABEL:
-                aria_asm_call_label(asm_ctx, insn->offset);
+                npk_asm_call_label(asm_ctx, insn->offset);
                 break;
             case JIT_OP_CALL_ABS:
-                aria_asm_call_abs(asm_ctx, (void*)(uintptr_t)insn->imm64);
+                npk_asm_call_abs(asm_ctx, (void*)(uintptr_t)insn->imm64);
                 break;
             case JIT_OP_PROLOGUE: {
                 // Save callee-saved regs before frame (user-provided prologue path)
                 if (!ra->auto_frame) {
                     for (uint8_t c = 0; c < ra->csr_save_count; c++) {
-                        aria_asm_push_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
+                        npk_asm_push_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
                     }
                 }
                 // Frame setup: push rbp; mov rbp, rsp; sub rsp, N
                 size_t total_stack = (size_t)insn->imm64 + ra->extra_stack_size;
-                aria_asm_prologue(asm_ctx, total_stack);
+                npk_asm_prologue(asm_ctx, total_stack);
                 break;
             }
             case JIT_OP_EPILOGUE:
                 // Frame teardown: mov rsp, rbp; pop rbp (NO ret — that's JIT_OP_RET's job)
-                aria_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
-                aria_asm_pop_r64(asm_ctx, REG_RBP);
+                npk_asm_mov_r64_r64(asm_ctx, REG_RSP, REG_RBP);
+                npk_asm_pop_r64(asm_ctx, REG_RBP);
                 // Restore callee-saved regs (user-provided epilogue path)
                 if (!ra->auto_frame) {
                     for (int c = ra->csr_save_count - 1; c >= 0; c--) {
-                        aria_asm_pop_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
+                        npk_asm_pop_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
                     }
                 }
                 break;
@@ -1947,89 +1947,89 @@ static void emit_ir_to_machine_code(Assembler* asm_ctx) {
             case JIT_OP_MOVSD_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_movsd_xmm_xmm(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_movsd_xmm_xmm(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOVSD_LOAD: {
                 int32_t b = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_movsd_xmm_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
+                npk_asm_movsd_xmm_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOVSD_STORE: {
                 int32_t b = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t s = resolve_reg2(asm_ctx, insn->src2, false);
-                aria_asm_movsd_mem_xmm(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
+                npk_asm_movsd_mem_xmm(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
                 break;
             }
             case JIT_OP_ADDSD: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_addsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_addsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_SUBSD: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_subsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_subsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MULSD: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_mulsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_mulsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_DIVSD: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_divsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_divsd(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_UCOMISD: {
                 int32_t l = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t r = resolve_reg2(asm_ctx, insn->src1, false);
-                aria_asm_ucomisd(asm_ctx, (AsmRegister)l, (AsmRegister)r);
+                npk_asm_ucomisd(asm_ctx, (AsmRegister)l, (AsmRegister)r);
                 break;
             }
             // SSE packed
             case JIT_OP_MOVAPS_RR: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_movaps_xmm_xmm(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_movaps_xmm_xmm(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOVAPS_LOAD: {
                 int32_t b = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, true);
-                aria_asm_movaps_xmm_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
+                npk_asm_movaps_xmm_mem(asm_ctx, (AsmRegister)d, (AsmRegister)b, insn->offset);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MOVAPS_STORE: {
                 int32_t b = resolve_reg(asm_ctx, insn->dst, false);
                 int32_t s = resolve_reg2(asm_ctx, insn->src2, false);
-                aria_asm_movaps_mem_xmm(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
+                npk_asm_movaps_mem_xmm(asm_ctx, (AsmRegister)b, insn->offset, (AsmRegister)s);
                 break;
             }
             case JIT_OP_ADDPS: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_addps(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_addps(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
             case JIT_OP_MULPS: {
                 int32_t s = resolve_reg(asm_ctx, insn->src1, false);
                 int32_t d = resolve_reg2(asm_ctx, insn->dst, false);
-                aria_asm_mulps(asm_ctx, (AsmRegister)d, (AsmRegister)s);
+                npk_asm_mulps(asm_ctx, (AsmRegister)d, (AsmRegister)s);
                 spill_if_needed(asm_ctx, insn->dst, d);
                 break;
             }
@@ -2090,10 +2090,10 @@ static void run_regalloc_pipeline(Assembler* asm_ctx) {
     if (ra->auto_frame) {
         // Push callee-saved registers BEFORE frame setup
         for (uint8_t c = 0; c < ra->csr_save_count; c++) {
-            aria_asm_push_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
+            npk_asm_push_r64(asm_ctx, (AsmRegister)ra->csr_save_regs[c]);
         }
         // Frame setup: push rbp; mov rbp, rsp; sub rsp, extra_stack_size
-        aria_asm_prologue(asm_ctx, ra->extra_stack_size);
+        npk_asm_prologue(asm_ctx, ra->extra_stack_size);
     }
 
     emit_ir_to_machine_code(asm_ctx);
@@ -2105,7 +2105,7 @@ static void run_regalloc_pipeline(Assembler* asm_ctx) {
 // Finalization and Execution
 // =============================================================================
 
-WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
+WildXGuard npk_asm_finalize(Assembler* asm_ctx) {
     WildXGuard empty = {nullptr, 0, 0, WILDX_STATE_UNINITIALIZED, false, 0};
     // Check for errors
     if (asm_ctx->error) {
@@ -2122,14 +2122,14 @@ WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
     
     // Verify all labels are bound
     for (uint32_t i = 0; i < asm_ctx->label_count; ++i) {
-        if (!aria_asm_label_is_bound(&asm_ctx->labels[i])) {
+        if (!npk_asm_label_is_bound(&asm_ctx->labels[i])) {
             set_error(asm_ctx, "Unbound label detected at finalization");
             return empty;
         }
     }
     
     // Allocate WildX memory
-    WildXGuard guard = aria_alloc_exec(asm_ctx->buffer->size);
+    WildXGuard guard = npk_alloc_exec(asm_ctx->buffer->size);
     if (!guard.ptr) {
         set_error(asm_ctx, "Failed to allocate WildX memory");
         return empty;
@@ -2139,8 +2139,8 @@ WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
     memcpy(guard.ptr, asm_ctx->buffer->data, asm_ctx->buffer->size);
     
     // Seal memory (RW → RX) — also computes code hash (v0.7.1)
-    if (aria_mem_protect_exec(&guard) != 0) {
-        aria_free_exec(&guard);
+    if (npk_mem_protect_exec(&guard) != 0) {
+        npk_free_exec(&guard);
         set_error(asm_ctx, "Failed to seal WildX memory");
         return empty;
     }
@@ -2148,14 +2148,14 @@ WildXGuard aria_asm_finalize(Assembler* asm_ctx) {
     return guard;
 }
 
-int64_t aria_asm_execute(WildXGuard* guard) {
+int64_t npk_asm_execute(WildXGuard* guard) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return -1;
     }
     
     // v0.7.1: Verify code integrity before execution
     if (guard->code_hash != 0) {
-        uint64_t current = aria_wildx_verify_hash(guard);
+        uint64_t current = npk_wildx_verify_hash(guard);
         if (current != guard->code_hash) {
             return -1; // Tampered
         }
@@ -2168,14 +2168,14 @@ int64_t aria_asm_execute(WildXGuard* guard) {
     return func();
 }
 
-int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1) {
+int64_t npk_asm_execute_i64(WildXGuard* guard, int64_t arg1) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return -1;
     }
     
     // v0.7.1: Verify code integrity before execution
     if (guard->code_hash != 0) {
-        uint64_t current = aria_wildx_verify_hash(guard);
+        uint64_t current = npk_wildx_verify_hash(guard);
         if (current != guard->code_hash) {
             return -1; // Tampered
         }
@@ -2188,14 +2188,14 @@ int64_t aria_asm_execute_i64(WildXGuard* guard, int64_t arg1) {
     return func(arg1);
 }
 
-int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2) {
+int64_t npk_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2) {
     if (!guard || !guard->ptr || guard->state != WILDX_STATE_EXECUTABLE) {
         return -1;
     }
     
     // v0.7.1: Verify code integrity before execution
     if (guard->code_hash != 0) {
-        uint64_t current = aria_wildx_verify_hash(guard);
+        uint64_t current = npk_wildx_verify_hash(guard);
         if (current != guard->code_hash) {
             return -1; // Tampered
         }
@@ -2212,14 +2212,14 @@ int64_t aria_asm_execute_i64_i64(WildXGuard* guard, int64_t arg1, int64_t arg2) 
 // v0.7.4: Peephole Statistics API
 // =============================================================================
 
-PeepholeStats aria_asm_peephole_stats(const Assembler* asm_ctx) {
+PeepholeStats npk_asm_peephole_stats(const Assembler* asm_ctx) {
     PeepholeStats stats = {0, 0, 0, 0, 0, 0};
     if (!asm_ctx || !asm_ctx->regalloc) return stats;
     stats.total_eliminated = asm_ctx->regalloc->peephole_elim;
     return stats;
 }
 
-InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx) {
+InsnSelStats npk_asm_insn_sel_stats(const Assembler* asm_ctx) {
     InsnSelStats stats = {0, 0, 0, 0, 0, 0};
     if (!asm_ctx || !asm_ctx->regalloc) return stats;
     return asm_ctx->regalloc->insn_sel;
@@ -2229,7 +2229,7 @@ InsnSelStats aria_asm_insn_sel_stats(const Assembler* asm_ctx) {
 // v0.7.4: Profiling — perf map integration
 // =============================================================================
 
-void aria_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name) {
+void npk_asm_perf_map_register(const void* code_addr, size_t code_size, const char* name) {
     if (!code_addr || !name || code_size == 0) return;
 
 #if defined(__linux__)
@@ -2255,7 +2255,7 @@ void aria_asm_perf_map_register(const void* code_addr, size_t code_size, const c
 // v0.7.4: Architecture abstraction
 // =============================================================================
 
-AsmArch aria_asm_get_arch(void) {
+AsmArch npk_asm_get_arch(void) {
 #if defined(__x86_64__) || defined(_M_X64)
     return ASM_ARCH_X86_64;
 #elif defined(__aarch64__) || defined(_M_ARM64)
@@ -2265,7 +2265,7 @@ AsmArch aria_asm_get_arch(void) {
 #endif
 }
 
-bool aria_asm_arch_supported(AsmArch arch) {
+bool npk_asm_arch_supported(AsmArch arch) {
     // Currently only x86-64 has a full code generator
     return arch == ASM_ARCH_X86_64;
 }

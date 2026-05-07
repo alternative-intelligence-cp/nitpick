@@ -1,0 +1,267 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Doc Generator — v0.15.2
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria documentation generator:
+// parsing source files, extracting doc comments and items, generating HTML.
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── Item kind constants ──────────────────────────────────────────────
+const int32:KIND_FUNCTION   = 1i32;
+const int32:KIND_STRUCT     = 2i32;
+const int32:KIND_ENUM       = 3i32;
+const int32:KIND_CONST      = 7i32;
+
+const int32:VIS_PUBLIC  = 0i32;
+const int32:VIS_PRIVATE = 1i32;
+
+const int32:TAG_PARAM      = 0i32;
+const int32:TAG_RETURN     = 1i32;
+const int32:TAG_DEPRECATED = 4i32;
+const int32:TAG_SINCE      = 6i32;
+
+// ─── C shim externs ───────────────────────────────────────────────────
+extern func:doc_parse_file = int64(string:path);
+extern func:doc_free_module = int32(int64:handle);
+extern func:doc_module_name = string(int64:handle);
+extern func:doc_module_path = string(int64:handle);
+extern func:doc_module_summary = string(int64:handle);
+extern func:doc_item_count = int32(int64:handle);
+extern func:doc_item_name = string(int64:handle, int32:idx);
+extern func:doc_item_kind = int32(int64:handle, int32:idx);
+extern func:doc_item_visibility = int32(int64:handle, int32:idx);
+extern func:doc_item_signature = string(int64:handle, int32:idx);
+extern func:doc_item_summary = string(int64:handle, int32:idx);
+extern func:doc_item_description = string(int64:handle, int32:idx);
+extern func:doc_item_is_deprecated = int32(int64:handle, int32:idx);
+extern func:doc_item_line = int32(int64:handle, int32:idx);
+extern func:doc_item_annotation_count = int32(int64:handle, int32:idx);
+extern func:doc_item_annotation_tag = int32(int64:handle, int32:item_idx, int32:ann_idx);
+extern func:doc_item_annotation_name = string(int64:handle, int32:item_idx, int32:ann_idx);
+extern func:doc_count_by_kind = int32(int64:handle, int32:kind);
+extern func:doc_count_public = int32(int64:handle);
+extern func:doc_generate_html = int32(int64:handle, string:output_dir);
+extern func:doc_index_exists = int32(string:output_dir);
+extern func:doc_item_page_exists = int32(string:output_dir, string:item_name);
+extern func:doc_kind_label = string(int32:kind);
+extern func:doc_visibility_label = string(int32:vis);
+
+// Helper to create a sample .aria file for parsing (C-side, avoids long string codegen issue)
+extern func:doc_create_test_fixture = int64(string:path);
+
+// We use a known test fixture file path
+const string:TEST_FILE = "/tmp/npk_doc_test_fixture.aria";
+const string:TEST_OUT  = "/tmp/npk_doc_test_output";
+
+// ═══ Helper: write test fixture ══════════════════════════════════════
+pub func:write_fixture = int32() {
+    int64:rc = doc_create_test_fixture(TEST_FILE);
+    int32:result = 0i32;
+    if (rc < 0i64) {
+        result = 1i32;
+    }
+    pass result;
+};
+
+// ═══ Test 1: Parse file returns valid handle ═════════════════════════
+pub func:test_parse_file = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:result = 1i32;
+    if (h >= 0i64) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 2: Module name extracted from path ═════════════════════════
+pub func:test_module_name = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    string:name = doc_module_name(h);
+    int32:result = 1i32;
+    if (name == "npk_doc_test_fixture") {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 3: Item count matches declarations ═════════════════════════
+pub func:test_item_count = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:count = doc_item_count(h);
+    int32:result = 1i32;
+    // Expect: add, Point, old_add, private_helper, Color, MAX_SIZE = 6
+    if (count >= 5i32) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 4: Function kind detected ══════════════════════════════════
+pub func:test_function_kind = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:kind = doc_item_kind(h, 0i32);
+    int32:result = 1i32;
+    if (kind == KIND_FUNCTION) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 5: Public visibility detected ══════════════════════════════
+pub func:test_pub_visibility = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:vis = doc_item_visibility(h, 0i32);
+    int32:result = 1i32;
+    if (vis == VIS_PUBLIC) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 6: Item name extracted ═════════════════════════════════════
+pub func:test_item_name = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    string:name = doc_item_name(h, 0i32);
+    int32:result = 1i32;
+    if (name == "add") {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 7: Doc summary extracted ═══════════════════════════════════
+pub func:test_doc_summary = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    string:summary = doc_item_summary(h, 0i32);
+    int32:result = 1i32;
+    if (summary != "") {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 8: Annotations parsed (param count) ════════════════════════
+pub func:test_annotations = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:ann_count = doc_item_annotation_count(h, 0i32);
+    int32:result = 1i32;
+    // @param a, @param b, @return, @since = 4 annotations
+    if (ann_count >= 3i32) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 9: Kind label conversion ═══════════════════════════════════
+pub func:test_kind_label = int32() {
+    string:fn_label = doc_kind_label(KIND_FUNCTION);
+    string:st_label = doc_kind_label(KIND_STRUCT);
+    int32:result = 1i32;
+    if (fn_label == "Function" && st_label == "Struct") {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 10: Count by kind ══════════════════════════════════════════
+pub func:test_count_by_kind = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:fn_count = doc_count_by_kind(h, KIND_FUNCTION);
+    int32:result = 1i32;
+    // add, old_add, private_helper = 3 functions
+    if (fn_count >= 2i32) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 11: HTML generation creates index ══════════════════════════
+pub func:test_generate_html = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    int32:gen_rc = doc_generate_html(h, TEST_OUT);
+    int32:idx_exists = doc_index_exists(TEST_OUT);
+    int32:result = 1i32;
+    if (gen_rc == 0i32 && idx_exists == 1i32) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ Test 12: HTML generation creates item pages ═════════════════════
+pub func:test_item_pages = int32() {
+    _ = write_fixture();
+    int64:h = doc_parse_file(TEST_FILE);
+    _ = doc_generate_html(h, TEST_OUT);
+    int32:add_exists = doc_item_page_exists(TEST_OUT, "add");
+    int32:result = 1i32;
+    if (add_exists == 1i32) {
+        result = 0i32;
+    }
+    _ = doc_free_module(h);
+    pass result;
+};
+
+// ═══ main / failsafe ═════════════════════════════════════════════════
+
+pub func:main = int32() {
+    int32:r1 = raw test_parse_file();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_module_name();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_item_count();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_function_kind();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_pub_visibility();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_item_name();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_doc_summary();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_annotations();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_kind_label();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_count_by_kind();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_generate_html();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_item_pages();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

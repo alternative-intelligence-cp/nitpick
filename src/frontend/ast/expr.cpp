@@ -1,7 +1,7 @@
 #include "frontend/ast/expr.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 
 std::string LiteralExpr::toString() const {
     std::ostringstream oss;
@@ -57,7 +57,7 @@ std::string TemplateLiteralExpr::toString() const {
 }
 
 std::string BinaryExpr::toString() const {
-    return "Binary(" + left->toString() + " " + aria::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
+    return "Binary(" + left->toString() + " " + npk::frontend::tokenTypeToString(op.type) + " " + right->toString() + ")";
 }
 
 std::string RangeExpr::toString() const {
@@ -66,7 +66,7 @@ std::string RangeExpr::toString() const {
 }
 
 std::string UnaryExpr::toString() const {
-    return "Unary(" + aria::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
+    return "Unary(" + npk::frontend::tokenTypeToString(op.type) + " " + operand->toString() + ")";
 }
 
 std::string CallExpr::toString() const {
@@ -108,7 +108,7 @@ std::string TernaryExpr::toString() const {
 
 std::string AssignmentExpr::toString() const {
     return "Assignment(" + target->toString() + " " + 
-           aria::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
+           npk::frontend::tokenTypeToString(op.type) + " " + value->toString() + ")";
 }
 
 std::string ArrayLiteralExpr::toString() const {
@@ -241,4 +241,4 @@ std::string SpreadExpr::toString() const {
     return "..^" + (operand ? operand->toString() : "null");
 }
 
-} // namespace aria
+} // namespace npk

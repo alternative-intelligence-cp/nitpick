@@ -12,7 +12,7 @@
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 
-namespace aria {
+namespace npk {
 
 class Parser {
 private:
@@ -145,6 +145,6 @@ public:
     const std::vector<std::string>& getErrors() const;
 };
 
-} // namespace aria
+} // namespace npk
 
 #endif // ARIA_PARSER_H

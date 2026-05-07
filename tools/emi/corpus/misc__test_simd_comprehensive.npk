@@ -1,0 +1,54 @@
+// Comprehensive SIMD test with all features
+// Tests: element access, arithmetic, comparisons, reductions
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:test_element_access = int32() {
+    // Create vector and read individual elements
+    simd<int32, 4>:vec = simd_broadcast(7i32, 4);
+    int32:elem0 = vec[0i32];
+    int32:elem1 = vec[1i32];
+    int32:elem2 = vec[2i32];
+    int32:elem3 = vec[3i32];
+    int32:sum = elem0 + elem1 + elem2 + elem3;
+    pass sum;  // 7*4 = 28
+};
+
+func:test_arithmetic = int32() {
+    simd<int32, 4>:a = simd_broadcast(10i32, 4);
+    simd<int32, 4>:b = simd_broadcast(5i32, 4);
+    simd<int32, 4>:sum = a + b;
+    simd<int32, 4>:diff = a - b;
+    simd<int32, 4>:prod = a * b;
+    // sum=[15,15,15,15] diff=[5,5,5,5] prod=[50,50,50,50]
+    int32:s = sum[0i32];
+    int32:d = diff[0i32];
+    int32:p = prod[0i32];
+    int32:result = s + d + p;
+    pass result;  // 15 + 5 + 50 = 70
+};
+
+func:test_comparison = int32() {
+    simd<int32, 4>:a = simd_broadcast(10i32, 4);
+    simd<int32, 4>:b = simd_broadcast(5i32, 4);
+    simd<bool, 4>:gt = a > b;
+    simd<bool, 4>:eq = a == a;
+    bool:all_gt = simd_all(gt);
+    bool:all_eq = simd_all(eq);
+    // Both should be true; return 42 as success indicator
+    pass 42i32;
+};
+
+func:test_reductions = int32() {
+    simd<int32, 4>:vec = simd_broadcast(3i32, 4);
+    int32:sum = simd_sum(vec);       // 12
+    int32:prod = simd_product(vec);  // 81
+    int32:mn = simd_min(vec);        // 3
+    int32:mx = simd_max(vec);        // 3
+    int32:total = sum + prod + mn + mx;
+    pass total;  // 12 + 81 + 3 + 3 = 99
+};
+
+func:main = int32() {
+    exit 0;
+};

@@ -12,12 +12,12 @@ echo "========================================"
 echo "Aria v0.1.0 Fuzzing Campaign"
 echo "========================================"
 echo "Date: $(date)"
-echo "Compiler: $(./build/ariac --version 2>&1 | head -1 || echo 'unknown')"
+echo "Compiler: $(./build/npkc --version 2>&1 | head -1 || echo 'unknown')"
 echo "Hardware: $(nproc) CPU cores, $(free -h | awk '/^Mem:/ {print $2}') RAM"
 echo ""
 
 # Check compiler is built
-if [ ! -f "./build/ariac" ]; then
+if [ ! -f "./build/npkc" ]; then
     echo "ERROR: Compiler not built. Run ./build.sh first."
     exit 1
 fi
@@ -31,7 +31,7 @@ cd "$ARIA_ROOT/.."
 echo "Searching for implicit TBB widening in ecosystem..."
 TBB_USAGE=$(grep -r "tbb8.*=\|tbb16.*=\|tbb32.*=\|tbb64.*=" \
     aria_make/src aria_shell/src aria_utils/src \
-    --include="*.aria" 2>/dev/null | grep -v "Binary" || true)
+    --include="*.npk" 2>/dev/null | grep -v "Binary" || true)
 
 if [ -z "$TBB_USAGE" ]; then
     echo "✅ No TBB usage found in ecosystem source code"
@@ -123,7 +123,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "========================================"
     echo ""
     
-    CRASH_COUNT=$(find crashes -name "*.aria" 2>/dev/null | wc -l)
+    CRASH_COUNT=$(find crashes -name "*.npk" 2>/dev/null | wc -l)
     if [ "$CRASH_COUNT" -gt 0 ]; then
         echo "❌ Found $CRASH_COUNT crashes"
         echo "   These must be fixed before v0.1.0 release"

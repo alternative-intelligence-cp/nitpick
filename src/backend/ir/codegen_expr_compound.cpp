@@ -19,10 +19,10 @@
 #include <cmath>
 #include "debug_log.h"
 
-using namespace aria;
-using namespace aria::frontend;
-using namespace aria::backend;
-using namespace aria::sema;
+using namespace npk;
+using namespace npk::frontend;
+using namespace npk::backend;
+using namespace npk::sema;
 
 /**
  * Generate code for ternary expressions (is ? :)
@@ -279,6 +279,11 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
                 // Strip trailing "@" (pointer indicator) to get the value type
                 if (!ariaElemType.empty() && ariaElemType.back() == '@') {
                     ariaElemType.pop_back();
+                }
+                // Strip "[]" dynamic array suffix — var holds a ptr to elements of T
+                if (ariaElemType.size() >= 2 &&
+                    ariaElemType.substr(ariaElemType.size() - 2) == "[]") {
+                    ariaElemType = ariaElemType.substr(0, ariaElemType.size() - 2);
                 }
                 if (!ariaElemType.empty()) {
                     llvm::Type* resolved = getLLVMTypeFromString(ariaElemType);
@@ -748,7 +753,7 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         uint64_t env_size = dl.getTypeAllocSize(env_struct_type);
         llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
         llvm::Type* i64Ty = llvm::Type::getInt64Ty(context);
-        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("aria_gc_alloc",
+        llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("npk_gc_alloc",
             llvm::FunctionType::get(ptrTy, {i64Ty}, false));
         env_alloca = builder.CreateCall(gcAlloc,
             {llvm::ConstantInt::get(i64Ty, env_size)}, "env");
@@ -1473,7 +1478,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 
                 // Overflow path: panic
                 builder.SetInsertPoint(overflowBB);
-                llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+                llvm::Function* panicFn = module->getFunction("npk_panic_overflow");
                 if (!panicFn) {
                     llvm::FunctionType* panicType = llvm::FunctionType::get(
                         llvm::Type::getVoidTy(context),
@@ -1482,7 +1487,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                     );
                     panicFn = llvm::Function::Create(
                         panicType, llvm::Function::ExternalLinkage,
-                        "aria_panic_overflow", module
+                        "npk_panic_overflow", module
                     );
                 }
                 llvm::Value* panicMsg = builder.CreateGlobalString(
@@ -1553,7 +1558,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 
                 // Overflow path: panic
                 builder.SetInsertPoint(overflowBB);
-                llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+                llvm::Function* panicFn = module->getFunction("npk_panic_overflow");
                 if (!panicFn) {
                     llvm::FunctionType* panicType = llvm::FunctionType::get(
                         llvm::Type::getVoidTy(context),
@@ -1562,7 +1567,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                     );
                     panicFn = llvm::Function::Create(
                         panicType, llvm::Function::ExternalLinkage,
-                        "aria_panic_overflow", module
+                        "npk_panic_overflow", module
                     );
                 }
                 llvm::Value* panicMsg = builder.CreateGlobalString(
@@ -1642,7 +1647,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
             builder.CreateCondBr(outOfRange, overflowBB, okBB);
 
             builder.SetInsertPoint(overflowBB);
-            llvm::Function* panicFn = module->getFunction("aria_panic_overflow");
+            llvm::Function* panicFn = module->getFunction("npk_panic_overflow");
             if (!panicFn) {
                 llvm::FunctionType* panicType = llvm::FunctionType::get(
                     llvm::Type::getVoidTy(context),
@@ -1651,7 +1656,7 @@ llvm::Value* ExprCodegen::codegenCast(CastExpr* expr) {
                 );
                 panicFn = llvm::Function::Create(
                     panicType, llvm::Function::ExternalLinkage,
-                    "aria_panic_overflow", module
+                    "npk_panic_overflow", module
                 );
             }
             llvm::Value* panicMsg = builder.CreateGlobalString(

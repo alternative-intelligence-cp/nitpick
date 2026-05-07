@@ -1,0 +1,19 @@
+// Simple test for instance<T>() transformation
+// Validates that instance<Counter>(args) desugars to Counter_create(args)
+
+func:Counter_create = int32(int32:initial) {
+    pass initial;
+};
+
+func:test_instance = int32() {
+    // This should transform instance<Counter> to identifier "Counter_create"
+    // Then the call expression adds the arguments
+    int32:x = raw instance<Counter>(42i32);
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

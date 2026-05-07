@@ -1,0 +1,27 @@
+// SV-COMP Termination equivalent: nested loops
+//
+// C analog: Termination-MainControlFlow/loops/nested.c
+// Property: LTL(F end) — nested loops always terminate
+// Aria: loop(0,5,1) inside loop(0,5,1) = 25 total iterations.
+//       Nested fixed-bound loops are always terminating. No divergence possible.
+//
+// Expected verdict: true   Strategy: runtime (exits 0 — terminates)
+
+func:main = int32() {
+    tbb32:total = 0;
+    tbb32:one = 1;
+
+    loop(0, 5, 1) {
+        loop(0, 5, 1) {
+            total = total + one;
+        }
+    }
+
+    // total = 25 after 5*5 = 25 iterations
+    if (total != 25) { exit 1; }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

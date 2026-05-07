@@ -1,7 +1,7 @@
 #include "frontend/token.h"
 #include <sstream>
 
-namespace aria {
+namespace npk {
 namespace frontend {
 
 // ============================================================================
@@ -478,4 +478,4 @@ std::string tokenTypeToString(TokenType type) {
 }
 
 } // namespace frontend
-} // namespace aria
+} // namespace npk

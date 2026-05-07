@@ -1,0 +1,14 @@
+// Test: unknown < unknown should return false (sentinel < sentinel = false)
+
+func:main = int32() {
+    pick(unknown < unknown) {
+        (true) { exit 1i32; },
+        (false) { exit 0i32; },
+        (unknown) { exit 1i32; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

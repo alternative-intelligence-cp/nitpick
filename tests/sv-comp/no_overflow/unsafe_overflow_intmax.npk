@@ -1,0 +1,24 @@
+// SV-COMP NoOverflows equivalent: integer overflow at INT_MAX (BAD)
+//
+// C analog: c/NoOverflows-Main/bitvector/ signed overflow triggers
+// Property: LTL(G! overflow) — VIOLATED in C (INT_MAX + 1 = undefined behavior)
+// Aria: tbb32 INT_MAX + 1 transitions to ERR sentinel instead of wrapping.
+//       The overflow IS caught — program exits non-zero (prevention confirmed).
+//       In Aria this is NOT undefined behavior; it is defined as ERR.
+//
+// Expected verdict: false   Strategy: runtime (exits 1 = overflow caught)
+
+func:main = int32() {
+    tbb32:x = 2147483647;    // INT_MAX for tbb32
+    tbb32:one = 1;
+    tbb32:y = x + one;       // overflow → ERR sentinel (not silent wrap)
+
+    pick(y) {
+        (ERR) { exit 1; },   // overflow detected — violation confirmed
+        (-2147483647..2147483647) { exit 0; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

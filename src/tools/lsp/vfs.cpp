@@ -2,7 +2,7 @@
 #include <mutex>
 #include <algorithm>
 
-namespace aria {
+namespace npk {
 namespace lsp {
 
 void VirtualFileSystem::set_content(const std::string& uri, const std::string& content) {
@@ -49,4 +49,4 @@ size_t VirtualFileSystem::size() const {
 }
 
 } // namespace lsp
-} // namespace aria
+} // namespace npk

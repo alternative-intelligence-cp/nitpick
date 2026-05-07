@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 
-namespace aria {
+namespace npk {
 namespace runtime {
 
 // LLVM coroutine frame ABI: the first two words of a coroutine frame are
@@ -82,4 +82,4 @@ void complete_future_error(void* futurePtr) {
 } // namespace coro_support
 
 } // namespace runtime
-} // namespace aria
+} // namespace npk

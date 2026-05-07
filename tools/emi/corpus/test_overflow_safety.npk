@@ -1,0 +1,49 @@
+// Test: Integer overflow returns Unknown instead of wrapping
+// Layer 1 Safety: Arithmetic operations detect overflow
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Test 1: Addition overflow
+    // INT32_MAX = 2147483647
+    int32:max_val = 2147483647i32;
+    int32:one = 1i32;
+    int32:overflow_add = max_val + one;  // Should return Unknown (INT_MAX)
+    
+    if (ok overflow_add == 0i32) {
+        // Success: overflow detected as Unknown
+        exit 0;
+    }
+    
+    // Test 2: Subtraction underflow
+    int32:min_val = -2147483648i32;  // INT32_MIN
+    int32:underflow_sub = min_val - one;  // Should return Unknown
+    
+    if (ok underflow_sub == 0i32) {
+        // Success: underflow detected as Unknown
+        exit 0;
+    }
+    
+    // Test 3: Multiplication overflow
+    int32:large = 1000000i32;
+    int32:overflow_mul = large * large;  // 10^12 > INT32_MAX
+    
+    if (ok overflow_mul == 0i32) {
+        // Success: overflow detected as Unknown
+        exit 0;
+    }
+    
+    // Test 4: Compound assignment overflow
+    int32:val = max_val;
+    val += one;  // Should set to Unknown
+    
+    if (ok val == 0i32) {
+        // Success: overflow in compound assignment detected
+        exit 0;
+    }
+    
+    // If we reach here, one of the tests failed
+    exit 1i32;
+};

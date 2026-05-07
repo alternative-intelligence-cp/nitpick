@@ -1,0 +1,26 @@
+// bug061: pass(struct_returning_fn()) works without a manual temp variable
+// Covers the former limitation: struct return value directly used in pass/as arg
+// Expected exit: 12 (x+y where x=5, y=7)
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:make_point = Point() {
+    pass(Point{ x: 5i32, y: 7i32 });
+};
+
+func:sum_fields = int32(Point:p) {
+    pass(p.x + p.y);
+};
+
+func:main = int32() {
+    // Use struct return value directly as argument — no temp variable
+    int32:v = raw sum_fields(raw make_point());
+    exit v;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

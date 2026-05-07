@@ -1,0 +1,277 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Usage Stats — v0.15.1
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for telemetry counters, feature tracking, system info,
+// session management, and flush/reset.
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:TYPE_INT128 = 0i32;
+const int32:TYPE_FIX256 = 1i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:us_new = wild int8*();
+extern func:us_free = int32(wild int8*:state);
+extern func:us_null_ptr = wild int8*();
+extern func:us_release = int32(wild int8*:p);
+extern func:us_session_id = int64(wild int8*:state);
+extern func:us_set_enabled = int32(wild int8*:state, int32:flag);
+extern func:us_is_enabled = int32(wild int8*:state);
+extern func:us_record_compilation = int32(wild int8*:state);
+extern func:us_record_ffi = int32(wild int8*:state);
+extern func:us_record_type = int32(wild int8*:state, int32:type_kind);
+extern func:us_record_async = int32(wild int8*:state);
+extern func:us_record_alloc = int32(wild int8*:state);
+extern func:us_record_panic = int32(wild int8*:state);
+extern func:us_record_feature = int32(wild int8*:state, string:feature);
+extern func:us_feature_count = int32(wild int8*:state);
+extern func:us_get_feature = string(wild int8*:state, int32:idx);
+extern func:us_get_compilations = int64(wild int8*:state);
+extern func:us_get_ffi_calls = int64(wild int8*:state);
+extern func:us_get_int128_usage = int64(wild int8*:state);
+extern func:us_get_fix256_usage = int64(wild int8*:state);
+extern func:us_get_async_tasks = int64(wild int8*:state);
+extern func:us_get_memory_allocs = int64(wild int8*:state);
+extern func:us_get_panics = int64(wild int8*:state);
+extern func:us_os_name = string(wild int8*:state);
+extern func:us_cpu_arch = string(wild int8*:state);
+extern func:us_compiler_version = string(wild int8*:state);
+extern func:us_total_memory_mb = int32(wild int8*:state);
+extern func:us_cpu_cores = int32(wild int8*:state);
+extern func:us_flush = int32(wild int8*:state);
+extern func:us_flush_count = int32(wild int8*:state);
+extern func:us_reset = int32(wild int8*:state);
+
+
+// ═══ Test 1: Session ID nonzero ═════════════════════════════════════
+pub func:test_session_id = int32() {
+    wild int8->:state = us_new();
+    int64:sid = us_session_id(state);
+    int32:result = 1i32;
+    if (sid != 0i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Enabled by default ═════════════════════════════════════
+pub func:test_enabled_default = int32() {
+    wild int8->:state = us_new();
+    int32:en = us_is_enabled(state);
+    int32:result = 1i32;
+    if (en == 1i32) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Compilation counter ════════════════════════════════════
+pub func:test_compilation_counter = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_compilation(state);
+    _ = us_record_compilation(state);
+    _ = us_record_compilation(state);
+    int64:cnt = us_get_compilations(state);
+    int32:result = 1i32;
+    if (cnt == 3i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 4: FFI call counter ═══════════════════════════════════════
+pub func:test_ffi_counter = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_ffi(state);
+    _ = us_record_ffi(state);
+    int64:cnt = us_get_ffi_calls(state);
+    int32:result = 1i32;
+    if (cnt == 2i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 5: Type usage (int128 + fix256) ═══════════════════════════
+pub func:test_type_usage = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_type(state, TYPE_INT128);
+    _ = us_record_type(state, TYPE_INT128);
+    _ = us_record_type(state, TYPE_FIX256);
+    int64:i128 = us_get_int128_usage(state);
+    int64:f256 = us_get_fix256_usage(state);
+    int32:result = 1i32;
+    if (i128 == 2i64 && f256 == 1i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Async + alloc + panic counters ═════════════════════════
+pub func:test_misc_counters = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_async(state);
+    _ = us_record_alloc(state);
+    _ = us_record_alloc(state);
+    _ = us_record_panic(state);
+    int64:a = us_get_async_tasks(state);
+    int64:m = us_get_memory_allocs(state);
+    int64:p = us_get_panics(state);
+    int32:result = 1i32;
+    if (a == 1i64 && m == 2i64 && p == 1i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Feature tracking ═══════════════════════════════════════
+pub func:test_features = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_feature(state, "jit");
+    _ = us_record_feature(state, "gpu-codegen");
+    int32:cnt = us_feature_count(state);
+    string:f0 = us_get_feature(state, 0i32);
+    string:f1 = us_get_feature(state, 1i32);
+    int32:result = 1i32;
+    if (cnt == 2i32 && f0 == "jit" && f1 == "gpu-codegen") {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 8: Disable stops recording ════════════════════════════════
+pub func:test_disabled = int32() {
+    wild int8->:state = us_new();
+    _ = us_set_enabled(state, 0i32);
+    _ = us_record_compilation(state);
+    _ = us_record_ffi(state);
+    _ = us_record_feature(state, "foo");
+    int64:c = us_get_compilations(state);
+    int64:f = us_get_ffi_calls(state);
+    int32:fc = us_feature_count(state);
+    int32:result = 1i32;
+    if (c == 0i64 && f == 0i64 && fc == 0i32) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 9: System info populated ══════════════════════════════════
+pub func:test_system_info = int32() {
+    wild int8->:state = us_new();
+    string:os_val = us_os_name(state);
+    string:arch = us_cpu_arch(state);
+    string:cv = us_compiler_version(state);
+    int32:mem = us_total_memory_mb(state);
+    int32:cores = us_cpu_cores(state);
+    int32:result = 1i32;
+    // On Linux: os="Linux", arch="x86_64", compiler_ver="ariac-0.15.1"
+    if (os_val == "Linux" && cores > 0i32 && mem > 0i32 && cv == "ariac-0.15.1") {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Flush increments flush counter ════════════════════════
+pub func:test_flush = int32() {
+    wild int8->:state = us_new();
+    _ = us_flush(state);
+    _ = us_flush(state);
+    int32:fc = us_flush_count(state);
+    int32:result = 1i32;
+    if (fc == 2i32) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Reset clears everything ═══════════════════════════════
+pub func:test_reset_all = int32() {
+    wild int8->:state = us_new();
+    _ = us_record_compilation(state);
+    _ = us_record_ffi(state);
+    _ = us_record_feature(state, "x");
+    _ = us_flush(state);
+    _ = us_reset(state);
+    int64:c = us_get_compilations(state);
+    int64:f = us_get_ffi_calls(state);
+    int32:fc = us_feature_count(state);
+    int32:flc = us_flush_count(state);
+    int32:result = 1i32;
+    if (c == 0i64 && f == 0i64 && fc == 0i32 && flc == 0i32) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Re-enable after disable ═══════════════════════════════
+pub func:test_reenable = int32() {
+    wild int8->:state = us_new();
+    _ = us_set_enabled(state, 0i32);
+    _ = us_record_compilation(state);
+    _ = us_set_enabled(state, 1i32);
+    _ = us_record_compilation(state);
+    int64:c = us_get_compilations(state);
+    int32:result = 1i32;
+    if (c == 1i64) {
+        result = 0i32;
+    }
+    _ = us_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_session_id();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_enabled_default();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_compilation_counter();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_ffi_counter();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_type_usage();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_misc_counters();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_features();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_disabled();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_system_info();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_flush();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_reset_all();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_reenable();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
