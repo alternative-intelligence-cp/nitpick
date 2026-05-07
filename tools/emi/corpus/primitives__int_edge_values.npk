@@ -1,0 +1,43 @@
+// Tests: integer edge values (min, max) for int8, int16, int32, int64.
+// Verifies literals parse, store, and compare correctly at type boundaries.
+// Exit 0 = all pass.  Exit N = assertion N failed.
+
+func:main = int32() {
+    // --- int8 ---
+    int8:i8_max = 127i8;
+    int8:i8_min = -128i8;
+    if (i8_max != 127i8)  { exit 1i32; }
+    if (i8_min != -128i8) { exit 2i32; }
+
+    // --- int16 ---
+    int16:i16_max = 32767i16;
+    int16:i16_min = -32768i16;
+    if (i16_max != 32767i16)  { exit 3i32; }
+    if (i16_min != -32768i16) { exit 4i32; }
+
+    // --- int32 ---
+    int32:i32_max = 2147483647i32;
+    int32:i32_min = -2147483648i32;
+    if (i32_max != 2147483647i32)  { exit 5i32; }
+    if (i32_min != -2147483648i32) { exit 6i32; }
+
+    // --- int64 ---
+    int64:i64_max = 9223372036854775807i64;
+    int64:i64_min = -9223372036854775808i64;
+    if (i64_max != 9223372036854775807i64)  { exit 7i32; }
+    if (i64_min != -9223372036854775808i64) { exit 8i32; }
+
+    // --- arithmetic at boundaries: max + 1 should clamp (overflow-safe) ---
+    // Aria safe-add clamps to max rather than wrapping
+    int32:clamped = 2147483647i32 + 1i32;
+    if (clamped != 2147483647i32) { exit 9i32; }
+
+    // --- comparisons spanning zero ---
+    if (0i32 < i32_min)  { exit 10i32; }
+    if (i32_max < 0i32)  { exit 11i32; }
+    if (i32_min > 0i32)  { exit 12i32; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

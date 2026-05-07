@@ -1,0 +1,53 @@
+// Test: Range Inference — Overflow Elimination Without Rules (v0.14.1)
+// Compile: ariac --smt-opt -v test_range_overflow_elim.aria -o test_range_overflow_elim
+// Expected: Overflow checks eliminated purely via inferred ranges.
+// This is the KEY test — no Rules annotations at all, just literal assignments
+// and conditional narrowing driving the solver.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Literal-only overflow elimination
+// x=42, y=10 → x+y=52, provably safe
+func:test_literal_overflow_elim = int32() {
+    int32:x = 42i32;
+    int32:y = 10i32;
+    int32:z = x + y;
+    pass z;
+};
+
+// Test 2: Conditional narrowing enables overflow elimination
+// Without the if-guard, x could be anything.
+// With the guard, x is safely bounded.
+func:test_conditional_overflow_elim = int32(int32:x) {
+    if (x >= 0i32 && x <= 1000i32) {
+        // x ∈ [0, 1000], 500 is literal → x+500 ∈ [500, 1500] — safe for int32
+        int32:y = x + 500i32;
+        pass y;
+    }
+    pass 0i32;
+};
+
+// Test 3: Multiplication after narrowing
+func:test_mul_after_narrowing = int32(int32:a) {
+    if (a >= 1i32 && a <= 100i32) {
+        // a ∈ [1, 100], so a * a ∈ [1, 10000] — safe for int32
+        int32:sq = a * a;
+        pass sq;
+    }
+    pass 0i32;
+};
+
+// Test 4: Subtraction with known bounds
+func:test_sub_bounded = int32() {
+    int32:big = 1000i32;
+    int32:small = 500i32;
+    // big=[1000,1000], small=[500,500] → big-small=[500,500], safe
+    int32:diff = big - small;
+    pass diff;
+};
+
+func:main = int32() {
+    exit 0;
+};

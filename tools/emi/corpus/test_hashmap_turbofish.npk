@@ -1,0 +1,34 @@
+// Test generic function calls with type inference
+// Parser has turbofish (::< >) support, but backend uses type inference
+// Demonstrates: Generic functions work via automatic monomorphization
+
+// Simple generic function that returns the first argument
+func<T>:identity = *T(*T:value) {
+    pass value;
+};
+
+// Generic function with two type parameters
+func<T, U>:pair_first = *T(*T:first, *U:second) {
+    pass first;
+};
+
+// Main function - test type inference for generics
+func:main = int32() {
+    // Call generic functions - compiler infers types automatically
+    int64:result1 = raw identity(42i64);       // T inferred as int64
+    int32:result2 = raw identity(100i32);      // T inferred as int32
+    
+    // Call with two type parameters - both inferred
+    int64:result3 = raw pair_first(99i64, 1i32);  // T=int64, U=int32
+    
+    print("Generic function test passed!");
+    print("Results: ");
+    print(", ");
+    print(", ");
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,24 @@
+// Test int1024 basic operations
+func:test_int1024_basic = int32() {
+    // Basic int1024 arithmetic
+    int1024:a = 1000;
+    int1024:b = 2000;
+    int1024:sum = a + b;
+    int1024:expected = 3000;
+    
+    bool:passed = (sum == expected);
+    if (passed) {
+        pass 0;
+    }
+    pass 1;
+};
+
+func:main = int32() {
+    int32:result = raw test_int1024_basic();
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

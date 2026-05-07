@@ -1,0 +1,93 @@
+// Test NIL vs NULL vs void distinction
+// Validates that NIL, NULL, and void are properly distinguished
+
+// Failsafe function
+func:failsafe = int32(tbb32:err) {
+    print("ERROR: Program failed with code:");
+    // print(err_code);  // TODO: Once print supports multiple args
+    exit 1;
+};
+
+// Helper functions - defined before main
+func:returns_nil = int64?() {
+    pass NIL;
+};
+
+func:returns_value = int64?() {
+    pass 999;
+};
+
+func:main = int32() {
+    print("=== NIL vs NULL vs void Distinction Test ===");
+    
+    // Test 1: NIL is for optional types
+    print("Test 1: NIL for optional types");
+    int64?:opt = NIL;
+    string?:opt_str = NIL;
+    if (opt == NIL) {
+        print("NIL works with optional int64");
+    }
+    if (opt_str == NIL) {
+        print("NIL works with optional string");
+    }
+    
+    // Test 2: NULL is for pointers
+    print("Test 2: NULL for pointers");
+    int64->:ptr = NULL;
+    string->:str_ptr = NULL;
+    if (ptr == NULL) {
+        print("NULL works with int64 pointer");
+    }
+    if (str_ptr == NULL) {
+        print("NULL works with string pointer");
+    }
+    
+    // Test 3: NIL and NULL are NOT interchangeable
+    print("Test 3: NIL and NULL are distinct");
+    // int64?:opt_bad = NULL;  // This should be TYPE ERROR
+    // int64->ptr_bad = NIL;   // This should be TYPE ERROR
+    print("NIL and NULL cannot be used interchangeably (compile-time check)");
+    
+    // Test 4: Optional type with actual value
+    print("Test 4: Optional with value vs NIL");
+    int64?:has_value = 100;
+    int64?:no_value = NIL;
+    
+    int64:v1 = has_value ?? 0;  // Should get 100
+    int64:v2 = no_value ?? 200; // Should get 200
+    
+    if (v1 == 100 && v2 == 200) {
+        print("Optional value extraction works correctly");
+    }
+    
+    // Test 5: Pointer with actual address
+    print("Test 5: Pointer with address vs NULL");
+    int64:actual_var = 42;
+    int64->:valid_ptr = @actual_var;
+    int64->:null_ptr = NULL;
+    
+    // Both pointers exist but one is NULL
+    print("Pointer distinction works");
+    
+    // Test 6: Function returns with NIL
+    print("Test 6: Function returns with NIL");
+    int64?:result1 = raw returns_nil();
+    int64?:result2 = raw returns_value();
+    
+    int64:r1 = result1 ?? -1;  // Should get -1 (NIL)
+    int64:r2 = result2 ?? -1;  // Should get 999 (value)
+    
+    if (r1 == -1 && r2 == 999) {
+        print("Function returns with NIL work correctly");
+    }
+    
+    // Test 7: Safe navigation returns NIL on chain break
+    print("Test 7: Safe navigation returns NIL");
+    // When we have struct support:
+    // User?:user = NIL;
+    // string?:name = user?.name;  // Returns NIL, not crash
+    print("Safe navigation NIL return (requires struct support)");
+    
+    print("=== All distinction tests complete ===");
+    exit 0;
+};

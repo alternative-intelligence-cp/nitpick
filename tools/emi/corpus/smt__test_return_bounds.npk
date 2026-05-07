@@ -1,0 +1,22 @@
+// Test: Automatic return bounds inference (v0.5.3, Phase 15)
+// Verify that the compiler can infer return value bounds from param Rules.
+
+Rules<int32>:Percentage = { $ >= 0, $ <= 100 };
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// double_pct: parameter constrained via limit<Percentage>
+// Inferred return bounds should be [0, 200]
+func:double_pct = int32(int32:x) {
+    limit<Percentage> int32:safe_x = x;
+    int32:result = safe_x * 2;
+    pass result;
+};
+
+func:main = int32() {
+    limit<Percentage> int32:val = 50;
+    int32:doubled = raw double_pct(val);
+    exit 0;
+};

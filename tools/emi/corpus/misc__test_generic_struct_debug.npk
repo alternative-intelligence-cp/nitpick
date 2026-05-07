@@ -1,0 +1,23 @@
+// Debug generic struct field access
+
+struct<T>:Pair = {
+    *T:first;
+    *T:second;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    //  Test 1: Declare generic struct variable
+    Pair<int64>:p;
+    
+    // Test 2: Try to assign to field
+    p.first = 42i64;
+    
+    // Test 3: Try to read from field
+    int64:val = p.first;
+    
+    return 0;
+};

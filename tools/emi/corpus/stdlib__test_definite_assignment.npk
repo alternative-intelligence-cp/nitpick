@@ -1,0 +1,331 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Definite Assignment — v0.15.0
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria definite assignment analysis.
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:ST_UNASSIGNED = 0i32;
+const int32:ST_ASSIGNED   = 1i32;
+const int32:ST_MAYBE      = 2i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:da_new = wild int8*();
+extern func:da_free = int32(wild int8*:state);
+extern func:da_null_ptr = wild int8*();
+extern func:da_release = int32(wild int8*:p);
+extern func:da_enter_scope = int32(wild int8*:state);
+extern func:da_exit_scope = int32(wild int8*:state);
+extern func:da_declare = int32(wild int8*:state, string:name);
+extern func:da_declare_init = int32(wild int8*:state, string:name);
+extern func:da_declare_wild = int32(wild int8*:state, string:name);
+extern func:da_assign = int32(wild int8*:state, string:name);
+extern func:da_get_state = int32(wild int8*:state, string:name);
+extern func:da_save = int32(wild int8*:state, int32:slot);
+extern func:da_load = int32(wild int8*:state, int32:slot);
+extern func:da_merge = int32(wild int8*:state, int32:slot_a, int32:slot_b);
+extern func:da_check_read = int32(wild int8*:state, string:name);
+extern func:da_add_error = int32(wild int8*:state, string:msg);
+extern func:da_error_count = int32(wild int8*:state);
+extern func:da_get_error = string(wild int8*:state, int32:index);
+extern func:da_clear_errors = int32(wild int8*:state);
+extern func:da_mark_loop_maybe = int32(wild int8*:state, int32:before_slot);
+
+
+// ═══ Test 1: Declare + assign + read (no error) ════════════════════
+pub func:test_assign_read = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "x");
+    _ = da_assign(state, "x");
+    int32:err = da_check_read(state, "x");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (err == 0i32 && da_error_count(state) == 0i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Declare + read without assign (error) ═════════════════
+pub func:test_read_unassigned = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "y");
+    int32:err = da_check_read(state, "y");
+    _ = da_exit_scope(state);
+    int32:ec = da_error_count(state);
+    int32:result = 1i32;
+    if (err == 1i32 && ec == 1i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Declare with initializer (no error) ═══════════════════
+pub func:test_declare_init = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare_init(state, "z");
+    int32:err = da_check_read(state, "z");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (err == 0i32 && da_error_count(state) == 0i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 4: If-else both assign → ASSIGNED ════════════════════════
+pub func:test_if_both_assign = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "v");
+    // Before branches
+    _ = da_save(state, 0i32);
+    // Then branch: assign v
+    _ = da_assign(state, "v");
+    _ = da_save(state, 1i32);
+    // Restore before for else branch
+    _ = da_load(state, 0i32);
+    // Else branch: assign v
+    _ = da_assign(state, "v");
+    _ = da_save(state, 2i32);
+    // Restore before and merge
+    _ = da_load(state, 0i32);
+    _ = da_merge(state, 1i32, 2i32);
+    // Read v — should be ASSIGNED
+    int32:err = da_check_read(state, "v");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (err == 0i32 && da_error_count(state) == 0i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 5: If-else one assigns → MAYBE → error ══════════════════
+pub func:test_if_one_assigns = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "w");
+    // Before branches
+    _ = da_save(state, 0i32);
+    // Then branch: assign w
+    _ = da_assign(state, "w");
+    _ = da_save(state, 1i32);
+    // Restore before for else branch
+    _ = da_load(state, 0i32);
+    // Else branch: do not assign w
+    _ = da_save(state, 2i32);
+    // Restore before and merge
+    _ = da_load(state, 0i32);
+    _ = da_merge(state, 1i32, 2i32);
+    // Read w — should be MAYBE
+    int32:st = da_get_state(state, "w");
+    int32:err = da_check_read(state, "w");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (st == ST_MAYBE && err == 1i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 6: If-else neither assigns → UNASSIGNED → error ══════════
+pub func:test_if_neither_assigns = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "a");
+    // Before branches
+    _ = da_save(state, 0i32);
+    // Then branch: no assign
+    _ = da_save(state, 1i32);
+    // Restore before for else branch
+    _ = da_load(state, 0i32);
+    // Else branch: no assign
+    _ = da_save(state, 2i32);
+    // Restore before and merge
+    _ = da_load(state, 0i32);
+    _ = da_merge(state, 1i32, 2i32);
+    // Read a — should be UNASSIGNED
+    int32:st = da_get_state(state, "a");
+    int32:err = da_check_read(state, "a");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (st == ST_UNASSIGNED && err == 1i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Scope — inner variable removed after exit ═════════════
+pub func:test_scope_exit = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare_init(state, "outer");
+    // Inner scope
+    _ = da_enter_scope(state);
+    _ = da_declare_init(state, "inner");
+    int32:inner_st = da_get_state(state, "inner");
+    _ = da_exit_scope(state);
+    // After exiting inner scope, "inner" should be removed → getState returns ASSIGNED (unknown = outer scope assumed assigned)
+    int32:after_st = da_get_state(state, "inner");
+    int32:outer_st = da_get_state(state, "outer");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (inner_st == ST_ASSIGNED && after_st == ST_ASSIGNED && outer_st == ST_ASSIGNED) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 8: While loop assigns → MAYBE_ASSIGNED ═══════════════════
+pub func:test_loop_maybe = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "n");
+    // Before loop
+    _ = da_save(state, 3i32);
+    // Loop body: assign n
+    _ = da_assign(state, "n");
+    // After loop: mark loop-assigned as MAYBE
+    _ = da_mark_loop_maybe(state, 3i32);
+    int32:st = da_get_state(state, "n");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (st == ST_MAYBE) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 9: Nested scopes with shadowing ══════════════════════════
+pub func:test_nested_scopes = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "val");
+    // outer: val is UNASSIGNED
+    int32:s1 = da_get_state(state, "val");
+    // inner scope
+    _ = da_enter_scope(state);
+    _ = da_assign(state, "val");
+    int32:s2 = da_get_state(state, "val");
+    _ = da_exit_scope(state);
+    // after inner, val was assigned within reach (same name still in outer scope)
+    // Actually, exit_scope removed "val" from inner scope vars, but assign set it in the map
+    // Since we used da_assign (not da_declare in inner), it modifies the same var
+    int32:s3 = da_get_state(state, "val");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (s1 == ST_UNASSIGNED && s2 == ST_ASSIGNED && s3 == ST_ASSIGNED) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 10: Multiple variables tracked independently ══════════════
+pub func:test_multiple_vars = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare(state, "p");
+    _ = da_declare(state, "q");
+    _ = da_assign(state, "p");
+    int32:sp = da_get_state(state, "p");
+    int32:sq = da_get_state(state, "q");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (sp == ST_ASSIGNED && sq == ST_UNASSIGNED) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Error collection and clearing ═════════════════════════
+pub func:test_error_mgmt = int32() {
+    wild int8->:state = da_new();
+    _ = da_add_error(state, "var x not init");
+    _ = da_add_error(state, "var y not init");
+    int32:ec = da_error_count(state);
+    string:e0 = da_get_error(state, 0i32);
+    string:e1 = da_get_error(state, 1i32);
+    _ = da_clear_errors(state);
+    int32:ec2 = da_error_count(state);
+    int32:result = 1i32;
+    if (ec == 2i32 && e0 == "var x not init" && e1 == "var y not init" && ec2 == 0i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+// ═══ Test 12: Wild variable starts as ASSIGNED ═════════════════════
+pub func:test_wild_assigned = int32() {
+    wild int8->:state = da_new();
+    _ = da_enter_scope(state);
+    _ = da_declare_wild(state, "buf");
+    int32:st = da_get_state(state, "buf");
+    int32:err = da_check_read(state, "buf");
+    _ = da_exit_scope(state);
+    int32:result = 1i32;
+    if (st == ST_ASSIGNED && err == 0i32 && da_error_count(state) == 0i32) {
+        result = 0i32;
+    }
+    _ = da_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_assign_read();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_read_unassigned();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_declare_init();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_if_both_assign();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_if_one_assigns();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_if_neither_assigns();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_scope_exit();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_loop_maybe();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_nested_scopes();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_multiple_vars();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_error_mgmt();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_wild_assigned();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,34 @@
+// Test TBB overflow detection (Session 14 Part 2)
+// Expected: All overflow operations should produce ERR (-128 for tbb8)
+
+func:main = int32() {
+    // Test multiplication overflow: 64 * 2 = 128 > 127 (max for tbb8)
+    tbb8:a = 64;
+    tbb8:two = 2;
+    tbb8:mul_result = a * two;  // Should be ERR (-128)
+    
+    // Test subtraction underflow: -120 - 10 = -130 < -127 (min for tbb8)
+    tbb8:b = -120;
+    tbb8:ten = 10;
+    tbb8:sub_result = b - ten;  // Should be ERR (-128)
+    
+    // Test addition overflow: 120 + 10 = 130 > 127
+    tbb8:c = 120;
+    tbb8:add_result = c + ten;  // Should be ERR (-128)
+    
+    // ERR sentinel
+    tbb8:err = -128;
+    
+    // Verify all overflow results equal ERR
+    if (mul_result == err && sub_result == err && add_result == err) {
+        exit 0;  // Success: All overflows detected!
+    }
+    
+    exit 1;  // Failure: Overflow detection not working
+};
+
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

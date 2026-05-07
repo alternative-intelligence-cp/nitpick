@@ -1,0 +1,26 @@
+// Test if parser supports defer statements
+
+func:test_defer = int32() {
+    int32:value = 10;
+    
+    defer {
+        value = 99;
+    }
+    
+    value += 5;
+    
+    pass value;
+};
+
+func:main = int32() {
+    int32:result = raw test_defer();
+    if (result == 99) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

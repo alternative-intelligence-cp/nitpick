@@ -1,0 +1,25 @@
+/// Test Randy's new pointer syntax
+/// -> for pointer type and member access
+/// <- for dereference
+/// @ only for address-of
+
+func:test_new_syntax = int32() {
+    // New pointer type syntax: int64-> instead of int64@
+    int64:myInt = 345;
+    int64->:myPtr = @myInt;  // "int64 pointer" - arrow shows it points TO an int64
+    
+    // Try the new dereference syntax: <-
+    int64:retrieved = <-myPtr;  // "get value FROM myPtr" - arrow points left, pulling value
+    
+    pass 0;
+};
+
+func:main = int32() {
+    int32:r = raw test_new_syntax();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

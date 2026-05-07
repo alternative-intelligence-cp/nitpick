@@ -1,0 +1,69 @@
+// Simpler test: Direct complex struct usage without generic functions
+// Tests the generic struct fix we just applied
+
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    // Test 1: complex<int32> instantiation and field access
+    complex<int32>:z1;
+    z1.real = 3;
+    z1.imag = 4;
+    
+    complex<int32>:z2;
+    z2.real = 1;
+    z2.imag = 2;
+    
+    // Test addition manually (proving field access works)
+    complex<int32>:sum;
+    sum.real = z1.real + z2.real;  // 4
+    sum.imag = z1.imag + z2.imag;  // 6
+    
+    // Test subtraction manually
+    complex<int32>:diff;
+    diff.real = z1.real - z2.real;  // 2
+    diff.imag = z1.imag - z2.imag;  // 2
+    
+    // Test 2: complex<int64> for larger values
+    complex<int64>:w1;
+    w1.real = 1000000;
+    w1.imag = 2000000;
+    
+    complex<int64>:w2;
+    w2.real = 500000;
+    w2.imag = 750000;
+    
+    complex<int64>:w_sum;
+    w_sum.real = w1.real + w2.real;  // 1500000
+    w_sum.imag = w1.imag + w2.imag;  // 2750000
+    
+    // Test 3: complex<flt64> for floating point
+    complex<flt64>:x1;
+    x1.real = 3.14;
+    x1.imag = 2.71;
+    
+    complex<flt64>:x2;
+    x2.real = 1.41;
+    x2.imag = 1.73;
+    
+    complex<flt64>:x_sum;
+    x_sum.real = x1.real + x2.real;  // 4.55
+    x_sum.imag = x1.imag + x2.imag;  // 4.44
+    
+    // Test 4: Use 3-multiplication algorithm manually
+    // (3 + 4i) * (1 + 2i) = -5 + 10i
+    int32:k1 = z1.real * (z2.real + z2.imag);  // 3 * 3 = 9
+    int32:k2 = z2.imag * (z1.real + z1.imag);  // 2 * 7 = 14
+    int32:k3 = z2.real * (z1.imag - z1.real);  // 1 * 1 = 1
+    
+    complex<int32>:prod;
+    prod.real = k1 - k2;  // 9 - 14 = -5
+    prod.imag = k1 + k3;  // 9 + 1 = 10
+    
+    // Success - generic structs work!
+    exit 0;
+};

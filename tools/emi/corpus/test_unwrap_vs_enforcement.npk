@@ -1,0 +1,35 @@
+// Test: Unwrap vs manual checking - both should work
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail 0i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    // Scenario 1: Use unwrap operator - clean and safe
+    int32:x = divide(10i32, 2i32) ? 0i32;
+    
+    // Scenario 2: Manual check and access - also safe
+    Result<int32>:r = divide(20i32, 4i32);
+    int32:y = 0i32;
+    if (r.is_error == false) {
+        y = r.value;  // Should work - we checked!
+    }
+    
+    // Scenario 3: Mix both patterns
+    Result<int32>:r2 = divide(30i32, 5i32);
+    int32:z = r2 ? 0i32;  // Unwrap a stored Result
+    
+    int32:total = x + y + z;  // 5 + 5 + 6 = 16
+    if (total == 16i32) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

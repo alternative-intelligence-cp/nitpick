@@ -1,0 +1,71 @@
+// Test: Variable shadowing warnings
+// Spec: ARIA-001 Shadowing warnings task
+// Tests that compiler warns when variables shadow outer scope
+
+func:test_shadowing_in_block = int32() {
+    int32:x = 5;
+    
+    if (true) {
+        int32:x = 10;  // Should warn: shadows outer x
+        pass x;
+    }
+    
+    int32:ret = 0;
+    pass ret;
+};
+
+func:test_shadowing_in_nested_blocks = int32() {
+    int32:value = 1;
+    
+    if (true) {
+        int32:inner = 2;
+        
+        if (true) {
+            int32:value = 3;  // Should warn: shadows outer value
+            int32:inner = 4;  // Should warn: shadows outer inner
+            pass value;
+        }
+        
+        pass inner;
+    }
+    
+    int32:ret = 0;
+    pass ret;
+};
+
+func:test_no_shadow_different_scopes = int32() {
+    if (true) {
+        int32:x = 1;
+        pass x;
+    }
+    
+    if (true) {
+        int32:x = 2;  // Should NOT warn: different scope, not nested
+        pass x;
+    }
+    
+    int32:ret = 0;
+    pass ret;
+};
+
+func:test_param_shadowing = int32(int32:param) {
+    if (true) {
+        int32:param = 999;  // Should warn: shadows parameter
+        pass param;
+    }
+    
+    int32:ret = 0;
+    pass ret;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_shadowing_in_block();
+    int32:r2 = raw test_shadowing_in_nested_blocks();
+    int32:r3 = raw test_param_shadowing(42);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

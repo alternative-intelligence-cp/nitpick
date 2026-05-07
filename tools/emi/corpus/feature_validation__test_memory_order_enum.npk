@@ -1,0 +1,33 @@
+/**
+ * Test MemoryOrder enum parsing
+ * Phase 2.1 validation: Verify enum with memory ordering keywords parses
+ */
+
+// Define MemoryOrder enum
+enum:MemoryOrder = {
+    RELAXED = 0,
+    ACQUIRE = 1,
+    RELEASE = 2,
+    ACQ_REL = 3,
+    SEQ_CST = 4
+};
+
+func:test_enum = int32() {
+    println("MemoryOrder enum test");
+    
+    // TODO: Once enum usage is implemented, test:
+    // MemoryOrder:order = relaxed;
+    // println("Order: " + itoa(order));
+    
+    pass 0;
+};
+
+func:main = int32() {
+    int32:result = raw test_enum();
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

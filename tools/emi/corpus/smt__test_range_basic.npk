@@ -1,0 +1,42 @@
+// Test: Range Inference — Basic Literal Assignments (v0.14.1)
+// Compile: ariac --smt-opt -v test_range_basic.aria -o test_range_basic
+// Expected: Overflow checks eliminated via inferred ranges from literal assignments.
+// No explicit Rules annotations needed — the compiler infers ranges automatically.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Simple literal assignment — inferred range [42, 42]
+func:test_literal_add = int32() {
+    int32:x = 42i32;
+    int32:y = 10i32;
+    // x=[42,42], y=[10,10] → x+y=[52,52], no overflow
+    int32:z = x + y;
+    pass z;
+};
+
+// Test 2: Variable copy — range propagates
+func:test_copy_range = int32() {
+    int32:a = 100i32;
+    int32:b = a;
+    // b inherits a's range [100, 100] → b+50 = [150, 150], no overflow
+    int32:c = b + 50i32;
+    pass c;
+};
+
+// Test 3: Multiple literal assignments — each has exact range
+func:test_multi_literal = int32() {
+    int32:p = 5i32;
+    int32:q = 7i32;
+    int32:r = 3i32;
+    // p=[5,5], q=[7,7], r=[3,3]
+    // p*q = [35, 35], then +r = [38, 38], no overflow
+    int32:product = p * q;
+    int32:result = product + r;
+    pass result;
+};
+
+func:main = int32() {
+    exit 0;
+};

@@ -1,0 +1,74 @@
+// Test emphatic unwrap operator (?!) - Basic functionality
+// This tests that the ?! operator correctly unwraps Result<T> values
+
+// Helper: returns error Result (error code 1)
+func:make_error = int32() {
+    fail 1;
+};
+
+// Helper: returns success Result with value 10
+func:make_success = int32() {
+    pass 10i32;
+};
+
+// Helper: returns success Result with value 5
+func:make_success_5 = int32() {
+    pass 5i32;
+};
+
+// Test 1: Failsafe with error - should return default value 42
+func:test_error_unwrap = int32() {
+    Result<int32>:r = make_error();
+    int32:val = r ?! 42i32;
+    pass val;
+};
+
+// Test 2: Failsafe with success - should return unwrapped value 10
+func:test_success_unwrap = int32() {
+    Result<int32>:r = make_success();
+    int32:val = r ?! 42i32;
+    pass val;
+};
+
+// Test 3: Chain multiple failsafes
+func:test_chained_failsafe = int32() {
+    Result<int32>:r1 = make_success_5();
+    Result<int32>:r2 = make_error();
+    
+    int32:val1 = r1 ?! 100i32;  // Should be 5
+    int32:val2 = r2 ?! 200i32;  // Should be 200
+    
+    pass val1 + val2;  // Should return 205
+};
+
+// Main: Run all tests
+func:main = int32() {
+    Result<int32>:t1 = test_error_unwrap();
+    int32:test1 = t1 ? 0i32;
+
+    Result<int32>:t2 = test_success_unwrap();
+    int32:test2 = t2 ? 0i32;
+
+    Result<int32>:t3 = test_chained_failsafe();
+    int32:test3 = t3 ? 0i32;
+
+    // All tests should exit
+    if (!(test1 == 42i32)) {
+        exit 1i32;  // Test 1 failed
+    }
+
+    if (!(test2 == 10i32)) {
+        exit 2i32;  // Test 2 failed
+    }
+
+    if (!(test3 == 205i32)) {
+        exit 3i32;  // Test 3 failed
+    }
+
+    exit 0;  // All tests passed
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

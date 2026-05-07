@@ -1,0 +1,50 @@
+// Test: Session 9 - Arrays Complete Test
+// Purpose: Validate array type declaration, literals, and indexing
+// Expected: Exit code 0 (all tests pass)
+
+func:main = int32() {
+    // Test 1: Array with literal initialization
+    int64[3]:arr1 = [10i64, 20i64, 30i64];
+    
+    // Test 2: Array indexing - read first element
+    int64:first = arr1[0];
+    int64:expected_first = 10;
+    if (first != expected_first) {
+        int32:code = 1;
+        exit code;
+    }
+    
+    // Test 3: Array indexing - read middle element
+    int64:middle = arr1[1];
+    int64:expected_middle = 20;
+    if (middle != expected_middle) {
+        int32:code = 2;
+        exit code;
+    }
+    
+    // Test 4: Array indexing - read last element
+    int64:last = arr1[2];
+    int64:expected_last = 30;
+    if (last != expected_last) {
+        int32:code = 3;
+        exit code;
+    }
+    
+    // Test 5: Another array
+    int64[4]:arr2 = [100i64, 200i64, 300i64, 400i64];
+    int64:val = arr2[3];
+    int64:expected_val = 400;
+    if (val != expected_val) {
+        int32:code = 4;
+        exit code;
+    }
+    
+    // All tests passed!
+    int32:success = 0;
+    exit success;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

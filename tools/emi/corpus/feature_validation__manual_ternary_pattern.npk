@@ -1,0 +1,67 @@
+// Manual ternary using if-else (since parser doesn't support ternary yet)
+// This demonstrates the pattern that IR generation would produce
+
+func:test_manual_ternary = int32() {
+    int32:x = 10;
+    int32:y = 20;
+    
+    // Manual ternary: result = (x > y) ? x : y
+    int32:max = 0;
+    if (x > y) {
+        max = x;
+    } else {
+        max = y;
+    }
+    
+    pass max;  // Should return 20
+};
+
+func:test_ternary_with_computation = int32() {
+    int32:a = 5;
+    int32:b = 10;
+    
+    // Choose computation based on condition
+    int32:value = 0;
+    if (a < b) {
+        value = a + b;  // 15
+    } else {
+        value = a - b;
+    }
+    
+    pass value;
+};
+
+func:test_nested_conditions = int32() {
+    int32:score = 85;
+    
+    // Nested ternary pattern: A > 90 ? 1 : (A > 80 ? 2 : 3)
+    int32:grade = 0;
+    if (score > 90) {
+        grade = 1;  // A
+    } else {
+        if (score > 80) {
+            grade = 2;  // B
+        } else {
+            grade = 3;  // C
+        }
+    }
+    
+    pass grade;  // Should return 2
+};
+
+func:main = int32() {
+    int32:r1 = raw test_manual_ternary();         // 20
+    int32:r2 = raw test_ternary_with_computation(); // 15
+    int32:r3 = raw test_nested_conditions();       // 2
+    
+    int32:total = r1 + r2 + r3;  // 20 + 15 + 2 = 37
+    if (total == 37) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

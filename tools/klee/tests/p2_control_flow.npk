@@ -1,0 +1,38 @@
+// Phase 2: Control flow — verify all branches are reachable with symbolic input.
+// KLEE should generate test cases for both branches.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int32:x = 0;
+    drop klee_make_symbolic(@x, 4, 0);
+
+    // Branch 1: positive / negative / zero
+    int32:sign = 0;
+    if (x > 0) {
+        sign = 1;
+    }
+    if (x < 0) {
+        sign = -1;
+    }
+    if (x == 0) {
+        sign = 0;
+    }
+
+    // Branch 2: bitwise parity (even/odd)
+    int32:one = 1;
+    int32:lsb = x & one;
+    int32:is_even = 0;
+    if (lsb == 0) {
+        is_even = 1;
+    }
+
+    // sign + is_even must be a valid combination
+    // (just verify KLEE explores multiple paths without assertion failure)
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

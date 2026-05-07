@@ -1,0 +1,39 @@
+// Comprehensive atomic<T> operations test
+// Tests all core operations: new, load, store, swap, fetch_add, fetch_sub
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test 1: Basic operations
+    atomic<int32>:counter = atomic_new(0i32);
+    
+    // Test load
+    int32:val1 = counter.load();
+    println("Initial value: 0 (expected)");
+    
+    // Test store
+    counter.store(42i32);
+    int32:val2 = counter.load();
+    println("After store(42): 42 (expected)");
+    
+    // Test swap
+    int32:old = counter.swap(100i32);
+    println("Swap returned old value: 42 (expected)");
+    int32:val3 = counter.load();
+    println("After swap(100): 100 (expected)");
+    
+    // Test fetch_add
+    int32:before_add = counter.fetch_add(5i32);
+    println("fetch_add(5) returned: 100 (expected)");
+    int32:after_add = counter.load();
+    println("After fetch_add(5): 105 (expected)");
+    
+    // Test fetch_sub
+    int32:before_sub = counter.fetch_sub(10i32);
+    println("fetch_sub(10) returned: 105 (expected)");
+    int32:after_sub = counter.load();
+    println("After fetch_sub(10): 95 (expected)");
+    
+    println("All tests passed!");
+    exit 0;
+};

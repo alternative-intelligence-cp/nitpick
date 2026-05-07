@@ -1,0 +1,42 @@
+// Minimal test for @ operator
+func:main = int32() {
+    print("=== Address-of Operator (@) Test ===");
+    
+    // Test 1: Basic @ on local variable
+    print("Test 1: Address of local variable");
+    int64:value = 42;
+    int64->:ptr = @value;
+    
+    if (ptr != NULL) {
+        print("✓ @value creates non-NULL pointer");
+    }
+    
+    // Test 2: @ for different types
+    print("Test 2: Address of different types");
+    int32:i = 100;
+    string:s = "hello";
+    
+    int32->:p_i = @i;
+    string->:p_s = @s;
+    
+    if (p_i != NULL && p_s != NULL) {
+        print("✓ @ works for int32 and string");
+    }
+    
+    // Test 3: NULL vs valid pointer distinction
+    print("Test 3: NULL vs valid pointer");
+    int64->:null_ptr = NULL;
+    int64->:valid_ptr = @value;
+    
+    if (null_ptr == NULL && valid_ptr != NULL) {
+        print("✓ Can distinguish NULL from @variable");
+    }
+    
+    print("=== All @ operator tests passed ===");
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,34 @@
+// Test: Range Inference — Loop Induction Variables (v0.14.1)
+// Compile: ariac --smt-opt -v test_range_loop_induction.aria -o test_range_loop_induction
+// Expected: Loop induction variable ranges inferred from loop bounds.
+// $ in loop(0, 100, 1) → [0, 99], $ in till(50, 1) → [0, 49]
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: loop() induction variable
+func:test_loop_induction = int32() {
+    int32:total = 0i32;
+    loop(0, 10, 1) {
+        // $ ∈ [0, 9], so $ + 1 ∈ [1, 10] — no overflow
+        int64:val = $ + 1i64;
+        total = total + 1i32;
+    }
+    pass total;
+};
+
+// Test 2: till() induction variable
+func:test_till_induction = int32() {
+    int32:sum = 0i32;
+    till(20, 1) {
+        // $ ∈ [0, 19], so $ * $ ∈ [0, 361] — no overflow
+        int64:sq = $ * $;
+        sum = sum + 1i32;
+    }
+    pass sum;
+};
+
+func:main = int32() {
+    exit 0;
+};

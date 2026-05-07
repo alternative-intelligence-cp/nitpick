@@ -1,0 +1,81 @@
+// Basic Borrow Checker Tests - Rule: 1 mutable XOR N immutable
+
+func:test_immutable_borrows = int32() {
+    // Test 1: Multiple immutable borrows are allowed
+    int32:x = 42;
+    $$i int32:ref1 = x;   // First immutable borrow
+    $$i int32:ref2 = x;   // Second immutable borrow - should be OK
+    $$i int32:ref3 = x;   // Third immutable borrow - should be OK
+    
+    int32:zero = 0;
+    pass zero;
+};
+
+func:test_single_mutable_borrow = int32() {
+    // Test 2: Single mutable borrow is allowed
+    int32:y = 100;
+    $$m int32:mut_ref = y;  // Mutable borrow - should be OK
+    
+    int32:zero = 0;
+    pass zero;
+};
+
+// COMMENTED OUT: These functions are designed to test borrow checker errors
+// Uncomment one at a time to verify error reporting
+
+/*
+func:test_mutable_blocks_immutable = int32() {
+    // Test 3: Cannot create immutable borrow when mutable exists
+    // This should FAIL at compile time
+    int32:z = 50;
+    $$m int32:mut_ref = z;   // Mutable borrow
+    $$i int32:imm_ref = z;   // ERROR: Cannot borrow as immutable while mutably borrowed
+    
+    int32:one = 1;
+    pass(one);
+};
+
+func:test_immutable_blocks_mutable = int32() {
+    // Test 4: Cannot create mutable borrow when immutable exists
+    // This should FAIL at compile time
+    int32:w = 75;
+    $$i int32:ref1 = w;      // Immutable borrow
+    $$m int32:mut_ref = w;   // ERROR: Cannot borrow as mutable while immutably borrowed
+    
+    int32:one = 1;
+    pass(one);
+};
+*/
+
+func:test_scope_releases_borrows = int32() {
+    // Test 5: Borrows are released when they go out of scope
+    int32:a = 10;
+    
+    {
+        $$i int32:ref = a;     // Borrow in inner scope
+    }  // ref goes out of scope here
+    
+    $$m int32:mut_ref = a;  // Should be OK - no active borrows
+    int32:zero = 0;
+    pass zero;
+};
+
+func:main = int32() {
+    // Run tests that should succeed
+    int32:result1 = raw test_immutable_borrows();
+    int32:result2 = raw test_single_mutable_borrow();
+    int32:result5 = raw test_scope_releases_borrows();
+    
+    // Tests 3 and 4 should fail at compile time
+    // Uncomment one at a time to test error reporting:
+    // int32:result3 = test_mutable_blocks_immutable();
+    // int32:result4 = test_immutable_blocks_mutable();
+    
+    int32:zero = 0;
+    exit zero;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

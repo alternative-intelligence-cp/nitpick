@@ -1,0 +1,25 @@
+// Test each pick unknown case individually
+// Return the actual value to see what passes/fails
+
+func:test1 = int32() {
+    int32:x = unknown;
+    
+    pick(x) {
+        (unknown) {
+            pass 0i32;
+        },
+        (*) {
+            pass 1i32;
+        }
+    }
+};
+
+func:main = int32() {
+    int32:result = raw test1();
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

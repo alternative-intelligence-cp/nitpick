@@ -1,0 +1,24 @@
+// Test: Parser precedence for !r.is_error
+
+func:divide = int32(int32:a, int32:b) {
+    if (b == 0i32) {
+        fail -1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // WITHOUT parentheses - does parser handle this?
+    if (!r.is_error) {
+        int32:x = r.value;
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

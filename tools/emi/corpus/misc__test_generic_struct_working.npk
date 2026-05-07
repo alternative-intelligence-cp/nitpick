@@ -1,0 +1,24 @@
+// Test generic struct field access with proper initialization
+
+struct<T>:Pair = {
+    *T:first;
+    *T:second;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Test 1: Declare generic struct and assign fields
+    Pair<int64>:p;
+    p.first = 42i64;
+    p.second = 100i64;
+    
+    // Test 2: Create another instance with different type
+    Pair<int32>:p2;
+    p2.first = 10;
+    p2.second = 20;
+    
+    return 0;
+};

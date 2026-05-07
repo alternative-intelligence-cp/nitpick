@@ -1,0 +1,39 @@
+// Test high-precision integer literals
+// Phase 3.2.5: String-as-Truth Architecture
+// Use i128 suffix for integer literals that exceed INT64_MAX
+
+func:main = int32() {
+    // Test 1: Regular precision (int64)
+    int64:regular1 = 42;
+    int64:regular2 = 1000000;
+    
+    // Test 2: Maximum int64 value
+    int64:max_i64 = 9223372036854775807;
+    
+    // Test 3: Just beyond int64 range (i128 suffix required)
+    int128:beyond_i64 = 9223372036854775808i128;  // 2^63
+    
+    // Test 4: Very large int128 values
+    int128:huge1 = 170141183460469231731687303715884105727i128;  // Near int128::max
+    int128:huge2 = 123456789012345678901234567890123456789i128;
+    
+    // Test 5: Powers of 2
+    int64:pow2_32 = 4294967296;      // 2^32 (fits in int64)
+    int128:pow2_64 = 18446744073709551616i128;  // 2^64
+    int128:pow2_100 = 1267650600228229401496703205376i128;  // 2^100
+    
+    // Test 6: Small values in int128 context
+    int128:fib_large = 2880067194370816120i128;
+    
+    // Test 7: Zero and small values
+    int64:zero = 0;
+    int64:one = 1;
+    int64:negative = -42;
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

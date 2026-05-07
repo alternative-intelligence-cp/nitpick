@@ -1,0 +1,32 @@
+// Simple Struct Test - No Forward Declarations
+// Tests basic struct functionality
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    // Create a Point struct
+    Point:p = Point{ x: 42, y: 100 };
+    
+    // Access members
+    int32:x_val = p.x;
+    int32:y_val = p.y;
+    
+    // Verify values
+    if (x_val != 42) {
+        exit 1;  // ERROR: x should be 42
+    }
+    
+    if (y_val != 100) {
+        exit 2;  // ERROR: y should be 100
+    }
+    
+    exit 0;  // Success!
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

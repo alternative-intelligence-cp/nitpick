@@ -1,0 +1,22 @@
+// Simple math utilities module for testing module loading
+// Uses proper Aria syntax: func:name = returntype() { }
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:add = int32(int32:a, int32:b) {
+    int32:result = a + b;
+    pass result;
+};
+
+func:multiply = int32(int32:a, int32:b) {
+    int32:result = a * b;
+    pass result;
+};
+
+// Private function (should not be importable without pub)
+func:internal_helper = int32() {
+    int32:value = 42;
+    pass value;
+};
+
+func:main = int32() { exit 0; };

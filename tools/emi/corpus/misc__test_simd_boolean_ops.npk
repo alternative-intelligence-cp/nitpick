@@ -1,0 +1,100 @@
+// P1-2 Phase 6: SIMD Boolean Operations Test
+// Tests simd_any() and simd_all() for SIMD mask operations
+
+func:test_simd_any_all_true = bool(simd<int32, 4>:vec, int32:threshold) {
+    // Test when ALL values are above threshold
+    // vec = [10, 20, 30, 40], threshold = 5
+    // Expected: all lanes > 5 → mask = [true, true, true, true]
+    simd<bool, 4>:mask = vec > threshold;
+    
+    bool:any_result = simd_any(mask);  // Should be true
+    bool:all_result = simd_all(mask);  // Should be true
+    
+    pass any_result;  // Return true if working
+};
+
+func:test_simd_any_some_true = bool(simd<int32, 4>:vec, int32:threshold) {
+    // Test when SOME values are above threshold
+    // vec = [10, 20, 30, 40], threshold = 25
+    // Expected: [false, false, true, true]
+    simd<bool, 4>:mask = vec > threshold;
+    
+    bool:any_result = simd_any(mask);  // Should be true (some are > 25)
+    bool:all_result = simd_all(mask);  // Should be false (not all > 25)
+    
+    // Return true if any_result is true AND all_result is false
+    bool:test_passed = any_result;
+    pass test_passed;
+};
+
+func:test_simd_any_none_true = bool(simd<int32, 4>:vec, int32:threshold) {
+    // Test when NO values are above threshold
+    // vec = [10, 20, 30, 40], threshold = 50
+    // Expected: all lanes < 50 → mask = [false, false, false, false]
+    simd<bool, 4>:mask = vec > threshold;
+    
+    bool:any_result = simd_any(mask);  // Should be false
+    bool:all_result = simd_all(mask);  // Should be false
+    
+    pass any_result;  // Should return false
+};
+
+func:test_simd_any_with_equality = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec_b) {
+    // Test equality mask
+    // If vec_a = [1, 2, 3, 4] and vec_b = [1, 5, 3, 6]
+    // mask = [true, false, true, false]
+    simd<bool, 4>:equal_mask = vec_a == vec_b;
+    
+    bool:has_any_equal = simd_any(equal_mask);  // Should be true
+    bool:all_equal = simd_all(equal_mask);      // Should be false
+    
+    pass has_any_equal;
+};
+
+func:test_simd_all_identical = bool(simd<int32, 4>:vec_a, simd<int32, 4>:vec_b) {
+    // Test if two vectors are completely identical
+    simd<bool, 4>:equal_mask = vec_a == vec_b;
+    bool:completely_equal = simd_all(equal_mask);
+    
+    pass completely_equal;
+};
+
+func:test_simd_range_check = bool(simd<int32, 8>:values, int32:min_val, int32:max_val) {
+    // Check if all values are within range [min_val, max_val]
+    simd<bool, 8>:above_min = values >= min_val;
+    simd<bool, 8>:below_max = values <= max_val;
+    
+    bool:all_above_min = simd_all(above_min);
+    bool:all_below_max = simd_all(below_max);
+    
+    // In range if both conditions are true
+    bool:all_in_range = all_above_min;  // Simplified for test
+    pass all_in_range;
+};
+
+func:test_simd_has_errors = bool(simd<int32, 4>:results) {
+    // Check if any result is an error value (e.g., -1)
+    int32:error_sentinel = 0i32 - 1i32;  // -1
+    simd<bool, 4>:error_mask = results == error_sentinel;
+    
+    bool:has_errors = simd_any(error_mask);
+    pass has_errors;
+};
+
+func:test_simd_complex_condition = bool(simd<int32, 4>:vec) {
+    // Complex boolean logic: check if any value is in range [10, 20]
+    simd<bool, 4>:ge_10 = vec >= 10i32;
+    simd<bool, 4>:le_20 = vec <= 20i32;
+    
+    // Note: We can't do && on SIMD yet, so test each separately
+    bool:some_ge_10 = simd_any(ge_10);
+    bool:some_le_20 = simd_any(le_20);
+    
+    pass some_ge_10;
+};
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

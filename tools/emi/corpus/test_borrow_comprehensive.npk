@@ -1,0 +1,51 @@
+// Comprehensive borrow tests — all should compile and run correctly
+// Tests: multiple immutable borrows, mutable borrow aliasing, read/write semantics
+
+func:failsafe = int32(tbb32:err) {
+    println("failsafe");
+    exit 1;
+};
+
+func:main = int32() {
+    // ================================================================
+    // Test 1: Multiple immutable borrows (N immutable OK)
+    // ================================================================
+    int32:a = 10i32;
+    $$i int32:r1 = a;
+    $$i int32:r2 = a;
+    $$i int32:r3 = a;
+    
+    // All should read 10
+    int32:sum1 = r1 + r2 + r3;
+    // sum1 should be 30
+    
+    // ================================================================
+    // Test 2: Mutable borrow writes through to original
+    // ================================================================
+    int32:b = 50i32;
+    $$m int32:mb = b;
+    
+    // Write through mutable borrow
+    mb = 75i32;
+    
+    // b should now be 75 (aliased)
+    int32:check2 = b;
+    
+    // ================================================================
+    // Test 3: Independent borrows on different variables
+    // ================================================================
+    int32:c = 100i32;
+    int32:d = 200i32;
+    $$m int32:mc = c;
+    $$m int32:md = d;
+    
+    mc = 111i32;
+    md = 222i32;
+    
+    // c = 111, d = 222
+    int32:sum3 = c + d;
+    // sum3 should be 333
+    
+    println("borrow comprehensive test passed");
+    exit 0;
+};

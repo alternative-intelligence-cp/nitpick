@@ -1,0 +1,44 @@
+// Phase 4: Boolean / conditional logic — symbolic boolean inputs.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int32:p = 0;
+    int32:q = 0;
+    drop klee_make_symbolic(@p, 4, 0);
+    drop klee_make_symbolic(@q, 4, 0);
+
+    // Normalise to 0 or 1
+    int32:zero = 0;
+    int32:one  = 1;
+    if (p != zero) { p = one; }
+    if (q != zero) { q = one; }
+
+    // De Morgan: !(p && q) == (!p || !q)
+    int32:not_p  = one - p;
+    int32:not_q  = one - q;
+    int32:pq_and = p & q;
+    int32:not_pq = one - pq_and;
+    int32:np_or_nq = not_p | not_q;
+    // Normalise or-result: if nonzero, treat as 1
+    if (np_or_nq != zero) { np_or_nq = one; }
+    if (not_pq != np_or_nq) { exit 1; }
+
+    // Excluded middle: p | !p == 1
+    int32:p_or_np = p | not_p;
+    if (p_or_np != one) { exit 2; }
+
+    // Contradiction: p & !p == 0
+    int32:p_and_np = p & not_p;
+    if (p_and_np != zero) { exit 3; }
+
+    // Double negation: !!p == p
+    int32:not_not_p = one - not_p;
+    if (not_not_p != p) { exit 4; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

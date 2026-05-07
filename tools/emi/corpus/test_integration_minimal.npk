@@ -1,0 +1,21 @@
+func:test_minimal = NIL() {
+    // Test variables
+    nit:accumulator = 3;
+    nit:increment = 2;
+    nit:new_value = accumulator + increment;
+    
+    nit:expected_nit_err = -128;
+    if (new_value != expected_nit_err) {
+        drop print("Test running");
+    }
+};
+
+func:main = int32() {
+    drop test_minimal();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

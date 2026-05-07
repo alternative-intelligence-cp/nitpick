@@ -1,0 +1,26 @@
+// Test: Multiple specializations of the same generic function
+
+func<T>:identity = *T(*T:value) {
+    pass value;
+};
+
+func:main = int32() {
+    // Instantiate with int32
+    int32:x = 42;
+    int32:y = raw identity(x);
+    
+    // Instantiate with int8 (should create another specialization)
+    int8:a = 10;
+    int8:b = raw identity(a);
+    
+    // Instantiate with flt64 (third specialization)
+    flt64:f = 3.14;
+    flt64:g = raw identity(f);
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

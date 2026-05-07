@@ -1,0 +1,44 @@
+// Quick test: Pipeline operators (|>, <|)
+// Functional composition operators
+
+func:failsafe = int32(tbb32:err) {
+    print("ERROR");
+    exit 1;
+};
+
+// Try without pass() - direct return
+func:add_ten_direct = int32(int32:x) {
+    pass x + 10;
+};
+
+func:double_it_direct = int32(int32:x) {
+    pass x * 2;
+};
+
+func:main = int32() {
+    print("Testing pipeline operators");
+    
+    int32:value = 5;
+    
+    // Try pipeline forward with direct return functions
+    int32:result1 = raw (value |> add_ten_direct |> double_it_direct);  // Should be 30
+    
+    // Debug: check result
+    if (result1 == 0) {
+        print("ERROR: result is 0!");
+    }
+    if (result1 == 5) {
+        print("ERROR: result is 5 (no pipeline executed)");
+    }
+    if (result1 == 15) {
+        print("ERROR: result is 15 (only add_ten ran)");
+    }
+    if (result1 == 10) {
+        print("ERROR: result is 10 (only double_it ran on 5)");
+    }
+    if (result1 == 30) {
+        print("✓ Pipeline forward works!");
+    }
+    
+    exit 0;
+};

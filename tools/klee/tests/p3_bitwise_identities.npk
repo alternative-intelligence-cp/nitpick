@@ -1,0 +1,49 @@
+// Phase 3: Bitwise identities — verify standard bitwise laws symbolically.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int32:a = 0;
+    int32:b = 0;
+    drop klee_make_symbolic(@a, 4, 0);
+    drop klee_make_symbolic(@b, 4, 0);
+
+    int32:zero = 0;
+    int32:neg1 = -1;  // All bits set (0xFFFFFFFF)
+
+    // Idempotent: a & a == a, a | a == a
+    int32:aa_and = a & a;
+    int32:aa_or  = a | a;
+    if (aa_and != a) { exit 1; }
+    if (aa_or  != a) { exit 2; }
+
+    // Identity: a & 0 == 0
+    int32:and0 = a & zero;
+    if (and0 != zero) { exit 3; }
+
+    // Identity: a | 0 == a
+    int32:or0 = a | zero;
+    if (or0 != a) { exit 4; }
+
+    // Annihilator: a | -1 == -1
+    int32:or_neg1 = a | neg1;
+    if (or_neg1 != neg1) { exit 5; }
+
+    // Double negation: ~(~a) == a  (via XOR with -1 twice)
+    int32:not_a  = a ^ neg1;
+    int32:not_na = not_a ^ neg1;
+    if (not_na != a) { exit 6; }
+
+    // De Morgan: ~(a & b) == (~a | ~b)
+    int32:not_ab   = (a & b) ^ neg1;
+    int32:not_a2   = a ^ neg1;
+    int32:not_b    = b ^ neg1;
+    int32:noa_or_nb = not_a2 | not_b;
+    if (not_ab != noa_or_nb) { exit 7; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

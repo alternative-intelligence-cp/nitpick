@@ -1,0 +1,32 @@
+// Test: Sub-byte integer arithmetic — addition, comparison
+// Verifies sub-byte integer types support basic operations
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:test_int4_arithmetic = tbb32() {
+    int4:a = 3 => int4;
+    int4:b = 4 => int4;
+    int4:c = a + b;
+    pass 0;
+};
+
+func:test_uint4_arithmetic = tbb32() {
+    uint4:a = 5 => uint4;
+    uint4:b = 10 => uint4;
+    uint4:c = a + b;
+    pass 0;
+};
+
+func:test_int2_values = tbb32() {
+    int2:neg = -1 => int2;
+    int2:zero = 0 => int2;
+    int2:pos = 1 => int2;
+    pass 0;
+};
+
+func:main = int32() {
+    tbb32:r1 = raw test_int4_arithmetic();
+    tbb32:r2 = raw test_uint4_arithmetic();
+    tbb32:r3 = raw test_int2_values();
+    exit 0;
+};

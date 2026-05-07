@@ -1,0 +1,52 @@
+// Test TBB8 basic arithmetic
+func:test_tbb8_basic = int32() {
+    tbb8:a = 10;
+    tbb8:b = 20;
+    tbb8:sum = a + b;
+    tbb8:expected = 30;
+    
+    bool:passed = (sum == expected);
+    if (passed) {
+        pass 1;
+    }
+    pass 0;
+};
+
+// Test TBB8 division by zero (should not crash)
+func:test_tbb8_div_zero = int32() {
+    tbb8:val = 100;
+    tbb8:zero = 0;
+    
+    // Should return ERR sentinel, not crash
+    tbb8:result = val / zero;
+    
+    // If we got here, test passed
+    pass 1;
+};
+
+// Test TBB8 overflow behavior
+func:test_tbb8_overflow = int32() {
+    tbb8:a = 127;  // Max value for tbb8
+    tbb8:b = 1;
+    tbb8:sum = a + b;  // Should overflow to ERR
+    
+    // Can't easily test for ERR without knowing its value
+    // But if we got here without crashing, partial pass
+    pass 1;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_tbb8_basic();
+    int32:r2 = raw test_tbb8_div_zero();
+    int32:r3 = raw test_tbb8_overflow();
+    int32:total = r1 + r2 + r3;
+    if (total == 3) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

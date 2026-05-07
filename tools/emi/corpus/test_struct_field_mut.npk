@@ -1,0 +1,37 @@
+// Direct test of struct field mutation after creation
+// This is the simplest possible test
+
+extern func:npk_array_new_simple = wild int8*(int64:element_size, int32:type_id);
+extern func:npk_array_length = int64(wild int8*:arr);
+
+// Constructor that properly returns a Vec
+func:create_vec = Vec<int8>() {
+    Vec<int8>:result = {
+        data: npk_array_new_simple(1i64, 0i32),
+        length: 0i64,
+        capacity: 0i64,
+        element_size: 1i64,
+        type_id: 0i32
+    };
+    
+    pass result;
+};
+
+func:main = int32() {
+    // Test 1: Create a Vec using constructor that returns a value
+    Vec<int8>:v = raw create_vec();
+    
+    // Test 2: Mutate a field (THIS is what we fixed!)
+    v.length = 42i64;
+    
+    // Test 3: Verify mutation persisted
+    if (v.length != 42i64) {
+        exit 1i32;  // FAIL
+    }
+    
+    exit 0;  // SUCCESS
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

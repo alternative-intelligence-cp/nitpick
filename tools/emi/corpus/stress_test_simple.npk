@@ -1,0 +1,89 @@
+// Simplified Real-World Stress Test
+// Tests Result enforcement with realistic patterns
+
+// Simple parser that can fail
+func:parse_number = int32(int32:line) {
+    bool:valid = (line % 2i32) == 0i32;
+    if (valid) {
+        pass line * 10i32;
+    }
+    fail 1i32;
+};
+
+// Validate range
+func:in_range = int32(int32:val) {
+    if (val > 100i32) {
+        fail 2i32;
+    }
+    pass val;
+};
+
+// Chain two Result-returning functions
+func:parse_and_check = int32(int32:line) {
+    Result<int32>:parsed = parse_number(line);
+    if (parsed.is_error) {
+        fail parsed.error;
+    }
+    
+    Result<int32>:checked = in_range(parsed.value);
+    if (checked.is_error) {
+        fail checked.error;
+    }
+    
+    pass checked.value;
+};
+
+// Test unwrap operator
+func:parse_with_default = int32(int32:line, int32:default_val) {
+    Result<int32>:r = parse_number(line);
+    int32:val = r ? default_val;
+    pass val;
+};
+
+// Test pick statement
+func:parse_with_pick = int32(int32:line) {
+    Result<int32>:r = parse_and_check(line);
+    
+    pick(r.is_error) {
+        (false) {
+            pass r.value;
+        },
+        (*) {
+            pass 999i32;
+        }
+    }
+};
+
+func:main = int32() {
+    int32:total = 0i32;
+    
+    // Test 1: Basic Result with check
+    Result<int32>:r1 = parse_number(2i32);
+    if (!(r1.is_error)) {
+        total = total + r1.value;  // Should add 20
+    }
+    
+    // Test 2: Unwrap operator
+    int32:val2 = raw parse_with_default(3i32, 5i32);  // 3 is odd, returns 5
+    total = total + val2;  // Should add 5
+    
+    // Test 3: Chained functions
+    Result<int32>:r3 = parse_and_check(4i32);
+    if (!(r3.is_error)) {
+        total = total + r3.value;  // Should add 40
+    }
+    
+    // Test 4: Pick statement
+    int32:val4 = raw parse_with_pick(6i32);
+    total = total + val4;  // Should add 60
+    
+    if (total == 125i32) {
+        exit 0;
+    }
+    exit 1;  // Expected: 20 + 5 + 40 + 60 = 125
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

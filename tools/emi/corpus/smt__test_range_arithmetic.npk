@@ -1,0 +1,52 @@
+// Test: Range Inference — Arithmetic Propagation (v0.14.1)
+// Compile: ariac --smt-opt -v test_range_arithmetic.aria -o test_range_arithmetic
+// Expected: Ranges propagate through arithmetic operations.
+// y = x + 5 → y.range = [x.lo+5, x.hi+5]
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Test 1: Addition propagation
+func:test_add_propagation = int32() {
+    int32:a = 10i32;
+    int32:b = 20i32;
+    // a=[10,10], b=[20,20] → a+b=[30,30], no overflow
+    int32:sum = a + b;
+    // sum=[30,30] → sum+5=[35,35], no overflow
+    int32:result = sum + 5i32;
+    pass result;
+};
+
+// Test 2: Subtraction propagation
+func:test_sub_propagation = int32() {
+    int32:x = 100i32;
+    int32:y = 30i32;
+    // x=[100,100], y=[30,30] → x-y=[70,70], no overflow
+    int32:diff = x - y;
+    pass diff;
+};
+
+// Test 3: Multiplication of small values
+func:test_mul_propagation = int32() {
+    int32:m = 15i32;
+    int32:n = 8i32;
+    // m=[15,15], n=[8,8] → m*n=[120,120], no overflow
+    int32:prod = m * n;
+    pass prod;
+};
+
+// Test 4: Chain of arithmetic
+func:test_chain = int32() {
+    int32:x = 3i32;
+    int32:y = 4i32;
+    int32:z = 5i32;
+    // x+y=[7,7], (x+y)*z=[35,35], no overflow
+    int32:sum = x + y;
+    int32:result = sum * z;
+    pass result;
+};
+
+func:main = int32() {
+    exit 0;
+};

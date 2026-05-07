@@ -1,0 +1,38 @@
+// Phase 2: Integer arithmetic — symbolic commutativity, associativity,
+// identity, and TBB overflow propagation.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int32:a = 0;
+    int32:b = 0;
+    int32:c = 0;
+    drop klee_make_symbolic(@a, 4, 0);
+    drop klee_make_symbolic(@b, 4, 0);
+    drop klee_make_symbolic(@c, 4, 0);
+
+    // Commutativity: a + b == b + a
+    int32:sum1 = a + b;
+    int32:sum2 = b + a;
+    if (sum1 != sum2) { exit 1; }
+
+    // Identity: a + 0 == a
+    int32:zero = 0;
+    int32:sum3 = a + zero;
+    if (sum3 != a) { exit 2; }
+
+    // a - a == 0
+    int32:diff = a - a;
+    if (diff != zero) { exit 3; }
+
+    // a * 1 == a
+    int32:one = 1;
+    int32:prod = a * one;
+    if (prod != a) { exit 4; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

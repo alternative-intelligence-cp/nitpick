@@ -1,0 +1,27 @@
+// Test if const expressions are evaluated at compile time
+
+const int64:A = 10;
+const int64:B = 20;
+const int64:SUM = A + B;  // Should be 30
+
+func:main = int32() {
+    int64:result = SUM;
+    
+    // Print result as exit code (should be 30)
+    int32:ret = 30;
+    
+    // If SUM was correctly evaluated, result should be 30
+    // We'll return 0 for success, 1 for failure
+    if (result == 30) {
+        int32:zero = 0;
+        exit zero;
+    }
+    
+    int32:one = 1;
+    exit one;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

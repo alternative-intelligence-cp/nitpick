@@ -1,0 +1,43 @@
+// test_fix256_division.aria - fix256 division edge cases
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // 10 / 2 = 5
+    fix256:a1 = fix256_from_int(10);
+    fix256:b1 = fix256_from_int(2);
+    fix256:r1 = a1 / b1;
+    int64:v1 = fix256_to_int(r1);
+    if (v1 != 5) {
+        return 1;
+    }
+
+    // 42 / 1 = 42
+    fix256:a4 = fix256_from_int(42);
+    fix256:b4 = fix256_from_int(1);
+    fix256:r4 = a4 / b4;
+    int64:v4 = fix256_to_int(r4);
+    if (v4 != 42) {
+        return 2;
+    }
+
+    // 123 / 123 = 1
+    fix256:a5 = fix256_from_int(123);
+    fix256:b5 = fix256_from_int(123);
+    fix256:r5 = a5 / b5;
+    int64:v5 = fix256_to_int(r5);
+    if (v5 != 1) {
+        return 3;
+    }
+
+    // 1000000 / 1000 = 1000
+    fix256:a6 = fix256_from_int(1000000);
+    fix256:b6 = fix256_from_int(1000);
+    fix256:r6 = a6 / b6;
+    int64:v6 = fix256_to_int(r6);
+    if (v6 != 1000) {
+        return 4;
+    }
+
+    return 0;
+};

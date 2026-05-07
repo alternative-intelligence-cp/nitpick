@@ -1,0 +1,241 @@
+// Nikola Capability Test - validates Aria features required for Nikola
+// Tests: custom numeric types, generics, pattern matching, error handling
+
+// ============================================================================
+// TEST 1: Custom Numeric Type with Operator Overloading
+// ============================================================================
+
+// Nit - Balanced Nonary digit type (-4 to +4)
+struct:Nit = {
+    int32:value;
+};
+
+// Constructor with clamping (saturated)
+func:nit_new = Nit(int32:v) {
+    int32:clamped = v;
+    if (v < -4) { clamped = -4; }
+    if (v > 4) { clamped = 4; }
+    Nit:ret;
+    ret.value = clamped;
+    pass ret;
+};
+
+// Addition with saturation
+func:nit_add = Nit(Nit:a, Nit:b) {
+    int32:s = a.value + b.value;
+    Nit:ret = raw nit_new(s);
+    pass ret;
+};
+
+// Subtraction with saturation
+func:nit_sub = Nit(Nit:a, Nit:b) {
+    int32:d = a.value - b.value;
+    Nit:ret = raw nit_new(d);
+    pass ret;
+};
+
+// Equality
+func:nit_eq = bool(Nit:a, Nit:b) {
+    pass a.value == b.value;
+};
+
+// ============================================================================
+// TEST 2: Generic Complex Number Type
+// ============================================================================
+
+/**
+ * Complex<T> - Generic complex number
+ * Tests: generic structs, type parameters, operations on generic types
+ */
+struct<T>:Complex = {
+    *T:real;
+    *T:imag;
+};
+
+// Generic constructor
+func<T>:complex_new = Complex<T>(T:r, T:i) {
+    Complex<T>:result;
+    result.real = r;
+    result.imag = i;
+    pass result;
+};
+
+// Generic addition
+func<T>:complex_add = Complex<T>(Complex<T>:a, Complex<T>:b) {
+    T:r = a.real + b.real;
+    T:i = a.imag + b.imag;
+    Complex<T>:result = complex_new::<T>(r, i);
+    pass result;
+};
+
+// Generic multiplication (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+func<T>:complex_mul = Complex<T>(Complex<T>:a, Complex<T>:b) {
+    T:ac = a.real * b.real;
+    T:bd = a.imag * b.imag;
+    T:ad = a.real * b.imag;
+    T:bc = a.imag * b.real;
+    
+    T:real_part = ac - bd;
+    T:imag_part = ad + bc;
+    
+    Complex<T>:result = complex_new::<T>(real_part, imag_part);
+    pass result;
+};
+
+// ============================================================================
+// TEST 3: Pattern Matching
+// ============================================================================
+
+/**
+ * Test pattern matching on enum-like values
+ */
+func:classify_nit = int32(Nit:n) {
+    if (n.value < 0) {
+        pass 1;  // Negative
+    }
+    if (n.value == 0) {
+        pass 0;  // Zero
+    }
+    // else
+    pass 2;  // Positive
+};
+
+// ============================================================================
+// TEST 4: Error Handling with Result Types
+// ============================================================================
+
+/**
+ * Test Result<T> error handling (required for Nikola)
+ */
+func:safe_divide = int32(int32:a, int32:b) {
+    if (b == 0) {
+        fail 1;
+    }
+    pass a / b;
+};
+
+// ============================================================================
+// MAIN TEST RUNNER
+// ============================================================================
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    print("=== Nikola Capability Test Suite ===");
+    print("");
+    
+    // TEST 1: Custom Numeric Type (Nit)
+    print("[TEST 1] Custom Numeric Type - Nit");
+    
+    Nit:n1 = raw nit_new(3);
+    Nit:n2 = raw nit_new(-2);
+    
+    // Test addition: 3 + (-2) = 1
+    Nit:sum = raw nit_add(n1, n2);
+    if (sum.value != 1) {
+        int32:val = sum.value;
+        print("FAIL: Nit addition");
+        exit 1;
+    }
+    print("  PASS: Addition works (3 + -2 = 1)");
+    
+    // Test subtraction: 3 - (-2) = 5, but saturates to 4
+    Nit:diff = raw nit_sub(n1, n2);
+    if (diff.value != 4) {
+        print("FAIL: Nit saturation");
+        exit 2;
+    }
+    print("  PASS: Saturation works (3 - -2 = 4 clamped from 5)");
+    
+    // Test equality
+    Nit:n3 = raw nit_new(3);
+    if (!raw nit_eq(n1, n3)) {
+        print("FAIL: Nit equality");
+        exit 3;
+    }
+    print("  PASS: Equality works");
+    
+    print("");
+    
+    // TEST 2: Generic Complex Numbers
+    print("[TEST 2] Generic Complex Numbers");
+    
+    // Test with int32
+    Complex<int32>:z1 = raw complex_new::<int32>(3, 4);
+    Complex<int32>:z2 = raw complex_new::<int32>(1, 2);
+    
+    // Addition: (3+4i) + (1+2i) = (4+6i)
+    Complex<int32>:z_sum = raw complex_add::<int32>(z1, z2);
+    if (z_sum.real != 4 || z_sum.imag != 6) {
+        print("FAIL: Complex addition");
+        exit 4;
+    }
+    print("  PASS: Complex addition works (3+4i + 1+2i = 4+6i)");
+    
+    // Multiplication: (3+4i) * (1+2i) = (3-8) + (6+4)i = -5+10i
+    Complex<int32>:z_prod = raw complex_mul::<int32>(z1, z2);
+    if (z_prod.real != -5 || z_prod.imag != 10) {
+        print("FAIL: Complex multiplication");
+        exit 5;
+    }
+    print("  PASS: Complex multiplication works (3+4i * 1+2i = -5+10i)");
+    
+    // Test with int64 (different type)
+    Complex<int64>:w1 = raw complex_new::<int64>(10, 20);
+    Complex<int64>:w2 = raw complex_new::<int64>(5, 15);
+    Complex<int64>:w_sum = raw complex_add::<int64>(w1, w2);
+    if (w_sum.real != 15 || w_sum.imag != 35) {
+        print("FAIL: Complex<int64> addition");
+        exit 6;
+    }
+    print("  PASS: Generic instantiation works (Complex<int32> and Complex<int64>)");
+    
+    print("");
+    
+    // TEST 3: Pattern Matching
+    print("[TEST 3] Pattern Matching");
+    
+    Nit:neg = raw nit_new(-3);
+    Nit:zero = raw nit_new(0);
+    Nit:pos = raw nit_new(2);
+    
+    int32:class_neg = raw classify_nit(neg);
+    int32:class_zero = raw classify_nit(zero);
+    int32:class_pos = raw classify_nit(pos);
+    
+    if (class_neg != 1 || class_zero != 0 || class_pos != 2) {
+        print("FAIL: Pattern matching classification");
+        exit 7;
+    }
+    print("  PASS: Pattern matching works");
+    
+    print("");
+    
+    // TEST 4: Error Handling
+    print("[TEST 4] Error Handling with Result<T>");
+    
+    Result<int32>:good_div = safe_divide(10, 2);
+    if (good_div.is_error) {
+        print("FAIL: Valid division returned error");
+        exit 8;
+    }
+    if (good_div.value != 5) {
+        print("FAIL: Division result incorrect");
+        exit 9;
+    }
+    print("  PASS: Successful Result works");
+    
+    Result<int32>:bad_div = safe_divide(10, 0);
+    if (!bad_div.is_error) {
+        print("FAIL: Division by zero should return error");
+        exit 10;
+    }
+    print("  PASS: Error Result works (division by zero detected)");
+    
+    print("");
+    print("=== ALL TESTS PASSED ===");
+    
+    exit 0;
+};

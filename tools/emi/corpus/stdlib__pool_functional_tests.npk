@@ -1,0 +1,94 @@
+// Positive test: Pool allocator lifecycle and operations
+func:test_pool_lifecycle = int32() {
+    print("Test 1: Pool lifecycle\n");
+    
+    // Create pool (64-byte objects, 16 objects per block)
+    int64:pool = pool_new(64, 16);
+    if (pool == 0) {
+        print("ERROR: Pool creation failed\n");
+        int32:err = 1;
+        pass err;
+    }
+    
+    // Reset pool
+    pool_reset(pool);
+    
+    // Destroy pool
+    pool_destroy(pool);
+    
+    print("SUCCESS: Pool lifecycle test passed\n");
+    int32:res_ok = 0;
+    pass res_ok;
+};
+
+func:test_pool_stats = int32() {
+    print("Test 2: Pool statistics\n");
+    
+    int64:pool = pool_new(128, 8);
+    if (pool == 0) {
+        print("ERROR: Pool creation failed\n");
+        int32:err = 3;
+        pass err;
+    }
+    
+    // TODO: Get stats when builtins available
+    // int64:total = pool_get_total_objects(pool);
+    
+    print("Pool stats test (basic)\n");
+    
+    // Cleanup
+    pool_destroy(pool);
+    
+    print("SUCCESS: Pool stats test passed\n");
+    int32:res_ok = 0;
+    pass res_ok;
+};
+
+func:test_pool_multiple = int32() {
+    print("Test 3: Multiple pools\n");
+    
+    // Create different sized pools
+    int64:pool1 = pool_new(32, 16);
+    int64:pool2 = pool_new(64, 8);
+    int64:pool3 = pool_new(256, 4);
+    
+    if (pool1 == 0 || pool2 == 0 || pool3 == 0) {
+        print("ERROR: Multi-pool creation failed\n");
+        if (pool1 != 0) { pool_destroy(pool1); }
+        if (pool2 != 0) { pool_destroy(pool2); }
+        if (pool3 != 0) { pool_destroy(pool3); }
+        int32:err = 4;
+        pass err;
+    }
+    
+    // Destroy in reverse order
+    pool_destroy(pool3);
+    pool_destroy(pool2);
+    pool_destroy(pool1);
+    
+    print("SUCCESS: Multiple pools test passed\n");
+    int32:res_ok = 0;
+    pass res_ok;
+};
+
+func:main = int32() {
+    print("=== Pool Allocator Functional Tests ===\n\n");
+    
+    int32:result1 = raw test_pool_lifecycle();
+    if (result1 != 0) { exit result1; }
+    
+    int32:result2 = raw test_pool_stats();
+    if (result2 != 0) { exit result2; }
+    
+    int32:result3 = raw test_pool_multiple();
+    if (result3 != 0) { exit result3; }
+    
+    print("\n=== All Pool Tests PASSED ===\n");
+    int32:success = 0;
+    exit success;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,37 @@
+// Test: v0.14.0 — Contract proof with multiple return paths (pass statements)
+// Functions with multiple pass() in different branches.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Three-way branch — all paths return non-negative
+func:sign = int32(int32:x)
+    requires x > -1000i32, x < 1000i32
+    ensures $ >= -1i32, $ <= 1i32
+{
+    if (x > 0i32) {
+        pass(1i32);
+    } else {
+        if (x < 0i32) {
+            pass(-1i32);
+        } else {
+            pass(0i32);
+        }
+    }
+};
+
+// Early return pattern — all paths return >= 0
+func:relu = int32(int32:x)
+    requires x > -1000i32, x < 1000i32
+    ensures $ >= 0i32
+{
+    if (x < 0i32) {
+        pass(0i32);
+    }
+    pass(x);
+};
+
+func:main = int32() {
+    exit 0;
+};

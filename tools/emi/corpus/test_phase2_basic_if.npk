@@ -1,0 +1,26 @@
+// Phase 2 Test 1: Basic if statement with Result check
+// Should PASS - accessing value after checking is_error == false
+
+func:divide = int32(int32:a, int32:b) {
+    bool:is_zero = (b == 0i32);
+    if (is_zero) {
+        fail -1i32;
+    }
+    pass a / b;
+};
+
+func:main = int32() {
+    Result<int32>:r = divide(10i32, 2i32);
+    
+    // Check is_error == false, then access value in then branch
+    if (r.is_error == false) {
+        int32:x = r.value;  // SAFE: we know is_error == false
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

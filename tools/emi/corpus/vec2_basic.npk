@@ -1,0 +1,72 @@
+// Test basic vec2 operations
+// Part of Phase 3.3: Mathematical Types (Vectors)
+// vec2 is a 2-component SIMD vector type
+
+func:main = int32() {
+    // Test vec2 construction with flt64 components (dvec2)
+    // Note: 1.0 literals default to flt64, creating dvec2
+    vec2:pos = vec2(1.0, 2.0);
+    vec2:vel = vec2(3.0, 4.0);
+    
+    // Test component access
+    flt64:x = pos.x;
+    flt64:y = pos.y;
+    
+    // Verify components
+    if (x != 1.0) {
+        int32:tmp1 = 1; exit tmp1;  // Fail
+    }
+    
+    if (y != 2.0) {
+        int32:tmp2 = 2; exit tmp2;  // Fail
+    }
+    
+    // Test index access
+    flt64:first = pos[0];
+    flt64:second = pos[1];
+    
+    if (first != 1.0) {
+        int32:tmp3 = 3; exit tmp3;  // Fail
+    }
+    
+    if (second != 2.0) {
+        int32:tmp4 = 4; exit tmp4;  // Fail
+    }
+    
+    // Test vector arithmetic (component-wise)
+    vec2:sum = pos + vel;
+    vec2:diff = vel - pos;
+    
+    // Check sum components
+    flt64:sum_x = sum.x;
+    flt64:sum_y = sum.y;
+    
+    if (sum_x != 4.0) {  // 1.0 + 3.0
+        int32:tmp5 = 5; exit tmp5;  // Fail
+    }
+    
+    if (sum_y != 6.0) {  // 2.0 + 4.0
+        int32:tmp6 = 6; exit tmp6;  // Fail
+    }
+    
+    // Test scalar multiplication
+    vec2:scaled = pos * 2.0;
+    flt64:scaled_x = scaled.x;
+    flt64:scaled_y = scaled.y;
+    
+    if (scaled_x != 2.0) {  // 1.0 * 2.0
+        int32:tmp7 = 7; exit tmp7;  // Fail
+    }
+    
+    if (scaled_y != 4.0) {  // 2.0 * 2.0
+        int32:tmp8 = 8; exit tmp8;  // Fail
+    }
+    
+    // All tests passed
+    int32:tmp0 = 0; exit tmp0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

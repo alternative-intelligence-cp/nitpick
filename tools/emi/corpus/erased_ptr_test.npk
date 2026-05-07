@@ -1,0 +1,46 @@
+/**
+ * erased_ptr_test.aria — P3: ?-> / ?* type-erased pointer
+ *
+ * Tests:
+ *   1. Extern FFI functions declared with ?* (honest void* replacement)
+ *   2. wild ?-> variable declaration receives erased pointer from malloc
+ *   3. wild ?-> is passed to free (wild ?* param) — implicit thin-compat
+ *   4. move() transfers wild ?-> ownership correctly
+ *   5. Multiple allocations and frees without leaks / double-frees
+ *
+ * Companion docs: ARIA-P3 in 0.1.0_FEATURE_FREEZE_CHECKLIST.md
+ *
+ * Expected: PASS — exits with code 0
+ */
+
+// Honest FFI declarations: ?* replaces the former "wild int8*" lie.
+// malloc returns a pointer to something unknown — that's exactly ?*.
+extern func:malloc = wild ?*(int64:size);
+extern func:free   = void(wild ?*:ptr);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+
+    // Test 1: basic alloc → free with erased pointer
+    wild ?->:buf = malloc(64i64);
+    free(buf);
+
+    // Test 2: move transfers ownership of erased pointer
+    wild ?->:src = malloc(128i64);
+    wild ?->:dst = move(src);
+    free(dst);  // dst is the owner; no double-free, no leak
+
+    // Test 3: chain of moves (erased pointer stays erased through moves)
+    wild ?->:a = malloc(256i64);
+    wild ?->:b = move(a);
+    wild ?->:c = move(b);
+    free(c);
+
+    // Test 4: zero-size hinting (malloc(0) behavior is implementation-defined,
+    // but should not crash — just free whatever we got)
+    wild ?->:tiny = malloc(0i64);
+    free(tiny);
+
+    exit 0;
+};

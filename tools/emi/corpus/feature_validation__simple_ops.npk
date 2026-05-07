@@ -1,0 +1,30 @@
+// Test operators that should work with type system
+// Simple arithmetic and demonstrate the IR generation
+
+// Test simple arithmetic
+func:test_add = int64() {
+    pass 10 + 5;
+};
+
+func:test_subtract = int64() {
+    pass 10 - 5;
+};
+
+func:test_multiply = int64() {
+    pass 3 * 4;
+};
+
+func:test_divide = int64() {
+    pass 20 / 4;
+};
+
+// Main
+func:main = int32() {
+    int64:r = test_add() ? -1i64;
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

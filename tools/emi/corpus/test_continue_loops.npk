@@ -1,0 +1,38 @@
+// Test: continue keyword in loops — additional edge cases
+// Verifies continue works with nested conditions
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:test_continue_basic = tbb32() {
+    int32:sum = 0;
+    int32:i = 0;
+    while (i < 10) {
+        i += 1;
+        if (i == 5) {
+            continue;
+        }
+        sum = sum + i;
+    }
+    // sum = 1+2+3+4+6+7+8+9+10 = 50 (skipped 5)
+    pass 0;
+};
+
+func:test_continue_first_iteration = tbb32() {
+    int32:count = 0;
+    int32:i = 0;
+    while (i < 5) {
+        i += 1;
+        if (i == 1) {
+            continue;
+        }
+        count += 1;
+    }
+    // count = 4 (skipped first iteration)
+    pass 0;
+};
+
+func:main = int32() {
+    tbb32:r1 = raw test_continue_basic();
+    tbb32:r2 = raw test_continue_first_iteration();
+    exit 0;
+};

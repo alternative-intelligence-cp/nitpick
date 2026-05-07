@@ -1,0 +1,40 @@
+// Regression test: nested struct member access through array fields
+// Verifies both writes (obj.arr[i].field = val) and reads (obj.arr[i].field)
+// Previously both codegen paths silently failed (returned nullptr)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Line = {
+    int32:id;
+    Point[2]:endpoints;
+};
+
+func:main = int32() {
+    // Create a Line with two endpoints
+    Line:seg;
+    seg.id = 42i32;
+    seg.endpoints[0].x = 10i32;
+    seg.endpoints[0].y = 20i32;
+    seg.endpoints[1].x = 30i32;
+    seg.endpoints[1].y = 40i32;
+
+    // Verify writes took effect via reads
+    if (seg.id != 42i32) { exit 1; }
+    if (seg.endpoints[0].x != 10i32) { exit 2; }
+    if (seg.endpoints[0].y != 20i32) { exit 3; }
+    if (seg.endpoints[1].x != 30i32) { exit 4; }
+    if (seg.endpoints[1].y != 40i32) { exit 5; }
+
+    // Overwrite one nested field and verify isolation
+    seg.endpoints[0].x = 99i32;
+    if (seg.endpoints[0].x != 99i32) { exit 6; }
+    if (seg.endpoints[0].y != 20i32) { exit 7; }
+    if (seg.endpoints[1].x != 30i32) { exit 8; }
+
+    exit 0;
+};

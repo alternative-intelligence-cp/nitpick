@@ -1,0 +1,92 @@
+// Test int64_toString function
+
+/**
+ * Convert an int64 to a string representation.
+ * Simple implementation using divide-by-10 algorithm.
+ */
+func:int64_toString = string(int64:value) {
+    // Special case: zero
+    if (value == 0) {
+        pass "0";
+    }
+    
+    // Handle negative numbers
+    bool:is_negative = false;
+    int64:work_value = value;  // Use local copy instead of modifying parameter
+    if (value < 0) {
+        is_negative = true;
+        work_value = -value;  // Make positive for digit extraction
+    }
+    
+    // Build result string by extracting digits
+    string:result = "";
+    int64:remaining = work_value;
+    
+    // Extract digits from right to left
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        
+        // Convert digit to character
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        
+        // Prepend digit to result
+        result = string_concat(digit_char, result);
+    }
+    
+    // Add negative sign if needed
+    if (is_negative) {
+        result = string_concat("-", result);
+    }
+    
+    pass result;
+};
+
+func:main = int32() {
+    // Test zero
+    int64:zero = 0;
+    string:zero_str = raw int64_toString(zero);
+    drop println(string_concat("Zero: ", zero_str));
+    
+    // Test positive numbers
+    int64:pos = 42;
+    string:pos_str = raw int64_toString(pos);
+    drop println(string_concat("Positive: ", pos_str));
+    
+    // Test negative numbers
+    int64:neg = -123;
+    string:neg_str = raw int64_toString(neg);
+    drop println(string_concat("Negative: ", neg_str));
+    
+    // Test large number
+    int64:large = 987654321;
+    string:large_str = raw int64_toString(large);
+    drop println(string_concat("Large: ", large_str));
+    
+    // Test with ternary literals
+    int64:tern_six = 0t1T0;  // 1*9 + (-1)*3 + 0*1 = 6
+    string:tern_str = raw int64_toString(tern_six);
+    drop println(string_concat("Ternary 0t1T0 = ", tern_str));
+    
+    // Test with nonary literals
+    int64:non_seventeen = 0n2A;  // 2*9 + (-1)*1 = 17
+    string:non_str = raw int64_toString(non_seventeen);
+    drop println(string_concat("Nonary 0n2A = ", non_str));
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

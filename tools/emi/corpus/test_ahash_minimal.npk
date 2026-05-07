@@ -1,0 +1,17 @@
+// test_ahash_minimal.aria — Minimal ahash test
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:ht = ahash(4096);
+    ahset(ht, "x", 42i64);
+    int64:v = ahget(ht, "x");
+    if (v == 42i64) {
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+    return 0;
+};

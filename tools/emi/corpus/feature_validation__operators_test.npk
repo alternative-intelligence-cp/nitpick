@@ -1,0 +1,153 @@
+// Test operators without control flow
+// Tests: comparisons, logical ops, bitwise ops, arithmetic, unary
+
+// Test comparison operators
+func:test_equal = int64() {
+    if (10 == 10) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_not_equal = int64() {
+    if (10 != 5) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_less_than = int64() {
+    if (5 < 10) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_less_equal = int64() {
+    if (5 <= 10) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_greater = int64() {
+    if (10 > 5) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_greater_equal = int64() {
+    if (10 >= 10) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+// Test logical operators
+func:test_and_true = int64() {
+    if ((1 != 0) && (1 != 0)) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_and_false = int64() {
+    if ((1 != 0) && (0 != 0)) {
+        pass 1;  // Returns 1 (should not reach)
+    }
+    pass 0;  // Returns 0 (false)
+};
+
+func:test_or_true = int64() {
+    if ((0 != 0) || (1 != 0)) {
+        pass 1;  // Returns 1 (true)
+    }
+    pass 0;
+};
+
+func:test_or_false = int64() {
+    if ((0 != 0) || (0 != 0)) {
+        pass 1;  // Returns 1 (should not reach)
+    }
+    pass 0;  // Returns 0 (false)
+};
+
+// Test bitwise operators
+func:test_bitwise_and = uint64() {
+    uint64:a = 12;
+    uint64:b = 10;
+    uint64:result = a & b;  // 1100 & 1010 = 1000 = 8
+    pass result;
+};
+
+func:test_bitwise_or = uint64() {
+    uint64:a = 12;
+    uint64:b = 10;
+    uint64:result = a | b;  // 1100 | 1010 = 1110 = 14
+    pass result;
+};
+
+func:test_bitwise_xor = uint64() {
+    uint64:a = 12;
+    uint64:b = 10;
+    uint64:result = a ^ b;  // 1100 ^ 1010 = 0110 = 6
+    pass result;
+};
+
+func:test_shift_left = uint64() {
+    uint64:a = 3;
+    uint64:result = a << 2;  // 3 << 2 = 12
+    pass result;
+};
+
+func:test_shift_right = uint64() {
+    uint64:a = 12;
+    uint64:result = a >> 2;  // 12 >> 2 = 3
+    pass result;
+};
+
+// Test arithmetic
+func:test_add = int64() {
+    pass 10 + 5;  // Returns 15
+};
+
+func:test_subtract = int64() {
+    pass 10 - 5;  // Returns 5
+};
+
+func:test_multiply = int64() {
+    pass 3 * 4;  // Returns 12
+};
+
+func:test_divide = int64() {
+    pass 20 / 4;  // Returns 5
+};
+
+func:test_modulo = int64() {
+    pass 17 % 5;  // Returns 2
+};
+
+// Test unary operators
+func:test_negate = int64() {
+    pass -5;  // Returns -5
+};
+
+func:test_double_negate = int64() {
+    pass -(-5);  // Returns 5
+};
+
+// Test combinations
+func:test_complex = int64() {
+    pass (10 + 5) * 2;  // Returns 30
+};
+
+// Main entry point
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

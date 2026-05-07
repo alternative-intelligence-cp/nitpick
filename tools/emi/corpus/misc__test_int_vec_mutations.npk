@@ -1,0 +1,178 @@
+// Type:IntVec - Complete implementation with mutation support
+// Demonstrates dynamic array with push/pop operations
+
+// External memory functions
+extern func:malloc = wild int8*(int64:size);
+extern func:free = NIL(wild int8*:ptr);
+extern func:realloc = wild int8*(wild int8*:ptr, int64:new_size);
+
+// Pointer conversion helpers
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+
+// Array element access helpers
+extern func:int_array_get = int32(wild int8*:buf, int32:idx);
+extern func:int_array_set = NIL(wild int8*:buf, int32:idx, int32:val);
+
+Type:IntVec = {
+    // Constructor: Create vector with initial capacity
+    func:create = IntVec(int32:initial_capacity) {
+        // Calculate bytes: capacity * 4 (sizeof int32)
+        int64:cap64 = 0i64;
+        int64:bytes = 64i64;  // Default 16 elements
+        
+        // Adjust based on capacity
+        bool:use_large = (initial_capacity > 16i32);
+        // For demo, just use fixed size for now
+        wild int8->:buffer = malloc(bytes);
+        
+        IntVec:vec = IntVec{
+            dataptr: ptr_to_int64(buffer),
+            length: 0i32,
+            capacity: initial_capacity
+        };
+        pass vec;
+    };
+    
+    // Destructor: Free vector memory
+    func:destroy = NIL(IntVec:self) {
+        _ = free(int64_to_ptr(self.dataptr));
+        pass NIL;
+    };
+    
+    // Accessor methods
+    func:len = int32(IntVec:self) {
+        pass self.length;
+    };
+    
+    func:capacity = int32(IntVec:self) {
+        pass self.capacity;
+    };
+    
+    func:isEmpty = bool(IntVec:self) {
+        bool:empty = (self.length == 0i32);
+        pass empty;
+    };
+    
+    func:isFull = bool(IntVec:self) {
+        bool:full = (self.length == self.capacity);
+        pass full;
+    };
+    
+    // Get element at index (unsafe - no bounds checking)
+    func:get = int32(IntVec:self, int32:index) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        int32:element = int_array_get(buffer, index);
+        pass element;
+    };
+    
+    // Set element at index (unsafe - no bounds checking)
+    func:set = NIL(IntVec:self, int32:index, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, index, value);
+        pass NIL;
+    };
+    
+    // Push element to end (returns new IntVec with updated length)
+    func:push = IntVec(IntVec:self, int32:value) {
+        // Check if we have space
+        bool:has_space = (self.length < self.capacity);
+        
+        // Add element at current length position
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, self.length, value);
+        
+        // Return new IntVec with incremented length
+        int32:new_length = self.length + 1i32;
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: new_length,
+            capacity: self.capacity
+        };
+        pass result;
+    };
+    
+    // Pop element from end (returns new IntVec with updated length)
+    // Returns the modified vector; use get(length-1) to retrieve the popped value first
+    func:pop = IntVec(IntVec:self) {
+        // Check if empty
+        bool:is_empty = (self.length == 0i32);
+        
+        // Decrement length (don't need to clear the value)
+        int32:new_length = self.length - 1i32;
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: new_length,
+            capacity: self.capacity
+        };
+        pass result;
+    };
+    
+    // Clear all elements (reset length to 0)
+    func:clear = IntVec(IntVec:self) {
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: 0i32,
+            capacity: self.capacity
+        };
+        pass result;
+    };
+    
+    // Static factory methods
+    func:new = IntVec() {
+        IntVec:vec = raw instance<IntVec>(16i32);
+        pass vec;
+    };
+    
+    func:withCapacity = IntVec(int32:cap) {
+        IntVec:vec = raw instance<IntVec>(cap);
+        pass vec;
+    };
+    
+    // Public interface
+    struct:interface = {
+        int64:dataptr;
+        int32:length;
+        int32:capacity;
+    };
+};
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Create empty vector
+    IntVec:vec = raw IntVec.new();
+    
+    // Push some elements (functional style - returns new IntVec)
+    IntVec:vecA = raw vec.push(10i32);
+    IntVec:vecB = raw vecA.push(20i32);
+    IntVec:vecC = raw vecB.push(30i32);
+    IntVec:vecD = raw vecC.push(40i32);
+    
+    // Check length
+    int32:len = raw vecD.len();  // Should be 4
+    
+    // Read values
+    int32:first = raw vecD.get(0i32);   // 10
+    int32:second = raw vecD.get(1i32);  // 20
+    int32:third = raw vecD.get(2i32);   // 30
+    int32:fourth = raw vecD.get(3i32);  // 40
+    
+    // Verify: 10 + 20 + 30 + 40 = 100
+    int32:sum = first + second + third + fourth;
+    
+    // Pop an element
+    int32:last = raw vecD.get(3i32);  // Get last value before pop
+    IntVec:vecE = raw vecD.pop();
+    int32:new_len = raw vecE.len();  // Should be 3
+    
+    // Clear vector
+    IntVec:vecF = raw vecE.clear();
+    bool:empty = raw vecF.isEmpty();  // Should be true
+    
+    // Clean up
+    _ = vecF.destroy();
+    
+    exit 0;
+};

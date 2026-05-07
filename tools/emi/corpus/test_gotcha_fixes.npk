@@ -1,0 +1,46 @@
+// ARIA GOTCHA Fixes Validation Test
+// Simplified test - validates arithmetic uses runtime calls not LLVM ops
+
+func:test_trit_overflow = NIL() {
+    trit:a = 1;
+    trit:b = 1;
+    trit:sum = a + b;  // 1 + 1 = ERR (overflow)
+    
+    // Verify it's ERR sentinel
+    if (sum == -128) {
+        // Success
+        trit:success = 1;
+    }
+};
+
+func:test_nit_overflow = NIL() {
+    nit:a = 3;
+    nit:b = 2;
+    nit:sum = a + b;  // 3 + 2 = ERR (overflow)
+    
+    if (sum == -128) {
+        nit:success = 1;
+    }
+};
+
+func:test_valid_ops = NIL() {
+    trit:a = 1;
+    trit:b = -1;
+    trit:sum = a + b;  // 1 + (-1) = 0 (valid)
+    
+    if (sum == 0) {
+        trit:success = 1;
+    }
+};
+
+func:main = int32() {
+    drop test_trit_overflow();
+    drop test_nit_overflow();
+    drop test_valid_ops();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,27 @@
+// Minimal test matching what we verified worked yesterday
+
+struct<T>:complex = {
+    *T:real;
+    *T:imag;
+};
+
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    // Basic assignment without reading back
+    complex<int32>:z;
+    z.real = 42;
+    z.imag = 17;
+    
+    // Multiple instantiations
+    complex<int64>:w;
+    w.real = 1000000;
+    w.imag = 2000000;
+    
+    complex<flt64>:x;
+    x.real = 3.14;
+    x.imag = 2.71;
+    
+    // Generic structs work!
+    exit 0;
+};

@@ -1,0 +1,56 @@
+// Basic range operator tests
+// Testing .. (inclusive) and ... (exclusive) range notation
+
+// Inline int64_toString for explicit conversion
+func:int64_toString = string(int64:value) {
+    if (value == 0) { pass "0"; }
+    bool:is_negative = false;
+    int64:work_value = value;
+    if (value < 0) { is_negative = true; work_value = -value; }
+    string:result = "";
+    int64:remaining = work_value;
+    while (remaining > 0) {
+        int64:digit = remaining % 10;
+        remaining = remaining / 10;
+        string:digit_char = "";
+        if (digit == 0) { digit_char = "0"; }
+        if (digit == 1) { digit_char = "1"; }
+        if (digit == 2) { digit_char = "2"; }
+        if (digit == 3) { digit_char = "3"; }
+        if (digit == 4) { digit_char = "4"; }
+        if (digit == 5) { digit_char = "5"; }
+        if (digit == 6) { digit_char = "6"; }
+        if (digit == 7) { digit_char = "7"; }
+        if (digit == 8) { digit_char = "8"; }
+        if (digit == 9) { digit_char = "9"; }
+        result = string_concat(digit_char, result);
+    }
+    if (is_negative) { result = string_concat("-", result); }
+    pass result;
+};
+
+func:main = int32() {
+    // Basic inclusive range (1..5 includes 5)
+    // For now, just test that ranges parse and compile
+    int64:start = 1;
+    int64:finish = 5;
+    
+    // These will create range structs
+    // TODO: Add for loop support to actually iterate
+    
+    drop println("Range operators test:");
+    drop print("Start: ");
+    string:start_str = raw int64_toString(start);
+    drop println(start_str);
+    drop print("Finish: ");
+    string:finish_str = raw int64_toString(finish);
+    drop println(finish_str);
+    drop println("Basic test passed!");
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

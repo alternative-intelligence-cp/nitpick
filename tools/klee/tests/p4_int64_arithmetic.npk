@@ -1,0 +1,35 @@
+// Phase 4: int64 arithmetic — same properties as Phase 2 but for 64-bit.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int64:a = 0;
+    int64:b = 0;
+    drop klee_make_symbolic(@a, 8, 0);
+    drop klee_make_symbolic(@b, 8, 0);
+
+    // Commutativity
+    int64:sum1 = a + b;
+    int64:sum2 = b + a;
+    if (sum1 != sum2) { exit 1; }
+
+    // Identity
+    int64:zero = 0;
+    int64:sum3 = a + zero;
+    if (sum3 != a) { exit 2; }
+
+    // a - a == 0
+    int64:diff = a - a;
+    if (diff != zero) { exit 3; }
+
+    // Multiply: a * 1 == a
+    int64:one = 1;
+    int64:prod = a * one;
+    if (prod != a) { exit 4; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

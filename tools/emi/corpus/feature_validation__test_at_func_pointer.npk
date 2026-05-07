@@ -1,0 +1,25 @@
+// Test: @ function pointer syntax
+// Verifies that @func_name correctly creates a function pointer
+// from a named function and that indirect calls through it work.
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
+
+func:add = int32(int32:a, int32:b) {
+    pass a + b;
+};
+
+func:main = int32() {
+    // Test 1: @ function pointer from named function
+    (int32)(int32, int32):fp = @add;
+    int32:r1 = fp(10i32, 20i32) ? -1i32;
+    if (r1 != 30i32) { exit 1i32; }
+
+    // Test 2: Lambda function pointer (existing functionality)
+    (int32)(int32, int32):fp2 = int32(int32:x, int32:y) { pass x + y; };
+    int32:r2 = fp2(5i32, 7i32) ? -1i32;
+    if (r2 != 12i32) { exit 2i32; }
+
+    exit 0;
+};

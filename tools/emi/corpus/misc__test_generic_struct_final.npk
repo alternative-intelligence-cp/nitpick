@@ -1,0 +1,32 @@
+// Final Test: Generic Struct Field Access Fix
+// Demonstrates that *T syntax now works correctly for generic type parameters
+
+struct<T>:Box = {
+    *T:value;
+};
+
+struct<T, U>:Pair = {
+    *T:first;
+    *U:second;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    //  1: Test with int64
+    Box<int64>:b1;
+    b1.value = 42i64;
+    
+    // Test 2: Test with int32
+    Box<int32>:b2;
+    b2.value = 100;
+    
+    // Test 3: Test multiple type parameters
+    Pair<int64, int32>:p;
+    p.first = 1000i64;
+    p.second = 2000;
+    
+    return 0;
+};

@@ -1,0 +1,260 @@
+// ═══════════════════════════════════════════════════════════════════════
+// Test: Self-hosted Warnings System — v0.15.1
+// ═══════════════════════════════════════════════════════════════════════
+// 12 test cases for the Aria warning configuration, flag parsing,
+// warning emission, and type conversion.
+// ═══════════════════════════════════════════════════════════════════════
+
+const int32:WT_UNUSED_VARIABLE    = 0i32;
+const int32:WT_UNUSED_PARAMETER   = 1i32;
+const int32:WT_UNUSED_FUNCTION    = 2i32;
+const int32:WT_DEAD_CODE          = 3i32;
+const int32:WT_UNREACHABLE_CODE   = 4i32;
+const int32:WT_IMPLICIT_CONVERSION = 5i32;
+const int32:WT_EMPTY_BLOCK        = 6i32;
+const int32:WT_CONSTANT_CONDITION = 7i32;
+const int32:WT_SHADOWING          = 8i32;
+
+// ─── C Shim Externs ──────────────────────────────────────────────────
+extern func:warn_new = wild int8*();
+extern func:warn_free = int32(wild int8*:state);
+extern func:warn_null_ptr = wild int8*();
+extern func:warn_release = int32(wild int8*:p);
+extern func:warn_enable = int32(wild int8*:state, int32:wtype);
+extern func:warn_disable = int32(wild int8*:state, int32:wtype);
+extern func:warn_enable_all = int32(wild int8*:state);
+extern func:warn_disable_all = int32(wild int8*:state);
+extern func:warn_is_enabled = int32(wild int8*:state, int32:wtype);
+extern func:warn_set_as_errors = int32(wild int8*:state, int32:flag);
+extern func:warn_as_errors = int32(wild int8*:state);
+extern func:warn_type_to_string = string(int32:wtype);
+extern func:warn_string_to_type = int32(string:name);
+extern func:warn_parse_flag = int32(wild int8*:state, string:flag);
+extern func:warn_emit = int32(wild int8*:state, int32:wtype, string:msg);
+extern func:warn_count = int32(wild int8*:state);
+extern func:warn_entry_count = int32(wild int8*:state);
+extern func:warn_get_message = string(wild int8*:state, int32:idx);
+extern func:warn_get_type = int32(wild int8*:state, int32:idx);
+extern func:warn_clear = int32(wild int8*:state);
+extern func:warn_is_terminal = int32(int32:stmt_kind);
+extern func:warn_supported_flag_count = int32();
+extern func:warn_supported_flag = string(int32:idx);
+
+
+// ═══ Test 1: All warnings enabled by default ════════════════════════
+pub func:test_all_enabled_default = int32() {
+    wild int8->:state = warn_new();
+    int32:result = 1i32;
+    int32:e0 = warn_is_enabled(state, WT_UNUSED_VARIABLE);
+    int32:e4 = warn_is_enabled(state, WT_UNREACHABLE_CODE);
+    int32:e8 = warn_is_enabled(state, WT_SHADOWING);
+    if (e0 == 1i32 && e4 == 1i32 && e8 == 1i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 2: Disable individual warning ═════════════════════════════
+pub func:test_disable_individual = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_disable(state, WT_DEAD_CODE);
+    int32:en = warn_is_enabled(state, WT_DEAD_CODE);
+    int32:still = warn_is_enabled(state, WT_UNUSED_VARIABLE);
+    int32:result = 1i32;
+    if (en == 0i32 && still == 1i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 3: Disable all, then re-enable one ═══════════════════════
+pub func:test_disable_all_reenable = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_disable_all(state);
+    int32:en = warn_is_enabled(state, WT_SHADOWING);
+    _ = warn_enable(state, WT_SHADOWING);
+    int32:en2 = warn_is_enabled(state, WT_SHADOWING);
+    int32:other = warn_is_enabled(state, WT_DEAD_CODE);
+    int32:result = 1i32;
+    if (en == 0i32 && en2 == 1i32 && other == 0i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 4: Type ↔ string round-trip ═══════════════════════════════
+pub func:test_type_string_roundtrip = int32() {
+    string:name = warn_type_to_string(WT_DEAD_CODE);
+    int32:back = warn_string_to_type("dead-code");
+    int32:result = 1i32;
+    if (name == "dead-code" && back == WT_DEAD_CODE) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 5: Flag parsing -Wall / -Wno-all ══════════════════════════
+pub func:test_flag_wall = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_disable_all(state);
+    _ = warn_parse_flag(state, "-Wall");
+    int32:en = warn_is_enabled(state, WT_EMPTY_BLOCK);
+    _ = warn_parse_flag(state, "-Wno-all");
+    int32:en2 = warn_is_enabled(state, WT_EMPTY_BLOCK);
+    int32:result = 1i32;
+    if (en == 1i32 && en2 == 0i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 6: Flag parsing -Wno-<type> ═══════════════════════════════
+pub func:test_flag_disable_type = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_parse_flag(state, "-Wno-shadowing");
+    int32:en = warn_is_enabled(state, WT_SHADOWING);
+    int32:result = 1i32;
+    if (en == 0i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 7: Warning emission stores entry ══════════════════════════
+pub func:test_emit_warning = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_emit(state, WT_UNUSED_VARIABLE, "variable 'x' unused");
+    int32:cnt = warn_count(state);
+    int32:ecnt = warn_entry_count(state);
+    string:msg = warn_get_message(state, 0i32);
+    int32:wt = warn_get_type(state, 0i32);
+    int32:result = 1i32;
+    if (cnt == 1i32 && ecnt == 1i32 && wt == WT_UNUSED_VARIABLE) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 8: Suppressed warning not stored ══════════════════════════
+pub func:test_suppressed_warning = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_disable(state, WT_DEAD_CODE);
+    _ = warn_emit(state, WT_DEAD_CODE, "dead code here");
+    int32:cnt = warn_count(state);
+    int32:result = 1i32;
+    if (cnt == 0i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 9: Warnings as errors ═════════════════════════════════════
+pub func:test_warnings_as_errors = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_set_as_errors(state, 1i32);
+    int32:flag = warn_as_errors(state);
+    int32:rc = warn_emit(state, WT_UNUSED_PARAMETER, "param unused");
+    int32:result = 1i32;
+    if (flag == 1i32 && rc == 2i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 10: -Werror flag parsing ══════════════════════════════════
+pub func:test_werror_flag = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_parse_flag(state, "-Werror");
+    int32:flag = warn_as_errors(state);
+    int32:result = 1i32;
+    if (flag == 1i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+// ═══ Test 11: Terminal statement check ══════════════════════════════
+pub func:test_is_terminal = int32() {
+    // 0=return,1=pass,2=fail,3=break,4=continue → all terminal
+    int32:r0 = warn_is_terminal(0i32);
+    int32:r1 = warn_is_terminal(1i32);
+    int32:r4 = warn_is_terminal(4i32);
+    int32:r5 = warn_is_terminal(5i32);
+    int32:result = 1i32;
+    if (r0 == 1i32 && r1 == 1i32 && r4 == 1i32 && r5 == 0i32) {
+        result = 0i32;
+    }
+    pass result;
+};
+
+// ═══ Test 12: Clear warnings resets count ═══════════════════════════
+pub func:test_clear_warnings = int32() {
+    wild int8->:state = warn_new();
+    _ = warn_emit(state, WT_UNUSED_VARIABLE, "a");
+    _ = warn_emit(state, WT_SHADOWING, "b");
+    int32:before = warn_count(state);
+    _ = warn_clear(state);
+    int32:after = warn_count(state);
+    int32:entries = warn_entry_count(state);
+    int32:result = 1i32;
+    if (before == 2i32 && after == 0i32 && entries == 0i32) {
+        result = 0i32;
+    }
+    _ = warn_free(state);
+    pass result;
+};
+
+
+// ═══ Main ════════════════════════════════════════════════════════════
+func:main = int32() {
+    int32:r1 = raw test_all_enabled_default();
+    if (r1 != 0i32) { exit 1; }
+
+    int32:r2 = raw test_disable_individual();
+    if (r2 != 0i32) { exit 2; }
+
+    int32:r3 = raw test_disable_all_reenable();
+    if (r3 != 0i32) { exit 3; }
+
+    int32:r4 = raw test_type_string_roundtrip();
+    if (r4 != 0i32) { exit 4; }
+
+    int32:r5 = raw test_flag_wall();
+    if (r5 != 0i32) { exit 5; }
+
+    int32:r6 = raw test_flag_disable_type();
+    if (r6 != 0i32) { exit 6; }
+
+    int32:r7 = raw test_emit_warning();
+    if (r7 != 0i32) { exit 7; }
+
+    int32:r8 = raw test_suppressed_warning();
+    if (r8 != 0i32) { exit 8; }
+
+    int32:r9 = raw test_warnings_as_errors();
+    if (r9 != 0i32) { exit 9; }
+
+    int32:r10 = raw test_werror_flag();
+    if (r10 != 0i32) { exit 10; }
+
+    int32:r11 = raw test_is_terminal();
+    if (r11 != 0i32) { exit 11; }
+
+    int32:r12 = raw test_clear_warnings();
+    if (r12 != 0i32) { exit 12; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

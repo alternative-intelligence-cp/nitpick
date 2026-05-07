@@ -1,0 +1,234 @@
+// Stress Test: Atomic Operations with Result Enforcement
+// Real-world concurrency patterns with proper error handling
+
+// Simulated atomic operations that can fail
+// In real implementation, compareExchange can fail due to race conditions
+
+// Create an atomic value (simulated)
+func:make_atomic = int32(int32:initial) {
+    pass initial;  // In real code, would allocate atomic
+};
+
+// Load always succeeds
+func:atomic_load = int32(int32:atomic_val) {
+    pass atomic_val;
+};
+
+// Store always succeeds
+func:atomic_store = int32(int32:atomic_val, int32:new_val) {
+    pass new_val;
+};
+
+// Add and return old value
+func:atomic_fetch_add = int32(int32:atomic_val, int32:delta) {
+    int32:old = atomic_val;
+    pass old;
+};
+
+// Compare-and-swap: Returns success if comparison matched
+// This is where Results shine - CAS can fail!
+func:atomic_compare_exchange = int32(int32:atomic_val, int32:expected, int32:desired) {
+    bool:matches = (atomic_val == expected);
+    if (matches) {
+        pass desired;  // Success - swap happened
+    }
+    fail 1i32;  // Failed - value changed
+};
+
+// ============================================================================
+// HIGH-LEVEL PATTERNS: Retry loops with Results
+// ============================================================================
+
+// Increment with retry (common pattern in lock-free code)
+func:safe_increment = int32(int32:atomic_val) {
+    int32:max_retries = 10i32;
+    int32:attempts = 0i32;
+    
+    while (attempts < max_retries) {
+        int32:current = raw atomic_load(atomic_val);
+        int32:next = current + 1i32;
+        
+        Result<int32>:result = atomic_compare_exchange(atomic_val, current, next);
+        
+        // Test: Result check in loop
+        if (!(result.is_error)) {
+            pass result.value;  // Success!
+        }
+        
+        attempts = attempts + 1i32;
+    }
+    
+    fail 2i32;  // Exhausted retries
+};
+
+// Conditional update: only update if value meets criteria
+func:update_if_less_than = int32(int32:atomic_val, int32:new_val, int32:lim) {
+    int32:current = raw atomic_load(atomic_val);
+    
+    // Only update if current < lim
+    if (current >= lim) {
+        fail 3i32;  // Condition not met
+    }
+    
+    Result<int32>:swap = atomic_compare_exchange(atomic_val, current, new_val);
+    
+    // Test: Re-checking Result after conditional
+    if (swap.is_error) {
+        fail swap.error;  // Propagate CAS failure
+    }
+    
+    pass swap.value;
+};
+
+// ============================================================================
+// SPINLOCK PATTERN: Acquire/Release with Results
+// ============================================================================
+
+func:try_acquire_lock = int32(int32:lock_val) {
+    int32:unlocked = 0i32;
+    int32:locked = 1i32;
+    
+    Result<int32>:cas = atomic_compare_exchange(lock_val, unlocked, locked);
+    
+    pick(cas.is_error) {
+        (false) {
+            // Got the lock!
+            pass locked;
+        },
+        (*) {
+            // Someone else has it
+            fail 4i32;
+        }
+    }
+};
+
+func:release_lock = int32(int32:lock_val) {
+    int32:locked = 1i32;
+    int32:unlocked = 0i32;
+    
+    // Release always succeeds (we own the lock)
+    int32:new_val = raw atomic_store(lock_val, unlocked);
+    pass new_val;
+};
+
+// Acquire with timeout
+func:acquire_with_timeout = int32(int32:lock_val, int32:max_tries) {
+    int32:tries = 0i32;
+    
+    while (tries < max_tries) {
+        Result<int32>:acquired = try_acquire_lock(lock_val);
+        
+        // Test: Early return on success in loop
+        if (!(acquired.is_error)) {
+            pass acquired.value;
+        }
+        
+        tries = tries + 1i32;
+    }
+    
+    fail 5i32;  // Timeout
+};
+
+// ============================================================================
+// COUNTER PATTERN: Increment/decrement with bounds checking
+// ============================================================================
+
+func:bounded_increment = int32(int32:counter_val, int32:max_value) {
+    int32:current = raw atomic_load(counter_val);
+    
+    // Check bounds
+    if (current >= max_value) {
+        fail 6i32;  // Already at max
+    }
+    
+    int32:next = current + 1i32;
+    Result<int32>:swap = atomic_compare_exchange(counter_val, current, next);
+    
+    // Test: Nested Result checks
+    if (swap.is_error) {
+        // CAS failed, someone else modified it
+        // Try again (simplified - real code would loop)
+        int32:retry_current = raw atomic_load(counter_val);
+        
+        if (retry_current >= max_value) {
+            fail 6i32;
+        }
+        
+        int32:retry_next = retry_current + 1i32;
+        Result<int32>:retry_swap = atomic_compare_exchange(counter_val, retry_current, retry_next);
+        
+        if (retry_swap.is_error) {
+            fail retry_swap.error;  // Give up after one retry
+        }
+        
+        pass retry_swap.value;
+    }
+    
+    pass swap.value;
+};
+
+// ============================================================================
+// MAIN: Test all patterns
+// ============================================================================
+
+func:main = int32() {
+    int32:result = 0i32;
+    
+    // Test 1: Simple atomic load (always succeeds)
+    int32:atomic1 = raw make_atomic(10i32);
+    int32:val1 = raw atomic_load(atomic1);
+    result = result + val1;  // +10 = 10
+    
+    // Test 2: CAS that succeeds
+    int32:atomic2 = 42i32;
+    Result<int32>:cas1 = atomic_compare_exchange(atomic2, 42i32, 100i32);
+    if (!(cas1.is_error)) {
+        result = result + cas1.value;  // +100 = 110
+    }
+    
+    // Test 3: CAS that fails
+    int32:atomic3 = 5i32;
+    Result<int32>:cas2 = atomic_compare_exchange(atomic3, 99i32, 200i32);  // Wrong expected
+    if (cas2.is_error) {
+        result = result + 1i32;  // Failed as expected, +1 = 111
+    }
+    
+    // Test 4: Safe increment
+    int32:atomic4 = 20i32;
+    Result<int32>:inc = safe_increment(atomic4);
+    int32:inc_val = inc ? 0i32;  // Test unwrap operator
+    result = result + inc_val;  // +21 = 132
+    
+    // Test 5: Conditional update
+    int32:atomic5 = 5i32;
+    Result<int32>:upd = update_if_less_than(atomic5, 15i32, 100i32);
+    if (!(upd.is_error)) {
+        result = result + upd.value;  // +15 = 147
+    }
+    
+    // Test 6: Lock acquisition
+    int32:lock = 0i32;
+    Result<int32>:acquired = try_acquire_lock(lock);
+    if (!(acquired.is_error)) {
+        result = result + 10i32;  // Got lock, +10 = 157
+        int32:released = raw release_lock(acquired.value);
+        result = result + released;  // Released (0), +0 = 157
+    }
+    
+    // Test 7: Bounded increment
+    int32:counter = 8i32;
+    Result<int32>:bounded = bounded_increment(counter, 100i32);
+    if (!(bounded.is_error)) {
+        result = result + bounded.value;  // +9 = 166
+    }
+    
+    if (result == 166i32) {
+        exit 0;
+    }
+    exit result;  // Expected: 166
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

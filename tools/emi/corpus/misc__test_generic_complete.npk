@@ -1,0 +1,35 @@
+// Test generic function with turbofish syntax
+// Tests both type resolution and correct value passing
+
+func<T>:identity = T(T:value) {
+    pass value;
+};
+
+func<T>:double_value = T(T:x) {
+    pass x + x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test 1: identity function with int32 (literals are int32)
+    int32:r1 = raw identity::<int32>(42);
+    if (r1 != 42) {
+        exit -2;
+    }
+    
+    // Test 2: double_value function with int32
+    int32:r2 = raw double_value::<int32>(21);
+    if (r2 != 42) {
+        exit -4;
+    }
+    
+    // Test 3: identity with different value
+    int32:r3 = raw identity::<int32>(100);
+    if (r3 != 100) {
+        exit -6;
+    }
+    
+    // All tests passed
+    exit 0;
+};

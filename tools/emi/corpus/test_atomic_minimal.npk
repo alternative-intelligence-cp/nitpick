@@ -1,0 +1,14 @@
+// Minimal atomic<T> syntax test
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Test 1: Can we declare atomic<T> types?
+    atomic<int32>:counter = atomic_new(0i32);
+    
+    // Test 2: Can we call .load()?
+    int32:val = counter.load();
+    
+    println("Test passed");
+    exit 0;
+};

@@ -1,0 +1,25 @@
+// Test 7: Same-Type Casts (Should be no-ops)
+
+func:test_same_type = int32() {
+    // Casting to same type (redundant but valid)
+    int32:x = 100i32;
+    int32:y = @cast<int32>(x);  // No-op
+    
+    flt64:f = 3.14f64;
+    flt64:g = @cast<flt64>(f);  // No-op
+    
+    uint64:u = 1000u64;
+    uint64:v = @cast<uint64>(u);  // No-op
+    
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:result = raw test_same_type();
+    exit result;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

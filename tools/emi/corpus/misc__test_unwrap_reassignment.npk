@@ -1,0 +1,67 @@
+// Test: Can we use ? operator to unwrap result types for reassignment?
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+extern func:malloc = wild int8*(int64:size);
+extern func:ptr_to_int64 = int64(wild int8*:ptr);
+extern func:int64_to_ptr = wild int8*(int64:val);
+extern func:int_array_set = void(wild int8*:buf, int32:idx, int32:val);
+extern func:int_array_get = int32(wild int8*:buf, int32:idx);
+
+Type:IntVec = {
+
+    func:new = IntVec() {
+        wild int8->:buffer = malloc(40i64);
+        int64:ptr_as_int = ptr_to_int64(buffer);
+        IntVec:result = IntVec{dataptr: ptr_as_int, length: 0i32, capacity: 10i32};
+        pass result;
+    };
+    
+    func:push = IntVec(IntVec:self, int32:value) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        _ = int_array_set(buffer, self.length, value);
+        int32:new_length = self.length + 1i32;
+        IntVec:result = IntVec{
+            dataptr: self.dataptr,
+            length: new_length,
+            capacity: self.capacity
+        };
+        pass result;
+    };
+    
+    func:get = int32(IntVec:self, int32:index) {
+        wild int8->:buffer = int64_to_ptr(self.dataptr);
+        int32:value = int_array_get(buffer, index);
+        pass value;
+    };
+    
+    struct:interface = {
+        int64:dataptr;
+        int32:length;
+        int32:capacity;
+    };
+};
+
+func:main = int32() {
+    // Use ? operator to unwrap result types!
+    IntVec:empty = IntVec{dataptr: 0i64, length: 0i32, capacity: 0i32};
+    IntVec:vec = IntVec.new() ? empty;  // Unwrap with default
+    
+    // NOW TRY REASSIGNMENT WITH UNWRAP!
+    vec = vec.push(100i32) ? vec;  // If push fails, keep vec unchanged
+    vec = vec.push(200i32) ? vec;  // Unwrap each reassignment!
+    vec = vec.push(300i32) ? vec;
+    vec = vec.push(400i32) ? vec;
+    
+    // Calculate sum
+    int32:sum = vec.get(0i32) ? 0i32;  // Unwrap get() calls too
+    sum = sum + (vec.get(1i32) ? 0i32);
+    sum = sum + (vec.get(2i32) ? 0i32);
+    sum = sum + (vec.get(3i32) ? 0i32);
+    
+    // Should be 1000 if it all worked! (100+200+300+400)
+    if (sum == 1000i32) {
+        exit 0;
+    }
+    exit 1;
+};

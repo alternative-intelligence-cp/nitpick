@@ -1,0 +1,30 @@
+// Test basic Result<T> functionality (capital R!)
+// Tests: pass(), fail(), member access, type system integration
+
+func:get_success = int32() {
+    pass 42i32;
+};
+
+func:get_error = int32() {
+    fail 1i32;
+};
+
+func:main = int32() {
+    // Test 1: Success case
+    Result<int32>:r1 = get_success();
+    if (!r1.is_error) {
+        int32:val1 = r1.value;  // OK: checked is_error first
+    }
+    
+    // Test 2: Error case  
+    Result<int32>:r2 = get_error();
+    bool:has_error = r2.is_error;
+    
+    // If we got here without crashing, success
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

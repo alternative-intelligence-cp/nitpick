@@ -1,0 +1,41 @@
+// Test string manipulation operations
+// Phase 4.3 String Library Testing
+
+func:main = int32() {
+    // Test 1: String concatenation
+    string:hello = "Hello";
+    string:world = "World";
+    string:combined = string_concat(hello, world);
+    int64:combined_len = string_length(combined);
+    
+    // Test 2: String substring
+    string:original = "Hello World";
+    string:sub = string_substring(original, 0, 5);  // "Hello"
+    int64:sub_len = string_length(sub);
+    
+    // Test 3: String trim
+    string:padded = "  trim me  ";
+    string:trimmed = string_trim(padded);
+    int64:trimmed_len = string_length(trimmed);
+    
+    // Test 4: String to uppercase
+    string:lower = "lowercase";
+    string:upper = string_to_upper(lower);
+    bool:contains_upper = string_contains(upper, "LOWER");
+    if (contains_upper) {
+    }
+    
+    // Test 5: String to lowercase
+    string:mixed = "MiXeD CaSe";
+    string:all_lower = string_to_lower(mixed);
+    bool:contains_mixed = string_contains(all_lower, "mixed");
+    if (contains_mixed) {
+    }
+    
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

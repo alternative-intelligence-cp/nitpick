@@ -1,0 +1,25 @@
+// Test: assert_static() builtin — compile-time Z3 with runtime fallback (v0.5.1)
+// assert_static(condition) tries to prove at compile time.
+// If proven, the check is erased (zero runtime cost).
+// If not provable, a runtime guard is emitted instead.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+Rules:Percentage = { $ >= 0, $ <= 100 };
+Rules:Positive = { $ > 0, $ < 1000 };
+
+func:check_bounds = NIL(int32:x) {
+    limit<Percentage> int32:pct = x;
+    limit<Positive> int32:count = x;
+
+    assert_static(pct >= 0);
+    assert_static(pct <= 100);
+    assert_static(count > 0);
+    pass(NIL);
+};
+
+func:main = int32() {
+    exit 0;
+};

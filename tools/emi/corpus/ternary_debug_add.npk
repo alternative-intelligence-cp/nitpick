@@ -1,0 +1,24 @@
+// Debug test for trit addition
+func:main = int32() {
+    trit:t_add = 1;
+    trit:t_one = 1;
+    trit:t_sum = t_add + t_one;  // 1 + 1 should = 1 (clamped)
+    
+    // Check the actual value
+    if (t_sum == 1) {
+        exit 0;  // Success
+    }
+    if (t_sum == 2) {
+        exit 99;  // Not clamped, got 2
+    }
+    if (t_sum == 0) {
+        exit 88;  // Got 0
+    }
+    
+    exit 77;  // Some other value
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

@@ -1,0 +1,15 @@
+// Test: Verify pick matches i32(1)
+func:main = int32() {
+    int32:x = 1i32;
+    
+    pick(x) {
+        (0i32) { exit 1i32; },
+        (1i32) { exit 0i32; },
+        (*) { exit 1i32; }
+    }
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

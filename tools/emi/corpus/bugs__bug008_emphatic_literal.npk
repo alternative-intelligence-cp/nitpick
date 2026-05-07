@@ -1,0 +1,17 @@
+// BUG-008: ?! should accept unsuffixed integer literals
+// Expected: unsuffixed 42 infers int32 from Result<int32> context
+
+func:maybe_fail = int32() {
+    fail 1i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    Result<int32>:r = maybe_fail();
+    int32:val = r ?! 42;
+    println("val = ");
+    exit 0;
+};

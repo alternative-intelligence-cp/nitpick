@@ -1,0 +1,103 @@
+// test_ustack_strings.aria — Test per-scope user stack with strings and mixed types (v0.4.3)
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:helper = NIL() {
+    // Separate scope with its own stack
+    astack 256i64;  // default size (256 slots)
+
+    apush 100i64;
+    apush 200i64;
+    int64:x = apop;
+    int64:y = apop;
+
+    if (x == 200i64) {
+        println("PASS: helper scope stack independent (200)");
+    } else {
+        println("FAIL: helper scope wrong value");
+    }
+
+    if (y == 100i64) {
+        println("PASS: helper scope stack independent (100)");
+    } else {
+        println("FAIL: helper scope wrong value");
+    }
+    // Stack auto-cleaned on scope exit
+    pass NIL;
+};
+
+func:main = int32() {
+    astack 32i64;
+
+    // ================================================================
+    // Test 1: Push and pop int64 values across helper call
+    // ================================================================
+    apush 42i64;
+
+    // Call helper which uses its own separate scope stack
+    NIL:_ = raw helper();
+
+    // Our stack should still have 42
+    int64:v = apop;
+    if (v == 42i64) {
+        println("PASS: main stack preserved across helper call");
+    } else {
+        println("FAIL: main stack corrupted by helper");
+    }
+
+    // ================================================================
+    // Test 2: Mixed int types — push int8, int32, int64, pop correctly
+    // ================================================================
+    apush 7i8;
+    apush 1000i32;
+    apush 999999i64;
+
+    int64:m3 = apop;
+    int32:m2 = apop;
+    int8:m1 = apop;
+
+    if (m3 == 999999i64) {
+        println("PASS: mixed int64 correct");
+    } else {
+        println("FAIL: mixed int64 wrong");
+    }
+
+    if (m2 == 1000i32) {
+        println("PASS: mixed int32 correct");
+    } else {
+        println("FAIL: mixed int32 wrong");
+    }
+
+    if (m1 == 7i8) {
+        println("PASS: mixed int8 correct");
+    } else {
+        println("FAIL: mixed int8 wrong");
+    }
+
+    // ================================================================
+    // Test 3: Float + int mixed
+    // ================================================================
+    apush 42i64;
+    apush 1.5f32;
+
+    flt32:fv = apop;
+    int64:iv = apop;
+
+    flt32:fdiff = fv - 1.5f32;
+    if (fdiff < 0.001f32) {
+        println("PASS: mixed float pop correct");
+    } else {
+        println("FAIL: mixed float pop wrong");
+    }
+
+    if (iv == 42i64) {
+        println("PASS: mixed int64 under float correct");
+    } else {
+        println("FAIL: mixed int64 under float wrong");
+    }
+
+    println("Mixed type and scope tests completed!");
+    return 0;
+};

@@ -1,0 +1,48 @@
+// Comprehensive dyn Trait dispatch tests
+// Tests: multiple methods, struct impls, multiple types for same trait
+
+trait:Shape = {
+    func:area = int32(int32:self);
+    func:perimeter = int32(int32:self);
+};
+
+// int32 represents a "square" where self = side length
+impl:Shape:for:int32 = {
+    func:area = int32(int32:self) {
+        pass self * self;
+    };
+    func:perimeter = int32(int32:self) {
+        pass self * 4i32;
+    };
+};
+
+// Function that uses dyn dispatch for area
+func:get_area = int32(dyn Shape:shape) {
+    pass shape.area();
+};
+
+// Function that uses dyn dispatch for perimeter
+func:get_perimeter = int32(dyn Shape:shape) {
+    pass shape.perimeter();
+};
+
+pub func:main = int32() {
+    int32:side = 5i32;
+
+    // Static dispatch (UFCS) — area: 5*5=25, perimeter: 5*4=20
+    int32:s_area = raw int32_area(side);
+    int32:s_perim = raw int32_perimeter(side);
+
+    // Dynamic dispatch — same results through vtable
+    int32:d_area = raw get_area(side);
+    int32:d_perim = raw get_perimeter(side);
+
+    // Sum all: 25 + 20 + 25 + 20 = 90
+    int32:total = s_area + s_perim + d_area + d_perim;
+    if (total == 90) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

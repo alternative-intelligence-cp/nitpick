@@ -1,0 +1,36 @@
+// Phase 2: Loop symbolic exploration — verify a symbolic loop bound
+// causes KLEE to explore different iteration counts.
+
+extern func:klee_make_symbolic = void(wild ?*:addr, int64:nbytes, int64:name_ptr);
+
+func:main = int32() {
+    int64:n = 0;
+    drop klee_make_symbolic(@n, 8, 0);
+
+    // Clamp n to [0, 8] to bound the path explosion
+    int64:bound = 8;
+    if (n < 0) { n = 0; }
+    if (n > bound) { n = bound; }
+
+    // Accumulate: sum = 0 + 1 + 2 + ... + (n-1)
+    int64:acc = 0;
+    int64:i = 0;
+    loop(0, n, 1) {
+        acc = acc + i;
+        i = i + 1;
+    }
+
+    // acc == n*(n-1)/2 for n in [0,8]
+    // Verify via concrete check: if n==4, acc must be 6
+    int64:four = 4;
+    int64:six = 6;
+    if (n == four) {
+        if (acc != six) { exit 1; }
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};

@@ -1,0 +1,113 @@
+// Borrow Checker Wild Pointer Hardening Tests (v0.6.3)
+// POSITIVE tests only — all should compile with ZERO borrow errors
+//
+// Features tested: alloc/free tracking, realloc size tracking, conditional free,
+//   per-allocation size extraction, --borrow-debug diagnostics
+//
+// Compile: ariac tests/borrow_wild_v063.aria -o /tmp/test_wild_v063
+// Debug:   ariac tests/borrow_wild_v063.aria -o /tmp/test_wild_v063 --borrow-debug
+
+extern func:puts = int32(string:s);
+extern func:malloc = wild ?*(int64:size);
+extern func:free = void(wild ?*:ptr);
+extern func:realloc = wild ?*(wild ?*:ptr, int64:new_size);
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE");
+    exit 1;
+};
+
+// ============================================================================
+// Test 1: Basic wild alloc + free — clean lifecycle
+// ============================================================================
+func:test_basic_alloc_free = NIL() {
+    wild ?->:buf = malloc(1024i64);
+    free(buf);
+};
+
+// ============================================================================
+// Test 2: Multiple allocs with proper cleanup
+// ============================================================================
+func:test_multiple_allocs = NIL() {
+    wild ?->:a = malloc(64i64);
+    wild ?->:b = malloc(128i64);
+    wild ?->:c = malloc(256i64);
+    free(c);
+    free(b);
+    free(a);
+};
+
+// ============================================================================
+// Test 3: Realloc — consumes old pointer, result is new allocation
+// ============================================================================
+func:test_realloc_clean = NIL() {
+    wild ?->:buf = malloc(64i64);
+    wild ?->:buf2 = realloc(buf, 256i64);
+    free(buf2);
+};
+
+// ============================================================================
+// Test 4: Realloc chain — multiple resizes
+// ============================================================================
+func:test_realloc_chain = NIL() {
+    wild ?->:buf = malloc(32i64);
+    wild ?->:buf2 = realloc(buf, 64i64);
+    wild ?->:buf3 = realloc(buf2, 128i64);
+    free(buf3);
+};
+
+// ============================================================================
+// Test 5: Both branches free — valid conditional cleanup
+// ============================================================================
+func:test_both_branches_free = NIL(int32:flag) {
+    wild ?->:buf = malloc(64i64);
+    if (flag > 0i32) {
+        free(buf);
+    } else {
+        free(buf);
+    }
+};
+
+// ============================================================================
+// Test 6: Alloc with size from variable (size tracking via identifier)
+// ============================================================================
+func:test_alloc_variable_size = NIL(int64:size) {
+    wild ?->:buf = malloc(size);
+    free(buf);
+};
+
+// ============================================================================
+// Test 7: Alloc + realloc with size from variable
+// ============================================================================
+func:test_realloc_variable_size = NIL(int64:initial, int64:bigger) {
+    wild ?->:buf = malloc(initial);
+    wild ?->:buf2 = realloc(buf, bigger);
+    free(buf2);
+};
+
+// ============================================================================
+// Test 8: Multiple independent allocations, freed in interleaved order
+// ============================================================================
+func:test_interleaved_free = NIL() {
+    wild ?->:a = malloc(100i64);
+    wild ?->:b = malloc(200i64);
+    free(a);
+    wild ?->:c = malloc(300i64);
+    free(c);
+    free(b);
+};
+
+// ============================================================================
+// Main: run all tests
+// ============================================================================
+func:main = int32() {
+    drop test_basic_alloc_free();
+    drop test_multiple_allocs();
+    drop test_realloc_clean();
+    drop test_realloc_chain();
+    drop test_both_branches_free(1i32);
+    drop test_alloc_variable_size(512i64);
+    drop test_realloc_variable_size(64i64, 256i64);
+    drop test_interleaved_free();
+    exit 0;
+};

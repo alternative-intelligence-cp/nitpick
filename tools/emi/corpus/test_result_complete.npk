@@ -1,0 +1,36 @@
+// Test: Complete Result<T> Enforcement Suite
+// Tests Phase 1 (no checky no val) and Phase 1.5 (immutable .is_error)
+// Uses concrete types (generics not yet fully supported)
+
+func:maybe_value_ok = int64() {
+    pass 42i64;
+};
+
+func:maybe_value_fail = int64() {
+    fail 1i64;
+};
+
+func:main = int32() {
+    // TEST 1: Phase 1 - No Checky No Val (should compile)
+    Result<int64>:r1 = maybe_value_ok();
+
+    // Must check .is_error before accessing .value
+    if (!r1.is_error) {
+        int64:good_value = r1.value;  // OK - checked first
+    } else {
+        int64:err_code = r1.error;    // OK - checked first
+    }
+
+    // TEST 2: Error result access (also needs check)
+    Result<int64>:r2 = maybe_value_fail();
+    if (r2.is_error) {
+        int64:err = r2.error;  // OK - checked is_error first
+    }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    // Error handling
+    exit 1;
+};

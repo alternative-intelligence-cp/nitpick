@@ -1,0 +1,16 @@
+// Test: assert_static() with unprovable condition — should warn + keep runtime guard
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+Rules:Percentage = { $ >= 0, $ <= 100 };
+
+func:check = NIL(int32:x) {
+    limit<Percentage> int32:pct = x;
+    assert_static(pct > 0);
+    pass(NIL);
+};
+
+func:main = int32() {
+    exit 0;
+};
