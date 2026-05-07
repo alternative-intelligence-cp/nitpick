@@ -1,0 +1,13 @@
+// bug068: borrow ($$i) and struct update syntax coexist — should compile and run
+// Expected: exit 5 (struct update q.y = 5 from p.y = 2)
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+func:main = int32() {
+    Point:p = Point{ x: 1i32, y: 2i32 };
+    $$i Point:r = p;
+    Point:q = Point{ ...p, y: 5i32 };
+    exit q.y;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
