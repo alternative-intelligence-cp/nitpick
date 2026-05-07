@@ -1,0 +1,19 @@
+// bug076: Result<T> used in arithmetic gives actionable error message
+// Previously: generic "type mismatch"; now: "Cannot use Result<T> as T — unwrap first"
+// Fix: type_checker.cpp BUG-001 — improved error for arithmetic on unwrapped Result
+
+// This test is a REJECTED test: it should fail to compile.
+// Expected error substring: "Cannot use Result<int32> as int32 in arithmetic"
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:compute = int32(int32:x) {
+    pass x;
+};
+
+func:main = int32() {
+    // compute() returns Result<int32>; adding 3 directly should be a compile error
+    // with an actionable message (not just "type mismatch")
+    int32:val = (compute(5i32) + 3i32);
+    exit val;
+};

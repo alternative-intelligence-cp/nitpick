@@ -1,0 +1,30 @@
+// bug075: variables defined before loop() remain accessible after the loop exits
+// Previously: "variables defined before loop() may become inaccessible after exit"
+// Fix: already resolved prior to v0.19.3 (scope handling is correct for all exit paths)
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:counter = 0i32;
+    int32:found = -1i32;
+
+    // Fall-through exit: counter must equal 5 after loop
+    loop(0i32, 5i32, 1) {
+        counter = (counter + 1i32);
+    }
+
+    // Break exit: found must equal 3 after loop
+    loop(0i32, 10i32, 1) {
+        if ($ == 3i32) {
+            found = $;
+            break;
+        }
+    }
+
+    // Verify both variables are accessible and correct
+    int32:valid = 1i32;
+    if (counter != 5i32) { valid = 0i32; }
+    if (found != 3i32) { valid = 0i32; }
+    if (valid == 1i32) { exit 0; }
+    exit 1;
+};
