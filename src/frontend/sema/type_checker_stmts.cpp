@@ -4662,8 +4662,29 @@ void TypeChecker::checkLoopStmt(LoopStmt* stmt) {
         }
     }
     
-    // Check body
+    // Determine $ (loop counter) type: widest integer among start/limit/step
+    // This ensures the body sees the correct type when referencing $
+    std::string dollarType = "int64"; // safe default
+    auto intWidth = [](const std::string& n) -> int {
+        if (n == "uint64" || n == "int64") return 64;
+        if (n == "uint32" || n == "int32") return 32;
+        if (n == "uint16" || n == "int16") return 16;
+        if (n == "uint8"  || n == "int8")  return 8;
+        return 0;
+    };
+    int bestWidth = 0;
+    for (Type* t : {startType, limitType, stepType}) {
+        if (!t || t->getKind() == TypeKind::ERROR) continue;
+        PrimitiveType* pt = dynamic_cast<PrimitiveType*>(t);
+        if (!pt) continue;
+        int w = intWidth(pt->getName());
+        if (w > bestWidth) { bestWidth = w; dollarType = pt->getName(); }
+    }
+
+    // Check body with $ resolving to dollarType
+    loop_dollar_type_.push_back(dollarType);
     checkStatement(stmt->body.get());
+    loop_dollar_type_.pop_back();
 }
 
 void TypeChecker::checkWhenStmt(WhenStmt* stmt) {

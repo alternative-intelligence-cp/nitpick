@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR - assign to borrowed struct variable (ARIA-026)
+// bug069: p = Point{...p, y:5} while $$i r = p is active must be rejected.
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+func:main = int32() {
+    Point:p = Point{ x: 1i32, y: 2i32 };
+    $$i Point:r = p;
+    p = Point{ ...p, y: 5i32 };
+    exit p.y;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };

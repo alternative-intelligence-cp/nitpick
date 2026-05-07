@@ -873,6 +873,7 @@ private:
     void checkIfStmt(IfStmt* stmt);
     void checkWhileStmt(WhileStmt* stmt);
     void checkForStmt(ForStmt* stmt);
+    void checkLoopStmt(LoopStmt* stmt);
     void checkBlockStmt(BlockStmt* stmt);
     void checkReturnStmt(ReturnStmt* stmt);
     void checkPassStmt(PassStmt* stmt);

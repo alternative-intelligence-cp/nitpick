@@ -6721,7 +6721,25 @@ skip_comparison:
             if (!startVal || !limitVal || !stepVal) return nullptr;
             
             llvm::Function* function = builder.GetInsertBlock()->getParent();
+            
+            // Unify integer types: widen start/limit/step to the same width
+            // so that e.g. loop(0, int32_var, 1) doesn't produce i64 vs i32 ICmp mismatch.
             llvm::Type* counterType = startVal->getType();
+            auto widenLoop = [&](llvm::Type* t) {
+                if (counterType->isIntegerTy() && t->isIntegerTy() &&
+                    t->getIntegerBitWidth() > counterType->getIntegerBitWidth()) {
+                    counterType = t;
+                }
+            };
+            widenLoop(limitVal->getType());
+            widenLoop(stepVal->getType());
+            auto castLoop = [&](llvm::Value* v, const char* nm) -> llvm::Value* {
+                if (v->getType() == counterType) return v;
+                return builder.CreateIntCast(v, counterType, true, nm);
+            };
+            startVal = castLoop(startVal, "loop.start");
+            limitVal = castLoop(limitVal, "loop.limit");
+            stepVal  = castLoop(stepVal,  "loop.step");
             
             // Create basic blocks
             llvm::BasicBlock* condBB = llvm::BasicBlock::Create(context, "loop.cond", function);
