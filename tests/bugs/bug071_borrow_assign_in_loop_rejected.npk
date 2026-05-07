@@ -1,0 +1,12 @@
+// Expected: COMPILER ERROR - assign to borrowed local inside loop body (ARIA-026)
+// bug071: $$i borrow of x then x = x+1 within the same loop iteration must be rejected.
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32:x = 10;
+    int32:n = 3;
+    loop(0, n, 1) {
+        $$i int32:r = x;
+        x = (x + 1);
+    }
+    exit x;
+};

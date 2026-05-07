@@ -1,0 +1,19 @@
+// bug070: immutable borrow inside loop body — accumulates borrowed value each iteration
+// Expected: exit 30 (10 * 3 iterations = 30)
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:accumulate = int32(int32:x, int32:n) {
+    int32:total = 0;
+    loop(0, n, 1) {
+        $$i int32:r = x;
+        total = (total + r);
+    }
+    pass total;
+};
+
+func:main = int32() {
+    int32:val = 10;
+    int32:count = 3;
+    int32:result = raw accumulate(val, count);
+    exit result;
+};

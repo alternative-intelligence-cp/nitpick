@@ -1390,6 +1390,10 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
         case ASTNode::NodeType::FOR:
             checkForStmt(static_cast<ForStmt*>(stmt));
             break;
+
+        case ASTNode::NodeType::LOOP:
+            checkLoopStmt(static_cast<LoopStmt*>(stmt));
+            break;
             
         case ASTNode::NodeType::BLOCK:
             checkBlockStmt(static_cast<BlockStmt*>(stmt));
@@ -1835,11 +1839,77 @@ void BorrowChecker::checkWhileStmt(WhileStmt* stmt) {
     }
 }
 
-void BorrowChecker::checkForStmt(ForStmt* stmt) {
+// ============================================================================
+// loop() Statement Borrow Checking (v0.19.2)
+// ============================================================================
+void BorrowChecker::checkLoopStmt(LoopStmt* stmt) {
     if (!stmt) return;
 
-    // ========================================================================
-    // FIXPOINT ITERATION FOR FOR-LOOP ANALYSIS
+    // Analyze the bound expressions (evaluated once, may create borrows)
+    if (stmt->start)  checkExpression(stmt->start.get());
+    if (stmt->limit)  checkExpression(stmt->limit.get());
+    if (stmt->step)   checkExpression(stmt->step.get());
+
+    // Snapshot state before entering the repeating body
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        ctx.restore(loop_head_state);
+
+        // Analyze body in its own scope
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+
+        // Capture back-edge state before exiting iteration scope
+        LifetimeContext back_edge_state = ctx.snapshot();
+        ctx.exitScope();
+
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
+    }
+
+    // Settle on the fixed-point header state
+    ctx.restore(loop_head_state);
+
+    // Check for loop-carried mutable borrow conflicts
+    for (const auto& [host, loans] : ctx.active_loans) {
+        int mutable_count = 0;
+        const Loan* first_mutable = nullptr;
+        for (const auto& loan : loans) {
+            if (loan.is_mutable) {
+                mutable_count++;
+                if (!first_mutable) first_mutable = &loan;
+            }
+        }
+        if (mutable_count > 1) {
+            addError("Loop-carried borrow conflict: '" + host +
+                    "' is mutably borrowed multiple times across loop iterations",
+                    stmt,
+                    "First mutable borrow here",
+                    first_mutable->creation_line, first_mutable->creation_column);
+            tagCode("ARIA-025");
+        }
+    }
+}
+
+void BorrowChecker::checkForStmt(ForStmt* stmt) {
     // ========================================================================
     // For loops have: initializer; condition; update; body
     // The initializer runs once, then (condition, body, update) repeats.
