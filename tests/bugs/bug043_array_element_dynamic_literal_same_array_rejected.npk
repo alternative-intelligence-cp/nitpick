@@ -1,0 +1,15 @@
+// BUG-043: A literal-index borrow and a dynamic-index borrow to the same array
+// must be rejected — [*] (dynamic) is not provably disjoint from [0] (literal).
+// Expected: compile failure with ARIA-023
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[3]:arr = [10, 20, 30];
+    int32:i = 1;
+    $$m int32:lit = arr[0];
+    $$m int32:dynelem = arr[i];
+    exit 0;
+};

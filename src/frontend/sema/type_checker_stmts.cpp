@@ -802,13 +802,28 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             return std::holds_alternative<int64_t>(literal->value);
         };
 
-        // Borrow initializer must be addressable storage. Start conservatively:
-        // variables, struct fields, and direct literal-index fixed-array slots.
+        // v0.19.0: Allow dynamic-index borrow initializers (arr[i]) — the index
+        // may be any expression, not just a literal. The borrow checker maps these
+        // to [*] paths and rejects conflicting borrows conservatively (ARIA-023).
+        auto isDynamicIndexBorrowInitializer = [](ASTNode* node) -> bool {
+            if (!node || node->type != ASTNode::NodeType::INDEX) {
+                return false;
+            }
+            auto* indexExpr = static_cast<IndexExpr*>(node);
+            if (!indexExpr->array || indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+                return false;
+            }
+            return indexExpr->index != nullptr;
+        };
+
+        // Borrow initializer must be addressable storage: a named variable,
+        // struct field, literal-index array element, or dynamic-index array element.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
             stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
-            !isLiteralIndexBorrowInitializer(stmt->initializer.get())) {
+            !isLiteralIndexBorrowInitializer(stmt->initializer.get()) &&
+            !isDynamicIndexBorrowInitializer(stmt->initializer.get())) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "
-                     "(a named variable, struct field, or direct literal-index array element)", stmt);
+                     "(a named variable, struct field, or array element)", stmt);
             return;
         }
     }

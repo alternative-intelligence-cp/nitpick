@@ -1,0 +1,17 @@
+// BUG-040: Two $$m borrows to the same array via dynamic index must be rejected.
+// Even if i != j at runtime, the borrow checker conservatively maps both to
+// path [*] of the same array — ARIA-023 conflict.
+// Expected: compile failure with ARIA-023
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[4]:arr = [10, 20, 30, 40];
+    int32:i = 0;
+    int32:j = 1;
+    $$m int32:a = arr[i];
+    $$m int32:b = arr[j];
+    exit 0;
+};
