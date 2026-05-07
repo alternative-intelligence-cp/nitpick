@@ -1,0 +1,9 @@
+// Expected: COMPILER ERROR - assign to borrowed variable (ARIA-026)
+// bug067: Writing to a variable while it has an active borrow must be rejected.
+func:main = int32() {
+    int32:x = 10;
+    $$i int32:a = x;
+    x = 20;
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };

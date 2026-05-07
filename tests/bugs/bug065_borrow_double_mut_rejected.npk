@@ -1,0 +1,9 @@
+// Expected: COMPILER ERROR - double mutable borrow (ARIA-023)
+// bug065: Two $$m borrows of the same variable must be rejected.
+func:main = int32() {
+    int32:x = 10;
+    $$m int32:a = x;
+    $$m int32:b = x;
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };

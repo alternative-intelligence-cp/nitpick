@@ -1,0 +1,9 @@
+// Expected: COMPILER ERROR - mutable borrow conflicts with immutable borrow (ARIA-023)
+// bug066: $$m borrow while $$i borrow is active must be rejected.
+func:main = int32() {
+    int32:x = 10;
+    $$i int32:a = x;
+    $$m int32:b = x;
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
