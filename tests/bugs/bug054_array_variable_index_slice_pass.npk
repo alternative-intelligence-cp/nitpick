@@ -1,0 +1,20 @@
+// bug054: Variable-index inclusive slice from fixed-size int32 array
+// int32[5] sliced with [start..endIdx] where start=2, endIdx=4
+// → 3 elements (indices 2,3,4 = values 30,40,50)
+// Expected: exits 40 (sl[1])
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32[5]:nums;
+    nums[0] = 10i32;
+    nums[1] = 20i32;
+    nums[2] = 30i32;
+    nums[3] = 40i32;
+    nums[4] = 50i32;
+    int32:start = 2i32;
+    int32:endIdx = 4i32;
+    int32[]:sl = nums[start..endIdx];
+    if (sl[0] != 30i32) { exit 1; }
+    if (sl[1] != 40i32) { exit 2; }
+    if (sl[2] != 50i32) { exit 3; }
+    exit sl[1];
+};

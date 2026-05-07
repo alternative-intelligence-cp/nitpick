@@ -35,7 +35,7 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
     
     // Check if this is array slicing (index is a range)
     if (expr->index->type == ASTNode::NodeType::RANGE) {
-        // Array slicing: arr[start..end] returns an array of same element type
+        // Array slicing: arr[start..end] returns a dynamic array of same element type
         RangeExpr* rangeExpr = static_cast<RangeExpr*>(expr->index.get());
         
         // Type check the range expression
@@ -44,15 +44,19 @@ Type* TypeChecker::inferIndexExpr(IndexExpr* expr) {
             return typeSystem->getErrorType();
         }
         
-        // Verify we're slicing an array (pointer type)
-        if (arrayType->getKind() != TypeKind::POINTER) {
-            addError("Cannot slice non-array type '" + arrayType->toString() + "'", expr);
-            return typeSystem->getErrorType();
+        // Accept both fixed-size arrays (T[N]) and pointer/dynamic arrays (T[])
+        if (arrayType->getKind() == TypeKind::ARRAY) {
+            // v0.19.0 Phase 4: slicing a fixed-size array T[N] yields T[] (dynamic)
+            ArrayType* arrType = static_cast<ArrayType*>(arrayType);
+            Type* elemType = const_cast<Type*>(arrType->getElementType());
+            return typeSystem->getArrayType(elemType, -1);
         }
-        
-        // Slicing returns the same type (pointer to element type)
-        // arr[0..5] where arr is int64[] returns int64[]
-        return arrayType;
+        if (arrayType->getKind() == TypeKind::POINTER) {
+            // Slicing a pointer/dynamic array returns the same dynamic type
+            return arrayType;
+        }
+        addError("Cannot slice non-array type '" + arrayType->toString() + "'", expr);
+        return typeSystem->getErrorType();
     }
     
     // Regular indexing: arr[i]

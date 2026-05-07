@@ -280,6 +280,11 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
                 if (!ariaElemType.empty() && ariaElemType.back() == '@') {
                     ariaElemType.pop_back();
                 }
+                // Strip "[]" dynamic array suffix — var holds a ptr to elements of T
+                if (ariaElemType.size() >= 2 &&
+                    ariaElemType.substr(ariaElemType.size() - 2) == "[]") {
+                    ariaElemType = ariaElemType.substr(0, ariaElemType.size() - 2);
+                }
                 if (!ariaElemType.empty()) {
                     llvm::Type* resolved = getLLVMTypeFromString(ariaElemType);
                     if (resolved) elemType = resolved;

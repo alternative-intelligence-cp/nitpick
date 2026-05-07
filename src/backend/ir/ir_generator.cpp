@@ -12070,25 +12070,39 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                 // Array slicing: arr[start..end] or arr[start...end]
                 RangeExpr* rangeExpr = static_cast<RangeExpr*>(indexExpr->index.get());
                 
-                // Generate code for the array (should be a pointer)
+                // v0.19.0 Phase 4: resolve array pointer and element type generically.
+                // Handles both fixed-size arrays (alloca [N x T]) and dynamic/pointer arrays.
                 llvm::Value* array_ptr = nullptr;
-                
+                llvm::Type* elem_type = builder.getInt64Ty(); // default fallback
+                uint64_t elem_size_bytes = 8;
+
+                auto resolveArrayBase = [&](llvm::Value* var) {
+                    if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
+                        llvm::Type* at = allocaInst->getAllocatedType();
+                        if (at->isPointerTy()) {
+                            // Dynamic array — load the pointer stored in the alloca
+                            array_ptr = builder.CreateLoad(at, var, "arr.dyn.ptr");
+                        } else if (at->isArrayTy()) {
+                            // Fixed-size array alloca: treat its address as a flat element pointer
+                            elem_type = llvm::cast<llvm::ArrayType>(at)->getElementType();
+                            array_ptr = var;  // GEP base is the alloca itself
+                        } else {
+                            array_ptr = var;
+                        }
+                        if (elem_type->isSized()) {
+                            elem_size_bytes = module->getDataLayout().getTypeAllocSize(elem_type);
+                        }
+                    } else {
+                        array_ptr = var;
+                    }
+                };
+
                 // Get array pointer
                 if (indexExpr->array->type == ASTNode::NodeType::IDENTIFIER) {
                     IdentifierExpr* ident = static_cast<IdentifierExpr*>(indexExpr->array.get());
                     auto it = named_values.find(ident->name);
                     if (it != named_values.end()) {
-                        llvm::Value* var = it->second;
-                        if (auto* allocaInst = llvm::dyn_cast<llvm::AllocaInst>(var)) {
-                            llvm::Type* allocated_type = allocaInst->getAllocatedType();
-                            if (allocated_type->isPointerTy()) {
-                                array_ptr = builder.CreateLoad(allocated_type, var, ident->name + ".ptr");
-                            } else {
-                                array_ptr = var;
-                            }
-                        } else {
-                            array_ptr = var;
-                        }
+                        resolveArrayBase(it->second);
                     }
                 } else {
                     array_ptr = codegenExpression(indexExpr->array.get());
@@ -12123,11 +12137,12 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                 }
                 
                 // Get element type (assume int64 for now - should track this properly)
-                llvm::Type* elem_type = builder.getInt64Ty();
+                // elem_type and elem_size_bytes were already resolved during array base resolution above.
                 
                 // Allocate memory for the new slice
                 // Call malloc(length * sizeof(element))
-                llvm::Value* elem_size = llvm::ConstantInt::get(builder.getInt64Ty(), 8); // sizeof(int64)
+                llvm::Value* elem_size = llvm::ConstantInt::get(builder.getInt64Ty(),
+                    static_cast<uint64_t>(elem_size_bytes));
                 llvm::Value* byte_count = builder.CreateMul(length, elem_size, "slice.bytes");
                 
                 llvm::Function* malloc_func = module->getFunction("malloc");
@@ -12549,6 +12564,9 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     if (at != var_aria_types.end()) {
                         std::string t = at->second;
                         if (!t.empty() && t.back() == '@') t.pop_back();
+                        // Strip "[]" dynamic array suffix — var holds ptr to elements of T
+                        if (t.size() >= 2 && t.substr(t.size() - 2) == "[]")
+                            t = t.substr(0, t.size() - 2);
                         if      (t == "int8"  || t == "i8")  elem_type = builder.getInt8Ty();
                         else if (t == "int16" || t == "i16") elem_type = builder.getInt16Ty();
                         else if (t == "int32" || t == "i32") elem_type = builder.getInt32Ty();

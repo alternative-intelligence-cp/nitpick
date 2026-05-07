@@ -362,6 +362,25 @@ llvm::Type* ExprCodegen::getLLVMTypeFromString(const std::string& typeName) {
         return llvm::PointerType::get(context, 0);
     }
 
+    // v0.19.0 Phase 4: Dynamic array types: T[] → opaque pointer (holds malloc'd memory)
+    // Fixed-size array types: T[N] → [N x T]
+    if (typeName.size() > 2 && typeName.back() == ']') {
+        size_t bracket = typeName.rfind('[');
+        if (bracket != std::string::npos) {
+            std::string elemStr = typeName.substr(0, bracket);
+            std::string sizeStr = typeName.substr(bracket + 1, typeName.size() - bracket - 2);
+            llvm::Type* elemLLVM = getLLVMTypeFromString(elemStr);
+            if (sizeStr.empty()) {
+                // Dynamic array T[] → pointer
+                return llvm::PointerType::get(context, 0);
+            } else {
+                // Fixed-size array T[N] → [N x T]
+                size_t n = std::stoull(sizeStr);
+                return llvm::ArrayType::get(elemLLVM, n);
+            }
+        }
+    }
+
     // Unknown type - throw error instead of defaulting
     throw std::runtime_error("Unknown Nitpick type: " + typeName);
 }
