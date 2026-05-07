@@ -5257,7 +5257,86 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                             if (auto* srcAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
                                 srcElemType = srcAlloca->getAllocatedType();
                             }
-                            
+
+                            // v0.19.0: Multi-dimensional array initializer.
+                            // ARRAY_LITERAL codegen for [[r0...], [r1...], ...] produces a flat
+                            // alloca of pointer-sized slots, one ptr per row (each ptr points to
+                            // an inner flat alloca of the row's scalar elements).  When the
+                            // destination element type is itself an array type we must dereference
+                            // each row pointer and copy its scalar elements into the proper
+                            // [0, row, col] GEP slot of the typed destination alloca.
+                            if (elemType->isArrayTy() && srcElemType->isPointerTy()) {
+                                auto* innerArrType = llvm::cast<llvm::ArrayType>(elemType);
+                                llvm::Type* innerElemType = innerArrType->getElementType();
+                                uint64_t innerNumElems = innerArrType->getNumElements();
+
+                                // Discover the actual element type stored by the inner alloca
+                                // (integer literals without suffix produce i64, not i32).
+                                // Walk GEP+store chains into the outer alloca to find the first
+                                // inner alloca and query its allocated type.
+                                llvm::Type* innerSrcElemType = innerElemType; // fallback
+                                if (auto* outerAlloca = llvm::dyn_cast<llvm::AllocaInst>(initVal)) {
+                                    for (auto* outerUser : outerAlloca->users()) {
+                                        if (auto* gep = llvm::dyn_cast<llvm::GetElementPtrInst>(outerUser)) {
+                                            for (auto* gepUser : gep->users()) {
+                                                if (auto* si = llvm::dyn_cast<llvm::StoreInst>(gepUser)) {
+                                                    if (auto* inner = llvm::dyn_cast<llvm::AllocaInst>(
+                                                            si->getValueOperand())) {
+                                                        innerSrcElemType = inner->getAllocatedType();
+                                                        goto found_inner_type;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    found_inner_type:;
+                                }
+
+                                for (uint64_t i = 0; i < numElems; ++i) {
+                                    // Load inner row pointer from outer flat alloca slot i
+                                    llvm::Value* rowPtrLoc = builder.CreateGEP(
+                                        srcElemType, initVal,
+                                        llvm::ConstantInt::get(builder.getInt64Ty(), i),
+                                        "arr2d.row.src");
+                                    llvm::Value* rowPtr = builder.CreateLoad(
+                                        llvm::PointerType::get(context, 0), rowPtrLoc,
+                                        "arr2d.row.ptr");
+                                    // Copy each scalar element from the inner alloca
+                                    for (uint64_t j = 0; j < innerNumElems; ++j) {
+                                        llvm::Value* innerSrcPtr = builder.CreateGEP(
+                                            innerSrcElemType, rowPtr,
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), j),
+                                            "arr2d.elem.src");
+                                        llvm::Value* innerElemVal = builder.CreateLoad(
+                                            innerSrcElemType, innerSrcPtr, "arr2d.elem.val");
+                                        // Cast source element type to destination element type
+                                        if (innerSrcElemType != innerElemType) {
+                                            if (innerSrcElemType->isIntegerTy() && innerElemType->isIntegerTy()) {
+                                                unsigned srcBits = innerSrcElemType->getIntegerBitWidth();
+                                                unsigned dstBits = innerElemType->getIntegerBitWidth();
+                                                if (srcBits > dstBits)
+                                                    innerElemVal = builder.CreateTrunc(
+                                                        innerElemVal, innerElemType, "arr2d.trunc");
+                                                else
+                                                    innerElemVal = builder.CreateSExt(
+                                                        innerElemVal, innerElemType, "arr2d.sext");
+                                            } else if (innerSrcElemType->isFloatingPointTy() &&
+                                                       innerElemType->isFloatingPointTy()) {
+                                                innerElemVal = builder.CreateFPCast(
+                                                    innerElemVal, innerElemType, "arr2d.fpcast");
+                                            }
+                                        }
+                                        std::vector<llvm::Value*> dstIdx = {
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), i),
+                                            llvm::ConstantInt::get(builder.getInt64Ty(), j)
+                                        };
+                                        llvm::Value* dstPtr = builder.CreateInBoundsGEP(
+                                            varType, alloca, dstIdx, "arr2d.elem.dst");
+                                        builder.CreateStore(innerElemVal, dstPtr);
+                                    }
+                                }
+                            } else {
                             for (uint64_t i = 0; i < numElems; ++i) {
                                 // Load element i from the tmp flat alloca using SOURCE type
                                 llvm::Value* srcPtr = builder.CreateGEP(
@@ -5290,6 +5369,7 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                                     varType, alloca, destIdx, "arr.init.dst");
                                 builder.CreateStore(elem, destPtr);
                             }
+                            } // end flat-copy else
                         } else {
                             builder.CreateStore(initVal, alloca);
                         }

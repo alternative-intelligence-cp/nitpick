@@ -1,0 +1,16 @@
+// BUG-045: 2-D array literal initializer stores correct values.
+// int32[2][2]:sq = [[1,2],[3,4]] — all four elements must be readable.
+// Expected: exits 4  (sq[1][1])
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32[2][2]:sq = [[1, 2], [3, 4]];
+    // Spot-check all four cells; any mismatch exits a non-4 sentinel
+    if (sq[0][0] != 1) { exit 10; }
+    if (sq[0][1] != 2) { exit 20; }
+    if (sq[1][0] != 3) { exit 30; }
+    exit sq[1][1];
+};
