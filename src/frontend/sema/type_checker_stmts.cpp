@@ -787,12 +787,31 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
                      "$$i/$$m must reference an existing variable", stmt);
             return;
         }
-        auto isLiteralIndexBorrowInitializer = [](ASTNode* node) -> bool {
+        // v0.19.0 Phase 3: recursively check that a node is addressable storage.
+        // Handles: identifier, struct field access (member), array element (index),
+        // and chains thereof (e.g. pair.buf[0], matrix[i][j]).
+        std::function<bool(ASTNode*)> isAddressableBase = [&](ASTNode* n) -> bool {
+            if (!n) return false;
+            switch (n->type) {
+                case ASTNode::NodeType::IDENTIFIER:    return true;
+                case ASTNode::NodeType::MEMBER_ACCESS: {
+                    auto* m = static_cast<MemberAccessExpr*>(n);
+                    return isAddressableBase(m->object.get());
+                }
+                case ASTNode::NodeType::INDEX: {
+                    auto* ix = static_cast<IndexExpr*>(n);
+                    return isAddressableBase(ix->array.get());
+                }
+                default: return false;
+            }
+        };
+
+        auto isLiteralIndexBorrowInitializer = [&](ASTNode* node) -> bool {
             if (!node || node->type != ASTNode::NodeType::INDEX) {
                 return false;
             }
             auto* indexExpr = static_cast<IndexExpr*>(node);
-            if (!indexExpr->array || indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+            if (!isAddressableBase(indexExpr->array.get())) {
                 return false;
             }
             if (!indexExpr->index || indexExpr->index->type != ASTNode::NodeType::LITERAL) {
@@ -805,12 +824,12 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // v0.19.0: Allow dynamic-index borrow initializers (arr[i]) — the index
         // may be any expression, not just a literal. The borrow checker maps these
         // to [*] paths and rejects conflicting borrows conservatively (ARIA-023).
-        auto isDynamicIndexBorrowInitializer = [](ASTNode* node) -> bool {
+        auto isDynamicIndexBorrowInitializer = [&](ASTNode* node) -> bool {
             if (!node || node->type != ASTNode::NodeType::INDEX) {
                 return false;
             }
             auto* indexExpr = static_cast<IndexExpr*>(node);
-            if (!indexExpr->array || indexExpr->array->type != ASTNode::NodeType::IDENTIFIER) {
+            if (!isAddressableBase(indexExpr->array.get())) {
                 return false;
             }
             return indexExpr->index != nullptr;

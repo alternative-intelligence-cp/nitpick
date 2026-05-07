@@ -82,22 +82,27 @@ llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) 
 
     if (expr->type == ASTNode::NodeType::INDEX) {
         IndexExpr* index = static_cast<IndexExpr*>(expr);
-        if (!index->array || index->array->type != ASTNode::NodeType::IDENTIFIER) {
+        if (!index->array) {
             return nullptr;
         }
 
-        IdentifierExpr* root_ident = static_cast<IdentifierExpr*>(index->array.get());
-        auto root_it = named_values.find(root_ident->name);
-        if (root_it == named_values.end()) {
+        // v0.19.0 Phase 3: resolve the array base recursively so that
+        // struct-field array borrows (e.g. pair.buf[0]) work correctly.
+        Type* base_aria_type = nullptr;
+        llvm::Value* array_ptr = getBorrowAliasPointer(index->array.get(), &base_aria_type);
+        if (!array_ptr) {
             return nullptr;
         }
 
-        llvm::Value* array_ptr = root_it->second;
+        // Determine the LLVM element type of the array being indexed.
         llvm::Type* array_llvm_type = nullptr;
         if (auto* alloca_inst = llvm::dyn_cast<llvm::AllocaInst>(array_ptr)) {
             array_llvm_type = alloca_inst->getAllocatedType();
         } else if (auto* global = llvm::dyn_cast<llvm::GlobalVariable>(array_ptr)) {
             array_llvm_type = global->getValueType();
+        } else if (base_aria_type) {
+            // The base is a GEP result (e.g. struct field ptr) — map through Aria type.
+            array_llvm_type = mapType(base_aria_type);
         }
 
         if (!array_llvm_type || !array_llvm_type->isArrayTy()) {
@@ -117,13 +122,17 @@ llvm::Value* IRGenerator::getBorrowAliasPointer(ASTNode* expr, Type** out_type) 
             index_value
         };
         llvm::Value* elem_ptr = builder.CreateInBoundsGEP(
-            array_llvm_type, array_ptr, gep_indices, root_ident->name + ".borrow.elem.ptr");
+            array_llvm_type, array_ptr, gep_indices, "borrow.elem.ptr");
 
         Type* elem_aria_type = nullptr;
-        auto value_type_it = value_types.find(array_ptr);
-        if (value_type_it != value_types.end() && value_type_it->second &&
-            value_type_it->second->getKind() == TypeKind::ARRAY) {
-            elem_aria_type = static_cast<sema::ArrayType*>(value_type_it->second)->getElementType();
+        if (base_aria_type && base_aria_type->getKind() == TypeKind::ARRAY) {
+            elem_aria_type = static_cast<sema::ArrayType*>(base_aria_type)->getElementType();
+        } else {
+            auto value_type_it = value_types.find(array_ptr);
+            if (value_type_it != value_types.end() && value_type_it->second &&
+                value_type_it->second->getKind() == TypeKind::ARRAY) {
+                elem_aria_type = static_cast<sema::ArrayType*>(value_type_it->second)->getElementType();
+            }
         }
 
         if (elem_aria_type) {
