@@ -1,0 +1,36 @@
+// bug078: pick struct field pattern with a wildcard fallback arm
+// Verifies that the wildcard (*) arm catches non-matching cases when a struct
+// pattern is present alongside other cases.
+// Expected exit: 42
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+struct:Vec3 = {
+    int32:x;
+    int32:y;
+    int32:z;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    Point:p = Point{ x: 20i32, y: 22i32 };
+    int32:result = 0i32;
+
+    // Struct pattern + wildcard: wildcard must not fire for a matching type
+    pick(p) {
+        (Point{ x, y }) {
+            result = x + y;
+        },
+        (*) {
+            result = -1i32;
+        }
+    }
+
+    exit result;
+};

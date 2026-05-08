@@ -1,0 +1,27 @@
+// bug080: lambda variable with conditional logic — verifies pick/if inside lambda body
+// Expected exit: 0
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Lambda that returns 1 if positive, 0 if zero, -1 if negative
+    (int32)(int32):sign = int32(int32:n) {
+        int32:s = 0i32;
+        if (n > 0i32) { s = 1i32; }
+        if (n < 0i32) { s = -1i32; }
+        pass s;
+    };
+
+    int32:a = sign(42i32) ? -99i32;
+    if (a != 1i32) { exit 1; }
+
+    int32:b = sign(0i32) ? -99i32;
+    if (b != 0i32) { exit 2; }
+
+    int32:c = sign(-5i32) ? -99i32;
+    if (c != -1i32) { exit 3; }
+
+    exit 0;
+};
