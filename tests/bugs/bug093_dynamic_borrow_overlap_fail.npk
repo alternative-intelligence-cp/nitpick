@@ -1,0 +1,21 @@
+// bug093: A-004 — Two dynamic borrows to the same array with different
+//         identifier indices still triggers ARIA-023 (conservative baseline,
+//         no Rules constraints to suppress it).
+// Compile: should fail with ARIA-023.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:bad_overlap = int32(int32:i, int32:j) {
+    int32[8]:arr = [0, 1, 2, 3, 4, 5, 6, 7];
+    $$m int32:a = arr[i];
+    $$m int32:b = arr[j];   // ARIA-023: cannot prove arr[i] and arr[j] disjoint
+    a = 1;
+    b = 2;
+    pass 0;
+};
+
+func:main = int32() {
+    exit 0;
+};

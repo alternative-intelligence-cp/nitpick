@@ -1,0 +1,26 @@
+// bug090: A-003 — No ARIA-030 when $$m borrow is released before await.
+// Compile and run: should succeed with no warnings.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+async func:get_value = int32() {
+    pass 42i32;
+};
+
+// $$m borrow is used and then the variable goes out of scope before await
+async func:good_borrow = int32() {
+    int32:x = 10;
+    {
+        $$m int32:ref_x = x;
+        ref_x = 20;
+    }
+    // ref_x is now out of scope; borrow released — await is safe
+    int32:_ = raw await get_value();
+    pass x;
+};
+
+func:main = int32() {
+    exit 0;
+};

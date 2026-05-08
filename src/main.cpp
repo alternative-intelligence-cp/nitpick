@@ -4410,12 +4410,12 @@ llvm::Module* compile_to_module(
         }
     }
 #endif // ARIA_HAS_Z3
-    
+
     // Phase 3.5: Borrow Checker (Phase 5b in research)
     if (opts.verbose) {
         std::cout << "Phase 3.5: Borrow checking...\n";
     }
-    
+
     npk::sema::BorrowChecker borrow_checker;
     if (opts.borrow_debug) {
         borrow_checker.setBorrowDebug(true);
@@ -4423,6 +4423,24 @@ llvm::Module* compile_to_module(
     if (opts.borrow_dump) {
         borrow_checker.setBorrowDump(true);
     }
+
+#ifdef ARIA_HAS_Z3
+    // A-004: Wire Rules table and a lightweight Z3 verifier into the borrow
+    // checker so that limit<Rules>-constrained index variables can be proven
+    // disjoint, suppressing conservative ARIA-023/ARIA-026 false positives.
+    const auto& bc_rules = type_checker.getRulesTable();
+    std::unique_ptr<npk::Z3Verifier> borrow_z3v;
+    if (!bc_rules.empty()) {
+        borrow_z3v = std::make_unique<npk::Z3Verifier>(opts.smt_timeout);
+        borrow_z3v->setTypeSystem(&type_system);
+        for (const auto& [name, rules_ptr] : bc_rules) {
+            borrow_z3v->registerRules(name, rules_ptr);
+        }
+        borrow_checker.setZ3Verifier(borrow_z3v.get());
+        borrow_checker.setRulesTable(&bc_rules);
+    }
+#endif
+
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {

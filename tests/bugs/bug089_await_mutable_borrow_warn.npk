@@ -1,0 +1,23 @@
+// bug089: A-003 — ARIA-030 warning when $$m borrow is live across await point.
+// Compile: should succeed (warning, not error).
+// Expected output: ARIA-030 warning mentioning the host variable.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+async func:get_value = int32() {
+    pass 42i32;
+};
+
+// $$m borrow of 'x' is alive when 'await' is reached → ARIA-030 warning
+async func:bad_borrow = int32() {
+    int32:x = 10;
+    $$m int32:ref_x = x;
+    int32:_ = raw await get_value();
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};

@@ -315,3 +315,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0211.sh")
         LABELS "cfg;derive;display;catch;preprocessor;v0.21.1"
     )
 endif()
+
+# ============================================================================
+# Async Borrow Checking (A-003) + Rules/Z3 Index Disjointness (A-004) (v0.21.2)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0212.sh")
+    add_test(
+        NAME bug_tests_v0212
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0212.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/bugs
+    )
+    set_tests_properties(bug_tests_v0212 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "async;borrow;await;ARIA-030;disjoint;z3;v0.21.2"
+    )
+endif()

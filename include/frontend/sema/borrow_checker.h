@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <set>
+#include <map>
 #include <memory>
 
 // Forward declaration for optional Z3 integration (v0.6.1)
@@ -666,7 +667,14 @@ private:
     
     // Optional Z3 verifier for precision proofs (nullptr if Z3 not available)
     Z3Verifier* z3_verifier = nullptr;
-    
+
+    // A-004: Rules/limit registry for Z3-backed index disjointness proofs.
+    // Populated by setRulesTable() from main.cpp before analyze() is called.
+    const std::unordered_map<std::string, RulesDeclStmt*>* rules_table_ = nullptr;
+
+    // A-004: Maps variable name → limitRulesName, populated in checkVarDecl.
+    std::unordered_map<std::string, std::string> var_limit_rules_;
+
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping
     bool proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2);
@@ -884,6 +892,9 @@ private:
     // isPassedToFunc=true when passed as an argument to another function.
     void checkLambdaExpr(LambdaExpr* lambda, bool isEscaping, bool isPassedToFunc);
 
+    // A-003: Borrow checking across async await suspension points
+    void checkAwaitExpr(AwaitExpr* expr);
+
     // v0.6.1: Pattern match borrow flow
     void checkPickStmt(PickStmt* stmt);
     void checkWhenStmt(WhenStmt* stmt);
@@ -1050,6 +1061,12 @@ public:
      * conditional borrow narrowing.
      */
     void setZ3Verifier(Z3Verifier* z3v) { z3_verifier = z3v; }
+
+    /**
+     * A-004: Set the Rules declaration table for Z3-backed index disjointness.
+     * Call this before analyze() when the program uses limit<Rules> qualifiers.
+     */
+    void setRulesTable(const std::unordered_map<std::string, RulesDeclStmt*>* rules) { rules_table_ = rules; }
     
     /**
      * v0.6.3: Enable borrow debug diagnostics (--borrow-debug)

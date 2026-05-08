@@ -1,4 +1,7 @@
 #include "frontend/sema/borrow_checker.h"
+#ifdef ARIA_HAS_Z3
+#include "analysis/z3_verifier.h"
+#endif
 #include <sstream>
 #include <algorithm>
 #include <iostream>
@@ -1474,6 +1477,11 @@ void BorrowChecker::checkExpression(ASTNode* expr) {
             checkMoveExpr(static_cast<MoveExpr*>(expr));
             break;
 
+        case ASTNode::NodeType::AWAIT:
+            // A-003: Check borrow state at async suspension points
+            checkAwaitExpr(static_cast<AwaitExpr*>(expr));
+            break;
+
         case ASTNode::NodeType::LAMBDA:
             // Lambda used in expression context — not escaping here.
             // Escape is detected in checkReturnStmt/checkPassStmt/checkCallExpr.
@@ -1498,6 +1506,11 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
 
     // Register the variable first
     registerVariable(stmt->varName, stmt);
+
+    // A-004: Track limit<Rules> qualifiers for Z3-backed index disjointness.
+    if (!stmt->limitRulesName.empty()) {
+        var_limit_rules_[stmt->varName] = stmt->limitRulesName;
+    }
 
     const std::string type_text = stmt->typeNode ? stmt->typeNode->toString() : stmt->typeName;
     const bool is_pointer_decl = stmt->typeName.find("->") != std::string::npos ||
@@ -2418,19 +2431,40 @@ bool BorrowChecker::proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2) {
         if (id1->name == id2->name) {
             return false;
         }
-        
-        // If Z3 verifier is available, attempt range-based disjointness proof.
-        // Look up both variables' Rules constraints; if their ranges are
-        // non-overlapping, they're provably disjoint.
-        if (z3_verifier) {
-            // Check if both variables have limit<Rules> constraints that
-            // define non-overlapping integer ranges. The Z3 verifier's
-            // verifyLimitRange can determine if a value in [lo1, hi1]
-            // can equal a value in [lo2, hi2] — if the ranges don't
-            // overlap, indices are provably different.
-            // This requires Rules constraint lookup from the enclosing scope,
-            // which is not yet wired in. When Rules constraints are available
-            // on BorrowChecker's context, this path activates.
+
+        // A-004: If Z3 verifier is available, attempt range-based disjointness
+        // proof using limit<Rules> constraints on the two index variables.
+        if (z3_verifier && rules_table_) {
+#ifdef ARIA_HAS_Z3
+            auto lrIt1 = var_limit_rules_.find(id1->name);
+            auto lrIt2 = var_limit_rules_.find(id2->name);
+            if (lrIt1 != var_limit_rules_.end() && lrIt2 != var_limit_rules_.end() &&
+                !lrIt1->second.empty() && !lrIt2->second.empty()) {
+                auto rt1 = rules_table_->find(lrIt1->second);
+                auto rt2 = rules_table_->find(lrIt2->second);
+                if (rt1 != rules_table_->end() && rt2 != rules_table_->end()) {
+                    // Construct a temporary "id1 == id2" expression and ask Z3
+                    // whether it is ever satisfiable under both sets of Rules.
+                    // proveDeadBranch returns DISPROVEN when the condition is
+                    // always false → the two indices are always unequal.
+                    auto lhs = std::make_shared<IdentifierExpr>(id1->name, 0, 0);
+                    auto rhs = std::make_shared<IdentifierExpr>(id2->name, 0, 0);
+                    Token eq_tok(frontend::TokenType::TOKEN_EQUAL_EQUAL, "==", 0, 0);
+                    auto eq_expr = std::make_shared<BinaryExpr>(lhs, eq_tok, rhs, 0, 0);
+                    std::map<std::string, std::pair<RulesDeclStmt*, std::string>> varRules = {
+                        {id1->name, {rt1->second, "int64"}},
+                        {id2->name, {rt2->second, "int64"}}
+                    };
+                    std::vector<VerifyOutcome> outcomes;
+                    auto result = z3_verifier->proveDeadBranch(
+                        eq_expr.get(), varRules, outcomes);
+                    if (result == VerifyResult::DISPROVEN) {
+                        // Condition id1==id2 is always false → indices are disjoint
+                        return true;
+                    }
+                }
+            }
+#endif
         }
     }
 
@@ -2652,6 +2686,40 @@ static bool hasComplexControlFlow(ASTNode* node) {
         default:
             return false;
     }
+}
+
+// ============================================================================
+// A-003: Async Borrow Checking
+// ============================================================================
+
+void BorrowChecker::checkAwaitExpr(AwaitExpr* expr) {
+    if (!expr) return;
+
+    // Check the awaited operand expression first
+    if (expr->operand) checkExpression(expr->operand.get());
+
+    // A-003: Detect $$m borrows that are live at an await suspension point.
+    // In the current synchronous resume model this is not immediately
+    // exploitable, but should be flagged so users are ready for a preemptive
+    // scheduler.  Emit one ARIA-030 warning per await point (list only the
+    // first offending borrow to avoid diagnostic spam).
+    for (const auto& [host, loans] : ctx.active_loans) {
+        for (const auto& loan : loans) {
+            if (loan.phase == LoanPhase::ACTIVE && loan.is_mutable) {
+                BorrowError err(expr->line, expr->column,
+                    "mutable borrow of '" + host + "' is live across an 'await' "
+                    "suspension point; this will be a data race under a preemptive "
+                    "scheduler \u2014 release the borrow before awaiting",
+                    loan.creation_line, loan.creation_column,
+                    "mutable borrow created here");
+                err.severity = BorrowSeverity::WARNING;
+                err.code = "ARIA-030";
+                errors.push_back(err);
+                goto done_await_check;  // one warning per await point is enough
+            }
+        }
+    }
+    done_await_check:;
 }
 
 void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {

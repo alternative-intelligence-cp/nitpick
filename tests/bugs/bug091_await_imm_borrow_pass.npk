@@ -1,0 +1,22 @@
+// bug091: A-003 — Immutable $$i borrow across await is fine (no ARIA-030).
+// Compile: should succeed with no warnings.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+async func:get_value = int32() {
+    pass 42i32;
+};
+
+// $$i borrow: read-only, no aliasing hazard — no warning expected
+async func:imm_borrow_await = int32() {
+    int32:x = 10;
+    $$i int32:ref_x = x;
+    int32:_ = raw await get_value();
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};

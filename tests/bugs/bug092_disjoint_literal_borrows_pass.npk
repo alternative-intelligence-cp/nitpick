@@ -1,0 +1,16 @@
+// bug092: A-004 — Two literal-indexed borrows of the same array are disjoint
+//         (fast-path proof, no Z3 required).
+// Compile and run: should succeed without ARIA-023.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int32[4]:arr = [10, 20, 30, 40];
+    $$m int32:a = arr[0];
+    $$m int32:b = arr[2];
+    a = 100;
+    b = 300;
+    exit 0;
+};
