@@ -4,6 +4,7 @@
 #include <set>
 #include <vector>
 #include <string>
+#include <climits>
 #include "frontend/sema/type.h"
 #include "frontend/ast/stmt.h"  // For PickStmt and PickCase
 
@@ -125,6 +126,30 @@ public:
         TypeDomain domain(Kind::INTEGER_RANGE);
         domain.ranges.push_back(ValueRange(-9223372036854775807LL, 9223372036854775807LL));
         domain.hasERR = true;  // ERR is min i64
+        return domain;
+    }
+
+    // A-013: int32/uint32/int64 are large but finite.
+    // Route through INTEGER_RANGE analysis so the analyzer can detect
+    // uncovered intervals and list them in the diagnostic.
+    static TypeDomain forInt32() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(-2147483648LL, 2147483647LL));
+        domain.hasERR = false;
+        return domain;
+    }
+
+    static TypeDomain forUInt32() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(0LL, 4294967295LL));
+        domain.hasERR = false;
+        return domain;
+    }
+
+    static TypeDomain forInt64() {
+        TypeDomain domain(Kind::INTEGER_RANGE);
+        domain.ranges.push_back(ValueRange(INT64_MIN, INT64_MAX));
+        domain.hasERR = false;
         return domain;
     }
     

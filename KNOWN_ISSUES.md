@@ -77,13 +77,13 @@ Last updated: v0.20.5
   OOM in pathological cases. Avoid deep pub-pub chains across modules in
   tight memory environments.
 
-- **`pick` range arms not exhaustiveness-checked for `int32`/`int64`** (Medium):
-  The exhaustiveness checker treats `int32` and `int64` as infinite domains
-  (their value spaces are 2³² and 2⁶⁴ respectively). Range arms like `0..100:`
-  do not contribute to exhaustiveness analysis for these types — you must always
-  include a `(*):` wildcard arm. For `int8`, `int16`, and all `tbb*` types,
-  range arms are fully tracked and a wildcard is not required when all values
-  are covered.
+- **`pick` range exhaustiveness for `int32`/`uint32`/`int64`** — Fixed in v0.21.3:
+  The exhaustiveness checker now routes `int32`, `uint32`, and `int64` through
+  INTEGER_RANGE analysis. Range arms contribute to coverage and the compiler
+  lists uncovered intervals in the diagnostic. A `(*)` wildcard is still
+  required unless all values are covered by range arms. `uint64` remains
+  treated as an infinite domain (its max value exceeds `int64_t`).
+  Fixed: commit tagged v0.21.3.
 
 ### Low Severity
 
@@ -96,8 +96,9 @@ Last updated: v0.20.5
 - **Extern pointer returns** (Low): `{ i1, ptr }` optional wrapper can corrupt
   struct fields. Use `int64` for handle types in extern blocks.
 
-- **`fixed` with compile-time arithmetic** (Low): `fixed int64:NEG1 = 0i64 - 1i64`
-  may evaluate to `0`. Compute negative values at runtime instead.
+- **`fixed` with compile-time arithmetic** -- Fixed in v0.13.0 (BUG-09):
+  `fixed int64:NEG1 = 0i64 - 1i64` now correctly evaluates to `-1`.
+  Verified in v0.21.3. Negative `fixed` values are valid and supported.
 
 - **Negative constants imported via `use` are zeroed** (Low): Compute negative
   values inline as `0i64 - value` rather than importing from another module.
@@ -107,7 +108,7 @@ Last updated: v0.20.5
 - `if` requires parentheses: `if (cond) { }`
 - Control flow blocks have no trailing semicolons: `loop(...){}`, `pick(...){}`, `if(...){}` etc.
 - Bitwise operators (`&`, `|`, `^`) require unsigned types
-- `pick()` requires a `(*)` wildcard case for types with infinite domains
+- `pick()` requires a `(*)` wildcard case for types with infinite domains (e.g. `string`, `uint64`); for `int32`, `uint32`, `int64`, `int8`, `int16`, and all `tbb*` types, range arms are tracked and `(*)` is only needed if the range arms do not cover all values
 - `NIL` for non-extern void returns; `void` only in extern blocks
 - `loop`/`till` iteration variable is `$` (reserved — cannot be reused in loop body)
 - `fixed` not `const` for immutable bindings; `const` only in extern blocks

@@ -1,0 +1,18 @@
+// bug096: A-013 — pick on int32 with range arm + wildcard compiles OK
+// Regression: wildcard (*) must still be accepted as exhaustive for int32/int64
+// now that they route through INTEGER_RANGE analysis.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 42i32;
+    int32:result = 0i32;
+    pick(x) {
+        (0i32..100i32) { result = 1i32; },
+        (*) { result = 2i32; }
+    }
+    if (result == 1i32) {
+        exit 0;
+    }
+    exit 1;
+};

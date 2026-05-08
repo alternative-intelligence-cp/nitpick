@@ -1,0 +1,13 @@
+// bug098: A-014 — catch keyword gives specific diagnostic
+// Regression: v0.21.1 added a clear diagnostic for 'catch' in parser.
+// Expected: compile FAIL with message mentioning "catch" and an alternative.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 5;
+    catch {
+        x = 0;
+    }
+    exit 0;
+};

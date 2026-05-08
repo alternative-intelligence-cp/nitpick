@@ -332,3 +332,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0212.sh")
         LABELS "async;borrow;await;ARIA-030;disjoint;z3;v0.21.2"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0213.sh")
+    add_test(
+        NAME bug_tests_v0213
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0213.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/bugs
+    )
+    set_tests_properties(bug_tests_v0213 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "sema;pick;exhaustiveness;int32;int64;ICE;A-008;A-013;A-014;fixed;v0.21.3"
+    )
+endif()

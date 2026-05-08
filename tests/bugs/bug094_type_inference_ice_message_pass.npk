@@ -1,0 +1,12 @@
+// bug094: A-008 — type inference ICE message quality
+// Baseline test: valid programs with explicit type annotations compile cleanly.
+// The [ICE] message in type_checker.cpp default: case should never appear
+// for well-formed programs. This test verifies that normal compilation succeeds.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 42;
+    int32:y = x + 1;
+    exit 0;
+};

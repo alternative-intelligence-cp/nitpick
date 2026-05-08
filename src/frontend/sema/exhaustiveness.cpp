@@ -232,6 +232,14 @@ TypeDomain ExhaustivenessAnalyzer::getDomain(Type* type) {
         if (name == "tbb32") return TypeDomain::forTBB32();
         if (name == "tbb64") return TypeDomain::forTBB64();
         
+        // A-013: int32/uint32/int64 are large but finite integers.
+        // Route through INTEGER_RANGE analysis so the exhaustiveness checker
+        // can detect uncovered intervals and list them in the diagnostic,
+        // rather than just requiring a wildcard (*) arm blindly.
+        if (name == "int32") return TypeDomain::forInt32();
+        if (name == "uint32") return TypeDomain::forUInt32();
+        if (name == "int64") return TypeDomain::forInt64();
+        
         // Fixed-size integers have finite domains but are large
         // Treat as infinite for practical purposes
         return TypeDomain::infinite();

@@ -1,0 +1,13 @@
+// bug095: A-013 — pick on int32 with range arm but no wildcard
+// Expected: compile FAIL — non-exhaustive pick on int32 should report
+// missing intervals, not just "Infinite domain requires default case (*)".
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 5i32;
+    pick(x) {
+        (0i32..10i32) { exit 0; }
+    }
+    exit 1;
+};

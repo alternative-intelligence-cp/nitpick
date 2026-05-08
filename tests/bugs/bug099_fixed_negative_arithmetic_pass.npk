@@ -1,0 +1,17 @@
+// bug099: Fixed-negative — fixed binding with arithmetic produces correct value
+// Regression for BUG-09 (v0.13.0): fixed int64 with negative arithmetic
+// must evaluate correctly at runtime, not be zeroed out.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    fixed int64:NEG1 = 0i64 - 1i64;
+    fixed int64:NEG100 = 0i64 - 100i64;
+    fixed int64:POS5 = 3i64 + 2i64;
+
+    if (NEG1 != -1i64) { exit 1; }
+    if (NEG100 != -100i64) { exit 1; }
+    if (POS5 != 5i64) { exit 1; }
+
+    exit 0;
+};

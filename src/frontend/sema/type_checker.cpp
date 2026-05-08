@@ -441,9 +441,13 @@ Type* TypeChecker::inferType(ASTNode* expr) {
         }
         
         default:
-            addError("Type inference not yet implemented for node type: " + 
-                    ASTNode::nodeTypeToString(expr->type) + 
-                    ". Use an explicit type annotation, e.g. Type:name = expr;", expr);
+            // ICE: reached type inference for an unhandled or statement-level
+            // node type. This is a compiler bug, not a user error.
+            addError("[ICE] type_checker: reached type inference for unhandled "
+                    "node type '" + ASTNode::nodeTypeToString(expr->type) +
+                    "' -- this is a compiler bug. Please file a bug report. "
+                    "As a workaround, add an explicit type annotation, "
+                    "e.g. 'Type:name = expr;'", expr);
             return typeSystem->getErrorType();
     }
 }

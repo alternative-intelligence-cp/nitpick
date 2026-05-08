@@ -1,0 +1,13 @@
+// bug097: A-013 — pick on int64 with range arm but no wildcard
+// Expected: compile FAIL — non-exhaustive pick on int64 should report
+// missing intervals. int64 is now INTEGER_RANGE domain, not INFINITE.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:x = 500i64;
+    pick(x) {
+        (100i64..999i64) { exit 0; }
+    }
+    exit 1;
+};
