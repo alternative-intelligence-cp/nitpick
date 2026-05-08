@@ -134,7 +134,17 @@ Assembler* npk_asm_create() {
     asm_ctx->error = false;
     asm_ctx->error_msg[0] = '\0';
     asm_ctx->regalloc = nullptr;  // Lazy init when first vreg is created
-    
+
+    // A-005: AArch64 JIT is not yet implemented. Fail fast on AArch64 hosts
+    // rather than producing silently broken x86-64 output. Use AOT compilation
+    // (npkc --emit-llvm or --emit-obj) on AArch64 (Apple Silicon, Ampere, etc.).
+#if defined(__aarch64__) || defined(_M_ARM64)
+    set_error(asm_ctx, "[JIT] AArch64 JIT is not yet implemented. "
+              "Use AOT compilation: npkc --emit-llvm or --emit-obj.");
+    fprintf(stderr, "[JIT] AArch64 JIT is not supported. "
+                    "Use --emit-llvm or --emit-obj for AOT compilation.\n");
+#endif
+
     return asm_ctx;
 }
 

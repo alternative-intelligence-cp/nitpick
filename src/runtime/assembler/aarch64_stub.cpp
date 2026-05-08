@@ -91,13 +91,20 @@ static void aarch64_emit_insn(CodeBuffer* buf, uint32_t insn) {
 // Caller-saved: X0-X18, V0-V7, V16-V31
 
 // =============================================================================
-// Stub: AArch64 is not yet implemented
+// Stub: AArch64 JIT not yet implemented (A-005)
 // =============================================================================
 
-// This file is compiled but the functions are only called if
-// npk_asm_get_arch() returns ASM_ARCH_AARCH64, which currently
-// never happens on x86-64 builds. When AArch64 support is added,
-// these stubs will be replaced with real encoders.
+// AArch64 JIT implementation is deferred to a future release.
+// npk_asm_create() (assembler.cpp) now detects AArch64 at runtime and
+// immediately sets an error with a clear diagnostic, preventing silent
+// production of broken x86-64 code on AArch64 hosts.
+//
+// AArch64 users should use AOT compilation:
+//   npkc --emit-llvm program.npk   (LLVM IR)
+//   npkc --emit-obj  program.npk   (native object)
+//
+// When AArch64 JIT is implemented, these stubs will be replaced with
+// AAPCS64-compliant encoders using fixed-width 32-bit instructions.
 
 // Placeholder: encode AArch64 NOP (0xD503201F)
 static const uint32_t AARCH64_NOP = 0xD503201F;

@@ -733,8 +733,26 @@ void DAPServer::handleSetBreakpoints(const DAPMessage& request, DAPMessage& resp
 }
 
 void DAPServer::handleSetExceptionBreakpoints(const DAPMessage& request, DAPMessage& response) {
-    // Not implemented yet
-    response.body = new nlohmann::json(nlohmann::json::object());
+    // A-015: Implement minimal setExceptionBreakpoints response.
+    // The Nitpick debugger does not currently support exception breakpoints
+    // (Nitpick uses failsafe/Result<T> rather than exceptions). We acknowledge
+    // each requested filter with verified:false so DAP clients don't hang.
+    nlohmann::json breakpoints = nlohmann::json::array();
+
+    if (request.body && request.body->contains("filters") &&
+        (*request.body)["filters"].is_array()) {
+        for (const auto& filter : (*request.body)["filters"]) {
+            nlohmann::json bp;
+            bp["verified"] = false;
+            bp["message"] = "Exception breakpoints are not supported — "
+                            "Nitpick uses Result<T>/failsafe for error handling.";
+            breakpoints.push_back(bp);
+        }
+    }
+
+    nlohmann::json body;
+    body["breakpoints"] = breakpoints;
+    response.body = new nlohmann::json(body);
 }
 
 void DAPServer::handleContinue(const DAPMessage& request, DAPMessage& response) {

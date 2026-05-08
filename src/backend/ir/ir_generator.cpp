@@ -7305,10 +7305,12 @@ skip_comparison:
         }
 
         default:
-            std::cerr << "[ICE] ir_generator: unhandled statement node type "
-                      << static_cast<int>(stmt->type)
-                      << " at " << stmt->line << ":" << stmt->column
-                      << " — please file a bug report\n";
+            // A-006: emit node type name (not just int) for actionable ICE.
+            std::cerr << "[ICE] ir_generator: unhandled statement node type '"
+                      << ASTNode::nodeTypeToString(stmt->type)
+                      << "' (" << static_cast<int>(stmt->type) << ")"
+                      << " at line " << stmt->line << ":" << stmt->column
+                      << " \xe2\x80\x94 please file a bug report\n";
             return nullptr;
     }
 }
@@ -12933,10 +12935,12 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
         }
 
         default:
-            std::cerr << "[ICE] ir_generator: unhandled expression node type "
-                      << static_cast<int>(expr->type)
-                      << " at " << expr->line << ":" << expr->column
-                      << " — please file a bug report\n";
+            // A-007: emit node type name (not just int) for actionable ICE.
+            std::cerr << "[ICE] ir_generator: unhandled expression node type '"
+                      << ASTNode::nodeTypeToString(expr->type)
+                      << "' (" << static_cast<int>(expr->type) << ")"
+                      << " at line " << expr->line << ":" << expr->column
+                      << " \xe2\x80\x94 please file a bug report\n";
             return nullptr;
     }
 }

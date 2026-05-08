@@ -1,0 +1,13 @@
+// bug100: A-005 — wildx allocation/deallocation still works on x86-64.
+// The AArch64 JIT check in npk_asm_create() must not affect x86-64 builds.
+// Expected: compile and exit 0.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:buf = alloc(128);
+    free(buf);
+    exit 0;
+};
