@@ -8195,10 +8195,15 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         llvm::Value* vec_val = builder.CreateLoad(vec_llvm_type, var, "vec");
                         
                         if (dimension == 9) {
-                            // vec9 is a struct - use insertvalue with dynamic selection
+                            // vec9 is a struct - use insertvalue with dynamic selection.
+                            // Cast index to i32: loop counters are i64 but getInt32() is i32.
+                            llvm::Value* idx_i32 = index_value;
+                            if (!index_value->getType()->isIntegerTy(32)) {
+                                idx_i32 = builder.CreateIntCast(index_value, builder.getInt32Ty(), true, "idx.i32");
+                            }
                             llvm::Value* result = vec_val;
                             for (int i = 0; i < 9; ++i) {
-                                llvm::Value* cmp = builder.CreateICmpEQ(index_value, builder.getInt32(i), "idx.cmp");
+                                llvm::Value* cmp = builder.CreateICmpEQ(idx_i32, builder.getInt32(i), "idx.cmp");
                                 llvm::Value* updated = builder.CreateInsertValue(result, rhs, {static_cast<unsigned>(i)}, "vec9.insert");
                                 result = builder.CreateSelect(cmp, updated, result, "vec9.select");
                             }
@@ -12319,13 +12324,18 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         // Extract element
                         if (dimension == 9) {
                             // vec9 is a struct - need to use switch or GEP
-                            // For dynamic indexing, use a series of selects
+                            // For dynamic indexing, use a series of selects.
+                            // Cast index to i32 first: loop(0,9,1) produces i64 counter
+                            // but getInt32(i) comparison operand is i32 — types must match.
                             llvm::Type* component_type = mapType(vec_type->getComponentType());
                             llvm::Value* result = llvm::UndefValue::get(component_type);
-                            
+                            llvm::Value* idx_i32 = index_value;
+                            if (!index_value->getType()->isIntegerTy(32)) {
+                                idx_i32 = builder.CreateIntCast(index_value, builder.getInt32Ty(), true, "idx.i32");
+                            }
                             for (int i = 0; i < 9; ++i) {
                                 llvm::Value* elem = builder.CreateExtractValue(vec_val, {static_cast<unsigned>(i)}, "vec9.elem");
-                                llvm::Value* cmp = builder.CreateICmpEQ(index_value, builder.getInt32(i), "idx.cmp");
+                                llvm::Value* cmp = builder.CreateICmpEQ(idx_i32, builder.getInt32(i), "idx.cmp");
                                 result = builder.CreateSelect(cmp, elem, result, "vec9.select");
                             }
                             return result;

@@ -281,3 +281,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/optional/run_optional_tests.sh")
         LABELS "optional;safe_nav;v0.20.4"
     )
 endif()
+
+# ============================================================================
+# Vec9 Dynamic Indexing Tests (v0.20.5)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/vec/run_vec_tests.sh")
+    add_test(
+        NAME vec9_dynamic_index_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/vec/run_vec_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/vec
+    )
+    set_tests_properties(vec9_dynamic_index_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "vec9;dynamic_index;v0.20.5"
+    )
+endif()

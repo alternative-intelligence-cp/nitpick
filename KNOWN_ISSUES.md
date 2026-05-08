@@ -1,12 +1,24 @@
-# Nitpick v0.20.3 — Known Issues & Limitations
+# Nitpick v0.20.5 — Known Issues & Limitations
 
-Last updated: v0.20.3
+Last updated: v0.20.5
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
 
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.20.x
+
+| ID | Description | Resolution | Version |
+|----|-------------|------------|---------|
+| — | `vec9` dynamic indexing throws `std::runtime_error` at runtime | ICmpEQ type mismatch fixed in `ir_generator.cpp`; read and write paths now cast loop index to i32 before select loop | v0.20.5 |
+| — | `UNUSED_FUNCTION` and `EMPTY_BLOCK` warnings not emitted | Warning pass implemented | v0.20.0 |
+| — | `%error`/`%warning` directives not implemented | Preprocessor directives implemented | v0.20.1 |
+| — | Struct interpolation in template literals not supported | `Display` trait and struct interpolation implemented | v0.20.2 |
+| — | `comptime` evaluator Step 7 (struct comparison) stub | Const evaluator Step 7 complete | v0.20.3 |
+| — | Closure `validateLifetimes` stub (no escape detection) | Closure lifetime validation implemented | v0.20.4 |
+| — | `optional<T>` not in type system | `optional<T>` with safe navigation (`?.`) and null coalescing (`?|`) implemented | v0.20.4 |
 
 ### Resolved in v0.19.x
 
@@ -108,21 +120,15 @@ Last updated: v0.20.3
 
 ---
 
-## Test Suite Status (v0.19.5)
+## Test Suite Status (v0.20.5)
 
-- **831 passing** test files
-- **78 expected compile errors** (negative tests — borrow checker, type mismatch)
-- **33 adversarial tests** (designed to test error detection)
-- **13 fuzz-generated tests** (designed to fail compilation)
-- **6 `@skip-test`** (helper modules, no `main`)
-- **2 Z3 verification tests** (require `--verify` flags)
+- **18/18 CTest** suites passing (all CTest registered tests pass)
+- **K core**: passes (k_semantics_core test)
+- **K proofs**: passes (k_semantics_proofs test)
+- **vec9 dynamic indexing**: 1/1 (new in v0.20.5)
+- **Closure lifetime tests**: 1/1 (v0.20.4)
+- **Optional safe navigation**: 1/1 (v0.20.4)
 - **0 genuine failures**
-- **K core**: 127/127 (K Framework v7.1.320)
-- **K proofs**: 10/10
-
-### Fuzzer Status
-- v0.19.x campaign (EMI, 500 variants): **0 miscompiles**
-- v0.13.6 binary frozen for continued fuzzing; 0 crashes, 0 timeouts
 
 ---
 
