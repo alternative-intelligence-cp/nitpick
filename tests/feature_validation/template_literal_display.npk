@@ -1,0 +1,32 @@
+// template_literal_display.npk
+// v0.20.2: Struct implementing Display can be interpolated in template literals.
+// Expected output:
+//   Point(3, 7)
+//   Point(0, 0)
+//   Value is Point(5, 10) and Point(1, 2) together
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+impl:Display:for:Point = {
+    func:display = string(Point:self) {
+        pass `Point(&{self.x}, &{self.y})`;
+    };
+};
+
+func:main = int32() {
+    Point:a = Point{ x: 3, y: 7 };
+    Point:b = Point{ x: 0, y: 0 };
+    Point:c = Point{ x: 5, y: 10 };
+    Point:d = Point{ x: 1, y: 2 };
+    drop println(`&{a}`);
+    drop println(`&{b}`);
+    drop println(`Value is &{c} and &{d} together`);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

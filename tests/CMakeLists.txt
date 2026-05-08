@@ -213,3 +213,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/preprocessor/run_preprocessor_tests.sh")
         LABELS "preprocessor;macros;v0.20.1"
     )
 endif()
+
+# ============================================================================
+# Template Literal & Display Trait Tests (v0.20.2)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/template_literal/run_display_tests.sh")
+    add_test(
+        NAME template_literal_display_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/template_literal/run_display_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/template_literal
+    )
+    set_tests_properties(template_literal_display_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "template_literal;display;trait;v0.20.2"
+    )
+endif()

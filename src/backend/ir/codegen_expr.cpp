@@ -2244,6 +2244,31 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             // Check for special Aria types that need custom formatters
             std::string ariaType = getExprAriaTypeName(interpExpr, var_aria_types);
 
+            // Helper: decide whether ariaType is a known builtin primitive that
+            // has its own codegen path (int*, uint*, flt*, tbb*, bool, string,
+            // balanced ternary types, etc.).  User-defined struct/enum names are
+            // NOT in this set and will be routed through the Display trait path.
+            auto isBuiltinAriaType = [](const std::string& t) -> bool {
+                if (t.empty()) return true;
+                if (t == "string" || t == "bool" || t == "fix256") return true;
+                // Numeric types: prefix + decimal digit (e.g. int64, uint32, flt64)
+                struct { const char* prefix; size_t len; } prefixes[] = {
+                    {"int",   3}, {"uint",  4}, {"flt",   3},
+                    {"tbb",   3}, {"frac",  4}, {"tfp",   3},
+                    {nullptr, 0}
+                };
+                for (auto* p = prefixes; p->prefix; ++p) {
+                    if (t.size() > p->len &&
+                        t.compare(0, p->len, p->prefix) == 0 &&
+                        std::isdigit((unsigned char)t[p->len])) {
+                        return true;
+                    }
+                }
+                // Balanced ternary names without digit suffix
+                if (t == "trit" || t == "tryte" || t == "nit" || t == "nyte") return true;
+                return false;
+            };
+
             if (needsSpecialFormatter(ariaType)) {
                 // Use type-aware formatter from runtime/fmt/formatters.cpp
                 std::string formatterName = "npk_format_" + ariaType;
@@ -2283,6 +2308,105 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
                 // Call formatter and load the returned AriaString
                 llvm::Value* strPtr = builder.CreateCall(formatterFn, { argVal }, "fmt_result");
                 interpStr = builder.CreateLoad(ariaStringType, strPtr, "fmt_str");
+            } else if (!isBuiltinAriaType(ariaType)) {
+                // User-defined struct or enum implementing the Display trait.
+                // Nitpick regular functions return Result<T> = { T, ptr, i8 }.
+                // For Display: Result<string> = { AriaString*, ptr, i8 }.
+                //
+                // Parameter conventions:
+                //   struct with $$i self  -> ptr (immutable borrow, recommended)
+                //   struct with owned self -> %StructType by value
+                //   enum with owned self  -> i64 by value
+                //
+                // Strategy: if the function is already compiled (impl appears
+                // before the template literal), inspect its actual parameter type
+                // and match it.  If not yet compiled (forward ref), default to
+                // ptr for structs ($$i convention) and i64 for enums.
+                std::string displayFnName = ariaType + "_display";
+
+                // Build the Result<string> return type = { ptr, ptr, i8 }
+                llvm::StructType* resultStringType = llvm::StructType::get(context, {
+                    llvm::PointerType::get(context, 0),  // value: AriaString*
+                    llvm::PointerType::get(context, 0),  // error*
+                    llvm::Type::getInt8Ty(context)       // is_error flag
+                });
+
+                llvm::Function* displayFn = module->getFunction(displayFnName);
+
+                // Build the self argument, matching the function's actual param type.
+                llvm::Value* selfArg = nullptr;
+                if (displayFn && displayFn->getFunctionType()->getNumParams() > 0) {
+                    // Function already compiled — match its exact parameter type.
+                    llvm::Type* expectedParam = displayFn->getFunctionType()->getParamType(0);
+                    if (expectedParam->isPointerTy()) {
+                        // $$i/$$m borrow or heap ptr: alloca+store to get a pointer
+                        if (valType->isStructTy()) {
+                            llvm::Value* tmp = builder.CreateAlloca(valType, nullptr, "struct_display_self");
+                            builder.CreateStore(interpVal, tmp);
+                            selfArg = tmp;
+                        } else {
+                            // For pointer values already, or integer/enum stored via alloca
+                            llvm::Value* tmp = builder.CreateAlloca(valType, nullptr, "val_display_self");
+                            builder.CreateStore(interpVal, tmp);
+                            selfArg = tmp;
+                        }
+                    } else if (expectedParam->isStructTy()) {
+                        // Owned struct by value
+                        selfArg = interpVal;
+                    } else if (expectedParam->isIntegerTy()) {
+                        // Owned enum/integer by value — cast if width differs
+                        if (valType != expectedParam) {
+                            selfArg = builder.CreateIntCast(interpVal, expectedParam, false, "enum_display_cast");
+                        } else {
+                            selfArg = interpVal;
+                        }
+                    } else {
+                        selfArg = interpVal;
+                    }
+                } else {
+                    // Forward declaration: derive convention from value type.
+                    if (valType->isIntegerTy() && !valType->isIntegerTy(1)) {
+                        // Enum: pass i64 value directly
+                        selfArg = interpVal;
+                    } else if (valType->isStructTy()) {
+                        // Struct: alloca+store, pass pointer ($$i borrow default)
+                        llvm::Value* tmp = builder.CreateAlloca(valType, nullptr, "struct_display_self");
+                        builder.CreateStore(interpVal, tmp);
+                        selfArg = tmp;
+                    } else {
+                        selfArg = interpVal;
+                    }
+                }
+
+                if (!displayFn) {
+                    // Build forward declaration matching the derived convention.
+                    llvm::Type* selfParamType;
+                    if (valType->isIntegerTy() && !valType->isIntegerTy(1)) {
+                        selfParamType = llvm::Type::getInt64Ty(context);
+                    } else {
+                        selfParamType = llvm::PointerType::get(context, 0);
+                    }
+                    llvm::FunctionType* displayFnType = llvm::FunctionType::get(
+                        resultStringType,
+                        { selfParamType },
+                        false
+                    );
+                    displayFn = llvm::Function::Create(
+                        displayFnType,
+                        llvm::Function::ExternalLinkage,
+                        displayFnName,
+                        module
+                    );
+                }
+
+                // Call the display method and extract the AriaString from the Result.
+                llvm::Value* displayResult = builder.CreateCall(
+                    displayFn, { selfArg }, "display_result");
+
+                // Result<string>.field[0] is the AriaString* value (valid when no error).
+                llvm::Value* ariaStrPtr = builder.CreateExtractValue(
+                    displayResult, {0u}, "display_str_ptr");
+                interpStr = builder.CreateLoad(ariaStringType, ariaStrPtr, "display_str");
             } else if (valType->isIntegerTy(1)) {
                 interpStr = boolToString(interpVal);
             } else if (valType->isIntegerTy()) {
@@ -2295,7 +2419,8 @@ llvm::Value* ExprCodegen::codegenTemplateLiteral(TemplateLiteralExpr* expr) {
             } else if (valType->isPointerTy()) {
                 interpStr = ptrToAriaString(interpVal);
             } else {
-                throw std::runtime_error("Unsupported type in template literal interpolation");
+                llvm_unreachable("Unsupported type in template literal interpolation"
+                                 " — sema type checker should have rejected this");
             }
 
             llvm::Value* interpSlotPtr = builder.CreateGEP(arrayType, stringsArray,

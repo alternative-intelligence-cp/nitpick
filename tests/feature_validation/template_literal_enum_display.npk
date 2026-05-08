@@ -1,0 +1,37 @@
+// template_literal_enum_display.npk
+// v0.20.2: Enum implementing Display can be interpolated in template literals.
+// Expected output:
+//   Color: Red
+//   Color: Green
+//   Color: Blue
+//   Mixed: Red and Blue
+
+enum:Color = {
+    RED,
+    GREEN,
+    BLUE
+};
+
+impl:Display:for:Color = {
+    func:display = string(Color:self) {
+        if (self == Color.RED) { pass "Red"; }
+        if (self == Color.GREEN) { pass "Green"; }
+        if (self == Color.BLUE) { pass "Blue"; }
+        pass "Unknown";
+    };
+};
+
+func:main = int32() {
+    Color:r = Color.RED;
+    Color:g = Color.GREEN;
+    Color:b = Color.BLUE;
+    drop println(`Color: &{r}`);
+    drop println(`Color: &{g}`);
+    drop println(`Color: &{b}`);
+    drop println(`Mixed: &{r} and &{b}`);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
