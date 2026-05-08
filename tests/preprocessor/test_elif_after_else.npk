@@ -1,0 +1,17 @@
+// test_elif_after_else.npk
+// v0.21.1: %elif after %else is a preprocessor error.
+// Expected: compile failure with a diagnostic about %elif after %else
+
+%define X 1
+
+%if X == 1
+%define RESULT "one"
+%else
+%define RESULT "other"
+%elif X == 2
+%define RESULT "two"
+%endif
+
+func:main = int32() {
+    exit 0;
+};

@@ -1,0 +1,19 @@
+// bug085: #[cfg(target_os=windows)] on the only implementation of a function —
+// on Linux this cfg is false so the function is removed.  Calling it should
+// produce a "function not defined" or "unknown identifier" compile error.
+// Expected: compile error (exit != 0)
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[cfg(target_os=windows)]
+func:windows_only = int32() {
+    pass 1i32;
+};
+
+func:main = int32() {
+    // This call should fail on Linux because windows_only is cfg-excluded
+    int32:v = windows_only() ? -1i32;
+    exit 0;
+};

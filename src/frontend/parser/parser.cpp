@@ -2896,6 +2896,16 @@ ASTNodePtr Parser::parseStatement() {
         return parseFailStatement();
     }
     
+    // v0.21.1 A-014: 'catch' is tokenized but has no parser rule.
+    // Emit a clear diagnostic rather than silently crashing or misparsing.
+    if (check(TokenType::TOKEN_KW_CATCH)) {
+        error("'catch' is not valid here — Nitpick uses 'defaults' for fallback "
+              "values, '?' / '!!' for error propagation, and 'pick' for "
+              "structured error handling. Remove or replace 'catch'.");
+        advance();  // consume 'catch' so we don't loop
+        return nullptr;
+    }
+    
     if (match(TokenType::TOKEN_KW_PROVE)) {
         return parseProveStatement();
     }
@@ -5890,6 +5900,9 @@ std::vector<Attribute> Parser::parseAttributes() {
         } else if (check(TokenType::TOKEN_KW_NOINLINE)) {
             attrName = "noinline";
             advance();
+        } else if (check(TokenType::TOKEN_KW_CFG)) {
+            attrName = "cfg";
+            advance();
         } else {
             error("Expected attribute name after '#['");
             current = saved;
@@ -5901,31 +5914,67 @@ std::vector<Attribute> Parser::parseAttributes() {
         if (check(TokenType::TOKEN_LEFT_PAREN)) {
             advance();  // consume (
             
-            while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
-                // Arguments can be identifiers, keywords, or integer literals
-                if (check(TokenType::TOKEN_IDENTIFIER)) {
-                    args.push_back(peek().lexeme);
-                    advance();
-                } else if (check(TokenType::TOKEN_INTEGER)) {
-                    args.push_back(peek().lexeme);
-                    advance();
-                } else if (peek().type >= TokenType::TOKEN_KW_INT1 && 
-                           peek().type <= TokenType::TOKEN_KW_UINT4096) {
-                    // Type keywords as arguments
-                    args.push_back(peek().lexeme);
-                    advance();
-                } else {
-                    // Try consuming as an identifier-like token
-                    args.push_back(peek().lexeme);
-                    advance();
+            if (attrName == "cfg") {
+                // For cfg, collect the full predicate as a single string
+                // by tracking paren depth, so that cfg(all(a=b, not(c)))
+                // becomes args = ["all(a=b, not(c))"].
+                std::string predicate;
+                int depth = 0;
+                while (!isAtEnd()) {
+                    if (check(TokenType::TOKEN_LEFT_PAREN)) {
+                        depth++;
+                        predicate += "(";
+                        advance();
+                    } else if (check(TokenType::TOKEN_RIGHT_PAREN)) {
+                        if (depth == 0) break;
+                        depth--;
+                        predicate += ")";
+                        advance();
+                    } else if (check(TokenType::TOKEN_COMMA)) {
+                        predicate += ",";
+                        advance();
+                    } else if (check(TokenType::TOKEN_EQUAL)) {
+                        predicate += "=";
+                        advance();
+                    } else if (check(TokenType::TOKEN_BANG)) {
+                        predicate += "!";
+                        advance();
+                    } else {
+                        if (!predicate.empty() && predicate.back() != '(' &&
+                            predicate.back() != ',' && predicate.back() != '=')
+                            predicate += " ";
+                        predicate += peek().lexeme;
+                        advance();
+                    }
                 }
-                
-                if (check(TokenType::TOKEN_COMMA)) {
-                    advance();  // consume comma
+                if (!predicate.empty()) args.push_back(predicate);
+                consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after cfg predicate");
+            } else {
+                while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+                    // Arguments can be identifiers, keywords, or integer literals
+                    if (check(TokenType::TOKEN_IDENTIFIER)) {
+                        args.push_back(peek().lexeme);
+                        advance();
+                    } else if (check(TokenType::TOKEN_INTEGER)) {
+                        args.push_back(peek().lexeme);
+                        advance();
+                    } else if (peek().type >= TokenType::TOKEN_KW_INT1 && 
+                               peek().type <= TokenType::TOKEN_KW_UINT4096) {
+                        // Type keywords as arguments
+                        args.push_back(peek().lexeme);
+                        advance();
+                    } else {
+                        // Try consuming as an identifier-like token
+                        args.push_back(peek().lexeme);
+                        advance();
+                    }
+                    
+                    if (check(TokenType::TOKEN_COMMA)) {
+                        advance();  // consume comma
+                    }
                 }
+                consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after attribute arguments");
             }
-            
-            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after attribute arguments");
         }
         
         consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after attribute");

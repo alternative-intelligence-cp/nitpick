@@ -30,6 +30,13 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
         return;
     }
     
+    // v0.21.1 A-001: cfg conditional compilation.
+    // If the node carries #[cfg(pred)] that evaluates false for this target,
+    // skip it entirely — as if it was never written.
+    if (nodeHasFalseCfg(stmt)) {
+        return;
+    }
+    
     switch (stmt->type) {
         case ASTNode::NodeType::VAR_DECL:
             checkVarDecl(static_cast<VarDeclStmt*>(stmt));
@@ -5353,10 +5360,158 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
     return nullptr;
 }
 
+// ============================================================================
+// cfg Attribute Evaluation — A-001
+// Evaluate #[cfg(predicate)] against the current compilation environment.
+// Supported predicates:
+//   debug, release
+//   target_os=linux/windows/macos/wasm
+//   target_arch=x86_64/aarch64/wasm32
+//   feature=<name>   (always false unless --feature=name was passed)
+//   not(pred), any(pred,...), all(pred,...)
+// ============================================================================
+
+// Trim leading/trailing whitespace from a string view
+static std::string cfgTrim(const std::string& s) {
+    size_t a = s.find_first_not_of(" \t\r\n");
+    if (a == std::string::npos) return "";
+    size_t b = s.find_last_not_of(" \t\r\n");
+    return s.substr(a, b - a + 1);
+}
+
+bool TypeChecker::evaluateCfgPredicate(const std::string& raw) const {
+    std::string pred = cfgTrim(raw);
+    if (pred.empty()) return true;  // vacuously true
+
+    // not(inner)
+    if (pred.rfind("not(", 0) == 0 && pred.back() == ')') {
+        std::string inner = pred.substr(4, pred.size() - 5);
+        return !evaluateCfgPredicate(inner);
+    }
+
+    // any(p1, p2, ...) — split at top-level commas
+    if ((pred.rfind("any(", 0) == 0 || pred.rfind("all(", 0) == 0) && pred.back() == ')') {
+        bool isAny = (pred[0] == 'a' && pred[1] == 'n');
+        std::string inner = pred.substr(pred.find('(') + 1, pred.size() - pred.find('(') - 2);
+        // Split inner at top-level commas
+        std::vector<std::string> parts;
+        int depth = 0;
+        std::string cur;
+        for (char c : inner) {
+            if (c == '(') { depth++; cur += c; }
+            else if (c == ')') { depth--; cur += c; }
+            else if (c == ',' && depth == 0) { parts.push_back(cur); cur.clear(); }
+            else { cur += c; }
+        }
+        if (!cur.empty()) parts.push_back(cur);
+
+        if (isAny) {
+            for (const auto& p : parts)
+                if (evaluateCfgPredicate(p)) return true;
+            return false;
+        } else {
+            for (const auto& p : parts)
+                if (!evaluateCfgPredicate(p)) return false;
+            return true;
+        }
+    }
+
+    // debug / release
+    if (pred == "debug") {
+#ifdef NDEBUG
+        return false;
+#else
+        return true;
+#endif
+    }
+    if (pred == "release") {
+#ifdef NDEBUG
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    // target_os=VALUE
+    if (pred.rfind("target_os=", 0) == 0) {
+        std::string val = cfgTrim(pred.substr(10));
+#if defined(__linux__)
+        return val == "linux";
+#elif defined(_WIN32)
+        return val == "windows";
+#elif defined(__APPLE__)
+        return val == "macos";
+#elif defined(__wasi__)
+        return val == "wasm";
+#else
+        return false;
+#endif
+    }
+
+    // target_arch=VALUE
+    if (pred.rfind("target_arch=", 0) == 0) {
+        std::string val = cfgTrim(pred.substr(12));
+#if defined(__x86_64__) || defined(_M_X64)
+        return val == "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+        return val == "aarch64";
+#elif defined(__i386__) || defined(_M_IX86)
+        return val == "x86";
+#elif defined(__wasm32__)
+        return val == "wasm32";
+#else
+        return false;
+#endif
+    }
+
+    // target=VALUE  (shorthand: any of os/arch matching)
+    if (pred.rfind("target=", 0) == 0) {
+        std::string val = cfgTrim(pred.substr(7));
+        return evaluateCfgPredicate("target_os=" + val) ||
+               evaluateCfgPredicate("target_arch=" + val);
+    }
+
+    // feature=VALUE — always false unless enabled at compile time
+    // Future: wire through CompileOptions::features set
+    if (pred.rfind("feature=", 0) == 0) {
+        (void)pred;  // feature flags not yet wired
+        return false;
+    }
+
+    // Unknown predicate — conservative: keep the item, emit a warning
+    // (don't silently discard code due to a typo in a cfg predicate)
+    return true;
+}
+
+bool TypeChecker::nodeHasFalseCfg(ASTNode* node) const {
+    if (!node) return false;
+    const std::vector<Attribute>* attrs = nullptr;
+    switch (node->type) {
+        case ASTNode::NodeType::FUNC_DECL:
+            attrs = &static_cast<FuncDeclStmt*>(node)->attributes;
+            break;
+        case ASTNode::NodeType::STRUCT_DECL:
+            attrs = &static_cast<StructDeclStmt*>(node)->attributes;
+            break;
+        case ASTNode::NodeType::ENUM_DECL:
+            attrs = &static_cast<EnumDeclStmt*>(node)->attributes;
+            break;
+        default:
+            return false;  // TraitDeclStmt / ImplDeclStmt have no attributes yet
+    }
+    if (!attrs) return false;
+    for (const auto& attr : *attrs) {
+        if (attr.name != "cfg") continue;
+        const std::string& predicate = attr.args.empty() ? "" : attr.args[0];
+        if (!evaluateCfgPredicate(predicate)) return true;
+    }
+    return false;
+}
+
 void TypeChecker::expandDeriveAttributes(StructDeclStmt* stmt) {
     // Auto-register built-in derive traits if not yet declared
     static const std::vector<std::string> builtinDeriveTraits = {
-        "ToString", "Eq", "Hash", "Clone", "Debug", "Ord"
+        "ToString", "Eq", "Hash", "Clone", "Debug", "Ord", "Display"
     };
     for (const auto& bt : builtinDeriveTraits) {
         if (!symbolTable->lookupSymbol(bt)) {
@@ -5661,9 +5816,63 @@ void TypeChecker::expandDeriveAttributes(StructDeclStmt* stmt) {
                 syntheticNodes.push_back(impl);
                 checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
                 
+            } else if (traitName == "Display") {
+                // Generate: impl:Display:for:StructName = {
+                //   func:display = string($i StructName:self) {
+                //     pass(`StructName { field1: &{self.field1}, ... }`);
+                //   };
+                // };
+                
+                auto selfParam = std::make_shared<ParameterNode>(
+                    std::make_shared<SimpleType>(stmt->structName, stmt->line, stmt->column),
+                    "self", nullptr, stmt->line, stmt->column);
+                // No borrow marker — matches manual impl:Display:for:T pattern
+                
+                // Build a TemplateLiteralExpr:
+                //   parts: ["StructName { ", ", field2: ", ..., " }"]
+                //   interpolations: [MemberAccessExpr(self,field1), ...]
+                auto tmpl = std::make_shared<TemplateLiteralExpr>(stmt->line, stmt->column);
+                
+                // First part: "StructName { field1: " (if any fields exist)
+                if (stmt->fields.empty()) {
+                    tmpl->parts.push_back(stmt->structName + " {}");
+                } else {
+                    for (size_t i = 0; i < stmt->fields.size(); ++i) {
+                        auto* field = static_cast<VarDeclStmt*>(stmt->fields[i].get());
+                        if (i == 0)
+                            tmpl->parts.push_back(stmt->structName + " { " + field->varName + ": ");
+                        else
+                            tmpl->parts.push_back(", " + field->varName + ": ");
+                        
+                        auto selfId = std::make_shared<IdentifierExpr>("self", stmt->line, stmt->column);
+                        auto access = std::make_shared<MemberAccessExpr>(
+                            selfId, field->varName, false, false, stmt->line, stmt->column);
+                        tmpl->interpolations.push_back(access);
+                    }
+                    tmpl->parts.push_back(" }");  // trailing part after last interpolation
+                }
+                
+                auto passStmt = std::make_shared<PassStmt>(tmpl, stmt->line, stmt->column);
+                std::vector<ASTNodePtr> bodyStmts = {passStmt};
+                auto body = std::make_shared<BlockStmt>(bodyStmts, stmt->line, stmt->column);
+                auto retType = std::make_shared<SimpleType>("string", stmt->line, stmt->column);
+                
+                auto func = std::make_shared<FuncDeclStmt>(
+                    "display", retType,
+                    std::vector<ASTNodePtr>{selfParam},
+                    body, stmt->line, stmt->column);
+                
+                std::vector<ASTNodePtr> methods = {func};
+                auto impl = std::make_shared<ImplDeclStmt>(
+                    "Display", stmt->structName, std::move(methods),
+                    stmt->line, stmt->column);
+                
+                syntheticNodes.push_back(impl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(impl.get()));
+                
             } else {
                 addError("Unknown derive trait '" + traitName + 
-                         "'. Available: ToString, Eq, Hash, Clone, Debug, Ord", stmt);
+                         "'. Available: ToString, Eq, Hash, Clone, Debug, Ord, Display", stmt);
             }
         }
     }

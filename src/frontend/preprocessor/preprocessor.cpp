@@ -606,11 +606,17 @@ void Preprocessor::handleDefine() {
     
     if (name.empty()) {
         error("%define requires a name");
+        return;
     }
     
     skipWhitespace();
     std::string value = readUntilNewline();
     
+    // Warn on redefinition unless the value is identical
+    auto it = constants.find(name);
+    if (it != constants.end() && it->second != value) {
+        warning("%define redefines '" + name + "' (was '" + it->second + "', now '" + value + "')");
+    }
     constants[name] = value;
 }
 
@@ -620,9 +626,14 @@ void Preprocessor::handleUndef() {
     
     if (name.empty()) {
         error("%undef requires a name");
+        return;
     }
     
+    if (constants.find(name) == constants.end() && macros.find(name) == macros.end()) {
+        warning("%undef of undefined symbol '" + name + "'");
+    }
     constants.erase(name);
+    macros.erase(name);
 }
 
 void Preprocessor::handleIfdef() {
@@ -639,6 +650,7 @@ void Preprocessor::handleIfdef() {
     ConditionalState state;
     state.is_active = is_defined;
     state.has_matched = is_defined;
+    state.has_else = false;
     state.line = line;
     
     conditional_stack.push(state);
@@ -658,6 +670,7 @@ void Preprocessor::handleIfndef() {
     ConditionalState state;
     state.is_active = !is_defined;
     state.has_matched = !is_defined;
+    state.has_else = false;
     state.line = line;
     
     conditional_stack.push(state);
@@ -676,6 +689,7 @@ void Preprocessor::handleIf() {
     ConditionalState state;
     state.is_active = result;
     state.has_matched = result;
+    state.has_else = false;
     state.line = line;
     
     conditional_stack.push(state);
@@ -695,6 +709,10 @@ void Preprocessor::handleElif() {
     
     ConditionalState& state = conditional_stack.top();
     
+    if (state.has_else) {
+        error("%elif after %else");
+        return;
+    }
     if (!state.has_matched) {
         bool result = evaluateCondition(expr);
         state.is_active = result;
@@ -707,10 +725,17 @@ void Preprocessor::handleElif() {
 void Preprocessor::handleElse() {
     if (conditional_stack.empty()) {
         error("%else without matching %if");
+        return;
     }
     
     ConditionalState& state = conditional_stack.top();
+    if (state.has_else) {
+        error("duplicate %else");
+        return;
+    }
+    state.has_else = true;
     state.is_active = !state.has_matched;
+    state.has_matched = true;  // prevent further %elif from activating
 }
 
 void Preprocessor::handleEndif() {
@@ -765,7 +790,16 @@ void Preprocessor::handleInclude() {
     std::string resolved_path = resolveIncludePath(filename, is_system_include);
     
     if (resolved_path.empty()) {
-        error("Cannot find include file: " + filename);
+        std::string searched = "\n  Searched:";
+        // relative to current file
+        if (!current_file.empty()) {
+            size_t slash = current_file.find_last_of("/\\");
+            searched += "\n    " + (slash != std::string::npos ? current_file.substr(0, slash + 1) : "") + filename;
+        }
+        for (const auto& p : include_paths) {
+            searched += "\n    " + p + "/" + filename;
+        }
+        error("Cannot find include file: " + filename + searched);
     }
     
     // Check for circular include using resolved path

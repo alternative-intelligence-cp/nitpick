@@ -1,0 +1,14 @@
+// test_undef_undefined.npk
+// v0.21.1: %undef of an undefined symbol emits a warning but compilation
+// succeeds (graceful degradation).
+// Expected: COMPILES SUCCESSFULLY (warning in stderr about undefined symbol)
+
+%undef SYMBOL_THAT_DOES_NOT_EXIST
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    exit 0;
+};

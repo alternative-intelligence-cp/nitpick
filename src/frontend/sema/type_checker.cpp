@@ -226,6 +226,7 @@ void TypeChecker::check(ASTNode* module) {
         for (const auto& s2 : stmts) {
             if (!s2 || s2->type != ASTNode::NodeType::STRUCT_DECL) continue;
             StructDeclStmt* sd = static_cast<StructDeclStmt*>(s2.get());
+            if (nodeHasFalseCfg(s2.get())) continue;  // v0.21.1 A-001
             if (sd->genericParams.empty() && !typeSystem->getStructType(sd->structName)) {
                 checkStructDecl(sd);  // registers StructType; main pass will silently skip
             }
@@ -237,6 +238,7 @@ void TypeChecker::check(ASTNode* module) {
         for (const auto& s2 : stmts) {
             if (!s2 || s2->type != ASTNode::NodeType::STRUCT_DECL) continue;
             StructDeclStmt* sd = static_cast<StructDeclStmt*>(s2.get());
+            if (nodeHasFalseCfg(s2.get())) continue;  // v0.21.1 A-001
             if (!sd->genericParams.empty() &&
                 genericStructRegistry.find(sd->structName) == genericStructRegistry.end()) {
                 genericStructRegistry[sd->structName] = sd;
@@ -270,6 +272,8 @@ void TypeChecker::check(ASTNode* module) {
         for (const auto& stmt : stmts) {
             if (!stmt || stmt->type != ASTNode::NodeType::FUNC_DECL) continue;
             FuncDeclStmt* fd = static_cast<FuncDeclStmt*>(stmt.get());
+            // v0.21.1 A-001: skip cfg-excluded functions
+            if (nodeHasFalseCfg(stmt.get())) continue;
             // Skip generics (handled during monomorphization)
             if (!fd->genericParams.empty()) continue;
             // Skip if already in symbol table (self-recursion pre-reg inside checkFuncDecl

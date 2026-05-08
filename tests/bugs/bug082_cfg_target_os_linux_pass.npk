@@ -1,0 +1,18 @@
+// bug082: #[cfg(target_os=linux)] on a function — on Linux the function is
+// included and callable; on other OSes it would be absent.
+// Expected exit: 0 (on Linux)
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[cfg(target_os=linux)]
+func:linux_only = int32() {
+    pass 42i32;
+};
+
+func:main = int32() {
+    int32:v = linux_only() ? -1i32;
+    if (v != 42i32) { exit 1; }
+    exit 0;
+};

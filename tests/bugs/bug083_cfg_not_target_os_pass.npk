@@ -1,0 +1,18 @@
+// bug083: #[cfg(not(target_os=windows))] — on Linux this is true, so the
+// function should be present and callable.
+// Expected exit: 0 (on Linux)
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[cfg(not(target_os=windows))]
+func:not_windows = int32() {
+    pass 7i32;
+};
+
+func:main = int32() {
+    int32:v = not_windows() ? -1i32;
+    if (v != 7i32) { exit 1; }
+    exit 0;
+};

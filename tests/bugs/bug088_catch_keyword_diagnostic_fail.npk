@@ -1,0 +1,15 @@
+// bug088: 'catch' keyword in statement position — must produce a clear parse
+// error (A-014), not a silent parse failure or ICE.
+// Expected: compile error mentioning "catch" or "'catch' is not valid"
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int32:x = 1i32;
+    catch {
+        x = 2i32;
+    }
+    exit 0;
+};

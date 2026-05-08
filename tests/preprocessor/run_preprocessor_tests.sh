@@ -1,6 +1,8 @@
 #!/bin/bash
-# Nitpick Preprocessor Tests — v0.20.1
+# Nitpick Preprocessor Tests — v0.21.1
 # Tests %error, %warning, %str(), ##, #%N, and all existing preprocessor features.
+# v0.21.1 additions: %elif-after-%else error, duplicate %else error,
+#   %undef-of-undefined warning, %define redefinition warning.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NPKC="${SCRIPT_DIR}/../../build/npkc"
@@ -51,7 +53,7 @@ expect_fail() {
     fi
 }
 
-echo "=== Preprocessor Tests (v0.20.1) ==="
+echo "=== Preprocessor Tests (v0.20.1 + v0.21.1) ==="
 echo ""
 
 # ── Existing feature regression tests ────────────────────────────────────────
@@ -112,8 +114,43 @@ expect_ok "#%N stringify operator" \
 expect_ok "%str() inline stringify directive" \
     "$SCRIPT_DIR/test_str_directive.npk"
 
+# ── New v0.21.1 preprocessor-hardening tests ─────────────────────────────────
+expect_fail "%elif after %else is an error" \
+    "$SCRIPT_DIR/test_elif_after_else.npk" \
+    "elif"
+
+expect_fail "duplicate %else is an error" \
+    "$SCRIPT_DIR/test_duplicate_else.npk" \
+    "duplicate.*else\|else.*duplicate"
+
+expect_ok "%undef of undefined symbol: compile succeeds" \
+    "$SCRIPT_DIR/test_undef_undefined.npk"
+
+# %undef of undefined should emit a warning
+OUTPUT=$("$NPKC" "$SCRIPT_DIR/test_undef_undefined.npk" -o "$TMP_OUT" 2>&1 || true)
+rm -f "$TMP_OUT"
+if echo "$OUTPUT" | grep -qi "warning\|undef\|undefined\|not defined"; then
+    pass "%undef of undefined emits a warning in compiler output"
+else
+    fail "%undef of undefined emits a warning in compiler output" \
+         "expected warning text in stderr; got: $OUTPUT"
+fi
+
+expect_ok "%define redefinition: compile succeeds" \
+    "$SCRIPT_DIR/test_define_redefinition.npk"
+
+# %define redefinition should emit a warning
+OUTPUT=$("$NPKC" "$SCRIPT_DIR/test_define_redefinition.npk" -o "$TMP_OUT" 2>&1 || true)
+rm -f "$TMP_OUT"
+if echo "$OUTPUT" | grep -qi "warning\|redefin\|already defined"; then
+    pass "%define redefinition emits a warning in compiler output"
+else
+    fail "%define redefinition emits a warning in compiler output" \
+         "expected warning text in stderr; got: $OUTPUT"
+fi
+
 echo ""
-echo "=== Preprocessor Tests: $PASS/$TOTAL passed ==="
+echo "=== Preprocessor Tests (v0.20.1 + v0.21.1): $PASS/$TOTAL passed ==="
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1

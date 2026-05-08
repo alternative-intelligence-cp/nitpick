@@ -70,6 +70,7 @@ private:
     struct ConditionalState {
         bool is_active;      // Is this branch active?
         bool has_matched;    // Has any branch matched yet?
+        bool has_else;       // Has an %else branch been seen? (%elif after %else is an error)
         int line;            // Line number for error reporting
     };
     std::stack<ConditionalState> conditional_stack;

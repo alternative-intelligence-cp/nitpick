@@ -1,0 +1,23 @@
+// bug086: derive(Display) on a struct — auto-generates impl:Display:for:Point
+// with a display() method that formats fields.
+// Expected exit: 0
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[derive(Display)]
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    Point:p = Point{ x: 3, y: 7 };
+    // Use the auto-generated display() method via template literal interpolation
+    string:s = `&{p}`;
+    // The generated format is "Point { x: 3, y: 7 }"
+    // Just verify it compiles and runs without crash
+    drop println(s);
+    exit 0;
+};

@@ -1,0 +1,18 @@
+// bug084: #[cfg(all(target_os=linux, not(target_os=windows)))] — conjunction
+// is true on Linux; function is present and callable.
+// Expected exit: 0
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[cfg(all(target_os=linux, not(target_os=windows)))]
+func:both_true = int32() {
+    pass 99i32;
+};
+
+func:main = int32() {
+    int32:v = both_true() ? -1i32;
+    if (v != 99i32) { exit 1; }
+    exit 0;
+};

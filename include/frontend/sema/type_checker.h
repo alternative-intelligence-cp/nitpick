@@ -1096,6 +1096,21 @@ public:
      */
     void processAttributes(FuncDeclStmt* stmt);
 
+    /**
+     * Evaluate a #[cfg(...)] predicate against the current compilation
+     * environment (OS, arch, features, build mode).
+     * Returns true if the item should be compiled in; false if it should be
+     * skipped.
+     */
+    bool evaluateCfgPredicate(const std::string& pred) const;
+
+    /**
+     * Check whether a node carries a false #[cfg(...)] attribute.
+     * Returns true if ANY cfg attribute on the node evaluates to false
+     * (meaning the item should be skipped entirely).
+     */
+    bool nodeHasFalseCfg(ASTNode* node) const;
+
 private:
     // v0.8.3: Macro registry — maps macro name -> MacroDeclStmt*
     std::map<std::string, MacroDeclStmt*> macroRegistry;

@@ -1,0 +1,28 @@
+// bug087: derive(Display) followed by an explicit impl:Display:for:T override —
+// the explicit impl should win (no "duplicate impl" error).
+// Expected exit: 0
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[derive(Display)]
+struct:Color = {
+    int32:r;
+    int32:g;
+    int32:b;
+};
+
+// Explicit override — should supersede the derived one
+impl:Display:for:Color = {
+    func:display = string(Color:self) {
+        pass `rgb(&{self.r}, &{self.g}, &{self.b})`;
+    };
+};
+
+func:main = int32() {
+    Color:c = Color{ r: 255, g: 128, b: 0 };
+    string:s = `&{c}`;
+    drop println(s);
+    exit 0;
+};

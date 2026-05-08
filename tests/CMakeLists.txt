@@ -298,3 +298,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/vec/run_vec_tests.sh")
         LABELS "vec9;dynamic_index;v0.20.5"
     )
 endif()
+
+# ============================================================================
+# cfg Conditional Compilation + derive(Display) + Preprocessor Hardening (v0.21.1)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0211.sh")
+    add_test(
+        NAME bug_tests_v0211
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0211.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/bugs
+    )
+    set_tests_properties(bug_tests_v0211 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "cfg;derive;display;catch;preprocessor;v0.21.1"
+    )
+endif()

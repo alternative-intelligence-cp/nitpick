@@ -1,0 +1,17 @@
+// test_duplicate_else.npk
+// v0.21.1: Duplicate %else in a single conditional block is an error.
+// Expected: compile failure with a diagnostic about duplicate %else
+
+%define X 1
+
+%if X == 1
+%define RESULT "one"
+%else
+%define RESULT "other"
+%else
+%define RESULT "duplicate"
+%endif
+
+func:main = int32() {
+    exit 0;
+};
