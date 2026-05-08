@@ -424,6 +424,10 @@ Type* TypeChecker::inferType(ASTNode* expr) {
 
         case ASTNode::NodeType::LAMBDA: {
             // Lambda expression used as a function pointer initializer.
+            // v0.20.4: Analyse captures so capturedVars is populated before
+            // the BorrowChecker runs its escape checks.
+            auto* lambda = static_cast<LambdaExpr*>(expr);
+            closureAnalyzer->analyzeLambda(lambda);
             // The IR generator handles LAMBDA codegen directly when the declared
             // variable has a FUNCTION_TYPE typeNode.  Return a placeholder so
             // the assignment compatibility check doesn't error.

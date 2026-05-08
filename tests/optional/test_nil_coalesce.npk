@@ -1,0 +1,28 @@
+// v0.20.4 — Null coalescing (??) on optional types
+// Verifies ?! (emphatic unwrap) and ?? (null coalesce) work correctly.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+struct:Box = {
+    int32:value;
+};
+
+func:main = int32() {
+    // Test 1: Coalesce present optional
+    Box?:b1 = Box{value: 42};
+    int32:v1 = b1?.value ?? -1i32;
+    if (v1 != 42i32) {
+        exit 1;
+    }
+
+    // Test 2: Coalesce NIL optional → default
+    Box?:b2 = NIL;
+    int32:v2 = b2?.value ?? -1i32;
+    if (v2 != -1i32) {
+        exit 2;
+    }
+
+    exit 0;
+};

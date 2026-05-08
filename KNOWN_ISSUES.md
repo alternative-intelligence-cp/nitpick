@@ -57,11 +57,6 @@ Last updated: v0.20.3
 
 ### Medium Severity
 
-- **Lambda closures do not capture scope** (Medium): Lambda function pointer
-  variables (`(T)(U):f = T(U:x) { ... }`) cannot capture variables from the
-  enclosing scope. All values must be passed as explicit parameters. Captured-
-  environment closures are planned for a future release.
-
 - **`ahset` silently returns -1 on capacity overflow** (Medium): Check the
   return value of `ahset` — a return of -1 means the table is full and the
   key was not inserted.

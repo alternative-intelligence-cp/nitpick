@@ -5,6 +5,7 @@
 #include "symbol_table.h"
 #include "generic_resolver.h"
 #include "const_evaluator.h"  // Phase 2.2: Compile-time evaluation
+#include "closure_analyzer.h"  // v0.20.4: Closure capture analysis
 #include "module_loader.h"     // Module system integration
 #include "frontend/ast/ast_node.h"
 #include "frontend/ast/expr.h"
@@ -84,6 +85,7 @@ private:
     GenericResolver* genericResolver;
     Monomorphizer* monomorphizer;
     ConstEvaluator* constEvaluator;  // Phase 2.2: Compile-time evaluation
+    ClosureAnalyzer* closureAnalyzer;  // v0.20.4: Lambda capture / lifetime analysis
     ModuleLoader* moduleLoader;       // Module loading and import resolution
     std::vector<std::string> errors;  // Accumulated type errors
     std::vector<std::string> warnings;  // Accumulated type warnings (v0.4.3)
@@ -595,6 +597,7 @@ public:
         : typeSystem(typeSystem), symbolTable(symbolTable),
           genericResolver(resolver), monomorphizer(morpher),
           constEvaluator(new ConstEvaluator(symbolTable)),  // Phase 2.2
+          closureAnalyzer(new ClosureAnalyzer(symbolTable)),  // v0.20.4
           moduleLoader(loader),
           currentModulePath(modulePath),
           currentFunctionReturnType(nullptr),
@@ -603,6 +606,7 @@ public:
     
     ~TypeChecker() {
         delete constEvaluator;  // Clean up
+        delete closureAnalyzer;  // Clean up
     }
     
     /**

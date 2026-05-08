@@ -879,6 +879,11 @@ private:
     void checkPassStmt(PassStmt* stmt);
     void checkDeferStmt(DeferStmt* stmt);
 
+    // v0.20.4: Lambda / closure escape analysis
+    // isEscaping=true when the lambda is directly returned/passed from the function.
+    // isPassedToFunc=true when passed as an argument to another function.
+    void checkLambdaExpr(LambdaExpr* lambda, bool isEscaping, bool isPassedToFunc);
+
     // v0.6.1: Pattern match borrow flow
     void checkPickStmt(PickStmt* stmt);
     void checkWhenStmt(WhenStmt* stmt);

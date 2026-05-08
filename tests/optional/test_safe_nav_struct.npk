@@ -1,0 +1,29 @@
+// v0.20.4 — Safe navigation (?.) on optional<struct>
+// Verifies: optional<User>?.field returns optional<T> which can be coalesced via ??
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:main = int32() {
+    // Test 1: Optional with value — safe nav + null coalesce
+    Point?:p1 = Point{x: 3, y: 7};
+    int32:x1 = p1?.x ?? 0i32;
+    if (x1 != 3i32) {
+        exit 1;
+    }
+
+    // Test 2: Optional NIL — safe nav returns NIL, coalesce gives default
+    Point?:p2 = NIL;
+    int32:x2 = p2?.x ?? 99i32;
+    if (x2 != 99i32) {
+        exit 2;
+    }
+
+    exit 0;
+};

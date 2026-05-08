@@ -247,3 +247,37 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/comptime/run_comptime_tests.sh")
         LABELS "comptime;const_eval;memoization;v0.20.3"
     )
 endif()
+
+# ============================================================================
+# Closure Lifetime Tests (v0.20.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/closures/run_closure_tests.sh")
+    add_test(
+        NAME closure_lifetime_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/closures/run_closure_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/closures
+    )
+    set_tests_properties(closure_lifetime_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "closures;lifetime;capture;v0.20.4"
+    )
+endif()
+
+# ============================================================================
+# Optional Safe Navigation Tests (v0.20.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/optional/run_optional_tests.sh")
+    add_test(
+        NAME optional_safe_nav_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/optional/run_optional_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/optional
+    )
+    set_tests_properties(optional_safe_nav_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "optional;safe_nav;v0.20.4"
+    )
+endif()

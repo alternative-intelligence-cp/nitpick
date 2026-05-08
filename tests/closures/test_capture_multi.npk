@@ -1,0 +1,17 @@
+// v0.20.4 — Closure capture: multiple captures, accumulate values
+// Captures two outer variables; verifies both are accessible inside lambda.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int32:a = 5i32;
+    int32:b = 7i32;
+    (int32)():get_sum = int32() { pass a + b; };
+    int32:result = get_sum() ? -1i32;
+    if (result != 12i32) {
+        exit 1;
+    }
+    exit 0;
+};
