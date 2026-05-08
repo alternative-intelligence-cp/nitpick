@@ -145,7 +145,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             break;
         
         default:
-            // Other statement types not yet implemented
+            std::cerr << "[ICE] type_checker: unhandled statement node type "
+                      << static_cast<int>(stmt->type)
+                      << " at " << stmt->line << ":" << stmt->column
+                      << " — please file a bug report\n";
             break;
     }
 }

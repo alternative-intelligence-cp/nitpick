@@ -533,7 +533,11 @@ Type* TypeChecker::inferTemplateLiteral(TemplateLiteralExpr* expr) {
             interpType->getKind() != TypeKind::ERROR &&
             interpType->getKind() != TypeKind::UNKNOWN) {
             addError("Cannot interpolate value of type '" + interpType->toString() +
-                    "' into template literal (only primitive types supported)", interpolation.get());
+                    "' into a template literal — only primitive types (int*, uint*, flt*,"
+                    " bool, string, tbb*) are directly interpolable. To format a custom"
+                    " type, convert it explicitly first, e.g. `&{myVar.toString()}`."
+                    " Native Display-trait interpolation is planned for a future release.",
+                    interpolation.get());
         }
     }
     

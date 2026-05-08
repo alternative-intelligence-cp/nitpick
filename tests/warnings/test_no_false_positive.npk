@@ -1,0 +1,18 @@
+/**
+ * Test: Functions referenced indirectly should NOT warn
+ * Expected: COMPILES SUCCESSFULLY, no UNUSED_FUNCTION warning
+ * Why: 'add' is called from 'main' — should not be flagged as unused
+ */
+
+func:add = int32(int32:a, int32:b) {
+    pass a + b;
+};
+
+func:main = int32() {
+    drop add(3i32, 4i32);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

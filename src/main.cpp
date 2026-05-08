@@ -1072,6 +1072,17 @@ llvm::Module* compile_to_module(
             diags.warning(npk::SourceLocation(filename, 0, 0), warn);
         }
     }
+
+    // Warning analysis pass (v0.20.0): UNUSED_FUNCTION, EMPTY_BLOCK, etc.
+    {
+        npk::WarningConfig warn_config;
+        // Parse -Wall / -Wno-* / -Werror flags from CLI
+        for (const auto& flag : opts.warning_flags) {
+            npk::WarningFlagParser::parseFlag(flag, warn_config);
+        }
+        npk::WarningAnalyzer warn_analyzer(diags, warn_config);
+        warn_analyzer.analyze(module_node.get());
+    }
     
     // Dead branch elimination sets — declared outside #ifdef so they're available to codegen
     std::set<npk::ASTNode*> dead_branch_true_set;

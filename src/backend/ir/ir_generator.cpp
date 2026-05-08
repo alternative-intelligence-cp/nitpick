@@ -7305,14 +7305,13 @@ skip_comparison:
         }
 
         default:
-            // Other statement types not yet implemented
+            std::cerr << "[ICE] ir_generator: unhandled statement node type "
+                      << static_cast<int>(stmt->type)
+                      << " at " << stmt->line << ":" << stmt->column
+                      << " — please file a bug report\n";
             return nullptr;
     }
 }
-
-// =============================================================================
-// Expression Code Generation
-// =============================================================================
 
 llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
     if (!expr) {
@@ -12924,14 +12923,13 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
         }
 
         default:
-            // Other expression types not yet implemented
+            std::cerr << "[ICE] ir_generator: unhandled expression node type "
+                      << static_cast<int>(expr->type)
+                      << " at " << expr->line << ":" << expr->column
+                      << " — please file a bug report\n";
             return nullptr;
     }
 }
-
-// =============================================================================
-// Debug Info Generation (Phase 7.4.1)
-// =============================================================================
 
 void npk::IRGenerator::initDebugInfo(const std::string& filename, const std::string& directory) {
     if (!debug_enabled || !di_builder) {

@@ -35,7 +35,9 @@ void WarningConfig::enableAll() {
     enabled_warnings_.insert(WarningType::UNUSED_FUNCTION);
     enabled_warnings_.insert(WarningType::DEAD_CODE);
     enabled_warnings_.insert(WarningType::UNREACHABLE_CODE);
-    enabled_warnings_.insert(WarningType::IMPLICIT_CONVERSION);
+    // IMPLICIT_CONVERSION intentionally excluded: Nitpick enforces Zero Implicit
+    // Conversion at the sema level, so all type mismatches are caught as errors
+    // before this pass runs. Enabling it here would produce zero additional value.
     enabled_warnings_.insert(WarningType::EMPTY_BLOCK);
     enabled_warnings_.insert(WarningType::CONSTANT_CONDITION);
     enabled_warnings_.insert(WarningType::SHADOWING);
@@ -107,9 +109,15 @@ void WarningAnalyzer::analyze(const ASTNode* ast) {
         analyzeUnreachableCode(ast);
     }
     
-    if (config_.isEnabled(WarningType::IMPLICIT_CONVERSION)) {
-        analyzeImplicitConversions(ast);
+    if (config_.isEnabled(WarningType::UNUSED_FUNCTION)) {
+        analyzeUnusedFunctions(ast);
     }
+
+    if (config_.isEnabled(WarningType::EMPTY_BLOCK)) {
+        analyzeEmptyBlocks(ast);
+    }
+
+    // IMPLICIT_CONVERSION: no-op — see analyzeImplicitConversions() below.
 }
 
 // Helper: collect all identifier names referenced in an AST subtree
@@ -119,6 +127,11 @@ static void collectIdentifiers(const ASTNode* node, std::unordered_set<std::stri
         case ASTNode::NodeType::IDENTIFIER: {
             auto* id = static_cast<const IdentifierExpr*>(node);
             names.insert(id->name);
+            break;
+        }
+        case ASTNode::NodeType::PROGRAM: {
+            auto* prog = static_cast<const ProgramNode*>(node);
+            for (const auto& s : prog->declarations) collectIdentifiers(s.get(), names);
             break;
         }
         case ASTNode::NodeType::BLOCK: {
@@ -356,15 +369,114 @@ void WarningAnalyzer::analyzeUnreachableCode(const ASTNode* ast) {
     }
 }
 
-void WarningAnalyzer::analyzeImplicitConversions(const ASTNode* ast) {
-    if (!ast || !config_.isEnabled(WarningType::IMPLICIT_CONVERSION)) {
+// Helper: collect all top-level private function declarations
+static void collectFuncDecls(
+    const ASTNode* ast,
+    std::unordered_map<std::string, SourceLocation>& decls) {
+    if (!ast) return;
+    const std::vector<ASTNodePtr>* stmts = nullptr;
+    std::vector<ASTNodePtr> dummy;
+    if (ast->type == ASTNode::NodeType::PROGRAM) {
+        stmts = &static_cast<const ProgramNode*>(ast)->declarations;
+    } else if (ast->type == ASTNode::NodeType::BLOCK) {
+        stmts = &static_cast<const BlockStmt*>(ast)->statements;
+    }
+    if (!stmts) return;
+    for (const auto& stmt : *stmts) {
+        if (!stmt) continue;
+        if (stmt->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* fn = static_cast<const FuncDeclStmt*>(stmt.get());
+            // Only track private, non-extern functions that aren't entry points
+            if (!fn->isPublic && !fn->isExtern &&
+                fn->funcName != "main" && fn->funcName != "failsafe" &&
+                !fn->funcName.empty() && fn->funcName[0] != '_') {
+                decls.emplace(fn->funcName, SourceLocation("", fn->line, fn->column));
+            }
+        }
+    }
+}
+
+void WarningAnalyzer::analyzeUnusedFunctions(const ASTNode* ast) {
+    if (!ast || !config_.isEnabled(WarningType::UNUSED_FUNCTION)) return;
+
+    // Step 1: collect private function declarations at program scope
+    std::unordered_map<std::string, SourceLocation> declared;
+    collectFuncDecls(ast, declared);
+    if (declared.empty()) return;
+
+    // Step 2: collect all identifier references across the entire AST
+    // (CALL nodes add their callee identifier via collectIdentifiers)
+    std::unordered_set<std::string> referenced;
+    collectIdentifiers(ast, referenced);
+
+    // Step 3: warn on functions declared but never referenced
+    for (const auto& [name, loc] : declared) {
+        if (!referenced.count(name)) {
+            emitWarning(WarningType::UNUSED_FUNCTION, loc,
+                        "function '" + name + "' is defined but never called");
+        }
+    }
+}
+
+// Helper: return true if node is an empty block (zero statements)
+static bool isEmptyBlock(const ASTNode* node) {
+    if (!node) return true;
+    if (node->type == ASTNode::NodeType::BLOCK) {
+        return static_cast<const BlockStmt*>(node)->statements.empty();
+    }
+    return false;
+}
+
+void WarningAnalyzer::analyzeEmptyBlocks(const ASTNode* ast) {
+    if (!ast || !config_.isEnabled(WarningType::EMPTY_BLOCK)) return;
+
+    const std::vector<ASTNodePtr>* stmts = nullptr;
+    if (ast->type == ASTNode::NodeType::PROGRAM) {
+        stmts = &static_cast<const ProgramNode*>(ast)->declarations;
+    } else if (ast->type == ASTNode::NodeType::BLOCK) {
+        stmts = &static_cast<const BlockStmt*>(ast)->statements;
+    } else {
         return;
     }
-    
-    // Nitpick follows Zero Implicit Conversion Policy — all conversions must be explicit.
-    // This pass is a safety net: if any implicit conversions slip through sema,
-    // they would be caught here. Currently a no-op since sema enforces this.
-    // Future: walk binary expressions and assignments to verify type consistency.
+
+    for (const auto& stmt : *stmts) {
+        if (!stmt) continue;
+
+        if (stmt->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* fn = static_cast<const FuncDeclStmt*>(stmt.get());
+            if (fn->body && isEmptyBlock(fn->body.get()) && !fn->isExtern) {
+                SourceLocation loc("", fn->body->line, fn->body->column);
+                emitWarning(WarningType::EMPTY_BLOCK, loc,
+                            "function '" + fn->funcName + "' has an empty body");
+            } else if (fn->body) {
+                analyzeEmptyBlocks(fn->body.get());
+            }
+        } else if (stmt->type == ASTNode::NodeType::IF) {
+            auto* ifs = static_cast<const IfStmt*>(stmt.get());
+            if (ifs->thenBranch && isEmptyBlock(ifs->thenBranch.get())) {
+                SourceLocation loc("", ifs->thenBranch->line, ifs->thenBranch->column);
+                emitWarning(WarningType::EMPTY_BLOCK, loc, "empty if body");
+            } else if (ifs->thenBranch) {
+                analyzeEmptyBlocks(ifs->thenBranch.get());
+            }
+            if (ifs->elseBranch && isEmptyBlock(ifs->elseBranch.get())) {
+                SourceLocation loc("", ifs->elseBranch->line, ifs->elseBranch->column);
+                emitWarning(WarningType::EMPTY_BLOCK, loc, "empty else body");
+            } else if (ifs->elseBranch) {
+                analyzeEmptyBlocks(ifs->elseBranch.get());
+            }
+        }
+        // Note: empty pick arms and loop bodies are intentionally not warned
+        // since these are common no-op patterns.
+    }
+}
+
+void WarningAnalyzer::analyzeImplicitConversions(const ASTNode* ast) {
+    (void)ast;
+    // Nitpick enforces Zero Implicit Conversion at the sema level: every type
+    // mismatch is an error before this pass runs. There is nothing to detect
+    // here and this function is intentionally a no-op.
+    // It is kept to satisfy -Wimplicit-conversion CLI flag handling.
 }
 
 std::unordered_map<std::string, WarningAnalyzer::VariableUsage> 

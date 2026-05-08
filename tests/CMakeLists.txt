@@ -179,3 +179,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh")
         ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
     )
 endif()
+
+# ============================================================================
+# Warning System Tests (v0.20.0)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/warnings/run_warning_tests.sh")
+    add_test(
+        NAME warning_system_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/warnings/run_warning_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/warnings
+    )
+    set_tests_properties(warning_system_tests PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "warnings;diagnostics;v0.20.0"
+    )
+endif()
