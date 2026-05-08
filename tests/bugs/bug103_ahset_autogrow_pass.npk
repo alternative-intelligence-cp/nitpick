@@ -1,0 +1,43 @@
+// bug103: A-011 — ahset must auto-grow past initial capacity and never
+// return -1 (B7 fix carried forward in v0.21.5). Each insert returns 0
+// even when far beyond the requested initial byte budget.
+// Expected: compile and exit 0.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    // Tiny initial capacity (4 bytes); insert 16 entries of 8-byte values
+    // (128 bytes total). Auto-grow must absorb the overflow silently.
+    int64:ht = ahash(4i64);
+    int32:rc = 0i32;
+    int32:total_rc = 0i32;
+    rc = ahset(ht, "k01", 1i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k02", 2i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k03", 3i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k04", 4i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k05", 5i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k06", 6i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k07", 7i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k08", 8i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k09", 9i64);  total_rc = total_rc + rc;
+    rc = ahset(ht, "k10", 10i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k11", 11i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k12", 12i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k13", 13i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k14", 14i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k15", 15i64); total_rc = total_rc + rc;
+    rc = ahset(ht, "k16", 16i64); total_rc = total_rc + rc;
+
+    // All 16 inserts must have returned 0 (no -1 overflow); sum must be 0.
+    if (total_rc != 0i32) { exit 1; }
+
+    // Spot-check a value past the initial 4-byte budget.
+    int64:v = ahget(ht, "k16");
+    if (v != 16i64) { exit 1; }
+
+    // Count must be 16.
+    int64:n = ahcount(ht);
+    if (n != 16i64) { exit 1; }
+
+    exit 0;
+};

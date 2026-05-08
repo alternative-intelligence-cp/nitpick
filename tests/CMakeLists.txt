@@ -358,3 +358,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0214.sh")
         LABELS "backend;ir;codegen;jit;aarch64;DAP;abi;A-005;A-006;A-007;A-015;v0.21.4"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0215.sh")
+    add_test(
+        NAME bug_tests_v0215
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0215.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0215 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "stdlib;ahash;modules;A-011;A-012;v0.21.5"
+    )
+endif()

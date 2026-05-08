@@ -69,13 +69,19 @@ Last updated: v0.20.5
 
 ### Medium Severity
 
-- **`ahset` silently returns -1 on capacity overflow** (Medium): Check the
-  return value of `ahset` — a return of -1 means the table is full and the
-  key was not inserted.
+- **`ahset` capacity overflow** — Fixed in v0.4.5 (B7) and verified in
+  v0.21.5: `npk_uhash_set` auto-grows the hash table on capacity overflow
+  rather than returning `-1`. The runtime now always returns `0` from a
+  successful insert; the previously documented `-1` overflow return is
+  unreachable. Regression test: `tests/bugs/bug103_ahset_autogrow_pass.npk`.
 
 - **Nested module function calls (A→B, both pub)** (Medium): May trigger GC
   OOM in pathological cases. Avoid deep pub-pub chains across modules in
-  tight memory environments.
+  tight memory environments. v0.21.5 investigation: 4-level chains and
+  16-leaf hub graphs compile and run cleanly under 70 MB; the failure mode
+  appears only on much larger or cyclic graphs and could not be reproduced
+  on small/medium fixtures. Floor regression test:
+  `tests/bugs/bug104_pub_pub_chain_pass.npk` (4-level chain).
 
 - **`pick` range exhaustiveness for `int32`/`uint32`/`int64`** — Fixed in v0.21.3:
   The exhaustiveness checker now routes `int32`, `uint32`, and `int64` through

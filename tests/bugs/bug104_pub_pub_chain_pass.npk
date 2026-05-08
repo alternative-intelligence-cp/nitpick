@@ -1,0 +1,15 @@
+// bug104: A-012 — deep pub→pub→pub cross-module call chain compiles and
+// runs without GC OOM on small/medium graphs. The pathological case
+// remains documented in KNOWN_ISSUES; this test pins down the floor:
+// 4-level chain must always work.
+// Expected: compile and exit 0.
+
+use "tests/bugs/bug104_a_pass.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:r = raw a_top(0i64);
+    if (r == 10i64) { exit 0; }
+    exit 1;
+};
