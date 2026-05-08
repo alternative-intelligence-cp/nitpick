@@ -1,6 +1,6 @@
-# Nitpick v0.19.5 — Known Issues & Limitations
+# Nitpick v0.20.3 — Known Issues & Limitations
 
-Last updated: May 7, 2026
+Last updated: v0.20.3
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
 
@@ -49,11 +49,11 @@ Last updated: May 7, 2026
 
 ---
 
-## Current Limitations (v0.19.5)
+## Current Limitations (v0.20.3)
 
 ### High Severity
 
-*(none — all high-severity issues resolved as of v0.19.5)*
+*(none — all high-severity issues resolved as of v0.20.3)*
 
 ### Medium Severity
 
@@ -69,6 +69,14 @@ Last updated: May 7, 2026
 - **Nested module function calls (A→B, both pub)** (Medium): May trigger GC
   OOM in pathological cases. Avoid deep pub-pub chains across modules in
   tight memory environments.
+
+- **`pick` range arms not exhaustiveness-checked for `int32`/`int64`** (Medium):
+  The exhaustiveness checker treats `int32` and `int64` as infinite domains
+  (their value spaces are 2³² and 2⁶⁴ respectively). Range arms like `0..100:`
+  do not contribute to exhaustiveness analysis for these types — you must always
+  include a `(*):` wildcard arm. For `int8`, `int16`, and all `tbb*` types,
+  range arms are fully tracked and a wildcard is not required when all values
+  are covered.
 
 ### Low Severity
 

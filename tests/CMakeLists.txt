@@ -230,3 +230,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/template_literal/run_display_tests.sh")
         LABELS "template_literal;display;trait;v0.20.2"
     )
 endif()
+
+# ============================================================================
+# Comptime Evaluator Tests (v0.20.3)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/comptime/run_comptime_tests.sh")
+    add_test(
+        NAME comptime_evaluator_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/comptime/run_comptime_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/comptime
+    )
+    set_tests_properties(comptime_evaluator_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;const_eval;memoization;v0.20.3"
+    )
+endif()

@@ -180,6 +180,8 @@ private:
     // Sandboxed memory simulation using opaque handles {AllocID, Offset}
     struct Allocation {
         std::vector<uint8_t> data;
+        ComptimeValue storedValue;  // Full value for struct/array/float/string/bool
+        bool hasStoredValue;        // True when storedValue is valid
         bool isMutable;           // Can be written to
         bool isStaticPromotable;  // Can move to .rodata
         bool isWild;              // Manual memory (wild)

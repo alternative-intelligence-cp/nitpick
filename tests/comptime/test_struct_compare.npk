@@ -1,0 +1,25 @@
+// v0.20.3 — Comptime function with local variable declarations
+// Tests that VAR_DECL inside comptime function bodies is supported
+
+comptime func:double = int32(int32:x) {
+    int32:two = 2i32;
+    pass x * two;
+};
+
+comptime func:add = int32(int32:a, int32:b) {
+    int32:sum = a + b;
+    pass sum;
+};
+
+pub func:main = int32() {
+    int32:eight = comptime(double(4i32));
+    int32:four = comptime(add(2i32, 2i32));
+    if (eight == 8) {
+        if (four == 4) {
+            exit 0;
+        }
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

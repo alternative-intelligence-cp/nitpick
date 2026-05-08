@@ -1,0 +1,29 @@
+// v0.20.3 — Comptime function with conditional branches
+// Tests evalBodyNode handles if/pass correctly
+
+comptime func:maxval = int32(int32:a, int32:b) {
+    if (a > b) {
+        pass a;
+    }
+    pass b;
+};
+
+comptime func:minval = int32(int32:a, int32:b) {
+    if (a < b) {
+        pass a;
+    }
+    pass b;
+};
+
+pub func:main = int32() {
+    int32:m = comptime(maxval(3i32, 7i32));
+    int32:n = comptime(minval(3i32, 7i32));
+    if (m == 7) {
+        if (n == 3) {
+            exit 0;
+        }
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

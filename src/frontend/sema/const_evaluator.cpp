@@ -5,6 +5,7 @@
 #include "frontend/ast/stmt.h"
 #include <sstream>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <algorithm>
 
@@ -228,8 +229,28 @@ bool ComptimeValue::operator==(const ComptimeValue& other) const {
             return getPointer() == other.getPointer();
         case Kind::NULL_VALUE:
             return true;  // All NULL values are equal
+        case Kind::ARRAY: {
+            const auto& a = getArray();
+            const auto& b = other.getArray();
+            if (a.size() != b.size()) return false;
+            for (size_t i = 0; i < a.size(); ++i) {
+                if (!(a[i] == b[i])) return false;
+            }
+            return true;
+        }
+        case Kind::STRUCT: {
+            const auto& a = getStruct();
+            const auto& b = other.getStruct();
+            if (a.size() != b.size()) return false;
+            for (const auto& [key, val] : a) {
+                auto it = b.find(key);
+                if (it == b.end()) return false;
+                if (!(val == it->second)) return false;
+            }
+            return true;
+        }
         default:
-            return false;  // Arrays/structs not yet comparable
+            return false;
     }
 }
 
@@ -263,8 +284,31 @@ bool ComptimeValue::operator<(const ComptimeValue& other) const {
             return getPointer().offset < other.getPointer().offset;
         case Kind::NULL_VALUE:
             return false;  // All NULL values are equal
+        case Kind::ARRAY: {
+            const auto& a = getArray();
+            const auto& b = other.getArray();
+            if (a.size() != b.size()) return a.size() < b.size();
+            for (size_t i = 0; i < a.size(); ++i) {
+                if (a[i] < b[i]) return true;
+                if (b[i] < a[i]) return false;
+            }
+            return false;
+        }
+        case Kind::STRUCT: {
+            const auto& a = getStruct();
+            const auto& b = other.getStruct();
+            if (a.size() != b.size()) return a.size() < b.size();
+            auto ita = a.begin(), itb = b.begin();
+            while (ita != a.end()) {
+                if (ita->first != itb->first) return ita->first < itb->first;
+                if (ita->second < itb->second) return true;
+                if (itb->second < ita->second) return false;
+                ++ita; ++itb;
+            }
+            return false;
+        }
         default:
-            return false;  // Arrays/structs not yet comparable
+            return false;
     }
 }
 
@@ -373,7 +417,16 @@ ComptimeValue ConstEvaluator::evalLiteral(LiteralExpr* lit) {
         int bits = 64;
         if (lit->hasExplicitType()) {
             typeName = lit->getExplicitType();
-            // Extract bit width from type name (e.g., "i64" -> 64, "u32" -> 32)
+            // Normalize suffix form to canonical form: i32→int32, u64→uint64, f32→flt32
+            // Lexer suffixes: i8/i16/i32/i64, u8/u16/u32/u64, tbb8/16/32/64, f32/f64
+            if (!typeName.empty() && typeName[0] == 'i' && typeName.size() >= 2 && typeName.find("int") == std::string::npos) {
+                typeName = "int" + typeName.substr(1);
+            } else if (!typeName.empty() && typeName[0] == 'u' && typeName.size() >= 2 && typeName.find("uint") == std::string::npos) {
+                typeName = "uint" + typeName.substr(1);
+            } else if (!typeName.empty() && typeName[0] == 'f' && typeName.size() >= 2 && typeName.find("flt") == std::string::npos) {
+                typeName = "flt" + typeName.substr(1);
+            }
+            // Extract bit width from canonical type name (e.g., "int32" -> 32, "uint64" -> 64)
             std::string numPart;
             for (char c : typeName) {
                 if (c >= '0' && c <= '9') numPart += c;
@@ -381,7 +434,7 @@ ComptimeValue ConstEvaluator::evalLiteral(LiteralExpr* lit) {
             if (!numPart.empty()) bits = std::stoi(numPart);
             
             // Handle unsigned types
-            if (typeName[0] == 'u') {
+            if (typeName.find("uint") == 0) {
                 return ComptimeValue::makeUnsigned(static_cast<uint64_t>(std::get<int64_t>(lit->value)), typeName, bits);
             }
             // Handle TBB types
@@ -552,6 +605,25 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         return getTypeInfo(typeName);
     }
 
+    // === raw / drop intrinsics ===
+    // 'raw expr' and 'drop expr' are parsed as CallExpr("raw"/"drop", [operand])
+    // In comptime context, Result<T> is already unwrapped, so 'raw' is a no-op.
+    if (funcName == "raw") {
+        if (call->arguments.size() != 1) {
+            addError("'raw' expects exactly 1 argument");
+            return ComptimeValue();
+        }
+        return evaluateExpr(call->arguments[0].get());
+    }
+    if (funcName == "drop") {
+        if (call->arguments.size() != 1) {
+            addError("'drop' expects exactly 1 argument");
+            return ComptimeValue();
+        }
+        evaluateExpr(call->arguments[0].get());  // evaluate for side-effects, discard result
+        return ComptimeValue();
+    }
+
     // Evaluate arguments
     std::vector<ComptimeValue> argValues;
     argValues.reserve(call->arguments.size());
@@ -605,90 +677,63 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     if (funcDecl->body) {
         BlockStmt* block = static_cast<BlockStmt*>(funcDecl->body.get());
         
-        // Execute each statement in the block
-        for (const auto& stmt : block->statements) {
-            // Check for return statement
-            if (stmt->type == ASTNode::NodeType::RETURN) {
-                ReturnStmt* retStmt = static_cast<ReturnStmt*>(stmt.get());
-                if (retStmt->value) {
-                    result = evaluateExpr(retStmt->value.get());
-                } else {
-                    // Return with no value - use NULL
-                    result = ComptimeValue();
-                }
-                break;  // Stop execution at return
-            } 
-            // Handle if statements
-            else if (stmt->type == ASTNode::NodeType::IF) {
-                IfStmt* ifStmt = static_cast<IfStmt*>(stmt.get());
-                
-                // Evaluate condition
-                ComptimeValue condValue = evaluateExpr(ifStmt->condition.get());
-                if (hasErrors()) {
-                    break;
-                }
-                
-                if (!condValue.isBool()) {
-                    addError("If condition must evaluate to bool");
-                    break;
-                }
-                
-                // Execute appropriate branch
-                if (condValue.getBool()) {
-                    // Execute then branch
-                    if (ifStmt->thenBranch) {
-                        // Check if then branch is a return statement (single statement if)
-                        if (ifStmt->thenBranch->type == ASTNode::NodeType::RETURN) {
-                            ReturnStmt* retStmt = static_cast<ReturnStmt*>(ifStmt->thenBranch.get());
-                            if (retStmt->value) {
-                                result = evaluateExpr(retStmt->value.get());
-                            } else {
-                                result = ComptimeValue();
-                            }
-                            break;  // Stop execution at return
-                        } 
-                        // Otherwise execute the statement
-                        else {
-                            evaluateStmt(ifStmt->thenBranch.get());
-                        }
+        // Recursive block evaluator that handles PASS/RETURN, VAR_DECL, IF, WHILE, BLOCK
+        bool returned = false;
+        std::function<void(ASTNode*)> evalBodyNode = [&](ASTNode* node) {
+            if (returned || hasErrors() || !node) return;
+
+            if (node->type == ASTNode::NodeType::RETURN) {
+                ReturnStmt* ret = static_cast<ReturnStmt*>(node);
+                result = ret->value ? evaluateExpr(ret->value.get()) : ComptimeValue();
+                returned = true;
+            } else if (node->type == ASTNode::NodeType::PASS) {
+                PassStmt* pass = static_cast<PassStmt*>(node);
+                result = pass->value ? evaluateExpr(pass->value.get()) : ComptimeValue();
+                returned = true;
+            } else if (node->type == ASTNode::NodeType::VAR_DECL) {
+                VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+                if (var->initializer) {
+                    ComptimeValue val = evaluateExpr(var->initializer.get());
+                    if (!hasErrors()) {
+                        defineLocalConstant(var->varName, val);
                     }
                 } else {
-                    // Execute else branch if present
-                    if (ifStmt->elseBranch) {
-                        if (ifStmt->elseBranch->type == ASTNode::NodeType::RETURN) {
-                            ReturnStmt* retStmt = static_cast<ReturnStmt*>(ifStmt->elseBranch.get());
-                            if (retStmt->value) {
-                                result = evaluateExpr(retStmt->value.get());
-                            } else {
-                                result = ComptimeValue();
-                            }
-                            break;  // Stop execution at return
-                        } else {
-                            evaluateStmt(ifStmt->elseBranch.get());
-                        }
-                    }
+                    // Default-initialize to zero
+                    defineLocalConstant(var->varName, ComptimeValue::makeInteger(0, "int32", 32));
                 }
-                
-                if (hasErrors()) {
-                    break;
+            } else if (node->type == ASTNode::NodeType::IF) {
+                IfStmt* ifStmt = static_cast<IfStmt*>(node);
+                ComptimeValue cond = evaluateExpr(ifStmt->condition.get());
+                if (hasErrors()) return;
+                if (!cond.isBool()) {
+                    addError("If condition must evaluate to bool in comptime context");
+                    return;
                 }
-            }
-            // Handle while loops
-            else if (stmt->type == ASTNode::NodeType::WHILE) {
-                ComptimeValue loopResult = evalWhileLoop(stmt.get());
-                // If while loop returned a value (via return statement), use it
+                ASTNode* branch = cond.getBool()
+                    ? ifStmt->thenBranch.get()
+                    : ifStmt->elseBranch.get();
+                if (branch) evalBodyNode(branch);
+            } else if (node->type == ASTNode::NodeType::WHILE) {
+                ComptimeValue loopResult = evalWhileLoop(node);
                 if (loopResult.getKind() != ComptimeValue::Kind::NULL_VALUE || hasErrors()) {
                     result = loopResult;
-                    break;
+                    returned = true;
                 }
-            }
-            else {
-                // Execute other statements (e.g., variable declarations, nested blocks)
-                evaluateStmt(stmt.get());
-                if (hasErrors()) {
-                    break;
+            } else if (node->type == ASTNode::NodeType::BLOCK) {
+                BlockStmt* blk = static_cast<BlockStmt*>(node);
+                for (const auto& s : blk->statements) {
+                    evalBodyNode(s.get());
+                    if (returned || hasErrors()) break;
                 }
+            } else {
+                // Fallthrough: expression statements, etc. — evaluate silently
+                evaluateStmt(node);
             }
+        };
+        
+        for (const auto& stmt : block->statements) {
+            evalBodyNode(stmt.get());
+            if (returned || hasErrors()) break;
         }
     }
     
@@ -1363,6 +1408,7 @@ ComptimeValue ConstEvaluator::allocate(size_t sizeBytes, bool isMutable, bool is
     // Create allocation
     Allocation alloc;
     alloc.data.resize(sizeBytes, 0);  // Zero-initialize
+    alloc.hasStoredValue = false;
     alloc.isMutable = isMutable;
     alloc.isStaticPromotable = !isMutable;  // Only immutable data can go to .rodata
     alloc.isWild = isWild;
@@ -1459,15 +1505,19 @@ ComptimeValue ConstEvaluator::dereference(const ComptimeValue& ptr) {
     
     const auto& handle = ptr.getPointer();
     
-    // Validate allocation
-    if (!isValidAllocation(handle.allocId)) {
+    auto it = virtualHeap.find(handle.allocId);
+    if (it == virtualHeap.end()) {
         addError("Dereference of invalid pointer: allocation ID " + 
                  std::to_string(handle.allocId) + " not found");
         return ComptimeValue();
     }
     
-    // For now, we'll implement simple byte-level dereference
-    // Full struct/type-aware dereference will be added in Step 7 (const functions)
+    // Return the full stored value if available (struct, array, float, string, bool)
+    if (it->second.hasStoredValue) {
+        return it->second.storedValue;
+    }
+    
+    // Fall back to byte-level read for integer values
     uint8_t byte = readByte(handle.allocId, handle.offset);
     
     // Return as int8 for now
@@ -1482,28 +1532,33 @@ void ConstEvaluator::store(const ComptimeValue& ptr, const ComptimeValue& value)
     
     const auto& handle = ptr.getPointer();
     
-    // Validate allocation
-    if (!isValidAllocation(handle.allocId)) {
+    auto it = virtualHeap.find(handle.allocId);
+    if (it == virtualHeap.end()) {
         addError("Store through invalid pointer: allocation ID " + 
                  std::to_string(handle.allocId) + " not found");
         return;
     }
     
-    // For now, we'll implement simple byte-level store
-    // Full struct/type-aware store will be added in Step 7 (const functions)
+    Allocation& alloc = it->second;
+    
     if (value.isInteger() || value.isTBB()) {
+        // Integer store: write lowest byte and clear any stored value
         uint8_t byte = static_cast<uint8_t>(value.getInt() & 0xFF);
         writeByte(handle.allocId, handle.offset, byte);
+        alloc.hasStoredValue = false;
     } else {
-        addError("Store of non-integer value not yet implemented");
+        // Non-integer store: keep the full ComptimeValue (struct, array, float, string, bool)
+        alloc.storedValue = value;
+        alloc.hasStoredValue = true;
     }
 }
 
 // ============================================================================
 // Memoization (research_030 Section 5.2)
 // ============================================================================
-// Infrastructure for caching pure function results
-// Will be activated in Step 7 when const function evaluation is implemented
+// Caches pure function results keyed by (funcName, argValues).
+// Requires ComptimeValue::operator== and operator< to handle all kinds
+// (including ARRAY and STRUCT — implemented in v0.20.3).
 
 bool ConstEvaluator::hasMemoizedResult(const std::string& funcName, 
                                        const std::vector<ComptimeValue>& args) const {
