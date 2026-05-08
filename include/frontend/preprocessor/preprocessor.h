@@ -107,6 +107,8 @@ private:
     void handleContext();
     void handleRep();
     void handleAssign();
+    void handleError();
+    void handleWarning();
     
     // Macro expansion
     std::string expandMacro(const std::string& macro_name, const std::vector<std::string>& args);

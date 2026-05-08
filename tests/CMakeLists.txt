@@ -196,3 +196,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/warnings/run_warning_tests.sh")
         LABELS "warnings;diagnostics;v0.20.0"
     )
 endif()
+
+# ============================================================================
+# Preprocessor Tests (v0.20.1)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/preprocessor/run_preprocessor_tests.sh")
+    add_test(
+        NAME preprocessor_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/preprocessor/run_preprocessor_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/preprocessor
+    )
+    set_tests_properties(preprocessor_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "preprocessor;macros;v0.20.1"
+    )
+endif()

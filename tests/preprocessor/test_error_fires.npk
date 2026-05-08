@@ -1,0 +1,19 @@
+/**
+ * Test: %error in active branch causes compilation to fail
+ * Expected: COMPILE ERROR — preprocessor must abort with the error message
+ * Verifies: %error fires in the active conditional branch
+ */
+
+%define FAIL_MODE 1i32
+
+%ifdef FAIL_MODE
+%error "Intentional preprocessor error for testing"
+%endif
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

@@ -1,0 +1,20 @@
+/**
+ * Test: %ifndef include guard pattern
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: once-only inclusion idiom using %ifndef / %define / %endif
+ * Note: preprocessor directives must start at column 1
+ */
+
+%ifndef MY_MODULE_GUARD
+%define MY_MODULE_GUARD 1i32
+%define MODULE_VERSION 3i32
+%endif
+
+func:main = int32() {
+    int32:v = MODULE_VERSION;
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

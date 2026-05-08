@@ -1,0 +1,18 @@
+/**
+ * Test: #%N stringify operator in macro body
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: #%1 converts the macro argument to a quoted string literal
+ */
+
+%macro TOSTR 1
+println(#%1);
+%endmacro
+
+func:main = int32() {
+    TOSTR(hello_world)
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

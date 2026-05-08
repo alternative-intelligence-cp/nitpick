@@ -1,0 +1,24 @@
+/**
+ * Test: %define and %undef basic usage
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %define creates constants; %undef removes them
+ */
+
+%define ANSWER 42i32
+%define GREETING "hello"
+
+func:getAnswer = int32() {
+    int32:v = ANSWER;
+    pass v;
+};
+
+%undef GREETING
+
+func:main = int32() {
+    drop getAnswer();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

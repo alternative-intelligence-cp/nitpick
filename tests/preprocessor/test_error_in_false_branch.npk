@@ -1,0 +1,21 @@
+/**
+ * Test: %error in a false conditional branch is skipped (compilation succeeds)
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %error inside %else (inactive branch) does NOT fire
+ */
+
+%define FEATURE_ENABLED 1i32
+
+%ifdef FEATURE_ENABLED
+// Active branch — all good
+%else
+%error "Feature disabled — this branch must not be reached"
+%endif
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

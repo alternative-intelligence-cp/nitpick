@@ -1,0 +1,19 @@
+/**
+ * Test: Multi-argument macros expand correctly
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %macro with 2 params substitutes both args in the body
+ */
+
+%macro DECL_INT 2
+int32:%1 = %2;
+%endmacro
+
+func:main = int32() {
+    DECL_INT(x, 5i32)
+    DECL_INT(y, 10i32)
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
