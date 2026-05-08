@@ -1,0 +1,34 @@
+// bug081: lambda variable stored, reused across multiple calls, then passed to a
+// higher-order function — tests that lambda variables are stable values
+// Expected exit: 0
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:apply_twice = int32((int32)(int32):f, int32:x) {
+    int32:once = f(x) ? -1i32;
+    int32:twice = f(once) ? -1i32;
+    pass twice;
+};
+
+func:main = int32() {
+    // triple: multiply by 3 via addition
+    (int32)(int32):triple = int32(int32:x) {
+        int32:v = x + x + x;
+        pass v;
+    };
+
+    // Direct calls
+    int32:r1 = triple(2i32) ? -1i32;
+    if (r1 != 6i32) { exit 1; }
+
+    int32:r2 = triple(7i32) ? -1i32;
+    if (r2 != 21i32) { exit 2; }
+
+    // Passed to higher-order function: triple(triple(2)) = triple(6) = 18
+    int32:r3 = apply_twice(triple, 2i32) ? -1i32;
+    if (r3 != 18i32) { exit 3; }
+
+    exit 0;
+};
