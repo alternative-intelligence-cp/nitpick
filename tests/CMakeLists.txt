@@ -179,3 +179,122 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/sv-comp/run_svcomp.sh")
         ENVIRONMENT "NPKC=${CMAKE_BINARY_DIR}/npkc"
     )
 endif()
+
+# ============================================================================
+# Warning System Tests (v0.20.0)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/warnings/run_warning_tests.sh")
+    add_test(
+        NAME warning_system_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/warnings/run_warning_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/warnings
+    )
+    set_tests_properties(warning_system_tests PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "warnings;diagnostics;v0.20.0"
+    )
+endif()
+
+# ============================================================================
+# Preprocessor Tests (v0.20.1)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/preprocessor/run_preprocessor_tests.sh")
+    add_test(
+        NAME preprocessor_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/preprocessor/run_preprocessor_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/preprocessor
+    )
+    set_tests_properties(preprocessor_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "preprocessor;macros;v0.20.1"
+    )
+endif()
+
+# ============================================================================
+# Template Literal & Display Trait Tests (v0.20.2)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/template_literal/run_display_tests.sh")
+    add_test(
+        NAME template_literal_display_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/template_literal/run_display_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/template_literal
+    )
+    set_tests_properties(template_literal_display_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "template_literal;display;trait;v0.20.2"
+    )
+endif()
+
+# ============================================================================
+# Comptime Evaluator Tests (v0.20.3)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/comptime/run_comptime_tests.sh")
+    add_test(
+        NAME comptime_evaluator_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/comptime/run_comptime_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/comptime
+    )
+    set_tests_properties(comptime_evaluator_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;const_eval;memoization;v0.20.3"
+    )
+endif()
+
+# ============================================================================
+# Closure Lifetime Tests (v0.20.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/closures/run_closure_tests.sh")
+    add_test(
+        NAME closure_lifetime_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/closures/run_closure_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/closures
+    )
+    set_tests_properties(closure_lifetime_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "closures;lifetime;capture;v0.20.4"
+    )
+endif()
+
+# ============================================================================
+# Optional Safe Navigation Tests (v0.20.4)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/optional/run_optional_tests.sh")
+    add_test(
+        NAME optional_safe_nav_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/optional/run_optional_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/optional
+    )
+    set_tests_properties(optional_safe_nav_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "optional;safe_nav;v0.20.4"
+    )
+endif()
+
+# ============================================================================
+# Vec9 Dynamic Indexing Tests (v0.20.5)
+# ============================================================================
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/vec/run_vec_tests.sh")
+    add_test(
+        NAME vec9_dynamic_index_tests
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/vec/run_vec_tests.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/vec
+    )
+    set_tests_properties(vec9_dynamic_index_tests PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "vec9;dynamic_index;v0.20.5"
+    )
+endif()

@@ -1473,6 +1473,12 @@ void BorrowChecker::checkExpression(ASTNode* expr) {
         case ASTNode::NodeType::MOVE:
             checkMoveExpr(static_cast<MoveExpr*>(expr));
             break;
+
+        case ASTNode::NodeType::LAMBDA:
+            // Lambda used in expression context — not escaping here.
+            // Escape is detected in checkReturnStmt/checkPassStmt/checkCallExpr.
+            checkLambdaExpr(static_cast<LambdaExpr*>(expr), false, false);
+            break;
             
         default:
             // Other expression types don't require borrow checking
@@ -2503,6 +2509,12 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
     if (stmt->value) {
         checkExpression(stmt->value.get());
 
+        // v0.20.4: If a lambda is returned, check for BY_REFERENCE escaping captures
+        if (stmt->value->type == ASTNode::NodeType::LAMBDA) {
+            checkLambdaExpr(static_cast<LambdaExpr*>(stmt->value.get()),
+                            /*isEscaping=*/true, /*isPassedToFunc=*/false);
+        }
+
         // ARIA-017: Check that returned references don't point to local variables
         // This prevents dangling references from escaping function scope
         checkReferenceEscape(stmt->value.get(), stmt);
@@ -2520,6 +2532,12 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
     // Check passed value
     if (stmt->value) {
         checkExpression(stmt->value.get());
+
+        // v0.20.4: If a lambda is passed (returned via pass), check for BY_REFERENCE escaping captures
+        if (stmt->value->type == ASTNode::NodeType::LAMBDA) {
+            checkLambdaExpr(static_cast<LambdaExpr*>(stmt->value.get()),
+                            /*isEscaping=*/true, /*isPassedToFunc=*/false);
+        }
 
         // ARIA-017: Check that passed references don't point to local variables
         // This prevents dangling references from escaping function scope
@@ -2543,6 +2561,49 @@ void BorrowChecker::checkReferenceEscape(ASTNode* value, ASTNode* context) {
     (void)value;
     (void)context;
     // No dollar-borrow expression syntax exists in current Aria.
+}
+
+/**
+ * v0.20.4: Lambda escape analysis.
+ *
+ * Inspects the capturedVars that the TypeChecker's ClosureAnalyzer already
+ * populated, and emits borrow errors / warnings based on whether the lambda
+ * is escaping its defining scope.
+ *
+ *  isEscaping    = lambda is returned / passed-out from the enclosing function
+ *  isPassedToFunc = lambda is passed as an argument to another function
+ *
+ * BY_REFERENCE captures are unsafe when escaping because the captured variable
+ * lives on the enclosing function's stack and would be freed before the lambda
+ * is called.  When merely passed to another function the risk is lower but
+ * still warrants a warning.
+ */
+void BorrowChecker::checkLambdaExpr(LambdaExpr* lambda, bool isEscaping, bool isPassedToFunc) {
+    if (!lambda) return;
+
+    for (const auto& capture : lambda->capturedVars) {
+        if (capture.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+            if (isEscaping) {
+                BorrowError err(lambda->line, lambda->column,
+                    "Closure captures '" + capture.name + "' by reference and escapes "
+                    "its defining scope; the captured variable would be freed before the "
+                    "closure is called, creating a dangling reference. "
+                    "Capture by value instead, or ensure the closure does not outlive '" +
+                    capture.name + "'.");
+                err.severity = BorrowSeverity::ERROR;
+                err.code = "ARIA-025";
+                errors.push_back(err);
+            } else if (isPassedToFunc) {
+                BorrowError warn(lambda->line, lambda->column,
+                    "Closure captures '" + capture.name + "' by reference and is passed "
+                    "to another function; if the callee stores or calls the closure after "
+                    "'" + capture.name + "' is freed, a dangling reference will result.");
+                warn.severity = BorrowSeverity::WARNING;
+                warn.code = "ARIA-025";
+                errors.push_back(warn);
+            }
+        }
+    }
 }
 
 /**
@@ -2941,6 +3002,15 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
             }
         }
 
+    }
+
+    // v0.20.4: If any argument is a lambda with BY_REFERENCE captures, warn that
+    // the closure may escape into the callee — potential dangling-reference hazard.
+    for (const auto& arg : expr->arguments) {
+        if (arg && arg->type == ASTNode::NodeType::LAMBDA) {
+            checkLambdaExpr(static_cast<LambdaExpr*>(arg.get()),
+                            /*isEscaping=*/false, /*isPassedToFunc=*/true);
+        }
     }
 
     // ARIA-022: Check for wild memory deallocation calls

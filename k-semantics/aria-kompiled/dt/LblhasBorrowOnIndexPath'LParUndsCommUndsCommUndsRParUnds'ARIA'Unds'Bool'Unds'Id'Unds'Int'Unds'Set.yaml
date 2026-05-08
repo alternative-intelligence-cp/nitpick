@@ -1,0 +1,109 @@
+args:
+- - &id001 ['3']
+  - SET.Set
+next:
+  default:
+    next:
+      args:
+      - - &id002 [size, '3']
+        - STRING.String
+      - - *id001
+        - SET.Set
+      next:
+        args:
+        - - *id001
+          - SET.Set
+        - - *id002
+          - STRING.String
+        next:
+          default: null
+          specializations:
+          - - '1'
+            - action:
+              - 7497
+              - - - ['SymbolP(inj{SortBorrowPath{}, SortKItem{}},List(SymbolP(LblIndexPath''LParUndsCommUndsRParUnds''ARIA-SYNTAX''Unds''BorrowPath''Unds''Id''Unds''Int{},List(VariableP(Some(Num(1,Base())),StringS()),
+                      VariableP(Some(Num(2,Base())),IntS())))))_rem', '3']
+                  - SET.Set
+                - - &id003 ['1']
+                  - STRING.String
+                - - &id004 ['2']
+                  - INT.Int
+            - [SET.Set, SET.Set]
+          - - '0'
+            - next:
+                next:
+                  default: null
+                  specializations:
+                  - - '0'
+                    - fail
+                    - [SET.Set]
+                  - - '1'
+                    - args:
+                      - - *id001
+                        - SET.Set
+                      - - [key, '3']
+                        - STRING.String
+                      next:
+                        action:
+                        - 7496
+                        - - - [key, '3']
+                            - STRING.String
+                          - - *id003
+                            - STRING.String
+                          - - *id004
+                            - INT.Int
+                          - - [rem, '3']
+                            - SET.Set
+                      function: hook_SET_remove
+                      sort: SET.Set
+                      occurrence: [rem, '3']
+                    - [STRING.String, SET.Set]
+                  isnull: true
+                  sort: STRING.String
+                  occurrence: [key, '3']
+                iterator: *id001
+                function: set_iterator_next
+                binding: [key, '3']
+                sort: STRING.String
+              function: set_iterator
+              collection: *id001
+              sort: SET.Set
+            - [SET.Set]
+          bitwidth: 1
+          sort: BOOL.Bool
+          occurrence: ['SymbolP(inj{SortBorrowPath{}, SortKItem{}},List(SymbolP(LblIndexPath''LParUndsCommUndsRParUnds''ARIA-SYNTAX''Unds''BorrowPath''Unds''Id''Unds''Int{},List(VariableP(Some(Num(1,Base())),StringS()),
+              VariableP(Some(Num(2,Base())),IntS())))))_val', '3']
+        function: hook_SET_remove
+        sort: SET.Set
+        occurrence: ['SymbolP(inj{SortBorrowPath{}, SortKItem{}},List(SymbolP(LblIndexPath''LParUndsCommUndsRParUnds''ARIA-SYNTAX''Unds''BorrowPath''Unds''Id''Unds''Int{},List(VariableP(Some(Num(1,Base())),StringS()),
+            VariableP(Some(Num(2,Base())),IntS())))))_rem', '3']
+      function: hook_SET_in
+      sort: BOOL.Bool
+      occurrence: ['SymbolP(inj{SortBorrowPath{}, SortKItem{}},List(SymbolP(LblIndexPath''LParUndsCommUndsRParUnds''ARIA-SYNTAX''Unds''BorrowPath''Unds''Id''Unds''Int{},List(VariableP(Some(Num(1,Base())),StringS()),
+          VariableP(Some(Num(2,Base())),IntS())))))_val', '3']
+    pattern:
+      args:
+      - args:
+        - hook: STRING.String
+          occurrence: *id003
+        - hook: INT.Int
+          occurrence: *id004
+        constructor: LblIndexPath'LParUndsCommUndsRParUnds'ARIA-SYNTAX'Unds'BorrowPath'Unds'Id'Unds'Int{}
+      constructor: inj{SortBorrowPath{}, SortKItem{}}
+    occurrence: *id002
+    sort: STRING.String
+  specializations:
+  - - '0'
+    - action:
+      - 7498
+      - - - *id003
+          - STRING.String
+        - - *id004
+          - INT.Int
+    - []
+  bitwidth: 64
+  sort: MINT.MInt 64
+  occurrence: &id005 [size, '3']
+function: hook_SET_size_long
+sort: MINT.MInt 64
+occurrence: *id005

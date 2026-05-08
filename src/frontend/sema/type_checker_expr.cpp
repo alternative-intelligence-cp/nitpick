@@ -295,10 +295,12 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         // Look up member in struct fields
         for (const auto& field : fields) {
             if (field.name == expr->member) {
-                // For safe navigation (?.), semantically the result should be
-                // optional<field.type>. Currently returns field.type directly
-                // since the optional<T> type is not yet in the type system.
-                // The IR generator handles null-check branching regardless.
+                // v0.20.4: Safe navigation (?.) on a bare struct value returns
+                // optional<fieldType> so that callers can chain further ?. or ??
+                // operators. The optional<T> type is fully in the type system now.
+                if (expr->isSafeNavigation) {
+                    return typeSystem->getOptionalType(field.type);
+                }
                 return field.type;
             }
         }
@@ -362,6 +364,11 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
             // Look up member in struct fields
             for (const auto& field : fields) {
                 if (field.name == expr->member) {
+                    // v0.20.4: Safe navigation (?.) on ptr<struct> returns
+                    // optional<fieldType> so the result can be chained with ??
+                    if (expr->isSafeNavigation) {
+                        return typeSystem->getOptionalType(field.type);
+                    }
                     return field.type;
                 }
             }

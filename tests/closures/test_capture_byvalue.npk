@@ -1,0 +1,17 @@
+// v0.20.4 — Closure capture: local variable captured by value
+// The lambda captures 'base' (int32) from outer scope.
+// Confirms ClosureAnalyzer populates capturedVars and the lambda works correctly.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int32:base = 10i32;
+    (int32)(int32):add_base = int32(int32:x) { pass x + base; };
+    int32:result = add_base(3i32) ? -1i32;
+    if (result != 13i32) {
+        exit 1;
+    }
+    exit 0;
+};

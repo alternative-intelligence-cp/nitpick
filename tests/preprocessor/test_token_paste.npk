@@ -1,0 +1,20 @@
+/**
+ * Test: ## token paste operator in macro body
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %1##%2 concatenates two macro arguments into a single identifier
+ */
+
+%macro PAIR 2
+func:%1##%2 = int32() { pass 99i32; };
+%endmacro
+
+PAIR(get, Value)
+
+func:main = int32() {
+    drop getValue();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

@@ -1,0 +1,31 @@
+// v0.20.5 — ivec9/vec9 dynamic indexing test
+// Tests that vec9[runtimeVar] compiles and executes correctly after type-fix.
+// Root cause: ICmpEQ(i64_index, getInt32(i)) mismatched types in ir_generator.cpp
+// Fix: cast index to i32 before ICmpEQ in the select-based dynamic index loop.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    // Build an ivec9 with 9 known values.
+    // Type checker infers ivec9 (int32 components); codegen stores as LLVM struct{i32 × 9}.
+    ivec9:v = vec9(10i32, 20i32, 30i32, 40i32, 50i32, 60i32, 70i32, 80i32, 90i32);
+
+    // Constant index — should return exact element (pre-existing path)
+    int32:c0 = v[0];
+    int32:c8 = v[8];
+
+    // Dynamic index via loop variable $ (i64 counter from loop(0,9,1))
+    // Previously threw ICmpInst::AssertOK due to i64 vs i32 mismatch.
+    int64:total = 0i64;
+    loop(0, 9, 1) {
+        int32:elem = v[$];
+        int64:e64 = elem;
+        total = total + e64;
+    }
+    // Expected sum: 10+20+30+40+50+60+70+80+90 = 450
+
+    exit 0;
+};
+

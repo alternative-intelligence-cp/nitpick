@@ -1,0 +1,21 @@
+/**
+ * Test: %rep / %endrep repetition
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %rep repeats a block N times without crashing
+ */
+
+%macro NOP 0
+// (no-op placeholder)
+%endmacro
+
+%rep 4
+NOP
+%endrep
+
+func:main = int32() {
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

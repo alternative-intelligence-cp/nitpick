@@ -1,0 +1,17 @@
+// template_literal_no_display.npk
+// v0.20.2: Struct without Display gives a clear compile error.
+// Expected: compile error mentioning 'Display' trait.
+
+struct:Opaque = {
+    int32:val;
+};
+
+func:main = int32() {
+    Opaque:o = Opaque{ val: 42 };
+    drop println(`value is &{o}`);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

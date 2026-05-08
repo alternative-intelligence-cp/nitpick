@@ -152,6 +152,66 @@ void TypeChecker::check(ASTNode* module) {
     }
 
     // -------------------------------------------------------------------------
+    // BUILTIN TRAIT REGISTRATION: Display — types that support template literal
+    // interpolation.  Any struct or enum that has `impl:Display:for:TypeName`
+    // in scope can be used inside `&{...}` template literal interpolations.
+    // All primitive types (int*, uint*, flt*, bool, string, tbb*) implement
+    // Display automatically.  User-defined types must add an impl block with
+    //   `func:display = string($i self) { ... };`
+    // -------------------------------------------------------------------------
+    {
+        // Check if user code defines trait:Display — if so, let theirs take priority
+        bool userDefinesDisplay = false;
+        const std::vector<std::shared_ptr<ASTNode>>* stmtList2 = nullptr;
+        if (module->type == ASTNode::NodeType::PROGRAM) {
+            stmtList2 = &static_cast<ProgramNode*>(module)->declarations;
+        } else if (module->type == ASTNode::NodeType::BLOCK) {
+            stmtList2 = &static_cast<BlockStmt*>(module)->statements;
+        }
+        if (stmtList2) {
+            for (const auto& s : *stmtList2) {
+                if (s && s->type == ASTNode::NodeType::TRAIT_DECL) {
+                    if (static_cast<TraitDeclStmt*>(s.get())->traitName == "Display") {
+                        userDefinesDisplay = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Display — implemented by all primitive types and opt-in structs/enums
+        if (!userDefinesDisplay && !symbolTable->lookupSymbol("Display")) {
+            auto displayTrait = std::make_shared<TraitDeclStmt>(
+                "Display", std::vector<TraitMethod>{}, 0, 0);
+            syntheticNodes.push_back(displayTrait);
+            checkTraitDecl(static_cast<TraitDeclStmt*>(displayTrait.get()));
+
+            // All primitive types implement Display (handled natively in codegen)
+            static const std::vector<std::string> displayPrimitives = {
+                "int8",  "int16",  "int32",  "int64",
+                "int128", "int256", "int512", "int1024",
+                "int2048", "int4096",
+                "uint8", "uint16", "uint32", "uint64",
+                "uint128", "uint256", "uint512", "uint1024",
+                "uint2048", "uint4096",
+                "tbb8", "tbb16", "tbb32", "tbb64",
+                "frac8", "frac16", "frac32", "frac64",
+                "tfp32", "tfp64", "fix256",
+                "flt32", "flt64",
+                "trit", "tryte", "nit", "nyte",
+                "bool", "string"
+            };
+            for (const auto& typeName : displayPrimitives) {
+                auto implDecl = std::make_shared<ImplDeclStmt>(
+                    "Display", typeName,
+                    std::vector<std::shared_ptr<ASTNode>>{}, 0, 0);
+                syntheticNodes.push_back(implDecl);
+                checkImplDecl(static_cast<ImplDeclStmt*>(implDecl.get()));
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // PRE-PASS: Forward-declare all non-generic module-level functions so that
     // mutual recursion (funcA calls funcB, funcB calls funcA) resolves cleanly.
     // Without this, calling a function declared later in the file raises
@@ -364,6 +424,10 @@ Type* TypeChecker::inferType(ASTNode* expr) {
 
         case ASTNode::NodeType::LAMBDA: {
             // Lambda expression used as a function pointer initializer.
+            // v0.20.4: Analyse captures so capturedVars is populated before
+            // the BorrowChecker runs its escape checks.
+            auto* lambda = static_cast<LambdaExpr*>(expr);
+            closureAnalyzer->analyzeLambda(lambda);
             // The IR generator handles LAMBDA codegen directly when the declared
             // variable has a FUNCTION_TYPE typeNode.  Return a placeholder so
             // the assignment compatibility check doesn't error.
@@ -527,13 +591,53 @@ Type* TypeChecker::inferTemplateLiteral(TemplateLiteralExpr* expr) {
         
         // Validate that the interpolated type can be converted to string.
         // Primitive types (int, uint, float, bool, string, TBB, balanced) have
-        // implicit toString in the IR codegen. Struct/object types require an
-        // explicit toString() method (checked when Trait system is complete).
+        // implicit formatters in the IR codegen.  Struct/enum types can be
+        // interpolated if they implement the Display trait (func:display returns
+        // a string).  All other types are rejected with an actionable message.
         if (interpType->getKind() != TypeKind::PRIMITIVE &&
             interpType->getKind() != TypeKind::ERROR &&
             interpType->getKind() != TypeKind::UNKNOWN) {
-            addError("Cannot interpolate value of type '" + interpType->toString() +
-                    "' into template literal (only primitive types supported)", interpolation.get());
+
+            if (interpType->getKind() == TypeKind::STRUCT ||
+                interpType->getKind() == TypeKind::ENUM) {
+                // Check whether this type has an impl:Display:for:TypeName
+                std::string typeName = interpType->toString();
+                Symbol* displaySym = symbolTable->lookupSymbol("Display");
+                bool hasDisplay = false;
+                if (displaySym && displaySym->kind == SymbolKind::TRAIT) {
+                    for (const auto* implDecl : displaySym->getImplDecls()) {
+                        if (implDecl && implDecl->typeName == typeName) {
+                            hasDisplay = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasDisplay) {
+                    addError("Type '" + typeName + "' cannot be interpolated in a template literal"
+                            " — implement the Display trait to enable this:\n"
+                            "  impl:Display:for:" + typeName + " = {\n"
+                            "    func:display = string($i self) { pass `...`; };\n"
+                            "  };",
+                            interpolation.get());
+                }
+                // hasDisplay == true → codegen will call TypeName_display(self)
+            } else if (interpType->getKind() == TypeKind::POINTER ||
+                       interpType->getKind() == TypeKind::ARRAY ||
+                       interpType->getKind() == TypeKind::SLICE) {
+                addError("Cannot interpolate '" + interpType->toString() +
+                        "' in a template literal — pointer, array, and slice types"
+                        " must be converted to string explicitly first,"
+                        " e.g. use a Display-implementing wrapper or convert manually.",
+                        interpolation.get());
+            } else {
+                addError("Cannot interpolate value of type '" + interpType->toString() +
+                        "' into a template literal — only primitive types (int*, uint*, flt*,"
+                        " bool, string, tbb*) and struct/enum types implementing the Display"
+                        " trait are supported.\n"
+                        "To add Display support: impl:Display:for:" + interpType->toString() +
+                        " = { func:display = string($i self) { pass `...`; }; };",
+                        interpolation.get());
+            }
         }
     }
     

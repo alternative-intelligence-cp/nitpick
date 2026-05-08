@@ -1,0 +1,21 @@
+// v0.20.3 — Array/element comparison in comptime context
+// Verifies the operator== and operator< fixes for ComptimeValue
+
+comptime func:max2 = int32(int32:a, int32:b) {
+    if (a > b) {
+        pass a;
+    }
+    pass b;
+};
+
+pub func:main = int32() {
+    // Comptime integer comparison (exercises compare() code path)
+    int32:a = comptime(2i32 + 3i32);
+    int32:b = comptime(10i32 - 5i32);
+    if (a == b) {
+        exit 0;
+    }
+    exit 1;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

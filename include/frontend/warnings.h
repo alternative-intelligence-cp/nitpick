@@ -81,9 +81,11 @@ public:
     // Note: Currently a stub - full AST analysis will be implemented in future phases
     void analyze(const ASTNode* ast);
     
-    // Individual analysis passes (stubs for now)
+    // Individual analysis passes
     void analyzeUnusedVariables(const ASTNode* ast);
     void analyzeUnusedParameters(const FuncDeclStmt* func);
+    void analyzeUnusedFunctions(const ASTNode* ast);
+    void analyzeEmptyBlocks(const ASTNode* ast);
     void analyzeDeadCode(const BlockStmt* block);
     void analyzeUnreachableCode(const ASTNode* ast);
     void analyzeImplicitConversions(const ASTNode* ast);

@@ -204,6 +204,48 @@ std::string Preprocessor::process(const std::string& source_text, const std::str
                 while (peek() != '\n' && peek() != 0) advance();
                 if (peek() == '\n') advance();
                 continue;
+            } else if (directive == "error") {
+                handleError();
+                // handleError either threw or returned (inactive branch) — skip rest of line
+                while (peek() != '\n' && peek() != 0) advance();
+                if (peek() == '\n') advance();
+                continue;
+            } else if (directive == "warning") {
+                handleWarning();
+                // Skip to end of line
+                while (peek() != '\n' && peek() != 0) advance();
+                if (peek() == '\n') advance();
+                continue;
+            } else if (directive == "str") {
+                // %str(content) — inline stringify: replaces with "content" as string literal
+                if (!conditional_stack.empty() && !conditional_stack.top().is_active) {
+                    while (peek() != '\n' && peek() != 0) advance();
+                    if (peek() == '\n') advance();
+                    continue;
+                }
+                skipWhitespace();
+                if (peek() != '(') {
+                    error("%str requires parentheses: %str(content)");
+                }
+                advance(); // skip opening (
+                std::string content;
+                int str_depth = 1;
+                while (peek() != 0 && str_depth > 0) {
+                    char ch = peek();
+                    advance();
+                    if (ch == '(') { str_depth++; content += ch; }
+                    else if (ch == ')') { str_depth--; if (str_depth > 0) content += ch; }
+                    else { content += ch; }
+                }
+                // Escape backslashes and double-quotes inside the content
+                std::string escaped;
+                for (char ch : content) {
+                    if (ch == '\\') escaped += "\\\\";
+                    else if (ch == '"') escaped += "\\\"";
+                    else escaped += ch;
+                }
+                output << "\"" << escaped << "\"";
+                continue; // resume processing rest of current line
             } else if (directive == "endrep") {
                 error("%endrep without matching %rep");
             } else {
@@ -870,6 +912,28 @@ void Preprocessor::handleAssign() {
     } catch (...) {
         error("Invalid expression in %assign: " + expr);
     }
+}
+
+void Preprocessor::handleError() {
+    // If inside an inactive conditional branch, do nothing
+    if (!conditional_stack.empty() && !conditional_stack.top().is_active) return;
+    skipWhitespace();
+    std::string message = readUntilNewline();
+    // Strip surrounding double-quotes if present
+    if (message.size() >= 2 && message.front() == '"' && message.back() == '"')
+        message = message.substr(1, message.size() - 2);
+    error(message.empty() ? "%error" : message);
+}
+
+void Preprocessor::handleWarning() {
+    // If inside an inactive conditional branch, do nothing
+    if (!conditional_stack.empty() && !conditional_stack.top().is_active) return;
+    skipWhitespace();
+    std::string message = readUntilNewline();
+    // Strip surrounding double-quotes if present
+    if (message.size() >= 2 && message.front() == '"' && message.back() == '"')
+        message = message.substr(1, message.size() - 2);
+    warning(message.empty() ? "%warning" : message);
 }
 
 void Preprocessor::handleRep() {

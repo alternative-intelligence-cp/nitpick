@@ -327,13 +327,39 @@ llvm::Value* ExprCodegen::codegenIndex(IndexExpr* expr) {
         }
         
         // For vec9 (struct): Extract with constant index
-        // Note: vec9[i] where i is not constant requires a different approach
         if (llvm::ConstantInt* constIndex = llvm::dyn_cast<llvm::ConstantInt>(indexVal)) {
             int idx = constIndex->getSExtValue();
             return builder.CreateExtractValue(arrayVal, idx, "vec9.index");
         } else {
-            // Dynamic index into vec9 struct - needs switch/select pattern
-            throw std::runtime_error("Dynamic indexing into vec9 not yet implemented");
+            // Dynamic index into vec9 struct — spill to alloca, GEP with dynamic index.
+            // LLVM struct extractvalue requires constant indices; alloca+GEP handles
+            // runtime indices. All 9 elements share the same type.
+            llvm::Type* elemType = arrayType->getStructElementType(0);
+            llvm::ArrayType* spillType = llvm::ArrayType::get(elemType, 9);
+            llvm::Value* spill = builder.CreateAlloca(spillType, nullptr, "vec9.spill");
+            // Store each struct element into the spill array at a constant index
+            for (unsigned i = 0; i < 9; i++) {
+                llvm::Value* elem = builder.CreateExtractValue(arrayVal, i, "vec9.e");
+                std::vector<llvm::Value*> storeIdx = {
+                    llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                    llvm::ConstantInt::get(builder.getInt64Ty(), i)
+                };
+                llvm::Value* elemPtr = builder.CreateGEP(
+                    spillType, spill, storeIdx, "vec9.sp");
+                builder.CreateStore(elem, elemPtr);
+            }
+            // Load from the spill array via the dynamic index
+            if (!indexVal->getType()->isIntegerTy(64)) {
+                indexVal = builder.CreateSExtOrTrunc(
+                    indexVal, builder.getInt64Ty(), "idx.i64");
+            }
+            std::vector<llvm::Value*> loadIdx = {
+                llvm::ConstantInt::get(builder.getInt64Ty(), 0),
+                indexVal
+            };
+            llvm::Value* dynPtr = builder.CreateGEP(
+                spillType, spill, loadIdx, "vec9.dyn.ptr");
+            return builder.CreateLoad(elemType, dynPtr, "vec9.dynidx");
         }
     }
     

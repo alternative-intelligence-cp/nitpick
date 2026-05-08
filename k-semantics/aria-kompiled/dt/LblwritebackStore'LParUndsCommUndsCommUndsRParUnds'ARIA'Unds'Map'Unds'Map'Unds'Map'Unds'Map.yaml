@@ -1,0 +1,81 @@
+args:
+- - &id001 ['3']
+  - MAP.Map
+next:
+  default:
+    next:
+      next:
+        default: null
+        specializations:
+        - - '0'
+          - fail
+          - [MAP.Map]
+        - - '1'
+          - args:
+            - - *id001
+              - MAP.Map
+            - - [key, '3']
+              - STRING.String
+            next:
+              args:
+              - - *id001
+                - MAP.Map
+              - - [key, '3']
+                - STRING.String
+              next:
+                default: fail
+                specializations:
+                - - inj{SortBool{}, SortKItem{}}
+                  - default: fail
+                    specializations:
+                    - - inj{SortInt{}, SortKItem{}}
+                      - action:
+                        - 7916
+                        - - - ['0', val, '3']
+                            - BOOL.Bool
+                          - - &id002 ['2']
+                            - MAP.Map
+                          - - ['0', key, '3']
+                            - INT.Int
+                          - - [rem, '3']
+                            - MAP.Map
+                          - - &id003 ['1']
+                            - MAP.Map
+                      - [INT.Int]
+                    sort: STRING.String
+                    occurrence: [key, '3']
+                  - [BOOL.Bool]
+                sort: STRING.String
+                occurrence: [val, '3']
+              function: hook_MAP_remove
+              sort: MAP.Map
+              occurrence: [rem, '3']
+            function: hook_MAP_lookup
+            sort: STRING.String
+            occurrence: [val, '3']
+          - [STRING.String, STRING.String, MAP.Map]
+        isnull: true
+        sort: STRING.String
+        occurrence: [key, '3']
+      iterator: *id001
+      function: map_iterator_next
+      binding: [key, '3']
+      sort: STRING.String
+    function: map_iterator
+    collection: *id001
+    sort: MAP.Map
+  specializations:
+  - - '0'
+    - action:
+      - 7917
+      - - - *id002
+          - MAP.Map
+        - - *id003
+          - MAP.Map
+    - []
+  bitwidth: 64
+  sort: MINT.MInt 64
+  occurrence: &id004 [size, '3']
+function: hook_MAP_size_long
+sort: MINT.MInt 64
+occurrence: *id004

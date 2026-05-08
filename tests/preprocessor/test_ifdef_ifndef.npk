@@ -1,0 +1,25 @@
+/**
+ * Test: %ifdef / %ifndef conditional compilation
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: %ifdef includes active branches; %ifndef includes absent-name branches
+ */
+
+%define PLATFORM 1i32
+
+%ifdef PLATFORM
+%define PLATFORM_DEFINED 1i32
+%endif
+
+%ifndef MISSING_SYMBOL
+%define MISSING_HANDLED 1i32
+%endif
+
+func:main = int32() {
+    int32:a = PLATFORM_DEFINED;
+    int32:b = MISSING_HANDLED;
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

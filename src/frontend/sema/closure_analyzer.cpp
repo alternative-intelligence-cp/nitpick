@@ -196,10 +196,23 @@ void ClosureAnalyzer::handleVarDecl(VarDeclStmt* stmt) {
 }
 
 bool ClosureAnalyzer::isFromOuterScope(const std::string& name) {
-    // Check if variable exists in symbol table
-    // For now, simplified: assume all non-parameter, non-local identifiers are captures
-    // Proper implementation would check symbol table scope depth
-    return symbolTable && symbolTable->lookupSymbol(name) != nullptr;
+    if (!symbolTable) return false;
+
+    // Walk up all parent scopes to find the symbol
+    Symbol* symbol = symbolTable->resolveSymbol(name);
+    if (!symbol) return false;
+
+    // Module-level (GLOBAL/MODULE scope) constants and functions are globally
+    // visible — they don't need to be captured.
+    if (symbol->scope) {
+        ScopeKind kind = symbol->scope->getKind();
+        if (kind == ScopeKind::GLOBAL || kind == ScopeKind::MODULE) {
+            return false;
+        }
+    }
+
+    // Symbol is defined in an enclosing function/block scope → it IS a capture
+    return true;
 }
 
 LambdaExpr::CaptureMode ClosureAnalyzer::determineCaptureMode(const CaptureInfo& info) {
@@ -244,18 +257,23 @@ bool ClosureAnalyzer::shouldCaptureByValue(const std::string& varName) {
 }
 
 bool ClosureAnalyzer::validateLifetimes() {
-    // Appendage Theory validation:
-    // - Closure lifetime must not exceed captured variable lifetimes
-    // - Stack closures cannot be returned
-    // - Captured stack variables → closure must stay on stack
-    
-    // For now, simplified validation
-    // Proper implementation would:
-    // 1. Check if lambda is returned from function
-    // 2. Check if any captures are stack variables
-    // 3. Error if stack closure tries to escape
-    
-    // This will be properly implemented when we integrate with borrow checker
+    if (!currentLambda) return true;
+
+    // Validate captures: check for conflicting capture modes.
+    // A variable that is both mutated AND has its address taken is a double-alias
+    // risk — flag it.
+    for (const auto& [name, info] : captures) {
+        if (info.isMutated && info.isAddressTaken) {
+            errors.push_back(
+                "Closure capture '" + name + "' is both mutated and address-taken "
+                "inside the lambda body; this may alias across calls and is unsafe. "
+                "Capture by value or restructure to avoid double aliasing.");
+            return false;
+        }
+    }
+
+    // Escape detection for BY_REFERENCE captures is performed by the BorrowChecker
+    // at the return/pass site, where escape context is known.
     return true;
 }
 

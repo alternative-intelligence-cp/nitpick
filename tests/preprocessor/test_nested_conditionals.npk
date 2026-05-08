@@ -1,0 +1,28 @@
+/**
+ * Test: Nested %ifdef / %if conditionals
+ * Expected: COMPILES SUCCESSFULLY
+ * Verifies: only the BOTH_DEFINED branch is active; outer+inner both true
+ * Note: preprocessor directives must start at column 1 (no leading spaces)
+ */
+
+%define OUTER 1i32
+%define INNER 1i32
+
+%ifdef OUTER
+%ifdef INNER
+%define BOTH_DEFINED 1i32
+%else
+%define OUTER_ONLY 1i32
+%endif
+%else
+%define NEITHER 1i32
+%endif
+
+func:main = int32() {
+    int32:b = BOTH_DEFINED;
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

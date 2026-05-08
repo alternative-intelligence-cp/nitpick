@@ -1,0 +1,37 @@
+// template_literal_primitives_full.npk
+// v0.20.2: All primitive types work in template literals without Display.
+// Note: uses non-negative values to avoid pre-existing unsigned SExt display issue.
+
+func:main = int32() {
+    int8:a   = 64i8;
+    int16:b  = 1000i16;
+    int32:c  = 42i32;
+    int64:d  = 9223372036854775807;
+    uint8:e  = 100u8;
+    uint16:ff = 1000u16;
+    uint32:g = 100000u32;
+    uint64:h = 1000000u64;
+    flt32:pi  = 3.14f32;
+    flt64:tau = 6.283185307f64;
+    bool:t   = true;
+    bool:fl  = false;
+    string:s = "hello";
+    drop println(`int8:&{a}`);
+    drop println(`int16:&{b}`);
+    drop println(`int32:&{c}`);
+    drop println(`int64:&{d}`);
+    drop println(`uint8:&{e}`);
+    drop println(`uint16:&{ff}`);
+    drop println(`uint32:&{g}`);
+    drop println(`uint64:&{h}`);
+    drop println(`flt32:&{pi}`);
+    drop println(`flt64:&{tau}`);
+    drop println(`bool:&{t}`);
+    drop println(`bool:&{fl}`);
+    drop println(`string:&{s}`);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

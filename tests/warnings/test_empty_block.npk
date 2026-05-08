@@ -1,0 +1,17 @@
+/**
+ * Test: EMPTY_BLOCK warning on function body
+ * Expected: WARNING empty_block
+ * Why: Function 'noop' has an empty body — should trigger EMPTY_BLOCK
+ */
+
+func:noop = int32() {
+};
+
+func:main = int32() {
+    drop noop();
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
