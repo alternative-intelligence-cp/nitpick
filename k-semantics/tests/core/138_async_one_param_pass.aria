@@ -1,0 +1,9 @@
+// expect-exit: 7
+// async func: with one parameter — await propagates return
+async func: double = int32(int32:n) { pass n + n; };
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int32:r = await double(7);
+    if (r == 14) { exit 7; }
+    exit 99;
+};

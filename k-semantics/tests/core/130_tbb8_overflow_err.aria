@@ -1,0 +1,10 @@
+// expect-exit: 24
+// tbb8 overflow (127 + 1) yields ERR
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    tbb8:x = 127;
+    tbb8:one = 1;
+    tbb8:y = x + one;
+    if (y == ERR) { exit 24; }
+    exit 25;
+};

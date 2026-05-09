@@ -1,0 +1,10 @@
+// expect-exit: 25
+// ERR sticky-propagates: ERR + tbb8 => ERR
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    tbb8:x = -128;
+    tbb8:y = 1;
+    tbb8:z = x + y;
+    if (z == ERR) { exit 25; }
+    exit 26;
+};

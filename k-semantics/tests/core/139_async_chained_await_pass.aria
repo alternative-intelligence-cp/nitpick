@@ -1,0 +1,10 @@
+// expect-exit: 9
+// Two chained async calls via await — synchronous model
+async func: inc = int32(int32:x) { pass x + 1; };
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int32:a = await inc(3);
+    int32:b = await inc(a);
+    if (b == 5) { exit 9; }
+    exit 99;
+};

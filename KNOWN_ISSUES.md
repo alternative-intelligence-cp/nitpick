@@ -127,15 +127,23 @@ Last updated: v0.20.5
 
 ---
 
-## Test Suite Status (v0.20.5)
+## Test Suite Status (v0.21.6)
 
-- **18/18 CTest** suites passing (all CTest registered tests pass)
-- **K core**: passes (k_semantics_core test)
-- **K proofs**: passes (k_semantics_proofs test)
-- **vec9 dynamic indexing**: 1/1 (new in v0.20.5)
-- **Closure lifetime tests**: 1/1 (v0.20.4)
-- **Optional safe navigation**: 1/1 (v0.20.4)
+- **24/24 CTest** suites passing (all CTest registered tests pass)
+- **K core**: 139/139 (k_semantics_core test) — up from 127 (v0.21.5: 127, v0.21.6 adds tbb8/16/64 + async/await tests)
+- **K proofs**: 10/10 (k_semantics_proofs test)
+- **bug_tests_v0216**: 2/2 (bug105 tbb variants, bug106 async/await)
 - **0 genuine failures**
+
+### A-009 — tbb8/tbb16/tbb64 K Semantics (Partially Addressed — v0.21.6)
+K now formalizes all four TBB types (tbb8, tbb16, tbb32, tbb64) with arithmetic
+and ERR sentinels. Remaining type lattice gaps (int128, flt arithmetic, etc.) are
+documented in `k-semantics/SEMANTIC_GAPS.md`.
+
+### A-010 — async/await K Semantics (Partially Addressed — v0.21.6)
+K now models `async func:` declarations and `await` (synchronous model). True
+coroutine frame semantics (suspension/resume) remain unformalized. See
+`k-semantics/SEMANTIC_GAPS.md`.
 
 ---
 

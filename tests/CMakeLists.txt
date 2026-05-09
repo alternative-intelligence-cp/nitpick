@@ -371,3 +371,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0215.sh")
         LABELS "stdlib;ahash;modules;A-011;A-012;v0.21.5"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0216.sh")
+    add_test(
+        NAME bug_tests_v0216
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0216.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0216 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "k-semantics;tbb8;tbb16;tbb64;async;await;A-009;A-010;v0.21.6"
+    )
+endif()

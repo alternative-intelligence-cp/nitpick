@@ -37,7 +37,7 @@ module ARIA-SYNTAX
   imports STRING-SYNTAX
   imports ID-SYNTAX
 
-     syntax Type ::= "int8" | "int32" | "int64" | "tbb32" | "flt32" | "flt64" | "string" | Type "->" | Type "[" Int "]" | Id
+     syntax Type ::= "int8" | "int32" | "int64" | "tbb8" | "tbb16" | "tbb32" | "tbb64" | "flt32" | "flt64" | "string" | Type "->" | Type "[" Int "]" | Id
      syntax MemMode ::= "stack" | "gc" | "wild" | "wildx"
      syntax BorrowMode ::= "$$i" | "$$m"
      syntax BorrowInfo ::= "CopyBorrow" | "ImmBorrow" | "MutBorrow"
@@ -59,7 +59,10 @@ module ARIA-SYNTAX
                | "Result" "(" Val "," Val "," Bool ")"
                | "I32" "(" Int ")"
                | "I64" "(" Int ")"
+               | "TBB8" "(" Int ")"
+               | "TBB16" "(" Int ")"
                | "TBB32" "(" Int ")"
+               | "TBB64" "(" Int ")"
                | "PTR" "(" Int ")"
                | "PTRLOC" "(" Int ")"
                | "PINPTRLOC" "(" Int ")"
@@ -105,6 +108,7 @@ module ARIA-SYNTAX
                > "pass" Exp [strict]
                | "fail" Exp [strict]
                | "raw" Exp [strict]
+               | "await" Exp [strict]
                | "drop" Exp [strict]
                | "?!" Exp [strict]
                > Exp "defaults" Exp [strict(1), right]
@@ -162,6 +166,9 @@ module ARIA-SYNTAX
   syntax FuncDecl     ::= "func:" Id "=" Type "(" ")" Block ";"
                         | "func:" Id "=" Type "(" Param ")" Block ";"
                         | "func:" Id "=" Type "(" Param "," Param ")" Block ";"
+                        | "async" "func:" Id "=" Type "(" ")" Block ";"
+                        | "async" "func:" Id "=" Type "(" Param ")" Block ";"
+                        | "async" "func:" Id "=" Type "(" Param "," Param ")" Block ";"
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
      syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
@@ -1071,6 +1078,26 @@ module ARIA
   rule <k> loadFuncs(func: F:Id = _T:Type(P1:Param, P2:Param) { fail E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2Fail(paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
 
+  // async func: declarations — synchronous model: semantics identical to sync func:
+  rule <k> loadFuncs(async func: F:Id = T:Type() { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn0Pass(T, E) ] </functions>
+
+  rule <k> loadFuncs(async func: F:Id = T:Type(P:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Pass(T, paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
+
+  rule <k> loadFuncs(async func: F:Id = T:Type(P:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1StmtPass(T, paramBorrow(P), paramType(P), paramName(P), S, E) ] </functions>
+
+  rule <k> loadFuncs(async func: F:Id = T:Type(P1:Param, P2:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Pass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
+
+  rule <k> loadFuncs(async func: F:Id = T:Type(P1:Param, P2:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2StmtPass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), S, E) ] </functions>
+
+  // await: synchronous model — extracts success value from Result, or passes plain Val through
+  rule <k> await Result(_:Val, V:Val, _:Bool) => V ... </k>
+  rule <k> await V:Val => V ... </k> [owise]
+
      rule <k> F:Id() => E ~> finishCallPassFrame(T, FrameState(Env, Types, Store, Limits, Modes, Stack, GC, Wild, BorrowVars, BorrowAliases, ImmHosts, MutHosts, PinnedHosts, Fixed, Next)) ... </k>
        <functions> ... F |-> Fn0Pass(T, E) ... </functions>
        <env> Env => .Map </env>
@@ -1767,27 +1794,48 @@ module ARIA
 
   syntax Val ::= normalizeValue(Type, Val) [function]
                | normalizeLike(Val, Val) [function]
+               | normalizeTBB8(Int) [function]
+               | normalizeTBB16(Int) [function]
                | normalizeTBB32(Int) [function]
+               | normalizeTBB64(Int) [function]
 
   rule normalizeValue(int32, I:Int) => I32(wrapI32(I))
   rule normalizeValue(int64, I:Int) => I64(wrapI64(I))
+  rule normalizeValue(tbb8, I:Int) => normalizeTBB8(I)
+  rule normalizeValue(tbb16, I:Int) => normalizeTBB16(I)
   rule normalizeValue(tbb32, I:Int) => normalizeTBB32(I)
+  rule normalizeValue(tbb64, I:Int) => normalizeTBB64(I)
   rule normalizeValue(int32, I32(I)) => I32(wrapI32(I))
   rule normalizeValue(int64, I64(I)) => I64(wrapI64(I))
+  rule normalizeValue(tbb8, TBB8(I)) => normalizeTBB8(I)
+  rule normalizeValue(tbb16, TBB16(I)) => normalizeTBB16(I)
   rule normalizeValue(tbb32, TBB32(I)) => normalizeTBB32(I)
+  rule normalizeValue(tbb64, TBB64(I)) => normalizeTBB64(I)
      rule normalizeValue(_:Type [ _:Int ], V:Val) => V
+  rule normalizeValue(tbb8, ERR) => ERR
+  rule normalizeValue(tbb16, ERR) => ERR
   rule normalizeValue(tbb32, ERR) => ERR
+  rule normalizeValue(tbb64, ERR) => ERR
   rule normalizeValue(string, S:String) => S
   rule normalizeValue(_:Type, V:Val) => V [owise]
 
      rule normalizeLike(I32(_:Int), V:Val) => normalizeValue(int32, V)
      rule normalizeLike(I64(_:Int), V:Val) => normalizeValue(int64, V)
+     rule normalizeLike(TBB8(_:Int), V:Val) => normalizeValue(tbb8, V)
+     rule normalizeLike(TBB16(_:Int), V:Val) => normalizeValue(tbb16, V)
      rule normalizeLike(TBB32(_:Int), V:Val) => normalizeValue(tbb32, V)
+     rule normalizeLike(TBB64(_:Int), V:Val) => normalizeValue(tbb64, V)
      rule normalizeLike(ERR, V:Val) => normalizeValue(tbb32, V)
      rule normalizeLike(_:Val, V:Val) => V [owise]
 
+  rule normalizeTBB8(I) => ERR requires I <=Int -128 orBool I >Int 127
+  rule normalizeTBB8(I) => TBB8(I) requires I >Int -128 andBool I <=Int 127
+  rule normalizeTBB16(I) => ERR requires I <=Int -32768 orBool I >Int 32767
+  rule normalizeTBB16(I) => TBB16(I) requires I >Int -32768 andBool I <=Int 32767
   rule normalizeTBB32(I) => ERR requires I <=Int -2147483648 orBool I >Int 2147483647
   rule normalizeTBB32(I) => TBB32(I) requires I >Int -2147483648 andBool I <=Int 2147483647
+  rule normalizeTBB64(I) => ERR requires I <=Int -9223372036854775808 orBool I >Int 9223372036854775807
+  rule normalizeTBB64(I) => TBB64(I) requires I >Int -9223372036854775808 andBool I <=Int 9223372036854775807
 
   syntax Int ::= numericValue(Val) [function]
   syntax Bool ::= isNumericValue(Val) [function]
@@ -1795,12 +1843,18 @@ module ARIA
   rule numericValue(I:Int) => I
   rule numericValue(I32(I)) => I
   rule numericValue(I64(I)) => I
+  rule numericValue(TBB8(I)) => I
+  rule numericValue(TBB16(I)) => I
   rule numericValue(TBB32(I)) => I
+  rule numericValue(TBB64(I)) => I
 
   rule isNumericValue(_:Int) => true
   rule isNumericValue(I32(_:Int)) => true
   rule isNumericValue(I64(_:Int)) => true
+  rule isNumericValue(TBB8(_:Int)) => true
+  rule isNumericValue(TBB16(_:Int)) => true
   rule isNumericValue(TBB32(_:Int)) => true
+  rule isNumericValue(TBB64(_:Int)) => true
   rule isNumericValue(_) => false [owise]
 
   rule <k> I1:Int + I2:Int => I1 +Int I2 ... </k>
@@ -1850,6 +1904,48 @@ module ARIA
   rule <k> TBB32(I1) / I2:Int => normalizeTBB32(I1 /Int I2) ... </k> requires I2 =/=Int 0
   rule <k> TBB32(_) / TBB32(0) => ERR ... </k>
   rule <k> TBB32(_) / 0 => ERR ... </k>
+
+  rule <k> TBB8(I1) + TBB8(I2) => normalizeTBB8(I1 +Int I2) ... </k>
+  rule <k> TBB8(I1) + I2:Int => normalizeTBB8(I1 +Int I2) ... </k>
+  rule <k> I1:Int + TBB8(I2) => normalizeTBB8(I1 +Int I2) ... </k>
+  rule <k> TBB8(I1) - TBB8(I2) => normalizeTBB8(I1 -Int I2) ... </k>
+  rule <k> TBB8(I1) - I2:Int => normalizeTBB8(I1 -Int I2) ... </k>
+  rule <k> I1:Int - TBB8(I2) => normalizeTBB8(I1 -Int I2) ... </k>
+  rule <k> TBB8(I1) * TBB8(I2) => normalizeTBB8(I1 *Int I2) ... </k>
+  rule <k> TBB8(I1) * I2:Int => normalizeTBB8(I1 *Int I2) ... </k>
+  rule <k> I1:Int * TBB8(I2) => normalizeTBB8(I1 *Int I2) ... </k>
+  rule <k> TBB8(I1) / TBB8(I2) => normalizeTBB8(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB8(I1) / I2:Int => normalizeTBB8(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB8(_) / TBB8(0) => ERR ... </k>
+  rule <k> TBB8(_) / 0 => ERR ... </k>
+
+  rule <k> TBB16(I1) + TBB16(I2) => normalizeTBB16(I1 +Int I2) ... </k>
+  rule <k> TBB16(I1) + I2:Int => normalizeTBB16(I1 +Int I2) ... </k>
+  rule <k> I1:Int + TBB16(I2) => normalizeTBB16(I1 +Int I2) ... </k>
+  rule <k> TBB16(I1) - TBB16(I2) => normalizeTBB16(I1 -Int I2) ... </k>
+  rule <k> TBB16(I1) - I2:Int => normalizeTBB16(I1 -Int I2) ... </k>
+  rule <k> I1:Int - TBB16(I2) => normalizeTBB16(I1 -Int I2) ... </k>
+  rule <k> TBB16(I1) * TBB16(I2) => normalizeTBB16(I1 *Int I2) ... </k>
+  rule <k> TBB16(I1) * I2:Int => normalizeTBB16(I1 *Int I2) ... </k>
+  rule <k> I1:Int * TBB16(I2) => normalizeTBB16(I1 *Int I2) ... </k>
+  rule <k> TBB16(I1) / TBB16(I2) => normalizeTBB16(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB16(I1) / I2:Int => normalizeTBB16(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB16(_) / TBB16(0) => ERR ... </k>
+  rule <k> TBB16(_) / 0 => ERR ... </k>
+
+  rule <k> TBB64(I1) + TBB64(I2) => normalizeTBB64(I1 +Int I2) ... </k>
+  rule <k> TBB64(I1) + I2:Int => normalizeTBB64(I1 +Int I2) ... </k>
+  rule <k> I1:Int + TBB64(I2) => normalizeTBB64(I1 +Int I2) ... </k>
+  rule <k> TBB64(I1) - TBB64(I2) => normalizeTBB64(I1 -Int I2) ... </k>
+  rule <k> TBB64(I1) - I2:Int => normalizeTBB64(I1 -Int I2) ... </k>
+  rule <k> I1:Int - TBB64(I2) => normalizeTBB64(I1 -Int I2) ... </k>
+  rule <k> TBB64(I1) * TBB64(I2) => normalizeTBB64(I1 *Int I2) ... </k>
+  rule <k> TBB64(I1) * I2:Int => normalizeTBB64(I1 *Int I2) ... </k>
+  rule <k> I1:Int * TBB64(I2) => normalizeTBB64(I1 *Int I2) ... </k>
+  rule <k> TBB64(I1) / TBB64(I2) => normalizeTBB64(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB64(I1) / I2:Int => normalizeTBB64(I1 /Int I2) ... </k> requires I2 =/=Int 0
+  rule <k> TBB64(_) / TBB64(0) => ERR ... </k>
+  rule <k> TBB64(_) / 0 => ERR ... </k>
 
   rule <k> ERR + _:Val => ERR ... </k>
   rule <k> _:Val + ERR => ERR ... </k>

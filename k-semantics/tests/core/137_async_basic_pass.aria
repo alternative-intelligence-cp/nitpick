@@ -1,0 +1,8 @@
+// expect-exit: 42
+// async func: with synchronous model — await is identity on a completed value
+async func: compute = int32() { pass 42; };
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    int32:r = await compute();
+    exit r;
+};

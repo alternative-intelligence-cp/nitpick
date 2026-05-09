@@ -1,0 +1,8 @@
+// expect-exit: 23
+// tbb64 value at lower sentinel (INT64_MIN = -9223372036854775808) must be ERR
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    tbb64:x = -9223372036854775808;
+    if (x == ERR) { exit 23; }
+    exit 24;
+};
