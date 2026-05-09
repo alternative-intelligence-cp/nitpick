@@ -1,0 +1,19 @@
+// bug107: POLISH-012 — pass n; should not trigger unused-variable warning
+// The value passed to `pass` counts as a use of the variable.
+// Before fix: `n` would produce "declared but never used" warning.
+// After fix: no warning; program compiles and exits 0.
+
+func:compute = int32(int32:x) {
+    int32:n = x + 1i32;
+    pass n;
+};
+
+func:main = int32() {
+    // raw: explicitly discard the result — we only care that n is not flagged unused
+    raw compute(41i32);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

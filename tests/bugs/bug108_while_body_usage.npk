@@ -1,0 +1,18 @@
+// bug108: POLISH-014 — variables used inside while body should not be flagged as unused
+// Before fix: `ip` and `dp` would produce "declared but never used" warnings
+// because the while body was not scanned by the unused-variable checker.
+// After fix: no warnings; program compiles and exits 0.
+
+func:main = int32() {
+    int32:ip = 0i32;
+    int32:dp = 0i32;
+    while (ip < 5i32) {
+        dp = dp + 1i32;
+        ip = ip + 1i32;
+    }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};

@@ -208,6 +208,60 @@ static void collectIdentifiers(const ASTNode* node, std::unordered_set<std::stri
             collectIdentifiers(idx->index.get(), names);
             break;
         }
+        // POLISH-014: while body was not visited — variables used inside the
+        // while condition or body were silently missed, causing false unused-var
+        // warnings for variables that are only referenced inside a while loop.
+        case ASTNode::NodeType::WHILE: {
+            auto* w = static_cast<const WhileStmt*>(node);
+            collectIdentifiers(w->condition.get(), names);
+            collectIdentifiers(w->body.get(), names);
+            break;
+        }
+        // POLISH-012: pass n; — the value expression was not visited, causing
+        // a false unused-var warning for any variable passed via `pass`.
+        case ASTNode::NodeType::PASS: {
+            auto* p = static_cast<const PassStmt*>(node);
+            if (p->value) collectIdentifiers(p->value.get(), names);
+            break;
+        }
+        // Audit: remaining loop forms also need their bodies walked so that
+        // variables used inside them are not falsely flagged as unused.
+        case ASTNode::NodeType::TILL: {
+            auto* t = static_cast<const TillStmt*>(node);
+            collectIdentifiers(t->limit.get(), names);
+            collectIdentifiers(t->step.get(), names);
+            collectIdentifiers(t->body.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::FOR: {
+            auto* f = static_cast<const ForStmt*>(node);
+            if (f->initializer) collectIdentifiers(f->initializer.get(), names);
+            if (f->rangeExpr) collectIdentifiers(f->rangeExpr.get(), names);
+            if (f->condition) collectIdentifiers(f->condition.get(), names);
+            if (f->update) collectIdentifiers(f->update.get(), names);
+            collectIdentifiers(f->body.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::WHEN: {
+            auto* w = static_cast<const WhenStmt*>(node);
+            collectIdentifiers(w->condition.get(), names);
+            collectIdentifiers(w->body.get(), names);
+            if (w->then_block) collectIdentifiers(w->then_block.get(), names);
+            if (w->end_block) collectIdentifiers(w->end_block.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::PICK: {
+            auto* pk = static_cast<const PickStmt*>(node);
+            collectIdentifiers(pk->selector.get(), names);
+            for (const auto& c : pk->cases) collectIdentifiers(c.get(), names);
+            break;
+        }
+        case ASTNode::NodeType::PICK_CASE: {
+            auto* pc = static_cast<const PickCase*>(node);
+            if (pc->pattern) collectIdentifiers(pc->pattern.get(), names);
+            collectIdentifiers(pc->body.get(), names);
+            break;
+        }
         default:
             break;
     }
