@@ -766,7 +766,7 @@ Type* TypeChecker::resolveTypeNode(ASTNode* typeNode) {
 void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Prevent shadowing reserved builtin names
     static const std::unordered_set<std::string> reservedBuiltins = {
-        "ok", "print", "println", "stdout_write", "stderr_write",
+        "ok", "print", "println", "eprint", "eprintln", "stdout_write", "stderr_write",
         "to_string", "fail", "pass", "drop", "raw", "sleep_ms", "exit", "env_get", "sort_lines",
         "sys"
     };
@@ -1900,6 +1900,14 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
     // function name is visible inside the body.  This allows recursive calls like
     //   func:fib = int32(int32:n) { ... pass(fib(n-1i32)); ... }
     // to resolve correctly during type-checking.
+    //
+    // POLISH-010 FIX: The global preRegisterFunctions pass runs before 'use' imports
+    // are processed, so struct parameter types imported from other modules are resolved
+    // by getPrimitiveType(), which creates a fake PrimitiveType("Foo") placeholder.
+    // When checkFuncDecl runs in the main pass, 'use' imports have already been
+    // processed and getStructType("Foo") returns the real StructType.  We update the
+    // existing pre-registered symbol in-place rather than calling defineSymbol() (which
+    // would fail with "already defined") so that call-site checks use the real type.
     {
         std::vector<Type*> earlyParamTypes;
         for (const auto& param : stmt->parameters) {
@@ -1912,12 +1920,23 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         }
         Type* earlyFuncType = new FunctionType(earlyParamTypes, actualReturnType,
                                                stmt->isAsync, stmt->isVariadic);
-        Symbol* earlySym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
-                                                      earlyFuncType,
-                                                      stmt->line, stmt->column);
-        if (earlySym) {
-            earlySym->setFuncDecl(stmt);
+
+        Symbol* existingSym = symbolTable->lookupSymbol(stmt->funcName);
+        if (existingSym && existingSym->getFuncDecl() == stmt) {
+            // Pre-registered by the global pre-pass with the same AST node — update
+            // its type to the freshly-resolved (correct) version.
+            existingSym->type = earlyFuncType;
+        } else if (!existingSym) {
+            // Not yet registered — define it now for self-recursion support.
+            Symbol* earlySym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                          earlyFuncType,
+                                                          stmt->line, stmt->column);
+            if (earlySym) {
+                earlySym->setFuncDecl(stmt);
+            }
         }
+        // else: existingSym with a different funcDecl — genuine duplicate, will be
+        // caught below when the body is type-checked and reported via addError.
     }
 
     // CRITICAL FIX: Enter function scope BEFORE defining parameters

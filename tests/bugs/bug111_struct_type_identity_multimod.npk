@@ -1,0 +1,32 @@
+// bug111: POLISH-010 — struct type identity across multi-module imports.
+//
+// When a main file imports two modules (A and B), functions defined in main
+// that take a struct type from module A used to report:
+//   "Argument 1 has type 'Foo', but function expects 'Foo'"
+//
+// Root cause: preRegisterFunctions() ran before 'use' imports were processed,
+// so resolveTypeNode("Foo") fell through to getPrimitiveType("Foo"), creating
+// a fake PrimitiveType("Foo") placeholder.  When checkFuncDecl() later ran
+// with the real StructType("Foo") in scope, it couldn't update the pre-registered
+// symbol (defineSymbol returned null for duplicate).  Fix: update the existing
+// symbol in-place when the funcDecl pointer matches (POLISH-010, v0.22.2).
+//
+// This test uses the same-file helper (no second module) to isolate the
+// two-module import scenario.  The modA and modB helpers live in:
+//   tests/bugs/bug111_modA.npk
+//   tests/bugs/bug111_modB.npk
+
+use "./bug111_modA.npk".*;
+use "./bug111_modB.npk".*;
+
+// wrap is defined here (main file) but its param type Foo comes from modA.
+// This triggered the "Foo but expects Foo" error before the fix.
+pub func:wrap = int32(Foo:f) { pass f.x; };
+
+func:main = int32() {
+    Foo:f = raw foo_new();
+    int32:v = raw wrap(f);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:e) { exit 1; };

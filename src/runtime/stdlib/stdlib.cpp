@@ -78,6 +78,30 @@ void npk_eprintln(const char* str, int64_t len) {
     write(STDERR_FILENO, "\n", 1);
 }
 
+// Single-argument (null-terminated) versions used by eprint()/eprintln() builtins
+extern "C" int64_t npk_eprint_cstr(const char* str) {
+    if (!str) return -1;
+    size_t len = strlen(str);
+    if (len == 0) return 0;
+    ssize_t written = write(STDERR_FILENO, str, len);
+    return (int64_t)written;
+}
+
+extern "C" int64_t npk_eprintln_cstr(const char* str) {
+    if (!str) return -1;
+    size_t len = strlen(str);
+    ssize_t bytes = 0;
+    if (len > 0) {
+        ssize_t str_written = write(STDERR_FILENO, str, len);
+        if (str_written < 0) return -1;
+        bytes += str_written;
+    }
+    ssize_t nl_written = write(STDERR_FILENO, "\n", 1);
+    if (nl_written < 0) return -1;
+    bytes += nl_written;
+    return (int64_t)bytes;
+}
+
 void npk_debug(const char* str, int64_t len) {
     if (!str || len <= 0) return;
     

@@ -113,7 +113,7 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
             }
         }
         
-        addError("File path '" + filePath + "' does not exist or is not a .npk file");
+        addError("File path '" + filePath + "' does not exist or is not a .npk/.aria file");
         return "";
     }
     
@@ -168,7 +168,7 @@ bool ModuleResolver::isValidAriaFile(const std::string& path) {
     try {
         fs::path p(path);
         return fs::exists(p) && fs::is_regular_file(p) &&
-               p.extension() == ".npk";
+               (p.extension() == ".npk" || p.extension() == ".aria");
     } catch (...) {
         return false;
     }
@@ -253,14 +253,18 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
                                           const std::vector<std::string>& components) {
     if (components.empty()) return "";
     
-    // Try pattern 1: <base>/path/to/module.npk
+    // Try pattern 1: <base>/path/to/module.npk (then .aria)
     // Example: std.io -> /usr/lib/nitpick/std/io.npk
     std::string filePathNpk = buildPath(baseDir, components, ".npk");
     if (isValidAriaFile(filePathNpk)) {
         return filePathNpk;
     }
+    std::string filePathAria = buildPath(baseDir, components, ".aria");
+    if (isValidAriaFile(filePathAria)) {
+        return filePathAria;
+    }
 
-    // Try pattern 2: <base>/path/to/module/mod.npk
+    // Try pattern 2: <base>/path/to/module/mod.npk (then mod.aria)
     // Example: std.io -> /usr/lib/nitpick/std/io/mod.npk
     // research_028 Section 3.2 step 3
     std::vector<std::string> modComponents = components;
@@ -268,6 +272,10 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
     std::string modPathNpk = buildPath(baseDir, modComponents, ".npk");
     if (isValidAriaFile(modPathNpk)) {
         return modPathNpk;
+    }
+    std::string modPathAria = buildPath(baseDir, modComponents, ".aria");
+    if (isValidAriaFile(modPathAria)) {
+        return modPathAria;
     }
     
     return "";

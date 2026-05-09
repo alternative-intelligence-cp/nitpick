@@ -876,9 +876,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     
     // print(string) - write string as-is (no newline)
     // println(string) - write string + newline (convenience)
-    // Both minimal primitives with same interface, different intent
-    if (callee_ident->name == "print" || callee_ident->name == "println") {
-        bool add_newline = (callee_ident->name == "println");
+    // eprint(string) - write string to stderr (no newline)
+    // eprintln(string) - write string to stderr + newline
+    // All minimal primitives with same interface, different intent/destination
+    if (callee_ident->name == "print" || callee_ident->name == "println" ||
+        callee_ident->name == "eprint" || callee_ident->name == "eprintln") {
+        bool add_newline = (callee_ident->name == "println" || callee_ident->name == "eprintln");
+        bool use_stderr  = (callee_ident->name == "eprint"  || callee_ident->name == "eprintln");
         
         if (expr->arguments.size() != 1) {
             throw std::runtime_error(callee_ident->name + "() requires exactly one string argument");
@@ -964,10 +968,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        // Declare runtime function: npk_print_cstr or npk_println_cstr
-        // Signature: int64_t npk_print[ln]_cstr(const char* str)
+        // Declare runtime function: npk_print_cstr, npk_println_cstr,
+        // npk_eprint_cstr, or npk_eprintln_cstr
+        // Signature: int64_t npk_*_cstr(const char* str)
         // Returns: Number of bytes written, or -1 on error
-        const char* func_name = add_newline ? "npk_println_cstr" : "npk_print_cstr";
+        const char* func_name;
+        if (use_stderr) {
+            func_name = add_newline ? "npk_eprintln_cstr" : "npk_eprint_cstr";
+        } else {
+            func_name = add_newline ? "npk_println_cstr" : "npk_print_cstr";
+        }
         llvm::Function* npk_print = module->getFunction(func_name);
         if (!npk_print) {
             llvm::FunctionType* print_type = llvm::FunctionType::get(

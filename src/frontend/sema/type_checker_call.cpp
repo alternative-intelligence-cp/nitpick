@@ -1229,7 +1229,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         
         // Builtin: print() - write string as-is (no newline)
         // Builtin: println() - write string + newline
-        if (idExpr->name == "print" || idExpr->name == "println") {
+        // Builtin: eprint() - write string to stderr (no newline)
+        // Builtin: eprintln() - write string to stderr + newline
+        if (idExpr->name == "print" || idExpr->name == "println" ||
+            idExpr->name == "eprint" || idExpr->name == "eprintln") {
             if (expr->arguments.size() != 1) {
                 addError(idExpr->name + "() requires exactly one argument", expr);
                 return typeSystem->getErrorType();
@@ -1239,7 +1242,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            // print/println return i64 (bytes written from write() syscall)
+            // print/println/eprint/eprintln return i64 (bytes written from write() syscall)
             return typeSystem->getPrimitiveType("int64");
         }
         

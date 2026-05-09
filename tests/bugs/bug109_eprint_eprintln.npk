@@ -1,0 +1,9 @@
+// bug109: POLISH-001 — eprint/eprintln builtins should compile and emit to stderr
+// Both are analogous to print/println but target stderr (fd 2).
+// This test verifies they compile and run without error.
+func:main = int32() {
+    eprint("err: ");
+    eprintln("something went wrong");
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
