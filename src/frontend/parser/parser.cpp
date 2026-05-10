@@ -3080,7 +3080,28 @@ ASTNodePtr Parser::parseVarDecl() {
         nameToken.type == TokenType::TOKEN_KW_GC) {     // 'gc'    is contextual (allocation qualifier)
         advance();
     } else {
-        error("Expected variable name");
+        // Give a specific message if the next token is a reserved keyword
+        static const std::unordered_map<std::string, std::string> reservedSuggestion = {
+            {"ok",      "ok_val, result_ok, or similar"},
+            {"fail",    "fail_cnt, err, or similar"},
+            {"raw",     "raw_val, raw_data, or similar"},
+            {"end",     "end_pos, end_idx, or similar"},
+            {"stream",  "stream_val, data_stream, or similar"},
+            {"is",      "is_ok, is_done, or similar"},
+            {"limit",   "limit_val, max_count, or similar"},
+            {"binary",  "binary_val, bin_data, or similar"},
+            {"process", "process_id, proc, or similar"},
+            {"pipe",    "pipe_val, chan, or similar"},
+            {"debug",   "debug_val, dbg, or similar"},
+        };
+        std::string lexeme = peek().lexeme;
+        auto it = reservedSuggestion.find(lexeme);
+        if (it != reservedSuggestion.end()) {
+            error("'" + lexeme + "' is a reserved keyword and cannot be used as a variable name. "
+                  "Consider: " + it->second);
+        } else {
+            error("Expected variable name");
+        }
         return nullptr;
     }
     
