@@ -1,0 +1,41 @@
+// bug115 — POLISH-006: pick statement on int64 values
+//
+// Verifies that pick works on int64 selector values, including large 64-bit
+// literal arms and the wildcard (*) fallthrough.
+//
+// Test 1: match large int64 literal arm (1000000000000i64 → r = 2)
+// Test 2: wildcard taken for unmatched int64 (42i64 → r = 99)
+// Exits 0 iff both pass.
+
+func:test_int64_arm = int32() {
+    int64:v = 1000000000000i64;
+    int32:r = 0i32;
+    pick (v) {
+        (999999999999i64) { r = 1i32; },
+        (1000000000000i64) { r = 2i32; },
+        (*) { r = 3i32; }
+    }
+    if (r != 2i32) { pass 1; }
+    pass 0;
+};
+
+func:test_int64_wild = int32() {
+    int64:v = 42i64;
+    int32:r = 0i32;
+    pick (v) {
+        (1i64) { r = 1i32; },
+        (2i64) { r = 2i32; },
+        (*) { r = 99i32; }
+    }
+    if (r != 99i32) { pass 1; }
+    pass 0;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_int64_arm();
+    if (r1 != 0i32) { exit 1; }
+    int32:r2 = raw test_int64_wild();
+    if (r2 != 0i32) { exit 2; }
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };

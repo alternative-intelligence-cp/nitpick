@@ -423,3 +423,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0223.sh")
         LABELS "builtins;cli-args;loop-control;POLISH-003;POLISH-011;v0.22.3"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0224.sh")
+    add_test(
+        NAME bug_tests_v0224
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0224.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0224 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "pick;bitwise;integer-types;POLISH-006;POLISH-007;v0.22.4"
+    )
+endif()

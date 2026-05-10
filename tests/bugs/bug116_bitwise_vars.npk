@@ -1,0 +1,56 @@
+// bug116 — POLISH-007: bitwise operators on int32 and uint8 variables
+//
+// Verifies that &, |, ^, >>, << operate correctly on runtime variables
+// (not just literals that can be constant-folded at compile time).
+//
+// int32 tests: all five operators with known hex values
+//   a = 0xFF00 = 65280,  b = 0x0F0F = 3855
+//   a & b = 0x0F00 = 3840
+//   a | b = 0xFF0F = 65295
+//   a ^ b = 0xF00F = 61455
+//   a >> 4 = 0x0FF0 = 4080
+//   b << 4 = 0xF0F0 = 61680
+//
+// uint8 tests: AND / OR / XOR on 8-bit variables
+//   0xF0 & 0x0F = 0x00 = 0
+//   0xF0 | 0x0F = 0xFF = 255
+//   0xF0 ^ 0x0F = 0xFF = 255
+//
+// Exits 0 iff all checks pass.
+
+func:test_int32_bitwise = int32() {
+    int32:a = 0xFF00i32;
+    int32:b = 0x0F0Fi32;
+    int32:r_and = a & b;
+    int32:r_or  = a | b;
+    int32:r_xor = a ^ b;
+    int32:r_shr = a >> 4i32;
+    int32:r_shl = b << 4i32;
+    if (r_and != 3840i32)  { pass 1; }
+    if (r_or  != 65295i32) { pass 2; }
+    if (r_xor != 61455i32) { pass 3; }
+    if (r_shr != 4080i32)  { pass 4; }
+    if (r_shl != 61680i32) { pass 5; }
+    pass 0;
+};
+
+func:test_uint8_bitwise = int32() {
+    uint8:a = 0xF0u8;
+    uint8:b = 0x0Fu8;
+    uint8:r_and = a & b;
+    uint8:r_or  = a | b;
+    uint8:r_xor = a ^ b;
+    if (r_and != 0u8)   { pass 1; }
+    if (r_or  != 255u8) { pass 2; }
+    if (r_xor != 255u8) { pass 3; }
+    pass 0;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_int32_bitwise();
+    if (r1 != 0i32) { exit r1; }
+    int32:r2 = raw test_uint8_bitwise();
+    if (r2 != 0i32) { exit r2; }
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };

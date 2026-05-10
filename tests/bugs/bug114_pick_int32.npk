@@ -1,0 +1,42 @@
+// bug114 — POLISH-006: pick statement on int32 values
+//
+// Verifies that pick works on integer selector values with literal arm patterns
+// and the wildcard (*) fallthrough arm.
+//
+// Test 1: match arm 2 of 3 (value 2i32 → r = 300)
+// Test 2: wildcard arm taken when no literal matches (value 7i32 → r2 = 42)
+// Exits 0 iff both pass.
+
+func:test_arm = int32() {
+    int32:v = 2i32;
+    int32:r = 0i32;
+    pick (v) {
+        (0i32) { r = 100i32; },
+        (1i32) { r = 200i32; },
+        (2i32) { r = 300i32; },
+        (*) { r = 999i32; }
+    }
+    if (r != 300i32) { pass 1; }
+    pass 0;
+};
+
+func:test_wildcard = int32() {
+    int32:v = 7i32;
+    int32:r = 0i32;
+    pick (v) {
+        (1i32) { r = 1i32; },
+        (2i32) { r = 2i32; },
+        (*) { r = 42i32; }
+    }
+    if (r != 42i32) { pass 1; }
+    pass 0;
+};
+
+func:main = int32() {
+    int32:r1 = raw test_arm();
+    if (r1 != 0i32) { exit 1; }
+    int32:r2 = raw test_wildcard();
+    if (r2 != 0i32) { exit 2; }
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };
