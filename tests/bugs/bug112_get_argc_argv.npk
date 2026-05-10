@@ -1,0 +1,19 @@
+// bug112 — POLISH-003: get_argc() / get_argv() builtins
+//
+// Tests that get_argc() and get_argv(i) work correctly.
+// This program is run by the test harness with two arguments: "alpha" "beta".
+//   - get_argc() must return 2 (user arg count, excluding program name)
+//   - get_argv(0) must return "alpha" (printed to stdout for capture)
+//   - exit code must equal get_argc() (2) so the harness can verify the count
+//
+// When run with no args the harness uses expect_compile_run (exit 0 path).
+
+func:main = int32() {
+    int32:n = get_argc();
+    if (n == 0i32) {
+        exit 0;
+    }
+    println(get_argv(0i32));
+    exit n;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };

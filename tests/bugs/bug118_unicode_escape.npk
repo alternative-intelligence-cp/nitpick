@@ -1,0 +1,39 @@
+// bug118 — POLISH-009: \u{NNNN} unicode escape sequences in string literals
+//
+// Verifies that \u{NNNN} (1–6 hex digits) is decoded to the correct UTF-8
+// byte sequence for the given Unicode codepoint.
+//
+// Test 1: ASCII range \u{41} == "A"
+// Test 2: 2-byte UTF-8: \u{A9} == "©" (U+00A9, 0xC2 0xA9)
+// Test 3: 3-byte UTF-8: \u{20AC} == "€" (U+20AC, 0xE2 0x82 0xAC)
+// Test 4: 4-byte UTF-8: \u{1F600} == "😀" (U+1F600)
+// Test 5: \u{} in template literal — same decoding
+// Exits 0 iff all pass.
+
+func:main = int32() {
+    // ASCII: \u{41} == "A"
+    string:s1 = "\u{41}";
+    if (s1 != "A") { exit 1; }
+
+    // 2-byte: copyright sign ©
+    string:s2 = "\u{A9}";
+    string:s2_ref = "©";
+    if (s2 != s2_ref) { exit 2; }
+
+    // 3-byte: euro sign €
+    string:s3 = "\u{20AC}";
+    string:s3_ref = "€";
+    if (s3 != s3_ref) { exit 3; }
+
+    // 4-byte: grinning face emoji 😀
+    string:s4 = "\u{1F600}";
+    string:s4_ref = "😀";
+    if (s4 != s4_ref) { exit 4; }
+
+    // Template literal: \u{} works inside backtick strings
+    string:s5 = `\u{48}\u{69}`;
+    if (s5 != "Hi") { exit 5; }
+
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };

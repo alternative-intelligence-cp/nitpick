@@ -1229,7 +1229,10 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         
         // Builtin: print() - write string as-is (no newline)
         // Builtin: println() - write string + newline
-        if (idExpr->name == "print" || idExpr->name == "println") {
+        // Builtin: eprint() - write string to stderr (no newline)
+        // Builtin: eprintln() - write string to stderr + newline
+        if (idExpr->name == "print" || idExpr->name == "println" ||
+            idExpr->name == "eprint" || idExpr->name == "eprintln") {
             if (expr->arguments.size() != 1) {
                 addError(idExpr->name + "() requires exactly one argument", expr);
                 return typeSystem->getErrorType();
@@ -1239,7 +1242,7 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
-            // print/println return i64 (bytes written from write() syscall)
+            // print/println/eprint/eprintln return i64 (bytes written from write() syscall)
             return typeSystem->getPrimitiveType("int64");
         }
         
@@ -1297,6 +1300,34 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         if (idExpr->name == "stdin_read_all") {
             if (expr->arguments.size() != 0) {
                 addError("stdin_read_all() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+
+        // ====================================================================
+        // CLI ARG BUILTINS — get_argc() / get_argv(i)  (POLISH-003, v0.22.3)
+        // ====================================================================
+
+        // Builtin: get_argc() -> int32
+        // Returns the number of user-supplied arguments (excludes program name).
+        if (idExpr->name == "get_argc") {
+            if (expr->arguments.size() != 0) {
+                addError("get_argc() takes no arguments", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // Builtin: get_argv(int32:i) -> string
+        // Returns the i-th user argument (0-based, after the program name).
+        if (idExpr->name == "get_argv") {
+            if (expr->arguments.size() != 1) {
+                addError("get_argv() requires exactly one int32 argument", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();
             }
             return typeSystem->getPrimitiveType("string");

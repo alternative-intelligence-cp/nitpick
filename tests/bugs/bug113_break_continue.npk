@@ -1,0 +1,35 @@
+// bug113 — POLISH-011: break and continue in loop bodies
+//
+// Tests that break and continue correctly control loop iteration.
+//
+// Test 1 — while + break:
+//   Sum 0+1+...+6, break when i==7. Expected sum = 21.
+//
+// Test 2 — loop() + continue:
+//   Sum 0..9 skipping 3 via continue. Expected sum = 42.
+//   (0+1+2+4+5+6+7+8+9 = 42)
+//
+// Exits 0 iff both tests pass.
+
+func:main = int32() {
+    // --- Test 1: break in while ---
+    int32:total = 0i32;
+    int32:i = 0i32;
+    while (i < 20i32) {
+        if (i == 7i32) { break; }
+        total = total + i;
+        i = i + 1i32;
+    }
+    if (total != 21i32) { exit 1; }
+
+    // --- Test 2: continue in loop() ---
+    int32:sum = 0i32;
+    loop (0i32, 10i32, 1i32) {
+        if ($ == 3i32) { continue; }
+        sum = sum + $;
+    }
+    if (sum != 42i32) { exit 2; }
+
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };

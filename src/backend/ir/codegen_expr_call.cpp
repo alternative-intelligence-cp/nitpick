@@ -876,9 +876,13 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     
     // print(string) - write string as-is (no newline)
     // println(string) - write string + newline (convenience)
-    // Both minimal primitives with same interface, different intent
-    if (callee_ident->name == "print" || callee_ident->name == "println") {
-        bool add_newline = (callee_ident->name == "println");
+    // eprint(string) - write string to stderr (no newline)
+    // eprintln(string) - write string to stderr + newline
+    // All minimal primitives with same interface, different intent/destination
+    if (callee_ident->name == "print" || callee_ident->name == "println" ||
+        callee_ident->name == "eprint" || callee_ident->name == "eprintln") {
+        bool add_newline = (callee_ident->name == "println" || callee_ident->name == "eprintln");
+        bool use_stderr  = (callee_ident->name == "eprint"  || callee_ident->name == "eprintln");
         
         if (expr->arguments.size() != 1) {
             throw std::runtime_error(callee_ident->name + "() requires exactly one string argument");
@@ -964,10 +968,16 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             );
         }
         
-        // Declare runtime function: npk_print_cstr or npk_println_cstr
-        // Signature: int64_t npk_print[ln]_cstr(const char* str)
+        // Declare runtime function: npk_print_cstr, npk_println_cstr,
+        // npk_eprint_cstr, or npk_eprintln_cstr
+        // Signature: int64_t npk_*_cstr(const char* str)
         // Returns: Number of bytes written, or -1 on error
-        const char* func_name = add_newline ? "npk_println_cstr" : "npk_print_cstr";
+        const char* func_name;
+        if (use_stderr) {
+            func_name = add_newline ? "npk_eprintln_cstr" : "npk_eprint_cstr";
+        } else {
+            func_name = add_newline ? "npk_println_cstr" : "npk_print_cstr";
+        }
         llvm::Function* npk_print = module->getFunction(func_name);
         if (!npk_print) {
             llvm::FunctionType* print_type = llvm::FunctionType::get(
@@ -1642,7 +1652,48 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         llvm::Value* cstr = builder.CreateCall(read_func, {}, "stdin_readall_call");
         return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "stdin_all_str");
     }
-    
+
+    // ====================================================================
+    // CLI ARG BUILTINS — get_argc() / get_argv(i)  (POLISH-003, v0.22.3)
+    // ====================================================================
+
+    // get_argc() -> int32: number of user args (excludes program name)
+    if (callee_ident->name == "get_argc") {
+        if (expr->arguments.size() != 0) {
+            throw std::runtime_error("get_argc() takes no arguments");
+        }
+        llvm::Function* fn = module->getFunction("npk_get_argc_builtin");
+        if (!fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                llvm::Type::getInt32Ty(context), {}, false);
+            fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                        "npk_get_argc_builtin", module);
+        }
+        return builder.CreateCall(fn, {}, "get_argc_call");
+    }
+
+    // get_argv(int32:i) -> string: i-th user arg (0-based, after program name)
+    if (callee_ident->name == "get_argv") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("get_argv() requires exactly one int32 argument");
+        }
+        llvm::Value* idx = codegenExpressionNode(expr->arguments[0].get(), this);
+        // Ensure i32 (widen if needed)
+        if (idx->getType()->isIntegerTy() && !idx->getType()->isIntegerTy(32)) {
+            idx = builder.CreateIntCast(idx, llvm::Type::getInt32Ty(context), true, "argv_idx");
+        }
+        llvm::Function* fn = module->getFunction("npk_get_argv_cstr");
+        if (!fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                llvm::PointerType::get(context, 0),
+                {llvm::Type::getInt32Ty(context)}, false);
+            fn = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                        "npk_get_argv_cstr", module);
+        }
+        llvm::Value* cstr = builder.CreateCall(fn, {idx}, "get_argv_cstr");
+        return builder.CreateCall(getOrDeclareStringFromCstr(), {cstr}, "get_argv_str");
+    }
+
     // ====================================================================
     // FRAC (EXACT RATIONAL) ARITHMETIC INTRINSICS
     // ====================================================================

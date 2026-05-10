@@ -1,12 +1,31 @@
-# Nitpick v0.20.5 — Known Issues & Limitations
+# Nitpick v0.22.7 — Known Issues & Limitations
 
-Last updated: v0.20.5
+Last updated: v0.22.7
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
 
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.22.x
+
+| ID | Description | Resolution | Version |
+|----|-------------|------------|---------|
+| POLISH-001 | `eprint`/`eprintln` not wired in type checker/codegen | Implemented; stdlib builtins | v0.22.2 |
+| POLISH-002 | `.aria` extension rejected by module resolver | `isValidSourceFile()` accepts both `.npk` and `.aria` | v0.22.2 |
+| POLISH-003 | `npk_arg(i)` broken ABI | Replaced with `get_argc`/`get_argv` builtins | v0.22.3 |
+| POLISH-004 | File extension conventions undocumented | `use_import.md` File Extension Conventions section | v0.22.6 |
+| POLISH-006 | `pick` on integer values untested | Regression tests added; already worked | v0.22.4 |
+| POLISH-007 | Bitwise ops on int32 variables untested | Regression tests added; already worked | v0.22.4 |
+| POLISH-008 | Reserved keyword as var name → cryptic error | Parser emits friendly message with suggestions | v0.22.6 |
+| POLISH-009 | `\xNN` / `\u{NNNN}` escape sequences unsupported | Added to all three string scanners in lexer | v0.22.5 |
+| POLISH-010 | "type X but expects X" multi-module import clash | `checkFuncDecl()` in-place symbol update | v0.22.2 |
+| POLISH-011 | `break`/`continue` not in loop bodies | Already implemented end-to-end; tests added | v0.22.3 |
+| POLISH-012 | `pass n;` not counted as variable use | `collectIdentifiers()` PASS case added | v0.22.1 |
+| POLISH-013 | `print()` vs C stdio buffering interop | `ffi_advanced.md` Stdio Buffering section | v0.22.1 |
+| POLISH-014 | `while` body not scanned by unused-var checker | `collectIdentifiers()` WHILE+6 cases added | v0.22.1 |
+| — | `isValidAriaFile()` pre-rebrand name | Renamed to `isValidSourceFile()` | v0.22.7 |
 
 ### Resolved in v0.20.x
 

@@ -1127,6 +1127,85 @@ void Lexer::scanString() {
                 case '\\': value += '\\'; break;
                 case '"': value += '"'; break;
                 case '0': value += '\0'; break;
+                case 'x': {
+                    // \xNN — exactly 2 hex digits
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    if (isAtEnd() || hexVal(peek()) < 0) {
+                        error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                        break;
+                    }
+                    int hi = hexVal(advance());
+                    if (isAtEnd() || hexVal(peek()) < 0) {
+                        error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                        break;
+                    }
+                    int lo = hexVal(advance());
+                    value += static_cast<char>((hi << 4) | lo);
+                    break;
+                }
+                case 'u': {
+                    // \u{NNNN} — 1-6 hex digits, encoded as UTF-8
+                    if (isAtEnd() || peek() != '{') {
+                        error("\\u escape requires '{' (e.g. \\u{1F600})");
+                        break;
+                    }
+                    advance(); // consume '{'
+                    uint32_t codepoint = 0;
+                    int digits = 0;
+                    while (!isAtEnd() && peek() != '}') {
+                        char c = peek();
+                        int d;
+                        if (c >= '0' && c <= '9') d = c - '0';
+                        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+                        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+                        else {
+                            error("Invalid hex digit in \\u{} escape");
+                            break;
+                        }
+                        codepoint = (codepoint << 4) | static_cast<uint32_t>(d);
+                        advance();
+                        digits++;
+                        if (digits > 6) {
+                            error("\\u{} escape: too many hex digits (max 6)");
+                            break;
+                        }
+                    }
+                    if (isAtEnd() || peek() != '}') {
+                        error("\\u{} escape: missing closing '}'");
+                        break;
+                    }
+                    advance(); // consume '}'
+                    if (digits == 0) {
+                        error("\\u{} escape: no hex digits provided");
+                        break;
+                    }
+                    if (codepoint > 0x10FFFF) {
+                        error("\\u{} escape: code point exceeds U+10FFFF");
+                        break;
+                    }
+                    // Encode as UTF-8
+                    if (codepoint < 0x80) {
+                        value += static_cast<char>(codepoint);
+                    } else if (codepoint < 0x800) {
+                        value += static_cast<char>(0xC0 | (codepoint >> 6));
+                        value += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    } else if (codepoint < 0x10000) {
+                        value += static_cast<char>(0xE0 | (codepoint >> 12));
+                        value += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                        value += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    } else {
+                        value += static_cast<char>(0xF0 | (codepoint >> 18));
+                        value += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+                        value += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                        value += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    }
+                    break;
+                }
                 default:
                     std::ostringstream oss;
                     oss << "Unknown escape sequence: \\" << escaped;
@@ -1181,6 +1260,29 @@ void Lexer::scanCharacter() {
             case '\\': value = '\\'; break;
             case '\'': value = '\''; break;
             case '0': value = '\0'; break;
+            case 'x': {
+                // \xNN — exactly 2 hex digits
+                auto hexVal = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                    return -1;
+                };
+                if (isAtEnd() || hexVal(peek()) < 0) {
+                    error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                    value = '?';
+                    break;
+                }
+                int hi = hexVal(advance());
+                if (isAtEnd() || hexVal(peek()) < 0) {
+                    error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                    value = '?';
+                    break;
+                }
+                int lo = hexVal(advance());
+                value = static_cast<char>((hi << 4) | lo);
+                break;
+            }
             default:
                 std::ostringstream oss;
                 oss << "Unknown escape sequence: \\" << escaped;
@@ -1327,6 +1429,85 @@ void Lexer::scanTemplateLiteral() {
                 case '`': currentPart += '`'; break;  // Escaped backtick
                 case '&': currentPart += '&'; break;  // Escaped ampersand
                 case '0': currentPart += '\0'; break;
+                case 'x': {
+                    // \xNN — exactly 2 hex digits
+                    auto hexVal = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    if (isAtEnd() || hexVal(peek()) < 0) {
+                        error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                        break;
+                    }
+                    int hi = hexVal(advance());
+                    if (isAtEnd() || hexVal(peek()) < 0) {
+                        error("\\x escape requires exactly 2 hex digits (e.g. \\x41)");
+                        break;
+                    }
+                    int lo = hexVal(advance());
+                    currentPart += static_cast<char>((hi << 4) | lo);
+                    break;
+                }
+                case 'u': {
+                    // \u{NNNN} — 1-6 hex digits, encoded as UTF-8
+                    if (isAtEnd() || peek() != '{') {
+                        error("\\u escape requires '{' (e.g. \\u{1F600})");
+                        break;
+                    }
+                    advance(); // consume '{'
+                    uint32_t codepoint = 0;
+                    int digits = 0;
+                    while (!isAtEnd() && peek() != '}') {
+                        char c = peek();
+                        int d;
+                        if (c >= '0' && c <= '9') d = c - '0';
+                        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+                        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+                        else {
+                            error("Invalid hex digit in \\u{} escape");
+                            break;
+                        }
+                        codepoint = (codepoint << 4) | static_cast<uint32_t>(d);
+                        advance();
+                        digits++;
+                        if (digits > 6) {
+                            error("\\u{} escape: too many hex digits (max 6)");
+                            break;
+                        }
+                    }
+                    if (isAtEnd() || peek() != '}') {
+                        error("\\u{} escape: missing closing '}'");
+                        break;
+                    }
+                    advance(); // consume '}'
+                    if (digits == 0) {
+                        error("\\u{} escape: no hex digits provided");
+                        break;
+                    }
+                    if (codepoint > 0x10FFFF) {
+                        error("\\u{} escape: code point exceeds U+10FFFF");
+                        break;
+                    }
+                    // Encode as UTF-8
+                    if (codepoint < 0x80) {
+                        currentPart += static_cast<char>(codepoint);
+                    } else if (codepoint < 0x800) {
+                        currentPart += static_cast<char>(0xC0 | (codepoint >> 6));
+                        currentPart += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    } else if (codepoint < 0x10000) {
+                        currentPart += static_cast<char>(0xE0 | (codepoint >> 12));
+                        currentPart += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                        currentPart += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    } else {
+                        currentPart += static_cast<char>(0xF0 | (codepoint >> 18));
+                        currentPart += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+                        currentPart += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+                        currentPart += static_cast<char>(0x80 | (codepoint & 0x3F));
+                    }
+                    break;
+                }
                 default:
                     // For unknown escapes, just include the character
                     currentPart += escaped;

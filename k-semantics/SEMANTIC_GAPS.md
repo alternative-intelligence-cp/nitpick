@@ -1,6 +1,6 @@
 # Nitpick K Semantics — Semantic Gaps
 
-**Last updated:** v0.21.6 (May 2026)
+**Last updated:** v0.22.7 (May 2026)
 
 This file tracks language features and type-system constructs that are **not yet
 formalized** in `k-semantics/aria.k`. Items are removed here when they graduate

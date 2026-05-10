@@ -102,7 +102,7 @@ public:
      * @param path File path to check
      * @return True if file exists and has .aria extension
      */
-    static bool isValidAriaFile(const std::string& path);
+    static bool isValidSourceFile(const std::string& path);
     
     /**
      * Convert a logical module path to a file system path
