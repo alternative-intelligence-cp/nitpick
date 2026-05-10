@@ -436,3 +436,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0224.sh")
         LABELS "pick;bitwise;integer-types;POLISH-006;POLISH-007;v0.22.4"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0225.sh")
+    add_test(
+        NAME bug_tests_v0225
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0225.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0225 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "lexer;escapes;unicode;POLISH-009;v0.22.5"
+    )
+endif()

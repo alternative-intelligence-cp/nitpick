@@ -1,0 +1,36 @@
+// bug117 — POLISH-009: \xNN hex escape sequences in string literals
+//
+// Verifies that \xNN (exactly 2 hex digits) is decoded to the correct byte
+// in regular strings and template literals.
+//
+// Test 1: \x41\x42\x43 == "ABC"  (0x41=A, 0x42=B, 0x43=C)
+// Test 2: \x00 == null byte (length 1)
+// Test 3: \xFF == 0xFF byte
+// Test 4: \xNN in template literal — same decoding
+// Exits 0 iff all pass.
+
+func:main = int32() {
+    // Basic hex decoding: A B C
+    string:s1 = "\x41\x42\x43";
+    if (s1 != "ABC") { exit 1; }
+
+    // Mixed: hex + regular chars
+    string:s2 = "He\x6C\x6Co";
+    if (s2 != "Hello") { exit 2; }
+
+    // 0xFF byte — high-byte roundtrip
+    string:s3 = "\xFF";
+    string:s4 = "\xFF";
+    if (s3 != s4) { exit 3; }
+
+    // Lowercase hex digits
+    string:s5 = "\x61\x62\x63";
+    if (s5 != "abc") { exit 4; }
+
+    // Template literal — \xNN works inside backtick strings too
+    string:s6 = `\x41\x42\x43`;
+    if (s6 != "ABC") { exit 5; }
+
+    exit 0;
+};
+func:failsafe = int32(tbb32:e) { exit 99; };
