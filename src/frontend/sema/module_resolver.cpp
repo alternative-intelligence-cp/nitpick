@@ -98,7 +98,7 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
         std::string currentDir = getDirectory(currentModulePath);
         std::string resolved = normalizePath(filePath, currentDir);
         
-        if (isValidAriaFile(resolved)) {
+        if (isValidSourceFile(resolved)) {
             return resolved;
         }
         
@@ -108,7 +108,7 @@ std::string ModuleResolver::resolveModulePath(const std::vector<std::string>& pa
         for (const auto& searchPath : getSearchPaths()) {
             fs::path candidate = fs::path(searchPath) / filePath;
             std::string candidateStr = candidate.lexically_normal().string();
-            if (isValidAriaFile(candidateStr)) {
+            if (isValidSourceFile(candidateStr)) {
                 return candidateStr;
             }
         }
@@ -162,13 +162,14 @@ std::vector<std::string> ModuleResolver::getSearchPaths() const {
     return searchPaths;
 }
 
-bool ModuleResolver::isValidAriaFile(const std::string& path) {
+bool ModuleResolver::isValidSourceFile(const std::string& path) {
     if (path.empty()) return false;
     
     try {
         fs::path p(path);
         return fs::exists(p) && fs::is_regular_file(p) &&
-               (p.extension() == ".npk" || p.extension() == ".aria");
+               (p.extension() == ".npk" ||
+                p.extension() == ".aria");  // legacy: also accepts .aria (pre-rebrand extension, POLISH-002 v0.22.2)
     } catch (...) {
         return false;
     }
@@ -256,11 +257,11 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
     // Try pattern 1: <base>/path/to/module.npk (then .aria)
     // Example: std.io -> /usr/lib/nitpick/std/io.npk
     std::string filePathNpk = buildPath(baseDir, components, ".npk");
-    if (isValidAriaFile(filePathNpk)) {
+    if (isValidSourceFile(filePathNpk)) {
         return filePathNpk;
     }
     std::string filePathAria = buildPath(baseDir, components, ".aria");
-    if (isValidAriaFile(filePathAria)) {
+    if (isValidSourceFile(filePathAria)) {
         return filePathAria;
     }
 
@@ -270,11 +271,11 @@ std::string ModuleResolver::tryFindModule(const std::string& baseDir,
     std::vector<std::string> modComponents = components;
     modComponents.push_back("mod");
     std::string modPathNpk = buildPath(baseDir, modComponents, ".npk");
-    if (isValidAriaFile(modPathNpk)) {
+    if (isValidSourceFile(modPathNpk)) {
         return modPathNpk;
     }
     std::string modPathAria = buildPath(baseDir, modComponents, ".aria");
-    if (isValidAriaFile(modPathAria)) {
+    if (isValidSourceFile(modPathAria)) {
         return modPathAria;
     }
     
