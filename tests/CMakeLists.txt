@@ -487,3 +487,16 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_macro_basic.npk")
         LABELS "macros;MACRO-001;v0.23.0"
     )
 endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0231.sh")
+    add_test(
+        NAME bug_tests_v0231
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0231.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0231 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-001;MACRO-002;v0.23.1"
+    )
+endif()
