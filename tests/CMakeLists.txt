@@ -462,3 +462,28 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0226.sh")
         LABELS "parser;diagnostics;POLISH-008;v0.22.6"
     )
 endif()
+
+# v0.23.0: Macro system smoke test — basic pipeline end-to-end (MACRO-001)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_macro_basic.npk")
+    add_test(
+        NAME macro_smoke_compile
+        COMMAND ${CMAKE_BINARY_DIR}/npkc
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_macro_basic.npk
+            -o ${CMAKE_BINARY_DIR}/test_macro_smoke
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(macro_smoke_compile PROPERTIES
+        TIMEOUT 30
+        LABELS "macros;MACRO-001;v0.23.0"
+    )
+
+    add_test(
+        NAME macro_smoke_run
+        COMMAND ${CMAKE_BINARY_DIR}/test_macro_smoke
+    )
+    set_tests_properties(macro_smoke_run PROPERTIES
+        DEPENDS macro_smoke_compile
+        TIMEOUT 10
+        LABELS "macros;MACRO-001;v0.23.0"
+    )
+endif()
