@@ -31,6 +31,7 @@ int32_t npk_get_argc(void) {
 }
 
 /* Returns argv[index] as an AriaString*, or empty string if OOB */
+/* DEPRECATED: ABI-broken (returns pointer, not value). Use get_argv() builtin. */
 AriaString* npk_arg(int32_t index) {
     AriaString* result = (AriaString*)malloc(sizeof(AriaString));
     if (!result) {
@@ -49,4 +50,22 @@ AriaString* npk_arg(int32_t index) {
     }
     result->length = len;
     return result;
+}
+
+/* Returns the number of user-supplied arguments (argc - 1, excludes program name).
+ * Used by the get_argc() builtin. */
+int32_t npk_get_argc_builtin(void) {
+    int32_t n = g_argc - 1;
+    return n > 0 ? n : 0;
+}
+
+/* Returns argv[index + 1] as a null-terminated C string (excludes program name).
+ * index 0 = first user argument. Returns "" if out of bounds.
+ * Used by the get_argv() builtin via getOrDeclareStringFromCstr(). */
+const char* npk_get_argv_cstr(int32_t index) {
+    int32_t real = index + 1;
+    if (real < 1 || real >= g_argc || !g_argv || !g_argv[real]) {
+        return "";
+    }
+    return g_argv[real];
 }

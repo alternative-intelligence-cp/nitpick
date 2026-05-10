@@ -768,7 +768,7 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
     static const std::unordered_set<std::string> reservedBuiltins = {
         "ok", "print", "println", "eprint", "eprintln", "stdout_write", "stderr_write",
         "to_string", "fail", "pass", "drop", "raw", "sleep_ms", "exit", "env_get", "sort_lines",
-        "sys"
+        "sys", "get_argc", "get_argv"
     };
     if (reservedBuiltins.count(stmt->varName)) {
         addError("'" + stmt->varName + "' is a reserved builtin and cannot be used as a variable name", stmt);
