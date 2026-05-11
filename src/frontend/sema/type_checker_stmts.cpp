@@ -5260,6 +5260,7 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
 
 ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTNodePtr>& substitutions) {
     if (!node) return nullptr;
+    static uint64_t macroHygieneCounter = 0;
     
     // If this is an identifier that matches a macro parameter, substitute it
     if (node->type == ASTNode::NodeType::IDENTIFIER) {
@@ -5313,8 +5314,30 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
     if (node->type == ASTNode::NodeType::BLOCK) {
         auto* block = static_cast<BlockStmt*>(node);
         std::vector<ASTNodePtr> newStmts;
+        std::map<std::string, ASTNodePtr> scopedSubstitutions = substitutions;
         for (const auto& s : block->statements) {
-            auto cloned = cloneAST(s.get(), substitutions);
+            if (!s) continue;
+
+            // Hygiene: local variables introduced by macro body must not collide
+            // with names in the caller scope. Rename each declaration to a fresh
+            // internal symbol and remap subsequent identifier uses in this scope.
+            if (s->type == ASTNode::NodeType::VAR_DECL) {
+                auto* var = static_cast<VarDeclStmt*>(s.get());
+                auto newInit = var->initializer ? cloneAST(var->initializer.get(), scopedSubstitutions) : nullptr;
+                auto newTypeNode = var->typeNode ? cloneAST(var->typeNode.get(), scopedSubstitutions) : nullptr;
+
+                std::string freshName = "__macro_" + var->varName + "_" + std::to_string(++macroHygieneCounter);
+                auto clonedDecl = std::make_shared<VarDeclStmt>(newTypeNode, freshName, newInit, var->line, var->column);
+                clonedDecl->typeName = var->typeName;
+                clonedDecl->isWild = var->isWild;
+                clonedDecl->isConst = var->isConst;
+                newStmts.push_back(clonedDecl);
+
+                scopedSubstitutions[var->varName] = std::make_shared<IdentifierExpr>(freshName, var->line, var->column);
+                continue;
+            }
+
+            auto cloned = cloneAST(s.get(), scopedSubstitutions);
             if (cloned) newStmts.push_back(cloned);
         }
         return std::make_shared<BlockStmt>(newStmts, block->line, block->column);
