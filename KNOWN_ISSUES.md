@@ -1,12 +1,29 @@
-# Nitpick v0.22.7 — Known Issues & Limitations
+# Nitpick v0.23.7 — Known Issues & Limitations
 
-Last updated: v0.22.7
+Last updated: v0.23.7
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
 
 ---
 
+## Deferred — v0.23.x
+
+### MACRO-007 — Complex Code-Generating Macros (Deferred)
+Macros that generate code requiring a C-shim bridge (heavy FFI body generation)
+are deferred. Current macros support all pure-Nitpick body patterns. C-bridging
+code generation macros require additional codegen work planned for v0.24.x+.
+
+---
+
 ## Resolved Bugs (by version)
+
+### Resolved in v0.23.x
+
+| ID | Description | Resolution | Version |
+|----|-------------|------------|---------|
+| MACRO-003 | Macro variable hygiene | gensym/cloneAST per call site | v0.23.2 |
+| (unnamed) | `case RETURN:` dropped from `checkStatement()` in v0.23.5 | Restored in `ba66d8a` | v0.23.6 |
+
 
 ### Resolved in v0.22.x
 

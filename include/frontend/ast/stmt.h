@@ -763,12 +763,16 @@ public:
     std::vector<std::string> paramNames;  // Parameter placeholder names
     ASTNodePtr body;                      // Template AST (BlockStmt or single expression)
     bool isExpression;                    // true = expression macro, false = statement macro
+        bool isVariadic;                      // true if macro has a rest parameter
+        std::string restParamName;            // Name of the variadic rest parameter
     
     MacroDeclStmt(const std::string& name, const std::vector<std::string>& params,
-                  ASTNodePtr bodyNode, bool exprMacro = false, int line = 0, int column = 0)
+                                    ASTNodePtr bodyNode, bool exprMacro = false,
+                                    bool variadic = false, const std::string& restParam = "",
+                                    int line = 0, int column = 0)
         : ASTNode(NodeType::MACRO_DECL, line, column),
           macroName(name), paramNames(params), body(std::move(bodyNode)),
-          isExpression(exprMacro) {}
+                    isExpression(exprMacro), isVariadic(variadic), restParamName(restParam) {}
     
     std::string toString() const override;
 };

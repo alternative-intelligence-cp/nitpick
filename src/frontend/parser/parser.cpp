@@ -709,6 +709,33 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<ComptimeExpr>(expr, line, col);
     }
     
+    // Built-in cfg! macro invocation (cfg is tokenized as keyword, not identifier)
+    if (token.type == TokenType::TOKEN_KW_CFG) {
+        int line = token.line;
+        int col = token.column;
+        advance();  // consume cfg
+
+        if (check(TokenType::TOKEN_BANG) &&
+            current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_LEFT_PAREN) {
+            advance();  // consume !
+            advance();  // consume (
+
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) arguments.push_back(arg);
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after macro arguments");
+            return std::make_shared<MacroInvocationExpr>("cfg", arguments, line, col);
+        }
+
+        error("'cfg' keyword is only valid as an attribute #[cfg(...)] or built-in macro cfg!(...)");
+        return nullptr;
+    }
+
     // Identifier
     if (token.type == TokenType::TOKEN_IDENTIFIER) {
         std::string lexeme = token.lexeme;  // Save before advance()
@@ -2973,6 +3000,38 @@ ASTNodePtr Parser::parseStatement() {
         return parseAstackStatement();
     }
     
+    // v0.23.5/v0.23.6: Check for statement-position macro invocation: name!(args); / cfg!(args);
+    // MACRO-006: Allow macros to be invoked at statement level
+    if (peek().type == TokenType::TOKEN_IDENTIFIER || peek().type == TokenType::TOKEN_KW_CFG) {
+        size_t saved = current;
+        Token idToken = peek();
+        std::string macroName = (idToken.type == TokenType::TOKEN_KW_CFG) ? "cfg" : idToken.lexeme;
+        advance(); // consume identifier
+        
+        if (check(TokenType::TOKEN_BANG) && 
+            current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_LEFT_PAREN) {
+            // It's a macro invocation at statement level
+            advance();  // consume !
+            advance();  // consume (
+            
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) arguments.push_back(arg);
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after macro arguments");
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after statement macro");
+            
+            return std::make_shared<MacroInvocationExpr>(macroName, arguments, idToken.line, idToken.column);
+        }
+        
+        // Not a macro invocation, restore and fall through to expression statement
+        current = saved;
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
@@ -4087,7 +4146,24 @@ ASTNodePtr Parser::parseMacroDecl() {
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' for macro parameters");
     
     std::vector<std::string> paramNames;
+    bool isVariadicMacro = false;
+    std::string restParamName;
     while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+        if (check(TokenType::TOKEN_VARIADIC)) {
+            advance(); // consume '..?'
+            Token restNameToken = consume(TokenType::TOKEN_IDENTIFIER,
+                                          "Expected rest parameter name after '..?'");
+            isVariadicMacro = true;
+            restParamName = restNameToken.lexeme;
+
+            // Rest parameter must be last
+            if (check(TokenType::TOKEN_COMMA)) {
+                error("Rest variadic parameter must be the last macro parameter");
+                return nullptr;
+            }
+            break;
+        }
+
         Token paramToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
         paramNames.push_back(paramToken.lexeme);
         
@@ -4110,6 +4186,8 @@ ASTNodePtr Parser::parseMacroDecl() {
         paramNames,
         body,
         false,  // statement macro by default
+        isVariadicMacro,
+        restParamName,
         macroToken.line,
         macroToken.column
     );

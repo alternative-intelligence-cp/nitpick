@@ -462,3 +462,116 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0226.sh")
         LABELS "parser;diagnostics;POLISH-008;v0.22.6"
     )
 endif()
+
+# v0.23.0: Macro system smoke test — basic pipeline end-to-end (MACRO-001)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_macro_basic.npk")
+    add_test(
+        NAME macro_smoke_compile
+        COMMAND ${CMAKE_BINARY_DIR}/npkc
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_macro_basic.npk
+            -o ${CMAKE_BINARY_DIR}/test_macro_smoke
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(macro_smoke_compile PROPERTIES
+        TIMEOUT 30
+        LABELS "macros;MACRO-001;v0.23.0"
+    )
+
+    add_test(
+        NAME macro_smoke_run
+        COMMAND ${CMAKE_BINARY_DIR}/test_macro_smoke
+    )
+    set_tests_properties(macro_smoke_run PROPERTIES
+        DEPENDS macro_smoke_compile
+        TIMEOUT 10
+        LABELS "macros;MACRO-001;v0.23.0"
+    )
+endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0231.sh")
+    add_test(
+        NAME bug_tests_v0231
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0231.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0231 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-001;MACRO-002;v0.23.1"
+    )
+endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0232.sh")
+    add_test(
+        NAME bug_tests_v0232
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0232.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0232 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-003;v0.23.2"
+    )
+endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0233.sh")
+    add_test(
+        NAME bug_tests_v0233
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0233.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0233 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-004;v0.23.3"
+    )
+endif()
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
+    add_test(
+        NAME bug_tests_v0234
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0234 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-005;v0.23.4"
+    )
+
+    # v0.23.5: Statement macros (MACRO-006) & code-generating macros (MACRO-007)
+    add_test(
+        NAME bug_tests_v0235
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0235.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0235 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-006;MACRO-007;v0.23.5"
+    )
+
+    # v0.23.6: Built-in macros (MACRO-008..011)
+    add_test(
+        NAME bug_tests_v0236
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0236.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0236 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-008;MACRO-009;MACRO-010;MACRO-011;v0.23.6"
+    )
+
+    # v0.23.7: --expand-macros debug flag (MACRO-012)
+    add_test(
+        NAME bug_tests_v0237
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0237.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0237 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-012;v0.23.7"
+    )
+endif()

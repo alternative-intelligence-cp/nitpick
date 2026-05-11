@@ -7304,6 +7304,19 @@ skip_comparison:
             return nullptr;
         }
 
+        // v0.23.5: MACRO-006 — Handle statement-position macro invocations
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            // Statement-position macro invocation.
+            // The macro has been expanded by the type checker and replaced with expandedAST.
+            // Emit code for the expanded statement.
+            auto* macro = static_cast<MacroInvocationExpr*>(stmt);
+            if (macro->expandedAST) {
+                return codegenStatement(macro->expandedAST.get());
+            }
+            // If not expanded (error during type checking), emit nothing
+            return nullptr;
+        }
+
         default:
             // A-006: emit node type name (not just int) for actionable ICE.
             std::cerr << "[ICE] ir_generator: unhandled statement node type '"

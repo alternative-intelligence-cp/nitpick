@@ -159,6 +159,9 @@ struct CompilerOptions {
     // v0.8.2: Incremental compilation
     bool incremental = false;         // --incremental: Cache per-module IR, only recompile changed files
     std::string cache_dir = ".npk-cache";  // --cache-dir=<path>: IR cache directory
+
+    // v0.23.7: Macro expansion debug
+    bool expand_macros = false;       // --expand-macros: Dump post-expansion macro trace to stdout and exit
 };
 
 /**
@@ -211,6 +214,7 @@ void print_help() {
     std::cout << "  --emit-deps       Emit JSON dependency manifest (for npkbld)\n";
     std::cout << "  --ast-dump        Dump AST and exit\n";
     std::cout << "  --tokens          Dump tokens and exit\n";
+    std::cout << "  --expand-macros   Dump post-expansion macro trace to stdout and exit\n";
     std::cout << "  -c                Compile library (no failsafe required)\n";
     std::cout << "  --shared          Compile to shared library (.so)\n";
     std::cout << "  --static          Link as fully static executable\n";
@@ -464,6 +468,8 @@ bool parse_arguments(int argc, char** argv, CompilerOptions& opts) {
             opts.incremental = true;  // Implies --incremental
         } else if (arg == "--ast-dump") {
             opts.dump_ast = true;
+        } else if (arg == "--expand-macros") {
+            opts.expand_macros = true;
         } else if (arg == "--tokens") {
             opts.dump_tokens = true;
         } else if (arg == "-v" || arg == "--verbose") {
@@ -1014,7 +1020,25 @@ llvm::Module* compile_to_module(
     for (const auto& warn : type_checker.getWarnings()) {
         diags.warning(npk::SourceLocation(filename, 0, 0), warn);
     }
-    
+
+    // v0.23.7: MACRO-012 — --expand-macros: dump expansion trace collected during type-check
+    if (opts.expand_macros) {
+        const auto& log = type_checker.getMacroExpansionLog();
+        if (log.empty()) {
+            std::cout << "// no macro invocations found in " << filename << "\n";
+        } else {
+            for (const auto& rec : log) {
+                std::cout << "// macro expansion at " << filename
+                          << ":" << rec.line << ":" << rec.column << "\n";
+                std::cout << "// call:     " << rec.callSite << "\n";
+                std::cout << "// expanded: " << rec.expanded << "\n";
+                std::cout << "\n";
+            }
+            std::cout << "// total: " << log.size() << " expansion(s)\n";
+        }
+        return nullptr;
+    }
+
     // Validate that the mandatory failsafe() function exists
     // Every Aria executable must define failsafe(int32) for error handling accountability
     // Libraries (-c flag) are exempt as they're components, not final programs
@@ -6170,8 +6194,8 @@ int main(int argc, char** argv) {
     // Create diagnostic engine
     npk::DiagnosticEngine diags;
 
-    // For --dump-tokens or --dump-ast, only process first file
-    if (opts.dump_tokens || opts.dump_ast) {
+    // For --dump-tokens, --dump-ast, or --expand-macros, only process first file
+    if (opts.dump_tokens || opts.dump_ast || opts.expand_macros) {
         std::string source;
         if (!read_source_file(opts.input_files[0], source, diags)) {
             diags.printAll();
