@@ -5201,6 +5201,22 @@ void TypeChecker::checkMacroDecl(MacroDeclStmt* stmt) {
 
 Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
     if (!expr) return typeSystem->getErrorType();
+
+    constexpr int kMacroExpansionDepthLimit = 64;
+    static thread_local int macroExpansionDepth = 0;
+    if (macroExpansionDepth >= kMacroExpansionDepthLimit) {
+        addError("Macro expansion depth limit (" +
+                 std::to_string(kMacroExpansionDepthLimit) +
+                 ") exceeded - possible infinite recursion in '" +
+                 expr->macroName + "!'", expr);
+        return typeSystem->getErrorType();
+    }
+
+    struct MacroDepthGuard {
+        int& depth;
+        explicit MacroDepthGuard(int& d) : depth(d) { ++depth; }
+        ~MacroDepthGuard() { --depth; }
+    } depthGuard(macroExpansionDepth);
     
     // Look up the macro
     auto it = macroRegistry.find(expr->macroName);
@@ -5297,6 +5313,16 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
             newArgs.push_back(cloneAST(arg.get(), substitutions));
         }
         return std::make_shared<CallExpr>(newCallee, newArgs, call->line, call->column);
+    }
+
+    // Macro invocations
+    if (node->type == ASTNode::NodeType::MACRO_INVOCATION) {
+        auto* macro = static_cast<MacroInvocationExpr*>(node);
+        std::vector<ASTNodePtr> newArgs;
+        for (const auto& arg : macro->arguments) {
+            newArgs.push_back(cloneAST(arg.get(), substitutions));
+        }
+        return std::make_shared<MacroInvocationExpr>(macro->macroName, newArgs, macro->line, macro->column);
     }
     
     // Literals — just copy
