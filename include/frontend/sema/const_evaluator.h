@@ -272,6 +272,7 @@ public:
     void pushLocalScope();
     void popLocalScope();
     void defineLocalConstant(const std::string& name, const ComptimeValue& value);
+    void setLocalConstant(const std::string& name, const ComptimeValue& value);
     
     // === Symbol Table Integration (Task 8) ===
     // Define a const in the symbol table

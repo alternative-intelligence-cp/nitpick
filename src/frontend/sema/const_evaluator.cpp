@@ -692,14 +692,27 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
                 returned = true;
             } else if (node->type == ASTNode::NodeType::VAR_DECL) {
                 VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+                // Helper: narrow an integer ComptimeValue to a declared type
+                auto narrowInt = [&](ComptimeValue val, const std::string& tn) -> ComptimeValue {
+                    if (!val.isInteger() || tn.empty()) return val;
+                    static const std::map<std::string, int> intBits = {
+                        {"int8",8},{"int16",16},{"int32",32},{"int64",64},
+                        {"uint8",8},{"uint16",16},{"uint32",32},{"uint64",64}
+                    };
+                    auto it = intBits.find(tn);
+                    if (it != intBits.end()) {
+                        return ComptimeValue::makeInteger(val.getInt(), tn, it->second);
+                    }
+                    return val;
+                };
                 if (var->initializer) {
                     ComptimeValue val = evaluateExpr(var->initializer.get());
                     if (!hasErrors()) {
-                        defineLocalConstant(var->varName, val);
+                        defineLocalConstant(var->varName, narrowInt(val, var->typeName));
                     }
                 } else {
-                    // Default-initialize to zero
-                    defineLocalConstant(var->varName, ComptimeValue::makeInteger(0, "int32", 32));
+                    defineLocalConstant(var->varName,
+                        narrowInt(ComptimeValue::makeInteger(0, "int64", 64), var->typeName));
                 }
             } else if (node->type == ASTNode::NodeType::IF) {
                 IfStmt* ifStmt = static_cast<IfStmt*>(node);
@@ -725,6 +738,111 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
                     evalBodyNode(s.get());
                     if (returned || hasErrors()) break;
                 }
+            } else if (node->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                // Unwrap expression statement and re-dispatch (handles assignments etc.)
+                ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(node);
+                if (exprStmt->expression) {
+                    evalBodyNode(exprStmt->expression.get());
+                }
+            } else if (node->type == ASTNode::NodeType::BINARY_OP) {
+                // In statement position: check for assignment operators (COMPTIME-002)
+                // Nitpick parses "x = expr" as BinaryExpr(IDENTIFIER, "=", expr)
+                BinaryExpr* bin = static_cast<BinaryExpr*>(node);
+                const std::string& op = bin->op.lexeme;
+                bool isAssignOp = (op == "=" || op == "+=" || op == "-=" ||
+                                   op == "*=" || op == "/=" || op == "%=");
+                if (isAssignOp && bin->left &&
+                    bin->left->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& varName =
+                        static_cast<IdentifierExpr*>(bin->left.get())->name;
+                    ComptimeValue rhs = evaluateExpr(bin->right.get());
+                    if (hasErrors()) return;
+                    if (op != "=") {
+                        ComptimeValue lhs = lookupConstant(varName);
+                        if (hasErrors()) return;
+                        if (lhs.isInteger() && rhs.isInteger()) {
+                            int64_t l = lhs.getInt(), r = rhs.getInt();
+                            int64_t res = (op == "+=") ? l + r : (op == "-=") ? l - r :
+                                          (op == "*=") ? l * r : (op == "/=") ? l / r : l % r;
+                            rhs = ComptimeValue::makeInteger(res, lhs.getTypeName(), lhs.getBitWidth());
+                        } else {
+                            addError("comptime compound assignment: unsupported operand types for '" + op + "'");
+                            return;
+                        }
+                    } else {
+                        // Simple assignment: narrow RHS to the type of the existing variable
+                        // so that e.g. acc(int32) = acc + $(int64) stays int32
+                        ComptimeValue existing = lookupConstant(varName);
+                        // Ignore lookup error if variable not yet defined
+                        if (!hasErrors() && existing.isInteger() && rhs.isInteger() &&
+                            existing.getBitWidth() != rhs.getBitWidth()) {
+                            rhs = ComptimeValue::makeInteger(rhs.getInt(),
+                                      existing.getTypeName(), existing.getBitWidth());
+                        }
+                        clearErrors(); // suppress "undefined" if var not yet defined
+                    }
+                    setLocalConstant(varName, rhs);
+                } else {
+                    // Not an assignment — evaluate as expression (for side-effect-free calls etc.)
+                    evaluateExpr(node);
+                }
+            } else if (node->type == ASTNode::NodeType::ASSIGNMENT) {
+                // Mutable local assignment: x = expr  or  x += expr etc. (COMPTIME-002)
+                AssignmentExpr* assign = static_cast<AssignmentExpr*>(node);
+                if (!assign->target || assign->target->type != ASTNode::NodeType::IDENTIFIER) {
+                    addError("comptime assignment: only simple variable targets are supported");
+                    return;
+                }
+                const std::string& varName = static_cast<IdentifierExpr*>(assign->target.get())->name;
+                ComptimeValue rhs = evaluateExpr(assign->value.get());
+                if (hasErrors()) return;
+                // Apply compound operators
+                const std::string& op = assign->op.lexeme;
+                if (op == "+=" || op == "-=" || op == "*=" || op == "/=" || op == "%=") {
+                    ComptimeValue lhs = lookupConstant(varName);
+                    if (hasErrors()) return;
+                    if (lhs.isInteger() && rhs.isInteger()) {
+                        int64_t l = lhs.getInt(), r = rhs.getInt();
+                        int64_t res = (op == "+=") ? l + r : (op == "-=") ? l - r :
+                                      (op == "*=") ? l * r : (op == "/=") ? l / r : l % r;
+                        rhs = ComptimeValue::makeInteger(res, lhs.getTypeName(), lhs.getBitWidth());
+                    } else {
+                        addError("comptime compound assignment: unsupported operand types for '" + op + "'");
+                        return;
+                    }
+                }
+                setLocalConstant(varName, rhs);
+            } else if (node->type == ASTNode::NodeType::LOOP) {
+                // loop(start, limit, step) { body } — exposes $ as loop counter (COMPTIME-001)
+                LoopStmt* loopStmt = static_cast<LoopStmt*>(node);
+                ComptimeValue startVal = evaluateExpr(loopStmt->start.get());
+                if (hasErrors()) return;
+                ComptimeValue limitVal = evaluateExpr(loopStmt->limit.get());
+                if (hasErrors()) return;
+                ComptimeValue stepVal = evaluateExpr(loopStmt->step.get());
+                if (hasErrors()) return;
+                if (!startVal.isInteger() || !limitVal.isInteger() || !stepVal.isInteger()) {
+                    addError("comptime loop: start, limit, and step must be integer expressions");
+                    return;
+                }
+                int64_t counter = startVal.getInt();
+                int64_t limit   = limitVal.getInt();
+                int64_t step    = stepVal.getInt();
+                if (step == 0) { addError("comptime loop: step must not be zero"); return; }
+                const size_t maxIter = 1000;
+                size_t iters = 0;
+                pushLocalScope();
+                while (counter != limit) {
+                    if (iters++ >= maxIter) {
+                        addError("comptime loop exceeded iteration limit (1000); use a smaller range or switch to runtime evaluation");
+                        break;
+                    }
+                    setLocalConstant("$", ComptimeValue::makeInteger(counter, "int64", 64));
+                    evalBodyNode(loopStmt->body.get());
+                    if (returned || hasErrors()) break;
+                    counter += step;
+                }
+                popLocalScope();
             } else {
                 // Fallthrough: expression statements, etc. — evaluate silently
                 evaluateStmt(node);
@@ -1234,6 +1352,19 @@ void ConstEvaluator::defineLocalConstant(const std::string& name, const Comptime
     } else {
         addError("defineLocalConstant called without local scope");
     }
+}
+
+void ConstEvaluator::setLocalConstant(const std::string& name, const ComptimeValue& value) {
+    // Update an existing binding in the innermost scope that holds it (mutable assignment).
+    // If the name is not found in any scope, define it in the current scope.
+    for (auto it = localScopeStack.rbegin(); it != localScopeStack.rend(); ++it) {
+        if (it->count(name)) {
+            (*it)[name] = value;
+            return;
+        }
+    }
+    // Not found — fall back to defining in current scope
+    defineLocalConstant(name, value);
 }
 
 void ConstEvaluator::defineConstant(const std::string& name, const ComptimeValue& value, Type* type) {
