@@ -5198,6 +5198,14 @@ bool TypeChecker::validateMainExists() {
 
 void TypeChecker::checkMacroDecl(MacroDeclStmt* stmt) {
     if (!stmt) return;
+
+    static const std::unordered_set<std::string> kBuiltinMacros = {
+        "assert", "todo", "unreachable", "cfg"
+    };
+    if (kBuiltinMacros.count(stmt->macroName)) {
+        addError("Cannot redefine built-in macro '" + stmt->macroName + "'", stmt);
+        return;
+    }
     
     // Check for duplicate macro names
     if (macroRegistry.count(stmt->macroName)) {
@@ -5227,6 +5235,181 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
         explicit MacroDepthGuard(int& d) : depth(d) { ++depth; }
         ~MacroDepthGuard() { --depth; }
     } depthGuard(macroExpansionDepth);
+
+    // ------------------------------------------------------------------------
+    // v0.23.6: Built-in macros (MACRO-008..011)
+    //   assert!(cond)      -> AssertStaticStmt(cond)
+    //   unreachable!()     -> AssertStaticStmt(false)
+    //   todo!("msg"?)      -> compile-time error placeholder
+    //   cfg!(pred)         -> compile-time bool literal
+    // ------------------------------------------------------------------------
+    if (expr->macroName == "assert") {
+        if (expr->arguments.size() != 1) {
+            addError("assert! expects exactly 1 argument", expr);
+            return typeSystem->getErrorType();
+        }
+
+        ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(
+            expr->arguments[0], expr->line, expr->column);
+        expr->expandedAST = expanded;
+        checkStatement(expanded.get());
+        return typeSystem->getPrimitiveType("void");
+    }
+
+    if (expr->macroName == "unreachable") {
+        if (!expr->arguments.empty()) {
+            addError("unreachable! expects 0 arguments", expr);
+            return typeSystem->getErrorType();
+        }
+
+        ASTNodePtr falseLit = std::make_shared<LiteralExpr>(false, expr->line, expr->column);
+        ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(falseLit, expr->line, expr->column);
+        expr->expandedAST = expanded;
+        checkStatement(expanded.get());
+        return typeSystem->getPrimitiveType("void");
+    }
+
+    if (expr->macroName == "todo") {
+        if (expr->arguments.size() > 1) {
+            addError("todo! accepts at most 1 optional message argument", expr);
+            return typeSystem->getErrorType();
+        }
+
+        // Runtime placeholder: emit a guaranteed-failing assert fallback,
+        // so code compiles but fails if execution reaches this path.
+        ASTNodePtr falseLit = std::make_shared<LiteralExpr>(false, expr->line, expr->column);
+        ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(falseLit, expr->line, expr->column);
+        expr->expandedAST = expanded;
+        checkStatement(expanded.get());
+        return typeSystem->getPrimitiveType("void");
+    }
+
+    if (expr->macroName == "cfg") {
+        if (expr->arguments.size() != 1) {
+            addError("cfg! expects exactly 1 predicate argument", expr);
+            return typeSystem->getErrorType();
+        }
+
+        auto cfgExprToPredicate = [&](ASTNode* node, auto&& self) -> std::string {
+            if (!node) return "";
+
+            if (node->type == ASTNode::NodeType::IDENTIFIER) {
+                return static_cast<IdentifierExpr*>(node)->name;
+            }
+
+            if (node->type == ASTNode::NodeType::LITERAL) {
+                auto* lit = static_cast<LiteralExpr*>(node);
+                if (std::holds_alternative<std::string>(lit->value)) {
+                    return std::get<std::string>(lit->value);
+                }
+                if (std::holds_alternative<bool>(lit->value)) {
+                    return std::get<bool>(lit->value) ? "true" : "false";
+                }
+                if (std::holds_alternative<int64_t>(lit->value)) {
+                    return std::to_string(std::get<int64_t>(lit->value));
+                }
+                return "";
+            }
+
+            if (node->type == ASTNode::NodeType::ASSIGNMENT) {
+                auto* asn = static_cast<AssignmentExpr*>(node);
+                std::string left = self(asn->target.get(), self);
+                std::string right = self(asn->value.get(), self);
+                if (left.empty() || right.empty()) return "";
+                return left + "=" + right;
+            }
+
+            if (node->type == ASTNode::NodeType::BINARY_OP) {
+                auto* bin = static_cast<BinaryExpr*>(node);
+                if (bin->op.type != TokenType::TOKEN_EQUAL &&
+                    bin->op.type != TokenType::TOKEN_EQUAL_EQUAL) {
+                    return "";
+                }
+                std::string left = self(bin->left.get(), self);
+                std::string right = self(bin->right.get(), self);
+                if (left.empty() || right.empty()) return "";
+                return left + "=" + right;
+            }
+
+            if (node->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(node);
+                if (!call->callee || call->callee->type != ASTNode::NodeType::IDENTIFIER) return "";
+                auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
+                std::ostringstream oss;
+                oss << callee->name << "(";
+                for (size_t i = 0; i < call->arguments.size(); ++i) {
+                    if (i) oss << ",";
+                    std::string part = self(call->arguments[i].get(), self);
+                    if (part.empty()) return "";
+                    oss << part;
+                }
+                oss << ")";
+                return oss.str();
+            }
+
+            return "";
+        };
+
+        std::string predicate = cfgExprToPredicate(expr->arguments[0].get(), cfgExprToPredicate);
+        if (predicate.empty()) {
+            addError("cfg! predicate must be an identifier/call/assignment form, e.g. cfg!(debug), cfg!(target_os=linux), cfg!(all(debug, target_os=linux))", expr);
+            return typeSystem->getErrorType();
+        }
+
+        auto cfgPredKnown = [&](const std::string& raw, auto&& self) -> bool {
+            auto trim = [](const std::string& s) {
+                size_t a = s.find_first_not_of(" \t\r\n");
+                if (a == std::string::npos) return std::string();
+                size_t b = s.find_last_not_of(" \t\r\n");
+                return s.substr(a, b - a + 1);
+            };
+
+            std::string pred = trim(raw);
+            if (pred.empty()) return false;
+
+            if (pred.rfind("not(", 0) == 0 && pred.back() == ')') {
+                std::string inner = pred.substr(4, pred.size() - 5);
+                return self(inner, self);
+            }
+
+            if ((pred.rfind("any(", 0) == 0 || pred.rfind("all(", 0) == 0) && pred.back() == ')') {
+                std::string inner = pred.substr(pred.find('(') + 1, pred.size() - pred.find('(') - 2);
+                std::vector<std::string> parts;
+                int depth = 0;
+                std::string cur;
+                for (char c : inner) {
+                    if (c == '(') { depth++; cur += c; }
+                    else if (c == ')') { depth--; cur += c; }
+                    else if (c == ',' && depth == 0) { parts.push_back(cur); cur.clear(); }
+                    else { cur += c; }
+                }
+                if (!cur.empty()) parts.push_back(cur);
+                if (parts.empty()) return false;
+                for (const auto& p : parts) {
+                    if (!self(p, self)) return false;
+                }
+                return true;
+            }
+
+            if (pred == "debug" || pred == "release") return true;
+            if (pred.rfind("target_os=", 0) == 0) return !trim(pred.substr(10)).empty();
+            if (pred.rfind("target_arch=", 0) == 0) return !trim(pred.substr(12)).empty();
+            if (pred.rfind("target=", 0) == 0) return !trim(pred.substr(7)).empty();
+            if (pred.rfind("feature=", 0) == 0) return !trim(pred.substr(8)).empty();
+
+            return false;
+        };
+
+        if (!cfgPredKnown(predicate, cfgPredKnown)) {
+            addError("cfg! unsupported predicate '" + predicate + "'. Supported roots: debug, release, target_os=..., target_arch=..., target=..., feature=..., plus not/any/all", expr);
+            return typeSystem->getErrorType();
+        }
+
+        bool enabled = evaluateCfgPredicate(predicate);
+        ASTNodePtr expanded = std::make_shared<LiteralExpr>(enabled, expr->line, expr->column);
+        expr->expandedAST = expanded;
+        return typeSystem->getPrimitiveType("bool");
+    }
     
     // Look up the macro
     auto it = macroRegistry.find(expr->macroName);

@@ -550,4 +550,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "macros;MACRO-006;MACRO-007;v0.23.5"
     )
+
+    # v0.23.6: Built-in macros (MACRO-008..011)
+    add_test(
+        NAME bug_tests_v0236
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0236.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0236 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "macros;MACRO-008;MACRO-009;MACRO-010;MACRO-011;v0.23.6"
+    )
 endif()
