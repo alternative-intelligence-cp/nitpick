@@ -74,7 +74,17 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkMacroDecl(static_cast<MacroDeclStmt*>(stmt));
             break;
 
-        case ASTNode::NodeType::RETURN:
+        // v0.23.5: MACRO-006 — Handle statement-position macro invocations
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            auto* macro = static_cast<MacroInvocationExpr*>(stmt);
+            inferMacroInvocation(macro);
+            // After expansion, recursively check the expanded AST
+            if (macro->expandedAST) {
+                checkStatement(macro->expandedAST.get());
+            }
+            break;
+        }
+
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
         

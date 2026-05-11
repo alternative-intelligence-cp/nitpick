@@ -2973,6 +2973,37 @@ ASTNodePtr Parser::parseStatement() {
         return parseAstackStatement();
     }
     
+    // v0.23.5: Check for statement-position macro invocation: name!(args);
+    // MACRO-006: Allow macros to be invoked at statement level
+    if (peek().type == TokenType::TOKEN_IDENTIFIER) {
+        size_t saved = current;
+        Token idToken = peek();
+        advance(); // consume identifier
+        
+        if (check(TokenType::TOKEN_BANG) && 
+            current + 1 < tokens.size() && tokens[current + 1].type == TokenType::TOKEN_LEFT_PAREN) {
+            // It's a macro invocation at statement level
+            advance();  // consume !
+            advance();  // consume (
+            
+            std::vector<ASTNodePtr> arguments;
+            if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+                do {
+                    ASTNodePtr arg = parseExpression();
+                    if (arg) arguments.push_back(arg);
+                } while (match(TokenType::TOKEN_COMMA));
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after macro arguments");
+            consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after statement macro");
+            
+            return std::make_shared<MacroInvocationExpr>(idToken.lexeme, arguments, idToken.line, idToken.column);
+        }
+        
+        // Not a macro invocation, restore and fall through to expression statement
+        current = saved;
+    }
+    
     // Check for block
     if (match(TokenType::TOKEN_LEFT_BRACE)) {
         return parseBlock();
