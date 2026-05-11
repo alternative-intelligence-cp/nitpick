@@ -141,12 +141,17 @@ else
 fi
 
 # ============================================================================
-# MACRO-007 Tests: Code-Generating Macros (TBD - placeholder for now)
+# MACRO-007 Tests: Code-Generating Macros
 # ============================================================================
+# Note: Full code-generating macros (generating func:/struct: definitions)
+# require program-level macro invocations and hoisting infrastructure.
+# This is deferred to v0.23.6 or later.
+# For now, MACRO-007 tests are placeholder.
 
 echo ""
-echo "--- MACRO-007: Code-Generating Macros ---"
-echo "[placeholder] Code-generating macro tests deferred to later implementation"
+echo "--- MACRO-007: Code-Generating Macros (Deferred) ---"
+echo "[deferred] Full code-generating macro support requires program-level"
+echo "          macro invocation infrastructure, deferred to v0.23.6+"
 
 echo ""
 echo "================================================================================="
