@@ -5253,6 +5253,7 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
         ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(
             expr->arguments[0], expr->line, expr->column);
         expr->expandedAST = expanded;
+        macroExpansionLog.push_back({expr->macroName, expr->toString(), expanded->toString(), expr->line, expr->column});
         checkStatement(expanded.get());
         return typeSystem->getPrimitiveType("void");
     }
@@ -5266,6 +5267,7 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
         ASTNodePtr falseLit = std::make_shared<LiteralExpr>(false, expr->line, expr->column);
         ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(falseLit, expr->line, expr->column);
         expr->expandedAST = expanded;
+        macroExpansionLog.push_back({expr->macroName, expr->toString(), expanded->toString(), expr->line, expr->column});
         checkStatement(expanded.get());
         return typeSystem->getPrimitiveType("void");
     }
@@ -5281,6 +5283,7 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
         ASTNodePtr falseLit = std::make_shared<LiteralExpr>(false, expr->line, expr->column);
         ASTNodePtr expanded = std::make_shared<AssertStaticStmt>(falseLit, expr->line, expr->column);
         expr->expandedAST = expanded;
+        macroExpansionLog.push_back({expr->macroName, expr->toString(), expanded->toString(), expr->line, expr->column});
         checkStatement(expanded.get());
         return typeSystem->getPrimitiveType("void");
     }
@@ -5409,6 +5412,7 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
         bool enabled = evaluateCfgPredicate(predicate);
         ASTNodePtr expanded = std::make_shared<LiteralExpr>(enabled, expr->line, expr->column);
         expr->expandedAST = expanded;
+        macroExpansionLog.push_back({expr->macroName, expr->toString(), expanded->toString(), expr->line, expr->column});
         return typeSystem->getPrimitiveType("bool");
     }
     
@@ -5457,7 +5461,16 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
     // Clone the macro body with parameter substitutions
     ASTNodePtr expanded = cloneAST(macroDef->body.get(), substitutions);
     expr->expandedAST = expanded;
-    
+
+    // v0.23.7: MACRO-012 — record expansion for --expand-macros trace
+    macroExpansionLog.push_back({
+        expr->macroName,
+        expr->toString(),
+        expanded ? expanded->toString() : "<null>",
+        expr->line,
+        expr->column
+    });
+
     // Type-check the expanded AST
     if (expanded) {
         // If the expanded AST is a block, check it and return the type of the last expression

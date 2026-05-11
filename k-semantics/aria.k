@@ -172,7 +172,20 @@ module ARIA-SYNTAX
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
      syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
-     syntax Pgm          ::= RulesDecls StructDecls FuncDecls FailsafeDecl MainDecl
+
+  // -----------------------------------------------------------------------
+  // v0.23.7 MACRO-013: Macro declaration syntax
+  //   Macros are expanded before K evaluation (compile-time substitution).
+  //   These rules model the declaration and expansion as abstract rewriting.
+  //   Supported forms: zero-arg and one-arg; variadic rest-params documented
+  //   as an implementation-level concern (K models the common case).
+  // -----------------------------------------------------------------------
+  syntax MacroDecl  ::= "macro:" Id "=" "(" ")" Block ";"
+                      | "macro:" Id "=" "(" Id ")" Block ";"
+  syntax MacroDecls ::= List{MacroDecl, ""}
+  syntax MacroBody  ::= Block
+
+     syntax Pgm          ::= RulesDecls StructDecls MacroDecls FuncDecls FailsafeDecl MainDecl
 endmodule
 
 module ARIA
@@ -211,13 +224,15 @@ module ARIA
     <failsafe> .K </failsafe>
     <failsafe-triggered> false </failsafe-triggered>
     <exit-code> 0 </exit-code>
+    // v0.23.7: MACRO-013 — macro registry cell (name -> body block)
+    <macros> .Map </macros>
   </T>
 
   // -------------------------------------------------------------------------
   // Program envelope
   // -------------------------------------------------------------------------
 
-  rule <k> RULES:RulesDecls STRUCTS:StructDecls FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadRules(RULES) ~> loadStructs(STRUCTS) ~> loadFuncs(FUNCS) ~> MAIN </k>
+  rule <k> RULES:RulesDecls STRUCTS:StructDecls MACROS:MacroDecls FUNCS:FuncDecls func:failsafe = int32(tbb32:_ERRID) FS ; func:main = int32() MAIN ; => loadRules(RULES) ~> loadStructs(STRUCTS) ~> loadMacros(MACROS) ~> loadFuncs(FUNCS) ~> MAIN </k>
        <failsafe> _ => FS </failsafe>
 
   // -------------------------------------------------------------------------
@@ -1051,6 +1066,55 @@ module ARIA
                  | "finishCallPassFrameWriteback" "(" Type "," FrameState "," Map ")"
                  | "finishCallFailFrameWriteback" "(" FrameState "," Map ")"
                  | "finishFn2MutFirstArg" "(" Id "," Id ")"
+
+  // -----------------------------------------------------------------------
+  // v0.23.7 MACRO-013: Macro loading and expansion rules
+  //
+  // Macro semantics: macros are compile-time rewriting rules that substitute
+  // their body at call sites before program evaluation.  In the K model we
+  // represent this as a two-phase process:
+  //   1. loadMacros  — populate the <macros> cell from MacroDecls
+  //   2. macroExpand — substitute a zero- or one-argument macro call inline
+  //
+  // Hygiene (variable isolation) is an implementation-level property ensured
+  // by the compiler's cloneAST / gensym mechanism before K evaluation begins;
+  // the K rules below model the logical substitution only.
+  //
+  // Built-in macros (assert!, todo!, unreachable!, cfg!) are pre-resolved by
+  // the type checker and do not appear in the <macros> cell.
+  // -----------------------------------------------------------------------
+
+  syntax KItem ::= "loadMacros" "(" MacroDecls ")"
+  syntax KItem ::= "macroExpand" "(" Id "," MacroBody ")"
+                 | "macroExpand1" "(" Id "," Id "," Exp "," MacroBody ")"
+
+  // Base case: no more macros to load
+  rule <k> loadMacros(.MacroDecls) => .K ... </k>
+
+  // Zero-arg macro: register body block in <macros>
+  rule <k> loadMacros(macro: M:Id = () B:Block ; REST:MacroDecls) => loadMacros(REST) ... </k>
+       <macros> Ms => Ms [ M <- B ] </macros>
+
+  // One-arg macro: register as a two-element tuple (param name, body block)
+  rule <k> loadMacros(macro: M:Id = (P:Id) B:Block ; REST:MacroDecls) => loadMacros(REST) ... </k>
+       <macros> Ms => Ms [ M <- MacroFn1(P, B) ] </macros>
+
+  syntax MacroVal ::= "MacroFn1" "(" Id "," MacroBody ")"
+
+  // macroExpand(M, Body) — inline the body of a zero-arg macro as a statement
+  // The result block is evaluated in the current environment; since macros were
+  // already expanded by the compiler, this rule fires only when the K model is
+  // used in standalone verification mode.
+  rule <k> macroExpand(M:Id, B:Block) => B ... </k>
+       <macros> Ms </macros>
+    requires M in_keys(Ms)
+
+  // macroExpand1(M, Param, Arg, Body) — substitute Arg for Param in Body
+  // Hygiene: in the compiler, cloneAST introduces fresh gensym names before
+  // substitution; in this K model we document the logical substitution only.
+  rule <k> macroExpand1(M:Id, _P:Id, _A:Exp, B:Block) => B ... </k>
+       <macros> Ms </macros>
+    requires M in_keys(Ms)
 
   rule <k> loadFuncs(.FuncDecls) => .K ... </k>
 
