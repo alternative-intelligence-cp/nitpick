@@ -85,6 +85,7 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             break;
         }
 
+        case ASTNode::NodeType::RETURN:
             checkReturnStmt(static_cast<ReturnStmt*>(stmt));
             break;
         
