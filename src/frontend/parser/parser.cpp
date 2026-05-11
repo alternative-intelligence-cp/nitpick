@@ -4087,7 +4087,24 @@ ASTNodePtr Parser::parseMacroDecl() {
     consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' for macro parameters");
     
     std::vector<std::string> paramNames;
+    bool isVariadicMacro = false;
+    std::string restParamName;
     while (!check(TokenType::TOKEN_RIGHT_PAREN) && !isAtEnd()) {
+        if (check(TokenType::TOKEN_VARIADIC)) {
+            advance(); // consume '..?'
+            Token restNameToken = consume(TokenType::TOKEN_IDENTIFIER,
+                                          "Expected rest parameter name after '..?'");
+            isVariadicMacro = true;
+            restParamName = restNameToken.lexeme;
+
+            // Rest parameter must be last
+            if (check(TokenType::TOKEN_COMMA)) {
+                error("Rest variadic parameter must be the last macro parameter");
+                return nullptr;
+            }
+            break;
+        }
+
         Token paramToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name");
         paramNames.push_back(paramToken.lexeme);
         
@@ -4110,6 +4127,8 @@ ASTNodePtr Parser::parseMacroDecl() {
         paramNames,
         body,
         false,  // statement macro by default
+        isVariadicMacro,
+        restParamName,
         macroToken.line,
         macroToken.column
     );

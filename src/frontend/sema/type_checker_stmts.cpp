@@ -5228,17 +5228,36 @@ Type* TypeChecker::inferMacroInvocation(MacroInvocationExpr* expr) {
     MacroDeclStmt* macroDef = it->second;
     
     // Check argument count
-    if (expr->arguments.size() != macroDef->paramNames.size()) {
-        addError("Macro '" + expr->macroName + "' expects " + 
-                 std::to_string(macroDef->paramNames.size()) + " arguments, got " +
-                 std::to_string(expr->arguments.size()), expr);
-        return typeSystem->getErrorType();
+    if (!macroDef->isVariadic) {
+        if (expr->arguments.size() != macroDef->paramNames.size()) {
+            addError("Macro '" + expr->macroName + "' expects " +
+                     std::to_string(macroDef->paramNames.size()) + " arguments, got " +
+                     std::to_string(expr->arguments.size()), expr);
+            return typeSystem->getErrorType();
+        }
+    } else {
+        if (expr->arguments.size() < macroDef->paramNames.size()) {
+            addError("Macro '" + expr->macroName + "' expects at least " +
+                     std::to_string(macroDef->paramNames.size()) + " arguments, got " +
+                     std::to_string(expr->arguments.size()), expr);
+            return typeSystem->getErrorType();
+        }
     }
     
     // Build substitution map: param name -> argument AST
     std::map<std::string, ASTNodePtr> substitutions;
     for (size_t i = 0; i < macroDef->paramNames.size(); ++i) {
         substitutions[macroDef->paramNames[i]] = expr->arguments[i];
+    }
+
+    // Variadic rest binding: bind '..?rest' to an array literal of remaining args.
+    // This provides a stable AST node for simple variadic macro patterns.
+    if (macroDef->isVariadic) {
+        std::vector<ASTNodePtr> restArgs;
+        for (size_t i = macroDef->paramNames.size(); i < expr->arguments.size(); ++i) {
+            restArgs.push_back(expr->arguments[i]);
+        }
+        substitutions[macroDef->restParamName] = std::make_shared<ArrayLiteralExpr>(restArgs, expr->line, expr->column);
     }
     
     // Clone the macro body with parameter substitutions

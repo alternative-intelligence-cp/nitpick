@@ -446,6 +446,10 @@ std::string MacroDeclStmt::toString() const {
         if (i > 0) oss << ", ";
         oss << paramNames[i];
     }
+    if (isVariadic) {
+        if (!paramNames.empty()) oss << ", ";
+        oss << "..?" << restParamName;
+    }
     oss << ") " << (body ? body->toString() : "{}") << ")";
     return oss.str();
 }
