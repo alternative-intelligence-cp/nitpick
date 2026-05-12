@@ -885,6 +885,8 @@ private:
     void checkBlockStmt(BlockStmt* stmt);
     void checkReturnStmt(ReturnStmt* stmt);
     void checkPassStmt(PassStmt* stmt);
+    void checkFailStmt(FailStmt* stmt);
+    void checkTillStmt(TillStmt* stmt);
     void checkDeferStmt(DeferStmt* stmt);
 
     // v0.20.4: Lambda / closure escape analysis

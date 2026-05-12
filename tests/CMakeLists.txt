@@ -658,4 +658,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "comptime;COMPTIME-013;v0.24.7"
     )
+
+    # v0.25.0: borrow checker triage — till body now visited (BORROW-001)
+    add_test(
+        NAME bug_tests_v0250
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0250.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0250 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-001;v0.25.0"
+    )
 endif()

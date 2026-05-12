@@ -1410,6 +1410,14 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             checkPassStmt(static_cast<PassStmt*>(stmt));
             break;
 
+        case ASTNode::NodeType::FAIL:
+            checkFailStmt(static_cast<FailStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::TILL:
+            checkTillStmt(static_cast<TillStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::DEFER:
             checkDeferStmt(static_cast<DeferStmt*>(stmt));
             break;
@@ -2582,6 +2590,62 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
     }
+}
+
+// v0.25.0 (BORROW-001 triage): `fail <expr>;` early-exit was previously
+// silently skipped by the borrow checker. The error-code expression may
+// reference borrowed values — check it like pass/return.
+void BorrowChecker::checkFailStmt(FailStmt* stmt) {
+    if (!stmt) return;
+    if (stmt->errorCode) {
+        checkExpression(stmt->errorCode.get());
+        checkReferenceEscape(stmt->errorCode.get(), stmt);
+        if (!current_function.empty()) {
+            checkReturnBorrowEscape(stmt->errorCode.get(), stmt);
+        }
+    }
+}
+
+// v0.25.0 (BORROW-001 triage): `till(limit, step) { body }` body was
+// previously silently skipped by the borrow checker. Treat like a simple
+// loop: check bound expressions, then run the body in its own scope with
+// fixpoint iteration over loop-carried borrow state.
+void BorrowChecker::checkTillStmt(TillStmt* stmt) {
+    if (!stmt) return;
+
+    if (stmt->limit) checkExpression(stmt->limit.get());
+    if (stmt->step)  checkExpression(stmt->step.get());
+
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        ctx.restore(loop_head_state);
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+        LifetimeContext back_edge_state = ctx.snapshot();
+        ctx.exitScope();
+
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
+    }
+
+    ctx.restore(loop_head_state);
 }
 
 /**
