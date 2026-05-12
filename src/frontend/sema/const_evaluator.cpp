@@ -647,6 +647,27 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     
     const std::string& funcName = callee->name;
 
+    // === v0.24.6 (COMPTIME-012): Comptime limitations enforcement ===
+    // Reject I/O builtins explicitly. These have no meaning at compile time.
+    if (funcName == "print" || funcName == "println" ||
+        funcName == "eprint" || funcName == "eprintln" ||
+        funcName == "stdout_write" || funcName == "stderr_write" ||
+        funcName == "puts") {
+        addError("I/O functions are not allowed in comptime context "
+                 "(called '" + funcName + "'). Comptime evaluation must be "
+                 "side-effect free.");
+        return ComptimeValue();
+    }
+    // Reject GC allocation intrinsics. Comptime values live in the evaluator's
+    // own arena, not the runtime GC heap.
+    if (funcName == "new" || funcName == "alloc" || funcName == "gc_alloc" ||
+        funcName == "malloc" || funcName == "calloc" || funcName == "realloc") {
+        addError("GC/heap allocation is not allowed in comptime context "
+                 "(called '" + funcName + "'). Use comptime arrays/strings "
+                 "or `fixed` bindings instead.");
+        return ComptimeValue();
+    }
+
     // === Builtin Intrinsics ===
     // v0.24.5 (COMPTIME-010): if an identifier resolves to a local TYPE_NAME
     // value (a `type:T` parameter binding), substitute its stored type name.
@@ -804,6 +825,15 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     FuncDeclStmt* funcDecl = lookupFunction(funcName);
     if (!funcDecl) {
         addError("Undefined function in const context: " + funcName);
+        return ComptimeValue();
+    }
+
+    // v0.24.6 (COMPTIME-012): reject extern function calls. These cross the
+    // FFI boundary and cannot be evaluated by the comptime interpreter.
+    if (funcDecl->isExtern) {
+        addError("extern function calls are not allowed in comptime context "
+                 "(called '" + funcName + "'). Comptime can only invoke "
+                 "Nitpick functions whose bodies are CTFE-evaluable.");
         return ComptimeValue();
     }
     
