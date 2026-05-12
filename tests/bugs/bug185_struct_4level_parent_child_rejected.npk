@@ -1,0 +1,17 @@
+// BUG-185: deep parent/child overlap rejected (ARIA-023).
+// Borrowing outer.m.mid AND outer.m.mid.x simultaneously must conflict because
+// the second path is a prefix of the first.
+// Verifies BORROW-005 deep struct prefix detection (v0.25.3).
+
+struct:Inner = { int32:x; int32:y; };
+struct:Mid   = { Inner:mid; int32:tag; };
+struct:Outer = { Mid:m; int32:id; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Outer:outer = Outer{m: Mid{mid: Inner{x: 1, y: 2}, tag: 9}, id: 42};
+    $$m Inner:a = outer.m.mid;
+    $$m int32:b = outer.m.mid.x;
+    exit 0;
+};

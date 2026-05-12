@@ -1,0 +1,14 @@
+// BUG-188: ptr->x vs ptr->x rejected (ARIA-023).
+// Two mutable borrows of the same pointer field must conflict.
+
+struct:Pair = { int32:x; int32:y; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Pair:p = Pair{x: 1, y: 2};
+    stack Pair->:ptr = @p;
+    $$m int32:a = ptr->x;
+    $$m int32:b = ptr->x;
+    exit 0;
+};

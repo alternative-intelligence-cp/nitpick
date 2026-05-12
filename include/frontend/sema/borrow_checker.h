@@ -88,7 +88,25 @@ struct AccessPath {
      * v0.6.1: Uses index_exprs for Z3-backed disjointness when both have [*]
      */
     bool isDisjointFrom(const AccessPath& other) const {
-        if (base_var != other.base_var) return true;  // Different roots
+        // v0.25.3 (BORROW-006): conservative cross-pointer aliasing.
+        // If either path goes through a pointer dereference ("->field"
+        // segment), a different base_var does NOT guarantee disjointness —
+        // two distinct pointer variables may alias the same host. Without
+        // alias analysis (planned for BORROW-007/008), treat such pairs as
+        // overlapping. Two paths starting at the SAME pointer variable still
+        // follow the normal prefix rules, so ptr->x and ptr->y stay disjoint.
+        auto pathHasDeref = [](const AccessPath& p) {
+            for (const auto& seg : p.fields) {
+                if (seg.size() >= 2 && seg[0] == '-' && seg[1] == '>') return true;
+            }
+            return false;
+        };
+        if (base_var != other.base_var) {
+            if (pathHasDeref(*this) || pathHasDeref(other)) {
+                return false;  // Conservative: may alias
+            }
+            return true;  // Different non-pointer roots
+        }
 
         // Find where paths diverge
         size_t min_len = std::min(fields.size(), other.fields.size());

@@ -694,4 +694,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-004;v0.25.2"
     )
+
+    # v0.25.3: deep struct paths + ptr->field borrows (BORROW-005, BORROW-006)
+    add_test(
+        NAME bug_tests_v0253
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0253.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0253 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-005;BORROW-006;v0.25.3"
+    )
 endif()

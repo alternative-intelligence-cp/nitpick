@@ -1,0 +1,18 @@
+// BUG-186: deep struct writeback through borrows (BORROW-005).
+// Disjoint deep paths can be mutated and the writes reach the host.
+
+struct:Inner = { int32:x; int32:y; };
+struct:Mid   = { Inner:mid; int32:tag; };
+struct:Outer = { Mid:m; int32:id; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Outer:outer = Outer{m: Mid{mid: Inner{x: 1, y: 2}, tag: 9}, id: 42};
+    $$m int32:a = outer.m.mid.x;
+    $$m int32:b = outer.m.mid.y;
+    a = 100i32;
+    b = 200i32;
+    int32:sum = (outer.m.mid.x + outer.m.mid.y);
+    exit (sum - 300i32);
+};

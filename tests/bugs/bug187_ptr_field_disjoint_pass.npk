@@ -1,0 +1,16 @@
+// BUG-187: ptr->x and ptr->y disjoint (BORROW-006).
+// Pointer member borrows on different fields of the same pointer must not conflict.
+
+struct:Pair = { int32:x; int32:y; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Pair:p = Pair{x: 1, y: 2};
+    stack Pair->:ptr = @p;
+    $$m int32:a = ptr->x;
+    $$m int32:b = ptr->y;
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};

@@ -1,0 +1,17 @@
+// BUG-189: cross-pointer aliasing conservatively rejected (ARIA-023).
+// Two pointers may alias the same host; without escape analysis, p->x and q->x
+// must conflict. BORROW-007/008 may relax this once interprocedural alias
+// analysis lands.
+
+struct:Pair = { int32:x; int32:y; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Pair:r = Pair{x: 1, y: 2};
+    stack Pair->:p = @r;
+    stack Pair->:q = @r;
+    $$m int32:a = p->x;
+    $$m int32:b = q->x;
+    exit 0;
+};

@@ -815,11 +815,14 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // v0.19.0 Phase 3: recursively check that a node is addressable storage.
         // Handles: identifier, struct field access (member), array element (index),
         // and chains thereof (e.g. pair.buf[0], matrix[i][j]).
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field) is also
+        // addressable storage — the pointer itself names the host.
         std::function<bool(ASTNode*)> isAddressableBase = [&](ASTNode* n) -> bool {
             if (!n) return false;
             switch (n->type) {
                 case ASTNode::NodeType::IDENTIFIER:    return true;
-                case ASTNode::NodeType::MEMBER_ACCESS: {
+                case ASTNode::NodeType::MEMBER_ACCESS:
+                case ASTNode::NodeType::POINTER_MEMBER: {
                     auto* m = static_cast<MemberAccessExpr*>(n);
                     return isAddressableBase(m->object.get());
                 }
@@ -862,8 +865,11 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 
         // Borrow initializer must be addressable storage: a named variable,
         // struct field, literal-index array element, or dynamic-index array element.
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field) is also
+        // addressable storage.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
             stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
+            stmt->initializer->type != ASTNode::NodeType::POINTER_MEMBER &&
             !isLiteralIndexBorrowInitializer(stmt->initializer.get()) &&
             !isDynamicIndexBorrowInitializer(stmt->initializer.get())) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "

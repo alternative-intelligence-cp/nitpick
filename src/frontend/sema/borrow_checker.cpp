@@ -3897,6 +3897,21 @@ AccessPath BorrowChecker::extractAccessPath(ASTNode* expr) {
             return base;
         }
 
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field).
+        // Treat as path "ptr->field" — distinct from "ptr.field" so the same
+        // pointer's fields are tracked as siblings (ptr->x vs ptr->y disjoint),
+        // while two different pointers (p->x vs q->x) live under different
+        // base_var roots and are conservatively considered alias-free *only*
+        // because they have distinct roots — alias analysis (BORROW-007/008)
+        // would tighten the cross-pointer story. For now we mark the dereference
+        // explicitly with a "->field" segment so prefix queries still work.
+        case ASTNode::NodeType::POINTER_MEMBER: {
+            auto* member = static_cast<MemberAccessExpr*>(expr);
+            AccessPath base = extractAccessPath(member->object.get());
+            base.fields.push_back("->" + member->member);
+            return base;
+        }
+
         case ASTNode::NodeType::INDEX: {
             auto* index = static_cast<IndexExpr*>(expr);
             AccessPath base = extractAccessPath(index->array.get());
