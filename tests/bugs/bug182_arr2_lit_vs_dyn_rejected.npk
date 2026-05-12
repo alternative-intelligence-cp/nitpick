@@ -1,0 +1,16 @@
+// BUG-182: Mixing literal and dynamic indices on the outer level of a 2-D
+// array is treated conservatively (overlapping). arr2[0][1] vs arr2[i][2]
+// must be rejected with ARIA-023 even though col-1 and col-2 are distinct.
+// Verifies BORROW-004 dynamic-index conservative bail-out (v0.25.2).
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    int32[2][3]:arr2 = [[1, 2, 3], [4, 5, 6]];
+    int32:i = 0i32;
+    $$m int32:a = arr2[0][1];
+    $$m int32:b = arr2[i][2];
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};

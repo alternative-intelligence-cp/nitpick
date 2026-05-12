@@ -1,0 +1,19 @@
+// BUG-180: Array-of-struct distinct fields at the same literal index are
+// tracked as disjoint borrows.
+// pts[0].x and pts[0].y must coexist as $$m without ARIA-023.
+// Verifies BORROW-004 path-chaining for index-then-field (v0.25.2).
+
+struct:Point = { int32:x; int32:y; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    Point[2]:pts;
+    pts[0].x = 1i32;
+    pts[0].y = 2i32;
+    $$m int32:a = pts[0].x;
+    $$m int32:b = pts[0].y;
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};

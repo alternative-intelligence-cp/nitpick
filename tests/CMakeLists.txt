@@ -682,4 +682,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-002;BORROW-003;v0.25.1"
     )
+
+    # v0.25.2: multi-dim & nested array borrow paths (BORROW-004)
+    add_test(
+        NAME bug_tests_v0252
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0252.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0252 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-004;v0.25.2"
+    )
 endif()

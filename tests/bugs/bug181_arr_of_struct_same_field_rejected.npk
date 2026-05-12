@@ -1,0 +1,17 @@
+// BUG-181: Same array-of-struct field at the same literal index must conflict.
+// Two $$m borrows of pts[0].x must be rejected with ARIA-023.
+// Verifies BORROW-004 same-leaf detection (v0.25.2).
+
+struct:Point = { int32:x; int32:y; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    Point[2]:pts;
+    pts[0].x = 1i32;
+    $$m int32:a = pts[0].x;
+    $$m int32:b = pts[0].x;
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};
