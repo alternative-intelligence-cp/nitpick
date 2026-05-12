@@ -110,4 +110,4 @@ See `KNOWN_ISSUES.md` for MACRO-007 deferral rationale.
 
 ## Next Cycle
 
-v0.24.x planning is pending. See `META/ARIA/ROADMAP/MASTER_ROADMAP.md`.
+v0.24.x planning is pending. See `META/NITPICK/ROADMAP/MASTER_ROADMAP.md`.

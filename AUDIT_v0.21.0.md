@@ -14,7 +14,7 @@
 | CTest | 18/18 | ✅ PASS |
 | K core semantics | 127/127 | ✅ PASS |
 | K proofs | 10/10 | ✅ PASS |
-| Open bugs (META/ARIA/BUGS) | 0 | ✅ clean |
+| Open bugs (META/NITPICK/BUGS) | 0 | ✅ clean |
 
 No regressions from v0.20.5. All v0.21.x work starts from a green baseline.
 
