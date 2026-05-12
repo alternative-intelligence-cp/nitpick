@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# v0.24.4 regression tests — assert_static+comptime + diagnostics
+# (COMPTIME-008, COMPTIME-009)
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NPKC="${SCRIPT_DIR}/../../build/npkc"
+
+pass=0
+fail=0
+
+run_test() {
+    local label="$1"
+    local file="$2"
+    local bin
+    bin="$(mktemp /tmp/npk_test_XXXXXX)"
+
+    set +e
+    local compile_out
+    compile_out=$("$NPKC" "$file" -o "$bin" 2>&1)
+    local compile_rc=$?
+    set -e
+
+    if [[ $compile_rc -ne 0 ]]; then
+        echo "FAIL: $label — compile failed (rc=$compile_rc)"
+        echo "$compile_out"
+        rm -f "$bin"
+        fail=$((fail + 1))
+        return
+    fi
+
+    set +e
+    "$bin"
+    local run_rc=$?
+    set -e
+    rm -f "$bin"
+
+    if [[ $run_rc -eq 0 ]]; then
+        echo "PASS: $label"
+        pass=$((pass + 1))
+    else
+        echo "FAIL: $label — runtime exited $run_rc (expected 0)"
+        fail=$((fail + 1))
+    fi
+}
+
+# run_diag_test: compile must FAIL and stderr must contain ALL the given
+# substring patterns (one per extra argument).
+run_diag_test() {
+    local label="$1"
+    local file="$2"
+    shift 2
+    local patterns=("$@")
+    local bin
+    bin="$(mktemp /tmp/npk_test_XXXXXX)"
+
+    set +e
+    local compile_out
+    compile_out=$("$NPKC" "$file" -o "$bin" 2>&1)
+    local compile_rc=$?
+    set -e
+    rm -f "$bin"
+
+    if [[ $compile_rc -eq 0 ]]; then
+        echo "FAIL: $label — compile succeeded (expected failure)"
+        fail=$((fail + 1))
+        return
+    fi
+
+    local p
+    for p in "${patterns[@]}"; do
+        if ! grep -q -- "$p" <<<"$compile_out"; then
+            echo "FAIL: $label — diagnostic missing pattern: $p"
+            echo "--- diagnostic was: ---"
+            echo "$compile_out"
+            echo "-----------------------"
+            fail=$((fail + 1))
+            return
+        fi
+    done
+
+    echo "PASS: $label"
+    pass=$((pass + 1))
+}
+
+run_test "bug159_assert_static_comptime_true" \
+    "${SCRIPT_DIR}/bug159_assert_static_comptime_true.npk"
+
+run_test "bug160_assert_static_comptime_expr" \
+    "${SCRIPT_DIR}/bug160_assert_static_comptime_expr.npk"
+
+run_test "bug161_assert_static_comptime_func" \
+    "${SCRIPT_DIR}/bug161_assert_static_comptime_func.npk"
+
+run_diag_test "bug162_comptime_error_shows_expr_fail" \
+    "${SCRIPT_DIR}/bug162_comptime_error_shows_expr_fail.npk" \
+    "comptime evaluation failed" \
+    "expression:" \
+    "Division by zero"
+
+run_diag_test "bug163_comptime_error_call_chain_fail" \
+    "${SCRIPT_DIR}/bug163_comptime_error_call_chain_fail.npk" \
+    "comptime evaluation failed" \
+    "called from:" \
+    "inner(" \
+    "outer("
+
+echo
+if [[ $fail -ne 0 ]]; then
+    echo "v0.24.4 regression tests FAILED: $fail failing, $pass passing"
+    exit 1
+fi
+echo "v0.24.4 regression tests PASSED: $pass passing"

@@ -195,7 +195,11 @@ private:
     
     // === Error Handling ===
     std::vector<std::string> errors;
-    
+
+    // === v0.24.4 (COMPTIME-009): Call chain for diagnostics ===
+    // Pushed when entering a comptime function call, popped on return.
+    std::vector<std::string> callStack;
+
 public:
     // Constructor - takes optional SymbolTable pointer
     // If nullptr, uses internal storage (for standalone testing)

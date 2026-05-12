@@ -1,0 +1,18 @@
+// v0.24.4 (COMPTIME-009): when a comptime evaluation fails inside a chain of
+// comptime function calls, the diagnostic must show the call chain as
+//   called from: inner(...) -> outer(...)
+// Compiling this file must FAIL.
+comptime func:inner = int32(int32:n) {
+    pass 100i32 / n;
+};
+
+comptime func:outer = int32(int32:m) {
+    pass raw inner(m);
+};
+
+pub func:main = int32() {
+    int32:x = comptime(raw outer(0i32));
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

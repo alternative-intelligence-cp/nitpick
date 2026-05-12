@@ -610,4 +610,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "comptime;COMPTIME-006;COMPTIME-007;v0.24.3"
     )
+
+    # v0.24.4: assert_static+comptime + diagnostics (COMPTIME-008, COMPTIME-009)
+    add_test(
+        NAME bug_tests_v0244
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0244.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0244 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-008;COMPTIME-009;v0.24.4"
+    )
 endif()

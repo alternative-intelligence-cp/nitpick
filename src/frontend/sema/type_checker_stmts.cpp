@@ -2041,8 +2041,12 @@ Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
     
     // Check for evaluation errors
     if (constEvaluator->hasErrors()) {
+        // v0.24.4 (COMPTIME-009): improved diagnostics — include the expression
+        // text and the underlying reason on separate lines for clarity.
+        std::string exprText = expr->expr ? expr->expr->toString() : std::string("<unknown>");
         for (const auto& err : constEvaluator->getErrors()) {
-            addError("comptime evaluation failed: " + err, expr);
+            addError("comptime evaluation failed\n  expression: " + exprText +
+                     "\n  reason: " + err, expr);
         }
         constEvaluator->clearErrors();
         return typeSystem->getErrorType();

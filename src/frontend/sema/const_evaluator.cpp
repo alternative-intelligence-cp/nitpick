@@ -761,7 +761,18 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         // Error already added by checkStackDepth()
         return ComptimeValue();
     }
-    
+
+    // v0.24.4 (COMPTIME-009): record call chain for diagnostics
+    {
+        std::string frame = funcName + "(";
+        for (size_t i = 0; i < argValues.size(); ++i) {
+            if (i) frame += ", ";
+            frame += argValues[i].toString();
+        }
+        frame += ")";
+        callStack.push_back(frame);
+    }
+
     // Create new local scope for function body (parameters, local consts)
     pushLocalScope();
     
@@ -957,7 +968,8 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     // Cleanup local scope and stack frame
     popLocalScope();
     popStackFrame();
-    
+    if (!callStack.empty()) callStack.pop_back();
+
     // If evaluation succeeded, memoize the result
     if (!hasErrors()) {
         memoizeResult(funcName, argValues, result);
@@ -1628,7 +1640,18 @@ void ConstEvaluator::popStackFrame() {
 }
 
 void ConstEvaluator::addError(const std::string& msg) {
-    errors.push_back(msg);
+    // v0.24.4 (COMPTIME-009): if we're inside a comptime call chain, append it
+    // so the type checker can present a clear "called from:" trail.
+    if (!callStack.empty()) {
+        std::string full = msg + "\n  called from: ";
+        for (size_t i = callStack.size(); i-- > 0;) {
+            full += callStack[i];
+            if (i != 0) full += " -> ";
+        }
+        errors.push_back(full);
+    } else {
+        errors.push_back(msg);
+    }
 }
 
 // ============================================================================
