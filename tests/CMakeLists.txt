@@ -646,4 +646,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "comptime;COMPTIME-011;COMPTIME-012;v0.24.6"
     )
+
+    # v0.24.7: struct field reflection via @typeInfo + @fieldType (COMPTIME-013)
+    add_test(
+        NAME bug_tests_v0247
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0247.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0247 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-013;v0.24.7"
+    )
 endif()

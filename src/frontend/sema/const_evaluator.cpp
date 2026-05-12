@@ -705,6 +705,49 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         return getTypeInfo(typeName);
     }
 
+    // v0.24.7 (COMPTIME-013): @fieldType(T, "name") returns the type name
+    // of a struct field as a string. Shorthand for
+    // `@typeInfo(T).fields.<name>.type_name`.
+    if (funcName == "@fieldType" || funcName == "fieldType") {
+        if (call->arguments.size() != 2) {
+            addError("@fieldType expects exactly 2 arguments (type, field name)");
+            return ComptimeValue();
+        }
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
+            addError("@fieldType: first argument must be a type name");
+            return ComptimeValue();
+        }
+        ComptimeValue fnameVal = evaluateExpr(call->arguments[1].get());
+        if (hasErrors()) return ComptimeValue();
+        if (!fnameVal.isString()) {
+            addError("@fieldType: second argument must be a string");
+            return ComptimeValue();
+        }
+        ComptimeValue ti = getTypeInfo(typeName);
+        if (!ti.isStruct()) {
+            addError("@fieldType: '" + typeName + "' is not a struct type");
+            return ComptimeValue();
+        }
+        const auto& tfields = ti.getStruct();
+        auto fmIt = tfields.find("fields");
+        if (fmIt == tfields.end() || !fmIt->second.isStruct()) {
+            addError("@fieldType: type '" + typeName + "' has no field reflection info");
+            return ComptimeValue();
+        }
+        const auto& fmap = fmIt->second.getStruct();
+        auto fIt = fmap.find(fnameVal.getString());
+        if (fIt == fmap.end() || !fIt->second.isStruct()) {
+            addError("@fieldType: struct '" + typeName + "' has no field '" +
+                     fnameVal.getString() + "'");
+            return ComptimeValue();
+        }
+        const auto& finfo = fIt->second.getStruct();
+        auto tnIt = finfo.find("type_name");
+        if (tnIt == finfo.end()) return ComptimeValue();
+        return tnIt->second;
+    }
+
     // @sizeof(T) / @alignof(T): return size in bytes / alignment from getTypeInfo (COMPTIME-003, 004)
     if (funcName == "@sizeof" || funcName == "sizeof" ||
         funcName == "@alignof" || funcName == "alignof") {
@@ -1173,6 +1216,40 @@ ComptimeValue ConstEvaluator::getTypeInfo(const std::string& typeName) {
                     fieldNames += fields[i].name;
                 }
                 typeInfo["field_names"] = ComptimeValue::makeString(fieldNames);
+
+                // v0.24.7 (COMPTIME-013): per-field reflection sub-struct.
+                // `@typeInfo(T).fields.<name>` exposes
+                // `{ name, type_name, bit_width, alignment, offset }`.
+                std::map<std::string, ComptimeValue> fieldsMap;
+                for (const auto& f : fields) {
+                    std::map<std::string, ComptimeValue> finfo;
+                    std::string ftypeName = f.type ? f.type->toString() : std::string("?");
+                    finfo["name"] = ComptimeValue::makeString(f.name);
+                    finfo["type_name"] = ComptimeValue::makeString(ftypeName);
+                    // Bit width / alignment from primitive name when possible.
+                    int fbits = 0, falign = 0;
+                    if (ftypeName == "tbb8" || ftypeName == "int8" || ftypeName == "uint8") {
+                        fbits = 8; falign = 1;
+                    } else if (ftypeName == "tbb16" || ftypeName == "int16" || ftypeName == "uint16") {
+                        fbits = 16; falign = 2;
+                    } else if (ftypeName == "tbb32" || ftypeName == "int32" || ftypeName == "uint32" ||
+                               ftypeName == "flt32") {
+                        fbits = 32; falign = 4;
+                    } else if (ftypeName == "tbb64" || ftypeName == "int64" || ftypeName == "uint64" ||
+                               ftypeName == "flt64") {
+                        fbits = 64; falign = 8;
+                    } else if (ftypeName == "bool") {
+                        fbits = 1; falign = 1;
+                    } else if (ftypeName == "string") {
+                        fbits = 0; falign = 8;
+                    }
+                    finfo["bit_width"] = ComptimeValue::makeInteger(fbits, "int64", 64);
+                    finfo["alignment"] = ComptimeValue::makeInteger(falign, "int64", 64);
+                    finfo["offset"] = ComptimeValue::makeInteger(
+                        static_cast<int64_t>(f.offset), "int64", 64);
+                    fieldsMap[f.name] = ComptimeValue::makeStruct(finfo, "FieldInfo");
+                }
+                typeInfo["fields"] = ComptimeValue::makeStruct(fieldsMap, "FieldsMap");
                 
                 // Use struct's actual size and alignment if available
                 if (st->getSize() > 0) {

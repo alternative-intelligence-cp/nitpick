@@ -2075,15 +2075,27 @@ Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
         addError("Invalid comptime expression", expr);
         return typeSystem->getErrorType();
     }
-    
-    // First, type-check the inner expression normally
-    Type* innerType = inferType(expr->expr.get());
-    if (!innerType || innerType->getKind() == TypeKind::ERROR) {
-        return typeSystem->getErrorType();
+
+    // v0.24.7 (COMPTIME-013): Evaluate first. CTFE intrinsics like
+    // `@typeInfo(T).fields.<name>.bit_width` produce structured comptime
+    // values that don't have a clean type-checker representation; if eval
+    // succeeds, prefer its concrete result type over the inferType result.
+    ComptimeValue earlyResult = constEvaluator->evaluate(expr->expr.get());
+    bool earlyOk = !constEvaluator->hasErrors() &&
+                   earlyResult.getKind() != ComptimeValue::Kind::NULL_VALUE;
+    if (!earlyOk) constEvaluator->clearErrors();
+
+    Type* innerType = nullptr;
+    if (!earlyOk) {
+        innerType = inferType(expr->expr.get());
+        if (!innerType || innerType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
     }
-    
-    // Evaluate the expression at compile time
-    ComptimeValue result = constEvaluator->evaluate(expr->expr.get());
+
+    // Re-evaluate (or first-evaluate when earlyOk was false) to produce the
+    // result that downstream code reads via expr->intResult/floatResult/etc.
+    ComptimeValue result = earlyOk ? earlyResult : constEvaluator->evaluate(expr->expr.get());
     
     // Check for evaluation errors
     if (constEvaluator->hasErrors()) {
@@ -2129,7 +2141,7 @@ Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
             return typeSystem->getPrimitiveType("str");
         default:
             // For complex types (arrays, structs, etc.), use the inner expression's type
-            return innerType;
+            return innerType ? innerType : typeSystem->getPrimitiveType("int64");
     }
 }
 

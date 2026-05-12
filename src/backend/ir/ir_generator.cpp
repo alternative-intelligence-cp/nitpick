@@ -12924,7 +12924,36 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
             if (typeName == "bool") {
                 return builder.getInt1(comptimeExpr->boolResult);
             } else if (typeName == "str") {
-                return builder.CreateGlobalString(comptimeExpr->stringResult, "comptime.str");
+                // v0.24.7 (COMPTIME-013): emit a proper AriaString struct
+                // (matching string-literal codegen in codegen_expr.cpp), not
+                // a raw [N x i8]* — otherwise downstream consumers (println,
+                // string equality, etc.) read garbage and segfault.
+                const std::string& s = comptimeExpr->stringResult;
+                llvm::LLVMContext& ctx = module->getContext();
+                llvm::Constant* strData = llvm::ConstantDataArray::getString(ctx, s, true);
+                llvm::GlobalVariable* strGV = new llvm::GlobalVariable(
+                    *module, strData->getType(), true,
+                    llvm::GlobalValue::PrivateLinkage, strData, ".comptime.str.data");
+                llvm::StructType* npkStrTy =
+                    llvm::StructType::getTypeByName(ctx, "struct.NpkString");
+                if (!npkStrTy) {
+                    std::vector<llvm::Type*> fields = {
+                        llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0),
+                        llvm::Type::getInt64Ty(ctx)
+                    };
+                    npkStrTy = llvm::StructType::create(ctx, fields, "struct.NpkString");
+                }
+                std::vector<llvm::Constant*> structVals = {
+                    llvm::ConstantExpr::getPointerCast(
+                        strGV, llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0)),
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), s.length())
+                };
+                llvm::Constant* structConst =
+                    llvm::ConstantStruct::get(npkStrTy, structVals);
+                llvm::GlobalVariable* structGV = new llvm::GlobalVariable(
+                    *module, npkStrTy, true,
+                    llvm::GlobalValue::PrivateLinkage, structConst, ".comptime.str");
+                return structGV;
             } else if (typeName.find("flt") == 0 || typeName.find("f") == 0) {
                 // Float types
                 llvm::Type* llvmType = mapTypeFromName(typeName);

@@ -1,0 +1,33 @@
+// v0.24.7 (COMPTIME-013): per-field reflection via @typeInfo(T).fields
+// and @fieldType(T, "name"). A struct's fields are now exposed as a
+// comptime sub-struct keyed by name, each containing
+// {name, type_name, bit_width, alignment, offset}.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+Type:Point = {
+    func:create = Point(flt64:ix, flt64:iy) {
+        Point:p = Point{x: ix, y: iy};
+        pass p;
+    };
+    struct:interface = {
+        flt64:x;
+        flt64:y;
+    };
+};
+
+func:main = int32() {
+    int64:fc = comptime(@typeInfo(Point).field_count);
+    if (fc != 2i64) {
+        exit 1;
+    }
+    string:tx = comptime(@fieldType(Point, "x"));
+    if (tx != "flt64") {
+        exit 1;
+    }
+    string:ty = comptime(@fieldType(Point, "y"));
+    if (ty != "flt64") {
+        exit 1;
+    }
+    exit 0;
+};

@@ -1,8 +1,23 @@
-# Nitpick v0.23.7 — Known Issues & Limitations
+# Nitpick v0.24.7 — Known Issues & Limitations
 
-Last updated: v0.23.7
+Last updated: v0.24.7
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
+
+---
+
+## Deferred — v0.24.x
+
+### Comptime — Planned But Not Yet Implemented
+
+- **`--comptime-budget` flag** — CTFE step cap is documented as configurable
+  but the CLI flag is not exposed; the cap is a fixed compile-time constant.
+- **`--trace-comptime=<funcname>` flag** — documented in
+  `aria-docs/guide/comptime/debug.md` as planned; not implemented.
+- **Comptime arrays of struct values** evaluate correctly inside comptime
+  but cannot yet be embedded directly into IR globals; large lookup tables
+  should be built inside a `comptime { ... }` returning the final scalar
+  or small array.
 
 ---
 
@@ -11,11 +26,18 @@ Last updated: v0.23.7
 ### MACRO-007 — Complex Code-Generating Macros (Deferred)
 Macros that generate code requiring a C-shim bridge (heavy FFI body generation)
 are deferred. Current macros support all pure-Nitpick body patterns. C-bridging
-code generation macros require additional codegen work planned for v0.24.x+.
+code generation macros require additional codegen work planned for v0.25.x+.
 
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.24.x
+
+| ID | Description | Resolution | Version |
+|----|-------------|------------|---------|
+| (unnamed) | `string:x = comptime("...")` segfaulted at runtime — `COMPTIME_EXPR` codegen emitted raw `i8*` instead of `AriaString` struct | Construct `struct.NpkString {data, length}` global mirroring string-literal codegen | v0.24.7 |
+| (unnamed) | `inferComptimeExpr()` failed on intrinsic chains like `@typeInfo(T).fields.x.type_name` | Refactored to evaluate-first; only fall back to `inferType()` when evaluation fails | v0.24.7 |
 
 ### Resolved in v0.23.x
 

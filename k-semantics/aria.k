@@ -111,6 +111,7 @@ module ARIA-SYNTAX
                | "await" Exp [strict]
                | "drop" Exp [strict]
                | "?!" Exp [strict]
+               | "comptime" "(" Exp ")" [strict]
                > Exp "defaults" Exp [strict(1), right]
 
   syntax Stmt ::= Type ":" Id "=" Exp ";" [strict(3)]
@@ -138,6 +139,7 @@ module ARIA-SYNTAX
                 | "fall" Id ";"
                 | "loop" "(" Exp "," Exp "," Exp ")" Block [strict(1, 2, 3)]
                 | "defer" Block
+                | "comptime" Block
                 | Block
                 | Exp ";" [strict]
 
@@ -169,6 +171,9 @@ module ARIA-SYNTAX
                         | "async" "func:" Id "=" Type "(" ")" Block ";"
                         | "async" "func:" Id "=" Type "(" Param ")" Block ";"
                         | "async" "func:" Id "=" Type "(" Param "," Param ")" Block ";"
+                        | "comptime" "func:" Id "=" Type "(" ")" Block ";"
+                        | "comptime" "func:" Id "=" Type "(" Param ")" Block ";"
+                        | "comptime" "func:" Id "=" Type "(" Param "," Param ")" Block ";"
   syntax FuncDecls    ::= List{FuncDecl, ""}
   syntax FailsafeDecl ::= "func:failsafe" "=" "int32" "(" "tbb32" ":" Id ")" Block ";"
      syntax MainDecl     ::= "func:main" "=" "int32" "(" ")" Block ";"
@@ -226,6 +231,8 @@ module ARIA
     <exit-code> 0 </exit-code>
     // v0.23.7: MACRO-013 — macro registry cell (name -> body block)
     <macros> .Map </macros>
+    // v0.24.7: COMPTIME-014 — comptime function registry (name -> arity tag)
+    <comptime-env> .Map </comptime-env>
   </T>
 
   // -------------------------------------------------------------------------
@@ -1157,6 +1164,28 @@ module ARIA
 
   rule <k> loadFuncs(async func: F:Id = T:Type(P1:Param, P2:Param) { S:Stmt pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
        <functions> Funcs => Funcs [ F <- Fn2StmtPass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), S, E) ] </functions>
+
+  // v0.24.7: COMPTIME-014 — comptime func: declarations
+  //   Same runtime semantics as func: (Aria comptime is CTFE; in K we model
+  //   it as ordinary call evaluation), but additionally registered in
+  //   <comptime-env> so the model exposes the comptime callability set.
+  rule <k> loadFuncs(comptime func: F:Id = T:Type() { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn0Pass(T, E) ] </functions>
+       <comptime-env> CE => CE [ F <- 0 ] </comptime-env>
+
+  rule <k> loadFuncs(comptime func: F:Id = T:Type(P:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn1Pass(T, paramBorrow(P), paramType(P), paramName(P), E) ] </functions>
+       <comptime-env> CE => CE [ F <- 1 ] </comptime-env>
+
+  rule <k> loadFuncs(comptime func: F:Id = T:Type(P1:Param, P2:Param) { pass E:Exp ; }; REST:FuncDecls) => loadFuncs(REST) ... </k>
+       <functions> Funcs => Funcs [ F <- Fn2Pass(T, paramBorrow(P1), paramType(P1), paramName(P1), paramBorrow(P2), paramType(P2), paramName(P2), E) ] </functions>
+       <comptime-env> CE => CE [ F <- 2 ] </comptime-env>
+
+  // v0.24.7: COMPTIME-014 — comptime expression / block passthrough
+  //   Aria's comptime(E) folds E to a Val at compile time; in K's small-step
+  //   model the value-yielding rule is the same as runtime evaluation.
+  rule <k> comptime ( V:Val ) => V ... </k>
+  rule <k> comptime B:Block => B ... </k>
 
   // await: synchronous model — extracts success value from Result, or passes plain Val through
   rule <k> await Result(_:Val, V:Val, _:Bool) => V ... </k>

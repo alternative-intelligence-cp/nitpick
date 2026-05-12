@@ -1,0 +1,10 @@
+// expect-exit: 5
+// v0.24.7 COMPTIME-014: comptime { ... } block executes its body
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    comptime {
+        fixed int32:y = 5;
+        exit y;
+    }
+    exit 0;
+};

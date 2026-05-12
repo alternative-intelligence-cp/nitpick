@@ -1071,7 +1071,8 @@ ASTNodePtr Parser::parseUnary() {
         if (next.type == TokenType::TOKEN_IDENTIFIER &&
             (next.lexeme == "sizeof" || next.lexeme == "alignof" ||
              next.lexeme == "typeof" || next.lexeme == "offsetof" ||
-             next.lexeme == "typeInfo" || next.lexeme == "len")) {
+             next.lexeme == "typeInfo" || next.lexeme == "len" ||
+             next.lexeme == "fieldType")) {
             int line = token.line;
             int col = token.column;
             std::string builtinName = "@" + next.lexeme;
@@ -1100,6 +1101,12 @@ ASTNodePtr Parser::parseUnary() {
             
             // @offsetof takes a second argument (field name)
             if (builtinName == "@offsetof" && check(TokenType::TOKEN_COMMA)) {
+                advance(); // consume ','
+                ASTNodePtr field = parseExpression();
+                if (field) args.push_back(field);
+            }
+            // v0.24.7 (COMPTIME-013): @fieldType(T, "name") takes second arg
+            if (builtinName == "@fieldType" && check(TokenType::TOKEN_COMMA)) {
                 advance(); // consume ','
                 ASTNodePtr field = parseExpression();
                 if (field) args.push_back(field);

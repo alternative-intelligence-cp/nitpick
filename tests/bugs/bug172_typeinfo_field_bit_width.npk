@@ -1,0 +1,36 @@
+// v0.24.7 (COMPTIME-013): per-field bit_width via comptime nested
+// member access on @typeInfo(T).fields.<name>.bit_width.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+Type:Mixed = {
+    func:create = Mixed(int32:ia, flt64:fb, int8:ic) {
+        Mixed:m = Mixed{a: ia, b: fb, c: ic};
+        pass m;
+    };
+    struct:interface = {
+        int32:a;
+        flt64:b;
+        int8:c;
+    };
+};
+
+func:main = int32() {
+    int64:wa = comptime(@typeInfo(Mixed).fields.a.bit_width);
+    if (wa != 32i64) {
+        exit 1;
+    }
+    int64:wb = comptime(@typeInfo(Mixed).fields.b.bit_width);
+    if (wb != 64i64) {
+        exit 1;
+    }
+    int64:wc = comptime(@typeInfo(Mixed).fields.c.bit_width);
+    if (wc != 8i64) {
+        exit 1;
+    }
+    string:tb = comptime(@typeInfo(Mixed).fields.b.type_name);
+    if (tb != "flt64") {
+        exit 1;
+    }
+    exit 0;
+};
