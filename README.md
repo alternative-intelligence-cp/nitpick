@@ -1,4 +1,4 @@
-# Nitpick Programming Language v0.18.x (formerly Aria)
+# Nitpick Programming Language v0.24.x (formerly Aria)
 
 <p align="center">
     <img src="assets/nitpick_logo.png" alt="Nitpick logo: raccoon holding a magnifying glass" width="280">
@@ -14,86 +14,71 @@
 
 **The Alternative Intelligence Liberation Platform presents: A systems programming language built for safety, determinism, and AI-native applications**
 
-> ⚠️ **[READ THIS FIRST: SAFETY.md](SAFETY.md)** — No language is truly safe on its own. Aria makes dangerous operations **explicit** — you can't shoot yourself in the foot accidentally, but you can do it intentionally. Understand the safety contract before using `wild`, `async`, `@`, `extern`, or `wildx`.
+> ⚠️ **[READ THIS FIRST: SAFETY.md](SAFETY.md)** — No language is truly safe on its
+> own. Nitpick makes dangerous operations **explicit** — you can't shoot yourself in
+> the foot accidentally, but you can do it intentionally. Understand the safety
+> contract before using `wild`, `async`, `@`, `extern`, or `wildx`.
 
 ---
 
-## Current Status (May 4, 2026)
+## Current Status (May 12, 2026)
 
-**Stable release: v0.18.0 — K Framework executable semantics seed complete**
+**Stable release: v0.24.7 — Comptime / CTFE system complete (8-release cycle)**
 
-**Current transition: Nitpick rebrand planning plus bounded v0.18.x safety hardening**
+The v0.24.x cycle delivered the full compile-time evaluation subsystem: pure
+expression folding, comptime blocks, `comptime func:` declarations with
+memoization, type intrinsics (`@sizeof`, `@alignof`, `@offsetof`, `@len`,
+`@typeInfo`, `@fieldType`), `T: type` generic parameters, `limit<Rules>`
+short-circuit at comptime, `assert_static`, struct field reflection, and a
+formal K-Framework model of the comptime layer. All 14 tracked COMPTIME items
+are resolved.
 
-Aria is now feature-frozen for broad language-surface expansion and focused on
-distribution, formal semantics, and certification-grade validation. The v0.17.x
-series made Aria installable through mainstream Linux paths; v0.18.0 delivered a
-formal K Framework oracle seed for “what should this program do?” independent of
-`ariac`.
+**Current validation snapshot:** CTest **46/46** passing (release build,
+K semantics enabled); `k_semantics_core` **142/142** under K Framework v7.1.320;
+`k_semantics_proofs` **10/10** proof modules; **172** regression bug tests
+(bug001 – bug172); **103 packages**; **72 stdlib modules**.
 
-**Current validation snapshot:** CTest **8/8 passing** with K semantics enabled;
-`k_semantics_core` **109/109** under K Framework v7.1.320;
-`k_semantics_proofs` **10/10 proof modules**;
-v0.16/v0.17 compiler audit baseline **1,015 tests** with 0 genuine regressions;
-**800K+ fuzz tests** with 0 crashes; **103 packages**; **72 stdlib modules**.
+**v0.24.x highlights (released this cycle):**
+- **v0.24.0–v0.24.2** — Comptime triage, `comptime(expr)` const folding,
+  `comptime { ... }` blocks with mutable locals, `comptime func:` with
+  memoization, `@sizeof`/`@alignof`/`@offsetof`/`@len` intrinsics, comptime
+  string operations.
+- **v0.24.3–v0.24.4** — Macro × comptime cooperation, `assert_static`,
+  comptime call-chain diagnostics, recursion budget enforcement.
+- **v0.24.5** — Comptime generics: `T: type` parameters and type-level dispatch.
+- **v0.24.6** — `limit<Rules>` short-circuit at comptime; explicit
+  enforcement of comptime limitations (no I/O, GC, extern, async, threading,
+  pinning, RNG, time).
+- **v0.24.7** — Struct field reflection (`@typeInfo(T).fields.<name>`,
+  `@fieldType(T, "f")`), K semantics for the comptime layer (3 new K core
+  tests, `<comptime-env>` configuration cell), 9-chapter
+  [`guide/comptime/`](https://github.com/alternative-intelligence-cp/nitpick-docs/tree/main/guide/comptime)
+  documentation, and the [v0.24.7 audit](AUDIT_v0.24.7.md) closing the cycle.
 
-**v0.18.0 complete:**
-- **K executable semantics seed** — `k-semantics/aria.k` defines a
-    first executable subset: `func:main`/`func:failsafe`, variable binding,
-    `fixed`, bounded `int32`/`int64`, explicit `tbb32` min-sentinel behavior,
-    integer arithmetic/comparisons, sticky `ERR`, `Unknown`, Result operators,
-    zero-/one-/two-argument helper calls returning through `pass`/`fail`,
-    isolated helper call frames with pinned-host preservation,
-    one-/two-/three-field structs with field reads and writes, string literals,
-    `print`/`println` stdout modeling, `if`/`else`,
-    `pick`/`fall` value and wildcard dispatch, untyped `Rules:` declarations,
-    integer `limit<Rules>` declaration and reassignment checks with failsafe
-    routing, cascaded rules, initial memory allocation qualifier semantics for
-    `stack`/`gc`/`wild`, `alloc`/`free` wild cleanup and leak routing,
-    `wildx` declarations as explicit executable-memory allocations sharing the
-    currently modeled wild cleanup/leak lifecycle, initial `defer { ... }`
-    block-scoped LIFO cleanup semantics, local pointer
-    address/dereference/store-through semantics for `@value`, `<-ptr`, and
-    `<-ptr = value`, pointer-member reads and store-through via `ptr->field`,
-    including nested pointer-valued paths such as `ptr->leaf->x`,
-    `#value` pin registration with pin dereference,
-    read-only pin store-through, pin-member store-through enforcement,
-    pin-derived nested path mutation blocking, pinned-host field mutation blocking,
-    pinned-host by-value call and terminal-exit blocking,
-    and block-scoped pin release,
-    initial borrow permission semantics for `$$i`/`$$m` aliases and helper parameters,
-    direct struct-field borrow path tracking that distinguishes disjoint fields
-    such as `obj.a` and `obj.b`, blocks exact borrowed-field mutation, and keeps
-    conservative host-level conflicts,
-    nested two-level struct-field borrow path tracking such as `box.leaf.x`,
-    including sibling split borrows, parent/child conflict checks, nested-field
-    mutation, and parent-field mutation blocking while a child field is borrowed,
-    local mutable field-alias writeback for direct and two-level paths such as
-    `$$m int32:x = pair.a` and `$$m int32:x = box.leaf.x`,
-    fixed two-element array literals, literal-index reads/writes, and
-    literal-index borrow path tracking/writeback for paths such as
-    `$$m int32:x = arr[0]`,
-    positive `$$m` call-by-reference mutation/writeback,
-    block-scoped borrow release for nested statement blocks,
-    `loop(start,end,step)`, and `exit`.
-- **K runner integrated with CTest** — `run_k_tests.sh` compiles with `kompile`,
-    executes core programs with `krun`, and skips cleanly when K is unavailable.
-- **K proof runner integrated with CTest** — `run_k_proofs.sh` compiles the
-    semantics with the Haskell backend required by `kprove` and proves the core
-    field-alias, pin read-only, pinned by-value, local pointer, pointer-path,
-    borrow-path, control/rules, arithmetic, and Result claim modules.
-- **Remaining wall documented** — the current compiler/K model now covers the
-    safe fixed-array literal-index subset, while richer arrays, dynamic indices,
-    arrays-in-structs, and deeper mixed field/index paths remain future work.
-
-**Recently completed series:**
-- **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
-    Debian `.deb` builder, RPM builder, `aria-pkg` remote fetch from GitHub, and
-    refreshed install/tooling docs.
-- **v0.16.x** — Full compiler/runtime/tooling audit: 0 TODO/FIXME/HACK in C++
-    source, 72 stdlib modules audited, 33 examples tested, 171-page manual
-    regenerated, improved diagnostics, and 800K+ fuzz tests with 0 crashes.
+**Catching up — major series since the last GitHub release on `main` (v0.17.5):**
+- **v0.18.x** — K Framework executable semantics seed; KLEE symbolic execution;
+  Juliet CWE corpus; bounded safety hardening.
+- **v0.19.x** — Array, struct, and borrow-checker polish; loop-body borrow
+  checking; K semantics through 127 core tests.
+- **v0.20.x** — Diagnostics & warning system polish, preprocessor hardening,
+  Display trait, closure lifetimes, `optional<T>`.
+- **v0.21.x** — Audit-driven follow-ups: cfg compilation, `derive(Display)`,
+  async borrow checking, `Rules`/Z3 disjointness, ICE quality, AArch64 JIT
+  diagnostics, K `tbb8`/`tbb16`/`tbb64`, K `async`/`await`.
+- **v0.22.x** — Port-driven polish (CHIP-8, jsmn, Brainfuck): `get_argc`/
+  `get_argv` builtins, `break`/`continue`, pick on integers, bitwise ops,
+  string escape sequences, reserved-keyword diagnostics.
+- **v0.23.x** — Full macro system: hygiene, recursion + depth guard, variadic
+  macros, statement-position invocations, built-in macros (`assert!`, `todo!`,
+  `unreachable!`, `cfg!`), `--expand-macros` flag, K semantics for macros.
+- **v0.24.x** — Comptime / CTFE system (this release).
 
 **Previous series highlights:**
+- **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
+    Debian `.deb` builder, RPM builder, `aria-pkg` remote fetch from GitHub.
+- **v0.16.x** — Full compiler/runtime/tooling audit: 0 TODO/FIXME/HACK in C++
+    source, 72 stdlib modules audited, 33 examples tested, 171-page manual
+    regenerated, **800K+ fuzz tests** with 0 crashes.
 - **v0.15.x** — Self-hosting: 12 compiler/tool modules ported to Aria (lexer, parser, type checker, borrow checker, safety checker, exhaustiveness, const evaluator, module resolver, doc generator, package manager, project config), final census
 - **v0.14.x** — SMT solver expansion: contract proofs, range inference, data race analysis, fast-paths, documentation
 - **v0.13.x** — Traits, enums, generics, deferred language features, @ function pointers, 234-page PDF manual, final audit (959 tests, 17h+ fuzzing)
