@@ -670,4 +670,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-001;v0.25.0"
     )
+
+    # v0.25.1: defer body + early-exit borrow release (BORROW-002, BORROW-003)
+    add_test(
+        NAME bug_tests_v0251
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0251.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0251 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-002;BORROW-003;v0.25.1"
+    )
 endif()

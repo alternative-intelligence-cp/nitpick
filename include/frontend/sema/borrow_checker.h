@@ -848,6 +848,14 @@ private:
      */
     void checkForLeaks();
 
+    /**
+     * v0.25.1 (BORROW-003): Detect memory leaks across ALL enclosing scopes,
+     * up to the function root. Used on early-exit statements (`pass`, `fail`,
+     * `return`, `exit`) where the normal scope-pop leak check never fires
+     * because the inner scopes are abandoned by control flow.
+     */
+    void checkForLeaksAllScopes();
+
     // ========================================================================
     // Defer Enforcement (ARIA-014)
     // ========================================================================

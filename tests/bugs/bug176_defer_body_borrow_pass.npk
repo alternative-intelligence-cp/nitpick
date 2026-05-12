@@ -1,0 +1,14 @@
+// BUG-176: defer body without borrow conflicts must still compile (v0.25.1).
+// Single $$i borrow inside defer body is fine.
+// Expected: exit 0.
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    int32:x = 42;
+    defer {
+        $$i int32:r = x;
+        int32:y = (r + 0);
+    }
+    exit 0;
+};

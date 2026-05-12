@@ -1301,6 +1301,30 @@ void BorrowChecker::checkForLeaks() {
     }
 }
 
+// v0.25.1 (BORROW-003): early-exit (pass/fail/return/exit) abandons every
+// enclosing scope on the way out, so the per-scope leak check that runs at
+// normal block exit never fires for those scopes. Walk every scope on the
+// stack and report any wild allocation that has not been paired with a
+// free() / defer free().
+void BorrowChecker::checkForLeaksAllScopes() {
+    std::unordered_set<std::string> already_reported;
+    for (auto it = ctx.scope_stack.rbegin(); it != ctx.scope_stack.rend(); ++it) {
+        for (const auto& var : *it) {
+            if (already_reported.count(var) > 0) continue;
+            if (ctx.pending_wild_frees.count(var) > 0) {
+                BorrowError err(1, 1,
+                    "Memory leak on early exit: wild variable '" + var +
+                        "' was not freed before pass/fail/return/exit",
+                    "hint: add 'defer { free(" + var +
+                        "); }' after allocation so the cleanup also runs on early exit");
+                err.code = "ARIA-014";
+                errors.push_back(err);
+                already_reported.insert(var);
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Defer Enforcement (ARIA-014)
 // ============================================================================
@@ -1426,6 +1450,19 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             auto* exprStmt = static_cast<ExpressionStmt*>(stmt);
             if (exprStmt->expression) {
                 checkExpression(exprStmt->expression.get());
+                // v0.25.1 (BORROW-003): `exit(code)` parses as ExpressionStmt(
+                //   CallExpr(IdentifierExpr("exit"), ...)). Treat it as an
+                //   early-exit terminator and audit leaks across every scope.
+                if (exprStmt->expression->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(exprStmt->expression.get());
+                    if (call->callee &&
+                        call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        auto* id = static_cast<IdentifierExpr*>(call->callee.get());
+                        if (id->name == "exit") {
+                            checkForLeaksAllScopes();
+                        }
+                    }
+                }
             }
             break;
         }
@@ -2566,6 +2603,9 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
     }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
 }
 
 void BorrowChecker::checkPassStmt(PassStmt* stmt) {
@@ -2590,6 +2630,9 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
     }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
 }
 
 // v0.25.0 (BORROW-001 triage): `fail <expr>;` early-exit was previously
@@ -2604,6 +2647,9 @@ void BorrowChecker::checkFailStmt(FailStmt* stmt) {
             checkReturnBorrowEscape(stmt->errorCode.get(), stmt);
         }
     }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
 }
 
 // v0.25.0 (BORROW-001 triage): `till(limit, step) { body }` body was
@@ -2792,6 +2838,17 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
     // ARIA-014: Deep scan the defer block for free() calls
     // Handles: direct free(), wrapper functions, conditionals, method cleanup
     if (stmt->block) {
+        // v0.25.1 (BORROW-002): Walk the defer body so internal borrow conflicts
+        // (e.g. two $$m of the same host inside the defer block) are caught.
+        // The defer body executes at scope exit (LIFO), so we run it in its own
+        // nested scope rather than mutating the enclosing scope's borrow state.
+        // This catches intra-body conflicts like ARIA-023 / ARIA-026 without
+        // letting defer-internal borrows leak into the surrounding flow.
+        // Note: full deferred-execution-point modeling (mutations inside the
+        // defer body conflicting with borrows still live at the deferred point)
+        // is tracked as a follow-up under BORROW-002.
+        checkStatement(stmt->block.get());
+
         // Step 1: Identify ALL variables that MIGHT be freed (May-Analysis)
         std::unordered_set<std::string> freed_vars =
             scanDeferBlockForFree(stmt->block.get(), stmt->line, false);

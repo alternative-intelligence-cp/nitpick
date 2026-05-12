@@ -887,6 +887,14 @@ public:
     void checkTillStmt(TillStmt* stmt);
     
     /**
+     * Check defer statement (v0.25.1: BORROW-002 prerequisite)
+     *
+     * Recursively type-checks the deferred block body in its own scope.
+     * Body executes at scope exit (LIFO) but must still type-check now.
+     */
+    void checkDeferStmt(DeferStmt* stmt);
+    
+    /**
      * Check loop statement
      * 
      * Rules:

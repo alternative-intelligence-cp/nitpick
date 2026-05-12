@@ -129,6 +129,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkWhenStmt(static_cast<WhenStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::DEFER:
+            checkDeferStmt(static_cast<DeferStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::BLOCK:
             checkBlockStmt(static_cast<BlockStmt*>(stmt));
             break;
@@ -3506,6 +3510,19 @@ void TypeChecker::checkBlockStmt(BlockStmt* stmt) {
     
     // Exit scope
     symbolTable->exitScope();
+}
+
+// ============================================================================
+// Defer Statement Type Checking (v0.25.1: BORROW-002 prerequisite)
+// ============================================================================
+
+void TypeChecker::checkDeferStmt(DeferStmt* stmt) {
+    if (!stmt || !stmt->block) {
+        return;
+    }
+    // Defer body executes at scope exit (LIFO), but it still needs to be
+    // type-checked now in its own block scope.
+    checkStatement(stmt->block.get());
 }
 
 // ============================================================================
