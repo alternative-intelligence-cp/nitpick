@@ -1,0 +1,21 @@
+// v0.24.2 — COMPTIME-005: @len on string literals at comptime
+
+pub func:main = int32() {
+    int64:l0 = comptime(@len(""));
+    int64:l3 = comptime(@len("abc"));
+    int64:l5 = comptime(@len("hello"));
+    int64:l11 = comptime(@len("hello world"));
+
+    if (l0  != 0)  { exit 1; }
+    if (l3  != 3)  { exit 2; }
+    if (l5  != 5)  { exit 3; }
+    if (l11 != 11) { exit 4; }
+
+    // @len of concatenated strings
+    int64:lc = comptime(@len("foo" + "bar"));
+    if (lc != 6) { exit 5; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

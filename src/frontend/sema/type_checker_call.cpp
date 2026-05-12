@@ -442,6 +442,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             return typeSystem->getPrimitiveType("int64");
         }
         
+        // @len(s) -> int64 - Length of a string or array (comptime-only for now)
+        if (idExpr->name == "@len" || idExpr->name == "len") {
+            if (expr->arguments.size() != 1) {
+                addError("@len() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
+        
         // ====================================================================
         // COMPILER HINTS - Branch Prediction & Performance
         // ====================================================================

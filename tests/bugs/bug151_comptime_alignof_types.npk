@@ -1,0 +1,21 @@
+// v0.24.2 — COMPTIME-004: @alignof(T) intrinsic at comptime
+
+pub func:main = int32() {
+    int64:a8  = comptime(@alignof(int8));
+    int64:a16 = comptime(@alignof(int16));
+    int64:a32 = comptime(@alignof(int32));
+    int64:a64 = comptime(@alignof(int64));
+    int64:af64 = comptime(@alignof(flt64));
+    int64:ab  = comptime(@alignof(bool));
+
+    if (a8  != 1) { exit 1; }
+    if (a16 != 2) { exit 2; }
+    if (a32 != 4) { exit 3; }
+    if (a64 != 8) { exit 4; }
+    if (af64 != 8) { exit 5; }
+    if (ab  != 1) { exit 6; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

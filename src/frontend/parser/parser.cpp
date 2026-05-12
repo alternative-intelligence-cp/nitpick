@@ -1063,39 +1063,51 @@ ASTNodePtr Parser::parsePrimary() {
 ASTNodePtr Parser::parseUnary() {
     Token token = peek();
     
-    // Check for @sizeof(type_or_expr) — must come before general @ handling
+    // Check for @sizeof / @alignof / @typeof / @offsetof / @typeInfo
+    // Must come before general @ handling. These take a type or expression argument;
+    // we need to allow type keywords (int64, etc.) in the first position.
     if (token.type == TokenType::TOKEN_AT) {
         Token next = peekNext();
-        if (next.type == TokenType::TOKEN_IDENTIFIER && next.lexeme == "sizeof") {
+        if (next.type == TokenType::TOKEN_IDENTIFIER &&
+            (next.lexeme == "sizeof" || next.lexeme == "alignof" ||
+             next.lexeme == "typeof" || next.lexeme == "offsetof" ||
+             next.lexeme == "typeInfo" || next.lexeme == "len")) {
             int line = token.line;
             int col = token.column;
+            std::string builtinName = "@" + next.lexeme;
             advance(); // consume '@'
-            advance(); // consume 'sizeof'
+            advance(); // consume builtin name
             
-            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after @sizeof");
+            consume(TokenType::TOKEN_LEFT_PAREN, ("Expected '(' after " + builtinName).c_str());
             
             // The argument can be a type keyword (int64, uint32, etc.) or an expression
             ASTNodePtr arg;
             Token argToken = peek();
             if (isTypeKeyword(argToken.type)) {
-                // Type keyword — convert to identifier with type name
                 std::string typeName = argToken.lexeme;
-                advance(); // consume the type keyword
+                advance();
                 arg = std::make_shared<IdentifierExpr>(typeName, argToken.line, argToken.column);
             } else {
                 arg = parseExpression();
             }
             if (!arg) {
-                error("Expected type or expression in @sizeof()");
+                error(("Expected type or expression in " + builtinName + "()").c_str());
                 return nullptr;
             }
             
-            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after @sizeof argument");
-            
-            // Build as CallExpr with callee "@sizeof" so type checker and codegen recognize it
             std::vector<ASTNodePtr> args;
             args.push_back(arg);
-            auto identExpr = std::make_shared<IdentifierExpr>("@sizeof", line, col);
+            
+            // @offsetof takes a second argument (field name)
+            if (builtinName == "@offsetof" && check(TokenType::TOKEN_COMMA)) {
+                advance(); // consume ','
+                ASTNodePtr field = parseExpression();
+                if (field) args.push_back(field);
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, ("Expected ')' after " + builtinName + " argument").c_str());
+            
+            auto identExpr = std::make_shared<IdentifierExpr>(builtinName, line, col);
             return std::make_shared<CallExpr>(identExpr, args, line, col);
         }
     }

@@ -1,0 +1,21 @@
+// v0.24.2 — COMPTIME-003: @sizeof(T) intrinsic at comptime
+
+pub func:main = int32() {
+    int64:s8  = comptime(@sizeof(int8));
+    int64:s16 = comptime(@sizeof(int16));
+    int64:s32 = comptime(@sizeof(int32));
+    int64:s64 = comptime(@sizeof(int64));
+    int64:f32 = comptime(@sizeof(flt32));
+    int64:f64 = comptime(@sizeof(flt64));
+
+    if (s8  != 1) { exit 1; }
+    if (s16 != 2) { exit 2; }
+    if (s32 != 4) { exit 3; }
+    if (s64 != 8) { exit 4; }
+    if (f32 != 4) { exit 5; }
+    if (f64 != 8) { exit 6; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

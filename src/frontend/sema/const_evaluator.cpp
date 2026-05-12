@@ -489,7 +489,12 @@ ComptimeValue ConstEvaluator::evalBinaryOp(BinaryExpr* binOp) {
     }
     
     const std::string& op = binOp->op.lexeme;
-    
+
+    // String concatenation: "a" + "b" -> "ab" (COMPTIME-005)
+    if (op == "+" && left.isString() && right.isString()) {
+        return ComptimeValue::makeString(left.getString() + right.getString());
+    }
+
     // Dispatch arithmetic operations
     if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
         
@@ -603,6 +608,69 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
             return ComptimeValue();
         }
         return getTypeInfo(typeName);
+    }
+
+    // @sizeof(T) / @alignof(T): return size in bytes / alignment from getTypeInfo (COMPTIME-003, 004)
+    if (funcName == "@sizeof" || funcName == "sizeof" ||
+        funcName == "@alignof" || funcName == "alignof") {
+        bool wantAlign = (funcName == "@alignof" || funcName == "alignof");
+        const char* label = wantAlign ? "@alignof" : "@sizeof";
+        if (call->arguments.size() != 1) {
+            addError(std::string(label) + " expects exactly 1 argument (type name)");
+            return ComptimeValue();
+        }
+        ASTNode* arg = call->arguments[0].get();
+        std::string typeName;
+        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+            typeName = static_cast<IdentifierExpr*>(arg)->name;
+        } else if (arg->type == ASTNode::NodeType::LITERAL) {
+            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
+            if (argVal.isString()) {
+                typeName = argVal.getString();
+            } else {
+                addError(std::string(label) + " argument must be a type name or string");
+                return ComptimeValue();
+            }
+        } else {
+            addError(std::string(label) + " argument must be a type name");
+            return ComptimeValue();
+        }
+        ComptimeValue ti = getTypeInfo(typeName);
+        if (!ti.isStruct()) return ComptimeValue();
+        const auto& fields = ti.getStruct();
+        if (wantAlign) {
+            auto it = fields.find("alignment");
+            if (it == fields.end()) {
+                addError(std::string(label) + ": no alignment info for type '" + typeName + "'");
+                return ComptimeValue();
+            }
+            return it->second;
+        } else {
+            auto it = fields.find("bit_width");
+            if (it == fields.end()) {
+                addError(std::string(label) + ": no size info for type '" + typeName + "'");
+                return ComptimeValue();
+            }
+            int64_t bits = it->second.getInt();
+            int64_t bytes = (bits + 7) / 8;
+            return ComptimeValue::makeInteger(bytes, "int64", 64);
+        }
+    }
+
+    // @len(s) on a string returns its character count (COMPTIME-005)
+    if (funcName == "@len" || funcName == "len") {
+        if (call->arguments.size() != 1) {
+            addError("@len expects exactly 1 argument");
+            return ComptimeValue();
+        }
+        ComptimeValue argVal = evaluateExpr(call->arguments[0].get());
+        if (hasErrors()) return ComptimeValue();
+        if (argVal.isString()) {
+            return ComptimeValue::makeInteger(
+                static_cast<int64_t>(argVal.getString().size()), "int64", 64);
+        }
+        addError("@len: unsupported argument type (expected string)");
+        return ComptimeValue();
     }
 
     // === raw / drop intrinsics ===
@@ -1298,6 +1366,16 @@ ComptimeValue ConstEvaluator::compare(const ComptimeValue& a, const ComptimeValu
         
         if (op == "==") result = (aVal == bVal);
         else if (op == "!=") result = (aVal != bVal);
+    } else if (a.isString() && b.isString()) {
+        // String comparison (COMPTIME-005)
+        const std::string& aVal = a.getString();
+        const std::string& bVal = b.getString();
+        if (op == "==") result = (aVal == bVal);
+        else if (op == "!=") result = (aVal != bVal);
+        else if (op == "<") result = (aVal < bVal);
+        else if (op == "<=") result = (aVal <= bVal);
+        else if (op == ">") result = (aVal > bVal);
+        else if (op == ">=") result = (aVal >= bVal);
     }
     
     return ComptimeValue::makeBool(result);
