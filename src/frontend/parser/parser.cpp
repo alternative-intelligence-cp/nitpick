@@ -1833,6 +1833,20 @@ ASTNodePtr Parser::parseCallExpression(ASTNodePtr callee) {
                 }
                 arguments.push_back(std::make_shared<SpreadExpr>(operand, spreadToken.line, spreadToken.column));
             } else {
+                // v0.24.5 (COMPTIME-010): allow a bare type keyword as a call
+                // argument (e.g. `bw(int32)`) so comptime functions taking a
+                // `T: type` parameter can be invoked with a primitive type.
+                Token argTok = peek();
+                if (isTypeKeyword(argTok.type)) {
+                    Token nextTok = peekNext();
+                    if (nextTok.type == TokenType::TOKEN_COMMA ||
+                        nextTok.type == TokenType::TOKEN_RIGHT_PAREN) {
+                        advance();
+                        arguments.push_back(std::make_shared<IdentifierExpr>(
+                            argTok.lexeme, argTok.line, argTok.column));
+                        continue;
+                    }
+                }
                 ASTNodePtr arg = parseExpression();
                 if (arg) {
                     arguments.push_back(arg);
@@ -3320,16 +3334,29 @@ ASTNodePtr Parser::parseFuncDecl() {
             }
             
             // Parse parameter type using parseType() for full type support (including generics)
-            ASTNodePtr paramTypeNode = parseType();
-            if (!paramTypeNode) {
-                error("Expected parameter type");
-                return nullptr;
+            // v0.24.5 (COMPTIME-010): special-case bare identifier `type` as the
+            // type parameter meta-type. `type:T` declares a comptime generic.
+            bool paramIsTypeParam = false;
+            ASTNodePtr paramTypeNode;
+            if (peek().type == TokenType::TOKEN_IDENTIFIER &&
+                peek().lexeme == "type" &&
+                peekNext().type == TokenType::TOKEN_COLON) {
+                Token typeTok = advance();  // consume 'type'
+                paramTypeNode = std::make_shared<IdentifierExpr>(
+                    "type", typeTok.line, typeTok.column);
+                paramIsTypeParam = true;
+            } else {
+                paramTypeNode = parseType();
+                if (!paramTypeNode) {
+                    error("Expected parameter type");
+                    return nullptr;
+                }
             }
-            
+
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
-            
+
             Token paramNameToken = consumeName("parameter");
-            
+
             auto param = std::make_shared<ParameterNode>(
                 paramTypeNode,  // Pass ASTNodePtr instead of string
                 paramNameToken.lexeme,
@@ -3337,12 +3364,13 @@ ASTNodePtr Parser::parseFuncDecl() {
                 funcToken.line,
                 funcToken.column
             );
-            
+
             // Set qualifier flags
             param->isWild = isWild;
             param->isWildx = isWildx;
             param->isBorrowImm = isBorrowImm;
             param->isBorrowMut = isBorrowMut;
+            param->isTypeParam = paramIsTypeParam;
             
             parameters.push_back(param);
             

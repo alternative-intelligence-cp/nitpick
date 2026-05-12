@@ -110,6 +110,16 @@ ComptimeValue ComptimeValue::makeArray(const std::vector<ComptimeValue>& element
     return result;
 }
 
+// v0.24.5 (COMPTIME-010): comptime type-name value for `type:T` parameters.
+ComptimeValue ComptimeValue::makeTypeName(const std::string& tn) {
+    ComptimeValue result;
+    result.kind = Kind::TYPE_NAME;
+    result.value = tn;
+    result.typeName = "type";
+    result.bitWidth = 0;
+    return result;
+}
+
 int64_t ComptimeValue::getInt() const {
     return std::get<int64_t>(value);
 }
@@ -225,6 +235,8 @@ bool ComptimeValue::operator==(const ComptimeValue& other) const {
             return getBool() == other.getBool();
         case Kind::STRING:
             return getString() == other.getString();
+        case Kind::TYPE_NAME:
+            return getString() == other.getString();
         case Kind::POINTER:
             return getPointer() == other.getPointer();
         case Kind::NULL_VALUE:
@@ -276,6 +288,8 @@ bool ComptimeValue::operator<(const ComptimeValue& other) const {
         case Kind::BOOL:
             return getBool() < other.getBool();
         case Kind::STRING:
+            return getString() < other.getString();
+        case Kind::TYPE_NAME:
             return getString() < other.getString();
         case Kind::POINTER:
             // Compare pointers by allocId, then offset
@@ -364,6 +378,25 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
             return evalTernary(static_cast<TernaryExpr*>(node));
         case ASTNode::NodeType::CALL:
             return evalFunctionCall(static_cast<CallExpr*>(node));
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            // v0.24.5 (COMPTIME-010): support struct field access during CTFE
+            // (e.g. `@typeInfo(T).bit_width`).
+            auto* mem = static_cast<MemberAccessExpr*>(node);
+            ComptimeValue obj = evaluateExpr(mem->object.get());
+            if (hasErrors()) return ComptimeValue();
+            if (!obj.isStruct()) {
+                addError("comptime member access requires a struct value, got " +
+                         obj.toString());
+                return ComptimeValue();
+            }
+            const auto& fields = obj.getStruct();
+            auto it = fields.find(mem->member);
+            if (it == fields.end()) {
+                addError("comptime: struct has no field '" + mem->member + "'");
+                return ComptimeValue();
+            }
+            return it->second;
+        }
         case ASTNode::NodeType::COMPTIME_EXPR:
             // Unwrap: comptime(expr) just evaluates the inner expression
             return evaluateExpr(static_cast<ComptimeExpr*>(node)->expr.get());
@@ -615,26 +648,36 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     const std::string& funcName = callee->name;
 
     // === Builtin Intrinsics ===
+    // v0.24.5 (COMPTIME-010): if an identifier resolves to a local TYPE_NAME
+    // value (a `type:T` parameter binding), substitute its stored type name.
+    auto resolveTypeArg = [&](ASTNode* arg) -> std::string {
+        std::string tn;
+        if (!arg) return tn;
+        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& nm = static_cast<IdentifierExpr*>(arg)->name;
+            for (auto it = localScopeStack.rbegin(); it != localScopeStack.rend(); ++it) {
+                auto f = it->find(nm);
+                if (f != it->end()) {
+                    if (f->second.isTypeName()) return f->second.getString();
+                    break;
+                }
+            }
+            tn = nm;
+        } else if (arg->type == ASTNode::NodeType::LITERAL) {
+            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
+            if (argVal.isString()) tn = argVal.getString();
+        }
+        return tn;
+    };
+
     // Handle @typeInfo(TypeName) - returns TypeInfo struct
     if (funcName == "@typeInfo" || funcName == "typeInfo") {
         if (call->arguments.size() != 1) {
             addError("@typeInfo expects exactly 1 argument (type name)");
             return ComptimeValue();
         }
-        // Argument should be an identifier (type name) or string literal
-        ASTNode* arg = call->arguments[0].get();
-        std::string typeName;
-        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
-            typeName = static_cast<IdentifierExpr*>(arg)->name;
-        } else if (arg->type == ASTNode::NodeType::LITERAL) {
-            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
-            if (argVal.isString()) {
-                typeName = argVal.getString();
-            } else {
-                addError("@typeInfo argument must be a type name or string");
-                return ComptimeValue();
-            }
-        } else {
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
             addError("@typeInfo argument must be a type name");
             return ComptimeValue();
         }
@@ -650,19 +693,8 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
             addError(std::string(label) + " expects exactly 1 argument (type name)");
             return ComptimeValue();
         }
-        ASTNode* arg = call->arguments[0].get();
-        std::string typeName;
-        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
-            typeName = static_cast<IdentifierExpr*>(arg)->name;
-        } else if (arg->type == ASTNode::NodeType::LITERAL) {
-            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
-            if (argVal.isString()) {
-                typeName = argVal.getString();
-            } else {
-                addError(std::string(label) + " argument must be a type name or string");
-                return ComptimeValue();
-            }
-        } else {
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
             addError(std::string(label) + " argument must be a type name");
             return ComptimeValue();
         }
@@ -724,11 +756,38 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     }
 
     // Evaluate arguments
+    // v0.24.5 (COMPTIME-010): for `type:T` parameters we don't evaluate the
+    // argument as a value — we capture the type-name (identifier lexeme or
+    // string literal) directly. We still need the function decl to know
+    // which params are type params, so look it up first.
+    FuncDeclStmt* funcDeclEarly = lookupFunction(funcName);
+
     std::vector<ComptimeValue> argValues;
     argValues.reserve(call->arguments.size());
 
-    for (const auto& arg : call->arguments) {
-        ComptimeValue argVal = evaluateExpr(arg.get());
+    for (size_t i = 0; i < call->arguments.size(); ++i) {
+        ASTNode* arg = call->arguments[i].get();
+        bool isTypeParam = false;
+        if (funcDeclEarly && i < funcDeclEarly->parameters.size()) {
+            ParameterNode* pn = static_cast<ParameterNode*>(funcDeclEarly->parameters[i].get());
+            isTypeParam = pn->isTypeParam;
+        }
+        if (isTypeParam) {
+            std::string tn;
+            if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                tn = static_cast<IdentifierExpr*>(arg)->name;
+            } else if (arg->type == ASTNode::NodeType::LITERAL) {
+                ComptimeValue lit = evalLiteral(static_cast<LiteralExpr*>(arg));
+                if (lit.isString()) tn = lit.getString();
+            }
+            if (tn.empty()) {
+                addError("type parameter expects a type name (identifier) as argument");
+                return ComptimeValue();
+            }
+            argValues.push_back(ComptimeValue::makeTypeName(tn));
+            continue;
+        }
+        ComptimeValue argVal = evaluateExpr(arg);
         if (hasErrors()) {
             return ComptimeValue();
         }

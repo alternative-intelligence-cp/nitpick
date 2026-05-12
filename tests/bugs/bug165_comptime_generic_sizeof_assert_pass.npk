@@ -1,0 +1,14 @@
+// v0.24.5 (COMPTIME-010): assert_static can prove a comptime-generic call
+// taking a `type:T` parameter.
+pub comptime func:bytes = int64(type:T) {
+    pass @sizeof(T);
+};
+
+pub func:main = int32() {
+    assert_static comptime(raw bytes(int32) == 4i64);
+    assert_static comptime(raw bytes(int64) == 8i64);
+    assert_static comptime(raw bytes(int8)  == 1i64);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

@@ -1805,6 +1805,52 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         // Don't check the body - it will be checked during monomorphization
         return;
     }
+
+    // v0.24.5 (COMPTIME-010): comptime functions with `type:T` parameters are
+    // treated like generics — skip body type-checking (they are evaluated by
+    // the ConstEvaluator at every call site with a concrete type bound).
+    bool hasTypeParam = false;
+    for (const auto& p : stmt->parameters) {
+        if (p->type == ASTNode::NodeType::PARAMETER) {
+            ParameterNode* pn = static_cast<ParameterNode*>(p.get());
+            if (pn->isTypeParam) { hasTypeParam = true; break; }
+        }
+    }
+    if (hasTypeParam) {
+        if (!stmt->isComptime) {
+            addError("`type:` parameter only allowed in `comptime` functions (COMPTIME-010)", stmt);
+        }
+        // Register the function decl so the ConstEvaluator and call sites can
+        // find it. Use a placeholder signature.
+        if (stmt->isComptime) {
+            constEvaluator->registerFunction(stmt->funcName, stmt);
+        }
+        std::vector<Type*> placeholderParams;
+        for (const auto& param : stmt->parameters) {
+            (void)param;
+            placeholderParams.push_back(typeSystem->getUnknownType());
+        }
+        // Resolve the declared return type so callers see the real Result<T>;
+        // fall back to UnknownType only if resolution fails.
+        Type* valueType = stmt->returnType ? resolveTypeNode(stmt->returnType.get())
+                                           : typeSystem->getUnknownType();
+        if (!valueType || valueType->getKind() == TypeKind::ERROR) {
+            valueType = typeSystem->getUnknownType();
+        }
+        Type* placeholderReturn = stmt->body ? static_cast<Type*>(new ResultType(valueType))
+                                             : valueType;
+        Type* funcType = new FunctionType(placeholderParams, placeholderReturn,
+                                          stmt->isAsync, stmt->isVariadic);
+        Symbol* existingSym = symbolTable->lookupSymbol(stmt->funcName);
+        if (existingSym && existingSym->getFuncDecl() == stmt) {
+            existingSym->type = funcType;
+        } else if (!existingSym) {
+            Symbol* sym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                    funcType, stmt->line, stmt->column);
+            if (sym) sym->setFuncDecl(stmt);
+        }
+        return;
+    }
     
     // Register comptime functions with the ConstEvaluator for CTFE
     if (stmt->isComptime) {

@@ -852,6 +852,16 @@ llvm::Function* StmtCodegen::codegenFuncDecl(FuncDeclStmt* stmt) {
         // Specializations will be handled by codegenAllSpecializations()
         return nullptr;
     }
+
+    // v0.24.5 (COMPTIME-010): comptime functions with `type:T` parameters are
+    // CTFE-only — they have no runtime callsites and their bodies reference
+    // intrinsics like @typeInfo that the IR generator cannot lower.
+    for (const auto& p : stmt->parameters) {
+        if (p && p->type == ASTNode::NodeType::PARAMETER) {
+            auto* pn = static_cast<ParameterNode*>(p.get());
+            if (pn->isTypeParam) return nullptr;
+        }
+    }
     
     // Get return type
     std::string returnTypeStr = stmt->returnType ? stmt->returnType->toString() : "void";
