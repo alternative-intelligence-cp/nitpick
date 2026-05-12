@@ -2693,6 +2693,32 @@ VerifyResult Z3Verifier::proveUserAssertion(
 
     if (!condition) return VerifyResult::UNKNOWN;
 
+    // v0.24.4 (COMPTIME-008): if the user wrote `assert_static comptime(expr)`
+    // or `prove comptime(expr)`, the type checker has already folded the inner
+    // expression to a compile-time bool. Short-circuit before Z3 sees a node
+    // type it can't translate.
+    if (condition->type == ASTNode::NodeType::COMPTIME_EXPR) {
+        auto* ce = static_cast<ComptimeExpr*>(condition);
+        if (ce->evaluated && ce->resultTypeName == "bool") {
+            VerifyOutcome out;
+            out.conditionText = "comptime(" +
+                (ce->expr ? ce->expr->toString() : std::string("?")) + ")";
+            out.line = line;
+            out.column = column;
+            if (ce->boolResult) {
+                out.result = VerifyResult::PROVEN;
+                out.detail = "comptime-known true";
+                outcomes.push_back(out);
+                return VerifyResult::PROVEN;
+            } else {
+                out.result = VerifyResult::DISPROVEN;
+                out.detail = "comptime-known false";
+                outcomes.push_back(out);
+                return VerifyResult::DISPROVEN;
+            }
+        }
+    }
+
     // Build Z3 variable environment from Rules-constrained variables
     std::map<std::string, Z3_ast> env;
     std::vector<Z3_ast> axioms;  // Rules constraints as axioms

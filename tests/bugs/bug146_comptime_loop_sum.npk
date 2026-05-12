@@ -1,0 +1,20 @@
+// v0.24.1 — COMPTIME-001: loop() in comptime function bodies
+// Comptime function uses loop() to count 10 iterations
+
+comptime func:count_iters = int32(int32:n) {
+    int32:acc = 0;
+    loop(0i32, n, 1i32) {
+        acc = acc + 1i32;
+    }
+    pass acc;
+};
+
+pub func:main = int32() {
+    int32:result = comptime(count_iters(10i32));
+    if (result != 10) {
+        exit 1;
+    }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

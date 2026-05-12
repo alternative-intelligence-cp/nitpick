@@ -1,0 +1,20 @@
+// bug168 — v0.24.6 (COMPTIME-011)
+// limit<Rules> applied to an identifier that resolves to a `fixed` constant
+// which violates the rule: must produce a compile error at the limit site.
+
+extern func:puts = int32(string:s);
+
+Rules<int32>:r_pos = {
+    $ > 0
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: limit violation");
+    exit 1;
+};
+
+func:main = int32() {
+    fixed int32:zero = 0;
+    limit<r_pos> int32:x = zero;  // zero violates $ > 0 → compile error
+    exit 0;
+};

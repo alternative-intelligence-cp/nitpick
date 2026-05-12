@@ -1134,6 +1134,108 @@ llvm::Module* compile_to_module(
     std::set<npk::ASTNode*> defaults_safe_set;
 
 #ifdef ARIA_HAS_Z3
+    // v0.24.6 (COMPTIME-011): Always-on comptime limit verification.
+    // For `limit<Rules> T:x = init;` where `init` resolves to a comptime
+    // constant (literal, unary-minus literal, or `fixed` identifier), evaluate
+    // the rule against the resolved value at compile time. Violations become
+    // hard compile errors with no need for `--verify`.
+    {
+        auto* program_ct = dynamic_cast<npk::ProgramNode*>(module_node.get());
+        const auto& rules_table_ct = type_checker.getRulesTable();
+        if (program_ct && !rules_table_ct.empty()) {
+            std::map<std::string, int64_t> ctInt;
+            std::map<std::string, double>  ctFloat;
+            std::function<bool(npk::ASTNode*, int64_t&, double&, bool&, bool&)> resolveCT;
+            resolveCT = [&](npk::ASTNode* expr, int64_t& iv, double& fv,
+                            bool& isI, bool& isF) -> bool {
+                if (!expr) return false;
+                if (expr->type == npk::ASTNode::NodeType::LITERAL) {
+                    auto* lit = static_cast<npk::LiteralExpr*>(expr);
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        iv = std::get<int64_t>(lit->value); isI = true; return true;
+                    }
+                    if (std::holds_alternative<double>(lit->value)) {
+                        fv = std::get<double>(lit->value); isF = true; return true;
+                    }
+                    return false;
+                }
+                if (expr->type == npk::ASTNode::NodeType::UNARY_OP) {
+                    auto* unary = static_cast<npk::UnaryExpr*>(expr);
+                    if (unary->op.type == npk::frontend::TokenType::TOKEN_MINUS) {
+                        int64_t ii_v = 0; double ff_v = 0.0; bool ii = false, ff = false;
+                        if (resolveCT(unary->operand.get(), ii_v, ff_v, ii, ff)) {
+                            if (ii) { iv = -ii_v; isI = true; return true; }
+                            if (ff) { fv = -ff_v; isF = true; return true; }
+                        }
+                    }
+                    return false;
+                }
+                if (expr->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                    auto* id = static_cast<npk::IdentifierExpr*>(expr);
+                    auto it = ctInt.find(id->name);
+                    if (it != ctInt.end()) { iv = it->second; isI = true; return true; }
+                    auto fit = ctFloat.find(id->name);
+                    if (fit != ctFloat.end()) { fv = fit->second; isF = true; return true; }
+                }
+                return false;
+            };
+
+            npk::Z3Verifier z3vCT(opts.smt_timeout);
+            z3vCT.setTypeSystem(&type_system);
+            for (const auto& [name, rp] : rules_table_ct) z3vCT.registerRules(name, rp);
+
+            std::function<void(npk::ASTNode*)> walkCT = [&](npk::ASTNode* node) {
+                if (!node) return;
+                if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
+                    auto* var = static_cast<npk::VarDeclStmt*>(node);
+                    if (var->isFixed && var->initializer && !var->varName.empty()) {
+                        int64_t cIv = 0; double cFv = 0.0; bool cI = false, cF = false;
+                        if (resolveCT(var->initializer.get(), cIv, cFv, cI, cF)) {
+                            if (cI) ctInt[var->varName] = cIv;
+                            else if (cF) ctFloat[var->varName] = cFv;
+                        }
+                    }
+                    if (!var->limitRulesName.empty() && var->initializer) {
+                        int64_t iv = 0; double fv = 0.0; bool isI = false, isF = false;
+                        resolveCT(var->initializer.get(), iv, fv, isI, isF);
+                        if (isI || isF) {
+                            std::vector<npk::VerifyOutcome> outs;
+                            if (isI) z3vCT.verifyLimitInt(var->limitRulesName, iv, outs,
+                                                         var->line, var->column);
+                            else     z3vCT.verifyLimitFloat(var->limitRulesName, fv, outs,
+                                                           var->line, var->column);
+                            for (const auto& out : outs) {
+                                if (out.result == npk::VerifyResult::DISPROVEN) {
+                                    diags.error(npk::SourceLocation(filename, out.line, out.column),
+                                                "[comptime] limit<" + var->limitRulesName +
+                                                "> violated by comptime-known value: " + out.detail);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (node->type == npk::ASTNode::NodeType::PROGRAM) {
+                    for (const auto& d : static_cast<npk::ProgramNode*>(node)->declarations) walkCT(d.get());
+                } else if (node->type == npk::ASTNode::NodeType::FUNC_DECL) {
+                    auto* f = static_cast<npk::FuncDeclStmt*>(node);
+                    if (f->body) walkCT(f->body.get());
+                } else if (node->type == npk::ASTNode::NodeType::BLOCK) {
+                    for (const auto& s : static_cast<npk::BlockStmt*>(node)->statements) walkCT(s.get());
+                } else if (node->type == npk::ASTNode::NodeType::TYPE_DECL) {
+                    auto* td = static_cast<npk::TypeDeclStmt*>(node);
+                    if (td->createFunc) walkCT(td->createFunc.get());
+                    if (td->destroyFunc) walkCT(td->destroyFunc.get());
+                    for (const auto& m : td->methods) walkCT(m.get());
+                }
+            };
+            walkCT(program_ct);
+        }
+        if (diags.hasErrors()) {
+            diags.printAll();
+            return nullptr;
+        }
+    }
+
     // Phase 3.25: Z3 SMT Verification (static contract verification)
     // v0.14.3: --verify-level gating: 0=none, 1=fast, 2=standard, 3=thorough
     std::set<std::string> ustack_opt_funcs;  // Functions eligible for SMT-optimized user stack
@@ -1179,45 +1281,83 @@ llvm::Module* compile_to_module(
         // and verify them against their Rules constraints
         auto* program = dynamic_cast<npk::ProgramNode*>(module_node.get());
         if (program) {
+            // v0.24.6 (COMPTIME-011): track `fixed` variables with literal
+            // initializers as comptime-known constants so that `limit<Rules>`
+            // applied to identifier-initializers (which reference these
+            // constants) can be CTFE-evaluated and proven without Z3.
+            std::map<std::string, int64_t> comptimeInt;
+            std::map<std::string, double>  comptimeFloat;
+
+            // Resolve an initializer expression to a comptime int/float if
+            // possible. Recurses through LITERAL, UNARY_OP(MINUS,...) and
+            // IDENTIFIER bindings to comptimeInt/comptimeFloat.
+            std::function<bool(npk::ASTNode*, int64_t&, double&, bool&, bool&)>
+                resolveComptime;
+            resolveComptime = [&](npk::ASTNode* expr, int64_t& iv, double& fv,
+                                  bool& isI, bool& isF) -> bool {
+                if (!expr) return false;
+                if (expr->type == npk::ASTNode::NodeType::LITERAL) {
+                    auto* lit = static_cast<npk::LiteralExpr*>(expr);
+                    if (std::holds_alternative<int64_t>(lit->value)) {
+                        iv = std::get<int64_t>(lit->value); isI = true; return true;
+                    }
+                    if (std::holds_alternative<double>(lit->value)) {
+                        fv = std::get<double>(lit->value); isF = true; return true;
+                    }
+                    return false;
+                }
+                if (expr->type == npk::ASTNode::NodeType::UNARY_OP) {
+                    auto* unary = static_cast<npk::UnaryExpr*>(expr);
+                    if (unary->op.type == npk::frontend::TokenType::TOKEN_MINUS) {
+                        int64_t inner_i = 0; double inner_f = 0.0;
+                        bool ii = false, ff = false;
+                        if (resolveComptime(unary->operand.get(), inner_i, inner_f, ii, ff)) {
+                            if (ii) { iv = -inner_i; isI = true; return true; }
+                            if (ff) { fv = -inner_f; isF = true; return true; }
+                        }
+                    }
+                    return false;
+                }
+                if (expr->type == npk::ASTNode::NodeType::IDENTIFIER) {
+                    auto* id = static_cast<npk::IdentifierExpr*>(expr);
+                    auto it = comptimeInt.find(id->name);
+                    if (it != comptimeInt.end()) { iv = it->second; isI = true; return true; }
+                    auto fit = comptimeFloat.find(id->name);
+                    if (fit != comptimeFloat.end()) { fv = fit->second; isF = true; return true; }
+                }
+                return false;
+            };
+
             // Recursive lambda to walk statements
             std::function<void(npk::ASTNode*)> walkNode = [&](npk::ASTNode* node) {
                 if (!node) return;
                 
                 if (node->type == npk::ASTNode::NodeType::VAR_DECL) {
                     auto* var = static_cast<npk::VarDeclStmt*>(node);
+
+                    // v0.24.6 (COMPTIME-011): record `fixed` variables with
+                    // comptime-known initializer values for later resolution.
+                    if (var->isFixed && var->initializer && !var->varName.empty()) {
+                        int64_t cIv = 0; double cFv = 0.0;
+                        bool cI = false, cF = false;
+                        if (resolveComptime(var->initializer.get(), cIv, cFv, cI, cF)) {
+                            if (cI) comptimeInt[var->varName] = cIv;
+                            else if (cF) comptimeFloat[var->varName] = cFv;
+                        }
+                    }
+
                     if (!var->limitRulesName.empty() && var->initializer) {
                         int64_t intVal = 0;
                         double floatVal = 0.0;
                         bool isInt = false;
                         bool isFloat = false;
-                        
-                        // Direct literal
-                        if (var->initializer->type == npk::ASTNode::NodeType::LITERAL) {
-                            auto* lit = static_cast<npk::LiteralExpr*>(var->initializer.get());
-                            if (std::holds_alternative<int64_t>(lit->value)) {
-                                intVal = std::get<int64_t>(lit->value);
-                                isInt = true;
-                            } else if (std::holds_alternative<double>(lit->value)) {
-                                floatVal = std::get<double>(lit->value);
-                                isFloat = true;
-                            }
-                        }
-                        // Negative literal (unary minus on literal)
-                        else if (var->initializer->type == npk::ASTNode::NodeType::UNARY_OP) {
-                            auto* unary = static_cast<npk::UnaryExpr*>(var->initializer.get());
-                            if (unary->op.type == npk::frontend::TokenType::TOKEN_MINUS &&
-                                unary->operand && unary->operand->type == npk::ASTNode::NodeType::LITERAL) {
-                                auto* lit = static_cast<npk::LiteralExpr*>(unary->operand.get());
-                                if (std::holds_alternative<int64_t>(lit->value)) {
-                                    intVal = -std::get<int64_t>(lit->value);
-                                    isInt = true;
-                                } else if (std::holds_alternative<double>(lit->value)) {
-                                    floatVal = -std::get<double>(lit->value);
-                                    isFloat = true;
-                                }
-                            }
-                        }
-                        
+
+                        // v0.24.6 (COMPTIME-011): try comptime resolution first
+                        // (handles literals, unary-minus literals, and `fixed`
+                        // identifier references — all routed through CTFE-style
+                        // evaluation, no Z3 needed).
+                        resolveComptime(var->initializer.get(), intVal, floatVal, isInt, isFloat);
+
                         if (isInt) {
                             std::vector<npk::VerifyOutcome> outcomes;
                             z3v.verifyLimitInt(var->limitRulesName, intVal, outcomes,

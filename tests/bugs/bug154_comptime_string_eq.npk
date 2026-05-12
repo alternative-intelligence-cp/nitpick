@@ -1,0 +1,21 @@
+// v0.24.2 — COMPTIME-005: comptime string equality and ordering
+
+pub func:main = int32() {
+    bool:eq  = comptime("abc" == "abc");
+    bool:neq = comptime("abc" != "xyz");
+    bool:lt  = comptime("abc" < "abd");
+    bool:gt  = comptime("xyz" > "abc");
+
+    if (eq  != true) { exit 1; }
+    if (neq != true) { exit 2; }
+    if (lt  != true) { exit 3; }
+    if (gt  != true) { exit 4; }
+
+    // Equality false cases
+    bool:eq2 = comptime("abc" == "abd");
+    if (eq2 != false) { exit 5; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

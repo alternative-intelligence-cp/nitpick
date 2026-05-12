@@ -1,0 +1,18 @@
+// v0.24.4 (COMPTIME-008): assert_static of a comptime-function call
+// (CTFE-evaluated to bool) is proven via the comptime short-circuit.
+comptime func:fib = int32(int32:n) {
+    if (n <= 1i32) {
+        pass n;
+    }
+    int32:a = raw fib(n - 1i32);
+    int32:b = raw fib(n - 2i32);
+    pass a + b;
+};
+
+pub func:main = int32() {
+    assert_static comptime(raw fib(6i32) == 8i32);
+    assert_static comptime(raw fib(10i32) == 55i32);
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

@@ -1,0 +1,16 @@
+// v0.24.2 — COMPTIME-005: comptime string concatenation with `+`
+
+pub func:main = int32() {
+    bool:eq1 = comptime("hello" + " " + "world" == "hello world");
+    if (eq1 != true) { exit 1; }
+
+    bool:eq2 = comptime("foo" + "bar" == "foobar");
+    if (eq2 != true) { exit 2; }
+
+    bool:neq = comptime("a" + "b" != "ab");
+    if (neq != false) { exit 3; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

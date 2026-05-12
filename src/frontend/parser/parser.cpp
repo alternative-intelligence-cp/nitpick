@@ -1063,39 +1063,58 @@ ASTNodePtr Parser::parsePrimary() {
 ASTNodePtr Parser::parseUnary() {
     Token token = peek();
     
-    // Check for @sizeof(type_or_expr) — must come before general @ handling
+    // Check for @sizeof / @alignof / @typeof / @offsetof / @typeInfo
+    // Must come before general @ handling. These take a type or expression argument;
+    // we need to allow type keywords (int64, etc.) in the first position.
     if (token.type == TokenType::TOKEN_AT) {
         Token next = peekNext();
-        if (next.type == TokenType::TOKEN_IDENTIFIER && next.lexeme == "sizeof") {
+        if (next.type == TokenType::TOKEN_IDENTIFIER &&
+            (next.lexeme == "sizeof" || next.lexeme == "alignof" ||
+             next.lexeme == "typeof" || next.lexeme == "offsetof" ||
+             next.lexeme == "typeInfo" || next.lexeme == "len" ||
+             next.lexeme == "fieldType")) {
             int line = token.line;
             int col = token.column;
+            std::string builtinName = "@" + next.lexeme;
             advance(); // consume '@'
-            advance(); // consume 'sizeof'
+            advance(); // consume builtin name
             
-            consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after @sizeof");
+            consume(TokenType::TOKEN_LEFT_PAREN, ("Expected '(' after " + builtinName).c_str());
             
             // The argument can be a type keyword (int64, uint32, etc.) or an expression
             ASTNodePtr arg;
             Token argToken = peek();
             if (isTypeKeyword(argToken.type)) {
-                // Type keyword — convert to identifier with type name
                 std::string typeName = argToken.lexeme;
-                advance(); // consume the type keyword
+                advance();
                 arg = std::make_shared<IdentifierExpr>(typeName, argToken.line, argToken.column);
             } else {
                 arg = parseExpression();
             }
             if (!arg) {
-                error("Expected type or expression in @sizeof()");
+                error(("Expected type or expression in " + builtinName + "()").c_str());
                 return nullptr;
             }
             
-            consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after @sizeof argument");
-            
-            // Build as CallExpr with callee "@sizeof" so type checker and codegen recognize it
             std::vector<ASTNodePtr> args;
             args.push_back(arg);
-            auto identExpr = std::make_shared<IdentifierExpr>("@sizeof", line, col);
+            
+            // @offsetof takes a second argument (field name)
+            if (builtinName == "@offsetof" && check(TokenType::TOKEN_COMMA)) {
+                advance(); // consume ','
+                ASTNodePtr field = parseExpression();
+                if (field) args.push_back(field);
+            }
+            // v0.24.7 (COMPTIME-013): @fieldType(T, "name") takes second arg
+            if (builtinName == "@fieldType" && check(TokenType::TOKEN_COMMA)) {
+                advance(); // consume ','
+                ASTNodePtr field = parseExpression();
+                if (field) args.push_back(field);
+            }
+            
+            consume(TokenType::TOKEN_RIGHT_PAREN, ("Expected ')' after " + builtinName + " argument").c_str());
+            
+            auto identExpr = std::make_shared<IdentifierExpr>(builtinName, line, col);
             return std::make_shared<CallExpr>(identExpr, args, line, col);
         }
     }
@@ -1821,6 +1840,20 @@ ASTNodePtr Parser::parseCallExpression(ASTNodePtr callee) {
                 }
                 arguments.push_back(std::make_shared<SpreadExpr>(operand, spreadToken.line, spreadToken.column));
             } else {
+                // v0.24.5 (COMPTIME-010): allow a bare type keyword as a call
+                // argument (e.g. `bw(int32)`) so comptime functions taking a
+                // `T: type` parameter can be invoked with a primitive type.
+                Token argTok = peek();
+                if (isTypeKeyword(argTok.type)) {
+                    Token nextTok = peekNext();
+                    if (nextTok.type == TokenType::TOKEN_COMMA ||
+                        nextTok.type == TokenType::TOKEN_RIGHT_PAREN) {
+                        advance();
+                        arguments.push_back(std::make_shared<IdentifierExpr>(
+                            argTok.lexeme, argTok.line, argTok.column));
+                        continue;
+                    }
+                }
                 ASTNodePtr arg = parseExpression();
                 if (arg) {
                     arguments.push_back(arg);
@@ -3308,16 +3341,29 @@ ASTNodePtr Parser::parseFuncDecl() {
             }
             
             // Parse parameter type using parseType() for full type support (including generics)
-            ASTNodePtr paramTypeNode = parseType();
-            if (!paramTypeNode) {
-                error("Expected parameter type");
-                return nullptr;
+            // v0.24.5 (COMPTIME-010): special-case bare identifier `type` as the
+            // type parameter meta-type. `type:T` declares a comptime generic.
+            bool paramIsTypeParam = false;
+            ASTNodePtr paramTypeNode;
+            if (peek().type == TokenType::TOKEN_IDENTIFIER &&
+                peek().lexeme == "type" &&
+                peekNext().type == TokenType::TOKEN_COLON) {
+                Token typeTok = advance();  // consume 'type'
+                paramTypeNode = std::make_shared<IdentifierExpr>(
+                    "type", typeTok.line, typeTok.column);
+                paramIsTypeParam = true;
+            } else {
+                paramTypeNode = parseType();
+                if (!paramTypeNode) {
+                    error("Expected parameter type");
+                    return nullptr;
+                }
             }
-            
+
             consume(TokenType::TOKEN_COLON, "Expected ':' after parameter type");
-            
+
             Token paramNameToken = consumeName("parameter");
-            
+
             auto param = std::make_shared<ParameterNode>(
                 paramTypeNode,  // Pass ASTNodePtr instead of string
                 paramNameToken.lexeme,
@@ -3325,12 +3371,13 @@ ASTNodePtr Parser::parseFuncDecl() {
                 funcToken.line,
                 funcToken.column
             );
-            
+
             // Set qualifier flags
             param->isWild = isWild;
             param->isWildx = isWildx;
             param->isBorrowImm = isBorrowImm;
             param->isBorrowMut = isBorrowMut;
+            param->isTypeParam = paramIsTypeParam;
             
             parameters.push_back(param);
             

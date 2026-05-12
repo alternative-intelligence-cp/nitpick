@@ -1,0 +1,16 @@
+// bug169 — v0.24.6 (COMPTIME-012)
+// I/O calls (println) inside a comptime function body must produce a clear
+// compile error mentioning that I/O is not allowed in comptime context.
+
+pub comptime func:bad = int64() {
+    pass println("hello from comptime");
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:x = comptime(raw bad());
+    exit 0;
+};

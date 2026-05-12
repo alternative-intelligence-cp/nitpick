@@ -255,6 +255,7 @@ public:
     bool isBorrowImm = false; // true if '$$i' qualifier present (immutable borrow)
     bool isBorrowMut = false; // true if '$$m' qualifier present (mutable borrow)
     bool isRest = false;      // true if '..?' rest parameter (collects remaining variadic args)
+    bool isTypeParam = false; // v0.24.5 (COMPTIME-010): true if `type:T` parameter (comptime generics)
     
     ParameterNode(ASTNodePtr type, const std::string& name,
                   ASTNodePtr defVal = nullptr, int line = 0, int column = 0)

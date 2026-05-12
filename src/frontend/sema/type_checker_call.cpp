@@ -441,6 +441,25 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
             }
             return typeSystem->getPrimitiveType("int64");
         }
+
+        // v0.24.7 (COMPTIME-013): @fieldType(type, "name") -> string
+        // Returns the type name of a struct field as a string.
+        if (idExpr->name == "@fieldType" || idExpr->name == "fieldType") {
+            if (expr->arguments.size() != 2) {
+                addError("@fieldType() requires exactly two arguments (type, field_name)", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("string");
+        }
+        
+        // @len(s) -> int64 - Length of a string or array (comptime-only for now)
+        if (idExpr->name == "@len" || idExpr->name == "len") {
+            if (expr->arguments.size() != 1) {
+                addError("@len() requires exactly one argument", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int64");
+        }
         
         // ====================================================================
         // COMPILER HINTS - Branch Prediction & Performance
@@ -5157,6 +5176,17 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         // Check argument types
         const auto& paramTypes = funcType->getParamTypes();
         for (size_t i = 0; i < expectedCount && i < actualCount; ++i) {
+            // v0.24.5 (COMPTIME-010): comptime `type:T` parameters accept any
+            // type-name expression — skip the assignability check entirely.
+            if (funcDecl && i < funcDecl->parameters.size() &&
+                funcDecl->parameters[i]->type == ASTNode::NodeType::PARAMETER) {
+                auto* pn = static_cast<ParameterNode*>(funcDecl->parameters[i].get());
+                if (pn->isTypeParam) {
+                    // Still infer to surface unrelated errors inside the arg expr.
+                    (void)inferType(expr->arguments[i].get());
+                    continue;
+                }
+            }
             Type* argType = inferType(expr->arguments[i].get());
             if (argType->getKind() == TypeKind::ERROR) {
                 return typeSystem->getErrorType();

@@ -110,6 +110,16 @@ ComptimeValue ComptimeValue::makeArray(const std::vector<ComptimeValue>& element
     return result;
 }
 
+// v0.24.5 (COMPTIME-010): comptime type-name value for `type:T` parameters.
+ComptimeValue ComptimeValue::makeTypeName(const std::string& tn) {
+    ComptimeValue result;
+    result.kind = Kind::TYPE_NAME;
+    result.value = tn;
+    result.typeName = "type";
+    result.bitWidth = 0;
+    return result;
+}
+
 int64_t ComptimeValue::getInt() const {
     return std::get<int64_t>(value);
 }
@@ -225,6 +235,8 @@ bool ComptimeValue::operator==(const ComptimeValue& other) const {
             return getBool() == other.getBool();
         case Kind::STRING:
             return getString() == other.getString();
+        case Kind::TYPE_NAME:
+            return getString() == other.getString();
         case Kind::POINTER:
             return getPointer() == other.getPointer();
         case Kind::NULL_VALUE:
@@ -276,6 +288,8 @@ bool ComptimeValue::operator<(const ComptimeValue& other) const {
         case Kind::BOOL:
             return getBool() < other.getBool();
         case Kind::STRING:
+            return getString() < other.getString();
+        case Kind::TYPE_NAME:
             return getString() < other.getString();
         case Kind::POINTER:
             // Compare pointers by allocId, then offset
@@ -364,9 +378,48 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
             return evalTernary(static_cast<TernaryExpr*>(node));
         case ASTNode::NodeType::CALL:
             return evalFunctionCall(static_cast<CallExpr*>(node));
+        case ASTNode::NodeType::MEMBER_ACCESS: {
+            // v0.24.5 (COMPTIME-010): support struct field access during CTFE
+            // (e.g. `@typeInfo(T).bit_width`).
+            auto* mem = static_cast<MemberAccessExpr*>(node);
+            ComptimeValue obj = evaluateExpr(mem->object.get());
+            if (hasErrors()) return ComptimeValue();
+            if (!obj.isStruct()) {
+                addError("comptime member access requires a struct value, got " +
+                         obj.toString());
+                return ComptimeValue();
+            }
+            const auto& fields = obj.getStruct();
+            auto it = fields.find(mem->member);
+            if (it == fields.end()) {
+                addError("comptime: struct has no field '" + mem->member + "'");
+                return ComptimeValue();
+            }
+            return it->second;
+        }
         case ASTNode::NodeType::COMPTIME_EXPR:
             // Unwrap: comptime(expr) just evaluates the inner expression
             return evaluateExpr(static_cast<ComptimeExpr*>(node)->expr.get());
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            // v0.24.3 (COMPTIME-007): the type checker has already expanded
+            // the macro and stashed the expansion in expandedAST. Evaluate
+            // that expansion at compile time.
+            auto* macro = static_cast<MacroInvocationExpr*>(node);
+            if (!macro->expandedAST) {
+                addError("Macro '" + macro->macroName + "!' was not expanded "
+                         "before comptime evaluation");
+                return ComptimeValue();
+            }
+            ASTNode* expanded = macro->expandedAST.get();
+            // If the expansion is itself an expression, evaluate it directly.
+            if (expanded->isExpression()) {
+                return evaluateExpr(expanded);
+            }
+            // Statement / block expansion: fall through to evaluate(), which
+            // handles BLOCK and statement-form expansions and returns the
+            // last value evaluated.
+            return evaluate(expanded);
+        }
         default:
             addError("Expression type not supported in compile-time evaluation. "
                     "Only literals, identifiers, binary/unary ops, ternary, and function calls are allowed.");
@@ -403,6 +456,17 @@ ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
             if (hasErrors()) return ComptimeValue();
         }
         return lastValue;
+    }
+
+    // v0.24.3 (COMPTIME-006/007): expression statements occur in macro
+    // expansions like `macro:f = (x) { x * 2; }` — unwrap and evaluate the
+    // inner expression so the block returns its value.
+    if (stmt->type == ASTNode::NodeType::EXPRESSION_STMT) {
+        auto* exprStmt = static_cast<ExpressionStmt*>(stmt);
+        if (exprStmt->expression) {
+            return evaluateExpr(exprStmt->expression.get());
+        }
+        return ComptimeValue();
     }
     
     addError("Statement cannot be evaluated at compile time. Only const declarations and block expressions are supported.");
@@ -489,7 +553,12 @@ ComptimeValue ConstEvaluator::evalBinaryOp(BinaryExpr* binOp) {
     }
     
     const std::string& op = binOp->op.lexeme;
-    
+
+    // String concatenation: "a" + "b" -> "ab" (COMPTIME-005)
+    if (op == "+" && left.isString() && right.isString()) {
+        return ComptimeValue::makeString(left.getString() + right.getString());
+    }
+
     // Dispatch arithmetic operations
     if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
         
@@ -578,31 +647,157 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     
     const std::string& funcName = callee->name;
 
+    // === v0.24.6 (COMPTIME-012): Comptime limitations enforcement ===
+    // Reject I/O builtins explicitly. These have no meaning at compile time.
+    if (funcName == "print" || funcName == "println" ||
+        funcName == "eprint" || funcName == "eprintln" ||
+        funcName == "stdout_write" || funcName == "stderr_write" ||
+        funcName == "puts") {
+        addError("I/O functions are not allowed in comptime context "
+                 "(called '" + funcName + "'). Comptime evaluation must be "
+                 "side-effect free.");
+        return ComptimeValue();
+    }
+    // Reject GC allocation intrinsics. Comptime values live in the evaluator's
+    // own arena, not the runtime GC heap.
+    if (funcName == "new" || funcName == "alloc" || funcName == "gc_alloc" ||
+        funcName == "malloc" || funcName == "calloc" || funcName == "realloc") {
+        addError("GC/heap allocation is not allowed in comptime context "
+                 "(called '" + funcName + "'). Use comptime arrays/strings "
+                 "or `fixed` bindings instead.");
+        return ComptimeValue();
+    }
+
     // === Builtin Intrinsics ===
+    // v0.24.5 (COMPTIME-010): if an identifier resolves to a local TYPE_NAME
+    // value (a `type:T` parameter binding), substitute its stored type name.
+    auto resolveTypeArg = [&](ASTNode* arg) -> std::string {
+        std::string tn;
+        if (!arg) return tn;
+        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& nm = static_cast<IdentifierExpr*>(arg)->name;
+            for (auto it = localScopeStack.rbegin(); it != localScopeStack.rend(); ++it) {
+                auto f = it->find(nm);
+                if (f != it->end()) {
+                    if (f->second.isTypeName()) return f->second.getString();
+                    break;
+                }
+            }
+            tn = nm;
+        } else if (arg->type == ASTNode::NodeType::LITERAL) {
+            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
+            if (argVal.isString()) tn = argVal.getString();
+        }
+        return tn;
+    };
+
     // Handle @typeInfo(TypeName) - returns TypeInfo struct
     if (funcName == "@typeInfo" || funcName == "typeInfo") {
         if (call->arguments.size() != 1) {
             addError("@typeInfo expects exactly 1 argument (type name)");
             return ComptimeValue();
         }
-        // Argument should be an identifier (type name) or string literal
-        ASTNode* arg = call->arguments[0].get();
-        std::string typeName;
-        if (arg->type == ASTNode::NodeType::IDENTIFIER) {
-            typeName = static_cast<IdentifierExpr*>(arg)->name;
-        } else if (arg->type == ASTNode::NodeType::LITERAL) {
-            ComptimeValue argVal = evalLiteral(static_cast<LiteralExpr*>(arg));
-            if (argVal.isString()) {
-                typeName = argVal.getString();
-            } else {
-                addError("@typeInfo argument must be a type name or string");
-                return ComptimeValue();
-            }
-        } else {
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
             addError("@typeInfo argument must be a type name");
             return ComptimeValue();
         }
         return getTypeInfo(typeName);
+    }
+
+    // v0.24.7 (COMPTIME-013): @fieldType(T, "name") returns the type name
+    // of a struct field as a string. Shorthand for
+    // `@typeInfo(T).fields.<name>.type_name`.
+    if (funcName == "@fieldType" || funcName == "fieldType") {
+        if (call->arguments.size() != 2) {
+            addError("@fieldType expects exactly 2 arguments (type, field name)");
+            return ComptimeValue();
+        }
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
+            addError("@fieldType: first argument must be a type name");
+            return ComptimeValue();
+        }
+        ComptimeValue fnameVal = evaluateExpr(call->arguments[1].get());
+        if (hasErrors()) return ComptimeValue();
+        if (!fnameVal.isString()) {
+            addError("@fieldType: second argument must be a string");
+            return ComptimeValue();
+        }
+        ComptimeValue ti = getTypeInfo(typeName);
+        if (!ti.isStruct()) {
+            addError("@fieldType: '" + typeName + "' is not a struct type");
+            return ComptimeValue();
+        }
+        const auto& tfields = ti.getStruct();
+        auto fmIt = tfields.find("fields");
+        if (fmIt == tfields.end() || !fmIt->second.isStruct()) {
+            addError("@fieldType: type '" + typeName + "' has no field reflection info");
+            return ComptimeValue();
+        }
+        const auto& fmap = fmIt->second.getStruct();
+        auto fIt = fmap.find(fnameVal.getString());
+        if (fIt == fmap.end() || !fIt->second.isStruct()) {
+            addError("@fieldType: struct '" + typeName + "' has no field '" +
+                     fnameVal.getString() + "'");
+            return ComptimeValue();
+        }
+        const auto& finfo = fIt->second.getStruct();
+        auto tnIt = finfo.find("type_name");
+        if (tnIt == finfo.end()) return ComptimeValue();
+        return tnIt->second;
+    }
+
+    // @sizeof(T) / @alignof(T): return size in bytes / alignment from getTypeInfo (COMPTIME-003, 004)
+    if (funcName == "@sizeof" || funcName == "sizeof" ||
+        funcName == "@alignof" || funcName == "alignof") {
+        bool wantAlign = (funcName == "@alignof" || funcName == "alignof");
+        const char* label = wantAlign ? "@alignof" : "@sizeof";
+        if (call->arguments.size() != 1) {
+            addError(std::string(label) + " expects exactly 1 argument (type name)");
+            return ComptimeValue();
+        }
+        std::string typeName = resolveTypeArg(call->arguments[0].get());
+        if (typeName.empty()) {
+            addError(std::string(label) + " argument must be a type name");
+            return ComptimeValue();
+        }
+        ComptimeValue ti = getTypeInfo(typeName);
+        if (!ti.isStruct()) return ComptimeValue();
+        const auto& fields = ti.getStruct();
+        if (wantAlign) {
+            auto it = fields.find("alignment");
+            if (it == fields.end()) {
+                addError(std::string(label) + ": no alignment info for type '" + typeName + "'");
+                return ComptimeValue();
+            }
+            return it->second;
+        } else {
+            auto it = fields.find("bit_width");
+            if (it == fields.end()) {
+                addError(std::string(label) + ": no size info for type '" + typeName + "'");
+                return ComptimeValue();
+            }
+            int64_t bits = it->second.getInt();
+            int64_t bytes = (bits + 7) / 8;
+            return ComptimeValue::makeInteger(bytes, "int64", 64);
+        }
+    }
+
+    // @len(s) on a string returns its character count (COMPTIME-005)
+    if (funcName == "@len" || funcName == "len") {
+        if (call->arguments.size() != 1) {
+            addError("@len expects exactly 1 argument");
+            return ComptimeValue();
+        }
+        ComptimeValue argVal = evaluateExpr(call->arguments[0].get());
+        if (hasErrors()) return ComptimeValue();
+        if (argVal.isString()) {
+            return ComptimeValue::makeInteger(
+                static_cast<int64_t>(argVal.getString().size()), "int64", 64);
+        }
+        addError("@len: unsupported argument type (expected string)");
+        return ComptimeValue();
     }
 
     // === raw / drop intrinsics ===
@@ -625,11 +820,38 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     }
 
     // Evaluate arguments
+    // v0.24.5 (COMPTIME-010): for `type:T` parameters we don't evaluate the
+    // argument as a value — we capture the type-name (identifier lexeme or
+    // string literal) directly. We still need the function decl to know
+    // which params are type params, so look it up first.
+    FuncDeclStmt* funcDeclEarly = lookupFunction(funcName);
+
     std::vector<ComptimeValue> argValues;
     argValues.reserve(call->arguments.size());
 
-    for (const auto& arg : call->arguments) {
-        ComptimeValue argVal = evaluateExpr(arg.get());
+    for (size_t i = 0; i < call->arguments.size(); ++i) {
+        ASTNode* arg = call->arguments[i].get();
+        bool isTypeParam = false;
+        if (funcDeclEarly && i < funcDeclEarly->parameters.size()) {
+            ParameterNode* pn = static_cast<ParameterNode*>(funcDeclEarly->parameters[i].get());
+            isTypeParam = pn->isTypeParam;
+        }
+        if (isTypeParam) {
+            std::string tn;
+            if (arg->type == ASTNode::NodeType::IDENTIFIER) {
+                tn = static_cast<IdentifierExpr*>(arg)->name;
+            } else if (arg->type == ASTNode::NodeType::LITERAL) {
+                ComptimeValue lit = evalLiteral(static_cast<LiteralExpr*>(arg));
+                if (lit.isString()) tn = lit.getString();
+            }
+            if (tn.empty()) {
+                addError("type parameter expects a type name (identifier) as argument");
+                return ComptimeValue();
+            }
+            argValues.push_back(ComptimeValue::makeTypeName(tn));
+            continue;
+        }
+        ComptimeValue argVal = evaluateExpr(arg);
         if (hasErrors()) {
             return ComptimeValue();
         }
@@ -648,6 +870,15 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         addError("Undefined function in const context: " + funcName);
         return ComptimeValue();
     }
+
+    // v0.24.6 (COMPTIME-012): reject extern function calls. These cross the
+    // FFI boundary and cannot be evaluated by the comptime interpreter.
+    if (funcDecl->isExtern) {
+        addError("extern function calls are not allowed in comptime context "
+                 "(called '" + funcName + "'). Comptime can only invoke "
+                 "Nitpick functions whose bodies are CTFE-evaluable.");
+        return ComptimeValue();
+    }
     
     // Validate parameter count
     if (argValues.size() != funcDecl->parameters.size()) {
@@ -662,7 +893,18 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
         // Error already added by checkStackDepth()
         return ComptimeValue();
     }
-    
+
+    // v0.24.4 (COMPTIME-009): record call chain for diagnostics
+    {
+        std::string frame = funcName + "(";
+        for (size_t i = 0; i < argValues.size(); ++i) {
+            if (i) frame += ", ";
+            frame += argValues[i].toString();
+        }
+        frame += ")";
+        callStack.push_back(frame);
+    }
+
     // Create new local scope for function body (parameters, local consts)
     pushLocalScope();
     
@@ -692,14 +934,27 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
                 returned = true;
             } else if (node->type == ASTNode::NodeType::VAR_DECL) {
                 VarDeclStmt* var = static_cast<VarDeclStmt*>(node);
+                // Helper: narrow an integer ComptimeValue to a declared type
+                auto narrowInt = [&](ComptimeValue val, const std::string& tn) -> ComptimeValue {
+                    if (!val.isInteger() || tn.empty()) return val;
+                    static const std::map<std::string, int> intBits = {
+                        {"int8",8},{"int16",16},{"int32",32},{"int64",64},
+                        {"uint8",8},{"uint16",16},{"uint32",32},{"uint64",64}
+                    };
+                    auto it = intBits.find(tn);
+                    if (it != intBits.end()) {
+                        return ComptimeValue::makeInteger(val.getInt(), tn, it->second);
+                    }
+                    return val;
+                };
                 if (var->initializer) {
                     ComptimeValue val = evaluateExpr(var->initializer.get());
                     if (!hasErrors()) {
-                        defineLocalConstant(var->varName, val);
+                        defineLocalConstant(var->varName, narrowInt(val, var->typeName));
                     }
                 } else {
-                    // Default-initialize to zero
-                    defineLocalConstant(var->varName, ComptimeValue::makeInteger(0, "int32", 32));
+                    defineLocalConstant(var->varName,
+                        narrowInt(ComptimeValue::makeInteger(0, "int64", 64), var->typeName));
                 }
             } else if (node->type == ASTNode::NodeType::IF) {
                 IfStmt* ifStmt = static_cast<IfStmt*>(node);
@@ -725,6 +980,111 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
                     evalBodyNode(s.get());
                     if (returned || hasErrors()) break;
                 }
+            } else if (node->type == ASTNode::NodeType::EXPRESSION_STMT) {
+                // Unwrap expression statement and re-dispatch (handles assignments etc.)
+                ExpressionStmt* exprStmt = static_cast<ExpressionStmt*>(node);
+                if (exprStmt->expression) {
+                    evalBodyNode(exprStmt->expression.get());
+                }
+            } else if (node->type == ASTNode::NodeType::BINARY_OP) {
+                // In statement position: check for assignment operators (COMPTIME-002)
+                // Nitpick parses "x = expr" as BinaryExpr(IDENTIFIER, "=", expr)
+                BinaryExpr* bin = static_cast<BinaryExpr*>(node);
+                const std::string& op = bin->op.lexeme;
+                bool isAssignOp = (op == "=" || op == "+=" || op == "-=" ||
+                                   op == "*=" || op == "/=" || op == "%=");
+                if (isAssignOp && bin->left &&
+                    bin->left->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& varName =
+                        static_cast<IdentifierExpr*>(bin->left.get())->name;
+                    ComptimeValue rhs = evaluateExpr(bin->right.get());
+                    if (hasErrors()) return;
+                    if (op != "=") {
+                        ComptimeValue lhs = lookupConstant(varName);
+                        if (hasErrors()) return;
+                        if (lhs.isInteger() && rhs.isInteger()) {
+                            int64_t l = lhs.getInt(), r = rhs.getInt();
+                            int64_t res = (op == "+=") ? l + r : (op == "-=") ? l - r :
+                                          (op == "*=") ? l * r : (op == "/=") ? l / r : l % r;
+                            rhs = ComptimeValue::makeInteger(res, lhs.getTypeName(), lhs.getBitWidth());
+                        } else {
+                            addError("comptime compound assignment: unsupported operand types for '" + op + "'");
+                            return;
+                        }
+                    } else {
+                        // Simple assignment: narrow RHS to the type of the existing variable
+                        // so that e.g. acc(int32) = acc + $(int64) stays int32
+                        ComptimeValue existing = lookupConstant(varName);
+                        // Ignore lookup error if variable not yet defined
+                        if (!hasErrors() && existing.isInteger() && rhs.isInteger() &&
+                            existing.getBitWidth() != rhs.getBitWidth()) {
+                            rhs = ComptimeValue::makeInteger(rhs.getInt(),
+                                      existing.getTypeName(), existing.getBitWidth());
+                        }
+                        clearErrors(); // suppress "undefined" if var not yet defined
+                    }
+                    setLocalConstant(varName, rhs);
+                } else {
+                    // Not an assignment — evaluate as expression (for side-effect-free calls etc.)
+                    evaluateExpr(node);
+                }
+            } else if (node->type == ASTNode::NodeType::ASSIGNMENT) {
+                // Mutable local assignment: x = expr  or  x += expr etc. (COMPTIME-002)
+                AssignmentExpr* assign = static_cast<AssignmentExpr*>(node);
+                if (!assign->target || assign->target->type != ASTNode::NodeType::IDENTIFIER) {
+                    addError("comptime assignment: only simple variable targets are supported");
+                    return;
+                }
+                const std::string& varName = static_cast<IdentifierExpr*>(assign->target.get())->name;
+                ComptimeValue rhs = evaluateExpr(assign->value.get());
+                if (hasErrors()) return;
+                // Apply compound operators
+                const std::string& op = assign->op.lexeme;
+                if (op == "+=" || op == "-=" || op == "*=" || op == "/=" || op == "%=") {
+                    ComptimeValue lhs = lookupConstant(varName);
+                    if (hasErrors()) return;
+                    if (lhs.isInteger() && rhs.isInteger()) {
+                        int64_t l = lhs.getInt(), r = rhs.getInt();
+                        int64_t res = (op == "+=") ? l + r : (op == "-=") ? l - r :
+                                      (op == "*=") ? l * r : (op == "/=") ? l / r : l % r;
+                        rhs = ComptimeValue::makeInteger(res, lhs.getTypeName(), lhs.getBitWidth());
+                    } else {
+                        addError("comptime compound assignment: unsupported operand types for '" + op + "'");
+                        return;
+                    }
+                }
+                setLocalConstant(varName, rhs);
+            } else if (node->type == ASTNode::NodeType::LOOP) {
+                // loop(start, limit, step) { body } — exposes $ as loop counter (COMPTIME-001)
+                LoopStmt* loopStmt = static_cast<LoopStmt*>(node);
+                ComptimeValue startVal = evaluateExpr(loopStmt->start.get());
+                if (hasErrors()) return;
+                ComptimeValue limitVal = evaluateExpr(loopStmt->limit.get());
+                if (hasErrors()) return;
+                ComptimeValue stepVal = evaluateExpr(loopStmt->step.get());
+                if (hasErrors()) return;
+                if (!startVal.isInteger() || !limitVal.isInteger() || !stepVal.isInteger()) {
+                    addError("comptime loop: start, limit, and step must be integer expressions");
+                    return;
+                }
+                int64_t counter = startVal.getInt();
+                int64_t limit   = limitVal.getInt();
+                int64_t step    = stepVal.getInt();
+                if (step == 0) { addError("comptime loop: step must not be zero"); return; }
+                const size_t maxIter = 1000;
+                size_t iters = 0;
+                pushLocalScope();
+                while (counter != limit) {
+                    if (iters++ >= maxIter) {
+                        addError("comptime loop exceeded iteration limit (1000); use a smaller range or switch to runtime evaluation");
+                        break;
+                    }
+                    setLocalConstant("$", ComptimeValue::makeInteger(counter, "int64", 64));
+                    evalBodyNode(loopStmt->body.get());
+                    if (returned || hasErrors()) break;
+                    counter += step;
+                }
+                popLocalScope();
             } else {
                 // Fallthrough: expression statements, etc. — evaluate silently
                 evaluateStmt(node);
@@ -740,7 +1100,8 @@ ComptimeValue ConstEvaluator::evalFunctionCall(CallExpr* call) {
     // Cleanup local scope and stack frame
     popLocalScope();
     popStackFrame();
-    
+    if (!callStack.empty()) callStack.pop_back();
+
     // If evaluation succeeded, memoize the result
     if (!hasErrors()) {
         memoizeResult(funcName, argValues, result);
@@ -855,6 +1216,40 @@ ComptimeValue ConstEvaluator::getTypeInfo(const std::string& typeName) {
                     fieldNames += fields[i].name;
                 }
                 typeInfo["field_names"] = ComptimeValue::makeString(fieldNames);
+
+                // v0.24.7 (COMPTIME-013): per-field reflection sub-struct.
+                // `@typeInfo(T).fields.<name>` exposes
+                // `{ name, type_name, bit_width, alignment, offset }`.
+                std::map<std::string, ComptimeValue> fieldsMap;
+                for (const auto& f : fields) {
+                    std::map<std::string, ComptimeValue> finfo;
+                    std::string ftypeName = f.type ? f.type->toString() : std::string("?");
+                    finfo["name"] = ComptimeValue::makeString(f.name);
+                    finfo["type_name"] = ComptimeValue::makeString(ftypeName);
+                    // Bit width / alignment from primitive name when possible.
+                    int fbits = 0, falign = 0;
+                    if (ftypeName == "tbb8" || ftypeName == "int8" || ftypeName == "uint8") {
+                        fbits = 8; falign = 1;
+                    } else if (ftypeName == "tbb16" || ftypeName == "int16" || ftypeName == "uint16") {
+                        fbits = 16; falign = 2;
+                    } else if (ftypeName == "tbb32" || ftypeName == "int32" || ftypeName == "uint32" ||
+                               ftypeName == "flt32") {
+                        fbits = 32; falign = 4;
+                    } else if (ftypeName == "tbb64" || ftypeName == "int64" || ftypeName == "uint64" ||
+                               ftypeName == "flt64") {
+                        fbits = 64; falign = 8;
+                    } else if (ftypeName == "bool") {
+                        fbits = 1; falign = 1;
+                    } else if (ftypeName == "string") {
+                        fbits = 0; falign = 8;
+                    }
+                    finfo["bit_width"] = ComptimeValue::makeInteger(fbits, "int64", 64);
+                    finfo["alignment"] = ComptimeValue::makeInteger(falign, "int64", 64);
+                    finfo["offset"] = ComptimeValue::makeInteger(
+                        static_cast<int64_t>(f.offset), "int64", 64);
+                    fieldsMap[f.name] = ComptimeValue::makeStruct(finfo, "FieldInfo");
+                }
+                typeInfo["fields"] = ComptimeValue::makeStruct(fieldsMap, "FieldsMap");
                 
                 // Use struct's actual size and alignment if available
                 if (st->getSize() > 0) {
@@ -1180,6 +1575,16 @@ ComptimeValue ConstEvaluator::compare(const ComptimeValue& a, const ComptimeValu
         
         if (op == "==") result = (aVal == bVal);
         else if (op == "!=") result = (aVal != bVal);
+    } else if (a.isString() && b.isString()) {
+        // String comparison (COMPTIME-005)
+        const std::string& aVal = a.getString();
+        const std::string& bVal = b.getString();
+        if (op == "==") result = (aVal == bVal);
+        else if (op == "!=") result = (aVal != bVal);
+        else if (op == "<") result = (aVal < bVal);
+        else if (op == "<=") result = (aVal <= bVal);
+        else if (op == ">") result = (aVal > bVal);
+        else if (op == ">=") result = (aVal >= bVal);
     }
     
     return ComptimeValue::makeBool(result);
@@ -1234,6 +1639,19 @@ void ConstEvaluator::defineLocalConstant(const std::string& name, const Comptime
     } else {
         addError("defineLocalConstant called without local scope");
     }
+}
+
+void ConstEvaluator::setLocalConstant(const std::string& name, const ComptimeValue& value) {
+    // Update an existing binding in the innermost scope that holds it (mutable assignment).
+    // If the name is not found in any scope, define it in the current scope.
+    for (auto it = localScopeStack.rbegin(); it != localScopeStack.rend(); ++it) {
+        if (it->count(name)) {
+            (*it)[name] = value;
+            return;
+        }
+    }
+    // Not found — fall back to defining in current scope
+    defineLocalConstant(name, value);
 }
 
 void ConstEvaluator::defineConstant(const std::string& name, const ComptimeValue& value, Type* type) {
@@ -1388,7 +1806,18 @@ void ConstEvaluator::popStackFrame() {
 }
 
 void ConstEvaluator::addError(const std::string& msg) {
-    errors.push_back(msg);
+    // v0.24.4 (COMPTIME-009): if we're inside a comptime call chain, append it
+    // so the type checker can present a clear "called from:" trail.
+    if (!callStack.empty()) {
+        std::string full = msg + "\n  called from: ";
+        for (size_t i = callStack.size(); i-- > 0;) {
+            full += callStack[i];
+            if (i != 0) full += " -> ";
+        }
+        errors.push_back(full);
+    } else {
+        errors.push_back(msg);
+    }
 }
 
 // ============================================================================

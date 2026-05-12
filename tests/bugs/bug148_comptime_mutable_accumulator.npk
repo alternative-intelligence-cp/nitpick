@@ -1,0 +1,22 @@
+// v0.24.1 — COMPTIME-002: mutable local variable assignment in CTFE
+// Tests that x = x + n works inside a comptime function
+
+comptime func:accumulate = int32(int32:n) {
+    int32:x = 0;
+    x = x + n;
+    pass x;
+};
+
+pub func:main = int32() {
+    int32:a = comptime(accumulate(7i32));
+    if (a != 7) {
+        exit 1;
+    }
+    int32:b = comptime(accumulate(42i32));
+    if (b != 42) {
+        exit 1;
+    }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

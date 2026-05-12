@@ -2999,6 +2999,16 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
 
         // Skip generics (specialised by monomorphisation) and already-declared
         if (!fd->genericParams.empty()) continue;
+        // v0.24.5 (COMPTIME-010): skip comptime functions with `type:T` params
+        // (CTFE-only, no runtime callsites; bodies use intrinsics like @typeInfo).
+        bool skip_type_param = false;
+        for (const auto& p : fd->parameters) {
+            if (p && p->type == ASTNode::NodeType::PARAMETER) {
+                auto* pn2 = static_cast<ParameterNode*>(p.get());
+                if (pn2->isTypeParam) { skip_type_param = true; break; }
+            }
+        }
+        if (skip_type_param) continue;
         std::string pre_name = modulePrefix.empty() ? fd->funcName
                                                      : modulePrefix + "." + fd->funcName;
         if (module->getFunction(pre_name)) continue;   // already declared
@@ -3364,6 +3374,24 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                 uhash_fast_mode = false;
                 result_elide_mode = false;
                 continue;
+            }
+
+            // v0.24.5 (COMPTIME-010): skip comptime `type:T` functions (CTFE-only).
+            {
+                bool _hasTypeParam = false;
+                for (const auto& _p : funcDecl->parameters) {
+                    if (_p && _p->type == ASTNode::NodeType::PARAMETER) {
+                        auto* _pn = static_cast<ParameterNode*>(_p.get());
+                        if (_pn->isTypeParam) { _hasTypeParam = true; break; }
+                    }
+                }
+                if (_hasTypeParam) {
+                    current_func_decl = nullptr;
+                    ustack_fast_mode = false;
+                    uhash_fast_mode = false;
+                    result_elide_mode = false;
+                    continue;
+                }
             }
             
             // Create function signature with proper type mapping
@@ -12896,7 +12924,36 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
             if (typeName == "bool") {
                 return builder.getInt1(comptimeExpr->boolResult);
             } else if (typeName == "str") {
-                return builder.CreateGlobalString(comptimeExpr->stringResult, "comptime.str");
+                // v0.24.7 (COMPTIME-013): emit a proper AriaString struct
+                // (matching string-literal codegen in codegen_expr.cpp), not
+                // a raw [N x i8]* — otherwise downstream consumers (println,
+                // string equality, etc.) read garbage and segfault.
+                const std::string& s = comptimeExpr->stringResult;
+                llvm::LLVMContext& ctx = module->getContext();
+                llvm::Constant* strData = llvm::ConstantDataArray::getString(ctx, s, true);
+                llvm::GlobalVariable* strGV = new llvm::GlobalVariable(
+                    *module, strData->getType(), true,
+                    llvm::GlobalValue::PrivateLinkage, strData, ".comptime.str.data");
+                llvm::StructType* npkStrTy =
+                    llvm::StructType::getTypeByName(ctx, "struct.NpkString");
+                if (!npkStrTy) {
+                    std::vector<llvm::Type*> fields = {
+                        llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0),
+                        llvm::Type::getInt64Ty(ctx)
+                    };
+                    npkStrTy = llvm::StructType::create(ctx, fields, "struct.NpkString");
+                }
+                std::vector<llvm::Constant*> structVals = {
+                    llvm::ConstantExpr::getPointerCast(
+                        strGV, llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0)),
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), s.length())
+                };
+                llvm::Constant* structConst =
+                    llvm::ConstantStruct::get(npkStrTy, structVals);
+                llvm::GlobalVariable* structGV = new llvm::GlobalVariable(
+                    *module, npkStrTy, true,
+                    llvm::GlobalValue::PrivateLinkage, structConst, ".comptime.str");
+                return structGV;
             } else if (typeName.find("flt") == 0 || typeName.find("f") == 0) {
                 // Float types
                 llvm::Type* llvmType = mapTypeFromName(typeName);

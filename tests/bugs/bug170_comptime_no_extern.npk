@@ -1,0 +1,18 @@
+// bug170 — v0.24.6 (COMPTIME-012)
+// extern function calls inside a comptime function body must produce a clear
+// compile error mentioning extern is not allowed in comptime context.
+
+extern func:puts = int32(string:s);
+
+pub comptime func:bad = int32() {
+    pass puts("hello");
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int32:x = comptime(raw bad());
+    exit 0;
+};

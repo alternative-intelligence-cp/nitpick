@@ -1,0 +1,25 @@
+// v0.24.3 — Combined: a macro whose body uses comptime(...) is itself
+// invoked inside an outer comptime(...). No double-evaluation, no ICE.
+
+macro:quad_ct = (x) {
+    comptime(x * 4);
+};
+
+macro:plus_ct = (x, y) {
+    comptime(x + y);
+};
+
+pub func:main = int32() {
+    int64:a = comptime(quad_ct!(3));
+    if (a != 12) { exit 1; }
+
+    int64:b = comptime(plus_ct!(quad_ct!(2), quad_ct!(5)));
+    if (b != 28) { exit 2; }
+
+    int64:c = comptime(plus_ct!(1, plus_ct!(2, plus_ct!(3, 4))));
+    if (c != 10) { exit 3; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

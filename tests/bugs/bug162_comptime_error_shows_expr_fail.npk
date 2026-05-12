@@ -1,0 +1,10 @@
+// v0.24.4 (COMPTIME-009): when a comptime evaluation fails, the diagnostic
+// must include the offending expression text on its own line.
+// Compiling this file must FAIL with a message containing
+//   expression: ...
+//   reason: Division by zero
+pub func:main = int32() {
+    int32:x = comptime(100i32 / 0i32);
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };

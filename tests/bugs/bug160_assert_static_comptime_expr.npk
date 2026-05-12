@@ -1,0 +1,9 @@
+// v0.24.4 (COMPTIME-008): assert_static of a folded arithmetic comptime
+// expression evaluates at compile time and is proven without Z3 translation.
+pub func:main = int32() {
+    assert_static comptime(2 + 2 == 4);
+    assert_static comptime(10 * 10 == 100);
+    assert_static comptime(7 - 3 > 0);
+    exit 0;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };

@@ -574,4 +574,88 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "macros;MACRO-012;v0.23.7"
     )
+
+    # v0.24.1: loop() + mutable locals in CTFE (COMPTIME-001, COMPTIME-002)
+    add_test(
+        NAME bug_tests_v0241
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0241.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0241 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-001;COMPTIME-002;v0.24.1"
+    )
+
+    # v0.24.2: @sizeof, @alignof, comptime string ops (COMPTIME-003, 004, 005)
+    add_test(
+        NAME bug_tests_v0242
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0242.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0242 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-003;COMPTIME-004;COMPTIME-005;v0.24.2"
+    )
+
+    # v0.24.3: macro × comptime interaction (COMPTIME-006, COMPTIME-007)
+    add_test(
+        NAME bug_tests_v0243
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0243.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0243 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-006;COMPTIME-007;v0.24.3"
+    )
+
+    # v0.24.4: assert_static+comptime + diagnostics (COMPTIME-008, COMPTIME-009)
+    add_test(
+        NAME bug_tests_v0244
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0244.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0244 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-008;COMPTIME-009;v0.24.4"
+    )
+
+    # v0.24.5: comptime generics — `type:T` parameters (COMPTIME-010)
+    add_test(
+        NAME bug_tests_v0245
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0245.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0245 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-010;v0.24.5"
+    )
+
+    # v0.24.6: limit<Rules> comptime + comptime limitations (COMPTIME-011, COMPTIME-012)
+    add_test(
+        NAME bug_tests_v0246
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0246.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0246 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-011;COMPTIME-012;v0.24.6"
+    )
+
+    # v0.24.7: struct field reflection via @typeInfo + @fieldType (COMPTIME-013)
+    add_test(
+        NAME bug_tests_v0247
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0247.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0247 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "comptime;COMPTIME-013;v0.24.7"
+    )
 endif()

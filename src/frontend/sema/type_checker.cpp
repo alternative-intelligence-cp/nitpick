@@ -276,6 +276,18 @@ void TypeChecker::check(ASTNode* module) {
             if (nodeHasFalseCfg(stmt.get())) continue;
             // Skip generics (handled during monomorphization)
             if (!fd->genericParams.empty()) continue;
+            // v0.24.5 (COMPTIME-010): skip funcs with `type:T` parameters —
+            // their bodies are evaluated by the ConstEvaluator, and resolving
+            // a `type` parameter as a real type would error out here. The
+            // main checkFuncDecl pass registers them with placeholder types.
+            bool hasTypeParam = false;
+            for (const auto& p : fd->parameters) {
+                if (p->type == ASTNode::NodeType::PARAMETER) {
+                    auto* pn = static_cast<ParameterNode*>(p.get());
+                    if (pn->isTypeParam) { hasTypeParam = true; break; }
+                }
+            }
+            if (hasTypeParam) continue;
             // Skip if already in symbol table (self-recursion pre-reg inside checkFuncDecl
             // may have registered it, but at module level nothing has run yet)
             if (symbolTable->lookupSymbol(fd->funcName)) continue;
@@ -681,6 +693,14 @@ Type* TypeChecker::inferIdentifier(IdentifierExpr* expr) {
     Symbol* symbol = symbolTable->lookupSymbol(expr->name);
 
     if (!symbol) {
+        // v0.24.5 (COMPTIME-010): a bare type-keyword name (e.g. `int32`) is
+        // a valid expression atom — used as a comptime-generic argument to
+        // functions taking a `type:T` parameter. Resolve to the primitive
+        // type so call-site checking sees a concrete type.
+        if (isTypeKeyword(expr->name)) {
+            return typeSystem->getPrimitiveType(expr->name);
+        }
+
         // Enhanced error message: check if this looks like a UFCS method call
         // Pattern: TypeName_methodName (e.g., string_lenght, array_pussh)
         size_t underscorePos = expr->name.find('_');

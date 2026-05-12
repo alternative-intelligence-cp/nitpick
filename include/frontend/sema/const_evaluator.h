@@ -46,7 +46,8 @@ public:
         POINTER,      // Virtual heap pointer
         FUNCTION,     // Function reference
         NULL_VALUE,   // NULL
-        ERR_SENTINEL  // TBB ERR sentinel
+        ERR_SENTINEL, // TBB ERR sentinel
+        TYPE_NAME     // v0.24.5 (COMPTIME-010): comptime type-name parameter (string-backed)
     };
     
     // Pointer representation: opaque handle {AllocID, Offset}
@@ -94,6 +95,9 @@ public:
     static ComptimeValue makeERR(const std::string& type, int bits);
     static ComptimeValue makeStruct(const std::map<std::string, ComptimeValue>& fields, const std::string& typeName);
     static ComptimeValue makeArray(const std::vector<ComptimeValue>& elements, const std::string& elementType);
+
+    // v0.24.5 (COMPTIME-010): comptime type-name (used for `type:T` parameters)
+    static ComptimeValue makeTypeName(const std::string& typeName);
     
     // Type queries
     Kind getKind() const { return kind; }
@@ -109,6 +113,7 @@ public:
     bool isERR() const { return kind == Kind::ERR_SENTINEL; }
     bool isStruct() const { return kind == Kind::STRUCT; }
     bool isArray() const { return kind == Kind::ARRAY; }
+    bool isTypeName() const { return kind == Kind::TYPE_NAME; }
     
     // Comparison operator for memoization cache keys (research_030 Section 5.2)
     bool operator<(const ComptimeValue& other) const;
@@ -195,7 +200,11 @@ private:
     
     // === Error Handling ===
     std::vector<std::string> errors;
-    
+
+    // === v0.24.4 (COMPTIME-009): Call chain for diagnostics ===
+    // Pushed when entering a comptime function call, popped on return.
+    std::vector<std::string> callStack;
+
 public:
     // Constructor - takes optional SymbolTable pointer
     // If nullptr, uses internal storage (for standalone testing)
@@ -272,6 +281,7 @@ public:
     void pushLocalScope();
     void popLocalScope();
     void defineLocalConstant(const std::string& name, const ComptimeValue& value);
+    void setLocalConstant(const std::string& name, const ComptimeValue& value);
     
     // === Symbol Table Integration (Task 8) ===
     // Define a const in the symbol table

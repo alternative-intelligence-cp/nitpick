@@ -1,0 +1,23 @@
+// bug167 — v0.24.6 (COMPTIME-011)
+// limit<Rules> applied to an identifier that resolves to a `fixed` constant
+// should be CTFE-evaluable and proven without Z3 errors.
+
+extern func:puts = int32(string:s);
+
+Rules<int32>:r_pos = {
+    $ > 0
+};
+
+func:failsafe = int32(tbb32:err) {
+    drop puts("FAILSAFE: limit violation");
+    exit 1;
+};
+
+func:main = int32() {
+    fixed int32:n = 42;
+    limit<r_pos> int32:x = n;  // n is comptime-known and > 0 → must compile and pass
+    if (x == 42) {
+        exit 0;
+    }
+    exit 1;
+};

@@ -1805,6 +1805,52 @@ void TypeChecker::checkFuncDecl(FuncDeclStmt* stmt) {
         // Don't check the body - it will be checked during monomorphization
         return;
     }
+
+    // v0.24.5 (COMPTIME-010): comptime functions with `type:T` parameters are
+    // treated like generics — skip body type-checking (they are evaluated by
+    // the ConstEvaluator at every call site with a concrete type bound).
+    bool hasTypeParam = false;
+    for (const auto& p : stmt->parameters) {
+        if (p->type == ASTNode::NodeType::PARAMETER) {
+            ParameterNode* pn = static_cast<ParameterNode*>(p.get());
+            if (pn->isTypeParam) { hasTypeParam = true; break; }
+        }
+    }
+    if (hasTypeParam) {
+        if (!stmt->isComptime) {
+            addError("`type:` parameter only allowed in `comptime` functions (COMPTIME-010)", stmt);
+        }
+        // Register the function decl so the ConstEvaluator and call sites can
+        // find it. Use a placeholder signature.
+        if (stmt->isComptime) {
+            constEvaluator->registerFunction(stmt->funcName, stmt);
+        }
+        std::vector<Type*> placeholderParams;
+        for (const auto& param : stmt->parameters) {
+            (void)param;
+            placeholderParams.push_back(typeSystem->getUnknownType());
+        }
+        // Resolve the declared return type so callers see the real Result<T>;
+        // fall back to UnknownType only if resolution fails.
+        Type* valueType = stmt->returnType ? resolveTypeNode(stmt->returnType.get())
+                                           : typeSystem->getUnknownType();
+        if (!valueType || valueType->getKind() == TypeKind::ERROR) {
+            valueType = typeSystem->getUnknownType();
+        }
+        Type* placeholderReturn = stmt->body ? static_cast<Type*>(new ResultType(valueType))
+                                             : valueType;
+        Type* funcType = new FunctionType(placeholderParams, placeholderReturn,
+                                          stmt->isAsync, stmt->isVariadic);
+        Symbol* existingSym = symbolTable->lookupSymbol(stmt->funcName);
+        if (existingSym && existingSym->getFuncDecl() == stmt) {
+            existingSym->type = funcType;
+        } else if (!existingSym) {
+            Symbol* sym = symbolTable->defineSymbol(stmt->funcName, SymbolKind::FUNCTION,
+                                                    funcType, stmt->line, stmt->column);
+            if (sym) sym->setFuncDecl(stmt);
+        }
+        return;
+    }
     
     // Register comptime functions with the ConstEvaluator for CTFE
     if (stmt->isComptime) {
@@ -2029,20 +2075,36 @@ Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
         addError("Invalid comptime expression", expr);
         return typeSystem->getErrorType();
     }
-    
-    // First, type-check the inner expression normally
-    Type* innerType = inferType(expr->expr.get());
-    if (!innerType || innerType->getKind() == TypeKind::ERROR) {
-        return typeSystem->getErrorType();
+
+    // v0.24.7 (COMPTIME-013): Evaluate first. CTFE intrinsics like
+    // `@typeInfo(T).fields.<name>.bit_width` produce structured comptime
+    // values that don't have a clean type-checker representation; if eval
+    // succeeds, prefer its concrete result type over the inferType result.
+    ComptimeValue earlyResult = constEvaluator->evaluate(expr->expr.get());
+    bool earlyOk = !constEvaluator->hasErrors() &&
+                   earlyResult.getKind() != ComptimeValue::Kind::NULL_VALUE;
+    if (!earlyOk) constEvaluator->clearErrors();
+
+    Type* innerType = nullptr;
+    if (!earlyOk) {
+        innerType = inferType(expr->expr.get());
+        if (!innerType || innerType->getKind() == TypeKind::ERROR) {
+            return typeSystem->getErrorType();
+        }
     }
-    
-    // Evaluate the expression at compile time
-    ComptimeValue result = constEvaluator->evaluate(expr->expr.get());
+
+    // Re-evaluate (or first-evaluate when earlyOk was false) to produce the
+    // result that downstream code reads via expr->intResult/floatResult/etc.
+    ComptimeValue result = earlyOk ? earlyResult : constEvaluator->evaluate(expr->expr.get());
     
     // Check for evaluation errors
     if (constEvaluator->hasErrors()) {
+        // v0.24.4 (COMPTIME-009): improved diagnostics — include the expression
+        // text and the underlying reason on separate lines for clarity.
+        std::string exprText = expr->expr ? expr->expr->toString() : std::string("<unknown>");
         for (const auto& err : constEvaluator->getErrors()) {
-            addError("comptime evaluation failed: " + err, expr);
+            addError("comptime evaluation failed\n  expression: " + exprText +
+                     "\n  reason: " + err, expr);
         }
         constEvaluator->clearErrors();
         return typeSystem->getErrorType();
@@ -2079,7 +2141,7 @@ Type* TypeChecker::inferComptimeExpr(ComptimeExpr* expr) {
             return typeSystem->getPrimitiveType("str");
         default:
             // For complex types (arrays, structs, etc.), use the inner expression's type
-            return innerType;
+            return innerType ? innerType : typeSystem->getPrimitiveType("int64");
     }
 }
 
@@ -5549,6 +5611,15 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
             newArgs.push_back(cloneAST(arg.get(), substitutions));
         }
         return std::make_shared<MacroInvocationExpr>(macro->macroName, newArgs, macro->line, macro->column);
+    }
+
+    // v0.24.3 (COMPTIME-006): comptime(expr) inside a macro body. Clone
+    // the inner expression so the cloned macro body can be type-checked
+    // and the const evaluator can fold it after expansion.
+    if (node->type == ASTNode::NodeType::COMPTIME_EXPR) {
+        auto* ce = static_cast<ComptimeExpr*>(node);
+        auto newInner = ce->expr ? cloneAST(ce->expr.get(), substitutions) : nullptr;
+        return std::make_shared<ComptimeExpr>(newInner, ce->line, ce->column);
     }
     
     // Literals — just copy

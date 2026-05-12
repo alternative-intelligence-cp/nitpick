@@ -1,0 +1,25 @@
+// v0.24.3 — COMPTIME-006: macro body containing comptime(expr) is folded
+// at compile time after expansion.
+
+macro:four = () {
+    comptime(2 * 2);
+};
+
+macro:double_ct = (x) {
+    comptime(x * 2);
+};
+
+pub func:main = int32() {
+    int64:a = four!();
+    if (a != 4) { exit 1; }
+
+    int64:b = double_ct!(7);
+    if (b != 14) { exit 2; }
+
+    int64:c = double_ct!(0);
+    if (c != 0) { exit 3; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

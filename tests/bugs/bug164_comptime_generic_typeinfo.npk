@@ -1,0 +1,23 @@
+// v0.24.5 (COMPTIME-010): comptime function with `type:T` parameter,
+// returning the bit width of the bound type via @typeInfo(T).bit_width.
+pub comptime func:bw = int64(type:T) {
+    pass @typeInfo(T).bit_width;
+};
+
+pub func:main = int32() {
+    int64:b = comptime(raw bw(int32));
+    if (b != 32i64) {
+        exit 1;
+    }
+    int64:c = comptime(raw bw(int64));
+    if (c != 64i64) {
+        exit 1;
+    }
+    int64:d = comptime(raw bw(int8));
+    if (d != 8i64) {
+        exit 1;
+    }
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
