@@ -367,6 +367,26 @@ ComptimeValue ConstEvaluator::evaluateExpr(ASTNode* node) {
         case ASTNode::NodeType::COMPTIME_EXPR:
             // Unwrap: comptime(expr) just evaluates the inner expression
             return evaluateExpr(static_cast<ComptimeExpr*>(node)->expr.get());
+        case ASTNode::NodeType::MACRO_INVOCATION: {
+            // v0.24.3 (COMPTIME-007): the type checker has already expanded
+            // the macro and stashed the expansion in expandedAST. Evaluate
+            // that expansion at compile time.
+            auto* macro = static_cast<MacroInvocationExpr*>(node);
+            if (!macro->expandedAST) {
+                addError("Macro '" + macro->macroName + "!' was not expanded "
+                         "before comptime evaluation");
+                return ComptimeValue();
+            }
+            ASTNode* expanded = macro->expandedAST.get();
+            // If the expansion is itself an expression, evaluate it directly.
+            if (expanded->isExpression()) {
+                return evaluateExpr(expanded);
+            }
+            // Statement / block expansion: fall through to evaluate(), which
+            // handles BLOCK and statement-form expansions and returns the
+            // last value evaluated.
+            return evaluate(expanded);
+        }
         default:
             addError("Expression type not supported in compile-time evaluation. "
                     "Only literals, identifiers, binary/unary ops, ternary, and function calls are allowed.");
@@ -403,6 +423,17 @@ ComptimeValue ConstEvaluator::evaluateStmt(ASTNode* stmt) {
             if (hasErrors()) return ComptimeValue();
         }
         return lastValue;
+    }
+
+    // v0.24.3 (COMPTIME-006/007): expression statements occur in macro
+    // expansions like `macro:f = (x) { x * 2; }` — unwrap and evaluate the
+    // inner expression so the block returns its value.
+    if (stmt->type == ASTNode::NodeType::EXPRESSION_STMT) {
+        auto* exprStmt = static_cast<ExpressionStmt*>(stmt);
+        if (exprStmt->expression) {
+            return evaluateExpr(exprStmt->expression.get());
+        }
+        return ComptimeValue();
     }
     
     addError("Statement cannot be evaluated at compile time. Only const declarations and block expressions are supported.");

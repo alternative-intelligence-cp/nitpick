@@ -5550,6 +5550,15 @@ ASTNodePtr TypeChecker::cloneAST(ASTNode* node, const std::map<std::string, ASTN
         }
         return std::make_shared<MacroInvocationExpr>(macro->macroName, newArgs, macro->line, macro->column);
     }
+
+    // v0.24.3 (COMPTIME-006): comptime(expr) inside a macro body. Clone
+    // the inner expression so the cloned macro body can be type-checked
+    // and the const evaluator can fold it after expansion.
+    if (node->type == ASTNode::NodeType::COMPTIME_EXPR) {
+        auto* ce = static_cast<ComptimeExpr*>(node);
+        auto newInner = ce->expr ? cloneAST(ce->expr.get(), substitutions) : nullptr;
+        return std::make_shared<ComptimeExpr>(newInner, ce->line, ce->column);
+    }
     
     // Literals — just copy
     if (node->type == ASTNode::NodeType::LITERAL) {

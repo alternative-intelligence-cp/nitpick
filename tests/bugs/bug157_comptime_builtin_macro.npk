@@ -1,0 +1,20 @@
+// v0.24.3 — COMPTIME-007: built-in macros (cfg!) usable inside comptime(...)
+// cfg! expands to a literal bool; comptime() must delegate through it.
+
+pub func:main = int32() {
+    bool:on_linux = comptime(cfg!(target_os=linux));
+    if (on_linux != true) { exit 1; }
+
+    bool:on_arch  = comptime(cfg!(target_arch=x86_64));
+    if (on_arch != true) { exit 2; }
+
+    bool:not_win  = comptime(cfg!(not(target_os=windows)));
+    if (not_win != true) { exit 3; }
+
+    bool:both     = comptime(cfg!(all(target_os=linux, target_arch=x86_64)));
+    if (both != true) { exit 4; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };

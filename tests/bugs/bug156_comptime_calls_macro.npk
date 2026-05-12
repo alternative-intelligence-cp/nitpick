@@ -1,0 +1,25 @@
+// v0.24.3 — COMPTIME-007: comptime(macro_invocation()) — the const evaluator
+// must delegate to the macro's expanded AST.
+
+macro:double_it = (x) {
+    x * 2;
+};
+
+macro:add_one = (x) {
+    x + 1;
+};
+
+pub func:main = int32() {
+    int64:a = comptime(double_it!(3));
+    if (a != 6) { exit 1; }
+
+    int64:b = comptime(add_one!(double_it!(10)));
+    if (b != 21) { exit 2; }
+
+    int64:c = comptime(double_it!(double_it!(5)));
+    if (c != 20) { exit 3; }
+
+    exit 0;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
