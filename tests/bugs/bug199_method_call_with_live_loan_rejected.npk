@@ -1,0 +1,19 @@
+// v0.25.5 BORROW-009/010 negative: calling c.bump(...) while c is already
+// immutably borrowed must be rejected (ARIA-020). Two-phase borrow does NOT
+// extend to ignoring outer-scope live loans.
+struct:Counter = { int32:n; };
+trait:T = { func:bump = int32($$m Counter:self, int32:v); };
+impl:T:for:Counter = {
+    func:bump = int32($$m Counter:self, int32:v) {
+        self.n = self.n + v;
+        pass 0;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Counter:c;
+    c.n = 1i32;
+    $$i int32:y = c.n;
+    int32:rc = raw c.bump(2i32);
+    exit rc + y;
+};

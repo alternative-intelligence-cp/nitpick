@@ -752,7 +752,11 @@ private:
      * At a call site, check argument ownership against callee summary
      * Enforces: move semantics, borrow rules, mutability requirements
      */
-    void checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary);
+    // v0.25.5 (BORROW-010): `param_offset` lets UFCS method-call dispatch
+    // skip the summary's implicit-`self` slot so call-site arguments line up
+    // with the remaining parameters. Defaults to 0 (direct calls).
+    void checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary,
+                            size_t param_offset = 0);
     
     // ========================================================================
     // Lifetime Tracking (Phase 3.3.1)

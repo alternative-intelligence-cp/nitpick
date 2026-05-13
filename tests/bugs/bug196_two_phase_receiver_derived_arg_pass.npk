@@ -1,0 +1,23 @@
+// v0.25.5 BORROW-009: receiver $$m + arg derived from same host via $$i
+// method — c.bump(raw c.peek()) — accepted by two-phase dispatch.
+struct:Counter = { int32:n; };
+trait:T = {
+    func:bump = int32($$m Counter:self, int32:v);
+    func:peek = int32($$i Counter:self);
+};
+impl:T:for:Counter = {
+    func:bump = int32($$m Counter:self, int32:v) {
+        self.n = self.n + v;
+        pass 0;
+    };
+    func:peek = int32($$i Counter:self) {
+        pass self.n;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Counter:c;
+    c.n = 3i32;
+    int32:rc = raw c.bump(raw c.peek());
+    exit rc;
+};

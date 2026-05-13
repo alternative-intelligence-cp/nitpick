@@ -1,0 +1,19 @@
+// v0.25.5 BORROW-009/010: c.bump(7i32) where bump takes ($$m self, int32:v).
+// Pre-fix the borrow checker mis-aligned summary param 0 ($self) against
+// argument 0 (7i32) and reported ARIA-020 "expects $$m, not addressable".
+// After the v0.25.5 fix, UFCS dispatch skips the implicit self slot.
+struct:Counter = { int32:n; };
+trait:T = { func:bump = int32($$m Counter:self, int32:v); };
+impl:T:for:Counter = {
+    func:bump = int32($$m Counter:self, int32:v) {
+        self.n = self.n + v;
+        pass 0;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Counter:c;
+    c.n = 1i32;
+    int32:rc = raw c.bump(7i32);
+    exit rc;
+};

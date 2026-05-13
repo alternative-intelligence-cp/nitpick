@@ -1,0 +1,16 @@
+// v0.25.5 BORROW-010: $$m self impl method writes through self.field cleanly.
+struct:Counter = { int32:n; };
+trait:T = { func:incr = int32($$m Counter:self); };
+impl:T:for:Counter = {
+    func:incr = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass 0;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Counter:c;
+    c.n = 0i32;
+    int32:rc = raw c.incr();
+    exit rc;
+};

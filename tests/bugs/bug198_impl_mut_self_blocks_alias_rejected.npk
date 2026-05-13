@@ -1,0 +1,20 @@
+// v0.25.5 BORROW-010: inside an impl with $$m self, taking a $$m local
+// borrow of self.field and then writing self.field must be rejected
+// (ARIA-026) — the local mutable borrow blocks the assignment.
+struct:Counter = { int32:n; };
+trait:T = { func:bad = int32($$m Counter:self); };
+impl:T:for:Counter = {
+    func:bad = int32($$m Counter:self) {
+        $$m int32:x = self.n;
+        self.n = 5i32;
+        x = x + 1i32;
+        pass 0;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Counter:c;
+    c.n = 0i32;
+    int32:rc = raw c.bad();
+    exit rc;
+};

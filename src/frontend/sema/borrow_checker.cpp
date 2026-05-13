@@ -736,16 +736,19 @@ void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
     }
 }
 
-void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary) {
+void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary,
+                                       size_t param_offset) {
     size_t num_params = summary.param_ownership.size();
+    if (param_offset > num_params) param_offset = num_params;
     std::unordered_map<std::string, size_t> mutable_borrow_targets;
-    
-    for (size_t i = 0; i < expr->arguments.size() && i < num_params; ++i) {
+
+    for (size_t i = 0; i < expr->arguments.size() && (i + param_offset) < num_params; ++i) {
         const auto& arg = expr->arguments[i];
         if (!arg) continue;
-        
-        ParamOwnership expected = summary.param_ownership[i];
-        const std::string& param_name = summary.param_names[i];
+
+        size_t pi = i + param_offset;
+        ParamOwnership expected = summary.param_ownership[pi];
+        const std::string& param_name = summary.param_names[pi];
         
         // Extract the argument variable name if it's an identifier
         std::string arg_var;
@@ -3513,8 +3516,11 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     }
                 }
 
-                // Also check non-self arguments via normal ownership checking
-                checkCallOwnership(expr, summary);
+                // Also check non-self arguments via normal ownership checking.
+                // v0.25.5 (BORROW-010): UFCS call sites pass `obj` implicitly,
+                // so `expr->arguments` starts at param index 1 (skip self).
+                size_t self_skip = (summary.self_param_index == 0) ? 1 : 0;
+                checkCallOwnership(expr, summary, self_skip);
                 break;  // Found matching method
             }
         }
