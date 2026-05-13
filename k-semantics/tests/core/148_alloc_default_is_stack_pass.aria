@@ -1,0 +1,15 @@
+// expect-exit: 11
+// v0.26.0 / MEM-003: a bare declaration without a region keyword behaves
+// the same as the explicit `stack` form (current codegen audit, codegen_stmt.cpp:602).
+// Two unqualified locals plus a `stack`-qualified one: all three sum cleanly.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:a = 3;
+    int32:b = 4;
+    stack int32:c = 4;
+    exit a + b + c;
+};

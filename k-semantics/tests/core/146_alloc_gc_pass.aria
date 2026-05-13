@@ -1,0 +1,12 @@
+// expect-exit: 30
+// v0.26.0 / MEM-003: explicit `gc` keyword puts the value in the GC region.
+// Reads after allocation must see the stored value regardless of region.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    gc int32:x = 30;
+    exit x;
+};

@@ -1,0 +1,12 @@
+// expect-exit: 42
+// v0.26.0 / MEM-003: explicit `stack` keyword puts the value in the stack region.
+// Reads after allocation must see the stored value.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    stack int32:x = 42;
+    exit x;
+};
