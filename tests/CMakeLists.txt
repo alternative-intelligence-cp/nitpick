@@ -730,4 +730,16 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-009;BORROW-010;v0.25.5"
     )
+
+    # v0.25.6: closure capture borrow + multi-await polish (BORROW-011, BORROW-012, BORROW-013)
+    add_test(
+        NAME bug_tests_v0256
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0256.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0256 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-011;BORROW-012;BORROW-013;v0.25.6"
+    )
 endif()

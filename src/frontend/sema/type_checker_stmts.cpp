@@ -913,6 +913,15 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // FUNCTION_TYPE: function pointer variable — IR generator handles all codegen.
         // Register as unknown (so call sites don't error) and skip all type checks.
         if (stmt->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+            // v0.25.6 (BORROW-011): still analyze a LAMBDA initializer so its
+            // capturedVars are populated for the BorrowChecker — the early
+            // return below would otherwise skip inferType on the initializer.
+            if (stmt->initializer &&
+                stmt->initializer->type == ASTNode::NodeType::LAMBDA &&
+                closureAnalyzer) {
+                closureAnalyzer->analyzeLambda(
+                    static_cast<LambdaExpr*>(stmt->initializer.get()));
+            }
             symbolTable->defineSymbol(stmt->varName,
                                      SymbolKind::VARIABLE,
                                      typeSystem->getUnknownType(),

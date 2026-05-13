@@ -1,0 +1,9 @@
+// bug201: BORROW-011 — closure that mutates capture is BY_REFERENCE; outer $$m must reject ARIA-023.
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32:x = 5i32;
+    (int32)():inc = int32() { x = x + 1i32; pass x; };
+    $$m int32:y = x;
+    int32:rc = inc() ? -1i32;
+    exit y + rc;
+};

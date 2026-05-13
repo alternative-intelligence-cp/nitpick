@@ -1665,6 +1665,27 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         checkExpression(stmt->initializer.get());
 
         // ====================================================================
+        // v0.25.6 (BORROW-011): closure capture registers borrows of host vars
+        // ====================================================================
+        // When the initializer is a LAMBDA, the closure binding holds a
+        // reference to each BY_REFERENCE-captured variable for the lifetime
+        // of the binding. Register a $$m loan keyed on the binding name so
+        // that subsequent overlapping borrows of the captured var conflict.
+        // BY_VALUE captures are pure copies (no loan); BY_MOVE consumes.
+        if (stmt->initializer->type == ASTNode::NodeType::LAMBDA) {
+            auto* lambda = static_cast<LambdaExpr*>(stmt->initializer.get());
+            for (const auto& cap : lambda->capturedVars) {
+                if (cap.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+                    AccessPath cap_path(cap.name);
+                    recordBorrowWithPath(cap_path, stmt->varName,
+                                         /*is_mutable=*/true, stmt);
+                } else if (cap.mode == LambdaExpr::CaptureMode::BY_MOVE) {
+                    ctx.moved_variables.insert(cap.name);
+                }
+            }
+        }
+
+        // ====================================================================
         // v0.2.35: $$i/$$m qualifier-based borrows
         // ====================================================================
         if (stmt->isBorrowImm || stmt->isBorrowMut) {

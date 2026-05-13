@@ -1,0 +1,14 @@
+// bug203: BORROW-012 — multi-await with $$m borrow released between awaits → no ARIA-030.
+async func:tick = int32() { pass 1i32; };
+async func:run = int32() {
+    int32:x = 0i32;
+    {
+        $$m int32:y = x;
+        y = y + 1i32;
+    }
+    int32:r1 = raw await tick();
+    int32:r2 = raw await tick();
+    pass r1 + r2;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { drop run(); exit 0; };
