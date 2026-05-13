@@ -1,0 +1,23 @@
+// expect-exit: 30
+// v0.25.7 / BORROW-014: combined two-phase pattern. An immutable plain-var
+// borrow is released by scope, then a mutable field borrow on an unrelated
+// struct is taken; the immutable borrow does not leak across the boundary.
+
+struct:Pair = {
+    int32:a;
+    int32:b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    int32:a = 10;
+    Pair:pair = Pair{a: 1, b: 2};
+    {
+        $$i int32:r = a;
+    }
+    $$m int32:rb = pair.b;
+    exit a + rb + 18;
+};

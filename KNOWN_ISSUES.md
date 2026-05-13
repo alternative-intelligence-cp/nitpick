@@ -1,8 +1,31 @@
-# Nitpick v0.24.7 — Known Issues & Limitations
+# Nitpick v0.25.7 — Known Issues & Limitations
 
-Last updated: v0.24.7
+Last updated: v0.25.7
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
+
+---
+
+## Deferred — v0.25.x (Borrow Checker Hardening)
+
+The items below are explicitly out of scope for the v0.25.x cycle and
+carried forward to v0.26.x triage:
+
+- **Flow-sensitive borrow release across `if` / `else` arms** — releasing in
+  one arm does not free the host in the join.
+- **Implicit two-phase borrows** — methods take their receiver loan up
+  front for the whole call; explicit scope-release is required.
+- **Closure capture for non-primitive types** — defaults to BY_VALUE;
+  capture-by-reference is currently supported only for primitive scalars.
+- **IR-gen path-arg lowering for `$$m` parameters** — the borrow checker
+  enforces the rules but codegen still uses the existing pointer-passing
+  convention.
+- **Cross-module return-borrow inference** — summary-based, not global;
+  novel cross-module shapes may require explicit scoping.
+- **K model field-path depth** — capped at 3 levels (`a.b.c`); deeper
+  paths exist in the parser but are not yet expressible in the K model.
+- **Out-of-bounds array access** — not borrow-checked; lives in the
+  verification stack (KLEE / CBMC).
 
 ---
 
@@ -31,6 +54,19 @@ code generation macros require additional codegen work planned for v0.25.x+.
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.25.x
+
+| Slice | Bugs | Theme |
+|-------|------|-------|
+| v0.25.0 | bug173 – bug174 | `TILL` body borrow checking, `FAIL` dispatch |
+| v0.25.1 | bug175 – bug178 | `defer` body borrow tracking; early-exit leak audit |
+| v0.25.2 | bug179 – bug183 | Multi-dim and nested array borrow paths |
+| v0.25.3 | bug184 – bug189 | Deep struct field paths and `ptr->field` |
+| v0.25.4 | bug190 – bug194 | Inter-procedural parameter intent and return-borrow lifetime |
+| v0.25.5 | bug195 – bug199 | Two-phase borrows; `$$m self` in trait impls |
+| v0.25.6 | bug200 – bug204 | Closure capture borrows; multi-await polish; ARIA-023/026 secondary spans |
+| v0.25.7 | (no new bugs) | K core tests 143/144/145; `guide/borrow/` cookbook; cycle audit |
 
 ### Resolved in v0.24.x
 

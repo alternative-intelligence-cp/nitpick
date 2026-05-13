@@ -1,4 +1,4 @@
-# Nitpick Programming Language v0.24.x (formerly Aria)
+# Nitpick Programming Language v0.25.x (formerly Aria)
 
 <p align="center">
     <img src="assets/nitpick_logo.png" alt="Nitpick logo: raccoon holding a magnifying glass" width="280">
@@ -21,7 +21,42 @@
 
 ---
 
-## Current Status (May 12, 2026)
+## Current Status (May 13, 2026)
+
+**Stable release: v0.25.7 — Borrow Checker Hardening complete (8-release cycle)**
+
+The v0.25.x cycle delivered a comprehensive hardening of the borrow checker:
+statement-visitor coverage, `defer` and early-exit handling, multi-dim and
+nested array borrow paths, 3+-level struct field paths and `ptr->field`,
+inter-procedural parameter intent and return-borrow lifetime, two-phase
+borrows, `$$m self` in trait impls, closure-capture borrow tracking,
+multi-await polish, secondary-span diagnostics, plus K-semantics test coverage
+for multilevel field disjointness, two-phase release, and async release.
+All 14 tracked BORROW items are resolved.
+
+**Current validation snapshot:** CTest **53/53** passing (release build,
+K semantics enabled); `k_semantics_core` **145/145** under K Framework v7.1.320;
+`k_semantics_proofs` **10/10** proof modules; **204** regression bug tests
+(bug001 – bug204, including 105 borrow-specific); **103 packages**;
+**72 stdlib modules**.
+
+**v0.25.x highlights (released this cycle):**
+- **v0.25.0** — Statement-visitor audit + coverage matrix; `FAIL`/`TILL`
+  dispatch (BORROW-001).
+- **v0.25.1** — `defer` body borrow tracking + early-exit leak audit
+  (BORROW-002, BORROW-003).
+- **v0.25.2** — Multi-dim and nested array borrow paths (BORROW-004).
+- **v0.25.3** — 3+-level struct field paths and `ptr->field` paths
+  (BORROW-005, BORROW-006).
+- **v0.25.4** — Inter-procedural parameter intent and return-borrow
+  lifetime (BORROW-007, BORROW-008).
+- **v0.25.5** — Two-phase borrows and `$$m self` in trait impls
+  (BORROW-009, BORROW-010).
+- **v0.25.6** — Closure-capture borrow tracking, multi-await `$$m` polish,
+  ARIA-023 / ARIA-026 secondary spans (BORROW-011/012/013).
+- **v0.25.7** — K semantics test coverage (3 new core tests),
+  9-chapter [`guide/borrow/`](https://github.com/alternative-intelligence-cp/nitpick-docs/tree/main/guide/borrow)
+  cookbook, and the [v0.25.7 audit](AUDIT_v0.25.7.md) closing the cycle.
 
 **Stable release: v0.24.7 — Comptime / CTFE system complete (8-release cycle)**
 
@@ -71,7 +106,8 @@ K semantics enabled); `k_semantics_core` **142/142** under K Framework v7.1.320;
 - **v0.23.x** — Full macro system: hygiene, recursion + depth guard, variadic
   macros, statement-position invocations, built-in macros (`assert!`, `todo!`,
   `unreachable!`, `cfg!`), `--expand-macros` flag, K semantics for macros.
-- **v0.24.x** — Comptime / CTFE system (this release).
+- **v0.24.x** — Comptime / CTFE system.
+- **v0.25.x** — Borrow Checker Hardening (this release).
 
 **Previous series highlights:**
 - **v0.17.x** — Installers, packaging, and distribution: enhanced `install.sh`,
