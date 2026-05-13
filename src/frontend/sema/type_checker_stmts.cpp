@@ -867,9 +867,13 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // struct field, literal-index array element, or dynamic-index array element.
         // v0.25.3 (BORROW-006): pointer member access (ptr->field) is also
         // addressable storage.
+        // v0.25.4 (BORROW-008): a CALL whose callee returns a borrow is also
+        // a valid initializer; the borrow checker derives the source path from
+        // the callee's return-borrow source parameter.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
             stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
             stmt->initializer->type != ASTNode::NodeType::POINTER_MEMBER &&
+            stmt->initializer->type != ASTNode::NodeType::CALL &&
             !isLiteralIndexBorrowInitializer(stmt->initializer.get()) &&
             !isDynamicIndexBorrowInitializer(stmt->initializer.get())) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "

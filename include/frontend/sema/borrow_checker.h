@@ -658,6 +658,14 @@ struct FunctionBorrowSummary {
     std::string trait_name;           // Trait name (e.g. "Drawable")
     int self_param_index = -1;        // Index of self parameter (-1 if none)
     ParamOwnership self_ownership = ParamOwnership::COPY;  // How self is passed
+
+    // v0.25.4 (BORROW-008): Index of the parameter that the returned borrow
+    // derives from. -1 = not a borrow-returning function, or could not infer
+    // (e.g. multiple borrow params). Heuristic: when returns_borrow_imm/mut
+    // is set and exactly one parameter is itself a borrow, the return is
+    // assumed to derive from that parameter. Multi-borrow cases require an
+    // explicit annotation (deferred to a later cycle).
+    int return_borrow_source_param = -1;
     
     // Line of declaration (for diagnostics)
     int decl_line = 0;

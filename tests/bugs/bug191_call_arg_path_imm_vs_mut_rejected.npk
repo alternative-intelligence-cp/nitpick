@@ -1,0 +1,13 @@
+// v0.25.4 BORROW-007: passing p.a as $$i argument while a $$m borrow on
+// p.a is live must be rejected (ARIA-023). Immutable + mutable conflict.
+struct:Pair = { int32:a; int32:b; };
+func:read_a = int32($$i int32:s) { pass s; };
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$m int32:x = p.a;
+    int32:v = raw read_a(p.a);
+    exit 0;
+};

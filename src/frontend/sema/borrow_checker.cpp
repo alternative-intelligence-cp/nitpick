@@ -689,7 +689,27 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         summary.param_ownership.push_back(ownership);
         summary.param_names.push_back(p->paramName);
     }
-    
+
+    // v0.25.4 (BORROW-008): infer return-borrow source parameter.
+    // Heuristic: if the function returns a borrow and exactly one parameter
+    // is itself a borrow ($$i / $$m), assume the returned borrow derives
+    // from that parameter. Multi-borrow-parameter cases are left at -1
+    // and require explicit annotation (future cycle).
+    if (summary.returns_borrow_imm || summary.returns_borrow_mut) {
+        int single = -1;
+        int count = 0;
+        for (size_t i = 0; i < summary.param_ownership.size(); ++i) {
+            if (summary.param_ownership[i] == ParamOwnership::BORROW_IMM ||
+                summary.param_ownership[i] == ParamOwnership::BORROW_MUT) {
+                single = static_cast<int>(i);
+                ++count;
+            }
+        }
+        if (count == 1) {
+            summary.return_borrow_source_param = single;
+        }
+    }
+
     return summary;
 }
 
@@ -782,12 +802,59 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                         "hint: pass the addressable variable directly; keep $$m on the parameter declaration");
                     tagCode("ARIA-020");
                 } else if (arg_var.empty()) {
-                    addErrorWithSuggestion(
-                        "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects a mutable borrow ($$m), but the argument is not an addressable variable",
-                        arg.get(),
-                        "hint: pass a local variable name directly");
-                    tagCode("ARIA-020");
+                    // v0.25.4 (BORROW-007): allow addressable path arguments
+                    // (struct field, pointer member, array element). Extract
+                    // the AccessPath and conflict-check it against live loans.
+                    bool is_addressable_path =
+                        arg->type == ASTNode::NodeType::MEMBER_ACCESS ||
+                        arg->type == ASTNode::NodeType::POINTER_MEMBER ||
+                        arg->type == ASTNode::NodeType::INDEX;
+                    if (!is_addressable_path) {
+                        addErrorWithSuggestion(
+                            "Function '" + summary.func_name + "' parameter '" +
+                            param_name + "' expects a mutable borrow ($$m), but the argument is not an addressable variable",
+                            arg.get(),
+                            "hint: pass a local variable name, struct field, or array element directly");
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    AccessPath arg_path = extractAccessPath(arg.get());
+                    if (arg_path.base_var.empty()) {
+                        addErrorWithSuggestion(
+                            "Function '" + summary.func_name + "' parameter '" +
+                            param_name + "' expects a mutable borrow ($$m), but the argument's borrow path is not addressable",
+                            arg.get(),
+                            "hint: pass a local variable name, struct field, or array element directly");
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    auto existing_pkey = arg_path.base_var + ":" + arg_path.toString();
+                    if (mutable_borrow_targets.count(existing_pkey)) {
+                        addError("Cannot mutably borrow '" + arg_path.toString() +
+                                 "' multiple times in the same function call",
+                                 arg.get());
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    mutable_borrow_targets[existing_pkey] = i;
+                    if (ctx.moved_variables.count(arg_path.base_var)) {
+                        addErrorWithSuggestion(
+                            "Cannot mutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                            "' parameter '" + param_name + "' because '" + arg_path.base_var + "' was already moved",
+                            arg.get(),
+                            "hint: clone the value before moving if you need to borrow it later");
+                        tagCode("ARIA-019");
+                        break;
+                    }
+                    const Loan* conflict = ctx.checkPathConflict(arg_path, /*is_mutable=*/true);
+                    if (conflict) {
+                        addError("Cannot mutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                                 "' parameter '" + param_name + "' because it conflicts with existing borrow by '" +
+                                 conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                                 arg.get(),
+                                 "Existing borrow was created here", conflict->creation_line, conflict->creation_column);
+                        tagCode("ARIA-023");
+                    }
                 } else {
                     auto existing = mutable_borrow_targets.find(arg_var);
                     if (existing != mutable_borrow_targets.end()) {
@@ -834,6 +901,30 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                         arg.get(),
                         "hint: pass the value directly; keep $$i on the parameter declaration");
                     tagCode("ARIA-020");
+                    break;
+                }
+                // v0.25.4 (BORROW-007): for $$i, conflict only against live $$m
+                // borrows on overlapping paths. Identifier args check loans on
+                // the bare var; path args check via extractAccessPath.
+                AccessPath arg_path;
+                if (!arg_var.empty()) {
+                    arg_path = AccessPath(arg_var);
+                } else if (arg->type == ASTNode::NodeType::MEMBER_ACCESS ||
+                           arg->type == ASTNode::NodeType::POINTER_MEMBER ||
+                           arg->type == ASTNode::NodeType::INDEX) {
+                    arg_path = extractAccessPath(arg.get());
+                }
+                if (!arg_path.base_var.empty()) {
+                    const Loan* conflict = ctx.checkPathConflict(arg_path, /*is_mutable=*/false);
+                    if (conflict && conflict->is_mutable) {
+                        addError("Cannot immutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                                 "' parameter '" + param_name + "' because it is already mutably borrowed by '" +
+                                 conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                                 arg.get(),
+                                 "Existing mutable borrow was created here",
+                                 conflict->creation_line, conflict->creation_column);
+                        tagCode("ARIA-023");
+                    }
                 }
                 break;
             }
@@ -1574,6 +1665,75 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         // v0.2.35: $$i/$$m qualifier-based borrows
         // ====================================================================
         if (stmt->isBorrowImm || stmt->isBorrowMut) {
+            // v0.25.4 (BORROW-008): if the initializer is a CALL, derive the
+            // source borrow path from the callee's return-borrow source
+            // parameter (set by buildSummary). Without inference (multiple
+            // borrow params, or callee summary missing), emit a clear error.
+            if (stmt->initializer->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(stmt->initializer.get());
+                std::string callee_name;
+                if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    callee_name = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                }
+                // `raw expr` parses to CallExpr("raw", [inner]) — peek through
+                // to the actual user call so we can reason about its summary.
+                if ((callee_name == "raw" || callee_name == "drop") &&
+                    call->arguments.size() == 1 &&
+                    call->arguments[0] &&
+                    call->arguments[0]->type == ASTNode::NodeType::CALL) {
+                    call = static_cast<CallExpr*>(call->arguments[0].get());
+                    callee_name.clear();
+                    if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        callee_name = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    }
+                }
+                auto sit = func_summaries.find(callee_name);
+                if (sit == func_summaries.end()) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result: callee '" + callee_name +
+                             "' summary unavailable (cross-module return-borrow inference is deferred)",
+                             stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                const FunctionBorrowSummary& summary = sit->second;
+                if (!summary.returns_borrow_imm && !summary.returns_borrow_mut) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result: '" + callee_name + "' does not return a borrow",
+                             stmt);
+                    tagCode("ARIA-020");
+                    return;
+                }
+                if (summary.return_borrow_source_param < 0) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': cannot infer which parameter the returned borrow derives from "
+                             "(multi-borrow-parameter case requires explicit annotation)",
+                             stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                size_t src_idx = static_cast<size_t>(summary.return_borrow_source_param);
+                if (src_idx >= call->arguments.size() || !call->arguments[src_idx]) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': source argument missing", stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                AccessPath src_path = extractAccessPath(call->arguments[src_idx].get());
+                if (src_path.base_var.empty()) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': source argument is not an addressable storage path",
+                             stmt);
+                    tagCode("ARIA-020");
+                    return;
+                }
+                bool is_mutable = stmt->isBorrowMut;
+                recordBorrowWithPath(src_path, stmt->varName, is_mutable, stmt);
+                return;
+            }
             // Extract borrow target from initializer (must be an identifier or
             // member access — validated by type checker, but guard defensively)
             AccessPath borrow_path = extractAccessPath(stmt->initializer.get());
