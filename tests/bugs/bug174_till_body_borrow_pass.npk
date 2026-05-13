@@ -1,0 +1,13 @@
+// Expected: COMPILES + exit 0 — till body without borrow conflicts.
+// bug174: v0.25.0 — companion to bug173: ensure till body still passes
+// when borrows in the body are valid (single $$i borrow, no host conflict).
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32:x = 10;
+    int32:total = 0;
+    till(3, 1) {
+        $$i int32:r = x;
+        total = (total + r);
+    }
+    exit 0;
+};

@@ -129,6 +129,10 @@ void TypeChecker::checkStatement(ASTNode* stmt) {
             checkWhenStmt(static_cast<WhenStmt*>(stmt));
             break;
         
+        case ASTNode::NodeType::DEFER:
+            checkDeferStmt(static_cast<DeferStmt*>(stmt));
+            break;
+        
         case ASTNode::NodeType::BLOCK:
             checkBlockStmt(static_cast<BlockStmt*>(stmt));
             break;
@@ -811,11 +815,14 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // v0.19.0 Phase 3: recursively check that a node is addressable storage.
         // Handles: identifier, struct field access (member), array element (index),
         // and chains thereof (e.g. pair.buf[0], matrix[i][j]).
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field) is also
+        // addressable storage — the pointer itself names the host.
         std::function<bool(ASTNode*)> isAddressableBase = [&](ASTNode* n) -> bool {
             if (!n) return false;
             switch (n->type) {
                 case ASTNode::NodeType::IDENTIFIER:    return true;
-                case ASTNode::NodeType::MEMBER_ACCESS: {
+                case ASTNode::NodeType::MEMBER_ACCESS:
+                case ASTNode::NodeType::POINTER_MEMBER: {
                     auto* m = static_cast<MemberAccessExpr*>(n);
                     return isAddressableBase(m->object.get());
                 }
@@ -858,8 +865,15 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
 
         // Borrow initializer must be addressable storage: a named variable,
         // struct field, literal-index array element, or dynamic-index array element.
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field) is also
+        // addressable storage.
+        // v0.25.4 (BORROW-008): a CALL whose callee returns a borrow is also
+        // a valid initializer; the borrow checker derives the source path from
+        // the callee's return-borrow source parameter.
         if (stmt->initializer->type != ASTNode::NodeType::IDENTIFIER &&
             stmt->initializer->type != ASTNode::NodeType::MEMBER_ACCESS &&
+            stmt->initializer->type != ASTNode::NodeType::POINTER_MEMBER &&
+            stmt->initializer->type != ASTNode::NodeType::CALL &&
             !isLiteralIndexBorrowInitializer(stmt->initializer.get()) &&
             !isDynamicIndexBorrowInitializer(stmt->initializer.get())) {
             addError("Borrow variable '" + stmt->varName + "' must borrow from addressable storage "
@@ -899,6 +913,15 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         // FUNCTION_TYPE: function pointer variable — IR generator handles all codegen.
         // Register as unknown (so call sites don't error) and skip all type checks.
         if (stmt->typeNode->type == ASTNode::NodeType::FUNCTION_TYPE) {
+            // v0.25.6 (BORROW-011): still analyze a LAMBDA initializer so its
+            // capturedVars are populated for the BorrowChecker — the early
+            // return below would otherwise skip inferType on the initializer.
+            if (stmt->initializer &&
+                stmt->initializer->type == ASTNode::NodeType::LAMBDA &&
+                closureAnalyzer) {
+                closureAnalyzer->analyzeLambda(
+                    static_cast<LambdaExpr*>(stmt->initializer.get()));
+            }
             symbolTable->defineSymbol(stmt->varName,
                                      SymbolKind::VARIABLE,
                                      typeSystem->getUnknownType(),
@@ -3506,6 +3529,19 @@ void TypeChecker::checkBlockStmt(BlockStmt* stmt) {
     
     // Exit scope
     symbolTable->exitScope();
+}
+
+// ============================================================================
+// Defer Statement Type Checking (v0.25.1: BORROW-002 prerequisite)
+// ============================================================================
+
+void TypeChecker::checkDeferStmt(DeferStmt* stmt) {
+    if (!stmt || !stmt->block) {
+        return;
+    }
+    // Defer body executes at scope exit (LIFO), but it still needs to be
+    // type-checked now in its own block scope.
+    checkStatement(stmt->block.get());
 }
 
 // ============================================================================

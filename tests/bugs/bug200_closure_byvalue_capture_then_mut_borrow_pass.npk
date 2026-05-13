@@ -1,0 +1,10 @@
+// bug200: BORROW-011 — closure that only reads capture is BY_VALUE; outer $$m borrow OK.
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32:x = 5i32;
+    (int32)():get_x = int32() { pass x; };
+    $$m int32:y = x;
+    int32:r = get_x() ? -1i32;
+    y = y + 1i32;
+    exit (r + y - x) - 5i32;
+};

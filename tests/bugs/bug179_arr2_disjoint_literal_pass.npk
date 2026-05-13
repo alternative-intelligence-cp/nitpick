@@ -1,0 +1,14 @@
+// BUG-179: 2-D array literal indices on the inner level are tracked as disjoint.
+// arr2[0][1] and arr2[0][2] must coexist as $$m without ARIA-023.
+// Verifies BORROW-004 path-chaining (v0.25.2).
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    int32[2][3]:arr2 = [[1, 2, 3], [4, 5, 6]];
+    $$m int32:a = arr2[0][1];
+    $$m int32:b = arr2[0][2];
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};

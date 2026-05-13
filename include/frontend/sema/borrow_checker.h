@@ -88,7 +88,25 @@ struct AccessPath {
      * v0.6.1: Uses index_exprs for Z3-backed disjointness when both have [*]
      */
     bool isDisjointFrom(const AccessPath& other) const {
-        if (base_var != other.base_var) return true;  // Different roots
+        // v0.25.3 (BORROW-006): conservative cross-pointer aliasing.
+        // If either path goes through a pointer dereference ("->field"
+        // segment), a different base_var does NOT guarantee disjointness —
+        // two distinct pointer variables may alias the same host. Without
+        // alias analysis (planned for BORROW-007/008), treat such pairs as
+        // overlapping. Two paths starting at the SAME pointer variable still
+        // follow the normal prefix rules, so ptr->x and ptr->y stay disjoint.
+        auto pathHasDeref = [](const AccessPath& p) {
+            for (const auto& seg : p.fields) {
+                if (seg.size() >= 2 && seg[0] == '-' && seg[1] == '>') return true;
+            }
+            return false;
+        };
+        if (base_var != other.base_var) {
+            if (pathHasDeref(*this) || pathHasDeref(other)) {
+                return false;  // Conservative: may alias
+            }
+            return true;  // Different non-pointer roots
+        }
 
         // Find where paths diverge
         size_t min_len = std::min(fields.size(), other.fields.size());
@@ -640,6 +658,14 @@ struct FunctionBorrowSummary {
     std::string trait_name;           // Trait name (e.g. "Drawable")
     int self_param_index = -1;        // Index of self parameter (-1 if none)
     ParamOwnership self_ownership = ParamOwnership::COPY;  // How self is passed
+
+    // v0.25.4 (BORROW-008): Index of the parameter that the returned borrow
+    // derives from. -1 = not a borrow-returning function, or could not infer
+    // (e.g. multiple borrow params). Heuristic: when returns_borrow_imm/mut
+    // is set and exactly one parameter is itself a borrow, the return is
+    // assumed to derive from that parameter. Multi-borrow cases require an
+    // explicit annotation (deferred to a later cycle).
+    int return_borrow_source_param = -1;
     
     // Line of declaration (for diagnostics)
     int decl_line = 0;
@@ -726,7 +752,11 @@ private:
      * At a call site, check argument ownership against callee summary
      * Enforces: move semantics, borrow rules, mutability requirements
      */
-    void checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary);
+    // v0.25.5 (BORROW-010): `param_offset` lets UFCS method-call dispatch
+    // skip the summary's implicit-`self` slot so call-site arguments line up
+    // with the remaining parameters. Defaults to 0 (direct calls).
+    void checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary,
+                            size_t param_offset = 0);
     
     // ========================================================================
     // Lifetime Tracking (Phase 3.3.1)
@@ -848,6 +878,14 @@ private:
      */
     void checkForLeaks();
 
+    /**
+     * v0.25.1 (BORROW-003): Detect memory leaks across ALL enclosing scopes,
+     * up to the function root. Used on early-exit statements (`pass`, `fail`,
+     * `return`, `exit`) where the normal scope-pop leak check never fires
+     * because the inner scopes are abandoned by control flow.
+     */
+    void checkForLeaksAllScopes();
+
     // ========================================================================
     // Defer Enforcement (ARIA-014)
     // ========================================================================
@@ -885,6 +923,8 @@ private:
     void checkBlockStmt(BlockStmt* stmt);
     void checkReturnStmt(ReturnStmt* stmt);
     void checkPassStmt(PassStmt* stmt);
+    void checkFailStmt(FailStmt* stmt);
+    void checkTillStmt(TillStmt* stmt);
     void checkDeferStmt(DeferStmt* stmt);
 
     // v0.20.4: Lambda / closure escape analysis

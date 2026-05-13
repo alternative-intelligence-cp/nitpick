@@ -282,7 +282,7 @@ The v0.4.2 handle-based user stack has been redesigned to use per-scope implicit
 - **Async/await error propagation** — `pass()` and `fail()` in async functions store `Result<T>` to the coroutine promise; `await` extracts the Result via `@llvm.coro.promise`. Full error propagation across async boundaries.
 - **Async-aware `drop()`** — `drop(async_func())` automatically resumes and destroys the coroutine frame, running the async body to completion.
 - **Regression test suite** — 5 regression tests (test_async_await, test_extern_count, test_extern_names, test_main_call_limit, test_nested_struct_array) with `run_regression.sh` runner.
-- **Traits & Borrow Semantics RFC** — Design document for trait system (monomorphization by default, `dyn Trait` opt-in) and borrow qualifiers. The early dollar-prefixed sketch was superseded by current `$$i` / `$$m` syntax. Implementation deferred to v0.2.5+. See `META/ARIA/TRAITS_AND_BORROW_SEMANTICS_RFC.md`.
+- **Traits & Borrow Semantics RFC** — Design document for trait system (monomorphization by default, `dyn Trait` opt-in) and borrow qualifiers. The early dollar-prefixed sketch was superseded by current `$$i` / `$$m` syntax. Implementation deferred to v0.2.5+. See `META/NITPICK/TRAITS_AND_BORROW_SEMANTICS_RFC.md`.
 
 ### Fixed
 - **Coroutine double-free** — Fixed final suspend switch routing: case 0 (suspended) now goes to return block (frame stays alive for promise read), case 1 (destroy) goes to cleanup (frees frame). Previously all cases went to cleanup, causing `coro.resume` and `coro.destroy` to both free the frame.

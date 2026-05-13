@@ -1,5 +1,5 @@
 #!/bin/bash
-# v0.16.0-1 Bug Audit — Test all 13 active bugs from META/ARIA/BUGS
+# v0.16.0-1 Bug Audit — Test all 13 active bugs from META/NITPICK/BUGS
 cd /home/randy/Workspace/REPOS/aria
 NPKC=build/npkc
 DIR=tests/regression

@@ -1,0 +1,13 @@
+// Expected: COMPILER ERROR - double mutable borrow inside till body (ARIA-023)
+// bug173: v0.25.0 — `till(limit, step) { body }` body must be borrow-checked.
+// Pre-v0.25.0 the till body fell through the borrow checker default case and
+// silently passed conflicting borrows.
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    int32:x = 10;
+    $$m int32:a = x;
+    till(5, 1) {
+        $$m int32:b = x;
+    }
+    exit 0;
+};

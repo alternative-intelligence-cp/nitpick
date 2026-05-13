@@ -156,7 +156,7 @@ All 14 COMPTIME items resolved across the v0.24.x cycle.
 - [x] AUDIT_v0.24.7.md (this file)
 - [x] KNOWN_ISSUES.md updated → v0.24.7
 - [x] META/NITPICK_COMPTIME/COMPTIME.md → all 14 items ✅
-- [x] META/ARIA/ROADMAP/0.24/RELEASE_0.24.7.md → COMPLETE
-- [x] META/ARIA/ROADMAP/MASTER_ROADMAP.md → v0.24.x ✅, v0.25.x NEXT
+- [x] META/NITPICK/ROADMAP/0.24/RELEASE_0.24.7.md → COMPLETE
+- [x] META/NITPICK/ROADMAP/MASTER_ROADMAP.md → v0.24.x ✅, v0.25.x NEXT
 - [x] aria-docs/guide/comptime/ committed (9 chapters)
 - [x] Tag v0.24.7 on dev-0.24.x, merged to main

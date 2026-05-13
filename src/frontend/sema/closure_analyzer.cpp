@@ -71,6 +71,27 @@ void ClosureAnalyzer::walkNode(ASTNode* node) {
             
         case ASTNode::NodeType::BINARY_OP: {
             auto binary = static_cast<BinaryExpr*>(node);
+            // v0.25.6 (BORROW-011): Aria parses plain '=' assignment as a
+            // BinaryExpr with TOKEN_EQUAL — detect mutation of captured vars
+            // here (handleAssignment only fires for AssignmentExpr / compound
+            // assignments).
+            if (binary->op.type == frontend::TokenType::TOKEN_EQUAL &&
+                binary->left &&
+                binary->left->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& name =
+                    static_cast<IdentifierExpr*>(binary->left.get())->name;
+                if (isFromOuterScope(name)) {
+                    if (captures.count(name) == 0) {
+                        captures[name] = CaptureInfo{name, false, false, 0};
+                    }
+                    captures[name].isMutated = true;
+                    captures[name].usageCount++;
+                }
+                // Walk right-hand side only — LHS is the assignment target,
+                // not a use, and walking it would double-register the read.
+                walkNode(binary->right.get());
+                break;
+            }
             walkNode(binary->left.get());
             walkNode(binary->right.get());
             break;
@@ -115,6 +136,20 @@ void ClosureAnalyzer::walkNode(ASTNode* node) {
             if (retStmt->value) {
                 walkNode(retStmt->value.get());
             }
+            break;
+        }
+        
+        // v0.25.6 (BORROW-011): pass / fail are Aria's return-style
+        // statements — their value expression must be walked for capture
+        // detection, mirroring RETURN above.
+        case ASTNode::NodeType::PASS: {
+            auto passStmt = static_cast<PassStmt*>(node);
+            if (passStmt->value) walkNode(passStmt->value.get());
+            break;
+        }
+        case ASTNode::NodeType::FAIL: {
+            auto failStmt = static_cast<FailStmt*>(node);
+            if (failStmt->errorCode) walkNode(failStmt->errorCode.get());
             break;
         }
             

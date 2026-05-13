@@ -689,7 +689,27 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         summary.param_ownership.push_back(ownership);
         summary.param_names.push_back(p->paramName);
     }
-    
+
+    // v0.25.4 (BORROW-008): infer return-borrow source parameter.
+    // Heuristic: if the function returns a borrow and exactly one parameter
+    // is itself a borrow ($$i / $$m), assume the returned borrow derives
+    // from that parameter. Multi-borrow-parameter cases are left at -1
+    // and require explicit annotation (future cycle).
+    if (summary.returns_borrow_imm || summary.returns_borrow_mut) {
+        int single = -1;
+        int count = 0;
+        for (size_t i = 0; i < summary.param_ownership.size(); ++i) {
+            if (summary.param_ownership[i] == ParamOwnership::BORROW_IMM ||
+                summary.param_ownership[i] == ParamOwnership::BORROW_MUT) {
+                single = static_cast<int>(i);
+                ++count;
+            }
+        }
+        if (count == 1) {
+            summary.return_borrow_source_param = single;
+        }
+    }
+
     return summary;
 }
 
@@ -716,16 +736,19 @@ void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
     }
 }
 
-void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary) {
+void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSummary& summary,
+                                       size_t param_offset) {
     size_t num_params = summary.param_ownership.size();
+    if (param_offset > num_params) param_offset = num_params;
     std::unordered_map<std::string, size_t> mutable_borrow_targets;
-    
-    for (size_t i = 0; i < expr->arguments.size() && i < num_params; ++i) {
+
+    for (size_t i = 0; i < expr->arguments.size() && (i + param_offset) < num_params; ++i) {
         const auto& arg = expr->arguments[i];
         if (!arg) continue;
-        
-        ParamOwnership expected = summary.param_ownership[i];
-        const std::string& param_name = summary.param_names[i];
+
+        size_t pi = i + param_offset;
+        ParamOwnership expected = summary.param_ownership[pi];
+        const std::string& param_name = summary.param_names[pi];
         
         // Extract the argument variable name if it's an identifier
         std::string arg_var;
@@ -782,12 +805,59 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                         "hint: pass the addressable variable directly; keep $$m on the parameter declaration");
                     tagCode("ARIA-020");
                 } else if (arg_var.empty()) {
-                    addErrorWithSuggestion(
-                        "Function '" + summary.func_name + "' parameter '" +
-                        param_name + "' expects a mutable borrow ($$m), but the argument is not an addressable variable",
-                        arg.get(),
-                        "hint: pass a local variable name directly");
-                    tagCode("ARIA-020");
+                    // v0.25.4 (BORROW-007): allow addressable path arguments
+                    // (struct field, pointer member, array element). Extract
+                    // the AccessPath and conflict-check it against live loans.
+                    bool is_addressable_path =
+                        arg->type == ASTNode::NodeType::MEMBER_ACCESS ||
+                        arg->type == ASTNode::NodeType::POINTER_MEMBER ||
+                        arg->type == ASTNode::NodeType::INDEX;
+                    if (!is_addressable_path) {
+                        addErrorWithSuggestion(
+                            "Function '" + summary.func_name + "' parameter '" +
+                            param_name + "' expects a mutable borrow ($$m), but the argument is not an addressable variable",
+                            arg.get(),
+                            "hint: pass a local variable name, struct field, or array element directly");
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    AccessPath arg_path = extractAccessPath(arg.get());
+                    if (arg_path.base_var.empty()) {
+                        addErrorWithSuggestion(
+                            "Function '" + summary.func_name + "' parameter '" +
+                            param_name + "' expects a mutable borrow ($$m), but the argument's borrow path is not addressable",
+                            arg.get(),
+                            "hint: pass a local variable name, struct field, or array element directly");
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    auto existing_pkey = arg_path.base_var + ":" + arg_path.toString();
+                    if (mutable_borrow_targets.count(existing_pkey)) {
+                        addError("Cannot mutably borrow '" + arg_path.toString() +
+                                 "' multiple times in the same function call",
+                                 arg.get());
+                        tagCode("ARIA-020");
+                        break;
+                    }
+                    mutable_borrow_targets[existing_pkey] = i;
+                    if (ctx.moved_variables.count(arg_path.base_var)) {
+                        addErrorWithSuggestion(
+                            "Cannot mutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                            "' parameter '" + param_name + "' because '" + arg_path.base_var + "' was already moved",
+                            arg.get(),
+                            "hint: clone the value before moving if you need to borrow it later");
+                        tagCode("ARIA-019");
+                        break;
+                    }
+                    const Loan* conflict = ctx.checkPathConflict(arg_path, /*is_mutable=*/true);
+                    if (conflict) {
+                        addError("Cannot mutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                                 "' parameter '" + param_name + "' because it conflicts with existing borrow by '" +
+                                 conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                                 arg.get(),
+                                 "Existing borrow was created here", conflict->creation_line, conflict->creation_column);
+                        tagCode("ARIA-023");
+                    }
                 } else {
                     auto existing = mutable_borrow_targets.find(arg_var);
                     if (existing != mutable_borrow_targets.end()) {
@@ -834,6 +904,30 @@ void BorrowChecker::checkCallOwnership(CallExpr* expr, const FunctionBorrowSumma
                         arg.get(),
                         "hint: pass the value directly; keep $$i on the parameter declaration");
                     tagCode("ARIA-020");
+                    break;
+                }
+                // v0.25.4 (BORROW-007): for $$i, conflict only against live $$m
+                // borrows on overlapping paths. Identifier args check loans on
+                // the bare var; path args check via extractAccessPath.
+                AccessPath arg_path;
+                if (!arg_var.empty()) {
+                    arg_path = AccessPath(arg_var);
+                } else if (arg->type == ASTNode::NodeType::MEMBER_ACCESS ||
+                           arg->type == ASTNode::NodeType::POINTER_MEMBER ||
+                           arg->type == ASTNode::NodeType::INDEX) {
+                    arg_path = extractAccessPath(arg.get());
+                }
+                if (!arg_path.base_var.empty()) {
+                    const Loan* conflict = ctx.checkPathConflict(arg_path, /*is_mutable=*/false);
+                    if (conflict && conflict->is_mutable) {
+                        addError("Cannot immutably borrow '" + arg_path.toString() + "' for '" + summary.func_name +
+                                 "' parameter '" + param_name + "' because it is already mutably borrowed by '" +
+                                 conflict->borrower + "' of '" + conflict->path.toString() + "'",
+                                 arg.get(),
+                                 "Existing mutable borrow was created here",
+                                 conflict->creation_line, conflict->creation_column);
+                        tagCode("ARIA-023");
+                    }
                 }
                 break;
             }
@@ -1301,6 +1395,30 @@ void BorrowChecker::checkForLeaks() {
     }
 }
 
+// v0.25.1 (BORROW-003): early-exit (pass/fail/return/exit) abandons every
+// enclosing scope on the way out, so the per-scope leak check that runs at
+// normal block exit never fires for those scopes. Walk every scope on the
+// stack and report any wild allocation that has not been paired with a
+// free() / defer free().
+void BorrowChecker::checkForLeaksAllScopes() {
+    std::unordered_set<std::string> already_reported;
+    for (auto it = ctx.scope_stack.rbegin(); it != ctx.scope_stack.rend(); ++it) {
+        for (const auto& var : *it) {
+            if (already_reported.count(var) > 0) continue;
+            if (ctx.pending_wild_frees.count(var) > 0) {
+                BorrowError err(1, 1,
+                    "Memory leak on early exit: wild variable '" + var +
+                        "' was not freed before pass/fail/return/exit",
+                    "hint: add 'defer { free(" + var +
+                        "); }' after allocation so the cleanup also runs on early exit");
+                err.code = "ARIA-014";
+                errors.push_back(err);
+                already_reported.insert(var);
+            }
+        }
+    }
+}
+
 // ============================================================================
 // Defer Enforcement (ARIA-014)
 // ============================================================================
@@ -1410,6 +1528,14 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             checkPassStmt(static_cast<PassStmt*>(stmt));
             break;
 
+        case ASTNode::NodeType::FAIL:
+            checkFailStmt(static_cast<FailStmt*>(stmt));
+            break;
+
+        case ASTNode::NodeType::TILL:
+            checkTillStmt(static_cast<TillStmt*>(stmt));
+            break;
+
         case ASTNode::NodeType::DEFER:
             checkDeferStmt(static_cast<DeferStmt*>(stmt));
             break;
@@ -1418,6 +1544,19 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
             auto* exprStmt = static_cast<ExpressionStmt*>(stmt);
             if (exprStmt->expression) {
                 checkExpression(exprStmt->expression.get());
+                // v0.25.1 (BORROW-003): `exit(code)` parses as ExpressionStmt(
+                //   CallExpr(IdentifierExpr("exit"), ...)). Treat it as an
+                //   early-exit terminator and audit leaks across every scope.
+                if (exprStmt->expression->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(exprStmt->expression.get());
+                    if (call->callee &&
+                        call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        auto* id = static_cast<IdentifierExpr*>(call->callee.get());
+                        if (id->name == "exit") {
+                            checkForLeaksAllScopes();
+                        }
+                    }
+                }
             }
             break;
         }
@@ -1526,9 +1665,99 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         checkExpression(stmt->initializer.get());
 
         // ====================================================================
+        // v0.25.6 (BORROW-011): closure capture registers borrows of host vars
+        // ====================================================================
+        // When the initializer is a LAMBDA, the closure binding holds a
+        // reference to each BY_REFERENCE-captured variable for the lifetime
+        // of the binding. Register a $$m loan keyed on the binding name so
+        // that subsequent overlapping borrows of the captured var conflict.
+        // BY_VALUE captures are pure copies (no loan); BY_MOVE consumes.
+        if (stmt->initializer->type == ASTNode::NodeType::LAMBDA) {
+            auto* lambda = static_cast<LambdaExpr*>(stmt->initializer.get());
+            for (const auto& cap : lambda->capturedVars) {
+                if (cap.mode == LambdaExpr::CaptureMode::BY_REFERENCE) {
+                    AccessPath cap_path(cap.name);
+                    recordBorrowWithPath(cap_path, stmt->varName,
+                                         /*is_mutable=*/true, stmt);
+                } else if (cap.mode == LambdaExpr::CaptureMode::BY_MOVE) {
+                    ctx.moved_variables.insert(cap.name);
+                }
+            }
+        }
+
+        // ====================================================================
         // v0.2.35: $$i/$$m qualifier-based borrows
         // ====================================================================
         if (stmt->isBorrowImm || stmt->isBorrowMut) {
+            // v0.25.4 (BORROW-008): if the initializer is a CALL, derive the
+            // source borrow path from the callee's return-borrow source
+            // parameter (set by buildSummary). Without inference (multiple
+            // borrow params, or callee summary missing), emit a clear error.
+            if (stmt->initializer->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(stmt->initializer.get());
+                std::string callee_name;
+                if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    callee_name = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                }
+                // `raw expr` parses to CallExpr("raw", [inner]) — peek through
+                // to the actual user call so we can reason about its summary.
+                if ((callee_name == "raw" || callee_name == "drop") &&
+                    call->arguments.size() == 1 &&
+                    call->arguments[0] &&
+                    call->arguments[0]->type == ASTNode::NodeType::CALL) {
+                    call = static_cast<CallExpr*>(call->arguments[0].get());
+                    callee_name.clear();
+                    if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        callee_name = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    }
+                }
+                auto sit = func_summaries.find(callee_name);
+                if (sit == func_summaries.end()) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result: callee '" + callee_name +
+                             "' summary unavailable (cross-module return-borrow inference is deferred)",
+                             stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                const FunctionBorrowSummary& summary = sit->second;
+                if (!summary.returns_borrow_imm && !summary.returns_borrow_mut) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result: '" + callee_name + "' does not return a borrow",
+                             stmt);
+                    tagCode("ARIA-020");
+                    return;
+                }
+                if (summary.return_borrow_source_param < 0) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': cannot infer which parameter the returned borrow derives from "
+                             "(multi-borrow-parameter case requires explicit annotation)",
+                             stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                size_t src_idx = static_cast<size_t>(summary.return_borrow_source_param);
+                if (src_idx >= call->arguments.size() || !call->arguments[src_idx]) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': source argument missing", stmt);
+                    tagCode("ARIA-023");
+                    return;
+                }
+                AccessPath src_path = extractAccessPath(call->arguments[src_idx].get());
+                if (src_path.base_var.empty()) {
+                    addError("Cannot bind borrow variable '" + stmt->varName +
+                             "' to call result of '" + callee_name +
+                             "': source argument is not an addressable storage path",
+                             stmt);
+                    tagCode("ARIA-020");
+                    return;
+                }
+                bool is_mutable = stmt->isBorrowMut;
+                recordBorrowWithPath(src_path, stmt->varName, is_mutable, stmt);
+                return;
+            }
             // Extract borrow target from initializer (must be an identifier or
             // member access — validated by type checker, but guard defensively)
             AccessPath borrow_path = extractAccessPath(stmt->initializer.get());
@@ -2558,6 +2787,9 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
     }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
 }
 
 void BorrowChecker::checkPassStmt(PassStmt* stmt) {
@@ -2582,6 +2814,68 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
     }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
+}
+
+// v0.25.0 (BORROW-001 triage): `fail <expr>;` early-exit was previously
+// silently skipped by the borrow checker. The error-code expression may
+// reference borrowed values — check it like pass/return.
+void BorrowChecker::checkFailStmt(FailStmt* stmt) {
+    if (!stmt) return;
+    if (stmt->errorCode) {
+        checkExpression(stmt->errorCode.get());
+        checkReferenceEscape(stmt->errorCode.get(), stmt);
+        if (!current_function.empty()) {
+            checkReturnBorrowEscape(stmt->errorCode.get(), stmt);
+        }
+    }
+
+    // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
+    checkForLeaksAllScopes();
+}
+
+// v0.25.0 (BORROW-001 triage): `till(limit, step) { body }` body was
+// previously silently skipped by the borrow checker. Treat like a simple
+// loop: check bound expressions, then run the body in its own scope with
+// fixpoint iteration over loop-carried borrow state.
+void BorrowChecker::checkTillStmt(TillStmt* stmt) {
+    if (!stmt) return;
+
+    if (stmt->limit) checkExpression(stmt->limit.get());
+    if (stmt->step)  checkExpression(stmt->step.get());
+
+    LifetimeContext entry_state = ctx.snapshot();
+    LifetimeContext loop_head_state = entry_state;
+
+    bool changed = true;
+    int iterations = 0;
+
+    while (changed && iterations < MAX_FIXPOINT_ITERATIONS) {
+        changed = false;
+        iterations++;
+
+        ctx.restore(loop_head_state);
+        ctx.enterScope();
+        if (stmt->body) {
+            checkStatement(stmt->body.get());
+        }
+        LifetimeContext back_edge_state = ctx.snapshot();
+        ctx.exitScope();
+
+        if (loop_head_state.mergeLoopBackEdge(back_edge_state)) {
+            changed = true;
+        }
+        if (iterations >= WIDENING_THRESHOLD && changed) {
+            loop_head_state.widen();
+            if (iterations >= MAX_FIXPOINT_ITERATIONS - 1) {
+                changed = false;
+            }
+        }
+    }
+
+    ctx.restore(loop_head_state);
 }
 
 /**
@@ -2728,6 +3022,17 @@ void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {
     // ARIA-014: Deep scan the defer block for free() calls
     // Handles: direct free(), wrapper functions, conditionals, method cleanup
     if (stmt->block) {
+        // v0.25.1 (BORROW-002): Walk the defer body so internal borrow conflicts
+        // (e.g. two $$m of the same host inside the defer block) are caught.
+        // The defer body executes at scope exit (LIFO), so we run it in its own
+        // nested scope rather than mutating the enclosing scope's borrow state.
+        // This catches intra-body conflicts like ARIA-023 / ARIA-026 without
+        // letting defer-internal borrows leak into the surrounding flow.
+        // Note: full deferred-execution-point modeling (mutations inside the
+        // defer body conflicting with borrows still live at the deferred point)
+        // is tracked as a follow-up under BORROW-002.
+        checkStatement(stmt->block.get());
+
         // Step 1: Identify ALL variables that MIGHT be freed (May-Analysis)
         std::unordered_set<std::string> freed_vars =
             scanDeferBlockForFree(stmt->block.get(), stmt->line, false);
@@ -3232,8 +3537,11 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     }
                 }
 
-                // Also check non-self arguments via normal ownership checking
-                checkCallOwnership(expr, summary);
+                // Also check non-self arguments via normal ownership checking.
+                // v0.25.5 (BORROW-010): UFCS call sites pass `obj` implicitly,
+                // so `expr->arguments` starts at param index 1 (skip self).
+                size_t self_skip = (summary.self_param_index == 0) ? 1 : 0;
+                checkCallOwnership(expr, summary, self_skip);
                 break;  // Found matching method
             }
         }
@@ -3773,6 +4081,21 @@ AccessPath BorrowChecker::extractAccessPath(ASTNode* expr) {
             auto* member = static_cast<MemberAccessExpr*>(expr);
             AccessPath base = extractAccessPath(member->object.get());
             base.fields.push_back(member->member);
+            return base;
+        }
+
+        // v0.25.3 (BORROW-006): pointer member access (ptr->field).
+        // Treat as path "ptr->field" — distinct from "ptr.field" so the same
+        // pointer's fields are tracked as siblings (ptr->x vs ptr->y disjoint),
+        // while two different pointers (p->x vs q->x) live under different
+        // base_var roots and are conservatively considered alias-free *only*
+        // because they have distinct roots — alias analysis (BORROW-007/008)
+        // would tighten the cross-pointer story. For now we mark the dereference
+        // explicitly with a "->field" segment so prefix queries still work.
+        case ASTNode::NodeType::POINTER_MEMBER: {
+            auto* member = static_cast<MemberAccessExpr*>(expr);
+            AccessPath base = extractAccessPath(member->object.get());
+            base.fields.push_back("->" + member->member);
             return base;
         }
 

@@ -1,0 +1,14 @@
+// v0.25.4 BORROW-008: a borrow returned from a call derives from the
+// callee's $$i source parameter. Mutating that source while the borrow
+// is live must be rejected by the borrow checker (ARIA-023).
+struct:Pair = { int32:a; int32:b; };
+func:get_a = $$i int32($$i Pair:s) { pass s.a; };
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$i int32:y = raw get_a(p);
+    p.a = 5i32;
+    exit 0;
+};

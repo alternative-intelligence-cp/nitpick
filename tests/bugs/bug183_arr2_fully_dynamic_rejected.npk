@@ -1,0 +1,18 @@
+// BUG-183: Both index levels dynamic on a 2-D array — fully conservative.
+// arr2[i][k] vs arr2[j][m] must be rejected with ARIA-023.
+// Verifies BORROW-004 fully-dynamic conservative bail-out (v0.25.2).
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    int32[2][3]:arr2 = [[1, 2, 3], [4, 5, 6]];
+    int32:i = 0i32;
+    int32:j = 1i32;
+    int32:k = 0i32;
+    int32:m = 1i32;
+    $$m int32:a = arr2[i][k];
+    $$m int32:b = arr2[j][m];
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};

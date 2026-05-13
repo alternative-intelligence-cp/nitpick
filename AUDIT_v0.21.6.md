@@ -15,7 +15,7 @@
 | K core semantics | 139/139 | ✅ PASS |
 | K proofs | 10/10 | ✅ PASS |
 | Bug regression (v0.21.6) | 2/2 | ✅ PASS |
-| Open bugs (META/ARIA/BUGS) | 0 | ✅ clean |
+| Open bugs (META/NITPICK/BUGS) | 0 | ✅ clean |
 
 All 24 CTest tests pass with no regressions from v0.21.5.
 

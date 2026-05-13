@@ -1,0 +1,17 @@
+// v0.25.4 BORROW-008: when a callee declares more than one borrow parameter
+// and returns a borrow, the source-parameter cannot be inferred without
+// explicit annotation. Binding such a call to a $$i variable must be
+// rejected with a clear diagnostic (ARIA-023).
+struct:Pair = { int32:a; int32:b; };
+func:choose = $$i int32($$i int32:l, $$i int32:r, int32:flag) {
+    if (flag == 0i32) { pass l; }
+    pass r;
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$i int32:y = raw choose(p.a, p.b, 0i32);
+    exit 0;
+};

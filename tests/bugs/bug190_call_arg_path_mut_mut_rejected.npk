@@ -1,0 +1,13 @@
+// v0.25.4 BORROW-007: passing p.a as $$m argument while a $$m borrow on
+// p.a is live must be rejected by the borrow checker (ARIA-023).
+struct:Pair = { int32:a; int32:b; };
+func:set = int32($$m int32:s, int32:val) { s = val; pass 0; };
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$m int32:x = p.a;
+    int32:rc = raw set(p.a, 99i32);
+    exit 0;
+};

@@ -658,4 +658,88 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "comptime;COMPTIME-013;v0.24.7"
     )
+
+    # v0.25.0: borrow checker triage — till body now visited (BORROW-001)
+    add_test(
+        NAME bug_tests_v0250
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0250.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0250 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-001;v0.25.0"
+    )
+
+    # v0.25.1: defer body + early-exit borrow release (BORROW-002, BORROW-003)
+    add_test(
+        NAME bug_tests_v0251
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0251.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0251 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-002;BORROW-003;v0.25.1"
+    )
+
+    # v0.25.2: multi-dim & nested array borrow paths (BORROW-004)
+    add_test(
+        NAME bug_tests_v0252
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0252.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0252 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-004;v0.25.2"
+    )
+
+    # v0.25.3: deep struct paths + ptr->field borrows (BORROW-005, BORROW-006)
+    add_test(
+        NAME bug_tests_v0253
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0253.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0253 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-005;BORROW-006;v0.25.3"
+    )
+
+    # v0.25.4: inter-procedural borrow summaries (BORROW-007, BORROW-008)
+    add_test(
+        NAME bug_tests_v0254
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0254.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0254 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-007;BORROW-008;v0.25.4"
+    )
+
+    # v0.25.5: two-phase borrows + $$m self in trait impls (BORROW-009, BORROW-010)
+    add_test(
+        NAME bug_tests_v0255
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0255.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0255 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-009;BORROW-010;v0.25.5"
+    )
+
+    # v0.25.6: closure capture borrow + multi-await polish (BORROW-011, BORROW-012, BORROW-013)
+    add_test(
+        NAME bug_tests_v0256
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0256.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0256 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;BORROW-011;BORROW-012;BORROW-013;v0.25.6"
+    )
 endif()

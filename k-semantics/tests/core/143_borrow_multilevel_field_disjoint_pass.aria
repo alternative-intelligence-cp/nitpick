@@ -1,0 +1,26 @@
+// expect-exit: 60
+// v0.25.7 / BORROW-014: three disjoint mutable borrows on sibling fields of a
+// nested struct (3-level path) coexist without conflict.
+
+struct:Leaf = {
+    int32:x;
+    int32:y;
+    int32:z;
+};
+
+struct:Box = {
+    Leaf:leaf;
+    int32:tag;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    Box:box = Box{leaf: Leaf{x: 10, y: 20, z: 30}, tag: 1};
+    $$m int32:rx = box.leaf.x;
+    $$m int32:ry = box.leaf.y;
+    $$m int32:rz = box.leaf.z;
+    exit box.leaf.x + box.leaf.y + box.leaf.z;
+};

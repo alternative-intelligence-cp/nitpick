@@ -1,0 +1,18 @@
+// BUG-184: 3-level struct field path disjointness.
+// outer.mid.x and outer.mid.y must coexist as $$m without ARIA-023.
+// Verifies BORROW-005 deep struct path chaining (v0.25.3).
+
+struct:Inner = { int32:x; int32:y; };
+struct:Mid   = { Inner:mid; int32:tag; };
+struct:Outer = { Mid:m; int32:id; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    stack Outer:outer = Outer{m: Mid{mid: Inner{x: 1, y: 2}, tag: 9}, id: 42};
+    $$m int32:a = outer.m.mid.x;
+    $$m int32:b = outer.m.mid.y;
+    a = (a + 10);
+    b = (b + 20);
+    exit 0;
+};
