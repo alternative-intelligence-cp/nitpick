@@ -238,15 +238,23 @@ llvm::Type* StmtCodegen::getLLVMType(Type* type) {
 
 /**
  * Get or declare npk_gc_alloc runtime function
- * Signature: void* npk_gc_alloc(i64 size)
+ * Signature: void* npk_gc_alloc(i64 size, i16 type_id)
+ *
+ * v0.26.2 (MEM-008): type_id passthrough. The runtime stores type_id in the
+ * object header for type-aware tracing via npk_gc_register_type_layout.
+ * Today the compiler always passes 0 (untyped); per-type ids are reserved for
+ * a future typed-tracing slice. Previously we declared a single-arg signature
+ * and the runtime read garbage out of RSI as type_id, which was a latent bug
+ * if a user registered a layout for type_id 0.
  */
 llvm::Function* StmtCodegen::getOrDeclareGCAlloc() {
     llvm::Function* func = module->getFunction("npk_gc_alloc");
     if (!func) {
-        // Declare: void* npk_gc_alloc(i64 size)
+        // Declare: void* npk_gc_alloc(i64 size, i16 type_id)
         llvm::FunctionType* func_type = llvm::FunctionType::get(
             llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0),  // void* return
-            {llvm::Type::getInt64Ty(context)},                          // i64 size param
+            {llvm::Type::getInt64Ty(context),                            // i64 size
+             llvm::Type::getInt16Ty(context)},                           // i16 type_id
             false                                                         // not vararg
         );
         func = llvm::Function::Create(
@@ -627,9 +635,11 @@ void StmtCodegen::codegenVarDecl(VarDeclStmt* stmt) {
         const llvm::DataLayout& data_layout = module->getDataLayout();
         uint64_t type_size = data_layout.getTypeAllocSize(var_type);
         llvm::Value* size = llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), type_size);
+        // v0.26.2 (MEM-008): pass type_id=0 (untyped) until per-type ids land.
+        llvm::Value* type_id = llvm::ConstantInt::get(llvm::Type::getInt16Ty(context), 0);
         
-        // Call npk_gc_alloc(size) -> returns void* (i8*)
-        llvm::Value* raw_ptr = builder.CreateCall(gc_alloc, {size}, "gc_alloc");
+        // Call npk_gc_alloc(size, type_id) -> returns void* (i8*)
+        llvm::Value* raw_ptr = builder.CreateCall(gc_alloc, {size, type_id}, "gc_alloc");
         
         // Bitcast void* to appropriate pointer type
         var_ptr = builder.CreateBitCast(

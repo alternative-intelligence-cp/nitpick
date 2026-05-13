@@ -779,10 +779,14 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
         uint64_t env_size = dl.getTypeAllocSize(env_struct_type);
         llvm::Type* ptrTy = llvm::PointerType::get(context, 0);
         llvm::Type* i64Ty = llvm::Type::getInt64Ty(context);
+        llvm::Type* i16Ty = llvm::Type::getInt16Ty(context);
+        // v0.26.2 (MEM-008): match runtime signature npk_gc_alloc(size, type_id).
+        // Lambda envs are untyped from the GC's perspective (type_id=0).
         llvm::FunctionCallee gcAlloc = module->getOrInsertFunction("npk_gc_alloc",
-            llvm::FunctionType::get(ptrTy, {i64Ty}, false));
+            llvm::FunctionType::get(ptrTy, {i64Ty, i16Ty}, false));
         env_alloca = builder.CreateCall(gcAlloc,
-            {llvm::ConstantInt::get(i64Ty, env_size)}, "env");
+            {llvm::ConstantInt::get(i64Ty, env_size),
+             llvm::ConstantInt::get(i16Ty, 0)}, "env");
         
         // Populate environment with captured values
         for (size_t i = 0; i < expr->capturedVars.size(); ++i) {

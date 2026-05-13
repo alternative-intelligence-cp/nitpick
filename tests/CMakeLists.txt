@@ -755,4 +755,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;memory;MEM-005;v0.26.1"
     )
+
+    # v0.26.2: GC stress smoke tests (MEM-006 alloc stress, MEM-007 large objs,
+    # MEM-008 long-lived survivor under churn).
+    add_test(
+        NAME bug_tests_v0262
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0262.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0262 PROPERTIES
+        TIMEOUT 180
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;MEM-006;MEM-007;MEM-008;v0.26.2"
+    )
 endif()

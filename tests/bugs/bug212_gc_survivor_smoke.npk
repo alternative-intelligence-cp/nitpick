@@ -1,0 +1,28 @@
+// bug212: MEM-008 — survivor / generational behavior smoke test.
+// Allocates a long-lived gc object, then runs many short-lived gc allocations
+// around it. The long-lived object must survive every minor collection and
+// retain its original value. This validates root tracking and
+// (eventually) tenuring into the old generation.
+
+struct:Holder = { int32:value; };
+struct:Trash = { int32:x; int32:y; };
+
+func:churn = int32(int32:v) {
+    gc Trash:t = Trash{x: v, y: v};
+    pass t.x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 1234i32};
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    loop(0i32, 30000i32, 1i32) {
+        sum = sum + raw churn(i);
+        i = i + 1i32;
+    }
+    // Long-lived holder must still hold its value.
+    if (h.value == 1234i32) { exit 0; }
+    exit 2;
+};
