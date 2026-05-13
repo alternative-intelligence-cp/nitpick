@@ -742,4 +742,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-011;BORROW-012;BORROW-013;v0.25.6"
     )
+
+    # v0.26.1: stack-escape (MEM-005) regression suite — locks in ARIA-017
+    # behavior for `stack` keyword and chained borrow paths.
+    add_test(
+        NAME bug_tests_v0261
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0261.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0261 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;memory;MEM-005;v0.26.1"
+    )
 endif()

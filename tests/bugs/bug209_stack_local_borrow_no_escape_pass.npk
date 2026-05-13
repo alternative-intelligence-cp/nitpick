@@ -1,0 +1,10 @@
+// bug209: MEM-005 — using a stack-local borrow strictly within the function
+// (no return/pass) is fine; this confirms the escape check is not over-broad.
+func:use_local = int32() {
+    stack int32:x = 7i32;
+    $$m int32:r = x;
+    int32:v = r;
+    pass v;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { int32:got = raw use_local(); exit got - 7i32; };
