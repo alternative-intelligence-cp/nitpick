@@ -1,0 +1,14 @@
+// bug215: MEM-009 — borrow checker invariants apply uniformly to gc
+// allocations: two simultaneous $m borrows of the same gc binding are
+// rejected with ARIA-023, exactly as for stack bindings. Compiles to error.
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 1i32};
+    $$m Holder:b1 = h;
+    $$m Holder:b2 = h;     // ARIA-023: conflicting mutable borrow
+    if (b1.value == 1i32 && b2.value == 1i32) { exit 0; }
+    exit 2;
+};

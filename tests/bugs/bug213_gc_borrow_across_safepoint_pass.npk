@@ -1,0 +1,16 @@
+// bug213: MEM-009a — $m borrow of a gc allocation must remain valid across
+// an explicit npk_gc_safepoint() call. The safepoint is a no-op when no GC
+// pause is requested, but borrow + safepoint should compose cleanly.
+extern func:npk_gc_safepoint = void();
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 1234i32};
+    $$m Holder:b = h;
+    npk_gc_safepoint();
+    if (b.value == 1234i32) { exit 0; }
+    exit 2;
+};

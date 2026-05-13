@@ -1,0 +1,28 @@
+// bug214: MEM-009b — $m borrow of a gc allocation must remain valid across a
+// heavy churn loop that drives implicit minor collections via nursery
+// pressure. Tests that the long-lived borrow path survives many safepoints.
+extern func:npk_gc_safepoint = void();
+
+struct:Holder = { int32:value; };
+struct:Trash = { int32:x; int32:y; };
+
+func:churn = int32(int32:v) {
+    gc Trash:t = Trash{x: v, y: v};
+    pass t.x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 7777i32};
+    $$m Holder:b = h;
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    loop(0i32, 5000i32, 1i32) {
+        sum = sum + raw churn(i);
+        npk_gc_safepoint();
+        i = i + 1i32;
+    }
+    if (b.value == 7777i32) { exit 0; }
+    exit 2;
+};

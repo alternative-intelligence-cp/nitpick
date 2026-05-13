@@ -768,4 +768,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;MEM-006;MEM-007;MEM-008;v0.26.2"
     )
+
+    # v0.26.3: GC borrow + safepoint interaction (MEM-009).
+    # MEM-010 (pin syntax `#x`) deferred — runtime exists, lowering pending.
+    add_test(
+        NAME bug_tests_v0263
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0263.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0263 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;borrow;MEM-009;v0.26.3"
+    )
 endif()
