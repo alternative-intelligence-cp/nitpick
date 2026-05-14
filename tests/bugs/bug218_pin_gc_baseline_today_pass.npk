@@ -4,18 +4,21 @@
 // lowering work in v0.26.3.{2,3} — what changes is that the compiler
 // starts telling the runtime about the pin via npk_gc_pin/unpin.
 //
-// Note: process exit codes are truncated to 8 bits, so we keep the
-// sentinel value < 256.
+// We verify the FULL int32 value read through the pin (not just its low
+// byte). Returning the value as the exit code would mask everything
+// above bit 7 (POSIX `WEXITSTATUS` truncates to 8 bits — see the note
+// in guide/functions/main_failsafe.md).
 //
-// Expected exit: 42
+// Expected exit: 0  (success — gc-bound value read through the pin matches)
 
 struct:Holder = { int32:value; };
 
 func:failsafe = int32(tbb32:err) { exit 1; };
 
 func:main = int32() {
-    gc Holder:h = Holder{value: 42i32};
+    gc Holder:h = Holder{value: 1234i32};
     wild Holder->:p = #h;
     int32:got = p->value;
-    exit got;
+    if (got == 1234i32) { exit 0; }
+    exit 2;
 };

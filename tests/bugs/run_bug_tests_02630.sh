@@ -68,7 +68,7 @@ expect_compile_run_exit "bug217 #stack_x baseline (no runtime pin)" \
     "$SCRIPT_DIR/bug217_pin_stack_baseline_pass.npk" 42
 
 expect_compile_run_exit "bug218 #gc_x baseline today (lowering arrives in v0.26.3.{2,3})" \
-    "$SCRIPT_DIR/bug218_pin_gc_baseline_today_pass.npk" 42
+    "$SCRIPT_DIR/bug218_pin_gc_baseline_today_pass.npk" 0
 
 expect_compile_error    "bug219 ARIA-016 rejects \$\$m borrow of pinned gc binding" \
     "$SCRIPT_DIR/bug219_pin_gc_borrow_conflict_rejected.npk" \
