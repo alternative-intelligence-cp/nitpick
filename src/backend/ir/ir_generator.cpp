@@ -2512,6 +2512,8 @@ size_t npk::IRGenerator::codegenSpecializedFunctions(
         
         // P1-4: Track current function declaration for contract checking
         current_func_decl = funcDecl;
+        // v0.26.3.2 (GCRT-003): reset shadow-stack frame flag for new function.
+        current_function_pushed_gc_frame_ = false;
         
         // Create entry basic block
         llvm::BasicBlock* entryBB = llvm::BasicBlock::Create(
@@ -2678,6 +2680,8 @@ size_t npk::IRGenerator::codegenSpecializedFunctions(
             // If body didn't already create a terminator, add one
             // For Result<T> returns, create default success Result
             if (!builder.GetInsertBlock()->getTerminator()) {
+                // v0.26.3.2 (GCRT-003): pop shadow-stack frame on fall-through.
+                popGCFrameIfNeeded();
                 llvm::Value* defaultResult = llvm::UndefValue::get(resultType);
                 defaultResult = builder.CreateInsertValue(defaultResult, 
                     llvm::Constant::getNullValue(innerType), 0, "default.val");
@@ -3358,6 +3362,8 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
             
             // P1-4: Track current function declaration for contract checking
             current_func_decl = funcDecl;
+            // v0.26.3.2 (GCRT-003): reset shadow-stack frame flag for new function.
+            current_function_pushed_gc_frame_ = false;
 
             // v0.4.3+: Check if this function has SMT-proven ustack optimization
             ustack_fast_mode = ustack_optimized_funcs.count(funcDecl->funcName) > 0;
@@ -3944,8 +3950,12 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     // Async function: Jump to final suspend instead of returning directly
                     builder.CreateBr(coro_suspend_block);
                 } else if (actual_return_type->isVoidTy()) {
+                    // v0.26.3.2 (GCRT-003): pop shadow-stack frame on fall-through.
+                    popGCFrameIfNeeded();
                     builder.CreateRetVoid();
                 } else {
+                    // v0.26.3.2 (GCRT-003): pop shadow-stack frame on fall-through.
+                    popGCFrameIfNeeded();
                     // CRITICAL FIX: Check if return type is struct (Result<T>)
                     if (actual_return_type->isStructTy()) {
                         // Create a zero-initialized Result struct for default return
@@ -4161,6 +4171,8 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                 // Create entry block
                 llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", func);
                 builder.SetInsertPoint(entry);
+                // v0.26.3.2 (GCRT-003): reset shadow-stack frame flag for impl method.
+                current_function_pushed_gc_frame_ = false;
 
                 // Map parameters to symbol table
                 size_t idx = 0;
@@ -4198,6 +4210,8 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
 
                 // Add terminator if missing
                 if (!builder.GetInsertBlock()->getTerminator()) {
+                    // v0.26.3.2 (GCRT-003): pop shadow-stack frame on fall-through.
+                    popGCFrameIfNeeded();
                     if (return_type->isVoidTy()) {
                         builder.CreateRetVoid();
                     } else if (result_struct_type) {
@@ -4959,6 +4973,12 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             llvm::AllocaInst* alloca_inst = nullptr;
             if (varDecl->isGC) {
                 // Heap allocation through the tracing GC.
+                // v0.26.3.2 (GCRT-001..005): Push a shadow-stack frame on the
+                // first gc binding in this function and register the heap
+                // pointer as a GC root after allocation. Without this, the GC
+                // never sees the binding and would sweep it on the next cycle.
+                pushGCFrameIfNeeded();
+
                 llvm::FunctionCallee gc_alloc_fn = module->getOrInsertFunction(
                     "npk_gc_alloc",
                     llvm::FunctionType::get(
@@ -4972,6 +4992,9 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                 llvm::Value* type_id = llvm::ConstantInt::get(
                     llvm::Type::getInt16Ty(context), 0);
                 alloca = builder.CreateCall(gc_alloc_fn, {size, type_id}, varDecl->varName);
+
+                // v0.26.3.2: register heap pointer as a GC root and pin it.
+                registerGCRoot(alloca, varDecl->varName);
             } else if (varDecl->isWild) {
                 // Manual heap allocation; user is responsible for `_release`/`_destroy`
                 // (enforced by the borrow checker at scope exit).
@@ -7127,6 +7150,8 @@ skip_comparison:
                 // Create entry block and generate body
                 llvm::BasicBlock* entry = llvm::BasicBlock::Create(context, "entry", llvmFunc);
                 builder.SetInsertPoint(entry);
+                // v0.26.3.2 (GCRT-003): reset shadow-stack frame flag for trait method.
+                current_function_pushed_gc_frame_ = false;
 
                 // Add parameters to named_values
                 idx = 0;
@@ -7156,6 +7181,8 @@ skip_comparison:
 
                 // Add implicit void return if needed
                 if (!builder.GetInsertBlock()->getTerminator()) {
+                    // v0.26.3.2 (GCRT-003): pop shadow-stack frame on fall-through.
+                    popGCFrameIfNeeded();
                     if (returnType->isVoidTy()) {
                         builder.CreateRetVoid();
                     } else if (result_struct_type) {
@@ -13345,6 +13372,73 @@ void npk::IRGenerator::executeFunctionDefers() {
     }
 
     executing_defers = was_executing;
+
+    // v0.26.3.2 (GCRT-003): Pop the shadow-stack frame if this function pushed
+    // one. Defers run before the pop so they can still use gc bindings.
+    popGCFrameIfNeeded();
+}
+
+// =============================================================================
+// v0.26.3.2 (GCRT-001..005): Shadow-stack root tracking for `gc` bindings.
+// =============================================================================
+
+void npk::IRGenerator::pushGCFrameIfNeeded() {
+    if (current_function_pushed_gc_frame_) return;
+    if (!builder.GetInsertBlock()) return;
+    if (builder.GetInsertBlock()->getTerminator()) return;
+
+    llvm::FunctionCallee fn = module->getOrInsertFunction(
+        "npk_shadow_stack_push_frame",
+        llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false));
+    builder.CreateCall(fn);
+    current_function_pushed_gc_frame_ = true;
+}
+
+void npk::IRGenerator::popGCFrameIfNeeded() {
+    if (!current_function_pushed_gc_frame_) return;
+    if (!builder.GetInsertBlock()) return;
+    if (builder.GetInsertBlock()->getTerminator()) return;
+
+    llvm::FunctionCallee fn = module->getOrInsertFunction(
+        "npk_shadow_stack_pop_frame",
+        llvm::FunctionType::get(llvm::Type::getVoidTy(context), {}, false));
+    builder.CreateCall(fn);
+    // Note: do NOT clear current_function_pushed_gc_frame_ here -- multiple
+    // exit paths in the same function each need to emit their own pop call.
+    // The flag is reset at function entry.
+}
+
+void npk::IRGenerator::registerGCRoot(llvm::Value* heap_ptr, const std::string& name) {
+    if (!heap_ptr || !builder.GetInsertBlock()) return;
+
+    llvm::Type* ptr_ty = llvm::PointerType::get(context, 0);
+
+    // Allocate root slot in the function's entry block so it is hoisted out of
+    // any inner control flow (matches how regular allocas live for the whole
+    // function lifetime).
+    llvm::Function* current_fn = builder.GetInsertBlock()->getParent();
+    llvm::IRBuilder<> entry_builder(&current_fn->getEntryBlock(),
+                                    current_fn->getEntryBlock().getFirstInsertionPt());
+    llvm::AllocaInst* slot = entry_builder.CreateAlloca(ptr_ty, nullptr, name + ".rootslot");
+
+    // Store the heap pointer into the slot at the current insertion point.
+    builder.CreateStore(heap_ptr, slot);
+
+    // Pin the object so minor GC cannot evacuate it. This keeps the SSA
+    // `heap_ptr` valid for every subsequent member load without needing a
+    // reload-from-slot pattern.
+    llvm::FunctionCallee pin_fn = module->getOrInsertFunction(
+        "npk_gc_pin",
+        llvm::FunctionType::get(llvm::Type::getVoidTy(context), {ptr_ty}, false));
+    builder.CreateCall(pin_fn, {heap_ptr});
+
+    // Register the slot as a GC root so the mark phase keeps the object alive
+    // across collections.
+    llvm::FunctionCallee add_root_fn = module->getOrInsertFunction(
+        "npk_shadow_stack_add_root",
+        llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                                {llvm::PointerType::get(context, 0)}, false));
+    builder.CreateCall(add_root_fn, {slot});
 }
 
 // =============================================================================

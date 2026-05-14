@@ -810,4 +810,18 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;wild;ir;v0.26.3.1"
     )
+
+    # v0.26.3.2 (GC root tracking): regression tests that lock in the fix
+    # where every `gc T:x` binding registers a shadow-stack root and pins
+    # the heap object, so the value survives a collection cycle.
+    add_test(
+        NAME bug_tests_v02632
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02632.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02632 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;root;shadow_stack;v0.26.3.2"
+    )
 endif()
