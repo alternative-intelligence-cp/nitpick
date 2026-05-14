@@ -279,6 +279,15 @@ ObjHeader* npk_gc_get_header(void* ptr);
  */
 bool npk_gc_is_heap_pointer(void* ptr);
 
+/**
+ * v0.26.5 / MEM-013: ABI-safe variant of `npk_gc_is_heap_pointer`.
+ * Returns 1 (in heap) or 0 (not in heap) as a fully-extended `int32_t`.
+ * Use this from Nitpick `extern` declarations: the System V x86-64
+ * ABI for `_Bool` / `uint8_t` returns leaves the upper bits of EAX
+ * undefined, which fooled fixtures that read the result as `int32`.
+ */
+int32_t npk_gc_is_heap_pointer_i32(void* ptr);
+
 // =============================================================================
 // GC Initialization and Shutdown
 // =============================================================================

@@ -1,0 +1,46 @@
+// bug231 — v0.26.5 / MEM-013: a `gc` binding survives an explicit
+// safepoint loop while wild allocations are being made and freed in
+// the same scope. This is the dual of bug230: bug230 proves the
+// runtime distinguishes the two regions; bug231 proves they coexist
+// under churn without the wild traffic perturbing gc reachability.
+//
+// Specifically, `npk_alloc` / `npk_free` calls touch the system
+// allocator in between gc safepoints. The gc binding `h` is rooted
+// via the v0.26.3.2 shadow-stack frame and is the ONLY thing keeping
+// the underlying object alive — the wild slot stored alongside it is
+// invisible to the marker. If MEM-013 ever regressed (e.g. wild
+// allocations starting to register as gc roots and confusing the
+// mark phase, or the marker following a wild pointer into unmapped
+// memory) this test would crash long before the final `h.value` read.
+
+extern func:npk_gc_safepoint = void();
+extern func:npk_alloc = wild ?*(int64:size);
+extern func:npk_free = void(wild ?*:ptr);
+
+struct:Holder = { int32:value; };
+struct:Trash = { int32:x; int32:y; };
+
+func:churn = int32(int32:v) {
+    gc Trash:t = Trash{x: v, y: v};
+    pass t.x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 555i32};
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    loop(0i32, 5000i32, 1i32) {
+        // Allocate-and-free a wild buffer per iteration. The buffer
+        // never appears in any gc-traceable slot; it must NOT keep
+        // anything alive and must NOT be visited by the gc marker.
+        wild ?->:wp = npk_alloc(128i64);
+        npk_free(wp);
+        sum = sum + raw churn(i);
+        npk_gc_safepoint();
+        i = i + 1i32;
+    }
+    if (h.value == 555i32) { exit 0; }
+    exit 2;
+};

@@ -378,6 +378,11 @@ bool npk_gc_is_heap_pointer(void* ptr) {
     return GCState::instance().is_heap_pointer(ptr);
 }
 
+// v0.26.5 / MEM-013: ABI-safe variant — see header for rationale.
+int32_t npk_gc_is_heap_pointer_i32(void* ptr) {
+    return GCState::instance().is_heap_pointer(ptr) ? 1 : 0;
+}
+
 void npk_gc_init(size_t nursery_size, size_t old_gen_threshold) {
     GCState::instance().init(nursery_size, old_gen_threshold);
     

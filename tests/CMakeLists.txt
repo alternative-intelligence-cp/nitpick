@@ -856,4 +856,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;tuning;MEM-011;v0.26.4"
     )
+
+    # v0.26.5 (MEM-013 wild ↔ gc interop): two execution fixtures
+    # verifying the runtime cleanly partitions gc-heap pointers from
+    # wild-allocator pointers (bug230), and that wild alloc/free
+    # churn around npk_gc_safepoint() never perturbs gc reachability
+    # (bug231).
+    add_test(
+        NAME bug_tests_v0265
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0265.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0265 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;interop;MEM-013;v0.26.5"
+    )
 endif()

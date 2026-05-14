@@ -1,0 +1,40 @@
+// bug230 — v0.26.5 / MEM-013: the runtime correctly partitions the
+// heap. `npk_gc_is_heap_pointer_i32` returns 1 for an address inside
+// the gc nursery/old-gen and 0 for an address returned by `npk_alloc`
+// (wild / libc-malloc backed). This is the ground-truth test that
+// the GC mark phase uses to decide whether to follow a reference:
+// wild pointers are unconditionally skipped, so a `wild` buffer that
+// happens to contain something that looks like a gc address can
+// never accidentally keep an object alive.
+//
+// Pre-v0.26.5 this behaviour was implicit (the nursery range check
+// in `is_heap_pointer` and bug225's pin-alias survival test). bug230
+// makes it explicit and execution-checked. Note: this test relies on
+// the new `_i32` accessor — the legacy `npk_gc_is_heap_pointer`
+// returns C `_Bool`, whose upper EAX bits are undefined in the SysV
+// ABI and so reading it as `int32` produces garbage.
+
+extern func:npk_alloc = wild ?*(int64:size);
+extern func:npk_free = void(wild ?*:ptr);
+extern func:npk_gc_is_heap_pointer_i32 = int32(wild ?*:ptr);
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 7i32};
+    wild Holder->:hp = #h;
+    int32:gc_is_heap = npk_gc_is_heap_pointer_i32(hp);
+
+    wild ?->:wp = npk_alloc(64i64);
+    int32:wild_is_heap = npk_gc_is_heap_pointer_i32(wp);
+    npk_free(wp);
+
+    // Expected: gc address is in heap, wild address is not.
+    if (gc_is_heap == 1i32) {
+        if (wild_is_heap == 0i32) { exit 0; }
+        exit 3;
+    }
+    exit 2;
+};
