@@ -824,4 +824,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;root;shadow_stack;v0.26.3.2"
     )
+
+    # v0.26.3.3 (MEM-010 reinstatement): execution-level regression tests
+    # that close the v0.26.3 deferral. bug224 verifies a gc binding
+    # survives an explicit npk_gc_safepoint() loop without any borrow or
+    # pin alias; bug225 verifies the `wild T->:p = #h;` alias survives
+    # the same safepoint loop and reads through correctly.
+    add_test(
+        NAME bug_tests_v02633
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02633.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02633 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;pin;safepoint;MEM-010;v0.26.3.3"
+    )
 endif()

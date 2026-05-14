@@ -5,11 +5,11 @@
 #   bug214: $m borrow of gc survives a heavy churn + safepoint loop.
 #   bug215: ARIA-023 still fires for double $m borrow of a gc binding (negative).
 #
-# Note: MEM-010 (pin syntax `#x` lowering to npk_gc_pin/npk_gc_unpin) is
-# DEFERRED — the runtime entry points exist (allocator.cpp:337,341) and
-# include/runtime/gc.h documents the intended `wild T@:ptr = #gc_obj`
-# spelling, but the compiler does not yet lower the `#` operator. Tracked
-# in CODEGEN_AUDIT.md "Open items"; slated for a follow-up slice.
+# Note: MEM-010 (pin syntax `#x` lowering + gc-binding root tracking) was
+# CLOSED by the v0.26.3.x sub-series. v0.26.3.2 auto-pins every gc binding
+# at allocation and registers a shadow-stack root; v0.26.3.3 reinstates
+# the MEM-010 end-to-end tests as bug224 / bug225 in
+# `run_bug_tests_02633.sh`. See `META/NITPICK/ROADMAP/0.26/0.26.3.x/`.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NPKC="${SCRIPT_DIR}/../../build/npkc"
