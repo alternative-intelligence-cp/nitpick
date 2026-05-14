@@ -1,0 +1,25 @@
+// bug229 — v0.26.4 / MEM-011: with NO env-vars set the runtime falls
+// back to the compiled-in defaults (4 MB nursery, 64 MB old-gen, STW
+// mode). Runner explicitly unsets the NPK_GC_* vars before exec.
+
+extern func:npk_gc_nursery_size_bytes = int64();
+extern func:npk_gc_old_gen_threshold_bytes = int64();
+extern func:npk_gc_concurrent_enabled = int32();
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:nurs = npk_gc_nursery_size_bytes();
+    int64:old  = npk_gc_old_gen_threshold_bytes();
+    int32:conc = npk_gc_concurrent_enabled();
+    int64:want_nurs = 4194304i64;   // 4 MB
+    int64:want_old  = 67108864i64;  // 64 MB
+    if (nurs == want_nurs) {
+        if (old == want_old) {
+            if (conc == 0i32) { exit 0; }
+            exit 4;
+        }
+        exit 3;
+    }
+    exit 2;
+};

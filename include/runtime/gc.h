@@ -369,6 +369,29 @@ void npk_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, si
  */
 void npk_gc_enable_concurrent(uint8_t enable);
 
+// =============================================================================
+// v0.26.4 / MEM-011: Tuning observability
+// =============================================================================
+
+/**
+ * Return the configured nursery capacity in bytes (after env-var
+ * resolution). Lazy-initializes the GC if not yet started.
+ */
+size_t npk_gc_nursery_size_bytes(void);
+
+/**
+ * Return the configured old-generation threshold in bytes (after
+ * env-var resolution). Lazy-initializes the GC if not yet started.
+ */
+size_t npk_gc_old_gen_threshold_bytes(void);
+
+/**
+ * Return 1 if the concurrent collector mode is enabled (NPK_GC_MODE
+ * = "concurrent" or `npk_gc_enable_concurrent(1)` called), else 0.
+ * Lazy-initializes the GC if not yet started.
+ */
+uint8_t npk_gc_concurrent_enabled(void);
+
 /**
  * GC safepoint poll.
  * Inserted by the compiler at loop back-edges and function entry.

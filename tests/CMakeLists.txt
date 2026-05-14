@@ -840,4 +840,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;pin;safepoint;MEM-010;v0.26.3.3"
     )
+
+    # v0.26.4 (MEM-011 GC tuning env-vars): four execution-level
+    # fixtures that exercise NPK_GC_NURSERY_SIZE, NPK_GC_OLD_GEN_THRESHOLD,
+    # NPK_GC_MODE=concurrent, and the no-env-var default fallback. Each
+    # case spawns a fresh process so GCState::init() reads the env vars
+    # before the singleton is initialized.
+    add_test(
+        NAME bug_tests_v0264
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0264.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0264 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;tuning;MEM-011;v0.26.4"
+    )
 endif()

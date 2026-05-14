@@ -465,6 +465,30 @@ void npk_gc_enable_concurrent(uint8_t enable) {
     GCState::instance().enable_concurrent(enable != 0);
 }
 
+// v0.26.4 / MEM-011: tuning observability — small wrappers over GCStats
+// and concurrent_enabled, used by .npk env-var regression fixtures.
+size_t npk_gc_nursery_size_bytes(void) {
+    auto& gc = GCState::instance();
+    if (!gc.is_initialized()) gc.init(0, 0);
+    GCStats s;
+    gc.get_stats(&s);
+    return s.nursery_size;
+}
+
+size_t npk_gc_old_gen_threshold_bytes(void) {
+    auto& gc = GCState::instance();
+    if (!gc.is_initialized()) gc.init(0, 0);
+    GCStats s;
+    gc.get_stats(&s);
+    return s.old_gen_size;
+}
+
+uint8_t npk_gc_concurrent_enabled(void) {
+    auto& gc = GCState::instance();
+    if (!gc.is_initialized()) gc.init(0, 0);
+    return gc.is_concurrent_enabled() ? 1u : 0u;
+}
+
 void npk_gc_safepoint(void) {
     GCState::instance().safepoint();
 }

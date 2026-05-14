@@ -17,6 +17,7 @@
 #include "gc_internal.h"
 #include "runtime/async/gc_integration.h"
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <cstring>
 
@@ -86,6 +87,24 @@ void GCState::init(size_t nursery_size, size_t old_gen_threshold) {
         return;  // Already initialized
     }
     
+    // v0.26.4 / MEM-011: env-var tuning. Explicit nonzero args from
+    // npk_gc_init() take priority; otherwise fall back to NPK_GC_*
+    // env vars; otherwise fall back to compiled-in defaults.
+    auto parse_size_env = [](const char* name) -> size_t {
+        const char* env = std::getenv(name);
+        if (env == nullptr || env[0] == '\0') return 0;
+        char* end = nullptr;
+        unsigned long long v = std::strtoull(env, &end, 0);
+        if (end == env || v == 0ULL) return 0;  // unparseable / zero → ignore
+        return static_cast<size_t>(v);
+    };
+    if (nursery_size == 0) {
+        nursery_size = parse_size_env("NPK_GC_NURSERY_SIZE");
+    }
+    if (old_gen_threshold == 0) {
+        old_gen_threshold = parse_size_env("NPK_GC_OLD_GEN_THRESHOLD");
+    }
+    
     // Default sizes if not specified
     if (nursery_size == 0) {
         nursery_size = 4 * 1024 * 1024;  // 4MB default
@@ -117,6 +136,18 @@ void GCState::init(size_t nursery_size, size_t old_gen_threshold) {
     mark_thread = nullptr;
     gray_worklist.clear();
     satb_buffer.clear();
+    
+    // v0.26.4 / MEM-011: NPK_GC_MODE selects collector mode.
+    //   "concurrent"      → background mark thread (SATB barrier).
+    //   "stw" or unset    → stop-the-world (default).
+    //   "off"             → DEFERRED (collector cannot be disabled at
+    //                       runtime today; documented in tuning.md).
+    if (const char* mode = std::getenv("NPK_GC_MODE")) {
+        if (std::strcmp(mode, "concurrent") == 0) {
+            concurrent_enabled = true;  // direct write — gc_mutex held
+        }
+        // "stw" / "" / unrecognized → leave concurrent_enabled = false.
+    }
     
     initialized = true;
 }

@@ -254,6 +254,8 @@ public:
     bool is_heap_pointer(void* ptr) const;
     ObjHeader* get_header(void* ptr) const;
     void get_stats(GCStats* stats) const;
+    bool is_initialized() const { return initialized; }
+    bool is_concurrent_enabled() const { return concurrent_enabled; }
     
 private:
     GCState() : initialized(false), collecting(false), max_heap(0),

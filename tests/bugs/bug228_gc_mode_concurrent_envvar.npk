@@ -1,0 +1,14 @@
+// bug228 — v0.26.4 / MEM-011: NPK_GC_MODE=concurrent flips the GC into
+// concurrent-mark mode at init time. Runner sets the env-var and then
+// the program asks the runtime whether concurrent mode is enabled.
+// Exits 0 when 1 is observed (concurrent), else 2.
+
+extern func:npk_gc_concurrent_enabled = int32();
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:got = npk_gc_concurrent_enabled();
+    if (got == 1i32) { exit 0; }
+    exit 2;
+};
