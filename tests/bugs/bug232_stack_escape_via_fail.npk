@@ -1,0 +1,11 @@
+// bug232: MEM-014 / ARIA-028 — escaping a borrow of a local stack
+// binding via `fail` is just as illegal as via `pass`. The fail-path
+// went through checkFailStmt → checkReturnBorrowEscape; this test
+// locks in that path under the new ARIA-028 tag.
+func:leaky = $$m int32() {
+    stack int32:x = 11i32;
+    $$m int32:r = x;
+    fail r;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { exit 0; };

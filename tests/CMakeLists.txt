@@ -872,4 +872,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;interop;MEM-013;v0.26.5"
     )
+
+    # v0.26.6 (MEM-014 ARIA-028 STACK_ESCAPE polish): four fixtures.
+    # bug232 (escape via fail), bug233 (escape from nested block),
+    # bug234 (polished message contents grep), bug235 (positive
+    # internal-only borrow). The pre-existing v0.26.1 suite was also
+    # re-tagged ARIA-017 → ARIA-028 in this slice.
+    add_test(
+        NAME bug_tests_v0266
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0266.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0266 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-028;MEM-014;v0.26.6"
+    )
 endif()

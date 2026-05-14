@@ -2618,13 +2618,24 @@ void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* conte
             for (const auto& origin : it->second) {
                 int origin_depth = getVariableDepth(origin);
                 if (origin_depth > 1) {
-                    addError("Cannot return '" + ident->name +
-                            "' — it borrows from local variable '" + origin +
-                            "' which will be destroyed when the function returns",
+                    // v0.26.6 / MEM-014: ARIA-028 STACK_ESCAPE — polished
+                    // wording. The borrow's host is a local binding (default
+                    // region is the stack frame; `gc` bindings are also
+                    // conservatively rejected because the *named binding*
+                    // dies even though the heap object survives). Hint
+                    // attached via the suggestion field on the same error.
+                    addError("Cannot return borrow '" + ident->name +
+                            "' — it points into local binding '" + origin +
+                            "', whose stack frame is destroyed when the function returns",
                             context,
-                            "'" + origin + "' is local to this function",
+                            "'" + origin + "' is declared inside this function",
                             returnValue->line, returnValue->column);
-                    tagCode("ARIA-017");
+                    if (!errors.empty()) {
+                        errors.back().suggestion =
+                            "hint: return by value, take ownership in the caller, "
+                            "or accept a borrow parameter and return that";
+                    }
+                    tagCode("ARIA-028");
                 }
             }
         }
@@ -2752,9 +2763,14 @@ void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
                 if (origins.count(var) > 0) {
                     int ref_depth = getVariableDepth(ref);
                     if (ref_depth >= 0 && ref_depth < ctx.current_depth) {
-                        addError("Reference '" + ref + "' outlives its host '" + var + "'",
+                        // v0.26.6 / MEM-014: ARIA-028 STACK_ESCAPE — host
+                        // (a local stack-frame binding) goes out of scope
+                        // while a reference to it is still live in an
+                        // outer scope.
+                        addError("Reference '" + ref + "' outlives its host '" + var +
+                                "' — host's stack frame ends here",
                                 1, 1);  // Line info not available at scope exit
-                        tagCode("ARIA-017");
+                        tagCode("ARIA-028");
                     }
                 }
             }

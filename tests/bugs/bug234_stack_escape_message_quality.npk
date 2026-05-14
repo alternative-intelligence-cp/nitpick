@@ -1,0 +1,11 @@
+// bug234: MEM-014 / ARIA-028 — the polished message quality test.
+// The compiler must mention "stack frame", the borrow name, and the
+// host name. The runner greps for the three substrings to lock in the
+// improved diagnostic text.
+func:leaky = $$m int32() {
+    stack int32:host = 5i32;
+    $$m int32:bad = host;
+    pass bad;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { exit 0; };
