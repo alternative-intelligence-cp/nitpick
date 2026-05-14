@@ -1,0 +1,21 @@
+// bug218: v0.26.3.0 / PIN-002 — baseline.
+// Documents that `#gc_x` compiles and runs today (no runtime pin emitted
+// yet). The .npk source itself does not need to change after the pin
+// lowering work in v0.26.3.{2,3} — what changes is that the compiler
+// starts telling the runtime about the pin via npk_gc_pin/unpin.
+//
+// Note: process exit codes are truncated to 8 bits, so we keep the
+// sentinel value < 256.
+//
+// Expected exit: 42
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 42i32};
+    wild Holder->:p = #h;
+    int32:got = p->value;
+    exit got;
+};

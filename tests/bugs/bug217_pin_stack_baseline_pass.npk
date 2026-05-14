@@ -1,0 +1,18 @@
+// bug217: v0.26.3.0 / PIN-002 — baseline.
+// Documents current behavior: `#stack_x` compiles, returns the address,
+// and reading through the pin returns the original value. This must
+// continue to pass after v0.26.3.{1..5} (PIN-DEC-001: stack pins stay
+// no-op even after gc pin lowering lands).
+//
+// Expected exit: 42
+
+struct:Box = { int32:x; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    stack Box:b = Box{x: 42i32};
+    stack Box->:p = #b;
+    int32:got = p->x;
+    exit got;
+};

@@ -781,4 +781,18 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;borrow;MEM-009;v0.26.3"
     )
+
+    # v0.26.3.0 (PIN baseline): lock in current `#x` behavior before the
+    # pin-lowering work in v0.26.3.{1..5}. See
+    # META/NITPICK/ROADMAP/0.26/0.26.3.x/PIN_LOWERING_AUDIT.md.
+    add_test(
+        NAME bug_tests_v02630
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02630.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02630 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;pin;PIN-001;PIN-002;v0.26.3.0"
+    )
 endif()
