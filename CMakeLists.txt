@@ -274,7 +274,9 @@ set(IR_SOURCES
     src/backend/ir/codegen_expr_binary.cpp
     src/backend/ir/codegen_expr_call.cpp
     src/backend/ir/codegen_expr_compound.cpp
-    src/backend/ir/codegen_stmt.cpp
+    # codegen_stmt.cpp removed in v0.26.3.1 (was dead code, never instantiated;
+    # variable lowering lives in ir_generator.cpp). Backup at
+    # META/NITPICK/ROADMAP/0.26/0.26.3.x/_dead_code_backup/.
     # src/backend/ir/type_mapper.cpp
     # src/backend/ir/memory_codegen.cpp
 )

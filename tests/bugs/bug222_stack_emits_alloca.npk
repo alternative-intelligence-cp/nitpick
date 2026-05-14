@@ -1,0 +1,19 @@
+// bug222 — v0.26.3.1 regression guard: `stack T:x = ...` (and the bare default)
+// MUST lower to an LLVM `alloca` instruction. Confirms the surgery in v0.26.3.1
+// preserved the stack path while wiring the heap paths.
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    stack Holder:h = Holder{value: 5i64};
+    if (h.value == 5i64) {
+        exit 0;
+    }
+    exit 4;
+};

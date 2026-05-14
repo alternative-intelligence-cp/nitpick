@@ -1,5 +1,4 @@
 #include "backend/ir/codegen_expr.h"
-#include "backend/ir/codegen_stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/ast_node.h"
@@ -28,14 +27,10 @@ ExprCodegen::ExprCodegen(llvm::LLVMContext& ctx, llvm::IRBuilder<>& bldr,
                          std::map<std::string, std::string>& types,
                          sema::TypeSystem* ts)
     : context(ctx), builder(bldr), module(mod), named_values(values),
-      var_aria_types(types), type_system(ts), stmt_codegen(nullptr), tbb_codegen(ctx, bldr),
+      var_aria_types(types), type_system(ts), tbb_codegen(ctx, bldr),
       ternary_codegen(ctx, bldr) {
     // Set module for ternary codegen to declare runtime intrinsics
     ternary_codegen.setModule(mod);
-}
-
-void ExprCodegen::setStmtCodegen(StmtCodegen* stmt_gen) {
-    stmt_codegen = stmt_gen;
 }
 
 // Helper: Get LLVM type from Aria type

@@ -1,6 +1,5 @@
 // codegen_expr_compound.cpp — Split from codegen_expr.cpp for parallel builds (v0.8.2)
 #include "backend/ir/codegen_expr.h"
-#include "backend/ir/codegen_stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/ast_node.h"
@@ -987,33 +986,21 @@ llvm::Value* ExprCodegen::codegenLambda(LambdaExpr* expr) {
     // STEP 2c: GENERATE LAMBDA BODY
     // ========================================================================
     
-    if (expr->body && stmt_codegen) {
-        // Generate code for lambda body using StmtCodegen
-        BlockStmt* body_block = static_cast<BlockStmt*>(expr->body.get());
-        stmt_codegen->codegenBlock(body_block);
-        
-        // If body doesn't have a terminator, add default return
-        if (!builder.GetInsertBlock()->getTerminator()) {
-            if (return_type->isVoidTy()) {
-                builder.CreateRetVoid();
-            } else {
-                // Return zero/null for non-void functions without explicit return
-                if (return_type->isIntegerTy()) {
-                    builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
-                } else if (return_type->isFloatingPointTy()) {
-                    builder.CreateRet(llvm::ConstantFP::get(return_type, 0.0));
-                } else {
-                    builder.CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(return_type)));
-                }
-            }
-        }
+    // v0.26.3.1: The lambda body inside ExprCodegen has never had a working
+    // statement-codegen path -- it depended on the never-instantiated StmtCodegen.
+    // Module-level lambda bodies are generated via IRGenerator's own lambda lowering
+    // (see ir_generator.cpp's FUNCTION_TYPE/lambda branches). The fallthrough here
+    // emits a minimal valid terminator so any orphan call site stays well-formed.
+    if (return_type->isVoidTy()) {
+        builder.CreateRetVoid();
+    } else if (return_type->isIntegerTy()) {
+        builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
+    } else if (return_type->isFloatingPointTy()) {
+        builder.CreateRet(llvm::ConstantFP::get(return_type, 0.0));
+    } else if (return_type->isPointerTy()) {
+        builder.CreateRet(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(return_type)));
     } else {
-        // No body or no stmt_codegen - generate placeholder return
-        if (return_type->isVoidTy()) {
-            builder.CreateRetVoid();
-        } else {
-            builder.CreateRet(llvm::ConstantInt::get(return_type, 0));
-        }
+        builder.CreateRet(llvm::UndefValue::get(return_type));
     }
     
     // Restore insertion point and named_values (return to outer scope)

@@ -1,0 +1,26 @@
+// bug221 — v0.26.3.1 regression guard: `wild T:x = ...` MUST lower to a call
+// to npk_alloc, not a stack alloca. Before v0.26.3.1 the qualifier was silently
+// ignored. Wild ergonomics (typed free, ARIA-014 polish) is the v0.27 series;
+// this test only locks in that the heap allocation actually happens.
+//
+// We avoid actually exiting the program to sidestep the leak-on-exit shape of
+// today's wild-on-value-type ergonomics; the test script only inspects emitted
+// LLVM IR and never runs the binary.
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wild Holder:h = Holder{value: 7i64};
+    if (h.value == 7i64) {
+        free(h);
+        exit 0;
+    }
+    free(h);
+    exit 3;
+};

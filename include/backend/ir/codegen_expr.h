@@ -42,9 +42,6 @@ namespace npk {
 namespace npk {
 namespace backend {
 
-// Forward declaration for circular dependency
-class StmtCodegen;
-
 /**
  * ExprCodegen - Expression code generation
  * 
@@ -68,9 +65,6 @@ private:
     // Type system for struct field lookup
     sema::TypeSystem* type_system;
 
-    // Statement codegen (for lambda body generation)
-    StmtCodegen* stmt_codegen;
-    
     // TBB codegen for safe arithmetic with overflow detection
     TBBCodegen tbb_codegen;
     
@@ -171,12 +165,6 @@ public:
                 llvm::Module* mod, std::map<std::string, llvm::Value*>& values,
                 std::map<std::string, std::string>& types,
                 sema::TypeSystem* ts = nullptr);
-    
-    /**
-     * Set statement codegen helper (for lambda body generation)
-     * @param stmt_gen Statement codegen instance
-     */
-    void setStmtCodegen(StmtCodegen* stmt_gen);
 
     /**
      * Set dyn Trait parameter info for call-site coercion (v0.2.36)
@@ -189,7 +177,7 @@ public:
     }
 
     // v0.4.3: User stack pop/peek destination type context
-    // Set by StmtCodegen before codegenning an initializer that may be apop()/apeek().
+    // Set before codegenning an initializer that may be apop()/apeek().
     // The apop/apeek codegen reads this to determine the expected type tag and
     // convert the raw i64 to the correct LLVM type before returning.
     llvm::Type* ustack_pop_dest_type = nullptr;
@@ -200,7 +188,7 @@ public:
     bool ustack_fast_mode = false;
 
     // v0.4.5: User hash table get destination type context
-    // Set by StmtCodegen before codegenning an initializer that may be ahget().
+    // Set before codegenning an initializer that may be ahget().
     // The ahget codegen reads this to determine the expected type tag and
     // convert the raw i64 to the correct LLVM type before returning.
     llvm::Type* uhash_get_dest_type = nullptr;

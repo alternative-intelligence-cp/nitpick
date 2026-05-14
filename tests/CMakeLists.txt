@@ -795,4 +795,19 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;gc;pin;PIN-001;PIN-002;v0.26.3.0"
     )
+
+    # v0.26.3.1 (allocation qualifier wire-up): regression tests that lock in
+    # the fix where `gc T:x` lowers to npk_gc_alloc, `wild T:x` lowers to
+    # npk_alloc, and `stack T:x` keeps emitting alloca. Before v0.26.3.1 the
+    # qualifier was silently ignored and every binding hit the stack.
+    add_test(
+        NAME bug_tests_v02631
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02631.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02631 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;wild;ir;v0.26.3.1"
+    )
 endif()

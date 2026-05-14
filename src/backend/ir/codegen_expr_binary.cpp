@@ -1,6 +1,5 @@
 // codegen_expr_binary.cpp — Split from codegen_expr.cpp for parallel builds (v0.8.2)
 #include "backend/ir/codegen_expr.h"
-#include "backend/ir/codegen_stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/ast_node.h"

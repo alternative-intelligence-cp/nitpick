@@ -4932,10 +4932,68 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                 // Fallthrough if target not found (shouldn't happen after type checker)
             }
             
-            llvm::AllocaInst* alloca = builder.CreateAlloca(varType, nullptr, varDecl->varName);
+            // ================================================================
+            // v0.26.3.1 (MEM-010): Honor allocation qualifiers (gc / wild / stack).
+            //
+            // Until v0.26.3.1, every VAR_DECL lowered to a stack alloca regardless
+            // of the `gc`, `wild`, or `stack` keyword the user wrote. The frontend
+            // parsed the qualifier and the borrow checker enforced wild-leak rules,
+            // but the backend never honored the storage class. This silently broke
+            // `gc T:x = ...` (no actual heap allocation, no GC visibility) and
+            // `wild T:x = ...` (no `npk_alloc` call -- only the leak check fired).
+            //
+            // The correct lowering had been written in `class StmtCodegen`
+            // (codegen_stmt.cpp:574) as part of an unfinished refactor, but
+            // StmtCodegen was never instantiated. v0.26.3.1 inlines the correct
+            // three-way lowering directly into IRGenerator and deletes StmtCodegen
+            // so there is one source of truth for variable lowering going forward.
+            //
+            // `alloca` below is typed as `llvm::Value*` (not `AllocaInst*`) so it
+            // can hold either a stack alloca or a heap pointer returned from
+            // `npk_gc_alloc`/`npk_alloc`. In opaque-pointer LLVM both are `ptr`,
+            // so all downstream uses (CreateStore, GEP, value_types[]) work
+            // unchanged. `alloca_inst` is non-null only on the stack path and
+            // gates code that needs a true alloca (debug info, alignment).
+            // ================================================================
+            llvm::Value* alloca = nullptr;
+            llvm::AllocaInst* alloca_inst = nullptr;
+            if (varDecl->isGC) {
+                // Heap allocation through the tracing GC.
+                llvm::FunctionCallee gc_alloc_fn = module->getOrInsertFunction(
+                    "npk_gc_alloc",
+                    llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::Type::getInt64Ty(context), llvm::Type::getInt16Ty(context)},
+                        false));
+                uint64_t type_size = module->getDataLayout().getTypeAllocSize(varType);
+                llvm::Value* size = llvm::ConstantInt::get(
+                    llvm::Type::getInt64Ty(context), type_size);
+                // v0.26.2 (MEM-008): pass type_id=0 (untyped) until per-type ids land.
+                llvm::Value* type_id = llvm::ConstantInt::get(
+                    llvm::Type::getInt16Ty(context), 0);
+                alloca = builder.CreateCall(gc_alloc_fn, {size, type_id}, varDecl->varName);
+            } else if (varDecl->isWild) {
+                // Manual heap allocation; user is responsible for `_release`/`_destroy`
+                // (enforced by the borrow checker at scope exit).
+                llvm::FunctionCallee wild_alloc_fn = module->getOrInsertFunction(
+                    "npk_alloc",
+                    llvm::FunctionType::get(
+                        llvm::PointerType::get(context, 0),
+                        {llvm::Type::getInt64Ty(context)},
+                        false));
+                uint64_t type_size = module->getDataLayout().getTypeAllocSize(varType);
+                llvm::Value* size = llvm::ConstantInt::get(
+                    llvm::Type::getInt64Ty(context), type_size);
+                alloca = builder.CreateCall(wild_alloc_fn, {size}, varDecl->varName);
+            } else {
+                // Default / explicit `stack`: stack alloca.
+                alloca_inst = builder.CreateAlloca(varType, nullptr, varDecl->varName);
+                alloca = alloca_inst;
+            }
             
-            // Emit debug info for local variable
-            if (debug_enabled && di_builder && getCurrentDebugScope()) {
+            // Emit debug info for local variable (stack allocations only -- DWARF
+            // location for heap-allocated bindings would need additional metadata).
+            if (alloca_inst && debug_enabled && di_builder && getCurrentDebugScope()) {
                 llvm::DIType* di_type = nullptr;
                 if (type_system) {
                     auto* npk_type_for_debug = type_system->getPrimitiveType(actualTypeName);
@@ -4957,13 +5015,17 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                     builder.GetInsertBlock());
             }
 
-            // P0: Apply explicit alignment from #[align(N)] attribute if specified
-            if (varDecl->alignment > 0) {
-                alloca->setAlignment(llvm::Align(varDecl->alignment));
-            }
-            // Apply default alignment for special types
-            else if (actualTypeName == "int128" || actualTypeName == "uint128") {
-                alloca->setAlignment(llvm::Align(16));
+            // P0: Apply explicit alignment from #[align(N)] attribute if specified.
+            // Heap allocators (`npk_gc_alloc`/`npk_alloc`) handle alignment internally
+            // through the runtime, so the alignment knob only applies on the stack path.
+            if (alloca_inst) {
+                if (varDecl->alignment > 0) {
+                    alloca_inst->setAlignment(llvm::Align(varDecl->alignment));
+                }
+                // Apply default alignment for special types
+                else if (actualTypeName == "int128" || actualTypeName == "uint128") {
+                    alloca_inst->setAlignment(llvm::Align(16));
+                }
             }
             
             // Track the Aria type of this alloca (needed for member access, vectors, and TBB overflow detection)
@@ -5436,7 +5498,7 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                     // Emit runtime checks for non-constant initializers
                     // (Constant violations are caught at compile time by the type checker)
                     llvm::Function* currentFunc = builder.GetInsertBlock()->getParent();
-                    llvm::Value* loadedVal = builder.CreateLoad(alloca->getAllocatedType(), alloca, "limit.val");
+                    llvm::Value* loadedVal = builder.CreateLoad(varType, alloca, "limit.val");
                     emitLimitChecks(varDecl->limitRulesName, loadedVal, currentFunc);
                 }
             }

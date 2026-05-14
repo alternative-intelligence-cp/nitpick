@@ -1,0 +1,21 @@
+// bug220 — v0.26.3.1 regression guard: `gc T:x = ...` MUST lower to a call to
+// npk_gc_alloc, not a stack alloca. Before v0.26.3.1 the qualifier was silently
+// ignored and every gc binding ended up on the stack with no GC visibility.
+//
+// Verified by `run_bug_tests_02631.sh` via `npkc --emit-llvm` + grep.
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 42i64};
+    if (h.value == 42i64) {
+        exit 0;
+    }
+    exit 2;
+};
