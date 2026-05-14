@@ -1,0 +1,16 @@
+// expect-exit: 7
+// v0.26.3.x / MEM-010: while a pin alias to a gc binding is live,
+// taking an exclusive `$$m` borrow of that binding must be rejected
+// (mirrors test 054 for stack region — borrow rules apply uniformly
+// across gc/stack/wild after v0.26.3.x).
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    gc int32:x = 42;
+    int32->:p = #x;
+    $$m int32:ref = x;
+    exit ref;
+};
