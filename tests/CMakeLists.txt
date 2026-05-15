@@ -967,3 +967,22 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         LABELS "memory;wild;borrow;v0.27.6"
     )
 endif()
+
+# ============================================================================
+# v0.27.7 — Handle<T> Phase 1 runtime ABI (bug252-bug255)
+# ============================================================================
+# Pure-runtime test: links libaria_runtime and exercises the npk_handle_*
+# C ABI directly. No compiler involvement, no K test (runtime-only slice).
+add_executable(test_handle_v0277 runtime/test_handle_v0277.cpp)
+target_link_libraries(test_handle_v0277 PRIVATE aria_runtime)
+target_include_directories(test_handle_v0277 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME runtime_handle_v0277
+    COMMAND test_handle_v0277
+)
+set_tests_properties(runtime_handle_v0277 PROPERTIES
+    TIMEOUT 60
+    LABELS "memory;handles;runtime;v0.27.7"
+)

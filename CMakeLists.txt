@@ -287,6 +287,7 @@ set(RUNTIME_SOURCES
     src/runtime/gc/gc.cpp
     src/runtime/allocators/wild_alloc.cpp
     src/runtime/allocators/wildx_alloc.cpp
+    src/runtime/allocators/handle_alloc.cpp
     src/runtime/allocators/arena_alloc.cpp
     src/runtime/allocators/pool_alloc.cpp
     src/runtime/allocators/slab_alloc.cpp
