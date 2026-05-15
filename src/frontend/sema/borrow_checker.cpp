@@ -720,6 +720,16 @@ void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
         
         // Register the parameter variable in the current scope
         registerVariable(p->paramName, param.get());
+
+        // v0.27.1: classify the parameter's region. Parameters carry
+        // isWild/isWildx flags (set by the parser); other annotations
+        // are not currently exposed on ParameterNode, so non-wild
+        // params default to Region::Stack which matches their actual
+        // lowering (caller-pushed slot).
+        Region prgn = Region::Stack;
+        if (p->isWildx) prgn = Region::Wildx;
+        else if (p->isWild) prgn = Region::Wild;
+        ctx.set_region(p->paramName, prgn);
         
         // If the parameter is a borrow, record an active loan
         // The "host" is an implicit caller variable (we use a synthetic name)
@@ -1646,6 +1656,12 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Register the variable first
     registerVariable(stmt->varName, stmt);
 
+    // v0.27.1 (MEM-DEC-007): record the binding's memory region so
+    // downstream checks (ARIA-029, ARIA-031, Handle<T> lifetime tying)
+    // can ask region_of(name) instead of re-deriving from the type
+    // string each time. Defaults to Region::Stack per MEM-DEC-001.
+    ctx.set_region(stmt->varName, regionFromVarDecl(*stmt));
+
     // A-004: Track limit<Rules> qualifiers for Z3-backed index disjointness.
     if (!stmt->limitRulesName.empty()) {
         var_limit_rules_[stmt->varName] = stmt->limitRulesName;
@@ -2533,6 +2549,15 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
                 auto* p = static_cast<ParameterNode*>(param.get());
 
                 registerVariable(p->paramName, param.get());
+
+                // v0.27.1: classify region for trait method params, mirroring
+                // the free-function path in registerFunctionParams.
+                {
+                    Region prgn = Region::Stack;
+                    if (p->isWildx) prgn = Region::Wildx;
+                    else if (p->isWild) prgn = Region::Wild;
+                    ctx.set_region(p->paramName, prgn);
+                }
 
                 if (p->paramName == "self") {
                     // 'self' is the receiver — track borrow mode
