@@ -888,4 +888,22 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;diagnostics;ARIA-028;MEM-014;v0.26.6"
     )
+
+    # v0.27.2 (ARIA-029 GC_REF_FROM_WILD): three fixtures.
+    # bug237 (gc binding into wild slot, no pin → reject),
+    # bug238 (pin-derived #h positive), bug239 (raw wild alloc
+    # positive — no gc origin so ARIA-029 doesn't fire).
+    # Consumes the per-binding Region map landed in v0.27.1
+    # (MEM-DEC-007). Indirect-through-struct-field companion
+    # case is deferred to v0.27.3 with field-region propagation.
+    add_test(
+        NAME bug_tests_v0272
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0272.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0272 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-029;MEM-DEC-007;v0.27.2"
+    )
 endif()

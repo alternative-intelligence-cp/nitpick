@@ -1660,7 +1660,23 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // downstream checks (ARIA-029, ARIA-031, Handle<T> lifetime tying)
     // can ask region_of(name) instead of re-deriving from the type
     // string each time. Defaults to Region::Stack per MEM-DEC-001.
-    ctx.set_region(stmt->varName, regionFromVarDecl(*stmt));
+    //
+    // v0.27.2 borrow-region inheritance: a borrow binding (`$i T:b = x;`
+    // / `$m T:b = x;`) does not have its own storage class — the
+    // referent lives wherever `x` lives. Inherit the source's region
+    // so ARIA-029 can fire on `wild T->:p = b;` chains where `b`
+    // borrows a gc binding (the type checker can't catch that —
+    // both sides are `T@`).
+    Region binding_region = regionFromVarDecl(*stmt);
+    if ((stmt->isBorrowImm || stmt->isBorrowMut) && stmt->initializer &&
+        stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* src = static_cast<IdentifierExpr*>(stmt->initializer.get());
+        Region src_region = ctx.region_of(src->name);
+        if (src_region != Region::Unknown) {
+            binding_region = src_region;
+        }
+    }
+    ctx.set_region(stmt->varName, binding_region);
 
     // A-004: Track limit<Rules> qualifiers for Z3-backed index disjointness.
     if (!stmt->limitRulesName.empty()) {
@@ -1819,6 +1835,43 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // A pin creates a wild pointer to GC memory, not a wild allocation
     // Use isWild flag set by parser when 'wild' keyword is present
     bool is_wild_type = stmt->isWild || stmt->typeName.find("wild") == 0;
+
+    // ────────────────────────────────────────────────────────────────────
+    // v0.27.2 (ARIA-029 GC_REF_FROM_WILD)
+    // ────────────────────────────────────────────────────────────────────
+    // Reject storing a gc-region binding into a wild-region slot WITHOUT
+    // a pin marker. The pin pattern
+    //     wild Holder->:p = #h;
+    // is the documented way to expose a gc address to FFI safely
+    // (handled below as is_pinned_shadow). Without the pin, the GC
+    // marker does not follow the wild slot, so the referent may be
+    // collected or moved while the wild pointer dangles.
+    //
+    // Consumes Region::Gc classification from v0.27.1 (MEM-DEC-007).
+    // Field-level region propagation (catching the same shape inside
+    // struct fields) is deferred to v0.27.3.
+    if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow &&
+        stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(stmt->initializer.get());
+        if (ctx.region_of(id->name) == Region::Gc) {
+            addErrorWithSuggestion(
+                "Cannot store gc-region binding '" + id->name +
+                "' into wild-region slot '" + stmt->varName +
+                "' — the GC marker does not follow wild allocations, "
+                "so the referent may be collected or moved while this "
+                "slot still references it",
+                stmt,
+                "hint: pin the gc value first (`wild T->:" + stmt->varName +
+                " = #" + id->name + ";`), keep the reference in a gc "
+                "binding, or use npk_shadow_stack_add_root if you "
+                "genuinely need a wild slot to root a gc value");
+            tagCode("ARIA-029");
+            // Fall through to the wild-allocation tracking below so
+            // the rest of the checker sees a consistent state; the
+            // error has already been recorded.
+        }
+    }
+
     if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow) {
         // This is an actual wild allocation (e.g., wild int8@:ptr = alloc(...))
         stmt->requires_drop = true;
