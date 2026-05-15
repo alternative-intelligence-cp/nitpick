@@ -906,4 +906,23 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;diagnostics;ARIA-029;MEM-DEC-007;v0.27.2"
     )
+
+    # v0.27.3 / ARIA-031 STACK_REF_INTO_GC_FIELD diagnostic.
+    # bug240 rejects `h.p = #x` where `h` is gc and `x` is stack
+    # (use-after-free if the gc object outlives the stack frame).
+    # bug241 (stack→stack) and bug242 (gc→gc) are negative
+    # controls — neither shape may regress into ARIA-031. Consumes
+    # the per-binding Region map landed in v0.27.1 (MEM-DEC-007)
+    # plus the pin/address-of source classification added in
+    # v0.27.3.
+    add_test(
+        NAME bug_tests_v0273
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0273.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0273 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-031;MEM-DEC-007;v0.27.3"
+    )
 endif()

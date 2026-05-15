@@ -2030,6 +2030,38 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
             tagCode("ARIA-016");
             return;
         }
+
+        // ARIA-031: storing a stack-region pin (`#x`) into a gc-rooted
+        // struct field is unsafe — the gc object can outlive the stack
+        // frame that owns `x`. Consumes Region::Stack/Region::Gc tags
+        // recorded via var_regions in v0.27.1 (MEM-DEC-007).
+        if (!target_path.base_var.empty() &&
+            ctx.region_of(target_path.base_var) == Region::Gc &&
+            expr->right &&
+            expr->right->type == ASTNode::NodeType::UNARY_OP) {
+            auto* u = static_cast<UnaryExpr*>(expr->right.get());
+            bool is_pin = u->creates_pin ||
+                          u->op.type == frontend::TokenType::TOKEN_HASH;
+            bool is_addr = u->op.type == frontend::TokenType::TOKEN_AT;
+            if ((is_pin || is_addr) && u->operand &&
+                u->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                std::string src = static_cast<IdentifierExpr*>(u->operand.get())->name;
+                if (ctx.region_of(src) == Region::Stack) {
+                    const char* op_str = is_pin ? "#" : "@";
+                    addErrorWithSuggestion(
+                        "Cannot store stack-region reference '" +
+                        std::string(op_str) + src +
+                        "' into gc-rooted field '" + member->member +
+                        "' of '" + target_path.base_var + "'", expr,
+                        "hint: gc objects can outlive the stack frame "
+                        "that owns '" + src + "'; promote the source to "
+                        "gc (`gc T:" + src + " = ...`) or store the value "
+                        "directly. See ARIA-031 and guide/memory/regions.md");
+                    tagCode("ARIA-031");
+                    return;
+                }
+            }
+        }
     }
 
     // Check right side

@@ -1,0 +1,21 @@
+// bug241 — v0.27.3 / ARIA-031 negative control (stack→stack)
+//
+// Storing a stack-region reference into a STACK-rooted struct field
+// is fine: the host shares the same lifetime as the source (or a
+// strictly shorter one). ARIA-031 must NOT fire.
+//
+// Expected exit: 0.
+
+struct:Holder = { int32->:p; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    stack int32:seed = 0i32;
+    stack Holder:h = Holder{p: @seed};
+    stack int32:x = 7i32;
+    h.p = #x;
+    int32:got = <-h.p;
+    if (got == 7i32) { exit 0; }
+    exit 2;
+};
