@@ -1,0 +1,18 @@
+// expect-exit: 0
+// v0.27.6: borrow on a `wild` binding is a first-class Aria-visible
+// borrow (PLAN option (b)). Mirrors bug249 in K: the storeMemory rule
+// allocates the wild slot, the `$$i` rule binds X to the same host,
+// and the deallocation at scope exit sees the borrow has dropped.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    wild int8->:buf = alloc(64);
+    {
+        $$i int8->:b = buf;
+    }
+    free(buf);
+    exit 0;
+};

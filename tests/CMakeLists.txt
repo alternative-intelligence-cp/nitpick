@@ -946,4 +946,24 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;wildx;security;v0.27.5"
     )
+
+    # v0.27.6 wild ↔ borrow checker interaction polish.
+    # Codifies that the borrow checker is NOT silently bypassed for
+    # `wild` bindings — v0.27.1/v0.27.2 region propagation already
+    # treats `$$i wild T:b = wild_buf;` as an Aria-visible borrow
+    # that obeys mut-XOR-aliasing (PLAN option (b)). bug249 confirms
+    # the immutable borrow path compiles and runs; bug250 confirms
+    # two overlapping `$$m` borrows are still rejected (ARIA-023);
+    # bug251 confirms passing a wild buffer to `$$i`/`$$m` parameters
+    # and free-ing after the borrow drops works end-to-end.
+    add_test(
+        NAME bug_tests_v0276
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0276.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0276 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;wild;borrow;v0.27.6"
+    )
 endif()

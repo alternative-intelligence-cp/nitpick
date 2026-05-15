@@ -1,0 +1,17 @@
+// BUG-250 (v0.27.6): mut-XOR-aliasing is enforced on `wild` bindings.
+// Two overlapping `$$m` borrows of the same wild buffer must be
+// rejected at compile time with ARIA-023, just like for stack/gc
+// bindings. Confirms PLAN option (b) — wild gets the borrow checker
+// for the part of the program written in Aria, not just for FFI.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wild int8->:buf = alloc(64);
+    $$m int8->:a = buf;
+    $$m int8->:b = buf;
+    free(buf);
+    exit 0;
+};
