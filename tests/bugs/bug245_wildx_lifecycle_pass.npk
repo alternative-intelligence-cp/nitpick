@@ -1,0 +1,21 @@
+// BUG-245 (v0.27.5): WildX W^X state machine round-trip via surface builtins.
+// Exercises the full UNINITIALIZED -> WRITABLE -> EXECUTABLE -> FREED path
+// through `wildx_alloc`, `wildx_seal`, and `wildx_free`, confirming that
+// the runtime registry threads the WildXGuard correctly when the user only
+// holds a raw `int8@` pointer.
+//
+// Expected: compile and exit 0 (all three lifecycle calls succeed).
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(128);
+    fixed int32:seal_rc = wildx_seal(page);
+    fixed int32:free_rc = wildx_free(page);
+    if (seal_rc == 0 && free_rc == 0) {
+        exit 0;
+    }
+    exit 2;
+};

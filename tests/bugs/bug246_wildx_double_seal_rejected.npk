@@ -1,0 +1,22 @@
+// BUG-246 (v0.27.5): WildX rejects double-seal at runtime.
+// `wildx_seal` is the W -> X transition; calling it twice on the same
+// page must return -1 because npk_mem_protect_exec only accepts pages
+// in the WRITABLE state. Verifies the W^X invariant cannot be bypassed
+// by re-issuing the mprotect.
+//
+// Expected: compile and exit 0 (second seal returns -1).
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(64);
+    fixed int32:seal1 = wildx_seal(page);
+    fixed int32:seal2 = wildx_seal(page);
+    fixed int32:freed = wildx_free(page);
+    if (seal1 == 0 && seal2 == -1 && freed == 0) {
+        exit 0;
+    }
+    exit 2;
+};

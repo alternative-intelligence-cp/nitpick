@@ -925,4 +925,25 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "memory;diagnostics;ARIA-031;MEM-DEC-007;v0.27.3"
     )
+
+    # v0.27.5 WildX W^X lifecycle hardening.
+    # bug245 exercises the full alloc -> seal -> free state machine
+    # through the new surface builtins `wildx_alloc`, `wildx_seal`,
+    # `wildx_free`, which route through a process-wide pointer ->
+    # WildXGuard registry in src/runtime/allocators/wildx_alloc.cpp.
+    # bug246 confirms the runtime rejects a double-seal (the
+    # WRITABLE -> EXECUTABLE transition is one-way). bug247 and bug248
+    # confirm the borrow checker still rejects double-free and leaks
+    # for the new builtins at compile time, so callers cannot reach
+    # the runtime mistakes covered by tests/runtime/test_wildx_security.cpp.
+    add_test(
+        NAME bug_tests_v0275
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0275.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0275 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;wildx;security;v0.27.5"
+    )
 endif()

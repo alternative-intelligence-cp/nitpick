@@ -1883,7 +1883,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
                 auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
                 if ((callee->name == "alloc" || callee->name == "npk_alloc" ||
-                     callee->name == "malloc") &&
+                     callee->name == "malloc" || callee->name == "wildx_alloc") &&
                     !call->arguments.empty()) {
                     ASTNode* sizeArg = call->arguments[0].get();
                     if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {

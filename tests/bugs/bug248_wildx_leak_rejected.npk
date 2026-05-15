@@ -1,0 +1,15 @@
+// BUG-248 (v0.27.5): Static leak rejection — wildx allocations require cleanup.
+// A `wildx int8->:p = wildx_alloc(N);` binding without a matching free
+// (or `defer wildx_free(p)`) must be rejected by the wild-leak checker
+// at compile time, exactly like the plain `wild` allocator pattern.
+//
+// Expected: compile FAILS with a wild-leak diagnostic.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(32);
+    exit 0;
+};
