@@ -720,6 +720,16 @@ void BorrowChecker::registerFunctionParams(FuncDeclStmt* func) {
         
         // Register the parameter variable in the current scope
         registerVariable(p->paramName, param.get());
+
+        // v0.27.1: classify the parameter's region. Parameters carry
+        // isWild/isWildx flags (set by the parser); other annotations
+        // are not currently exposed on ParameterNode, so non-wild
+        // params default to Region::Stack which matches their actual
+        // lowering (caller-pushed slot).
+        Region prgn = Region::Stack;
+        if (p->isWildx) prgn = Region::Wildx;
+        else if (p->isWild) prgn = Region::Wild;
+        ctx.set_region(p->paramName, prgn);
         
         // If the parameter is a borrow, record an active loan
         // The "host" is an implicit caller variable (we use a synthetic name)
@@ -1646,6 +1656,28 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // Register the variable first
     registerVariable(stmt->varName, stmt);
 
+    // v0.27.1 (MEM-DEC-007): record the binding's memory region so
+    // downstream checks (ARIA-029, ARIA-031, Handle<T> lifetime tying)
+    // can ask region_of(name) instead of re-deriving from the type
+    // string each time. Defaults to Region::Stack per MEM-DEC-001.
+    //
+    // v0.27.2 borrow-region inheritance: a borrow binding (`$i T:b = x;`
+    // / `$m T:b = x;`) does not have its own storage class — the
+    // referent lives wherever `x` lives. Inherit the source's region
+    // so ARIA-029 can fire on `wild T->:p = b;` chains where `b`
+    // borrows a gc binding (the type checker can't catch that —
+    // both sides are `T@`).
+    Region binding_region = regionFromVarDecl(*stmt);
+    if ((stmt->isBorrowImm || stmt->isBorrowMut) && stmt->initializer &&
+        stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* src = static_cast<IdentifierExpr*>(stmt->initializer.get());
+        Region src_region = ctx.region_of(src->name);
+        if (src_region != Region::Unknown) {
+            binding_region = src_region;
+        }
+    }
+    ctx.set_region(stmt->varName, binding_region);
+
     // A-004: Track limit<Rules> qualifiers for Z3-backed index disjointness.
     if (!stmt->limitRulesName.empty()) {
         var_limit_rules_[stmt->varName] = stmt->limitRulesName;
@@ -1803,6 +1835,43 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
     // A pin creates a wild pointer to GC memory, not a wild allocation
     // Use isWild flag set by parser when 'wild' keyword is present
     bool is_wild_type = stmt->isWild || stmt->typeName.find("wild") == 0;
+
+    // ────────────────────────────────────────────────────────────────────
+    // v0.27.2 (ARIA-029 GC_REF_FROM_WILD)
+    // ────────────────────────────────────────────────────────────────────
+    // Reject storing a gc-region binding into a wild-region slot WITHOUT
+    // a pin marker. The pin pattern
+    //     wild Holder->:p = #h;
+    // is the documented way to expose a gc address to FFI safely
+    // (handled below as is_pinned_shadow). Without the pin, the GC
+    // marker does not follow the wild slot, so the referent may be
+    // collected or moved while the wild pointer dangles.
+    //
+    // Consumes Region::Gc classification from v0.27.1 (MEM-DEC-007).
+    // Field-level region propagation (catching the same shape inside
+    // struct fields) is deferred to v0.27.3.
+    if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow &&
+        stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* id = static_cast<IdentifierExpr*>(stmt->initializer.get());
+        if (ctx.region_of(id->name) == Region::Gc) {
+            addErrorWithSuggestion(
+                "Cannot store gc-region binding '" + id->name +
+                "' into wild-region slot '" + stmt->varName +
+                "' — the GC marker does not follow wild allocations, "
+                "so the referent may be collected or moved while this "
+                "slot still references it",
+                stmt,
+                "hint: pin the gc value first (`wild T->:" + stmt->varName +
+                " = #" + id->name + ";`), keep the reference in a gc "
+                "binding, or use npk_shadow_stack_add_root if you "
+                "genuinely need a wild slot to root a gc value");
+            tagCode("ARIA-029");
+            // Fall through to the wild-allocation tracking below so
+            // the rest of the checker sees a consistent state; the
+            // error has already been recorded.
+        }
+    }
+
     if (is_wild_type && stmt->initializer && !stmt->is_pinned_shadow) {
         // This is an actual wild allocation (e.g., wild int8@:ptr = alloc(...))
         stmt->requires_drop = true;
@@ -1814,7 +1883,7 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
                 auto* callee = static_cast<IdentifierExpr*>(call->callee.get());
                 if ((callee->name == "alloc" || callee->name == "npk_alloc" ||
-                     callee->name == "malloc") &&
+                     callee->name == "malloc" || callee->name == "wildx_alloc") &&
                     !call->arguments.empty()) {
                     ASTNode* sizeArg = call->arguments[0].get();
                     if (sizeArg && sizeArg->type == ASTNode::NodeType::LITERAL) {
@@ -1842,6 +1911,46 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
         recordWildAlloc(stmt->varName, stmt, alloc_size_expr);
+    }
+
+    // ========================================================================
+    // v0.27.9 (ARIA-032 — handle outlives arena): if this binding's
+    // initializer is `HandleArena.alloc(arena, size)` (optionally wrapped
+    // in `raw(...)`), record the (handle -> arena) tie so later uses of
+    // the handle can be flagged when the arena has been destroyed.
+    // ========================================================================
+    if (stmt->initializer) {
+        ASTNode* init = stmt->initializer.get();
+        // Peek through `raw(...)` / `drop(...)` single-arg wrappers.
+        while (init && init->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(init);
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& n = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                if ((n == "raw" || n == "drop") && call->arguments.size() == 1) {
+                    init = call->arguments[0].get();
+                    continue;
+                }
+            }
+            break;
+        }
+        if (init && init->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(init);
+            // Parser pre-mangles `HandleArena.alloc(...)` to an IdentifierExpr
+            // with name "HandleArena_alloc" (parser.cpp ~line 1935) before
+            // sema ever runs, so match on that mangled name here.
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& cn =
+                    static_cast<IdentifierExpr*>(call->callee.get())->name;
+                if (cn == "HandleArena_alloc" &&
+                    !call->arguments.empty() &&
+                    call->arguments[0] &&
+                    call->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& arena_name =
+                        static_cast<IdentifierExpr*>(call->arguments[0].get())->name;
+                    handle_arena_map_[stmt->varName] = arena_name;
+                }
+            }
+        }
     }
 }
 
@@ -1960,6 +2069,38 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
                     "hint: pins provide stable read access; unpin before mutating fields");
             tagCode("ARIA-016");
             return;
+        }
+
+        // ARIA-031: storing a stack-region pin (`#x`) into a gc-rooted
+        // struct field is unsafe — the gc object can outlive the stack
+        // frame that owns `x`. Consumes Region::Stack/Region::Gc tags
+        // recorded via var_regions in v0.27.1 (MEM-DEC-007).
+        if (!target_path.base_var.empty() &&
+            ctx.region_of(target_path.base_var) == Region::Gc &&
+            expr->right &&
+            expr->right->type == ASTNode::NodeType::UNARY_OP) {
+            auto* u = static_cast<UnaryExpr*>(expr->right.get());
+            bool is_pin = u->creates_pin ||
+                          u->op.type == frontend::TokenType::TOKEN_HASH;
+            bool is_addr = u->op.type == frontend::TokenType::TOKEN_AT;
+            if ((is_pin || is_addr) && u->operand &&
+                u->operand->type == ASTNode::NodeType::IDENTIFIER) {
+                std::string src = static_cast<IdentifierExpr*>(u->operand.get())->name;
+                if (ctx.region_of(src) == Region::Stack) {
+                    const char* op_str = is_pin ? "#" : "@";
+                    addErrorWithSuggestion(
+                        "Cannot store stack-region reference '" +
+                        std::string(op_str) + src +
+                        "' into gc-rooted field '" + member->member +
+                        "' of '" + target_path.base_var + "'", expr,
+                        "hint: gc objects can outlive the stack frame "
+                        "that owns '" + src + "'; promote the source to "
+                        "gc (`gc T:" + src + " = ...`) or store the value "
+                        "directly. See ARIA-031 and guide/memory/regions.md");
+                    tagCode("ARIA-031");
+                    return;
+                }
+            }
         }
     }
 
@@ -2534,6 +2675,15 @@ void BorrowChecker::checkImplDeclStmt(ImplDeclStmt* stmt) {
 
                 registerVariable(p->paramName, param.get());
 
+                // v0.27.1: classify region for trait method params, mirroring
+                // the free-function path in registerFunctionParams.
+                {
+                    Region prgn = Region::Stack;
+                    if (p->isWildx) prgn = Region::Wildx;
+                    else if (p->isWild) prgn = Region::Wild;
+                    ctx.set_region(p->paramName, prgn);
+                }
+
                 if (p->paramName == "self") {
                     // 'self' is the receiver — track borrow mode
                     if (p->isBorrowImm) {
@@ -2618,13 +2768,24 @@ void BorrowChecker::checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* conte
             for (const auto& origin : it->second) {
                 int origin_depth = getVariableDepth(origin);
                 if (origin_depth > 1) {
-                    addError("Cannot return '" + ident->name +
-                            "' — it borrows from local variable '" + origin +
-                            "' which will be destroyed when the function returns",
+                    // v0.26.6 / MEM-014: ARIA-028 STACK_ESCAPE — polished
+                    // wording. The borrow's host is a local binding (default
+                    // region is the stack frame; `gc` bindings are also
+                    // conservatively rejected because the *named binding*
+                    // dies even though the heap object survives). Hint
+                    // attached via the suggestion field on the same error.
+                    addError("Cannot return borrow '" + ident->name +
+                            "' — it points into local binding '" + origin +
+                            "', whose stack frame is destroyed when the function returns",
                             context,
-                            "'" + origin + "' is local to this function",
+                            "'" + origin + "' is declared inside this function",
                             returnValue->line, returnValue->column);
-                    tagCode("ARIA-017");
+                    if (!errors.empty()) {
+                        errors.back().suggestion =
+                            "hint: return by value, take ownership in the caller, "
+                            "or accept a borrow parameter and return that";
+                    }
+                    tagCode("ARIA-028");
                 }
             }
         }
@@ -2752,9 +2913,14 @@ void BorrowChecker::checkBlockStmt(BlockStmt* stmt) {
                 if (origins.count(var) > 0) {
                     int ref_depth = getVariableDepth(ref);
                     if (ref_depth >= 0 && ref_depth < ctx.current_depth) {
-                        addError("Reference '" + ref + "' outlives its host '" + var + "'",
+                        // v0.26.6 / MEM-014: ARIA-028 STACK_ESCAPE — host
+                        // (a local stack-frame binding) goes out of scope
+                        // while a reference to it is still live in an
+                        // outer scope.
+                        addError("Reference '" + ref + "' outlives its host '" + var +
+                                "' — host's stack frame ends here",
                                 1, 1);  // Line info not available at scope exit
-                        tagCode("ARIA-017");
+                        tagCode("ARIA-028");
                     }
                 }
             }
@@ -3333,6 +3499,43 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
 
 void BorrowChecker::checkCallExpr(CallExpr* expr) {
     if (!expr) return;
+
+    // ========================================================================
+    // v0.27.9 (ARIA-032 — handle outlives arena): inspect HandleArena.*
+    // method calls. `destroy(a)` marks the arena dead; `deref(h)` /
+    // `free(h)` on a handle whose recorded arena is dead → static error.
+    // The parser pre-mangles `HandleArena.foo(...)` into an IdentifierExpr
+    // named "HandleArena_foo" (parser.cpp ~line 1935), so match on that.
+    // Runs BEFORE child traversal so the outermost call site is what gets
+    // flagged in diagnostics.
+    // ========================================================================
+    if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        const std::string& cn =
+            static_cast<IdentifierExpr*>(expr->callee.get())->name;
+        if (cn == "HandleArena_destroy" &&
+            !expr->arguments.empty() &&
+            expr->arguments[0] &&
+            expr->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+            destroyed_arenas_.insert(
+                static_cast<IdentifierExpr*>(expr->arguments[0].get())->name);
+        } else if ((cn == "HandleArena_deref" || cn == "HandleArena_free") &&
+                   !expr->arguments.empty() &&
+                   expr->arguments[0] &&
+                   expr->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& h =
+                static_cast<IdentifierExpr*>(expr->arguments[0].get())->name;
+            auto it = handle_arena_map_.find(h);
+            if (it != handle_arena_map_.end() &&
+                destroyed_arenas_.count(it->second)) {
+                addError("Handle '" + h + "' outlives its arena '" +
+                         it->second + "'. The arena was destroyed earlier "
+                         "in this function; the handle is no longer valid. "
+                         "See ARIA-032 and guide/memory/handles.md",
+                         expr);
+                tagCode("ARIA-032");
+            }
+        }
+    }
 
     // Check all arguments
     for (const auto& arg : expr->arguments) {

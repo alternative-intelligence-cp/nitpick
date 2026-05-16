@@ -1,0 +1,40 @@
+// bug223 — v0.26.3.2 regression guard: a `gc T:x = ...` binding MUST survive a
+// garbage collection cycle that runs between its allocation and a later read.
+//
+// Before v0.26.3.2, the backend emitted `npk_gc_alloc` (per v0.26.3.1) but
+// never registered the resulting heap pointer as a GC root. The shadow-stack
+// infrastructure existed in the runtime but was unreachable from compiled
+// code, so the mark phase saw no roots and the next minor GC would either
+// evacuate the object out from under the SSA pointer (causing a stale read)
+// or sweep the old-gen copy. v0.26.3.2 fixes this by emitting (per gc binding):
+//   - npk_shadow_stack_push_frame (lazily, once per function)
+//   - npk_gc_pin (so minor GC cannot move the object)
+//   - alloca + store + npk_shadow_stack_add_root (so mark phase keeps it live)
+//   - npk_shadow_stack_pop_frame (on every function exit)
+//
+// The 4MB default nursery holds ~170k tiny Holder objects, so 200k forces at
+// least one minor GC between the `h` allocation and its later read.
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99;
+};
+
+func:fill_garbage = int32() {
+    loop(0i64, 200000i64, 1i64) {
+        gc Holder:g = Holder{value: 1i64};
+    }
+    pass 0i32;
+};
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 2882400018i64};
+    raw fill_garbage();
+    if (h.value == 2882400018i64) {
+        exit 0;
+    }
+    exit 1;
+};

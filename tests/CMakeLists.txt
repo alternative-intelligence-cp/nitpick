@@ -742,4 +742,288 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0234.sh")
         SKIP_RETURN_CODE 77
         LABELS "borrow;BORROW-011;BORROW-012;BORROW-013;v0.25.6"
     )
+
+    # v0.26.1: stack-escape (MEM-005) regression suite — locks in ARIA-017
+    # behavior for `stack` keyword and chained borrow paths.
+    add_test(
+        NAME bug_tests_v0261
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0261.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0261 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;memory;MEM-005;v0.26.1"
+    )
+
+    # v0.26.2: GC stress smoke tests (MEM-006 alloc stress, MEM-007 large objs,
+    # MEM-008 long-lived survivor under churn).
+    add_test(
+        NAME bug_tests_v0262
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0262.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0262 PROPERTIES
+        TIMEOUT 180
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;MEM-006;MEM-007;MEM-008;v0.26.2"
+    )
+
+    # v0.26.3: GC borrow + safepoint interaction (MEM-009).
+    # MEM-010 (pin syntax `#x`) deferred — runtime exists, lowering pending.
+    add_test(
+        NAME bug_tests_v0263
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0263.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0263 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;borrow;MEM-009;v0.26.3"
+    )
+
+    # v0.26.3.0 (PIN baseline): lock in current `#x` behavior before the
+    # pin-lowering work in v0.26.3.{1..5}. See
+    # META/NITPICK/ROADMAP/0.26/0.26.3.x/PIN_LOWERING_AUDIT.md.
+    add_test(
+        NAME bug_tests_v02630
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02630.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02630 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;pin;PIN-001;PIN-002;v0.26.3.0"
+    )
+
+    # v0.26.3.1 (allocation qualifier wire-up): regression tests that lock in
+    # the fix where `gc T:x` lowers to npk_gc_alloc, `wild T:x` lowers to
+    # npk_alloc, and `stack T:x` keeps emitting alloca. Before v0.26.3.1 the
+    # qualifier was silently ignored and every binding hit the stack.
+    add_test(
+        NAME bug_tests_v02631
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02631.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02631 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;wild;ir;v0.26.3.1"
+    )
+
+    # v0.26.3.2 (GC root tracking): regression tests that lock in the fix
+    # where every `gc T:x` binding registers a shadow-stack root and pins
+    # the heap object, so the value survives a collection cycle.
+    add_test(
+        NAME bug_tests_v02632
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02632.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02632 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;root;shadow_stack;v0.26.3.2"
+    )
+
+    # v0.26.3.3 (MEM-010 reinstatement): execution-level regression tests
+    # that close the v0.26.3 deferral. bug224 verifies a gc binding
+    # survives an explicit npk_gc_safepoint() loop without any borrow or
+    # pin alias; bug225 verifies the `wild T->:p = #h;` alias survives
+    # the same safepoint loop and reads through correctly.
+    add_test(
+        NAME bug_tests_v02633
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02633.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02633 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;pin;safepoint;MEM-010;v0.26.3.3"
+    )
+
+    # v0.26.4 (MEM-011 GC tuning env-vars): four execution-level
+    # fixtures that exercise NPK_GC_NURSERY_SIZE, NPK_GC_OLD_GEN_THRESHOLD,
+    # NPK_GC_MODE=concurrent, and the no-env-var default fallback. Each
+    # case spawns a fresh process so GCState::init() reads the env vars
+    # before the singleton is initialized.
+    add_test(
+        NAME bug_tests_v0264
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0264.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0264 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;tuning;MEM-011;v0.26.4"
+    )
+
+    # v0.26.5 (MEM-013 wild ↔ gc interop): two execution fixtures
+    # verifying the runtime cleanly partitions gc-heap pointers from
+    # wild-allocator pointers (bug230), and that wild alloc/free
+    # churn around npk_gc_safepoint() never perturbs gc reachability
+    # (bug231).
+    add_test(
+        NAME bug_tests_v0265
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0265.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0265 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "memory;gc;interop;MEM-013;v0.26.5"
+    )
+
+    # v0.26.6 (MEM-014 ARIA-028 STACK_ESCAPE polish): four fixtures.
+    # bug232 (escape via fail), bug233 (escape from nested block),
+    # bug234 (polished message contents grep), bug235 (positive
+    # internal-only borrow). The pre-existing v0.26.1 suite was also
+    # re-tagged ARIA-017 → ARIA-028 in this slice.
+    add_test(
+        NAME bug_tests_v0266
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0266.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0266 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-028;MEM-014;v0.26.6"
+    )
+
+    # v0.27.2 (ARIA-029 GC_REF_FROM_WILD): three fixtures.
+    # bug237 (gc binding into wild slot, no pin → reject),
+    # bug238 (pin-derived #h positive), bug239 (raw wild alloc
+    # positive — no gc origin so ARIA-029 doesn't fire).
+    # Consumes the per-binding Region map landed in v0.27.1
+    # (MEM-DEC-007). Indirect-through-struct-field companion
+    # case is deferred to v0.27.3 with field-region propagation.
+    add_test(
+        NAME bug_tests_v0272
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0272.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0272 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-029;MEM-DEC-007;v0.27.2"
+    )
+
+    # v0.27.3 / ARIA-031 STACK_REF_INTO_GC_FIELD diagnostic.
+    # bug240 rejects `h.p = #x` where `h` is gc and `x` is stack
+    # (use-after-free if the gc object outlives the stack frame).
+    # bug241 (stack→stack) and bug242 (gc→gc) are negative
+    # controls — neither shape may regress into ARIA-031. Consumes
+    # the per-binding Region map landed in v0.27.1 (MEM-DEC-007)
+    # plus the pin/address-of source classification added in
+    # v0.27.3.
+    add_test(
+        NAME bug_tests_v0273
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0273.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0273 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;diagnostics;ARIA-031;MEM-DEC-007;v0.27.3"
+    )
+
+    # v0.27.5 WildX W^X lifecycle hardening.
+    # bug245 exercises the full alloc -> seal -> free state machine
+    # through the new surface builtins `wildx_alloc`, `wildx_seal`,
+    # `wildx_free`, which route through a process-wide pointer ->
+    # WildXGuard registry in src/runtime/allocators/wildx_alloc.cpp.
+    # bug246 confirms the runtime rejects a double-seal (the
+    # WRITABLE -> EXECUTABLE transition is one-way). bug247 and bug248
+    # confirm the borrow checker still rejects double-free and leaks
+    # for the new builtins at compile time, so callers cannot reach
+    # the runtime mistakes covered by tests/runtime/test_wildx_security.cpp.
+    add_test(
+        NAME bug_tests_v0275
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0275.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0275 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;wildx;security;v0.27.5"
+    )
+
+    # v0.27.6 wild ↔ borrow checker interaction polish.
+    # Codifies that the borrow checker is NOT silently bypassed for
+    # `wild` bindings — v0.27.1/v0.27.2 region propagation already
+    # treats `$$i wild T:b = wild_buf;` as an Aria-visible borrow
+    # that obeys mut-XOR-aliasing (PLAN option (b)). bug249 confirms
+    # the immutable borrow path compiles and runs; bug250 confirms
+    # two overlapping `$$m` borrows are still rejected (ARIA-023);
+    # bug251 confirms passing a wild buffer to `$$i`/`$$m` parameters
+    # and free-ing after the borrow drops works end-to-end.
+    add_test(
+        NAME bug_tests_v0276
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0276.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0276 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;wild;borrow;v0.27.6"
+    )
+endif()
+
+# ============================================================================
+# v0.27.7 — Handle<T> Phase 1 runtime ABI (bug252-bug255)
+# ============================================================================
+# Pure-runtime test: links libaria_runtime and exercises the npk_handle_*
+# C ABI directly. No compiler involvement, no K test (runtime-only slice).
+add_executable(test_handle_v0277 runtime/test_handle_v0277.cpp)
+target_link_libraries(test_handle_v0277 PRIVATE aria_runtime)
+target_include_directories(test_handle_v0277 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME runtime_handle_v0277
+    COMMAND test_handle_v0277
+)
+set_tests_properties(runtime_handle_v0277 PROPERTIES
+    TIMEOUT 60
+    LABELS "memory;handles;runtime;v0.27.7"
+)
+
+# ============================================================================
+# v0.27.8 — Handle<T> Phase 2 typed surface (bug256-bug259)
+# ============================================================================
+# Exercises the Aria-side Handle<T> + HandleArena module on top of the
+# v0.27.7 npk_handle_* C ABI. bug256 round-trips alloc/deref/free; bug257
+# locks in that Handle<int32> ≠ Handle<int64> at the type checker;
+# bug258 confirms use-after-free deref returns NULL (not stale pointer);
+# bug259 confirms arena destroy invalidates all of its outstanding handles.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0278
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0278.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0278 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;handles;v0.27.8"
+    )
+endif()
+
+# ============================================================================
+# v0.27.9 — Handle<T> Phase 3: borrow-checker tying + ARIA-032 (bug260-bug263)
+# ============================================================================
+# Static rejection of `HandleArena.deref(h)` / `HandleArena.free(h)` after the
+# arena that backed `h` has been destroyed. bug260/261 are compile-fail cases
+# (ARIA-032); bug262/263 are positive controls confirming the rule only fires
+# when destroy precedes a use of a handle tied to that exact arena.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0279
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0279.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0279 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;handles;borrow;v0.27.9"
+    )
 endif()

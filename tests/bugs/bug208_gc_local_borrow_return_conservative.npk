@@ -1,0 +1,11 @@
+// bug208: MEM-005 — current behavior locks in conservative rejection of
+// returning a borrow into a `gc` local. Even though the underlying allocation
+// survives function exit, the named binding goes out of scope, so ARIA-017
+// rejects it. Path-sensitive relaxation deferred to a future cycle.
+func:leaky = $$m int32() {
+    gc int32:x = 99i32;
+    $$m int32:r = x;
+    pass r;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { exit 0; };

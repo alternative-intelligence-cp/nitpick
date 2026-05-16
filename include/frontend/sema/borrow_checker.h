@@ -379,6 +379,26 @@ constexpr int WIDENING_THRESHOLD = 3;  // Max iterations before widening
 constexpr int MAX_FIXPOINT_ITERATIONS = 10;  // Absolute maximum iterations
 
 /**
+ * Memory region a binding lives in.
+ *
+ * v0.27.1 (MEM-DEC-007): introduced as a per-binding tag on
+ * LifetimeContext so downstream slices (ARIA-029 GC_REF_FROM_WILD,
+ * ARIA-031 STACK_REF_INTO_GC_FIELD, Handle<T> arena tying) can
+ * answer "what region does this name live in?" without re-deriving
+ * it from the type string each time.
+ *
+ * Field-level region propagation through struct types is deferred
+ * to v0.27.3 where it is actually consumed.
+ */
+enum class Region {
+    Unknown,  // Not yet classified (initial state, externs, params w/o annotation)
+    Stack,    // Default region: scoped to the declaring frame
+    Gc,       // Generational GC heap (auto-pinned + shadow-stack rooted)
+    Wild,     // Manual heap (npk_alloc / npk_free); FFI buffers
+    Wildx,    // Manual heap with PROT_EXEC (W^X discipline); JIT
+};
+
+/**
  * Lifetime tracking context - core data structure for borrow checking
  * 
  * Implements the Scope-Weighted Control Flow Graph (SW-CFG) analysis
@@ -388,6 +408,13 @@ struct LifetimeContext {
     // Maps variable name -> Declaration Scope Depth
     // Used for Appendage Theory: Depth(Host) <= Depth(Reference)
     std::unordered_map<std::string, int> var_depths;
+
+    // v0.27.1: Maps variable name -> Region (stack/gc/wild/wildx).
+    // Populated at variable declaration in checkVarDecl from the
+    // VarDeclStmt::isWild/isWildx/isGC/isStack flags. Defaults to
+    // Region::Stack for non-annotated locals (matches MEM-DEC-001:
+    // default region is stack, not GC).
+    std::unordered_map<std::string, Region> var_regions;
     
     // Maps Reference -> Set of Origins (Hosts)
     // A reference may point to different hosts depending on CFG path (phi nodes)
@@ -458,7 +485,27 @@ struct LifetimeContext {
     LifetimeContext() : current_depth(0) {
         scope_stack.push_back({}); // Global scope
     }
-    
+
+    /**
+     * v0.27.1: Look up the region a binding lives in.
+     * Returns Region::Unknown for names that were never declared
+     * inside the current function (e.g., free identifiers, externs).
+     */
+    Region region_of(const std::string& name) const {
+        auto it = var_regions.find(name);
+        return (it != var_regions.end()) ? it->second : Region::Unknown;
+    }
+
+    /**
+     * v0.27.1: Record the region for a binding. Called from
+     * checkVarDecl after parsing the qualifier flags. Idempotent
+     * for repeated declarations of the same name in nested scopes
+     * (last write wins, matching how var_depths is treated).
+     */
+    void set_region(const std::string& name, Region r) {
+        var_regions[name] = r;
+    }
+
     /**
      * Get current scope depth
      */
@@ -673,6 +720,43 @@ struct FunctionBorrowSummary {
 };
 
 // ============================================================================
+// v0.27.1: Region helpers
+// ============================================================================
+
+/**
+ * Derive the Region of a variable declaration from its qualifier
+ * flags. Precedence: wildx > wild > gc > stack > default(stack).
+ *
+ * Note: this looks at the VarDeclStmt only; it does not inspect the
+ * initializer. That is correct for v0.27.1 (binding-site classification
+ * matches how the parser surfaces the keyword). v0.27.3 will extend
+ * this to handle field-level region propagation through struct types.
+ */
+inline Region regionFromVarDecl(const ::npk::VarDeclStmt& stmt) {
+    if (stmt.isWildx) return Region::Wildx;
+    if (stmt.isWild)  return Region::Wild;
+    if (stmt.isGC)    return Region::Gc;
+    if (stmt.isStack) return Region::Stack;
+    // MEM-DEC-001: default region is stack, not GC.
+    return Region::Stack;
+}
+
+/**
+ * Human-readable name for a Region (used by --dump-regions and
+ * future diagnostic messages).
+ */
+inline const char* regionName(Region r) {
+    switch (r) {
+        case Region::Stack:   return "stack";
+        case Region::Gc:      return "gc";
+        case Region::Wild:    return "wild";
+        case Region::Wildx:   return "wildx";
+        case Region::Unknown: return "unknown";
+    }
+    return "unknown";
+}
+
+// ============================================================================
 // Borrow Checker Class
 // ============================================================================
 
@@ -700,6 +784,16 @@ private:
 
     // A-004: Maps variable name → limitRulesName, populated in checkVarDecl.
     std::unordered_map<std::string, std::string> var_limit_rules_;
+
+    // v0.27.9 (ARIA-032 — handle-outlives-arena): track which arena binding
+    // each Handle<T> binding was allocated from, plus the set of arena
+    // bindings that have been explicitly destroyed via HandleArena.destroy.
+    // Populated by checkVarDecl when the initializer is HandleArena.alloc(a,
+    // size) where `a` is a plain identifier; consulted by checkCallExpr at
+    // every HandleArena.{deref,free} use to fail the static check if the
+    // arena has been destroyed earlier in the same function body.
+    std::unordered_map<std::string, std::string> handle_arena_map_;
+    std::unordered_set<std::string> destroyed_arenas_;
 
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping

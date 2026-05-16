@@ -1,0 +1,22 @@
+// bug239 — v0.27.2 / ARIA-029 negative-control positive
+//
+// The initializer here is a fresh wild allocation (npk_alloc),
+// not a gc identifier, so ARIA-029 does NOT fire — and the user
+// has taken explicit responsibility for the lifetime via the
+// runtime call. (`npk_shadow_stack_add_root` is the explicit
+// escape hatch for genuinely rooting gc values from wild storage;
+// we don't invoke it here — the point is that the raw-wild shape
+// compiles cleanly without false positives.)
+//
+// Expected exit: 0.
+
+extern func:npk_alloc = wild ?*(int64:size);
+extern func:npk_free = void(wild ?*:ptr);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    wild ?->:buf = npk_alloc(64i64);
+    npk_free(buf);
+    exit 0;
+};

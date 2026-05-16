@@ -1,0 +1,25 @@
+// BUG-249 (v0.27.6): borrow on a `wild` binding compiles and runs.
+// Locks in the v0.27.1 / v0.27.2 region-propagation behaviour where
+// `$$i T:b = wild_buf;` is treated as a stack-like Aria-visible borrow
+// (PLAN.md option (b)). The borrow drops at scope-end and `free` then
+// proceeds without ARIA-019.
+//
+// Expected: compile and exit 0.
+
+func:read_byte = int8($$i int8->:p) {
+    pass 0i8;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wild int8->:buf = alloc(64);
+    {
+        $$i int8->:b = buf;
+        fixed int8:b0 = raw read_byte(b);
+    }
+    free(buf);
+    exit 0;
+};

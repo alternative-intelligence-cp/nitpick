@@ -1,0 +1,46 @@
+// bug225 — v0.26.3.3 / MEM-010: the `#h` pin operator returns a working
+// alias to a gc binding, and a read through that alias survives a
+// safepoint-driven collection cycle.
+//
+// bug218 already documents that `#gc_x` compiles and reads correctly in
+// the absence of GC pressure (v0.26.3.0 baseline). bug225 strengthens
+// that guarantee under explicit safepoints — the same scenario MEM-010
+// originally wanted to exercise but couldn't because the pin operator
+// wasn't lowered AND there was no root tracking.
+//
+// As of v0.26.3.2, both halves are addressed:
+//   - The gc binding `h` is auto-pinned at allocation, so the heap
+//     object never moves and the SSA pointer used for `#h` stays
+//     valid forever.
+//   - The shadow-stack root keeps `h` reachable across collections,
+//     so the mark phase will not sweep it out from under the alias.
+//
+// Net effect: `wild Holder->:p = #h;` is now a fully-functional alias
+// to the gc binding for the binding's entire scope.
+
+extern func:npk_gc_safepoint = void();
+
+struct:Holder = { int32:value; };
+struct:Trash = { int32:x; int32:y; };
+
+func:churn = int32(int32:v) {
+    gc Trash:t = Trash{x: v, y: v};
+    pass t.x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 9182736i32};
+    wild Holder->:p = #h;
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    loop(0i32, 5000i32, 1i32) {
+        sum = sum + raw churn(i);
+        npk_gc_safepoint();
+        i = i + 1i32;
+    }
+    int32:got = p->value;
+    if (got == 9182736i32) { exit 0; }
+    exit 2;
+};

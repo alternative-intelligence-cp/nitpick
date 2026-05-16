@@ -1,0 +1,21 @@
+// bug238 — v0.27.2 / ARIA-029 escape hatch
+//
+// Pin-derived positive case. `wild Holder->:p = #h;` is the
+// documented FFI-safety pattern (cf. bug218, pinning.md). The
+// pin marks the gc value as rooted; the wild pointer derived
+// from it inherits that rooting. ARIA-029 does NOT fire because
+// `is_pinned_shadow` is set on the var-decl.
+//
+// Expected exit: 0.
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 1234i32};
+    wild Holder->:p = #h;
+    int32:got = p->value;
+    if (got == 1234i32) { exit 0; }
+    exit 2;
+};

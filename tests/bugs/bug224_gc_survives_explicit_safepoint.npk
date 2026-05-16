@@ -1,0 +1,41 @@
+// bug224 — v0.26.3.3 / MEM-010: a `gc T:x` binding survives an explicit
+// `npk_gc_safepoint()`-driven collection cycle. Complements bug223 (which
+// uses 200k garbage allocs to force an implicit minor GC); bug224 makes
+// the safepoint explicit so the test is deterministic regardless of
+// nursery sizing.
+//
+// Before v0.26.3.2, calling `npk_gc_safepoint()` between the allocation
+// of `h` and the read of `h.value` was unsafe: `h` was on the heap (per
+// v0.26.3.1) but invisible to the mark phase, so a safepoint that
+// triggered collection could evacuate or sweep the object.
+//
+// v0.26.3.2 fixes the visibility (auto-pin + shadow-stack root). bug224
+// is the regression guard that proves a real safepoint is now safe.
+
+extern func:npk_gc_safepoint = void();
+
+struct:Holder = { int32:value; };
+struct:Trash = { int32:x; int32:y; };
+
+func:churn = int32(int32:v) {
+    gc Trash:t = Trash{x: v, y: v};
+    pass t.x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 4242i32};
+    int32:i = 0i32;
+    int32:sum = 0i32;
+    loop(0i32, 5000i32, 1i32) {
+        sum = sum + raw churn(i);
+        npk_gc_safepoint();
+        i = i + 1i32;
+    }
+    // Read through the gc binding directly — no borrow, no pin alias.
+    // Pre-v0.26.3.2 this could observe stale or swept memory because
+    // the mark phase had no root to keep `h` alive.
+    if (h.value == 4242i32) { exit 0; }
+    exit 2;
+};

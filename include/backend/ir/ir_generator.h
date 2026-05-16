@@ -319,6 +319,24 @@ private:
      * Called by return statements
      */
     void executeFunctionDefers();
+
+    // ========================================================================
+    // v0.26.3.2 (GCRT-001..005): Shadow-stack root tracking for `gc` bindings.
+    //
+    // Each function that contains at least one `gc T:x = ...` binding lazily
+    // emits `npk_shadow_stack_push_frame()` at the first such binding and a
+    // matching `npk_shadow_stack_pop_frame()` on every exit path. Each gc
+    // binding registers a stack slot (holding the heap pointer) as a GC
+    // root via `npk_shadow_stack_add_root(&slot)`, so the collector keeps the
+    // object alive across safepoints. The binding is also pinned via
+    // `npk_gc_pin(heap_ptr)` so the minor GC cannot evacuate it -- this lets
+    // the SSA heap pointer used by every later access (member loads, etc.)
+    // stay valid for the lifetime of the binding.
+    // ========================================================================
+    bool current_function_pushed_gc_frame_ = false;
+    void pushGCFrameIfNeeded();
+    void popGCFrameIfNeeded();
+    void registerGCRoot(llvm::Value* heap_ptr, const std::string& name);
     
     /**
      * Map Aria type to DWARF debug type

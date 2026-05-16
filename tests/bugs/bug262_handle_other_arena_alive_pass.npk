@@ -1,0 +1,24 @@
+// BUG-262 (v0.27.9, ARIA-032): two arenas, only one destroyed —
+// handles bound to the LIVE arena still compile and run; handles
+// bound to the destroyed arena would be ARIA-032 (not exercised here
+// to keep this a positive test).
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int64:b = raw HandleArena.create();
+    Handle<int32>:hb = raw HandleArena.alloc(b, 4i64);
+    raw HandleArena.destroy(a);
+    int64:p = raw HandleArena.deref(hb); // hb is bound to b (still alive)
+    if (p == 0i64) { exit 3; }
+    raw HandleArena.free(hb);
+    raw HandleArena.destroy(b);
+    exit 0;
+};

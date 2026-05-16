@@ -1,0 +1,28 @@
+// bug240 — v0.27.3 / ARIA-031 STACK_REF_INTO_GC_FIELD
+//
+// A gc-rooted struct must not capture a stack-region reference in
+// one of its pointer fields: the gc object can outlive the stack
+// frame that owns the source, and dereferencing the field after the
+// frame returns is a use-after-free.
+//
+// Surface shape:
+//     gc Holder:h = ... ;
+//     stack int32:x = 7;
+//     h.p = #x;          // ARIA-031
+//
+// The diagnostic must mention ARIA-031 and the pin/address operator
+// it caught.
+//
+// Expected: compile fails with ARIA-031.
+
+struct:Holder = { int32->:p; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    stack int32:seed = 0i32;
+    gc Holder:h = Holder{p: @seed};
+    stack int32:x = 7i32;
+    h.p = #x;
+    exit 0;
+};

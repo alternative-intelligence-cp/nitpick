@@ -1586,9 +1586,36 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             
             if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && 
                 !optionalWrapping && !ffiPointerConversion) {
-                addError("Cannot initialize variable '" + stmt->varName + 
+                std::string msg = "Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
-                        "' with value of type '" + initType->toString() + "'", stmt);
+                        "' with value of type '" + initType->toString() + "'";
+
+                // v0.27.2 (ARIA-029 GC_REF_FROM_WILD hint): when the LHS is
+                // a wild pointer and the RHS is a value of the pointee type
+                // referenced by name, the user almost certainly wants the
+                // pin pattern. Surface the suggestion alongside the type
+                // mismatch so the diagnostic is actionable instead of
+                // forcing the user to dig through the memory guide.
+                //
+                // We deliberately don't gate on the source's storage class
+                // (gc vs stack vs wild) — `#name` is the right answer for
+                // any of them when exposing a value through a wild pointer.
+                if (stmt->isWild &&
+                    declaredType->getKind() == TypeKind::POINTER &&
+                    stmt->initializer &&
+                    stmt->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                    auto* id = static_cast<IdentifierExpr*>(stmt->initializer.get());
+                    const Type* pointee = static_cast<const PointerType*>(declaredType)->getPointeeType();
+                    if (pointee && initType->toString() == pointee->toString()) {
+                        msg += "\n  hint: to expose a value through a wild pointer "
+                               "(typical for FFI), use the pin operator: "
+                               "`wild " + pointee->toString() + "->:" + stmt->varName +
+                               " = #" + id->name + ";` (see guide/memory/pinning.md "
+                               "and ARIA-029)";
+                    }
+                }
+
+                addError(msg, stmt);
                 return;
             }
         }

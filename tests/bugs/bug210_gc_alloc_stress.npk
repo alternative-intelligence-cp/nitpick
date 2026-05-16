@@ -1,0 +1,24 @@
+// bug210: MEM-006 — GC alloc stress.
+// Allocate many gc objects in a loop with no surviving refs.
+// Exercises nursery rollover and bump-pointer allocation under pressure.
+// Implicit minor GC happens as the nursery fills.
+
+struct:Node = { int32:value; int32:tag; };
+
+func:make_one = int32(int32:v) {
+    gc Node:n = Node{value: v, tag: v + 1i32};
+    pass n.value + n.tag;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:sum = 0i32;
+    int32:i = 0i32;
+    loop(0i32, 50000i32, 1i32) {
+        sum = sum + raw make_one(i);
+        i = i + 1i32;
+    }
+    if (sum >= 0i32) { exit 0; }
+    exit 1;
+};

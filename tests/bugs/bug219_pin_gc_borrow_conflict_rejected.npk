@@ -1,0 +1,19 @@
+// bug219: v0.26.3.0 / PIN-002 — baseline (negative).
+// Documents the existing borrow-checker rule that an active pin blocks
+// a subsequent `$$m` borrow of the same gc binding with diagnostic
+// **ARIA-016** ("Cannot borrow pinned variable ... as mutable"). Pure
+// sema check — no codegen change in this slice or in v0.26.3.{1..5}.
+//
+// Expected: COMPILER ERROR — must contain "ARIA-016".
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 1i32};
+    wild Holder->:p = #h;
+    $$m Holder:b = h;     // ARIA-016: cannot borrow pinned variable as mutable
+    if (b.value == 1i32 && p->value == 1i32) { exit 0; }
+    exit 2;
+};

@@ -1,0 +1,22 @@
+// BUG-263 (v0.27.9, ARIA-032): destroying an arena AFTER all derived
+// handles have been freed and used compiles cleanly (positive control
+// for the v0.27.9 borrow checker rule — the rule must only fire when
+// `destroy` precedes a use, not when it follows correct teardown).
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 3; }
+    raw HandleArena.free(h);
+    raw HandleArena.destroy(a);          // OK: no further uses of h
+    exit 0;
+};

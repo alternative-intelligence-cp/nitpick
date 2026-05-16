@@ -1,0 +1,9 @@
+// bug206: MEM-005 — borrow into a stack-local struct field must not escape.
+struct:Pair = { int32:a; int32:b; };
+func:leaky = $$m int32() {
+    stack Pair:p = Pair{a: 1i32, b: 2i32};
+    $$m int32:r = p.a;
+    pass r;
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() { exit 0; };

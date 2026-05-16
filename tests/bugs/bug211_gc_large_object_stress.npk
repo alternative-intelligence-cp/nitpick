@@ -1,0 +1,30 @@
+// bug211: MEM-007 — GC large-object allocation stress.
+// Each Bigger struct is much larger than bug210's Node; this hits the
+// nursery overflow path more aggressively and forces more frequent
+// minor collections per outer iteration.
+
+struct:Bigger = {
+    int64:a; int64:b; int64:c; int64:d;
+    int64:e; int64:f; int64:g; int64:h;
+};
+
+func:make_big = int64(int64:v) {
+    gc Bigger:b = Bigger{
+        a: v, b: v + 1i64, c: v + 2i64, d: v + 3i64,
+        e: v + 4i64, f: v + 5i64, g: v + 6i64, h: v + 7i64
+    };
+    pass b.a + b.h;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:sum = 0i64;
+    int64:i = 0i64;
+    loop(0i64, 5000i64, 1i64) {
+        sum = sum + raw make_big(i);
+        i = i + 1i64;
+    }
+    if (sum >= 0i64) { exit 0; }
+    exit 1;
+};

@@ -1,0 +1,40 @@
+// BUG-258 (v0.27.8): use-after-free returns NULL (no UB).
+// Allocates 16 handles, deref each (all nonzero), free each, then deref
+// each AGAIN (all must be 0 — generation bump invalidates the slot, the
+// runtime returns NULL rather than the stale buffer).
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    if (a < 0i64) { exit 2; }
+
+    Handle<int8>:h0 = raw HandleArena.alloc(a, 32i64);
+    Handle<int8>:h1 = raw HandleArena.alloc(a, 32i64);
+    Handle<int8>:h2 = raw HandleArena.alloc(a, 32i64);
+    Handle<int8>:h3 = raw HandleArena.alloc(a, 32i64);
+
+    if (raw HandleArena.deref(h0) == 0i64) { exit 3; }
+    if (raw HandleArena.deref(h1) == 0i64) { exit 4; }
+    if (raw HandleArena.deref(h2) == 0i64) { exit 5; }
+    if (raw HandleArena.deref(h3) == 0i64) { exit 6; }
+
+    raw HandleArena.free(h0);
+    raw HandleArena.free(h1);
+    raw HandleArena.free(h2);
+    raw HandleArena.free(h3);
+
+    if (raw HandleArena.deref(h0) != 0i64) { exit 7; }
+    if (raw HandleArena.deref(h1) != 0i64) { exit 8; }
+    if (raw HandleArena.deref(h2) != 0i64) { exit 9; }
+    if (raw HandleArena.deref(h3) != 0i64) { exit 10; }
+
+    raw HandleArena.destroy(a);
+    exit 0;
+};

@@ -359,6 +359,48 @@ void npk_wildx_set_quota(size_t bytes);
  */
 uint64_t npk_wildx_verify_hash(WildXGuard* guard);
 
+// =============================================================================
+// v0.27.5: Pointer-keyed WildX lifecycle (surface `wildx` keyword support)
+// =============================================================================
+//
+// Aria's `wildx` binding qualifier exposes a raw pointer (`int8@`/`int8->`)
+// to user code, but the underlying allocator returns a `WildXGuard` struct
+// holding the W^X state machine. The wrappers below maintain a process-wide
+// `void* -> WildXGuard` registry so the surface language can drive the full
+// alloc -> seal -> exec -> free lifecycle through plain pointers, while the
+// runtime keeps enforcing the W^X invariant, double-free rejection, and the
+// FNV-1a integrity hash.
+//
+// Thread safety: backed by a single `std::mutex` guarding the registry.
+// Errors are reported on stderr ("[WildX] panic: ...") and surfaced as a
+// non-zero return so the Aria caller can react via `failsafe`.
+
+/**
+ * Allocate a WildX page (initial state: WRITABLE) and register the
+ * resulting guard under its `.ptr` value.
+ *
+ * @param size  Bytes requested (rounded up to one page internally).
+ * @return      Page-aligned writable pointer, or NULL on quota exhaustion.
+ */
+void* npk_wildx_alloc(size_t size);
+
+/**
+ * Transition the page backing `ptr` from WRITABLE -> EXECUTABLE.
+ *
+ * @return 0 on success; -1 if `ptr` is unknown to the registry, already
+ *         sealed, or the underlying mprotect call fails. A clear panic
+ *         message is printed to stderr on every failure.
+ */
+int npk_wildx_seal(void* ptr);
+
+/**
+ * Free a WildX page previously returned by `npk_wildx_alloc`.
+ *
+ * @return 0 on success; -1 if `ptr` is NULL or not in the registry
+ *         (double-free / foreign pointer). Prints a panic message on -1.
+ */
+int npk_wildx_free(void* ptr);
+
 #ifdef __cplusplus
 }
 #endif

@@ -2200,6 +2200,39 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         }
 
         // ====================================================================
+        // v0.27.5: WildX (W^X executable memory) lifecycle builtins
+        // ====================================================================
+        // wildx_alloc(size: int64) -> wildx int8@   -- writable page
+        // wildx_seal(ptr: wildx int8@) -> int32     -- W -> X transition
+        // wildx_free(ptr: wildx int8@) -> int32     -- munmap; 0=ok, -1=double-free
+        if (idExpr->name == "wildx_alloc") {
+            if (expr->arguments.size() != 1) {
+                addError("wildx_alloc() requires exactly one argument (size in bytes)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPointerType(typeSystem->getPrimitiveType("int8"));
+        }
+        if (idExpr->name == "wildx_seal" || idExpr->name == "wildx_free") {
+            if (expr->arguments.size() != 1) {
+                addError(idExpr->name + "() requires exactly one argument (pointer)", expr);
+                return typeSystem->getErrorType();
+            }
+            Type* argType = inferType(expr->arguments[0].get());
+            if (argType->getKind() == TypeKind::ERROR) {
+                return typeSystem->getErrorType();
+            }
+            if (argType->getKind() != TypeKind::POINTER) {
+                addError(idExpr->name + "() requires a pointer argument, got '" + argType->toString() + "'", expr);
+                return typeSystem->getErrorType();
+            }
+            return typeSystem->getPrimitiveType("int32");
+        }
+
+        // ====================================================================
         // STRING LIBRARY BUILTINS (Phase 4.3)
         // ====================================================================
         

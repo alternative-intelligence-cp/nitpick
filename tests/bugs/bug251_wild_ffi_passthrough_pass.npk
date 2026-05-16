@@ -1,0 +1,26 @@
+// BUG-251 (v0.27.6): FFI-style passthrough of a wild buffer to a
+// borrow-typed parameter still works. Mirrors the common shape where
+// a wild allocation is handed to an in-Aria reader/writer via $$i/$$m,
+// then released after the call returns and the borrow drops.
+//
+// Expected: compile and exit 0.
+
+func:fill_first = int32($$m int8->:p) {
+    pass 0;
+};
+
+func:probe_first = int8($$i int8->:p) {
+    pass 7i8;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wild int8->:buf = alloc(128);
+    fixed int32:rc = raw fill_first(buf);
+    fixed int8:probe = raw probe_first(buf);
+    free(buf);
+    exit 0;
+};

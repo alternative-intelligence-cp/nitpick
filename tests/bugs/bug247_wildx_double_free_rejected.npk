@@ -1,0 +1,18 @@
+// BUG-247 (v0.27.5): Static rejection of double `wildx_free` on the same binding.
+// `wildx_free` is registered as a deallocator (KNOWN_DEALLOCATORS), so the
+// borrow checker flags the second call as ARIA-022 at compile time. The
+// runtime registry would also reject this with rc=-1, but a compile-time
+// rejection is strictly safer and prevents the broken program from running.
+//
+// Expected: compile FAILS with ARIA-022.
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(32);
+    fixed int32:free1 = wildx_free(page);
+    fixed int32:free2 = wildx_free(page);
+    exit 0;
+};

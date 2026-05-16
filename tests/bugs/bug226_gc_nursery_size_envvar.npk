@@ -1,0 +1,16 @@
+// bug226 — v0.26.4 / MEM-011: NPK_GC_NURSERY_SIZE env-var tunes the
+// nursery capacity. The runner sets NPK_GC_NURSERY_SIZE=8388608 (8 MB)
+// before exec; the program asks the runtime for the resolved capacity
+// and exits 0 when it sees 8 MB. Without the env-var the runtime would
+// fall back to the 4 MB default and we'd exit 2 instead.
+
+extern func:npk_gc_nursery_size_bytes = int64();
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:got = npk_gc_nursery_size_bytes();
+    int64:want = 8388608i64; // 8 MB — set by the runner via env-var.
+    if (got == want) { exit 0; }
+    exit 2;
+};

@@ -1,0 +1,25 @@
+// bug237 — v0.27.2 / ARIA-029 GC_REF_FROM_WILD
+//
+// Naive case. A user writes `wild Holder->:p = h;` expecting to
+// stash the gc value's address into a wild pointer for FFI. The
+// type checker rejects (`Holder` value vs `Holder@` pointer) and
+// — new in v0.27.2 — annotates the error with a region-aware
+// hint suggesting the pin operator. Without this hint the user
+// has no clear path from the error to the fix.
+//
+// The diagnostic must mention both ARIA-029 and the pin operator.
+// Compare bug238 (the suggested fix) and bug239 (raw wild
+// allocation, no gc origin — clean compile).
+//
+// Expected: compile fails with ARIA-029 + 'pin operator' hint.
+
+struct:Holder = { int32:value; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    gc Holder:h = Holder{value: 7i32};
+    // Naive: forgets the pin. Hint should suggest `#h`.
+    wild Holder->:p = h;
+    exit 0;
+};

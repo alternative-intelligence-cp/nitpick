@@ -133,6 +133,7 @@ module ARIA-SYNTAX
                 | Exp "->" Id "=" Exp ";" [strict(1, 3)]
                 | "exit" Exp ";" [strict]
                 | "exit" "(" Exp ")" ";" [strict, prefer]
+                | "gc_cycle" ";"
                 | "if" "(" Exp ")" Block "else" Block [strict(1)]
                 | "if" "(" Exp ")" Block [strict(1)]
                 | "pick" "(" Exp ")" "{" PickCases "}" [strict(1)]
@@ -414,6 +415,14 @@ module ARIA
        <failsafe> FS </failsafe>
        <failsafe-triggered> _ => true </failsafe-triggered>
     requires notBool(isStorePointer(V))
+
+  // -------------------------------------------------------------------------
+  // gc_cycle: abstract garbage-collector cycle.
+  // Pinned objects are address-stable by construction: a gc_cycle reduces
+  // to .K and touches none of <env>, <store>, <pinned-hosts>, so any pin's
+  // location is invariant across any sequence of gc_cycle reductions.
+  // -------------------------------------------------------------------------
+  rule <k> gc_cycle ; => .K ... </k>
 
   // -------------------------------------------------------------------------
   // Borrow permission qualifiers: $$i / $$m

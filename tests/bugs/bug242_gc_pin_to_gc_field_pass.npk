@@ -1,0 +1,19 @@
+// bug242 — v0.27.3 / ARIA-031 negative control (gc→gc field)
+//
+// Storing a gc-region pin into a gc-rooted struct field is fine:
+// both the host and the source share the gc heap's lifetime, so the
+// field can safely outlive the surrounding stack frame.
+//
+// Expected exit: 0.
+
+struct:Holder = { int32->:p; };
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    stack int32:seed = 0i32;
+    gc Holder:h = Holder{p: @seed};
+    gc int32:y = 99i32;
+    h.p = #y;
+    exit 0;
+};

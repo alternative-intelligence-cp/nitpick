@@ -279,6 +279,15 @@ ObjHeader* npk_gc_get_header(void* ptr);
  */
 bool npk_gc_is_heap_pointer(void* ptr);
 
+/**
+ * v0.26.5 / MEM-013: ABI-safe variant of `npk_gc_is_heap_pointer`.
+ * Returns 1 (in heap) or 0 (not in heap) as a fully-extended `int32_t`.
+ * Use this from Nitpick `extern` declarations: the System V x86-64
+ * ABI for `_Bool` / `uint8_t` returns leaves the upper bits of EAX
+ * undefined, which fooled fixtures that read the result as `int32`.
+ */
+int32_t npk_gc_is_heap_pointer_i32(void* ptr);
+
 // =============================================================================
 // GC Initialization and Shutdown
 // =============================================================================
@@ -368,6 +377,29 @@ void npk_gc_register_type_layout(uint16_t type_id, const size_t* ref_offsets, si
  * Default: disabled (STW mark).
  */
 void npk_gc_enable_concurrent(uint8_t enable);
+
+// =============================================================================
+// v0.26.4 / MEM-011: Tuning observability
+// =============================================================================
+
+/**
+ * Return the configured nursery capacity in bytes (after env-var
+ * resolution). Lazy-initializes the GC if not yet started.
+ */
+size_t npk_gc_nursery_size_bytes(void);
+
+/**
+ * Return the configured old-generation threshold in bytes (after
+ * env-var resolution). Lazy-initializes the GC if not yet started.
+ */
+size_t npk_gc_old_gen_threshold_bytes(void);
+
+/**
+ * Return 1 if the concurrent collector mode is enabled (NPK_GC_MODE
+ * = "concurrent" or `npk_gc_enable_concurrent(1)` called), else 0.
+ * Lazy-initializes the GC if not yet started.
+ */
+uint8_t npk_gc_concurrent_enabled(void);
 
 /**
  * GC safepoint poll.

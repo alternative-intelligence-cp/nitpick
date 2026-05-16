@@ -1,6 +1,5 @@
 // codegen_expr_call.cpp — Split from codegen_expr.cpp for parallel builds (v0.8.2)
 #include "backend/ir/codegen_expr.h"
-#include "backend/ir/codegen_stmt.h"
 #include "frontend/ast/expr.h"
 #include "frontend/ast/stmt.h"
 #include "frontend/ast/ast_node.h"
@@ -3573,6 +3572,82 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
             new_size = builder.CreateZExtOrTrunc(new_size, builder.getInt64Ty());
         }
         return builder.CreateCall(realloc_func, {ptr, new_size}, "realloc_ptr");
+    }
+
+    // ====================================================================
+    // v0.27.5: WildX (W^X executable memory) lifecycle builtins
+    // ====================================================================
+    // wildx_alloc(size: int64) -> wildx int8@   (writable page)
+    // wildx_seal(ptr: wildx int8@) -> int32     (W -> X transition; 0=ok)
+    // wildx_free(ptr: wildx int8@) -> int32     (munmap; 0=ok, -1=double-free)
+    //
+    // Routes through the pointer-keyed registry in wildx_alloc.cpp so that
+    // the surface language can drive the full W^X state machine through
+    // plain pointers without exposing the WildXGuard struct.
+
+    if (callee_ident->name == "wildx_alloc") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("wildx_alloc() requires exactly one argument (size)");
+        }
+        llvm::Function* fn = module->getFunction("npk_wildx_alloc");
+        if (!fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getPtrTy(),
+                {builder.getInt64Ty()},
+                false);
+            fn = llvm::Function::Create(ft,
+                llvm::Function::ExternalLinkage, "npk_wildx_alloc", module);
+        }
+        llvm::Value* size = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (size->getType()->isStructTy()) {
+            size = builder.CreateExtractValue(size, {0, 0}, "size.limb0");
+        } else if (!size->getType()->isIntegerTy()) {
+            throw std::runtime_error("wildx_alloc() size must be an integer type");
+        }
+        if (!size->getType()->isIntegerTy(64)) {
+            size = builder.CreateZExtOrTrunc(size, builder.getInt64Ty(), "size.i64");
+        }
+        return builder.CreateCall(fn, {size}, "wildx_ptr");
+    }
+
+    if (callee_ident->name == "wildx_seal") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("wildx_seal() requires exactly one argument (pointer)");
+        }
+        llvm::Function* fn = module->getFunction("npk_wildx_seal");
+        if (!fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getPtrTy()},
+                false);
+            fn = llvm::Function::Create(ft,
+                llvm::Function::ExternalLinkage, "npk_wildx_seal", module);
+        }
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!ptr->getType()->isPointerTy()) {
+            ptr = builder.CreateIntToPtr(ptr, builder.getPtrTy());
+        }
+        return builder.CreateCall(fn, {ptr}, "wildx_seal_rc");
+    }
+
+    if (callee_ident->name == "wildx_free") {
+        if (expr->arguments.size() != 1) {
+            throw std::runtime_error("wildx_free() requires exactly one argument (pointer)");
+        }
+        llvm::Function* fn = module->getFunction("npk_wildx_free");
+        if (!fn) {
+            llvm::FunctionType* ft = llvm::FunctionType::get(
+                builder.getInt32Ty(),
+                {builder.getPtrTy()},
+                false);
+            fn = llvm::Function::Create(ft,
+                llvm::Function::ExternalLinkage, "npk_wildx_free", module);
+        }
+        llvm::Value* ptr = codegenExpressionNode(expr->arguments[0].get(), this);
+        if (!ptr->getType()->isPointerTy()) {
+            ptr = builder.CreateIntToPtr(ptr, builder.getPtrTy());
+        }
+        return builder.CreateCall(fn, {ptr}, "wildx_free_rc");
     }
 
     // ====================================================================

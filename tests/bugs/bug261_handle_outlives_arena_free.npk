@@ -1,0 +1,18 @@
+// BUG-261 (v0.27.9, ARIA-032): handle outlives arena — explicit destroy
+// then free of a handle bound to that arena must be a static error.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    raw HandleArena.destroy(a);
+    raw HandleArena.free(h);             // ERROR: a was destroyed above
+    exit 0;
+};

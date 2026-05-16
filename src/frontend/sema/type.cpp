@@ -26,6 +26,15 @@ bool PrimitiveType::isAssignableTo(const Type* target) const {
         return true;
     }
 
+    // v0.27.8: int64 → Handle<T> coercion. Handle<T> lowers to int64 at IR
+    // level (the v0.27.7 packed npk_handle_t), so the result of e.g.
+    // `npk_handle_alloc(arena, size) -> int64` can be stored in a typed
+    // Handle<T> binding. T enforcement still happens between Handle<U>
+    // and Handle<V> (rejected unless U==V) inside HandleType::isAssignableTo.
+    if (target->getKind() == TypeKind::HANDLE && name == "int64") {
+        return true;
+    }
+
     // Only allow coercion between primitive types
     if (target->getKind() != TypeKind::PRIMITIVE) {
         return false;
@@ -694,12 +703,24 @@ bool HandleType::isAssignableTo(const Type* target) const {
         return false;
     }
     
-    // Handle<T> can assign to Handle<T> if T matches
+    // Handle<T> can assign to Handle<U> only if T equals U exactly.
+    // Even though int32 widens to int64 for primitives, Handle<int32> must
+    // NOT silently flow into Handle<int64> — the runtime allocation size
+    // and downstream typed accessors depend on T being preserved.
     if (target->getKind() == TypeKind::HANDLE) {
         const HandleType* targetHandle = static_cast<const HandleType*>(target);
-        return pointeeType->isAssignableTo(targetHandle->pointeeType);
+        return pointeeType->equals(targetHandle->pointeeType);
     }
-    
+
+    // v0.27.8: Handle<T> → int64. Handle<T> lowers to int64 at IR level,
+    // so it can flow into extern functions taking int64 (e.g. npk_handle_free).
+    if (target->getKind() == TypeKind::PRIMITIVE) {
+        const PrimitiveType* targetPrim = static_cast<const PrimitiveType*>(target);
+        if (targetPrim->getName() == "int64") {
+            return true;
+        }
+    }
+
     // Cannot assign Handle<T> to T (requires explicit .get())
     return false;
 }

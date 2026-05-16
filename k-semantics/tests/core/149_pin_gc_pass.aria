@@ -1,0 +1,16 @@
+// expect-exit: 42
+// v0.26.3.x / MEM-010: pinning a gc-bound value produces a pin alias
+// through which `<-` deref returns the bound value. Combines the gc
+// region (146) with the pin operator + deref (061) — exercises the
+// path that v0.26.3.{1,2,3} made first-class in the compiler/runtime.
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:main = int32() {
+    gc int32:x = 42;
+    int32->:p = #x;
+    int32:got = <-p;
+    exit got;
+};

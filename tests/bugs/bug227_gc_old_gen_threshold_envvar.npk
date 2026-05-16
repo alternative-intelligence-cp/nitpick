@@ -1,0 +1,15 @@
+// bug227 — v0.26.4 / MEM-011: NPK_GC_OLD_GEN_THRESHOLD env-var tunes
+// the old-generation threshold. Runner sets NPK_GC_OLD_GEN_THRESHOLD
+// =33554432 (32 MB); the program reads the resolved threshold and
+// exits 0 on match. Default would be 64 MB.
+
+extern func:npk_gc_old_gen_threshold_bytes = int64();
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int64:got = npk_gc_old_gen_threshold_bytes();
+    int64:want = 33554432i64; // 32 MB — set by runner.
+    if (got == want) { exit 0; }
+    exit 2;
+};

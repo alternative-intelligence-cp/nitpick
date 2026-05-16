@@ -398,3 +398,85 @@ uint64_t npk_wildx_verify_hash(WildXGuard* guard) {
 
 // Note: npk_allocator_get_stats() is implemented in wild_alloc.cpp
 // This file only provides the WildX statistics via global atomics
+
+// =============================================================================
+// v0.27.5: Pointer-keyed WildX lifecycle (surface `wildx` keyword)
+// =============================================================================
+//
+// The Aria surface language exposes `wildx int8->:b = wildx_alloc(N);` style
+// bindings. Underneath, every wildx page lives in a process-wide registry
+// keyed by the writable pointer the allocator returned. The registry owns
+// the WildXGuard so seal/free can be driven through plain pointers without
+// the user juggling the struct.
+
+#include <unordered_map>
+
+namespace {
+std::mutex g_wildx_registry_mutex;
+std::unordered_map<void*, WildXGuard>& wildx_registry() {
+    static std::unordered_map<void*, WildXGuard> r;
+    return r;
+}
+
+void wildx_panic(const char* op, const void* ptr, const char* reason) {
+    std::fprintf(stderr,
+        "[WildX] panic: %s(%p) rejected: %s\n", op, ptr, reason);
+}
+} // namespace
+
+extern "C" void* npk_wildx_alloc(size_t size) {
+    WildXGuard guard = npk_alloc_exec(size);
+    if (!guard.ptr) {
+        return nullptr;  // quota exhausted / mmap failed (already logged)
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_wildx_registry_mutex);
+        wildx_registry().emplace(guard.ptr, guard);
+    }
+    return guard.ptr;
+}
+
+extern "C" int npk_wildx_seal(void* ptr) {
+    if (!ptr) {
+        wildx_panic("wildx_seal", ptr, "null pointer");
+        return -1;
+    }
+    WildXGuard* gptr = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(g_wildx_registry_mutex);
+        auto it = wildx_registry().find(ptr);
+        if (it == wildx_registry().end()) {
+            wildx_panic("wildx_seal", ptr, "pointer not in WildX registry");
+            return -1;
+        }
+        gptr = &it->second;
+    }
+    int rc = npk_mem_protect_exec(gptr);
+    if (rc != 0) {
+        wildx_panic("wildx_seal", ptr,
+            "npk_mem_protect_exec failed (already sealed or mprotect error)");
+        return -1;
+    }
+    return 0;
+}
+
+extern "C" int npk_wildx_free(void* ptr) {
+    if (!ptr) {
+        wildx_panic("wildx_free", ptr, "null pointer (double-free?)");
+        return -1;
+    }
+    WildXGuard local_guard;
+    {
+        std::lock_guard<std::mutex> lk(g_wildx_registry_mutex);
+        auto it = wildx_registry().find(ptr);
+        if (it == wildx_registry().end()) {
+            wildx_panic("wildx_free", ptr,
+                "pointer not in WildX registry (double-free or foreign ptr)");
+            return -1;
+        }
+        local_guard = it->second;
+        wildx_registry().erase(it);
+    }
+    npk_free_exec(&local_guard);
+    return 0;
+}

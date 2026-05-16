@@ -338,18 +338,16 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         return typeSystem->getErrorType();
     }
     
-    // P1-3 Phase 3: Handle<T> member access
-    // Handle<T> has two fields: index (i64) and generation (i32)
+    // v0.27.8: Handle<T> is now an int64 alias (packed npk_handle_t),
+    // not a struct. The legacy .index / .generation accessors are
+    // retired — users go through HandleArena.deref(h) / HandleArena.free(h)
+    // and the runtime owns the bit layout (see include/runtime/handle.h).
     if (objectType->getKind() == TypeKind::HANDLE) {
-        if (expr->member == "index") {
-            return typeSystem->getPrimitiveType("int64");  // size_t = i64
-        } else if (expr->member == "generation") {
-            return typeSystem->getPrimitiveType("int32");  // u32 = i32
-        } else {
-            addError("Handle<T> has no member named '" + expr->member + 
-                    "'. Available fields: index, generation", expr);
-            return typeSystem->getErrorType();
-        }
+        addError("Handle<T> has no member named '" + expr->member +
+                "'. Handle<T> is an opaque packed handle — use "
+                "HandleArena.deref(h) to obtain the buffer pointer "
+                "and HandleArena.free(h) to release it.", expr);
+        return typeSystem->getErrorType();
     }
     
     // For pointer types with safe navigation, check if it's a pointer to struct
