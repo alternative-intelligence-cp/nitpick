@@ -785,6 +785,16 @@ private:
     // A-004: Maps variable name → limitRulesName, populated in checkVarDecl.
     std::unordered_map<std::string, std::string> var_limit_rules_;
 
+    // v0.27.9 (ARIA-032 — handle-outlives-arena): track which arena binding
+    // each Handle<T> binding was allocated from, plus the set of arena
+    // bindings that have been explicitly destroyed via HandleArena.destroy.
+    // Populated by checkVarDecl when the initializer is HandleArena.alloc(a,
+    // size) where `a` is a plain identifier; consulted by checkCallExpr at
+    // every HandleArena.{deref,free} use to fail the static check if the
+    // arena has been destroyed earlier in the same function body.
+    std::unordered_map<std::string, std::string> handle_arena_map_;
+    std::unordered_set<std::string> destroyed_arenas_;
+
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping
     bool proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2);

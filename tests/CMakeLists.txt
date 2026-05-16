@@ -1007,3 +1007,23 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "memory;handles;v0.27.8"
     )
 endif()
+
+# ============================================================================
+# v0.27.9 — Handle<T> Phase 3: borrow-checker tying + ARIA-032 (bug260-bug263)
+# ============================================================================
+# Static rejection of `HandleArena.deref(h)` / `HandleArena.free(h)` after the
+# arena that backed `h` has been destroyed. bug260/261 are compile-fail cases
+# (ARIA-032); bug262/263 are positive controls confirming the rule only fires
+# when destroy precedes a use of a handle tied to that exact arena.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0279
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0279.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0279 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;handles;borrow;v0.27.9"
+    )
+endif()

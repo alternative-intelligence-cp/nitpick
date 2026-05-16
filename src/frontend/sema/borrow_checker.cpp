@@ -1912,6 +1912,46 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
         recordWildAlloc(stmt->varName, stmt, alloc_size_expr);
     }
+
+    // ========================================================================
+    // v0.27.9 (ARIA-032 — handle outlives arena): if this binding's
+    // initializer is `HandleArena.alloc(arena, size)` (optionally wrapped
+    // in `raw(...)`), record the (handle -> arena) tie so later uses of
+    // the handle can be flagged when the arena has been destroyed.
+    // ========================================================================
+    if (stmt->initializer) {
+        ASTNode* init = stmt->initializer.get();
+        // Peek through `raw(...)` / `drop(...)` single-arg wrappers.
+        while (init && init->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(init);
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& n = static_cast<IdentifierExpr*>(call->callee.get())->name;
+                if ((n == "raw" || n == "drop") && call->arguments.size() == 1) {
+                    init = call->arguments[0].get();
+                    continue;
+                }
+            }
+            break;
+        }
+        if (init && init->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(init);
+            // Parser pre-mangles `HandleArena.alloc(...)` to an IdentifierExpr
+            // with name "HandleArena_alloc" (parser.cpp ~line 1935) before
+            // sema ever runs, so match on that mangled name here.
+            if (call->callee && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& cn =
+                    static_cast<IdentifierExpr*>(call->callee.get())->name;
+                if (cn == "HandleArena_alloc" &&
+                    !call->arguments.empty() &&
+                    call->arguments[0] &&
+                    call->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& arena_name =
+                        static_cast<IdentifierExpr*>(call->arguments[0].get())->name;
+                    handle_arena_map_[stmt->varName] = arena_name;
+                }
+            }
+        }
+    }
 }
 
 void BorrowChecker::checkAssignment(BinaryExpr* expr) {
@@ -3459,6 +3499,43 @@ void BorrowChecker::checkIdentifier(IdentifierExpr* expr) {
 
 void BorrowChecker::checkCallExpr(CallExpr* expr) {
     if (!expr) return;
+
+    // ========================================================================
+    // v0.27.9 (ARIA-032 — handle outlives arena): inspect HandleArena.*
+    // method calls. `destroy(a)` marks the arena dead; `deref(h)` /
+    // `free(h)` on a handle whose recorded arena is dead → static error.
+    // The parser pre-mangles `HandleArena.foo(...)` into an IdentifierExpr
+    // named "HandleArena_foo" (parser.cpp ~line 1935), so match on that.
+    // Runs BEFORE child traversal so the outermost call site is what gets
+    // flagged in diagnostics.
+    // ========================================================================
+    if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+        const std::string& cn =
+            static_cast<IdentifierExpr*>(expr->callee.get())->name;
+        if (cn == "HandleArena_destroy" &&
+            !expr->arguments.empty() &&
+            expr->arguments[0] &&
+            expr->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+            destroyed_arenas_.insert(
+                static_cast<IdentifierExpr*>(expr->arguments[0].get())->name);
+        } else if ((cn == "HandleArena_deref" || cn == "HandleArena_free") &&
+                   !expr->arguments.empty() &&
+                   expr->arguments[0] &&
+                   expr->arguments[0]->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& h =
+                static_cast<IdentifierExpr*>(expr->arguments[0].get())->name;
+            auto it = handle_arena_map_.find(h);
+            if (it != handle_arena_map_.end() &&
+                destroyed_arenas_.count(it->second)) {
+                addError("Handle '" + h + "' outlives its arena '" +
+                         it->second + "'. The arena was destroyed earlier "
+                         "in this function; the handle is no longer valid. "
+                         "See ARIA-032 and guide/memory/handles.md",
+                         expr);
+                tagCode("ARIA-032");
+            }
+        }
+    }
 
     // Check all arguments
     for (const auto& arg : expr->arguments) {
