@@ -986,3 +986,24 @@ set_tests_properties(runtime_handle_v0277 PROPERTIES
     TIMEOUT 60
     LABELS "memory;handles;runtime;v0.27.7"
 )
+
+# ============================================================================
+# v0.27.8 — Handle<T> Phase 2 typed surface (bug256-bug259)
+# ============================================================================
+# Exercises the Aria-side Handle<T> + HandleArena module on top of the
+# v0.27.7 npk_handle_* C ABI. bug256 round-trips alloc/deref/free; bug257
+# locks in that Handle<int32> ≠ Handle<int64> at the type checker;
+# bug258 confirms use-after-free deref returns NULL (not stale pointer);
+# bug259 confirms arena destroy invalidates all of its outstanding handles.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0278
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0278.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0278 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "memory;handles;v0.27.8"
+    )
+endif()

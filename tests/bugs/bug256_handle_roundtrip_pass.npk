@@ -1,0 +1,31 @@
+// BUG-256 (v0.27.8): typed Handle<T> alloc → deref → free roundtrip.
+// Locks in the v0.27.8 Phase 2 typed surface where Handle<T> lowers
+// to int64 (the v0.27.7 packed npk_handle_t) and HandleArena.alloc
+// hands back a generation-checked handle that deref turns into a
+// real buffer pointer (nonzero) and that free invalidates (deref → 0).
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    if (a < 0i64) { exit 2; }
+
+    Handle<int64>:hp = raw HandleArena.alloc(a, 8i64);
+
+    int64:p_live = raw HandleArena.deref(hp);
+    if (p_live == 0i64) { exit 3; }
+
+    raw HandleArena.free(hp);
+
+    int64:p_dead = raw HandleArena.deref(hp);
+    if (p_dead != 0i64) { exit 4; }
+
+    raw HandleArena.destroy(a);
+    exit 0;
+};

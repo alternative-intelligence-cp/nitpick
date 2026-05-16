@@ -1,0 +1,20 @@
+// BUG-257 (v0.27.8): Handle<T> type tag is enforced at compile time.
+// Locks in that even though Handle<T> lowers to int64 at IR level,
+// the type checker rejects assigning Handle<int32> into Handle<int64>
+// (HandleType::isAssignableTo only accepts a matching pointee type).
+//
+// Expected: compile failure (do NOT produce a binary).
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:hi32 = raw HandleArena.alloc(a, 4i64);
+    Handle<int64>:hi64 = hi32;  // ERROR: Handle<int32> ≠ Handle<int64>
+    raw HandleArena.destroy(a);
+    exit 0;
+};

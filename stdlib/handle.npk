@@ -1,0 +1,58 @@
+// stdlib/handle.npk — Generational handles (v0.27.8 — Phase 2 typed surface)
+//
+// Wraps the v0.27.7 npk_handle_* C ABI with a typed Aria surface.
+// Use Handle<T> to declare typed handle bindings; the runtime layer
+// is generation-checked so use-after-free returns NULL (no UB).
+//
+// Surface:
+//   use "handle.aria".*;
+//
+//   int64:a = HandleArena.create();
+//   int64:h = HandleArena.alloc(a, 8i64);          // raw handle (int64)
+//   Handle<int64>:hp = h;                          // typed binding
+//   int64:p = HandleArena.deref(hp);               // ptr-as-int64; 0 = stale
+//   HandleArena.free(hp);
+//   HandleArena.destroy(a);
+//
+// Runtime ABI (see include/runtime/handle.h, src/runtime/allocators/handle_alloc.cpp):
+//   npk_handle_t = int64 packed [generation:32 | arena_id:16 | slot_index:16]
+//   gen 0 = NULL; saturated slots are retired (no wrap-around).
+
+extern func:npk_handle_arena_create  = int64();
+extern func:npk_handle_arena_destroy = void(int64:arena);
+extern func:npk_handle_alloc         = int64(int64:arena, int64:size);
+extern func:npk_handle_deref         = int64(int64:h);
+extern func:npk_handle_free          = void(int64:h);
+
+Type:HandleArena = {
+    // create() — make a new generational arena. Returns arena id (>= 0).
+    func:create = int64() {
+        pass npk_handle_arena_create();
+    };
+
+    // destroy(arena) — tear down the arena. Bumps every slot's generation
+    // so any outstanding handles fail subsequent gen checks.
+    func:destroy = int32(int64:arena) {
+        npk_handle_arena_destroy(arena);
+        pass 0i32;
+    };
+
+    // alloc(arena, size) — allocate `size` bytes; returns a packed handle
+    // (int64). Caller usually stores into a Handle<T>:h binding.
+    func:alloc = int64(int64:arena, int64:size) {
+        pass npk_handle_alloc(arena, size);
+    };
+
+    // deref(h) — returns underlying buffer pointer as int64. Returns 0
+    // on NULL handle, stale generation, or freed slot. Caller must check.
+    func:deref = int64(int64:h) {
+        pass npk_handle_deref(h);
+    };
+
+    // free(h) — release the slot and bump its generation. No-op on stale
+    // or NULL handles.
+    func:free = int32(int64:h) {
+        npk_handle_free(h);
+        pass 0i32;
+    };
+};

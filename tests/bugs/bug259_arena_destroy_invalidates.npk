@@ -1,0 +1,33 @@
+// BUG-259 (v0.27.8): arena destroy invalidates outstanding handles.
+// Two arenas, allocate handles in each, destroy arena A, ensure A's
+// handles deref to 0 while B's handles still resolve.
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int64:b = raw HandleArena.create();
+    if (a < 0i64) { exit 2; }
+    if (b < 0i64) { exit 3; }
+
+    Handle<int8>:ha = raw HandleArena.alloc(a, 64i64);
+    Handle<int8>:hb = raw HandleArena.alloc(b, 64i64);
+
+    if (raw HandleArena.deref(ha) == 0i64) { exit 4; }
+    if (raw HandleArena.deref(hb) == 0i64) { exit 5; }
+
+    raw HandleArena.destroy(a);
+
+    if (raw HandleArena.deref(ha) != 0i64) { exit 6; }
+    if (raw HandleArena.deref(hb) == 0i64) { exit 7; }
+
+    raw HandleArena.destroy(b);
+    if (raw HandleArena.deref(hb) != 0i64) { exit 8; }
+    exit 0;
+};

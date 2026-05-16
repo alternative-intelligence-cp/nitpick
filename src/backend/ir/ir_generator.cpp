@@ -688,19 +688,12 @@ llvm::Type* IRGenerator::mapType(Type* npk_type) {
         }
         
         case TypeKind::HANDLE: {
-            // Handle type for generational arena: Handle<T>
-            // Runtime layout: { size_t index, uint32_t generation }
-            // Reference: include/runtime/gen_arena.h (npk_handle)
-            // P1-3 Phase 3: Handle operations & generation checks
-            auto* handle_type = static_cast<HandleType*>(npk_type);
-            (void)handle_type;
-            
-            std::vector<llvm::Type*> handle_fields = {
-                builder.getInt64Ty(),  // index (field 0) - size_t (usize)
-                builder.getInt32Ty()   // generation (field 1) - uint32_t (u32)
-            };
-            
-            llvm_type = llvm::StructType::get(context, handle_fields);
+            // v0.27.8: Handle<T> lowers to int64 — matches the v0.27.7
+            // npk_handle_t packed ABI [generation:32 | arena_id:16 | slot:16].
+            // T is carried only at type-check time; zero runtime overhead
+            // beyond the in-runtime generation check inside npk_handle_deref.
+            // Reference: include/runtime/handle.h, src/runtime/allocators/handle_alloc.cpp
+            llvm_type = builder.getInt64Ty();
             break;
         }
         
@@ -1902,6 +1895,13 @@ llvm::Type* IRGenerator::mapTypeFromName(const std::string& type_name) {
         });
     }
     
+    // v0.27.8: Handle<T> lowers to int64 (the v0.27.7 packed npk_handle_t).
+    // T is type-check-only; runtime value is just int64. Mirror the mapType()
+    // case above so name-based lookup (used by VarDecl alloca sizing) agrees.
+    if (type_name.size() > 7 && type_name.substr(0, 7) == "Handle<" && type_name.back() == '>') {
+        return builder.getInt64Ty();
+    }
+
     // Check for optional types (e.g., "int64?", "string?")
     // Optional types are represented as structs: { i1 hasValue, T value }
     if (type_name.size() >= 2 && type_name.back() == '?') {
