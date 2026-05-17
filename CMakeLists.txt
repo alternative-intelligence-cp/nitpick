@@ -300,6 +300,7 @@ set(RUNTIME_SOURCES
     src/runtime/assembler/assembler.cpp
     src/runtime/assembler/llvm_jit.cpp
     src/runtime/assembler/code_cache.cpp
+    src/runtime/assembler/jit_smoke.cpp
     src/runtime/io/io.cpp
     src/runtime/io/zero_copy_bridge.cpp
     src/runtime/streams/streams.cpp

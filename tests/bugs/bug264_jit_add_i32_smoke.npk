@@ -1,0 +1,33 @@
+// BUG-264 (v0.28.1): JIT end-to-end smoke test.
+//
+// Allocates a wildx page, writes hand-assembled x86-64 machine code
+// for `int32 add(int32, int32)` via `npk_jit_install_add_i32`, seals
+// the page (W^X transitions WRITABLE -> EXECUTABLE), invokes the
+// JIT'd function through `npk_jit_call_i32_i32`, and tears the page
+// down with `wildx_free`.
+//
+// Closes the loop opened by v0.27.5's wildx lifecycle: a Nitpick
+// program can now produce executable code at runtime, call it, and
+// release it, using only surface builtins plus two minimal C helpers.
+//
+// Expected: exit 0 (write_rc == 0, seal_rc == 0, free_rc == 0,
+// 7 + 35 == 42).
+
+extern func:npk_jit_install_add_i32 = int32(wild ?*:page);
+extern func:npk_jit_call_i32_i32    = int32(wild ?*:page, int32:a, int32:b);
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(64);
+    fixed int32:write_rc = npk_jit_install_add_i32(page);
+    fixed int32:seal_rc = wildx_seal(page);
+    fixed int32:result = npk_jit_call_i32_i32(page, 7i32, 35i32);
+    fixed int32:free_rc = wildx_free(page);
+    if (write_rc == 0 && seal_rc == 0 && free_rc == 0 && result == 42i32) {
+        exit 0;
+    }
+    exit 2;
+};

@@ -1027,3 +1027,25 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "memory;handles;borrow;v0.27.9"
     )
 endif()
+
+# ============================================================================
+# v0.28.1 — JIT end-to-end smoke (bug264)
+# ============================================================================
+# Closes the wildx W^X loop opened in v0.27.5: a Nitpick program allocates
+# a wildx page, installs hand-assembled x86-64 machine code for
+# `int32 add(int32, int32)` via npk_jit_install_add_i32, seals the page,
+# invokes the JIT'd function via npk_jit_call_i32_i32, and frees the page.
+# x86-64 only this cycle (JIT-DEC-002); the runner self-skips on other
+# architectures.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0281
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0281.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0281 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "jit;wildx;v0.28.1"
+    )
+endif()
