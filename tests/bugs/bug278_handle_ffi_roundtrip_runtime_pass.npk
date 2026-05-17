@@ -1,0 +1,48 @@
+// BUG-278 (v0.28.5, ARIA-032 FFI passthrough rule): end-to-end
+// roundtrip through int64 across the FFI edge — the runtime
+// generation check catches a stale handle even though the static
+// rule deliberately stopped tracking at the cast.
+//
+// Workflow:
+//   1. alloc handle, deref → nonzero pointer (live).
+//   2. cast handle to int64, "send across FFI" (just rebind).
+//   3. recover handle from the int64 token (no cast back needed —
+//      HandleArena.deref accepts the int64 already), deref →
+//      nonzero (still live).
+//   4. free the handle.
+//   5. deref the recovered int64 token → 0 (generation check
+//      catches the stale handle).
+//
+// Expected: compile cleanly (no ARIA-032 warning — the explicit
+// `@cast<int64>` silences it) and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+
+    int64:p_live = raw HandleArena.deref(h);
+    if (p_live == 0i64) { exit 2; }
+
+    // Cross the FFI edge as an int64 token (explicit cast).
+    int64:tok = @cast<int64>(h);
+
+    // Recover-via-token: HandleArena.deref already takes int64.
+    int64:p_via_tok = raw HandleArena.deref(tok);
+    if (p_via_tok == 0i64) { exit 3; }
+
+    // Invalidate, then verify the runtime generation check
+    // catches the stale token.
+    raw HandleArena.free(h);
+
+    int64:p_dead = raw HandleArena.deref(tok);
+    if (p_dead != 0i64) { exit 4; }
+
+    raw HandleArena.destroy(a);
+    exit 0;
+};

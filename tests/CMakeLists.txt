@@ -1112,3 +1112,20 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "borrow;handles;aria-032;v0.28.4.1"
     )
 endif()
+
+# bug_tests_v0285 — ARIA-032 FFI passthrough rule (v0.28.5).
+# Warns when a tracked Handle<T> is passed directly to an extern
+# function; the explicit @cast<int64>(h) wrapper silences the
+# warning; runtime generation check remains the universal backstop.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0285
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0285.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0285 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;ffi;v0.28.5"
+    )
+endif()

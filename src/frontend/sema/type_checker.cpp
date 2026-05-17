@@ -1724,6 +1724,24 @@ Type* TypeChecker::inferCastExpr(CastExpr* expr) {
     if (sourceIsPointer && targetIsPointer) {
         return targetType;  // Cast succeeds, return target type
     }
+
+    // v0.28.5 (ARIA-032 FFI passthrough rule): allow explicit casts
+    // between `Handle<T>` and `int64` in either direction. Handles
+    // lower to int64 packed tokens at the C ABI; the cast is the
+    // user-visible "I am crossing the FFI edge" marker. The borrow
+    // checker uses the cast as a silencer for its FFI passthrough
+    // warning. Past the cast there is no static tracking; the
+    // runtime generation check is the only backstop.
+    bool sourceIsHandle = sourceType->isHandle();
+    bool targetIsHandle = targetType->isHandle();
+    bool sourceIsInt64  = sourceType->isPrimitive() &&
+                          sourceType->toString() == "int64";
+    bool targetIsInt64  = targetType->isPrimitive() &&
+                          targetType->toString() == "int64";
+    if ((sourceIsHandle && targetIsInt64) ||
+        (sourceIsInt64 && targetIsHandle)) {
+        return targetType;
+    }
     
     // Both types must be primitive numeric types for numeric casts
     if (!sourceType->isPrimitive() || !targetType->isPrimitive()) {

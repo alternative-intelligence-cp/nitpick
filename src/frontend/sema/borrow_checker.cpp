@@ -671,6 +671,7 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
     summary.returns_borrow_imm = func->returnIsBorrowImm;
     summary.returns_borrow_mut = func->returnIsBorrowMut;
     summary.returns_wild = func->returnIsWild;
+    summary.is_extern = func->isExtern;
     
     for (const auto& param : func->parameters) {
         if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
@@ -3812,6 +3813,41 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     destroyed_arenas_.insert(
                         static_cast<IdentifierExpr*>(
                             expr->arguments[pi].get())->name);
+                }
+            }
+
+            // v0.28.5 (ARIA-032 FFI passthrough rule): if the callee is
+            // an `extern` function, warn when a tracked handle is passed
+            // directly (bare identifier in handle_arena_map_). The static
+            // rule deliberately stops at the FFI edge — past the cast,
+            // the runtime generation check is the only backstop. Users
+            // can silence the warning by writing `@cast<int64>(h)` to
+            // make the intentional escape explicit; the cast wrapper is
+            // a CastExpr, not an IdentifierExpr, so it bypasses this
+            // check naturally.
+            if (summary.is_extern) {
+                for (size_t i = 0; i < expr->arguments.size(); ++i) {
+                    ASTNode* arg = expr->arguments[i].get();
+                    if (!arg || arg->type !=
+                        ASTNode::NodeType::IDENTIFIER) continue;
+                    const std::string& an =
+                        static_cast<IdentifierExpr*>(arg)->name;
+                    if (handle_arena_map_.find(an) !=
+                        handle_arena_map_.end()) {
+                        addWarning(
+                            "Handle '" + an + "' passed directly to "
+                            "extern function '" + cn + "'. Handles cross "
+                            "the FFI boundary as int64 tokens; the "
+                            "borrow checker stops tracking past this "
+                            "point. Wrap with @cast<int64>(" + an +
+                            ") to make the intentional escape explicit. "
+                            "See ARIA-032 and guide/handles/ffi.md",
+                            arg);
+                        // Tag the warning under ARIA-032 so tests and
+                        // diagnostics surface the same code as the
+                        // intra/cross-function escape errors.
+                        tagCode("ARIA-032");
+                    }
                 }
             }
         }

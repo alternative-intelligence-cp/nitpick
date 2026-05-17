@@ -1,0 +1,33 @@
+// BUG-276 (v0.28.5, ARIA-032 FFI passthrough rule): the canonical
+// way to cross the FFI boundary with a handle is to cast it to
+// int64 first. `@cast<int64>(h)` is the user's explicit "I know
+// this leaves the static rule's domain" marker; the borrow
+// checker treats the cast as a silencer and emits no warning.
+//
+// Expected: compile cleanly (NO warning containing ARIA-032)
+// and exit 0.
+
+use "handle.npk".*;
+
+extern func:npk_handle_arena_destroy = void(int64:arena);
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 2; }
+
+    // Explicit cast: hand the raw int64 token across the FFI edge.
+    // No warning expected — the cast makes the escape intentional.
+    int64:token = @cast<int64>(h);
+    if (token == 0i64) { exit 3; }
+
+    raw HandleArena.free(h);
+    raw HandleArena.destroy(a);
+    exit 0;
+};

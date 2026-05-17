@@ -722,6 +722,12 @@ struct FunctionBorrowSummary {
     // sites, the matching argument's bound arena is marked destroyed.
     std::set<size_t> destroys_param_indices;
 
+    // v0.28.5 (ARIA-032 FFI passthrough rule): true when this function is
+    // declared `extern` (no body to analyse). Call sites use this to emit
+    // the FFI passthrough warning when a tracked handle is passed to an
+    // extern callee without an explicit `@cast<int64>(...)` wrapper.
+    bool is_extern = false;
+
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;
