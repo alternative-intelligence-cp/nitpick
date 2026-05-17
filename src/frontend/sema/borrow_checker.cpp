@@ -1577,9 +1577,11 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 auto saved_handle_map = handle_arena_map_;
                 auto saved_destroyed = destroyed_arenas_;
                 auto saved_local_arenas = local_arenas_;
+                auto saved_struct_handles = struct_handle_arenas_;
                 handle_arena_map_.clear();
                 destroyed_arenas_.clear();
                 local_arenas_.clear();
+                struct_handle_arenas_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1591,6 +1593,7 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 handle_arena_map_ = std::move(saved_handle_map);
                 destroyed_arenas_ = std::move(saved_destroyed);
                 local_arenas_ = std::move(saved_local_arenas);
+                struct_handle_arenas_ = std::move(saved_struct_handles);
             }
             current_function = prev_function;
             break;
@@ -2049,6 +2052,27 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 // handles that would outlive the frame.
                 if (cn == "HandleArena_create") {
                     local_arenas_.insert(stmt->varName);
+                }
+            }
+        }
+        // v0.28.4.1 (ARIA-032 Phase 2 part B): recognise a struct literal
+        // initializer whose fields bind known handles. Record each handle
+        // field's bound arena so a later `pass <struct>` can be checked
+        // against `local_arenas_`.
+        if (init && init->type == ASTNode::NodeType::OBJECT_LITERAL) {
+            auto* obj = static_cast<ObjectLiteralExpr*>(init);
+            if (!obj->type_name.empty()) {
+                for (const auto& f : obj->fields) {
+                    if (f.value &&
+                        f.value->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& vn =
+                            static_cast<IdentifierExpr*>(f.value.get())->name;
+                        auto it = handle_arena_map_.find(vn);
+                        if (it != handle_arena_map_.end()) {
+                            struct_handle_arenas_[stmt->varName]
+                                .push_back(it->second);
+                        }
+                    }
                 }
             }
         }
@@ -3135,6 +3159,27 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
                      "guide/memory/handles.md",
                      context);
             tagCode("ARIA-032");
+            return;
+        }
+        // v0.28.4.1 (Phase 2 part B): if the identifier names a struct
+        // binding with handle-bearing fields, check each tracked arena.
+        auto sit = struct_handle_arenas_.find(hname);
+        if (sit != struct_handle_arenas_.end()) {
+            for (const auto& aname : sit->second) {
+                if (local_arenas_.count(aname)) {
+                    addError("Struct '" + hname + "' contains a handle "
+                             "bound to arena '" + aname + "', which is "
+                             "local to this function. Returning the "
+                             "struct would leave the embedded handle "
+                             "stale at every caller. Thread the arena "
+                             "in as a parameter so the caller owns its "
+                             "lifetime. See ARIA-032 and "
+                             "guide/memory/handles.md",
+                             context);
+                    tagCode("ARIA-032");
+                    return;
+                }
+            }
         }
         return;
     }
@@ -3163,6 +3208,36 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
                              "See ARIA-032 and guide/memory/handles.md",
                              context);
                     tagCode("ARIA-032");
+                }
+            }
+        }
+        return;
+    }
+
+    // Case C (v0.28.4.1): inline struct literal — `pass HBox{ h: h }` —
+    // walk fields and reject any handle field bound to a local arena.
+    if (node->type == ASTNode::NodeType::OBJECT_LITERAL) {
+        auto* obj = static_cast<ObjectLiteralExpr*>(node);
+        if (!obj->type_name.empty()) {
+            for (const auto& f : obj->fields) {
+                if (f.value &&
+                    f.value->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& vn =
+                        static_cast<IdentifierExpr*>(f.value.get())->name;
+                    auto it = handle_arena_map_.find(vn);
+                    if (it != handle_arena_map_.end() &&
+                        local_arenas_.count(it->second)) {
+                        addError("Struct literal field '" + f.name +
+                                 "' binds handle '" + vn +
+                                 "' whose arena '" + it->second +
+                                 "' is local to this function. The "
+                                 "returned struct would leave the "
+                                 "handle stale at every caller. See "
+                                 "ARIA-032 and guide/memory/handles.md",
+                                 context);
+                        tagCode("ARIA-032");
+                        return;
+                    }
                 }
             }
         }

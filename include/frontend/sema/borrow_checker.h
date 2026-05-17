@@ -812,6 +812,17 @@ private:
     // escape. Save/restored around each function body in checkStatement.
     std::unordered_set<std::string> local_arenas_;
 
+    // v0.28.4.1 (ARIA-032 Phase 2 part B): for each struct-typed binding,
+    // the list of arena names referenced by its handle-bearing fields at
+    // construction time. Populated in checkVarDecl when the initializer
+    // is an ObjectLiteralExpr with a struct type_name and one or more
+    // fields whose value is an IdentifierExpr in handle_arena_map_.
+    // Consulted by checkHandleArenaEscape at return/pass: if any tracked
+    // arena is in local_arenas_, the struct cannot escape. Save/restored
+    // per-function like the other handle maps.
+    std::unordered_map<std::string, std::vector<std::string>>
+        struct_handle_arenas_;
+
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping
     bool proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2);

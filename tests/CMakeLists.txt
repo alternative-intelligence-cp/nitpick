@@ -1096,3 +1096,19 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "borrow;handles;aria-032;v0.28.4"
     )
 endif()
+
+# bug_tests_v02841 — Cross-function ARIA-032 Phase 2 part B (v0.28.4.1).
+# Rejects returning a struct whose Handle field is bound to a locally-
+# created arena; allows the same shape when arena is threaded as param.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v02841
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02841.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02841 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;v0.28.4.1"
+    )
+endif()

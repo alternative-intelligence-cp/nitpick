@@ -1,0 +1,28 @@
+// BUG-273 (v0.28.4.1, ARIA-032 Phase 2 part B): a struct field holds
+// a Handle bound to a locally-created arena. Returning the struct
+// would leave the embedded handle stale at every caller, so the
+// borrow checker must reject the return.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+struct:HBox = {
+    int64:h;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_box = HBox() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    HBox:b = HBox{h: h};
+    pass b;                               // ERROR: a is local to make_box()
+};
+
+func:main = int32() {
+    HBox:b = raw make_box();
+    exit 0;
+};
