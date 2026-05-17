@@ -1,0 +1,24 @@
+// BUG-272 (v0.28.4, ARIA-032 Phase 2): inline `pass raw
+// HandleArena.alloc(<localArena>, ...)` is rejected — the borrow
+// checker must see through `raw` and recognize the literal alloc
+// against a locally-created arena.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make = int64() {
+    int64:a = raw HandleArena.create();
+    pass raw HandleArena.alloc(a, 4i64); // ERROR: a is local to make()
+};
+
+func:main = int32() {
+    int64:h = raw make();
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 0; }
+    exit 0;
+};

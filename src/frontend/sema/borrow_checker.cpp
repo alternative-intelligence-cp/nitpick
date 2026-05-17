@@ -4,6 +4,7 @@
 #endif
 #include <sstream>
 #include <algorithm>
+#include <functional>
 #include <iostream>
 
 namespace npk {
@@ -670,6 +671,7 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
     summary.returns_borrow_imm = func->returnIsBorrowImm;
     summary.returns_borrow_mut = func->returnIsBorrowMut;
     summary.returns_wild = func->returnIsWild;
+    summary.is_extern = func->isExtern;
     
     for (const auto& param : func->parameters) {
         if (!param || param->type != ASTNode::NodeType::PARAMETER) continue;
@@ -708,6 +710,87 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         if (count == 1) {
             summary.return_borrow_source_param = single;
         }
+    }
+
+    // v0.28.3 (ARIA-032 cross-function Phase 1): scan the function body
+    // for `HandleArena_destroy(<param_name>)` calls and record the
+    // corresponding parameter indices. At call sites, the bound arena
+    // of the matching argument will be marked destroyed so subsequent
+    // handle uses are caught by the existing v0.27.9 mechanism. Externs
+    // (no body) are conservatively ignored — they cannot be analyzed
+    // here and would need explicit annotation (deferred to v0.28.5).
+    if (func->body && !func->isExtern) {
+        std::function<void(ASTNode*)> scan = [&](ASTNode* n) {
+            if (!n) return;
+            if (n->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(n);
+                if (call->callee &&
+                    call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cn =
+                        static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    if (cn == "HandleArena_destroy" &&
+                        !call->arguments.empty() &&
+                        call->arguments[0] &&
+                        call->arguments[0]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& aname =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[0].get())->name;
+                        for (size_t i = 0;
+                             i < summary.param_names.size(); ++i) {
+                            if (summary.param_names[i] == aname) {
+                                summary.destroys_param_indices.insert(i);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Recurse into statement/expression children.
+            switch (n->type) {
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) scan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::EXPRESSION_STMT: {
+                    auto* es = static_cast<ExpressionStmt*>(n);
+                    scan(es->expression.get());
+                    break;
+                }
+                case ASTNode::NodeType::VAR_DECL: {
+                    auto* vd = static_cast<VarDeclStmt*>(n);
+                    scan(vd->initializer.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    scan(is->condition.get());
+                    scan(is->thenBranch.get());
+                    scan(is->elseBranch.get());
+                    break;
+                }
+                case ASTNode::NodeType::CALL: {
+                    auto* c = static_cast<CallExpr*>(n);
+                    scan(c->callee.get());
+                    for (const auto& a : c->arguments) scan(a.get());
+                    break;
+                }
+                case ASTNode::NodeType::RETURN: {
+                    auto* r = static_cast<ReturnStmt*>(n);
+                    scan(r->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::PASS: {
+                    auto* p = static_cast<PassStmt*>(n);
+                    scan(p->value.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        scan(func->body.get());
     }
 
     return summary;
@@ -1488,6 +1571,18 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 LifetimeContext saved_ctx = ctx.snapshot();
                 ctx = LifetimeContext();  // Fresh context for this function
                 ctx.enterScope();
+                // v0.28.3: handle/arena state must NOT leak across function
+                // boundaries — names like `a` are scoped per function and
+                // a `destroyed_arenas_` entry from one function would
+                // produce false-positive ARIA-032 in another. Save/restore.
+                auto saved_handle_map = handle_arena_map_;
+                auto saved_destroyed = destroyed_arenas_;
+                auto saved_local_arenas = local_arenas_;
+                auto saved_struct_handles = struct_handle_arenas_;
+                handle_arena_map_.clear();
+                destroyed_arenas_.clear();
+                local_arenas_.clear();
+                struct_handle_arenas_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1496,6 +1591,10 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 }
                 ctx.exitScope();
                 ctx.restore(saved_ctx);
+                handle_arena_map_ = std::move(saved_handle_map);
+                destroyed_arenas_ = std::move(saved_destroyed);
+                local_arenas_ = std::move(saved_local_arenas);
+                struct_handle_arenas_ = std::move(saved_struct_handles);
             }
             current_function = prev_function;
             break;
@@ -1948,6 +2047,33 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                     const std::string& arena_name =
                         static_cast<IdentifierExpr*>(call->arguments[0].get())->name;
                     handle_arena_map_[stmt->varName] = arena_name;
+                }
+                // v0.28.4 (ARIA-032 Phase 2): track arenas created locally
+                // in the current function. Used at return/pass to reject
+                // handles that would outlive the frame.
+                if (cn == "HandleArena_create") {
+                    local_arenas_.insert(stmt->varName);
+                }
+            }
+        }
+        // v0.28.4.1 (ARIA-032 Phase 2 part B): recognise a struct literal
+        // initializer whose fields bind known handles. Record each handle
+        // field's bound arena so a later `pass <struct>` can be checked
+        // against `local_arenas_`.
+        if (init && init->type == ASTNode::NodeType::OBJECT_LITERAL) {
+            auto* obj = static_cast<ObjectLiteralExpr*>(init);
+            if (!obj->type_name.empty()) {
+                for (const auto& f : obj->fields) {
+                    if (f.value &&
+                        f.value->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& vn =
+                            static_cast<IdentifierExpr*>(f.value.get())->name;
+                        auto it = handle_arena_map_.find(vn);
+                        if (it != handle_arena_map_.end()) {
+                            struct_handle_arenas_[stmt->varName]
+                                .push_back(it->second);
+                        }
+                    }
                 }
             }
         }
@@ -2952,6 +3078,9 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
         if (!current_function.empty()) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
+
+        // v0.28.4 (ARIA-032 Phase 2): handle from a local arena cannot escape
+        checkHandleArenaEscape(stmt->value.get(), stmt);
     }
 
     // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
@@ -2979,10 +3108,141 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
         if (!current_function.empty()) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
+
+        // v0.28.4 (ARIA-032 Phase 2): handle from a local arena cannot escape
+        checkHandleArenaEscape(stmt->value.get(), stmt);
     }
 
     // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
     checkForLeaksAllScopes();
+}
+
+// v0.28.4 (ARIA-032 Phase 2 — handle return from local arena):
+// Reject `pass h` / `return h` (and the inline form `pass raw
+// HandleArena.alloc(localArena, ...)`) when the bound arena was created
+// in THIS function. Such a handle is dead the moment the caller resumes
+// because the arena id is a stack-local int64 and the runtime's slot
+// table is keyed off that id only for the lifetime of the create/destroy
+// pair owned by this frame. Threading the arena down from a caller is
+// fine — that arena is NOT in `local_arenas_`.
+void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
+    if (!value) return;
+
+    // Peel `raw(...)` / `drop(...)` wrappers — `raw HandleArena.alloc(...)`
+    // shows up as CallExpr("raw", [CallExpr("HandleArena_alloc", ...)]).
+    ASTNode* node = value;
+    while (node && node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        if (call->callee &&
+            call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& n =
+                static_cast<IdentifierExpr*>(call->callee.get())->name;
+            if ((n == "raw" || n == "drop") && call->arguments.size() == 1) {
+                node = call->arguments[0].get();
+                continue;
+            }
+        }
+        break;
+    }
+    if (!node) return;
+
+    // Case A: returning a Handle binding — look up its arena.
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        const std::string& hname = static_cast<IdentifierExpr*>(node)->name;
+        auto it = handle_arena_map_.find(hname);
+        if (it != handle_arena_map_.end() &&
+            local_arenas_.count(it->second)) {
+            addError("Handle '" + hname + "' is returned but its arena '" +
+                     it->second + "' is local to this function. The handle "
+                     "is invalid at every caller. Thread the arena in as a "
+                     "parameter (or expose a destroy hook) so the caller "
+                     "owns its lifetime. See ARIA-032 and "
+                     "guide/memory/handles.md",
+                     context);
+            tagCode("ARIA-032");
+            return;
+        }
+        // v0.28.4.1 (Phase 2 part B): if the identifier names a struct
+        // binding with handle-bearing fields, check each tracked arena.
+        auto sit = struct_handle_arenas_.find(hname);
+        if (sit != struct_handle_arenas_.end()) {
+            for (const auto& aname : sit->second) {
+                if (local_arenas_.count(aname)) {
+                    addError("Struct '" + hname + "' contains a handle "
+                             "bound to arena '" + aname + "', which is "
+                             "local to this function. Returning the "
+                             "struct would leave the embedded handle "
+                             "stale at every caller. Thread the arena "
+                             "in as a parameter so the caller owns its "
+                             "lifetime. See ARIA-032 and "
+                             "guide/memory/handles.md",
+                             context);
+                    tagCode("ARIA-032");
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    // Case B: returning a fresh `HandleArena.alloc(<localArena>, size)`.
+    if (node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        if (call->callee &&
+            call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& cn =
+                static_cast<IdentifierExpr*>(call->callee.get())->name;
+            if (cn == "HandleArena_alloc" &&
+                !call->arguments.empty() &&
+                call->arguments[0] &&
+                call->arguments[0]->type ==
+                    ASTNode::NodeType::IDENTIFIER) {
+                const std::string& aname =
+                    static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                if (local_arenas_.count(aname)) {
+                    addError("Handle returned from `HandleArena.alloc("
+                             + aname + ", ..)` is invalid at the caller — "
+                             "arena '" + aname + "' is local to this "
+                             "function. Thread the arena in as a "
+                             "parameter so the caller owns its lifetime. "
+                             "See ARIA-032 and guide/memory/handles.md",
+                             context);
+                    tagCode("ARIA-032");
+                }
+            }
+        }
+        return;
+    }
+
+    // Case C (v0.28.4.1): inline struct literal — `pass HBox{ h: h }` —
+    // walk fields and reject any handle field bound to a local arena.
+    if (node->type == ASTNode::NodeType::OBJECT_LITERAL) {
+        auto* obj = static_cast<ObjectLiteralExpr*>(node);
+        if (!obj->type_name.empty()) {
+            for (const auto& f : obj->fields) {
+                if (f.value &&
+                    f.value->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& vn =
+                        static_cast<IdentifierExpr*>(f.value.get())->name;
+                    auto it = handle_arena_map_.find(vn);
+                    if (it != handle_arena_map_.end() &&
+                        local_arenas_.count(it->second)) {
+                        addError("Struct literal field '" + f.name +
+                                 "' binds handle '" + vn +
+                                 "' whose arena '" + it->second +
+                                 "' is local to this function. The "
+                                 "returned struct would leave the "
+                                 "handle stale at every caller. See "
+                                 "ARIA-032 and guide/memory/handles.md",
+                                 context);
+                        tagCode("ARIA-032");
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 // v0.25.0 (BORROW-001 triage): `fail <expr>;` early-exit was previously
@@ -3533,6 +3793,62 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "See ARIA-032 and guide/memory/handles.md",
                          expr);
                 tagCode("ARIA-032");
+            }
+        }
+
+        // v0.28.3 (ARIA-032 cross-function Phase 1): if the callee's
+        // summary marks one or more parameter indices as destroyed by
+        // the callee body (`HandleArena_destroy(param)` inside), mark
+        // the bound arena of the corresponding argument as destroyed
+        // here too. The existing intra-function rule above then catches
+        // any later `deref` / `free` on handles tied to that arena.
+        auto sumIt = func_summaries.find(cn);
+        if (sumIt != func_summaries.end()) {
+            const auto& summary = sumIt->second;
+            for (size_t pi : summary.destroys_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    destroyed_arenas_.insert(
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name);
+                }
+            }
+
+            // v0.28.5 (ARIA-032 FFI passthrough rule): if the callee is
+            // an `extern` function, warn when a tracked handle is passed
+            // directly (bare identifier in handle_arena_map_). The static
+            // rule deliberately stops at the FFI edge — past the cast,
+            // the runtime generation check is the only backstop. Users
+            // can silence the warning by writing `@cast<int64>(h)` to
+            // make the intentional escape explicit; the cast wrapper is
+            // a CastExpr, not an IdentifierExpr, so it bypasses this
+            // check naturally.
+            if (summary.is_extern) {
+                for (size_t i = 0; i < expr->arguments.size(); ++i) {
+                    ASTNode* arg = expr->arguments[i].get();
+                    if (!arg || arg->type !=
+                        ASTNode::NodeType::IDENTIFIER) continue;
+                    const std::string& an =
+                        static_cast<IdentifierExpr*>(arg)->name;
+                    if (handle_arena_map_.find(an) !=
+                        handle_arena_map_.end()) {
+                        addWarning(
+                            "Handle '" + an + "' passed directly to "
+                            "extern function '" + cn + "'. Handles cross "
+                            "the FFI boundary as int64 tokens; the "
+                            "borrow checker stops tracking past this "
+                            "point. Wrap with @cast<int64>(" + an +
+                            ") to make the intentional escape explicit. "
+                            "See ARIA-032 and guide/handles/ffi.md",
+                            arg);
+                        // Tag the warning under ARIA-032 so tests and
+                        // diagnostics surface the same code as the
+                        // intra/cross-function escape errors.
+                        tagCode("ARIA-032");
+                    }
+                }
             }
         }
     }

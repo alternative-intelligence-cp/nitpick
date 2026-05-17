@@ -1,0 +1,26 @@
+// BUG-267 (v0.28.3, ARIA-032 cross-function Phase 1): a helper that
+// destroys an arena passed in by id propagates the destruction back
+// to the caller. Using a handle bound to that arena AFTER the helper
+// call must be a static error tagged ARIA-032.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroyer = int32(int64:a) {
+    raw HandleArena.destroy(a);
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw destroyer(a);          // helper destroys a internally
+    if (rc != 0i32) { exit 2; }
+    raw HandleArena.free(h);              // ERROR: a was destroyed by callee
+    exit 0;
+};

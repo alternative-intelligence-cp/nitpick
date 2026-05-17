@@ -1,0 +1,32 @@
+// BUG-274 (v0.28.4.1, ARIA-032 Phase 2 part B — positive corollary):
+// a helper that takes the arena id as a parameter and returns a
+// struct containing a Handle bound to that parameter MUST compile.
+// The arena lives in the caller frame.
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+struct:HBox = {
+    int64:h;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_box_in = HBox(int64:a) {
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    HBox:b = HBox{h: h};
+    pass b;                               // OK: a is a parameter
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    HBox:b = raw make_box_in(a);
+    int64:p = raw HandleArena.deref(b.h);
+    if (p == 0i64) { exit 2; }
+    raw HandleArena.free(b.h);
+    raw HandleArena.destroy(a);
+    exit 0;
+};

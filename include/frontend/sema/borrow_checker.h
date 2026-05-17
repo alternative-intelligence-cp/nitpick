@@ -714,6 +714,20 @@ struct FunctionBorrowSummary {
     // explicit annotation (deferred to a later cycle).
     int return_borrow_source_param = -1;
     
+    // v0.28.3 (ARIA-032 cross-function Phase 1): indices of params that
+    // this function destroys via a direct `HandleArena_destroy(param)`
+    // call somewhere in its body. Discovered statically in `buildSummary`
+    // by scanning the function body for `HandleArena_destroy(<ident>)`
+    // calls whose argument identifier matches a parameter name. At call
+    // sites, the matching argument's bound arena is marked destroyed.
+    std::set<size_t> destroys_param_indices;
+
+    // v0.28.5 (ARIA-032 FFI passthrough rule): true when this function is
+    // declared `extern` (no body to analyse). Call sites use this to emit
+    // the FFI passthrough warning when a tracked handle is passed to an
+    // extern callee without an explicit `@cast<int64>(...)` wrapper.
+    bool is_extern = false;
+
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;
@@ -794,6 +808,26 @@ private:
     // arena has been destroyed earlier in the same function body.
     std::unordered_map<std::string, std::string> handle_arena_map_;
     std::unordered_set<std::string> destroyed_arenas_;
+
+    // v0.28.4 (ARIA-032 Phase 2): arenas declared LOCALLY in the current
+    // function (initializer was `HandleArena_create()`). Used by return/
+    // pass to reject returning a `Handle<T>` (or a fresh `HandleArena_alloc`
+    // call) whose arena is local — the handle is dead the moment the
+    // function frame unwinds. Parameters and arenas threaded in from a
+    // caller are NOT entered here, so handles from them may legitimately
+    // escape. Save/restored around each function body in checkStatement.
+    std::unordered_set<std::string> local_arenas_;
+
+    // v0.28.4.1 (ARIA-032 Phase 2 part B): for each struct-typed binding,
+    // the list of arena names referenced by its handle-bearing fields at
+    // construction time. Populated in checkVarDecl when the initializer
+    // is an ObjectLiteralExpr with a struct type_name and one or more
+    // fields whose value is an IdentifierExpr in handle_arena_map_.
+    // Consulted by checkHandleArenaEscape at return/pass: if any tracked
+    // arena is in local_arenas_, the struct cannot escape. Save/restored
+    // per-function like the other handle maps.
+    std::unordered_map<std::string, std::vector<std::string>>
+        struct_handle_arenas_;
 
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping
@@ -1035,6 +1069,11 @@ private:
     
     // v0.6.1: Return type borrow validation
     void checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context);
+
+    // v0.28.4 (ARIA-032 Phase 2): reject returning/passing a Handle<T> bound
+    // to a locally-created arena, or a fresh `HandleArena.alloc(<localArena>,
+    // ..)` expression. Consults `local_arenas_` + `handle_arena_map_`.
+    void checkHandleArenaEscape(ASTNode* value, ASTNode* context);
 
     // v0.6.2: Trait Integration
     void checkTraitDeclStmt(TraitDeclStmt* stmt);

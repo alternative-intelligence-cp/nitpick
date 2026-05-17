@@ -1027,3 +1027,126 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "memory;handles;borrow;v0.27.9"
     )
 endif()
+
+# ============================================================================
+# v0.28.1 — JIT end-to-end smoke (bug264)
+# ============================================================================
+# Closes the wildx W^X loop opened in v0.27.5: a Nitpick program allocates
+# a wildx page, installs hand-assembled x86-64 machine code for
+# `int32 add(int32, int32)` via npk_jit_install_add_i32, seals the page,
+# invokes the JIT'd function via npk_jit_call_i32_i32, and frees the page.
+# x86-64 only this cycle (JIT-DEC-002); the runner self-skips on other
+# architectures.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0281
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0281.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0281 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "jit;wildx;v0.28.1"
+    )
+endif()
+
+# bug_tests_v0282 — JIT helper API via stdlib/jit.npk (v0.28.2).
+# Same x86-64-only constraint (JIT-DEC-002); runner self-skips elsewhere.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0282
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0282.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0282 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "jit;wildx;v0.28.2"
+    )
+endif()
+
+# bug_tests_v0283 — Cross-function ARIA-032 Phase 1 (v0.28.3).
+# Verifies that callees calling HandleArena_destroy(<param>) propagate
+# arena death back to the caller so subsequent handle use is rejected.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0283
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0283.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0283 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;v0.28.3"
+    )
+endif()
+
+# bug_tests_v0284 — Cross-function ARIA-032 Phase 2 part A (v0.28.4).
+# Rejects returning a Handle bound to a locally-created arena; allows
+# returning a Handle bound to an arena threaded in as a parameter.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0284
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0284.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0284 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;v0.28.4"
+    )
+endif()
+
+# bug_tests_v02841 — Cross-function ARIA-032 Phase 2 part B (v0.28.4.1).
+# Rejects returning a struct whose Handle field is bound to a locally-
+# created arena; allows the same shape when arena is threaded as param.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v02841
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_02841.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v02841 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;v0.28.4.1"
+    )
+endif()
+
+# bug_tests_v0285 — ARIA-032 FFI passthrough rule (v0.28.5).
+# Warns when a tracked Handle<T> is passed directly to an extern
+# function; the explicit @cast<int64>(h) wrapper silences the
+# warning; runtime generation check remains the universal backstop.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0285
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0285.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0285 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;ffi;v0.28.5"
+    )
+endif()
+
+# ============================================================================
+# v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
+# ============================================================================
+# Multi-threaded harness exercising the GC pin protocol under contention.
+# The K proof (ARIA-PIN-PROOFS) covers single-mutator behaviour; this
+# slice exercises the implementation with N pin threads + an allocator
+# pressure thread. Tuned for ~5s wall-clock. Decision: PIN-DEC-004 part 2.
+add_executable(test_pin_concurrent_v0286 runtime/test_pin_concurrent_v0286.cpp)
+target_link_libraries(test_pin_concurrent_v0286 PRIVATE aria_runtime)
+target_include_directories(test_pin_concurrent_v0286 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME test_pin_concurrent_v0286
+    COMMAND test_pin_concurrent_v0286
+)
+set_tests_properties(test_pin_concurrent_v0286 PROPERTIES
+    TIMEOUT 60
+    LABELS "memory;gc;pin;runtime;stress;v0.28.6"
+)

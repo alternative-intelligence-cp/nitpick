@@ -1,0 +1,38 @@
+// BUG-277 (v0.28.5, ARIA-032 FFI passthrough rule): passing a
+// tracked Handle<T> binding directly to an extern function (no
+// explicit `@cast<int64>(h)` wrapper) emits a borrow-checker
+// WARNING — not an error. The lossy direction is flagged but
+// compilation still succeeds + produces an executable; the
+// runtime generation check is the universal backstop past the
+// FFI edge.
+//
+// The probe function below is statically analysed but never
+// invoked at runtime (`main` short-circuits with exit 0), so we
+// don't actually invoke the FFI call against a fresh handle.
+//
+// `npk_handle_arena_destroy` is re-declared locally (already
+// part of handle.npk) so the borrow checker's `func_summaries`
+// sees the extern at the same translation unit and the linker
+// finds the real libnpk symbol.
+//
+// Expected: compile succeeds + produces an executable (exit 0),
+// and stderr from npkc contains "ARIA-032" warning text.
+
+use "handle.npk".*;
+
+extern func:npk_handle_arena_destroy = void(int64:arena);
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Statically analysed only — never called at runtime.
+func:probe = int32(int64:a) {
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    npk_handle_arena_destroy(h);   // ← warns ARIA-032 (no cast wrapper)
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};

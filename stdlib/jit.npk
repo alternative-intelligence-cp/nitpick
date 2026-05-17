@@ -1,0 +1,61 @@
+// stdlib/jit.npk — Minimal JIT helper API (v0.28.2)
+//
+// Wraps the wildx W^X lifecycle (wildx_alloc / wildx_seal / wildx_free,
+// v0.27.5) plus the v0.28.1 install/call helpers in
+// src/runtime/assembler/jit_smoke.cpp so user code doesn't need to
+// touch raw wildx_* builtins or extern declarations.
+//
+// This cycle ships exactly one signature: int32 add(int32, int32).
+// Later slices will widen the helper to accept user-supplied bytes
+// + a signature tag once slice/array FFI is in place.
+//
+// Surface:
+//   use "jit.npk".*;
+//
+//   wildx int8->:f = Jit.compile_add_i32();         // alloc + install + seal
+//   int32:r        = Jit.call_i32_i32(f, 7i32, 35i32);   // r == 42
+//   Jit.free(f);                                    // tear down W^X page
+//
+// Decisions (v0.28.2):
+//   * Ownership is explicit (caller must `Jit.free(f)`). RAII via
+//     failsafe is deferred until a later cycle has destructor hooks.
+//   * `JitFn` is currently `wildx int8->` (the raw page pointer). A
+//     richer typed wrapper waits for richer struct-FFI.
+//   * x86-64 Linux only (JIT-DEC-002).
+//
+// Runtime ABI: see src/runtime/assembler/jit_smoke.cpp and
+// src/runtime/allocators/wildx_alloc.cpp.
+
+extern func:npk_jit_install_add_i32 = int32(wild ?*:page);
+extern func:npk_jit_call_i32_i32    = int32(wild ?*:page, int32:a, int32:b);
+
+Type:Jit = {
+    // compile_add_i32() — allocate a wildx page, install the 5-byte
+    // x86-64 add(i32,i32) sequence, and seal the page executable.
+    // Returns the page pointer; caller must eventually `Jit.free` it.
+    func:compile_add_i32 = wildx int8->() {
+        wildx int8->:page = wildx_alloc(64);
+        fixed int32:write_rc = npk_jit_install_add_i32(page);
+        if (write_rc != 0i32) {
+            wildx_free(page);
+        }
+        fixed int32:seal_rc = wildx_seal(page);
+        if (seal_rc != 0i32) {
+            wildx_free(page);
+        }
+        pass page;
+    };
+
+    // call_i32_i32(f, a, b) — invoke a JIT page compiled for the
+    // int32(int32,int32) signature. Caller is responsible for
+    // matching the signature; passing the wrong page is UB.
+    func:call_i32_i32 = int32(wildx int8->:f, int32:a, int32:b) {
+        pass npk_jit_call_i32_i32(f, a, b);
+    };
+
+    // free(f) — release the wildx page. Returns 0 on success, -1
+    // on double-free / foreign pointer (runtime logs a panic line).
+    func:free = int32(wildx int8->:f) {
+        pass wildx_free(f);
+    };
+};

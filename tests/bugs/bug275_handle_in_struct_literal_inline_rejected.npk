@@ -1,0 +1,27 @@
+// BUG-275 (v0.28.4.1, ARIA-032 Phase 2 part B): inline struct
+// literal `pass HBox{h: h}` where `h` is a Handle bound to a local
+// arena. The borrow checker must walk the literal's fields and
+// reject — no intermediate binding is needed.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+struct:HBox = {
+    int64:h;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_box = HBox() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    pass HBox{h: h};                      // ERROR: a is local to make_box()
+};
+
+func:main = int32() {
+    HBox:b = raw make_box();
+    exit 0;
+};

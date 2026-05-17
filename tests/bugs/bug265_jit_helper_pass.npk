@@ -1,0 +1,23 @@
+// BUG-265 (v0.28.2): JIT helper happy-path via stdlib `jit.npk`.
+//
+// Same end-to-end loop as bug264, but routed through the new
+// `Type:Jit` helper module instead of touching `wildx_*` builtins
+// and the `npk_jit_*` externs directly.
+//
+// Expected: exit 0 (page non-null, call returns 42, free returns 0).
+
+use "jit.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:f = raw Jit.compile_add_i32();
+    fixed int32:result = raw Jit.call_i32_i32(f, 7i32, 35i32);
+    fixed int32:free_rc = raw Jit.free(f);
+    if (result == 42i32 && free_rc == 0i32) {
+        exit 0;
+    }
+    exit 2;
+};
