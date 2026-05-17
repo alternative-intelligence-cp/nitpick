@@ -1150,3 +1150,25 @@ set_tests_properties(test_pin_concurrent_v0286 PROPERTIES
     TIMEOUT 60
     LABELS "memory;gc;pin;runtime;stress;v0.28.6"
 )
+
+# ============================================================================
+# v0.28.6.1 — Pin stress UNDER REAL GC PRESSURE (deadlock regression guard)
+# ============================================================================
+# Re-enables the small-nursery + multi-mutator configuration that was
+# deferred in v0.28.6 due to a self-deadlock in `GCCoroAllocator::init_gc`
+# (lazy-constructed inside `minor_gc()` while gc_mutex was held, then
+# re-acquiring it via `npk_gc_init`). Fixed in v0.28.6.1.
+# Requires `stats.num_minor_collections > 0` to prove the GC really fired.
+add_executable(test_pin_gc_pressure_v02861 runtime/test_pin_gc_pressure_v02861.cpp)
+target_link_libraries(test_pin_gc_pressure_v02861 PRIVATE aria_runtime)
+target_include_directories(test_pin_gc_pressure_v02861 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME test_pin_gc_pressure_v02861
+    COMMAND test_pin_gc_pressure_v02861
+)
+set_tests_properties(test_pin_gc_pressure_v02861 PROPERTIES
+    TIMEOUT 60
+    LABELS "memory;gc;pin;runtime;stress;v0.28.6.1;deadlock-regression"
+)

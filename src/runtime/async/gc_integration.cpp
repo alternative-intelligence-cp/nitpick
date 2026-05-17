@@ -149,12 +149,17 @@ void GCCoroAllocator::scan_frames(std::function<void(void*)> mark_fn) {
 }
 
 void GCCoroAllocator::init_gc() {
-    // Initialize GC subsystem if not already running
-    // (npk_gc_init is idempotent)
-    npk_gc_init(4 * 1024 * 1024, 64 * 1024 * 1024);
-    
-    // Store a self-pointer as the gc_handle so we can identify
-    // this allocator instance from C callbacks if needed
+    // v0.28.6.1 / GC-DEADLOCK fix: do NOT call npk_gc_init() here.
+    //
+    // get_global_coro_allocator() can be triggered from inside minor_gc() /
+    // major_gc(), which already hold GCState::gc_mutex. Calling npk_gc_init()
+    // would re-acquire that same (non-recursive) std::mutex and self-deadlock.
+    // npk_gc_init() is idempotent at the data-level, but its lock acquisition
+    // is NOT re-entrant. The runtime caller is responsible for invoking
+    // npk_gc_init() once at startup before any allocation occurs.
+    //
+    // Store a self-pointer as the gc_handle so we can identify this allocator
+    // instance from C callbacks if needed.
     gc_handle = static_cast<void*>(this);
 }
 
