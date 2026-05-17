@@ -1129,3 +1129,24 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "borrow;handles;aria-032;ffi;v0.28.5"
     )
 endif()
+
+# ============================================================================
+# v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
+# ============================================================================
+# Multi-threaded harness exercising the GC pin protocol under contention.
+# The K proof (ARIA-PIN-PROOFS) covers single-mutator behaviour; this
+# slice exercises the implementation with N pin threads + an allocator
+# pressure thread. Tuned for ~5s wall-clock. Decision: PIN-DEC-004 part 2.
+add_executable(test_pin_concurrent_v0286 runtime/test_pin_concurrent_v0286.cpp)
+target_link_libraries(test_pin_concurrent_v0286 PRIVATE aria_runtime)
+target_include_directories(test_pin_concurrent_v0286 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME test_pin_concurrent_v0286
+    COMMAND test_pin_concurrent_v0286
+)
+set_tests_properties(test_pin_concurrent_v0286 PROPERTIES
+    TIMEOUT 60
+    LABELS "memory;gc;pin;runtime;stress;v0.28.6"
+)
