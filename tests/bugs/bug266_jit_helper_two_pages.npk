@@ -1,0 +1,25 @@
+// BUG-266 (v0.28.2): Two independent JIT pages coexist in the wildx
+// registry. Compiling two `add(i32,i32)` regions, calling each, and
+// freeing them in reverse order proves the helper does not have any
+// hidden global / single-slot state.
+//
+// Expected: exit 0 (both calls return 42, both frees succeed).
+
+use "jit.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:f1 = raw Jit.compile_add_i32();
+    wildx int8->:f2 = raw Jit.compile_add_i32();
+    fixed int32:r1 = raw Jit.call_i32_i32(f1, 20i32, 22i32);
+    fixed int32:r2 = raw Jit.call_i32_i32(f2, 17i32, 25i32);
+    fixed int32:free2_rc = raw Jit.free(f2);
+    fixed int32:free1_rc = raw Jit.free(f1);
+    if (r1 == 42i32 && r2 == 42i32 && free1_rc == 0i32 && free2_rc == 0i32) {
+        exit 0;
+    }
+    exit 2;
+};

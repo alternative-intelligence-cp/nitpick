@@ -1049,3 +1049,18 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "jit;wildx;v0.28.1"
     )
 endif()
+
+# bug_tests_v0282 — JIT helper API via stdlib/jit.npk (v0.28.2).
+# Same x86-64-only constraint (JIT-DEC-002); runner self-skips elsewhere.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0282
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0282.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0282 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "jit;wildx;v0.28.2"
+    )
+endif()
