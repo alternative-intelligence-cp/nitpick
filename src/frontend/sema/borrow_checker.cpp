@@ -4,6 +4,7 @@
 #endif
 #include <sstream>
 #include <algorithm>
+#include <functional>
 #include <iostream>
 
 namespace npk {
@@ -708,6 +709,87 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         if (count == 1) {
             summary.return_borrow_source_param = single;
         }
+    }
+
+    // v0.28.3 (ARIA-032 cross-function Phase 1): scan the function body
+    // for `HandleArena_destroy(<param_name>)` calls and record the
+    // corresponding parameter indices. At call sites, the bound arena
+    // of the matching argument will be marked destroyed so subsequent
+    // handle uses are caught by the existing v0.27.9 mechanism. Externs
+    // (no body) are conservatively ignored — they cannot be analyzed
+    // here and would need explicit annotation (deferred to v0.28.5).
+    if (func->body && !func->isExtern) {
+        std::function<void(ASTNode*)> scan = [&](ASTNode* n) {
+            if (!n) return;
+            if (n->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(n);
+                if (call->callee &&
+                    call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cn =
+                        static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    if (cn == "HandleArena_destroy" &&
+                        !call->arguments.empty() &&
+                        call->arguments[0] &&
+                        call->arguments[0]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& aname =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[0].get())->name;
+                        for (size_t i = 0;
+                             i < summary.param_names.size(); ++i) {
+                            if (summary.param_names[i] == aname) {
+                                summary.destroys_param_indices.insert(i);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            // Recurse into statement/expression children.
+            switch (n->type) {
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) scan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::EXPRESSION_STMT: {
+                    auto* es = static_cast<ExpressionStmt*>(n);
+                    scan(es->expression.get());
+                    break;
+                }
+                case ASTNode::NodeType::VAR_DECL: {
+                    auto* vd = static_cast<VarDeclStmt*>(n);
+                    scan(vd->initializer.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    scan(is->condition.get());
+                    scan(is->thenBranch.get());
+                    scan(is->elseBranch.get());
+                    break;
+                }
+                case ASTNode::NodeType::CALL: {
+                    auto* c = static_cast<CallExpr*>(n);
+                    scan(c->callee.get());
+                    for (const auto& a : c->arguments) scan(a.get());
+                    break;
+                }
+                case ASTNode::NodeType::RETURN: {
+                    auto* r = static_cast<ReturnStmt*>(n);
+                    scan(r->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::PASS: {
+                    auto* p = static_cast<PassStmt*>(n);
+                    scan(p->value.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        scan(func->body.get());
     }
 
     return summary;
@@ -1488,6 +1570,14 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 LifetimeContext saved_ctx = ctx.snapshot();
                 ctx = LifetimeContext();  // Fresh context for this function
                 ctx.enterScope();
+                // v0.28.3: handle/arena state must NOT leak across function
+                // boundaries — names like `a` are scoped per function and
+                // a `destroyed_arenas_` entry from one function would
+                // produce false-positive ARIA-032 in another. Save/restore.
+                auto saved_handle_map = handle_arena_map_;
+                auto saved_destroyed = destroyed_arenas_;
+                handle_arena_map_.clear();
+                destroyed_arenas_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1496,6 +1586,8 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 }
                 ctx.exitScope();
                 ctx.restore(saved_ctx);
+                handle_arena_map_ = std::move(saved_handle_map);
+                destroyed_arenas_ = std::move(saved_destroyed);
             }
             current_function = prev_function;
             break;
@@ -3533,6 +3625,27 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "See ARIA-032 and guide/memory/handles.md",
                          expr);
                 tagCode("ARIA-032");
+            }
+        }
+
+        // v0.28.3 (ARIA-032 cross-function Phase 1): if the callee's
+        // summary marks one or more parameter indices as destroyed by
+        // the callee body (`HandleArena_destroy(param)` inside), mark
+        // the bound arena of the corresponding argument as destroyed
+        // here too. The existing intra-function rule above then catches
+        // any later `deref` / `free` on handles tied to that arena.
+        auto sumIt = func_summaries.find(cn);
+        if (sumIt != func_summaries.end()) {
+            const auto& summary = sumIt->second;
+            for (size_t pi : summary.destroys_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    destroyed_arenas_.insert(
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name);
+                }
             }
         }
     }

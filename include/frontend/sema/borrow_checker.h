@@ -714,6 +714,14 @@ struct FunctionBorrowSummary {
     // explicit annotation (deferred to a later cycle).
     int return_borrow_source_param = -1;
     
+    // v0.28.3 (ARIA-032 cross-function Phase 1): indices of params that
+    // this function destroys via a direct `HandleArena_destroy(param)`
+    // call somewhere in its body. Discovered statically in `buildSummary`
+    // by scanning the function body for `HandleArena_destroy(<ident>)`
+    // calls whose argument identifier matches a parameter name. At call
+    // sites, the matching argument's bound arena is marked destroyed.
+    std::set<size_t> destroys_param_indices;
+
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;

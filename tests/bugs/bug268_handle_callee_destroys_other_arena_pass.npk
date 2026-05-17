@@ -1,0 +1,29 @@
+// BUG-268 (v0.28.3, ARIA-032 cross-function Phase 1): the callee
+// destroys arena `a2`, but the live handle is bound to a DIFFERENT
+// arena `a1`. The handle remains valid; compiles and runs.
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroyer = int32(int64:a) {
+    raw HandleArena.destroy(a);
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a1 = raw HandleArena.create();
+    int64:a2 = raw HandleArena.create();
+    Handle<int32>:h1 = raw HandleArena.alloc(a1, 4i64);
+    int32:rc = raw destroyer(a2);         // helper destroys a2, NOT a1
+    if (rc != 0i32) { exit 2; }
+    int64:p = raw HandleArena.deref(h1);  // h1 still bound to a1 (alive)
+    if (p == 0i64) { exit 3; }
+    raw HandleArena.free(h1);
+    raw HandleArena.destroy(a1);
+    exit 0;
+};

@@ -1064,3 +1064,19 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "jit;wildx;v0.28.2"
     )
 endif()
+
+# bug_tests_v0283 — Cross-function ARIA-032 Phase 1 (v0.28.3).
+# Verifies that callees calling HandleArena_destroy(<param>) propagate
+# arena death back to the caller so subsequent handle use is rejected.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0283
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0283.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0283 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "borrow;handles;aria-032;v0.28.3"
+    )
+endif()

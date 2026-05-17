@@ -1,0 +1,39 @@
+// BUG-269 (v0.28.3, ARIA-032 cross-function Phase 1 — known limit):
+// transitive destruction through a wrapper is NOT detected in this
+// slice. `wrapper(a)` calls `destroyer(a)`, but only direct callees
+// that themselves call `HandleArena_destroy(<param>)` are recorded
+// in the per-function summary. A future slice will compose summaries
+// transitively; for now this compiles (documents the boundary so a
+// later regression flips it to expect-compile-fail).
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroyer = int32(int64:a) {
+    raw HandleArena.destroy(a);
+    pass 0i32;
+};
+
+func:wrapper = int32(int64:a) {
+    int32:rc = raw destroyer(a);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    // Use the handle BEFORE the wrapper call so we don't rely on transitive
+    // detection. This documents that direct-only attribution is the Phase 1
+    // contract; Phase 2 will compose summaries.
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 2; }
+    raw HandleArena.free(h);
+    int32:rc = raw wrapper(a);
+    if (rc != 0i32) { exit 3; }
+    exit 0;
+};
