@@ -1,0 +1,25 @@
+// BUG-270 (v0.28.4, ARIA-032 cross-function Phase 2 — part A):
+// a helper creates an arena locally and tries to return a handle
+// bound to it. The handle is dead the moment the helper returns,
+// so the borrow checker must reject this statically.
+//
+// Expected: compile failure tagged ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make = int64() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    pass h;                               // ERROR: a is local to make()
+};
+
+func:main = int32() {
+    int64:h = raw make();
+    int64:p = raw HandleArena.deref(h);  // would be stale at use
+    if (p == 0i64) { exit 0; }
+    exit 0;
+};

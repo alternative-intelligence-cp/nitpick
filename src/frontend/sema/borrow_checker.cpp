@@ -1576,8 +1576,10 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 // produce false-positive ARIA-032 in another. Save/restore.
                 auto saved_handle_map = handle_arena_map_;
                 auto saved_destroyed = destroyed_arenas_;
+                auto saved_local_arenas = local_arenas_;
                 handle_arena_map_.clear();
                 destroyed_arenas_.clear();
+                local_arenas_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1588,6 +1590,7 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 ctx.restore(saved_ctx);
                 handle_arena_map_ = std::move(saved_handle_map);
                 destroyed_arenas_ = std::move(saved_destroyed);
+                local_arenas_ = std::move(saved_local_arenas);
             }
             current_function = prev_function;
             break;
@@ -2040,6 +2043,12 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                     const std::string& arena_name =
                         static_cast<IdentifierExpr*>(call->arguments[0].get())->name;
                     handle_arena_map_[stmt->varName] = arena_name;
+                }
+                // v0.28.4 (ARIA-032 Phase 2): track arenas created locally
+                // in the current function. Used at return/pass to reject
+                // handles that would outlive the frame.
+                if (cn == "HandleArena_create") {
+                    local_arenas_.insert(stmt->varName);
                 }
             }
         }
@@ -3044,6 +3053,9 @@ void BorrowChecker::checkReturnStmt(ReturnStmt* stmt) {
         if (!current_function.empty()) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
+
+        // v0.28.4 (ARIA-032 Phase 2): handle from a local arena cannot escape
+        checkHandleArenaEscape(stmt->value.get(), stmt);
     }
 
     // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
@@ -3071,10 +3083,90 @@ void BorrowChecker::checkPassStmt(PassStmt* stmt) {
         if (!current_function.empty()) {
             checkReturnBorrowEscape(stmt->value.get(), stmt);
         }
+
+        // v0.28.4 (ARIA-032 Phase 2): handle from a local arena cannot escape
+        checkHandleArenaEscape(stmt->value.get(), stmt);
     }
 
     // v0.25.1 (BORROW-003): early-exit leak audit across every enclosing scope.
     checkForLeaksAllScopes();
+}
+
+// v0.28.4 (ARIA-032 Phase 2 — handle return from local arena):
+// Reject `pass h` / `return h` (and the inline form `pass raw
+// HandleArena.alloc(localArena, ...)`) when the bound arena was created
+// in THIS function. Such a handle is dead the moment the caller resumes
+// because the arena id is a stack-local int64 and the runtime's slot
+// table is keyed off that id only for the lifetime of the create/destroy
+// pair owned by this frame. Threading the arena down from a caller is
+// fine — that arena is NOT in `local_arenas_`.
+void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
+    if (!value) return;
+
+    // Peel `raw(...)` / `drop(...)` wrappers — `raw HandleArena.alloc(...)`
+    // shows up as CallExpr("raw", [CallExpr("HandleArena_alloc", ...)]).
+    ASTNode* node = value;
+    while (node && node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        if (call->callee &&
+            call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& n =
+                static_cast<IdentifierExpr*>(call->callee.get())->name;
+            if ((n == "raw" || n == "drop") && call->arguments.size() == 1) {
+                node = call->arguments[0].get();
+                continue;
+            }
+        }
+        break;
+    }
+    if (!node) return;
+
+    // Case A: returning a Handle binding — look up its arena.
+    if (node->type == ASTNode::NodeType::IDENTIFIER) {
+        const std::string& hname = static_cast<IdentifierExpr*>(node)->name;
+        auto it = handle_arena_map_.find(hname);
+        if (it != handle_arena_map_.end() &&
+            local_arenas_.count(it->second)) {
+            addError("Handle '" + hname + "' is returned but its arena '" +
+                     it->second + "' is local to this function. The handle "
+                     "is invalid at every caller. Thread the arena in as a "
+                     "parameter (or expose a destroy hook) so the caller "
+                     "owns its lifetime. See ARIA-032 and "
+                     "guide/memory/handles.md",
+                     context);
+            tagCode("ARIA-032");
+        }
+        return;
+    }
+
+    // Case B: returning a fresh `HandleArena.alloc(<localArena>, size)`.
+    if (node->type == ASTNode::NodeType::CALL) {
+        auto* call = static_cast<CallExpr*>(node);
+        if (call->callee &&
+            call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            const std::string& cn =
+                static_cast<IdentifierExpr*>(call->callee.get())->name;
+            if (cn == "HandleArena_alloc" &&
+                !call->arguments.empty() &&
+                call->arguments[0] &&
+                call->arguments[0]->type ==
+                    ASTNode::NodeType::IDENTIFIER) {
+                const std::string& aname =
+                    static_cast<IdentifierExpr*>(
+                        call->arguments[0].get())->name;
+                if (local_arenas_.count(aname)) {
+                    addError("Handle returned from `HandleArena.alloc("
+                             + aname + ", ..)` is invalid at the caller — "
+                             "arena '" + aname + "' is local to this "
+                             "function. Thread the arena in as a "
+                             "parameter so the caller owns its lifetime. "
+                             "See ARIA-032 and guide/memory/handles.md",
+                             context);
+                    tagCode("ARIA-032");
+                }
+            }
+        }
+    }
 }
 
 // v0.25.0 (BORROW-001 triage): `fail <expr>;` early-exit was previously

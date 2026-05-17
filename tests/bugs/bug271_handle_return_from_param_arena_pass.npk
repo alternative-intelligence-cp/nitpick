@@ -1,0 +1,28 @@
+// BUG-271 (v0.28.4, ARIA-032 Phase 2 — positive corollary): a helper
+// that takes the arena id as a parameter and returns a handle bound
+// to that parameter MUST compile. The arena lives in the caller
+// frame, so the returned handle is valid until the caller destroys
+// the arena.
+//
+// Expected: compile and exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_in = int64(int64:a) {
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    pass h;                               // OK: a is a parameter, not local
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int64:h = raw make_in(a);
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 2; }
+    raw HandleArena.free(h);
+    raw HandleArena.destroy(a);
+    exit 0;
+};

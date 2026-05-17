@@ -803,6 +803,15 @@ private:
     std::unordered_map<std::string, std::string> handle_arena_map_;
     std::unordered_set<std::string> destroyed_arenas_;
 
+    // v0.28.4 (ARIA-032 Phase 2): arenas declared LOCALLY in the current
+    // function (initializer was `HandleArena_create()`). Used by return/
+    // pass to reject returning a `Handle<T>` (or a fresh `HandleArena_alloc`
+    // call) whose arena is local — the handle is dead the moment the
+    // function frame unwinds. Parameters and arenas threaded in from a
+    // caller are NOT entered here, so handles from them may legitimately
+    // escape. Save/restored around each function body in checkStatement.
+    std::unordered_set<std::string> local_arenas_;
+
     // Prove two index expressions are disjoint using Z3
     // Returns true if provably disjoint, false if unknown/overlapping
     bool proveIndexDisjoint(ASTNode* idx1, ASTNode* idx2);
@@ -1043,6 +1052,11 @@ private:
     
     // v0.6.1: Return type borrow validation
     void checkReturnBorrowEscape(ASTNode* returnValue, ASTNode* context);
+
+    // v0.28.4 (ARIA-032 Phase 2): reject returning/passing a Handle<T> bound
+    // to a locally-created arena, or a fresh `HandleArena.alloc(<localArena>,
+    // ..)` expression. Consults `local_arenas_` + `handle_arena_map_`.
+    void checkHandleArenaEscape(ASTNode* value, ASTNode* context);
 
     // v0.6.2: Trait Integration
     void checkTraitDeclStmt(TraitDeclStmt* stmt);
