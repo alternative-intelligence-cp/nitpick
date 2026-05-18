@@ -1,0 +1,11 @@
+// bug281 — v0.29.1 DROP-DEC-001
+// Negative: impl:Drop:for:UnknownType rejected — type must exist first.
+
+impl:Drop:for:Nonexistent = {
+    func:drop = NIL($$m Nonexistent:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() { exit 0; };

@@ -810,6 +810,26 @@ public:
     void checkImplDecl(ImplDeclStmt* stmt);
 
     /**
+     * Check Drop trait implementation (v0.29.1, DROP-DEC-001).
+     *
+     * Drop is a builtin trait — no `trait:Drop = { ... };` declaration is
+     * required (or permitted to override the builtin). Each user type may
+     * have at most one `impl:Drop:for:T = { func:drop = NIL($$m T:self) { body }; };`.
+     *
+     * Rules:
+     * - Type T must exist (struct or known builtin)
+     * - Exactly one method named "drop"
+     * - Return type is NIL
+     * - Exactly one parameter (the self binding)
+     * - At most one Drop impl per type (duplicate rejected with clear error)
+     *
+     * Side effect: records the Drop impl in `drop_impls_` so v0.29.2 codegen
+     * can insert scope-end auto-calls. v0.29.1 itself emits no codegen — users
+     * call the destructor explicitly via the mangled name `T_drop(value)`.
+     */
+    void checkDropImplDecl(ImplDeclStmt* stmt);
+
+    /**
      * Check assignment expression
      * 
      * Rules:
@@ -1137,6 +1157,12 @@ private:
     };
     std::vector<MacroExpansionRecord> macroExpansionLog;
     
+    // v0.29.1 DROP-DEC-001: per-type Drop trait impl registry.
+    // Key: type name (e.g. "Counter"). Value: the FuncDeclStmt for the
+    // single `drop` method. v0.29.2 codegen consults this to insert
+    // scope-end auto-calls; v0.29.1 only records.
+    std::unordered_map<std::string, FuncDeclStmt*> drop_impls_;
+
     // v0.8.3: Clone an AST subtree with parameter substitution
     ASTNodePtr cloneAST(ASTNode* node, const std::map<std::string, ASTNodePtr>& substitutions);
 

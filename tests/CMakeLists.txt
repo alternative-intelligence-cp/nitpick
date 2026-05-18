@@ -1130,6 +1130,27 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0291 — Drop trait parser+sema surface (v0.29.1, DROP-DEC-001).
+# Adds the builtin `Drop` trait special-case: `impl:Drop:for:T = { func:drop = NIL($$m T:self) { ... }; };`
+# parses and sema-validates without requiring a user-declared `trait:Drop`.
+# Exactly one `drop` method per type; method must be named 'drop',
+# return NIL, take exactly one self-like parameter; duplicate Drop impls
+# rejected; unknown types rejected. The existing `drop <expr>` unary
+# discard form is preserved (DROP-DEC-007a regression). Runtime auto-call
+# arrives in v0.29.2.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0291
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0291.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0291 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;trait;sema;parser;v0.29.1"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

@@ -1898,6 +1898,12 @@ ASTNodePtr Parser::parseMemberExpression(ASTNodePtr object) {
         // Allow ERR as static member (e.g., int1024.ERR, tbb8.ERR)
         memberName = "ERR";
         advance();
+    } else if (memberToken.type == TokenType::TOKEN_KW_DROP) {
+        // v0.29.1 DROP-DEC-007a: allow `value.drop()` method-call sugar so
+        // an impl:Drop:for:T method can be invoked through UFCS without
+        // colliding with the unary `drop <expr>` discard form.
+        memberName = "drop";
+        advance();
     } else if (isTypeKeyword(memberToken.type)) {
         // Allow type keywords as member names (for method chaining, etc.)
         memberName = memberToken.lexeme;
@@ -3241,8 +3247,13 @@ ASTNodePtr Parser::parseFuncDecl() {
     consume(TokenType::TOKEN_COLON, "Expected ':' after 'func'");
 
     // Get function name (allow 'process' keyword as function name too)
+    // v0.29.1 DROP-DEC-007a: also allow 'drop' keyword as function name so that
+    // `impl:Drop:for:X = { func:drop = NIL(...) { ... }; };` parses without
+    // colliding with the existing `drop <expr>` unary form.
     Token nameToken;
     if (peek().type == TokenType::TOKEN_KW_PROCESS) {
+        nameToken = advance();
+    } else if (peek().type == TokenType::TOKEN_KW_DROP) {
         nameToken = advance();
     } else {
         nameToken = consume(TokenType::TOKEN_IDENTIFIER, "Expected function name");

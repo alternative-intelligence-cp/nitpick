@@ -2806,6 +2806,13 @@ void TypeChecker::checkTraitDecl(TraitDeclStmt* stmt) {
 }
 
 void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
+    // v0.29.1 DROP-DEC-001: Drop is a builtin trait — special-case it before
+    // the normal trait-lookup, since no `trait:Drop` declaration is required.
+    if (stmt->traitName == "Drop") {
+        checkDropImplDecl(stmt);
+        return;
+    }
+
     // Look up the trait
     Symbol* traitSymbol = symbolTable->lookupSymbol(stmt->traitName);
     if (!traitSymbol || traitSymbol->kind != SymbolKind::TRAIT) {
@@ -2930,6 +2937,116 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
             break;
         }
     }
+}
+
+// ============================================================================
+// v0.29.1 DROP-DEC-001 — Drop trait special-case
+// ============================================================================
+//
+// Drop is a builtin trait: `impl:Drop:for:T = { func:drop = NIL($$m T:self) { body }; };`
+// is recognised without requiring (or permitting) a user-defined `trait:Drop`
+// declaration. Each type T may have at most one Drop impl.
+//
+// v0.29.1 surface only: parser + sema validation + registration in
+// `drop_impls_`. NO codegen — users must call the destructor explicitly via
+// the mangled name `T_drop(value)`. v0.29.2 will wire scope-end auto-call.
+//
+void TypeChecker::checkDropImplDecl(ImplDeclStmt* stmt) {
+    // (1) Type T must exist. Note: we deliberately do NOT call
+    //     `typeSystem->getPrimitiveType(...)` here because that helper
+    //     lazily fabricates a fake PrimitiveType for unknown names
+    //     (see the function pre-pass comment in type_checker.cpp). Instead
+    //     accept only: (a) a real TYPE symbol, (b) a known type keyword
+    //     (int32, bool, etc.), or (c) a previously-registered struct.
+    Symbol* typeSymbol = symbolTable->lookupSymbol(stmt->typeName);
+    bool typeKnown = (typeSymbol && typeSymbol->kind == SymbolKind::TYPE)
+                     || isTypeKeyword(stmt->typeName)
+                     || typeSystem->getStructType(stmt->typeName);
+    if (!typeKnown) {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " — type '" + stmt->typeName + "' is not defined", stmt);
+        return;
+    }
+
+    // (2) At most one Drop impl per type.
+    auto existing = drop_impls_.find(stmt->typeName);
+    if (existing != drop_impls_.end()) {
+        addError("Duplicate impl:Drop:for:" + stmt->typeName +
+                 " — Drop is already implemented for type '" + stmt->typeName + "'",
+                 stmt);
+        return;
+    }
+
+    // (3) Exactly one method, named "drop".
+    if (stmt->methods.size() != 1) {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " must contain exactly one method (the 'drop' destructor), got " +
+                 std::to_string(stmt->methods.size()), stmt);
+        return;
+    }
+    auto funcDecl = std::dynamic_pointer_cast<FuncDeclStmt>(stmt->methods[0]);
+    if (!funcDecl) {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " — body must be a function declaration", stmt);
+        return;
+    }
+    if (funcDecl->funcName != "drop") {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " — method must be named 'drop', got '" + funcDecl->funcName + "'",
+                 stmt);
+        return;
+    }
+
+    // (4) Return type must be NIL.
+    std::string retTypeName = funcDecl->returnType
+        ? funcDecl->returnType->toString() : "NIL";
+    if (retTypeName != "NIL" && retTypeName != "void") {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " — drop method must return NIL, got '" + retTypeName + "'", stmt);
+        return;
+    }
+
+    // (5) Exactly one parameter (the self binding).
+    if (funcDecl->parameters.size() != 1) {
+        addError("impl:Drop:for:" + stmt->typeName +
+                 " — drop method must take exactly one self parameter, got " +
+                 std::to_string(funcDecl->parameters.size()), stmt);
+        return;
+    }
+
+    // (6) Register the mangled function `T_drop` as a regular function so
+    //     existing call/codegen machinery can reach it. Mirrors the trait-
+    //     method registration in checkImplDecl above.
+    std::string mangledName = stmt->typeName + "_drop";
+
+    std::vector<Type*> paramTypes;
+    for (const auto& param : funcDecl->parameters) {
+        if (param->type == ASTNode::NodeType::PARAMETER) {
+            ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+            if (pnode->typeNode) {
+                std::string paramTypeName = pnode->typeNode->toString();
+                Type* ptype = typeSystem->getStructType(paramTypeName);
+                if (!ptype) ptype = typeSystem->getPrimitiveType(paramTypeName);
+                if (!ptype) ptype = typeSystem->getPrimitiveType("int64");
+                paramTypes.push_back(ptype);
+            }
+        }
+    }
+
+    Type* nilT = typeSystem->getPrimitiveType("void");
+    Type* funcType = typeSystem->getFunctionType(paramTypes, nilT, false);
+
+    Symbol* funcSymbol = symbolTable->defineSymbol(
+        mangledName, SymbolKind::FUNCTION, funcType);
+    if (funcSymbol) {
+        funcSymbol->setFuncDecl(funcDecl.get());
+    }
+
+    // (7) Record the Drop impl for v0.29.2 codegen lookup.
+    drop_impls_[stmt->typeName] = funcDecl.get();
+
+    // (8) Type-check the method body.
+    checkFuncDecl(funcDecl.get());
 }
 
 // ============================================================================

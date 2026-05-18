@@ -1,0 +1,14 @@
+// bug283 — v0.29.1 DROP-DEC-001
+// Negative: drop method must return NIL, not int32 (or anything else).
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = int32($$m Counter:self) {
+        self.n = 0i32;
+        pass 0;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() { exit 0; };

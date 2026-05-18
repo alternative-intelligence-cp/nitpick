@@ -1,0 +1,26 @@
+// bug279 — v0.29.1 DROP-DEC-001
+// Positive surface test: impl:Drop:for:Counter parses and sema-checks
+// cleanly. v0.29.1 ships parser + sema only — auto-call codegen and
+// mutation-through-self interop arrive in v0.29.2, so this fixture
+// deliberately does NOT invoke the destructor at runtime; it only
+// proves the surface is accepted end-to-end (parse + sema + IR + link).
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        self.n = 0i32;
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    Counter:c;
+    c.n = 5i32;
+    if (c.n == 5i32) {
+        exit 0;
+    }
+    exit 1;
+};
