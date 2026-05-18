@@ -5186,6 +5186,27 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                 drop_stack_.back().push_back(DropEntry{
                     varDecl->varName, alloca, actualTypeName});
             }
+
+            // v0.29.3 DROP-DEC-007: register wild-struct heap bindings for
+            // scope-end auto-`npk_free` emission. Gated on the opt-in
+            // `use "drop.npk".*;` flag (no behavior change for pre-RAII
+            // modules). Conservative scope: only the canonical
+            // `wild T:x = T{...}` pattern, identified by isWild + the
+            // heap-alloc path being taken (alloca_inst == nullptr) + a
+            // non-pointer type name. Pointer-typed wild bindings
+            // (`wild T->:p = alloc(...)`) and wildx bindings need slot-
+            // load logic and land in v0.29.3b/v0.29.4.
+            if (!drop_stack_.empty() && wild_raii_enabled_ && varDecl->isWild
+                && !varDecl->isWildx && alloca_inst == nullptr && alloca
+                && !actualTypeName.empty()
+                && actualTypeName.back() != '@'
+                && actualTypeName.back() != '*'
+                && varDecl->initializer
+                && varDecl->initializer->type == ASTNode::NodeType::OBJECT_LITERAL) {
+                drop_stack_.back().push_back(DropEntry{
+                    varDecl->varName, alloca, actualTypeName,
+                    DropEntry::Kind::WildRaw});
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -13392,6 +13413,43 @@ void npk::IRGenerator::executeScopeDrops() {
 
     for (auto it = current.rbegin(); it != current.rend(); ++it) {
         const DropEntry& entry = *it;
+
+        // v0.29.3 DROP-DEC-007: dispatch by entry kind. WildRaw bindings
+        // emit `npk_free(heap_ptr)`; WildxRaw bindings (reserved for
+        // v0.29.3b) load from a stack slot and emit `npk_wildx_free`.
+        if (entry.kind == DropEntry::Kind::WildRaw) {
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            builder.CreateCall(free_fn, {entry.alloca});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::WildxRaw) {
+            // Reserved: load heap ptr from the stack slot and free via
+            // `npk_wildx_free`. Wired in a follow-up slice.
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_wildx_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getInt32Ty(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            llvm::Value* heap_ptr = builder.CreateLoad(
+                llvm::PointerType::get(context, 0),
+                entry.alloca, entry.varName + ".wildx_raw");
+            builder.CreateCall(free_fn, {heap_ptr});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+
+        // Default: v0.29.2 Stack path — call `<TypeName>_drop(self)`.
         std::string mangled = entry.typeName + "_drop";
         llvm::Function* fn = module->getFunction(mangled);
         if (!fn) {

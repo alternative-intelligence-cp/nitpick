@@ -107,12 +107,23 @@ private:
     // `setDropImplTypes()` after sema completes.
     // ========================================================================
     struct DropEntry {
+        // v0.29.3 DROP-DEC-007: `kind` selects the lowering used at scope end.
+        //   Stack    -> existing v0.29.2 path: call `<typeName>_drop(self)`
+        //               with `alloca` pointing at the stack slot.
+        //   WildRaw  -> emit `npk_free(alloca)` (alloca holds the heap ptr
+        //               returned by `npk_alloc` at the wild VAR_DECL site).
+        //   WildxRaw -> emit `npk_wildx_free(alloca)` (alloca holds the heap
+        //               ptr returned by `npk_wildx_alloc`).
+        enum class Kind { Stack, WildRaw, WildxRaw };
         std::string varName;
-        llvm::Value* alloca;   // pointer to the stack slot (already a pointer-typed Value)
+        llvm::Value* alloca;   // stack slot OR heap ptr value, depending on `kind`
         std::string typeName;  // Aria type name (drives mangled function lookup)
+        Kind kind = Kind::Stack;
     };
     std::set<std::string> drop_impl_types_;
     std::vector<std::vector<DropEntry>> drop_stack_;
+    bool wild_raii_enabled_ = false;   // v0.29.3 DROP-DEC-007 opt-in flag
+    bool wildx_raii_enabled_ = false;
 
     // ARIA-022: Recursion depth limit to prevent stack overflow
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
@@ -624,6 +635,19 @@ public:
      * empty set (no drops emitted).
      */
     void setDropImplTypes(const std::set<std::string>& types) { drop_impl_types_ = types; }
+
+    /**
+     * v0.29.3 DROP-DEC-007: toggle RAII for `wild` / `wildx` pointer
+     * bindings. When set, every `wild T:x = alloc(...)` or `wildx T:x = ...`
+     * declared inside a block is registered into `drop_stack_` and an
+     * `npk_free` / `npk_wildx_free` call is auto-emitted at scope exit
+     * (DROP-DEC-003: reverse declaration order; DROP-DEC-010: drops BEFORE
+     * defers). Wired from `TypeChecker::hasWildRaii()` /
+     * `TypeChecker::hasWildxRaii()` in `main.cpp` after sema. The opt-in
+     * signal at the source level is `use "drop.npk".*;`.
+     */
+    void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
+    void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
     
     /**
      * Set the current module name (for determining function linkage)

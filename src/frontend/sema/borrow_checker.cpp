@@ -1975,6 +1975,21 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
         // This is an actual wild allocation (e.g., wild int8@:ptr = alloc(...))
         stmt->requires_drop = true;
 
+        // v0.29.3 DROP-DEC-007: when wild RAII is opted in (`use "drop.npk".*;`)
+        // and this binding matches the canonical `wild T:x = T{...}` struct
+        // pattern that IRGen will auto-`npk_free` at scope end, skip
+        // ARIA-014 obligation recording. Conservative match: isWild + not
+        // wildx + non-pointer type name + initializer is a struct literal.
+        // Pointer-typed wild bindings (`wild T->:p = alloc(...)`) and
+        // wildx bindings remain on the explicit-free contract.
+        bool raii_handles_this = false;
+        if (wild_raii_enabled_ && stmt->isWild && !stmt->isWildx
+            && !stmt->typeName.empty()
+            && stmt->typeName.back() != '@' && stmt->typeName.back() != '*'
+            && stmt->initializer->type == ASTNode::NodeType::OBJECT_LITERAL) {
+            raii_handles_this = true;
+        }
+
         // v0.6.3: Extract allocation size from alloc(size) call
         std::string alloc_size_expr;
         if (stmt->initializer->type == ASTNode::NodeType::CALL) {
@@ -2009,7 +2024,11 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 }
             }
         }
-        recordWildAlloc(stmt->varName, stmt, alloc_size_expr);
+        if (raii_handles_this) {
+            // RAII auto-discharges the ARIA-014 obligation; do not register.
+        } else {
+            recordWildAlloc(stmt->varName, stmt, alloc_size_expr);
+        }
     }
 
     // ========================================================================

@@ -1,0 +1,28 @@
+// bug289 — v0.29.3 DROP-DEC-007: two wild bindings in the same inner
+// scope are auto-freed in reverse declaration order at scope end via
+// emitted `npk_free` calls. No explicit `free` is required.
+
+use "drop.npk".*;
+
+struct:NodeA = {
+    int64:a;
+};
+
+struct:NodeB = {
+    int64:b;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wild NodeA:x = NodeA{a: 1i64};
+        wild NodeB:y = NodeB{b: 2i64};
+        if (x.a + y.b != 3i64) {
+            exit 3;
+        }
+    }
+    exit 0;
+};

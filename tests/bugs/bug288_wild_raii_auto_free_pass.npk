@@ -1,0 +1,28 @@
+// bug288 — v0.29.3 DROP-DEC-007: with `use "drop.npk".*;`, a canonical
+// `wild T:x = T{ ... };` binding is auto-freed at scope end via an
+// emitted `npk_free(...)` call. No explicit `free(h)` is required.
+//
+// v0.29.x scope: scope-end drops only fire on normal block fall-through
+// — early-exit (`exit`/`pass`/`fail`/`return`) drops land in v0.29.6.
+// The inner `{ ... }` block here exercises the fall-through path:
+// when control leaves the inner block normally, the drop runs.
+
+use "drop.npk".*;
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wild Holder:h = Holder{value: 42i64};
+        if (h.value != 42i64) {
+            exit 3;
+        }
+    }
+    exit 0;
+};

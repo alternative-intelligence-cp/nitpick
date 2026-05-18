@@ -1176,6 +1176,26 @@ public:
     // v0.29.2 DROP-DEC-001: expose the Drop impl registry to IR codegen so it
     // can decide which stack-local types need scope-end auto-`drop` calls.
     const std::unordered_map<std::string, FuncDeclStmt*>& getDropImpls() const { return drop_impls_; }
+
+    // v0.29.3 DROP-DEC-007: opt-in RAII for wild/wildx pointer bindings. The
+    // presence of a Drop impl for the sentinel marker structs declared in
+    // `stdlib/drop.npk` (`NitpickWildRaii` / `NitpickWildxRaii`) is the
+    // module-level opt-in signal. When set, IRGen emits `npk_free` /
+    // `npk_wildx_free` at scope end for every `wild` / `wildx` binding and
+    // the borrow checker suppresses the matching ARIA-014 leak obligation.
+    //
+    // Imported modules are type-checked with separate TypeChecker instances
+    // (their `drop_impls_` map is not visible here), but they share the
+    // global TypeSystem — so the presence of the sentinel struct type
+    // anywhere in the program (local OR imported) is the reliable signal.
+    bool hasWildRaii() const {
+        return drop_impls_.count("NitpickWildRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickWildRaii") != nullptr);
+    }
+    bool hasWildxRaii() const {
+        return drop_impls_.count("NitpickWildxRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickWildxRaii") != nullptr);
+    }
 };
 
 } // namespace sema

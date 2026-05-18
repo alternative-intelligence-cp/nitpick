@@ -1,0 +1,21 @@
+// bug290 — v0.29.3 contract: WITHOUT `use "drop.npk".*;`, the canonical
+// `wild T:x = T{...}` binding keeps the pre-RAII explicit-free contract.
+// Because no explicit `free(...)` is present and RAII is NOT opted in,
+// ARIA-014 (memory leak on early exit) MUST fire and reject compile.
+// This proves the v0.29.3 opt-in is required to obtain auto-RAII.
+
+struct:Holder = {
+    int64:value;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wild Holder:h = Holder{value: 99i64};
+    if (h.value == 99i64) {
+        exit 0;
+    }
+    exit 3;
+};

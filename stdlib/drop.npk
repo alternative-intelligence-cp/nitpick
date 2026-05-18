@@ -1,0 +1,49 @@
+// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3)
+//
+// Importing this file enables Drop-trait RAII auto-free for
+// `wild T:x = T{ ... }` bindings in the importing program. Without this
+// import, wild bindings continue to follow the existing explicit-free
+// contract (ARIA-014 leak rule + manual `free(...)` / `npk_free(...)`
+// required, double-free flagged via ARIA-022).
+//
+// Scope of v0.29.3:
+//   * Supported   : `wild T:x = T{ ... };`   where T is a struct.
+//   * Not yet     : `wild T->:p = alloc(...);` (pointer-typed wild bindings)
+//   * Not yet     : `wildx T->:p = ...;`      (executable-memory wildx)
+//
+// The unsupported patterns keep the v0.29.2-and-earlier explicit-free
+// contract intact; they are NOT affected by this opt-in.
+//
+// Usage:
+//
+//     use "drop.npk".*;
+//
+//     struct:Holder = { value: int64, };
+//
+//     func:main = int32() {
+//         wild Holder:h = Holder{ value: 42i64 };
+//         // No explicit free required — `npk_free(h)` is auto-emitted
+//         // at scope end (DROP-DEC-003: reverse declaration order,
+//         // DROP-DEC-010: drops BEFORE defers).
+//         exit 0;
+//     };
+//
+// Opting back out per-binding: write `raw npk_free(p);` to take manual
+// control (v0.29.4 will extend ARIA-022 to flag explicit-free + auto-drop
+// collisions at compile time).
+//
+// Mechanism: the presence of `impl:Drop:for:NitpickWildRaii` is the
+// opt-in signal. The compiler does not call this stub destructor
+// directly — it inspects the Drop registry, flips its
+// `wild_raii_enabled` flag, and then emits `npk_free` at scope end for
+// every wild-struct binding inside a block.
+
+struct:NitpickWildRaii = {
+    int8:_marker;
+};
+
+impl:Drop:for:NitpickWildRaii = {
+    func:drop = NIL($$m NitpickWildRaii:self) {
+        pass;
+    };
+};

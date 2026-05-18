@@ -4605,6 +4605,12 @@ llvm::Module* compile_to_module(
     }
 #endif
 
+    // v0.29.3 DROP-DEC-007: opt-in wild RAII suppresses ARIA-014 obligation
+    // for canonical `wild T:x = T{...}` bindings (IRGen emits npk_free at
+    // scope end). Driven by `use "drop.npk".*;` having landed
+    // `impl:Drop:for:NitpickWildRaii` in the registry.
+    borrow_checker.setWildRaiiEnabled(type_checker.hasWildRaii());
+
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {
@@ -5199,6 +5205,16 @@ llvm::Module* compile_to_module(
         }
         ir_gen.setDropImplTypes(drop_types);
     }
+
+    // v0.29.3 DROP-DEC-007: wild/wildx RAII opt-in. Importing
+    // `stdlib/drop.npk` lands an `impl:Drop:for:NitpickWildRaii` (and the
+    // wildx variant) in `drop_impls_`, which TypeChecker exposes via
+    // `hasWildRaii()`/`hasWildxRaii()`. IR generator uses those flags to
+    // decide whether to emit scope-end auto-`npk_free`/`npk_wildx_free`
+    // for `wild`/`wildx` bindings. Without the import these are false and
+    // pre-RAII behavior is preserved.
+    ir_gen.setWildRaiiEnabled(type_checker.hasWildRaii());
+    ir_gen.setWildxRaiiEnabled(type_checker.hasWildxRaii());
 
 #ifdef ARIA_HAS_Z3
     // Pass SMT-proven ustack optimization set to IR generator
