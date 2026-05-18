@@ -1990,6 +1990,26 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             raii_handles_this = true;
         }
 
+        // v0.29.4 DROP-DEC-007: wildx RAII opt-in. When enabled, skip the
+        // ARIA-014 obligation for `wildx T->:p = wildx_alloc(N);` so IRGen
+        // can auto-emit `npk_wildx_free` at scope end. Conservative match:
+        // isWildx + initializer is a direct call to `wildx_alloc`. Other
+        // wildx initializers (e.g., re-binding an existing wildx pointer)
+        // stay on the explicit-free contract.
+        if (!raii_handles_this && wildx_raii_enabled_ && stmt->isWildx
+            && stmt->initializer
+            && stmt->initializer->type == ASTNode::NodeType::CALL) {
+            auto* call = static_cast<CallExpr*>(stmt->initializer.get());
+            if (call->callee
+                && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& cname =
+                    static_cast<IdentifierExpr*>(call->callee.get())->name;
+                if (cname == "wildx_alloc" || cname == "npk_wildx_alloc") {
+                    raii_handles_this = true;
+                }
+            }
+        }
+
         // v0.6.3: Extract allocation size from alloc(size) call
         std::string alloc_size_expr;
         if (stmt->initializer->type == ASTNode::NodeType::CALL) {

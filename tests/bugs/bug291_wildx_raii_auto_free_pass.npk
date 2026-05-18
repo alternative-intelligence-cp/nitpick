@@ -1,0 +1,22 @@
+// bug291 — v0.29.4 DROP-DEC-007: with `use "drop.npk".*;`, a
+// `wildx T->:p = wildx_alloc(N);` binding is auto-freed at scope end via
+// an emitted `npk_wildx_free(...)` call. No explicit `wildx_free(p)`
+// is required.
+//
+// v0.29.x scope: scope-end drops only fire on normal block fall-through
+// — early-exit (`exit`/`pass`/`fail`/`return`) drops land in v0.29.6.
+// The inner `{ ... }` block here exercises the fall-through path:
+// when control leaves the inner block normally, the drop runs.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wildx int8->:page = wildx_alloc(32i64);
+    }
+    exit 0;
+};

@@ -4610,6 +4610,11 @@ llvm::Module* compile_to_module(
     // scope end). Driven by `use "drop.npk".*;` having landed
     // `impl:Drop:for:NitpickWildRaii` in the registry.
     borrow_checker.setWildRaiiEnabled(type_checker.hasWildRaii());
+    // v0.29.4 DROP-DEC-007: opt-in wildx RAII suppresses ARIA-014 obligation
+    // for `wildx T->:p = wildx_alloc(N);` bindings (IRGen emits
+    // npk_wildx_free at scope end). Driven by `use "drop.npk".*;` having
+    // landed `impl:Drop:for:NitpickWildxRaii` in the registry.
+    borrow_checker.setWildxRaiiEnabled(type_checker.hasWildxRaii());
 
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     

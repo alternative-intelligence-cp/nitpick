@@ -1195,6 +1195,29 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0294 — Wildx RAII opt-in via `use "drop.npk".*;` (v0.29.4,
+# DROP-DEC-007). Importing the stdlib sentinel `NitpickWildxRaii`
+# toggles automatic `npk_wildx_free(...)` emission at scope end for
+# `wildx T->:p = wildx_alloc(N);` bindings, with the borrow checker's
+# leak-on-early-exit guard (ARIA-014) suppressed for those bindings.
+# Scope: `wildx + wildx_alloc(...)` call-initializer only — pointer-
+# typed wild and raw-pointer wild stay on the explicit-free contract.
+# Asserted via emitted LLVM IR (`npk_wildx_free` calls present),
+# runtime exit code, and an opt-in negative test (bug293) proving
+# ARIA-014 still fires without the import.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0294
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0294.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0294 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;wildx;raii;codegen;v0.29.4"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

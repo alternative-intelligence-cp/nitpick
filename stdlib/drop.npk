@@ -1,15 +1,16 @@
-// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3)
+// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3 + v0.29.4)
 //
 // Importing this file enables Drop-trait RAII auto-free for
-// `wild T:x = T{ ... }` bindings in the importing program. Without this
-// import, wild bindings continue to follow the existing explicit-free
-// contract (ARIA-014 leak rule + manual `free(...)` / `npk_free(...)`
-// required, double-free flagged via ARIA-022).
+// `wild T:x = T{ ... }` bindings (v0.29.3) and `wildx T->:p = wildx_alloc(N);`
+// bindings (v0.29.4) in the importing program. Without this import, wild
+// and wildx bindings continue to follow the existing explicit-free
+// contract (ARIA-014 leak rule + manual `free(...)` / `npk_free(...)` /
+// `wildx_free(...)` required, double-free flagged via ARIA-022).
 //
-// Scope of v0.29.3:
-//   * Supported   : `wild T:x = T{ ... };`   where T is a struct.
-//   * Not yet     : `wild T->:p = alloc(...);` (pointer-typed wild bindings)
-//   * Not yet     : `wildx T->:p = ...;`      (executable-memory wildx)
+// Scope (cumulative through v0.29.4):
+//   * Supported (v0.29.3): `wild T:x = T{ ... };`        where T is a struct.
+//   * Supported (v0.29.4): `wildx T->:p = wildx_alloc(N);` (executable mem).
+//   * Not yet            : `wild T->:p = alloc(...);` (raw pointer-typed wild).
 //
 // The unsupported patterns keep the v0.29.2-and-earlier explicit-free
 // contract intact; they are NOT affected by this opt-in.
@@ -44,6 +45,23 @@ struct:NitpickWildRaii = {
 
 impl:Drop:for:NitpickWildRaii = {
     func:drop = NIL($$m NitpickWildRaii:self) {
+        pass;
+    };
+};
+
+// v0.29.4: wildx (executable-memory) RAII sentinel. Mirrors the wild
+// case: presence of this Drop impl flips the compiler's
+// `wildx_raii_enabled` flag, after which `wildx T->:p = wildx_alloc(N);`
+// bindings inside a block auto-emit `npk_wildx_free(p)` at scope end
+// (DROP-DEC-003 reverse declaration order, DROP-DEC-010 drops BEFORE
+// defers). Bindings with an explicit `wildx_free(p);` still work but
+// will be flagged as double-frees in a follow-up slice.
+struct:NitpickWildxRaii = {
+    int8:_marker;
+};
+
+impl:Drop:for:NitpickWildxRaii = {
+    func:drop = NIL($$m NitpickWildxRaii:self) {
         pass;
     };
 };

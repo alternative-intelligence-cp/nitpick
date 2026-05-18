@@ -1,0 +1,13 @@
+// bug293 — v0.29.4 DROP-DEC-007 negative: without `use "drop.npk".*;`,
+// a wildx binding without an explicit `wildx_free(p)` must be rejected
+// by the ARIA-014 leak rule. Proves the opt-in is required to obtain
+// auto-RAII (existing manual-free contract is the default).
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:page = wildx_alloc(32i64);
+    exit 0;
+};

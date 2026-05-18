@@ -5207,6 +5207,33 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                     varDecl->varName, alloca, actualTypeName,
                     DropEntry::Kind::WildRaw});
             }
+
+            // v0.29.4 DROP-DEC-007: register wildx bindings for scope-end
+            // auto-`npk_wildx_free` emission. Gated on the opt-in
+            // `use "drop.npk".*;` flag (no behavior change pre-RAII).
+            // Conservative scope: isWildx + initializer is a direct call
+            // to `wildx_alloc`. `alloca` holds the heap-allocated slot
+            // pointer that stores the wildx page address; the WildxRaw
+            // dispatch arm loads the page ptr from that slot and frees it.
+            if (!drop_stack_.empty() && wildx_raii_enabled_ && varDecl->isWildx
+                && alloca && varDecl->initializer
+                && varDecl->initializer->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(varDecl->initializer.get());
+                bool is_wildx_alloc = false;
+                if (call->callee
+                    && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cname =
+                        static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    if (cname == "wildx_alloc" || cname == "npk_wildx_alloc") {
+                        is_wildx_alloc = true;
+                    }
+                }
+                if (is_wildx_alloc) {
+                    drop_stack_.back().push_back(DropEntry{
+                        varDecl->varName, alloca, actualTypeName,
+                        DropEntry::Kind::WildxRaw});
+                }
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -13431,8 +13458,9 @@ void npk::IRGenerator::executeScopeDrops() {
             continue;
         }
         if (entry.kind == DropEntry::Kind::WildxRaw) {
-            // Reserved: load heap ptr from the stack slot and free via
-            // `npk_wildx_free`. Wired in a follow-up slice.
+            // v0.29.4: load wildx page ptr from the heap-allocated slot
+            // and free via `npk_wildx_free`. The slot itself is intentionally
+            // leaked, matching pre-RAII manual-free convention.
             llvm::FunctionCallee free_fn = module->getOrInsertFunction(
                 "npk_wildx_free",
                 llvm::FunctionType::get(

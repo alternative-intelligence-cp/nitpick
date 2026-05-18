@@ -1,0 +1,17 @@
+// bug292 — v0.29.4 DROP-DEC-007: two wildx bindings declared in order
+// A then B. At inner-block fall-through, IRGen emits the drops in
+// reverse (LIFO) order so the IR contains TWO `npk_wildx_free` calls.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wildx int8->:page_a = wildx_alloc(32i64);
+        wildx int8->:page_b = wildx_alloc(64i64);
+    }
+    exit 0;
+};
