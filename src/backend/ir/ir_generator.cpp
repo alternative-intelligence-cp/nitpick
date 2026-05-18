@@ -5278,6 +5278,52 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                     }
                 }
             }
+
+            // v0.29.6 DROP-DEC-007: register `wildx int8->:f = Jit.compile_*();`
+            // bindings for scope-end auto-`npk_wildx_free` emission. Closes
+            // the RAII followup explicitly flagged in JIT-DEC-003. Gated on
+            // the opt-in `use "drop.npk".*;` flag landing the
+            // `NitpickJitFnRaii` sentinel; lowering is identical to the
+            // WildxRaw dispatch (Jit.free == wildx_free) but the gate is
+            // separate so JIT auto-free can be enabled independently of
+            // blanket wildx RAII. As with v0.29.5, optional `raw(...)` /
+            // `drop(...)` wrappers are peeled before matching; the parser
+            // pre-mangles `Jit.compile_add_i32()` to an `IdentifierExpr`
+            // named `Jit_compile_add_i32` before sema/IRGen see it.
+            if (!drop_stack_.empty() && jit_fn_raii_enabled_
+                && varDecl->isWildx && alloca && varDecl->initializer) {
+                ASTNode* probe = varDecl->initializer.get();
+                while (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* pc = static_cast<CallExpr*>(probe);
+                    if (pc->callee
+                        && pc->callee->type == ASTNode::NodeType::IDENTIFIER
+                        && pc->arguments.size() == 1) {
+                        const std::string& pn =
+                            static_cast<IdentifierExpr*>(pc->callee.get())->name;
+                        if (pn == "raw" || pn == "drop") {
+                            probe = pc->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(probe);
+                    if (call->callee
+                        && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cname =
+                            static_cast<IdentifierExpr*>(call->callee.get())->name;
+                        // Match any `Jit_compile_*` constructor so future
+                        // signatures (compile_mul_i32, compile_add_i64, ...)
+                        // are picked up automatically.
+                        if (cname.rfind("Jit_compile_", 0) == 0) {
+                            drop_stack_.back().push_back(DropEntry{
+                                varDecl->varName, alloca, actualTypeName,
+                                DropEntry::Kind::JitFn});
+                        }
+                    }
+                }
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -13535,6 +13581,26 @@ void npk::IRGenerator::executeScopeDrops() {
                 llvm::Type::getInt64Ty(context),
                 entry.alloca, entry.varName + ".handle_arena_id");
             builder.CreateCall(destroy_fn, {arena_id});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::JitFn) {
+            // v0.29.6: load the wildx JIT page ptr from the local slot
+            // and free via `npk_wildx_free` (Jit.free == wildx_free).
+            // The slot itself is intentionally leaked, mirroring the
+            // WildxRaw arm's pre-RAII manual-free convention.
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_wildx_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getInt32Ty(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            llvm::Value* page_ptr = builder.CreateLoad(
+                llvm::PointerType::get(context, 0),
+                entry.alloca, entry.varName + ".jit_fn");
+            builder.CreateCall(free_fn, {page_ptr});
             if (builder.GetInsertBlock()->getTerminator()) {
                 break;
             }

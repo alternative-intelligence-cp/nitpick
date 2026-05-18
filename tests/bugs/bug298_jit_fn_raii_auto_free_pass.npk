@@ -1,0 +1,24 @@
+// bug298 — v0.29.6 DROP-DEC-007: with `use "drop.npk".*;`, a
+// `wildx int8->:f = Jit.compile_add_i32();` binding inside an inner
+// block is auto-freed at scope end via an emitted
+// `npk_wildx_free(f)` call. No explicit `Jit.free(f)` required.
+// Closes the RAII followup explicitly flagged in JIT-DEC-003.
+//
+// v0.29.x scope: scope-end drops fire only on normal block fall-through.
+// The inner `{ ... }` block exercises that path.
+
+use "drop.npk".*;
+use "jit.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wildx int8->:f = raw Jit.compile_add_i32();
+        fixed int32:result = raw Jit.call_i32_i32(f, 7i32, 35i32);
+        if (result != 42i32) { exit 2; }
+    }
+    exit 0;
+};

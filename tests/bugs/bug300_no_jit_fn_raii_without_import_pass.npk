@@ -1,0 +1,24 @@
+// bug300 — v0.29.6 negative control: WITHOUT `use "drop.npk".*;` the
+// JIT auto-free gate is OFF. The binding is NOT auto-freed at scope
+// end; the user is responsible for calling `Jit.free(f)` explicitly
+// (the v0.28.2 contract). This program does call it manually and
+// must compile + exit 0, and the emitted IR must contain only the
+// single explicit `npk_wildx_free` from `Jit.free`, with no
+// compiler-inserted auto-drop.
+
+use "jit.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wildx int8->:f = raw Jit.compile_add_i32();
+        fixed int32:result = raw Jit.call_i32_i32(f, 7i32, 35i32);
+        fixed int32:free_rc = raw Jit.free(f);
+        if (result != 42i32) { exit 2; }
+        if (free_rc != 0i32) { exit 3; }
+    }
+    exit 0;
+};

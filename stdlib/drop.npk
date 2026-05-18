@@ -1,17 +1,19 @@
-// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3 + v0.29.4 + v0.29.5)
+// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3 + v0.29.4 + v0.29.5 + v0.29.6)
 //
 // Importing this file enables Drop-trait RAII auto-cleanup for
 // `wild T:x = T{ ... }` bindings (v0.29.3), `wildx T->:p = wildx_alloc(N);`
-// bindings (v0.29.4), and `int64:a = HandleArena.create();` bindings
-// (v0.29.5) in the importing program. Without this import, those
+// bindings (v0.29.4), `int64:a = HandleArena.create();` bindings
+// (v0.29.5), and `wildx int8->:f = Jit.compile_add_i32();` bindings
+// (v0.29.6) in the importing program. Without this import, those
 // bindings continue to follow the existing explicit-cleanup contracts
 // (ARIA-014 leak rule for wild/wildx + manual `free` / `wildx_free` /
-// `HandleArena.destroy`).
+// `HandleArena.destroy` / `Jit.free`).
 //
-// Scope (cumulative through v0.29.5):
+// Scope (cumulative through v0.29.6):
 //   * Supported (v0.29.3): `wild T:x = T{ ... };`         where T is a struct.
 //   * Supported (v0.29.4): `wildx T->:p = wildx_alloc(N);`  (executable mem).
 //   * Supported (v0.29.5): `int64:a = HandleArena.create();` (handle arena).
+//   * Supported (v0.29.6): `wildx int8->:f = Jit.compile_add_i32();` (JIT page).
 //   * Not yet            : `wild T->:p = alloc(...);` (raw pointer-typed wild),
 //                          per-handle auto-free for `HandleArena.alloc`.
 //
@@ -86,6 +88,25 @@ struct:NitpickHandleArenaRaii = {
 
 impl:Drop:for:NitpickHandleArenaRaii = {
     func:drop = NIL($$m NitpickHandleArenaRaii:self) {
+        pass;
+    };
+};
+
+// v0.29.6: JitFn auto-free. Presence of this Drop impl flips
+// `jit_fn_raii_enabled` in the compiler, after which
+// `wildx int8->:f = Jit.compile_add_i32();` bindings inside a block
+// auto-emit `npk_wildx_free(f)` at scope end (DROP-DEC-003 reverse
+// declaration order, DROP-DEC-010 drops BEFORE defers). Closes the
+// RAII followup explicitly flagged in JIT-DEC-003. The underlying
+// wildx page free is identical to the v0.29.4 wildx RAII dispatch,
+// but JIT bindings carry their own opt-in flag so a program can
+// enable JIT auto-free without enabling blanket wildx RAII.
+struct:NitpickJitFnRaii = {
+    int8:_marker;
+};
+
+impl:Drop:for:NitpickJitFnRaii = {
+    func:drop = NIL($$m NitpickJitFnRaii:self) {
         pass;
     };
 };

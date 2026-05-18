@@ -4615,6 +4615,11 @@ llvm::Module* compile_to_module(
     // npk_wildx_free at scope end). Driven by `use "drop.npk".*;` having
     // landed `impl:Drop:for:NitpickWildxRaii` in the registry.
     borrow_checker.setWildxRaiiEnabled(type_checker.hasWildxRaii());
+    // v0.29.6 DROP-DEC-007: opt-in JitFn RAII suppresses ARIA-014 obligation
+    // for `wildx int8->:f = Jit.compile_*();` bindings (IRGen emits
+    // npk_wildx_free at scope end). Driven by `use "drop.npk".*;` having
+    // landed `impl:Drop:for:NitpickJitFnRaii` in the registry.
+    borrow_checker.setJitFnRaiiEnabled(type_checker.hasJitFnRaii());
 
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
@@ -5223,6 +5228,11 @@ llvm::Module* compile_to_module(
     // v0.29.5: same opt-in landed `NitpickHandleArenaRaii` → flip the
     // HandleArena auto-destroy gate.
     ir_gen.setHandleArenaRaiiEnabled(type_checker.hasHandleArenaRaii());
+    // v0.29.6: same opt-in landed `NitpickJitFnRaii` → flip the JitFn
+    // auto-free gate. Lowering reuses `npk_wildx_free` (Jit.free == wildx_free)
+    // but the gate is separate so JIT auto-free is opt-in independently
+    // of blanket wildx RAII.
+    ir_gen.setJitFnRaiiEnabled(type_checker.hasJitFnRaii());
 
 #ifdef ARIA_HAS_Z3
     // Pass SMT-proven ustack optimization set to IR generator

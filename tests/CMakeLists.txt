@@ -1240,6 +1240,27 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0296 — JitFn RAII opt-in via `use "drop.npk".*;`
+# (v0.29.6, DROP-DEC-007). The stdlib sentinel `NitpickJitFnRaii`
+# toggles automatic `npk_wildx_free(...)` emission at scope end for
+# `wildx int8->:f = Jit.compile_add_i32();` bindings, closing the
+# RAII followup explicitly flagged in JIT-DEC-003. Validates: auto-
+# free IR emission, LIFO order for multiple JIT pages, and that the
+# pre-RAII explicit-`Jit.free` contract is preserved without the
+# import (no compiler-inserted double-free).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0296
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0296.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0296 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;jit;raii;codegen;v0.29.6"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

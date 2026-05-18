@@ -117,7 +117,13 @@ private:
         //   HandleArena -> emit `npk_handle_arena_destroy(load_i64(alloca))`
         //                  (alloca is the stack slot holding the int64
         //                  arena id returned by `HandleArena_create`).
-        enum class Kind { Stack, WildRaw, WildxRaw, HandleArena };
+        //   JitFn    -> emit `npk_wildx_free(load_ptr(alloca))` (alloca is
+        //               the stack slot holding the wildx page pointer
+        //               returned by `Jit.compile_add_i32()`). Same lowering
+        //               as WildxRaw but separately opt-in via
+        //               `NitpickJitFnRaii` so JIT auto-free can be enabled
+        //               without enabling blanket wildx RAII.
+        enum class Kind { Stack, WildRaw, WildxRaw, HandleArena, JitFn };
         std::string varName;
         llvm::Value* alloca;   // stack slot OR heap ptr value, depending on `kind`
         std::string typeName;  // Aria type name (drives mangled function lookup)
@@ -128,6 +134,7 @@ private:
     bool wild_raii_enabled_ = false;   // v0.29.3 DROP-DEC-007 opt-in flag
     bool wildx_raii_enabled_ = false;
     bool handle_arena_raii_enabled_ = false;  // v0.29.5 DROP-DEC-007
+    bool jit_fn_raii_enabled_ = false;        // v0.29.6 DROP-DEC-007
 
     // ARIA-022: Recursion depth limit to prevent stack overflow
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
@@ -653,6 +660,7 @@ public:
     void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
     void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
     void setHandleArenaRaiiEnabled(bool enabled) { handle_arena_raii_enabled_ = enabled; }
+    void setJitFnRaiiEnabled(bool enabled) { jit_fn_raii_enabled_ = enabled; }
     
     /**
      * Set the current module name (for determining function linkage)

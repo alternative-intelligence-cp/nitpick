@@ -806,6 +806,12 @@ private:
     // `npk_wildx_free` at scope end). See setWildxRaiiEnabled().
     bool wildx_raii_enabled_ = false;
 
+    // v0.29.6 DROP-DEC-007: JitFn RAII opt-in flag. When true, recordWildAlloc
+    // is skipped for `wildx int8->:f = Jit.compile_*();` bindings (IRGen emits
+    // `npk_wildx_free` at scope end). Independent of wildx_raii_enabled_ so a
+    // program can opt into JIT auto-free without enabling blanket wildx RAII.
+    bool jit_fn_raii_enabled_ = false;
+
     // A-004: Maps variable name → limitRulesName, populated in checkVarDecl.
     std::unordered_map<std::string, std::string> var_limit_rules_;
 
@@ -1261,6 +1267,7 @@ public:
      */
     void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
     void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
+    void setJitFnRaiiEnabled(bool enabled) { jit_fn_raii_enabled_ = enabled; }
     
     /**
      * v0.6.3: Enable borrow debug diagnostics (--borrow-debug)

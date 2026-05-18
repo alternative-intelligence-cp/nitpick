@@ -1206,6 +1206,16 @@ public:
         return drop_impls_.count("NitpickHandleArenaRaii") > 0
             || (typeSystem && typeSystem->getStructType("NitpickHandleArenaRaii") != nullptr);
     }
+    // v0.29.6 DROP-DEC-007: JitFn auto-free opt-in. Sentinel
+    // `NitpickJitFnRaii` (from `stdlib/drop.npk`) flips IRGen's
+    // `jit_fn_raii_enabled_` flag; thereafter
+    // `wildx int8->:f = Jit.compile_add_i32();` bindings get
+    // `npk_wildx_free(f)` emitted at scope end. Closes the RAII
+    // followup explicitly flagged in JIT-DEC-003.
+    bool hasJitFnRaii() const {
+        return drop_impls_.count("NitpickJitFnRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickJitFnRaii") != nullptr);
+    }
 };
 
 } // namespace sema

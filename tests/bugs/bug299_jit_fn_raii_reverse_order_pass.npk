@@ -1,0 +1,22 @@
+// bug299 — v0.29.6: two JIT pages in the same scope each get their
+// own auto-`npk_wildx_free` at scope end, in reverse declaration
+// order (DROP-DEC-003). Both calls must succeed.
+
+use "drop.npk".*;
+use "jit.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        wildx int8->:f1 = raw Jit.compile_add_i32();
+        wildx int8->:f2 = raw Jit.compile_add_i32();
+        fixed int32:r1 = raw Jit.call_i32_i32(f1, 1i32, 2i32);
+        fixed int32:r2 = raw Jit.call_i32_i32(f2, 10i32, 20i32);
+        if (r1 != 3i32) { exit 2; }
+        if (r2 != 30i32) { exit 3; }
+    }
+    exit 0;
+};

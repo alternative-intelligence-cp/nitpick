@@ -2010,6 +2010,42 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
         }
 
+        // v0.29.6 DROP-DEC-007: JitFn RAII opt-in. When enabled, skip the
+        // ARIA-014 obligation for `wildx int8->:f = Jit.compile_*();` so
+        // IRGen can auto-emit `npk_wildx_free` at scope end. Parser pre-
+        // mangles `Jit.compile_add_i32()` to identifier `Jit_compile_add_i32`
+        // before sema runs (mirrors HandleArena.create handling). Optional
+        // `raw(...)` / `drop(...)` wrappers are peeled before matching.
+        if (!raii_handles_this && jit_fn_raii_enabled_ && stmt->isWildx
+            && stmt->initializer) {
+            ASTNode* probe = stmt->initializer.get();
+            while (probe && probe->type == ASTNode::NodeType::CALL) {
+                auto* pc = static_cast<CallExpr*>(probe);
+                if (pc->callee
+                    && pc->callee->type == ASTNode::NodeType::IDENTIFIER
+                    && pc->arguments.size() == 1) {
+                    const std::string& pn =
+                        static_cast<IdentifierExpr*>(pc->callee.get())->name;
+                    if (pn == "raw" || pn == "drop") {
+                        probe = pc->arguments[0].get();
+                        continue;
+                    }
+                }
+                break;
+            }
+            if (probe && probe->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(probe);
+                if (call->callee
+                    && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cname =
+                        static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    if (cname.rfind("Jit_compile_", 0) == 0) {
+                        raii_handles_this = true;
+                    }
+                }
+            }
+        }
+
         // v0.6.3: Extract allocation size from alloc(size) call
         std::string alloc_size_expr;
         if (stmt->initializer->type == ASTNode::NodeType::CALL) {
