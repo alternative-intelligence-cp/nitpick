@@ -5234,6 +5234,50 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                         DropEntry::Kind::WildxRaw});
                 }
             }
+
+            // v0.29.5 DROP-DEC-007: register `int64:a = HandleArena.create();`
+            // bindings for scope-end auto-`npk_handle_arena_destroy` emission.
+            // Gated on the opt-in `use "drop.npk".*;` flag landing the
+            // `NitpickHandleArenaRaii` sentinel. The parser pre-mangles
+            // `HandleArena.create()` to an `IdentifierExpr` named
+            // `HandleArena_create` before sema/IRGen ever runs (see
+            // borrow_checker.cpp's local_arenas_ tracker for the parallel
+            // recognition path). Optional `raw(...)` / `drop(...)` wrappers
+            // around the call are peeled before matching. The alloca here
+            // is the stack slot that holds the arena id (int64); the
+            // dispatch arm loads from it and frees.
+            if (!drop_stack_.empty() && handle_arena_raii_enabled_ && alloca
+                && varDecl->initializer) {
+                ASTNode* probe = varDecl->initializer.get();
+                while (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* pc = static_cast<CallExpr*>(probe);
+                    if (pc->callee
+                        && pc->callee->type == ASTNode::NodeType::IDENTIFIER
+                        && pc->arguments.size() == 1) {
+                        const std::string& pn =
+                            static_cast<IdentifierExpr*>(pc->callee.get())->name;
+                        if (pn == "raw" || pn == "drop") {
+                            probe = pc->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(probe);
+                    if (call->callee
+                        && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cname =
+                            static_cast<IdentifierExpr*>(call->callee.get())->name;
+                        if (cname == "HandleArena_create"
+                            || cname == "npk_handle_arena_create") {
+                            drop_stack_.back().push_back(DropEntry{
+                                varDecl->varName, alloca, actualTypeName,
+                                DropEntry::Kind::HandleArena});
+                        }
+                    }
+                }
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -13471,6 +13515,26 @@ void npk::IRGenerator::executeScopeDrops() {
                 llvm::PointerType::get(context, 0),
                 entry.alloca, entry.varName + ".wildx_raw");
             builder.CreateCall(free_fn, {heap_ptr});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::HandleArena) {
+            // v0.29.5: load the int64 arena id from the local slot and
+            // call `npk_handle_arena_destroy(id)`. Destroying the arena
+            // bumps every slot's generation so any outstanding handles
+            // become stale (gen check returns NULL on later derefs).
+            llvm::FunctionCallee destroy_fn = module->getOrInsertFunction(
+                "npk_handle_arena_destroy",
+                llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    {llvm::Type::getInt64Ty(context)},
+                    false));
+            llvm::Value* arena_id = builder.CreateLoad(
+                llvm::Type::getInt64Ty(context),
+                entry.alloca, entry.varName + ".handle_arena_id");
+            builder.CreateCall(destroy_fn, {arena_id});
             if (builder.GetInsertBlock()->getTerminator()) {
                 break;
             }

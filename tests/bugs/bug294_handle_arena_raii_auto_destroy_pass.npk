@@ -1,0 +1,24 @@
+// bug294 — v0.29.5 DROP-DEC-007: with `use "drop.npk".*;`, an
+// `int64:a = HandleArena.create();` binding inside an inner block is
+// auto-destroyed at scope end via an emitted
+// `npk_handle_arena_destroy(a)` call. No explicit
+// `HandleArena.destroy(a)` is required.
+//
+// v0.29.x scope: scope-end drops only fire on normal block fall-through.
+// The inner `{ ... }` block exercises that path.
+
+use "drop.npk".*;
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        int64:a = raw HandleArena.create();
+        int64:h = raw HandleArena.alloc(a, 8i64);
+        if (h == 0i64) { exit 2; }
+    }
+    exit 0;
+};

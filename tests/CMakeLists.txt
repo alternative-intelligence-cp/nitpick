@@ -1218,6 +1218,28 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0295 — HandleArena RAII opt-in via `use "drop.npk".*;`
+# (v0.29.5, DROP-DEC-007). The stdlib sentinel `NitpickHandleArenaRaii`
+# toggles automatic `npk_handle_arena_destroy(...)` emission at scope
+# end for `int64:a = HandleArena.create();` bindings. Handle<T> values
+# stay on the explicit-`HandleArena.free(h)` contract; the existing
+# ARIA-032 "handle outlives arena" borrow check continues to fire.
+# Validates: auto-destroy IR emission, LIFO order for multiple arenas,
+# pre-RAII contract preserved without the import, and ARIA-032 still
+# rejects local-arena handle escape.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0295
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0295.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0295 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;handle;raii;codegen;v0.29.5"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

@@ -1,16 +1,19 @@
-// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3 + v0.29.4)
+// stdlib/drop.npk — RAII for wild pointer bindings (v0.29.3 + v0.29.4 + v0.29.5)
 //
-// Importing this file enables Drop-trait RAII auto-free for
-// `wild T:x = T{ ... }` bindings (v0.29.3) and `wildx T->:p = wildx_alloc(N);`
-// bindings (v0.29.4) in the importing program. Without this import, wild
-// and wildx bindings continue to follow the existing explicit-free
-// contract (ARIA-014 leak rule + manual `free(...)` / `npk_free(...)` /
-// `wildx_free(...)` required, double-free flagged via ARIA-022).
+// Importing this file enables Drop-trait RAII auto-cleanup for
+// `wild T:x = T{ ... }` bindings (v0.29.3), `wildx T->:p = wildx_alloc(N);`
+// bindings (v0.29.4), and `int64:a = HandleArena.create();` bindings
+// (v0.29.5) in the importing program. Without this import, those
+// bindings continue to follow the existing explicit-cleanup contracts
+// (ARIA-014 leak rule for wild/wildx + manual `free` / `wildx_free` /
+// `HandleArena.destroy`).
 //
-// Scope (cumulative through v0.29.4):
-//   * Supported (v0.29.3): `wild T:x = T{ ... };`        where T is a struct.
-//   * Supported (v0.29.4): `wildx T->:p = wildx_alloc(N);` (executable mem).
-//   * Not yet            : `wild T->:p = alloc(...);` (raw pointer-typed wild).
+// Scope (cumulative through v0.29.5):
+//   * Supported (v0.29.3): `wild T:x = T{ ... };`         where T is a struct.
+//   * Supported (v0.29.4): `wildx T->:p = wildx_alloc(N);`  (executable mem).
+//   * Supported (v0.29.5): `int64:a = HandleArena.create();` (handle arena).
+//   * Not yet            : `wild T->:p = alloc(...);` (raw pointer-typed wild),
+//                          per-handle auto-free for `HandleArena.alloc`.
 //
 // The unsupported patterns keep the v0.29.2-and-earlier explicit-free
 // contract intact; they are NOT affected by this opt-in.
@@ -62,6 +65,27 @@ struct:NitpickWildxRaii = {
 
 impl:Drop:for:NitpickWildxRaii = {
     func:drop = NIL($$m NitpickWildxRaii:self) {
+        pass;
+    };
+};
+
+// v0.29.5: HandleArena auto-destroy. Presence of this Drop impl flips
+// `handle_arena_raii_enabled` in the compiler, after which
+// `int64:a = HandleArena.create();` bindings inside a block auto-emit
+// `npk_handle_arena_destroy(a)` at scope end (DROP-DEC-003 reverse
+// declaration order, DROP-DEC-010 drops BEFORE defers). Because
+// `npk_handle_arena_destroy` bumps every slot's generation, all
+// outstanding `Handle<T>` values become stale automatically — no
+// separate per-handle auto-free is emitted in this slice (handles
+// stay on the explicit-`HandleArena.free(h)` contract; the existing
+// ARIA-032 "handle outlives arena" rule continues to fire on escape
+// attempts from a RAII-managed arena).
+struct:NitpickHandleArenaRaii = {
+    int8:_marker;
+};
+
+impl:Drop:for:NitpickHandleArenaRaii = {
+    func:drop = NIL($$m NitpickHandleArenaRaii:self) {
         pass;
     };
 };

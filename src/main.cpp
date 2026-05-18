@@ -5220,6 +5220,9 @@ llvm::Module* compile_to_module(
     // pre-RAII behavior is preserved.
     ir_gen.setWildRaiiEnabled(type_checker.hasWildRaii());
     ir_gen.setWildxRaiiEnabled(type_checker.hasWildxRaii());
+    // v0.29.5: same opt-in landed `NitpickHandleArenaRaii` → flip the
+    // HandleArena auto-destroy gate.
+    ir_gen.setHandleArenaRaiiEnabled(type_checker.hasHandleArenaRaii());
 
 #ifdef ARIA_HAS_Z3
     // Pass SMT-proven ustack optimization set to IR generator

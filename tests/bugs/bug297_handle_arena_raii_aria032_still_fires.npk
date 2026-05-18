@@ -1,0 +1,26 @@
+// bug297 — v0.29.5: ARIA-032 (handle outlives arena) MUST still fire
+// when RAII is enabled. Auto-destroy at scope end is precisely WHY
+// returning a handle from a local arena is unsafe — the arena will be
+// torn down before the caller can deref the handle. The opt-in adds
+// cleanup, not lifetime extension.
+//
+// Expected: compile FAILS with ARIA-032 on the `pass h;` statement.
+
+use "drop.npk".*;
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_handle = int64() {
+    int64:a = raw HandleArena.create();
+    int64:h = raw HandleArena.alloc(a, 8i64);
+    pass h;
+};
+
+func:main = int32() {
+    int64:x = raw make_handle();
+    if (x == 0i64) { exit 2; }
+    exit 0;
+};

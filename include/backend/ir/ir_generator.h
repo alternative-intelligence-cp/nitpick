@@ -114,7 +114,10 @@ private:
         //               returned by `npk_alloc` at the wild VAR_DECL site).
         //   WildxRaw -> emit `npk_wildx_free(alloca)` (alloca holds the heap
         //               ptr returned by `npk_wildx_alloc`).
-        enum class Kind { Stack, WildRaw, WildxRaw };
+        //   HandleArena -> emit `npk_handle_arena_destroy(load_i64(alloca))`
+        //                  (alloca is the stack slot holding the int64
+        //                  arena id returned by `HandleArena_create`).
+        enum class Kind { Stack, WildRaw, WildxRaw, HandleArena };
         std::string varName;
         llvm::Value* alloca;   // stack slot OR heap ptr value, depending on `kind`
         std::string typeName;  // Aria type name (drives mangled function lookup)
@@ -124,6 +127,7 @@ private:
     std::vector<std::vector<DropEntry>> drop_stack_;
     bool wild_raii_enabled_ = false;   // v0.29.3 DROP-DEC-007 opt-in flag
     bool wildx_raii_enabled_ = false;
+    bool handle_arena_raii_enabled_ = false;  // v0.29.5 DROP-DEC-007
 
     // ARIA-022: Recursion depth limit to prevent stack overflow
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
@@ -648,6 +652,7 @@ public:
      */
     void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
     void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
+    void setHandleArenaRaiiEnabled(bool enabled) { handle_arena_raii_enabled_ = enabled; }
     
     /**
      * Set the current module name (for determining function linkage)

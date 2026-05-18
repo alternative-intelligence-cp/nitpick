@@ -1196,6 +1196,16 @@ public:
         return drop_impls_.count("NitpickWildxRaii") > 0
             || (typeSystem && typeSystem->getStructType("NitpickWildxRaii") != nullptr);
     }
+    // v0.29.5 DROP-DEC-007: HandleArena auto-destroy opt-in. Sentinel
+    // `NitpickHandleArenaRaii` (from `stdlib/drop.npk`) flips IRGen's
+    // `handle_arena_raii_enabled_` flag; thereafter `int64:a =
+    // HandleArena.create();` bindings get `npk_handle_arena_destroy(a)`
+    // emitted at scope end. No borrow checker change — ARIA-032
+    // (handle-outlives-arena) continues to apply.
+    bool hasHandleArenaRaii() const {
+        return drop_impls_.count("NitpickHandleArenaRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickHandleArenaRaii") != nullptr);
+    }
 };
 
 } // namespace sema
