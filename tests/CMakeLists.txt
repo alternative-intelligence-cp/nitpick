@@ -1151,6 +1151,27 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0292 — Drop codegen for stack-scoped bindings (v0.29.2, DROP-DEC-003).
+# Adds automatic `T_drop(&local)` emission at block-scope exit for stack
+# locals whose static type has a registered `impl:Drop:for:T`. Leaf cases
+# only (normal fall-through); pass/fail/return early-exit paths are
+# deferred to v0.29.6. Reverse declaration order (LIFO, DROP-DEC-003),
+# drops emitted BEFORE defers (DROP-DEC-010), and no overreach on
+# Drop-less types — all asserted via emitted LLVM IR plus exit-code
+# runtime check.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0292
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0292.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0292 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;trait;sema;codegen;v0.29.2"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

@@ -1172,6 +1172,10 @@ public:
 
     // v0.23.7: MACRO-012 — return expansion trace for --expand-macros
     const std::vector<MacroExpansionRecord>& getMacroExpansionLog() const { return macroExpansionLog; }
+
+    // v0.29.2 DROP-DEC-001: expose the Drop impl registry to IR codegen so it
+    // can decide which stack-local types need scope-end auto-`drop` calls.
+    const std::unordered_map<std::string, FuncDeclStmt*>& getDropImpls() const { return drop_impls_; }
 };
 
 } // namespace sema

@@ -1,0 +1,40 @@
+// bug287 — v0.29.2 DROP-DEC-003 / DROP-DEC-010
+// IR-level positive test: with two stack locals A and B declared in this
+// order inside the inner block, the harness asserts that B's drop is
+// emitted BEFORE A's drop (reverse declaration order, LIFO). The harness
+// `grep`s the emitted LLVM IR and uses line numbers to confirm:
+//
+//   line(call @TwoB_drop) < line(call @TwoA_drop)
+//
+// And that both calls appear before the outer `exit 0` block.
+//
+// Runtime: compiles, links, runs to `exit 0`. No side-effect observation
+// of self mutation (deferred to later slices once the wild-ptr field
+// pattern is finalised).
+
+struct:TwoA = { int32:a; };
+struct:TwoB = { int32:b; };
+
+impl:Drop:for:TwoA = {
+    func:drop = NIL($$m TwoA:self) {
+        pass;
+    };
+};
+
+impl:Drop:for:TwoB = {
+    func:drop = NIL($$m TwoB:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    {
+        TwoA:a;
+        TwoB:b;
+        a.a = 1i32;
+        b.b = 2i32;
+    }
+    exit 0;
+};

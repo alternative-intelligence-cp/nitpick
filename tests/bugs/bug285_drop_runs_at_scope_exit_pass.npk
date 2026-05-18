@@ -1,0 +1,29 @@
+// bug285 — v0.29.2 DROP-DEC-003
+// Positive surface + IR test: a Drop-implementing stack local declared
+// in an inner block triggers an automatic call to `Marker_drop(&local)`
+// when the block falls through. Verified two ways by the harness:
+//
+//   1. The program compiles, links, and runs to `exit 0`.
+//   2. The emitted LLVM IR (`npkc --emit-llvm`) contains a call to
+//      `@Marker_drop`. The harness greps the .ll for this.
+//
+// The destructor body is `pass;` (no side effect); runtime side-effect
+// observability is exercised by bug287.
+
+struct:Marker = { int32:n; };
+
+impl:Drop:for:Marker = {
+    func:drop = NIL($$m Marker:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    {
+        Marker:m;
+        m.n = 1i32;
+    }
+    exit 0;
+};

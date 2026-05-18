@@ -91,6 +91,29 @@ private:
     std::vector<std::vector<BlockStmt*>> defer_stack;
     bool executing_defers = false;  // ARIA-023: Prevents defer_stack modification during iteration
 
+    // ========================================================================
+    // v0.29.2 DROP-DEC-001/003: per-scope drop tracking.
+    //
+    // For every block we push an empty drop list onto `drop_stack_`. When a
+    // stack-allocated local of a type listed in `drop_impl_types_` is declared,
+    // its (name, alloca-pointer, type-name) tuple is appended to the top of
+    // the stack. At block exit (normal fallthrough only -- pass/fail/return
+    // is scope-narrowed to v0.29.6) we walk the top entry in reverse and emit
+    // a call to `<TypeName>_drop(&local)` per DROP-DEC-003 (reverse
+    // declaration order). Drops fire BEFORE user `defer` blocks per
+    // DROP-DEC-010.
+    //
+    // `drop_impl_types_` is populated once from the TypeChecker via
+    // `setDropImplTypes()` after sema completes.
+    // ========================================================================
+    struct DropEntry {
+        std::string varName;
+        llvm::Value* alloca;   // pointer to the stack slot (already a pointer-typed Value)
+        std::string typeName;  // Aria type name (drives mangled function lookup)
+    };
+    std::set<std::string> drop_impl_types_;
+    std::vector<std::vector<DropEntry>> drop_stack_;
+
     // ARIA-022: Recursion depth limit to prevent stack overflow
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
     size_t codegen_depth_ = 0;
@@ -313,6 +336,14 @@ private:
      * Execute defer blocks in the current scope (LIFO order)
      */
     void executeScopeDefers();
+
+    /**
+     * v0.29.2 DROP-DEC-003: emit scope-end auto-`drop` calls for every
+     * binding pushed into the current scope's `drop_stack_` entry. Reverse
+     * declaration order. Runs BEFORE `executeScopeDefers()` per DROP-DEC-010.
+     * No-op if the current insertion point already has a terminator.
+     */
+    void executeScopeDrops();
     
     /**
      * Execute all defer blocks up to function level (LIFO order)
@@ -584,6 +615,15 @@ public:
      * @param ts Pointer to TypeSystem (must remain valid for lifetime of IR generation)
      */
     void setTypeSystem(sema::TypeSystem* ts);
+
+    /**
+     * v0.29.2 DROP-DEC-001: register the set of Aria type names for which an
+     * `impl:Drop:for:T` was sema-validated. The IR generator uses this to
+     * decide which stack locals need scope-end auto-`drop` calls. Must be
+     * called after sema and before `generateModule()`. Safe to call with an
+     * empty set (no drops emitted).
+     */
+    void setDropImplTypes(const std::set<std::string>& types) { drop_impl_types_ = types; }
     
     /**
      * Set the current module name (for determining function linkage)

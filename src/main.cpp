@@ -5188,6 +5188,18 @@ llvm::Module* compile_to_module(
     // Pass TypeSystem to IR generator for struct type lookups
     ir_gen.setTypeSystem(&type_system);
 
+    // v0.29.2 DROP-DEC-001: hand the Drop-impl type set to the IR generator
+    // so it can emit scope-end auto-`drop` calls for stack locals of those
+    // types (DROP-DEC-003: reverse declaration order). Sema has populated
+    // type_checker.getDropImpls() by this point.
+    {
+        std::set<std::string> drop_types;
+        for (const auto& kv : type_checker.getDropImpls()) {
+            drop_types.insert(kv.first);
+        }
+        ir_gen.setDropImplTypes(drop_types);
+    }
+
 #ifdef ARIA_HAS_Z3
     // Pass SMT-proven ustack optimization set to IR generator
     if (!ustack_opt_funcs.empty()) {

@@ -4313,6 +4313,8 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (manage_defer_scope) {
                 // Push new defer scope for this block
                 defer_stack.push_back(std::vector<BlockStmt*>());
+                // v0.29.2: parallel drop scope (only managed when defers are)
+                drop_stack_.push_back(std::vector<DropEntry>());
             }
 
             // Save named_values snapshot for scope restoration after block
@@ -4328,11 +4330,16 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
 
             if (manage_defer_scope) {
+                // v0.29.2 DROP-DEC-010: drops fire BEFORE user `defer` blocks.
+                executeScopeDrops();
+
                 // Execute defers at block exit (LIFO order)
                 executeScopeDefers();
 
                 // Pop defer scope
                 defer_stack.pop_back();
+                // v0.29.2: pop the parallel drop scope
+                drop_stack_.pop_back();
             }
 
             // Restore outer scope's named_values (undoes any shadowing from this block)
@@ -5167,6 +5174,18 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             // modulo operations to runtime functions (npk_tryte_mod, npk_nyte_mod)
             var_aria_types[varDecl->varName] = actualTypeName;
             ARIA_DBG_STREAM << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
+
+            // v0.29.2 DROP-DEC-001/003: register stack-allocated locals of
+            // Drop-implementing types for scope-end auto-`drop` emission.
+            // Leaf cases only: gc/wild storage classes are deferred to
+            // v0.29.3/4 (where the destructor must compose with the
+            // existing explicit-free path). `alloca_inst` is non-null
+            // exactly when the local lives on the stack.
+            if (alloca_inst && !drop_stack_.empty()
+                && drop_impl_types_.count(actualTypeName)) {
+                drop_stack_.back().push_back(DropEntry{
+                    varDecl->varName, alloca, actualTypeName});
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -13348,6 +13367,65 @@ void npk::IRGenerator::executeScopeDefers() {
     }
 
     executing_defers = was_executing;
+}
+
+// v0.29.2 DROP-DEC-003: Emit scope-end auto-`drop` calls for every binding
+// pushed into the current `drop_stack_` entry. Reverse declaration order.
+// No-op if the insertion point already has a terminator (e.g. an `exit` ran
+// inside the block, in which case fall-through cleanup is unreachable).
+//
+// Scope limit (v0.29.2): leaf cases only. Early-exit paths (`pass`/`fail`/
+// `return`) do NOT call this yet -- that wiring lands in v0.29.6 alongside
+// DROP-DEC-004. For now, drops fire only on normal block fallthrough.
+void npk::IRGenerator::executeScopeDrops() {
+    if (drop_stack_.empty()) {
+        return;
+    }
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+
+    std::vector<DropEntry>& current = drop_stack_.back();
+    if (current.empty()) {
+        return;
+    }
+
+    for (auto it = current.rbegin(); it != current.rend(); ++it) {
+        const DropEntry& entry = *it;
+        std::string mangled = entry.typeName + "_drop";
+        llvm::Function* fn = module->getFunction(mangled);
+        if (!fn) {
+            // Sema registered the mangled function; if it is missing here
+            // the IR module is in an inconsistent state. Skip rather than
+            // crash so the rest of compilation can still report a useful
+            // diagnostic.
+            ARIA_DBG_STREAM << "[DEBUG DROP] missing drop fn '" << mangled
+                            << "' for binding '" << entry.varName << "'\n";
+            continue;
+        }
+        // The drop function's parameter type tells us the ABI used for
+        // `$$m T:self`. For now this is the struct-by-value lowering used
+        // by typical user-defined methods; future slices may also need to
+        // handle by-pointer ABI. We load the struct value from the
+        // entry.alloca slot and pass it positionally.
+        llvm::FunctionType* fty = fn->getFunctionType();
+        if (fty->getNumParams() != 1) {
+            ARIA_DBG_STREAM << "[DEBUG DROP] unexpected drop arity for '"
+                            << mangled << "': " << fty->getNumParams() << "\n";
+            continue;
+        }
+        llvm::Type* paramTy = fty->getParamType(0);
+        llvm::Value* arg = entry.alloca;
+        if (!paramTy->isPointerTy()) {
+            arg = builder.CreateLoad(paramTy, entry.alloca, entry.varName + ".drop_self");
+        }
+        builder.CreateCall(fn, {arg});
+        // Stop emitting if the destructor itself terminated control flow
+        // (e.g. it called `exit`); subsequent drops are unreachable.
+        if (builder.GetInsertBlock()->getTerminator()) {
+            break;
+        }
+    }
 }
 
 void npk::IRGenerator::executeFunctionDefers() {
