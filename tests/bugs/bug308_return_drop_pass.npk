@@ -1,0 +1,25 @@
+// bug308 — v0.29.7: drops on the RETURN code path mirror the PASS
+// path. A helper returning a Result literal still has scope drops
+// executed BEFORE the return. (Nitpick's `return` is only legal with
+// a `Result{...}` literal; bare-identifier moves go through `pass`,
+// covered by bug304.)
+//
+// IR check: @do_return body contains at least one `npk_wildx_free`
+// call before the function returns.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_return = int32() {
+    wildx int8->:p = wildx_alloc(32i64);
+    return Result{val: 0i32, err: 0i32, is_error: 0i8};
+};
+
+func:main = int32() {
+    int32:r = raw do_return();
+    if (r != 0i32) { exit 2; }
+    exit 0;
+};

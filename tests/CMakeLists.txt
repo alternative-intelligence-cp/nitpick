@@ -1261,6 +1261,28 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0297 — Drop ordering on early-exit paths (v0.29.7,
+# DROP-DEC-004 + DROP-DEC-008 + DROP-DEC-010). Wires
+# `executeAllScopeDrops()` into the PASS / FAIL / RETURN code paths
+# so RAII bindings are dropped on `pass v` / `fail e` / `return ...`
+# in reverse declaration order, innermost-out across nested scopes,
+# BEFORE function-scope defers. Hard `exit N` continues to skip
+# drops (DROP-DEC-008). Bare-identifier `pass v` / `return v` skips
+# the moved binding's drop (DROP-DEC-004 move semantics). Closes
+# the heaviest slice in the v0.29.x cycle.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0297
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0297.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0297 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;ordering;pass;fail;return;codegen;v0.29.7"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

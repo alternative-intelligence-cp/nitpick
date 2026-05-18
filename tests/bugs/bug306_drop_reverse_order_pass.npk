@@ -1,0 +1,27 @@
+// bug306 — v0.29.7: two RAII bindings declared in the same scope
+// are dropped in REVERSE declaration order on `pass`. A then B →
+// drops emitted as B then A. v0.29.7 uses the SAME emitDropsForScope
+// dispatch as the fall-through path, so order is identical.
+//
+// IR check: @do_pass body contains at least 2 `npk_wildx_free` calls.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_pass = int32() {
+    {
+        wildx int8->:a = wildx_alloc(16i64);
+        wildx int8->:b = wildx_alloc(32i64);
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+func:main = int32() {
+    int32:r = raw do_pass();
+    if (r != 0i32) { exit 2; }
+    exit 0;
+};

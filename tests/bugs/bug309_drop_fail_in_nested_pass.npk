@@ -1,0 +1,25 @@
+// bug309 — v0.29.7: `fail` from an INNER block runs drops for both
+// inner and outer scopes (innermost-out) BEFORE returning via TBB.
+//
+// IR check: @do_fail body contains at least 2 `npk_wildx_free` calls.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_fail = int32() {
+    wildx int8->:outer = wildx_alloc(32i64);
+    {
+        wildx int8->:inner = wildx_alloc(16i64);
+        fail 7i32;
+    }
+    pass 1i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = do_fail();
+    if (r.is_error) { exit 0; }
+    exit 2;
+};

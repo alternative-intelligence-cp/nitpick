@@ -366,7 +366,27 @@ private:
      * No-op if the current insertion point already has a terminator.
      */
     void executeScopeDrops();
-    
+
+    /**
+     * v0.29.7 DROP-DEC-004: emit drops for every still-live binding across
+     * EVERY active scope (innermost-out, reverse declaration order within
+     * each scope). Called from `pass` / `fail` codegen before
+     * `executeFunctionDefers()`. Hard `exit` does NOT call this
+     * (DROP-DEC-008). No-op if the current insertion point already has a
+     * terminator. If `moved_var_name` is non-empty, any DropEntry whose
+     * `varName` matches is skipped (move semantics: `pass v` transfers
+     * ownership, so `v` must NOT be dropped before the return).
+     */
+    void executeAllScopeDrops(const std::string& moved_var_name = "");
+
+    /**
+     * v0.29.7: shared per-scope drop-emission helper. Caller is responsible
+     * for terminator + empty `drop_stack_` guards. If `moved_var_name` is
+     * non-empty, entries with matching `varName` are skipped.
+     */
+    void emitDropsForScope(std::vector<DropEntry>& current,
+                           const std::string& moved_var_name = "");
+
     /**
      * Execute all defer blocks up to function level (LIFO order)
      * Called by return statements

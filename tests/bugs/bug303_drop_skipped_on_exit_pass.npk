@@ -1,0 +1,18 @@
+// bug303 — v0.29.7 / DROP-DEC-008: hard `exit N` does NOT run drops.
+// Same semantics as C++ `_Exit` / Rust `process::exit`. The wildx
+// binding `p` is leaked intentionally; the process exits and the OS
+// reclaims memory.
+//
+// IR check: harness asserts @main body contains ZERO `npk_wildx_free`
+// calls — the auto-injected drop must not appear on the exit path.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    wildx int8->:p = wildx_alloc(32i64);
+    exit 0;
+};

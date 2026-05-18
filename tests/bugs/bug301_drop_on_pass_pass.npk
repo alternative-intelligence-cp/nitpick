@@ -1,0 +1,23 @@
+// bug301 — v0.29.7: `pass v` in a helper runs drops on still-live
+// RAII bindings BEFORE returning. `do_pass` allocates and passes 0.
+// The auto-injected drop must fire before the return.
+//
+// IR check: harness greps @do_pass body for at least one
+// `npk_wildx_free` call.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_pass = int32() {
+    wildx int8->:p = wildx_alloc(32i64);
+    pass 0i32;
+};
+
+func:main = int32() {
+    int32:r = raw do_pass();
+    if (r != 0i32) { exit 2; }
+    exit 0;
+};

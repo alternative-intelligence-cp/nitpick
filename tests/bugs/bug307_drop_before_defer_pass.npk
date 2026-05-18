@@ -1,0 +1,28 @@
+// bug307 — v0.29.7 / DROP-DEC-010: on `pass`, drops run BEFORE
+// function-scope defers. The order is a static guarantee from
+// `executeAllScopeDrops()` being called BEFORE `executeFunctionDefers()`
+// in the PASS code path.
+//
+// IR check: @do_pass body contains at least one `npk_wildx_free` call
+// (the auto-injected drop) — proves the drop path is reached on the
+// pass exit, even with a defer present.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:do_pass = int32() {
+    int32:counter = 0i32;
+    defer { counter = counter + 1i32; }
+    {
+        wildx int8->:p = wildx_alloc(32i64);
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+func:main = int32() {
+    int32:r = raw do_pass();
+    if (r != 0i32) { exit 2; }
+    exit 0;
+};

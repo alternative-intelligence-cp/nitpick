@@ -4353,6 +4353,16 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             // Return statement - execute all defers before returning
             ReturnStmt* ret = static_cast<ReturnStmt*>(stmt);
 
+            // v0.29.7 DROP-DEC-004: drops run BEFORE defers (DROP-DEC-010)
+            // on every still-live binding (innermost-out, reverse order).
+            // If `return v` returns a bare identifier, skip its drop
+            // (move semantics).
+            std::string ret_moved_name;
+            if (ret->value && ret->value->type == ASTNode::NodeType::IDENTIFIER) {
+                ret_moved_name = static_cast<IdentifierExpr*>(ret->value.get())->name;
+            }
+            executeAllScopeDrops(ret_moved_name);
+
             // Execute all defer blocks (LIFO order)
             executeFunctionDefers();
 
@@ -6495,6 +6505,17 @@ skip_comparison:
             // Builds Result{val: value, err: NULL, is_error: false}
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
             
+            // v0.29.7 DROP-DEC-004: run drops on every still-live binding
+            // (innermost-out, reverse declaration order) BEFORE defers
+            // (DROP-DEC-010). If `pass v` returns a bare identifier,
+            // skip that binding's drop (move semantics — ownership
+            // transferred to caller). No-op if drop_stack_ is empty.
+            std::string moved_name;
+            if (passStmt->value && passStmt->value->type == ASTNode::NodeType::IDENTIFIER) {
+                moved_name = static_cast<IdentifierExpr*>(passStmt->value.get())->name;
+            }
+            executeAllScopeDrops(moved_name);
+
             // Execute all defer blocks (LIFO order) before returning
             executeFunctionDefers();
             
@@ -6727,6 +6748,11 @@ skip_comparison:
             // Builds Result{val: zero, err: error_code, is_error: true}
             FailStmt* failStmt = static_cast<FailStmt*>(stmt);
             
+            // v0.29.7 DROP-DEC-004: run drops on every still-live binding
+            // BEFORE defers. `failsafe` runs at the call-site level after
+            // the Result propagates up; drops + defers are local cleanup.
+            executeAllScopeDrops();
+
             // Execute all defer blocks (LIFO order) before returning
             executeFunctionDefers();
             
@@ -13512,9 +13538,9 @@ void npk::IRGenerator::executeScopeDefers() {
 // No-op if the insertion point already has a terminator (e.g. an `exit` ran
 // inside the block, in which case fall-through cleanup is unreachable).
 //
-// Scope limit (v0.29.2): leaf cases only. Early-exit paths (`pass`/`fail`/
-// `return`) do NOT call this yet -- that wiring lands in v0.29.6 alongside
-// DROP-DEC-004. For now, drops fire only on normal block fallthrough.
+// v0.29.7 DROP-DEC-004: Early-exit paths (`pass` / `fail`) now also drop
+// all still-live bindings via `executeAllScopeDrops()` (defined below),
+// which delegates to `emitDropsForScope` per scope.
 void npk::IRGenerator::executeScopeDrops() {
     if (drop_stack_.empty()) {
         return;
@@ -13522,14 +13548,48 @@ void npk::IRGenerator::executeScopeDrops() {
     if (builder.GetInsertBlock()->getTerminator()) {
         return;
     }
+    emitDropsForScope(drop_stack_.back());
+}
 
-    std::vector<DropEntry>& current = drop_stack_.back();
+// v0.29.7 DROP-DEC-004: Walk every active scope innermost-out and emit
+// drops for each. Called from PASS / FAIL codegen BEFORE
+// `executeFunctionDefers()` (DROP-DEC-010: drops first, then defers).
+// Hard `exit` does NOT call this (DROP-DEC-008).
+void npk::IRGenerator::executeAllScopeDrops(const std::string& moved_var_name) {
+    if (drop_stack_.empty()) {
+        return;
+    }
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+    for (auto scope_it = drop_stack_.rbegin(); scope_it != drop_stack_.rend(); ++scope_it) {
+        if (builder.GetInsertBlock()->getTerminator()) {
+            break;
+        }
+        emitDropsForScope(*scope_it, moved_var_name);
+    }
+}
+
+// v0.29.7: shared per-scope drop-emission helper, extracted from
+// `executeScopeDrops` so both fall-through and early-exit paths share
+// the same dispatch table. Caller is responsible for terminator + empty
+// guards on `drop_stack_` itself. `moved_var_name` (if non-empty) names
+// a binding whose ownership was transferred out (e.g. `pass v`) and
+// whose drop MUST be skipped to avoid use-after-free.
+void npk::IRGenerator::emitDropsForScope(std::vector<DropEntry>& current,
+                                         const std::string& moved_var_name) {
     if (current.empty()) {
         return;
     }
 
     for (auto it = current.rbegin(); it != current.rend(); ++it) {
         const DropEntry& entry = *it;
+
+        // v0.29.7 DROP-DEC-004: skip the binding whose ownership was
+        // transferred out via `pass v` (move semantics).
+        if (!moved_var_name.empty() && entry.varName == moved_var_name) {
+            continue;
+        }
 
         // v0.29.3 DROP-DEC-007: dispatch by entry kind. WildRaw bindings
         // emit `npk_free(heap_ptr)`; WildxRaw bindings (reserved for
