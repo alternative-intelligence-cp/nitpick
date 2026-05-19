@@ -705,6 +705,25 @@ void BorrowChecker::propagateTransitiveDestroys() {
                 }
             }
         }
+        // v0.30.2: lift callee escapes through return_call_sites_.
+        for (auto& [caller_name, call_sites] : return_call_sites_) {
+            auto caller_it = func_summaries.find(caller_name);
+            if (caller_it == func_summaries.end()) continue;
+            auto& caller = caller_it->second;
+            for (const auto& cs : call_sites) {
+                auto callee_it = func_summaries.find(cs.callee_name);
+                if (callee_it == func_summaries.end()) continue;
+                const auto& callee = callee_it->second;
+                for (const auto& [callee_pi, caller_pi] : cs.arg_to_param) {
+                    if (!callee.escapes_param_arena_indices.count(callee_pi))
+                        continue;
+                    if (caller.escapes_param_arena_indices
+                            .insert(caller_pi).second) {
+                        changed = true;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -869,6 +888,202 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
             }
         };
         scan(func->body.get());
+
+        // v0.30.2 (ARIA-032 transitive arena escape): scan pass/return
+        // statements to detect which of our params have their ARENA
+        // flow out through the return value. Three forms recognised:
+        //   (1) direct call:     `pass HandleArena_alloc(<param>, ..)`
+        //   (2) local handle:    `pass h` where h was bound to (1).
+        //   (3) callee chain:    `pass callee(<param>, ..)` \u2014 recorded
+        //       as a return_call_sites_ entry so the fixpoint pass can
+        //       lift the callee's own escape set into ours.
+        // Struct-literal escapes are deferred to v0.30.6 precision.
+        std::unordered_map<std::string, size_t>
+            local_handle_to_param_idx;  // var name -> our param index
+        std::function<void(ASTNode*)> preScan = [&](ASTNode* n) {
+            if (!n) return;
+            if (n->type == ASTNode::NodeType::VAR_DECL) {
+                auto* vd = static_cast<VarDeclStmt*>(n);
+                ASTNode* init = vd->initializer.get();
+                // Peel raw(...)/drop(...).
+                while (init && init->type == ASTNode::NodeType::CALL) {
+                    auto* c = static_cast<CallExpr*>(init);
+                    if (c->callee &&
+                        c->callee->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& nm =
+                            static_cast<IdentifierExpr*>(
+                                c->callee.get())->name;
+                        if ((nm == "raw" || nm == "drop") &&
+                            c->arguments.size() == 1) {
+                            init = c->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (init && init->type == ASTNode::NodeType::CALL) {
+                    auto* c = static_cast<CallExpr*>(init);
+                    if (c->callee &&
+                        c->callee->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cn =
+                            static_cast<IdentifierExpr*>(
+                                c->callee.get())->name;
+                        if (cn == "HandleArena_alloc" &&
+                            !c->arguments.empty() &&
+                            c->arguments[0] &&
+                            c->arguments[0]->type ==
+                                ASTNode::NodeType::IDENTIFIER) {
+                            const std::string& an =
+                                static_cast<IdentifierExpr*>(
+                                    c->arguments[0].get())->name;
+                            for (size_t i = 0;
+                                 i < summary.param_names.size(); ++i) {
+                                if (summary.param_names[i] == an) {
+                                    local_handle_to_param_idx[vd->varName]
+                                        = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            switch (n->type) {
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) preScan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    preScan(is->thenBranch.get());
+                    preScan(is->elseBranch.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        preScan(func->body.get());
+
+        std::vector<CallSiteParamMap>& ret_call_sites =
+            return_call_sites_[func->funcName];
+
+        auto checkReturnedExpr = [&](ASTNode* v) {
+            if (!v) return;
+            // Peel raw(...)/drop(...).
+            ASTNode* node = v;
+            while (node && node->type == ASTNode::NodeType::CALL) {
+                auto* c = static_cast<CallExpr*>(node);
+                if (c->callee &&
+                    c->callee->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& nm =
+                        static_cast<IdentifierExpr*>(
+                            c->callee.get())->name;
+                    if ((nm == "raw" || nm == "drop") &&
+                        c->arguments.size() == 1) {
+                        node = c->arguments[0].get();
+                        continue;
+                    }
+                }
+                break;
+            }
+            if (!node) return;
+            // Form (1): direct HandleArena_alloc(<param>, ..).
+            if (node->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(node);
+                if (call->callee &&
+                    call->callee->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cn =
+                        static_cast<IdentifierExpr*>(
+                            call->callee.get())->name;
+                    if (cn == "HandleArena_alloc" &&
+                        !call->arguments.empty() &&
+                        call->arguments[0] &&
+                        call->arguments[0]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[0].get())->name;
+                        for (size_t i = 0;
+                             i < summary.param_names.size(); ++i) {
+                            if (summary.param_names[i] == an) {
+                                summary.escapes_param_arena_indices
+                                    .insert(i);
+                                break;
+                            }
+                        }
+                        return;
+                    }
+                    // Form (3): generic callee \u2014 record arg<->param
+                    // mapping for fixpoint lifting.
+                    CallSiteParamMap cs;
+                    cs.callee_name = cn;
+                    for (size_t ai = 0;
+                         ai < call->arguments.size(); ++ai) {
+                        ASTNode* a = call->arguments[ai].get();
+                        if (!a || a->type !=
+                            ASTNode::NodeType::IDENTIFIER) continue;
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(a)->name;
+                        for (size_t pj = 0;
+                             pj < summary.param_names.size(); ++pj) {
+                            if (summary.param_names[pj] == an) {
+                                cs.arg_to_param.emplace_back(ai, pj);
+                                break;
+                            }
+                        }
+                    }
+                    if (!cs.arg_to_param.empty()) {
+                        ret_call_sites.push_back(std::move(cs));
+                    }
+                }
+                return;
+            }
+            // Form (2): local handle binding.
+            if (node->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& vn =
+                    static_cast<IdentifierExpr*>(node)->name;
+                auto it = local_handle_to_param_idx.find(vn);
+                if (it != local_handle_to_param_idx.end()) {
+                    summary.escapes_param_arena_indices.insert(it->second);
+                }
+            }
+        };
+
+        std::function<void(ASTNode*)> retScan = [&](ASTNode* n) {
+            if (!n) return;
+            switch (n->type) {
+                case ASTNode::NodeType::RETURN: {
+                    auto* r = static_cast<ReturnStmt*>(n);
+                    checkReturnedExpr(r->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::PASS: {
+                    auto* p = static_cast<PassStmt*>(n);
+                    checkReturnedExpr(p->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) retScan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    retScan(is->thenBranch.get());
+                    retScan(is->elseBranch.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        retScan(func->body.get());
     }
 
     return summary;
@@ -1658,11 +1873,13 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 auto saved_transitive = transitively_destroyed_arenas_;
                 auto saved_local_arenas = local_arenas_;
                 auto saved_struct_handles = struct_handle_arenas_;
+                auto saved_transitive_handles = transitive_handles_;
                 handle_arena_map_.clear();
                 destroyed_arenas_.clear();
                 transitively_destroyed_arenas_.clear();
                 local_arenas_.clear();
                 struct_handle_arenas_.clear();
+                transitive_handles_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1676,6 +1893,7 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 transitively_destroyed_arenas_ = std::move(saved_transitive);
                 local_arenas_ = std::move(saved_local_arenas);
                 struct_handle_arenas_ = std::move(saved_struct_handles);
+                transitive_handles_ = std::move(saved_transitive_handles);
             }
             current_function = prev_function;
             break;
@@ -2209,6 +2427,33 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 // handles that would outlive the frame.
                 if (cn == "HandleArena_create") {
                     local_arenas_.insert(stmt->varName);
+                }
+                // v0.30.2 (ARIA-032 transitive arena escape): if the
+                // callee is a user-defined function whose summary
+                // escapes a parameter's arena, link this binding to
+                // the matching argument arena. The handle is then
+                // checked by the standard ARIA-032 escape / deref-
+                // after-destroy machinery; transitive_handles_ flags
+                // it so checkHandleArenaEscape downgrades the escape
+                // diagnostic to a warning (IPC-DEC-004).
+                else if (cn != "HandleArena_alloc") {
+                    auto sumIt = func_summaries.find(cn);
+                    if (sumIt != func_summaries.end()) {
+                        const auto& summary = sumIt->second;
+                        for (size_t pi : summary.escapes_param_arena_indices) {
+                            if (pi < call->arguments.size() &&
+                                call->arguments[pi] &&
+                                call->arguments[pi]->type ==
+                                    ASTNode::NodeType::IDENTIFIER) {
+                                const std::string& an =
+                                    static_cast<IdentifierExpr*>(
+                                        call->arguments[pi].get())->name;
+                                handle_arena_map_[stmt->varName] = an;
+                                transitive_handles_.insert(stmt->varName);
+                                break;  // first matching escape wins
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -3308,6 +3553,25 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
         auto it = handle_arena_map_.find(hname);
         if (it != handle_arena_map_.end() &&
             local_arenas_.count(it->second)) {
+            // v0.30.2: if the binding was inferred via a callee escape
+            // summary (transitive), downgrade to a warning per
+            // IPC-DEC-004 \u2014 one-cycle migration window before
+            // promotion to a hard error.
+            if (transitive_handles_.count(hname)) {
+                addWarning("Handle '" + hname + "' is returned but its "
+                           "arena '" + it->second + "' is local to this "
+                           "function. The handle's arena was inferred "
+                           "from a callee that escapes its arena "
+                           "parameter; the returned handle is invalid "
+                           "at every caller. Thread the arena in as a "
+                           "parameter so the caller owns its lifetime. "
+                           "See ARIA-032 and guide/memory/handles.md. "
+                           "This will become an error in a future "
+                           "release.",
+                           context);
+                tagCode("ARIA-032");
+                return;
+            }
             addError("Handle '" + hname + "' is returned but its arena '" +
                      it->second + "' is local to this function. The handle "
                      "is invalid at every caller. Thread the arena in as a "
@@ -3365,6 +3629,40 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
                              "See ARIA-032 and guide/memory/handles.md",
                              context);
                     tagCode("ARIA-032");
+                }
+                return;
+            }
+            // v0.30.2 (ARIA-032 transitive arena escape): `pass wrap(a)`
+            // where wrap's summary marks param k as escaping its arena
+            // and our arg k is a local arena. Warn-only per IPC-DEC-004.
+            auto sumIt = func_summaries.find(cn);
+            if (sumIt != func_summaries.end()) {
+                const auto& summary = sumIt->second;
+                for (size_t pi : summary.escapes_param_arena_indices) {
+                    if (pi < call->arguments.size() &&
+                        call->arguments[pi] &&
+                        call->arguments[pi]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[pi].get())->name;
+                        if (local_arenas_.count(an)) {
+                            addWarning("Handle returned from `" + cn +
+                                       "(" + an + ", ..)` is invalid at "
+                                       "the caller \u2014 the callee escapes "
+                                       "its arena parameter and the arena "
+                                       "'" + an + "' is local to this "
+                                       "function. Thread the arena in as "
+                                       "a parameter so the caller owns "
+                                       "its lifetime. See ARIA-032 and "
+                                       "guide/memory/handles.md. This "
+                                       "will become an error in a future "
+                                       "release.",
+                                       context);
+                            tagCode("ARIA-032");
+                            return;
+                        }
+                    }
                 }
             }
         }

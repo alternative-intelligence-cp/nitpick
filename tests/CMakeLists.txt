@@ -1306,6 +1306,28 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.2 — ARIA-032 transitive arena escape (bug316-320)
+# ============================================================================
+# Extension of v0.28.4's local-arena escape rule: a function whose return
+# value is a handle bound to one of its arena parameters now carries an
+# `escapes_param_arena_indices` summary. Caller sites passing a LOCAL
+# arena to such a callee trigger an ARIA-032 WARNING (IPC-DEC-004 one-
+# cycle migration window). Fixpoint pass also lifts escapes through
+# arbitrary call chains.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0302
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0302.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0302 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;transitive;ipc;handles;escape;v0.30.2"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

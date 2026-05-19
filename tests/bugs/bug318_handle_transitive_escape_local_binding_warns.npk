@@ -1,0 +1,31 @@
+// BUG-318 (v0.30.2, ARIA-032 transitive arena escape — local
+// binding form): the caller stores the wrap'd handle into a local
+// `Handle<int32>` binding first, then returns it. The consumer-side
+// `transitive_handles_` machinery must propagate the (handle ->
+// local arena) link through the call so the eventual `pass h`
+// emits the ARIA-032 warning.
+//
+// Expected: compiles cleanly with an ARIA-032 warning mentioning
+// the local arena.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:wrap = int64(int64:a) {
+    pass raw HandleArena.alloc(a, 4i64);
+};
+
+func:leak = int64() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw wrap(a);
+    pass h;
+};
+
+func:main = int32() {
+    int64:h = raw leak();
+    if (h == 0i64) { exit 0; }
+    exit 0;
+};

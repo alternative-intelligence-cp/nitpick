@@ -1,0 +1,30 @@
+// BUG-319 (v0.30.2, ARIA-032 transitive arena escape — no false
+// positive): `noop_wrapper` does not allocate or return any
+// handle bound to its arena parameter. Its
+// `escapes_param_arena_indices` must stay empty so the caller's
+// `noop_wrapper(a)` compiles cleanly with zero ARIA-032
+// diagnostics.
+//
+// Expected: compiles cleanly with no ARIA-032 messages and runs
+// to exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:noop_wrapper = int32(int64:a) {
+    int64:h = raw HandleArena.alloc(a, 4i64);
+    if (h == 0i64) { pass 1i32; }
+    raw HandleArena.free(h);
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int32:rc = raw noop_wrapper(a);
+    if (rc != 0i32) { exit 2; }
+    raw HandleArena.destroy(a);
+    exit 0;
+};

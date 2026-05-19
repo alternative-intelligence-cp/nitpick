@@ -1,0 +1,30 @@
+// BUG-320 (v0.30.2, ARIA-032 transitive arena escape — legitimate
+// threaded-arena case): the caller threads its OWN arena parameter
+// into `wrap`. Since the arena is NOT in the caller's
+// `local_arenas_`, the returned handle is valid at the original
+// caller of `relay`. No ARIA-032 warning should fire.
+//
+// Expected: compiles cleanly with no ARIA-032 messages and runs
+// to exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:wrap = int64(int64:a) {
+    pass raw HandleArena.alloc(a, 4i64);
+};
+
+func:relay = int64(int64:a) {
+    pass raw wrap(a);
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int64:h = raw relay(a);
+    if (h == 0i64) { exit 2; }
+    raw HandleArena.destroy(a);
+    exit 0;
+};

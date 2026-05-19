@@ -731,6 +731,19 @@ struct FunctionBorrowSummary {
     // while continuing to error on the direct case.
     std::set<size_t> transitively_destroys_param_indices;
 
+    // v0.30.2 (ARIA-032 transitive arena escape): indices of params
+    // whose ARENA flows out through this function's return value. Set
+    // when the body has `pass`/`return` of either
+    //   * `HandleArena_alloc(<param>, ...)` (direct alloc returned), or
+    //   * a local handle binding initialised from such an alloc, or
+    //   * a call to a function whose own summary already escapes that
+    //     callee-param (lifted by the fixpoint pass).
+    // At consumer call sites, if the matching argument is a LOCAL arena
+    // (in `local_arenas_`), the returned handle would outlive the
+    // arena's frame — a new transitive variant of ARIA-032 that ships
+    // as a WARNING for one cycle per IPC-DEC-004 before promotion.
+    std::set<size_t> escapes_param_arena_indices;
+
     // v0.28.5 (ARIA-032 FFI passthrough rule): true when this function is
     // declared `extern` (no body to analyse). Call sites use this to emit
     // the FFI passthrough warning when a tracked handle is passed to an
@@ -834,6 +847,17 @@ private:
     std::unordered_map<std::string, std::string> handle_arena_map_;
     std::unordered_set<std::string> destroyed_arenas_;
 
+    // v0.30.2 (ARIA-032 transitive arena escape): set of handle binding
+    // names whose `handle_arena_map_` entry was inferred via a callee
+    // summary's `escapes_param_arena_indices` (i.e. the binding came
+    // from `stack Handle<T>:h = wrap(a);` where `wrap` escapes its
+    // arena param). Used by checkHandleArenaEscape to emit a WARNING
+    // (not an error) when such a handle is returned/passed and the
+    // bound arena is local — the indirection through `wrap` is a new
+    // analysis path that ships warn-only for one cycle per IPC-DEC-004.
+    // Save/restored at FUNC_DECL like the other handle maps.
+    std::unordered_set<std::string> transitive_handles_;
+
     // v0.30.1 (ARIA-032 transitive destroy): parallel set to
     // `destroyed_arenas_`. Populated at call sites when the callee
     // summary's `transitively_destroys_param_indices` (not the direct
@@ -897,6 +921,17 @@ private:
     std::unordered_map<std::string, std::vector<CallSiteParamMap>>
         func_call_sites_;
 
+    // v0.30.2 (ARIA-032 transitive arena escape): per-function record
+    // of call sites whose result flows directly into a `pass` /
+    // `return` statement of this function. Used by the fixpoint pass
+    // to lift callee `escapes_param_arena_indices` into the caller's
+    // own escape set when our argument at the escaping position is
+    // one of our parameters. Same shape as `func_call_sites_` —
+    // (callee_param_index, caller_param_index) pairs for each
+    // bare-identifier argument that names one of our parameters.
+    std::unordered_map<std::string, std::vector<CallSiteParamMap>>
+        return_call_sites_;
+
     /**
      * v0.30.1: fixpoint pass over `func_summaries` + `func_call_sites_`
      * that lifts each callee's destroyed-parameter set into the caller's
@@ -906,6 +941,11 @@ private:
      * union side: the callee's direct AND transitive sets both
      * contribute (so depth-N is reached in N iterations regardless of
      * declaration order).
+     *
+     * v0.30.2: same fixpoint also lifts callee
+     * `escapes_param_arena_indices` through `return_call_sites_` into
+     * the caller's own escape set. Both lifts share one outer loop so
+     * convergence is reached together.
      */
     void propagateTransitiveDestroys();
 
