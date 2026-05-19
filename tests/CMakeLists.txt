@@ -1284,6 +1284,28 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.1 — ARIA-032 transitive destroy fixpoint (cross-function Phase 2)
+# ============================================================================
+# Lifts `destroys_param_indices` through callee summaries via a
+# fixpoint pass in `BorrowChecker::propagateTransitiveDestroys`, so
+# handle-outlives-arena (ARIA-032) catches arenas destroyed by a
+# callee-of-a-callee (not just direct callees as in v0.28.3). Per
+# IPC-DEC-004, new transitive cases ship as WARNINGS for one cycle
+# before promotion to error. Closes bug269 (v0.28.3 documented gap).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0301
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0301.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0301 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;transitive;ipc;handles;v0.30.1"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

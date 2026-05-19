@@ -1,0 +1,39 @@
+// BUG-311 (v0.30.1, ARIA-032 transitive destroy — depth 2):
+// `wrapper(a)` calls `destroyer(a)` which calls
+// `HandleArena.destroy(a)`. Phase 2 (v0.30.1) lifts the destroy
+// through the wrapper via the fixpoint pass in the borrow checker.
+// Using a handle bound to `a` AFTER the wrapper call must produce
+// an ARIA-032 WARNING (one-cycle warn-only window per IPC-DEC-004).
+//
+// Expected: compiles cleanly (warning only). Binary is not executed
+// at runtime because the deref-after-destroy would be UB; the test
+// driver only asserts the compile-time warning fires.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroyer = int32(int64:a) {
+    raw HandleArena.destroy(a);
+    pass 0i32;
+};
+
+func:wrapper = int32(int64:a) {
+    int32:rc = raw destroyer(a);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw wrapper(a);
+    if (rc != 0i32) { exit 2; }
+    // This `free` triggers the v0.30.1 transitive-destroy warning:
+    // the arena `a` was destroyed by `destroyer` which was called by
+    // `wrapper`, and the fixpoint pass lifted that destroy into
+    // `wrapper`'s `transitively_destroys_param_indices`.
+    raw HandleArena.free(h);
+    exit 0;
+};

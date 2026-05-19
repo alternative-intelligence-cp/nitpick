@@ -722,6 +722,15 @@ struct FunctionBorrowSummary {
     // sites, the matching argument's bound arena is marked destroyed.
     std::set<size_t> destroys_param_indices;
 
+    // v0.30.1 (ARIA-032 transitive destroy): indices of params that this
+    // function destroys *indirectly* via a callee whose own summary marks
+    // those param indices as destroyed. Computed by the fixpoint pass in
+    // `collectFunctionSummaries` after every summary has been built. Kept
+    // separate from `destroys_param_indices` so that call sites can warn
+    // for the transitive case (IPC-DEC-004 — one-cycle migration window)
+    // while continuing to error on the direct case.
+    std::set<size_t> transitively_destroys_param_indices;
+
     // v0.28.5 (ARIA-032 FFI passthrough rule): true when this function is
     // declared `extern` (no body to analyse). Call sites use this to emit
     // the FFI passthrough warning when a tracked handle is passed to an
@@ -825,6 +834,17 @@ private:
     std::unordered_map<std::string, std::string> handle_arena_map_;
     std::unordered_set<std::string> destroyed_arenas_;
 
+    // v0.30.1 (ARIA-032 transitive destroy): parallel set to
+    // `destroyed_arenas_`. Populated at call sites when the callee
+    // summary's `transitively_destroys_param_indices` (not the direct
+    // set) maps an argument-position arena. Later `HandleArena_deref` /
+    // `_free` on a handle bound to one of these arenas produces a
+    // WARNING (not an error) per IPC-DEC-004 — the transitive path is
+    // new in v0.30.x and ships warn-only for one cycle to let user
+    // code migrate before promotion. Save/restored at FUNC_DECL like
+    // `destroyed_arenas_`.
+    std::unordered_set<std::string> transitively_destroyed_arenas_;
+
     // v0.28.4 (ARIA-032 Phase 2): arenas declared LOCALLY in the current
     // function (initializer was `HandleArena_create()`). Used by return/
     // pass to reject returning a `Handle<T>` (or a fresh `HandleArena_alloc`
@@ -858,6 +878,36 @@ private:
     
     // Name of the function currently being analyzed (empty if global scope)
     std::string current_function;
+
+    // v0.30.1 (ARIA-032 transitive destroy): per-function record of every
+    // call site whose argument list references one or more of the
+    // function's own parameters by bare identifier. Used by the fixpoint
+    // pass after summary collection to lift callees'
+    // `destroys_param_indices` / `transitively_destroys_param_indices`
+    // into the caller's `transitively_destroys_param_indices`.
+    //
+    // `arg_to_param` is a list of (callee_param_index, caller_param_index)
+    // pairs — for argument position `i` in the call, if the argument is a
+    // bare identifier matching parameter `j` of the caller, the pair
+    // (i, j) is recorded.
+    struct CallSiteParamMap {
+        std::string callee_name;
+        std::vector<std::pair<size_t, size_t>> arg_to_param;
+    };
+    std::unordered_map<std::string, std::vector<CallSiteParamMap>>
+        func_call_sites_;
+
+    /**
+     * v0.30.1: fixpoint pass over `func_summaries` + `func_call_sites_`
+     * that lifts each callee's destroyed-parameter set into the caller's
+     * `transitively_destroys_param_indices`. Iterates until no summary
+     * changes. Called from `collectFunctionSummaries` after the initial
+     * direct-scan pass over every function body. Conservative on the
+     * union side: the callee's direct AND transitive sets both
+     * contribute (so depth-N is reached in N iterations regardless of
+     * declaration order).
+     */
+    void propagateTransitiveDestroys();
 
     // ========================================================================
     // Trait Registry (v0.6.2: Trait Integration)

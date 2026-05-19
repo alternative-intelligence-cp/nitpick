@@ -661,6 +661,51 @@ void BorrowChecker::collectFunctionSummaries(ASTNode* ast) {
         FunctionBorrowSummary summary = buildSummary(func);
         func_summaries[summary.func_name] = std::move(summary);
     }
+
+    // v0.30.1: fixpoint lift of transitive destroys across summaries.
+    // Safe to call unconditionally — no-op when no call sites recorded
+    // a parameter-binding match.
+    propagateTransitiveDestroys();
+}
+
+void BorrowChecker::propagateTransitiveDestroys() {
+    // Iterate until no caller's transitive set grows. Bounded by
+    // O(N_funcs * max_params) in the worst case (every iteration adds at
+    // least one index to some summary or we terminate).
+    bool changed = true;
+    int iterations = 0;
+    const int kMaxIterations = 64;  // safety net; real fixpoint is much smaller
+    while (changed && iterations < kMaxIterations) {
+        changed = false;
+        ++iterations;
+        for (auto& [caller_name, call_sites] : func_call_sites_) {
+            auto caller_it = func_summaries.find(caller_name);
+            if (caller_it == func_summaries.end()) continue;
+            auto& caller = caller_it->second;
+            for (const auto& cs : call_sites) {
+                auto callee_it = func_summaries.find(cs.callee_name);
+                if (callee_it == func_summaries.end()) continue;
+                const auto& callee = callee_it->second;
+                // Union of callee's direct + transitive destroys.
+                for (const auto& [callee_pi, caller_pi] : cs.arg_to_param) {
+                    bool destroyed =
+                        callee.destroys_param_indices.count(callee_pi) ||
+                        callee.transitively_destroys_param_indices.count(
+                            callee_pi);
+                    if (!destroyed) continue;
+                    // Skip if already known as a DIRECT destroy of the
+                    // caller — direct beats transitive (so existing
+                    // ARIA-032 errors keep their error wording).
+                    if (caller.destroys_param_indices.count(caller_pi))
+                        continue;
+                    if (caller.transitively_destroys_param_indices
+                            .insert(caller_pi).second) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
 }
 
 FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
@@ -720,6 +765,13 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
     // (no body) are conservatively ignored — they cannot be analyzed
     // here and would need explicit annotation (deferred to v0.28.5).
     if (func->body && !func->isExtern) {
+        // v0.30.1: also collect call sites whose arguments reference our
+        // own parameters by bare identifier. After all summaries are
+        // built, `propagateTransitiveDestroys` walks this list to lift
+        // callee destroy sets into our `transitively_destroys_param_indices`.
+        std::vector<CallSiteParamMap>& call_sites =
+            func_call_sites_[func->funcName];
+
         std::function<void(ASTNode*)> scan = [&](ASTNode* n) {
             if (!n) return;
             if (n->type == ASTNode::NodeType::CALL) {
@@ -743,6 +795,32 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
                                 break;
                             }
                         }
+                    }
+
+                    // v0.30.1: record this call site for transitive
+                    // lifting. Skip the HandleArena_destroy direct match
+                    // above (it's already in the direct set) and skip
+                    // any callee we cannot resolve later — but it's
+                    // cheaper to record everything and filter in the
+                    // fixpoint pass than to filter here.
+                    CallSiteParamMap cs;
+                    cs.callee_name = cn;
+                    for (size_t ai = 0; ai < call->arguments.size(); ++ai) {
+                        ASTNode* a = call->arguments[ai].get();
+                        if (!a || a->type !=
+                            ASTNode::NodeType::IDENTIFIER) continue;
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(a)->name;
+                        for (size_t pj = 0;
+                             pj < summary.param_names.size(); ++pj) {
+                            if (summary.param_names[pj] == an) {
+                                cs.arg_to_param.emplace_back(ai, pj);
+                                break;
+                            }
+                        }
+                    }
+                    if (!cs.arg_to_param.empty()) {
+                        call_sites.push_back(std::move(cs));
                     }
                 }
             }
@@ -1577,10 +1655,12 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 // produce false-positive ARIA-032 in another. Save/restore.
                 auto saved_handle_map = handle_arena_map_;
                 auto saved_destroyed = destroyed_arenas_;
+                auto saved_transitive = transitively_destroyed_arenas_;
                 auto saved_local_arenas = local_arenas_;
                 auto saved_struct_handles = struct_handle_arenas_;
                 handle_arena_map_.clear();
                 destroyed_arenas_.clear();
+                transitively_destroyed_arenas_.clear();
                 local_arenas_.clear();
                 struct_handle_arenas_.clear();
                 // Register parameters so borrows of params are tracked
@@ -1593,6 +1673,7 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 ctx.restore(saved_ctx);
                 handle_arena_map_ = std::move(saved_handle_map);
                 destroyed_arenas_ = std::move(saved_destroyed);
+                transitively_destroyed_arenas_ = std::move(saved_transitive);
                 local_arenas_ = std::move(saved_local_arenas);
                 struct_handle_arenas_ = std::move(saved_struct_handles);
             }
@@ -3868,6 +3949,23 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "See ARIA-032 and guide/memory/handles.md",
                          expr);
                 tagCode("ARIA-032");
+            } else if (it != handle_arena_map_.end() &&
+                       transitively_destroyed_arenas_.count(it->second)) {
+                // v0.30.1 (ARIA-032 transitive destroy): the arena was
+                // destroyed by a *callee* of an earlier call in this
+                // function. Per IPC-DEC-004, this new case ships as a
+                // WARNING for one cycle to let user code migrate before
+                // promotion to error. The direct-destroy arm above stays
+                // an error.
+                addWarning("Handle '" + h + "' outlives its arena '" +
+                           it->second + "'. A function called earlier "
+                           "destroys this arena transitively (through a "
+                           "callee). The handle is no longer valid. "
+                           "See ARIA-032 and guide/memory/handles.md. "
+                           "This will become an error in a future "
+                           "release.",
+                           expr);
+                tagCode("ARIA-032");
             }
         }
 
@@ -3888,6 +3986,27 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     destroyed_arenas_.insert(
                         static_cast<IdentifierExpr*>(
                             expr->arguments[pi].get())->name);
+                }
+            }
+            // v0.30.1 (ARIA-032 transitive destroy): mark the bound
+            // arena of any argument whose corresponding callee param is
+            // in the callee's `transitively_destroys_param_indices` set.
+            // Goes into a parallel set so the later deref/free check
+            // can downgrade to a warning (one-cycle migration window
+            // per IPC-DEC-004).
+            for (size_t pi : summary.transitively_destroys_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& an =
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name;
+                    // Don't shadow a hard-destroyed arena with a
+                    // softer transitive mark.
+                    if (!destroyed_arenas_.count(an)) {
+                        transitively_destroyed_arenas_.insert(an);
+                    }
                 }
             }
 
