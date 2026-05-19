@@ -1,0 +1,21 @@
+// bug280 — v0.29.1 DROP-DEC-001
+// Negative: duplicate impl:Drop:for:Counter is rejected.
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        self.n = 0i32;
+        pass;
+    };
+};
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        self.n = -1i32;
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() { exit 0; };

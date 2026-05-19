@@ -91,6 +91,51 @@ private:
     std::vector<std::vector<BlockStmt*>> defer_stack;
     bool executing_defers = false;  // ARIA-023: Prevents defer_stack modification during iteration
 
+    // ========================================================================
+    // v0.29.2 DROP-DEC-001/003: per-scope drop tracking.
+    //
+    // For every block we push an empty drop list onto `drop_stack_`. When a
+    // stack-allocated local of a type listed in `drop_impl_types_` is declared,
+    // its (name, alloca-pointer, type-name) tuple is appended to the top of
+    // the stack. At block exit (normal fallthrough only -- pass/fail/return
+    // is scope-narrowed to v0.29.6) we walk the top entry in reverse and emit
+    // a call to `<TypeName>_drop(&local)` per DROP-DEC-003 (reverse
+    // declaration order). Drops fire BEFORE user `defer` blocks per
+    // DROP-DEC-010.
+    //
+    // `drop_impl_types_` is populated once from the TypeChecker via
+    // `setDropImplTypes()` after sema completes.
+    // ========================================================================
+    struct DropEntry {
+        // v0.29.3 DROP-DEC-007: `kind` selects the lowering used at scope end.
+        //   Stack    -> existing v0.29.2 path: call `<typeName>_drop(self)`
+        //               with `alloca` pointing at the stack slot.
+        //   WildRaw  -> emit `npk_free(alloca)` (alloca holds the heap ptr
+        //               returned by `npk_alloc` at the wild VAR_DECL site).
+        //   WildxRaw -> emit `npk_wildx_free(alloca)` (alloca holds the heap
+        //               ptr returned by `npk_wildx_alloc`).
+        //   HandleArena -> emit `npk_handle_arena_destroy(load_i64(alloca))`
+        //                  (alloca is the stack slot holding the int64
+        //                  arena id returned by `HandleArena_create`).
+        //   JitFn    -> emit `npk_wildx_free(load_ptr(alloca))` (alloca is
+        //               the stack slot holding the wildx page pointer
+        //               returned by `Jit.compile_add_i32()`). Same lowering
+        //               as WildxRaw but separately opt-in via
+        //               `NitpickJitFnRaii` so JIT auto-free can be enabled
+        //               without enabling blanket wildx RAII.
+        enum class Kind { Stack, WildRaw, WildxRaw, HandleArena, JitFn };
+        std::string varName;
+        llvm::Value* alloca;   // stack slot OR heap ptr value, depending on `kind`
+        std::string typeName;  // Aria type name (drives mangled function lookup)
+        Kind kind = Kind::Stack;
+    };
+    std::set<std::string> drop_impl_types_;
+    std::vector<std::vector<DropEntry>> drop_stack_;
+    bool wild_raii_enabled_ = false;   // v0.29.3 DROP-DEC-007 opt-in flag
+    bool wildx_raii_enabled_ = false;
+    bool handle_arena_raii_enabled_ = false;  // v0.29.5 DROP-DEC-007
+    bool jit_fn_raii_enabled_ = false;        // v0.29.6 DROP-DEC-007
+
     // ARIA-022: Recursion depth limit to prevent stack overflow
     static constexpr size_t MAX_CODEGEN_DEPTH = 256;
     size_t codegen_depth_ = 0;
@@ -313,7 +358,35 @@ private:
      * Execute defer blocks in the current scope (LIFO order)
      */
     void executeScopeDefers();
-    
+
+    /**
+     * v0.29.2 DROP-DEC-003: emit scope-end auto-`drop` calls for every
+     * binding pushed into the current scope's `drop_stack_` entry. Reverse
+     * declaration order. Runs BEFORE `executeScopeDefers()` per DROP-DEC-010.
+     * No-op if the current insertion point already has a terminator.
+     */
+    void executeScopeDrops();
+
+    /**
+     * v0.29.7 DROP-DEC-004: emit drops for every still-live binding across
+     * EVERY active scope (innermost-out, reverse declaration order within
+     * each scope). Called from `pass` / `fail` codegen before
+     * `executeFunctionDefers()`. Hard `exit` does NOT call this
+     * (DROP-DEC-008). No-op if the current insertion point already has a
+     * terminator. If `moved_var_name` is non-empty, any DropEntry whose
+     * `varName` matches is skipped (move semantics: `pass v` transfers
+     * ownership, so `v` must NOT be dropped before the return).
+     */
+    void executeAllScopeDrops(const std::string& moved_var_name = "");
+
+    /**
+     * v0.29.7: shared per-scope drop-emission helper. Caller is responsible
+     * for terminator + empty `drop_stack_` guards. If `moved_var_name` is
+     * non-empty, entries with matching `varName` are skipped.
+     */
+    void emitDropsForScope(std::vector<DropEntry>& current,
+                           const std::string& moved_var_name = "");
+
     /**
      * Execute all defer blocks up to function level (LIFO order)
      * Called by return statements
@@ -584,6 +657,30 @@ public:
      * @param ts Pointer to TypeSystem (must remain valid for lifetime of IR generation)
      */
     void setTypeSystem(sema::TypeSystem* ts);
+
+    /**
+     * v0.29.2 DROP-DEC-001: register the set of Aria type names for which an
+     * `impl:Drop:for:T` was sema-validated. The IR generator uses this to
+     * decide which stack locals need scope-end auto-`drop` calls. Must be
+     * called after sema and before `generateModule()`. Safe to call with an
+     * empty set (no drops emitted).
+     */
+    void setDropImplTypes(const std::set<std::string>& types) { drop_impl_types_ = types; }
+
+    /**
+     * v0.29.3 DROP-DEC-007: toggle RAII for `wild` / `wildx` pointer
+     * bindings. When set, every `wild T:x = alloc(...)` or `wildx T:x = ...`
+     * declared inside a block is registered into `drop_stack_` and an
+     * `npk_free` / `npk_wildx_free` call is auto-emitted at scope exit
+     * (DROP-DEC-003: reverse declaration order; DROP-DEC-010: drops BEFORE
+     * defers). Wired from `TypeChecker::hasWildRaii()` /
+     * `TypeChecker::hasWildxRaii()` in `main.cpp` after sema. The opt-in
+     * signal at the source level is `use "drop.npk".*;`.
+     */
+    void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
+    void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
+    void setHandleArenaRaiiEnabled(bool enabled) { handle_arena_raii_enabled_ = enabled; }
+    void setJitFnRaiiEnabled(bool enabled) { jit_fn_raii_enabled_ = enabled; }
     
     /**
      * Set the current module name (for determining function linkage)

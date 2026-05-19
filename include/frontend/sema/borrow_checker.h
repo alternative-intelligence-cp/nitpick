@@ -796,6 +796,22 @@ private:
     // Populated by setRulesTable() from main.cpp before analyze() is called.
     const std::unordered_map<std::string, RulesDeclStmt*>* rules_table_ = nullptr;
 
+    // v0.29.3 DROP-DEC-007: wild RAII opt-in flag. When true, recordWildAlloc
+    // is skipped for canonical `wild T:x = T{...}` struct bindings (IRGen
+    // emits `npk_free` at scope end). See setWildRaiiEnabled().
+    bool wild_raii_enabled_ = false;
+
+    // v0.29.4 DROP-DEC-007: wildx RAII opt-in flag. When true, recordWildAlloc
+    // is skipped for `wildx T->:p = wildx_alloc(N);` bindings (IRGen emits
+    // `npk_wildx_free` at scope end). See setWildxRaiiEnabled().
+    bool wildx_raii_enabled_ = false;
+
+    // v0.29.6 DROP-DEC-007: JitFn RAII opt-in flag. When true, recordWildAlloc
+    // is skipped for `wildx int8->:f = Jit.compile_*();` bindings (IRGen emits
+    // `npk_wildx_free` at scope end). Independent of wildx_raii_enabled_ so a
+    // program can opt into JIT auto-free without enabling blanket wildx RAII.
+    bool jit_fn_raii_enabled_ = false;
+
     // A-004: Maps variable name → limitRulesName, populated in checkVarDecl.
     std::unordered_map<std::string, std::string> var_limit_rules_;
 
@@ -1240,6 +1256,18 @@ public:
      * Call this before analyze() when the program uses limit<Rules> qualifiers.
      */
     void setRulesTable(const std::unordered_map<std::string, RulesDeclStmt*>* rules) { rules_table_ = rules; }
+
+    /**
+     * v0.29.3 DROP-DEC-007: opt-in RAII flag. When set (driven by
+     * `TypeChecker::hasWildRaii()` after sema sees `use "drop.npk".*;`),
+     * the borrow checker suppresses the ARIA-014 leak obligation for
+     * wild-struct bindings (the IR generator emits `npk_free` at scope
+     * end). Pre-RAII modules leave this false and keep the existing
+     * explicit-free contract.
+     */
+    void setWildRaiiEnabled(bool enabled) { wild_raii_enabled_ = enabled; }
+    void setWildxRaiiEnabled(bool enabled) { wildx_raii_enabled_ = enabled; }
+    void setJitFnRaiiEnabled(bool enabled) { jit_fn_raii_enabled_ = enabled; }
     
     /**
      * v0.6.3: Enable borrow debug diagnostics (--borrow-debug)

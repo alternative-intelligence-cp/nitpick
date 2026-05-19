@@ -1130,6 +1130,159 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
     )
 endif()
 
+# bug_tests_v0291 — Drop trait parser+sema surface (v0.29.1, DROP-DEC-001).
+# Adds the builtin `Drop` trait special-case: `impl:Drop:for:T = { func:drop = NIL($$m T:self) { ... }; };`
+# parses and sema-validates without requiring a user-declared `trait:Drop`.
+# Exactly one `drop` method per type; method must be named 'drop',
+# return NIL, take exactly one self-like parameter; duplicate Drop impls
+# rejected; unknown types rejected. The existing `drop <expr>` unary
+# discard form is preserved (DROP-DEC-007a regression). Runtime auto-call
+# arrives in v0.29.2.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0291
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0291.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0291 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;trait;sema;parser;v0.29.1"
+    )
+endif()
+
+# bug_tests_v0292 — Drop codegen for stack-scoped bindings (v0.29.2, DROP-DEC-003).
+# Adds automatic `T_drop(&local)` emission at block-scope exit for stack
+# locals whose static type has a registered `impl:Drop:for:T`. Leaf cases
+# only (normal fall-through); pass/fail/return early-exit paths are
+# deferred to v0.29.6. Reverse declaration order (LIFO, DROP-DEC-003),
+# drops emitted BEFORE defers (DROP-DEC-010), and no overreach on
+# Drop-less types — all asserted via emitted LLVM IR plus exit-code
+# runtime check.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0292
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0292.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0292 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;trait;sema;codegen;v0.29.2"
+    )
+endif()
+
+# bug_tests_v0293 — Wild RAII opt-in via `use "drop.npk".*;` (v0.29.3,
+# DROP-DEC-007). Importing the stdlib sentinel `NitpickWildRaii` toggles
+# automatic `npk_free(...)` emission at scope end for canonical
+# `wild T:x = T{...}` struct bindings, with the borrow checker's
+# leak-on-early-exit guard (ARIA-014) suppressed for those bindings.
+# Scope: leaf canonical wild-struct only — pointer-typed wild and
+# `wildx` are deferred to v0.29.3b/v0.29.4. Asserted via emitted LLVM
+# IR (`npk_free` calls present), runtime exit code, and an opt-in
+# negative test (bug290) proving ARIA-014 still fires without the
+# import.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0293
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0293.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0293 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;wild;raii;codegen;v0.29.3"
+    )
+endif()
+
+# bug_tests_v0294 — Wildx RAII opt-in via `use "drop.npk".*;` (v0.29.4,
+# DROP-DEC-007). Importing the stdlib sentinel `NitpickWildxRaii`
+# toggles automatic `npk_wildx_free(...)` emission at scope end for
+# `wildx T->:p = wildx_alloc(N);` bindings, with the borrow checker's
+# leak-on-early-exit guard (ARIA-014) suppressed for those bindings.
+# Scope: `wildx + wildx_alloc(...)` call-initializer only — pointer-
+# typed wild and raw-pointer wild stay on the explicit-free contract.
+# Asserted via emitted LLVM IR (`npk_wildx_free` calls present),
+# runtime exit code, and an opt-in negative test (bug293) proving
+# ARIA-014 still fires without the import.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0294
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0294.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0294 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;wildx;raii;codegen;v0.29.4"
+    )
+endif()
+
+# bug_tests_v0295 — HandleArena RAII opt-in via `use "drop.npk".*;`
+# (v0.29.5, DROP-DEC-007). The stdlib sentinel `NitpickHandleArenaRaii`
+# toggles automatic `npk_handle_arena_destroy(...)` emission at scope
+# end for `int64:a = HandleArena.create();` bindings. Handle<T> values
+# stay on the explicit-`HandleArena.free(h)` contract; the existing
+# ARIA-032 "handle outlives arena" borrow check continues to fire.
+# Validates: auto-destroy IR emission, LIFO order for multiple arenas,
+# pre-RAII contract preserved without the import, and ARIA-032 still
+# rejects local-arena handle escape.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0295
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0295.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0295 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;handle;raii;codegen;v0.29.5"
+    )
+endif()
+
+# bug_tests_v0296 — JitFn RAII opt-in via `use "drop.npk".*;`
+# (v0.29.6, DROP-DEC-007). The stdlib sentinel `NitpickJitFnRaii`
+# toggles automatic `npk_wildx_free(...)` emission at scope end for
+# `wildx int8->:f = Jit.compile_add_i32();` bindings, closing the
+# RAII followup explicitly flagged in JIT-DEC-003. Validates: auto-
+# free IR emission, LIFO order for multiple JIT pages, and that the
+# pre-RAII explicit-`Jit.free` contract is preserved without the
+# import (no compiler-inserted double-free).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0296
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0296.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0296 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;jit;raii;codegen;v0.29.6"
+    )
+endif()
+
+# bug_tests_v0297 — Drop ordering on early-exit paths (v0.29.7,
+# DROP-DEC-004 + DROP-DEC-008 + DROP-DEC-010). Wires
+# `executeAllScopeDrops()` into the PASS / FAIL / RETURN code paths
+# so RAII bindings are dropped on `pass v` / `fail e` / `return ...`
+# in reverse declaration order, innermost-out across nested scopes,
+# BEFORE function-scope defers. Hard `exit N` continues to skip
+# drops (DROP-DEC-008). Bare-identifier `pass v` / `return v` skips
+# the moved binding's drop (DROP-DEC-004 move semantics). Closes
+# the heaviest slice in the v0.29.x cycle.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0297
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0297.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0297 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "drop;ordering;pass;fail;return;codegen;v0.29.7"
+    )
+endif()
+
 # ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================

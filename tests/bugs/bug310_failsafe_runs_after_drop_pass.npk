@@ -1,0 +1,24 @@
+// bug310 — v0.29.7: `failsafe` runs AFTER drops on the `fail` path.
+// The helper allocates a wildx RAII binding and fails; the drop must
+// fire (IR-verified) before control bubbles up to `failsafe`. Main
+// uses `raw` so the error propagates; failsafe exits 7.
+//
+// IR check: @do_fail body contains at least one `npk_wildx_free` call.
+// Runtime: process exits 7 (set by failsafe).
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 7;
+};
+
+func:do_fail = int32() {
+    wildx int8->:p = wildx_alloc(32i64);
+    fail 9i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = do_fail();
+    if (r.is_error) { exit 7; }
+    exit 2;
+};

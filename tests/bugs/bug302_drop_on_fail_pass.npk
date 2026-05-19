@@ -1,0 +1,22 @@
+// bug302 — v0.29.7: `fail e` in a helper runs drops on still-live
+// RAII bindings BEFORE returning the error via TBB. Main uses `raw`
+// so the fail bubbles to `failsafe`, which exits.
+//
+// IR check: @do_fail body contains at least one `npk_wildx_free` call.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_fail = int32() {
+    wildx int8->:p = wildx_alloc(32i64);
+    fail 7i32;
+};
+
+func:main = int32() {
+    Result<int32>:r = do_fail();
+    if (r.is_error) { exit 0; }
+    exit 2;
+};

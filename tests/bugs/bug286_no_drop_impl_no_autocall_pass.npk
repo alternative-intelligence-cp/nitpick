@@ -1,0 +1,19 @@
+// bug286 — v0.29.2 DROP-DEC-003
+// Negative-of-overreach: a struct WITHOUT an `impl:Drop:for:T` MUST NOT get
+// an auto-call (no such symbol exists). This guards against the IR
+// generator inadvertently emitting drop calls for every struct local.
+//
+// Pass criterion: exit code 0 (no link errors, no runtime drop side
+// effect, program reaches the explicit `exit 0`).
+
+struct:Plain = { int32:n; };
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    {
+        Plain:p;
+        p.n = 5i32;
+    }
+    exit 0;
+};

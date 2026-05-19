@@ -4313,6 +4313,8 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             if (manage_defer_scope) {
                 // Push new defer scope for this block
                 defer_stack.push_back(std::vector<BlockStmt*>());
+                // v0.29.2: parallel drop scope (only managed when defers are)
+                drop_stack_.push_back(std::vector<DropEntry>());
             }
 
             // Save named_values snapshot for scope restoration after block
@@ -4328,11 +4330,16 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             }
 
             if (manage_defer_scope) {
+                // v0.29.2 DROP-DEC-010: drops fire BEFORE user `defer` blocks.
+                executeScopeDrops();
+
                 // Execute defers at block exit (LIFO order)
                 executeScopeDefers();
 
                 // Pop defer scope
                 defer_stack.pop_back();
+                // v0.29.2: pop the parallel drop scope
+                drop_stack_.pop_back();
             }
 
             // Restore outer scope's named_values (undoes any shadowing from this block)
@@ -4345,6 +4352,16 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
         case ASTNode::NodeType::RETURN: {
             // Return statement - execute all defers before returning
             ReturnStmt* ret = static_cast<ReturnStmt*>(stmt);
+
+            // v0.29.7 DROP-DEC-004: drops run BEFORE defers (DROP-DEC-010)
+            // on every still-live binding (innermost-out, reverse order).
+            // If `return v` returns a bare identifier, skip its drop
+            // (move semantics).
+            std::string ret_moved_name;
+            if (ret->value && ret->value->type == ASTNode::NodeType::IDENTIFIER) {
+                ret_moved_name = static_cast<IdentifierExpr*>(ret->value.get())->name;
+            }
+            executeAllScopeDrops(ret_moved_name);
 
             // Execute all defer blocks (LIFO order)
             executeFunctionDefers();
@@ -5167,6 +5184,156 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             // modulo operations to runtime functions (npk_tryte_mod, npk_nyte_mod)
             var_aria_types[varDecl->varName] = actualTypeName;
             ARIA_DBG_STREAM << "[DEBUG] Registered var_aria_types[" << varDecl->varName << "] = " << actualTypeName << std::endl;
+
+            // v0.29.2 DROP-DEC-001/003: register stack-allocated locals of
+            // Drop-implementing types for scope-end auto-`drop` emission.
+            // Leaf cases only: gc/wild storage classes are deferred to
+            // v0.29.3/4 (where the destructor must compose with the
+            // existing explicit-free path). `alloca_inst` is non-null
+            // exactly when the local lives on the stack.
+            if (alloca_inst && !drop_stack_.empty()
+                && drop_impl_types_.count(actualTypeName)) {
+                drop_stack_.back().push_back(DropEntry{
+                    varDecl->varName, alloca, actualTypeName});
+            }
+
+            // v0.29.3 DROP-DEC-007: register wild-struct heap bindings for
+            // scope-end auto-`npk_free` emission. Gated on the opt-in
+            // `use "drop.npk".*;` flag (no behavior change for pre-RAII
+            // modules). Conservative scope: only the canonical
+            // `wild T:x = T{...}` pattern, identified by isWild + the
+            // heap-alloc path being taken (alloca_inst == nullptr) + a
+            // non-pointer type name. Pointer-typed wild bindings
+            // (`wild T->:p = alloc(...)`) and wildx bindings need slot-
+            // load logic and land in v0.29.3b/v0.29.4.
+            if (!drop_stack_.empty() && wild_raii_enabled_ && varDecl->isWild
+                && !varDecl->isWildx && alloca_inst == nullptr && alloca
+                && !actualTypeName.empty()
+                && actualTypeName.back() != '@'
+                && actualTypeName.back() != '*'
+                && varDecl->initializer
+                && varDecl->initializer->type == ASTNode::NodeType::OBJECT_LITERAL) {
+                drop_stack_.back().push_back(DropEntry{
+                    varDecl->varName, alloca, actualTypeName,
+                    DropEntry::Kind::WildRaw});
+            }
+
+            // v0.29.4 DROP-DEC-007: register wildx bindings for scope-end
+            // auto-`npk_wildx_free` emission. Gated on the opt-in
+            // `use "drop.npk".*;` flag (no behavior change pre-RAII).
+            // Conservative scope: isWildx + initializer is a direct call
+            // to `wildx_alloc`. `alloca` holds the heap-allocated slot
+            // pointer that stores the wildx page address; the WildxRaw
+            // dispatch arm loads the page ptr from that slot and frees it.
+            if (!drop_stack_.empty() && wildx_raii_enabled_ && varDecl->isWildx
+                && alloca && varDecl->initializer
+                && varDecl->initializer->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(varDecl->initializer.get());
+                bool is_wildx_alloc = false;
+                if (call->callee
+                    && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cname =
+                        static_cast<IdentifierExpr*>(call->callee.get())->name;
+                    if (cname == "wildx_alloc" || cname == "npk_wildx_alloc") {
+                        is_wildx_alloc = true;
+                    }
+                }
+                if (is_wildx_alloc) {
+                    drop_stack_.back().push_back(DropEntry{
+                        varDecl->varName, alloca, actualTypeName,
+                        DropEntry::Kind::WildxRaw});
+                }
+            }
+
+            // v0.29.5 DROP-DEC-007: register `int64:a = HandleArena.create();`
+            // bindings for scope-end auto-`npk_handle_arena_destroy` emission.
+            // Gated on the opt-in `use "drop.npk".*;` flag landing the
+            // `NitpickHandleArenaRaii` sentinel. The parser pre-mangles
+            // `HandleArena.create()` to an `IdentifierExpr` named
+            // `HandleArena_create` before sema/IRGen ever runs (see
+            // borrow_checker.cpp's local_arenas_ tracker for the parallel
+            // recognition path). Optional `raw(...)` / `drop(...)` wrappers
+            // around the call are peeled before matching. The alloca here
+            // is the stack slot that holds the arena id (int64); the
+            // dispatch arm loads from it and frees.
+            if (!drop_stack_.empty() && handle_arena_raii_enabled_ && alloca
+                && varDecl->initializer) {
+                ASTNode* probe = varDecl->initializer.get();
+                while (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* pc = static_cast<CallExpr*>(probe);
+                    if (pc->callee
+                        && pc->callee->type == ASTNode::NodeType::IDENTIFIER
+                        && pc->arguments.size() == 1) {
+                        const std::string& pn =
+                            static_cast<IdentifierExpr*>(pc->callee.get())->name;
+                        if (pn == "raw" || pn == "drop") {
+                            probe = pc->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(probe);
+                    if (call->callee
+                        && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cname =
+                            static_cast<IdentifierExpr*>(call->callee.get())->name;
+                        if (cname == "HandleArena_create"
+                            || cname == "npk_handle_arena_create") {
+                            drop_stack_.back().push_back(DropEntry{
+                                varDecl->varName, alloca, actualTypeName,
+                                DropEntry::Kind::HandleArena});
+                        }
+                    }
+                }
+            }
+
+            // v0.29.6 DROP-DEC-007: register `wildx int8->:f = Jit.compile_*();`
+            // bindings for scope-end auto-`npk_wildx_free` emission. Closes
+            // the RAII followup explicitly flagged in JIT-DEC-003. Gated on
+            // the opt-in `use "drop.npk".*;` flag landing the
+            // `NitpickJitFnRaii` sentinel; lowering is identical to the
+            // WildxRaw dispatch (Jit.free == wildx_free) but the gate is
+            // separate so JIT auto-free can be enabled independently of
+            // blanket wildx RAII. As with v0.29.5, optional `raw(...)` /
+            // `drop(...)` wrappers are peeled before matching; the parser
+            // pre-mangles `Jit.compile_add_i32()` to an `IdentifierExpr`
+            // named `Jit_compile_add_i32` before sema/IRGen see it.
+            if (!drop_stack_.empty() && jit_fn_raii_enabled_
+                && varDecl->isWildx && alloca && varDecl->initializer) {
+                ASTNode* probe = varDecl->initializer.get();
+                while (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* pc = static_cast<CallExpr*>(probe);
+                    if (pc->callee
+                        && pc->callee->type == ASTNode::NodeType::IDENTIFIER
+                        && pc->arguments.size() == 1) {
+                        const std::string& pn =
+                            static_cast<IdentifierExpr*>(pc->callee.get())->name;
+                        if (pn == "raw" || pn == "drop") {
+                            probe = pc->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (probe && probe->type == ASTNode::NodeType::CALL) {
+                    auto* call = static_cast<CallExpr*>(probe);
+                    if (call->callee
+                        && call->callee->type == ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cname =
+                            static_cast<IdentifierExpr*>(call->callee.get())->name;
+                        // Match any `Jit_compile_*` constructor so future
+                        // signatures (compile_mul_i32, compile_add_i64, ...)
+                        // are picked up automatically.
+                        if (cname.rfind("Jit_compile_", 0) == 0) {
+                            drop_stack_.back().push_back(DropEntry{
+                                varDecl->varName, alloca, actualTypeName,
+                                DropEntry::Kind::JitFn});
+                        }
+                    }
+                }
+            }
             
             // Generate initializer if present
             if (varDecl->initializer) {
@@ -6338,6 +6505,17 @@ skip_comparison:
             // Builds Result{val: value, err: NULL, is_error: false}
             PassStmt* passStmt = static_cast<PassStmt*>(stmt);
             
+            // v0.29.7 DROP-DEC-004: run drops on every still-live binding
+            // (innermost-out, reverse declaration order) BEFORE defers
+            // (DROP-DEC-010). If `pass v` returns a bare identifier,
+            // skip that binding's drop (move semantics — ownership
+            // transferred to caller). No-op if drop_stack_ is empty.
+            std::string moved_name;
+            if (passStmt->value && passStmt->value->type == ASTNode::NodeType::IDENTIFIER) {
+                moved_name = static_cast<IdentifierExpr*>(passStmt->value.get())->name;
+            }
+            executeAllScopeDrops(moved_name);
+
             // Execute all defer blocks (LIFO order) before returning
             executeFunctionDefers();
             
@@ -6570,6 +6748,11 @@ skip_comparison:
             // Builds Result{val: zero, err: error_code, is_error: true}
             FailStmt* failStmt = static_cast<FailStmt*>(stmt);
             
+            // v0.29.7 DROP-DEC-004: run drops on every still-live binding
+            // BEFORE defers. `failsafe` runs at the call-site level after
+            // the Result propagates up; drops + defers are local cleanup.
+            executeAllScopeDrops();
+
             // Execute all defer blocks (LIFO order) before returning
             executeFunctionDefers();
             
@@ -13348,6 +13531,177 @@ void npk::IRGenerator::executeScopeDefers() {
     }
 
     executing_defers = was_executing;
+}
+
+// v0.29.2 DROP-DEC-003: Emit scope-end auto-`drop` calls for every binding
+// pushed into the current `drop_stack_` entry. Reverse declaration order.
+// No-op if the insertion point already has a terminator (e.g. an `exit` ran
+// inside the block, in which case fall-through cleanup is unreachable).
+//
+// v0.29.7 DROP-DEC-004: Early-exit paths (`pass` / `fail`) now also drop
+// all still-live bindings via `executeAllScopeDrops()` (defined below),
+// which delegates to `emitDropsForScope` per scope.
+void npk::IRGenerator::executeScopeDrops() {
+    if (drop_stack_.empty()) {
+        return;
+    }
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+    emitDropsForScope(drop_stack_.back());
+}
+
+// v0.29.7 DROP-DEC-004: Walk every active scope innermost-out and emit
+// drops for each. Called from PASS / FAIL codegen BEFORE
+// `executeFunctionDefers()` (DROP-DEC-010: drops first, then defers).
+// Hard `exit` does NOT call this (DROP-DEC-008).
+void npk::IRGenerator::executeAllScopeDrops(const std::string& moved_var_name) {
+    if (drop_stack_.empty()) {
+        return;
+    }
+    if (builder.GetInsertBlock()->getTerminator()) {
+        return;
+    }
+    for (auto scope_it = drop_stack_.rbegin(); scope_it != drop_stack_.rend(); ++scope_it) {
+        if (builder.GetInsertBlock()->getTerminator()) {
+            break;
+        }
+        emitDropsForScope(*scope_it, moved_var_name);
+    }
+}
+
+// v0.29.7: shared per-scope drop-emission helper, extracted from
+// `executeScopeDrops` so both fall-through and early-exit paths share
+// the same dispatch table. Caller is responsible for terminator + empty
+// guards on `drop_stack_` itself. `moved_var_name` (if non-empty) names
+// a binding whose ownership was transferred out (e.g. `pass v`) and
+// whose drop MUST be skipped to avoid use-after-free.
+void npk::IRGenerator::emitDropsForScope(std::vector<DropEntry>& current,
+                                         const std::string& moved_var_name) {
+    if (current.empty()) {
+        return;
+    }
+
+    for (auto it = current.rbegin(); it != current.rend(); ++it) {
+        const DropEntry& entry = *it;
+
+        // v0.29.7 DROP-DEC-004: skip the binding whose ownership was
+        // transferred out via `pass v` (move semantics).
+        if (!moved_var_name.empty() && entry.varName == moved_var_name) {
+            continue;
+        }
+
+        // v0.29.3 DROP-DEC-007: dispatch by entry kind. WildRaw bindings
+        // emit `npk_free(heap_ptr)`; WildxRaw bindings (reserved for
+        // v0.29.3b) load from a stack slot and emit `npk_wildx_free`.
+        if (entry.kind == DropEntry::Kind::WildRaw) {
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            builder.CreateCall(free_fn, {entry.alloca});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::WildxRaw) {
+            // v0.29.4: load wildx page ptr from the heap-allocated slot
+            // and free via `npk_wildx_free`. The slot itself is intentionally
+            // leaked, matching pre-RAII manual-free convention.
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_wildx_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getInt32Ty(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            llvm::Value* heap_ptr = builder.CreateLoad(
+                llvm::PointerType::get(context, 0),
+                entry.alloca, entry.varName + ".wildx_raw");
+            builder.CreateCall(free_fn, {heap_ptr});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::HandleArena) {
+            // v0.29.5: load the int64 arena id from the local slot and
+            // call `npk_handle_arena_destroy(id)`. Destroying the arena
+            // bumps every slot's generation so any outstanding handles
+            // become stale (gen check returns NULL on later derefs).
+            llvm::FunctionCallee destroy_fn = module->getOrInsertFunction(
+                "npk_handle_arena_destroy",
+                llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context),
+                    {llvm::Type::getInt64Ty(context)},
+                    false));
+            llvm::Value* arena_id = builder.CreateLoad(
+                llvm::Type::getInt64Ty(context),
+                entry.alloca, entry.varName + ".handle_arena_id");
+            builder.CreateCall(destroy_fn, {arena_id});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+        if (entry.kind == DropEntry::Kind::JitFn) {
+            // v0.29.6: load the wildx JIT page ptr from the local slot
+            // and free via `npk_wildx_free` (Jit.free == wildx_free).
+            // The slot itself is intentionally leaked, mirroring the
+            // WildxRaw arm's pre-RAII manual-free convention.
+            llvm::FunctionCallee free_fn = module->getOrInsertFunction(
+                "npk_wildx_free",
+                llvm::FunctionType::get(
+                    llvm::Type::getInt32Ty(context),
+                    {llvm::PointerType::get(context, 0)},
+                    false));
+            llvm::Value* page_ptr = builder.CreateLoad(
+                llvm::PointerType::get(context, 0),
+                entry.alloca, entry.varName + ".jit_fn");
+            builder.CreateCall(free_fn, {page_ptr});
+            if (builder.GetInsertBlock()->getTerminator()) {
+                break;
+            }
+            continue;
+        }
+
+        // Default: v0.29.2 Stack path — call `<TypeName>_drop(self)`.
+        std::string mangled = entry.typeName + "_drop";
+        llvm::Function* fn = module->getFunction(mangled);
+        if (!fn) {
+            // Sema registered the mangled function; if it is missing here
+            // the IR module is in an inconsistent state. Skip rather than
+            // crash so the rest of compilation can still report a useful
+            // diagnostic.
+            ARIA_DBG_STREAM << "[DEBUG DROP] missing drop fn '" << mangled
+                            << "' for binding '" << entry.varName << "'\n";
+            continue;
+        }
+        // The drop function's parameter type tells us the ABI used for
+        // `$$m T:self`. For now this is the struct-by-value lowering used
+        // by typical user-defined methods; future slices may also need to
+        // handle by-pointer ABI. We load the struct value from the
+        // entry.alloca slot and pass it positionally.
+        llvm::FunctionType* fty = fn->getFunctionType();
+        if (fty->getNumParams() != 1) {
+            ARIA_DBG_STREAM << "[DEBUG DROP] unexpected drop arity for '"
+                            << mangled << "': " << fty->getNumParams() << "\n";
+            continue;
+        }
+        llvm::Type* paramTy = fty->getParamType(0);
+        llvm::Value* arg = entry.alloca;
+        if (!paramTy->isPointerTy()) {
+            arg = builder.CreateLoad(paramTy, entry.alloca, entry.varName + ".drop_self");
+        }
+        builder.CreateCall(fn, {arg});
+        // Stop emitting if the destructor itself terminated control flow
+        // (e.g. it called `exit`); subsequent drops are unreachable.
+        if (builder.GetInsertBlock()->getTerminator()) {
+            break;
+        }
+    }
 }
 
 void npk::IRGenerator::executeFunctionDefers() {

@@ -1,0 +1,23 @@
+// bug295 — v0.29.5 DROP-DEC-007: two `HandleArena.create()` bindings in
+// the same inner block. Both must be auto-destroyed at fall-through,
+// in reverse declaration order (DROP-DEC-003). The emitted IR
+// contains >= 2 calls to `npk_handle_arena_destroy`.
+
+use "drop.npk".*;
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        int64:a1 = raw HandleArena.create();
+        int64:a2 = raw HandleArena.create();
+        int64:h1 = raw HandleArena.alloc(a1, 8i64);
+        int64:h2 = raw HandleArena.alloc(a2, 16i64);
+        if (h1 == 0i64) { exit 2; }
+        if (h2 == 0i64) { exit 3; }
+    }
+    exit 0;
+};

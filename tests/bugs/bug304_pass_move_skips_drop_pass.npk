@@ -1,0 +1,25 @@
+// bug304 — v0.29.7 / DROP-DEC-004: `pass v` where `v` is a bare
+// identifier referring to a RAII binding is treated as a MOVE —
+// the drop is skipped (ownership transferred to the caller).
+//
+// `make_page` returns its wildx pointer; if its drop had fired,
+// the caller would see a freed page (UAF).
+//
+// IR check: @make_page body contains ZERO `npk_wildx_free` calls.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:make_page = int8->() {
+    wildx int8->:p = wildx_alloc(32i64);
+    pass p;
+};
+
+func:main = int32() {
+    wildx int8->:page = raw make_page();
+    wildx_free(page);
+    exit 0;
+};

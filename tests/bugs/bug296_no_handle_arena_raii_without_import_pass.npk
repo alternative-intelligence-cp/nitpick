@@ -1,0 +1,23 @@
+// bug296 — v0.29.5 negative control: WITHOUT `use "drop.npk".*;` the
+// HandleArena RAII gate is OFF. The arena binding is NOT auto-
+// destroyed at scope end; the user is responsible for calling
+// `HandleArena.destroy(a)` explicitly (the v0.27.x contract). This
+// program does call it manually and must compile + exit 0, and the
+// emitted IR must NOT contain a compiler-inserted
+// `npk_handle_arena_destroy` beyond the single explicit call.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    {
+        int64:a = raw HandleArena.create();
+        int64:h = raw HandleArena.alloc(a, 8i64);
+        if (h == 0i64) { exit 2; }
+        raw HandleArena.destroy(a);
+    }
+    exit 0;
+};

@@ -1,0 +1,42 @@
+// bug284 — v0.29.1 DROP-DEC-007a regression
+// The parser change in v0.29.1 (allow 'drop' as a function name in
+// parseFuncDecl) must NOT break the existing `drop <expr>` unary form
+// used to discard a function's Result<T> return value. This test
+// exercises both shapes in the same program to lock down the
+// no-regression contract.
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        self.n = 0i32;
+        pass;
+    };
+};
+
+func:add = int32(int32:a, int32:b) {
+    pass a + b;
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:main = int32() {
+    // Form 1: `drop <expr>` discards a Result<int32> from a regular call.
+    //         This MUST still parse + run unchanged — the v0.29.1 parser
+    //         tweak only added 'drop' as an allowed *function-name* token
+    //         in parseFuncDecl, leaving the unary `drop` form intact.
+    drop add(1i32, 2i32);
+
+    // Form 2: the impl:Drop:for:Counter declaration above must coexist
+    //         (i.e. sema accepts both forms in the same TU). Runtime
+    //         invocation of the destructor is deferred to v0.29.2 once
+    //         auto-call codegen lands; here we only assert the surface
+    //         compiles and the program runs to completion.
+    Counter:c;
+    c.n = 9i32;
+
+    if (c.n == 9i32) {
+        exit 0;
+    }
+    exit 1;
+};

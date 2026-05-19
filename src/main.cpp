@@ -4605,6 +4605,22 @@ llvm::Module* compile_to_module(
     }
 #endif
 
+    // v0.29.3 DROP-DEC-007: opt-in wild RAII suppresses ARIA-014 obligation
+    // for canonical `wild T:x = T{...}` bindings (IRGen emits npk_free at
+    // scope end). Driven by `use "drop.npk".*;` having landed
+    // `impl:Drop:for:NitpickWildRaii` in the registry.
+    borrow_checker.setWildRaiiEnabled(type_checker.hasWildRaii());
+    // v0.29.4 DROP-DEC-007: opt-in wildx RAII suppresses ARIA-014 obligation
+    // for `wildx T->:p = wildx_alloc(N);` bindings (IRGen emits
+    // npk_wildx_free at scope end). Driven by `use "drop.npk".*;` having
+    // landed `impl:Drop:for:NitpickWildxRaii` in the registry.
+    borrow_checker.setWildxRaiiEnabled(type_checker.hasWildxRaii());
+    // v0.29.6 DROP-DEC-007: opt-in JitFn RAII suppresses ARIA-014 obligation
+    // for `wildx int8->:f = Jit.compile_*();` bindings (IRGen emits
+    // npk_wildx_free at scope end). Driven by `use "drop.npk".*;` having
+    // landed `impl:Drop:for:NitpickJitFnRaii` in the registry.
+    borrow_checker.setJitFnRaiiEnabled(type_checker.hasJitFnRaii());
+
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {
@@ -5187,6 +5203,36 @@ llvm::Module* compile_to_module(
     
     // Pass TypeSystem to IR generator for struct type lookups
     ir_gen.setTypeSystem(&type_system);
+
+    // v0.29.2 DROP-DEC-001: hand the Drop-impl type set to the IR generator
+    // so it can emit scope-end auto-`drop` calls for stack locals of those
+    // types (DROP-DEC-003: reverse declaration order). Sema has populated
+    // type_checker.getDropImpls() by this point.
+    {
+        std::set<std::string> drop_types;
+        for (const auto& kv : type_checker.getDropImpls()) {
+            drop_types.insert(kv.first);
+        }
+        ir_gen.setDropImplTypes(drop_types);
+    }
+
+    // v0.29.3 DROP-DEC-007: wild/wildx RAII opt-in. Importing
+    // `stdlib/drop.npk` lands an `impl:Drop:for:NitpickWildRaii` (and the
+    // wildx variant) in `drop_impls_`, which TypeChecker exposes via
+    // `hasWildRaii()`/`hasWildxRaii()`. IR generator uses those flags to
+    // decide whether to emit scope-end auto-`npk_free`/`npk_wildx_free`
+    // for `wild`/`wildx` bindings. Without the import these are false and
+    // pre-RAII behavior is preserved.
+    ir_gen.setWildRaiiEnabled(type_checker.hasWildRaii());
+    ir_gen.setWildxRaiiEnabled(type_checker.hasWildxRaii());
+    // v0.29.5: same opt-in landed `NitpickHandleArenaRaii` → flip the
+    // HandleArena auto-destroy gate.
+    ir_gen.setHandleArenaRaiiEnabled(type_checker.hasHandleArenaRaii());
+    // v0.29.6: same opt-in landed `NitpickJitFnRaii` → flip the JitFn
+    // auto-free gate. Lowering reuses `npk_wildx_free` (Jit.free == wildx_free)
+    // but the gate is separate so JIT auto-free is opt-in independently
+    // of blanket wildx RAII.
+    ir_gen.setJitFnRaiiEnabled(type_checker.hasJitFnRaii());
 
 #ifdef ARIA_HAS_Z3
     // Pass SMT-proven ustack optimization set to IR generator

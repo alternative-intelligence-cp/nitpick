@@ -810,6 +810,26 @@ public:
     void checkImplDecl(ImplDeclStmt* stmt);
 
     /**
+     * Check Drop trait implementation (v0.29.1, DROP-DEC-001).
+     *
+     * Drop is a builtin trait — no `trait:Drop = { ... };` declaration is
+     * required (or permitted to override the builtin). Each user type may
+     * have at most one `impl:Drop:for:T = { func:drop = NIL($$m T:self) { body }; };`.
+     *
+     * Rules:
+     * - Type T must exist (struct or known builtin)
+     * - Exactly one method named "drop"
+     * - Return type is NIL
+     * - Exactly one parameter (the self binding)
+     * - At most one Drop impl per type (duplicate rejected with clear error)
+     *
+     * Side effect: records the Drop impl in `drop_impls_` so v0.29.2 codegen
+     * can insert scope-end auto-calls. v0.29.1 itself emits no codegen — users
+     * call the destructor explicitly via the mangled name `T_drop(value)`.
+     */
+    void checkDropImplDecl(ImplDeclStmt* stmt);
+
+    /**
      * Check assignment expression
      * 
      * Rules:
@@ -1137,6 +1157,12 @@ private:
     };
     std::vector<MacroExpansionRecord> macroExpansionLog;
     
+    // v0.29.1 DROP-DEC-001: per-type Drop trait impl registry.
+    // Key: type name (e.g. "Counter"). Value: the FuncDeclStmt for the
+    // single `drop` method. v0.29.2 codegen consults this to insert
+    // scope-end auto-calls; v0.29.1 only records.
+    std::unordered_map<std::string, FuncDeclStmt*> drop_impls_;
+
     // v0.8.3: Clone an AST subtree with parameter substitution
     ASTNodePtr cloneAST(ASTNode* node, const std::map<std::string, ASTNodePtr>& substitutions);
 
@@ -1146,6 +1172,50 @@ public:
 
     // v0.23.7: MACRO-012 — return expansion trace for --expand-macros
     const std::vector<MacroExpansionRecord>& getMacroExpansionLog() const { return macroExpansionLog; }
+
+    // v0.29.2 DROP-DEC-001: expose the Drop impl registry to IR codegen so it
+    // can decide which stack-local types need scope-end auto-`drop` calls.
+    const std::unordered_map<std::string, FuncDeclStmt*>& getDropImpls() const { return drop_impls_; }
+
+    // v0.29.3 DROP-DEC-007: opt-in RAII for wild/wildx pointer bindings. The
+    // presence of a Drop impl for the sentinel marker structs declared in
+    // `stdlib/drop.npk` (`NitpickWildRaii` / `NitpickWildxRaii`) is the
+    // module-level opt-in signal. When set, IRGen emits `npk_free` /
+    // `npk_wildx_free` at scope end for every `wild` / `wildx` binding and
+    // the borrow checker suppresses the matching ARIA-014 leak obligation.
+    //
+    // Imported modules are type-checked with separate TypeChecker instances
+    // (their `drop_impls_` map is not visible here), but they share the
+    // global TypeSystem — so the presence of the sentinel struct type
+    // anywhere in the program (local OR imported) is the reliable signal.
+    bool hasWildRaii() const {
+        return drop_impls_.count("NitpickWildRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickWildRaii") != nullptr);
+    }
+    bool hasWildxRaii() const {
+        return drop_impls_.count("NitpickWildxRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickWildxRaii") != nullptr);
+    }
+    // v0.29.5 DROP-DEC-007: HandleArena auto-destroy opt-in. Sentinel
+    // `NitpickHandleArenaRaii` (from `stdlib/drop.npk`) flips IRGen's
+    // `handle_arena_raii_enabled_` flag; thereafter `int64:a =
+    // HandleArena.create();` bindings get `npk_handle_arena_destroy(a)`
+    // emitted at scope end. No borrow checker change — ARIA-032
+    // (handle-outlives-arena) continues to apply.
+    bool hasHandleArenaRaii() const {
+        return drop_impls_.count("NitpickHandleArenaRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickHandleArenaRaii") != nullptr);
+    }
+    // v0.29.6 DROP-DEC-007: JitFn auto-free opt-in. Sentinel
+    // `NitpickJitFnRaii` (from `stdlib/drop.npk`) flips IRGen's
+    // `jit_fn_raii_enabled_` flag; thereafter
+    // `wildx int8->:f = Jit.compile_add_i32();` bindings get
+    // `npk_wildx_free(f)` emitted at scope end. Closes the RAII
+    // followup explicitly flagged in JIT-DEC-003.
+    bool hasJitFnRaii() const {
+        return drop_impls_.count("NitpickJitFnRaii") > 0
+            || (typeSystem && typeSystem->getStructType("NitpickJitFnRaii") != nullptr);
+    }
 };
 
 } // namespace sema

@@ -1,0 +1,26 @@
+// bug305 — v0.29.7: `pass` from an inner block runs drops for ALL
+// enclosing scopes (innermost-out). Two wildx RAII bindings in
+// different nested scopes both freed before return.
+//
+// IR check: @do_pass body contains at least 2 `npk_wildx_free` calls.
+
+use "drop.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:do_pass = int32() {
+    wildx int8->:outer = wildx_alloc(32i64);
+    {
+        wildx int8->:inner = wildx_alloc(16i64);
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+func:main = int32() {
+    int32:r = raw do_pass();
+    if (r != 0i32) { exit 2; }
+    exit 0;
+};
