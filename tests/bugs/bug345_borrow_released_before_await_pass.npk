@@ -1,0 +1,25 @@
+// bug345: D-5 — borrow whose lexical scope ends BEFORE the await must compile.
+// Phase 1 / v0.31.0.4.
+//
+// Contract: if the borrow binding is no longer in scope at the await
+// point, there is nothing to invalidate and no diagnostic should fire.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:good = int32() {
+    int32:x = 0i32;
+    {
+        $$m int32:rx = x;
+        rx = rx + 5i32;
+    }
+    // rx is out of scope here — await is clean.
+    int32:_ = raw await tick();
+    pass x;
+};
+
+func:main = int32() {
+    drop good();
+    exit 0;
+};

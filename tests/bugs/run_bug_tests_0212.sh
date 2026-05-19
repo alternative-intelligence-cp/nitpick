@@ -83,18 +83,23 @@ echo "=== Bug Regression Tests (v0.21.2: bug089–bug093) ==="
 echo ""
 
 # A-003: Async borrow checking
-expect_compile_warn \
-    "bug089: $$m borrow live across await emits ARIA-030 warning" \
+# NOTE: v0.31.0.4 (D-5) made the await-borrow contract stricter — borrows
+# (both $$m AND $$i) do NOT survive an `await` suspension. ARIA-030 (warning)
+# was superseded by ARIA-041 (hard error). bug089/bug091 below were rewritten
+# in v0.31.0.4 to assert the new contract.
+expect_compile_fail \
+    "bug089: $$m borrow live across await → ARIA-041 (was ARIA-030 warning in v0.21.2)" \
     "$SCRIPT_DIR/bug089_await_mutable_borrow_warn.npk" \
-    "ARIA-030"
+    "ARIA-041"
 
 expect_compile_run \
-    "bug090: $$m borrow released before await — no ARIA-030" \
+    "bug090: $$m borrow released before await — no diagnostic" \
     "$SCRIPT_DIR/bug090_await_borrow_released_pass.npk"
 
-expect_compile_run \
-    "bug091: $$i borrow across await is fine (read-only, no race)" \
-    "$SCRIPT_DIR/bug091_await_imm_borrow_pass.npk"
+expect_compile_fail \
+    "bug091: $$i borrow across await → ARIA-041 (was pass in v0.21.2; D-5 now invalidates immutable too)" \
+    "$SCRIPT_DIR/bug091_await_imm_borrow_pass.npk" \
+    "ARIA-041"
 
 # A-004: Disjoint index proofs
 expect_compile_run \

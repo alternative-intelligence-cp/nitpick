@@ -1,0 +1,20 @@
+// bug350: D-5 — copying the host VALUE out into a fresh local before the
+//                await is the documented workaround. No borrow lives across
+//                the suspension, so no ARIA-041.
+// Phase 1 / v0.31.0.4.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:good = int32() {
+    int32:x = 41i32;
+    int32:snapshot = x;             // by-value copy — no borrow created
+    int32:_ = raw await tick();     // suspends with zero active borrows
+    pass snapshot + 1i32;
+};
+
+func:main = int32() {
+    drop good();
+    exit 0;
+};

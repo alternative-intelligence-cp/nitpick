@@ -4097,28 +4097,46 @@ void BorrowChecker::checkAwaitExpr(AwaitExpr* expr) {
     // Check the awaited operand expression first
     if (expr->operand) checkExpression(expr->operand.get());
 
-    // A-003: Detect $$m borrows that are live at an await suspension point.
-    // In the current synchronous resume model this is not immediately
-    // exploitable, but should be flagged so users are ready for a preemptive
-    // scheduler.  Emit one ARIA-030 warning per await point (list only the
-    // first offending borrow to avoid diagnostic spam).
+    // D-5 / v0.31.0.4 / ARIA-041: borrows do not survive an `await` suspension
+    // point. Both $$i and $$m borrows are invalidated at every await site.
+    // Code that needs a reference across an await must either:
+    //   - release the borrow first (let the binding go out of scope), or
+    //   - take a `Handle<T>` (which has ARIA-032 cross-destroy protection), or
+    //   - copy the value out of the host before suspending.
+    //
+    // We report one ERROR per active loan, then drop the loans so that code
+    // after the await starts with a clean borrow state and can re-borrow
+    // freely (this matches "borrow ends at await" from the v0.31.0.0 audit).
+    //
+    // Supersedes the v0.21.2 A-003 ARIA-030 warning, which only flagged
+    // mutable borrows and was non-fatal.
+    std::vector<std::string> borrowers_to_release;
+    std::unordered_set<std::string> already_reported;
     for (const auto& [host, loans] : ctx.active_loans) {
         for (const auto& loan : loans) {
-            if (loan.phase == LoanPhase::ACTIVE && loan.is_mutable) {
-                BorrowError err(expr->line, expr->column,
-                    "mutable borrow of '" + host + "' is live across an 'await' "
-                    "suspension point; this will be a data race under a preemptive "
-                    "scheduler \u2014 release the borrow before awaiting",
-                    loan.creation_line, loan.creation_column,
-                    "mutable borrow created here");
-                err.severity = BorrowSeverity::WARNING;
-                err.code = "ARIA-030";
-                errors.push_back(err);
-                goto done_await_check;  // one warning per await point is enough
-            }
+            if (loan.phase != LoanPhase::ACTIVE) continue;
+            // De-dup by (borrower,host) so a loan tracked in both active_loans
+            // and path_loans doesn't double-report.
+            std::string key = loan.borrower + "@" + host;
+            if (!already_reported.insert(key).second) continue;
+
+            const char* flavor = loan.is_mutable ? "mutable" : "immutable";
+            BorrowError err(expr->line, expr->column,
+                std::string(flavor) + " borrow of '" + host +
+                "' does not survive an 'await' suspension point; release the "
+                "borrow before awaiting, or take a Handle<T> for a "
+                "cross-await reference",
+                loan.creation_line, loan.creation_column,
+                std::string(flavor) + " borrow created here");
+            err.severity = BorrowSeverity::ERROR;
+            err.code = "ARIA-041";
+            errors.push_back(err);
+            borrowers_to_release.push_back(loan.borrower);
         }
     }
-    done_await_check:;
+    for (const auto& var : borrowers_to_release) {
+        releaseBorrows(var);
+    }
 }
 
 void BorrowChecker::checkDeferStmt(DeferStmt* stmt) {

@@ -113,13 +113,15 @@ expect_compile_fail "bug202 closure mut capture blocks outer $\$i" \
     "$SCRIPT_DIR/bug202_closure_mut_capture_blocks_imm_borrow_rejected.npk" \
     "ARIA-023"
 
-expect_compile_no_warn "bug203 multi-await released borrow no ARIA-030" \
+expect_compile_no_warn "bug203 multi-await released borrow no diagnostic" \
     "$SCRIPT_DIR/bug203_multi_await_released_borrow_pass.npk" \
-    "ARIA-030"
+    "ARIA-041"
 
-expect_compile_warn_count "bug204 multi-await live borrow → 2 ARIA-030" \
+# v0.31.0.4 (D-5): borrow across await is now an ARIA-041 hard error (was a
+# 2-count ARIA-030 warning). bug204 flips from "warn" to "fail".
+expect_compile_fail "bug204 multi-await live borrow → ARIA-041 (was 2x ARIA-030 warn pre v0.31.0.4)" \
     "$SCRIPT_DIR/bug204_multi_await_live_borrow_warns.npk" \
-    "ARIA-030" "2"
+    "ARIA-041"
 
 echo "== Results: $PASS/$TOTAL passed, $FAIL failed =="
 [ $FAIL -eq 0 ] && exit 0 || exit 1

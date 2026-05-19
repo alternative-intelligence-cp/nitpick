@@ -1,0 +1,22 @@
+// bug344: D-5 / ARIA-041 — $$i borrow live at await is also a hard error.
+// Phase 1 / v0.31.0.4.
+//
+// Contract: per D-5 the invalidation is unconditional — read-only borrows
+// must not span `await` either, because the host may be moved / GC'd /
+// arena-destroyed while suspended. v0.21.2 used to permit this.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:bad = int32() {
+    int32:x = 7i32;
+    $$i int32:rx = x;
+    int32:_ = raw await tick();   // <-- rx (immutable) still live → ARIA-041
+    pass rx;
+};
+
+func:main = int32() {
+    drop bad();
+    exit 0;
+};

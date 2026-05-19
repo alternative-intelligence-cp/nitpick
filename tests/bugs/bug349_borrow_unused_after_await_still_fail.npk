@@ -1,0 +1,24 @@
+// bug349: D-5 — borrow whose binding outlives the await fires ARIA-041
+//                even though the post-await code never reads it.
+// Phase 1 / v0.31.0.4.
+//
+// Rationale: the contract is "borrow ends at await", not "borrow ends
+// at first post-await use". This keeps the rule simple and matches
+// the audit's conservative position.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:bad = int32() {
+    int32:x = 0i32;
+    $$m int32:rx = x;   // binding lives to the end of the async fn
+    rx = 5i32;
+    int32:_ = raw await tick();   // <-- ARIA-041, even if rx is never read after
+    pass x;
+};
+
+func:main = int32() {
+    drop bad();
+    exit 0;
+};

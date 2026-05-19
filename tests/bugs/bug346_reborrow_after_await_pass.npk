@@ -1,0 +1,23 @@
+// bug346: D-5 — re-borrowing AFTER an await is allowed (fresh borrow start).
+// Phase 1 / v0.31.0.4.
+//
+// Contract: the await invalidates prior borrows, but does not poison
+// the host. After the await, a brand-new borrow may be acquired.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:good = int32() {
+    int32:x = 0i32;
+    int32:_ = raw await tick();
+    // Fresh borrow after the await — must compile cleanly.
+    $$m int32:rx = x;
+    rx = rx + 1i32;
+    pass x;
+};
+
+func:main = int32() {
+    drop good();
+    exit 0;
+};

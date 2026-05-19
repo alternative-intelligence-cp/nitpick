@@ -1,0 +1,23 @@
+// bug343: D-5 / ARIA-041 — $$m borrow live at await is a hard compile error.
+// Phase 1 / v0.31.0.4.
+//
+// Contract: borrows do not survive an `await` suspension point. The
+// previous v0.21.2 behaviour (ARIA-030 warning) was upgraded in
+// v0.31.0.4 to an ARIA-041 error.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:bad = int32() {
+    int32:x = 0i32;
+    $$m int32:rx = x;
+    int32:_ = raw await tick();   // <-- rx still live → ARIA-041
+    rx = rx + 1i32;
+    pass rx;
+};
+
+func:main = int32() {
+    drop bad();
+    exit 0;
+};

@@ -1,0 +1,27 @@
+// bug348: D-5 — borrow/use/release, await, borrow/use/release, await
+//                across SEPARATE scopes is fully legal.
+// Phase 1 / v0.31.0.4.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:tick = int32() { pass 1i32; };
+
+async func:good = int32() {
+    int32:x = 0i32;
+    {
+        $$m int32:rx = x;
+        rx = rx + 1i32;
+    }
+    int32:_a = raw await tick();
+    {
+        $$m int32:rx2 = x;
+        rx2 = rx2 + 1i32;
+    }
+    int32:_b = raw await tick();
+    pass x;
+};
+
+func:main = int32() {
+    drop good();
+    exit 0;
+};

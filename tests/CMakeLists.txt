@@ -1480,6 +1480,31 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.31.0.4 — Phase 1 async slice: D-5 (`ARIA-041` borrows-across-await)
+# ============================================================================
+# bug343..bug350 — eight fixtures covering the new contract:
+#   - $$m and $$i live across await both fail with ARIA-041;
+#   - borrows released before / re-acquired after await compile clean;
+#   - multi-borrow + multi-await + value-copy workaround patterns.
+#
+# checkAwaitExpr() in src/frontend/sema/borrow_checker.cpp was extended to
+# emit ARIA-041 (ERROR) per active loan and to drop the loans afterward so
+# downstream code can re-borrow. This supersedes the v0.21.2 ARIA-030
+# warning, which only flagged $$m and was non-fatal.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03104
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03104.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03104 PROPERTIES
+        TIMEOUT 120
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;borrow;await;d-5;v0.31.0.4"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.
