@@ -1,0 +1,15 @@
+// bug340: D-7 — `pass` mid-body in async fn must short-circuit (dead code unreachable)
+// Phase 1 / v0.31.0.3
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:get_value = int32() {
+    pass 42i32;
+    println("DEAD-bug340");   // must not execute
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop get_value();
+    exit 0;
+};

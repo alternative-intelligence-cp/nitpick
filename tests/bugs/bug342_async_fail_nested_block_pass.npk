@@ -1,0 +1,21 @@
+// bug342: D-7 — `fail` inside nested `if` blocks in an async fn must exit the function
+// Phase 1 / v0.31.0.3
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:nested_fail = int32() {
+    if (true) {
+        if (true) {
+            fail 7i32;
+            println("DEAD-bug342-inner");
+        }
+        println("DEAD-bug342-middle");
+    }
+    println("DEAD-bug342-outer");
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop nested_fail();
+    exit 0;
+};

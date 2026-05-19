@@ -1460,6 +1460,26 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.31.0.3 — Phase 1 async slice: D-7 (`pass`/`fail` short-circuit in async fns)
+# ============================================================================
+# bug339 — `fail` mid-body: dead code after must not execute.
+# bug340 — `pass` mid-body: dead code after must not execute.
+# bug341 — `fail` inside a `while` loop must exit the function, not just the loop.
+# bug342 — `fail` inside nested `if` blocks must exit the function.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03103
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03103.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03103 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;pass;fail;d-7;v0.31.0.3"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

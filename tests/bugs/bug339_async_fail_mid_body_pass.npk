@@ -1,0 +1,22 @@
+// bug339: D-7 — `fail` mid-body in async fn must short-circuit (dead code unreachable)
+// Phase 1 / v0.31.0.3
+//
+// Contract: in an async function, `fail E` resolves the future with the
+// error Result and returns immediately. Any statements after `fail` in
+// the same block are dead code and must not execute.
+//
+// Test strategy: place `println("DEAD")` after `fail`. The runner greps
+// stdout — if "DEAD" appears, the dead code ran (test failure).
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:try_thing = int32() {
+    fail 7i32;
+    println("DEAD-bug339");   // must not execute
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop try_thing();
+    exit 0;
+};
