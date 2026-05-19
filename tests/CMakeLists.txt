@@ -1348,6 +1348,28 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.4 — `#[destroys_arena(<param>)]` declarative attribute (IPC-DEC-005)
+# ============================================================================
+# Closes the gap that cross-module ingest (v0.30.3) exposed: extern
+# declarations have no body for the borrow checker's
+# `HandleArena_destroy(<param>)` body-scan to find. The attribute lets
+# extern (and self-hosted) declarations declare arena-destroying
+# parameters explicitly; the consumer site unions the attribute set
+# with the body-derived set so both sources are treated uniformly.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0304
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0304.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0304 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;ffi;destroys-arena;ipc;handles;v0.30.4"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

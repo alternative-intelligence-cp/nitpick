@@ -760,6 +760,21 @@ struct FunctionBorrowSummary {
     // collision, matching v0.30.3's bug277 retirement).
     std::string imported_from_module;
 
+    // v0.30.4 (IPC-DEC-002 fourth-bis / IPC-DEC-005): indices of params
+    // declared to be destroyed by the function via an explicit
+    // `#[destroys_arena(<param_name>)]` attribute on the declaration.
+    // This is the *declarative* counterpart to `destroys_param_indices`
+    // (which is derived from a body scan). Required for `extern`
+    // functions whose body the borrow checker cannot see — without the
+    // attribute, the cross-module ingest landed by v0.30.3 cannot tell
+    // that a raw C destroyer takes ownership of the arena. At call
+    // sites, the matching argument's bound arena is marked destroyed
+    // (identical to the `destroys_param_indices` consumer path); the
+    // attribute and body-derived sets are unioned at use, so a
+    // self-hosted re-implementation of a previously-extern destroyer
+    // gets the same treatment as the original declaration.
+    std::set<size_t> destroys_attribute_param_indices;
+
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;

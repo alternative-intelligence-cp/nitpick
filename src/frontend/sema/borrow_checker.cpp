@@ -783,6 +783,13 @@ void BorrowChecker::propagateTransitiveDestroys() {
                     bool destroyed =
                         callee.destroys_param_indices.count(callee_pi) ||
                         callee.transitively_destroys_param_indices.count(
+                            callee_pi) ||
+                        // v0.30.4 (IPC-DEC-005): the declarative
+                        // `#[destroys_arena(<param>)]` set lifts the
+                        // same way as the body-derived set so a
+                        // caller of an annotated extern carries the
+                        // transitive mark forward through chains.
+                        callee.destroys_attribute_param_indices.count(
                             callee_pi);
                     if (!destroyed) continue;
                     // Skip if already known as a DIRECT destroy of the
@@ -846,6 +853,28 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         
         summary.param_ownership.push_back(ownership);
         summary.param_names.push_back(p->paramName);
+    }
+
+    // v0.30.4 (IPC-DEC-005): declarative `#[destroys_arena(<param>)]`
+    // attribute. One or more attribute occurrences may appear on the
+    // declaration; each can carry one or more param-name args. We
+    // resolve names against `summary.param_names` and union into
+    // `destroys_attribute_param_indices`. Unknown names are diagnosed
+    // later (see note below) — at summary-building time we silently
+    // skip so a bad attribute doesn't crash the borrow checker.
+    // Required for `extern` destroyers like `npk_handle_arena_destroy`
+    // whose body cannot be scanned for the
+    // `HandleArena_destroy(<param>)` heuristic.
+    for (const auto& attr : func->attributes) {
+        if (attr.name != "destroys_arena") continue;
+        for (const auto& arg_name : attr.args) {
+            for (size_t i = 0; i < summary.param_names.size(); ++i) {
+                if (summary.param_names[i] == arg_name) {
+                    summary.destroys_attribute_param_indices.insert(i);
+                    break;
+                }
+            }
+        }
     }
 
     // v0.25.4 (BORROW-008): infer return-borrow source parameter.
@@ -4369,6 +4398,21 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
         if (sumIt != func_summaries.end()) {
             const auto& summary = sumIt->second;
             for (size_t pi : summary.destroys_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    destroyed_arenas_.insert(
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name);
+                }
+            }
+            // v0.30.4 (IPC-DEC-005): same consumer behaviour for the
+            // declarative `#[destroys_arena(<param>)]` attribute set.
+            // Treated identically to the body-derived set above so
+            // self-hosted re-implementations and extern declarations
+            // produce the same caller-side effect.
+            for (size_t pi : summary.destroys_attribute_param_indices) {
                 if (pi < expr->arguments.size() &&
                     expr->arguments[pi] &&
                     expr->arguments[pi]->type ==

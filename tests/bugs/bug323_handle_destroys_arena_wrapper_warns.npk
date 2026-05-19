@@ -1,0 +1,31 @@
+// BUG-323 (v0.30.4, IPC-DEC-005 — wrapper around annotated extern
+// gets transitive treatment):
+// `wrap_destroy(a)` calls `npk_handle_arena_destroy(a)`. The extern
+// is annotated `#[destroys_arena(arena)]`; the fixpoint propagator
+// lifts that into `wrap_destroy`'s
+// `transitively_destroys_param_indices`. Calling `wrap_destroy(a)`
+// from main then marks `a` *transitively* destroyed, so a later
+// handle op fires the SOFT ARIA-032 warning (per IPC-DEC-004, new
+// cases ship as warnings for one cycle).
+//
+// Expected: compile SUCCEEDS, executable produced, exactly one
+// `[ARIA-032]` warning line referring to the transitive case.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:wrap_destroy = int32(int64:a) {
+    npk_handle_arena_destroy(a);
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw wrap_destroy(a);     // transitive destroy of `a`
+    int64:p = raw HandleArena.deref(h); // ← ARIA-032 soft warning
+    exit 0;
+};

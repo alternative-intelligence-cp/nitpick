@@ -2444,6 +2444,19 @@ ASTNodePtr Parser::parseStatement() {
         }
     }
     
+    // v0.30.4: extern func declarations can also carry attributes
+    // (e.g. `#[destroys_arena(arena)]`). Re-check for TOKEN_KW_EXTERN
+    // here so the attribute attaches to the resulting FuncDeclStmt.
+    if (match(TokenType::TOKEN_KW_EXTERN)) {
+        ASTNodePtr externDecl = parseExternStatement();
+        if (externDecl && !pendingAttrs.empty() &&
+            externDecl->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* fd = static_cast<FuncDeclStmt*>(externDecl.get());
+            fd->attributes = std::move(pendingAttrs);
+        }
+        return externDecl;
+    }
+    
     // Check for struct declarations
     if (match(TokenType::TOKEN_KW_STRUCT)) {
         auto structDecl = parseStructDecl();

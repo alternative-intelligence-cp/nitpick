@@ -1,0 +1,25 @@
+// BUG-322 (v0.30.4, IPC-DEC-005 — `#[destroys_arena(<param>)]`):
+// the declarative attribute on `npk_handle_arena_destroy` (see
+// `stdlib/handle.npk`) makes the borrow checker mark the bound
+// arena as destroyed AT THE CALLER even though the extern has
+// no body to scan. A subsequent `HandleArena.deref(h)` on a
+// handle bound to that arena must fire a HARD ARIA-032 error
+// (direct destroy semantics — the annotation is just as explicit
+// as a `HandleArena.destroy(a)` call).
+//
+// Expected: compile FAILS with one `[ARIA-032]` error mentioning
+// the handle outliving its arena. No executable produced.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    npk_handle_arena_destroy(a);     // attribute → marks `a` destroyed
+    int64:p = raw HandleArena.deref(h);  // ← ARIA-032 hard error
+    exit 0;
+};
