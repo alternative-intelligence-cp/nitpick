@@ -2755,6 +2755,39 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
     // Check right side
     checkExpression(expr->right.get());
 
+    // v0.30.6 (ARIA-032 precision pass): reassigning an arena-typed
+    // local to a fresh `HandleArena.create()` produces a NEW arena
+    // value bound to the same name. Any prior destroyed-arena marker
+    // on this name refers to the OLD arena value and must not leak
+    // forward, or subsequent handles allocated from the reassigned
+    // name are falsely flagged as outliving a destroyed arena. The
+    // parser pre-mangles `HandleArena.create(...)` into a CALL whose
+    // callee is the IdentifierExpr `HandleArena_create` (parser.cpp
+    // ~line 1935). The `raw` keyword (parser.cpp ~line 1251) wraps
+    // its operand in `CallExpr(IdentifierExpr("raw"), [inner])`, so
+    // peel through any number of `raw`/`drop`/`ok` wrappers.
+    if (!target_name.empty() && expr->right) {
+        ASTNode* rhs = expr->right.get();
+        while (rhs && rhs->type == ASTNode::NodeType::CALL) {
+            auto* rc = static_cast<CallExpr*>(rhs);
+            if (!rc->callee ||
+                rc->callee->type != ASTNode::NodeType::IDENTIFIER) break;
+            const std::string& name =
+                static_cast<IdentifierExpr*>(rc->callee.get())->name;
+            if (name == "HandleArena_create") {
+                destroyed_arenas_.erase(target_name);
+                transitively_destroyed_arenas_.erase(target_name);
+                break;
+            }
+            if ((name == "raw" || name == "drop" || name == "ok") &&
+                rc->arguments.size() == 1) {
+                rhs = rc->arguments[0].get();
+                continue;
+            }
+            break;
+        }
+    }
+
     if (!target_name.empty() && ctx.pointer_vars.count(target_name) > 0) {
         recordPinDerivedAlias(target_name, expr->right.get(), expr);
     }
@@ -2768,7 +2801,54 @@ void BorrowChecker::checkIfStmt(IfStmt* stmt) {
     
     // Snapshot state before branching
     auto pre_branch_state = ctx.snapshot();
-    
+
+    // v0.30.6 (ARIA-032 precision pass): destroyed-arena state is a
+    // simple per-function set on BorrowChecker (not part of
+    // LifetimeContext), so the ctx snapshot above does not cover it.
+    // Without explicit save/restore around each branch a destroy that
+    // lives in a branch which terminates (`exit`/`pass`/`fail`/
+    // `return`) leaks into the outer flow and produces a false ARIA-
+    // 032 on later handle uses that are only reached when the
+    // destroying branch was NOT taken. Snapshot the destroy sets,
+    // and after each branch — if that branch terminates — restore
+    // them so the outer flow sees the pre-branch state.
+    auto pre_destroyed = destroyed_arenas_;
+    auto pre_transitively_destroyed = transitively_destroyed_arenas_;
+
+    // Helper: does this statement / block terminate control flow?
+    // `pass`, `fail`, `return`, and the `exit <expr>;` statement
+    // (which the parser lowers to an ExpressionStmt wrapping a CALL
+    // to the identifier `exit`) all qualify.
+    auto isTerminatorStmt = [](ASTNode* s) -> bool {
+        if (!s) return false;
+        if (s->type == ASTNode::NodeType::PASS ||
+            s->type == ASTNode::NodeType::FAIL ||
+            s->type == ASTNode::NodeType::RETURN) return true;
+        if (s->type == ASTNode::NodeType::EXPRESSION_STMT) {
+            auto* es = static_cast<ExpressionStmt*>(s);
+            if (es->expression &&
+                es->expression->type == ASTNode::NodeType::CALL) {
+                auto* c = static_cast<CallExpr*>(es->expression.get());
+                if (c->callee &&
+                    c->callee->type == ASTNode::NodeType::IDENTIFIER &&
+                    static_cast<IdentifierExpr*>(c->callee.get())->name
+                        == "exit") {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    auto branchTerminates = [&](ASTNode* n) -> bool {
+        if (!n) return false;
+        if (n->type == ASTNode::NodeType::BLOCK) {
+            auto* b = static_cast<BlockStmt*>(n);
+            if (b->statements.empty()) return false;
+            return isTerminatorStmt(b->statements.back().get());
+        }
+        return isTerminatorStmt(n);
+    };
+
     // Analyze THEN branch
     ctx.enterScope();
     if (stmt->thenBranch) {
@@ -2776,20 +2856,44 @@ void BorrowChecker::checkIfStmt(IfStmt* stmt) {
     }
     ctx.exitScope();
     auto then_state = ctx.snapshot();
-    
+    if (branchTerminates(stmt->thenBranch.get())) {
+        destroyed_arenas_ = pre_destroyed;
+        transitively_destroyed_arenas_ = pre_transitively_destroyed;
+    }
+    auto after_then_destroyed = destroyed_arenas_;
+    auto after_then_transitively = transitively_destroyed_arenas_;
+
     // Restore and analyze ELSE branch
     ctx.restore(pre_branch_state);
+    destroyed_arenas_ = pre_destroyed;
+    transitively_destroyed_arenas_ = pre_transitively_destroyed;
     LifetimeContext else_state;
     if (stmt->elseBranch) {
         ctx.enterScope();
         checkStatement(stmt->elseBranch.get());
         ctx.exitScope();
         else_state = ctx.snapshot();
+        if (branchTerminates(stmt->elseBranch.get())) {
+            destroyed_arenas_ = pre_destroyed;
+            transitively_destroyed_arenas_ = pre_transitively_destroyed;
+        }
     } else {
         // No else block, else state is same as pre-branch
         else_state = pre_branch_state;
     }
-    
+
+    // Merge destroy sets: an arena is destroyed after the if-stmt
+    // iff some non-terminating branch destroyed it. Union over the
+    // post-branch (post-restore) states is the conservative choice.
+    for (const auto& a : after_then_destroyed) {
+        destroyed_arenas_.insert(a);
+    }
+    for (const auto& a : after_then_transitively) {
+        if (!destroyed_arenas_.count(a)) {
+            transitively_destroyed_arenas_.insert(a);
+        }
+    }
+
     // Merge states
     ctx.merge(then_state, else_state);
 }

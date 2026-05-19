@@ -1,0 +1,29 @@
+// BUG-333 (v0.30.6, precision pass): calling a destroyer wrapper and
+// NEVER deref'ing the handle afterwards must not warn. Pre-v0.30.6
+// the transitive-destroys pass marks the arena `transitively-
+// destroyed` at the wrapper call site, but the deref-warn check
+// only fires on subsequent handle use \u2014 so a clean compile is the
+// status-quo expectation. Pinned here as a regression for v0.30.6
+// to verify the precision pass does not over-warn on "destroyer
+// is the last thing in the function".
+//
+// Expected: clean compile, no ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:wrap_destroy = int32(int64:arena) {
+    int32:rc = raw HandleArena.destroy(arena);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int64:p = raw HandleArena.deref(h);
+    int32:rc = raw wrap_destroy(a);
+    exit 0;
+};

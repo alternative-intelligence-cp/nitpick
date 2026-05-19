@@ -1391,6 +1391,32 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.6 — ARIA-032 precision pass
+# ============================================================================
+# Drops two false-positive corner cases that v0.30.1–5 surfaced in the
+# per-name destroyed-arena tracker:
+#   * Reassigning an arena local to a fresh `HandleArena.create()`
+#     produces a NEW arena; the stale destroyed marker on the bound
+#     name is now cleared (borrow_checker.cpp checkAssignment).
+#   * Destroying an arena inside a branch that terminates the
+#     function (`exit`/`pass`/`fail`/`return`) no longer leaks into
+#     the outer flow (borrow_checker.cpp checkIfStmt snapshot/restore).
+# bug330 + bug333 are regression-pins that passed pre-fix; bug331 +
+# bug332 are the real fixes.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0306
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0306.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0306 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;precision;ipc;handles;v0.30.6"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.
