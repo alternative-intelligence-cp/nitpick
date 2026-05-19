@@ -2350,7 +2350,22 @@ llvm::Value* npk::IRGenerator::codegen(npk::ASTNode* node) {
     // Walk the module AST and generate code for all non-generic functions
     if (node->type == ASTNode::NodeType::PROGRAM) {
         ProgramNode* program = static_cast<ProgramNode*>(node);
-        
+
+        // v0.31.0.1 (Phase 1 / D-2): scan top-level declarations for any
+        // `async func:` so the exit-site executor drain can be gated on the
+        // result. We only walk top-level here; async functions nested inside
+        // impl blocks etc. will be handled when Phase 2 (traits) lands.
+        for (const auto& decl : program->declarations) {
+            if (!decl) continue;
+            if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+                auto* fd = static_cast<FuncDeclStmt*>(decl.get());
+                if (fd->isAsync) {
+                    module_has_async_ = true;
+                    break;
+                }
+            }
+        }
+
 // Process all declarations recursively (handles nested modules)
         processModuleDeclarations(program->declarations, "");
     }
@@ -7946,6 +7961,9 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
             expr_codegen.uhash_handle_counter_ptr = &uhash_handle_counter;
             // v0.5.0: Propagate defaults fallback elimination set
             expr_codegen.defaults_safe_ptr = &defaults_safe;
+            // v0.31.0.1 (Phase 1 / D-2): propagate async-presence so `exit`
+            // lowering can emit the executor drain only when needed.
+            expr_codegen.module_has_async = module_has_async_;
             return expr_codegen.codegenCall(call);
         }
         

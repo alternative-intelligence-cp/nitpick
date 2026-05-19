@@ -6264,6 +6264,30 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
         if (code_val->getType() != builder.getInt32Ty()) {
             code_val = builder.CreateIntCast(code_val, builder.getInt32Ty(), true);
         }
+
+        // v0.31.0.1 (Phase 1 / D-2): if the module contains any `async func:`,
+        // drain queued tasks on the global executor before terminating the
+        // process. `npk_executor_run(NULL)` is a no-op when no executor has
+        // been lazily created (see runtime_api.cpp); we still gate on the
+        // module flag so sync-only programs do not even reference the
+        // executor symbol from their IR.
+        if (module_has_async) {
+            llvm::Function* drain_fn = module->getFunction("npk_executor_run");
+            if (!drain_fn) {
+                // npk_executor_run(AriaExecutorHandle /*ptr*/) -> void
+                llvm::FunctionType* drain_ft = llvm::FunctionType::get(
+                    builder.getVoidTy(),
+                    {llvm::PointerType::get(builder.getInt8Ty(), 0)},
+                    false);
+                drain_fn = llvm::Function::Create(
+                    drain_ft, llvm::Function::ExternalLinkage,
+                    "npk_executor_run", module);
+            }
+            llvm::Value* null_handle = llvm::ConstantPointerNull::get(
+                llvm::PointerType::get(builder.getInt8Ty(), 0));
+            builder.CreateCall(drain_fn, {null_handle});
+        }
+
         llvm::Function* exit_fn = module->getFunction("exit");
         if (!exit_fn) {
             llvm::FunctionType* ft = llvm::FunctionType::get(

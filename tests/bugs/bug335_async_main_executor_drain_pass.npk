@@ -1,0 +1,23 @@
+// bug335: D-2 — module-with-async emits executor drain before user `exit`
+// Phase 1 / v0.31.0.1
+//
+// IR-level expectation (verified by tests/bugs/run_bug335.sh):
+//   when the module contains any `async func:`, the LLVM IR emitted for
+//   `main` contains a `call void @npk_executor_run(ptr null)` immediately
+//   before the `call void @exit(...)`. This is the compiler-injected
+//   wrapper from decision D-2.
+//
+// Runtime expectation: program still compiles, links, and runs cleanly
+//   (exit 0). `npk_executor_run(NULL)` is a no-op when no executor was
+//   ever lazily created (see runtime_api.cpp v0.31.0.1 change).
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:work = int32() {
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop work();
+    exit 0;
+};

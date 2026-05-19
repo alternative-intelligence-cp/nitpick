@@ -1,0 +1,20 @@
+// bug334: D-3 / ARIA-040 — `await` outside an `async func:` is a hard compile error
+// Phase 1 / v0.31.0.1
+//
+// Pre-v0.31.0.1 behavior: stderr ERROR printed, compile exit 0 (soft-fail bug).
+// Expected v0.31.0.1+ behavior: npkc terminates with non-zero exit, emitting
+// the `ARIA-040: 'await' can only be used inside an 'async func:'` diagnostic.
+//
+// Driver: tests/bugs/run_bug334.sh inverts the npkc exit code.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:work = int32() {
+    pass 7i32;
+};
+
+func:main = int32() {
+    // Misuse: `await` in a sync function — must be rejected.
+    int32:x = raw await work();
+    exit x;
+};

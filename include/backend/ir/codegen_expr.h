@@ -204,6 +204,14 @@ public:
     // Set from IRGenerator::defaults_safe when creating ExprCodegen for CALL delegation.
     const std::set<ASTNode*>* defaults_safe_ptr = nullptr;
 
+    // v0.31.0.1 (Phase 1 / D-2): set true when the current module contains at
+    // least one `async func:`. When true, the `exit(code)` lowering in
+    // main/failsafe is preceded by `npk_executor_run(NULL)` so any queued
+    // async tasks are drained before the process terminates. Propagated from
+    // IRGenerator::module_has_async_ at every ExprCodegen instantiation that
+    // may reach `exit`.
+    bool module_has_async = false;
+
     /**
      * Promote int64 literal to LBIM struct type (int128/256/512/1024/2048/4096)
      * Used when assigning literals to large integer variables

@@ -259,7 +259,20 @@ private:
     // v0.5.1: assert_static nodes that Z3 proved at compile time (emit nothing)
     std::set<ASTNode*> assert_static_proven;
 
+    // v0.31.0.1 (Phase 1 / D-2): set true when the current module contains at
+    // least one `async func:` declaration. Computed at the top of `codegen()`
+    // by scanning the ProgramNode declarations. When true, the user-facing
+    // `exit(code)` call in `main`/`failsafe` is preceded by
+    // `npk_executor_run(NULL)` so that any tasks queued on the global
+    // executor are drained before the process terminates. When false, no
+    // executor-drain plumbing is emitted (zero overhead for sync-only
+    // programs).
+    bool module_has_async_ = false;
+
 public:
+    // v0.31.0.1 (Phase 1 / D-2): accessor for the async-presence flag, used by
+    // `codegen_expr_call.cpp` to gate executor-drain emission at `exit` sites.
+    bool moduleHasAsync() const { return module_has_async_; }
     /// Register functions whose user stacks are provably type-homogeneous (from Z3 phase)
     void setUStackOptimizedFuncs(const std::set<std::string>& funcs) {
         ustack_optimized_funcs = funcs;

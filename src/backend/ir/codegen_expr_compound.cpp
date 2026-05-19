@@ -1155,15 +1155,17 @@ llvm::Value* ExprCodegen::codegenAwait(ASTNode* node) {
     }
     
     if (!is_async) {
-        // ERROR: await in non-async function
-        // Print proper error message to stderr (user-facing)
-        std::cerr << "ERROR: 'await' can only be used in async functions (found in '" 
-                  << func_name << "')" << std::endl;
-        std::cerr << "  Hint: Change 'func:" << func_name << "' to 'async func:" << func_name << "'" << std::endl;
-        
-        // Return a dummy value to prevent LLVM crash
-        // Return i32 0 (arbitrary - compilation will fail anyway due to error message)
-        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+        // v0.31.0.1 (Phase 1 / D-3): `await` outside an `async func:` is now a
+        // hard compile error (ARIA-040). Previously this site emitted a
+        // stderr message and returned a dummy i32 0, letting compilation
+        // continue and exit 0 — a soft-fail bug. Throwing here aborts
+        // codegen the same way other ARIA-NNN diagnostics do.
+        throw std::runtime_error(
+            "ARIA-040: 'await' can only be used inside an 'async func:' "
+            "(found in function '" + func_name + "'). "
+            "To call an async function from a synchronous context, spawn it "
+            "via the runtime executor (`drop work();`) or convert the caller "
+            "to `async func:" + func_name + "`.");
     }
     
     ARIA_DBG_STREAM << "[DEBUG AWAIT] Async check passed, continuing..." << std::endl;

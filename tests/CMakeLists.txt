@@ -1417,6 +1417,30 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.31.0.1 — Phase 1 async slice: D-2 + D-3
+# ============================================================================
+# bug334 — `await` outside an `async func:` is now a hard ARIA-040 error
+#          (was a soft-fail printing to stderr but returning 0).
+# bug335 — async-bearing modules emit a `npk_executor_run(NULL)` drain
+#          call right before the user `exit(code)` in main, so any
+#          tasks queued on the global executor are completed before the
+#          process terminates.
+# bug336 — sync-only modules must NOT reference `npk_executor_run` in
+#          their IR (zero-overhead invariant).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03101
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03101.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03101 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;executor;await;v0.31.0.1"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

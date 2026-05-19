@@ -1,0 +1,13 @@
+// bug336: D-2 — sync-only module does NOT reference the executor in its IR
+// Phase 1 / v0.31.0.1
+//
+// IR-level expectation (verified by tests/bugs/run_bug336.sh):
+//   when the module contains NO `async func:`, the emitted LLVM IR for
+//   `main` must NOT mention `npk_executor_run` at all (zero overhead for
+//   purely synchronous programs).
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    exit 0;
+};

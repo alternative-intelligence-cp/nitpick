@@ -44,9 +44,14 @@ AriaTaskId npk_executor_spawn(AriaExecutorHandle executor, AriaCoroutineHandle c
 }
 
 void npk_executor_run(AriaExecutorHandle executor) {
-    Executor* exec = executor ? static_cast<Executor*>(executor) : 
-                               static_cast<Executor*>(npk_get_global_executor());
-    
+    // v0.31.0.1 (Phase 1 / D-2): the compiler injects `npk_executor_run(NULL)`
+    // before the user's `exit(code)` in `main`/`failsafe` whenever the
+    // module contains any `async func:`. To make that drain genuinely
+    // zero-cost when no async work was ever spawned, the NULL/no-global
+    // path now returns immediately instead of lazily allocating an
+    // Executor just to call runToCompletion on an empty queue.
+    Executor* exec = executor ? static_cast<Executor*>(executor)
+                              : globalExecutor;
     if (exec) {
         exec->runToCompletion();
     }
