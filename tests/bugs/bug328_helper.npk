@@ -1,0 +1,10 @@
+// Helper for bug328: a function with TWO borrow params and a borrow
+// return. The v0.25.4 single-source heuristic intentionally refuses
+// to guess which parameter feeds the returned borrow; the consumer
+// at the call site must reject the binding with ARIA-023, even when
+// the callee lives in a different module.
+struct:Pair = { int32:a; int32:b; };
+
+func:take_first = $$i int32($$i Pair:l, $$i Pair:r) {
+    pass l.a;
+};

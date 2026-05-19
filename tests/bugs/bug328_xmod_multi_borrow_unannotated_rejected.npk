@@ -1,0 +1,19 @@
+// BUG-328 (v0.30.5 — cross-module multi-borrow-param return-borrow
+// inference rejection): `take_first` takes two $$i Pair parameters
+// and returns $$i int32. The single-source heuristic cannot infer
+// which one feeds the return; consumer must emit ARIA-023 with the
+// "multi-borrow-parameter case requires explicit annotation"
+// wording — same as the intra-module case (bug194).
+
+use "bug328_helper.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Pair:p;
+    Pair:q;
+    p.a = 1i32; p.b = 2i32;
+    q.a = 3i32; q.b = 4i32;
+    $$i int32:y = raw take_first(p, q); // ARIA-023 ambiguous source
+    exit 0;
+};

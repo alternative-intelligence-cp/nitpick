@@ -1,0 +1,19 @@
+// BUG-326 (v0.30.5 — cross-module return-borrow inference, happy path):
+// `get_a` is declared in bug326_helper.npk as
+//   func:get_a = $$i int32($$i Pair:s) { pass $$i s.a; };
+// Importing it and binding a $$i to its call result must resolve the
+// source borrow to the argument path `p`, exactly as if `get_a` had
+// been declared in this translation unit. Compiles cleanly, runs.
+
+use "bug326_helper.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Pair:p;
+    p.a = 7i32;
+    p.b = 9i32;
+    $$i int32:y = raw get_a(p);
+    int32:rc = y;
+    exit 0;
+};

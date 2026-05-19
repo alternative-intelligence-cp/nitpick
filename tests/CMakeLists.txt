@@ -1370,6 +1370,27 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.5 — Return-borrow inference across modules (v0.25.x carryover)
+# ============================================================================
+# Pins the cross-module behaviour of `return_borrow_source_param`. The
+# v0.25.4 single-source heuristic and the consumer at the borrow-binding
+# site already work transparently once v0.30.3's cross-module ingest
+# seeds imported summaries via `buildSummary`. These four fixtures lock
+# the contract in place so future regressions show up here.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0305
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0305.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0305 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-023;aria-026;borrow;return-borrow;cross-module;v0.30.5"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.
