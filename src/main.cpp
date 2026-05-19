@@ -4621,6 +4621,20 @@ llvm::Module* compile_to_module(
     // landed `impl:Drop:for:NitpickJitFnRaii` in the registry.
     borrow_checker.setJitFnRaiiEnabled(type_checker.hasJitFnRaii());
 
+    // v0.30.3 (IPC-DEC-002/003): seed borrow checker with summaries
+    // from all imported modules BEFORE the main analyze() runs. The
+    // main translation unit's `collectFunctionSummaries` overwrites
+    // colliding keys, so local re-declarations still shadow the
+    // imported summary (matches the bug277 retirement narrative).
+    // Order is unspecified across imports — first-import-wins on
+    // collisions between imports (both should be the same FFI
+    // symbol with the same signature anyway).
+    for (const auto& [path, loaded_module] : module_loader.getLoadedModules()) {
+        if (loaded_module && loaded_module->ast) {
+            borrow_checker.ingestImportedSummaries(loaded_module->ast.get(), path);
+        }
+    }
+
     auto borrow_errors = borrow_checker.analyze(module_node.get());
     
     if (!borrow_errors.empty()) {

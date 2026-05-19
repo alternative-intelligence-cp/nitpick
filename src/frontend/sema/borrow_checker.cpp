@@ -592,7 +592,18 @@ std::vector<BorrowError> BorrowChecker::analyze(ASTNode* ast) {
     type_traits.clear();
     copyable_types.clear();
     droppable_types.clear();
-    
+
+    // v0.30.3 (IPC-DEC-002/003): re-seed cross-module summaries from
+    // imported ASTs queued via `ingestImportedSummaries`. Must run
+    // AFTER the clear above and BEFORE `collectFunctionSummaries`
+    // walks the main module — the main module's pass uses plain
+    // map assignment, so it naturally overwrites colliding keys
+    // (local re-declaration wins, matching the v0.30.3 bug277
+    // workaround retirement).
+    for (const auto& [path, imported_ast] : imported_module_asts_) {
+        seedImportedSummaries(imported_ast, path);
+    }
+
     // Phase 1: Collect function borrow summaries (signatures only)
     collectFunctionSummaries(ast);
     
@@ -666,6 +677,87 @@ void BorrowChecker::collectFunctionSummaries(ASTNode* ast) {
     // Safe to call unconditionally — no-op when no call sites recorded
     // a parameter-binding match.
     propagateTransitiveDestroys();
+}
+
+// v0.30.3 (IPC-DEC-002 / IPC-DEC-003): cross-module summary ingest.
+// See header comment above the declaration for the contract. Mirrors
+// the FUNC_DECL / IMPL_DECL / TRAIT_DECL arms of
+// `collectFunctionSummaries` but:
+//   * skips summaries whose name already exists in `func_summaries`
+//     (local re-declaration wins on collision — matches the
+//     v0.30.3 bug277 retirement narrative);
+//   * tags every newly-added summary with `imported_from_module`
+//     so diagnostics can attribute warnings back to the source
+//     module;
+//   * does NOT run `propagateTransitiveDestroys` itself — the main
+//     `collectFunctionSummaries` call invoked from `analyze()` runs
+//     the fixpoint once over the union of imported + local
+//     summaries.
+void BorrowChecker::ingestImportedSummaries(ASTNode* ast,
+                                            const std::string& module_path) {
+    if (!ast) return;
+    // v0.30.3: queue the imported AST. Actual seeding into
+    // `func_summaries` happens inside `analyze()` after the state
+    // reset, so this method is safe to call any time before
+    // `analyze()`.
+    imported_module_asts_.emplace_back(module_path, ast);
+}
+
+void BorrowChecker::seedImportedSummaries(ASTNode* ast,
+                                          const std::string& module_path) {
+    if (!ast || ast->type != ASTNode::NodeType::PROGRAM) return;
+    auto* program = static_cast<ProgramNode*>(ast);
+    for (const auto& decl : program->declarations) {
+        if (!decl) continue;
+        if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* func = static_cast<FuncDeclStmt*>(decl.get());
+            // Local re-declaration wins on collision. (At ingest time
+            // the main module has not yet been walked, but other
+            // imports may have registered the same name first; in
+            // that case first-import-wins is fine — both imports
+            // describe the same FFI symbol with the same signature.)
+            if (func_summaries.count(func->funcName)) continue;
+            FunctionBorrowSummary summary = buildSummary(func);
+            summary.imported_from_module = module_path;
+            func_summaries[summary.func_name] = std::move(summary);
+        } else if (decl->type == ASTNode::NodeType::TRAIT_DECL) {
+            auto* traitDecl = static_cast<TraitDeclStmt*>(decl.get());
+            // First registration wins — duplicate trait declarations
+            // across modules would be a semantic error caught earlier
+            // by the type checker.
+            if (!trait_methods.count(traitDecl->traitName)) {
+                trait_methods[traitDecl->traitName] = traitDecl->methods;
+            }
+        } else if (decl->type == ASTNode::NodeType::IMPL_DECL) {
+            auto* implDecl = static_cast<ImplDeclStmt*>(decl.get());
+            type_traits[implDecl->typeName].insert(implDecl->traitName);
+            if (implDecl->traitName == "Copyable") {
+                copyable_types.insert(implDecl->typeName);
+            } else if (implDecl->traitName == "Droppable") {
+                droppable_types.insert(implDecl->typeName);
+            }
+            for (const auto& methodNode : implDecl->methods) {
+                if (!methodNode || methodNode->type != ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<FuncDeclStmt*>(methodNode.get());
+                std::string mangledName = implDecl->typeName + "_" + func->funcName;
+                if (func_summaries.count(mangledName)) continue;
+                FunctionBorrowSummary summary = buildSummary(func);
+                summary.func_name = mangledName;
+                summary.is_trait_method = true;
+                summary.impl_type = implDecl->typeName;
+                summary.trait_name = implDecl->traitName;
+                summary.imported_from_module = module_path;
+                for (size_t i = 0; i < summary.param_names.size(); ++i) {
+                    if (summary.param_names[i] == "self") {
+                        summary.self_param_index = static_cast<int>(i);
+                        summary.self_ownership = summary.param_ownership[i];
+                        break;
+                    }
+                }
+                func_summaries[mangledName] = std::move(summary);
+            }
+        }
+    }
 }
 
 void BorrowChecker::propagateTransitiveDestroys() {

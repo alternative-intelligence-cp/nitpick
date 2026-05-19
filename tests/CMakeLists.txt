@@ -1328,6 +1328,26 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.3 — Cross-module function summary ingest (IPC-DEC-002/003)
+# ============================================================================
+# Borrow checker now seeds `func_summaries` from all imported module ASTs
+# before analysing the main translation unit. Local re-declarations
+# overwrite imported summaries on collision (local wins). This retires
+# the bug277 local-extern re-declaration workaround.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0303
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0303.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0303 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;cross-module;ipc;handles;v0.30.3"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

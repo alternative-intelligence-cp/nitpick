@@ -750,6 +750,16 @@ struct FunctionBorrowSummary {
     // extern callee without an explicit `@cast<int64>(...)` wrapper.
     bool is_extern = false;
 
+    // v0.30.3 (IPC-DEC-002 / IPC-DEC-003): canonical filesystem path of
+    // the module this summary was imported from, or empty string when
+    // the summary was built from the main translation unit. Used by
+    // diagnostics to point users at the right source file when a
+    // cross-module call triggers ARIA-032 / FFI-passthrough warnings.
+    // Also lets a local re-declaration silently shadow an imported
+    // summary at `collectFunctionSummaries` time (local wins on key
+    // collision, matching v0.30.3's bug277 retirement).
+    std::string imported_from_module;
+
     // Line of declaration (for diagnostics)
     int decl_line = 0;
     int decl_column = 0;
@@ -970,6 +980,39 @@ private:
      * Walks the AST without doing full analysis, just extracts signatures.
      */
     void collectFunctionSummaries(ASTNode* ast);
+
+public:
+    /**
+     * v0.30.3 (IPC-DEC-002 / IPC-DEC-003): seed `func_summaries`,
+     * `trait_methods`, `type_traits`, `copyable_types`, `droppable_types`,
+     * `func_call_sites_`, and `return_call_sites_` from an imported
+     * module's AST. Intended to be called by `main.cpp` once per
+     * loaded module BEFORE `analyze()` runs on the main translation
+     * unit. The main module's `collectFunctionSummaries` overwrites
+     * any colliding summary keys (local re-declaration wins —
+     * matches the bug277 workaround retirement). The final
+     * `propagateTransitiveDestroys` invoked by `collectFunctionSummaries`
+     * covers the union of imported + local summaries so cross-module
+     * call chains converge in one fixpoint pass.
+     *
+     * Each summary added by this method has `imported_from_module`
+     * set to `module_path` (the loaded module's canonical filesystem
+     * path) for diagnostics provenance.
+     */
+    void ingestImportedSummaries(ASTNode* ast, const std::string& module_path);
+
+private:
+    /**
+     * v0.30.3 helper: actually walk an imported AST and populate
+     * `func_summaries` + the trait/type registries. Invoked from
+     * `analyze()` after the state reset.
+     */
+    void seedImportedSummaries(ASTNode* ast, const std::string& module_path);
+
+    // v0.30.3: imported module ASTs queued by `ingestImportedSummaries`.
+    // Borrow checker does not own them — the ModuleLoader does. The
+    // pointers must outlive the next `analyze()` call.
+    std::vector<std::pair<std::string, ASTNode*>> imported_module_asts_;
     
     /**
      * Build a FunctionBorrowSummary from a FuncDeclStmt
