@@ -1,0 +1,43 @@
+// BUG-324 (v0.30.4, IPC-DEC-005 — attribute with unknown param
+// name is silently ignored at summary-building time):
+// `#[destroys_arena(does_not_exist)]` references a parameter
+// that doesn't exist on the declaration. The borrow checker
+// must not crash and must not synthesise a phantom destroy
+// (an unknown name simply produces no entries in
+// `destroys_attribute_param_indices`).
+//
+// We verify the silent-skip by analysing a sibling probe — the
+// deref of `h` after calling `bad_destroy(a)` must NOT fire
+// ARIA-032 (the `does_not_exist` token never matches any
+// parameter). `probe` is statically analysed only, never
+// called at runtime, so the unresolved `bad_destroy` symbol
+// doesn't break the link.
+//
+// (A future cycle can promote the silent skip to a clean
+// `[ARIA-???]` diagnostic; v0.30.4 prioritises robustness.)
+//
+// Expected: compile SUCCEEDS, executable produced, zero
+// `[ARIA-032]` lines emitted.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+// Regular Aria func (not extern) so the link is clean — the
+// attribute resolution path is identical for extern and non-
+// extern declarations. Body is empty so the body-scan adds
+// nothing either.
+#[destroys_arena(does_not_exist)]
+func:bad_destroy = int32(int64:arena) {
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw bad_destroy(a);      // attribute names a non-param → no-op
+    int64:p = raw HandleArena.deref(h); // no ARIA-032 — `a` is NOT destroyed
+    exit 0;
+};

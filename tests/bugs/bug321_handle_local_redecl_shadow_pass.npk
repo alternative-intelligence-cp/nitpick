@@ -1,0 +1,34 @@
+// BUG-321 (v0.30.3, IPC-DEC-002 — local re-declaration wins):
+// after the cross-module summary ingest landed, re-declaring an
+// imported extern locally must still compile cleanly. The main
+// module's `collectFunctionSummaries` pass overwrites the
+// imported summary entry, so there is no duplicate-extern error
+// AND no duplicate ARIA-032 warning. The local extern is the
+// "winning" summary at the call site.
+//
+// This is the migration safety net: pre-v0.30.3 code that relied
+// on the bug277 workaround (local re-decl of stdlib externs)
+// continues to compile and produce the same ARIA-032 warning as
+// before.
+//
+// Expected: compile succeeds, exactly one ARIA-032 warning for
+// the call site, executable produced (exit 0 at runtime).
+
+use "handle.npk".*;
+
+// Legacy local re-declaration — same signature as handle.npk:22.
+extern func:npk_handle_arena_destroy = void(int64:arena);
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:probe = int32(int64:a) {
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    npk_handle_arena_destroy(h);   // ← warns ARIA-032 once
+    pass 0i32;
+};
+
+func:main = int32() {
+    exit 0;
+};

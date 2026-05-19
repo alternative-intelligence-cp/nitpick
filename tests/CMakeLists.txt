@@ -1284,6 +1284,139 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.30.1 — ARIA-032 transitive destroy fixpoint (cross-function Phase 2)
+# ============================================================================
+# Lifts `destroys_param_indices` through callee summaries via a
+# fixpoint pass in `BorrowChecker::propagateTransitiveDestroys`, so
+# handle-outlives-arena (ARIA-032) catches arenas destroyed by a
+# callee-of-a-callee (not just direct callees as in v0.28.3). Per
+# IPC-DEC-004, new transitive cases ship as WARNINGS for one cycle
+# before promotion to error. Closes bug269 (v0.28.3 documented gap).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0301
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0301.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0301 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;transitive;ipc;handles;v0.30.1"
+    )
+endif()
+
+# ============================================================================
+# v0.30.2 — ARIA-032 transitive arena escape (bug316-320)
+# ============================================================================
+# Extension of v0.28.4's local-arena escape rule: a function whose return
+# value is a handle bound to one of its arena parameters now carries an
+# `escapes_param_arena_indices` summary. Caller sites passing a LOCAL
+# arena to such a callee trigger an ARIA-032 WARNING (IPC-DEC-004 one-
+# cycle migration window). Fixpoint pass also lifts escapes through
+# arbitrary call chains.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0302
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0302.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0302 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;transitive;ipc;handles;escape;v0.30.2"
+    )
+endif()
+
+# ============================================================================
+# v0.30.3 — Cross-module function summary ingest (IPC-DEC-002/003)
+# ============================================================================
+# Borrow checker now seeds `func_summaries` from all imported module ASTs
+# before analysing the main translation unit. Local re-declarations
+# overwrite imported summaries on collision (local wins). This retires
+# the bug277 local-extern re-declaration workaround.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0303
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0303.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0303 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;cross-module;ipc;handles;v0.30.3"
+    )
+endif()
+
+# ============================================================================
+# v0.30.4 — `#[destroys_arena(<param>)]` declarative attribute (IPC-DEC-005)
+# ============================================================================
+# Closes the gap that cross-module ingest (v0.30.3) exposed: extern
+# declarations have no body for the borrow checker's
+# `HandleArena_destroy(<param>)` body-scan to find. The attribute lets
+# extern (and self-hosted) declarations declare arena-destroying
+# parameters explicitly; the consumer site unions the attribute set
+# with the body-derived set so both sources are treated uniformly.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0304
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0304.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0304 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;ffi;destroys-arena;ipc;handles;v0.30.4"
+    )
+endif()
+
+# ============================================================================
+# v0.30.5 — Return-borrow inference across modules (v0.25.x carryover)
+# ============================================================================
+# Pins the cross-module behaviour of `return_borrow_source_param`. The
+# v0.25.4 single-source heuristic and the consumer at the borrow-binding
+# site already work transparently once v0.30.3's cross-module ingest
+# seeds imported summaries via `buildSummary`. These four fixtures lock
+# the contract in place so future regressions show up here.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0305
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0305.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0305 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-023;aria-026;borrow;return-borrow;cross-module;v0.30.5"
+    )
+endif()
+
+# ============================================================================
+# v0.30.6 — ARIA-032 precision pass
+# ============================================================================
+# Drops two false-positive corner cases that v0.30.1–5 surfaced in the
+# per-name destroyed-arena tracker:
+#   * Reassigning an arena local to a fresh `HandleArena.create()`
+#     produces a NEW arena; the stale destroyed marker on the bound
+#     name is now cleared (borrow_checker.cpp checkAssignment).
+#   * Destroying an arena inside a branch that terminates the
+#     function (`exit`/`pass`/`fail`/`return`) no longer leaks into
+#     the outer flow (borrow_checker.cpp checkIfStmt snapshot/restore).
+# bug330 + bug333 are regression-pins that passed pre-fix; bug331 +
+# bug332 are the real fixes.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v0306
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_0306.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v0306 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "aria-032;precision;ipc;handles;v0.30.6"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

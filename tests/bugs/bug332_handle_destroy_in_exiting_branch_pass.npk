@@ -1,0 +1,29 @@
+// BUG-332 (v0.30.6, precision pass): when a destroyer call lives in
+// an `if` branch that exits unconditionally, the destroy is reachable
+// only on a not-returning path. Code AFTER the if-block in the same
+// function does not see the destroy. v0.30.6's call-site consumer
+// recognises a CALL whose enclosing `if` branch terminates with
+// `exit`/`fail` and does NOT mark the arena destroyed in the outer
+// flow. (Pre-v0.30.6 the call-site loop would warn on the deref
+// below despite never having destroyed `a` on the reachable path.)
+//
+// Expected: clean compile, no ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:flag = 0i32;
+    if (flag != 0i32) {
+        int32:rc0 = raw HandleArena.destroy(a);
+        exit 0;
+    }
+    int64:p = raw HandleArena.deref(h);
+    int32:rc1 = raw HandleArena.destroy(a);
+    exit 0;
+};

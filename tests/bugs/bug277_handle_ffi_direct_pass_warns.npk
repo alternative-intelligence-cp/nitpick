@@ -10,17 +10,17 @@
 // invoked at runtime (`main` short-circuits with exit 0), so we
 // don't actually invoke the FFI call against a fresh handle.
 //
-// `npk_handle_arena_destroy` is re-declared locally (already
-// part of handle.npk) so the borrow checker's `func_summaries`
-// sees the extern at the same translation unit and the linker
-// finds the real libnpk symbol.
+// v0.30.3 retirement note: the local re-declaration of
+// `npk_handle_arena_destroy` previously needed here is GONE.
+// The borrow checker now ingests function summaries from all
+// imported modules (handle.npk already declares this extern at
+// line 22), so direct visibility of the extern at the call site
+// works cross-module.
 //
 // Expected: compile succeeds + produces an executable (exit 0),
 // and stderr from npkc contains "ARIA-032" warning text.
 
 use "handle.npk".*;
-
-extern func:npk_handle_arena_destroy = void(int64:arena);
 
 func:failsafe = int32(tbb32:err) {
     exit 1;

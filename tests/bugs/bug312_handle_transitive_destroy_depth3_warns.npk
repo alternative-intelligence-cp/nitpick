@@ -1,0 +1,39 @@
+// BUG-312 (v0.30.1, ARIA-032 transitive destroy — depth 3):
+// Three-deep call chain: `outer(a)` → `middle(a)` → `destroyer(a)`
+// → `HandleArena.destroy(a)`. The fixpoint pass must iterate
+// enough times (or in the correct order) to lift the destroy all
+// the way up to `outer`'s `transitively_destroys_param_indices`,
+// so a handle use after `outer(a)` still warns.
+//
+// Expected: compiles cleanly with an ARIA-032 transitive warning
+// at the `HandleArena.free(h)` site.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroyer = int32(int64:a) {
+    raw HandleArena.destroy(a);
+    pass 0i32;
+};
+
+func:middle = int32(int64:a) {
+    int32:rc = raw destroyer(a);
+    pass rc;
+};
+
+func:outer = int32(int64:a) {
+    int32:rc = raw middle(a);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw outer(a);
+    if (rc != 0i32) { exit 2; }
+    raw HandleArena.free(h);
+    exit 0;
+};

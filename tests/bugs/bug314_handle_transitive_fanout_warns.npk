@@ -1,0 +1,38 @@
+// BUG-314 (v0.30.1, ARIA-032 transitive destroy — fan-out):
+// `mixed_wrapper(a, b)` calls a destroyer on `b` only. The fixpoint
+// pass must populate `transitively_destroys_param_indices` with
+// just index 1 (param `b`), leaving param `a` unaffected. Handle
+// uses on the `a`-arena compile clean; handle uses on the
+// `b`-arena warn with ARIA-032 transitive.
+//
+// Expected: compiles cleanly with exactly one ARIA-032 transitive
+// warning (at the `free(hb)` site, not `free(ha)`).
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:destroy_second = int32(int64:x, int64:y) {
+    raw HandleArena.destroy(y);
+    pass 0i32;
+};
+
+func:mixed_wrapper = int32(int64:a, int64:b) {
+    int32:rc = raw destroy_second(a, b);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int64:b = raw HandleArena.create();
+    Handle<int32>:ha = raw HandleArena.alloc(a, 4i64);
+    Handle<int32>:hb = raw HandleArena.alloc(b, 4i64);
+    int32:rc = raw mixed_wrapper(a, b);
+    if (rc != 0i32) { exit 2; }
+    raw HandleArena.free(ha);   // ok: `a` was not destroyed
+    raw HandleArena.free(hb);   // WARNS: `b` destroyed transitively
+    raw HandleArena.destroy(a);
+    exit 0;
+};

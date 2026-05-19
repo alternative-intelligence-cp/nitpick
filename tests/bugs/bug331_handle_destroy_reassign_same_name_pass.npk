@@ -1,0 +1,26 @@
+// BUG-331 (v0.30.6, precision pass): after destroying arena `a` and
+// REASSIGNING `a` with a freshly-created arena, subsequent handles
+// allocated from `a` are backed by the NEW arena and must not trip
+// ARIA-032. The pre-v0.30.6 destroyed-arena tracker keyed on the
+// bound name with no awareness of reassignment, producing a false
+// positive on the deref below. v0.30.6 clears the destroyed marker
+// on reassignment whose RHS is a fresh `HandleArena.create()`/
+// `HandleArena_create()` call.
+//
+// Expected: clean compile, no ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int32:rc0 = raw HandleArena.destroy(a);
+    a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int64:p = raw HandleArena.deref(h);
+    int32:rc1 = raw HandleArena.destroy(a);
+    exit 0;
+};

@@ -592,7 +592,18 @@ std::vector<BorrowError> BorrowChecker::analyze(ASTNode* ast) {
     type_traits.clear();
     copyable_types.clear();
     droppable_types.clear();
-    
+
+    // v0.30.3 (IPC-DEC-002/003): re-seed cross-module summaries from
+    // imported ASTs queued via `ingestImportedSummaries`. Must run
+    // AFTER the clear above and BEFORE `collectFunctionSummaries`
+    // walks the main module — the main module's pass uses plain
+    // map assignment, so it naturally overwrites colliding keys
+    // (local re-declaration wins, matching the v0.30.3 bug277
+    // workaround retirement).
+    for (const auto& [path, imported_ast] : imported_module_asts_) {
+        seedImportedSummaries(imported_ast, path);
+    }
+
     // Phase 1: Collect function borrow summaries (signatures only)
     collectFunctionSummaries(ast);
     
@@ -661,6 +672,158 @@ void BorrowChecker::collectFunctionSummaries(ASTNode* ast) {
         FunctionBorrowSummary summary = buildSummary(func);
         func_summaries[summary.func_name] = std::move(summary);
     }
+
+    // v0.30.1: fixpoint lift of transitive destroys across summaries.
+    // Safe to call unconditionally — no-op when no call sites recorded
+    // a parameter-binding match.
+    propagateTransitiveDestroys();
+}
+
+// v0.30.3 (IPC-DEC-002 / IPC-DEC-003): cross-module summary ingest.
+// See header comment above the declaration for the contract. Mirrors
+// the FUNC_DECL / IMPL_DECL / TRAIT_DECL arms of
+// `collectFunctionSummaries` but:
+//   * skips summaries whose name already exists in `func_summaries`
+//     (local re-declaration wins on collision — matches the
+//     v0.30.3 bug277 retirement narrative);
+//   * tags every newly-added summary with `imported_from_module`
+//     so diagnostics can attribute warnings back to the source
+//     module;
+//   * does NOT run `propagateTransitiveDestroys` itself — the main
+//     `collectFunctionSummaries` call invoked from `analyze()` runs
+//     the fixpoint once over the union of imported + local
+//     summaries.
+void BorrowChecker::ingestImportedSummaries(ASTNode* ast,
+                                            const std::string& module_path) {
+    if (!ast) return;
+    // v0.30.3: queue the imported AST. Actual seeding into
+    // `func_summaries` happens inside `analyze()` after the state
+    // reset, so this method is safe to call any time before
+    // `analyze()`.
+    imported_module_asts_.emplace_back(module_path, ast);
+}
+
+void BorrowChecker::seedImportedSummaries(ASTNode* ast,
+                                          const std::string& module_path) {
+    if (!ast || ast->type != ASTNode::NodeType::PROGRAM) return;
+    auto* program = static_cast<ProgramNode*>(ast);
+    for (const auto& decl : program->declarations) {
+        if (!decl) continue;
+        if (decl->type == ASTNode::NodeType::FUNC_DECL) {
+            auto* func = static_cast<FuncDeclStmt*>(decl.get());
+            // Local re-declaration wins on collision. (At ingest time
+            // the main module has not yet been walked, but other
+            // imports may have registered the same name first; in
+            // that case first-import-wins is fine — both imports
+            // describe the same FFI symbol with the same signature.)
+            if (func_summaries.count(func->funcName)) continue;
+            FunctionBorrowSummary summary = buildSummary(func);
+            summary.imported_from_module = module_path;
+            func_summaries[summary.func_name] = std::move(summary);
+        } else if (decl->type == ASTNode::NodeType::TRAIT_DECL) {
+            auto* traitDecl = static_cast<TraitDeclStmt*>(decl.get());
+            // First registration wins — duplicate trait declarations
+            // across modules would be a semantic error caught earlier
+            // by the type checker.
+            if (!trait_methods.count(traitDecl->traitName)) {
+                trait_methods[traitDecl->traitName] = traitDecl->methods;
+            }
+        } else if (decl->type == ASTNode::NodeType::IMPL_DECL) {
+            auto* implDecl = static_cast<ImplDeclStmt*>(decl.get());
+            type_traits[implDecl->typeName].insert(implDecl->traitName);
+            if (implDecl->traitName == "Copyable") {
+                copyable_types.insert(implDecl->typeName);
+            } else if (implDecl->traitName == "Droppable") {
+                droppable_types.insert(implDecl->typeName);
+            }
+            for (const auto& methodNode : implDecl->methods) {
+                if (!methodNode || methodNode->type != ASTNode::NodeType::FUNC_DECL) continue;
+                auto* func = static_cast<FuncDeclStmt*>(methodNode.get());
+                std::string mangledName = implDecl->typeName + "_" + func->funcName;
+                if (func_summaries.count(mangledName)) continue;
+                FunctionBorrowSummary summary = buildSummary(func);
+                summary.func_name = mangledName;
+                summary.is_trait_method = true;
+                summary.impl_type = implDecl->typeName;
+                summary.trait_name = implDecl->traitName;
+                summary.imported_from_module = module_path;
+                for (size_t i = 0; i < summary.param_names.size(); ++i) {
+                    if (summary.param_names[i] == "self") {
+                        summary.self_param_index = static_cast<int>(i);
+                        summary.self_ownership = summary.param_ownership[i];
+                        break;
+                    }
+                }
+                func_summaries[mangledName] = std::move(summary);
+            }
+        }
+    }
+}
+
+void BorrowChecker::propagateTransitiveDestroys() {
+    // Iterate until no caller's transitive set grows. Bounded by
+    // O(N_funcs * max_params) in the worst case (every iteration adds at
+    // least one index to some summary or we terminate).
+    bool changed = true;
+    int iterations = 0;
+    const int kMaxIterations = 64;  // safety net; real fixpoint is much smaller
+    while (changed && iterations < kMaxIterations) {
+        changed = false;
+        ++iterations;
+        for (auto& [caller_name, call_sites] : func_call_sites_) {
+            auto caller_it = func_summaries.find(caller_name);
+            if (caller_it == func_summaries.end()) continue;
+            auto& caller = caller_it->second;
+            for (const auto& cs : call_sites) {
+                auto callee_it = func_summaries.find(cs.callee_name);
+                if (callee_it == func_summaries.end()) continue;
+                const auto& callee = callee_it->second;
+                // Union of callee's direct + transitive destroys.
+                for (const auto& [callee_pi, caller_pi] : cs.arg_to_param) {
+                    bool destroyed =
+                        callee.destroys_param_indices.count(callee_pi) ||
+                        callee.transitively_destroys_param_indices.count(
+                            callee_pi) ||
+                        // v0.30.4 (IPC-DEC-005): the declarative
+                        // `#[destroys_arena(<param>)]` set lifts the
+                        // same way as the body-derived set so a
+                        // caller of an annotated extern carries the
+                        // transitive mark forward through chains.
+                        callee.destroys_attribute_param_indices.count(
+                            callee_pi);
+                    if (!destroyed) continue;
+                    // Skip if already known as a DIRECT destroy of the
+                    // caller — direct beats transitive (so existing
+                    // ARIA-032 errors keep their error wording).
+                    if (caller.destroys_param_indices.count(caller_pi))
+                        continue;
+                    if (caller.transitively_destroys_param_indices
+                            .insert(caller_pi).second) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        // v0.30.2: lift callee escapes through return_call_sites_.
+        for (auto& [caller_name, call_sites] : return_call_sites_) {
+            auto caller_it = func_summaries.find(caller_name);
+            if (caller_it == func_summaries.end()) continue;
+            auto& caller = caller_it->second;
+            for (const auto& cs : call_sites) {
+                auto callee_it = func_summaries.find(cs.callee_name);
+                if (callee_it == func_summaries.end()) continue;
+                const auto& callee = callee_it->second;
+                for (const auto& [callee_pi, caller_pi] : cs.arg_to_param) {
+                    if (!callee.escapes_param_arena_indices.count(callee_pi))
+                        continue;
+                    if (caller.escapes_param_arena_indices
+                            .insert(caller_pi).second) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
 }
 
 FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
@@ -692,6 +855,28 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
         summary.param_names.push_back(p->paramName);
     }
 
+    // v0.30.4 (IPC-DEC-005): declarative `#[destroys_arena(<param>)]`
+    // attribute. One or more attribute occurrences may appear on the
+    // declaration; each can carry one or more param-name args. We
+    // resolve names against `summary.param_names` and union into
+    // `destroys_attribute_param_indices`. Unknown names are diagnosed
+    // later (see note below) — at summary-building time we silently
+    // skip so a bad attribute doesn't crash the borrow checker.
+    // Required for `extern` destroyers like `npk_handle_arena_destroy`
+    // whose body cannot be scanned for the
+    // `HandleArena_destroy(<param>)` heuristic.
+    for (const auto& attr : func->attributes) {
+        if (attr.name != "destroys_arena") continue;
+        for (const auto& arg_name : attr.args) {
+            for (size_t i = 0; i < summary.param_names.size(); ++i) {
+                if (summary.param_names[i] == arg_name) {
+                    summary.destroys_attribute_param_indices.insert(i);
+                    break;
+                }
+            }
+        }
+    }
+
     // v0.25.4 (BORROW-008): infer return-borrow source parameter.
     // Heuristic: if the function returns a borrow and exactly one parameter
     // is itself a borrow ($$i / $$m), assume the returned borrow derives
@@ -720,6 +905,13 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
     // (no body) are conservatively ignored — they cannot be analyzed
     // here and would need explicit annotation (deferred to v0.28.5).
     if (func->body && !func->isExtern) {
+        // v0.30.1: also collect call sites whose arguments reference our
+        // own parameters by bare identifier. After all summaries are
+        // built, `propagateTransitiveDestroys` walks this list to lift
+        // callee destroy sets into our `transitively_destroys_param_indices`.
+        std::vector<CallSiteParamMap>& call_sites =
+            func_call_sites_[func->funcName];
+
         std::function<void(ASTNode*)> scan = [&](ASTNode* n) {
             if (!n) return;
             if (n->type == ASTNode::NodeType::CALL) {
@@ -743,6 +935,32 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
                                 break;
                             }
                         }
+                    }
+
+                    // v0.30.1: record this call site for transitive
+                    // lifting. Skip the HandleArena_destroy direct match
+                    // above (it's already in the direct set) and skip
+                    // any callee we cannot resolve later — but it's
+                    // cheaper to record everything and filter in the
+                    // fixpoint pass than to filter here.
+                    CallSiteParamMap cs;
+                    cs.callee_name = cn;
+                    for (size_t ai = 0; ai < call->arguments.size(); ++ai) {
+                        ASTNode* a = call->arguments[ai].get();
+                        if (!a || a->type !=
+                            ASTNode::NodeType::IDENTIFIER) continue;
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(a)->name;
+                        for (size_t pj = 0;
+                             pj < summary.param_names.size(); ++pj) {
+                            if (summary.param_names[pj] == an) {
+                                cs.arg_to_param.emplace_back(ai, pj);
+                                break;
+                            }
+                        }
+                    }
+                    if (!cs.arg_to_param.empty()) {
+                        call_sites.push_back(std::move(cs));
                     }
                 }
             }
@@ -791,6 +1009,202 @@ FunctionBorrowSummary BorrowChecker::buildSummary(FuncDeclStmt* func) {
             }
         };
         scan(func->body.get());
+
+        // v0.30.2 (ARIA-032 transitive arena escape): scan pass/return
+        // statements to detect which of our params have their ARENA
+        // flow out through the return value. Three forms recognised:
+        //   (1) direct call:     `pass HandleArena_alloc(<param>, ..)`
+        //   (2) local handle:    `pass h` where h was bound to (1).
+        //   (3) callee chain:    `pass callee(<param>, ..)` \u2014 recorded
+        //       as a return_call_sites_ entry so the fixpoint pass can
+        //       lift the callee's own escape set into ours.
+        // Struct-literal escapes are deferred to v0.30.6 precision.
+        std::unordered_map<std::string, size_t>
+            local_handle_to_param_idx;  // var name -> our param index
+        std::function<void(ASTNode*)> preScan = [&](ASTNode* n) {
+            if (!n) return;
+            if (n->type == ASTNode::NodeType::VAR_DECL) {
+                auto* vd = static_cast<VarDeclStmt*>(n);
+                ASTNode* init = vd->initializer.get();
+                // Peel raw(...)/drop(...).
+                while (init && init->type == ASTNode::NodeType::CALL) {
+                    auto* c = static_cast<CallExpr*>(init);
+                    if (c->callee &&
+                        c->callee->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& nm =
+                            static_cast<IdentifierExpr*>(
+                                c->callee.get())->name;
+                        if ((nm == "raw" || nm == "drop") &&
+                            c->arguments.size() == 1) {
+                            init = c->arguments[0].get();
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                if (init && init->type == ASTNode::NodeType::CALL) {
+                    auto* c = static_cast<CallExpr*>(init);
+                    if (c->callee &&
+                        c->callee->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& cn =
+                            static_cast<IdentifierExpr*>(
+                                c->callee.get())->name;
+                        if (cn == "HandleArena_alloc" &&
+                            !c->arguments.empty() &&
+                            c->arguments[0] &&
+                            c->arguments[0]->type ==
+                                ASTNode::NodeType::IDENTIFIER) {
+                            const std::string& an =
+                                static_cast<IdentifierExpr*>(
+                                    c->arguments[0].get())->name;
+                            for (size_t i = 0;
+                                 i < summary.param_names.size(); ++i) {
+                                if (summary.param_names[i] == an) {
+                                    local_handle_to_param_idx[vd->varName]
+                                        = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            switch (n->type) {
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) preScan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    preScan(is->thenBranch.get());
+                    preScan(is->elseBranch.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        preScan(func->body.get());
+
+        std::vector<CallSiteParamMap>& ret_call_sites =
+            return_call_sites_[func->funcName];
+
+        auto checkReturnedExpr = [&](ASTNode* v) {
+            if (!v) return;
+            // Peel raw(...)/drop(...).
+            ASTNode* node = v;
+            while (node && node->type == ASTNode::NodeType::CALL) {
+                auto* c = static_cast<CallExpr*>(node);
+                if (c->callee &&
+                    c->callee->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& nm =
+                        static_cast<IdentifierExpr*>(
+                            c->callee.get())->name;
+                    if ((nm == "raw" || nm == "drop") &&
+                        c->arguments.size() == 1) {
+                        node = c->arguments[0].get();
+                        continue;
+                    }
+                }
+                break;
+            }
+            if (!node) return;
+            // Form (1): direct HandleArena_alloc(<param>, ..).
+            if (node->type == ASTNode::NodeType::CALL) {
+                auto* call = static_cast<CallExpr*>(node);
+                if (call->callee &&
+                    call->callee->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& cn =
+                        static_cast<IdentifierExpr*>(
+                            call->callee.get())->name;
+                    if (cn == "HandleArena_alloc" &&
+                        !call->arguments.empty() &&
+                        call->arguments[0] &&
+                        call->arguments[0]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[0].get())->name;
+                        for (size_t i = 0;
+                             i < summary.param_names.size(); ++i) {
+                            if (summary.param_names[i] == an) {
+                                summary.escapes_param_arena_indices
+                                    .insert(i);
+                                break;
+                            }
+                        }
+                        return;
+                    }
+                    // Form (3): generic callee \u2014 record arg<->param
+                    // mapping for fixpoint lifting.
+                    CallSiteParamMap cs;
+                    cs.callee_name = cn;
+                    for (size_t ai = 0;
+                         ai < call->arguments.size(); ++ai) {
+                        ASTNode* a = call->arguments[ai].get();
+                        if (!a || a->type !=
+                            ASTNode::NodeType::IDENTIFIER) continue;
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(a)->name;
+                        for (size_t pj = 0;
+                             pj < summary.param_names.size(); ++pj) {
+                            if (summary.param_names[pj] == an) {
+                                cs.arg_to_param.emplace_back(ai, pj);
+                                break;
+                            }
+                        }
+                    }
+                    if (!cs.arg_to_param.empty()) {
+                        ret_call_sites.push_back(std::move(cs));
+                    }
+                }
+                return;
+            }
+            // Form (2): local handle binding.
+            if (node->type == ASTNode::NodeType::IDENTIFIER) {
+                const std::string& vn =
+                    static_cast<IdentifierExpr*>(node)->name;
+                auto it = local_handle_to_param_idx.find(vn);
+                if (it != local_handle_to_param_idx.end()) {
+                    summary.escapes_param_arena_indices.insert(it->second);
+                }
+            }
+        };
+
+        std::function<void(ASTNode*)> retScan = [&](ASTNode* n) {
+            if (!n) return;
+            switch (n->type) {
+                case ASTNode::NodeType::RETURN: {
+                    auto* r = static_cast<ReturnStmt*>(n);
+                    checkReturnedExpr(r->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::PASS: {
+                    auto* p = static_cast<PassStmt*>(n);
+                    checkReturnedExpr(p->value.get());
+                    break;
+                }
+                case ASTNode::NodeType::BLOCK: {
+                    auto* b = static_cast<BlockStmt*>(n);
+                    for (const auto& s : b->statements) retScan(s.get());
+                    break;
+                }
+                case ASTNode::NodeType::IF: {
+                    auto* is = static_cast<IfStmt*>(n);
+                    retScan(is->thenBranch.get());
+                    retScan(is->elseBranch.get());
+                    break;
+                }
+                default:
+                    break;
+            }
+        };
+        retScan(func->body.get());
     }
 
     return summary;
@@ -1577,12 +1991,16 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 // produce false-positive ARIA-032 in another. Save/restore.
                 auto saved_handle_map = handle_arena_map_;
                 auto saved_destroyed = destroyed_arenas_;
+                auto saved_transitive = transitively_destroyed_arenas_;
                 auto saved_local_arenas = local_arenas_;
                 auto saved_struct_handles = struct_handle_arenas_;
+                auto saved_transitive_handles = transitive_handles_;
                 handle_arena_map_.clear();
                 destroyed_arenas_.clear();
+                transitively_destroyed_arenas_.clear();
                 local_arenas_.clear();
                 struct_handle_arenas_.clear();
+                transitive_handles_.clear();
                 // Register parameters so borrows of params are tracked
                 registerFunctionParams(funcDecl);
                 checkStatement(funcDecl->body.get());
@@ -1593,8 +2011,10 @@ void BorrowChecker::checkStatement(ASTNode* stmt) {
                 ctx.restore(saved_ctx);
                 handle_arena_map_ = std::move(saved_handle_map);
                 destroyed_arenas_ = std::move(saved_destroyed);
+                transitively_destroyed_arenas_ = std::move(saved_transitive);
                 local_arenas_ = std::move(saved_local_arenas);
                 struct_handle_arenas_ = std::move(saved_struct_handles);
+                transitive_handles_ = std::move(saved_transitive_handles);
             }
             current_function = prev_function;
             break;
@@ -2129,6 +2549,33 @@ void BorrowChecker::checkVarDecl(VarDeclStmt* stmt) {
                 if (cn == "HandleArena_create") {
                     local_arenas_.insert(stmt->varName);
                 }
+                // v0.30.2 (ARIA-032 transitive arena escape): if the
+                // callee is a user-defined function whose summary
+                // escapes a parameter's arena, link this binding to
+                // the matching argument arena. The handle is then
+                // checked by the standard ARIA-032 escape / deref-
+                // after-destroy machinery; transitive_handles_ flags
+                // it so checkHandleArenaEscape downgrades the escape
+                // diagnostic to a warning (IPC-DEC-004).
+                else if (cn != "HandleArena_alloc") {
+                    auto sumIt = func_summaries.find(cn);
+                    if (sumIt != func_summaries.end()) {
+                        const auto& summary = sumIt->second;
+                        for (size_t pi : summary.escapes_param_arena_indices) {
+                            if (pi < call->arguments.size() &&
+                                call->arguments[pi] &&
+                                call->arguments[pi]->type ==
+                                    ASTNode::NodeType::IDENTIFIER) {
+                                const std::string& an =
+                                    static_cast<IdentifierExpr*>(
+                                        call->arguments[pi].get())->name;
+                                handle_arena_map_[stmt->varName] = an;
+                                transitive_handles_.insert(stmt->varName);
+                                break;  // first matching escape wins
+                            }
+                        }
+                    }
+                }
             }
         }
         // v0.28.4.1 (ARIA-032 Phase 2 part B): recognise a struct literal
@@ -2308,6 +2755,39 @@ void BorrowChecker::checkAssignment(BinaryExpr* expr) {
     // Check right side
     checkExpression(expr->right.get());
 
+    // v0.30.6 (ARIA-032 precision pass): reassigning an arena-typed
+    // local to a fresh `HandleArena.create()` produces a NEW arena
+    // value bound to the same name. Any prior destroyed-arena marker
+    // on this name refers to the OLD arena value and must not leak
+    // forward, or subsequent handles allocated from the reassigned
+    // name are falsely flagged as outliving a destroyed arena. The
+    // parser pre-mangles `HandleArena.create(...)` into a CALL whose
+    // callee is the IdentifierExpr `HandleArena_create` (parser.cpp
+    // ~line 1935). The `raw` keyword (parser.cpp ~line 1251) wraps
+    // its operand in `CallExpr(IdentifierExpr("raw"), [inner])`, so
+    // peel through any number of `raw`/`drop`/`ok` wrappers.
+    if (!target_name.empty() && expr->right) {
+        ASTNode* rhs = expr->right.get();
+        while (rhs && rhs->type == ASTNode::NodeType::CALL) {
+            auto* rc = static_cast<CallExpr*>(rhs);
+            if (!rc->callee ||
+                rc->callee->type != ASTNode::NodeType::IDENTIFIER) break;
+            const std::string& name =
+                static_cast<IdentifierExpr*>(rc->callee.get())->name;
+            if (name == "HandleArena_create") {
+                destroyed_arenas_.erase(target_name);
+                transitively_destroyed_arenas_.erase(target_name);
+                break;
+            }
+            if ((name == "raw" || name == "drop" || name == "ok") &&
+                rc->arguments.size() == 1) {
+                rhs = rc->arguments[0].get();
+                continue;
+            }
+            break;
+        }
+    }
+
     if (!target_name.empty() && ctx.pointer_vars.count(target_name) > 0) {
         recordPinDerivedAlias(target_name, expr->right.get(), expr);
     }
@@ -2321,7 +2801,54 @@ void BorrowChecker::checkIfStmt(IfStmt* stmt) {
     
     // Snapshot state before branching
     auto pre_branch_state = ctx.snapshot();
-    
+
+    // v0.30.6 (ARIA-032 precision pass): destroyed-arena state is a
+    // simple per-function set on BorrowChecker (not part of
+    // LifetimeContext), so the ctx snapshot above does not cover it.
+    // Without explicit save/restore around each branch a destroy that
+    // lives in a branch which terminates (`exit`/`pass`/`fail`/
+    // `return`) leaks into the outer flow and produces a false ARIA-
+    // 032 on later handle uses that are only reached when the
+    // destroying branch was NOT taken. Snapshot the destroy sets,
+    // and after each branch — if that branch terminates — restore
+    // them so the outer flow sees the pre-branch state.
+    auto pre_destroyed = destroyed_arenas_;
+    auto pre_transitively_destroyed = transitively_destroyed_arenas_;
+
+    // Helper: does this statement / block terminate control flow?
+    // `pass`, `fail`, `return`, and the `exit <expr>;` statement
+    // (which the parser lowers to an ExpressionStmt wrapping a CALL
+    // to the identifier `exit`) all qualify.
+    auto isTerminatorStmt = [](ASTNode* s) -> bool {
+        if (!s) return false;
+        if (s->type == ASTNode::NodeType::PASS ||
+            s->type == ASTNode::NodeType::FAIL ||
+            s->type == ASTNode::NodeType::RETURN) return true;
+        if (s->type == ASTNode::NodeType::EXPRESSION_STMT) {
+            auto* es = static_cast<ExpressionStmt*>(s);
+            if (es->expression &&
+                es->expression->type == ASTNode::NodeType::CALL) {
+                auto* c = static_cast<CallExpr*>(es->expression.get());
+                if (c->callee &&
+                    c->callee->type == ASTNode::NodeType::IDENTIFIER &&
+                    static_cast<IdentifierExpr*>(c->callee.get())->name
+                        == "exit") {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    auto branchTerminates = [&](ASTNode* n) -> bool {
+        if (!n) return false;
+        if (n->type == ASTNode::NodeType::BLOCK) {
+            auto* b = static_cast<BlockStmt*>(n);
+            if (b->statements.empty()) return false;
+            return isTerminatorStmt(b->statements.back().get());
+        }
+        return isTerminatorStmt(n);
+    };
+
     // Analyze THEN branch
     ctx.enterScope();
     if (stmt->thenBranch) {
@@ -2329,20 +2856,44 @@ void BorrowChecker::checkIfStmt(IfStmt* stmt) {
     }
     ctx.exitScope();
     auto then_state = ctx.snapshot();
-    
+    if (branchTerminates(stmt->thenBranch.get())) {
+        destroyed_arenas_ = pre_destroyed;
+        transitively_destroyed_arenas_ = pre_transitively_destroyed;
+    }
+    auto after_then_destroyed = destroyed_arenas_;
+    auto after_then_transitively = transitively_destroyed_arenas_;
+
     // Restore and analyze ELSE branch
     ctx.restore(pre_branch_state);
+    destroyed_arenas_ = pre_destroyed;
+    transitively_destroyed_arenas_ = pre_transitively_destroyed;
     LifetimeContext else_state;
     if (stmt->elseBranch) {
         ctx.enterScope();
         checkStatement(stmt->elseBranch.get());
         ctx.exitScope();
         else_state = ctx.snapshot();
+        if (branchTerminates(stmt->elseBranch.get())) {
+            destroyed_arenas_ = pre_destroyed;
+            transitively_destroyed_arenas_ = pre_transitively_destroyed;
+        }
     } else {
         // No else block, else state is same as pre-branch
         else_state = pre_branch_state;
     }
-    
+
+    // Merge destroy sets: an arena is destroyed after the if-stmt
+    // iff some non-terminating branch destroyed it. Union over the
+    // post-branch (post-restore) states is the conservative choice.
+    for (const auto& a : after_then_destroyed) {
+        destroyed_arenas_.insert(a);
+    }
+    for (const auto& a : after_then_transitively) {
+        if (!destroyed_arenas_.count(a)) {
+            transitively_destroyed_arenas_.insert(a);
+        }
+    }
+
     // Merge states
     ctx.merge(then_state, else_state);
 }
@@ -3227,6 +3778,25 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
         auto it = handle_arena_map_.find(hname);
         if (it != handle_arena_map_.end() &&
             local_arenas_.count(it->second)) {
+            // v0.30.2: if the binding was inferred via a callee escape
+            // summary (transitive), downgrade to a warning per
+            // IPC-DEC-004 \u2014 one-cycle migration window before
+            // promotion to a hard error.
+            if (transitive_handles_.count(hname)) {
+                addWarning("Handle '" + hname + "' is returned but its "
+                           "arena '" + it->second + "' is local to this "
+                           "function. The handle's arena was inferred "
+                           "from a callee that escapes its arena "
+                           "parameter; the returned handle is invalid "
+                           "at every caller. Thread the arena in as a "
+                           "parameter so the caller owns its lifetime. "
+                           "See ARIA-032 and guide/memory/handles.md. "
+                           "This will become an error in a future "
+                           "release.",
+                           context);
+                tagCode("ARIA-032");
+                return;
+            }
             addError("Handle '" + hname + "' is returned but its arena '" +
                      it->second + "' is local to this function. The handle "
                      "is invalid at every caller. Thread the arena in as a "
@@ -3284,6 +3854,40 @@ void BorrowChecker::checkHandleArenaEscape(ASTNode* value, ASTNode* context) {
                              "See ARIA-032 and guide/memory/handles.md",
                              context);
                     tagCode("ARIA-032");
+                }
+                return;
+            }
+            // v0.30.2 (ARIA-032 transitive arena escape): `pass wrap(a)`
+            // where wrap's summary marks param k as escaping its arena
+            // and our arg k is a local arena. Warn-only per IPC-DEC-004.
+            auto sumIt = func_summaries.find(cn);
+            if (sumIt != func_summaries.end()) {
+                const auto& summary = sumIt->second;
+                for (size_t pi : summary.escapes_param_arena_indices) {
+                    if (pi < call->arguments.size() &&
+                        call->arguments[pi] &&
+                        call->arguments[pi]->type ==
+                            ASTNode::NodeType::IDENTIFIER) {
+                        const std::string& an =
+                            static_cast<IdentifierExpr*>(
+                                call->arguments[pi].get())->name;
+                        if (local_arenas_.count(an)) {
+                            addWarning("Handle returned from `" + cn +
+                                       "(" + an + ", ..)` is invalid at "
+                                       "the caller \u2014 the callee escapes "
+                                       "its arena parameter and the arena "
+                                       "'" + an + "' is local to this "
+                                       "function. Thread the arena in as "
+                                       "a parameter so the caller owns "
+                                       "its lifetime. See ARIA-032 and "
+                                       "guide/memory/handles.md. This "
+                                       "will become an error in a future "
+                                       "release.",
+                                       context);
+                            tagCode("ARIA-032");
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -3868,6 +4472,23 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                          "See ARIA-032 and guide/memory/handles.md",
                          expr);
                 tagCode("ARIA-032");
+            } else if (it != handle_arena_map_.end() &&
+                       transitively_destroyed_arenas_.count(it->second)) {
+                // v0.30.1 (ARIA-032 transitive destroy): the arena was
+                // destroyed by a *callee* of an earlier call in this
+                // function. Per IPC-DEC-004, this new case ships as a
+                // WARNING for one cycle to let user code migrate before
+                // promotion to error. The direct-destroy arm above stays
+                // an error.
+                addWarning("Handle '" + h + "' outlives its arena '" +
+                           it->second + "'. A function called earlier "
+                           "destroys this arena transitively (through a "
+                           "callee). The handle is no longer valid. "
+                           "See ARIA-032 and guide/memory/handles.md. "
+                           "This will become an error in a future "
+                           "release.",
+                           expr);
+                tagCode("ARIA-032");
             }
         }
 
@@ -3888,6 +4509,42 @@ void BorrowChecker::checkCallExpr(CallExpr* expr) {
                     destroyed_arenas_.insert(
                         static_cast<IdentifierExpr*>(
                             expr->arguments[pi].get())->name);
+                }
+            }
+            // v0.30.4 (IPC-DEC-005): same consumer behaviour for the
+            // declarative `#[destroys_arena(<param>)]` attribute set.
+            // Treated identically to the body-derived set above so
+            // self-hosted re-implementations and extern declarations
+            // produce the same caller-side effect.
+            for (size_t pi : summary.destroys_attribute_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    destroyed_arenas_.insert(
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name);
+                }
+            }
+            // v0.30.1 (ARIA-032 transitive destroy): mark the bound
+            // arena of any argument whose corresponding callee param is
+            // in the callee's `transitively_destroys_param_indices` set.
+            // Goes into a parallel set so the later deref/free check
+            // can downgrade to a warning (one-cycle migration window
+            // per IPC-DEC-004).
+            for (size_t pi : summary.transitively_destroys_param_indices) {
+                if (pi < expr->arguments.size() &&
+                    expr->arguments[pi] &&
+                    expr->arguments[pi]->type ==
+                        ASTNode::NodeType::IDENTIFIER) {
+                    const std::string& an =
+                        static_cast<IdentifierExpr*>(
+                            expr->arguments[pi].get())->name;
+                    // Don't shadow a hard-destroyed arena with a
+                    // softer transitive mark.
+                    if (!destroyed_arenas_.count(an)) {
+                        transitively_destroyed_arenas_.insert(an);
+                    }
                 }
             }
 

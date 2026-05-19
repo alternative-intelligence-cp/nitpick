@@ -1,0 +1,23 @@
+// BUG-330 (v0.30.6, precision pass): after destroying arena `a` and
+// allocating a fresh, *differently-named* arena `b`, handles created
+// from `b` and used after `a`'s destruction must not trip ARIA-032.
+// The destroyed-arena tracker keys on the bound NAME, so two distinct
+// names should never alias \u2014 verifies the per-name partitioning.
+//
+// Expected: clean compile, no ARIA-032.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    int32:rc0 = raw HandleArena.destroy(a);
+    int64:b = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(b, 4i64);
+    int64:p = raw HandleArena.deref(h);
+    int32:rc1 = raw HandleArena.destroy(b);
+    exit 0;
+};

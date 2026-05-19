@@ -1,0 +1,33 @@
+// BUG-325 (v0.30.4, IPC-DEC-005 — body-scan + attribute set union
+// at consumer site does not double-fire):
+// A self-hosted re-implementation of the destroyer carries the
+// `#[destroys_arena(arena)]` attribute AS WELL AS calling
+// `HandleArena_destroy(arena)` in its body. The body scan adds
+// the param to `destroys_param_indices` and the attribute parse
+// adds the same param to `destroys_attribute_param_indices`. At
+// the call site both loops fire and both try to mark `a`
+// destroyed — but since the consumer set is `std::set<...>`,
+// the insertion is idempotent and exactly one ARIA-032 error
+// is emitted (no duplicate diagnostic).
+//
+// Expected: compile FAILS with EXACTLY one `[ARIA-032]` error.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+#[destroys_arena(arena)]
+func:self_hosted_destroy = int32(int64:arena) {
+    int32:rc0 = raw HandleArena.destroy(arena);     // body-scan picks this up too
+    pass 0i32;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw self_hosted_destroy(a);
+    int64:p = raw HandleArena.deref(h); // ← exactly one ARIA-032
+    exit 0;
+};

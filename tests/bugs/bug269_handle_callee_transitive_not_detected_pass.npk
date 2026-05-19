@@ -6,6 +6,15 @@
 // transitively; for now this compiles (documents the boundary so a
 // later regression flips it to expect-compile-fail).
 //
+// v0.30.1 UPDATE: the fixpoint pass in
+// `BorrowChecker::propagateTransitiveDestroys` now DOES lift the
+// destroy through the wrapper. This fixture continues to compile +
+// run because the handle uses (`deref`, `free`) happen BEFORE the
+// `wrapper(a)` call — the transitive mark on `a` only takes effect
+// AFTER the wrapper site, and there are no handle uses on `a`
+// after it. New v0.30.1 fixtures bug311–315 cover the after-call
+// case (which now warns per IPC-DEC-004).
+//
 // Expected: compile and exit 0.
 
 use "handle.npk".*;

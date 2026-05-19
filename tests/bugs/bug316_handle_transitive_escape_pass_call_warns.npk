@@ -1,0 +1,30 @@
+// BUG-316 (v0.30.2, ARIA-032 transitive arena escape — direct
+// `pass wrap(a)` form): the callee `wrap` returns a handle bound
+// to its arena parameter. The caller's `pass wrap(a)` then leaks
+// a handle whose backing arena `a` is local to the caller. v0.30.2
+// detects this via the new `escapes_param_arena_indices` summary
+// field and emits an ARIA-032 WARNING per IPC-DEC-004.
+//
+// Expected: compiles cleanly with an ARIA-032 warning mentioning
+// `wrap` (binary is not executed).
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:wrap = int64(int64:a) {
+    pass raw HandleArena.alloc(a, 4i64);
+};
+
+func:leak = int64() {
+    int64:a = raw HandleArena.create();
+    pass raw wrap(a);
+};
+
+func:main = int32() {
+    int64:h = raw leak();
+    if (h == 0i64) { exit 0; }
+    exit 0;
+};

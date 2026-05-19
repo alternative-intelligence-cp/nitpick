@@ -1,0 +1,20 @@
+// BUG-327 (v0.30.5 — cross-module return-borrow ENFORCEMENT):
+// `get_a` is imported from bug326_helper.npk. Once
+// `$$i int32:y = raw get_a(p);` binds, the source path `p` is
+// borrowed; mutating `p.a` while `y` is live must fire ARIA-026,
+// exactly as for the intra-module case (bug192). Proves the
+// cross-module summary correctly seeds the borrow set, not just
+// the inference plumbing.
+
+use "bug326_helper.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$i int32:y = raw get_a(p);
+    p.a = 5i32; // ARIA-026 — source mutated while borrow live
+    exit 0;
+};

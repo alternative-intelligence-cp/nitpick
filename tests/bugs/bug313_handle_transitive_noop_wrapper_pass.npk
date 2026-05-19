@@ -1,0 +1,35 @@
+// BUG-313 (v0.30.1, ARIA-032 transitive destroy — non-destroying
+// wrapper): `noop_wrapper(a)` does NOT call any function that
+// destroys `a`. The fixpoint pass must leave `noop_wrapper`'s
+// `transitively_destroys_param_indices` empty, so handle uses after
+// the wrapper call compile cleanly with no ARIA-032 diagnostic.
+//
+// Expected: compiles cleanly (zero ARIA-032 messages) and runs to
+// exit 0.
+
+use "handle.npk".*;
+
+func:failsafe = int32(tbb32:err) {
+    exit 1;
+};
+
+func:noop = int32(int64:a) {
+    pass 0i32;
+};
+
+func:noop_wrapper = int32(int64:a) {
+    int32:rc = raw noop(a);
+    pass rc;
+};
+
+func:main = int32() {
+    int64:a = raw HandleArena.create();
+    Handle<int32>:h = raw HandleArena.alloc(a, 4i64);
+    int32:rc = raw noop_wrapper(a);
+    if (rc != 0i32) { exit 2; }
+    int64:p = raw HandleArena.deref(h);
+    if (p == 0i64) { exit 3; }
+    raw HandleArena.free(h);
+    raw HandleArena.destroy(a);
+    exit 0;
+};

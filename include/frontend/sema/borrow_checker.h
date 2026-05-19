@@ -722,11 +722,58 @@ struct FunctionBorrowSummary {
     // sites, the matching argument's bound arena is marked destroyed.
     std::set<size_t> destroys_param_indices;
 
+    // v0.30.1 (ARIA-032 transitive destroy): indices of params that this
+    // function destroys *indirectly* via a callee whose own summary marks
+    // those param indices as destroyed. Computed by the fixpoint pass in
+    // `collectFunctionSummaries` after every summary has been built. Kept
+    // separate from `destroys_param_indices` so that call sites can warn
+    // for the transitive case (IPC-DEC-004 — one-cycle migration window)
+    // while continuing to error on the direct case.
+    std::set<size_t> transitively_destroys_param_indices;
+
+    // v0.30.2 (ARIA-032 transitive arena escape): indices of params
+    // whose ARENA flows out through this function's return value. Set
+    // when the body has `pass`/`return` of either
+    //   * `HandleArena_alloc(<param>, ...)` (direct alloc returned), or
+    //   * a local handle binding initialised from such an alloc, or
+    //   * a call to a function whose own summary already escapes that
+    //     callee-param (lifted by the fixpoint pass).
+    // At consumer call sites, if the matching argument is a LOCAL arena
+    // (in `local_arenas_`), the returned handle would outlive the
+    // arena's frame — a new transitive variant of ARIA-032 that ships
+    // as a WARNING for one cycle per IPC-DEC-004 before promotion.
+    std::set<size_t> escapes_param_arena_indices;
+
     // v0.28.5 (ARIA-032 FFI passthrough rule): true when this function is
     // declared `extern` (no body to analyse). Call sites use this to emit
     // the FFI passthrough warning when a tracked handle is passed to an
     // extern callee without an explicit `@cast<int64>(...)` wrapper.
     bool is_extern = false;
+
+    // v0.30.3 (IPC-DEC-002 / IPC-DEC-003): canonical filesystem path of
+    // the module this summary was imported from, or empty string when
+    // the summary was built from the main translation unit. Used by
+    // diagnostics to point users at the right source file when a
+    // cross-module call triggers ARIA-032 / FFI-passthrough warnings.
+    // Also lets a local re-declaration silently shadow an imported
+    // summary at `collectFunctionSummaries` time (local wins on key
+    // collision, matching v0.30.3's bug277 retirement).
+    std::string imported_from_module;
+
+    // v0.30.4 (IPC-DEC-002 fourth-bis / IPC-DEC-005): indices of params
+    // declared to be destroyed by the function via an explicit
+    // `#[destroys_arena(<param_name>)]` attribute on the declaration.
+    // This is the *declarative* counterpart to `destroys_param_indices`
+    // (which is derived from a body scan). Required for `extern`
+    // functions whose body the borrow checker cannot see — without the
+    // attribute, the cross-module ingest landed by v0.30.3 cannot tell
+    // that a raw C destroyer takes ownership of the arena. At call
+    // sites, the matching argument's bound arena is marked destroyed
+    // (identical to the `destroys_param_indices` consumer path); the
+    // attribute and body-derived sets are unioned at use, so a
+    // self-hosted re-implementation of a previously-extern destroyer
+    // gets the same treatment as the original declaration.
+    std::set<size_t> destroys_attribute_param_indices;
 
     // Line of declaration (for diagnostics)
     int decl_line = 0;
@@ -825,6 +872,28 @@ private:
     std::unordered_map<std::string, std::string> handle_arena_map_;
     std::unordered_set<std::string> destroyed_arenas_;
 
+    // v0.30.2 (ARIA-032 transitive arena escape): set of handle binding
+    // names whose `handle_arena_map_` entry was inferred via a callee
+    // summary's `escapes_param_arena_indices` (i.e. the binding came
+    // from `stack Handle<T>:h = wrap(a);` where `wrap` escapes its
+    // arena param). Used by checkHandleArenaEscape to emit a WARNING
+    // (not an error) when such a handle is returned/passed and the
+    // bound arena is local — the indirection through `wrap` is a new
+    // analysis path that ships warn-only for one cycle per IPC-DEC-004.
+    // Save/restored at FUNC_DECL like the other handle maps.
+    std::unordered_set<std::string> transitive_handles_;
+
+    // v0.30.1 (ARIA-032 transitive destroy): parallel set to
+    // `destroyed_arenas_`. Populated at call sites when the callee
+    // summary's `transitively_destroys_param_indices` (not the direct
+    // set) maps an argument-position arena. Later `HandleArena_deref` /
+    // `_free` on a handle bound to one of these arenas produces a
+    // WARNING (not an error) per IPC-DEC-004 — the transitive path is
+    // new in v0.30.x and ships warn-only for one cycle to let user
+    // code migrate before promotion. Save/restored at FUNC_DECL like
+    // `destroyed_arenas_`.
+    std::unordered_set<std::string> transitively_destroyed_arenas_;
+
     // v0.28.4 (ARIA-032 Phase 2): arenas declared LOCALLY in the current
     // function (initializer was `HandleArena_create()`). Used by return/
     // pass to reject returning a `Handle<T>` (or a fresh `HandleArena_alloc`
@@ -859,6 +928,52 @@ private:
     // Name of the function currently being analyzed (empty if global scope)
     std::string current_function;
 
+    // v0.30.1 (ARIA-032 transitive destroy): per-function record of every
+    // call site whose argument list references one or more of the
+    // function's own parameters by bare identifier. Used by the fixpoint
+    // pass after summary collection to lift callees'
+    // `destroys_param_indices` / `transitively_destroys_param_indices`
+    // into the caller's `transitively_destroys_param_indices`.
+    //
+    // `arg_to_param` is a list of (callee_param_index, caller_param_index)
+    // pairs — for argument position `i` in the call, if the argument is a
+    // bare identifier matching parameter `j` of the caller, the pair
+    // (i, j) is recorded.
+    struct CallSiteParamMap {
+        std::string callee_name;
+        std::vector<std::pair<size_t, size_t>> arg_to_param;
+    };
+    std::unordered_map<std::string, std::vector<CallSiteParamMap>>
+        func_call_sites_;
+
+    // v0.30.2 (ARIA-032 transitive arena escape): per-function record
+    // of call sites whose result flows directly into a `pass` /
+    // `return` statement of this function. Used by the fixpoint pass
+    // to lift callee `escapes_param_arena_indices` into the caller's
+    // own escape set when our argument at the escaping position is
+    // one of our parameters. Same shape as `func_call_sites_` —
+    // (callee_param_index, caller_param_index) pairs for each
+    // bare-identifier argument that names one of our parameters.
+    std::unordered_map<std::string, std::vector<CallSiteParamMap>>
+        return_call_sites_;
+
+    /**
+     * v0.30.1: fixpoint pass over `func_summaries` + `func_call_sites_`
+     * that lifts each callee's destroyed-parameter set into the caller's
+     * `transitively_destroys_param_indices`. Iterates until no summary
+     * changes. Called from `collectFunctionSummaries` after the initial
+     * direct-scan pass over every function body. Conservative on the
+     * union side: the callee's direct AND transitive sets both
+     * contribute (so depth-N is reached in N iterations regardless of
+     * declaration order).
+     *
+     * v0.30.2: same fixpoint also lifts callee
+     * `escapes_param_arena_indices` through `return_call_sites_` into
+     * the caller's own escape set. Both lifts share one outer loop so
+     * convergence is reached together.
+     */
+    void propagateTransitiveDestroys();
+
     // ========================================================================
     // Trait Registry (v0.6.2: Trait Integration)
     // ========================================================================
@@ -880,6 +995,39 @@ private:
      * Walks the AST without doing full analysis, just extracts signatures.
      */
     void collectFunctionSummaries(ASTNode* ast);
+
+public:
+    /**
+     * v0.30.3 (IPC-DEC-002 / IPC-DEC-003): seed `func_summaries`,
+     * `trait_methods`, `type_traits`, `copyable_types`, `droppable_types`,
+     * `func_call_sites_`, and `return_call_sites_` from an imported
+     * module's AST. Intended to be called by `main.cpp` once per
+     * loaded module BEFORE `analyze()` runs on the main translation
+     * unit. The main module's `collectFunctionSummaries` overwrites
+     * any colliding summary keys (local re-declaration wins —
+     * matches the bug277 workaround retirement). The final
+     * `propagateTransitiveDestroys` invoked by `collectFunctionSummaries`
+     * covers the union of imported + local summaries so cross-module
+     * call chains converge in one fixpoint pass.
+     *
+     * Each summary added by this method has `imported_from_module`
+     * set to `module_path` (the loaded module's canonical filesystem
+     * path) for diagnostics provenance.
+     */
+    void ingestImportedSummaries(ASTNode* ast, const std::string& module_path);
+
+private:
+    /**
+     * v0.30.3 helper: actually walk an imported AST and populate
+     * `func_summaries` + the trait/type registries. Invoked from
+     * `analyze()` after the state reset.
+     */
+    void seedImportedSummaries(ASTNode* ast, const std::string& module_path);
+
+    // v0.30.3: imported module ASTs queued by `ingestImportedSummaries`.
+    // Borrow checker does not own them — the ModuleLoader does. The
+    // pointers must outlive the next `analyze()` call.
+    std::vector<std::pair<std::string, ASTNode*>> imported_module_asts_;
     
     /**
      * Build a FunctionBorrowSummary from a FuncDeclStmt

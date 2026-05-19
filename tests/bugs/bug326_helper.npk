@@ -1,0 +1,15 @@
+// v0.30.5 helper module — exports a return-borrow accessor used by
+// bug326/bug327/bug328. The borrow checker's v0.30.3 cross-module
+// summary ingest seeds func_summaries from this module, and v0.30.5
+// guarantees the consumer of return_borrow_source_param honours the
+// imported summary so `$$i int32:y = raw get_a(p);` resolves the
+// source path through the call.
+struct:Pair = { int32:a; int32:b; };
+
+func:get_a = $$i int32($$i Pair:s) {
+    pass s.a;
+};
+
+func:get_b = $$i int32($$i Pair:s) {
+    pass s.b;
+};

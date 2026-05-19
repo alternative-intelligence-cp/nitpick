@@ -1,0 +1,26 @@
+// BUG-329 (v0.30.5 — cross-module return-borrow composed through a
+// local wrapper): the local `wrap_get_a` is itself a single-borrow
+// returning $$i int32, declared in this module; it forwards to the
+// imported `get_a` from bug326_helper.npk. The borrow checker
+// builds summaries for both, infers return_borrow_source_param for
+// the wrapper (single borrow param), and binding $$i to the call
+// of `wrap_get_a` must record the source path correctly. Mutating
+// the source through `p.a` then fires ARIA-026, confirming the
+// cross-module summary flows through a same-module compose layer.
+
+use "bug326_helper.npk".*;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:wrap_get_a = $$i int32($$i Pair:s) {
+    pass raw get_a(s);
+};
+
+func:main = int32() {
+    Pair:p;
+    p.a = 1i32;
+    p.b = 2i32;
+    $$i int32:y = raw wrap_get_a(p);
+    p.a = 5i32; // ARIA-026 — source mutated while borrow live
+    exit 0;
+};
