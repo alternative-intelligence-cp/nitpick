@@ -1441,6 +1441,25 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.31.0.2 — Phase 1 async slice: D-8 Option A (pull `catch` keyword)
+# ============================================================================
+# bug337 — `catch` is no longer reserved; usable as an ordinary identifier.
+# bug338 — `try { ... } catch { ... }` is still rejected (generic parser
+#          path now, since neither word is a keyword anymore).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03102
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03102.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03102 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;keyword;catch;v0.31.0.2"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.

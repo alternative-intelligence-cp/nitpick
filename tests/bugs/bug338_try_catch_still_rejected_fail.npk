@@ -1,0 +1,22 @@
+// bug338: D-8 Option A — `try { ... } catch { ... }` syntax is still
+// rejected, but now via the generic parser path (since neither `try`
+// nor `catch` is a reserved keyword anymore). The compile must fail.
+// Phase 1 / v0.31.0.2
+//
+// This pins that pulling `catch` did not accidentally enable a
+// try/catch grammar — Nitpick remains Result-only for error handling
+// (defaults / ?| / !! / pick).
+//
+// Driver: tests/bugs/run_bug_tests_03102.sh — expects npkc exit != 0.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 1i32;
+    try {
+        x = 2i32;
+    } catch {
+        x = 3i32;
+    }
+    exit x;
+};

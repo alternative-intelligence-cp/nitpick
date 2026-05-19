@@ -1,0 +1,16 @@
+// bug337: D-8 Option A — `catch` is no longer a reserved keyword and may
+// be used as an ordinary identifier (variable name, in this case).
+// Phase 1 / v0.31.0.2
+//
+// Pre-v0.31.0.2: `catch` was tokenized as TOKEN_KW_CATCH and any use of
+// the bare word produced a parser diagnostic. Post-v0.31.0.2 the token
+// type is gone, so `int32:catch = 7i32;` is a perfectly normal local.
+//
+// Driver: tests/bugs/run_bug_tests_03102.sh — expects clean compile + run.
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:catch = 7i32;
+    exit catch;
+};

@@ -2975,16 +2975,12 @@ ASTNodePtr Parser::parseStatement() {
         return parseFailStatement();
     }
     
-    // v0.21.1 A-014: 'catch' is tokenized but has no parser rule.
-    // Emit a clear diagnostic rather than silently crashing or misparsing.
-    if (check(TokenType::TOKEN_KW_CATCH)) {
-        error("'catch' is not valid here — Nitpick uses 'defaults' for fallback "
-              "values, '?' / '!!' for error propagation, and 'pick' for "
-              "structured error handling. Remove or replace 'catch'.");
-        advance();  // consume 'catch' so we don't loop
-        return nullptr;
-    }
-    
+    // v0.31.0.2 (D-8 Option A): the `catch` keyword and its parser
+    // rejection block (formerly here, added in v0.21.1 / A-014) have
+    // been removed entirely. `catch` is now a plain identifier; the
+    // previous Result-based error model (defaults / ?| / !! / pick)
+    // remains the sanctioned error-handling surface.
+
     if (match(TokenType::TOKEN_KW_PROVE)) {
         return parseProveStatement();
     }

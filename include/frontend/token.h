@@ -89,7 +89,12 @@ enum class TokenType {
     // ========================================================================
     TOKEN_KW_ASYNC,     // async
     TOKEN_KW_AWAIT,     // await
-    TOKEN_KW_CATCH,     // catch
+    // v0.31.0.2 (D-8 Option A): `catch` was a reserved keyword from
+    // v0.21.1 that printed a parse diagnostic when used in statement
+    // position. It was never wired to any parser rule, contradicts the
+    // Result-based error model (defaults / ?| / !! / pick), and is not
+    // mentioned anywhere in specs_list.txt. Removed entirely so `catch`
+    // is a plain identifier again.
     TOKEN_KW_IN,        // in - for range-based loops (for x in range)
     
     // ========================================================================

@@ -208,7 +208,7 @@ static void kw_init() {
     // Async
     kw_insert("async",  TokenType::TOKEN_KW_ASYNC);
     kw_insert("await",  TokenType::TOKEN_KW_AWAIT);
-    kw_insert("catch",  TokenType::TOKEN_KW_CATCH);
+    // v0.31.0.2 (D-8 Option A): `catch` pulled from the keyword set.
     kw_insert("in",     TokenType::TOKEN_KW_IN);
 
     // Module system

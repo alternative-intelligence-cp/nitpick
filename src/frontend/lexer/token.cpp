@@ -200,7 +200,7 @@ std::string tokenTypeToString(TokenType type) {
         // Async
         case TokenType::TOKEN_KW_ASYNC: return "ASYNC";
         case TokenType::TOKEN_KW_AWAIT: return "AWAIT";
-        case TokenType::TOKEN_KW_CATCH: return "CATCH";
+        // v0.31.0.2 (D-8 Option A): `catch` removed from keyword set.
         case TokenType::TOKEN_KW_IN: return "IN";
         
         // Declarations
