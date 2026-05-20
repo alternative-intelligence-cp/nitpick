@@ -1,0 +1,54 @@
+// bug357 — v0.31.1.1 D-6 correction/verification slice.
+//
+// Confirms that the `?` (UNWRAP) expression operator interacts cleanly
+// with scope-end Drop auto-dispatch. The v0.31.1.0 audit listed `?`
+// and `?!` as "exit paths" needing drop emission; this fixture
+// verifies that interpretation was wrong:
+//
+//   - `?` is an expression-level merge operator (3-block diamond:
+//     error_block / success_block / merge_block). It does NOT
+//     terminate the function basic block.
+//   - Therefore a Drop-implementing local in scope across a `?`
+//     expression remains live, and its scope-end drop fires exactly
+//     once at the surrounding block's fall-through.
+//
+// The harness validates:
+//   1. The program compiles, links, and runs to `exit 0`.
+//   2. The emitted LLVM IR contains `@Trace_drop` exactly once
+//      inside `main` (single drop call — not duplicated by the `?`
+//      diamond and not skipped by the `?` diamond).
+//
+// Rationale for the second check: a regression where `?`'s diamond
+// blocks accidentally trigger an extra `executeScopeDrops()` would
+// show up as two `@Trace_drop` calls; a regression where the diamond
+// invalidates the drop registration would show up as zero calls.
+
+struct:Trace = { int32:n; };
+
+impl:Drop:for:Trace = {
+    func:drop = NIL($$m Trace:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7; };
+
+func:produce_ok = int32() {
+    pass 42i32;
+};
+
+func:main = int32() {
+    {
+        Trace:t;
+        t.n = 1i32;
+
+        // `?` expression: produce_ok() returns Result<int32>; on
+        // success extract value (42), on error use -1. Trace:t MUST
+        // remain registered for drop across this expression.
+        int32:v = produce_ok() ? -1i32;
+
+        if (v != 42i32) { exit 1; }
+        // Inner block falls through here; @Trace_drop must fire.
+    }
+    exit 0;
+};

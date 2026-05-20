@@ -1645,3 +1645,25 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "async;phase1;io;file;d-9;v0.31.0.7"
     )
 endif()
+
+# ============================================================================
+# v0.31.1.1 — Phase 2 D-6 correction: `?`-with-Drop interaction verification
+# ============================================================================
+# Single fixture (bug357) verifying that the `?` (UNWRAP) expression
+# operator interacts cleanly with scope-end Drop auto-dispatch. The
+# v0.31.1.0 audit listed `?`/`?!` as exit paths needing drop emission;
+# this fixture confirms they are merge expressions (not exits) and that
+# Drop locals remain registered across them. See
+# META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.1.md for the full correction.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03111
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03111.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03111 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "drop;phase2;traits;d-6;v0.31.1.1"
+    )
+endif()
