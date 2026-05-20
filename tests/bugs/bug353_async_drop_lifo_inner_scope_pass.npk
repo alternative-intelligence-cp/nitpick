@@ -1,0 +1,49 @@
+// bug353 — v0.31.0.5 / D-10 (Async + Drop).
+// Verification: two Drop-implementing locals declared in an inner block
+// inside an async body drop in LIFO order, and the inner-block drop fires
+// at the closing `}` of the inner scope (not deferred to the end of the
+// coroutine frame).
+//
+// Expected stdout order:
+//   WORK-inner-start
+//   WORK-inner-end       <- printed BEFORE inner drops
+//   DROP-TwoB            <- LIFO: B declared after A, dropped first
+//   DROP-TwoA
+//   WORK-outer-end       <- after the inner block closes
+//   MAIN-after-spawn
+
+struct:TwoA = { int32:a; };
+struct:TwoB = { int32:b; };
+
+impl:Drop:for:TwoA = {
+    func:drop = NIL($$m TwoA:self) {
+        println("DROP-TwoA");
+    };
+};
+
+impl:Drop:for:TwoB = {
+    func:drop = NIL($$m TwoB:self) {
+        println("DROP-TwoB");
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:work = int32() {
+    {
+        TwoA:a;
+        TwoB:b;
+        a.a = 1i32;
+        b.b = 2i32;
+        println("WORK-inner-start");
+        println("WORK-inner-end");
+    }
+    println("WORK-outer-end");
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop work();
+    println("MAIN-after-spawn");
+    exit 0;
+};

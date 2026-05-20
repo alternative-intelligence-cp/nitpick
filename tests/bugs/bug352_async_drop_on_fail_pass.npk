@@ -1,0 +1,30 @@
+// bug352 — v0.31.0.5 / D-10 (Async + Drop).
+// Verification (c): when an async function exits via `fail N`, the
+// stack-unwind path still invokes Drop on locals that were live at the
+// point of `fail`. The harness asserts stdout contains "DROP-Marker"
+// AFTER "WORK-pre-fail" and that the program exits 0 (failsafe is the
+// task's failure path, not the program's).
+
+struct:Marker = { int32:n; };
+
+impl:Drop:for:Marker = {
+    func:drop = NIL($$m Marker:self) {
+        println("DROP-Marker");
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:work = int32() {
+    Marker:m;
+    m.n = 1i32;
+    println("WORK-pre-fail");
+    fail 5i32;
+    pass 0i32;
+};
+
+func:main = int32() {
+    drop work();
+    println("MAIN-after-spawn");
+    exit 0;
+};

@@ -1,0 +1,28 @@
+// bug351 — v0.31.0.5 / D-10 (Async + Drop).
+// Verification (a): a Drop-implementing local declared inside an async
+// function body has its `drop` invoked when the task completes normally.
+// Harness asserts stdout contains "DROP-Marker" between "WORK-start" and
+// "MAIN-after-spawn".
+
+struct:Marker = { int32:n; };
+
+impl:Drop:for:Marker = {
+    func:drop = NIL($$m Marker:self) {
+        println("DROP-Marker");
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+async func:work = int32() {
+    Marker:m;
+    m.n = 1i32;
+    println("WORK-start");
+    pass 1i32;
+};
+
+func:main = int32() {
+    drop work();
+    println("MAIN-after-spawn");
+    exit 0;
+};

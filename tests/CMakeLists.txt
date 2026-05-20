@@ -1505,6 +1505,31 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
 endif()
 
 # ============================================================================
+# v0.31.0.5 — Phase 1 async slice: D-10 (Async + Drop interaction)
+# ============================================================================
+# bug351..bug353 — verification fixtures (no compiler change):
+#   - bug351: Drop fires when an async coroutine completes normally.
+#   - bug352: Drop fires during the `fail` unwind in an async body.
+#   - bug353: nested-block Drop is LIFO and fires at the inner `}` (not
+#             deferred to the end of the coroutine frame).
+#
+# Audit scenario (b) "executor shutdown of a suspended task" is NOT
+# covered: no user-surface awaitable in v0.31.x produces real suspension,
+# so a suspended-at-shutdown task is unreachable from `.npk`. Deferred.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03105
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03105.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03105 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;drop;d-10;v0.31.0.5"
+    )
+endif()
+
+# ============================================================================
 # v0.28.6 — Concurrent-pin runtime stress (bug244 revival)
 # ============================================================================
 # Multi-threaded harness exercising the GC pin protocol under contention.
