@@ -1,0 +1,62 @@
+// bug356 — v0.31.0.7 / D-9 (async file I/O surface, roundtrip + delete).
+// Writes a payload, reads it back, byte-compares the result against the
+// original via libc strcmp, then deletes the file and verifies deletion
+// reported success.
+//
+// Asserts (via println markers):
+//   "WRITE-OK", "READ-OK", "CONTENT-MATCH", "DELETE-OK", "END".
+
+extern func:npk_write_file_async  = wild int8*(string:path, string:content);
+extern func:npk_read_file_async   = wild int8*(string:path);
+extern func:npk_delete_file_async = wild int8*(string:path);
+extern func:npk_future_is_ready   = bool(wild int8*:fut);
+extern func:npk_future_is_error   = bool(wild int8*:fut);
+extern func:npk_future_get_value  = string(wild int8*:fut);
+extern func:npk_future_destroy    = NIL(wild int8*:fut);
+extern func:strcmp                = int32(string:a, string:b);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    string:path = "/tmp/aria_bug356_roundtrip.txt";
+    string:payload = "aria-async-d9-roundtrip-payload";
+
+    wild int8->:wfut = npk_write_file_async(path, payload);
+    int32:spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(wfut) == false) {
+        spins = spins + 1i32;
+    }
+    if (npk_future_is_error(wfut) == false) {
+        println("WRITE-OK");
+    }
+    npk_future_destroy(wfut);
+
+    wild int8->:rfut = npk_read_file_async(path);
+    spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(rfut) == false) {
+        spins = spins + 1i32;
+    }
+    if (npk_future_is_error(rfut) == false) {
+        println("READ-OK");
+    }
+
+    string:buf = npk_future_get_value(rfut);
+    int32:cmp = strcmp(buf, "aria-async-d9-roundtrip-payload");
+    if (cmp == 0i32) {
+        println("CONTENT-MATCH");
+    }
+    npk_future_destroy(rfut);
+
+    wild int8->:dfut = npk_delete_file_async(path);
+    spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(dfut) == false) {
+        spins = spins + 1i32;
+    }
+    if (npk_future_is_error(dfut) == false) {
+        println("DELETE-OK");
+    }
+    npk_future_destroy(dfut);
+
+    println("END");
+    exit 0;
+};

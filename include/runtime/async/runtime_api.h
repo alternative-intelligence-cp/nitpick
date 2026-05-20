@@ -106,6 +106,18 @@ void npk_future_set_value(AriaFutureHandle future, const void* value, size_t siz
 void npk_future_set_error(AriaFutureHandle future);
 
 /**
+ * Check if future is in the error state.
+ * A future is in the error state iff setError() was called on it.
+ * Note: npk_future_is_ready() returns true for BOTH success and error;
+ * call this to disambiguate after is_ready() returns true.
+ * Added in v0.31.0.7 (D-9) to give the user-facing async file I/O
+ * surface a way to detect failures (missing file, permission denied, etc.).
+ * @param future Future handle
+ * @return true if the future completed with an error
+ */
+bool npk_future_is_error(AriaFutureHandle future);
+
+/**
  * LLVM Coroutine Intrinsic Wrappers
  * These are called by LLVM-generated code
  */

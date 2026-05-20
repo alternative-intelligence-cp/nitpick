@@ -121,6 +121,14 @@ void npk_future_set_error(AriaFutureHandle future) {
     fut->setError(true);
 }
 
+// v0.31.0.7 (D-9): expose error-state inspection for user-surface async I/O.
+// `isReady()` returns true for both READY and ERROR; this disambiguates.
+bool npk_future_is_error(AriaFutureHandle future) {
+    if (!future) return false;
+    Future* fut = static_cast<Future*>(future);
+    return fut->hasErrorFlag();
+}
+
 void npk_coro_resume(AriaCoroutineHandle handle) {
     if (handle) {
         __aria_coro_resume(handle);

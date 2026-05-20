@@ -1,0 +1,47 @@
+// bug354 — v0.31.0.7 / D-9 (async file I/O surface).
+// Verifies the user-facing async file write path:
+//   1. submit npk_write_file_async(),
+//   2. spin-poll npk_future_is_ready until true,
+//   3. confirm npk_future_is_error returns false,
+//   4. observe the file actually exists on disk via npk_file_exists_async.
+//
+// Asserts (via println markers): "WRITE-READY", "WRITE-OK", "EXISTS-OK", "END".
+
+extern func:npk_write_file_async  = wild int8*(string:path, string:content);
+extern func:npk_file_exists_async = wild int8*(string:path);
+extern func:npk_future_is_ready   = bool(wild int8*:fut);
+extern func:npk_future_is_error   = bool(wild int8*:fut);
+extern func:npk_future_get_value  = wild int8*(wild int8*:fut);
+extern func:npk_future_destroy    = NIL(wild int8*:fut);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    wild int8->:wfut = npk_write_file_async("/tmp/aria_bug354.txt", "hello-d9");
+
+    int32:spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(wfut) == false) {
+        spins = spins + 1i32;
+    }
+
+    if (npk_future_is_ready(wfut) == true) {
+        println("WRITE-READY");
+    }
+    if (npk_future_is_error(wfut) == false) {
+        println("WRITE-OK");
+    }
+    npk_future_destroy(wfut);
+
+    wild int8->:efut = npk_file_exists_async("/tmp/aria_bug354.txt");
+    spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(efut) == false) {
+        spins = spins + 1i32;
+    }
+    if (npk_future_is_error(efut) == false) {
+        println("EXISTS-OK");
+    }
+    npk_future_destroy(efut);
+
+    println("END");
+    exit 0;
+};

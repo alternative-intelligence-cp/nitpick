@@ -1,0 +1,35 @@
+// bug355 — v0.31.0.7 / D-9 (async file I/O surface, error path).
+// Verifies that reading a missing file completes the future in the
+// ERROR state, and that npk_future_is_error() (added this slice) is
+// the canonical way to detect it. Without this accessor a user could
+// only observe a successful-but-zero-length read, which would silently
+// swallow real I/O failures.
+//
+// Asserts (via println markers): "READ-READY", "READ-ERROR", "END".
+
+extern func:npk_read_file_async  = wild int8*(string:path);
+extern func:npk_future_is_ready  = bool(wild int8*:fut);
+extern func:npk_future_is_error  = bool(wild int8*:fut);
+extern func:npk_future_destroy   = NIL(wild int8*:fut);
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    wild int8->:rfut = npk_read_file_async("/tmp/aria_bug355_does_not_exist_xyz_qpr.txt");
+
+    int32:spins = 0i32;
+    while (spins < 100000i32 && npk_future_is_ready(rfut) == false) {
+        spins = spins + 1i32;
+    }
+
+    if (npk_future_is_ready(rfut) == true) {
+        println("READ-READY");
+    }
+    if (npk_future_is_error(rfut) == true) {
+        println("READ-ERROR");
+    }
+    npk_future_destroy(rfut);
+
+    println("END");
+    exit 0;
+};

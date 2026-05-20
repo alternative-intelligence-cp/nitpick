@@ -1625,3 +1625,23 @@ set_tests_properties(test_async_pin_across_suspend_v03106 PROPERTIES
     TIMEOUT 60
     LABELS "async;phase1;gc;pin;d-11;v0.31.0.6"
 )
+
+# ============================================================================
+# v0.31.0.7 — D-9: user-facing async file I/O surface fixtures
+# ============================================================================
+# bug354 (write success), bug355 (read missing → error), bug356 (roundtrip).
+# Each fixture compiles a .npk that calls npk_*_async via extern "libc",
+# spin-polls npk_future_is_ready, then inspects npk_future_is_error
+# (added this slice) to disambiguate success from failure.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03107
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03107.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03107 PROPERTIES
+        TIMEOUT 60
+        SKIP_RETURN_CODE 77
+        LABELS "async;phase1;io;file;d-9;v0.31.0.7"
+    )
+endif()
