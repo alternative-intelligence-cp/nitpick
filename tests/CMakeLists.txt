@@ -1571,3 +1571,57 @@ set_tests_properties(test_pin_gc_pressure_v02861 PROPERTIES
     TIMEOUT 60
     LABELS "memory;gc;pin;runtime;stress;v0.28.6.1;deadlock-regression"
 )
+
+# ============================================================================
+# v0.31.0.6 — Phase 1 / D-6 + D-11: async runtime stress (suspended frames)
+# ============================================================================
+# Two runtime-API-level harnesses that drive GCCoroAllocator + the pin
+# protocol directly. Required because the user-facing .npk surface cannot
+# today reach a *real* suspension point (every async/await resolves
+# synchronously on the current executor surface), so the only way to
+# exercise the coro-frame mark path under genuine GC pressure is via
+# the runtime API.
+#
+# D-6 harness (test_async_gc_suspended_frames_v03106): N suspended
+# frames each hold a single GC root; minor GCs are forced via nursery
+# pressure; post-pressure the slot must read back a live object with
+# its original magic value. Regression guard for the v0.31.0.6 fix
+# that added slot-aware scan_frame_slots() and rewrote *root after
+# evacuation (previously the slot was left dangling at the vacated
+# nursery payload, which holds the forwarding pointer as its first
+# word).
+#
+# D-11 harness (test_async_pin_across_suspend_v03106): N suspended
+# frames each hold a *pinned* GC object; minor GCs are forced; the
+# pinned address must be bit-identical and the object bytes must
+# round-trip across every collection. Async-coroutine analogue of
+# the v0.28.6 / v0.28.6.1 thread-based pin stress.
+add_executable(test_async_gc_suspended_frames_v03106
+    runtime/test_async_gc_suspended_frames_v03106.cpp)
+target_link_libraries(test_async_gc_suspended_frames_v03106 PRIVATE aria_runtime)
+target_include_directories(test_async_gc_suspended_frames_v03106 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME test_async_gc_suspended_frames_v03106
+    COMMAND test_async_gc_suspended_frames_v03106
+)
+set_tests_properties(test_async_gc_suspended_frames_v03106 PROPERTIES
+    TIMEOUT 60
+    LABELS "async;phase1;gc;coro-frame;d-6;v0.31.0.6;regression"
+)
+
+add_executable(test_async_pin_across_suspend_v03106
+    runtime/test_async_pin_across_suspend_v03106.cpp)
+target_link_libraries(test_async_pin_across_suspend_v03106 PRIVATE aria_runtime)
+target_include_directories(test_async_pin_across_suspend_v03106 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+add_test(
+    NAME test_async_pin_across_suspend_v03106
+    COMMAND test_async_pin_across_suspend_v03106
+)
+set_tests_properties(test_async_pin_across_suspend_v03106 PROPERTIES
+    TIMEOUT 60
+    LABELS "async;phase1;gc;pin;d-11;v0.31.0.6"
+)

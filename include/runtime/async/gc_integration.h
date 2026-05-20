@@ -100,6 +100,23 @@ public:
      * @param mark_fn Function to mark live objects
      */
     void scan_frames(std::function<void(void*)> mark_fn);
+
+    /**
+     * v0.31.0.6 (Phase 1 / D-6): Slot-aware scan over all suspended-frame
+     * GC roots. Unlike scan_frames(), which only exposes the *value* of
+     * each root, this variant hands the GC the *slot* (void**) so a
+     * copying / evacuating collector can rewrite the slot to a forwarded
+     * address after evacuation. Required for correctness of the minor-GC
+     * mark phase: without slot updates, suspended coroutine frames retain
+     * pre-evacuation pointers into the (now-vacated) nursery and the next
+     * resume reads the forwarding word as if it were object data.
+     *
+     * Non-moving mark sites (concurrent mark snapshot, full STW mark)
+     * may continue to use scan_frames(); they never need to rewrite roots.
+     *
+     * @param slot_fn Callback invoked once per registered root slot.
+     */
+    void scan_frame_slots(std::function<void(void**)> slot_fn);
     
     /**
      * Get statistics

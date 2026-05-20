@@ -148,6 +148,21 @@ void GCCoroAllocator::scan_frames(std::function<void(void*)> mark_fn) {
     }
 }
 
+// v0.31.0.6 (Phase 1 / D-6): slot-aware variant; see header comment.
+// Used by the minor-GC mark phase so it can rewrite each root slot to
+// the post-evacuation address of the surviving object.
+void GCCoroAllocator::scan_frame_slots(std::function<void(void**)> slot_fn) {
+    for (auto& pair : frame_metadata) {
+        CoroFrameMetadata* metadata = pair.second;
+        if (!metadata->is_suspended) continue;
+        for (void** root : metadata->gc_roots) {
+            if (root) {
+                slot_fn(root);
+            }
+        }
+    }
+}
+
 void GCCoroAllocator::init_gc() {
     // v0.28.6.1 / GC-DEADLOCK fix: do NOT call npk_gc_init() here.
     //

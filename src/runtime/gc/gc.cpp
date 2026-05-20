@@ -331,9 +331,16 @@ void GCState::minor_gc() {
     std::vector<void*> worklist;
     
     // v0.8.4: Scan suspended coroutine frames for GC roots
+    // v0.31.0.6 (Phase 1 / D-6): use the slot-aware scanner so we can
+    // update each root slot to the post-evacuation address. Without
+    // this rewrite, a suspended coroutine's frame would retain its
+    // pre-evacuation nursery pointer; the next resume would dereference
+    // the now-vacated payload (whose first word is the forwarding
+    // pointer) and read garbage as if it were object data.
     GCCoroAllocator* coro_alloc = get_global_coro_allocator();
     if (coro_alloc) {
-        coro_alloc->scan_frames([&](void* obj_ptr) {
+        coro_alloc->scan_frame_slots([&](void** root) {
+            void* obj_ptr = *root;
             if (!obj_ptr || !nursery->contains(obj_ptr)) return;
             ObjHeader* header = get_header(obj_ptr);
             if (!header) return;
@@ -343,6 +350,7 @@ void GCState::minor_gc() {
             } else {
                 void* new_ptr = evacuate_object(obj_ptr);
                 if (new_ptr) {
+                    *root = new_ptr;  // D-6 fix: update slot to forwarded address
                     worklist.push_back(new_ptr);
                 }
             }
