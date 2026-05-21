@@ -4963,6 +4963,68 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
             // v0.2.35: Borrow variables ($$i/$$m) — alias the original
             // ================================================================
             if (varDecl->isBorrowImm || varDecl->isBorrowMut) {
+                // ============================================================
+                // v0.31.1.7 (D-12 Option B, sub-slice 1):
+                // When the declared type is `dyn Trait` AND the initializer is
+                // a concrete value bound to a local, we cannot alias the
+                // source storage directly: the source struct shape does not
+                // match the fat-pointer shape (`%struct.DynTraitObj`), and a
+                // later vtable dispatch would reinterpret the source's bytes
+                // as `{data, vtable}` → garbage → segfault (Probe C in
+                // AUDIT_v0.31.1.6.md).
+                //
+                // Build a proper fat pointer in a fresh stack slot with the
+                // borrowed source's address as the `data` slot (NOT a copy)
+                // and the concrete type's vtable in the `vtable` slot. Borrow
+                // semantics are preserved: mutations through the dyn
+                // trait-object reach the original `source` storage.
+                // ============================================================
+                if (actualTypeName.size() > 4 &&
+                    actualTypeName.substr(0, 4) == "dyn " &&
+                    varType && varType->isStructTy() &&
+                    varDecl->initializer &&
+                    varDecl->initializer->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* ident = static_cast<IdentifierExpr*>(
+                        varDecl->initializer.get());
+                    Type* alias_type = nullptr;
+                    llvm::Value* alias_ptr = getBorrowAliasPointer(
+                        varDecl->initializer.get(), &alias_type);
+                    std::string concreteType;
+                    auto cit = var_aria_types.find(ident->name);
+                    if (cit != var_aria_types.end()) concreteType = cit->second;
+                    if (alias_ptr && !concreteType.empty()) {
+                        std::string traitName = actualTypeName.substr(4);
+                        std::string vtableGVName =
+                            traitName + "_vtable_" + concreteType;
+                        llvm::GlobalVariable* vtableGV =
+                            module->getGlobalVariable(vtableGVName, true);
+                        if (vtableGV) {
+                            llvm::StructType* fatPtrTy =
+                                llvm::cast<llvm::StructType>(varType);
+                            llvm::AllocaInst* fatAlloca = builder.CreateAlloca(
+                                fatPtrTy, nullptr, varDecl->varName);
+                            llvm::Value* fat = llvm::UndefValue::get(fatPtrTy);
+                            fat = builder.CreateInsertValue(
+                                fat, alias_ptr, 0,
+                                varDecl->varName + ".dyn_fat.data");
+                            fat = builder.CreateInsertValue(
+                                fat, vtableGV, 1,
+                                varDecl->varName + ".dyn_fat.vtable");
+                            builder.CreateStore(fat, fatAlloca);
+                            named_values[varDecl->varName] = fatAlloca;
+                            var_aria_types[varDecl->varName] = actualTypeName;
+                            ARIA_DBG_STREAM << "[DYN] Borrow local '"
+                                << varDecl->varName
+                                << "' built fat-ptr {&" << ident->name
+                                << ", @" << vtableGVName << "}\n";
+                            return nullptr;
+                        }
+                    }
+                    // Fall through to the original alias path if any piece is
+                    // missing (vtable not emitted, concrete type unknown, etc.)
+                    // — the existing path will trip the legacy trap, which a
+                    // later slice can convert into a clear diagnostic.
+                }
                 Type* alias_type = nullptr;
                 llvm::Value* alias_ptr = getBorrowAliasPointer(varDecl->initializer.get(), &alias_type);
                 if (alias_ptr) {

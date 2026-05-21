@@ -1,0 +1,30 @@
+// bug371 — v0.31.1.7 D-12 Probe C: $$i dyn Trait local-var borrow
+// Regression for AUDIT_v0.31.1.6.md Probe C.
+//
+// Before v0.31.1.7, declaring `$$i dyn Trait` as a local-var borrow
+// of a concrete value compiled cleanly but segfaulted at dispatch:
+// the borrow-alias path in ir_generator.cpp:4965 stored a raw
+// pointer to the source's struct storage in `named_values`, while
+// var_aria_types claimed the variable was a fat-pointer
+// (%struct.DynTraitObj). Vtable dispatch then loaded a fat-ptr
+// shape from the source's bytes → garbage → crash.
+//
+// v0.31.1.7 special-cases the dyn-target case in the borrow-alias
+// path: it builds a proper fat pointer in a fresh stack slot with
+// the borrowed source's address (not a copy) as the `data` slot
+// and the concrete type's vtable as the `vtable` slot, preserving
+// borrow semantics through the dyn trait-object.
+//
+// Expected: exit 33 (Person.age dispatched through dyn Greet).
+
+struct:Person = { int32:age; };
+trait:Greet = { func:say_hi = int32($$i Person:self); };
+impl:Greet:for:Person = {
+    func:say_hi = int32($$i Person:self) { pass self.age; };
+};
+func:failsafe = int32(tbb32:err) { exit 1; };
+func:main = int32() {
+    Person:p = { age: 33i32 };
+    $$i dyn Greet:g = p;
+    exit g.say_hi();
+};

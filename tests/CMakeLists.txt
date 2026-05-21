@@ -1720,3 +1720,23 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "keyword-retirement;phase2;obj;d-10;v0.31.1.5"
     )
 endif()
+
+# v0.31.1.7 (D-12 Option B sub-slice 1): `$$i dyn Trait` local-var
+# borrow now builds a proper fat pointer in a fresh stack slot with
+# the borrowed source's address as the data slot (preserving borrow
+# semantics) and the concrete type's vtable as the vtable slot.
+# Pre-fix, the borrow-alias path stored a raw source pointer with
+# the dyn type tag → vtable dispatch read garbage → segfault.
+# See META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.7.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03117
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03117.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03117 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "phase2;dyn;borrow;d-12;v0.31.1.7"
+    )
+endif()
