@@ -1,0 +1,12 @@
+// bug384 — v0.31.2.2 D-15: NULL assigned to a non-pointer target via
+// assignment statement must be rejected.
+//
+// Expected diagnostic: "NULL can only be assigned to pointer types"
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 5i32;
+    x = NULL;
+    exit x;
+};

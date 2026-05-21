@@ -3255,7 +3255,36 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
     if (rightType->getKind() == TypeKind::ERROR) {
         return;
     }
-    
+
+    // ========================================================================
+    // v0.31.2.2 (D-15): NIL vs NULL Type Safety for Assignment Statements
+    // Mirrors the VAR_DECL check in checkVarDecl. NIL is valid only for
+    // optional targets (T?); NULL only for pointer targets (T@/T->).
+    // Without this, `x = NIL;` for non-optional `x` silently no-ops because
+    // the NIL literal infers as `unknown`, which `isAssignableTo` accepts.
+    // ========================================================================
+    if (expr->right->type == ASTNode::NodeType::LITERAL) {
+        LiteralExpr* literal = static_cast<LiteralExpr*>(expr->right.get());
+
+        if (literal->explicit_type == "NIL") {
+            if (leftType->getKind() != TypeKind::OPTIONAL) {
+                addError("NIL can only be assigned to optional types (T?). "
+                        "Assignment target has type '" +
+                        leftType->toString() +
+                        "'. Use NULL for pointers.", expr);
+                return;
+            }
+        } else if (literal->explicit_type == "NULL") {
+            if (leftType->getKind() != TypeKind::POINTER) {
+                addError("NULL can only be assigned to pointer types (T@). "
+                        "Assignment target has type '" +
+                        leftType->toString() +
+                        "'. Use NIL for optionals.", expr);
+                return;
+            }
+        }
+    }
+
     // Standard Integer Literal Assignment (Phase 4.5.4)
     // Allow safe narrowing for integer literals in assignments (e.g., x = 5)
     // This makes direct assignments consistent with variable declarations

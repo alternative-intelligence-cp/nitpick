@@ -1,0 +1,16 @@
+// bug383 — v0.31.2.2 D-15: NIL assigned to a non-optional target via
+// assignment statement (not var-decl) must be rejected.
+//
+// Mirrors the VAR_DECL check in checkVarDecl (type_checker_stmts.cpp).
+// The plain `=` assignment parses as a BinaryExpr with TOKEN_EQUAL and
+// is checked in checkBinaryOperator (type_checker.cpp).
+//
+// Expected diagnostic: "NIL can only be assigned to optional types"
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:x = 5i32;
+    x = NIL;
+    exit x;
+};
