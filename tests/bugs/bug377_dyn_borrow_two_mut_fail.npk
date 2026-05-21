@@ -1,0 +1,28 @@
+// bug377 — v0.31.1.10 D-12 Probe D: two $$m dyn borrows rejected
+//
+// Two simultaneous mutable dyn borrows of the same source must
+// be rejected with ARIA-023 (mut/mut conflict). Validates that
+// dyn coercion does NOT bypass the standard exclusivity rule.
+
+struct:Counter = { int32:n; };
+
+trait:Bumpable = {
+    func:bump = int32($$m Bumpable:self);
+};
+
+impl:Bumpable:for:Counter = {
+    func:bump = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass self.n;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 5i32 };
+    $$m dyn Bumpable:b1 = c;
+    $$m dyn Bumpable:b2 = c;
+    int32:r = b1.bump();
+    exit r;
+};

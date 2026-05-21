@@ -1,0 +1,30 @@
+// bug376 — v0.31.1.10 D-12 Probe D: $$m dyn borrow blocks source write
+//
+// While `b` holds a mutable dyn borrow of `c`, direct assignment
+// to `c.n` must be rejected with ARIA-026 (assignment to
+// borrowed storage). Validates that the borrow record produced
+// at VAR_DECL time is honoured by the source-side assignment
+// check even when the borrow target type is `dyn Trait`.
+
+struct:Counter = { int32:n; };
+
+trait:Bumpable = {
+    func:bump = int32($$m Bumpable:self);
+};
+
+impl:Bumpable:for:Counter = {
+    func:bump = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass self.n;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 5i32 };
+    $$m dyn Bumpable:b = c;
+    c.n = 99i32;
+    int32:r = b.bump();
+    exit r;
+};

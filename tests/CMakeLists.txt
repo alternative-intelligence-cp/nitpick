@@ -1781,3 +1781,23 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "phase2;dyn;borrow;trait;d-12;v0.31.1.9"
     )
 endif()
+
+# v0.31.1.10 — Phase 2 D-12 sub-slice 4: Probe D borrow-checker
+# liveness for dyn borrows. Regression slice (no new code) that
+# codifies the source-side conflict rules already honoured by the
+# borrow checker for dyn-target borrows once Probes B/C/E are
+# composed (v0.31.1.7/8/9). Fixtures cover ARIA-023, ARIA-026,
+# and the v0.31.1.9 call-site coercion path.
+# See META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.10.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v031110
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_031110.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v031110 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "phase2;dyn;borrow;trait;d-12;v0.31.1.10"
+    )
+endif()

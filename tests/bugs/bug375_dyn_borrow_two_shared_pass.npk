@@ -1,0 +1,29 @@
+// bug375 — v0.31.1.10 D-12 Probe D: two $$i dyn borrows OK
+//
+// Two simultaneous immutable dyn borrows of the same source must
+// be permitted (standard shared-borrow rule). Both must dispatch
+// correctly through their fat ptrs and read the same data.
+//
+// Expected: c.n = 7; b1.read() + b2.read() = 14; exit 14.
+
+struct:Counter = { int32:n; };
+
+trait:Readable = {
+    func:read = int32(Readable:self);
+};
+
+impl:Readable:for:Counter = {
+    func:read = int32(Counter:self) {
+        pass self.n;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 7i32 };
+    $$i dyn Readable:b1 = c;
+    $$i dyn Readable:b2 = c;
+    int32:r = b1.read() + b2.read();
+    exit r;
+};
