@@ -1,8 +1,30 @@
-# Nitpick v0.25.7 — Known Issues & Limitations
+# Nitpick v0.31.1.10 — Known Issues & Limitations
 
-Last updated: v0.25.7
+Last updated: v0.31.1.10
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
+
+---
+
+## Deferred — v0.31.1.x (Trait / dyn surface)
+
+Closed in Phase 2 of the v0.31.x cycle but explicitly carried forward:
+
+- **Re-borrow from a `$$m dyn T` parameter** — passing `b` onward as `$$m`
+  to another call is treated conservatively: the callee binds the fat ptr
+  to a struct alloca without setting the `__borrow_param_mut` marker for
+  `b`. No current fixture exercises this path; revisit if a real program
+  demands it.
+- **Field-level borrows of a `dyn T` struct field** — not supported;
+  borrow the whole containing struct.
+- **Trait inheritance / super-traits** — out of scope for Phase 2.
+- **Associated types / associated constants** — out of scope for Phase 2.
+- **Generic trait bounds** (`func:f = T($$i T:x) where T: Trait`) — out of
+  scope for Phase 2.
+- **`derive` for arbitrary traits** — only `derive(Display)` is supported
+  (v0.21.1).
+- **`obj` (owned trait object)** — distinguishing semantics from `dyn`
+  was deferred at v0.31.1.0 (D-9 follow-on).
 
 ---
 
@@ -54,6 +76,16 @@ code generation macros require additional codegen work planned for v0.25.x+.
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.31.1.x (Phase 2 — trait / impl / dyn)
+
+| Slice | Bugs | Theme |
+|-------|------|-------|
+| v0.31.1.0 – v0.31.1.6 | bug363 – bug370 | `dyn T` surface scaffolding (local var, struct field, fn arg, heterogeneous branch, no-impl diagnostic ARIA-043, two-method dispatch) |
+| v0.31.1.7 | bug371 | Probe C `$$i dyn T` local borrow + dispatch |
+| v0.31.1.8 | bug372, bug373 | impl-method `$$m self` lowering; `$$m dyn T` local borrow mutation |
+| v0.31.1.9 | bug374 | `$$m dyn T` parameter coercion (call-site + callee-side ABI) |
+| v0.31.1.10 | bug375 – bug378 | Probe D regression slice: dyn-borrow source-side conflict rules (ARIA-019/023/026 fire uniformly for `dyn T` borrows) |
 
 ### Resolved in v0.25.x
 
