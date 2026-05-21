@@ -2,9 +2,9 @@
 // Test const with array sizes and complex expressions
 // Tests compile-time evaluation capability
 
-const int64:ARRAY_SIZE = 10;
-const int64:BUFFER_COUNT = 5;
-const int64:TOTAL_SLOTS = ARRAY_SIZE * BUFFER_COUNT;
+fixed int64:ARRAY_SIZE = 10;
+fixed int64:BUFFER_COUNT = 5;
+fixed int64:TOTAL_SLOTS = ARRAY_SIZE * BUFFER_COUNT;
 
 // Test 1: Can we use const for array size?
 func:test_array_size = int64() {
@@ -15,8 +15,8 @@ func:test_array_size = int64() {
 
 // Test 2: Can we use const expressions?
 func:test_const_expr = int64() {
-    const int64:DOUBLED = ARRAY_SIZE * 2;
-    const int64:HALVED = ARRAY_SIZE / 2;
+    fixed int64:DOUBLED = ARRAY_SIZE * 2;
+    fixed int64:HALVED = ARRAY_SIZE / 2;
     
     int64:result = DOUBLED + HALVED;
     pass result;  // Should be 25 (20 + 5)
@@ -24,7 +24,7 @@ func:test_const_expr = int64() {
 
 // Test 3: Can we use const in conditionals?
 func:test_const_conditional = int64() {
-    const bool:USE_LARGE_BUFFER = true;
+    fixed bool:USE_LARGE_BUFFER = true;
     int64:size = 0;
     
     if (USE_LARGE_BUFFER) {

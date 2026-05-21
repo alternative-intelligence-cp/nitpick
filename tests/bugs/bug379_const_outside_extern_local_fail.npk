@@ -1,0 +1,14 @@
+// bug379 — v0.31.2.1 D-14 ARIA-044: `const` outside extern rejected (local).
+//
+// `const` is reserved for `extern "..." { ... }` blocks. A `const`
+// declaration at function scope must be rejected with ARIA-044 and
+// the diagnostic must point users at `fixed`.
+//
+// Expected diagnostic: ARIA-044
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    const int32:LOCAL_K = 42i32;
+    exit LOCAL_K;
+};

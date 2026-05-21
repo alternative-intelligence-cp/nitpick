@@ -1,0 +1,18 @@
+// bug381 — v0.31.2.1 D-14: `fixed` accepts a comptime initializer and is
+// available to subsequent comptime use (legacy `const`-fold parity).
+//
+// Verifies that swapping `const`→`fixed` does not regress comptime
+// folding for binding-level constants whose initializer is comptime
+// evaluable (literals, arithmetic).
+//
+// Expected: exit 50
+
+fixed int32:A = 20i32;
+fixed int32:B = 30i32;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:r = A + B;
+    exit r;
+};

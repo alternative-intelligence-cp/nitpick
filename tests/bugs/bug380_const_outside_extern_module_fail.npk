@@ -1,0 +1,14 @@
+// bug380 — v0.31.2.1 D-14 ARIA-044: `const` outside extern rejected (module-level).
+//
+// Module-level (top-level) `const` declarations must also be rejected
+// with ARIA-044. The replacement form is `fixed TYPE:NAME = expr;`.
+//
+// Expected diagnostic: ARIA-044
+
+const int32:MODULE_K = 99i32;
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    exit MODULE_K;
+};

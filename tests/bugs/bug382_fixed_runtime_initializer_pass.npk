@@ -1,0 +1,20 @@
+// bug382 — v0.31.2.1 D-14: `fixed` accepts a runtime initializer.
+//
+// `fixed` differs from legacy `const` in that the initializer is NOT
+// required to be comptime-evaluable. The comptime-folder must
+// gracefully skip non-foldable initializers without surfacing an
+// error.
+//
+// Expected: exit 7
+
+func:compute = int32(int32:x) {
+    pass x + 2i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    int32:base = 5i32;
+    fixed int32:R = raw compute(base);
+    exit R;
+};

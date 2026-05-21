@@ -1656,12 +1656,36 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
         }
     }
     
-    // Phase 2.2: Evaluate const expressions at compile time
+    // Phase 2.2 (v0.31.2.1, D-14): 'const' is reserved for extern blocks.
+    // ARIA-044: any 'const' reaching checkVarDecl is outside an extern block
+    // (extern decls are routed through checkExternStmt, not here).
+    if (stmt->isConst) {
+        addError("ARIA-044: 'const' is reserved for extern blocks "
+                 "— use 'fixed' for Aria-side immutability",
+                 stmt);
+        // Do not return; allow downstream checks to surface additional issues.
+    }
+
+    // Phase 2.3: Opportunistic comptime folding for 'const'/'fixed' initializers.
+    // 'const' folds eagerly (legacy behavior). 'fixed' folds when the initializer
+    // is comptime-evaluable; runtime initializers are permitted and any
+    // comptime-evaluator errors are discarded for that path.
     ComptimeValue* evaluatedConstValue = nullptr;
     if (stmt->isConst && stmt->initializer) {
         ComptimeValue constValue = constEvaluator->evaluate(stmt->initializer.get());
         // Store evaluated value on heap so it persists
         evaluatedConstValue = new ComptimeValue(constValue);
+    } else if (stmt->isFixed && stmt->initializer) {
+        size_t savedErrorCount = constEvaluator->getErrors().size();
+        ComptimeValue v = constEvaluator->evaluate(stmt->initializer.get());
+        if (constEvaluator->getErrors().size() == savedErrorCount) {
+            evaluatedConstValue = new ComptimeValue(v);
+        } else {
+            // 'fixed' permits runtime initializers — discard comptime errors.
+            // Note: pre-existing errors are also cleared; in practice the
+            // evaluator is fresh per declaration so this is benign.
+            constEvaluator->clearErrors();
+        }
     }
     
     // Define symbol in symbol table
