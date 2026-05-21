@@ -1,0 +1,21 @@
+// bug413 — v0.31.2.8 D-20 / ARIA-046: success-path regression. After a
+// successful call, `Result<int32?>.value` reads as the wrapped Some
+// payload (verified via the existing intermediate-binding access form;
+// DEF-CHAIN-RESULT means we don't chain `.value` directly off the call).
+//
+// Expected: compile OK, exit 42.
+
+func:produce = int32?() {
+    pass 42i32;
+};
+
+func:main = int32() {
+    Result<int32?>:r = produce();
+    int32?:opt = r.value;     // unguarded read on success path
+    if (opt == NIL) {
+        exit 1i32;            // failure: success path should yield Some
+    }
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

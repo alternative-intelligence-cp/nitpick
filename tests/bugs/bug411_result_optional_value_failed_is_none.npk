@@ -1,0 +1,24 @@
+// bug411 — v0.31.2.8 D-20 / ARIA-046: reading `.value` on a
+// `Result<Optional<T>>` does NOT require an `.is_error` guard, because
+// the failed-Result codegen zero-fills the value field, and Optional's
+// `hasValue=0` IS the None tag — the read yields a well-typed None.
+//
+// This test specifically exercises the failure path: after `fail(7)`
+// runs, `r.value` must be observable as `NIL` (the None state).
+//
+// Expected: compile OK, exit 0.
+
+func:may_fail = int32?() {
+    fail(7i32);
+};
+
+func:main = int32() {
+    Result<int32?>:r = may_fail();
+    int32?:opt = r.value;     // unguarded — must be accepted
+    if (opt == NIL) {
+        exit 0i32;            // success: failed Result.value reads as None
+    }
+    exit 1i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

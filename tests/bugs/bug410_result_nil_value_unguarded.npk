@@ -1,0 +1,17 @@
+// bug410 — v0.31.2.8 D-20 / ARIA-046: reading `.value` on a
+// `Result<NIL>` does NOT require an `.is_error` guard, because NIL is
+// the single inhabitant of its type — the read is trivially well-typed
+// whether the call succeeded or failed.
+//
+// Expected: compile OK, exit 0.
+
+func:noop = NIL() { pass NIL; };
+
+func:main = int32() {
+    Result<NIL>:r = noop();
+    NIL:n = r.value;          // unguarded — must be accepted
+    drop n;
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

@@ -213,8 +213,22 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
         // .value -> T (the wrapped value type)
         // ENFORCEMENT: Cannot access .value without first checking .is_error
         // Phase 2: Must KNOW is_error == false, not just that we checked it
+        //
+        // v0.31.2.8 (D-20, ARIA-046): the gate does NOT apply when the
+        // wrapped type is `NIL` (single inhabitant — read is trivially
+        // well-typed) or `Optional<T>` (the failed-Result codegen
+        // zero-fills the value field, and Optional's hasValue=0 IS the
+        // None tag, so the read yields a well-typed None).
         if (expr->member == "value") {
-            if (!varName.empty()) {
+            Type* valueType = resultType->getValueType();
+            bool valueIsNil =
+                valueType->getKind() == TypeKind::PRIMITIVE &&
+                static_cast<PrimitiveType*>(valueType)->getName() == "NIL";
+            bool valueIsOptional =
+                valueType->getKind() == TypeKind::OPTIONAL;
+            bool gateExempt = valueIsNil || valueIsOptional;
+
+            if (!varName.empty() && !gateExempt) {
                 ResultCheckState::State state = currentResultState.getState(varName);
                 if (state != ResultCheckState::State::KNOWN_SUCCESS) {
                     addError("Cannot access .value without checking .is_error first (no checky no val).\n"
@@ -224,7 +238,7 @@ Type* TypeChecker::inferMemberAccessExpr(MemberAccessExpr* expr) {
                     return typeSystem->getErrorType();
                 }
             }
-            return resultType->getValueType();
+            return valueType;
         }
         
         // .error -> error code (int32)

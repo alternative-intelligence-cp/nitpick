@@ -5526,6 +5526,15 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                         if (isNil) {
                             // Create { i1 false, T undef } for NIL
                             optionalValue = createOptionalNone(varType);
+                        } else if (initVal->getType() == varType) {
+                            // v0.31.2.8 (D-20): initializer is ALREADY the
+                            // same optional shape — e.g. `int32?:opt =
+                            // r.value;` where `r: Result<int32?>` returns
+                            // the inner Optional directly. Do not re-wrap
+                            // (that would yield `{ i1 true, {i1, T} value }`,
+                            // forcing the test to read the OUTER hasValue
+                            // instead of the inner None-tag).
+                            optionalValue = initVal;
                         } else {
                             // Create { i1 true, T value } for actual value
                             // Need to extract wrapped type from optional struct type

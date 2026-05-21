@@ -1,0 +1,19 @@
+// bug412 — v0.31.2.8 D-20 / ARIA-046: reading `.value` on a
+// `Result<T>` where T is *not* `NIL` and *not* `Optional` MUST still
+// be rejected when `.is_error` has not been checked. The D-20
+// relaxation is narrow — only NIL and Optional value-fields are
+// exempt; primitive payloads still require the "no checky no val"
+// guard.
+//
+// Expected: compile FAILURE — diagnostic "Cannot access .value
+// without checking .is_error first".
+
+func:may_fail = int32() { fail(7i32); };
+
+func:main = int32() {
+    Result<int32>:r = may_fail();
+    int32:x = r.value;        // must REJECT — int32 is not NIL/Optional
+    exit x;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };
