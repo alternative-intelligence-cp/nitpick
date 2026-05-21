@@ -1,6 +1,10 @@
 // bug105: A-009 — tbb8, tbb16, tbb64 arithmetic and ERR sentinel
 // K semantics formalized in v0.21.6 (tests 128-136 in k-semantics/tests/core/).
 // Compiler support exists since early v0.x; this is a regression anchor.
+// Updated v0.31.2.3 (D-16/16a): ERR detection via direct integer compare
+// to the sentinel constant is no longer valid — D-16a makes tbb cmp ops
+// sticky (`ERR == X` always false, `ERR != X` always true). The canonical
+// ERR probe is `(z != z)`, which is true iff z is the ERR sentinel.
 // Expected: compile and exit 0.
 
 func:failsafe = int32(tbb32:err) { exit 1; };
@@ -12,11 +16,12 @@ func:main = int32() {
     tbb8:c = a + b;
     if (c != 30) { exit 2; }
 
-    // tbb8 overflow -> ERR sentinel (-128)
+    // tbb8 overflow -> ERR sentinel; detect via D-16a sticky-`!=` self-test.
     tbb8:x = 120;
     tbb8:y = 10;
-    tbb8:z = x + y;   // 130 > 127, yields ERR sentinel (-128)
-    if (z != -128) { exit 3; }
+    tbb8:z = x + y;            // 130 > 127, yields ERR sentinel
+    bool:z_is_err = (z != z);  // sticky: true iff ERR
+    if (!z_is_err) { exit 3; }
 
     // tbb16: valid range (-32767..32767)
     tbb16:p = 1000;

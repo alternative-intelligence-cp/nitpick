@@ -80,6 +80,23 @@ public:
      */
     llvm::Value* generateWiden(llvm::Value* srcVal, Type* srcType, Type* dstType);
 
+    /**
+     * @brief Generate ERR-sticky TBB comparison (v0.31.2.3 D-16/16a).
+     *
+     * D-16a semantics: when either operand is the ERR sentinel, the bool
+     * result follows the rule "ERR is unequal to everything including
+     * itself" — `==`, `<`, `<=`, `>`, `>=` evaluate to false; `!=`
+     * evaluates to true. Otherwise the integer ICmp with `pred` is used.
+     *
+     * @param lhs Left operand (tbb type)
+     * @param rhs Right operand (tbb type)
+     * @param type The TBB type (tbb8/16/32/64)
+     * @param pred LLVM ICmp predicate (signed flavour for ordered ops)
+     * @return LLVM i1 value with ERR-sticky semantics
+     */
+    llvm::Value* generateCmp(llvm::Value* lhs, llvm::Value* rhs, Type* type,
+                             llvm::CmpInst::Predicate pred);
+
     // ========================================================================
     // Public helpers for testing
     // ========================================================================

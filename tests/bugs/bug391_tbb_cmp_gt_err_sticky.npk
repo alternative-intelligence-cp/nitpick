@@ -1,0 +1,23 @@
+// v0.31.2.3 D-16/16a: ERR-sticky tbb `>` comparison.
+//   ERR > x or x > ERR → false; ERR > ERR → false.
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:main = int32() {
+    tbb32:err  = tbb32.ERR;
+    tbb32:one  = 1tbb32;
+    tbb32:two  = 2tbb32;
+
+    bool:r1 = (err > one);
+    if (r1) { exit 1; }
+
+    bool:r2 = (one > err);
+    if (r2) { exit 2; }
+
+    bool:r3 = (err > err);
+    if (r3) { exit 3; }
+
+    // Normal: 2 > 1 → true
+    bool:r4 = (two > one);
+    if (!r4) { exit 4; }
+
+    exit 0;
+};

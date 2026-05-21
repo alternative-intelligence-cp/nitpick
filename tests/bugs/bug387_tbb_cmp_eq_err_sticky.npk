@@ -1,0 +1,28 @@
+// v0.31.2.3 D-16/16a: ERR-sticky tbb `==` comparison.
+//   ERR == x  → false (any side)
+//   ERR == ERR → false (ERR is unequal to everything including itself)
+//   normal a == b → as expected
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:main = int32() {
+    tbb32:err  = tbb32.ERR;
+    tbb32:one  = 1tbb32;
+    tbb32:one2 = 1tbb32;
+
+    // L-ERR
+    bool:r1 = (err == one);
+    if (r1) { exit 1; }
+
+    // R-ERR
+    bool:r2 = (one == err);
+    if (r2) { exit 2; }
+
+    // Both-ERR (sticky rule: false)
+    bool:r3 = (err == err);
+    if (r3) { exit 3; }
+
+    // Normal
+    bool:r4 = (one == one2);
+    if (!r4) { exit 4; }
+
+    exit 0;
+};

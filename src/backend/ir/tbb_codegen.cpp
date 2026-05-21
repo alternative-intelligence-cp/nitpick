@@ -464,4 +464,34 @@ llvm::Value* TBBCodegen::generateWiden(llvm::Value* srcVal, Type* srcType, Type*
     return builder.CreateSelect(isErr, dstSentinel, widened, "tbb_widen");
 }
 
+llvm::Value* TBBCodegen::generateCmp(llvm::Value* lhs, llvm::Value* rhs,
+                                     Type* type,
+                                     llvm::CmpInst::Predicate pred) {
+    // v0.31.2.3 D-16 / D-16a — ERR-sticky tbb comparison.
+    //
+    // Decision: "ERR is unequal to everything including itself" — when
+    // either operand is the ERR sentinel the bool result is:
+    //   - true  for ICMP_NE
+    //   - false for ICMP_EQ, ICMP_SLT, ICMP_SLE, ICMP_SGT, ICMP_SGE
+    // Otherwise the requested ICmp is performed as-is.
+    //
+    // Branchless lowering (cmov/csel):
+    //   lIsErr  = (lhs == sentinel)
+    //   rIsErr  = (rhs == sentinel)
+    //   anyErr  = lIsErr | rIsErr
+    //   normal  = icmp <pred> lhs, rhs
+    //   errBool = (pred == ICMP_NE) ? 1 : 0
+    //   result  = select(anyErr, errBool, normal)
+
+    llvm::Value* sentinel = getErrSentinel(type);
+    llvm::Value* lIsErr = builder.CreateICmpEQ(lhs, sentinel, "tbb.cmp.l.err");
+    llvm::Value* rIsErr = builder.CreateICmpEQ(rhs, sentinel, "tbb.cmp.r.err");
+    llvm::Value* anyErr = builder.CreateOr(lIsErr, rIsErr, "tbb.cmp.anyerr");
+    llvm::Value* normal = builder.CreateICmp(pred, lhs, rhs, "tbb.cmp.normal");
+    llvm::Value* errBool = llvm::ConstantInt::get(
+        llvm::Type::getInt1Ty(context),
+        (pred == llvm::CmpInst::ICMP_NE) ? 1 : 0);
+    return builder.CreateSelect(anyErr, errBool, normal, "tbb.cmp.sticky");
+}
+
 } // namespace npk

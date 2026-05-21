@@ -10883,6 +10883,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                     
                     ARIA_DBG_STREAM << "[DEBUG] TOKEN_EQUAL_EQUAL: L type=" << (L->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
                     ARIA_DBG_STREAM << "[DEBUG] TOKEN_EQUAL_EQUAL: R type=" << (R->getType()->isStructTy() ? "STRUCT" : "NOT_STRUCT") << std::endl;
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_EQ);
+                    }
                     // ARIA-024: LBIM equality comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         ARIA_DBG_STREAM << "[DEBUG] LBIM equality comparison detected, numLimbs=" << numLimbs << std::endl;
@@ -11066,6 +11070,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_NE);
+                    }
                     // ARIA-024: LBIM inequality comparison for large integers
                     if (unsigned numLimbs = isLBIMType(L->getType())) {
                         llvm::Value* eq = generateLBIMEQ(L, R, numLimbs);
@@ -11236,6 +11244,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_SLT);
+                    }
                     // String comparison: a < b
                     if (isStringOp) {
                         llvm::Value* cmp = emitStringCompare();
@@ -11337,6 +11349,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_SLE);
+                    }
                     // String comparison: a <= b
                     if (isStringOp) {
                         llvm::Value* cmp = emitStringCompare();
@@ -11442,6 +11458,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_SGT);
+                    }
                     // String comparison: a > b
                     if (isStringOp) {
                         llvm::Value* cmp = emitStringCompare();
@@ -11544,6 +11564,10 @@ llvm::Value* npk::IRGenerator::codegenExpression(ASTNode* expr) {
                         }
                     }
                     
+                    // v0.31.2.3 D-16/16a: ERR-sticky tbb comparison
+                    if (isTBB && tbbType) {
+                        return tbb_codegen.generateCmp(L, R, tbbType, llvm::CmpInst::ICMP_SGE);
+                    }
                     // String comparison: a >= b
                     if (isStringOp) {
                         llvm::Value* cmp = emitStringCompare();
