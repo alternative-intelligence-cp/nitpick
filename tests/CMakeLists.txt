@@ -1740,3 +1740,24 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "phase2;dyn;borrow;d-12;v0.31.1.7"
     )
 endif()
+
+# v0.31.1.8 — Phase 2 D-12 sub-slice 2: impl-method $$m self lowering.
+# Trait/impl methods declaring `$$m Type:self` now lower the LLVM
+# parameter as ptr (mirroring top-level func: handling), and the
+# mangled method is registered in __func_borrow_param: so UFCS call
+# sites pass the caller's address rather than a loaded value.
+# Pre-fix, mutations on `self.field` operated on a stack copy and
+# never persisted, independent of dyn coercion.
+# See META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.8.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03118
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03118.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03118 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "phase2;dyn;borrow;trait;d-12;v0.31.1.8"
+    )
+endif()

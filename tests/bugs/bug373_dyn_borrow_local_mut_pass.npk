@@ -1,0 +1,37 @@
+// bug373 — v0.31.1.8 D-12 sub-slice 2: $$m dyn Trait local-borrow mutates source
+//
+// Combines v0.31.1.7 (Probe C $$m variant fat-ptr build in borrow-alias
+// VAR_DECL path) with v0.31.1.8 (impl-method $$m self ptr lowering).
+// Both fixes must compose for dyn-borrow mutation to reach the source:
+//
+//   1. `$$m dyn Bumpable:b = c;` constructs a fat ptr whose data slot
+//      is the *alias pointer* to c (not a copy).        [v0.31.1.7]
+//   2. `b.bump()` dispatches via Bumpable_vtable_Counter.bump,
+//      whose thunk forwards data ptr as ptr-self.       [pre-existing]
+//   3. The thunk forwards to `Counter_bump(ptr %self)`, which writes
+//      `self.n` through the pointer.                    [v0.31.1.8]
+//
+// Counter starts at n=5; `b.bump()` returns the new value; expected
+// `c.n` after the call = 6.
+
+struct:Counter = { int32:n; };
+
+trait:Bumpable = {
+    func:bump = int32($$m Bumpable:self);
+};
+
+impl:Bumpable:for:Counter = {
+    func:bump = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass self.n;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 5i32 };
+    $$m dyn Bumpable:b = c;
+    int32:r = b.bump();
+    exit c.n;
+};

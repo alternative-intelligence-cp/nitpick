@@ -1,0 +1,37 @@
+// bug372 — v0.31.1.8 D-12 sub-slice 2: impl-method $$m self mutation persists
+//
+// Before v0.31.1.8, trait/impl methods declaring `$$m Type:self` lowered
+// to a by-value LLVM signature `Method(%Type %self)` because the impl
+// branch in IRGenerator (ir_generator.cpp ~4145) ignored the parameter's
+// `isBorrowMut` flag and unconditionally called `mapTypeFromName`.
+// Mutations on `self.field` then operated on a stack copy and never
+// reached the caller.
+//
+// v0.31.1.8 mirrors the top-level `func:` lowering for impl methods:
+// `$$m` params become `ptr`, bound directly to the incoming arg, and
+// the mangled function is marked in `__func_borrow_param:` so UFCS call
+// sites pass the caller's address (codegen_expr_call.cpp ~7752).
+//
+// Counter starts at n=5; `c.bump()` increments through $$m self;
+// expected exit code = 6.
+
+struct:Counter = { int32:n; };
+
+trait:Bumpable = {
+    func:bump = int32($$m Bumpable:self);
+};
+
+impl:Bumpable:for:Counter = {
+    func:bump = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass self.n;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 5i32 };
+    int32:r = raw c.bump();
+    exit c.n;
+};

@@ -4143,11 +4143,26 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                 std::string mangledName = impl->typeName + "_" + funcDecl->funcName;
 
                 // Create function signature
+                // v0.31.1.8 (D-12 sub-slice 2): $$m self/params lower to ptr
+                // so mutations through trait/impl methods persist to the
+                // caller's storage, mirroring top-level `func:` handling at
+                // line ~3042. Pre-fix, every impl param lowered via
+                // mapTypeFromName regardless of borrow qualifier, so
+                // `$$m Counter:self` produced `Counter_method(%Counter %self)`
+                // (by-value) — mutations on `self.field` operated on the
+                // copy and never persisted. `$$i` impl-method params stay
+                // by-value (only reads, copy is fine for primitives + small
+                // structs); fixing the read-only case is not required for
+                // safety and would change ABI for existing methods.
                 std::vector<llvm::Type*> param_types;
                 for (const auto& param : funcDecl->parameters) {
                     ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
-                    std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
-                    param_types.push_back(mapTypeFromName(paramTypeStr));
+                    if (pnode->isBorrowMut) {
+                        param_types.push_back(builder.getPtrTy());
+                    } else {
+                        std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
+                        param_types.push_back(mapTypeFromName(paramTypeStr));
+                    }
                 }
 
                 std::string returnTypeStr = funcDecl->returnType ? funcDecl->returnType->toString() : "void";
@@ -4178,6 +4193,16 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     module.get()
                 );
 
+                // v0.31.1.8: Mark $$m params so UFCS/direct call sites
+                // (codegen_expr_call.cpp ~7752) pass the caller's address
+                // instead of a loaded value.
+                for (size_t pi = 0; pi < funcDecl->parameters.size(); ++pi) {
+                    auto* pnode = static_cast<ParameterNode*>(funcDecl->parameters[pi].get());
+                    if (pnode->isBorrowMut) {
+                        var_aria_types["__func_borrow_param:" + mangledName + ":" + std::to_string(pi)] = "mut";
+                    }
+                }
+
                 // Skip if no body
                 if (!funcDecl->body) {
                     continue;
@@ -4196,23 +4221,41 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                         ParameterNode* param = static_cast<ParameterNode*>(funcDecl->parameters[idx].get());
                         arg.setName(param->paramName);
 
-                        // Create alloca for parameter
                         std::string paramTypeStr = param->typeNode ? param->typeNode->toString() : "void";
-                        llvm::Type* paramType = mapTypeFromName(paramTypeStr);
-                        llvm::AllocaInst* alloca = builder.CreateAlloca(paramType, nullptr, param->paramName);
-                        builder.CreateStore(&arg, alloca);
-                        named_values[param->paramName] = alloca;
 
-                        // Track Aria type name for UFCS method resolution
-                        var_aria_types[param->paramName] = paramTypeStr;
+                        if (param->isBorrowMut) {
+                            // v0.31.1.8: $$m impl-method param is already a
+                            // pointer to caller storage; bind name directly
+                            // so member writes (`self.f = ...`) update the
+                            // original. Mirrors top-level path at ~line 3771.
+                            named_values[param->paramName] = &arg;
+                            var_aria_types["__borrow_param_mut:" + param->paramName] = "1";
+                            var_aria_types[param->paramName] = paramTypeStr;
+                            if (type_system) {
+                                Type* ariaParamType = type_system->getStructType(paramTypeStr);
+                                if (!ariaParamType) ariaParamType = type_system->getPrimitiveType(paramTypeStr);
+                                if (ariaParamType) {
+                                    value_types[&arg] = ariaParamType;
+                                }
+                            }
+                        } else {
+                            // Create alloca for parameter
+                            llvm::Type* paramType = mapTypeFromName(paramTypeStr);
+                            llvm::AllocaInst* alloca = builder.CreateAlloca(paramType, nullptr, param->paramName);
+                            builder.CreateStore(&arg, alloca);
+                            named_values[param->paramName] = alloca;
 
-                        // Register in value_types so member access (self.field)
-                        // can look up the struct layout
-                        if (type_system) {
-                            Type* ariaParamType = type_system->getStructType(paramTypeStr);
-                            if (!ariaParamType) ariaParamType = type_system->getPrimitiveType(paramTypeStr);
-                            if (ariaParamType) {
-                                value_types[alloca] = ariaParamType;
+                            // Track Aria type name for UFCS method resolution
+                            var_aria_types[param->paramName] = paramTypeStr;
+
+                            // Register in value_types so member access (self.field)
+                            // can look up the struct layout
+                            if (type_system) {
+                                Type* ariaParamType = type_system->getStructType(paramTypeStr);
+                                if (!ariaParamType) ariaParamType = type_system->getPrimitiveType(paramTypeStr);
+                                if (ariaParamType) {
+                                    value_types[alloca] = ariaParamType;
+                                }
                             }
                         }
                     }
