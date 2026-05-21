@@ -165,7 +165,7 @@ Token Parser::consumeName(const std::string& context) {
         case TokenType::TOKEN_IDENTIFIER:
         case TokenType::TOKEN_KW_RESULT:
         case TokenType::TOKEN_KW_FUNC:
-        case TokenType::TOKEN_KW_OBJ:
+        // TOKEN_KW_OBJ retired in v0.31.1.5 — 'obj' now lexes as TOKEN_IDENTIFIER
         case TokenType::TOKEN_KW_BUFFER:
         case TokenType::TOKEN_KW_PROCESS:
         case TokenType::TOKEN_KW_STACK:   // allocation qualifier — contextual
@@ -888,16 +888,8 @@ ASTNodePtr Parser::parsePrimary() {
         return std::make_shared<IdentifierExpr>(lexeme, line, col);
     }
 
-    // FIX: Allow 'obj' keyword to be used as identifier (common name in tests)
-    // The test case "obj.field" fails because 'obj' is parsed as TOKEN_KW_OBJ
-    if (token.type == TokenType::TOKEN_KW_OBJ) {
-        std::string lexeme = token.lexeme;  // Save before advance()
-        int line = token.line;
-        int col = token.column;
-        advance();
-        return std::make_shared<IdentifierExpr>(lexeme, line, col);
-    }
-    
+    // 'obj' escape hatch retired in v0.31.1.5 — 'obj' lexes as TOKEN_IDENTIFIER now.
+
     // Allow 'result' keyword to be used as identifier (common name in tests)
     if (token.type == TokenType::TOKEN_KW_RESULT) {
         std::string lexeme = token.lexeme;  // Save before advance()
@@ -2283,7 +2275,7 @@ bool Parser::isTypeKeyword(frontend::TokenType type) const {
         type == TokenType::TOKEN_KW_FIX256 ||
         // Other types
         type == TokenType::TOKEN_KW_BOOL || type == TokenType::TOKEN_KW_STRING ||
-        type == TokenType::TOKEN_KW_DYN || type == TokenType::TOKEN_KW_OBJ ||
+        type == TokenType::TOKEN_KW_DYN ||  /* TOKEN_KW_OBJ retired in v0.31.1.5 */
         type == TokenType::TOKEN_KW_ANY ||
         type == TokenType::TOKEN_KW_RESULT || type == TokenType::TOKEN_KW_ARRAY ||
         type == TokenType::TOKEN_KW_STRUCT || type == TokenType::TOKEN_KW_NIL ||
@@ -3181,7 +3173,7 @@ ASTNodePtr Parser::parseVarDecl() {
     if (nameToken.type == TokenType::TOKEN_IDENTIFIER ||
         nameToken.type == TokenType::TOKEN_KW_RESULT ||
         nameToken.type == TokenType::TOKEN_KW_FUNC ||
-        nameToken.type == TokenType::TOKEN_KW_OBJ ||
+        /* TOKEN_KW_OBJ retired in v0.31.1.5 — 'obj' is TOKEN_IDENTIFIER now */
         nameToken.type == TokenType::TOKEN_KW_BUFFER ||
         nameToken.type == TokenType::TOKEN_KW_STACK ||  // 'stack' is contextual (allocation qualifier)
         nameToken.type == TokenType::TOKEN_KW_GC) {     // 'gc'    is contextual (allocation qualifier)

@@ -232,7 +232,7 @@ static void init_type_kw_table() {
     type_kw_table[(int)TokenType::TOKEN_KW_BOOL] = 1;
     type_kw_table[(int)TokenType::TOKEN_KW_STRING] = 1;
     type_kw_table[(int)TokenType::TOKEN_KW_DYN] = 1;
-    type_kw_table[(int)TokenType::TOKEN_KW_OBJ] = 1;
+    // TOKEN_KW_OBJ retired in v0.31.1.5
     type_kw_table[(int)TokenType::TOKEN_KW_RESULT] = 1;
     type_kw_table[(int)TokenType::TOKEN_KW_ARRAY] = 1;
     type_kw_table[(int)TokenType::TOKEN_KW_STRUCT] = 1;
@@ -364,7 +364,7 @@ static void init_name_kw_table() {
     memset(name_kw_table, 0, sizeof(name_kw_table));
     name_kw_table[(int)TokenType::TOKEN_KW_RESULT] = 1;
     name_kw_table[(int)TokenType::TOKEN_KW_FUNC] = 1;
-    name_kw_table[(int)TokenType::TOKEN_KW_OBJ] = 1;
+    // TOKEN_KW_OBJ retired in v0.31.1.5 — 'obj' is now a plain identifier
     name_kw_table[(int)TokenType::TOKEN_KW_BUFFER] = 1;
     name_kw_table[(int)TokenType::TOKEN_KW_PROCESS] = 1;
     name_kw_table[(int)TokenType::TOKEN_KW_STACK] = 1;

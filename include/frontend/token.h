@@ -209,7 +209,7 @@ enum class TokenType {
     TOKEN_KW_BOOL,      // bool - boolean type
     TOKEN_KW_STRING,    // string - string type
     TOKEN_KW_DYN,       // dyn - dynamic type
-    TOKEN_KW_OBJ,       // obj - object type
+    // TOKEN_KW_OBJ retired in v0.31.1.5 — see META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.4.md
     TOKEN_KW_ANY,       // any - type-erased pointer (safe void*)
     TOKEN_KW_RESULT,    // result - result type with {err, val}
     TOKEN_KW_ARRAY,     // array - array type marker

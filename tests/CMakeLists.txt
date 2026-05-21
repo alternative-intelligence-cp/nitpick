@@ -1702,3 +1702,21 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "traits;phase2;dyn;d-9;v0.31.1.3"
     )
 endif()
+
+# v0.31.1.5 (D-10): `obj` keyword retired per AUDIT_v0.31.1.4 Option
+# A ratification. TOKEN_KW_OBJ removed from lexer/parser/ast/printer;
+# `obj` now lexes as TOKEN_IDENTIFIER. Fixtures verify `obj` is
+# accepted as a local variable name, function name, parameter name,
+# and struct field name. See META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.5.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03115
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03115.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03115 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "keyword-retirement;phase2;obj;d-10;v0.31.1.5"
+    )
+endif()

@@ -207,7 +207,7 @@ void npk_shadow_stack_pop_frame(void);
  * @param root_addr Address of the stack variable (e.g., &x)
  * 
  * Example Lowering:
- *   obj:x = ...;  // Aria source
+ *   gc int32:x = 42i32;  // Aria source (obj keyword retired in v0.31.1.5)
  *   void* x = npk_gc_alloc(...);  // LLVM IR
  *   npk_shadow_stack_add_root(&x);  // Root registration
  * 

@@ -172,7 +172,7 @@ static const std::unordered_map<std::string, TokenType> keywords = {
     {"bool", TokenType::TOKEN_KW_BOOL},
     {"string", TokenType::TOKEN_KW_STRING},
     {"dyn", TokenType::TOKEN_KW_DYN},
-    {"obj", TokenType::TOKEN_KW_OBJ},
+    // 'obj' retired in v0.31.1.5 — now lexes as TOKEN_IDENTIFIER
     {"any", TokenType::TOKEN_KW_ANY},
     {"Result", TokenType::TOKEN_KW_RESULT},
     {"array", TokenType::TOKEN_KW_ARRAY},

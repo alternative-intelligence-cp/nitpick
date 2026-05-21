@@ -1,0 +1,13 @@
+// v0.31.1.5 bug369 — `obj` usable as parameter name and function name
+// Expected: exit 7
+// Regression for AUDIT_v0.31.1.4 D-10 Option A
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:obj = int32(int32:obj) {
+    pass obj;
+};
+
+pub func:main = int32() {
+    int32:result = raw obj(7i32);
+    exit result;
+};

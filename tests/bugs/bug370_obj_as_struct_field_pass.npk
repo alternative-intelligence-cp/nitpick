@@ -1,0 +1,14 @@
+// v0.31.1.5 bug370 — `obj` as struct field name and accessor target
+// Expected: exit 99
+// Regression for AUDIT_v0.31.1.4 D-10 Option A
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+struct:Container = {
+    int32:obj;
+    int32:other;
+};
+
+pub func:main = int32() {
+    Container:c = { obj: 99i32, other: 1i32 };
+    exit c.obj;
+};

@@ -297,7 +297,7 @@ static void kw_init() {
     kw_insert("bool",   TokenType::TOKEN_KW_BOOL);
     kw_insert("string", TokenType::TOKEN_KW_STRING);
     kw_insert("dyn",    TokenType::TOKEN_KW_DYN);
-    kw_insert("obj",    TokenType::TOKEN_KW_OBJ);
+    // 'obj' retired in v0.31.1.5 — now lexes as TOKEN_IDENTIFIER
     kw_insert("Result", TokenType::TOKEN_KW_RESULT);
     kw_insert("array",  TokenType::TOKEN_KW_ARRAY);
     kw_insert("func",   TokenType::TOKEN_KW_FUNC);
