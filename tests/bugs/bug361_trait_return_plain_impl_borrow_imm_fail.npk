@@ -1,0 +1,14 @@
+// bug361 (v0.31.1.2 / D-7 / ARIA-042): trait declares plain `int32` return
+// but the impl method declares `$$i int32`. Must fail at sema with
+// ARIA-042.
+struct:Pair = { int32:a; int32:b; };
+trait:GetA = { func:get_a = int32($$i Pair:self); };
+impl:GetA:for:Pair = {
+    func:get_a = $$i int32($$i Pair:self) {
+        pass self.a;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    exit 0;
+};

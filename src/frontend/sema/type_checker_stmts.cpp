@@ -2934,6 +2934,27 @@ void TypeChecker::checkImplDecl(ImplDeclStmt* stmt) {
                         "', but trait '" + stmt->traitName + "' requires '" +
                         requiredMethod.returnType + "'", stmt);
             }
+
+            // v0.31.1.2 (D-7) / ARIA-042: trait method's return-borrow qualifier
+            // ($$i / $$m) must match the impl method's. Both directions are
+            // errors — trait promises a borrow the impl does not produce, or
+            // impl produces a borrow the trait did not promise. The two flags
+            // are mutually exclusive at parse time (the parser consumes at
+            // most one), so we check them independently.
+            if (requiredMethod.returnIsBorrowImm != funcDecl->returnIsBorrowImm ||
+                requiredMethod.returnIsBorrowMut != funcDecl->returnIsBorrowMut) {
+                std::string traitQual =
+                    requiredMethod.returnIsBorrowImm ? "$$i " :
+                    requiredMethod.returnIsBorrowMut ? "$$m " : "(none) ";
+                std::string implQual =
+                    funcDecl->returnIsBorrowImm ? "$$i " :
+                    funcDecl->returnIsBorrowMut ? "$$m " : "(none) ";
+                addError("ARIA-042: return-borrow qualifier mismatch on method '" +
+                        requiredMethod.name + "' in impl for '" + stmt->typeName +
+                        "': trait '" + stmt->traitName + "' declares return as " +
+                        traitQual + "but impl declares return as " + implQual,
+                        stmt);
+            }
             break;
         }
     }

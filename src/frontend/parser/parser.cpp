@@ -3998,6 +3998,20 @@ ASTNodePtr Parser::parseTraitDecl() {
         // Parse return type first (before parameters)
         std::string returnType = "void";
 
+        // v0.31.1.2 (D-7): optional $$i / $$m qualifier on the return type,
+        // immediately before the return type name. Mirrors the function
+        // declaration return-qualifier path (parser.cpp ~3276) and the
+        // existing param-borrow qualifier path further down this function.
+        bool returnIsBorrowImm = false;
+        bool returnIsBorrowMut = false;
+        if (check(TokenType::TOKEN_KW_BORROW_IMM)) {
+            returnIsBorrowImm = true;
+            advance();
+        } else if (check(TokenType::TOKEN_KW_BORROW_MUT)) {
+            returnIsBorrowMut = true;
+            advance();
+        }
+
         // Check if we have a return type before '('
         if (!check(TokenType::TOKEN_LEFT_PAREN)) {
             ASTNodePtr returnTypeNode = parseType();
@@ -4056,6 +4070,12 @@ ASTNodePtr Parser::parseTraitDecl() {
 
         // Create TraitMethod
         methods.emplace_back(methodName, std::move(params), returnType);
+        // v0.31.1.2 (D-7): carry the return-borrow qualifier flags into the
+        // TraitMethod. (Done as post-construction assignment to avoid
+        // expanding the constructor signature and to mirror the
+        // existing per-param `pnode.isBorrowImm = ...` style above.)
+        methods.back().returnIsBorrowImm = returnIsBorrowImm;
+        methods.back().returnIsBorrowMut = returnIsBorrowMut;
 
         // If we didn't advance at all, skip the current token to avoid infinite loop
         if (current == positionBefore && !isAtEnd()) {

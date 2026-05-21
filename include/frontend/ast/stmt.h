@@ -693,6 +693,15 @@ struct TraitMethod {
     std::vector<ParameterNode> parameters;
     std::string returnType;
     bool autoWrap = false;
+    // v0.31.1.2 (D-7): $$i / $$m qualifier on the trait method's return type.
+    // Mirrors the per-parameter `isBorrowImm` / `isBorrowMut` fields on
+    // `ParameterNode` and the `returnIsBorrowImm` / `returnIsBorrowMut`
+    // fields on `FuncDeclStmt`. Set by the parser when the trait method
+    // signature opens with `$$i` or `$$m` immediately before the return
+    // type. Mismatch against the corresponding impl method is reported by
+    // the type checker as ARIA-042.
+    bool returnIsBorrowImm = false;
+    bool returnIsBorrowMut = false;
 
     TraitMethod(const std::string& n, std::vector<ParameterNode> params, const std::string& ret)
         : name(n), parameters(std::move(params)), returnType(ret) {}

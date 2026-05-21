@@ -1,0 +1,18 @@
+// bug359 (v0.31.1.2 / D-7): trait method signature with `$$m T` return type
+// parses, matches the impl method's return-borrow qualifier, and the
+// resulting code compiles and runs.
+struct:Pair = { int32:a; int32:b; };
+trait:GetMutA = { func:get_a = $$m int32($$m Pair:self); };
+impl:GetMutA:for:Pair = {
+    func:get_a = $$m int32($$m Pair:self) {
+        pass self.a;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+func:main = int32() {
+    Pair:p;
+    p.a = 42i32;
+    p.b = 99i32;
+    int32:y = raw p.get_a();
+    exit y;
+};

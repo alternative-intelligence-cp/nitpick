@@ -1667,3 +1667,20 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "drop;phase2;traits;d-6;v0.31.1.1"
     )
 endif()
+
+# v0.31.1.2 (D-7): trait method `$$i`/`$$m` return signatures. Parser
+# accepts the qualifier before the return type, AST carries it on
+# `TraitMethod`, sema reports ARIA-042 on mismatch with the impl. See
+# META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.0.md (D-7 entry).
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03112
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03112.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03112 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "traits;phase2;return-borrow;d-7;v0.31.1.2"
+    )
+endif()
