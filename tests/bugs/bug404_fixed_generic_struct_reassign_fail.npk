@@ -1,0 +1,23 @@
+// bug404 — v0.31.2.6 D-19: same as bug403 but with T monomorphised to a
+// user-defined struct (Box). Confirms the fixed-reassign guard fires
+// independently of the concrete type's category at monomorphisation.
+//
+// Expected: compile-time error, no executable produced.
+struct:Box = {
+    int32:val;
+};
+
+func<T>:bad_reassign_struct = *T(*T:a, *T:b) {
+    fixed *T:slot = a;
+    slot = b;
+    pass slot;
+};
+
+func:main = int32() {
+    Box:b1 = Box { val: 10i32 };
+    Box:b2 = Box { val: 20i32 };
+    Box:r = raw bad_reassign_struct(b1, b2);
+    exit r.val;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

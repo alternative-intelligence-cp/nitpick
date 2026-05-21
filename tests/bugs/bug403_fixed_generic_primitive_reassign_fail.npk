@@ -1,0 +1,25 @@
+// bug403 — v0.31.2.6 D-19: reassigning a `fixed *T:slot` inside a
+// monomorphised generic function must be rejected (primitive T = int32).
+//
+// Before v0.31.2.6 the binding-property `isFixed` flag was dropped in
+// cloneAST when the monomorphiser cloned the generic body, and the
+// specialised body was never type-checked, so this reassignment slipped
+// through silently. The slice adds checkFixedReassignInSpecialized to
+// restore the guard "immutability is a binding property, not a type
+// property".
+//
+// Expected: compile-time error, no executable produced.
+func<T>:bad_reassign = *T(*T:a, *T:b) {
+    fixed *T:slot = a;
+    slot = b;
+    pass slot;
+};
+
+func:main = int32() {
+    int32:x = 1i32;
+    int32:y = 2i32;
+    int32:r = raw bad_reassign(x, y);
+    exit r;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

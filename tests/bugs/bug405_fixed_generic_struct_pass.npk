@@ -1,0 +1,19 @@
+// bug405 — v0.31.2.6 D-19: positive struct path. A `fixed *T:slot` whose
+// initial value is a struct must be readable without reassignment when T
+// is monomorphised to the struct type.
+struct:Box = {
+    int32:val;
+};
+
+func<T>:store_and_read_struct = *T(*T:value) {
+    fixed *T:slot = value;
+    pass slot;
+};
+
+func:main = int32() {
+    Box:b = Box { val: 7i32 };
+    Box:r = raw store_and_read_struct(b);
+    exit r.val;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

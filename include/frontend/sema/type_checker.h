@@ -1015,7 +1015,18 @@ public:
      * other generic functions that also need specialization (transitive monomorphization).
      */
     void analyzeSpecializedBody(FuncDeclStmt* specDecl, const TypeSubstitution& outerSub);
-    
+
+    /**
+     * v0.31.2.6 (D-19): walk a monomorphised body and emit diagnostics for
+     * any reassignment of a `fixed`-declared binding. Generic bodies are not
+     * run through the main type-check pass (only nested generic calls are
+     * resolved via analyzeSpecializedBody), so the standard fixed-reassign
+     * check in checkAssignment never fires for generic functions. This pass
+     * restores that guard per the rule "immutability is a binding property,
+     * not a type property".
+     */
+    void checkFixedReassignInSpecialized(FuncDeclStmt* specDecl);
+
     // ========================================================================
     // Module Symbol Importing (Phase 3 from research_module_loading_system)
     // ========================================================================

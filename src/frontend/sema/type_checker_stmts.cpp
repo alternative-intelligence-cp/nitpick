@@ -4883,6 +4883,127 @@ void TypeChecker::analyzeSpecializedBody(FuncDeclStmt* specDecl, const TypeSubst
     };
 
     walkNode(specDecl->body.get());
+
+    // v0.31.2.6 (D-19): enforce fixed-reassign in the monomorphised body.
+    checkFixedReassignInSpecialized(specDecl);
+}
+
+// v0.31.2.6 (D-19): scan a specialised generic body for any reassignment of
+// a `fixed` binding. Generic bodies skip the main type-check pass, so the
+// check that normally lives in checkAssignment never runs here.
+void TypeChecker::checkFixedReassignInSpecialized(FuncDeclStmt* specDecl) {
+    if (!specDecl || !specDecl->body) return;
+
+    std::unordered_set<std::string> fixedNames;
+    // Parameters are bindings too — none are `fixed` today (the parser does
+    // not accept `fixed` on a parameter), so we only seed from VAR_DECLs.
+
+    std::function<void(ASTNode*)> walk = [&](ASTNode* node) {
+        if (!node) return;
+        switch (node->type) {
+            case ASTNode::NodeType::VAR_DECL: {
+                VarDeclStmt* vd = static_cast<VarDeclStmt*>(node);
+                if (vd->isFixed && !vd->varName.empty()) {
+                    fixedNames.insert(vd->varName);
+                }
+                if (vd->initializer) walk(vd->initializer.get());
+                break;
+            }
+            case ASTNode::NodeType::ASSIGNMENT: {
+                // Reserved for AssignmentExpr — parser currently emits BINARY_OP
+                // with an assignment-op token, handled below.
+                AssignmentExpr* ae = static_cast<AssignmentExpr*>(node);
+                if (ae->target && ae->target->type == ASTNode::NodeType::IDENTIFIER) {
+                    IdentifierExpr* id = static_cast<IdentifierExpr*>(ae->target.get());
+                    if (fixedNames.count(id->name) > 0) {
+                        addError("Cannot reassign fixed variable '" + id->name +
+                                 "' - fixed variables are immutable", ae);
+                    }
+                }
+                if (ae->target) walk(ae->target.get());
+                if (ae->value) walk(ae->value.get());
+                break;
+            }
+            case ASTNode::NodeType::BINARY_OP: {
+                BinaryExpr* be = static_cast<BinaryExpr*>(node);
+                if (be->left && be->left->type == ASTNode::NodeType::IDENTIFIER) {
+                    TokenType ot = be->op.type;
+                    bool isAssign = (ot == TokenType::TOKEN_EQUAL ||
+                                     ot == TokenType::TOKEN_PLUS_EQUAL ||
+                                     ot == TokenType::TOKEN_MINUS_EQUAL ||
+                                     ot == TokenType::TOKEN_STAR_EQUAL ||
+                                     ot == TokenType::TOKEN_SLASH_EQUAL ||
+                                     ot == TokenType::TOKEN_PERCENT_EQUAL);
+                    if (isAssign) {
+                        IdentifierExpr* id = static_cast<IdentifierExpr*>(be->left.get());
+                        if (fixedNames.count(id->name) > 0) {
+                            addError("Cannot reassign fixed variable '" + id->name +
+                                     "' - fixed variables are immutable", be);
+                        }
+                    }
+                }
+                if (be->left) walk(be->left.get());
+                if (be->right) walk(be->right.get());
+                break;
+            }
+            case ASTNode::NodeType::BLOCK: {
+                BlockStmt* b = static_cast<BlockStmt*>(node);
+                for (const auto& s : b->statements) walk(s.get());
+                break;
+            }
+            case ASTNode::NodeType::EXPRESSION_STMT: {
+                ExpressionStmt* es = static_cast<ExpressionStmt*>(node);
+                if (es->expression) walk(es->expression.get());
+                break;
+            }
+            case ASTNode::NodeType::IF: {
+                IfStmt* ifs = static_cast<IfStmt*>(node);
+                if (ifs->condition) walk(ifs->condition.get());
+                if (ifs->thenBranch) walk(ifs->thenBranch.get());
+                if (ifs->elseBranch) walk(ifs->elseBranch.get());
+                break;
+            }
+            case ASTNode::NodeType::WHILE: {
+                WhileStmt* ws = static_cast<WhileStmt*>(node);
+                if (ws->condition) walk(ws->condition.get());
+                if (ws->body) walk(ws->body.get());
+                break;
+            }
+            case ASTNode::NodeType::FOR: {
+                ForStmt* fs = static_cast<ForStmt*>(node);
+                if (fs->initializer) walk(fs->initializer.get());
+                if (fs->condition) walk(fs->condition.get());
+                if (fs->update) walk(fs->update.get());
+                if (fs->body) walk(fs->body.get());
+                break;
+            }
+            case ASTNode::NodeType::RETURN: {
+                ReturnStmt* rs = static_cast<ReturnStmt*>(node);
+                if (rs->value) walk(rs->value.get());
+                break;
+            }
+            case ASTNode::NodeType::PASS: {
+                PassStmt* ps = static_cast<PassStmt*>(node);
+                if (ps->value) walk(ps->value.get());
+                break;
+            }
+            case ASTNode::NodeType::UNARY_OP: {
+                UnaryExpr* ue = static_cast<UnaryExpr*>(node);
+                if (ue->operand) walk(ue->operand.get());
+                break;
+            }
+            case ASTNode::NodeType::CALL: {
+                CallExpr* call = static_cast<CallExpr*>(node);
+                if (call->callee) walk(call->callee.get());
+                for (const auto& arg : call->arguments) walk(arg.get());
+                break;
+            }
+            default:
+                break;
+        }
+    };
+
+    walk(specDecl->body.get());
 }
 
 void TypeChecker::checkExternStmt(ExternStmt* stmt) {

@@ -1,0 +1,19 @@
+// bug402 — v0.31.2.6 D-19: `fixed T:x` is legal for a generic T.
+//
+// Positive path: a generic function whose body declares a `fixed *T:slot`
+// and reads it must compile and run normally when T is monomorphised to
+// a primitive (int32 here). The monomorphiser must propagate the
+// `isFixed` binding marker through the AST clone.
+func<T>:store_and_read = *T(*T:value) {
+    fixed *T:slot = value;
+    pass slot;
+};
+
+func:main = int32() {
+    int32:a = 42i32;
+    int32:r = raw store_and_read(a);
+    if (r != 42i32) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 99i32; };

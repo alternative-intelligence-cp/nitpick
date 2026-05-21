@@ -593,6 +593,14 @@ ASTNodePtr Monomorphizer::cloneAST(ASTNode* node) {
             cloned->isWild = var->isWild;
             cloned->isWildx = var->isWildx;
             cloned->isConst = var->isConst;
+            // v0.31.2.6 (D-19): preserve binding-property flags through
+            // monomorphisation. Without these, `fixed T:x = ...;` inside a
+            // generic body silently lost its immutability marker at every
+            // instantiation and reassignment was wrongly accepted. Same
+            // omission would have masked $$i/$$m borrow markers.
+            cloned->isFixed = var->isFixed;
+            cloned->isBorrowImm = var->isBorrowImm;
+            cloned->isBorrowMut = var->isBorrowMut;
             cloned->isStack = var->isStack;
             cloned->isGC = var->isGC;
             // Clone typeNode if it exists, otherwise create from typeName for consistency
