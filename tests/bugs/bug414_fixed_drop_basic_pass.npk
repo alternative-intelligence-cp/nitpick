@@ -1,0 +1,26 @@
+// bug414 — v0.31.2.8 D-22 (verification)
+// A `fixed` binding of a Drop-implementing type STILL triggers the
+// auto-generated drop call at scope end. `fixed` only marks the
+// binding as non-reassignable; it does not opt out of destruction.
+//
+// Verified by harness:
+//   1. Program compiles, links, runs to `exit 0`.
+//   2. `--emit-llvm` output contains a call to `@Counter_drop` for
+//      the fixed binding.
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7i32; };
+
+func:main = int32() {
+    {
+        fixed Counter:c = Counter{ n: 1i32 };
+    }
+    exit 0i32;
+};

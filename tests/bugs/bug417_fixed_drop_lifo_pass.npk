@@ -1,0 +1,24 @@
+// bug417 — v0.31.2.8 D-22 (verification)
+// Two `fixed` bindings of Drop-implementing types in the same scope
+// are dropped in LIFO order at scope exit. `fixed` does not alter the
+// drop order — only the binding's reassignability.
+//
+// Verified by harness: emitted IR contains TWO calls to `@Counter_drop`.
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7i32; };
+
+func:main = int32() {
+    {
+        fixed Counter:a = Counter{ n: 1i32 };
+        fixed Counter:b = Counter{ n: 2i32 };
+    }
+    exit 0i32;
+};

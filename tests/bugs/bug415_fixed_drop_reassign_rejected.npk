@@ -1,0 +1,21 @@
+// bug415 — v0.31.2.8 D-22 (verification)
+// `fixed` binding of a Drop-implementing type is non-reassignable.
+// Whole-binding reassignment must be rejected by sema with the
+// existing "Cannot reassign fixed variable" diagnostic. (Drop
+// behaviour is unchanged — see bug414.)
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7i32; };
+
+func:main = int32() {
+    fixed Counter:c = Counter{ n: 1i32 };
+    c = Counter{ n: 2i32 };
+    exit 0i32;
+};

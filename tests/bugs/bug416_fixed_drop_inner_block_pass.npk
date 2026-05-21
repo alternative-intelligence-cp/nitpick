@@ -1,0 +1,24 @@
+// bug416 — v0.31.2.8 D-22 (verification)
+// `fixed` binding declared inside an inner `{ ... }` block is dropped
+// at the inner block exit, not at function exit. Outer block continues
+// normally afterwards.
+
+struct:Counter = { int32:n; };
+
+impl:Drop:for:Counter = {
+    func:drop = NIL($$m Counter:self) {
+        pass;
+    };
+};
+
+func:failsafe = int32(tbb32:err) { exit 7i32; };
+
+func:main = int32() {
+    int32:tally = 0i32;
+    {
+        fixed Counter:c = Counter{ n: 1i32 };
+        tally = c.n;
+    }
+    if (tally == 1i32) { exit 0i32; }
+    exit 1i32;
+};
