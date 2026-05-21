@@ -5208,6 +5208,15 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
         
         // Check argument types
         const auto& paramTypes = funcType->getParamTypes();
+        // v0.31.2.4 (D-17 / ARIA-045): the `ok()` builtin is the explicit
+        // taint-stripper and is the *only* callee allowed to receive a
+        // may-be-unknown argument without diagnosis. Determine here whether
+        // this call is `ok(...)`.
+        bool calleeIsOk = false;
+        if (expr->callee && expr->callee->type == ASTNode::NodeType::IDENTIFIER) {
+            auto* cid = static_cast<IdentifierExpr*>(expr->callee.get());
+            calleeIsOk = (cid->name == "ok");
+        }
         for (size_t i = 0; i < expectedCount && i < actualCount; ++i) {
             // v0.24.5 (COMPTIME-010): comptime `type:T` parameters accept any
             // type-name expression — skip the assignability check entirely.
@@ -5219,6 +5228,20 @@ Type* TypeChecker::inferCallExpr(CallExpr* expr) {
                     (void)inferType(expr->arguments[i].get());
                     continue;
                 }
+            }
+            // v0.31.2.4 (D-17 / ARIA-045): forwarding a may-be-unknown binding
+            // to any callee other than `ok(...)` is rejected. The runtime
+            // failsafe path still catches dynamic unknown values; ARIA-045 is
+            // the static, explicit-literal layer.
+            if (!calleeIsOk && exprCarriesUnknownTaint(expr->arguments[i].get())) {
+                auto* aid = static_cast<IdentifierExpr*>(expr->arguments[i].get());
+                addError(
+                    "ARIA-045: '" + aid->name + "' may be unknown — wrap in 'ok(" +
+                    aid->name + ")' before passing as argument " +
+                    std::to_string(i + 1) + ".",
+                    expr->arguments[i].get());
+                // Continue checking other args to surface every offender in
+                // one compile pass.
             }
             Type* argType = inferType(expr->arguments[i].get());
             if (argType->getKind() == TypeKind::ERROR) {

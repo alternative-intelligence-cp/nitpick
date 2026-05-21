@@ -518,40 +518,25 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
     // This keeps core simple, debuggable, and forces explicit formatting choices.
     
     // ====================================================================
-    // BUILTIN FUNCTION: ok() - Unknown State Detection (Phase 5.2 + Layer 1 Safety)
+    // BUILTIN FUNCTION: ok() — Unknown-taint acknowledgment (D-17 / D-17a)
     // ====================================================================
-    // ok(value) -> int32 - Check if value is Unknown
-    // Purpose: Detect Unknown sentinel values from divide-by-zero, overflow, etc.
-    // Returns: 1 if value is valid, 0 if value is Unknown
-    // Unknown sentinel = signed maximum value (INT_MAX for given bit width)
-    
+    // v0.31.2.4 (D-17 / D-17a): `ok(value)` is a pure pass-through that
+    // strips the *static* `mayBeUnknown` taint at the use site. The runtime
+    // failsafe path (failsafe(tbb32:err) for ERR, the existing optional-NIL
+    // path for unknown) covers the dynamic case. Before v0.31.2.4 the
+    // codegen returned a synthetic "1/0 validity bit" which did not match the
+    // type-checker contract (`ok(x) : T`); that broke the natural use form
+    // `r = call(ok(x))` for non-int32 T. The pass-through form is the
+    // canonical D-17 lowering.
     if (callee_ident->name == "ok") {
         if (expr->arguments.size() != 1) {
             throw std::runtime_error("ok() requires exactly one argument");
         }
-
-        // ok(value) -> int32: returns 1 if value is valid, 0 if value is Unknown
-        // Unknown sentinel = signed maximum value (INT_MAX for given bit width)
         llvm::Value* arg = codegenExpressionNode(expr->arguments[0].get(), this);
         if (!arg) {
             throw std::runtime_error("Failed to generate code for ok() argument");
         }
-        
-        if (arg->getType()->isIntegerTy()) {
-            llvm::IntegerType* intType = llvm::cast<llvm::IntegerType>(arg->getType());
-            unsigned width = intType->getBitWidth();
-            llvm::Value* sentinel = llvm::ConstantInt::get(context, llvm::APInt::getSignedMaxValue(width));
-            // Compare: is the value the unknown sentinel?
-            llvm::Value* isUnknown = builder.CreateICmpEQ(arg, sentinel, "ok.isunk");
-            // Return 0 if unknown, 1 if valid (as i32)
-            llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
-            llvm::Value* one = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1);
-            return builder.CreateSelect(isUnknown, zero, one, "ok.result");
-        }
-        
-        // Non-integer types: always valid
-        ARIA_DBG_STREAM << "[DEBUG] ok() on non-integer type - always valid" << std::endl;
-        return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1);
+        return arg;
     }
     
     // ====================================================================

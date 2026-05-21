@@ -550,6 +550,20 @@ private:
      * Check if a type is a standard integer type (int8, int16, int32, int64, uint8, uint16, uint32, uint64)
      */
     bool isStandardIntType(Type* type) const;
+
+    // ========================================================================
+    // v0.31.2.4 (D-17 / D-17a / ARIA-045): unknown-taint propagation helpers
+    // ========================================================================
+    /// Returns true if `expr` is the bare `unknown` keyword literal.
+    bool exprIsUnknownLiteral(ASTNode* expr) const;
+    /// Returns true if `expr` is a direct `ok(...)` builtin call (taint stripper).
+    bool exprIsOkCall(ASTNode* expr) const;
+    /// Returns true if `expr` reads a symbol that is currently `mayBeUnknown`.
+    /// `ok(...)` wrappers and the literal `unknown` itself are NOT considered tainted reads.
+    bool exprCarriesUnknownTaint(ASTNode* expr) const;
+    /// Compute the taint that should be assigned to an LHS binding given `init` as its
+    /// initializer / rhs. Returns true if the LHS should be marked `mayBeUnknown`.
+    bool initializerTaintsBinding(ASTNode* init) const;
     
     /**
      * Check if an int64_t literal value fits in the target integer type (silent check, no errors)

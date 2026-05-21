@@ -1,0 +1,12 @@
+// v0.31.2.4 (D-17a): until the function-level "?unknown" return-flow
+// marker exists, only *explicit* `unknown` literals taint a binding.
+// A binding initialised from an ordinary expression (even a function call)
+// is not tainted — passing it should NOT trigger ARIA-045.
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:takes_opt = int32(int32?:x) { pass 0; };
+func:make_value = int32?() { pass 42i32; };
+func:main = int32() {
+    int32?:v = raw make_value();   // no explicit unknown → no taint
+    int32:r = raw takes_opt(v);    // OK — D-17a opt-in marker not yet wired
+    exit r;
+};

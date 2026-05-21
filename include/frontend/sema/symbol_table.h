@@ -52,6 +52,12 @@ struct Symbol {
     bool isBorrowImm;           // Immutable borrow ($$i qualifier)
     bool isBorrowMut;           // Mutable borrow ($$m qualifier)
     bool isInitialized;         // Has been initialized
+    // v0.31.2.4 (D-17 / D-17a): per-symbol "may be unknown" taint flag.
+    // Set when initializer is the `unknown` literal (or propagated from a
+    // tainted source). Cleared when reassigned from a non-tainted source or
+    // explicitly through ok(...). Reading a tainted symbol as a call arg or
+    // pass-statement value without ok(...) emits ARIA-045.
+    bool mayBeUnknown = false;
     
     // CTFE Integration (Task 8: Symbol Table Integration)
     // These fields support compile-time evaluation:

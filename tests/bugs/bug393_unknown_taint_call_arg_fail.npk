@@ -1,0 +1,9 @@
+// v0.31.2.4 (D-17 / ARIA-045): forwarding a may-be-unknown binding to a
+// call without ok(...) is a compile-time error.
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:takes_opt = int32(int32?:x) { pass 0; };
+func:main = int32() {
+    int32?:u = unknown;
+    int32:r = raw takes_opt(u);  // ARIA-045 expected
+    exit r;
+};

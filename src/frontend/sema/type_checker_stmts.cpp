@@ -1719,6 +1719,16 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             sym->setComptimeValue(evaluatedConstValue);
         }
     }
+
+    // v0.31.2.4 (D-17 / D-17a): seed unknown-taint on the new binding.
+    // Explicit `unknown` initializer or initializer that reads a tainted
+    // identifier (without an `ok(...)` wrapper) taints the new symbol.
+    if (stmt->initializer) {
+        Symbol* sym = symbolTable->resolveSymbol(stmt->varName);
+        if (sym && initializerTaintsBinding(stmt->initializer.get())) {
+            sym->mayBeUnknown = true;
+        }
+    }
     
     // Phase 1.5: Track wild Result variables
     // Wild Results can modify .is_error field (allows error state corruption)
@@ -3351,6 +3361,17 @@ void TypeChecker::checkAssignment(BinaryExpr* expr) {
                     "' to variable of type '" + leftType->toString() + "'", expr);
         }
     }
+
+    // v0.31.2.4 (D-17 / D-17a): propagate / clear unknown-taint on identifier LHS.
+    // RHS is the canonical source for the LHS binding's new value, so its
+    // taint completely replaces the prior taint state.
+    if (expr->left->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(expr->left.get());
+        Symbol* sym = symbolTable->lookupSymbol(ident->name);
+        if (sym) {
+            sym->mayBeUnknown = initializerTaintsBinding(expr->right.get());
+        }
+    }
 }
 
 // ============================================================================
@@ -3460,8 +3481,27 @@ void TypeChecker::checkPassStmt(PassStmt* stmt) {
     if (valueType->getKind() == TypeKind::ERROR) {
         return;
     }
-    
+
+    // v0.31.2.4 (D-17 / ARIA-045): a tainted identifier returned from this
+    // function without `ok(...)` wrapping is rejected. The literal `unknown`
+    // itself is *not* flagged here — the existing type rule already rejects
+    // returning `unknown` to a non-optional return slot, and explicit
+    // `unknown` to an optional return slot is intentional. ARIA-045 is the
+    // *propagation* diagnostic: "you forwarded a may-be-unknown binding".
+    if (exprCarriesUnknownTaint(stmt->value.get())) {
+        auto* ident = static_cast<IdentifierExpr*>(stmt->value.get());
+        addError(
+            "ARIA-045: '" + ident->name + "' may be unknown — wrap in 'ok(" +
+            ident->name + ")' before returning, or check with 'is unknown' first.",
+            stmt);
+        return;
+    }
+
     // pass(value) builds Result{val: value, err: NULL}
+    // Validate that value type matches the function's declared value type
+    // func:foo = int32(...) { pass(42i32); } - int32 must match int32
+    // func:bar = NIL(...) { pass(NIL); } - NIL must match NIL
+
     // Validate that value type matches the function's declared value type
     // func:foo = int32(...) { pass(42i32); } - int32 must match int32
     // func:bar = NIL(...) { pass(NIL); } - NIL must match NIL
@@ -4159,6 +4199,50 @@ bool TypeChecker::isStandardIntType(Type* type) const {
            name == "int8" || name == "int16" || name == "int32" || name == "int64" ||
            name == "uint1" || name == "uint2" || name == "uint4" ||
            name == "uint8" || name == "uint16" || name == "uint32" || name == "uint64";
+}
+
+// ============================================================================
+// v0.31.2.4 (D-17 / D-17a / ARIA-045): unknown-taint helpers
+// ============================================================================
+bool TypeChecker::exprIsUnknownLiteral(ASTNode* expr) const {
+    if (!expr || expr->type != ASTNode::NodeType::LITERAL) return false;
+    auto* lit = static_cast<LiteralExpr*>(expr);
+    return lit->explicit_type == "UNKNOWN";
+}
+
+bool TypeChecker::exprIsOkCall(ASTNode* expr) const {
+    if (!expr || expr->type != ASTNode::NodeType::CALL) return false;
+    auto* call = static_cast<CallExpr*>(expr);
+    if (!call->callee || call->callee->type != ASTNode::NodeType::IDENTIFIER) return false;
+    auto* idExpr = static_cast<IdentifierExpr*>(call->callee.get());
+    return idExpr->name == "ok";
+}
+
+bool TypeChecker::exprCarriesUnknownTaint(ASTNode* expr) const {
+    if (!expr) return false;
+    // ok(...) strips taint at this use site, even if its argument is tainted.
+    if (exprIsOkCall(expr)) return false;
+    // The literal `unknown` itself is the *source* of taint, not a tainted
+    // read — passing the literal directly is rejected by ordinary type-checking
+    // already (its inferred type is `unknown`), so do not also flag ARIA-045.
+    if (exprIsUnknownLiteral(expr)) return false;
+    if (expr->type == ASTNode::NodeType::IDENTIFIER) {
+        auto* ident = static_cast<IdentifierExpr*>(expr);
+        Symbol* sym = symbolTable->lookupSymbol(ident->name);
+        return sym && sym->mayBeUnknown;
+    }
+    return false;
+}
+
+bool TypeChecker::initializerTaintsBinding(ASTNode* init) const {
+    if (!init) return false;
+    // Explicit `unknown` literal → taint.
+    if (exprIsUnknownLiteral(init)) return true;
+    // ok(...) explicitly strips taint regardless of inner expression.
+    if (exprIsOkCall(init)) return false;
+    // Reading a tainted symbol → propagate taint.
+    if (exprCarriesUnknownTaint(init)) return true;
+    return false;
 }
 
 bool TypeChecker::literalFitsInType(int64_t value, Type* type) const {

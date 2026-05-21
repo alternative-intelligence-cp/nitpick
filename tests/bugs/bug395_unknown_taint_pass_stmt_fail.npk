@@ -1,0 +1,11 @@
+// v0.31.2.4 (D-17 / ARIA-045): returning (pass) a may-be-unknown binding
+// without ok(...) is a compile-time error.
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:produce = int32?() {
+    int32?:u = unknown;
+    pass u;  // ARIA-045 expected
+};
+func:main = int32() {
+    int32?:r = raw produce();
+    exit 0i32;
+};
