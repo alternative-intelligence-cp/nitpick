@@ -1,0 +1,18 @@
+// bug408 (v0.31.2.7, D-21): proves the compiler treats a NIL-returning
+// Aria function's return as `Result<NIL>` — silently dropping the call
+// must error with "Unused result value" exactly like a Result<int32>
+// would. If the function were lowered as raw `void`, this code would
+// compile cleanly.
+
+func:bad = NIL() {
+    fail(7i32);
+};
+
+func:main = int32() {
+    bad();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99i32;
+};

@@ -1,0 +1,19 @@
+// bug407 (v0.31.2.7, D-21): a `NIL()` function with `fail(code);`
+// returns `Result<NIL>` with `is_error == true`. Caller observes
+// the error via the stored result and exits cleanly (no failsafe).
+
+func:bad = NIL() {
+    fail(7i32);
+};
+
+func:main = int32() {
+    Result<NIL>:r = bad();
+    if (r.is_error) {
+        exit 0i32;
+    }
+    exit 22i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99i32;
+};

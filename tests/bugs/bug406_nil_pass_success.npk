@@ -1,0 +1,19 @@
+// bug406 (v0.31.2.7, D-21): a `NIL()` function with `pass NIL;`
+// must wrap to `Result<NIL>` at sema *and* codegen. Caller stores
+// the result and observes `.is_error == false`.
+
+func:noop = NIL() {
+    pass NIL;
+};
+
+func:main = int32() {
+    Result<NIL>:r = noop();
+    if (r.is_error) {
+        exit 11i32;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99i32;
+};

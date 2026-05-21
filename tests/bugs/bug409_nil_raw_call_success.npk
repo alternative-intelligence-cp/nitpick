@@ -1,0 +1,16 @@
+// bug409 (v0.31.2.7, D-21): `raw noop()` on a successful NIL
+// function unwraps Result<NIL> and discards the value. Program
+// must reach `exit 0i32` without invoking the failsafe.
+
+func:noop = NIL() {
+    pass NIL;
+};
+
+func:main = int32() {
+    raw noop();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 99i32;
+};
