@@ -1,0 +1,29 @@
+// v0.31.1.3 (D-9 verification): dyn Trait already supports struct
+// implementors via the function-argument coercion path. This regression
+// fixture pins the surface — see AUDIT_v0.31.1.3.md.
+struct:Box = {
+    int32:w;
+    int32:h;
+};
+trait:Area = {
+    func:area = int32(int32:self);
+};
+impl:Area:for:Box = {
+    func:area = int32(Box:self) {
+        pass self.w * self.h;
+    };
+};
+func:get_area = int32(dyn Area:item) {
+    pass item.area();
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+pub func:main = int32() {
+    Box:b;
+    b.w = 3i32;
+    b.h = 4i32;
+    int32:a = raw get_area(b);
+    if (a == 12i32) {
+        exit 64;
+    }
+    exit 1;
+};

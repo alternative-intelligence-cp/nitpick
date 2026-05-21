@@ -1583,9 +1583,44 @@ void TypeChecker::checkVarDecl(VarDeclStmt* stmt) {
             }
             // P1.5: Allow automatic void* ↔ wild T-> conversions at FFI boundaries
             bool ffiPointerConversion = canConvertFFIPointer(initType, declaredType);
-            
-            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) && 
-                !optionalWrapping && !ffiPointerConversion) {
+
+            // v0.31.1.3 (D-9 local-var dyn coercion): mirror the call-site
+            // concrete→dyn Trait coercion in `type_checker_call.cpp`. A local
+            // declared as `dyn Trait:x = expr;` is well-formed when `expr`'s
+            // concrete type has an `impl:Trait:for:<ConcreteType>` block in
+            // scope; codegen then builds the fat pointer {data, vtable}.
+            // Without this, every local-binding form was rejected even though
+            // the equivalent function-argument form succeeded.
+            bool dynTraitCoercion = false;
+            if (declaredType->getKind() == TypeKind::DYN_TRAIT) {
+                DynTraitType* dynType = static_cast<DynTraitType*>(declaredType);
+                Symbol* traitSym = symbolTable->lookupSymbol(dynType->getTraitName());
+                if (traitSym && traitSym->kind == SymbolKind::TRAIT) {
+                    std::string concreteTypeName = initType->toString();
+                    for (const auto* implDecl : traitSym->getImplDecls()) {
+                        if (implDecl->typeName == concreteTypeName) {
+                            dynTraitCoercion = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!initType->isAssignableTo(declaredType) && !canCoerce(initType, declaredType) &&
+                !optionalWrapping && !ffiPointerConversion && !dynTraitCoercion) {
+                // v0.31.1.3 (ARIA-043): when the target IS dyn Trait but the
+                // concrete type lacks an `impl` for that trait, emit a focused
+                // diagnostic instead of the generic "cannot initialize" message.
+                if (declaredType->getKind() == TypeKind::DYN_TRAIT) {
+                    DynTraitType* dynType = static_cast<DynTraitType*>(declaredType);
+                    std::string msg = "ARIA-043: type '" + initType->toString() +
+                            "' does not implement trait '" + dynType->getTraitName() +
+                            "' — cannot coerce to '" + declaredType->toString() +
+                            "'.\n  hint: add `impl:" + dynType->getTraitName() +
+                            ":for:" + initType->toString() + " = { ... };`";
+                    addError(msg, stmt);
+                    return;
+                }
                 std::string msg = "Cannot initialize variable '" + stmt->varName + 
                         "' of type '" + declaredType->toString() + 
                         "' with value of type '" + initType->toString() + "'";

@@ -1684,3 +1684,21 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "traits;phase2;return-borrow;d-7;v0.31.1.2"
     )
 endif()
+
+# v0.31.1.3 (D-9): `dyn Trait` surface verification + local-var
+# coercion. Vtable/thunk/fat-pointer codegen already shipped in
+# v0.2.36; this slice pins the existing surface and extends the
+# coercion to the local-binding form. Mismatches emit ARIA-043. See
+# META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.3.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03113
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03113.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03113 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "traits;phase2;dyn;d-9;v0.31.1.3"
+    )
+endif()

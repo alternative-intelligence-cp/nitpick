@@ -5404,6 +5404,81 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                         
                         builder.CreateStore(optionalValue, alloca);
                     } else {
+                        // ============================================================
+                        // v0.31.1.3 (D-9 local-var dyn coercion):
+                        // `dyn Trait:x = concrete;` — build the {data, vtable} fat
+                        // pointer locally, mirroring the call-site coercion in
+                        // codegen_expr_call.cpp (v0.2.36). Without this the
+                        // assignment landed an int/struct value into a
+                        // %struct.DynTraitObj slot and the later vtable dispatch
+                        // read garbage.
+                        // ============================================================
+                        bool dynLocalCoercionDone = false;
+                        if (actualTypeName.size() > 4 &&
+                            actualTypeName.substr(0, 4) == "dyn " &&
+                            varType->isStructTy() &&
+                            initVal->getType() != varType) {
+
+                            std::string traitName = actualTypeName.substr(4);
+
+                            // Determine concrete Aria type name from the
+                            // initializer (identifier → var_aria_types,
+                            // else fall back to LLVM type shape).
+                            std::string concreteType;
+                            if (varDecl->initializer->type ==
+                                    ASTNode::NodeType::IDENTIFIER) {
+                                auto* id = static_cast<IdentifierExpr*>(
+                                    varDecl->initializer.get());
+                                auto it = var_aria_types.find(id->name);
+                                if (it != var_aria_types.end()) {
+                                    concreteType = it->second;
+                                }
+                            }
+                            if (concreteType.empty()) {
+                                llvm::Type* at = initVal->getType();
+                                if (at->isIntegerTy(32))      concreteType = "int32";
+                                else if (at->isIntegerTy(64)) concreteType = "int64";
+                                else if (at->isIntegerTy(16)) concreteType = "int16";
+                                else if (at->isIntegerTy(8))  concreteType = "int8";
+                                else if (at->isDoubleTy())    concreteType = "flt64";
+                                else if (at->isFloatTy())     concreteType = "flt32";
+                            }
+
+                            if (!concreteType.empty()) {
+                                std::string vtableGVName =
+                                    traitName + "_vtable_" + concreteType;
+                                llvm::GlobalVariable* vtableGV =
+                                    module->getGlobalVariable(vtableGVName, true);
+                                if (vtableGV) {
+                                    // Box the concrete value on the stack so
+                                    // the fat-ptr `data` slot has an address.
+                                    llvm::AllocaInst* dataAlloca =
+                                        builder.CreateAlloca(
+                                            initVal->getType(), nullptr,
+                                            varDecl->varName + ".dyn_data");
+                                    builder.CreateStore(initVal, dataAlloca);
+
+                                    llvm::StructType* fatPtrTy =
+                                        llvm::cast<llvm::StructType>(varType);
+                                    llvm::Value* fat =
+                                        llvm::UndefValue::get(fatPtrTy);
+                                    fat = builder.CreateInsertValue(
+                                        fat, dataAlloca, 0,
+                                        varDecl->varName + ".dyn_fat.data");
+                                    fat = builder.CreateInsertValue(
+                                        fat, vtableGV, 1,
+                                        varDecl->varName + ".dyn_fat.vtable");
+                                    builder.CreateStore(fat, alloca);
+                                    ARIA_DBG_STREAM << "[DYN] Local var '"
+                                        << varDecl->varName << "' coerced "
+                                        << concreteType << " -> dyn "
+                                        << traitName << " (vtable: @"
+                                        << vtableGVName << ")\n";
+                                    dynLocalCoercionDone = true;
+                                }
+                            }
+                        }
+                        if (!dynLocalCoercionDone) {
                         // Non-optional type - cast initializer to match variable type if necessary
                         if (initVal->getType() != varType) {
                             // P0: Auto-unwrap Optional<T> or Result<T> from function returns.
@@ -5677,6 +5752,7 @@ llvm::Value* npk::IRGenerator::codegenStatement(ASTNode* stmt) {
                         } else {
                             builder.CreateStore(initVal, alloca);
                         }
+                        } // end !dynLocalCoercionDone (v0.31.1.3 D-9)
                     }
                 }
             } else if (isOptional) {

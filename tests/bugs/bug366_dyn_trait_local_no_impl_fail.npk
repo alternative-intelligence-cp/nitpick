@@ -1,0 +1,12 @@
+// v0.31.1.3 (ARIA-043): local-var dyn coercion when the concrete type
+// does not implement the trait must produce a focused diagnostic
+// instead of the generic "cannot initialize variable" message.
+trait:Empty = {
+    func:e = int32(int32:self);
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+pub func:main = int32() {
+    int32:x = 1i32;
+    dyn Empty:d = x;
+    exit 0;
+};

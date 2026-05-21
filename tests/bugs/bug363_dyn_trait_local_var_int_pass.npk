@@ -1,0 +1,21 @@
+// v0.31.1.3 (D-9 local-var dyn coercion):
+// dyn Trait:x = concrete; should auto-coerce concrete (int32) into a
+// fat pointer and dispatch x.method() via the trait vtable.
+trait:Doubler = {
+    func:dbl = int32(int32:self);
+};
+impl:Doubler:for:int32 = {
+    func:dbl = int32(int32:self) {
+        pass self + self;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+pub func:main = int32() {
+    int32:x = 21i32;
+    dyn Doubler:d = x;
+    int32:r = d.dbl();
+    if (r == 42i32) {
+        exit 63;
+    }
+    exit 1;
+};

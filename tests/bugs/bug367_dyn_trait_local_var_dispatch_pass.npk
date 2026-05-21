@@ -1,0 +1,27 @@
+// v0.31.1.3 (D-9 local-var dyn coercion): after building the fat
+// pointer locally, the vtable dispatch must read the correct method
+// slot (not garbage). Two methods on the same trait, called via local.
+trait:Pair = {
+    func:lo = int32(int32:self);
+    func:hi = int32(int32:self);
+};
+impl:Pair:for:int32 = {
+    func:lo = int32(int32:self) {
+        pass self - 1i32;
+    };
+    func:hi = int32(int32:self) {
+        pass self + 1i32;
+    };
+};
+func:failsafe = int32(tbb32:err) { exit 7; };
+pub func:main = int32() {
+    int32:x = 50i32;
+    dyn Pair:p = x;
+    int32:l = p.lo();
+    int32:h = p.hi();
+    int32:sum = l + h;
+    if (sum == 100i32) {
+        exit 67;
+    }
+    exit 1;
+};
