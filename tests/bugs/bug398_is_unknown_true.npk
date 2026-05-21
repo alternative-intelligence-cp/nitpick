@@ -1,0 +1,10 @@
+// v0.31.2.5 (D-18): `x is unknown` returns true when x was assigned `unknown`.
+// Desugars to `x == unknown` (sentinel comparison).
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:main = int32() {
+    int32:x = unknown;
+    pick(x is unknown) {
+        (true)  { exit 0i32; },
+        (false) { exit 1i32; }
+    }
+};

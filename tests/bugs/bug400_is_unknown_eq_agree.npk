@@ -1,0 +1,18 @@
+// v0.31.2.5 (D-18): `x is unknown` and `x == unknown` agree.
+// `is unknown` is the preferred form; `== unknown` is accepted for
+// symmetry with `== NIL` / `== NULL`.
+func:failsafe = int32(tbb32:err) { exit 99; };
+func:main = int32() {
+    int32:x = unknown;
+    bool:a = (x is unknown);
+    bool:b = (x == unknown);
+    pick(a) {
+        (true) {
+            pick(b) {
+                (true)  { exit 0i32; },
+                (false) { exit 2i32; }
+            }
+        },
+        (false) { exit 1i32; }
+    }
+};

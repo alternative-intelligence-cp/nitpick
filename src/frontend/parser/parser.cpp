@@ -321,6 +321,22 @@ ASTNodePtr Parser::parseExpression(int minPrecedence) {
         // NOT binary: the 'is' starts the whole ternary expression
         // This case should NOT be hit since 'is' is not a binary operator on left side
         if (op.type == TokenType::TOKEN_KW_IS) {
+            // v0.31.2.5 (D-18): `<expr> is unknown` postfix test form.
+            // Desugars to `<expr> == unknown`, which the type checker and
+            // codegen already lower to a sentinel comparison returning bool.
+            if (peekNext().type == TokenType::TOKEN_KW_UNKNOWN) {
+                int isLine = op.line;
+                int isCol = op.column;
+                advance(); // consume 'is'
+                Token unkTok = peek();
+                advance(); // consume 'unknown'
+                auto unkLit = std::make_shared<LiteralExpr>(std::string("unknown"),
+                                                            unkTok.line, unkTok.column);
+                unkLit->explicit_type = "UNKNOWN";
+                Token eqTok(TokenType::TOKEN_EQUAL_EQUAL, "==", isLine, isCol);
+                left = std::make_shared<BinaryExpr>(left, eqTok, unkLit, isLine, isCol);
+                continue;
+            }
             // This should not happen in normal parsing
             // because 'is' is handled in parsePrimary/parseUnary
             error("Unexpected 'is' in expression - use: is (condition) : true_val : false_val");
