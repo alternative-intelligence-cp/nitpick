@@ -44,10 +44,21 @@ bool CoverageSet::isExhaustive(const TypeDomain& domain) const {
             return rangesCovered;
         }
         
-        case TypeDomain::Kind::INFINITE:
-            // Infinite domains require default case
-            return hasDefaultCase;
-        
+        case TypeDomain::Kind::INFINITE: {
+            // v0.31.2.10 D-23: special-value infinite domains. Optional<T>
+            // requires NIL coverage; Pointer<T> requires NULL coverage. The
+            // rest of the (infinite) domain is unreachable without a wildcard,
+            // so we still need a default unless every special-value gate is
+            // explicitly addressed and the user opted in via a wildcard.
+            // Practical rule (mirrors TBB ERR behaviour): default (*) alone
+            // suffices; otherwise the missing special-values are reported.
+            if (domain.requiresNIL() && !hasNILCase) return false;
+            if (domain.requiresNULL() && !hasNULLCase) return false;
+            if (domain.needsUnknown() && !hasUnknownCase) return false;
+            // No wildcard and no special-value taint → still infinite, not exhaustive.
+            return false;
+        }
+
         case TypeDomain::Kind::UNKNOWN:
             // Cannot determine exhaustiveness
             return false;
@@ -129,79 +140,109 @@ std::set<std::string> CoverageSet::getMissingSymbols(const TypeDomain& domain) c
 // ============================================================================
 
 ExhaustivenessAnalyzer::Analysis ExhaustivenessAnalyzer::analyze(
-    PickStmt* pickStmt, Type* selectorType) {
-    
+    PickStmt* pickStmt, Type* selectorType, bool selectorIsUnknownTainted) {
+
     Analysis result;
     result.isExhaustive = false;
     result.missingERR = false;
     result.missingUnknown = false;
-    
+    result.missingNIL = false;
+    result.missingNULL_ = false;
+
     // Determine the domain of the selector type
     TypeDomain domain = getDomain(selectorType);
-    
-    // Cannot check exhaustiveness for unknown or infinite domains
+
+    // v0.31.2.10 D-23: thread the symbol-table unknown-taint flag (per D-17)
+    // into the domain so the same exhaustiveness pass that demands an `ERR`
+    // arm for TBB types can also demand an `unknown` arm for tainted slots.
+    if (selectorIsUnknownTainted) {
+        domain.setRequiresUnknown(true);
+    }
+
+    // Cannot check exhaustiveness for unknown domains
     if (domain.getKind() == TypeDomain::Kind::UNKNOWN) {
         result.isExhaustive = true;  // Assume exhaustive if we can't check
         return result;
     }
-    
+
+    // Extract coverage uniformly so INFINITE domains can still detect
+    // NIL / NULL / unknown special-value arms and wildcards.
+    CoverageSet coverage = extractCoverage(pickStmt, domain);
+
     if (domain.getKind() == TypeDomain::Kind::INFINITE) {
-        // Infinite domains must have a default case
+        // Unreachable (!) and struct-destructure are wildcards.
+        // Detect them up front so they short-circuit the special-value check.
         for (const auto& caseNode : pickStmt->cases) {
             PickCase* pickCase = static_cast<PickCase*>(caseNode.get());
-            
-            // Check for unreachable (!)
             if (pickCase->is_unreachable) {
                 result.isExhaustive = true;
                 return result;
             }
-            
-            // v0.19.1: Struct destructure pattern covers the entire domain
             if (!pickCase->struct_pat_type.empty()) {
                 result.isExhaustive = true;
                 return result;
             }
-
-            // Check for wildcard (*) - represented as string literal "*"
-            if (pickCase->pattern && pickCase->pattern->type == ASTNode::NodeType::LITERAL) {
-                LiteralExpr* lit = static_cast<LiteralExpr*>(pickCase->pattern.get());
-                if (std::holds_alternative<std::string>(lit->value)) {
-                    std::string strVal = std::get<std::string>(lit->value);
-                    if (strVal == "*") {
-                        result.isExhaustive = true;
-                        return result;
-                    }
-                }
-            }
         }
-        result.errorMessage = "Non-exhaustive pick statement. Infinite domain requires default case (*).";
+
+        // Wildcard (*) was recorded by extractCoverage / analyzePattern.
+        if (coverage.hasDefault()) {
+            result.isExhaustive = true;
+            return result;
+        }
+
+        // No wildcard. For plain infinite domains, fail with the legacy
+        // diagnostic. For special-value infinite domains (Optional / Pointer /
+        // unknown-tainted), report the specific missing arm so the user knows
+        // exactly which sentinel they forgot.
+        if (domain.requiresNIL() || domain.requiresNULL() ||
+            domain.needsUnknown()) {
+            if (domain.requiresNIL() && !coverage.coversNIL()) {
+                result.missingNIL = true;
+            }
+            if (domain.requiresNULL() && !coverage.coversNULL_()) {
+                result.missingNULL_ = true;
+            }
+            if (domain.needsUnknown() && !coverage.coversUnknown()) {
+                result.missingUnknown = true;
+            }
+            // Even if every special-value arm is present, the rest of the
+            // infinite domain still needs a wildcard.
+            if (!result.missingNIL && !result.missingNULL_ &&
+                !result.missingUnknown) {
+                result.errorMessage =
+                    "Non-exhaustive pick statement. Infinite domain requires default case (*).";
+                return result;
+            }
+            result.errorMessage = generateErrorMessage(result, domain);
+            return result;
+        }
+
+        result.errorMessage =
+            "Non-exhaustive pick statement. Infinite domain requires default case (*).";
         return result;
     }
-    
-    // Extract coverage from cases
-    CoverageSet coverage = extractCoverage(pickStmt, domain);
-    
+
     // Check if exhaustive
     result.isExhaustive = coverage.isExhaustive(domain);
-    
+
     if (!result.isExhaustive) {
         // Find what's missing
         result.missingRanges = coverage.getMissingRanges(domain);
         result.missingSymbols = coverage.getMissingSymbols(domain);
-        
+
         // Check for missing ERR in TBB types
         if (domain.requiresERR() && !coverage.coversERR()) {
             result.missingERR = true;
         }
-        
+
         // Check for missing unknown (types that can be indeterminate)
         if (domain.needsUnknown() && !coverage.coversUnknown()) {
             result.missingUnknown = true;
         }
-        
+
         result.errorMessage = generateErrorMessage(result, domain);
     }
-    
+
     return result;
 }
 
@@ -245,6 +286,16 @@ TypeDomain ExhaustivenessAnalyzer::getDomain(Type* type) {
         return TypeDomain::infinite();
     }
     
+    // v0.31.2.10 D-23: Optional<T> — infinite-but-requires-NIL domain.
+    if (type->getKind() == TypeKind::OPTIONAL) {
+        return TypeDomain::forOptional();
+    }
+
+    // v0.31.2.10 D-23: Pointer<T> — infinite-but-requires-NULL domain.
+    if (type->getKind() == TypeKind::POINTER) {
+        return TypeDomain::forPointer();
+    }
+
     // Enum types have finite, enumerable domains (v0.2.39)
     if (type->getKind() == TypeKind::ENUM) {
         EnumType* enumType = static_cast<EnumType*>(type);
@@ -341,6 +392,17 @@ void ExhaustivenessAnalyzer::analyzePattern(
             // Single value literal or wildcard
             LiteralExpr* lit = static_cast<LiteralExpr*>(pattern);
             
+            // v0.31.2.10 D-23: NIL/NULL parse as monostate-valued LiteralExpr
+            // with explicit_type marker. Detect them before generic dispatch.
+            if (lit->explicit_type == "NIL") {
+                coverage.addNIL();
+                break;
+            }
+            if (lit->explicit_type == "NULL") {
+                coverage.addNULL_();
+                break;
+            }
+
             // Check if it's ERR or unknown sentinel (parsed as string literal)
             if (std::holds_alternative<std::string>(lit->value)) {
                 std::string strVal = std::get<std::string>(lit->value);
@@ -451,6 +513,18 @@ std::string ExhaustivenessAnalyzer::generateErrorMessage(
         msg << "unknown";
         needsSeparator = true;
     }
+
+    // v0.31.2.10 D-23: NIL / NULL sentinel arms.
+    if (analysis.missingNIL) {
+        if (needsSeparator) msg << ", ";
+        msg << "NIL";
+        needsSeparator = true;
+    }
+    if (analysis.missingNULL_) {
+        if (needsSeparator) msg << ", ";
+        msg << "NULL";
+        needsSeparator = true;
+    }
     
     // Report missing symbols
     if (!analysis.missingSymbols.empty()) {
@@ -496,7 +570,18 @@ std::string ExhaustivenessAnalyzer::generateErrorMessage(
     if (domain.requiresERR() && analysis.missingERR) {
         msg << " (TBB type requires ERR handling)";
     }
-    
+    // v0.31.2.10 D-23: targeted hints for special-value infinite domains.
+    if (analysis.missingNIL) {
+        msg << " (Optional<T> requires NIL handling or wildcard *)";
+    }
+    if (analysis.missingNULL_) {
+        msg << " (Pointer<T> requires NULL handling or wildcard *)";
+    }
+    if (analysis.missingUnknown && domain.needsUnknown() &&
+        !domain.requiresERR()) {
+        msg << " (unknown-tainted selector requires `unknown` arm or wildcard *)";
+    }
+
     return msg.str();
 }
 

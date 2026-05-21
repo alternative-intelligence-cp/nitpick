@@ -1,0 +1,16 @@
+// bug418: v0.31.2.10 D-23 — pick on tbb32 without ERR arm or wildcard
+// is rejected with the existing TBB-specific diagnostic.
+// Verification fixture: no source change in v0.31.2.10 (TBB ERR was
+// already wired in v0.21.3 A-013); D-23 just extends the same pattern
+// to NIL / NULL / unknown.
+
+func:failsafe = int32(tbb32:err) { exit 99; };
+
+func:main = int32() {
+    tbb32:v = 0i32;
+    pick (v) {
+        (0i32) { exit 0; },
+        (1i32) { exit 1; }
+    }
+    exit 2;
+};

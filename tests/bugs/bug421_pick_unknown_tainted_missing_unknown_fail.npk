@@ -1,0 +1,16 @@
+// bug421: v0.31.2.10 D-23 — pick on a may-be-unknown-tainted selector
+// (per D-17) without an `unknown` arm or wildcard is rejected. The
+// taint comes from the explicit `unknown` literal initializer; the
+// exhaustiveness checker threads the symbol-table flag through so it
+// can demand the `unknown` arm parallel to TBB's ERR requirement.
+
+func:failsafe = int32(tbb32:err) { exit 99; };
+
+func:main = int32() {
+    int32?:u = unknown;
+    pick (u) {
+        (42i32) { exit 0; },
+        (NIL) { exit 1; }
+    }
+    exit 2;
+};

@@ -1,0 +1,15 @@
+// bug422: v0.31.2.10 D-23 — pick on Optional<T> WITH NIL arm and
+// wildcard is exhaustive and compiles cleanly. Verifies the positive
+// path so D-23 doesn't over-reject.
+
+func:failsafe = int32(tbb32:err) { exit 99; };
+
+func:main = int32() {
+    int32?:opt = 42i32;
+    pick (opt) {
+        (42i32) { exit 0; },
+        (NIL) { exit 1; },
+        (*) { exit 2; }
+    }
+    exit 3;
+};

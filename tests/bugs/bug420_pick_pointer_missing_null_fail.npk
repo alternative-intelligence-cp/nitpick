@@ -1,0 +1,13 @@
+// bug420: v0.31.2.10 D-23 — pick on Pointer<T> without NULL arm or
+// wildcard is rejected. Expected diagnostic mentions NULL and the
+// `Pointer<T> requires NULL handling or wildcard *` hint.
+
+func:failsafe = int32(tbb32:err) { exit 99; };
+
+func:main = int32() {
+    int32->:p = NULL;
+    pick (p) {
+        (42i32) { exit 0; }
+    }
+    exit 1;
+};

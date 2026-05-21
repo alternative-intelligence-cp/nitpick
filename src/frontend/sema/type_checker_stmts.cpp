@@ -5327,8 +5327,14 @@ void TypeChecker::checkPickStmt(PickStmt* stmt) {
         }
 
         if (!selectorHasRules) {
+            // v0.31.2.10 D-23: thread the symbol-table unknown-taint flag
+            // (from D-17) into exhaustiveness so picks on may-be-unknown
+            // selectors must cover an `unknown` arm or wildcard.
+            bool selectorTainted = exprCarriesUnknownTaint(stmt->selector.get());
+
             // Check exhaustiveness
-            ExhaustivenessAnalyzer::Analysis result = ExhaustivenessAnalyzer::analyze(stmt, selectorType);
+            ExhaustivenessAnalyzer::Analysis result =
+                ExhaustivenessAnalyzer::analyze(stmt, selectorType, selectorTainted);
             
             // Report error if not exhaustive
             if (!result.isExhaustive) {

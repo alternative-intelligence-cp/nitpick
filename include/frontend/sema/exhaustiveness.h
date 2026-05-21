@@ -58,10 +58,13 @@ private:
     std::set<std::string> symbols;      // For ENUM (variant names)
     bool hasERR;                         // For TBB types
     bool requiresUnknown;                // For types that can be indeterminate
-    
+    bool hasNIL;                         // For OPTIONAL types (v0.31.2.10 D-23)
+    bool hasNULL;                        // For POINTER types (v0.31.2.10 D-23)
+
 public:
-    TypeDomain(Kind k = Kind::UNKNOWN) 
-        : kind(k), hasERR(false), requiresUnknown(false) {}
+    TypeDomain(Kind k = Kind::UNKNOWN)
+        : kind(k), hasERR(false), requiresUnknown(false),
+          hasNIL(false), hasNULL(false) {}
     
     Kind getKind() const { return kind; }
     
@@ -162,11 +165,35 @@ public:
     static TypeDomain infinite() {
         return TypeDomain(Kind::INFINITE);
     }
-    
+
+    // v0.31.2.10 D-23: special-value infinite domains. An `Optional<T>`
+    // pick requires either a NIL arm or a wildcard; a `Pointer<T>` pick
+    // requires either a NULL arm or a wildcard. The selector type alone
+    // is otherwise too large to enumerate, so we still report as INFINITE
+    // but track the special-value requirement.
+    static TypeDomain forOptional() {
+        TypeDomain domain(Kind::INFINITE);
+        domain.hasNIL = true;
+        return domain;
+    }
+
+    static TypeDomain forPointer() {
+        TypeDomain domain(Kind::INFINITE);
+        domain.hasNULL = true;
+        return domain;
+    }
+
     const std::vector<ValueRange>& getRanges() const { return ranges; }
     const std::set<std::string>& getSymbols() const { return symbols; }
     bool requiresERR() const { return hasERR; }
     bool needsUnknown() const { return requiresUnknown; }
+    bool requiresNIL() const { return hasNIL; }
+    bool requiresNULL() const { return hasNULL; }
+
+    // v0.31.2.10 D-23: set externally by callers that have access to
+    // the selector's symbol-table taint flag (e.g. TypeChecker passes
+    // `exprCarriesUnknownTaint(selector)` through to analyze()).
+    void setRequiresUnknown(bool v) { requiresUnknown = v; }
     
     // Coverage tracking
     bool isEmpty() const {
@@ -200,10 +227,14 @@ private:
     std::set<std::string> covered_symbols;
     bool hasERRCase;
     bool hasUnknownCase;
+    bool hasNILCase;
+    bool hasNULLCase;
     bool hasDefaultCase;
     
 public:
-    CoverageSet() : hasERRCase(false), hasUnknownCase(false), hasDefaultCase(false) {}
+    CoverageSet()
+        : hasERRCase(false), hasUnknownCase(false),
+          hasNILCase(false), hasNULLCase(false), hasDefaultCase(false) {}
     
     void addRange(int64_t min, int64_t max) {
         covered_ranges.push_back(ValueRange(min, max));
@@ -220,13 +251,23 @@ public:
     void addUnknown() {
         hasUnknownCase = true;
     }
-    
+
+    void addNIL() {
+        hasNILCase = true;
+    }
+
+    void addNULL_() {
+        hasNULLCase = true;
+    }
+
     void addDefault() {
         hasDefaultCase = true;
     }
     
     bool coversERR() const { return hasERRCase || hasDefaultCase; }
     bool coversUnknown() const { return hasUnknownCase || hasDefaultCase; }
+    bool coversNIL() const { return hasNILCase || hasDefaultCase; }
+    bool coversNULL_() const { return hasNULLCase || hasDefaultCase; }
     bool hasDefault() const { return hasDefaultCase; }
     
     // Check if domain is fully covered
@@ -246,6 +287,8 @@ public:
         bool isExhaustive;
         bool missingERR;
         bool missingUnknown;
+        bool missingNIL;
+        bool missingNULL_;
         std::vector<ValueRange> missingRanges;
         std::set<std::string> missingSymbols;
         std::string errorMessage;
@@ -253,12 +296,16 @@ public:
     
     /**
      * Analyze a pick statement for exhaustiveness
-     * 
+     *
      * @param pickStmt The pick statement to analyze
      * @param selectorType The type of the selector expression
+     * @param selectorIsUnknownTainted v0.31.2.10 D-23: when true, the selector
+     *        binding carries `mayBeUnknown` taint (per D-17); pick must cover
+     *        an `unknown` arm or include a wildcard.
      * @return Analysis result with missing cases
      */
-    static Analysis analyze(PickStmt* pickStmt, Type* selectorType);
+    static Analysis analyze(PickStmt* pickStmt, Type* selectorType,
+                            bool selectorIsUnknownTainted = false);
     
 private:
     // Determine the domain of a type
