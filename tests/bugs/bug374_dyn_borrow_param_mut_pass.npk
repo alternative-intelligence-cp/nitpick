@@ -1,0 +1,35 @@
+// bug374 — v0.31.1.9 D-12 Probe B: $$m dyn T parameter coercion
+//
+// `$$m dyn Bumpable:b` PARAMETER (not local). Caller passes a
+// concrete Counter; callee receives it as a dyn fat ptr whose
+// data slot points at the caller's storage. Mutation through
+// the param must persist to the caller.
+//
+// Expected: c.n starts at 7; bump_it($$m dyn Bumpable:b) calls
+// b.bump() which adds 1 → c.n = 8; exit 8.
+
+struct:Counter = { int32:n; };
+
+trait:Bumpable = {
+    func:bump = int32($$m Bumpable:self);
+};
+
+impl:Bumpable:for:Counter = {
+    func:bump = int32($$m Counter:self) {
+        self.n = self.n + 1i32;
+        pass self.n;
+    };
+};
+
+func:bump_it = int32($$m dyn Bumpable:b) {
+    int32:r = b.bump();
+    pass r;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1; };
+
+func:main = int32() {
+    Counter:c = { n: 7i32 };
+    int32:r = raw bump_it(c);
+    exit c.n;
+};

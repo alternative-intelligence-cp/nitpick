@@ -8027,23 +8027,39 @@ llvm::Value* ExprCodegen::codegenCall(CallExpr* expr) {
                                 std::string vtableGVName = traitName + "_vtable_" + concreteType;
                                 llvm::GlobalVariable* vtableGV = module->getGlobalVariable(vtableGVName, true);
                                 if (vtableGV) {
-                                    // Alloca space for the concrete value
-                                    llvm::AllocaInst* dataAlloca = builder.CreateAlloca(
-                                        arg_value->getType(), nullptr, "dyn_data");
-                                    builder.CreateStore(arg_value, dataAlloca);
+                                    // v0.31.1.9 (D-12 Probe B): for `$$m dyn T:param`
+                                    // the call site has already produced an
+                                    // alias pointer to the caller's variable
+                                    // (see mutableBorrowParam branch at
+                                    // ~line 7752). Use it directly as the
+                                    // fat-ptr data slot — boxing a copy would
+                                    // (a) lose mutation visibility and
+                                    // (b) store a `ptr` into a ptr-sized alloca,
+                                    // not the underlying struct.
+                                    llvm::Value* dataSlot;
+                                    if (mutableBorrowParam && arg_value->getType()->isPointerTy()) {
+                                        dataSlot = arg_value;
+                                    } else {
+                                        // Alloca space for the concrete value
+                                        llvm::AllocaInst* dataAlloca = builder.CreateAlloca(
+                                            arg_value->getType(), nullptr, "dyn_data");
+                                        builder.CreateStore(arg_value, dataAlloca);
+                                        dataSlot = dataAlloca;
+                                    }
 
                                     // Build fat pointer: { ptr data, ptr vtable }
                                     // Use the actual parameter type (named %struct.DynTraitObj)
                                     // instead of anonymous { ptr, ptr } to avoid type mismatch
                                     llvm::StructType* fatPtrTy = llvm::cast<llvm::StructType>(param_type);
                                     llvm::Value* fat = llvm::UndefValue::get(fatPtrTy);
-                                    fat = builder.CreateInsertValue(fat, dataAlloca, 0, "dyn_fat.data");
+                                    fat = builder.CreateInsertValue(fat, dataSlot, 0, "dyn_fat.data");
                                     fat = builder.CreateInsertValue(fat, vtableGV, 1, "dyn_fat.vtable");
                                     arg_value = fat;
 
                                     ARIA_DBG_STREAM << "[DYN] Coerced " << concreteType
                                               << " to dyn " << traitName
-                                              << " fat ptr (vtable: @" << vtableGVName << ")\n";
+                                              << " fat ptr (vtable: @" << vtableGVName << ")"
+                                              << (mutableBorrowParam ? " [borrow]" : "") << "\n";
                                 }
                             }
                         }

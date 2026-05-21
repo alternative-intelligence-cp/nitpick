@@ -1761,3 +1761,23 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
         LABELS "phase2;dyn;borrow;trait;d-12;v0.31.1.8"
     )
 endif()
+
+# v0.31.1.9 — Phase 2 D-12 sub-slice 3: $$m dyn T:param coercion.
+# When a function declares a `$$m dyn Trait:param`, the call site
+# must coerce a concrete value into a fat-ptr `{alias_ptr, vtable}`
+# whose data slot aliases caller storage. Pre-fix, the param was
+# lowered as a plain ptr (alias) and dyn-dispatch inside the callee
+# treated it as a fat-ptr aggregate → segfault.
+# See META/NITPICK/ROADMAP/0.31/AUDIT_v0.31.1.9.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/npkc)
+    add_test(
+        NAME bug_tests_v03119
+        COMMAND bash ${CMAKE_SOURCE_DIR}/tests/bugs/run_bug_tests_03119.sh
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(bug_tests_v03119 PROPERTIES
+        TIMEOUT 30
+        SKIP_RETURN_CODE 77
+        LABELS "phase2;dyn;borrow;trait;d-12;v0.31.1.9"
+    )
+endif()

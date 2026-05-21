@@ -3042,7 +3042,18 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
             if (pn->isBorrowMut) {
                 // v0.18.0: $$m params are passed by reference so writes in the
                 // callee update the caller's storage.
-                pre_params.push_back(builder.getPtrTy());
+                // v0.31.1.9 (D-12 Probe B): `$$m dyn T:param` is a fat-ptr
+                // by-value with an alias-pointer data slot — the natural way
+                // to convey mutation visibility through a trait object. Track
+                // it in func_dyn_params so the call site coerces to a fat ptr.
+                std::string pstr = pn->typeNode ? pn->typeNode->toString() : "";
+                if (pstr.substr(0, 4) == "dyn ") {
+                    pre_params.push_back(mapTypeFromName(pstr));
+                    std::string traitName = pstr.substr(4);
+                    func_dyn_params[fn][paramIndex] = traitName;
+                } else {
+                    pre_params.push_back(builder.getPtrTy());
+                }
                 var_aria_types["__func_borrow_param:" + fn + ":" + std::to_string(paramIndex)] = "mut";
             } else if (pn->isWild) {
                 pre_params.push_back(builder.getPtrTy());
@@ -3427,7 +3438,16 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                 // Check for wild qualifier (FFI pointers)
                 if (pnode->isBorrowMut) {
                     // v0.18.0: $$m params are call-by-reference aliases.
-                    param_types.push_back(builder.getPtrTy());
+                    // v0.31.1.9 (D-12 Probe B): `$$m dyn T` is a fat-ptr
+                    // by-value whose data slot aliases caller storage.
+                    std::string pstr = pnode->typeNode ? pnode->typeNode->toString() : "";
+                    if (pstr.substr(0, 4) == "dyn ") {
+                        param_types.push_back(mapTypeFromName(pstr));
+                        std::string traitName = pstr.substr(4);
+                        func_dyn_params[func_name][paramIndex] = traitName;
+                    } else {
+                        param_types.push_back(builder.getPtrTy());
+                    }
                     var_aria_types["__func_borrow_param:" + func_name + ":" + std::to_string(paramIndex)] = "mut";
                 } else if (pnode->isWild) {
                     // Wild pointers always map to LLVM ptr regardless of base type
@@ -3764,10 +3784,16 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                     // To ensure consistent access semantics, we copy all struct params to stack allocas.
                     // This matches Clang's behavior and ensures member access works correctly.
                     llvm::Value* param_storage = nullptr;
-                    if (param->isBorrowMut) {
+                    std::string borrowParamTypeStr = param->typeNode ? param->typeNode->toString() : "";
+                    bool borrowIsDyn = param->isBorrowMut && borrowParamTypeStr.substr(0, 4) == "dyn ";
+                    if (param->isBorrowMut && !borrowIsDyn) {
                         // v0.18.0: A $$m parameter is already a pointer to the
                         // caller's storage. Bind the parameter name directly to
                         // that pointer so assignments write through the alias.
+                        // v0.31.1.9 (D-12 Probe B): `$$m dyn T:param` is a fat
+                        // ptr by value — fall through to the struct-alloca path
+                        // below so dispatch can load the fat ptr normally; the
+                        // data slot already aliases caller storage.
                         param_storage = &arg;
                         named_values[param->paramName] = &arg;
                         var_aria_types["__borrow_param_mut:" + param->paramName] = "1";
@@ -4157,8 +4183,19 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
                 std::vector<llvm::Type*> param_types;
                 for (const auto& param : funcDecl->parameters) {
                     ParameterNode* pnode = static_cast<ParameterNode*>(param.get());
+                    unsigned paramIndex = static_cast<unsigned>(param_types.size());
                     if (pnode->isBorrowMut) {
-                        param_types.push_back(builder.getPtrTy());
+                        // v0.31.1.9 (D-12 Probe B): `$$m dyn T:param` is a
+                        // fat-ptr by-value whose data slot aliases caller
+                        // storage. See parallel block at line ~3438.
+                        std::string pstr = pnode->typeNode ? pnode->typeNode->toString() : "";
+                        if (pstr.substr(0, 4) == "dyn ") {
+                            param_types.push_back(mapTypeFromName(pstr));
+                            std::string traitName = pstr.substr(4);
+                            func_dyn_params[mangledName][paramIndex] = traitName;
+                        } else {
+                            param_types.push_back(builder.getPtrTy());
+                        }
                     } else {
                         std::string paramTypeStr = pnode->typeNode ? pnode->typeNode->toString() : "void";
                         param_types.push_back(mapTypeFromName(paramTypeStr));
@@ -4223,11 +4260,16 @@ void npk::IRGenerator::processModuleDeclarations(const std::vector<std::shared_p
 
                         std::string paramTypeStr = param->typeNode ? param->typeNode->toString() : "void";
 
-                        if (param->isBorrowMut) {
+                        if (param->isBorrowMut && paramTypeStr.substr(0, 4) != "dyn ") {
                             // v0.31.1.8: $$m impl-method param is already a
                             // pointer to caller storage; bind name directly
                             // so member writes (`self.f = ...`) update the
                             // original. Mirrors top-level path at ~line 3771.
+                            // v0.31.1.9 (D-12 Probe B): for `$$m dyn T:param`
+                            // the value is a fat-ptr struct (not a raw ptr),
+                            // so fall through to the regular alloca path —
+                            // dispatch loads the fat ptr from the alloca and
+                            // the data slot already aliases caller storage.
                             named_values[param->paramName] = &arg;
                             var_aria_types["__borrow_param_mut:" + param->paramName] = "1";
                             var_aria_types[param->paramName] = paramTypeStr;
