@@ -1,8 +1,44 @@
-# Nitpick v0.31.1.10 — Known Issues & Limitations
+# Nitpick v0.31.2.11 — Known Issues & Limitations
 
-Last updated: v0.31.1.10
+Last updated: v0.31.2.11
 
 > **Note:** The canonical KNOWN_ISSUES.md is in the [`nitpick`](https://github.com/alternative-intelligence-cp/nitpick) repo. This is a working copy for internal tracking.
+
+---
+
+## Deferred — v0.31.2.x (Special values & immutability)
+
+Closed in Phase 3 of the v0.31.x cycle but explicitly carried forward:
+
+- **`DEF-CHAIN-RESULT` — chained `.is_error` / `.value` / `.error_code`
+  directly off a `Result<T>`-returning call expression segfaults at
+  runtime** (e.g. `bool:e = bad().is_error;`). The crash happens for
+  *every* `Result<T>`-returning function, NIL-shaped and otherwise.
+  Workaround: bind the call to an intermediate `Result<T>:r` first,
+  then read fields off `r`. Root cause is in call-site member-access
+  codegen — not a NIL / D-21 issue. Pulled into Phase 4 (v0.31.3.x)
+  as a dedicated slice; needs fixtures covering chained `.is_error`,
+  `.value`, and `.error_code` on both NIL- and non-NIL-shaped
+  Results. Discovered in v0.31.2.7 during D-21 verification.
+- **`is unknown` / `== unknown` operator surface (D-18)** —
+  intentionally deferred during Phase 3; v0.31.2.4 wired the
+  taint-tracking infrastructure (`Symbol::mayBeUnknown` +
+  `exprCarriesUnknownTaint`), v0.31.2.10 pulled the taint into
+  `pick` exhaustiveness, but no first-class `x is unknown` /
+  `x == unknown` boolean form is wired into sema. Today the
+  parser accepts `x == unknown` and the type checker folds it
+  to a structural equality on the literal's underlying zero,
+  which is not the documented semantic. Revisit alongside
+  user-facing `unknown` ergonomics.
+- **`fixed` in struct field position with mixed-mutability structs**
+  — `fixed` on a struct field is parsed and recorded but the
+  interaction with partial-move / field-reassignment of the
+  enclosing struct is unverified. Record-and-revisit.
+- **`unknown` runtime failsafe layer for D-17** — only the
+  compile-time taint path landed in v0.31.2.4; the
+  runtime-only failsafe arm ("only runtime-detectable
+  unknowns trigger the existing `failsafe(...)` plumbing") is
+  deferred until a real program exercises the path.
 
 ---
 
@@ -76,6 +112,23 @@ code generation macros require additional codegen work planned for v0.25.x+.
 ---
 
 ## Resolved Bugs (by version)
+
+### Resolved in v0.31.2.x (Phase 3 — special values & immutability)
+
+| Slice | Bugs | Theme |
+|-------|------|-------|
+| v0.31.2.0 | (audit only) | Phase 3 baseline survey & decisions D-13..D-23 |
+| v0.31.2.1 | bug379 – bug382 | `const` outside extern rejected (ARIA-044); `fixed` opportunistic comptime fold; 36-file stdlib `const` → `fixed` sweep |
+| v0.31.2.2 | bug383 – bug386 | NIL/NULL safety guard mirrored into `checkAssignment` (statement-level `=`) — D-15 gap close |
+| v0.31.2.3 | bug387 – bug393 | tbb ERR sticky verified across compare / bitwise ops (D-16 / D-16a) |
+| v0.31.2.4 | bug394 – bug399 | `Symbol::mayBeUnknown` taint + `exprCarriesUnknownTaint` walker; `unknown`-without-`ok()` rejected (ARIA-045) — D-17 / D-17a |
+| v0.31.2.5 | (collapsed) | D-18 `is unknown` / `== unknown` operator surface deferred per slice-plan ratification |
+| v0.31.2.6 | bug400 – bug402 | `fixed T:x` × generic monomorphisation regression — D-19 verified, no source changes |
+| v0.31.2.7 | bug406 – bug409 | `func:f = NIL(...) { ... };` wraps to `Result<NIL>` — D-21 verified, no source changes; DEF-CHAIN-RESULT logged in-flight |
+| v0.31.2.8 | bug410 – bug413 | `fail(code)` ⇒ `.value == NIL` for `Result<NIL>` / `Result<Optional<T>>`; sema gate relaxed (ARIA-046); var-init Optional double-wrap fix |
+| v0.31.2.9 | bug414 – bug417 | `fixed` × Drop verification — Drop still fires at scope exit; no source changes |
+| v0.31.2.10 | bug418 – bug422 | `pick` exhaustiveness for special values: Optional NIL, Pointer NULL, tbb ERR (regression), unknown-tainted selector — D-23 |
+| v0.31.2.11 | (no new bugs) | Phase 3 close — `guide/special-values/` cookbook, KNOWN_ISSUES refresh, cycle audit |
 
 ### Resolved in v0.31.1.x (Phase 2 — trait / impl / dyn)
 
