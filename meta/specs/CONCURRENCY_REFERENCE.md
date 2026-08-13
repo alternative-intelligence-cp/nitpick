@@ -104,7 +104,8 @@ barriers are standard-library abstractions.
 
 ### 3.1 What already exists
 
-Substantially more than chapter 11 describes, and most of it is already C-free.
+Substantially more than chapter 11 describes — though less of it is C-free than
+a direct `extern` count suggests. See the transitive note below.
 
 **`libn` supplies the primitives.** Its syscall layer already wraps the Linux
 threading calls — `futex` (12 uses), `clone` (5), `gettid`, `tkill`,
@@ -126,8 +127,21 @@ thread *module* of its own.
 | `barrier.npk` | 34 | ⚠️ marked DEPRECATED — `npk_shim_barrier_*` |
 | `lockfree.npk` | — | ⚠️ marked DEPRECATED — `npk_shim_lfqueue_*` |
 
-The three carrying C shims are **already marked deprecated in their own source**,
-so the project had identified them before this review.
+The three carrying **direct** C shims are already marked deprecated in their own
+source, so the project had identified them independently.
+
+> ### ⚠️ Four more are C-dependent *transitively*
+>
+> `thread`, `thread_pool`, `channel`, and `actor` carry no `extern` of their own
+> but import `core.npk` (→ `nitpick_libc_string`) and `atomic.npk`
+> (→ `nitpick_runtime`). **Only `mutex`, `rwlock`, and `condvar` are genuinely
+> clean.**
+>
+> The taint has few roots, so this is a targeted job rather than a rewrite:
+> `atomic.npk` is superseded outright by the language-level `atomic<T>`, and
+> `core.npk` / `string.npk` are superseded by `ARCHIVE/nstr`. Clearing those
+> clears the entire concurrency stack **without touching `thread`, `channel`, or
+> `actor` themselves**.
 
 `atomic.npk` in particular is superseded rather than merely stale: `atomic<T>` is
 a **language type emitting native LLVM atomic IR with no shim**
@@ -244,9 +258,11 @@ Race freedom comes from three structural properties, none of them runtime checks
 
 ## 6. Open items
 
-- **Port the concurrency stdlib.** `thread`, `thread_pool`, `mutex`, `rwlock`,
-  `condvar`, `channel`, and `actor` are already C-free and go through the same
-  D-012 signature classification as the rest of `nlibc`. `barrier` and `lockfree`
+- **Port the concurrency stdlib**, in dependency order. `mutex`, `rwlock`, and
+  `condvar` are genuinely C-free and can go first. `thread`, `thread_pool`,
+  `channel`, and `actor` are clean in themselves but must wait until `atomic.npk`
+  is dropped and `core.npk`/`string.npk` are replaced by `nstr`. All go through
+  the same D-012 signature classification as the rest of `nlibc`. `barrier` and `lockfree`
   need native reimplementation to drop their C shims; `atomic.npk` is superseded
   by the language-level `atomic<T>` and should not be ported at all.
 - **Specify the omitted surface.** Channels, actors, and thread pools have real
