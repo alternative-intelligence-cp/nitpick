@@ -226,3 +226,110 @@ by `TYPE_REFERENCE.md` §18 with no governing document.
 
 Also confirms **UFCS** independently: 13 §13.2.4 states inherent methods are
 "dispatched statically via UFCS: `Point_magnitude(p)`" (D-006).
+
+---
+
+# Chapter 11 (Concurrency) — Conflict and Gap List
+
+Chapter 11 is **82 lines** and predates D-003. Most of what it needs is not
+correction but content that does not exist yet: it was written when a garbage
+collector answered every ownership question, and it answers none of them now.
+
+## Part I — Conflicts with settled decisions
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 35 | §11.3 | threading "encapsulated within the standard library (`stdlib/concurrent`) interfacing directly with **`nitpick-libc`**" | `nitpick-libc` is a musl tree. The native library is **`nlibc`** — which currently has **no thread module** at all (`syscall`, `mem`, `str`, `io`, `proc`, `fs`, `time`, `math`). Threading lives in the archived `nthread` (3 files) and `nsync` (5 files). |
+| 36 | §11.4.1 | `atomic_from_ptr<int32>(header_ptr + 24i64)` — raw pointer arithmetic on an integer offset | pointer arithmetic goes through `#ptr_add<T>(ptr, offset)` (`FORMAL_DRAFT` 08 §8.1.1, corrected for D-020); constructing a pointer from an integer requires `#wild_ptr<T>(addr)` in `wild` context (D-019) |
+
+## Part J — Gaps: things D-003 broke that were never revisited
+
+### J1. `atomic_new` heap-allocates with no owner
+
+```nitpick
+atomic<int32>:counter = atomic_new(0i32);
+```
+
+Chapter 11 §11.4.1 describes this as "heap allocation". With no collector, **who
+frees it?** The chapter does not say, because when it was written nothing had to.
+
+**Recommendation: remove `atomic_new` and keep only `atomic_from_ptr<T>`.**
+The aliasing form already exists precisely to place an atomic inside memory that
+something else owns — a struct field, an arena slot. Removing the allocating form
+eliminates the ownership question rather than answering it, adds no new
+allocation path to verify, and leaves one way to obtain an atomic instead of two.
+
+### J2. Coroutine frames have no owner either
+
+`async` lowers to `@llvm.coro` state machines (`FORMAL_DRAFT` 07 §7.4), whose
+frames are heap-allocated so they can survive suspension. Same question, same
+silence.
+
+**Recommendation: coroutine frames are allocated from a runtime-owned arena**,
+released when the task completes. Task completion is a well-defined free point,
+arenas are already the mechanism for batch-lifetime data (D-003), and it keeps
+the async runtime's memory deterministic rather than introducing a second
+discipline.
+
+### J3. Nothing connects threads to the memory model
+
+The chapter says nothing about:
+
+- **Borrows and threads.** D-004 already forbids a borrow from crossing a thread
+  spawn or an `await` point. That *is* the data-race-freedom story — it
+  eliminates shared stack references structurally, at compile time — and it is
+  absent from the document that should state it.
+- **Arenas and threads.** D-017 splits `arena<T>` (single-threaded, full
+  operations) from `shared_arena<T>` (allocation-only, non-moving chunks, atomic
+  bump). Chapter 11 predates it entirely.
+- **`--verify-concurrency`** is listed in `VERIFICATION_REFERENCE.md` §5 as
+  verifying "data race & deadlock freedom", with **no mechanism described
+  anywhere** for either.
+
+### J4. `Future<T>` is never mentioned
+
+`TYPE_REFERENCE.md` §17 defines it as `{ coroutine_handle, result_slot }`.
+Chapter 11 contains **zero** occurrences. The relationship between `async
+func`, `await`, and `Future<T>` is unspecified — in particular whether `Future<T>`
+is ever user-visible or purely an internal lowering artifact.
+
+### J5. Task spawning was dropped
+
+The prototype's `concurrency_specs.txt` §1.3 states that a task may be spawned on
+the runtime executor with `drop work();` — that is, calling an `async` function
+without `await` and discarding the `Future`. Chapter 11 omits it, leaving **no
+documented way to start a concurrent task at all**, only to await one.
+
+## Part K — The consequence nobody has costed
+
+§11.2 states the async runtime "multiplexes coroutines over a **configurable pool
+of system threads**".
+
+That means **a task can resume on a different OS thread than it suspended on.**
+Which in turn means everything a task touches across an `await` must tolerate
+cross-thread access — including `arena<T>`, whose D-017 contract says
+*single-threaded*.
+
+This is survivable but the contract needs restating. A work-stealing runtime
+establishes a happens-before edge when it migrates a task, so **sequential**
+access from different threads is safe; what is unsafe is **concurrent** access.
+So `arena<T>`'s guarantee should be phrased as *no concurrent access* rather than
+*same OS thread* — otherwise the rule as written is violated by any task holding
+an arena across a suspension point, which is the normal case.
+
+The alternative is **pinning tasks to threads**, which makes the original phrasing
+true and removes the class of problems, at the cost of load balancing across
+cores. For a language whose users include robotics, that trade may be worth
+taking deliberately rather than inheriting work-stealing by default.
+
+## Part L — What chapter 11 gets right
+
+- **SeqCst enforcement** (§11.4.3) — independently confirms D-016, with the same
+  justification (determinism for the physics engine and AGI substrate).
+- **The restricted atomic method set** (§11.4.2) — `load`, `store`, `swap`,
+  `fetch_add`, `fetch_sub`, `compare_exchange`, and nothing else.
+- **No `spawn` / `go` keyword**, keeping the thread model out of the language core
+  so bare-metal and embedded targets are not forced to carry it.
+- **No `sync` keyword** — explicitly rejected by the compiler.
+- **`await` restricted to `async func`** (`NITPICK-040`).
+- `atomic<T>` methods use **UFCS** — another independent confirmation of D-006.

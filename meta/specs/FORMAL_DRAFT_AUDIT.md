@@ -143,8 +143,13 @@ default and suspended only through a named, greppable, auditable construct.
    (D-028), and traits combining with `&` in two places but `+` in a third
    (D-029). Chapter 06's trait, impl, and generic-parameter forms were the
    outliers and are superseded (D-030).
-3. **Adopt 11 (concurrency)** after fixing conflict 14, and extend it with D-016
-   and D-017.
+3. ~~**Adopt 11 (concurrency)**~~ **✅ DONE** — adopted as `CONCURRENCY_REFERENCE.md`.
+   Only two conflicts, but five substantive **gaps**: the chapter is 82 lines and
+   predates D-003, so nothing in it answers an ownership question. `atomic_new`
+   and coroutine frames both allocated with no owner (D-033, D-034); task
+   migration collided with D-017's single-threaded arena (D-032); `Future<T>` is
+   never mentioned despite being a specified type; and task spawning was dropped
+   from the prototype, leaving no documented way to start a concurrent task.
 4. **Adopt 12 (safety)** after fixing conflicts 1, 3, 9, 10 and the Layer-1/Layer-3
    numbering. Keep 12.7 (`--extra-picky`) and 12.8 (K Framework) verbatim.
 5. **Adopt 02 (types)** after fixing conflict 11, and fold in D-005 and D-008.

@@ -1840,3 +1840,111 @@ the direction of the relationship rather than inverting it.
   loop keyword only, and the open item flagging its dual role is closed.
 - `AST_REFERENCE.md` — the impl node carries an optional trait slot, not a fixed
   three-part path.
+
+---
+
+## D-032 — Async tasks are pinned to threads — **SETTLED**
+
+A task resumes on the thread it suspended on. The async runtime does **not**
+migrate tasks between threads, and does not work-steal.
+
+### The framing this rejects
+
+`FORMAL_DRAFT` 11 §11.2 has the runtime "multiplex coroutines over a configurable
+pool of system threads", which permits migration. That looked like a
+safety-versus-performance trade. It is not, for this workload.
+
+**Work stealing optimizes the part of Nikola that is not the bottleneck.** The
+manifold, Mamba state, tensor math, and waveform processing are CPU-bound bulk
+numeric work that does not run through the coroutine scheduler at all — it
+parallelizes by explicitly partitioning known-size work across threads, which
+pinning does not affect. What *does* run through async is the ZMQ spine,
+ingestion, and mini-VM coordination: I/O-bound and coordination work, where tasks
+spend their time waiting rather than competing for cores.
+
+### Why pinning is the safety answer
+
+Migration does not corrupt data — a correct work-stealing runtime establishes a
+happens-before edge at the suspend/resume boundary, so sequential cross-thread
+access is sound. The cost is *"a correct runtime"*: it moves `arena<T>`'s
+single-threaded guarantee (D-017) from a **compile-time structural property** into
+**runtime TCB** that formal verification must then cover.
+
+That is precisely the cost that decided D-003 against the collector. The same
+answer follows.
+
+Without pinning, D-017's contract would also have to be restated from
+*single-threaded* to *no concurrent access*, since any task holding an arena
+across an `await` would otherwise violate it — and that is the normal case, not
+an edge one.
+
+### Secondary benefits
+
+- **Mini-VM isolation.** Each mini-VM can own one execution context plus its own
+  arena, with memory that never leaves its thread. "This VM's memory" becomes a
+  statement about a thread rather than a convention.
+- **Cheaper coroutine frames.** Because a thread's tasks never migrate, its
+  executor can allocate frames from a plain `arena<T>` — zero-cost — instead of
+  `shared_arena<T>`'s atomic bump (D-034).
+- **Reversible.** Pinning can be relaxed later against profiling evidence.
+  Shipping migration and retrofitting pinning after a load-dependent race
+  surfaces is the far worse ordering, and that failure class — intermittent,
+  load-dependent, invisible in testing — is the one Nikola cannot tolerate.
+
+### Rejected: pin by default, opt in to migration
+
+Two scheduling disciplines means every piece of async code carries the question
+"which one governs this?" The compute parallelism that would motivate opting in
+is better served by explicit thread partitioning, which is a separate mechanism
+rather than a second mode of this one.
+
+---
+
+## D-033 — `atomic_new` is removed — **SETTLED**
+
+Atomics live in storage something else already owns. There is no allocating
+constructor.
+
+```nitpick
+atomic<int32>:counter = 0i32;          // storage in the enclosing scope/struct/arena
+
+struct:Stats = {
+    atomic<int64>:hits;                // or as a field
+};
+
+atomic<int32>:lk = atomic_from_ptr<int32>(hdr_ptr);   // alias existing memory
+```
+
+`FORMAL_DRAFT` 11 §11.4.1 offers `atomic_new(0i32)` as "heap allocation". With no
+collector, nothing says who frees it — a question that did not exist when the
+chapter was written.
+
+Removing the allocating form **eliminates** the question rather than answering
+it: no new allocation path to verify, no ownership rule to remember, and one way
+to obtain an atomic instead of two. `atomic_from_ptr<T>` already existed for
+exactly the case that matters — placing an atomic over memory owned elsewhere.
+
+Where the aliased address originates as an integer, it must be converted with
+`#wild_ptr<T>(addr)` in `wild` context (D-019), and pointer arithmetic goes
+through `#ptr_add<T>(ptr, offset)` — not the raw `hdr_ptr + 24i64` shown in
+§11.4.1.
+
+---
+
+## D-034 — Coroutine frames are arena-allocated by the executor — **SETTLED**
+
+`async` lowers to `@llvm.coro` state machines whose frames are heap-allocated so
+they survive suspension (`FORMAL_DRAFT` 07 §7.4). With no collector, the frames
+need an owner.
+
+**Each thread's executor owns an `arena<T>` from which it allocates task frames,
+released when the task completes.**
+
+- Task completion is a well-defined free point — no reachability question.
+- Arenas are already the mechanism for batch-lifetime data (D-003).
+- Because tasks are pinned (D-032), the executor's arena is **single-threaded**,
+  so frame allocation uses plain `arena<T>` at zero cost rather than
+  `shared_arena<T>`'s atomic bump.
+
+This keeps the async runtime's memory deterministic and introduces no discipline
+that does not already exist.
