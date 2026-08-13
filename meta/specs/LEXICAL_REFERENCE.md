@@ -125,7 +125,9 @@ Operator ::= "+" | "-" | "*" | "/" | "%" | "++" | "--"
            | "->" | "<-" | "=>" | "=>!"
            | "@" | "$" | "$$i" | "$$m"
            | "?" | "?." | "??" | "?!" | "?|" | "_?" | "_!" | "_~"
-           | "!!" | "!!!" | "|>" | "<|" | ".." | "..." | "..*" | "..^"
+           | "!!!" | "|>" | "<|" | ".." | "..." | "..*" | "..^"
+
+ModifierToken ::= "!!"        /* not standalone — see below */
 
 CompilerSigil ::= "#"
 
@@ -143,6 +145,34 @@ Punctuation   ::= "(" | ")" | "{" | "}" | "[" | "]" | "." | "," | ":" | ";" | "`
 >
 > **Direction is semantic** in this operator set: `->` points *to* a target, `<-`
 > brings a value *back*, `=>` goes *from* one type *to* another.
+
+### 5.1 The range and spread family
+
+These four share a dot prefix because they are one family, not four unrelated
+symbols:
+
+| Token | Meaning | Where it appears |
+|---|---|---|
+| `..` | inclusive range `[a, b]` | expression |
+| `...` | exclusive range `[a, b)` | expression |
+| `..*` | variadic rest marker — **collects** arguments | declaration site |
+| `..^` | spread — **expands** a collection into arguments | call site |
+
+`..*` and `..^` are inverses. Confirmed against the prototype:
+`parser.cpp:2582` (`// Check for spread operator: ..^expr`) and
+`expr.cpp:248`; the token also exists in `npkc-native/src/frontend/token.npk`.
+
+This is why `FORMAL_DRAFT` 04 §4.2 names precedence level 8 "Range / **Spread**".
+
+### 5.2 `!!` is a modifier token, not an operator
+
+`FORMAL_DRAFT` 01 listed `!!` among the operators. It is not one — it is a lexer
+token that exists solely so `sys!!` and `asm!!` can be lexed. The prototype is
+explicit: `lexer.cpp:499` emits `TOKEN_BANG_BANG` with the comment
+`// !! (sys!! modifier)`.
+
+`!!!` **is** a genuine operator — the failsafe abort, `!!! errCode`. Note that
+after D-001 removed `sys!!!` and `asm!!!`, `!!!` has exactly one meaning again.
 
 ## 6. Literals
 
@@ -249,7 +279,4 @@ Interpolation   ::= "&{" /* syntactic expression */ "}"
 - **`dim256` rename is not yet applied project-wide.** `TYPE_REFERENCE.md` §5a and
   `FORMAL_DRAFT` 02 §2.3.3 still say `fix256`. This grammar uses `dim256` per
   `SPEC_GAPS` §3; the rest of the specs need to follow.
-- **`..^`** appears in the operator list with no definition in any chapter.
-- **`!!`** likewise — `!!!` is the failsafe abort, but bare `!!` is undefined
-  outside the `sys!!` / `asm!!` builtin names.
 - **`move`** is listed as a memory qualifier but is not specified anywhere.

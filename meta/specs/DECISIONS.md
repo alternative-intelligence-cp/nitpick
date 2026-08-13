@@ -1525,3 +1525,85 @@ which a compiler handles constantly.
 
 The lexical grammar must therefore include `RawStringLiteral` and
 `BlockStringLiteral` productions, which chapter 01 currently lacks.
+
+---
+
+## D-025 — No do-while construct — **SETTLED**
+
+Nitpick has five loop forms — `while`, `for`, `loop`, `till`, `when` — and does
+not add a sixth for do-while.
+
+### `when` / `then` / `end` does **not** express it
+
+This was considered and does not work. `when`'s body is gated on its condition:
+if the condition is false initially the body never runs and `end` fires instead.
+Producing "runs at least once" would mean duplicating the body into `end`, or
+reintroducing a boolean flag — and eliminating exactly that kind of external
+state-tracking flag is why `when` exists.
+
+### The existing spelling is adequate
+
+```nitpick
+while (true) {
+    body();
+    if (!cond) { break; }
+}
+```
+
+Explicit, greppable, and built from constructs that already exist. A sixth loop
+form to save one line does not clear the bar the blueprint philosophy sets, and
+each additional loop construct is one more thing a reviewer must know.
+
+If a do-while is ever genuinely wanted it needs its **own keyword** — reusing
+`till` would give one keyword two meanings, which D-022 already rejected.
+
+### Related question raised, not decided — `end` conflates two outcomes
+
+`when`'s stated purpose is to track *how* a loop terminated without external
+flags. But `end` fires in **two distinct cases**:
+
+1. the condition was false to begin with, so the body never ran;
+2. the loop was exited early via `break`.
+
+Distinguishing those requires a boolean flag — the exact workaround `when` was
+built to remove, in a case squarely inside its remit. Worth deciding whether
+`when` needs a third clause, or whether the two cases should be separated some
+other way.
+
+---
+
+## D-026 — `..^` is the spread operator; `!!` is a modifier token — **SETTLED**
+
+Both were listed in `FORMAL_DRAFT` 01 §1.5 with no definition anywhere. Resolved
+against the prototype source rather than by inference.
+
+### `..^` — spread
+
+`..` `...` `..*` `..^` are **one family**, not four unrelated symbols:
+
+| Token | Meaning | Site |
+|---|---|---|
+| `..` | inclusive range `[a, b]` | expression |
+| `...` | exclusive range `[a, b)` | expression |
+| `..*` | variadic rest marker — **collects** | declaration |
+| `..^` | spread — **expands** | call |
+
+`..*` and `..^` are inverses, which is why they share the dot prefix.
+
+Evidence: `nitpick/src/frontend/parser/parser.cpp:2582`
+(`// Check for spread operator: ..^expr`), `parser.cpp:2587`
+(`"Expected expression after '..^' spread operator"`), and
+`nitpick/src/frontend/ast/expr.cpp:248`. The token also exists in
+`npkc-native/src/frontend/token.npk` and `nitpick-bootstrap/src/frontend/tokens.npk`.
+
+This is why `FORMAL_DRAFT` 04 §4.2 names precedence level 8 "Range / **Spread**" —
+the name was correct and the operator list simply never defined the second half.
+
+### `!!` — a modifier token, not an operator
+
+`nitpick/src/frontend/lexer/lexer.cpp:499` emits `TOKEN_BANG_BANG` with the
+comment `// !! (sys!! modifier)`. It exists so `sys!!` and `asm!!` can be lexed
+and has no standalone meaning. Listing it among operators was a category error.
+
+`!!!` **is** a genuine operator — the failsafe abort. Note that after D-001
+removed `sys!!!` and `asm!!!`, `!!!` again has exactly one meaning.
