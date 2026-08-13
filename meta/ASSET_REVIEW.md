@@ -391,7 +391,7 @@ C-free and then promoted.
 
 | Library | Src files | Lines | C in src | Notes |
 |---|---|---|---|---|
-| **`ncrypto`** | 64 | **34,925** | **none** | largest clean asset — but see the caveat below |
+| **`ncrypto`** | 64 | **34,925** | **none** | largest clean asset — 52 files / 17,505 lines are `src/`; see caveats below |
 | `nregx` | 16 | 2,398 | none | complete regex engine; depends on `nlists` (clean — see below) |
 | `ntoml` | 3 | 1,092 | none | ⚠️ transitively tainted — see below |
 | `njson` | 23 | 849 | none | |
@@ -570,3 +570,45 @@ The C dependency is the *easy* part. What actually dominates the port is
 conforming code written before D-001…D-034 existed — and the `Result`-discipline
 violation is the one a reviewer would miss, because the line looks like ordinary
 C-style syscall usage.
+
+
+---
+
+## `ncrypto` and D-037: no reliance on LBIM ERR
+
+**Checked and clear.** D-037 removed the sticky ERR sentinel from `int`/`uint`
+types including the LBIM widths, and `ncrypto` does not depend on it:
+
+| Probe | Result |
+|---|---|
+| `ERR`, `sentinel`, `sticky`, `0x8000` | **0 occurrences** |
+| `is_err` | 1,867 — but these are `Result.is_error` field accesses, not the `tbb` predicate |
+| `uint4096` | 938 uses — the only LBIM width used |
+| carry handling | **explicit and manual** |
+
+`src/cipher/modes.npk`'s CTR counter increment is representative: it does
+byte-wise carry with explicit masking (`v &= 255i64`), so `v` never exceeds 256
+and no overflow of any kind occurs. Error signalling throughout is `Result`-based.
+
+D-037 therefore costs `ncrypto` nothing.
+
+### But the conformance work is substantial and countable
+
+Measured over `src/` (52 files, 17,505 lines):
+
+| Construct | Sites | Becomes |
+|---|---|---|
+| `cast_unchecked<…>` | **1,520** | `=>!` (D-021) |
+| — of which **integer→pointer** | **910** | `#wild_ptr<T>(addr)` in `wild` context (D-019) |
+| `?!` | 735 | verify each takes exactly one `tbb32` argument (D-009) |
+| `asm!!!` | 3 | removed (D-001) — must be rewritten as `asm!!` returning `Result<T>` |
+| `gc` | **0** | ✓ nothing to remove |
+
+So roughly **2,300 edits**, none of them C removal. The 910 integer→pointer sites
+are the ones needing judgement rather than substitution: each must be confined to
+`wild` context, and D-004's second-class borrow rules apply wherever the result
+escapes.
+
+This is the same pattern seen in `stdlib/base64` and `nlists/src/skiplist.npk`.
+Across every asset examined, **conforming to decisions made after the code was
+written dominates the port; removing C does not.**
