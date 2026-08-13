@@ -1,0 +1,65 @@
+# Nitpick Safety Architecture & Concepts
+
+Nitpick fundamentally rejects undefined behavior (UB), uncontrolled crashes, and implicit failures. To achieve this, the language architecture relies on a **Defense in Depth** strategy. Safety in Nitpick is not a single feature but an interconnected set of layers—spanning from compile-time mathematical proofs down to a mandatory runtime trap handler.
+
+This document outlines how these safety concepts play together, their purposes, and how they dictate the architecture of the language and compiler.
+
+---
+
+## The Three Layers of Safety
+
+Nitpick's safety architecture can be conceptualized in three layers, checked sequentially from compilation down to runtime execution:
+
+1. **Layer 1: Formal Verification (Compile Time)** - Prevent invalid states mathematically.
+2. **Layer 2: Safe Runtime Semantics (Runtime)** - Handle expected failures securely without exceptions.
+3. **Layer 3: The Mandatory Failsafe (Recovery/Trap)** - The ultimate, un-bypassable safety net.
+
+---
+
+### Layer 1: Formal Verification (Compile Time)
+
+The primary goal of Nitpick is to shift as much error handling as possible to compile-time using the **Z3 SMT Solver**.
+
+*   **`limit<Rules>` & Value Constraints**: Instead of checking bounds manually, developers declare structural constraints (`Rules`) and bind them to types (e.g., `limit<r_positive> int32:x`). The compiler mathematically proves these constraints are never violated. 
+*   **Design by Contract (`requires` / `ensures`)**: Functions declare preconditions and postconditions. The Z3 solver verifies that all callers satisfy the `requires` contract and that the function body satisfies the `ensures` contract.
+*   **Formal Proofs (`prove` & `assert_static`)**: Developers can force the solver to construct mathematical proofs of arbitrary expressions (`prove(x != 0)`), which accumulate path conditions (like being inside an `if(x > 0)` block).
+
+**Architectural Impact**: The compiler must tightly integrate with an SMT solver (Z3) during the type-checking/semantic analysis phase. Path condition accumulation must be a core part of the AST walk.
+
+---
+
+### Layer 2: Safe Runtime Semantics (The `Result<T>` Intercept)
+
+When a state cannot be mathematically proven at compile time (e.g., reading user input or dynamic data), Nitpick falls back to **sticky error propagation**. Exceptions and `catch` blocks are entirely absent from the language.
+
+*   **The `Result<T>` System**: Functions that can fail must return a `Result<T>`. Developers return using `pass value;` or `fail errCode;`.
+*   **Forced Handling**: The caller *must* explicitly handle the `Result<T>` using specific operators:
+    *   `?` (Safe Fallback): Swallows the error and provides a default.
+    *   `?!` (Emphatic Unwrap): Asserts success; traps to Layer 3 (`failsafe()`) if it errors.
+    *   `raw` (Explicit Cast): Bypasses safety (acts as a searchable "TOS" keyword).
+    *   `drop`: Explicitly discards the result.
+*   **The Contract Intercept**: This is where Layer 1 meets Layer 2. If a function has a `requires` contract that cannot be statically proven, Nitpick automatically forces the function to return a `Result<T>`. If the caller violates the contract at runtime, the function immediately intercepts and returns a `Result` error rather than crashing.
+
+**Architectural Impact**: `Result<T>` is heavily intertwined with the type system and ABI. The compiler must automatically inject runtime bounds/contract checks and wrap return types implicitly when verification is deferred to runtime.
+
+---
+
+### Layer 3: The Mandatory Failsafe
+
+The ultimate safety net. If an unrecoverable state is reached, execution is trapped.
+
+*   **The `failsafe` function**: Every Nitpick program must define a `func:failsafe = int32(tbb32:err)`. It acts as the global trap handler.
+*   **Triggers**: It is invoked via explicit developer commands (`!!! errCode`), emphatic unwraps (`?!`), or critical unrecoverable runtime panics (e.g., Out Of Memory).
+*   **K-Semantics on `exit`**: The failsafe and `main` are the only places allowed to call `exit`. Nitpick enforces that no unchecked manual memory (`wild`/`wildx`) is active upon `exit`. If a memory leak exists during an exit attempt, it traps back into the failsafe to enforce cleanup.
+
+**Architectural Impact**: The standard library and runtime must establish a global trap mechanism before invoking `main`. Memory allocations (specifically `wild`/`wildx`) must be tracked globally (e.g., in a `<wildx-states>` map) to validate the `exit` condition.
+
+---
+
+## Escape Hatches (Opt-in Unsafe)
+
+For low-level systems programming, safety checks can be intentionally bypassed, but they are highly visible and grep-able:
+
+*   **`raw`**: Forcibly unwrap a `Result<T>`.
+*   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers. 
+*   **Pedantic Restrictions**: The `--extra-picky` compiler flags (like `no-wild`) can be used to entirely ban these escape hatches in high-level application code.
