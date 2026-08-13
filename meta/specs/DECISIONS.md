@@ -2184,3 +2184,121 @@ and it never appears on `int`, `uint`, or `flt`.
 - `TYPE_REFERENCE.md` §1.2 and §1.3 — overflow wraps; remove the failsafe claim.
 - Check `ncrypto` (34,925 lines) for reliance on LBIM ERR propagation before
   porting.
+
+---
+
+## D-038 — Pointers are thin — **SETTLED**
+
+Every pointer is a single machine word — LLVM's opaque `ptr`. There is **no
+bounds metadata carried at runtime**.
+
+`FORMAL_DRAFT` 15 §15.1.3's claim that "`int8->` is a Fat Pointer containing
+bounds metadata" is **struck**. `TYPE_REFERENCE.md` §10 is correct: all pointer
+kinds lower to identical IR, and the distinction between `wild` and borrow
+pointers is enforced **entirely by the type checker**.
+
+### Why thin is the right answer here
+
+The usual argument for fat pointers is that they make out-of-bounds detectable on
+any pointer at runtime. Nitpick closes most of that ground **statically and at
+zero cost**, so the runtime metadata would be paying twice:
+
+| Hazard | Already handled by |
+|---|---|
+| dangling references | **second-class borrows** — a borrow cannot outlive its frame (D-004) |
+| use-after-free in arenas | **generation-counted `Handle<T>`** — a stale handle fails through `Result<T>` |
+| out-of-bounds indexing | bounds checks on array access, plus `limit<Rules>` and Z3 proving indices in range |
+| leaks | the K-semantics `exit` rule |
+
+What fat pointers would add beyond that is bounds checking on **raw `wild`
+pointers** — which are the explicit, greppable opt-out from safety in the first
+place. Paying two-to-three words on every pointer in the language to partially
+protect the construct that exists to say "I am taking responsibility here" is a
+poor trade.
+
+Three further costs:
+
+- **C ABI incompatibility.** Fat pointers cannot be passed to C without
+  conversion at every FFI boundary, which is exactly where the language is
+  already most careful and least able to afford surprises.
+- **Performance.** Two-to-three words per pointer on the numeric hot path, where
+  performance is a first-class requirement.
+- **Verification.** `--verify-memory` becomes partly a *runtime* guarantee rather
+  than a static one — the wrong direction for Astrée, which reasons about what is
+  provable before execution.
+
+`--guard-pages` (`FORMAL_DRAFT` 14.5.3) remains available for aggressive
+overrun detection around `wild` allocations, without changing the pointer
+representation.
+
+---
+
+## D-039 — Z3 and LLVM are invoked as tools, never linked — **SETTLED**
+
+Neither is compiled into the compiler binary or the produced binary. Both are
+driven over **text interfaces**, as external processes:
+
+| Tool | Interface | Role |
+|---|---|---|
+| **Z3** | SMT-LIB2 text | invoked during the build to discharge proof obligations |
+| **LLVM** | LLVM IR text, via `llc` / `opt` / `llvm-as` | invoked to assemble, optimise, and lower |
+
+This resolves `GRAMMAR_ADOPTION_CONFLICTS.md` Part X. `FORMAL_DRAFT` 00b's
+"isolated exceptions being the LLVM IR generator and the Z3 SMT Subsystem"
+described *linking*, and is corrected: they are exceptions in the sense that we
+**use** them, not that C++ enters the trusted computing base.
+
+Nothing about the zero-dependency rule is weakened. No C or C++ is linked into
+either binary, and neither tool is present at runtime.
+
+### Text interfaces make the solver replaceable
+
+Beyond the dependency argument, this is the decision that keeps the door open.
+**SMT-LIB2 is a standard**, so a text interface means Z3 can eventually be
+swapped for a Nitpick-native solver without touching the compiler's structure.
+Linking `libz3` would couple the compiler to Z3 permanently.
+
+A Nitpick-native SMT solver is a long-term aspiration, not near-term work. That
+mathematics is a specialist field and the intent is to leave it to people who
+work in it. Retaining Z3 compatibility over a text interface is the bridge until
+then. `--debug-z3` already dumps SMT-LIB2, so the interface exists.
+
+### What Z3 changes in the output
+
+Z3 runs during the build and verifies what it can. Its one effect on generated
+code is **check elimination**, and the rule is conservative in the safe
+direction:
+
+> If Z3 **proves** a value cannot fall outside its range, the corresponding
+> runtime check is removed. If it **cannot prove it**, the check stays and runs
+> at runtime.
+
+Proof can only ever *remove* a check that was provably unnecessary. Absence of
+proof never removes anything. This is `--smt-opt`
+(`VERIFICATION_REFERENCE.md` §5).
+
+### ⚠️ `--smt-opt` must not make builds non-deterministic
+
+Flagged rather than decided, because it matters for Astrée.
+
+`--smt-timeout=N` defaults to 5000 ms. If a proof succeeds within the timeout on
+one machine and times out on another — slower hardware, heavier load, a different
+Z3 build — **the two compilations emit different binaries from identical
+sources.** One retains a check the other elided.
+
+That is non-deterministic compilation, which is a serious problem for
+reproducible builds and for certification, where the artifact analysed must be
+the artifact shipped.
+
+Options, roughly in order of preference:
+
+1. **Record the elimination set.** Emit a manifest of every check Z3 discharged;
+   a build that does not reproduce it fails rather than silently differing.
+2. **Off by default for release and certified builds.** Treat `--smt-opt` as a
+   development-time optimisation only.
+3. **Unbounded timeout in release builds**, so the result depends on the
+   obligations rather than on the clock.
+
+The optimisation is a by-product of the Z3 integration suggested by an agent
+rather than a requirement, and there is no attachment to it if it proves
+troublesome. Determinism should win where the two conflict.

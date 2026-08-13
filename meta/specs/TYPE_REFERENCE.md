@@ -599,8 +599,19 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 > - `<-ptr` = dereference pointer
 > - `ptr.field` = unified member access (automatically dereferences if pointer)
 
-All pointers are LLVM opaque `ptr` at the IR level. The distinction between
-wild and borrow pointers is enforced entirely by the type checker — the LLVM IR is identical.
+All pointers are **thin** — a single machine word, LLVM opaque `ptr` at the IR
+level, carrying **no bounds metadata** (D-038). The distinction between wild and
+borrow pointers is enforced entirely by the type checker; the LLVM IR is
+identical.
+
+> `FORMAL_DRAFT` 15 §15.1.3 claims `int8->` is a *fat* pointer carrying bounds
+> metadata. **Struck.** Second-class borrows (D-004) and generation-counted
+> `Handle<T>` already close the dangling and use-after-free classes statically, so
+> runtime metadata would pay twice — at the cost of C ABI compatibility, two to
+> three words per pointer on the numeric hot path, and turning part of
+> `--verify-memory` into a runtime guarantee rather than a static one.
+> `--guard-pages` remains available for overrun detection around `wild`
+> allocations without changing the representation.
 
 ---
 
