@@ -164,7 +164,8 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 | `--verify-concurrency` | Verify data race & deadlock freedom |
 | `--verify-memory` | Verify use-after-free & recursion bounds |
 | `--verify-level=N` | Controls verification depth (see table below) |
-| `--smt-opt` | Enable SMT-guided optimizations (eliminates proven-safe checks) |
+| `--smt-opt` | Enable SMT-guided optimizations (eliminates proven-safe checks). **Writes an elimination manifest** — see §8 |
+| `--smt-manifest=<path>` | Path to the elimination manifest `--smt-opt` records against |
 | `--smt-timeout=N` | Per-query Z3 solver timeout in ms (default: 5000) |
 | `--prove-report` | Emit prove/assert_static outcomes with counterexamples |
 | `--debug-z3` | Dump SMT-LIB2 for proof obligations |
@@ -234,3 +235,46 @@ promises something no document delivers. Either a detection or proof strategy
 needs specifying — lock ordering, a wait-for graph, or a static discipline on the
 `mutex` / `rwlock` / `condvar` API — or the claim should be narrowed to data-race
 freedom alone.
+
+
+---
+
+## 8. The SMT elimination manifest
+
+`--smt-opt` is the only verification flag that changes generated code: where Z3
+**proves** a runtime check unnecessary, the check is removed; where it cannot
+prove it, the check stays and runs at runtime. Proof can only ever remove
+something provably redundant.
+
+That creates a reproducibility hazard. `--smt-timeout` defaults to 5000 ms, so a
+proof succeeding on one machine and timing out on another would emit **different
+binaries from identical sources**. For certification, where the artifact analysed
+must be the artifact shipped, that is not acceptable.
+
+**Every elision is therefore recorded in a manifest, and the manifest is
+authoritative on subsequent builds** (D-040):
+
+```
+# nitpick-smt-manifest v1
+# compiler: 0.1.0   z3: 4.13.0   target: x86_64-linux   timeout-ms: 5000
+a3f1…  npk_parse_expr   bounds     discharged
+b7c2…  npk_hash_mix     overflow   discharged
+```
+
+| Situation | Outcome |
+|---|---|
+| manifest matches exactly | build proceeds, binary reproducible |
+| Z3 proves **more** than recorded | **build fails** |
+| Z3 proves **less** than recorded | **build fails** |
+| no manifest | generated; build marked *not reproducibility-verified* |
+
+Obligations are identified by a **hash of their normalised SMT-LIB2 form**, not by
+source location — line numbers shift with any edit above them, while the
+obligation itself does not.
+
+This does not make Z3 deterministic. It makes divergence **detectable and fatal**
+rather than silent, which is the achievable guarantee.
+
+It is also an **audit artifact**: the manifest is evidence that every removed
+check had a proof, reproducible on demand. Certification runs may record full
+proof certificates (unsat cores) rather than outcomes alone.

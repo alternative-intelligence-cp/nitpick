@@ -2302,3 +2302,76 @@ Options, roughly in order of preference:
 The optimisation is a by-product of the Z3 integration suggested by an agent
 rather than a requirement, and there is no attachment to it if it proves
 troublesome. Determinism should win where the two conflict.
+
+---
+
+## D-040 — `--smt-opt` records an elimination manifest — **SETTLED**
+
+Closes the determinism concern raised in D-039. Where determinism and
+optimisation conflict, **determinism wins**.
+
+### The rule
+
+When `--smt-opt` elides a runtime check because Z3 proved it unnecessary, the
+compiler **records that decision in a manifest**. On any subsequent build the
+manifest is authoritative:
+
+| Situation | Outcome |
+|---|---|
+| no manifest present | one is generated; the build is marked *not reproducibility-verified* |
+| manifest present, every obligation matches | build proceeds; binary is reproducible |
+| Z3 proves **more** than the manifest records (faster machine, warmer cache) | **build fails** — the binary would differ |
+| Z3 proves **less** (timeout, slower host, different solver build) | **build fails** — the binary would differ |
+
+Note that proving *less* also fails, even though the resulting binary would be
+*safer* — it would retain a check the manifest says was removed. Reproducibility
+is the property being protected, not conservatism, and a build that silently
+differs is the thing to prevent regardless of which direction it differs in.
+
+### What the manifest must contain
+
+```
+# nitpick-smt-manifest v1
+# compiler: <version>   z3: <version>   target: <triple>   timeout-ms: <N>
+<obligation-hash>  <function>  <kind>  discharged
+```
+
+- **Obligation identity must be stable across edits.** Source line numbers are
+  too fragile — any change above a check renumbers everything below it. Identify
+  each obligation by a **hash of its normalised SMT-LIB2 form**, so the same
+  obligation yields the same identifier regardless of where it now sits.
+- **Record the Z3 version and the timeout.** A different solver build can decide
+  different things, and the timeout is precisely the variable that made this
+  non-deterministic. Both belong in the header so a mismatch is diagnosable
+  rather than mysterious.
+
+### What this does and does not guarantee
+
+It does **not** make Z3 deterministic. It makes **divergence detectable and
+fatal** instead of silent. That is the achievable property, and it is the one
+that matters: a build either reproduces the recorded reasoning exactly, or it
+stops.
+
+### It also turns a risk into an audit artifact
+
+Worth noting for Astrée: the manifest is **evidence that every elided check had a
+proof**. Rather than asking an auditor to accept that the compiler removed checks
+safely, the build produces a list of exactly which checks were removed and on
+what grounds, reproducible on demand.
+
+For certification runs the manifest should be able to carry **full proof
+certificates** (unsat cores) rather than just outcomes — larger, but maximally
+auditable. Hash-and-outcome is the default; certificates are an opt-in.
+
+### The asymmetry with the `--verify*` flags
+
+Only `--smt-opt` changes generated code, so only it needs a manifest for
+*reproducibility*.
+
+The `--verify*` family can still behave non-deterministically under timeout — a
+proof that succeeds on a fast machine may time out on a slow one — but it fails
+**safe**: the outcome is a rejected build, never a silently different binary. You
+cannot accidentally ship something unverified; you can only fail to build it.
+Worth keeping the distinction in mind when reasoning about timeouts, and worth
+considering an unbounded timeout for certification runs so that verification
+depends on the obligations rather than on the clock.
