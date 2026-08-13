@@ -143,48 +143,107 @@ were live parts of the ecosystem.
 
 ## The prototype standard library — `REPOS/nitpick/stdlib`
 
-**This is where `libn` was promoted, and it is the largest reusable asset found
-so far: 85 `.npk` files, ~20,700 lines.**
+**112 files, 20,702 lines — the largest reusable asset in the ecosystem.**
 
 It was overlooked initially because `nitpick-libc` was mistaken for the C-free
-libc effort. It is not — `nitpick-libc` was the *earliest* experiment, built on a
+libc effort. It is not: `nitpick-libc` was the *earliest* experiment, built on a
 musl tree while ideas were still being tested, and was all but deprecated within
 the prototype itself. `libn` came later to remove that dependency, and this
-directory is where it ended up.
+directory is where it was promoted.
 
-### Concurrency modules
+### Verdict by tier
 
-| Module | Lines | C surface |
-|---|---|---|
-| `thread.npk` | 111 | **none** — raw syscalls only |
-| `thread_pool.npk` | — | **none** |
-| `mutex.npk` | 121 | **none** — futex-based |
-| `rwlock.npk` | 126 | **none** |
-| `condvar.npk` | 85 | **none** |
-| `channel.npk` | 350 | **none** |
-| `actor.npk` | 111 | **none** |
-| `atomic.npk` | 181 | ⚠️ DEPRECATED — `extern "nitpick_runtime"` → `atomic_shim.cpp` |
-| `barrier.npk` | 34 | ⚠️ DEPRECATED — `npk_shim_barrier_*` |
-| `lockfree.npk` | — | ⚠️ DEPRECATED — `npk_shim_lfqueue_*` |
+| Tier | Files | Lines | Disposition |
+|---|---|---|---|
+| **1 — C-free, portable** | 63 | **11,406** | port; same D-012 signature pass as `libn` |
+| **2 — deprecated C shims** | 17 | 2,731 | reimplement natively, or drop as superseded |
+| **3 — FFI bindings to the C++ compiler** | 19 | 6,393 | **do not port** — this is what the project exists to eliminate |
+| **4 — tests & scratch** | 13 | 284 | assess separately |
 
-Seven of ten are already C-free. The three that are not are **marked deprecated
-in their own source**, so the project had identified them independently.
+**55% of the directory is directly portable.** Another 31% is the FFI bridge to
+the C++ backend and must not come across at any price.
 
-`atomic.npk` should not be ported at all — it is superseded by the language-level
-`atomic<T>`, which emits native LLVM atomic IR with no shim
-(`TYPE_REFERENCE.md` §13). `barrier` and `lockfree` need native reimplementation.
+### Tier 1 — what is actually there
 
-`libn` itself supplies the primitives these sit on: its syscall layer already
-wraps `futex` (12 uses), `clone` (5), `gettid`, `tkill`, and `set_robust_list`.
+| Domain | Files | Lines | Notes |
+|---|---|---|---|
+| **regex engine** | 14 | **2,339** | `regex_compiler` (721), `nfa_compiler` (311), `regex_vm` (297), `regex_cache` (261), `prefix_extractor` (154). **Zero extern anywhere.** |
+| **math / physics** | 7 | **2,309** | `quantum` (705), `complex` (566), `math` (372), `number`, `linalg`, `wavemech` |
+| **strings & fmt** | 5 | 1,681 | `string_convert` (602), `string` (449), `print_utils`, `fmt`, `string_builder` |
+| **system / io** | 11 | 1,720 | `sys` (391), `io`, `net`, `process`, `signal`, `pipe`, `shm`, `ntime`, `nfs`, `nurl` |
+| **concurrency** | 7 | 1,068 | `channel` (351), `thread_pool` (157), `rwlock` (126), `mutex` (121), `thread` (111), `actor` (111), `condvar` (85) |
+| **memory** | 5 | 498 | `arena` (91), `drop` (143), `pool_alloc` (102), `mem` (95), `handle` (62) |
+| **data & misc** | 14 | 1,791 | `binary` (349), `dbug` (289), `base64` (224), `buffer` (216), `hexstream`, `random`, `rules`, `bld`, `pkg` |
 
-### Not yet assessed
+**The regex engine is the standout.** ~2,300 lines, entirely C-free, including a
+compiler, an NFA builder, a VM, a cache, and a prefix extractor. `nregx` was named
+as a dependency of several later libraries (websockets among them), so this
+unblocks more than itself.
 
-The other ~75 files include `arena.npk`, `allocator.npk`, `collections.npk`,
-`buffer.npk`, `binary.npk`, `complex.npk`, `crypto/`, `base64/`, `jit.npk`, and
-compiler-support modules (`borrow_checker.npk`, `closure_analyzer.npk`,
-`definite_assignment.npk`, `const_evaluator.npk`, `async_analyzer.npk`,
-`diagnostics.npk`). Several of those last ones are **frontend analyses written in
-Nitpick** and may be directly relevant to building the new compiler.
+**`quantum.npk` (705), `complex.npk` (566), and `wavemech.npk` (175)** are the
+physics substrate — directly relevant to Nikola, and dependency-free.
 
-This directory should get the same treatment `libn/src` received before any
-further porting decisions are made.
+### Tier 2 — the C shims
+
+| File | Lines | extern | Disposition |
+|---|---|---|---|
+| `collections.npk` | 460 | 33 | **rebuild** — containers are foundational and this is a pure shim |
+| `json.npk` | 315 | 96 | rebuild |
+| `toml.npk` | 309 | 62 | rebuild (needed by `nitpick.toml` parsing) |
+| `atomic.npk` + `atomic/int32.npk` | 244 | 11 | **do not port** — superseded by the language-level `atomic<T>`, which emits native LLVM atomic IR with no shim (`TYPE_REFERENCE.md` §13) |
+| `lockfree.npk` | 115 | 16 | rebuild |
+| `wave.npk` | 563 | 4 | rebuild — small C surface, mostly native |
+| `aifs.npk` | 167 | 25 | assess — purpose unclear |
+| `barrier.npk` | 34 | 3 | rebuild |
+| `lib_hashmap_*` (3), `lib_vec_*` (4) | 352 | 44 | **delete** — see below |
+
+The seven `lib_hashmap_int32_int64` / `lib_vec_int64` style files are **hand
+monomorphized containers**, written because generics were not available. With
+generics specified (D-030), one generic implementation replaces all seven. They
+should not be ported in any form.
+
+All Tier 2 files are **already marked `DEPRECATED` in their own source headers**,
+so the project had identified them independently.
+
+### Tier 3 — do not port
+
+`parser.npk` (1,921), `type_checker.npk` (1,806), `lexer.npk` (1,270),
+`module_table`, `visibility_checker`, `diagnostics`, `borrow_checker`,
+`const_evaluator`, `definite_assignment`, `closure_analyzer`, `exhaustiveness`,
+`safety_checker`, `async_analyzer`, `warnings`, and the tooling modules.
+
+**These are not Nitpick implementations of compiler passes.** They are `extern`
+declaration blocks binding to the C++ compiler — `lex_new`, `ast_new_node`,
+`tc_new` are C++ functions. `borrow_checker.npk` is 49 lines of which 19 are
+extern declarations; the file header describes the algorithm and then declares
+the C++ entry points that implement it.
+
+This is the same arrangement as `npkc-native/src/backend/ffi_bridge.npk`, and it
+is precisely what `nitpick-native` exists to replace. **Correction to an earlier
+assessment**: these were previously described here as "frontend analyses written
+in Nitpick" that might inform the new compiler. They are not, and they will not.
+
+Their file headers remain useful as *documentation* of what each pass does —
+`borrow_checker.npk` states the borrow rules, the wild-memory state machine
+(`UNINIT → ALLOC → FREED/MOVED`), and the leak-detection strategy in prose.
+
+### A prototype bug worth carrying forward
+
+`borrow_checker.npk` records: *"Aria wrapper functions removed due to compiler
+codegen bug (`wild int8->` NIL comparison + extern call crashes LLVM)."* Worth a
+regression test in the new compiler.
+
+### Recommendation
+
+Assess Tier 1 for porting **after** `nlibc`'s core lands, in this order:
+
+1. **regex** — largest self-contained win, unblocks downstream libraries
+2. **concurrency** — needed for the D-032 executor model, and `thread`/`mutex`
+   already go through raw syscalls that `nlibc` supplies
+3. **strings, memory, system/io** — overlaps `libn`; reconcile rather than
+   duplicate, since both directories implement string and I/O layers
+4. **math / physics** — no dependencies, can happen any time
+
+Note the overlap risk: `libn/src/str/` and `stdlib/string*.npk` both exist, as do
+`libn/src/io/` and `stdlib/io.npk`. Deciding which survives is a prerequisite to
+porting either, or the work gets done twice.
