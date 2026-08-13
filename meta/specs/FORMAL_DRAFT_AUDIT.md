@@ -164,4 +164,17 @@ default and suspended only through a named, greppable, auditable construct.
    conflicts 2, 3, 7, 8, 12, 13 corrected.
 7. **Adopt 03, 07, 09** — already reviewed; 09 needs the GC sections removed per
    D-003, and 09 §9.7.1's `Result` layout corrected per D-005.
-8. **Assess 00b, 10, 14, 15** — not yet read in detail.
+8. ~~**Assess 00b, 10, 14, 15**~~ **✅ DONE** — `GRAMMAR_ADOPTION_CONFLICTS.md`
+   Parts T–X. **All 16 chapters are now assessed.**
+
+   Chapter 15 is the most out-of-date in the draft: it states that Nitpick
+   "deliberately omits a discrete `char` type", which is flatly contradicted by
+   `TYPE_REFERENCE.md` §2 and by the principle behind D-005.
+
+   Two genuine open questions surfaced, both expensive to change later:
+   **fat versus thin pointers** (Part W) and **the LLVM/Z3 dependency boundary**
+   (Part X).
+
+   Chapter 10 contributes three things found nowhere else: strict left-to-right
+   evaluation order, the symbol-mangling scheme, and the reserved failsafe error
+   codes.

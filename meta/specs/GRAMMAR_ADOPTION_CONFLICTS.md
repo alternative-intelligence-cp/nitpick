@@ -483,3 +483,108 @@ Adds, with no counterpart elsewhere:
 - **`frac8/16/32/64`** — exact rational fractions (whole, numerator, denominator).
 - **Sub-byte integers** — `int1`, `int2`, `int4` and unsigned counterparts.
 - **LBIM** — `int1024` … `int4096` as limb arrays for post-quantum work.
+
+---
+
+# Chapters 00b, 10, 14, 15 — Final Conflict List
+
+Completes the `FORMAL_DRAFT` review. Chapters 00, 03, 06, 07, 08, and 09 were
+catalogued in `FORMAL_DRAFT_AUDIT.md` §3–§4.
+
+## Part T — Chapter 15 (Standard Library): the most out-of-date chapter
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 51 | §15.1.1 | "Nitpick **deliberately omits a discrete `char` type**. Single-character literals evaluate directly to an `int8` or `uint8` scalar." | **Flatly contradicted.** `TYPE_REFERENCE.md` §2 defines `char8`/`char16`/`char32` as semantically distinct, with arithmetic and bitwise operations **rejected at compile time**. This is also the worked example behind D-005's governing principle — a character is not an integer at the semantic level. **Strike §15.1.1 entirely.** |
+| 52 | §15.1.3 | "`int8->` is a **Fat Pointer** containing bounds metadata. `int8*` is a standard Thin Pointer" | conflicts with `TYPE_REFERENCE.md` §10, which states the LLVM IR for pointer kinds is **identical** and the distinction is enforced by the type checker. See **Part W** — this is a real open question, not stale text. |
+| 53 | §15.1.3 | "`string` guarantees internal null-termination … `extern` signature **must** use `string`" | `MODULE_REFERENCE.md` §5.3 says the opposite: do **not** pass native `string` to C; use `as_cstring(string)` to produce a null-terminated `char8[]` |
+| 54 | §15.1.2 | raw and multi-line strings "currently unsupported" | **D-024** — both retained; that note described a prototype parser gap |
+| 55 | §15.2 | collections "managed via opaque `int64` handles" | **D-012** — `int64` handles defeat leak checking, escape analysis, and Z3 pointer reasoning. Use `Handle<T>` or a typed handle. |
+| 56 | §15.2.1–15.2.4 | `apush`/`alset`/`ahset` return **`0` on success, `-1` on overflow**; `apop`/`alget`/`ahget` return the **`unknown` sentinel** on underflow | violates the universal `Result<T>` rule twice over, and `unknown` is narrowed to `Result.value` taint (`TYPE_REFERENCE.md` §27). These should return `Result<T>`. |
+
+§15.2.5 (arenas and generational handles) is correct and consistent with D-017.
+
+## Part U — Chapter 10 (ABI & Hardware)
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 57 | §10.2.3, §10.4.2 | `sys!!!` and `asm!!!<T>` documented as raw tiers returning bare values | **removed** (D-001) |
+| 58 | §10.3 | "`->` : Type Annotation **& Field Access** … in an expression context it dereferences a pointer and accesses a field" | **D-006** — `->` is type-position only; `.` handles all member access |
+| 59 | §10.5.2 | "the runtime forcibly invokes **the C standard library `exit(code)`**" | ⚠️ **zero-dependency violation.** Process exit must go through `nlibc`'s syscall layer, not libc. |
+| 60 | §14.2.1 (ch. 14) | `extern` functions "**do not return `Result<T>`**"; callers "assign them directly without `raw` or `?`" | **D-002** — all functions including `extern` return `Result<T>`, with mandatory `fails on` / `never fails` contracts |
+| 61 | §14.2.1 | `?*` / `?->` for opaque pointers | `any->` (`TYPE_REFERENCE.md` §27) |
+| 62 | §14.5.2 | `--extra-picky` valid rules list | add `require-tbb` (D-007) and `no-failsafe-alloc` (D-014) |
+
+### Chapter 10 adds three things of real value
+
+- **§10.6.1 Left-to-right evaluation order**, strictly enforced for all binary
+  operations, function arguments, and assignment sequences. `foo() + bar()`
+  guarantees `foo()` completes first. This eliminates a well-known class of C/C++
+  undefined behaviour and **appears in no other document**.
+- **§10.5.1 Symbol mangling** — generics as `Vec_int8`, trait methods as
+  `Point_display`, drop glue as `T_drop`, base functions unmangled unless generic.
+  Directly relevant to D-015's deferred symbol-binding question.
+- **§10.5.2 Failsafe error codes** — `45` out-of-bounds, `46` null dereference,
+  `50` `requires` violation, `51` `ensures` violation. A reserved numbering scheme
+  that should be extended rather than reinvented.
+
+## Part V — Chapter 14 (Modules & Build) additions
+
+Mostly consistent. Adds, with no counterpart elsewhere:
+
+- **`--seccomp`** — embeds a seccomp-bpf sandbox with a syscall allowlist into the
+  binary. Directly relevant to Nikola's mini-VM isolation.
+- **`--guard-pages`** — injects guard pages around `wild` allocations.
+- **`--verify-nikos` / `--analyze`** — NIKOS abstract interpretation for
+  division-by-zero, out-of-bounds, and deep logical errors.
+- **`--emit-ptx`, `--target=gpu`, `--emit-wasm`** — GPU and WebAssembly targets.
+- **`-test` with `#[test]`** — synthesised test-runner `main`.
+
+## Part W — **Open question**: are pointers fat or thin?
+
+Chapter 15 §15.1.3 states:
+
+> `int8->` is a **Fat Pointer containing bounds metadata**. `int8*` is a standard
+> Thin Pointer that is strictly only valid inside an `extern` block.
+
+`TYPE_REFERENCE.md` §10 states the opposite — the LLVM IR for `wild` and borrow
+pointers is **identical**, with the distinction enforced entirely by the type
+checker.
+
+These cannot both be true, and the answer changes a great deal:
+
+| | Fat pointers | Thin pointers |
+|---|---|---|
+| Bounds checking | **carried at runtime**, so out-of-bounds is detectable on any pointer | only where the compiler can prove or inject a check |
+| Size | 2–3 words | 1 word |
+| C ABI | **incompatible** — every FFI boundary needs conversion | direct |
+| `--verify-memory` | much of it becomes a runtime guarantee | must be proven statically |
+
+It also interacts with D-004: if borrows are second-class and cannot escape, much
+of what fat pointers buy is already provided statically at zero cost.
+
+**This needs deciding before any pointer lowering is implemented**, and it is an
+ABI decision, so it is expensive to change later.
+
+## Part X — **Open question**: the LLVM and Z3 dependency boundary
+
+Chapter 00b §0 describes the native compiler as enforcing zero C/C++ dependencies
+**"with the only explicit and isolated exceptions being the LLVM IR generator and
+the Z3 SMT Subsystem."**
+
+Both LLVM and Z3 are large C++ codebases. That exception is either a significant
+qualification of the zero-dependency rule or a description of the *prototype*
+rather than the target. Which it is has never been stated.
+
+There is a meaningful distinction available:
+
+- **LLVM as a tool we invoke** (`llc`, `opt`, `llvm-as` as subprocesses over
+  hand-written IR) — no linking, nothing in the TCB at runtime. This is what
+  D-011 and D-015 already assume.
+- **LLVM as a library we link** (`libLLVM`) — C++ inside the compiler binary.
+
+The same split applies to Z3: invoking it over SMT-LIB2 text versus linking
+`libz3`. Note `--debug-z3` already dumps SMT-LIB2, so the text interface exists.
+
+Worth settling explicitly, since "no C/C++ dependencies" and "except LLVM and Z3"
+cannot both stand unqualified — and an auditor will ask.
