@@ -391,8 +391,8 @@ C-free and then promoted.
 
 | Library | Src files | Lines | C in src | Notes |
 |---|---|---|---|---|
-| **`ncrypto`** | 64 | **34,925** | **none** | by far the largest clean asset in the ecosystem |
-| `nregx` | 16 | 2,398 | none | complete regex engine |
+| **`ncrypto`** | 64 | **34,925** | **none** | largest clean asset — but see the caveat below |
+| `nregx` | 16 | 2,398 | none | complete regex engine; depends on `nlists` (clean — see below) |
 | `ntoml` | 3 | 1,092 | none | ⚠️ transitively tainted — see below |
 | `njson` | 23 | 849 | none | |
 | `nstr` | 3 | 434 | **none** | confirms the strings recommendation |
@@ -434,7 +434,7 @@ string operations from `nstr`. This is a mechanical swap, not a reimplementation
 | Library | Imports | Consequence |
 |---|---|---|
 | `ntoml` | `../../nitpick/stdlib/core.npk` | ⚠️ **tainted** — `core.npk` links `nitpick_libc_string` |
-| `nregx` | `../../nlists/src/doubly.npk` | `nlists` is clean **except** `original_singly.npk`, which links `nitpick_libc_mem`. Check whether `doubly.npk` reaches it. |
+| `nregx` | `../../nlists/src/doubly.npk` | ✅ **resolved — clean.** `nlists/src/` has no `extern` at all. The one C-bearing file, `original_singly.npk`, sits at the repo *root* rather than in `src/`, and **nothing imports it** — a pre-reorganisation leftover, as its name suggests. `doubly.npk` imports only `types.npk`. |
 | `nfs`, `nthread`, `nsync` | `libn` (`alloc`, `syscall`, `posix_constants`, `sleep`) | ✅ correct layering — these are the intended dependencies |
 
 `ntoml` is one import away from clean: point it at `nstr` instead of
@@ -476,3 +476,65 @@ Port order, after `nlibc`'s core lands:
 5. `njson`, `ntoml`, `nfs`, `nurl`, `nsocket`, `ntime`, `nrand`, `nvec`, `nmath` — small and independent
 6. **`nbase64`** — swap six externs for `libn`/`nstr` equivalents first
 
+
+
+---
+
+## ⚠️ `ncrypto`: C-free is not the same as audited
+
+Getting `ncrypto` free of C dependencies was itself a significant piece of work,
+and that part is confirmed — 34,925 lines, zero `extern`.
+
+**But the functional audit was never completed.** Work was underway on edge cases,
+in particular **side-channel resistance**, and it got a long way without reaching
+a state anyone would call finished. Treat the C-free result as established and
+everything about *correctness under adversarial conditions* as **open**.
+
+Practical consequence: `ncrypto` is a strong porting candidate on
+dependency grounds and **must not be treated as production-ready cryptography**
+on the strength of that alone. Constant-time behaviour, timing and cache
+side-channels, and error-path leakage all need review independently of the
+port. Anything security-facing that depends on it should carry that caveat
+forward.
+
+---
+
+## `nbase64` vs `stdlib/base64` — same file, stdlib is ahead
+
+Identical lineage, down to the header comment ("Base64 encoding and decoding for
+Nitpick — Native memory-safe implementation"). 221 versus 224 lines.
+
+| | `ARCHIVE/nbase64/src` | `stdlib/base64` |
+|---|---|---|
+| Lines | 221 | 224 |
+| C surface | **6 externs** to `nitpick_core` | **none** |
+| Approach | calls out for alloc, byte access, string construction | `use "stdlib/mem.npk"`, with a native `nbase64_string_byte_at` |
+
+**The stdlib copy is the promoted, de-externed version** — the extern block was
+replaced with native pointer work. So here the promotion flow did what it was
+meant to, which is the reverse of the strings case.
+
+### But it violates two settled decisions
+
+```nitpick
+int64:data_ptr = <-cast_unchecked<int64->>(cast_unchecked<int64>(s));
+```
+
+- **`cast_unchecked<T>(x)` is removed** — the only cast forms are `=>` and `=>!`
+  (D-021). This becomes `x =>! T`.
+- **Integer→pointer casting is illegal** outside `#wild_ptr<T>(addr)` in `wild`
+  context (D-019). This line does exactly that, twice.
+
+A useful concrete sample of what the port actually involves: the C dependency is
+already gone, and what remains is conforming to decisions made after the code was
+written.
+
+**Recommendation:** port `stdlib/base64`, not `ARCHIVE/nbase64`, and apply the
+D-019 / D-021 corrections.
+
+### Loose end
+
+`nlists/src/skiplist.npk` has `use "sys.npk".*;` and there is no `sys.npk` in
+`nlists/src/`. The import resolves somewhere outside the library — possibly
+`stdlib/sys.npk` (syscall constants, harmless) — but it is unresolved as written
+and needs pinning down before `nlists` is ported.
