@@ -378,3 +378,101 @@ displaced `string.npk`.
 `stdlib/sys.npk` (391 lines) is purely Linux x86-64 syscall constants,
 auto-generated from kernel headers. No runtime dependency; regenerate rather than
 port. Note it references `sys!!!`, which D-001 removed.
+
+---
+
+## `REPOS/ARCHIVE/` — the standalone libraries
+
+**16 libraries beyond `libn`: 103 source files, 41,145 lines** (tests and scratch
+excluded). These are the separate-repo builds that were meant to be audited
+C-free and then promoted.
+
+**Fifteen of sixteen have a completely clean source tree.**
+
+| Library | Src files | Lines | C in src | Notes |
+|---|---|---|---|---|
+| **`ncrypto`** | 64 | **34,925** | **none** | by far the largest clean asset in the ecosystem |
+| `nregx` | 16 | 2,398 | none | complete regex engine |
+| `ntoml` | 3 | 1,092 | none | ⚠️ transitively tainted — see below |
+| `njson` | 23 | 849 | none | |
+| `nstr` | 3 | 434 | **none** | confirms the strings recommendation |
+| `ntime` | 2 | 275 | none | |
+| `nbase64` | 2 | 241 | **6 decls** | the only one — see below |
+| `nfs` | 2 | 228 | none | builds on `libn` |
+| `nthread` | 2 | 158 | none | builds on `libn` |
+| `nurl` | 1 | 158 | none | |
+| `nsync` | 4 | 307 | none | builds on `libn` |
+| `nsocket` | 1 | 69 | none | |
+| `nrand` | 2 | 53 | none | |
+| `nvec` | 2 | 56 | none | |
+| `nstr-builder` | 1 | 32 | none | |
+| `nmath` | 1 | 256 | none | |
+
+Several libraries have `extern "libc"` in their **test harnesses** (`printf`,
+`exit`). That is test scaffolding, not a library dependency, and does not count.
+
+### The one exception: `nbase64`
+
+Six declarations against `nitpick_core`:
+
+```nitpick
+extern "nitpick_core" {
+    func:npk_core_alloc                 = int64(int64:size);
+    func:npk_core_dalloc                = void(int64:ptr);
+    func:nitpick_libc_mem_write_byte    = void(int64:ptr, int64:offset, int32:val);
+    func:nitpick_libc_string_byte_at    = int32(string:s, int64:idx);
+    func:nitpick_libc_string_from_buf   = string(int64:buf, int64:offset, int64:len);
+    func:string_length                  = int64(string:s);
+}
+```
+
+Every one has a native equivalent already: allocation from `libn/src/mem/alloc.npk`,
+string operations from `nstr`. This is a mechanical swap, not a reimplementation.
+
+### Transitive taint
+
+| Library | Imports | Consequence |
+|---|---|---|
+| `ntoml` | `../../nitpick/stdlib/core.npk` | ⚠️ **tainted** — `core.npk` links `nitpick_libc_string` |
+| `nregx` | `../../nlists/src/doubly.npk` | `nlists` is clean **except** `original_singly.npk`, which links `nitpick_libc_mem`. Check whether `doubly.npk` reaches it. |
+| `nfs`, `nthread`, `nsync` | `libn` (`alloc`, `syscall`, `posix_constants`, `sleep`) | ✅ correct layering — these are the intended dependencies |
+
+`ntoml` is one import away from clean: point it at `nstr` instead of
+`stdlib/core.npk`.
+
+### Compatibility with the settled decisions
+
+Across all ARCHIVE source:
+
+| Construct | Files | Impact |
+|---|---|---|
+| `gc` | **0** | D-003 costs the archive nothing |
+| `$$m` / `$$i` | **0** | no borrow usage to reconcile |
+| `arena<` | 0 | opportunity, not a problem |
+| `Handle<` | 2 | trivial |
+| `wild` | 63 | retained construct — fine |
+| `wildx` | 1 | fine |
+| `unknown` | 16 | audit against the narrowed meaning (`TYPE_REFERENCE` §27) |
+| `tbb` | **206** | heavy adoption — audit cast sites against D-008 §6 |
+| `Result<` | **366** | already on the discipline |
+
+The pattern from `libn` repeats: **zero usage of everything D-003 removed.**
+
+### `nbase64` versus `stdlib/base64`
+
+Both exist — `ARCHIVE/nbase64/src` (241 lines, 6 externs) and
+`stdlib/base64/nbase64.npk` (224 lines, clean). Here the **stdlib copy is the
+cleaner one**, reversing the pattern seen with strings. Worth checking pairwise
+rather than assuming either location is reliably ahead.
+
+### Recommendation
+
+Port order, after `nlibc`'s core lands:
+
+1. **`nstr`** — unblocks `ntoml`, `stdlib/io`, and the whole string story
+2. **`nregx`** (+ verify `nlists`) — unblocks downstream libraries
+3. **`ncrypto`** — 34,925 clean lines, no dependencies, the single largest win
+4. **`nthread` / `nsync`** — already layered on `libn`, needed for the D-032 executor
+5. `njson`, `ntoml`, `nfs`, `nurl`, `nsocket`, `ntime`, `nrand`, `nvec`, `nmath` — small and independent
+6. **`nbase64`** — swap six externs for `libn`/`nstr` equivalents first
+
