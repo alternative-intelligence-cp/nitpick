@@ -95,19 +95,41 @@ while (x < 10i32) {
 ```
 
 ### 2.2 `when` / `then` / `end` (State-Tracked Loop)
-A specialized `while` loop that inherently tracks *how* the loop terminated. It eliminates the need for external state-tracking boolean flags.
+A specialized `while` loop that inherently tracks **whether the body ever executed**. It eliminates the need for external state-tracking boolean flags.
 
 ```nitpick
 when (x > 0i32) {
     // Loop body
     x -= 1i32;
 } then {
-    // Executes ONLY if the loop completed normally (i.e. condition became false)
+    // Executes if the body ran AT LEAST ONCE —
+    // including when the loop was exited early via `break`
 } end {
-    // Executes ONLY if the condition was false to begin with, 
-    // OR if the loop exited prematurely via a `break`
+    // Executes ONLY if the condition was false to begin with,
+    // so the body never ran at all
 }
 ```
+
+**`then` and `end` partition the outcomes exactly.** One of them always runs, and
+never both:
+
+| Outcome | Clause |
+|---|---|
+| body ran ≥ 1 time, condition later became false | `then` |
+| body ran ≥ 1 time, exited early via `break` | `then` |
+| condition false initially — body never ran | `end` |
+
+Both clauses are optional.
+
+> **This corrects an earlier revision** which sent `break` to `end` and reserved
+> `then` for normal completion. That grouping made `end` mean *either* "never
+> ran" *or* "broke out" — two unrelated outcomes — so telling them apart required
+> a boolean flag, which is the exact workaround `when` exists to eliminate.
+>
+> The rule is simply **"did the body execute?"**, which is the property that
+> cannot otherwise be recovered without tracking it manually. Whether a loop
+> completed or broke out is normally evident from what the body did or from the
+> break condition; whether it ran at all is not. (D-027)
 
 ### 2.3 `for` Loop
 A range-based iteration loop utilizing type annotations and an iterable or range literal.

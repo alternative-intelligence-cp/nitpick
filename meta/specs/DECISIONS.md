@@ -1557,18 +1557,10 @@ each additional loop construct is one more thing a reviewer must know.
 If a do-while is ever genuinely wanted it needs its **own keyword** — reusing
 `till` would give one keyword two meanings, which D-022 already rejected.
 
-### Related question raised, not decided — `end` conflates two outcomes
+### Related question — resolved by D-027
 
-`when`'s stated purpose is to track *how* a loop terminated without external
-flags. But `end` fires in **two distinct cases**:
-
-1. the condition was false to begin with, so the body never ran;
-2. the loop was exited early via `break`.
-
-Distinguishing those requires a boolean flag — the exact workaround `when` was
-built to remove, in a case squarely inside its remit. Worth deciding whether
-`when` needs a third clause, or whether the two cases should be separated some
-other way.
+The `end` clause conflating "never ran" with "broke out early" turned out to be a
+transcription error in the specs rather than the intended design. See **D-027**.
 
 ---
 
@@ -1607,3 +1599,51 @@ and has no standalone meaning. Listing it among operators was a category error.
 
 `!!!` **is** a genuine operator — the failsafe abort. Note that after D-001
 removed `sys!!!` and `asm!!!`, `!!!` again has exactly one meaning.
+
+---
+
+## D-027 — `when` / `then` / `end` semantics corrected — **SETTLED**
+
+The specs had drifted from the intended design. Restored:
+
+| Outcome | Clause |
+|---|---|
+| body ran ≥ 1 time, condition later became false | **`then`** |
+| body ran ≥ 1 time, exited early via `break` | **`then`** |
+| condition false initially — body never ran | **`end`** |
+
+`then` and `end` **partition the outcomes exactly**: one always runs, never both,
+and both are optional.
+
+### What was wrong
+
+`CONTROL_REFERENCE.md` §2.2 sent `break` to `end`, reserving `then` for normal
+completion. That made `end` mean *either* "the body never ran" *or* "the loop
+broke out" — two unrelated outcomes sharing one clause.
+
+The consequence was self-defeating: distinguishing them required a boolean flag,
+which is precisely the external state-tracking `when` exists to eliminate, in a
+case squarely inside its remit. The construct failed at its own job.
+
+### Why this grouping is the right one
+
+The rule reduces to a single question — **did the body execute?** — and that is
+the property which cannot otherwise be recovered without tracking it by hand.
+
+Whether a loop *completed* versus *broke out* is normally evident from what the
+body did, or from the condition that triggered the `break`. Whether it ran **at
+all** is not evident from anything: on a zero-iteration loop the body leaves no
+trace, which is exactly why the flag was needed.
+
+So the split captures the information that is expensive to obtain and discards
+the distinction that is cheap. It is also a clean binary partition rather than a
+three-way classification with an ambiguous member — one rule, no exceptions.
+
+### Follow-up
+
+- `CONTROL_REFERENCE.md` §2.2 — corrected.
+- `AST_REFERENCE.md`'s `WHEN_STMT` node is unaffected: `.c` remains a `GROUP_NODE`
+  of up to two optional blocks (`then`, then `end`). Only the lowering changes —
+  `break` must branch to the `then` block, not `end`.
+- `FORMAL_DRAFT` 05 §5.4.5 mentions the clauses without defining their semantics,
+  so it needs the definition added rather than corrected.
