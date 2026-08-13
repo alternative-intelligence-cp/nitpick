@@ -46,6 +46,11 @@ func:main = int32() {
 
 When you compile with `--verify`, the compiler's integrated Z3 solver will mathematically prove that the assigned value (`5i32`) satisfies the constraint (`$ > 0i32`). If it cannot prove it statically (for instance, reading user input), it will enforce the check at runtime. If the runtime check fails, it triggers the `failsafe` handler.
 
+> `FORMAL_DRAFT` 12.6.1 says only that constraints are "enforced dynamically at
+> runtime" without saying what a violation *does*. It traps to `failsafe`, as
+> above — stated explicitly here because an unspecified failure mode in a
+> constraint system is worse than no constraint system.
+
 ### 2.1 Z3 and the borrow checker
 
 The borrow checker is **retained** (D-003) — dropping the garbage collector made
@@ -174,3 +179,58 @@ The `--verify-level=N` flag controls verification depth:
 | `1` | Level 0 + value constraints + `prove` / `assert_static` |
 | `2` | Level 1 + function contracts + arithmetic overflow |
 | `3` | All verification (contracts, overflow, concurrency, memory, SMT optimizations) |
+
+
+---
+
+## 6. Verification Backends
+
+Two complementary systems, operating at different levels.
+
+### 6.1 Z3 SMT Solver — proves *programs* correct
+
+Invoked during compilation (`npkc --verify`). Translates AST nodes into SMT
+formulas and decides concrete proof obligations for one specific program.
+
+Covers: `limit<Rules>` constraints, function contracts, loop invariants,
+`prove` / `assert_static` assertions, arithmetic overflow, memory safety,
+concurrency, and borrow-checker index disjointness.
+
+### 6.2 K Framework / `kprove` — proves the *language* correct
+
+Used offline during language development, not during compilation. Proves
+**metatheoretic** properties about the semantics themselves — for example that
+erasing verification constructs is sound, that the borrow rules preserve memory
+safety invariants, and that `Result<T>` propagation is correct.
+
+The full operational semantics live in `k-semantics/nitpick.k`, with proof claims
+in `k-semantics/proofs/`.
+
+### 6.3 Why both
+
+> **Z3 ensures your *program* is correct. K ensures the *language* is correct.**
+
+Together they give an unbroken chain from language specification to compiled
+binary. A verified program on top of unverified semantics proves less than it
+appears to — Z3 answers "does this code satisfy its contracts", K answers "do the
+rules Z3 is reasoning about actually mean what we think".
+
+This is also why the zero-dependency constraint reaches as far as it does: a
+C library inside the trusted computing base sits outside **both** backends. Z3
+cannot see its contracts and K cannot model its semantics.
+
+---
+
+## 7. Known gap: deadlock freedom
+
+`--verify-concurrency` is documented as verifying "data race **and deadlock**
+freedom". Data-race freedom is now accounted for by three structural properties
+(`CONCURRENCY_REFERENCE.md` §5.3): borrows cannot cross a thread spawn or
+`await` (D-004), tasks do not migrate between threads (D-032), and shared arenas
+never move memory or reuse slots (D-017).
+
+**Deadlock freedom has no mechanism described anywhere.** The flag currently
+promises something no document delivers. Either a detection or proof strategy
+needs specifying — lock ordering, a wait-for graph, or a static discipline on the
+`mutex` / `rwlock` / `condvar` API — or the claim should be narrowed to data-race
+freedom alone.

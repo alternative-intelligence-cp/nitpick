@@ -15,22 +15,16 @@ Nitpick's safety architecture can be conceptualized in three layers, checked seq
 3. **Layer 3: The Mandatory Failsafe (Recovery/Trap)** - The ultimate, un-bypassable safety net.
 
 > **Layer numbering is fixed as above.** `FORMAL_DRAFT` 12.4 calls `failsafe` the
-> "Layer-1 safety net" while 12.1 places it at Layer 3; Layer 3 is correct — it is
-> the last line, not the first.
+> "Layer-1 safety net" while 12.1 places it at Layer 3, four paragraphs earlier.
+> Layer 3 is correct — it is the last line, not the first.
 
-### Layer 2 includes two degradation mechanisms
+## Target applications
 
-Layer 2 is not only `Result<T>`. Two distinct mechanisms live here, and which one
-applies is determined by **type**, never by context (D-007):
-
-| Mechanism | Applies to | Behavior |
-|---|---|---|
-| **`tbb` sticky ERR** | `tbb8/16/32/64` arithmetic | undefined operations yield ERR, which propagates through data and traps at control flow |
-| **`unknown` taint** | `Result.value` after `fail()` | compiler-assigned; cleared by `ok()` or by checking `is_error` |
-
-`unknown` is **not** user-writable and is **not** the general degradation
-mechanism it was in the prototype. Division by zero on a plain `int32` traps to
-`failsafe`; on a `tbb` it yields ERR. See `TYPE_REFERENCE.md` §6 and §27.
+The bar is set by what the language is for: **AGI consciousness substrates
+(Nikola)**, robotics, medical devices, aerospace, and nuclear control. In every
+one of those, a silent failure or an unexpected core dump is catastrophic rather
+than inconvenient — which is why undefined behaviour is rejected outright instead
+of merely discouraged.
 
 ---
 
@@ -43,6 +37,21 @@ The primary goal of Nitpick is to shift as much error handling as possible to co
 *   **Formal Proofs (`prove` & `assert_static`)**: Developers can force the solver to construct mathematical proofs of arbitrary expressions (`prove(x != 0)`), which accumulate path conditions (like being inside an `if(x > 0)` block).
 
 **Architectural Impact**: The compiler must tightly integrate with an SMT solver (Z3) during the type-checking/semantic analysis phase. Path condition accumulation must be a core part of the AST walk.
+
+---
+
+### Memory safety is a Layer 1 property, not a runtime one
+
+`--verify-memory` covers use-after-free and recursion bounds. The mechanisms that
+deliver it are all **compile-time and structural**, with no runtime checks:
+
+| Property | Mechanism |
+|---|---|
+| no dangling references | **second-class borrows** — a borrow passes down the call stack and never up (D-004) |
+| no use-after-free in arenas | **generation-counted `Handle<T>`** — a stale handle fails safely through `Result<T>` rather than dangling |
+| no data races | borrows cannot cross a thread spawn or `await` (D-004); tasks do not migrate (D-032); shared arenas never move memory or reuse slots (D-017) |
+| leaks are detected, not silent | the **K-semantics `exit` rule** — reaching `exit` with live `wild`/`wildx` memory traps to `failsafe` instead of returning |
+| no collector pauses | there is no garbage collector (D-003) |
 
 ---
 
@@ -59,6 +68,25 @@ When a state cannot be mathematically proven at compile time (e.g., reading user
 *   **The Contract Intercept**: This is where Layer 1 meets Layer 2. If a function has a `requires` contract that cannot be statically proven, Nitpick automatically forces the function to return a `Result<T>`. If the caller violates the contract at runtime, the function immediately intercepts and returns a `Result` error rather than crashing.
 
 **Architectural Impact**: `Result<T>` is heavily intertwined with the type system and ABI. The compiler must automatically inject runtime bounds/contract checks and wrap return types implicitly when verification is deferred to runtime.
+
+#### All three Layer 2 mechanisms
+
+Layer 2 is not only `Result<T>`. Three distinct mechanisms live here, and which
+one applies is determined by **type**, never by context (D-007):
+
+| Mechanism | Applies to | Behaviour |
+|---|---|---|
+| **`Result<T>`** | every function except `main` / `failsafe` | errors are values the caller is forced to handle |
+| **`tbb` sticky ERR** | `tbb8/16/32/64` arithmetic | undefined operations yield ERR, which propagates through data and **traps at control flow** — a tainted value can never steer a branch (D-008) |
+| **`unknown` taint** | `Result.value` after `fail()` | compiler-assigned; cleared by `ok()` or by checking `is_error` |
+
+`unknown` is **not** user-writable and is **not** the general degradation
+mechanism it was in the prototype. Division by zero on a plain `int32` traps to
+`failsafe`; on a `tbb` it yields ERR and execution continues. See
+`TYPE_REFERENCE.md` §6 and §27.
+
+`tbb` sticky ERR is what actually delivers **fail-operational** behaviour, and it
+is the mechanism the robotics path depends on.
 
 ---
 
@@ -86,7 +114,20 @@ For low-level systems programming, safety checks can be intentionally bypassed, 
 *   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers.
 *   **`#wild_ptr<T>(addr)`**: Constructs a pointer from an integer address; legal only in `wild` context (D-019).
 *   **`=>!`**: Unchecked cast, opting out of the compile-time data-loss check.
-*   **Pedantic Restrictions**: The `--extra-picky` flags can ban escape hatches outright in high-level application code. The documented rule set is `literal-suffixes`, `explicit-widening`, `shadow`, and `wild`, each parameterizable as `warn-<rule>` or `no-<rule>`. Two additions follow from later decisions: a rule **requiring `tbb` arithmetic** in designated real-time code, so the fail-operational path is a compile-time guarantee rather than a convention (D-007), and a rule **rejecting allocation inside `failsafe`**, which partially enforces the preallocation discipline (D-014).
+### `--extra-picky`
+
+Optional but strongly recommended. Rules default to hard compilation errors and
+are parameterizable: `--extra-picky=warn-<rule>` downgrades one to a warning,
+`--extra-picky=no-<rule>` disables it.
+
+| Rule | Effect |
+|---|---|
+| `literal-suffixes` | every integer literal must carry an explicit bit-size suffix (`42i32`, not `42`), eliminating sizing ambiguity |
+| `explicit-widening` | bans implicit widening; all widenings use an explicit cast. *(`FORMAL_DRAFT` 12.7.2 says "using `as`" — wrong, `as` is the module-alias keyword. The cast forms are `=>` and `=>!`, D-021.)* |
+| `shadow` | bans inner scopes redefining outer names, ignoring macro-generated hygiene names |
+| `wild` | rejects `wild`/`wildx` on declarations, parameters, and return types, keeping high-level code away from unchecked pointers |
+| **`require-tbb`** *(new, D-007)* | requires `tbb` arithmetic in designated real-time code, making the fail-operational path a **compile-time guarantee** rather than a convention |
+| **`no-failsafe-alloc`** *(new, D-014)* | rejects allocation inside `failsafe`, partially enforcing the preallocation discipline |
 
 Every escape hatch is explicit, named, and greppable. That is the standing shape
 of a Nitpick guarantee: absolute by default, suspended only through a construct an

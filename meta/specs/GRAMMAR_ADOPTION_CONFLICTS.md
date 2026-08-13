@@ -333,3 +333,72 @@ taking deliberately rather than inheriting work-stealing by default.
 - **No `sync` keyword** — explicitly rejected by the compiler.
 - **`await` restricted to `async func`** (`NITPICK-040`).
 - `atomic<T>` methods use **UFCS** — another independent confirmation of D-006.
+
+---
+
+# Chapter 12 (Safety & Verification) — Conflict and Gap List
+
+The most valuable chapter for the safety story, and the one most out of date with
+respect to D-003, D-007, D-008, D-013, and D-014.
+
+## Part M — Conflicts with settled decisions
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 37 | §12.1, §12.3 | Layer 2 is "an `unknown` sentinel that gracefully degrades mathematically undefined operations (e.g. division by zero)" | **D-007** — behaviour is *type-directed*. `tbb` yields sticky ERR and keeps flowing; plain types trap to `failsafe`. `unknown` is narrowed to `Result.value` taint. |
+| 38 | §12.4 | `failsafe` called "the un-bypassable **Layer-1** safety net" | it is **Layer 3**, per §12.1 four paragraphs earlier. Internal contradiction. |
+| 39 | §12.4 | "Every Nitpick **program** must implement" | **D-013** — every **executable**; libraries must not define one. Exactly one per program, no chaining. |
+| 40 | §12.4 | no mention of trap semantics or handler requirements | **D-014** — `defer` does not run on a trap; `failsafe` must not assume a healthy system and should use preallocated resources; it must exist, be non-empty, and return a **positive** value via a compiler-injected `ensures result > 0i32`. |
+| 41 | §12.2 | "Functions that **might fail** must return a `Result<T>`" | **all** functions return `Result<T>` except `main` and `failsafe`. |
+| 42 | §12.6.2 | "If a function defines a `requires` block, Nitpick **implicitly transforms** its return type into a `Result<T>`" | already universal — this phrasing implies conditional wrapping. |
+| 43 | §12.7.2 | "All widenings must be cast explicitly using **`as`**" | **D-021** — `as` is the module-alias keyword. The cast forms are `=>` and `=>!`. |
+| 44 | §12.5.4 | `--verify-concurrency` — "data race & **deadlock** freedom" | race freedom is now accounted for (D-004, D-017, D-032); **deadlock still has no mechanism anywhere.** |
+
+## Part N — Gaps: Layer 2 is incomplete
+
+### N1. `tbb` sticky ERR is absent entirely
+
+D-008 makes it the **primary fail-operational mechanism** and D-007 makes it the
+divide-by-zero answer for `tbb` types. It is a Layer 2 mechanism and chapter 12
+does not mention it once.
+
+### N2. Memory safety is absent
+
+`--verify-memory` claims to verify "use-after-free & recursion bounds", but
+nothing in the chapter describes the mechanisms that deliver it: static ownership
+(D-003), second-class borrows (D-004), generation-counted `Handle<T>` and the
+`arena<T>` / `shared_arena<T>` split (D-017), or the K-semantics `exit` rule that
+makes a leak a *detected* condition.
+
+### N3. The escape-hatch catalogue is incomplete
+
+§12.7.4 covers `wild` / `wildx` only. Missing: `raw` / `_!`, `=>!`, and
+`#wild_ptr<T>(addr)` (D-019). Also worth noting `sys!!!` and `asm!!!` were
+escape hatches and are now removed (D-001).
+
+### N4. `--extra-picky` needs two rules that follow from later decisions
+
+- **require `tbb` arithmetic** in designated real-time code, making the
+  fail-operational path a compile-time guarantee rather than a convention (D-007);
+- **ban allocation inside `failsafe`**, partially enforcing the preallocation
+  discipline (D-014).
+
+### N5. Runtime constraint violation is unspecified
+
+§12.6.1 says that without `--verify`, `limit<Rules>` constraints are "enforced
+dynamically at runtime" — but not what a runtime violation *does*. Presumably it
+traps to `failsafe`; it should say so.
+
+## Part O — What chapter 12 gets right, and adds
+
+- **§12.8 dual verification backends** — Z3 for programs, K Framework / kprove for
+  the language metatheory, with operational semantics in `k-semantics/nitpick.k`.
+  The framing is worth keeping verbatim: *"Z3 ensures your program is correct.
+  K ensures the language is correct."* Neither carried-over doc mentions this.
+- **§12.7 the `--extra-picky` catalogue** — `literal-suffixes`,
+  `explicit-widening`, `shadow`, `wild`, with `warn-`/`no-` parameterisation.
+- **§12.5.1** `prove` path-condition accumulation and counterexample extraction.
+- **§12.5.5** Z3 borrow-checker integration proving index disjointness — an
+  independent argument for static ownership over a collector (D-003).
+- **§12.1** names Nikola explicitly alongside robotics, medical devices,
+  aerospace, and nuclear control as target applications.

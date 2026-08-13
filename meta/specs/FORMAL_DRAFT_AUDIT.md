@@ -150,8 +150,14 @@ default and suspended only through a named, greppable, auditable construct.
    migration collided with D-017's single-threaded arena (D-032); `Future<T>` is
    never mentioned despite being a specified type; and task spawning was dropped
    from the prototype, leaving no documented way to start a concurrent task.
-4. **Adopt 12 (safety)** after fixing conflicts 1, 3, 9, 10 and the Layer-1/Layer-3
-   numbering. Keep 12.7 (`--extra-picky`) and 12.8 (K Framework) verbatim.
+4. ~~**Adopt 12 (safety)**~~ **✅ DONE** — merged into `SAFETY_ARCHITECTURE.md`
+   and `VERIFICATION_REFERENCE.md` rather than adopted as a new file, since both
+   already covered parts of it. Eight conflicts and five gaps
+   (`GRAMMAR_ADOPTION_CONFLICTS.md` Parts M–O). The chapter had **no mention of
+   `tbb` sticky ERR** despite D-008 making it the primary fail-operational
+   mechanism, and **no mention of the memory-safety mechanisms** despite
+   `--verify-memory` claiming to verify use-after-free. 12.7's `--extra-picky`
+   catalogue and 12.8's dual-backend framing were kept.
 5. **Adopt 02 (types)** after fixing conflict 11, and fold in D-005 and D-008.
    Note 2.3.1's `tbb_widen<T>()` intrinsic should be carried into D-008.
 6. **Settle §5.1 and §5.2**, then adopt 06 (functions) and 08 (builtins) with
