@@ -46,7 +46,37 @@ func:main = int32() {
 
 When you compile with `--verify`, the compiler's integrated Z3 solver will mathematically prove that the assigned value (`5i32`) satisfies the constraint (`$ > 0i32`). If it cannot prove it statically (for instance, reading user input), it will enforce the check at runtime. If the runtime check fails, it triggers the `failsafe` handler.
 
-### 2.1 Rules Composition and Subsumption
+### 2.1 Z3 and the borrow checker
+
+The borrow checker is **retained** (D-003) — dropping the garbage collector made
+static ownership the memory model rather than an alternative to it. Z3 resolves
+aliasing patterns that lifetime analysis alone cannot: when two mutable borrows
+(`$$m`) target the same array through index variables constrained by different
+`limit<Rules>`, the solver proves the indices unequal and the borrows disjoint,
+suppressing a false-positive aliasing error.
+
+```nitpick
+Rules<int32>:EvenIdx = { $ % 2i32 == 0i32 };
+Rules<int32>:OddIdx  = { $ % 2i32 == 1i32 };
+
+func:update = int32(limit<EvenIdx> int32:i, limit<OddIdx> int32:j, int32[100]:arr) {
+    $$m int32:a = arr[i];   // mutable borrow at even index
+    $$m int32:b = arr[j];   // Z3 proves i != j → borrows are disjoint
+    pass(a + b);
+};
+```
+
+This synergy is a direct argument for static ownership over a tracing collector:
+lexical lifetimes give the solver facts it can use, whereas object validity under
+a collector is a global reachability property.
+
+Borrows are **second-class** (D-004): they pass down the call stack and never up.
+A borrow may not be returned, stored into anything outliving the frame, captured,
+or carried across an `extern` call, a thread spawn, or an `await` point. This
+removes the need for lifetime variables entirely — validity is bounded by the
+callee frame, structurally.
+
+### 2.2 Rules Composition and Subsumption
 
 Rules can reference other Rules via `limit<OtherRule>`, creating a constraint hierarchy:
 

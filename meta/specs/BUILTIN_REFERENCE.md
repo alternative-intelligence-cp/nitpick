@@ -8,7 +8,7 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 
 ## 1. Memory Management Built-ins (NitpickAlloc)
 
-These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. They all return `wild` pointers (untracked by the garbage collector).
+These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. They all return `wild` pointers — unmanaged memory outside RAII tracking, which the programmer must free. There is no garbage collector (D-003).
 *Security constraint: Every allocation has a hidden 8-byte CRC32 header. Double-frees and corruption immediately trigger the failsafe.*
 
 | Built-in | Signature | Description |
@@ -73,15 +73,35 @@ Direct access to operating system syscalls.
 |---|---|---|
 | `sys(CONST, args...)` | `Result<int64>` | Safe-tier syscall. Restricted to curated whitelist. Returns `tbb32` error codes (negative for system errors). |
 | `sys!!(CONST, args...)` | `Result<int64>` | Full-tier syscall. Allows any OS syscall. Returns `tbb32` error codes. |
-| `sys!!!(expr, args...)` | `int64` | Raw-tier syscall. Allows arbitrary expression evaluation as the syscall number and returns a bare integer (bypasses `Result` wrapping). |
+
+> **`sys!!!` is removed** (D-001). The raw tier returned a bare `int64`, bypassing
+> `Result<T>` entirely, and permitted an arbitrary expression as the syscall
+> number — an unchecked failure in the place it is most likely to be
+> catastrophic. Both remaining tiers are `Result`-wrapped, so the rule "every
+> function returns `Result<T>` except `main` and `failsafe`" has no exceptions.
+> `raw` / `_!` remains the single explicit, greppable bypass.
 
 ---
 
 ## 4. Compiler Macros
 
+`#` is the **compiler-directive sigil** — it marks something addressed to the
+compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
+
+| Form | Purpose |
+|---|---|
+| `#name<T>(...)` | builtin producing a value |
+| `#[name(...)]` | attribute annotating a declaration |
+
+> **`@` is never a builtin prefix.** `@` is the address-of operator and nothing
+> else. Forms such as `@sizeof`, `@cast<T>`, `@typeof`, and `@derive` appear in
+> older material and are **wrong** — `@cast<T>(x)` reads as "the address of
+> `cast<T>` of x". Rewrite any such usage to the `#` form.
+
 | Macro | Return | Description |
 |---|---|---|
 | `#size_of<T>` | `int64` | Returns the size in bytes of the type `T` at compile time. |
+| `#wild_ptr<T>(addr)` | `wild T` | Constructs a pointer from an integer address. **Legal only in `wild` context** — the single suspension of the general prohibition on integer→pointer casting (D-019). Exists because the allocator must turn an `mmap` result into a `wild int8->`. |
 
 ---
 
@@ -92,7 +112,10 @@ Nitpick supports direct inline assembly for `x86_64` and `aarch64` targets.
 | Built-in | Return | Description |
 |---|---|---|
 | `asm!!<T>(arch, code, constraints, args)` | `Result<T>` | Executes assembly and wraps the output in `Result<T>`. Negative integer returns are implicitly treated as errors. |
-| `asm!!!<T>(arch, code, constraints, args)`| `T` | Executes assembly and returns the bare type `T` without wrapping or checking. |
+
+> **`asm!!!` is removed** (D-001), for the same reason as `sys!!!` — raw inline
+> assembly returning an unwrapped value is precisely where an unchecked failure
+> is most dangerous.
 
 **Example:**
 ```nitpick

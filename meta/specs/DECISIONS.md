@@ -721,7 +721,7 @@ zero-initialization.
 
 ---
 
-## D-011 — LLVM runtime-symbol policy — **PROPOSED**
+## D-011 — LLVM runtime-symbol policy — **SETTLED**
 
 **Discovered while specifying `tbb128`/`tbb256`. This is broader than wide
 arithmetic and affects the whole backend.**
@@ -793,7 +793,7 @@ dedicated chapter in the eventual compiler spec.
 
 ---
 
-## D-012 — `libn` pointer convention at the API boundary — **PROPOSED**
+## D-012 — `libn` pointer convention at the API boundary — **SETTLED**
 
 Blocking decision for the `libn` port (`meta/ASSET_REVIEW.md`, concern 1). 514 of
 ~560 public functions are declared `= int64(...)`, using bare integers as
@@ -1125,7 +1125,7 @@ specifying `atomic<T>` (§13) and `Future<T>` (§17).
 
 ---
 
-## D-017 — Arenas and threads: two types, one discipline each — **PROPOSED**
+## D-017 — Arenas and threads: two types, one discipline each — **SETTLED**
 
 Closes the gap D-016 identified: `Handle<T>`'s use-after-free guarantee was
 specified for single-threaded access, and D-003 made arenas load-bearing.

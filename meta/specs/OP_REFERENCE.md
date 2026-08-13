@@ -13,11 +13,37 @@ This document provides a comprehensive list of all operators available in the Ni
 | `+` | Add | Safe addition. | `a + b` |
 | `-` | Subtract | Safe subtraction. | `a - b` |
 | `*` | Multiply | Safe multiplication. Note: also used for pointer syntax in `extern` blocks. | `a * b` |
-| `/` | Divide | Safe division. Triggers failsafe on divide-by-zero. | `a / b` |
-| `%` | Modulo | Remainder operation. | `a % b` |
+| `/` | Divide | Safe division. Divide-by-zero behavior is **type-directed** — see below. | `a / b` |
+| `%` | Modulo | Remainder operation. Same divide-by-zero rule as `/`. | `a % b` |
 | `++` | Increment | Post/pre-increment. | `i++` or `++i` |
 | `--` | Decrement | Post/pre-decrement. | `i--` or `--i` |
 | `**` | Power | Exponentiation (Standard Library expansion). | `2 ** 8` |
+
+### 1.1 Division by zero and overflow
+
+Behavior is selected by **operand type**, not by context (D-007). The type is
+written explicitly at every declaration, so which discipline applies is visible
+at a glance.
+
+| Operand type | Divide by zero / overflow | Intended for |
+|---|---|---|
+| `tbb8/16/32/64` | yields **ERR** — sticky, propagates, checkable | control loops, actuator paths, anything that must degrade rather than stop |
+| `int32`, `uint64`, `flt64`, … | traps to `failsafe` | ordinary code, parsing, setup, tooling |
+
+ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
+`ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.
+Only an explicit check (`is_err`), a fallback (`?`), or `ok()` leaves the state.
+
+Because `bool` has exactly two values and cannot represent ERR, **comparing or
+branching on an ERR value traps to `failsafe`**. ERR flows freely through data
+and stops at control flow — which is where a tainted value would otherwise steer
+a decision. Use `is_err(x)` to test without trapping, or a `pick` with an explicit
+`ERR:` arm.
+
+Bitwise operators (`&`, `|`, `^`, `~`, `<<`, `>>`) are **rejected on `tbb` types**:
+they can fabricate the ERR sentinel out of valid operands (`~127i8` is `-128`) or
+destroy it (`ERR & 0` is `0`). Cast to a plain integer first — which traps if the
+value is ERR, so the taint cannot cross silently. See D-008.
 
 ---
 
@@ -70,7 +96,7 @@ This document provides a comprehensive list of all operators available in the Ni
 |---|---|---|---|
 | `?` | Safe Unwrap | Unwraps a Result/Optional. If error/NIL, evaluates to right-hand side default. | `val = fn() ? 0i32;` |
 | `??` | Null Coalesce | Unwraps an Optional. If NIL, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
-| `?!` | Emphatic Unwrap | Unwraps a Result. If error, triggers `failsafe`. | `val = fn() ?!;` |
+| `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(errCode)`. **Takes exactly one argument.** | `val = fn() ?! 99i32;` |
 | `?.` | Safe Navigation | Accesses a field of an Optional. Returns NIL if Optional is NIL. | `val = obj?.field;` |
 | `?\|` | Defaults | Desugars to the `defaults` keyword at parse time. | `expr ?\| default;` |
 | `_?` | Drop | Desugars to `drop expr` — discards the Result without checking it. | `_? my_func();` |
@@ -86,11 +112,22 @@ This document provides a comprehensive list of all operators available in the Ni
 
 | Operator | Name | Description | Example |
 |---|---|---|---|
-| `@` | Address-Of | Takes the memory address of an l-value. | `int32->:ptr = @val;` |
+| `@` | Address-Of | Takes the memory address of an l-value. **This is `@`'s only meaning** — it is never a builtin prefix (D-020). | `int32->:ptr = @val;` |
 | `<-` | Dereference | Extracts the value FROM a pointer. | `int32:val = <-ptr;` |
 | `->` | Pointer To | In types: pointer declaration ONLY. | `type->:p` |
-| `.` | Member Access | Unified member access (automatically dereferences if pointer). | `my_struct.field` |
-| `#` | Pin | Prevents the Garbage Collector from moving the memory. | `#obj` |
+| `.` | Member Access | Unified member access (automatically dereferences if pointer). Handles **all** member access, including UFCS method calls. | `my_struct.field` |
+
+> **`#` is no longer the pin operator.** Pinning existed to stop the garbage
+> collector relocating memory; with no collector (D-003) nothing relocates
+> implicitly, so the operator has no purpose. `#` is now exclusively the
+> **compiler-directive sigil**: `#name<T>(...)` for builtins, `#[name]` for
+> attributes (D-020).
+
+> **Direction is semantic.** `->` points *to* a target, `<-` brings a value
+> *back*, `=>` goes *from* one type *to* another. `->` was removed as a
+> member-access operator because member access brings data *toward* the reader —
+> the arrow pointed the wrong way, and the `->`-versus-`.` distinction bought
+> nothing when the intent and outcome were identical.
 
 ---
 
@@ -98,8 +135,19 @@ This document provides a comprehensive list of all operators available in the Ni
 
 | Operator | Name | Description | Example |
 |---|---|---|---|
-| `=>` | Safe Cast | Checked cast. Triggers compiler warning/error on narrowing data loss. | `val => int32` |
-| `=>!` | Unchecked Cast | Direct bit-cast/truncation without checking. Explicitly suppresses data loss warnings. | `val =>! int32` |
+| `=>` | Safe Cast | Checked cast. **Compile-time error** if data loss is possible — not a runtime trap. | `val => int32` |
+| `=>!` | Unchecked Cast | Direct bit-cast/truncation without checking. The explicit opt-out from the above. | `val =>! int32` |
+
+> **Casts involving `tbb` are never straight bit operations.** The ERR sentinel is
+> a different bit pattern at every width, so sign-extending `tbb8` ERR (`-128`)
+> produces a *valid* `tbb32` value. Every `tbb` cast checks for the sentinel and
+> maps it to the target's sentinel; `tbb`→plain-integer traps on ERR; and
+> plain-integer→`tbb` traps on a source value that would forge one. `=>!`
+> preserves the ERR *state*, not the bit pattern, so it cannot launder a taint.
+> See D-008 §6.
+
+> **Integer→pointer casting is illegal.** It is suspended only by
+> `#wild_ptr<T>(addr)` in `wild` context (D-019).
 | `:` | Type Annotation | Used in variable declarations and ternary separators. | `int32:x` |
 | `::<T>` | Turbofish | Provides explicit type parameters to generic functions. | `func::<int32>()` |
 | `<T>?` | Optional Type | Declares a type as Optional. | `int64?` |

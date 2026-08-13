@@ -85,12 +85,34 @@ extern "libc" {
 }
 ```
 
-### 5.2 Mandatory `Result<T>` Wrapping
-> **⚠️ CRITICAL DEVIATION FROM PROTOTYPE:** In the original prototype, `extern` functions returned bare values. In `nitpick-next`, **ALL functions, including `extern` bindings, return `Result<T>`**. 
+### 5.2 Mandatory `Result<T>` Wrapping and error contracts
+> **⚠️ CRITICAL DEVIATION FROM PROTOTYPE:** In the original prototype, `extern` functions returned bare values. Now **ALL functions, including `extern` bindings, return `Result<T>`**.
 
-When calling C FFI functions via `extern`, the compiler automatically wraps the C return value in a `Result<T>`. This ensures consistency across the language: you never have to guess whether a function call needs error handling or `raw`. 
+When calling C FFI functions via `extern`, the compiler automatically wraps the C return value in a `Result<T>`. This ensures consistency across the language: you never have to guess whether a function call needs error handling or `raw`.
 
-If you do not care about error checking from an `extern` function (since C often doesn't return errors this way), simply append `raw` or use the `_!` prefix to unwrap the value directly. The compiler optimizer will strip away the empty `Result<T>` wrapper at compile time, guaranteeing **zero runtime overhead**.
+**A failing C call must produce an errored `Result`, never a silent success.**
+C has no universal failure convention — it is per-function — so the mapping
+cannot be inferred from the type. Every `extern` declaration therefore states its
+own failure condition, and **omitting it is a compile error** (D-002):
+
+```nitpick
+extern "libc" {
+    func:open   = int32(int8->:path, int32:flags)  fails on result < 0i32 with errno;
+    func:malloc = wild any->(int64:size)           fails on result == NULL;
+    func:strlen = int64(int8->:s)                  never fails;
+}
+```
+
+*   `fails on <expr>` — predicate over `result` marking the call as failed.
+*   `with errno` — optional source of the error code; without it a generic FFI error code is used.
+*   `never fails` — an explicit, greppable assertion that the function cannot fail. **Required rather than implied**, so that "this C function is infallible" is a documented claim a reviewer can audit rather than an unstated default.
+
+Predicates are unparenthesized, matching `requires` / `ensures` rather than the
+parenthesized conditions of `if` / `while`. The keyword is `fails on`, not
+`fails when` — `when` is the state-tracked loop construct and must not acquire a
+second meaning.
+
+If you do not care about the error from an `extern` function, append `raw` or use the `_!` prefix to unwrap the value directly. The optimizer strips the wrapper at compile time, guaranteeing **zero runtime overhead**.
 
 ```nitpick
 int32:n = raw printf("Hello"); 

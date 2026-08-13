@@ -55,7 +55,7 @@ br i1 %cond, label %then, label %else
   - When Z3/Rules prove no overflow: plain `add iN %a, %b`
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
-- Casting: explicit only (`x => int64`, `@cast_unchecked<int32>(y)`)
+- Casting: explicit only (`x => int64`, `#cast_unchecked<int32>(y)`)
 - Literal suffixes: `42i32`, `-1i8`, `0xFF_i64`
 
 **LLVM IR pattern (safe add):**
@@ -359,8 +359,8 @@ tfp256:trunced = tfp256_trunc(x);   // -> 3.0tfp256 (toward zero)
 **Cast support:**
 ```nitpick
 tfp256:f = 42.5tfp256;
-int64:i   = @cast<int64>(f);    // truncates to 42
-flt64:fl  = @cast<flt64>(f);    // 42.5 (nearest representable)
+int64:i   = #cast<int64>(f);    // truncates to 42
+flt64:fl  = #cast<flt64>(f);    // 42.5 (nearest representable)
 tfp64:f64 = f => tfp64;         // narrow cast (precision loss)
 ```
 
@@ -445,20 +445,51 @@ Type checker verifies dimensional algebra. Codegen ignores it entirely.
 
 ## 6. TBB Types — Twisted Balanced Binary (Tier 0 layout, Tier 1 operations)
 
-| Nitpick Type | LLVM IR Type | Size | Alignment | Range |
-|---|---|---|---|---|
-| `tbb8` | `i8` | 1 byte | 1 | -128..127 (balanced) |
-| `tbb16` | `i16` | 2 bytes | 2 | -32768..32767 |
-| `tbb32` | `i32` | 4 bytes | 4 | ~±2.1B |
-| `tbb64` | `i64` | 8 bytes | 8 | ~±9.2E18 |
-| `tbb128` | `{i64, i64}` | 16 bytes | 8 | ~±1.7E38 |
-| `tbb256` | `{i64 x 4}` | 32 bytes | 8 | ~±5.8E76 |
+The most negative two's-complement value is **reserved as the ERR sentinel** and
+excluded from the numeric range. What remains is symmetric about zero — the
+"balanced" in Twisted Balanced Binary.
+
+| Nitpick Type | LLVM IR Type | Size | Alignment | ERR sentinel | Valid numeric range |
+|---|---|---|---|---|---|
+| `tbb8` | `i8` | 1 byte | 1 | `-128` | `-127 .. 127` |
+| `tbb16` | `i16` | 2 bytes | 2 | `-32768` | `-32767 .. 32767` |
+| `tbb32` | `i32` | 4 bytes | 4 | `INT32_MIN` | `-(2^31-1) .. 2^31-1` |
+| `tbb64` | `i64` | 8 bytes | 8 | `INT64_MIN` | `-(2^63-1) .. 2^63-1` |
+| `tbb128` | `i128` | 16 bytes | 8 | `INT128_MIN` | `-(2^127-1) .. 2^127-1` |
+| `tbb256` | `i256` | 32 bytes | 8 | `INT256_MIN` | `-(2^255-1) .. 2^255-1` |
+
+*(A previous revision listed `tbb8` as `-128..127 (balanced)`. That is the
+asymmetric two's-complement range and contradicted the sentinel rule stated
+immediately below it. Corrected per D-008.)*
+
+**Why balanced.** Excluding the most negative value makes negation and absolute
+value **total**: `abs(x)` and `x * -1` are representable for every valid `x`, and
+`INT_MIN / -1` — which faults in hardware on x86 — cannot arise, because
+`INT_MIN` is ERR and rejected by the operand pre-check. An entire family of
+asymmetry bugs is eliminated structurally.
 
 **Behaviors:**
-- Arithmetic uses **safe variants** with error sentinel detection
-- Error sentinel: minimum value of the type (e.g., `INT32_MIN` for tbb32)
-- On overflow/error: result is set to sentinel, no crash
-- Used primarily for function error codes and the `failsafe` signature
+- **Any operation on an ERR value yields ERR.** This overrides mathematical
+  identities: `ERR * 0` is `ERR`, not `0`; so is `ERR - ERR`. If an identity
+  could erase ERR, sticky propagation would be defeated by ordinary algebra.
+- Overflow **saturates to ERR** rather than wrapping. Out-of-range results land
+  on the sentinel bit pattern naturally (`-127 + -1 = -128`).
+- Division or modulo by zero yields ERR (D-007).
+- **Comparison or branching on ERR traps to `failsafe`** — `bool` has exactly two
+  values and cannot represent ERR, so the total rule cannot apply there. ERR
+  flows through data and stops at control flow. Use `is_err(x)` to test without
+  trapping, or a `pick` with an explicit `ERR:` arm.
+- **Bitwise operators are rejected** on `tbb` — they can fabricate the sentinel
+  (`~127i8` is `-128`) or destroy it (`ERR & 0` is `0`).
+- **Casts are never straight bit operations.** The sentinel differs at every
+  width, so sign-extending `tbb8` ERR yields a *valid* `tbb32` value. See
+  D-008 §6. `FORMAL_DRAFT` 2.3.1 names a `tbb_widen<T>()` intrinsic for this.
+- **No implicit default value.** Definite-assignment analysis rejects
+  read-before-write at compile time, which is stronger than any default (D-010).
+  Assignment *replaces* a value, so an ERR taint is cleared by `x = 5i32`;
+  stickiness governs computation, not storage.
+- Used for function error codes, the `failsafe` signature, and any arithmetic
+  that must degrade rather than trap.
 
 
 ---
@@ -552,7 +583,7 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 > - `ptr.field` = unified member access (automatically dereferences if pointer)
 
 All pointers are LLVM opaque `ptr` at the IR level. The distinction between
-wild, borrow, and GC pointers is enforced entirely by the type checker — the LLVM IR is identical.
+wild and borrow pointers is enforced entirely by the type checker — the LLVM IR is identical.
 
 ---
 
@@ -636,11 +667,35 @@ extern {
 ```
 > **ALL functions (including `extern`), except `main` and `failsafe`, return `Result<T>`**.
 > Even when calling C FFI functions via `extern`, the Nitpick compiler automatically wraps
-> the C return value in a `Result<T>`. If the C function does not provide error information, 
-> the result defaults to `Ok(val)`. This ensures consistency across the language: you never 
-> have to guess whether a function call needs error handling or `raw`. If you do not care 
+> the C return value in a `Result<T>`. This ensures consistency across the language: you never
+> have to guess whether a function call needs error handling or `raw`. If you do not care
 > about the error from an `extern` function, simply append `raw` to unwrap the value directly.
-> This check can be optimized out at compile-time if `raw` is used, ensuring zero-overhead FFI. 
+> This check can be optimized out at compile-time if `raw` is used, ensuring zero-overhead FFI.
+
+> ### ⚠️ A failing C call must never produce a successful `Result`
+>
+> A previous revision stated that when a C function "does not provide error
+> information, the result defaults to `Ok(val)`". **That is removed** (D-002). It
+> meant a C function failing by returning `-1` or `NULL` was wrapped as
+> **success** — satisfying the `Result` machinery, taking no `failsafe` path, and
+> *looking* safe at the call site. That is worse than no wrapper at all, because
+> it defeats review.
+>
+> C has no universal failure convention, so the mapping cannot be inferred from
+> the type. Every `extern` declaration states its own, and **omitting it is a
+> compile error**:
+>
+> ```nitpick
+> extern "libc" {
+>     func:open   = int32(int8->:path, int32:flags)  fails on result < 0i32 with errno;
+>     func:malloc = wild any->(int64:size)           fails on result == NULL;
+>     func:strlen = int64(int8->:s)                  never fails;
+> }
+> ```
+>
+> `never fails` is required rather than implied, so "this C function is
+> infallible" is a documented claim a reviewer can audit rather than an unstated
+> default. Silence never becomes a silent `Ok`.
 
 ---
 
@@ -669,7 +724,7 @@ extern {
 
 ## 13. Atomic Types (Tier 0 — Native LLVM IR)
 
-Per AGENTS.md rule: `atomic<T>` emits native LLVM atomic IR (no C shims).
+`atomic<T>` emits native LLVM atomic IR — no C shims, per the zero-dependency constraint. All high-level methods enforce **SeqCst** ordering (D-016); weaker orderings are reachable only through low-level compiler intrinsics.
 
 | Operation | LLVM IR |
 |---|---|
@@ -708,9 +763,10 @@ Per AGENTS.md rule: `atomic<T>` emits native LLVM atomic IR (no C shims).
 
 ```llvm
 ; func:add = int32(int32:a, int32:b) { ... };
-define {i32, ptr, i8} @add(i32 %a, i32 %b) {
+define {i32, i32, i8} @add(i32 %a, i32 %b) {
   ; Returns Result<int32> by default
-  ; {value, error, is_error}
+  ; {value, error, is_error} — error is tbb32 (i32), NOT a pointer payload.
+  ; See §11.2; the {T, void*, i8} form is rejected (D-005).
 }
 
 ; When Result elision proves function is infallible:
@@ -807,8 +863,8 @@ Operations:
 ---
 
 > **Memory Model Note (string, binary, buffer):**
-> Nitpick supports multiple memory spaces: `stack` (default), `gc` (garbage collected), `wild` (unmanaged C-like memory), and `wildx` (JIT executable memory). 
-> By default, `string` and `binary` are `gc`-managed (or stack allocated via escape analysis). `buffer` is often allocated in `wild` memory, hence the existence of manual `buffer_free()`. To safely interop between `gc` and `wild` memory, the pin operator `#` prevents the garbage collector from moving a pinned object.
+> Nitpick supports multiple memory spaces: managed/`stack` (default, scope-determined), `wild` (unmanaged C-like memory), and `wildx` (JIT executable memory). There is no `gc` space and no collector (D-003).
+> By default, `string` and `binary` are scope-managed (stack-allocated where escape analysis permits, otherwise arena- or `wild`-backed with a determined owner). `buffer` is often allocated in `wild` memory, hence the existence of manual `buffer_free()`. No pin operator is needed: nothing relocates memory implicitly, so a pointer taken for FFI stays valid for the lifetime its owner guarantees (D-020).
 
 ## 22. binary — Raw Binary Data (Tier 0/1)
 
@@ -1004,7 +1060,7 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - Bare `any` without `->` is a type error:
   `"'any' must be used as a pointer type: 'any->'. Bare 'any' is not a valid type."`
 - IR: `ptr` (opaque pointer — same as all other pointers in LLVM opaque pointer mode)
-- Cast to concrete type via `@cast<T>(p)` before dereferencing
+- Cast to concrete type via `#cast<T>(p)` before dereferencing
 
 ### `unknown` — Layer 2 Safety Taint
 
@@ -1016,7 +1072,7 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 
 ---
 
-## 27. Operator Reference
+## 28. Operator Reference
 
 > Complete listing of all Nitpick operators and their lowering.
 
@@ -1082,8 +1138,8 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 |---|---|---|---|
 | `expr => T` | checked cast | `sext`/`zext`/`trunc`/`sitofp`/... | Bounds checked |
 | `expr =>! T` | unchecked cast | same but no bounds check | TOS auditable |
-| `@cast<T>(val)` | checked cast (verbose) | same as `=>` | |
-| `@cast_unchecked<T>(val)` | unchecked cast (verbose) | same as `=>!` | TOS auditable |
+| `#cast<T>(val)` | checked cast (verbose) | same as `=>` | |
+| `#cast_unchecked<T>(val)` | unchecked cast (verbose) | same as `=>!` | TOS auditable |
 
 ### Range
 | Operator | Meaning | Notes |

@@ -1,5 +1,29 @@
 # Specification Gaps & Ambiguities Report
 
+> # ⚠️ SUPERSEDED — HISTORICAL RECORD ONLY
+>
+> **Do not treat any resolution in this document as authoritative.**
+> It was written for the `nitpick-next` experiment, and several of its
+> `[RESOLVED]` blocks are **wrong**. `DECISIONS.md` replaces it in full.
+>
+> Retained because the *questions* it raises are good ones and the record of what
+> was believed at the time is useful. The *answers* are not.
+>
+> | § | Its answer | Actual decision |
+> |---|---|---|
+> | 1 | "Nitpick **uses a Garbage Collector**" (hybrid generational) | **D-003** — no collector. Static ownership + arenas with `Handle<T>`. `gc` removed entirely. |
+> | 1 | "dangling pointers are impossible because the GC retains all reachable objects" | **D-004** — borrows are second-class; they pass down the call stack and never up. |
+> | 1 | "`wild` … is 'pinned' so the GC doesn't move it" | **D-020** — pinning is obsolete; nothing relocates memory implicitly. |
+> | 2 | "`Result<T>` error field is a `tbb` type large enough" | **D-005** — confirmed `tbb32`, with `is_error` strictly `bool`. |
+> | 3 | "Nitpick does **NOT** support object-oriented method calls… `.` is strictly for struct field access" | **D-006** — **wrong**. UFCS was never removed. Arenas and `atomic<T>` both use method syntax throughout the specs. |
+> | 3 | "`dim` (e.g. `dim256<Joules>`)" for dimensional analysis | Retained — but `TYPE_REFERENCE` §2.3.3 and `FORMAL_DRAFT` 2.3.3 still say `fix256`. Rename still owed. |
+> | 4 | Division by zero unaddressed; arithmetic uses sticky ERR | **D-007** — type-directed: `tbb` degrades, plain types trap. **D-008** specifies the ERR encoding. |
+> | 5 | Module resolution "deferred to Cycle 0.4.0" | Still open. `FORMAL_DRAFT` ch. 14 is the adoption candidate. |
+>
+> The §3 UFCS error is the instructive one: it was asserted confidently while
+> contradicted by arena and atomic code sitting in the same repository. Treat
+> every remaining claim here with matching suspicion.
+
 **Target:** `nitpick-next` specifications
 **Goal:** Identify all ambiguities, missing details, and contradictions that would block an implementation team from building the compiler without external clarification.
 

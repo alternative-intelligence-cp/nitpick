@@ -14,6 +14,24 @@ Nitpick's safety architecture can be conceptualized in three layers, checked seq
 2. **Layer 2: Safe Runtime Semantics (Runtime)** - Handle expected failures securely without exceptions.
 3. **Layer 3: The Mandatory Failsafe (Recovery/Trap)** - The ultimate, un-bypassable safety net.
 
+> **Layer numbering is fixed as above.** `FORMAL_DRAFT` 12.4 calls `failsafe` the
+> "Layer-1 safety net" while 12.1 places it at Layer 3; Layer 3 is correct — it is
+> the last line, not the first.
+
+### Layer 2 includes two degradation mechanisms
+
+Layer 2 is not only `Result<T>`. Two distinct mechanisms live here, and which one
+applies is determined by **type**, never by context (D-007):
+
+| Mechanism | Applies to | Behavior |
+|---|---|---|
+| **`tbb` sticky ERR** | `tbb8/16/32/64` arithmetic | undefined operations yield ERR, which propagates through data and traps at control flow |
+| **`unknown` taint** | `Result.value` after `fail()` | compiler-assigned; cleared by `ok()` or by checking `is_error` |
+
+`unknown` is **not** user-writable and is **not** the general degradation
+mechanism it was in the prototype. Division by zero on a plain `int32` traps to
+`failsafe`; on a `tbb` it yields ERR. See `TYPE_REFERENCE.md` §6 and §27.
+
 ---
 
 ### Layer 1: Formal Verification (Compile Time)
@@ -48,8 +66,12 @@ When a state cannot be mathematically proven at compile time (e.g., reading user
 
 The ultimate safety net. If an unrecoverable state is reached, execution is trapped.
 
-*   **The `failsafe` function**: Every Nitpick program must define a `func:failsafe = int32(tbb32:err)`. It acts as the global trap handler.
-*   **Triggers**: It is invoked via explicit developer commands (`!!! errCode`), emphatic unwraps (`?!`), or critical unrecoverable runtime panics (e.g., Out Of Memory).
+*   **The `failsafe` function**: Every Nitpick **executable** must define a `func:failsafe = int32(tbb32:err)`. It acts as the global trap handler.
+*   **Exactly one per program, supplied by the end user** (D-013). Libraries do **not** define one — there is no chaining, no ordering question, and no second claimant on `exit`. Libraries manage their own resources with `defer`, which is per-scope and composes; `failsafe` is whole-program emergency *policy*.
+*   **Triggers**: It is invoked via explicit developer commands (`!!! errCode`), emphatic unwraps (`?! errCode`), comparison or branching on a `tbb` ERR value, or critical unrecoverable runtime panics (e.g., Out Of Memory).
+*   **`defer` does not run on a trap** (D-014). `!!!` and `?!` transfer control directly, without unwinding. At trap time the state of the system is unknown — including how degraded it is — so no cleanup runs before the handler that understands the situation gets control. `failsafe` receives the allocation registry intact.
+*   **It must not assume a healthy system.** The trap may fire in an arbitrarily degraded state: allocation, file access, and hardware may all be unavailable. Programs driving robotics should **preallocate whatever the shutdown path needs** before the fault, and have it standing ready.
+*   **Enforced requirements**: it must exist; its body must not be empty; and it must return a **positive** value — reaching `failsafe` means something failed, so returning `0` is a contradiction. The last is implemented as a compiler-injected `ensures result > 0i32` contract, verified by Z3 through the existing Design-by-Contract machinery.
 *   **K-Semantics on `exit`**: The failsafe and `main` are the only places allowed to call `exit`. Nitpick enforces that no unchecked manual memory (`wild`/`wildx`) is active upon `exit`. If a memory leak exists during an exit attempt, it traps back into the failsafe to enforce cleanup.
 
 **Architectural Impact**: The standard library and runtime must establish a global trap mechanism before invoking `main`. Memory allocations (specifically `wild`/`wildx`) must be tracked globally (e.g., in a `<wildx-states>` map) to validate the `exit` condition.
@@ -60,6 +82,12 @@ The ultimate safety net. If an unrecoverable state is reached, execution is trap
 
 For low-level systems programming, safety checks can be intentionally bypassed, but they are highly visible and grep-able:
 
-*   **`raw`**: Forcibly unwrap a `Result<T>`.
-*   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers. 
-*   **Pedantic Restrictions**: The `--extra-picky` compiler flags (like `no-wild`) can be used to entirely ban these escape hatches in high-level application code.
+*   **`raw`** / `_!`: Forcibly unwrap a `Result<T>`. The single bypass of the `Result` discipline — `sys!!!` and `asm!!!` were removed precisely so this remains the only one (D-001).
+*   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers.
+*   **`#wild_ptr<T>(addr)`**: Constructs a pointer from an integer address; legal only in `wild` context (D-019).
+*   **`=>!`**: Unchecked cast, opting out of the compile-time data-loss check.
+*   **Pedantic Restrictions**: The `--extra-picky` flags can ban escape hatches outright in high-level application code. The documented rule set is `literal-suffixes`, `explicit-widening`, `shadow`, and `wild`, each parameterizable as `warn-<rule>` or `no-<rule>`. Two additions follow from later decisions: a rule **requiring `tbb` arithmetic** in designated real-time code, so the fail-operational path is a compile-time guarantee rather than a convention (D-007), and a rule **rejecting allocation inside `failsafe`**, which partially enforces the preallocation discipline (D-014).
+
+Every escape hatch is explicit, named, and greppable. That is the standing shape
+of a Nitpick guarantee: absolute by default, suspended only through a construct an
+auditor can search for.

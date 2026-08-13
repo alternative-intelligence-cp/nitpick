@@ -1,8 +1,30 @@
 # Nitpick Abstract Syntax Tree (AST) Reference
 
-Because `nitpick-next` uses a "Full-Frontend, Incremental-Backend" bootstrap strategy, the AST must be perfectly defined to encapsulate the entire language grammar from Day 1. The code generators (backends) will traverse this AST and either lower it to LLVM IR or ignore unknown nodes.
+Because the compiler uses a "Full-Frontend, Incremental-Backend" bootstrap strategy, the AST must be perfectly defined to encapsulate the entire language grammar from Day 1. The code generators (backends) will traverse this AST and either lower it to LLVM IR or ignore unknown nodes.
 
 This document outlines the core structural nodes of the Nitpick AST.
+
+> ## ⚠️ This document does not yet meet its own bar
+>
+> It states that the AST must encapsulate the **entire** grammar from Day 1, and
+> it currently does not. Rebuild it from the completed grammar — `FORMAL_DRAFT`
+> chapters 01 (lexical), 04 (expressions), and 05 (statements) are the adoption
+> candidates — before the parser is written.
+>
+> **Missing nodes:** pipe operators (`|>`, `<|`), the `is` ternary, `discard`,
+> labelled `fall`, `break` / `continue`, range expressions (`..`, `...`), the `$`
+> iteration variable, `await`, string interpolation (`&{ }`), and `defer`.
+>
+> **Two naming conventions are mixed** in one document: `IfStmt` / `BlockStmt` /
+> `VarDeclStmt` alongside `WHEN_STMT` / `LOOP_STMT` / `PICK_STMT` with positional
+> `.a` / `.b` / `.c` operand slots. The second style appears lifted from the
+> prototype's implementation. Pick one.
+>
+> **Unverified detail:** `LOOP_STMT` and `TILL_STMT` are given an optional `end`
+> block, which `CONTROL_REFERENCE.md` documents only for `when`.
+>
+> **Removed:** the `LAMBDA` node kind and closure-capture analysis — closures are
+> gone (D-018). Function pointers (lambdas without capture) remain.
 
 ---
 
@@ -31,7 +53,7 @@ Statements do not return values (they evaluate to `void`).
 
 *   **`BlockStmt`**: A list of statements enclosed in `{ }`. Scopes variables.
 *   **`VarDeclStmt`**: Variable declaration (e.g., `stack int32:x = 5i32;`).
-    *   `memory_modifier`: Optional (`stack`, `gc`, `wild`, `wildx`)
+    *   `memory_modifier`: Optional (`stack`, `wild`, `wildx`) — **`gc` removed** (D-003)
     *   `drop_modifier`: Optional (`nodrop`)
     *   `limit`: Optional `LimitNode`
     *   `type`: `TypeNode`
@@ -58,6 +80,9 @@ Statements do not return values (they evaluate to `void`).
     *   `.c` = Unused.
 *   **`PICK_CASE`**:
     *   `.a` = A `GROUP_NODE` list of case match labels (e.g. `ERR:`, `(1):`).
+        The `ERR:` label matches the `tbb` error sentinel (D-008 §5.1). A `pick`
+        on a `tbb` selector **requires** an explicit `ERR:` arm — `(*)` must not
+        silently absorb a taint, or the tainted value steers a branch after all.
     *   `.b` = The block (body) to execute.
     *   `.c` = Unused.
 *   **`ResultExitStmt`**: 
@@ -84,9 +109,10 @@ Expressions evaluate to a value and have a computed `Type`.
 *   **`CallExpr`**: Function invocation (`foo(a, b)`).
 *   **`MemberAccessExpr`**: `obj.field`. (Unified access, automatically dereferences if `obj` is a pointer).
 *   **Pointer Expressions**:
-    *   **`AddressOfExpr`**: `@val`
+    *   **`AddressOfExpr`**: `@val` — yields a **second-class borrow**, not a first-class pointer (D-004)
     *   **`DerefExpr`**: `<-ptr` (Full deep dereference)
-    *   **`PinExpr`**: `#obj`
+    *   **`WildPtrExpr`**: `#wild_ptr<T>(addr)` — constructs a pointer from an integer address; legal only in `wild` context (D-019)
+    *   ~~`PinExpr`~~ — **removed**; pinning is obsolete without a collector (D-020)
 *   **Error Handling Expressions**:
     *   **`SafeUnwrapExpr`**: `expr ? default_expr`
     *   **`EmphaticUnwrapExpr`**: `expr ?! err_code`
