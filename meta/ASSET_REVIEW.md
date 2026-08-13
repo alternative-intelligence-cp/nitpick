@@ -197,7 +197,7 @@ experiment**, so anything binding to it is pre-`libn` and awaiting replacement.
 | **math / physics** | 7 | **2,309** | `quantum` (705), `complex` (566), `math` (372), `number`, `linalg`, `wavemech` |
 | **strings & fmt** | 2 | 511 | `print_utils` (271), `fmt` (240) only — see below |
 | **system / io** | 11 | 1,720 | `sys` (391), `io`, `net`, `process`, `signal`, `pipe`, `shm`, `ntime`, `nfs`, `nurl` |
-| **concurrency** | 7 | 1,068 | `channel` (351), `thread_pool` (157), `rwlock` (126), `mutex` (121), `thread` (111), `actor` (111), `condvar` (85) |
+| **concurrency** | 3 | 332 | `rwlock` (126), `mutex` (121), `condvar` (85) — **only these three**; see the transitive-taint section |
 | **memory** | 5 | 498 | `arena` (91), `drop` (143), `pool_alloc` (102), `mem` (95), `handle` (62) |
 | **data & misc** | 14 | 1,791 | `binary` (349), `dbug` (289), `base64` (224), `buffer` (216), `hexstream`, `random`, `rules`, `bld`, `pkg` |
 
@@ -296,3 +296,85 @@ repositories existed precisely so each could be audited independently and then
 promoted. A shimmed `stdlib/` module is a pre-audit artifact, not a finished one.
 
 `stdlib/io.npk` versus `libn/src/io/` still needs the same check.
+
+
+---
+
+## Transitive C dependency — a second counting correction
+
+Direct `extern` counting understates the problem. **Seven files carry no `extern`
+of their own but import something that does**, so they are C-dependent in
+practice:
+
+| File | Tainted via |
+|---|---|
+| `thread.npk` | `core.npk`, `atomic.npk` |
+| `thread_pool.npk` | `core.npk`, `thread.npk` |
+| `channel.npk` | `thread.npk` |
+| `actor.npk` | `thread.npk`, `channel.npk` |
+| `io.npk` | `string.npk` |
+| `process.npk` | `string.npk`, `io.npk` |
+| `wavemech.npk` | `wave.npk` |
+
+**Final tally for `nitpick/stdlib` (112 files):**
+
+| | Files |
+|---|---|
+| direct C surface | 45 |
+| **indirect C only** | **7** |
+| genuinely clean | **60** |
+
+### This corrects the concurrency claim
+
+An earlier revision here said seven of ten concurrency modules were C-free. That
+was true *directly* and false in practice: `thread`, `thread_pool`, `channel`,
+and `actor` all reach C through `core.npk` (→ `nitpick_libc_string`) and
+`atomic.npk` (→ `nitpick_runtime`). Only **`mutex`, `rwlock`, and `condvar`** are
+genuinely clean.
+
+### The taint has very few roots
+
+Which is the good news — this is a small, targeted job, not a rewrite:
+
+| Root | Clears |
+|---|---|
+| `atomic.npk` | superseded outright by the language-level `atomic<T>` (native LLVM atomic IR, no shim) |
+| `core.npk` + `string.npk` | superseded by `ARCHIVE/nstr` |
+| `wave.npk` | needs reimplementation (only 4 extern decls) |
+
+Fixing those **four** files clears all seven dependents. The whole concurrency
+stack comes clean once `atomic` is dropped and `core`/`string` are replaced by
+`nstr` — no changes needed to `thread`, `channel`, or `actor` themselves.
+
+### Methodology note for future assessments
+
+Measure C dependency **transitively**, not by direct `extern` count. A module can
+be spotless and still link a C shared object through two hops of `use`. Both
+counting errors in this review (block-form `extern`, then transitive imports)
+biased the same direction: they made the codebase look cleaner than it is.
+
+---
+
+## `io`: `stdlib/io.npk` vs `libn/src/io/` — different layers, both wanted
+
+Neither is a C shim, so unlike strings this is not a replacement question.
+
+| Source | Size | Direct C | Layer |
+|---|---|---|---|
+| `libn/src/io/` | 22 files, 6,269 | none | **libc-level** — `io_write_n`, `io_dup`, `open`, `read`, `seek`, `fcntl`, plus a full buffered `bio/` layer (`fopen`, `fgetc`, `fprintf`, `fscanf`, `tmpfile`) |
+| `stdlib/io.npk` | 186 | none *(but see below)* | **Nitpick-idiomatic** — `pub Type:FileStream` with `open`/read/write methods, built directly on syscalls |
+
+`stdlib/io.npk`'s header records that it was "Ported to native Linux syscalls,
+completely removing `nitpick_libc_io`" — so it *was* a C shim and has already been
+cleaned up. **But it still `use`s `string.npk`**, which links
+`libnitpick_libc_string.so`, so it is transitively tainted until strings are
+resolved.
+
+**Recommendation:** keep both. `libn/src/io/` provides the POSIX-compatible layer
+the rest of `nlibc` needs; `stdlib/io.npk` provides the ergonomic `FileStream`
+type on top. Port `libn/src/io/` first, then `stdlib/io.npk` once `nstr` has
+displaced `string.npk`.
+
+`stdlib/sys.npk` (391 lines) is purely Linux x86-64 syscall constants,
+auto-generated from kernel headers. No runtime dependency; regenerate rather than
+port. Note it references `sys!!!`, which D-001 removed.
