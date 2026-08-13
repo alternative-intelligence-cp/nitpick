@@ -1746,7 +1746,7 @@ from the keyword list. Add `Self` to `TypeKeyword` in `LEXICAL_REFERENCE.md`. It
 denotes the implementing type inside a `trait` or `impl` body and is invalid
 elsewhere.
 
-### Blanket impls use the bound form — **derived, flag if unwanted**
+### Blanket impls use the bound form
 
 Chapter 13 spells blanket impls as `impl:Loggable:for:T:where:Printable = { … };`,
 making `where` a colon-separated path segment. That is a second, unrelated
@@ -1763,11 +1763,80 @@ impl:Loggable:for:<T: Printable> = {
 
 This is a **consequence** of D-029 and D-030 rather than a separate choice — the
 same rule (`<T: Bound & Bound>`) now applies in every position that constrains a
-type parameter. It is called out because it changes a form chapter 13 states
-explicitly. Concrete impls continue to take priority over blanket-generated ones.
+type parameter. It was flagged for review because it changes a form chapter 13
+states explicitly, and has been **confirmed**. Concrete impls continue to take
+priority over blanket-generated ones.
 
 ### `>>` splitting
 
 `Handle<Node<int64>>` requires the lexer to split `>>`, which is also the
 right-shift operator. Chapter 13 §13.3.2 notes the behavior; it needs stating in
 the lexical grammar as an explicit parser interaction rather than left implicit.
+
+---
+
+## D-031 — `impl` syntax: no connector, type first — **SETTLED**
+
+```ebnf
+ImplDeclaration ::= "impl" ":" TypeOrParam (":" TraitName)? "=" "{" ImplBody "}" ";"
+```
+
+```nitpick
+impl:Point = {                       // inherent methods on Point
+    func:magnitude = flt64(Point:self) { … };
+};
+
+impl:Message:Serializable = {        // Message implements Serializable
+    func:to_bytes = buffer(Message:self) { … };
+};
+
+impl:<T: Printable>:Loggable = {     // blanket: every Printable is Loggable
+    func:log_str = string(T:self) { … };
+};
+```
+
+Supersedes `FORMAL_DRAFT` 13's `impl:TraitName:for:TypeName`, `impl:for:TypeName`,
+and `impl:Trait:for:T:where:Bound`.
+
+### Why the connector goes entirely
+
+`for` already means "iterate over" in `for (int64:i in 1..3)`. Reusing it for
+"applied to" gives one keyword two meanings — the thing the blueprint philosophy
+exists to prevent, and the same defect D-028 removed from `Type` and D-021 from
+having two cast spellings.
+
+Replacing it with a fresh keyword was considered and rejected. `with` was the
+natural candidate but is **already taken** by the FFI error contract
+(`fails on result < 0i32 with errno`, D-002), so it would recreate the same
+overload. `on`, `as`, `in`, `is`, and `where` are likewise reserved. That left
+`to`, `by`, and `via` — all free, but all **filler words**: they carry no
+information that position does not already carry. Facet 2 of the blueprint
+philosophy asks for maximum meaning in minimum space, and a connector adding zero
+meaning fails that test. Dropping it is strictly better than any replacement:
+same information, less to read, no vocabulary growth.
+
+### Why the type comes first
+
+The two forms share a rule: **slot 1 is always the type being implemented on.**
+
+| Form | Slot 1 | Slot 2 |
+|---|---|---|
+| `impl:Point` | type | — |
+| `impl:Message:Serializable` | type | trait |
+| `impl:<T: Printable>:Loggable` | bounded type parameter | trait |
+
+Trait-first ordering was considered and rejected for exactly this: with
+`impl:Serializable:Message`, the one-segment inherent form `impl:Point` would make
+slot 1 a *type* while the two-segment form made it a *trait* — the first slot
+changing meaning by arity. Type-first has one rule with no exception.
+
+It also reads as subject-predicate — "Message implements Serializable" — matching
+the direction of the relationship rather than inverting it.
+
+### Follow-up
+
+- `TRAITS_REFERENCE.md` — all `impl` forms rewritten.
+- `LEXICAL_REFERENCE.md` — `for` is no longer a path segment; it reverts to the
+  loop keyword only, and the open item flagging its dual role is closed.
+- `AST_REFERENCE.md` — the impl node carries an optional trait slot, not a fixed
+  three-part path.

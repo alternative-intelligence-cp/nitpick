@@ -1,7 +1,7 @@
 # Nitpick Traits, Generics, and Dispatch
 
 Adopted from `FORMAL_DRAFT/13_traits_and_generics.md` with corrections applied for
-D-001…D-030. Chapter 06's overlapping trait and generic material is superseded —
+D-001…D-031. Chapter 06's overlapping trait and generic material is superseded —
 see `GRAMMAR_ADOPTION_CONFLICTS.md` Part F for why chapter 13's forms won.
 
 ---
@@ -27,7 +27,7 @@ struct:Message = {
     int32:id;
 };
 
-impl:Serializable:for:Message = {
+impl:Message:Serializable = {
     func:to_bytes = buffer(Message:self) {
         pass result;
     };
@@ -41,6 +41,18 @@ invalid anywhere else.
 > `impl Reader for FileStream { … }` (space-separated). Both are **struck** — they
 > are the only declarations in the language that would not follow the
 > `keyword:name = value;` house form (D-030).
+>
+> Chapter 13's own `impl:Trait:for:Type` is also superseded. **`impl` takes no
+> connector, and the type comes first** (D-031):
+>
+> ```ebnf
+> ImplDeclaration ::= "impl" ":" TypeOrParam (":" TraitName)? "=" "{" ImplBody "}" ";"
+> ```
+>
+> Slot 1 is always the type being implemented on, in every form. `for` was
+> dropped because it already means "iterate over"; no replacement keyword was
+> added because a connector carries no information that position does not already
+> carry.
 
 ### 2.1 Default Methods
 
@@ -80,7 +92,7 @@ trait:Iterator = {
     func:next = Item(Self:self);
 };
 
-impl:Iterator:for:Range = {
+impl:Range:Iterator = {
     assoc:Item = int32;
     func:next  = int32(Range:self) { pass(self.current); };
 };
@@ -100,7 +112,7 @@ impl that omits the binding.
 Methods may attach to a type with no trait involved:
 
 ```nitpick
-impl:for:Point = {
+impl:Point = {
     func:magnitude = flt64(Point:self) {
         pass(flt64_sqrt(flt64(self.x * self.x + self.y * self.y)));
     };
@@ -133,7 +145,7 @@ Supported: `Default`, `PartialOrd`, `ToString`, `Eq`, `Hash`, `Clone`, `Debug`,
 A blanket impl implements a trait for every type satisfying a bound:
 
 ```nitpick
-impl:Loggable:for:<T: Printable> = {
+impl:<T: Printable>:Loggable = {
     func:log_str = string(T:self) { pass("[LOG]"); };
 };
 ```
@@ -145,7 +157,7 @@ impls take priority** over blanket-generated ones.
 > `where` a colon-separated path segment — a second, unrelated syntactic role for
 > a keyword that otherwise guards `pick` arms as a parenthesized expression. The
 > bound form above applies the same `<T: Bound>` rule used everywhere else
-> (D-030).
+> (D-030), and the type-first ordering of D-031.
 
 ### 2.7 Data Hiding and Opaque Types
 

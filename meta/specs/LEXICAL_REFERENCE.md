@@ -60,7 +60,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "defaults" | "discard"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
-                      | "invariant" | "fails" | "on" | "never"
+                      | "invariant" | "fails" | "on" | "with" | "never"
 
 AsyncKeyword        ::= "async" | "await"
 
@@ -106,7 +106,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | Change | Reason |
 |---|---|
 | `gc` removed from `MemoryQualifier` | D-003 — no collector |
-| `fails`, `on`, `never` added | D-002 — FFI error contracts |
+| `fails`, `on`, `with`, `never` added | D-002 — FFI error contracts. `with` binds the error source (`with errno`) and was missed in the first pass. |
 | `is_err` added | D-008 — non-trapping ERR test |
 | `discard` added to `ControlFlow` | it is a statement keyword and was absent |
 | `tbb128`, `tbb256` added | `TYPE_REFERENCE.md` §6 defines them |
@@ -293,9 +293,6 @@ Interpolation   ::= "&{" /* syntactic expression */ "}"
   `FORMAL_DRAFT` 02 §2.3.3 still say `fix256`. This grammar uses `dim256` per
   `SPEC_GAPS` §3; the rest of the specs need to follow.
 - **`move`** is listed as a memory qualifier but is not specified anywhere.
-- **`for` occupies two grammatical roles** — the loop header `for (int64:i in 1..3)`
-  and the impl path segment `impl:Serializable:for:Message`. It is one reserved
-  token and both positions are unambiguous to parse, but the *meanings* differ:
-  "iterate over" versus "applied to". Whether that clears the blueprint bar is
-  worth a deliberate answer rather than inheriting the convention from other
-  languages. An alternative for the impl path would avoid the question entirely.
+- ~~`for` occupies two grammatical roles~~ — **closed by D-031.** `impl` now takes
+  no connector (`impl:Message:Serializable`), so `for` reverts to the loop keyword
+  alone and has exactly one meaning.
