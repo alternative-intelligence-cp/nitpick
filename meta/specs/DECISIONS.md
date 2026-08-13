@@ -1647,3 +1647,127 @@ three-way classification with an ambiguous member — one rule, no exceptions.
   `break` must branch to the `then` block, not `end`.
 - `FORMAL_DRAFT` 05 §5.4.5 mentions the clauses without defining their semantics,
   so it needs the definition added rather than corrected.
+
+---
+
+## D-028 — `assoc` declares associated types; `Type` is namespace-only — **SETTLED**
+
+`Type` had two unrelated meanings distinguished only by position — a direct
+blueprint violation, and genuinely ambiguous to parse.
+
+| Construct | Keyword | Example |
+|---|---|---|
+| namespace / module grouping | **`Type`** *(unchanged)* | `Type:Counter = { … };` |
+| associated type in a trait | **`assoc`** *(new)* | `assoc:Item;` / `assoc:Item = int32;` |
+
+```nitpick
+trait:Iterator = {
+    assoc:Item;
+    func:next = Item(Self:self);
+};
+
+impl:Iterator:for:Range = {
+    assoc:Item = int32;
+    func:next = int32(Range:self) { pass(self.current); };
+};
+```
+
+Associated types may carry defaults — `assoc:Error = string;` — which an impl
+inherits if it omits the binding.
+
+**Why associated types moved rather than namespaces.** `Type` as a namespace is
+the older and more visible construct, specified in `FORMAL_DRAFT` 02 §2.7.4 with
+its own internal/interface/type struct discipline. Associated types are newer and
+confined to trait and impl bodies, so renaming them disturbs less existing
+material.
+
+It also removes a real parsing ambiguity: inside a trait body, `Type:Foo = { … };`
+could previously be read as either an associated type bound to an anonymous
+struct or a nested namespace. `assoc:Foo = …;` cannot.
+
+Add `assoc` to `TypeKeyword` in `LEXICAL_REFERENCE.md`.
+
+---
+
+## D-029 — `&` combines traits everywhere — **SETTLED**
+
+Three sites meant "satisfies several traits" using two different symbols. `&` wins
+in all of them; `+` is removed from trait combination.
+
+```nitpick
+trait:Ordered = Equatable & { … };                          // supertrait
+func:process<T: Renderable & Serializable> = NIL(T:item) { … };  // generic bound
+dyn Drawable & Serializable:obj = msg;                       // multi-bound dyn
+```
+
+Two of the three already used `&`, so this changes the fewest sites. `&` also
+reads as logical conjunction — "satisfies A **and** B" — which is what a
+constraint means, whereas `+` reads as addition.
+
+`dyn A & B` remains assignable to `dyn A` (widening by dropping bounds), and each
+trait must be object-safe.
+
+---
+
+## D-030 — Trait, impl, and generic declaration syntax — **SETTLED**
+
+`FORMAL_DRAFT` chapters 06 and 13 disagreed on all three. **Chapter 13 wins
+throughout**; chapter 06 is the outlier and is corrected.
+
+### Canonical forms
+
+```nitpick
+trait:Serializable = { … };                    // declaration
+impl:Serializable:for:Message = { … };         // trait impl
+impl:for:Point = { … };                        // inherent impl
+struct:Container<T> = { T:value; };            // generic struct
+func:extract_value<T> = T(Container<T>:c) { … };            // generic function
+func:process<T: Renderable & Serializable> = NIL(T:item) { … };  // bounded
+```
+
+| Construct | Chapter 06 (rejected) | Chapter 13 (adopted) |
+|---|---|---|
+| trait | `trait:Reader { … };` — no `=` | `trait:Reader = { … };` |
+| impl | `impl Reader for FileStream { … }` | `impl:Reader:for:FileStream = { … };` |
+| generic params | before the name — `func<T: …>:process` | **after** the name — `func:process<T: …>` |
+
+Chapter 13's forms match the house style used by every other declaration —
+`func:name = `, `struct:name = `, `Rules<T>:name = ` — and `SPEC_GAPS` §3
+independently specifies after-the-name placement. Chapter 06 was alone.
+
+Chapter 13 never shows a *bounded* generic, so the bound form above is written
+rather than adopted: parameters go after the name, bounds attach with `:` inside
+the angle brackets, and multiple bounds combine with `&` (D-029).
+
+### `Self` becomes a keyword
+
+Used six times in chapter 13 (`func:to_bytes = buffer(Self:self);`) but absent
+from the keyword list. Add `Self` to `TypeKeyword` in `LEXICAL_REFERENCE.md`. It
+denotes the implementing type inside a `trait` or `impl` body and is invalid
+elsewhere.
+
+### Blanket impls use the bound form — **derived, flag if unwanted**
+
+Chapter 13 spells blanket impls as `impl:Loggable:for:T:where:Printable = { … };`,
+making `where` a colon-separated path segment. That is a second, unrelated
+syntactic role for `where`, which otherwise guards `pick` arms as a parenthesized
+expression — `MyMacro!(a, b) where (a > b)`.
+
+Applying the bound syntax consistently removes the clash:
+
+```nitpick
+impl:Loggable:for:<T: Printable> = {
+    func:log_str = string(T:self) { pass("[LOG]"); };
+};
+```
+
+This is a **consequence** of D-029 and D-030 rather than a separate choice — the
+same rule (`<T: Bound & Bound>`) now applies in every position that constrains a
+type parameter. It is called out because it changes a form chapter 13 states
+explicitly. Concrete impls continue to take priority over blanket-generated ones.
+
+### `>>` splitting
+
+`Handle<Node<int64>>` requires the lexer to split `>>`, which is also the
+right-shift operator. Chapter 13 §13.3.2 notes the behavior; it needs stating in
+the lexical grammar as an explicit parser interaction rather than left implicit.

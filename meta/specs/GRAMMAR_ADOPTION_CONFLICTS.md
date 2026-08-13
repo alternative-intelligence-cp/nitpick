@@ -141,3 +141,88 @@ Not everything is a conflict. These are worth keeping:
 Note that chapter 05 overlaps `CONTROL_REFERENCE.md` substantially, and chapter 04
 overlaps `OP_REFERENCE.md`. Adoption is a **merge**, not an addition — which is
 why the A-list has to be settled first.
+
+---
+
+# Chapter 13 (Traits & Generics) + Chapter 06 (Functions) — Conflict List
+
+Read in full, together, because they overlap and disagree.
+
+## Part D — Design problems requiring a decision
+
+### D1. `Type` means two different things
+
+Same syntax, two unrelated constructs, disambiguated only by where it appears:
+
+| Context | Meaning | Source |
+|---|---|---|
+| top level | **namespace / module grouping** — `Type:Counter = { … };`, holds functions and structs, no member variables | `FORMAL_DRAFT` 02 §2.7.4 |
+| inside `trait` / `impl` | **associated type** — `Type:Item;` declares, `Type:Item = int32;` binds | `FORMAL_DRAFT` 13 §13.2.3 |
+
+This is a direct blueprint violation — a construct changing meaning by context is
+the exact thing the philosophy exists to prevent. It is also genuinely ambiguous
+to parse: inside a trait body, `Type:Foo = { … };` could be either an associated
+type bound to an anonymous struct, or a nested namespace.
+
+### D2. Traits are combined with `&` in some places and `+` in others
+
+| Purpose | Symbol | Source |
+|---|---|---|
+| supertrait requirement | `&` — `trait:Ordered = Equatable & { … };` | 13 §13.2.2 |
+| generic bound | `&` — `T: Renderable & Serializable` | 06 §6.3 |
+| multi-bound `dyn` | **`+`** — `dyn Drawable + Serializable:obj` | 13 §13.5.3 |
+
+Three places meaning "this type satisfies several traits", two different symbols.
+
+## Part E — Conflicts with settled decisions (mechanical)
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 26 | 13 §13.2.5 | `@derive(Default, Eq, …)` | `#[derive(…)]` — `@` is address-of only, and derive annotates a declaration, so it takes the attribute form (D-020) |
+| 27 | 13 §13.3.3 | arena access shown as `ptr->node_arena.alloc(…)` | `.` handles all member access and auto-dereferences (D-006) |
+| 28 | 13 §13.6.1–13.6.2 | `@cast<T>` / `@cast_unchecked<T>` presented as equal alternatives to `=>` | both removed; `=>` and `=>!` are the only cast forms (D-021) |
+| 29 | 13 §13.6.1 | destructive casts "emit warnings" (`NITPICK-062`, `NITPICK-063`) | `=>` is a **compile-time error** where loss is possible; `=>!` is the opt-out (D-021) |
+| 30 | 13 §13.6.3 | "use `int64` to track opaque C addresses rather than casting to typed pointers" | struck — `int64` addresses defeat leak checking and escape analysis (D-012); use `#wild_ptr<T>(addr)` (D-019) |
+| 31 | 06 §6.1, §6.6 | examples use `return a + b;` / `return bytesRead;` | `pass` / `fail` are the return keywords |
+| 32 | 06 §6.1, §6.3 | `void` used as a Nitpick return type | `void` is `extern`-only; use `NIL` |
+| 33 | 06 §6.1.2 | "`extern` … return bare types (`T`) … not wrapped in `Result<T>`" | all functions including `extern` return `Result<T>` with mandatory error contracts (D-002) |
+| 34 | 06 §6.4 | lambdas/closures capturing environments via `npk_gc_alloc` | closures removed (D-018) |
+
+## Part F — Chapter 06 and 13 disagree with each other
+
+| Construct | Chapter 06 | Chapter 13 |
+|---|---|---|
+| trait declaration | `trait:Reader { … };` — **no `=`** | `trait:Serializable = { … };` |
+| impl | `impl Reader for FileStream { … }` — space-separated | `impl:Serializable:for:Message = { … };` — colon-separated |
+| generic parameters | **before** the name, with bounds: `func<T: Renderable & Serializable>:process = void(T:item)` | **after** the name, no bounds shown: `func:extract_value<T> = T(Container<T>:c)` |
+
+Chapter 13's forms match the house style used everywhere else — `func:name = `,
+`struct:name = `, `Rules<T>:name = ` — and `SPEC_GAPS` §3 independently specifies
+the after-the-name placement (`struct:Name<T> = { … }`, `func:my_func<T> = …`).
+**Chapter 06 is the outlier on all three.**
+
+Note chapter 13 never shows a *bounded* generic, so wherever the bound syntax
+lands it has to be written, not copied.
+
+## Part G — Gaps
+
+- **`Self` is not a keyword.** Used six times in chapter 13 (`func:to_bytes = buffer(Self:self);`)
+  but absent from the chapter 01 keyword list and from `LEXICAL_REFERENCE.md`.
+- **`where` has two unrelated syntactic forms**: a `pick` arm guard,
+  `MyMacro!(a, b) where (a > b)`, and a path component in blanket impls,
+  `impl:Loggable:for:T:where:Printable`. Both express constraints, but one is a
+  parenthesized expression and the other a colon-separated segment.
+- **`>>` splitting**: `Handle<Node<int64>>` requires the lexer to split `>>`,
+  which is also the right-shift operator. A known parser interaction that needs
+  stating explicitly rather than being left to the implementer.
+
+## Part H — What chapter 13 adds that is wanted
+
+Default methods, supertraits, associated types, inherent impls, derive macros,
+blanket impls, `opaque` types, coherence (at most one impl per trait/type pair),
+object-safety rules for `dyn`, monomorphization, and multi-bound `dyn` with
+widening. None of this exists in the carried-over set, and traits are referenced
+by `TYPE_REFERENCE.md` §18 with no governing document.
+
+Also confirms **UFCS** independently: 13 §13.2.4 states inherent methods are
+"dispatched statically via UFCS: `Point_magnitude(p)`" (D-006).

@@ -67,7 +67,8 @@ AsyncKeyword        ::= "async" | "await"
 ModuleKeyword       ::= "use" | "mod" | "pub" | "extern" | "cfg" | "as"
                       | "comptime" | "inline" | "noinline" | "macro" | "derive"
 
-TypeKeyword         ::= "struct" | "enum" | "Type" | "opaque" | "trait" | "impl"
+TypeKeyword         ::= "struct" | "enum" | "Type" | "assoc" | "opaque"
+                      | "trait" | "impl" | "Self"
                       | "Rules" | "limit" | "const" | "fixed" | BuiltinType
 
 BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
@@ -112,6 +113,9 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `fix256` → `dim256` | `SPEC_GAPS` §3 rename |
 | `char8/16/32` added | `TYPE_REFERENCE.md` §2 — semantically distinct from `uint8` |
 | `Handle`, `arena`, `shared_arena`, `atomic`, `Future`, `Optional`, `simd`, `complex` added | all specified in `TYPE_REFERENCE.md`; all were missing |
+| `assoc` added | D-028 — declares an associated type; `Type` is namespace-only |
+| `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
+| — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 
 ## 5. Operators and Punctuation
 
@@ -164,7 +168,16 @@ symbols:
 
 This is why `FORMAL_DRAFT` 04 §4.2 names precedence level 8 "Range / **Spread**".
 
-### 5.2 `!!` is a modifier token, not an operator
+### 5.2 `>>` and nested generics
+
+`>>` is the right-shift operator **and** the closing bracket pair of a nested
+generic — `Handle<Node<int64>>`. The lexer must split `>>` into two `>` tokens
+when the parser is in a type-argument context.
+
+This is a known interaction rather than an accident, and it is stated here so it
+is not rediscovered during implementation (D-030).
+
+### 5.3 `!!` is a modifier token, not an operator
 
 `FORMAL_DRAFT` 01 listed `!!` among the operators. It is not one — it is a lexer
 token that exists solely so `sys!!` and `asm!!` can be lexed. The prototype is
@@ -280,3 +293,9 @@ Interpolation   ::= "&{" /* syntactic expression */ "}"
   `FORMAL_DRAFT` 02 §2.3.3 still say `fix256`. This grammar uses `dim256` per
   `SPEC_GAPS` §3; the rest of the specs need to follow.
 - **`move`** is listed as a memory qualifier but is not specified anywhere.
+- **`for` occupies two grammatical roles** — the loop header `for (int64:i in 1..3)`
+  and the impl path segment `impl:Serializable:for:Message`. It is one reserved
+  token and both positions are unambiguous to parse, but the *meanings* differ:
+  "iterate over" versus "applied to". Whether that clears the blueprint bar is
+  worth a deliberate answer rather than inheriting the convention from other
+  languages. An alternative for the impl path would avoid the question entirely.

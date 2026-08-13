@@ -137,8 +137,12 @@ default and suspended only through a named, greppable, auditable construct.
    **Lesson for the remaining chapters:** a structural skim does not surface
    conflicts. Chapters 02, 06, 08, 11, 12, and 13 were assessed the same way and
    their conflict lists should be treated as lower bounds, not complete.
-2. **Adopt 13 (traits/generics)** after fixing conflicts 6 and the ch6/ch13 trait
-   syntax split. Highest-value acquisition after the grammar.
+2. ~~**Adopt 13 (traits/generics)**~~ **✅ DONE** — adopted as `TRAITS_REFERENCE.md`.
+   Nine conflicts found (Parts D–G of `GRAMMAR_ADOPTION_CONFLICTS.md`), two of
+   them design problems: `Type` meaning both "namespace" and "associated type"
+   (D-028), and traits combining with `&` in two places but `+` in a third
+   (D-029). Chapter 06's trait, impl, and generic-parameter forms were the
+   outliers and are superseded (D-030).
 3. **Adopt 11 (concurrency)** after fixing conflict 14, and extend it with D-016
    and D-017.
 4. **Adopt 12 (safety)** after fixing conflicts 1, 3, 9, 10 and the Layer-1/Layer-3
