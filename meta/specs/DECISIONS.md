@@ -2375,3 +2375,136 @@ cannot accidentally ship something unverified; you can only fail to build it.
 Worth keeping the distinction in mind when reasoning about timeouts, and worth
 considering an unbounded timeout for certification runs so that verification
 depends on the obligations rather than on the clock.
+
+---
+
+## D-041 — The `a*` builtin collections are removed — **SETTLED**
+
+`astack`, `alist`, `ahash`, and `astringlist`, together with their ~35 operation
+keywords, are **not part of the language**. Collections belong in a library.
+
+### What goes
+
+```
+astack  apush  apop   apeek  acap   asize  afits  atype
+ahash   ahset  ahget  ahcount ahsize ahfits ahtype ahdelete ahhas ahclear ahkeys
+alist   alpush alinsert alset alremove alpop alget alsize
+astringlist aslpush aslinsert aslset aslremove aslpop aslget aslsize
+```
+
+That is **35 reserved words returned to userland** — a meaningful share of the
+keyword space, and every one of them was unavailable as an identifier.
+
+### Why they went
+
+They were **scope-bound**: allocated against the enclosing scope and reclaimed
+automatically at its end, so they never needed explicit cleanup. That was
+genuinely useful in a few applications, but the scope-bound nature proved
+confusing in practice — agents working on the prototype repeatedly misused them —
+and the same capability is straightforward to provide as an ordinary library.
+
+They are also the last significant **`aria` naming artifact** in the language
+surface (D-036's `fix`/`fixed` cleanup and the `Aria`→`Nitpick` rename being the
+others). The `a` prefix is a fossil of the old name.
+
+### Already superseded in practice
+
+`nitpick/stdlib/regex/alist.npk` **reimplements `alist` and `alpush` as ordinary
+functions** — the library replacement already exists and is in use by the regex
+engine. Only a stale comment in `nregx.npk` still describes `alist` as a builtin.
+
+Measured across `libn/src`, `nitpick/stdlib`, `ncrypto/src`, and `nlists/src`:
+**zero real uses of any builtin form.**
+
+### This resolves three logged conflicts
+
+`FORMAL_DRAFT` 15 §15.2.1–15.2.4 documented these builtins and is **struck
+entirely** — which disposes of:
+
+- **conflict 55** — collections "managed via opaque `int64` handles" (D-012 would
+  have rejected this anyway);
+- **conflict 56** — `0`/`-1` status returns and the `unknown` sentinel on
+  underflow, violating the universal `Result<T>` rule twice over.
+
+§15.2.5 (arenas and generational handles) is **retained** — it is correct and
+consistent with D-017.
+
+### Historical note: where `--smt-opt` came from
+
+These builtins could hold **any type**. If the solver could prove every element
+in a given collection had the same type, the per-access **type check** could be
+eliminated. That is the origin of the SMT-guided optimisation now governed by
+D-040 — the idea outlived the construct that motivated it.
+
+---
+
+## D-042 — Kernel identifiers are distinct types, not integers — **SETTLED**
+
+### The rule
+
+**A kernel-assigned identifier is not a number.** Each gets its own type,
+permitting comparison and forbidding arithmetic — the same treatment that
+separated `char8` from `uint8` and `bool` from `int8` (D-005).
+
+| Type | Represents | LLVM | Replaces |
+|---|---|---|---|
+| `fd` | file descriptor | `i32` | 19 signatures returning `int64` |
+| `pid` | process identifier | `i32` | |
+| `tid` | thread identifier | `i32` | 26 signatures between them |
+| `uid` | user identifier | `i32` | |
+| `gid` | group identifier | `i32` | |
+
+`uid` and `gid` are included because the same argument applies without
+modification: comparing a `uid` to a `pid` is a bug that no amount of care
+prevents while both are `int64`, and the compiler can simply refuse it.
+
+### Permitted and forbidden operations
+
+| | |
+|---|---|
+| **Permitted** | `==`, `!=`, `<`, `<=`, `>`, `>=` |
+| **Forbidden** | `+`, `-`, `*`, `/`, `%`, `++`, `--`, and all bitwise operators |
+
+Ordering is kept rather than restricted to equality because it has a real use —
+computing the maximum descriptor for a `poll` or `select` bound. Arithmetic has
+none: adding two file descriptors is not an operation, and `fd + 1` as a way to
+reach "the next descriptor" is precisely the kind of guess the type exists to
+prevent.
+
+### The property this buys, beyond pedantry
+
+Combined with the universal `Result<T>` rule, **an `fd` value is always valid.**
+
+In POSIX, `open()` returns `-1` on failure, so every descriptor is potentially a
+sentinel and every use site is responsible for remembering to check. Here the
+failure goes to `Result.error` and never reaches the `fd` type at all. The
+"did I check for `-1`?" bug class does not exist, because `-1` is not
+representable as an `fd`.
+
+The same holds for `pid`: `fork()` returning `-1` becomes an errored `Result`, and
+the `0`-means-child convention stays a legitimate `pid` value that a `pick` can
+match explicitly.
+
+### Constants and conversions
+
+Standard descriptors are named constants of type `fd`: **`STDIN`**, **`STDOUT`**,
+**`STDERR`**.
+
+Conversion is explicit in both directions:
+
+- `fd => int32` — always safe, for logging or serialisation.
+- `int32 => fd` — **requires `=>!`**. Fabricating a descriptor from an arbitrary
+  integer is legitimate (inheriting fd 3 from a parent, for instance) but is an
+  assertion that the integer really is an open descriptor, and it should be
+  greppable like every other such assertion.
+
+### Consequences
+
+- `LEXICAL_REFERENCE.md` — add `fd`, `pid`, `tid`, `uid`, `gid` to `BuiltinType`.
+- `SIGNATURE_LEDGER.md` — the FD (19) and PID (26) categories now target these
+  types rather than `int32`.
+- `nlibc`'s syscall layer is where they originate: `io_open` and friends return
+  `Result<fd>`, `fork` returns `Result<pid>`, `libn_getuid` returns `Result<uid>`.
+- Any function currently taking `int64:fd` takes `fd`, which also removes a class
+  of argument-order mistakes — `dup2(oldfd, newfd)` cannot be called with a size
+  in either position.

@@ -82,6 +82,7 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "tfp32" | "tfp64" | "tfp128" | "tfp256" | "dim256"
                       | "flt32" | "flt64" | "flt128" | "flt256" | "flt512"
                       | "bool" | "char8" | "char16" | "char32" | "string"
+                      | "fd" | "pid" | "tid" | "uid" | "gid"
                       | "dyn" | "any" | "Result" | "Optional"
                       | "Handle" | "arena" | "shared_arena" | "atomic" | "Future"
                       | "simd" | "complex" | "array" | "func"
@@ -91,14 +92,6 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "process" | "pipe" | "debug" | "log"
 
 BuiltinHelper       ::= "is" | "in" | "is_err"
-                      | "apop" | "apush" | "apeek" | "astack" | "acap"
-                      | "asize" | "afits" | "atype" | "ahash" | "ahset"
-                      | "ahget" | "ahcount" | "ahsize" | "ahfits" | "ahtype"
-                      | "ahdelete" | "ahhas" | "ahclear" | "ahkeys"
-                      | "alist" | "alpush" | "alinsert" | "alset" | "alremove"
-                      | "alpop" | "alget" | "alsize" | "astringlist" | "aslpush"
-                      | "aslinsert" | "aslset" | "aslremove" | "aslpop"
-                      | "aslget" | "aslsize"
 ```
 
 ### Corrections applied
@@ -114,6 +107,8 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `tfp128`, `tfp256` added | D-036 — `TYPE_REFERENCE.md` §5 defines four widths; only two were listed |
 | `char8/16/32` added | `TYPE_REFERENCE.md` §2 — semantically distinct from `uint8` |
 | `Handle`, `arena`, `shared_arena`, `atomic`, `Future`, `Optional`, `simd`, `complex` added | all specified in `TYPE_REFERENCE.md`; all were missing |
+| **35 `a*` collection keywords removed** | D-041 — `astack`, `alist`, `ahash`, `astringlist` and their operations are not language builtins; collections belong in a library. Returns 35 reserved words to userland and removes the last major `aria` naming artifact from the language surface. |
+| `fd`, `pid`, `tid`, `uid`, `gid` added | D-042 — kernel identifiers are distinct types permitting comparison but not arithmetic. Combined with `Result<T>`, an `fd` is always valid: POSIX's `-1` goes to `Result.error` and is not representable. |
 | `assoc` added | D-028 — declares an associated type; `Type` is namespace-only |
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
