@@ -155,13 +155,39 @@ directory is where it was promoted.
 
 | Tier | Files | Lines | Disposition |
 |---|---|---|---|
-| **1 — C-free, portable** | 63 | **11,406** | port; same D-012 signature pass as `libn` |
-| **2 — deprecated C shims** | 17 | 2,731 | reimplement natively, or drop as superseded |
+| **1 — C-free, portable** | 55 | **9,741** | port; same D-012 signature pass as `libn` |
+| **2 — C shims** | 25 | 4,396 | replace with the standalone `n*` library, or reimplement |
 | **3 — FFI bindings to the C++ compiler** | 19 | 6,393 | **do not port** — this is what the project exists to eliminate |
 | **4 — tests & scratch** | 13 | 284 | assess separately |
 
-**55% of the directory is directly portable.** Another 31% is the FFI bridge to
-the C++ backend and must not come across at any price.
+47% is directly portable; 31% is the FFI bridge to the C++ backend and must not
+come across at any price.
+
+> **Counting correction.** An earlier revision put Tier 1 at 63 files / 11,406
+> lines. That over-counted, because `extern` appears in two forms and the first
+> pass only detected one. Flat declarations (`extern func:name = …`) were counted
+> correctly, but **block form** —
+> ```nitpick
+> extern "nitpick_libc_string" {
+>     func:a = …;
+>     func:b = …;
+> }
+> ```
+> — registered as a single hit regardless of how many declarations it contained.
+> Nine files use block form and were scored as nearly clean. Corrected numbers
+> above.
+
+### The shared objects the stdlib actually links
+
+| Library | Files linking it |
+|---|---|
+| `nitpick_runtime` | `atomic` (24 decls), `allocator`, `handle` |
+| `nitpick_libc_string` | `string`, `string_convert`, `string_builder`, `core` |
+| `nitpick_libc_mem` | `buffer` |
+| `nitpick_libc_thread` | `shm` |
+
+Every one is a C shared object. **`nitpick_libc_*` is the early, superseded
+experiment**, so anything binding to it is pre-`libn` and awaiting replacement.
 
 ### Tier 1 — what is actually there
 
@@ -169,7 +195,7 @@ the C++ backend and must not come across at any price.
 |---|---|---|---|
 | **regex engine** | 14 | **2,339** | `regex_compiler` (721), `nfa_compiler` (311), `regex_vm` (297), `regex_cache` (261), `prefix_extractor` (154). **Zero extern anywhere.** |
 | **math / physics** | 7 | **2,309** | `quantum` (705), `complex` (566), `math` (372), `number`, `linalg`, `wavemech` |
-| **strings & fmt** | 5 | 1,681 | `string_convert` (602), `string` (449), `print_utils`, `fmt`, `string_builder` |
+| **strings & fmt** | 2 | 511 | `print_utils` (271), `fmt` (240) only — see below |
 | **system / io** | 11 | 1,720 | `sys` (391), `io`, `net`, `process`, `signal`, `pipe`, `shm`, `ntime`, `nfs`, `nurl` |
 | **concurrency** | 7 | 1,068 | `channel` (351), `thread_pool` (157), `rwlock` (126), `mutex` (121), `thread` (111), `actor` (111), `condvar` (85) |
 | **memory** | 5 | 498 | `arena` (91), `drop` (143), `pool_alloc` (102), `mem` (95), `handle` (62) |
@@ -244,6 +270,29 @@ Assess Tier 1 for porting **after** `nlibc`'s core lands, in this order:
    duplicate, since both directories implement string and I/O layers
 4. **math / physics** — no dependencies, can happen any time
 
-Note the overlap risk: `libn/src/str/` and `stdlib/string*.npk` both exist, as do
-`libn/src/io/` and `stdlib/io.npk`. Deciding which survives is a prerequisite to
-porting either, or the work gets done twice.
+### Strings: resolved — use `ARCHIVE/nstr`, not `stdlib/string*`
+
+There are three string implementations, and they are **not** three copies of the
+same thing:
+
+| Source | Size | C surface | What it is |
+|---|---|---|---|
+| `stdlib/string.npk`, `string_convert`, `string_builder`, `core` | 1,284 | **links `libnitpick_libc_string.so`** | the pre-audit C-shim version |
+| `ARCHIVE/nstr` + `nstr-builder` | 444 | **zero extern** | the standalone, audited, Nitpick-level string library |
+| `libn/src/str/` | ~4,166 | zero extern | libc-level string *functions* (`strlen`, `strcmp`, `strtok`, `strview`) |
+
+`stdlib/string.npk`'s own header records the history: *"v0.9.1: Ported from 18
+inline extern func to nitpick-libc shims + builtins … backed by
+`libnitpick_libc_string.so`."* It moved from direct externs to shims — it never
+stopped being C.
+
+The last two are **different layers**, not duplicates: `libn/src/str/` provides
+the libc-style string functions, `nstr` provides the higher-level Nitpick string
+type. Both are wanted. `stdlib/string*` is what both replace, and is not ported.
+
+This also settles the pattern for the rest: where a `stdlib/` module carries C
+shims, **look for the standalone `n*` library first** — the split into separate
+repositories existed precisely so each could be audited independently and then
+promoted. A shimmed `stdlib/` module is a pre-audit artifact, not a finished one.
+
+`stdlib/io.npk` versus `libn/src/io/` still needs the same check.
