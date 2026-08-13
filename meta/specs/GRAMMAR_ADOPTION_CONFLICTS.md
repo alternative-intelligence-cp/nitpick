@@ -402,3 +402,84 @@ traps to `failsafe`; it should say so.
   independent argument for static ownership over a collector (D-003).
 - **§12.1** names Nikola explicitly alongside robotics, medical devices,
   aerospace, and nuclear control as target applications.
+
+---
+
+# Chapter 02 (Types & Data Model) — Conflict and Gap List
+
+## Part P — Conflicts
+
+| # | Location | Issue | Fix |
+|---|---|---|---|
+| 45 | §2.3.3 | `FixedPointType ::= "fix256"` | **D-036** — renamed `dim256`; `fix256` is obsolete |
+| 46 | §2.3.2 | `TFPType ::= "tfp32" \| "tfp64"` only | **D-036** — four widths exist: `tfp32`, `tfp64`, `tfp128`, `tfp256` (`TYPE_REFERENCE.md` §5) |
+| 47 | §2.4 vs ch. 01 §1.6.2 | balanced literals use **prefix** form (`0t1T0`, `0n2A`) here, **suffix** form there (`1T0t`, `2An`) | suffix form wins — uniform with hex/binary/octal, which all use suffixes |
+| 48 | §2.5 | `complex<T>` laid out as `{ *T:real; *T:imag; }` | `*` is C pointer syntax, reserved for `extern` only. Also real/imag are **values**, not pointers: `{ T:real; T:imag; }` |
+| 49 | §2.7.1 | `StructType ::= "struct" \| "opaque" "struct"` | `TRAITS_REFERENCE.md` §2.7 (from ch. 13) uses a standalone declaration, `opaque:DatabaseHandle;`. Two forms for one concept — pick one |
+| 50 | §2.1 | "there are zero implicit **implicit** conversions" | typo |
+
+## Part Q — `tryte` / `nyte` packing: chapter 02 is right, `TYPE_REFERENCE` is wrong
+
+| | `FORMAL_DRAFT` 02 §2.4 | `TYPE_REFERENCE.md` §7 |
+|---|---|---|
+| `tryte` | **10 trits** (3¹⁰) in a `uint16` | 6 trits |
+| `nyte` | **5 nits** (9⁵) in a `uint16` | "packed nits" |
+
+Chapter 02 is correct and it is checkable: 3¹⁰ = 59,049 fits a `uint16` (65,536)
+while 3¹¹ = 177,147 does not, so ten is the maximum. Likewise 9⁵ = 59,049 fits
+and 9⁶ does not.
+
+Note 3¹⁰ = 9⁵ = 59,049 exactly — `tryte` and `nyte` have **identical cardinality**,
+which is presumably why both are `uint16`. Worth stating in the spec rather than
+leaving as a coincidence a reader has to notice.
+
+`TYPE_REFERENCE.md` §7 needs correcting.
+
+## Part R — **Open question**: do LBIM integers carry sticky ERR?
+
+§2.2.1 states that `int1024` … `int4096` (and unsigned counterparts) are Large
+Binary Integer Math types for post-quantum cryptography, and:
+
+> The `ERR` sentinel is defined as `0x8000...0000` set solely in the highest-order
+> limb … **Operations on LBIM types implicitly propagate this sticky `ERR` state.**
+
+**This conflicts with D-007.** Plain integer types trap; only `tbb` degrades. As
+written, `int4096` would behave like a `tbb` while `int32` traps — and the `int`
+prefix gives the reader no way to know that.
+
+The blueprint problem is precise: D-036 established that the **"twisted" prefix
+means "reserves a value as a sticky error state"** (`tbb`, `tfp`). A large integer
+with a sticky ERR sentinel *is* a twisted type by that definition, but is not
+named like one.
+
+Three ways out:
+
+1. **LBIM loses sticky ERR** — `int*`/`uint*` behave identically at every width,
+   and anything wanting ERR semantics uses `tbb` at that width (extending D-008's
+   table beyond `tbb256`). Most uniform; may not suit crypto, which often wants
+   defined modular arithmetic rather than an error state.
+2. **LBIM keeps sticky ERR under a twisted name** — `tbb1024`, `tbb4096`. Honest
+   naming, but `tbb` is *balanced* (symmetric about zero), which is an odd fit for
+   the unsigned moduli crypto actually uses.
+3. **LBIM keeps sticky ERR as `int*`** — accept that `int` semantics vary by
+   width, and document it loudly. Cheapest, and the one that violates the
+   philosophy.
+
+**This affects `ncrypto` (34,925 lines)**, so it should be settled before that is
+ported.
+
+## Part S — What chapter 02 confirms and adds
+
+Confirms: `tbb` ranges and sentinel (D-008), the **Sentinel Discontinuity**
+warning and `tbb_widen<T>()` intrinsic (D-008 §6), `atomic<T>` defaulting to
+SeqCst (D-016), `void`/`NIL`/`NULL`/`ERR` roles (D-005), and `Type` as a
+namespace construct (D-028).
+
+Adds, with no counterpart elsewhere:
+
+- **`simd<T, N>`** — power-of-two lane counts, enforced 16/32/64-byte alignment,
+  and notably **ERR mapped to masked operations rather than branches**, so
+  error states survive vectorisation without destroying throughput.
+- **`frac8/16/32/64`** — exact rational fractions (whole, numerator, denominator).
+- **Sub-byte integers** — `int1`, `int2`, `int4` and unsigned counterparts.
+- **LBIM** — `int1024` … `int4096` as limb arrays for post-quantum work.

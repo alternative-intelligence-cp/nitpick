@@ -79,7 +79,7 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "uint1024" | "uint2048" | "uint4096"
                       | "tbb8" | "tbb16" | "tbb32" | "tbb64" | "tbb128" | "tbb256"
                       | "frac8" | "frac16" | "frac32" | "frac64"
-                      | "tfp32" | "tfp64" | "dim256"
+                      | "tfp32" | "tfp64" | "tfp128" | "tfp256" | "dim256"
                       | "flt32" | "flt64" | "flt128" | "flt256" | "flt512"
                       | "bool" | "char8" | "char16" | "char32" | "string"
                       | "dyn" | "any" | "Result" | "Optional"
@@ -110,7 +110,8 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `is_err` added | D-008 — non-trapping ERR test |
 | `discard` added to `ControlFlow` | it is a statement keyword and was absent |
 | `tbb128`, `tbb256` added | `TYPE_REFERENCE.md` §6 defines them |
-| `fix256` → `dim256` | `SPEC_GAPS` §3 rename |
+| `fix256` → `dim256` | D-036 — `dim256` has dimensional analysis; `fix256` is its obsolete name. Also removes the `fix` / `fixed` near-miss, `fixed` being the immutability qualifier. |
+| `tfp128`, `tfp256` added | D-036 — `TYPE_REFERENCE.md` §5 defines four widths; only two were listed |
 | `char8/16/32` added | `TYPE_REFERENCE.md` §2 — semantically distinct from `uint8` |
 | `Handle`, `arena`, `shared_arena`, `atomic`, `Future`, `Optional`, `simd`, `complex` added | all specified in `TYPE_REFERENCE.md`; all were missing |
 | `assoc` added | D-028 — declares an associated type; `Type` is namespace-only |
@@ -235,7 +236,7 @@ TypeSuffix     ::= "u1" | "u2" | "u4" | "u8" | "u16" | "u32" | "u64" | "u128"
                  | "i256" | "i512" | "i1024" | "i2048" | "i4096"
                  | "tbb8" | "tbb16" | "tbb32" | "tbb64" | "tbb128" | "tbb256"
                  | "f32" | "f64" | "f128" | "f256" | "f512"
-                 | "tfp32" | "tfp64" | "dim256"
+                 | "tfp32" | "tfp64" | "tfp128" | "tfp256" | "dim256"
                  | "char8" | "char16" | "char32"
 ```
 

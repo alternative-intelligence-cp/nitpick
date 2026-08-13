@@ -50,22 +50,33 @@ br i1 %cond, label %then, label %else
 | `int64` | `i64` | 8 bytes | 8 |
 
 **Behaviors:**
-- Arithmetic: `+`, `-`, `*`, `/`, `%` — all use **checked (safe) variants** by default
-  - Safe add: `call {iN, i1} @llvm.sadd.with.overflow.iN(iN %a, iN %b)` → check overflow bit → failsafe on overflow
-  - When Z3/Rules prove no overflow: plain `add iN %a, %b`
+- Arithmetic: `+`, `-`, `*`, `/`, `%` — **overflow and underflow wrap**, per standard two's complement. They are *defined* behaviour, not undefined, and are routinely what is wanted (hashing, checksums, PRNGs, modular arithmetic).
+  - Lowers to plain `add`/`sub`/`mul iN` — no overflow check, no trap.
+  - **If overflow should be an error, use `tbb` instead** (D-037). The two families complement each other and the choice is made at the declaration, visibly.
+  - **Divide/modulo by zero still traps to `failsafe`** — unlike overflow, it has no defined result, and Nitpick does not invent one (D-007). On `tbb` it yields ERR.
+
+> A previous revision specified checked arithmetic here — `llvm.sadd.with.overflow.iN`
+> with a failsafe trap on overflow. **Struck** (D-037): it would make ordinary
+> correct code unrunnable and would leave no way to express wrapping at all.
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
 - Casting: explicit only (`x => int64`, `y =>! int32`)
 - Literal suffixes: `42i32`, `-1i8`, `0xFF_i64`
 
-**LLVM IR pattern (safe add):**
+**LLVM IR pattern:**
 ```llvm
-; int32:result = a + b;  (checked)
-%pair = call {i32, i1} @llvm.sadd.with.overflow.i32(i32 %a, i32 %b)
-%val = extractvalue {i32, i1} %pair, 0
-%overflow = extractvalue {i32, i1} %pair, 1
-br i1 %overflow, label %failsafe_trap, label %continue
+; int32:result = a + b;      — wraps on overflow, no check
+%val = add i32 %a, %b
+
+; int32:q = a / b;           — divide-by-zero still traps
+%is_zero = icmp eq i32 %b, 0
+br i1 %is_zero, label %failsafe_trap, label %do_div
+do_div:
+  %q = sdiv i32 %a, %b
 ```
+
+*(The overflow-checked form using `llvm.sadd.with.overflow.i32` belongs to `tbb`,
+not to `int` — see §6.)*
 
 ### 1.3 Unsigned Integers
 
@@ -81,7 +92,7 @@ br i1 %overflow, label %failsafe_trap, label %continue
   - Division/modulo use `udiv`/`urem` instead of `sdiv`/`srem`
   - Comparisons use `ult`/`ugt`/`ule`/`uge` instead of `slt`/`sgt`/`sle`/`sge`
   - Right shift uses `lshr` (logical) instead of `ashr` (arithmetic)
-  - Overflow checking uses `@llvm.uadd.with.overflow.iN` etc.
+  - Overflow wraps, as with signed types — no check, no trap (D-037). Use `tbb` where overflow should be an error.
 - Literal suffixes: `42u32`, `0xFFu8`
 
 > **Note:** `uint8` and `char8` share the same LLVM IR type (`i8`) but are **semantically distinct**. The type checker enforces different operation sets. See §2 for char types.
