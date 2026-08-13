@@ -532,9 +532,41 @@ written.
 **Recommendation:** port `stdlib/base64`, not `ARCHIVE/nbase64`, and apply the
 D-019 / D-021 corrections.
 
-### Loose end
+### Resolved: `nlists/src/skiplist.npk` → `stdlib/sys.npk`
 
-`nlists/src/skiplist.npk` has `use "sys.npk".*;` and there is no `sys.npk` in
-`nlists/src/`. The import resolves somewhere outside the library — possibly
-`stdlib/sys.npk` (syscall constants, harmless) — but it is unresolved as written
-and needs pinning down before `nlists` is ported.
+The import is for the **`GETRANDOM` syscall constant** — skiplists assign node
+levels probabilistically and seed their RNG from the kernel:
+
+```nitpick
+sys(GETRANDOM, seed_ptr, 8i64, 0i64);
+```
+
+It resolves to `nitpick/stdlib/sys.npk`, the 390-line auto-generated Linux
+x86-64 constants file — the only `sys.npk` on the module search path, since the
+others live inside applications (`npkdb`, `ntop`, `neditor`, `nparse`). Per the
+prototype's resolution order (current dir → `-I` → `stdlib/` → …), `nlists/src/`
+has none, so it falls through to stdlib.
+
+**Clean dependency**: constants only, no C, no runtime cost. Regenerate from
+kernel headers rather than porting.
+
+### Those two lines are a good specimen of the porting work
+
+```nitpick
+int8->:seed_ptr = cast_unchecked<int8-> >(@addressof(seed_buf[0i64]));
+sys(GETRANDOM, seed_ptr, 8i64, 0i64);
+```
+
+Four separate conformance issues in two lines, none of them C-related:
+
+| Issue | Decision |
+|---|---|
+| `cast_unchecked<T>` | removed — use `=>!` (D-021) |
+| `@addressof(...)` | doubled address-of; `@` **is** the operator, so this is `@seed_buf[0i64]` |
+| `@` yields a **second-class borrow**, then gets cast to a first-class `int8->` | D-004 forbids the borrow escaping; constructing a pointer needs `#wild_ptr<T>` in `wild` context (D-019) |
+| `sys(...)` called as a bare statement | `sys` returns `Result<int64>`; an unhandled `Result` is a compile error. Needs `drop`, `raw`, or a check. |
+
+The C dependency is the *easy* part. What actually dominates the port is
+conforming code written before D-001…D-034 existed — and the `Result`-discipline
+violation is the one a reviewer would miss, because the line looks like ordinary
+C-style syscall usage.
