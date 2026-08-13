@@ -2508,3 +2508,136 @@ Conversion is explicit in both directions:
 - Any function currently taking `int64:fd` takes `fd`, which also removes a class
   of argument-order mistakes — `dup2(oldfd, newfd)` cannot be called with a size
   in either position.
+
+---
+
+## D-043 — Signals are an enum — **SETTLED**
+
+Signal numbers become a closed enumeration rather than bare integers or a scalar
+`sig` type.
+
+D-042's rule is "a kernel-assigned identifier is not a number", but a signal
+number is not an identifier — it is a **constant drawn from a fixed, known set**.
+That is enum-shaped. An enum additionally makes `pick` over signals
+**exhaustive**, so a handler that forgets `SIGTERM` fails to compile rather than
+silently ignoring it.
+
+Affects the 16 signal-related parameters in `PARAMETER_LEDGER.md` and
+`proc/signal.npk`'s public surface (`sigaction`, `signal`, `kill`, `raise`,
+`killpg`, `sigaddset`, `sigdelset`, …).
+
+Signal **sets** (`sigset_t` equivalents) remain a separate type — a set of enum
+members, not an enum member.
+
+---
+
+## D-044 — Flags are bitflag types, not bare integers — **SETTLED**
+
+Mode bits, open flags, protection bits, and `fcntl` commands become **distinct
+bitflag types**, one per family. `int32` is not acceptable for any of them.
+
+| Family | Type | Members |
+|---|---|---|
+| open flags | `oflags` | `O_RDONLY`, `O_WRONLY`, `O_CREAT`, `O_APPEND`, … |
+| memory protection | `prot` | `PROT_READ`, `PROT_WRITE`, `PROT_EXEC`, `PROT_NONE` |
+| mmap flags | `mflags` | `MAP_ANON`, `MAP_PRIVATE`, `MAP_SHARED`, … |
+| file mode bits | `fmode` | `S_IRUSR`, `S_IWUSR`, … |
+| `fcntl` commands | `fcmd` | `F_GETFL`, `F_SETFL`, `F_SETFD`, … |
+| `madvise` advice | `advice` | `MADV_*` |
+| seek origin | `whence` | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` |
+
+### Why this is not deferrable
+
+As bare integers, nothing prevents `PROT_READ` being passed where an open flag
+belongs, or `SEEK_END` where a `fcntl` command belongs. Both compile, both are
+wrong, and both fail at runtime in ways that look like unrelated bugs. This is
+the identical error class D-042 eliminated for descriptors, and the same argument
+applies without modification.
+
+**Adding it later would require re-verification**, which is not affordable. It
+goes in now.
+
+### Operations
+
+| | |
+|---|---|
+| **Permitted** | `\|` (combine), `&` (test), `~` within the same family, `==`, `!=` |
+| **Forbidden** | arithmetic; **mixing families** — `oflags \| prot` is a compile error |
+
+Conversion to the underlying integer is explicit (`=>`), since the syscall layer
+must eventually hand a raw value to the kernel. That conversion is confined to
+`nlibc`'s syscall wrappers and is greppable.
+
+### Precedent
+
+`nlibc`'s `syscall/posix_constants.npk` (661 lines) already defines these as
+constants; they need grouping into types rather than inventing from scratch.
+
+---
+
+## D-045 — Variadic functions: format strings are checked at compile time — **PROPOSED**
+
+**This blocks the variadic collapse and needs settling before it starts.**
+
+### The problem the collapse exposed
+
+`PARAMETER_LEDGER.md` found that 153 of 608 functions are hand-expanded variadic
+families, and proposed collapsing them with `..*`. But `..*` as specified is
+**homogeneous** — `FORMAL_DRAFT` 06 §6.1.3 shows `..*string[]:args`, a typed
+slice.
+
+The printf and scanf families are **heterogeneous**. `libn` currently handles that
+by erasing everything to `int64`:
+
+```nitpick
+pub func:io_printf2 = int64(int64:fmt, int64:a0, int64:a1) { … };
+```
+
+An `int64` argument might be a number or might be a pointer to a string, and the
+**format string decides which**. That is precisely the C model, and it carries the
+C consequences: `%s` against a non-pointer reads an integer as an address, and
+argument count mismatches read past the end of the argument list. Format-string
+handling is a long-standing CVE class for exactly this reason.
+
+Collapsing these families with an erased `..*int64[]` would preserve the hazard.
+
+### The split
+
+| Families | Shape | Collapse |
+|---|---|---|
+| `execlN` (9), `execlpN` (8), `sysN` (5), `sys_fullN` (5) — **27 functions** | homogeneous — all `string`, all `int64` | trivial: `..*string[]`, `..*int64[]` |
+| printf/fprintf/eprintf/asprintf/io_*printf/str_snprintf/strbuf_appendf (99) and scanf/fscanf/sscanf (27) — **126 functions** | heterogeneous, format-directed | needs a mechanism |
+
+### Recommendation: format-checked, compile-time
+
+Make the printf and scanf families **compiler-checked constructs** rather than
+ordinary variadic functions:
+
+- the format string must be a **compile-time constant**;
+- the compiler **parses it and checks each specifier against the corresponding
+  argument's type**;
+- a mismatch — wrong type, too few arguments, too many — is a **compile error**.
+
+This eliminates the entire class: no `%s` with an integer, no argument-count
+overrun, no runtime format parsing on untrusted input. It is what Rust's
+`format!` does, and it fits the language's posture — the check moves to compile
+time where Astrée can see it, rather than becoming a runtime failure mode that
+must be proven absent.
+
+**Consequence:** a runtime-constructed format string cannot use these
+constructs. That is the intended outcome — a runtime format string is the
+vulnerability. Code needing dynamic output composes it explicitly with
+`strbuf`, which is already present and type-safe.
+
+**`scanf` deserves particular attention**: it writes through caller-supplied
+pointers, so a type mismatch corrupts memory rather than merely printing
+nonsense. If anything, the case for compile-time checking is stronger there.
+
+### What needs confirming
+
+1. Format-checked compile-time variadics for printf/scanf — recommended.
+2. Whether `..*` stays homogeneous-only for everything else — recommended, since
+   the 27 remaining functions need nothing more.
+3. Whether a runtime-format escape hatch exists at all. **Recommendation: no.**
+   `strbuf` covers the legitimate cases and an escape hatch here reintroduces the
+   exact hazard being removed.
