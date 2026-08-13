@@ -137,3 +137,54 @@ later: `nstr`, `nstr-builder`, `nfs`, `nmath`, `nrand`, `nregx`, `nsocket`,
 `nsync`, `nthread`, `ntime`, `njson`, `ntoml`, `nurl`, `nvec`, `nbase64`,
 `ncrypto`. Several are named in `npkc-native`'s manifest as dependencies, so they
 were live parts of the ecosystem.
+
+
+---
+
+## The prototype standard library — `REPOS/nitpick/stdlib`
+
+**This is where `libn` was promoted, and it is the largest reusable asset found
+so far: 85 `.npk` files, ~20,700 lines.**
+
+It was overlooked initially because `nitpick-libc` was mistaken for the C-free
+libc effort. It is not — `nitpick-libc` was the *earliest* experiment, built on a
+musl tree while ideas were still being tested, and was all but deprecated within
+the prototype itself. `libn` came later to remove that dependency, and this
+directory is where it ended up.
+
+### Concurrency modules
+
+| Module | Lines | C surface |
+|---|---|---|
+| `thread.npk` | 111 | **none** — raw syscalls only |
+| `thread_pool.npk` | — | **none** |
+| `mutex.npk` | 121 | **none** — futex-based |
+| `rwlock.npk` | 126 | **none** |
+| `condvar.npk` | 85 | **none** |
+| `channel.npk` | 350 | **none** |
+| `actor.npk` | 111 | **none** |
+| `atomic.npk` | 181 | ⚠️ DEPRECATED — `extern "nitpick_runtime"` → `atomic_shim.cpp` |
+| `barrier.npk` | 34 | ⚠️ DEPRECATED — `npk_shim_barrier_*` |
+| `lockfree.npk` | — | ⚠️ DEPRECATED — `npk_shim_lfqueue_*` |
+
+Seven of ten are already C-free. The three that are not are **marked deprecated
+in their own source**, so the project had identified them independently.
+
+`atomic.npk` should not be ported at all — it is superseded by the language-level
+`atomic<T>`, which emits native LLVM atomic IR with no shim
+(`TYPE_REFERENCE.md` §13). `barrier` and `lockfree` need native reimplementation.
+
+`libn` itself supplies the primitives these sit on: its syscall layer already
+wraps `futex` (12 uses), `clone` (5), `gettid`, `tkill`, and `set_robust_list`.
+
+### Not yet assessed
+
+The other ~75 files include `arena.npk`, `allocator.npk`, `collections.npk`,
+`buffer.npk`, `binary.npk`, `complex.npk`, `crypto/`, `base64/`, `jit.npk`, and
+compiler-support modules (`borrow_checker.npk`, `closure_analyzer.npk`,
+`definite_assignment.npk`, `const_evaluator.npk`, `async_analyzer.npk`,
+`diagnostics.npk`). Several of those last ones are **frontend analyses written in
+Nitpick** and may be directly relevant to building the new compiler.
+
+This directory should get the same treatment `libn/src` received before any
+further porting decisions are made.

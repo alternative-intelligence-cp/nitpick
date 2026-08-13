@@ -95,12 +95,56 @@ There is **no `spawn` or `go` keyword**, and **no `sync` keyword** — the compi
 rejects the latter outright. Threads, mutexes, condition variables, rwlocks, and
 barriers are standard-library abstractions.
 
-> Chapter 11 §11.3 says these interface with **`nitpick-libc`**. That repository
-> is a musl tree and is exactly what the zero-dependency rule excludes. The
-> native library is **`nlibc`** — which currently has **no thread module** at all
-> (`syscall`, `mem`, `str`, `io`, `proc`, `fs`, `time`, `math`). Threading lives
-> in the archived `nthread` and `nsync` libraries. **This is a real gap, not a
-> naming fix** — see §6.
+> Chapter 11 §11.3 says these interface with **`nitpick-libc`**. That is the
+> wrong library and a stale reference: `nitpick-libc` was the *earliest*
+> experiment, built on a musl tree while ideas were still being tested, and was
+> all but deprecated even within the prototype. `libn` was written later
+> specifically to remove that C dependency, and was then promoted into the
+> prototype's standard library. The reference should be **`nlibc`**.
+
+### 3.1 What already exists
+
+Substantially more than chapter 11 describes, and most of it is already C-free.
+
+**`libn` supplies the primitives.** Its syscall layer already wraps the Linux
+threading calls — `futex` (12 uses), `clone` (5), `gettid`, `tkill`,
+`set_robust_list` — so the foundation is present even though `libn` has no
+thread *module* of its own.
+
+**The promoted stdlib supplies the abstractions** (`../nitpick/stdlib/`):
+
+| Module | Lines | C surface |
+|---|---|---|
+| `thread.npk` | 111 | **none** — raw syscalls only |
+| `thread_pool.npk` | — | **none** |
+| `mutex.npk` | 121 | **none** — futex-based |
+| `rwlock.npk` | 126 | **none** |
+| `condvar.npk` | 85 | **none** |
+| `channel.npk` | 350 | **none** |
+| `actor.npk` | 111 | **none** |
+| `atomic.npk` | 181 | ⚠️ marked DEPRECATED — `extern "nitpick_runtime"` → `atomic_shim.cpp` |
+| `barrier.npk` | 34 | ⚠️ marked DEPRECATED — `npk_shim_barrier_*` |
+| `lockfree.npk` | — | ⚠️ marked DEPRECATED — `npk_shim_lfqueue_*` |
+
+The three carrying C shims are **already marked deprecated in their own source**,
+so the project had identified them before this review.
+
+`atomic.npk` in particular is superseded rather than merely stale: `atomic<T>` is
+a **language type emitting native LLVM atomic IR with no shim**
+(`TYPE_REFERENCE.md` §13), which is exactly what replaces it. `barrier` and
+`lockfree` still need native reimplementation.
+
+Also unassessed: `ARCHIVE/nthread` (154 lines) and `ARCHIVE/nsync`
+(`nmutex` 47, `ncondvar` 47, `nsync` 205), which may duplicate or improve on the
+stdlib versions.
+
+### 3.2 What chapter 11 omits entirely
+
+Channels, actors, thread pools, barriers, rwlocks, and lock-free queues are all
+implemented, and **none of them appear in chapter 11**. It documents `async`,
+`atomic<T>`, and a sentence saying threading lives in the standard library —
+describing a far smaller surface than what exists. Specifying the concurrency
+model properly means covering these, not just the two the chapter names.
 
 ## 4. Atomics
 
@@ -200,10 +244,14 @@ Race freedom comes from three structural properties, none of them runtime checks
 
 ## 6. Open items
 
-- **`nlibc` has no threading.** §3 describes a standard-library thread model that
-  does not exist yet. `nthread` (3 files) and `nsync` (5 files) sit in
-  `REPOS/ARCHIVE/` and have not been assessed. Until then, `async` is the only
-  working concurrency in the language.
+- **Port the concurrency stdlib.** `thread`, `thread_pool`, `mutex`, `rwlock`,
+  `condvar`, `channel`, and `actor` are already C-free and go through the same
+  D-012 signature classification as the rest of `nlibc`. `barrier` and `lockfree`
+  need native reimplementation to drop their C shims; `atomic.npk` is superseded
+  by the language-level `atomic<T>` and should not be ported at all.
+- **Specify the omitted surface.** Channels, actors, and thread pools have real
+  implementations and no specification. The concurrency model is not fully
+  described until they are covered.
 - **Deadlock freedom has no mechanism.** `--verify-concurrency` is documented as
   verifying "data race & deadlock freedom" (`VERIFICATION_REFERENCE.md` §5), and
   nothing anywhere describes how deadlock is detected or proven. Data-race
