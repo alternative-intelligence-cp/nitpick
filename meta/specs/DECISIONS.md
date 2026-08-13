@@ -1364,3 +1364,49 @@ construction (D-017 additionally makes `shared_arena<T>` storage non-moving).
 
 Pin therefore has no remaining purpose, and removing it leaves `#` with a single
 coherent meaning. `MEMORY_REFERENCE.md` §2 (Pinned Memory) is struck.
+
+---
+
+## D-021 — One cast spelling: `=>` and `=>!` — **SETTLED**
+
+`#cast<T>(expr)` and `#cast_unchecked<T>(expr)` are **removed from the language**.
+`=>` and `=>!` are the only cast forms.
+
+```nitpick
+int32:n = large_val => int32;    // checked — compile error if data loss is possible
+int8:b  = large_val =>! int8;    // unchecked — the explicit opt-out
+```
+
+### Why two spellings could not stand
+
+`TYPE_REFERENCE.md` §28 and `FORMAL_DRAFT` 13.6.1 both documented the function
+form as "semantically identical" to the operator. Two spellings for one operation
+is precisely what the **blueprint philosophy** rejects: it is one more thing to
+remember, one more variant to maintain, and one more inconsistency for a reviewer
+to reconcile — with no benefit, since the intent and outcome are identical either
+way. This is the same reasoning that collapsed `->` and `.` into a single member
+access operator (D-006).
+
+### Why the operator won rather than the builtin
+
+1. **`#cast` was in the wrong family.** D-020 defines `#` as the
+   **compiler-directive sigil** — something addressed to the compiler rather than
+   the runtime. `#size_of<T>` is a genuine compile-time query; `#wild_ptr<T>` is a
+   privileged construction. A cast is an ordinary operation on a value, so by
+   D-020's own definition it does not belong under `#`.
+2. **`=>` carries directional meaning.** Blueprint facet 2: direction is
+   semantic. `=>` reads as *going from one type to another*, alongside `->`
+   pointing *to* a target and `<-` bringing a value *back*. Deleting it would
+   remove a member of a deliberately designed notation family.
+3. **`!` already means unchecked**, consistently across `=>!`, `?!`, and `!!!`.
+   The operator form gets that for free; the function form spells it out in a
+   longer name.
+4. **Casts are common.** Terse notation is right for frequent operations —
+   the blueprint principle of maximum meaning in minimum space.
+
+### Follow-up
+
+- `TYPE_REFERENCE.md` §28 operator table — remove both `#cast` rows.
+- `TYPE_REFERENCE.md` §1.2, §5a, §27 — rewrite remaining `#cast` usages as `=>`.
+- `FORMAL_DRAFT` 13.6.1 and 13.6.2 — drop the function-style cast on adoption;
+  8.1.3's bare `cast<T>` / `cast_unchecked<T>` go with them.

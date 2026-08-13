@@ -55,7 +55,7 @@ br i1 %cond, label %then, label %else
   - When Z3/Rules prove no overflow: plain `add iN %a, %b`
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
-- Casting: explicit only (`x => int64`, `#cast_unchecked<int32>(y)`)
+- Casting: explicit only (`x => int64`, `y =>! int32`)
 - Literal suffixes: `42i32`, `-1i8`, `0xFF_i64`
 
 **LLVM IR pattern (safe add):**
@@ -359,10 +359,16 @@ tfp256:trunced = tfp256_trunc(x);   // -> 3.0tfp256 (toward zero)
 **Cast support:**
 ```nitpick
 tfp256:f = 42.5tfp256;
-int64:i   = #cast<int64>(f);    // truncates to 42
-flt64:fl  = #cast<flt64>(f);    // 42.5 (nearest representable)
-tfp64:f64 = f => tfp64;         // narrow cast (precision loss)
+flt64:fl  = f => flt64;         // OK — nearest representable, no loss possible
+int64:i   = f => int64;         // COMPILE ERROR — drops the fractional part
+int64:i2  = f =>! int64;        // OK — explicit opt-in to the loss, yields 42
+tfp64:f64 = f =>! tfp64;        // narrowing: precision loss, so =>! is required
 ```
+
+`=>` is a **compile-time error** wherever data loss is possible — not a runtime
+trap and not a warning. `=>!` is the sole opt-out, and it is deliberately
+greppable so an auditor can find every place a conversion was allowed to lose
+information.
 
 ---
 
@@ -1060,7 +1066,7 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - Bare `any` without `->` is a type error:
   `"'any' must be used as a pointer type: 'any->'. Bare 'any' is not a valid type."`
 - IR: `ptr` (opaque pointer — same as all other pointers in LLVM opaque pointer mode)
-- Cast to concrete type via `#cast<T>(p)` before dereferencing
+- Cast to concrete type via `p => T` before dereferencing
 
 ### `unknown` — Layer 2 Safety Taint
 
@@ -1138,8 +1144,6 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 |---|---|---|---|
 | `expr => T` | checked cast | `sext`/`zext`/`trunc`/`sitofp`/... | Bounds checked |
 | `expr =>! T` | unchecked cast | same but no bounds check | TOS auditable |
-| `#cast<T>(val)` | checked cast (verbose) | same as `=>` | |
-| `#cast_unchecked<T>(val)` | unchecked cast (verbose) | same as `=>!` | TOS auditable |
 
 ### Range
 | Operator | Meaning | Notes |

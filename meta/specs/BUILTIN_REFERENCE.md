@@ -94,9 +94,14 @@ compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
 | `#[name(...)]` | attribute annotating a declaration |
 
 > **`@` is never a builtin prefix.** `@` is the address-of operator and nothing
-> else. Forms such as `@sizeof`, `@cast<T>`, `@typeof`, and `@derive` appear in
-> older material and are **wrong** — `@cast<T>(x)` reads as "the address of
-> `cast<T>` of x". Rewrite any such usage to the `#` form.
+> else. Forms such as `@sizeof`, `@typeof`, and `@derive` appear in older
+> material and are **wrong** — `@cast<T>(x)` reads as "the address of `cast<T>`
+> of x". Rewrite any such usage to the `#name<T>(...)` form.
+>
+> **Except casting**, which has no builtin form at all: `@cast<T>` and
+> `@cast_unchecked<T>` become the operators **`=>`** and **`=>!`** (D-021), not
+> `#cast<T>`. A cast is an operation on a value, not a directive to the compiler,
+> so it does not belong under `#`.
 
 | Macro | Return | Description |
 |---|---|---|
