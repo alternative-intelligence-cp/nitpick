@@ -1410,3 +1410,118 @@ access operator (D-006).
 - `TYPE_REFERENCE.md` §1.2, §5a, §27 — rewrite remaining `#cast` usages as `=>`.
 - `FORMAL_DRAFT` 13.6.1 and 13.6.2 — drop the function-style cast on adoption;
   8.1.3's bare `cast<T>` / `cast_unchecked<T>` go with them.
+
+---
+
+## D-022 — Counted loops: `till` and `loop` — **SETTLED**
+
+Resolves `GRAMMAR_ADOPTION_CONFLICTS.md` A1. Both are **counted iteration**
+constructs exposing the counter as `$`. `FORMAL_DRAFT` 05 §5.4.3–5.4.4, which
+defines `till` as do-while and `loop` as infinite, is **wrong** and is struck.
+
+### The two forms
+
+| Form | Arguments | Range | Direction |
+|---|---|---|---|
+| `till(limit, step)` | 2 | `0` → `limit` | ascending only |
+| `loop(start, limit, step)` | 3 | `start` → `limit` | **inferred** from `start` vs `limit` |
+
+```nitpick
+till(10i32, 1i32) {        // 0,1,2,…,9
+    x += $;
+}
+
+loop(0i32, 10i32, 1i32) {  // 0,1,2,…,9   — ascending, inferred
+    x += $;
+}
+
+loop(10i32, 0i32, 1i32) {  // 10,9,8,…,1  — descending, inferred
+    x += $;
+}
+```
+
+`till` is the simple, common case; `loop` is the controlled form. They are **not
+redundant** — `till` counts up from zero only, while `loop` handles arbitrary
+start points and both directions.
+
+### `step` is always positive
+
+**Direction is inferred from `start` and `limit`, so `step` only controls the size
+of the jump and must be positive.** A negative step is a compile error.
+
+This makes an entire bug class **unrepresentable**: in C-style loops, pairing an
+ascending range with a negative step (or a descending range with a positive one)
+produces an infinite loop, and the mistake is invisible at a glance because the
+sign lives in a different clause from the bounds. Here the direction is not
+something the programmer can get out of sync with the bounds, because it is not
+something the programmer states at all.
+
+It also serves the blueprint philosophy: `step` means exactly one thing — how far
+to jump — everywhere it appears, rather than encoding direction in some contexts
+and magnitude in others.
+
+### Edge cases to specify
+
+| Case | Behavior |
+|---|---|
+| `step` negative | **compile error** |
+| `step` zero | **compile error** — the loop could not terminate. Where the step is not a literal, this becomes a verification obligation (`--verify` proves `step > 0`), falling back to a runtime check that traps to `failsafe`. |
+| `start == limit` | zero iterations |
+| `till` with `limit <= 0` | zero iterations — `till` ascends from `0` and can never reach a non-positive limit |
+| bound is `tbb` and holds ERR | traps to `failsafe`, per D-008 §5 — a loop bound is a control-flow decision |
+
+### Consequences
+
+- `while (true)` is the idiom for an unbounded loop; there is no `loop { }` form.
+- Nitpick has **no do-while construct**. If one is wanted it needs a distinct
+  keyword — reusing `till` would give one keyword two meanings.
+- `$` is well-defined in both forms, and counts *down* in a descending `loop`.
+- Corroborated by `CONTROL_REFERENCE.md` §2.4, `AST_REFERENCE.md`'s
+  `LOOP_STMT`/`TILL_STMT` operand slots, and `OP_REFERENCE.md` §8, which defines
+  `$` as "bound inside `till` and `loop`" — `$` only has meaning for counted loops.
+
+---
+
+## D-023 — `for` is range-form only, with a typed binding — **SETTLED**
+
+Resolves `GRAMMAR_ADOPTION_CONFLICTS.md` A3. The C-style three-clause form shown
+in `FORMAL_DRAFT` 05 §5.4.2 is **not supported**.
+
+```nitpick
+for (int64:i in 1..3) { ... }     // the only form
+
+// rejected:
+// for (int32:i = 0; i < 10; i++)    C-style three-clause
+// for (i in 0..10)                  untyped binding
+```
+
+**Rationale.** `loop` and `till` (D-022) already cover everything the three-clause
+form provides, with better safety properties — so supporting both would mean two
+constructs for one job, and the C-style one is the weaker of the pair. Keeping
+`for` to ranges also draws a sharper line between the two: `for` iterates a
+range or collection, `loop`/`till` count.
+
+The **typed binding is required** because `FORMAL_DRAFT` 03 §3.1 forbids implicit
+type inference outright — no `auto`, `var`, or `let`. The untyped `for (i in 0..10)`
+form shown in 05 §5.4.2 contradicts the language's own rule.
+
+---
+
+## D-024 — Raw and multi-line string literals are retained — **SETTLED**
+
+Resolves `GRAMMAR_ADOPTION_CONFLICTS.md` A4.
+
+```nitpick
+string:path  = r"C:\Users\dir";   // raw — no escape processing
+string:block = """line one
+line two""";                      // multi-line — preserves newlines
+```
+
+`FORMAL_DRAFT` 01 §1.6.3 states these were "intentionally omitted" because the
+v0.61.82 parser errors on them. That is a statement about the **prototype's
+implementation state**, not a design decision — `OP_REFERENCE.md` §9 lists both as
+current. Raw strings in particular matter for regex patterns and paths, both of
+which a compiler handles constantly.
+
+The lexical grammar must therefore include `RawStringLiteral` and
+`BlockStringLiteral` productions, which chapter 01 currently lacks.

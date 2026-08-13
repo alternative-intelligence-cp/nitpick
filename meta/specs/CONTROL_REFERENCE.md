@@ -1,6 +1,6 @@
 # Nitpick Control Flow Reference
 
-Nitpick provides a robust set of control flow primitives ranging from standard C-style loops to state-tracked conditional loops and advanced pattern matching.
+Nitpick provides a robust set of control flow primitives — condition-based and range-based loops, direction-inferring counted loops, state-tracked conditional loops, and advanced pattern matching. C-style three-clause `for` loops are deliberately **not** among them (D-023).
 
 > **⚠️ CRITICAL SYNTAX RULE**: Unlike functions, structs, and traits (which must be terminated with `};`), **control flow blocks do NOT end with semicolons**. Adding a semicolon after the closing brace of an `if`, `while`, or `pick` block will cause a syntax error.
 
@@ -36,6 +36,29 @@ pick (x) {
     (*) { println("Other"); }             // Default case
 }
 ```
+
+### 1.2.1 `pick` Destructuring
+
+`pick` supports destructuring for structs and enum variants:
+
+```nitpick
+pick (event) {
+    (MouseClick { x, y }) { ... },
+    (Net.Disconnect(reason)) { ... },
+    (*) { ... }
+}
+```
+
+### 1.2.2 `pick` Control Modifiers
+
+*   **`fall label;`** — falls through to the labelled arm. There is no implicit fallthrough.
+*   **`give expr;`** — yields a value out of the `pick` block when it is used as an expression.
+*   **`(!)`** — the *unreachable* marker. Asserts that execution can never reach this arm; traps to `failsafe` if it is reached at runtime.
+
+> **`(!)` does not satisfy exhaustiveness for a `tbb` selector.** `pick` must be
+> exhaustive, and a `tbb` selector additionally **requires an explicit `ERR:`
+> arm** (D-008 §5.1) — neither `(*)` nor `(!)` may absorb the ERR case, or a
+> tainted value ends up steering a branch.
 
 ### 1.3 `pick` Guards and Macros
 The `pick` construct can also match on macro invocations, and individual arms can be guarded by a conditional `where` clause:
@@ -95,22 +118,88 @@ for (int64:i in 1..3) {
 }
 ```
 
+> **Range form only, with a required typed binding** (D-023). Two forms are
+> rejected:
+>
+> ```nitpick
+> // for (int32:i = 0; i < 10; i++)   // C-style three-clause — not supported
+> // for (i in 0..10)                 // untyped binding — not supported
+> ```
+>
+> `loop` and `till` already cover everything the three-clause form provides, with
+> better safety properties, so supporting both would mean two constructs for one
+> job. Keeping `for` to ranges also draws a sharper line: **`for` iterates,
+> `loop`/`till` count.**
+>
+> The typed binding is required because the language forbids implicit type
+> inference outright — there is no `auto`, `var`, or `let`.
+
 ### 2.4 Counted Iteration (`loop` and `till`)
 For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.
 
-**`loop(start, limit, step)`**
-```nitpick
-loop(0i32, 10i32, 1i32) {
-    x += $;  // '$' resolves to the current iteration counter (0, 1, ..., 9)
-}
-```
-
-**`till(limit, step)`** (Shorthand when starting from 0)
+**`till(limit, step)`** — the simple form. Counts **up from 0** to `limit`.
 ```nitpick
 till(10i32, 1i32) {
     x += $;  // '$' ranges from 0 to 9
 }
 ```
+
+**`loop(start, limit, step)`** — the controlled form. **Direction is inferred**
+from `start` and `limit`.
+```nitpick
+loop(0i32, 10i32, 1i32) {
+    x += $;  // ascending:  0, 1, ..., 9
+}
+
+loop(10i32, 0i32, 1i32) {
+    x += $;  // descending: 10, 9, ..., 1
+}
+```
+
+> ### `step` is always positive
+>
+> Because direction is inferred from the bounds, `step` controls **only the size
+> of the jump**. A negative step is a **compile error**; so is a zero step, which
+> could not terminate. Where the step is not a literal, `--verify` discharges
+> `step > 0` as a proof obligation, falling back to a runtime check that traps to
+> `failsafe`.
+>
+> This makes a whole bug class unrepresentable. In C-style loops, pairing an
+> ascending range with a negative step produces an infinite loop, and the mistake
+> is invisible because the sign lives in a different clause from the bounds. Here
+> the programmer never states the direction, so it cannot fall out of sync with
+> the bounds. (D-022)
+
+| Case | Behavior |
+|---|---|
+| `step` negative or zero | compile error |
+| `start == limit` | zero iterations |
+| `till` with `limit <= 0` | zero iterations — `till` ascends from `0` |
+| a bound is `tbb` holding ERR | traps to `failsafe` — a loop bound is a control-flow decision (D-008 §5) |
+
+`till` and `loop` are **not redundant**: `till` ascends from zero only, while
+`loop` handles arbitrary start points and both directions.
+
+**There is no `loop { }` infinite form and no do-while construct.** `while (true)`
+is the idiom for an unbounded loop. `FORMAL_DRAFT` 05 §5.4.3–5.4.4 defines `till`
+as do-while and `loop` as infinite; that reading is **struck** (D-022).
+
+### 2.5 Loop Labels
+
+To break out of nested loops, a loop may be labelled with an identifier and a
+colon:
+
+```nitpick
+outer: while (true) {
+    while (true) {
+        if (fatal_error) {
+            break outer;
+        }
+    }
+}
+```
+
+`break label;` and `continue label;` both target a labelled loop.
 
 ---
 
@@ -128,3 +217,85 @@ discard(unused_val);
 // Or using the shorthand operator
 _~ 42i32;
 ```
+
+---
+
+## 4. Statement-Level Constructs
+
+Adopted from `FORMAL_DRAFT` 05 with corrections. See
+`GRAMMAR_ADOPTION_CONFLICTS.md`.
+
+### 4.1 Block Statements
+
+A block is zero or more statements in braces `{ … }`. Blocks introduce a lexical
+scope: variables declared inside are invisible outside, and scope-managed
+bindings are destroyed at the closing brace.
+
+### 4.2 Condition Pedantry
+
+Two checks that the compiler enforces aggressively:
+
+*   **`NITPICK-IF-002`** — an `if` condition must evaluate to a strict `bool`, and
+    the assignment operator is **rejected** inside it. `if (x = 3)` is a compile
+    error; use `==`.
+*   **`NITPICK-IF-001`** — an `else` without an immediately preceding `if` is an
+    error rather than a cascade into vague expression parsing.
+*   **`NITPICK-WHEN-001`** — an orphaned `then` or `end` without a preceding `when`.
+
+### 4.3 Returns
+
+*   **`pass expr;`** — returns a successful `Result<T>`.
+*   **`fail errCode;`** — returns an errored `Result<T>`.
+*   **`return Result{ … };`** — the literal form, the only way to return a value
+    *and* an error simultaneously.
+
+> `FORMAL_DRAFT` 05 §5.7 describes `pass` as sugar for `return ok(expr);` and
+> `fail` as `return err(expr);`. **Both are wrong.** `ok()` is the taint-clearing
+> builtin, not a `Result` constructor, and `err()` does not exist. `pass` and
+> `fail` construct `Result` directly — see `TYPE_REFERENCE.md` §11.2 for the
+> desugaring.
+
+### 4.4 Assertions
+
+*   **`prove(cond);`** — a **compile-time** proof obligation discharged by Z3 under
+    `--verify`. Path-condition aware: enclosing branch guards are asserted as
+    axioms first. If the solver finds a counterexample, **compilation fails**.
+*   **`assert_static(cond);`** — compile-time constant evaluation; halts
+    compilation if false.
+
+> `FORMAL_DRAFT` 05 §5.8 calls `prove` "a **runtime** assertion" that "panics
+> immediately". **That is wrong** and is struck — it contradicts
+> `VERIFICATION_REFERENCE.md` §1.2 and `FORMAL_DRAFT` 12.5.1, both of which
+> specify it in far greater detail as a compile-time Z3 obligation.
+
+### 4.5 `defer`
+
+Pushes a block onto a stack to run when the enclosing lexical scope exits.
+
+```nitpick
+wild int8->:buf = alloc(16i64);
+defer { dalloc(buf); }
+```
+
+Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `exit`.
+
+> **`defer` does NOT run on a trap** (D-014). `!!!` and `?!` transfer control
+> directly to `failsafe` without unwinding. At trap time the state of the system
+> is unknown, including how degraded it is, so no cleanup runs before the handler
+> that understands the situation gets control.
+>
+> `FORMAL_DRAFT` 05 §5.9 says `defer` runs "via a panic". **Struck.**
+
+### 4.6 `exit` and K-Semantics
+
+**`exit code;`** terminates the process, and may appear only in `main` or
+`failsafe`.
+
+A successful `exit` requires that **no unchecked manual memory remains
+allocated** — the `<wildx-states>` map must be empty. Reaching `exit` with live
+`wild` or `wildx` memory triggers the `failsafe` trap instead of returning;
+`failsafe` is then permitted to clean up and exit cleanly.
+
+This is why a memory leak is a *detected, controlled* condition in Nitpick rather
+than silent corruption — and it is what lets arenas replace a collector without
+losing the leak guarantee.

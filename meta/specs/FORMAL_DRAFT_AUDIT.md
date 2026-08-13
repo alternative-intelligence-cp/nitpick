@@ -124,8 +124,19 @@ default and suspended only through a named, greppable, auditable construct.
 
 ## 6. Recommended adoption sequence
 
-1. **Adopt chapters 01, 04, 05 immediately** — lexical grammar, expressions,
-   statements. No conflicts found, and they are the frontend foundation.
+1. ~~**Adopt chapters 01, 04, 05 immediately** — no conflicts found.~~
+   **✅ DONE, but the "no conflicts" assessment was wrong.** That came from a
+   structural skim; a full read found **~25 conflicts**, four of them semantic
+   disagreements requiring decisions (D-022 `till`/`loop`, `prove` compile-time
+   vs runtime, D-023 `for`, D-024 string literals). See
+   `GRAMMAR_ADOPTION_CONFLICTS.md`.
+
+   Adopted as: `LEXICAL_REFERENCE.md` (new), plus merges into `OP_REFERENCE.md`
+   §0 (precedence) and `CONTROL_REFERENCE.md` §1.2.1–1.2.2, §2.3–2.5, §4.
+
+   **Lesson for the remaining chapters:** a structural skim does not surface
+   conflicts. Chapters 02, 06, 08, 11, 12, and 13 were assessed the same way and
+   their conflict lists should be treated as lower bounds, not complete.
 2. **Adopt 13 (traits/generics)** after fixing conflicts 6 and the ch6/ch13 trait
    syntax split. Highest-value acquisition after the grammar.
 3. **Adopt 11 (concurrency)** after fixing conflict 14, and extend it with D-016

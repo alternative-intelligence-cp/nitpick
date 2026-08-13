@@ -6,6 +6,59 @@ This document provides a comprehensive list of all operators available in the Ni
 
 ---
 
+## 0. Precedence
+
+Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
+
+| | Level | Operators |
+|---|---|---|
+| 1 | Postfix | `++` `--` `()` `[]` `.` `?.` |
+| 2 | Pipeline | `\|>` `<\|` |
+| 3 | Cast | `=>` `=>!` |
+| 4 | Unary | `!` `~` `-` `@` `<-` `$$i` `$$m` |
+| 5 | Multiplicative | `*` `/` `%` |
+| 6 | Additive | `+` `-` |
+| 7 | Shift | `<<` `>>` |
+| 8 | Range / Spread | `..` `...` `..*` `..^` |
+| 9 | Relational | `<` `<=` `>` `>=` `<=>` |
+| 10 | Equality | `==` `!=` |
+| 11 | Bitwise AND | `&` |
+| 12 | Bitwise XOR | `^` |
+| 13 | Bitwise OR | `\|` |
+| 14 | Logical AND | `&&` (short-circuiting) |
+| 15 | Logical OR | `\|\|` (short-circuiting) |
+| 16 | Null Coalescing | `??` |
+| 17 | Ternary / Defaults | `is` `?\|` `defaults` |
+| 18 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
+
+**Corrections against `FORMAL_DRAFT` 04 §4.2:**
+
+- **`->` removed from level 1.** It was listed as a postfix member-access
+  operator; `->` is type-position only, and `.` handles all member access with
+  automatic dereference (D-006).
+- **`=>!` added to level 3.** Only `=>` was listed, but both are cast operators
+  and they must share a precedence level (D-021).
+- **`#` removed from level 4.** It was the pin operator; pinning is obsolete
+  without a collector, and `#` is now the compiler-directive sigil (D-020).
+
+### 0.1 Expression semantics
+
+- **Assignment is an expression** and evaluates to the assigned value, so
+  `int32:y = (x = 5i32) + 2i32;` sets `x` to 5 and `y` to 7.
+  > Assignment is nonetheless **rejected inside an `if` condition** — the
+  > condition must be a strict `bool`, and `if (x = 3)` is a compile error
+  > (`NITPICK-IF-002`). Use `==`.
+- **`&&` and `||` short-circuit** and require strictly boolean operands.
+- **`<=>`** (spaceship) yields `int32`: `-1`, `0`, or `1`.
+- **`?|` / `defaults`** is a scoped fallback for an entire expression chain, where
+  the fallback must be a literal or a simple identifier:
+  ```nitpick
+  int32:val = (complex_func() + 5i32) ?| 0i32;
+  int32:val = (complex_func() + 5i32) defaults 0i32;
+  ```
+
+---
+
 ## 1. Arithmetic & Mathematical
 
 | Operator | Name | Description | Example |
