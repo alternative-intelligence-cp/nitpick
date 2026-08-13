@@ -1014,3 +1014,353 @@ Add a rule that **rejects allocation inside `failsafe`** — `alloc`, `calloc`,
 above for code that opts in, in the same spirit as `no-wild`. It cannot catch
 everything (a called function might allocate), but it catches the common and most
 dangerous case directly.
+
+---
+
+## D-015 — Runtime symbols start as hand-written LLVM IR — **SETTLED**
+
+The D-011 symbol set is implemented as **hand-written LLVM IR at an early rung of
+the capability ladder**, then replaced with better implementations at a later rung.
+
+| Rung | Implementation |
+|---|---|
+| early | hand-written LLVM IR — simple, correct, dependency-free |
+| later | optimized Nitpick or tuned IR, once the compiler can express it |
+
+### Both bootstrap gotchas dissolve
+
+`PORT_PLAN.md` §4 raised two blockers. **Measured against LLVM 20.1.2, neither
+survives this approach:**
+
+1. **Self-reference — does not occur.** The concern was that a byte-copy loop
+   would be pattern-matched back into a `memcpy` call, making the implementation
+   call itself. Tested: a byte-copy loop inside a function literally named
+   `memcpy` (and likewise `memset`) is **not** transformed at `-O2`. LLVM guards
+   against converting a loop into a call to the function containing it. No
+   `nobuiltin` attribute was required.
+2. **Symbol binding — not needed.** The concern was that LLVM emits calls to
+   literally `memcpy` while `nlibc` exports `mem_memcpy`. Writing the
+   implementation directly in IR as `define ptr @memcpy(...)` **defines that
+   symbol outright**, so no export-name attribute or intrinsic table is required
+   at this rung.
+
+Note the second gotcha *returns* at the later rung, when a Nitpick-authored
+function needs to claim the symbol. Deferring it is exactly what the capability
+ladder is for — it is not being solved now, and does not need to be.
+
+### Performance is acceptable at the early rung
+
+At `-O2` LLVM vectorizes the naive byte loop to 4-byte vector loads and stores on
+its own. The simple implementation is not a byte-at-a-time crawl.
+
+### Initial symbol set
+
+`memcpy`, `memset`, `__divti3`, `__udivti3`, `__modti3`, `__umodti3`.
+
+Pair with D-011's **undefined-symbol build check** so any newly-emitted runtime
+call fails the build rather than surfacing at link time on some target.
+
+### Borrowing from the prototype
+
+The prototype (`../nitpick/`) is a legitimate source of *ideas and algorithms* for
+these routines. **Anything taken from it must be rewritten C/C++-free** — the
+prototype is heavily dependency-laden and its implementations frequently bottom
+out in C. Consult it for approach, never copy through.
+
+---
+
+## D-016 — Atomics keep strict sequential consistency — **SETTLED**
+
+The prototype's rule (`concurrency_specs.txt` §3.3) stands: high-level
+`atomic<T>` methods enforce **SeqCst**, and weaker orderings (`relaxed`,
+`acquire`, `release`, `acq_rel`) are reachable only through low-level compiler
+intrinsics intended for core framework developers.
+
+### Why this is right, not merely conservative
+
+- **Weak orderings fail in the worst possible way for this project.** Misused
+  relaxed atomics do not fail loudly or reproducibly — they produce intermittent
+  corruption that appears on a different CPU, under load, months later. That is
+  precisely the "small drift in numbers" failure class Nikola's safety case
+  cannot tolerate, and it is undetectable by ordinary testing.
+- **Verification tractability.** `--verify-concurrency` is a listed flag. Proving
+  data-race freedom under SeqCst is feasible; under relaxed and acquire/release
+  the set of permitted executions expands combinatorially. Committing to weak
+  orderings in the safe API means committing to verify something dramatically
+  harder.
+- **Blueprint philosophy.** One ordering means `.load()` means the same thing
+  everywhere, with no per-call-site ordering to remember or review.
+- **The cost is bounded and local** — it falls on atomic operations specifically,
+  not on all code. When profiling shows a specific atomic is a genuine
+  bottleneck, the intrinsic escape hatch exists, and reaching for it is explicit
+  and greppable.
+
+### The more important concurrency question — **OPEN**
+
+Memory ordering is not the main safety question; **whether data races are
+possible at all** is. Two observations:
+
+1. **D-004 already does much of the work.** Borrows are second-class and may not
+   cross a thread spawn, so stack references cannot be shared between threads.
+   That eliminates a large class of races structurally, at compile time.
+2. **`Handle<T>` safety is specified for single-threaded arena access, and D-003
+   made arenas load-bearing.** If two threads hold handles into the same arena,
+   the generation-counter check becomes a read-check-use race, and the freelist
+   and slot reuse need atomic updates. The use-after-free guarantee — which is
+   the whole reason arenas replaced the collector — **does not currently extend
+   to shared arenas.**
+
+Point 2 is a genuine gap created by D-003 and needs deciding: either arenas are
+single-threaded by construction (enforced how?), or arena operations become
+atomic (cost on the primary allocation path), or shared arenas require explicit
+synchronization at the type level. Recommend settling it alongside the
+concurrency spec.
+
+### Spec basis
+
+Adopt `FORMAL_DRAFT/11_concurrency.md` as the base for the missing concurrency
+specification rather than writing one from scratch — it exists, and the
+carried-over set has no concurrency document at all despite `TYPE_REFERENCE.md`
+specifying `atomic<T>` (§13) and `Future<T>` (§17).
+
+---
+
+## D-017 — Arenas and threads: two types, one discipline each — **PROPOSED**
+
+Closes the gap D-016 identified: `Handle<T>`'s use-after-free guarantee was
+specified for single-threaded access, and D-003 made arenas load-bearing.
+
+### Three races, not one
+
+The generation counter is the obvious hazard but not the worst:
+
+1. **Stale generation.** A reads generation and matches; B frees and the slot is
+   reused; A uses the slot. Atomics fix this.
+2. **Freelist contention.** A and B both pop the same freelist head. Atomics fix
+   this.
+3. **Growth invalidates pointers.** A holds a pointer from `get()`; B's `alloc()`
+   grows the arena, reallocating the slab; A's pointer dangles. **Atomics do not
+   fix this** — the memory moved. This is the one that decides the design.
+
+### Decision
+
+Two distinct types, each with exactly one discipline:
+
+| | `arena<T>` | `shared_arena<T>` |
+|---|---|---|
+| Threading | single-threaded | multi-threaded |
+| Operations | `alloc`, `get`, `free`, `reset`, `destroy` | **`alloc`, `get`, `destroy` only** |
+| Per-slot `free` | yes | **no** |
+| Storage | may reallocate on growth | **chunked, never moves** |
+| Cost | zero | one atomic bump per allocation |
+| Sharing | move-only; moving into a thread transfers ownership | shareable by reference |
+
+### Why the shared variant is allocation-only
+
+Removing per-slot `free` is what makes concurrency safe *without* a reclamation
+scheme. If slots are never freed while the arena is live:
+
+- generation counters never increment during concurrent access, so race 1 cannot
+  arise;
+- there is no freelist, so race 2 cannot arise;
+- chunked storage means growth allocates a **new chunk** rather than moving
+  existing ones, so race 3 cannot arise.
+
+Allocation reduces to an atomic bump — a single `fetch_add` — with no epochs, no
+hazard pointers, and no reference counting. All three of those are substantial
+runtime TCB and precisely the kind of subtle concurrent code D-003 rejected a
+collector to avoid.
+
+The concurrent case therefore gets the **simpler** semantics, not the more
+complex one.
+
+### This matches the use case that justified arenas
+
+D-003 justified arenas for cyclic graphs on the grounds that you "drop the arena
+wholesale" rather than freeing individual nodes. `shared_arena<T>` makes that
+justification into the type's actual contract. Nikola's knowledge graph and
+ingestion layer — the concurrent, graph-shaped, cyclic workload — accumulates and
+is torn down as a unit; it does not free individual nodes.
+
+Where per-slot reuse is genuinely needed, that workload is single-threaded and
+uses `arena<T>`.
+
+### Not a blueprint violation
+
+Two types is not two disciplines applied by context. Which discipline governs is
+**written at the declaration** and visible at every use, exactly as D-007 resolved
+divide-by-zero by type (`tbb` degrades, `int32` traps) rather than by
+circumstance. `arena<T>` means one thing everywhere; `shared_arena<T>` means one
+thing everywhere.
+
+### Teardown
+
+`destroy` on a `shared_arena<T>` requires that no thread still holds handles.
+This is ownership, not synchronization: the owner destroys it after joining. The
+same move-only discipline that keeps `arena<T>` single-threaded governs who may
+destroy the shared variant.
+
+### Open
+
+- Chunk size policy for `shared_arena<T>` — fixed, or geometric growth.
+- Whether `get()` on a shared arena returns a second-class borrow (D-004), which
+  would prevent the returned reference from escaping the checking scope. Likely
+  yes, and it composes well.
+
+---
+
+## D-018 — Closures are removed — **SETTLED**
+
+Lambdas remain as **plain function values with no captured environment**. State
+reaches them explicitly: as a parameter, or as a struct implementing a trait.
+
+### Why the motivation is gone
+
+Closures were added to pair with the garbage collector, so lambdas could carry
+state around the way they do in JavaScript. D-003 removed the collector, and
+`FORMAL_DRAFT` 6.4 shows exactly what that costs: closure environments were
+allocated with `npk_gc_alloc`. With no collector, every escaping closure needs an
+owner and an explicit lifetime — at which point the programmer is doing manual
+lifetime management anyway, and passing context explicitly is more honest and no
+more work.
+
+### Nothing depends on them
+
+Measured across the ecosystem:
+
+| Source | Files mentioning lambda/closure |
+|---|---|
+| `ARCHIVE/libn/src` | **0** of 58 |
+| `nitpick-posix/src` | **0** of 164 |
+| `ARCHIVE/nstr`, `ARCHIVE/nmath` | **0** |
+| `npkc-native/src` | 3 of 27 — all **compiler internals** (an AST node kind, a closure-capture analyzer) |
+
+Closures appear in **none** of the ten carried-over topic specs — only in
+`FORMAL_DRAFT` 6.4 and the prototype changelog. They are implemented but unused.
+
+Removal therefore deletes compiler complexity (the prototype carries a 430-line
+closure-capture analysis pass) and breaks no library code.
+
+### Traits already provide stateful callbacks, explicitly
+
+A closure is an anonymous struct with one method and a hidden lifetime. Nitpick
+already has the explicit form, specified in `FORMAL_DRAFT` 13:
+
+```nitpick
+struct:Counter = { int32:count; };
+impl:Handler:for:Counter = {
+    func:on_event = NIL(Counter:self, int32:ev) { self.count = self.count + 1i32; };
+};
+```
+
+Same capability, with a named type, a visible owner, a checkable lifetime, and a
+call graph the verifier can follow.
+
+### Additional reasons
+
+- **Verification.** Closures obscure the control-flow graph exactly as `dyn` does
+  — `FORMAL_DRAFT` 13.5.3 already warns that `dyn` "triggers compiler warnings
+  when strictly auditing under `nitpick-safety` profiles". Closures carry the
+  same cost without the same justification.
+- **Blueprint philosophy.** A closure's environment lifetime is invisible at the
+  call site: `f(x)` does not reveal whether `f` owns a heap environment.
+- **TCB.** Environment allocation is one more allocation path requiring
+  verification.
+- **D-004 already restricts them** — rule 5 bans closures from capturing borrows.
+  Removing closures makes that rule unnecessary rather than special.
+
+### Consequences
+
+- `FORMAL_DRAFT` 6.4 is struck; 9.7.3's fat-pointer layout keeps the `dyn Trait`
+  half and drops the closure half.
+- `npkc-native`'s `LAMBDA` AST node and `ClosureAnalyzer` are not carried forward.
+- Function *pointers* remain — a lambda without capture is a function value and
+  stays useful for callbacks, comparators, and dispatch tables.
+
+---
+
+## D-019 — Integer-to-pointer construction — **SETTLED**
+
+Resolves `FORMAL_DRAFT_AUDIT.md` §5.2: 13.6.3 declares integer-to-pointer casting
+illegal, which makes `nlibc` unwritable, since `mmap` returns an address that must
+become a `wild int8->`.
+
+**The general prohibition stands.** It is suspended by exactly one named,
+greppable construct, legal only in `wild` context:
+
+```nitpick
+wild int8->:page = #wild_ptr<int8->>(addr);
+```
+
+### Why a builtin rather than a cast operator
+
+`=>>` was considered — staying in the cast family (`=>`, `=>!`) has real appeal.
+It was not chosen for two reasons:
+
+1. **This is not a cast.** `=>` converts a *value* between types; `=>!` does so
+   without checking. Both preserve the thing being converted. Constructing a
+   pointer from an integer **fabricates a reference to memory out of a number** —
+   a categorically different operation, not a third severity level of the same
+   one. Giving it a different syntactic category reflects that honestly. Note
+   `!` already carries "unchecked" in this family; `=>>` would need to mean
+   something other than danger while actually meaning *more* danger.
+2. **Practical auditability.** A builtin is trivially restricted to `wild`
+   context by the type checker and greps cleanly. `=>>` is two characters
+   adjacent to `=>` on the keyboard and in the grammar.
+
+If an operator is preferred after all, `=>>` is the right shape — but the
+argument above is why the builtin is recommended.
+
+### Naming
+
+`#wild_ptr` reuses `wild`, which already means "unmanaged, unchecked, you are
+responsible" throughout the language. It introduces no new concept, states the
+danger tier in the name, and follows the `#name<T>(...)` builtin convention
+(D-020).
+
+---
+
+## D-020 — `@` is address-of only; `#` is the compiler-directive sigil — **SETTLED**
+
+**Every `@`-prefixed builtin in the specs is wrong.** `@` is the address-of
+operator and nothing else. `@cast<T>(x)` reads as "the address of `cast<T>` of
+x", which is both confusing and a direct blueprint violation — a symbol must not
+change meaning by context.
+
+This was introduced by mistake and partially corrected in the prototype; stale
+usages likely survived for backwards compatibility with libraries of the time.
+
+### Affected
+
+`FORMAL_DRAFT` 8.1 and 13.6 carry the incorrect form throughout: `@sizeof`,
+`@alignof`, `@offsetof`, `@len`, `@ptr_add`, `@ptr_sub`, `@typeof`, `@typeInfo`,
+`@type_name`, `@fieldType`, `@has_field`, `@field_names`, `@is_comptime`,
+`@cast`, `@cast_unchecked`, `@derive`. All must be rewritten.
+
+*(LLVM intrinsic names such as `@llvm.coro.suspend` are LLVM's own syntax and are
+not affected.)*
+
+### The correct convention
+
+`#` is the **compiler-directive sigil** — it marks something addressed to the
+compiler rather than the runtime. Two syntactic positions, one meaning:
+
+| Form | Purpose | Example |
+|---|---|---|
+| `#name<T>(...)` | builtin producing a value | `#size_of<T>`, `#wild_ptr<int8->>(addr)` |
+| `#[name(...)]` | attribute annotating a declaration | `#[align(16)]`, `#[cfg(...)]` |
+
+This matches `BUILTIN_REFERENCE.md` §4 (`#size_of<T>`) and `FORMAL_DRAFT` 8.3
+(`#[align(N)]`), and mirrors how `.` handles all member access in D-006 — one
+meaning, disambiguated by position rather than by context.
+
+### `#` as the pin operator is obsolete
+
+`OP_REFERENCE.md` §6 lists `#` as **pin** — "prevents the Garbage Collector from
+moving the memory." **D-003 removed the collector**, so nothing moves memory
+behind the programmer's back any more: `stack` and `wild` do not relocate, and
+arena contents are reached through `Handle<T>`, which is growth-safe by
+construction (D-017 additionally makes `shared_arena<T>` storage non-moving).
+
+Pin therefore has no remaining purpose, and removing it leaves `#` with a single
+coherent meaning. `MEMORY_REFERENCE.md` §2 (Pinned Memory) is struck.
