@@ -1,143 +1,371 @@
-# Nitpick Abstract Syntax Tree (AST) Reference
+# Nitpick Abstract Syntax Tree
 
-Because the compiler uses a "Full-Frontend, Incremental-Backend" bootstrap strategy, the AST must be perfectly defined to encapsulate the entire language grammar from Day 1. The code generators (backends) will traverse this AST and either lower it to LLVM IR or ignore unknown nodes.
+Rebuilt from the reconciled grammar — `LEXICAL_REFERENCE.md`, `OP_REFERENCE.md`,
+`CONTROL_REFERENCE.md`, `TYPE_REFERENCE.md`, `TRAITS_REFERENCE.md`,
+`CONCURRENCY_REFERENCE.md`, `MODULE_REFERENCE.md`, `VERIFICATION_REFERENCE.md`,
+`MEMORY_REFERENCE.md` — and D-001 … D-048.
 
-This document outlines the core structural nodes of the Nitpick AST.
+Because the compiler is built **full-frontend-first**, this must encapsulate the
+entire grammar from day one: the backend advances rung by rung, but the AST does
+not get to change underneath it. The previous revision did not meet that bar and
+said so; this one is intended to.
 
-> ## ⚠️ This document does not yet meet its own bar
->
-> It states that the AST must encapsulate the **entire** grammar from Day 1, and
-> it currently does not. Rebuild it from the completed grammar — `FORMAL_DRAFT`
-> chapters 01 (lexical), 04 (expressions), and 05 (statements) are the adoption
-> candidates — before the parser is written.
->
-> **Missing nodes:** pipe operators (`|>`, `<|`), the `is` ternary, `discard`,
-> labelled `fall`, `break` / `continue`, range expressions (`..`, `...`), the `$`
-> iteration variable, `await`, string interpolation (`&{ }`), and `defer`.
->
-> **Two naming conventions are mixed** in one document: `IfStmt` / `BlockStmt` /
-> `VarDeclStmt` alongside `WHEN_STMT` / `LOOP_STMT` / `PICK_STMT` with positional
-> `.a` / `.b` / `.c` operand slots. The second style appears lifted from the
-> prototype's implementation. Pick one.
->
-> **Unverified detail:** `LOOP_STMT` and `TILL_STMT` are given an optional `end`
-> block, which `CONTROL_REFERENCE.md` documents only for `when`.
->
-> **Removed:** the `LAMBDA` node kind and closure-capture analysis — closures are
-> gone (D-018). Function pointers (lambdas without capture) remain.
+## Conventions
+
+**One naming style: `PascalCase` node names with named fields.** The previous
+revision mixed `IfStmt`-style nodes with `WHEN_STMT`-style nodes carrying
+positional `.a` / `.b` / `.c` operand slots. Positional slots are removed —
+`stmt.then_block` cannot be confused with `stmt.end_block`, `stmt.c` can. For a
+compiler under formal verification, a field name that states its meaning is worth
+more than the brevity.
+
+Every node carries `span: SourceSpan`. Omitted from the listings below.
 
 ---
 
-## 1. Top-Level Declarations (`Decl`)
+# 1. Declarations
 
-Every Nitpick file is parsed into a list of Top-Level Declarations.
+Top-level items. A source file parses to `ModuleDecl`.
 
-*   **`ModuleDecl`**: Represents a file or module scope. Contains a list of `use` imports and other `Decl` nodes.
-*   **`ImportDecl`**: Represents a `use` statement (e.g., `use std.collections;`).
-*   **`FunctionDecl`**: Represents a function definition.
-    *   `name`: Identifier
-    *   `visibility`: `pub` or internal
-    *   `params`: List of `VarDecl` (parameters)
-    *   `return_type`: `TypeNode` (Defaults to `Result<T>` in semantics)
-    *   `contracts`: Optional list of `ContractNode` (`requires`, `ensures`)
-    *   `body`: `BlockStmt`
-*   **`StructDecl` / `EnumDecl`**: Represents custom type definitions.
-*   **`RuleDecl`**: Represents a structural constraint definition (`Rules<T>:r = { ... }`).
-*   **`MacroDecl`**: Represents an AST-aware macro definition.
+| Node | Fields | Notes |
+|---|---|---|
+| `ModuleDecl` | `name`, `visibility`, `items: Decl[]` | file scope or `mod name { … }` |
+| `ImportDecl` | `path`, `kind`, `names: Ident[]`, `alias` | `kind` ∈ wildcard / single / selective / namespace |
+| `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: ContractNode[]`, `body: BlockStmt?` | see §1.1 |
+| `StructDecl` | `name`, `visibility`, `generics`, `fields: FieldDecl[]`, `attributes` | |
+| `EnumDecl` | `name`, `visibility`, `generics`, `variants: EnumVariant[]` | variants may carry payloads |
+| `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
+| `ImplDecl` | `target: TypeNode \| GenericParam`, `trait: TypeNode?`, `items` | **`impl:Type`** or **`impl:Type:Trait`** — type always first, no connector (D-031) |
+| `TypeDecl` | `name`, `visibility`, `items` | the **namespace** construct, `Type:Name = { … }` (D-028) |
+| `RuleDecl` | `name`, `subject_type`, `body: Expr`, `refines: Ident[]` | `Rules<int32>:r = { $ > 0i32 }`; `refines` holds `limit<Other>` composition |
+| `MacroDecl` | `name`, `params`, `body` | invoked as **`#name(args)`** (D-046) |
+| `ExternBlock` | `library`, `items: ExternFn[]` | |
+| `OpaqueDecl` | `name`, `visibility` | `opaque:DatabaseHandle;` |
+| `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |
 
----
+## 1.1 Function declaration detail
 
-## 2. Statements (`Stmt`)
+```
+FunctionDecl
+  name         : Ident
+  visibility   : pub | private
+  modifiers    : { inline, noinline, comptime, async }
+  generics     : GenericParam[]        // after the name (D-030)
+  params       : ParamDecl[]
+  variadic     : VariadicSpec?         // see below
+  return_type  : TypeNode              // the SUCCESS type; Result<T> is implicit
+  contracts    : ContractNode[]        // requires / ensures
+  body         : BlockStmt?            // absent in trait declarations
+```
 
-Statements do not return values (they evaluate to `void`).
+- **`return_type` is the success type.** Every function returns `Result<T>`
+  implicitly, except `main` and `failsafe`. The AST stores the declared type; the
+  wrapping is a semantic-phase concern, not a syntactic one.
+- **`extern` is not a modifier here** — FFI functions live in `ExternBlock`,
+  because they carry error contracts that ordinary functions do not (D-002).
 
-*   **`BlockStmt`**: A list of statements enclosed in `{ }`. Scopes variables.
-*   **`VarDeclStmt`**: Variable declaration (e.g., `stack int32:x = 5i32;`).
-    *   `memory_modifier`: Optional (`stack`, `wild`, `wildx`) — **`gc` removed** (D-003)
-    *   `drop_modifier`: Optional (`nodrop`)
-    *   `limit`: Optional `LimitNode`
-    *   `type`: `TypeNode`
-    *   `identifier`: String
-    *   `initializer`: Optional `Expr`
-*   **`AssignmentStmt`**: Standard assignment (`=`, `+=`, etc.).
-*   **`ControlFlowStmt`**: 
-    *   **`IfStmt`**: Contains condition (`Expr`), `then_block`, optional `else_block`.
-    *   **`WHEN_STMT`**:
-    *   `.a` = The test expression.
-    *   `.b` = The main `when` block (body).
-    *   `.c` = A `GROUP_NODE` (list) containing up to two optional blocks: the `then` block, followed by the `end` block.
-*   **`LOOP_STMT`**:
-    *   `.a` = A `GROUP_NODE` containing the 3 operands: `start`, `limit`, and `step`.
-    *   `.b` = The block (body) of the loop.
-    *   `.c` = The optional `end` block (or `NIL`).
-*   **`TILL_STMT`**:
-    *   `.a` = A `GROUP_NODE` containing the 2 operands: `limit` and `step`.
-    *   `.b` = The block (body) of the loop.
-    *   `.c` = The optional `end` block (or `NIL`).
-*   **`PICK_STMT`**:
-    *   `.a` = The selector expression to pick against.
-    *   `.b` = A `GROUP_NODE` list of `PICK_CASE` nodes.
-    *   `.c` = Unused.
-*   **`PICK_CASE`**:
-    *   `.a` = A `GROUP_NODE` list of case match labels (e.g. `ERR:`, `(1):`).
-        The `ERR:` label matches the `tbb` error sentinel (D-008 §5.1). A `pick`
-        on a `tbb` selector **requires** an explicit `ERR:` arm — `(*)` must not
-        silently absorb a taint, or the tainted value steers a branch after all.
-    *   `.b` = The block (body) to execute.
-    *   `.c` = Unused.
-*   **`ResultExitStmt`**: 
-    *   **`PassStmt`**: `pass expr;` (Returns success Result)
-    *   **`FailStmt`**: `fail expr;` (Returns error Result)
-*   **`TrapStmt`**: `!!! expr;` (Triggers `failsafe`)
-*   **`DeferStmt`**: Defers execution of a block until scope exit.
+### `VariadicSpec`
 
----
+```
+VariadicSpec
+  kind      : Homogeneous | FormatDirected
+  elem_type : TypeNode?    // Homogeneous only — ..*string[] etc.
+```
 
-## 3. Expressions (`Expr`)
+Two forms, and the distinction is load-bearing (D-045):
 
-Expressions evaluate to a value and have a computed `Type`.
+- **`Homogeneous`** — `..*T[]:name`, a typed slice.
+- **`FormatDirected`** — a preceding parameter of type `fmt`, with a bare `..*`.
+  The `fmt` type is inhabited **only by string literals**, and the semantic phase
+  checks each specifier against the corresponding argument's type. A format
+  string cannot be computed, stored, or received.
 
-*   **`LiteralExpr`**: 
-    *   `IntegerLiteral`: (e.g., `42i32`)
-    *   `FloatLiteral`: (e.g., `3.14flt32`)
-    *   `CharLiteral`: (e.g., `'A'`)
-    *   `StringLiteral`: (e.g., `"Hello"`)
-    *   `TfpLiteral`: (e.g., `1.5tfp64`)
-*   **`BinaryExpr`**: `+`, `-`, `<`, `==`, `&&`, etc.
-*   **`UnaryExpr`**: `!`, `~`, `-` (negation).
-*   **`IdentifierExpr`**: Variable lookup.
-*   **`CallExpr`**: Function invocation (`foo(a, b)`).
-*   **`MemberAccessExpr`**: `obj.field`. (Unified access, automatically dereferences if `obj` is a pointer).
-*   **Pointer Expressions**:
-    *   **`AddressOfExpr`**: `@val` — yields a **second-class borrow**, not a first-class pointer (D-004)
-    *   **`DerefExpr`**: `<-ptr` (Full deep dereference)
-    *   **`WildPtrExpr`**: `#wild_ptr<T>(addr)` — constructs a pointer from an integer address; legal only in `wild` context (D-019)
-    *   ~~`PinExpr`~~ — **removed**; pinning is obsolete without a collector (D-020)
-*   **Error Handling Expressions**:
-    *   **`SafeUnwrapExpr`**: `expr ? default_expr`
-    *   **`EmphaticUnwrapExpr`**: `expr ?! err_code`
-    *   **`RawUnwrapExpr`**: `raw(expr)`
-*   **Casting Expressions**:
-    *   **`SafeCastExpr`**: `expr => TypeNode`
-    *   **`UncheckedCastExpr`**: `expr =>! TypeNode`
+## 1.2 `ExternFn`
+
+```
+ExternFn
+  name         : Ident
+  params       : ParamDecl[]
+  variadic     : bool
+  return_type  : TypeNode
+  failure      : FailureContract       // REQUIRED — omission is a compile error
+```
+
+```
+FailureContract = FailsOn { predicate: Expr, source: ErrnoSource? }
+                | NeverFails
+```
+
+`never fails` is a required, greppable assertion rather than a default, so that
+"this C function is infallible" is a claim a reviewer can audit (D-002).
+
+## 1.3 Trait items
+
+| Node | Fields |
+|---|---|
+| `TraitMethod` | `signature: FunctionDecl`, `default_body: BlockStmt?` |
+| `AssocTypeDecl` | `name`, `default: TypeNode?` — **`assoc:Item;`** (D-028) |
+
+`assoc` rather than `Type`, which declares a namespace. `Type:Foo = { … }` inside
+a trait body was ambiguous between an associated type bound to an anonymous
+struct and a nested namespace; `assoc` is not.
 
 ---
 
-## 4. Formal Verification Nodes (`VerifyNode`)
+# 2. Statements
 
-These nodes are attached to declarations and loops. They are passed directly to the Z3 SMT solver during Phase 3 semantic analysis.
+| Node | Fields |
+|---|---|
+| `BlockStmt` | `stmts: Stmt[]` — introduces a scope |
+| `VarDeclStmt` | `qualifiers`, `limit: LimitNode?`, `type`, `name`, `init: Expr?`, `attributes` |
+| `AssignStmt` | `target: Expr`, `op`, `value: Expr` |
+| `ExprStmt` | `expr` |
+| `IfStmt` | `cond`, `then_block`, `else_branch: IfStmt \| BlockStmt \| none` |
+| `PickStmt` | `selector: Expr`, `arms: PickArm[]` |
+| `WhileStmt` | `label: Ident?`, `cond`, `invariants: InvariantNode[]`, `body` |
+| `ForStmt` | `label`, `binding: ParamDecl`, `iterable: Expr`, `invariants`, `body` |
+| `LoopStmt` | `label`, `start`, `limit`, `step`, `invariants`, `body` |
+| `TillStmt` | `label`, `limit`, `step`, `invariants`, `body` |
+| `WhenStmt` | `label`, `cond`, `body`, `then_block: BlockStmt?`, `end_block: BlockStmt?` |
+| `BreakStmt` | `label: Ident?` |
+| `ContinueStmt` | `label: Ident?` |
+| `PassStmt` | `value: Expr?` |
+| `FailStmt` | `error: Expr` |
+| `ReturnStmt` | `result: Expr` — the literal `Result{…}` form only |
+| `ExitStmt` | `code: Expr` — legal only in `main` / `failsafe` |
+| `TrapStmt` | `error: Expr` — `!!! errCode;` |
+| `DeferStmt` | `body: BlockStmt` |
+| `DiscardStmt` | `expr` — `discard(e)` / `_~ e` |
+| `ProveStmt` | `condition: Expr` — **compile-time** obligation |
+| `AssertStaticStmt` | `condition: Expr` |
 
-*   **`ContractNode`**: Contains mathematical expressions bound to a `FunctionDecl`.
-    *   `type`: `requires` or `ensures`.
-    *   `condition`: `Expr` (the mathematical truth that must hold).
-*   **`LimitNode`**: Bound to a `VarDeclStmt` or `TypeNode` (e.g., `limit<r_pos>`). Maps to a predefined `RuleDecl`.
-*   **`InvariantNode`**: Bound to a loop statement. Holds the loop invariant expression.
-*   **`ProveStmt` / `AssertStaticStmt`**: Explicit proof obligation statements injected by the developer into a `BlockStmt`.
+### Notes carrying decisions
+
+- **`ForStmt.binding` is a full `ParamDecl` with a required type.** `for (int64:i in 1..3)`
+  only; the C three-clause form and untyped bindings are both rejected (D-023).
+- **`LoopStmt` has `start`/`limit`/`step`; `TillStmt` has `limit`/`step`.** Both
+  are **counted**, exposing the counter as `$`. `loop` infers direction from the
+  bounds, so `step` must be positive — a negative or zero step is a compile error
+  (D-022). Neither has an `end` block; the previous revision gave them one.
+- **`WhenStmt.then_block` runs when the body executed at least once, *including*
+  after a `break`. `end_block` runs only when the condition was false initially**
+  (D-027). Exactly one fires. `break` must lower to `then`, not `end`.
+- **`ProveStmt` is a compile-time proof obligation**, not a runtime assertion.
+- **`DeferStmt` does not run on a trap** (D-014) — a lowering property, but noted
+  here because it is easy to assume otherwise.
+
+## 2.1 `PickArm`
+
+```
+PickArm
+  label     : Ident?              // target of `fall label;`
+  pattern   : PickPattern
+  guard     : Expr?               // `where (a > b)`
+  body      : BlockStmt
+```
+
+```
+PickPattern = Value(Expr)                    // (200)
+            | Range(lo, hi, inclusive)       // (500..599)
+            | StructDestructure(type, binds) // (MouseClick { x, y })
+            | EnumDestructure(path, binds)   // (Net.Disconnect(reason))
+            | MacroPattern(name, args)       // MyMacro!(a, b) — see note
+            | ErrPattern                     // ERR:
+            | Wildcard                       // (*)
+            | Unreachable                    // (!)
+```
+
+- **`ErrPattern` matches the `tbb` error sentinel.** A `pick` on a `tbb` selector
+  **requires** an explicit `ERR:` arm — neither `Wildcard` nor `Unreachable` may
+  absorb it, or a tainted value steers a branch (D-008 §5.1).
+- `pick` must be exhaustive.
+- `MacroPattern` spelling needs revisiting against D-046: `FORMAL_DRAFT` 05 §5.6.2
+  shows `MyMacro!(a, b)`, but macro invocation is now `#name(args)`.
+
+## 2.2 Statement-level control transfers
+
+`FallStmt { target: Ident }` and `GiveStmt { value: Expr }` are legal only inside
+a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 
 ---
 
-## 5. Macro System (`MacroNode`)
+# 3. Expressions
 
-Because `nitpick-next` dropped the `pre()` text processor, all macros must operate natively on the AST.
+## 3.1 Literals
 
-*   **`MacroInvocationExpr`**: E.g., `MyMacro!(a, b)`. The parser reads this as a macro invocation but defers expansion until the AST macro-expansion pass, converting it into standard `Expr` or `Stmt` nodes before semantic analysis.
+| Node | Notes |
+|---|---|
+| `IntLiteral` | value, base (dec/hex/bin/oct/ternary/nonary), `type_suffix?` — **suffix-form bases** (`FFhex`, `1T0t`, `2An`) |
+| `FloatLiteral` | value, exponent, `type_suffix?` |
+| `CharLiteral` | `char8` / `char16` / `char32` — **not an integer** (D-005) |
+| `StringLiteral` | escape-processed |
+| `RawStringLiteral` | `r"…"` — no escape processing (D-024) |
+| `BlockStringLiteral` | `"""…"""` — newlines preserved (D-024) |
+| `BoolLiteral` | |
+| `SentinelLiteral` | `NULL`, `NIL`, `ERR` — **not `unknown`**, which is compiler-assigned |
+| `TemplateLiteral` | `parts: (TemplatePart \| Interpolation)[]` |
+
+## 3.2 Operators
+
+| Node | Fields | Covers |
+|---|---|---|
+| `BinaryExpr` | `op`, `lhs`, `rhs` | all of `+ - * / % == != < <= > >= <=> && \|\| & \| ^ << >>` — one node, discriminated by `op` |
+| `UnaryExpr` | `op`, `operand` | `!` `~` `-` |
+| `PostfixExpr` | `op`, `operand` | `++` `--` |
+| `AddressOfExpr` | `operand` | `@x` — yields a **second-class borrow**, not a pointer (D-004) |
+| `DerefExpr` | `operand` | `<-ptr` |
+| `BorrowExpr` | `mutable: bool`, `operand` | `$$i` / `$$m` |
+| `PipeExpr` | `direction`, `value`, `callee` | `\|>` / `<\|` |
+| `RangeExpr` | `lo`, `hi`, `inclusive` | `..` / `...` |
+| `SpreadExpr` | `operand` | **`..^`** — expands a collection at a call site (D-026) |
+| `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
+
+## 3.3 Access and calls
+
+| Node | Fields | Notes |
+|---|---|---|
+| `MemberAccessExpr` | `base`, `field` | **`.` only** — auto-dereferences pointers; `->` is type-position only (D-006) |
+| `SafeNavExpr` | `base`, `field` | `?.` |
+| `IndexExpr` | `base`, `index` | bounds-checked |
+| `CallExpr` | `callee`, `generic_args`, `args`, `turbofish: bool` | `generic_args` may arrive implicitly (`f<int32>(x)`) or via turbofish (`f::<int32>(x)`); `turbofish` records which, since the parser needs lookahead to tell a generic call from a `<` comparison |
+| `MethodCallExpr` | `receiver`, `method`, `generic_args`, `args` | UFCS — `p.magnitude()` resolves to `Point_magnitude(p)` (D-006) |
+| `BuiltinExpr` | `name`, `generic_args`, `args` | **`#name<T>(…)`** (D-020) — `#size_of<T>`, `#wild_ptr<T>(addr)` |
+| `MacroInvocationExpr` | `name`, `args` | **`#name(args)`** (D-046) — expanded before semantic analysis |
+
+### Two kinds of builtin, and why the parser must distinguish them
+
+| Form | Parsed as | Examples |
+|---|---|---|
+| **`#`-prefixed** | `BuiltinExpr` / `MacroInvocationExpr` | `#size_of<T>`, `#wild_ptr<T>(addr)`, `#derive`, user macros |
+| **bare name** | ordinary `CallExpr` | `alloc`, `calloc`, `ralloc`, `dalloc`, `mcpy`, `mmov`, `memset`, `sys`, `asm`, `ok`, `is_err`, the `string_*` intrinsics |
+
+The `#` sigil marks something **the compiler must treat specially** — evaluate at
+compile time, permit an otherwise-forbidden construction, or expand before
+semantic analysis. The bare-name builtins are ordinary calls that the compiler
+happens to provide: they take arguments, return `Result<T>`, and are subject to
+the same rules as any other function.
+
+The distinction is syntactic and the parser acts on it directly — a `#` changes
+the parse path — so it is recorded here rather than left to the semantic phase.
+
+## 3.4 Result and safety
+
+| Node | Fields | Notes |
+|---|---|---|
+| `SafeUnwrapExpr` | `expr`, `default` | `e ? d` |
+| `NullCoalesceExpr` | `expr`, `default` | `e ?? d` |
+| `EmphaticUnwrapExpr` | `expr`, `error_code` | **`e ?! code`** — exactly one `tbb32` argument (D-009) |
+| `DefaultsExpr` | `expr`, `fallback` | `?\|` / `defaults` |
+| `RawUnwrapExpr` | `expr` | `raw e` / `_! e` |
+| `DropExpr` | `expr` | `drop e` / `_? e` |
+
+## 3.5 Casts
+
+| Node | Fields |
+|---|---|
+| `CastExpr` | `expr`, `target: TypeNode` — `=>`, **compile error if loss is possible** |
+| `UncheckedCastExpr` | `expr`, `target` — `=>!`, the sole opt-out |
+
+Only these two. `cast<T>` / `#cast<T>` / `@cast<T>` do not exist (D-021).
+
+## 3.6 Construction and async
+
+| Node | Fields |
+|---|---|
+| `StructLiteralExpr` | `type`, `fields` |
+| `ArrayLiteralExpr` | `elements` |
+| `VectorCtorExpr` | `type`, `components` — `vec3(1.0, 2.0, 3.0)` |
+| `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-040`) |
+| `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
+| `DynCastExpr` | `expr`, `traits: TypeNode[]` — `dyn A & B` (D-029) |
+
+**No lambda or closure nodes.** Closures are removed (D-018); function pointers
+are ordinary values referenced by `IdentifierExpr`.
+
+---
+
+# 4. Types
+
+| Node | Fields | Notes |
+|---|---|---|
+| `NamedType` | `name`, `generic_args` | |
+| `PointerType` | `pointee` | `T->` — **thin**, one word, no bounds metadata (D-038) |
+| `OptionalType` | `inner` | `T?` |
+| `ArrayType` | `element`, `size: Expr?` | value type; does not decay |
+| `FuncType` | `params`, `return_type` | |
+| `DynType` | `traits: TypeNode[]` | `dyn A & B` |
+| `FmtType` | — | **`fmt`** — inhabited only by string literals (D-045) |
+| `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
+
+Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
+`const`, `fixed`, `borrow_imm`, `borrow_mut`. **`gc` does not exist** (D-003).
+
+### Types the parser must know as builtins
+
+Beyond the scalar families: `fd`, `pid`, `tid`, `uid`, `gid` (D-042); the bitflag
+families `oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence` (D-044);
+`Handle`, `arena`, `shared_arena` (D-017), `atomic`, `Future`, `Optional`,
+`Result`, `simd`, `complex`, `dim256`, `tfp32/64/128/256`.
+
+---
+
+# 5. Verification nodes
+
+| Node | Fields |
+|---|---|
+| `ContractNode` | `kind: requires \| ensures`, `condition: Expr` |
+| `InvariantNode` | `conditions: Expr[]` — attached to loop statements |
+| `LimitNode` | `rule: Ident` — `limit<r_pos>` on a declaration or parameter |
+
+`ensures` may reference the special `result` identifier.
+
+---
+
+# 6. Attributes
+
+```
+Attribute { name: Ident, args: Expr[] }      // #[align(16)], #[cfg(...)], #[derive(...)]
+```
+
+Attach to declarations. **`#[derive(…)]`**, not `@derive` (D-020).
+
+`#[lexical_drop]` and `#[nll_drop]` are **removed** — they existed to force
+deterministic RAII "bypassing standard GC", which is now the only behaviour
+(D-003).
+
+---
+
+# 7. Removed from the previous revision
+
+| Node | Why |
+|---|---|
+| `PinExpr` (`#obj`) | pinning is obsolete without a collector; `#` is now the compiler-directive sigil (D-020) |
+| `LAMBDA` / closure capture | closures removed (D-018) |
+| `gc` in `memory_modifier` | no collector (D-003) |
+| `WHEN_STMT` / `LOOP_STMT` / `PICK_STMT` positional `.a` / `.b` / `.c` | replaced by named fields |
+| `end` block on `LOOP_STMT` / `TILL_STMT` | only `when` has one (D-027) |
+| `a*` collection builtins | `astack`, `alist`, `ahash`, `astringlist` and 35 operation keywords are not language builtins (D-041) |
+
+---
+
+# 8. Open items
+
+These are gaps in the **grammar**, not in this document — recorded so the parser
+work does not silently invent answers.
+
+1. **`MacroPattern` in `pick`** (§2.1) — `FORMAL_DRAFT` 05 §5.6.2 spells it
+   `MyMacro!(a, b)`, but D-046 moved macro invocation to `#name(args)`. The
+   pattern form needs the same treatment.
+2. **Macros have no governing specification.** `MacroDecl` and
+   `MacroInvocationExpr` are represented here, but hygiene, expansion order,
+   pattern matching over AST fragments, and what a macro may produce are
+   unspecified. `FORMAL_DRAFT` 08.5 is a paragraph.
+3. **`Future<T>` visibility.** `TYPE_REFERENCE.md` §17 defines it; no chapter uses
+   it. Whether it is surface syntax — awaitable, composable, cancellable — or
+   purely a lowering artifact determines whether it needs expression nodes.
+4. **`give` and `pick`-as-expression.** `GiveStmt` implies `pick` can be an
+   expression, but the statement/expression boundary is stated inconsistently
+   across `FORMAL_DRAFT` 04 §4.1 and 05 §5.1.
+5. **`comptime` blocks.** `FORMAL_DRAFT` 07 §7.2 shows `comptime { … }` as a
+   statement form as well as a function modifier; only the modifier is
+   represented here.
