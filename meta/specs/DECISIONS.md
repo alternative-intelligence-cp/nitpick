@@ -3554,3 +3554,121 @@ the same boundary unchanged, since the isolation is what provides the safety
 property, not the API behind it. The choice affects portability and vendor
 lock-in, not the safety architecture — so it can be revisited without disturbing
 anything decided here.
+
+---
+
+## D-056 — Deadlock: lock levels prove the common case, deadlines contain the rest — **SETTLED**
+
+`--verify-concurrency` is documented as verifying "data race **and deadlock**
+freedom". Data-race freedom is accounted for (D-004, D-017, D-032). **Deadlock
+freedom had no mechanism anywhere** — the flag promised a safety property nothing
+delivered, which is worse than promising nothing, because it invites reliance.
+
+### Root cause: the lock API erases which lock is which
+
+```nitpick
+func:create = int64();              // stdlib/mutex.npk
+func:lock   = int32(int64:handle);
+```
+
+A lock is an `int64` handle. At a call to `lock(h)` **nothing in the program text
+says which lock is being acquired**, so no static analysis can order acquisitions,
+and no reviewer can either.
+
+This is the same erasure found in `printf` (every argument an `int64`, so `%s`
+against an integer becomes an arbitrary read) and in `libn_ioctl` (an arbitrary
+request code with the constraint checked three layers down). The fix is the same
+one taken there: **put the information in the type.**
+
+### `Mutex<T, LEVEL>`
+
+```nitpick
+Mutex<Config, 2>:cfg_lock;
+
+with (cfg_lock.acquire(deadline)?) : guard {
+    guard.value.retries = 3i32;
+}
+```
+
+Three properties, each removing a class:
+
+**1. The mutex owns its data.** `T` is reachable only through a guard, so
+"forgot to take the lock" is unrepresentable rather than a review item. The
+guard's lifetime is the critical section and release is automatic under D-003 —
+no unlock to forget, no early-return path that leaks the lock.
+
+**2. The level is part of the type.** `LEVEL` is a compile-time constant, so at
+every acquisition the compiler knows exactly which rank is being taken.
+
+**3. Acquisition must strictly increase.** A thread holding level N may acquire
+only levels > N. Circular wait — the Coffman condition every deadlock needs — is
+then impossible by construction, because a cycle requires some thread to acquire
+downward.
+
+### What the analysis actually does
+
+Whole-program, which is available since verification is whole-program anyway:
+
+1. Every `Mutex<T, L>` has a statically known `L`.
+2. For each function, compute the set of levels it may acquire, transitively
+   through its call graph.
+3. At each acquisition site the set of possibly-held levels follows from the call
+   graph.
+4. Reject any path that can acquire `L' ≤ L` while holding `L`.
+
+**Dynamic dispatch is the hole.** A call through a trait object can reach
+anything, so its acquisition set is unbounded. Rather than give up or silently
+under-approximate, a dynamically dispatched call **declares its maximum
+acquisition level** as part of the trait method's contract, and implementations
+are checked against it. An undeclared method may not acquire at all.
+
+### Every blocking primitive is leveled, not just `mutex`
+
+Deadlock does not require a mutex. Two tasks blocked on each other's bounded
+channel are deadlocked just as thoroughly. So `rwlock`, `condvar`, `channel`,
+`barrier`, and any future blocking primitive carry a level and participate in the
+same ordering. A rule that covered only mutexes would be a rule that looks like a
+proof and is not one.
+
+### Deadlines are mandatory — the same rule as D-055
+
+Static ordering proves the common case. It cannot cover everything: dynamic
+dispatch under a declared bound, priority inversion, a peer process that stops
+responding, or a lock held across a boundary the analysis cannot see.
+
+So **every blocking operation takes a deadline and returns `Result`**:
+
+```nitpick
+Result<Guard<Config>>:g = cfg_lock.acquire(deadline);
+```
+
+There is no infinitely blocking acquire. A residual deadlock becomes a **timeout
+error at a known point** — a value, propagated or escalated to `failsafe` —
+rather than a process wedged with actuators live.
+
+This is deliberately the identical rule D-055 imposed on GPU dispatch, and for
+the identical reason stated there: **a hang is worse than a crash, because a
+crash is observable and a hang is not.** One rule covering every blocking
+operation in the language, with no per-primitive exceptions to remember.
+
+### `create_recursive` is removed
+
+Recursive mutexes exist to paper over unclear ownership — code that cannot tell
+whether it already holds a lock. With the mutex owning its data and guards
+scoped, that uncertainty does not arise, and a recursive acquire would defeat the
+level discipline's central invariant. If a genuine need appears it requires its
+own justification, not a default.
+
+`trylock` stays: a non-blocking attempt is a legitimate deadlock-avoidance tool
+and cannot itself block.
+
+### The flag says what it proves
+
+`--verify-concurrency` verifies **data-race freedom and lock-order freedom**.
+It does **not** claim deadlock freedom outright, because the deadline backstop is
+containment, not proof.
+
+That distinction is the point of the whole decision. An honest narrow guarantee
+plus a stated containment mechanism is worth more than a broad claim nothing
+backs — particularly here, where the person relying on it is deciding whether a
+robot near a child can wedge.

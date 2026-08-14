@@ -352,7 +352,7 @@ respect to D-003, D-007, D-008, D-013, and D-014.
 | 41 | §12.2 | "Functions that **might fail** must return a `Result<T>`" | **all** functions return `Result<T>` except `main` and `failsafe`. |
 | 42 | §12.6.2 | "If a function defines a `requires` block, Nitpick **implicitly transforms** its return type into a `Result<T>`" | already universal — this phrasing implies conditional wrapping. |
 | 43 | §12.7.2 | "All widenings must be cast explicitly using **`as`**" | **D-021** — `as` is the module-alias keyword. The cast forms are `=>` and `=>!`. |
-| 44 | §12.5.4 | `--verify-concurrency` — "data race & **deadlock** freedom" | race freedom is now accounted for (D-004, D-017, D-032); **deadlock still has no mechanism anywhere.** |
+| 44 | §12.5.4 | `--verify-concurrency` — "data race & **deadlock** freedom" | **SETTLED by D-056.** Race freedom via D-004/D-017/D-032; lock-order freedom proven via typed `LEVEL`s on every blocking primitive; residual deadlock contained by mandatory deadlines. The flag's claim is narrowed to what it proves |
 
 ## Part N — Gaps: Layer 2 is incomplete
 

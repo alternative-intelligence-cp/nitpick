@@ -268,10 +268,14 @@ Race freedom comes from three structural properties, none of them runtime checks
 - **Specify the omitted surface.** Channels, actors, and thread pools have real
   implementations and no specification. The concurrency model is not fully
   described until they are covered.
-- **Deadlock freedom has no mechanism.** `--verify-concurrency` is documented as
-  verifying "data race & deadlock freedom" (`VERIFICATION_REFERENCE.md` §5), and
-  nothing anywhere describes how deadlock is detected or proven. Data-race
-  freedom is now accounted for by §5.3; deadlock is not.
+- ~~**Deadlock freedom has no mechanism.**~~ — **settled by D-056.** Every
+  blocking primitive carries a compile-time `LEVEL`; acquisition must strictly
+  increase, making circular wait impossible by construction. What the static
+  analysis cannot cover is contained by **mandatory deadlines** — every blocking
+  operation returns `Result` and there is no infinitely blocking acquire. The
+  flag now claims lock-order freedom rather than deadlock freedom. Note this
+  changes the `mutex` API: `Mutex<T, LEVEL>` owns its data, `create_recursive` is
+  removed, and the `int64` handle form is what made the old API unanalysable.
 - **Is `Future<T>` user-visible?** It is a specified type
   (`TYPE_REFERENCE.md` §17) that no chapter uses. Either it is part of the
   surface language — in which case awaiting, composing, and cancelling futures

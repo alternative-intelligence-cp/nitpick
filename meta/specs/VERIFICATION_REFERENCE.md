@@ -161,7 +161,7 @@ When compiled with `--verify-contracts`, the Z3 solver verifies the inductive st
 | `--verify` | Enable Z3 Rules/limit verification |
 | `--verify-contracts` | Verify requires/ensures/invariant contracts |
 | `--verify-overflow` | Verify integer arithmetic overflow |
-| `--verify-concurrency` | Verify data race & deadlock freedom |
+| `--verify-concurrency` | Verify data-race freedom and **lock-order freedom** (D-056). Deadlock freedom is *not* claimed outright — residual deadlock is contained by mandatory deadlines, not proven absent |
 | `--verify-memory` | Verify use-after-free & recursion bounds |
 | `--verify-level=N` | Controls verification depth (see table below) |
 | `--smt-opt` | Enable SMT-guided optimizations (eliminates proven-safe checks). **Writes an elimination manifest** — see §8 |
@@ -222,20 +222,33 @@ cannot see its contracts and K cannot model its semantics.
 
 ---
 
-## 7. Known gap: deadlock freedom
+## 7. Deadlock: proven where possible, contained otherwise (D-056)
 
-`--verify-concurrency` is documented as verifying "data race **and deadlock**
-freedom". Data-race freedom is now accounted for by three structural properties
+Data-race freedom is accounted for by three structural properties
 (`CONCURRENCY_REFERENCE.md` §5.3): borrows cannot cross a thread spawn or
 `await` (D-004), tasks do not migrate between threads (D-032), and shared arenas
 never move memory or reuse slots (D-017).
 
-**Deadlock freedom has no mechanism described anywhere.** The flag currently
-promises something no document delivers. Either a detection or proof strategy
-needs specifying — lock ordering, a wait-for graph, or a static discipline on the
-`mutex` / `rwlock` / `condvar` API — or the claim should be narrowed to data-race
-freedom alone.
+**Deadlock is addressed in two layers**, because the second is what makes the
+first honest:
 
+1. **Lock-order freedom is proven.** Every blocking primitive — `mutex`,
+   `rwlock`, `condvar`, `channel`, `barrier` — carries a compile-time `LEVEL` in
+   its type, and acquisition must strictly increase. Circular wait is impossible
+   by construction. A whole-program analysis computes each function's transitive
+   acquisition set; dynamically dispatched methods declare a maximum level and
+   are checked against it, and an undeclared method may not acquire at all.
+
+2. **Residual deadlock is contained, not proven absent.** Every blocking
+   operation takes a deadline and returns `Result`; there is no infinitely
+   blocking acquire. What the analysis cannot cover — priority inversion, an
+   unresponsive peer process, a declared-but-broad dynamic bound — surfaces as a
+   timeout error at a known point rather than a wedged process.
+
+The flag is documented as verifying **data-race and lock-order freedom**
+specifically. It does not claim deadlock freedom, and the previous wording that
+did has been corrected: a safety claim nothing backs is worse than an absent one,
+because it invites reliance.
 
 ---
 
