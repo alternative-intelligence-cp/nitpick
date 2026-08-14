@@ -4221,3 +4221,204 @@ point.
   before any `failsafe` code runs.
 - `--extra-picky`'s no-allocation-in-`failsafe` rule (D-014) extends naturally to
   **no `await` in `failsafe`**, which the `async` prohibition already implies.
+
+---
+
+## D-064 — Generics: definition-time checking, turbofish-only in expression position, bounded monomorphization — **SETTLED**
+
+Settles the **generics** gap in `PRE_PLANNING_REVIEW.md` §4 — the last
+frontend-blocking item. D-030 settled *declaration* syntax; everything below it
+was open.
+
+### What was already decided, and is unchanged
+
+`struct:Container<T>`, `func:extract_value<T>`, bounds as `<T: Renderable &
+Serializable>` with `&` combining (D-029, D-030). Parameters follow the name.
+Monomorphization is the implementation strategy. Object safety and coherence are
+`TRAITS_REFERENCE.md` §4.
+
+### 1. Generic bodies are checked at their definition, not at each instantiation
+
+**A generic body is type-checked once, treating each type parameter as an opaque
+type that satisfies exactly its declared bounds and nothing else.** Instantiation
+then checks only that the concrete arguments satisfy those bounds; it does not
+re-check the body.
+
+The prototype does the opposite, and the prototype's own bug log is the argument.
+`tests/bugs/bug403_fixed_generic_primitive_reassign_fail.npk` records it in
+detail:
+
+> *"the binding-property `isFixed` flag was dropped in `cloneAST` when the
+> monomorphiser cloned the generic body, and the specialised body was never
+> type-checked, so this reassignment slipped through silently."*
+
+The fix added `checkFixedReassignInSpecialized` — a re-check of the *clone*. That
+treats the symptom. `fixed` is a binding property of the generic body and is
+checkable without knowing `T` at all; under definition-time checking the error is
+caught once, at the definition, and no property of the source can be lost in a
+clone because no check depends on the clone.
+
+Three reasons this is the right side of the tradeoff here specifically:
+
+- **The single verification run.** Astrée analyses monomorphized output. Under
+  instantiation-time checking a generic body with *N* instantiations is *N*
+  separate things to establish, and a body can be correct for every instantiation
+  that happens to exist while being wrong in general. Checked once against its
+  bounds, it is established once.
+- **Errors land on the code that is wrong.** Instantiation-time checking reports
+  a fault in a generic body at the *caller*, who supplied a perfectly reasonable
+  type. That is the C++ template diagnostic experience, and it is a poor fit for a
+  language whose entire posture is that mistakes must be easy to see.
+- **An unbound body is an unstated contract.** If a body may do anything the
+  concrete type happens to support, the bound list stops describing the
+  requirement, and a later instantiation with a different type fails at a distance
+  from any change. Bounds become documentation rather than a checked interface.
+
+The cost is real and worth stating plainly: **a generic body may not use any
+capability its bounds do not declare.** Duck-typed templates are gone. That is
+the constraint that makes the body checkable, and the bound syntax to express it
+already exists.
+
+### 2. Value parameters are declared `comptime <type>:<name>`
+
+D-056 requires `Mutex<T, LEVEL>` with `LEVEL` a compile-time constant, and
+`TRAITS_REFERENCE.md` §3 does not mention value parameters at all. They exist:
+
+```nitpick
+struct:Mutex<T, comptime int32:LEVEL> = { … };
+
+Mutex<Config, 2>:cfg_lock;          // use site supplies the value
+```
+
+The declaration states the kind; the use site supplies type and value
+positionally.
+
+**Why `comptime` is required rather than bare `int32:LEVEL`.** Without a marker,
+`<T: Renderable>` and `<int32:LEVEL>` put the newly introduced name on *opposite
+sides of the same colon* — in the first the new name is on the left and the right
+is a bound, in the second the new name is on the right and the left is a type. A
+reader could not tell which identifier is being introduced without already
+knowing whether `Renderable` is a trait or a type. That is exactly the kind of
+context-dependent reading the blueprint philosophy exists to prevent.
+
+`comptime` removes it, uses an existing keyword with its existing meaning, leaves
+D-030's bound syntax untouched, and makes value parameters visibly heavier than
+type parameters — which matches how much rarer they are.
+
+### 3. In expression position, explicit type arguments are always `::<T>`
+
+| Position | Form | Example |
+|---|---|---|
+| **Type** | bare brackets | `Handle<Node<int64>>:h;` · `struct:Container<T>` |
+| **Expression** | turbofish, always | `extract_value::<int32>(c)` |
+| **`#`-builtin** | bare brackets | `#size_of<int32>()` · `#wild_ptr<T>(addr)` (D-020) |
+
+`TRAITS_REFERENCE.md` §3.2 previously made implicit `f<int32>(x)` the normal form
+with the turbofish as *"the fallback where that is ambiguous"*, resolved by
+unspecified *"lookahead"*. Both halves are struck.
+
+- **"Fallback where ambiguous" is a context-dependent spelling.** The author has
+  to know whether *this* call site happens to be ambiguous in order to know which
+  of two forms to write. One spelling that always works is strictly better than
+  two that divide a case space.
+- **"Lookahead" is not a specification.** It names a technique, not a rule, and
+  leaves the parser author to invent the boundary — precisely what
+  `AST_REFERENCE.md` §8 exists to prevent.
+
+**This costs almost nothing**, because type arguments are inferred at the
+overwhelming majority of call sites and neither form is written: `extract_value(c)`
+is the normal case. The turbofish is for the residue where inference genuinely
+cannot decide.
+
+**Why `#`-builtins keep bare brackets.** The `#` sigil is itself the
+disambiguator and it is visible in the token — `#size_of` cannot be a variable, so
+`<` after it is unambiguously a type-argument list. This is the same principle
+D-046 settled for `!`: a reader can tell which meaning applies from the token
+alone, without knowing what surrounds it. It is not an exception to the rule so
+much as the rule already being satisfied by the sigil.
+
+### 4. `>>` splitting is now confined to type-argument context
+
+`LEXICAL_REFERENCE.md` §5.2 requires the lexer to split `>>` into two `>` tokens
+"when the parser is in a type-argument context." §3 above makes that context
+precisely delimited: a type-argument list is opened by a type position or by
+`::<`, and nowhere else.
+
+Consequently `>>` is a right-shift **everywhere outside** a type-argument list,
+with no lookahead and no speculative parse. `Handle<Node<int64>>` splits;
+`x >> 2i32` does not; and there is no third case.
+
+### 5. `<T>` and `type:T` are different mechanisms and do not overlap
+
+The prototype has both, and `tests/bugs/bug166_comptime_generic_noncomptime_fail.npk`
+enforces the boundary — a `type:T` parameter in a non-`comptime` function is a
+compile error (COMPTIME-010).
+
+| | `<T>` | `type:T` |
+|---|---|---|
+| Kind | runtime generic | parameter to a `comptime` function |
+| Emits | one specialization per instantiation | **no code at all** |
+| Legal in | any function | `comptime` functions only |
+| Used for | generic data structures and algorithms | introspection — `#type_name(T)`, `#has_field(T, "f")` |
+
+These are not two ways to do one job. A `comptime func` is *evaluated* during
+compilation and produces a value; it never produces a specialized runtime
+function, so neither form can be substituted for the other. Both are kept, and
+the COMPTIME-010 restriction is kept with them. `TRAITS_REFERENCE.md` §4.2's
+third object-safety rule — no method with comptime type parameters — refers to
+this form.
+
+### 6. Monomorphization is bounded, deduplicated, and reversibly mangled
+
+**Depth.** Instantiation depth is capped at **64**, as the prototype already does
+(`generic_resolver.cpp:399`, `MAX_INSTANTIATION_DEPTH`). Exceeding it is a
+compile **error** with the instantiation stack printed, never a silent
+truncation. Recursive generic instantiation is otherwise non-terminating, and an
+unbounded expansion in the frontend is the same hazard D-057 bounded for macros —
+same problem, same answer.
+
+**Deduplication.** Instantiations are keyed by mangled name; a repeat request
+returns the existing specialization. The prototype already does this for structs
+via a `getStructType(mangledName)` lookup.
+
+**Cross-module.** A generic's body is part of what its module exports, since a
+using module must be able to instantiate it. Instantiation happens in the using
+module and identical specializations are folded at link time.
+
+**Mangling is readable and reversible.** The prototype emits
+`_Nitpick_M_<name>_<hash>_<types>` — both a hash and the canonicalized type
+names. **The hash is dropped.** A mangled symbol must map back to its source
+declaration by inspection, because an auditor reading a verification report or a
+disassembly has to do exactly that, and a hash makes it a lookup against a table
+that may not have survived. Symbol length is not a safety property; reversibility
+is.
+
+### 7. What does not exist
+
+- **No specialization.** There is no way to give one instantiation a different
+  body from another. Specialization makes the code that runs depend on the type
+  in a way the definition does not show, which is the same objection that removed
+  `(!)` in D-061 — the reader cannot see from the generic what a given
+  instantiation will do.
+- **No variance and no subtyping.** Nitpick has no inheritance, so
+  `Container<Derived>` and `Container<Base>` never arise as a question.
+  `dyn Trait` is the only type-erasing construct and is governed by object safety.
+- **No implicit conversion through a type parameter.**
+  `tests/adversnitpickl/type_system/generic_type_mismatch.npk` already pins this:
+  passing a `tbb8` where `identity<int8>` expects an `int8` is an error. A type
+  parameter binds to exactly one type.
+- **No duck-typed bodies.** Per §1 — a capability not in the bounds is not
+  available in the body.
+
+### Consequences
+
+- `TRAITS_REFERENCE.md` §3.2 is rewritten; the implicit-call-with-lookahead form
+  is struck.
+- `LEXICAL_REFERENCE.md` §5.2 gains the precise delimitation of type-argument
+  context.
+- `generic_resolver.cpp`'s `checkConstraints` / `validateConstraints` port across
+  as the *instantiation-side* check. The definition-side check is new work with
+  no prototype counterpart.
+- `checkFixedReassignInSpecialized` is **not** ported — the bug it patches cannot
+  occur once bodies are checked at their definition.
+- `comptime` is added to the generic-parameter grammar.

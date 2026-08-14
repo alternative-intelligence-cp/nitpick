@@ -203,22 +203,66 @@ func:process<T: Renderable & Serializable> = NIL(T:item) {
 > never shows a bounded generic at all, so the form above is written rather than
 > adopted.
 
-### 3.2 Instantiation
+### 3.1.1 Value parameters
 
-Generic functions instantiate implicitly through ordinary call syntax; the
-compiler uses lookahead to distinguish a generic call from a `<` comparison.
+Parameters may carry a compile-time **value** as well as a type, marked
+`comptime` (D-064). D-056's lock levels are the motivating case.
 
 ```nitpick
-int32:val = extract_value<int32>(my_container);
+struct:Mutex<T, comptime int32:LEVEL> = { … };
+
+Mutex<Config, 2>:cfg_lock;          // use site supplies type and value
 ```
 
-Where that is ambiguous, the turbofish `::<T>` is the fallback:
+> `comptime` is required rather than a bare `int32:LEVEL` because `<T: Renderable>`
+> and `<int32:LEVEL>` would otherwise put the newly introduced name on opposite
+> sides of the same colon — unreadable without already knowing whether the other
+> identifier is a trait or a type.
+
+### 3.2 Checking happens at the definition
+
+**A generic body is type-checked once**, treating each parameter as an opaque type
+satisfying exactly its declared bounds and nothing else. Instantiation checks only
+that the concrete arguments satisfy those bounds; the body is not re-checked
+(D-064).
+
+The consequence to know: **a body may not use any capability its bounds do not
+declare.** There is no duck typing. That restriction is what makes the body
+checkable once rather than once per instantiation — which matters directly,
+because Astrée analyses monomorphized output and a body correct for the
+instantiations that happen to exist may still be wrong in general.
+
+### 3.3 Instantiation
+
+Type arguments are **inferred** at the overwhelming majority of call sites, and
+nothing is written:
+
+```nitpick
+int32:val = extract_value(my_container);
+```
+
+Where inference cannot decide, explicit type arguments in **expression position
+are always the turbofish** (D-064):
 
 ```nitpick
 int32:val = extract_value::<int32>(my_container);
 ```
 
-### 3.3 Nested Generics
+| Position | Form |
+|---|---|
+| Type | bare brackets — `Handle<Node<int64>>:h;`, `struct:Container<T>` |
+| Expression | turbofish, always — `extract_value::<int32>(c)` |
+| `#`-builtin | bare brackets — `#size_of<int32>()`, `#wild_ptr<T>(addr)` (D-020) |
+
+> The earlier form — implicit `f<int32>(x)` with the turbofish as a *"fallback
+> where ambiguous"*, resolved by unspecified *"lookahead"* — is **struck**. A
+> fallback spelling requires the author to know whether this particular call site
+> is ambiguous before knowing which of two forms to write, and "lookahead" names
+> a technique rather than a rule. `#`-builtins keep bare brackets because the `#`
+> sigil is itself the disambiguator, visible in the token — the same principle
+> D-046 settled for `!`.
+
+### 3.4 Nested Generics
 
 Closing brackets need no separating space — the lexer splits `>>`.
 
@@ -226,9 +270,22 @@ Closing brackets need no separating space — the lexer splits `>>`.
 Handle<Node<int64>>:my_handle;
 ```
 
-> `>>` is also the right-shift operator. This is a **known lexer/parser
-> interaction** and must be handled explicitly rather than left to the
-> implementer (D-030).
+> `>>` is also the right-shift operator. A type-argument list is opened by a type
+> position or by `::<`, and nowhere else, so `>>` splits **only** inside one and is
+> a right-shift everywhere outside. No lookahead, no speculative parse, no third
+> case (D-064, narrowing the D-030 note).
+
+### 3.5 Monomorphization
+
+Instantiation depth is capped at **64**; exceeding it is a compile error with the
+instantiation stack printed, never a silent truncation. Instantiations are
+deduplicated by mangled name, a generic's body is exported with its module so
+using modules can instantiate it, and **mangled names are readable and
+reversible** — no hash — because an auditor reading a verification report has to
+map a symbol back to its declaration by inspection (D-064).
+
+There is **no specialization**: one instantiation cannot be given a different body
+from another.
 
 ### 3.4 Arenas Embedded in Generic Structs
 

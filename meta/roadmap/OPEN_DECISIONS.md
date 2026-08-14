@@ -34,7 +34,7 @@ avoid.
 
 | # | Item | Blocks | Source |
 |---|---|---|---|
-| 3 | **Generics** — nested generics, implicit call syntax, the `Type` keyword, monomorphization strategy. Declaration syntax alone is resolved. D-056's `Mutex<T, LEVEL>` already commits to a const-generic parameter, so this is load-bearing today. | parser, AST, type checker, and every `<T>` type in the stdlib | `PRE_PLANNING_REVIEW.md` §4; `SPEC_GAPS` §3 |
+| ~~3~~ | ~~**Generics**~~ — **settled by D-064.** Bodies checked at their definition against bounds alone; turbofish is the only expression-position form, which confines `>>`-splitting to a delimited context; `comptime` value parameters added for D-056's lock levels; monomorphization depth-capped at 64, deduplicated, reversibly mangled with no hash. No specialization, no variance, no duck-typed bodies. | — | `PRE_PLANNING_REVIEW.md` §4; `SPEC_GAPS` §3 |
 | 4 | **`move` memory qualifier** — present in the `MemoryQualifier` production, specified nowhere. | lexer/parser; ownership rules; channel `send` | `LEXICAL_REFERENCE.md` open items |
 | 5 | **`opaque` declaration form** — `struct \| opaque struct` versus the standalone `opaque:DatabaseHandle;`. Two spellings for one concept; blueprint philosophy says pick one. | parser | conflict 49 |
 | 6 | **LBIM sticky ERR** — `int1024`…`int4096` are specified to propagate a sticky ERR sentinel, which makes them twisted types under D-036's own definition while wearing an `int` name. Three ways out are laid out in Part R. | builtin-type table; `ncrypto` port (34,925 lines) | Part R |

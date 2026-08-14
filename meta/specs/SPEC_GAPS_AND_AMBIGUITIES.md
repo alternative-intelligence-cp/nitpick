@@ -63,6 +63,14 @@ With the removal of the borrow checker, the exact mechanism for memory lifecycle
 > - **Naming:** `tfp` is the standard fixed-width type without dimensional analysis. The specific type that supports dimensional analysis is `dim` (e.g., `dim256<Joules>`).
 > - **UFCS:** Nitpick does NOT support object-oriented method calls (no `s.trim()`). All operations are standard function calls `string_trim(s)` or `Vec.len(v)`. The `.` operator is strictly for struct field access.
 > - **Generics Syntax:** Declarations use the standard bracket syntax next to the name: `struct:Name<T> = { ... }` or `func:my_func<T> = ...`. (The turbofish `::<T>` is used for invocations).
+>
+> **Extended by D-064.** This resolved declaration syntax only. The turbofish is
+> now the *only* expression-position form rather than one of two, generic bodies
+> are checked at their definition against their bounds rather than per
+> instantiation, `comptime` value parameters are added, and monomorphization is
+> bounded at depth 64 with reversible mangling. Note the UFCS resolution directly
+> above is **wrong** — D-006 retains UFCS and method-call syntax; that line is an
+> error introduced when this document was authored.
 
 ## 4. Control Flow & Syntax
 *   **Exhaustiveness in `pick`:** Does the compiler enforce that a `pick` (match) block covers all possible values, requiring a `(*)` default case if not?

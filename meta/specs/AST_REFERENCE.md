@@ -58,6 +58,23 @@ FunctionDecl
   body         : BlockStmt?            // absent in trait declarations
 ```
 
+```
+GenericParam
+  name       : Ident
+  kind       : Type | ComptimeValue     // D-064
+  value_type : TypeNode?                // ComptimeValue only — comptime int32:LEVEL
+  bounds     : TypeNode[]               // Type only — combined with & (D-029)
+```
+
+- **Two kinds of parameter.** A bare `<T>` is a type parameter and may carry
+  bounds; `<comptime int32:LEVEL>` is a compile-time value parameter and carries a
+  `value_type` instead. The `comptime` marker is what keeps the two readable
+  apart, since otherwise the introduced name would sit on opposite sides of the
+  same colon in the two forms (D-064).
+- **Not to be confused with `type:T`**, which is an ordinary `ParamDecl` in a
+  `comptime` function, legal nowhere else, and produces no specialization
+  (D-064 §5).
+
 - **`return_type` is the success type.** Every function returns `Result<T>`
   implicitly, except `main` and `failsafe`. The AST stores the declared type; the
   wrapping is a semantic-phase concern, not a syntactic one.

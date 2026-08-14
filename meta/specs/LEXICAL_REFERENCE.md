@@ -171,6 +171,12 @@ when the parser is in a type-argument context.
 This is a known interaction rather than an accident, and it is stated here so it
 is not rediscovered during implementation (D-030).
 
+**A type-argument context is opened by a type position or by `::<`, and nowhere
+else** (D-064). Explicit type arguments in expression position are always written
+with the turbofish, so there is no case in which the lexer must guess: `>>`
+splits inside a type-argument list and is a right-shift everywhere outside one.
+No lookahead and no speculative parse are required.
+
 ### 5.3 The two meanings of `!`
 
 `!` is **lexically** disambiguated by position — a reader can tell which meaning

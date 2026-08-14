@@ -218,7 +218,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > **Integer→pointer casting is illegal.** It is suspended only by
 > `#wild_ptr<T>(addr)` in `wild` context (D-019).
 | `:` | Type Annotation | Used in variable declarations and ternary separators. | `int32:x` |
-| `::<T>` | Turbofish | Provides explicit type parameters to generic functions. | `func::<int32>()` |
+| `::<T>` | Turbofish | Explicit type arguments in **expression position** — the only form there (D-064). Bare `<T>` is type-position only. | `func::<int32>()` |
 | `<T>?` | Optional Type | Declares a type as Optional. | `int64?` |
 
 ---
