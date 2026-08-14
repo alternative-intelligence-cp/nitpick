@@ -127,8 +127,6 @@ Operator ::= "+" | "-" | "*" | "/" | "%" | "++" | "--"
            | "?" | "?." | "??" | "?!" | "?|" | "_?" | "_!" | "_~"
            | "!!!" | "|>" | "<|" | ".." | "..." | "..*" | "..^"
 
-ModifierToken ::= "!!"        /* not standalone — see below */
-
 CompilerSigil ::= "#"
 
 Punctuation   ::= "(" | ")" | "{" | "}" | "[" | "]" | "." | "," | ":" | ";" | "`"
@@ -173,15 +171,26 @@ when the parser is in a type-argument context.
 This is a known interaction rather than an accident, and it is stated here so it
 is not rediscovered during implementation (D-030).
 
-### 5.3 `!!` is a modifier token, not an operator
+### 5.3 The two meanings of `!`
 
-`FORMAL_DRAFT` 01 listed `!!` among the operators. It is not one — it is a lexer
-token that exists solely so `sys!!` and `asm!!` can be lexed. The prototype is
-explicit: `lexer.cpp:499` emits `TOKEN_BANG_BANG` with the comment
-`// !! (sys!! modifier)`.
+`!` is **lexically** disambiguated by position — a reader can tell which meaning
+applies from the token alone, without knowing what surrounds it (D-046):
 
-`!!!` **is** a genuine operator — the failsafe abort, `!!! errCode`. Note that
-after D-001 removed `sys!!!` and `asm!!!`, `!!!` has exactly one meaning again.
+| Position | Meaning | Forms |
+|---|---|---|
+| **leading** | negation | `!x`, `!=` |
+| **trailing or repeated** | unchecked / emphatic | `?!`, `=>!`, `_!`, `!!!` |
+
+**`!!` no longer exists.** After D-001 removed `sys!!!` and `asm!!!`, the tier
+marker distinguished nothing: `asm` is now the only assembly form, and the
+full-tier syscall is spelled **`sys_full`** — a word that states the tier as
+clearly as `!!` and matches `libn`'s existing `sys_safe` / `sys_full` naming.
+
+**Macro invocation is `#name(args)`**, not `name!(args)` (D-046). That was the
+one genuine collision — `foo!(x)` is indistinguishable from an emphatic
+operation and carries no positional cue. A macro is a compile-time construct
+addressed to the compiler, so it belongs under the `#` sigil alongside
+`#size_of<T>` and `#[derive(…)]`.
 
 ## 6. Literals
 

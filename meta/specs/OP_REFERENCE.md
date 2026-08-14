@@ -157,6 +157,22 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `_~` | Discard | Desugars to `discard(expr)` — suppresses unused variable warnings. | `_~ unused;` |
 | `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)`. | `!!! errCode;` |
 
+> ### The two meanings of `!` (D-046)
+>
+> | Position | Meaning | Forms |
+> |---|---|---|
+> | **leading** | negation | `!x`, `!=` |
+> | **trailing or repeated** | unchecked / emphatic | `?!`, `=>!`, `_!`, `!!!` |
+>
+> The distinction is **lexical, not contextual** — which meaning applies is
+> visible from the token itself, without knowing the operand types or the
+> surrounding code. That is what separates it from the `->` problem D-006 fixed,
+> where one token in one position meant different things depending on its operand.
+>
+> **`!!` no longer exists** and **macro invocation is `#name(args)`**, not
+> `name!(args)` — that spelling was indistinguishable from an emphatic operation
+> and carried no positional cue.
+
 ---
 
 ## 6. Pointers & Memory

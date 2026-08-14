@@ -2575,7 +2575,7 @@ constants; they need grouping into types rather than inventing from scratch.
 
 ---
 
-## D-045 — Variadic functions: format strings are checked at compile time — **PROPOSED**
+## D-045 — Variadic functions: format strings are checked at compile time — **SETTLED**
 
 **This blocks the variadic collapse and needs settling before it starts.**
 
@@ -2633,11 +2633,209 @@ vulnerability. Code needing dynamic output composes it explicitly with
 pointers, so a type mismatch corrupts memory rather than merely printing
 nonsense. If anything, the case for compile-time checking is stronger there.
 
-### What needs confirming
+### Settled
 
-1. Format-checked compile-time variadics for printf/scanf — recommended.
-2. Whether `..*` stays homogeneous-only for everything else — recommended, since
-   the 27 remaining functions need nothing more.
-3. Whether a runtime-format escape hatch exists at all. **Recommendation: no.**
-   `strbuf` covers the legitimate cases and an escape hatch here reintroduces the
-   exact hazard being removed.
+1. **Format-checked compile-time variadics** for the printf and scanf families.
+2. **`..*` stays homogeneous-only** everywhere else — the remaining 27 functions
+   need nothing more.
+3. **No runtime-format escape hatch.** `strbuf` covers the legitimate dynamic
+   cases type-safely, and an escape hatch here would reintroduce precisely the
+   hazard being removed.
+
+### The mechanism: a `fmt` parameter type
+
+The requirement lives in the **type**, not in a new call syntax:
+
+```nitpick
+pub func:printf = int64(fmt:f, ..*);
+```
+
+- **`fmt` is inhabited only by compile-time string literals.** A runtime `string`
+  cannot be passed, so a format cannot be constructed, stored, or received as
+  data. This is what forecloses the vulnerability class rather than mitigating it.
+- The compiler **parses the literal and checks each specifier against the
+  corresponding argument's type**. Wrong type, too few arguments, or too many is a
+  **compile error**.
+- Call sites look ordinary — `printf("count: %d\n", n)` — with no sigil and no
+  macro invocation.
+
+Putting the constraint in the parameter type keeps it **visible in the signature**
+and consistent with how the rest of the language works: `tbb` versus `int32`
+selects overflow behaviour, `fd` versus `int32` selects what operations are legal,
+and `fmt` versus `string` selects whether a value may be computed at runtime.
+
+Two alternatives were considered and rejected. A compiler-directive spelling
+(`#printf(…)`, consistent with D-020) puts a sigil on every print statement in the
+language. A macro spelling (`printf!(…)`, per `FORMAL_DRAFT` 08.5) overloads `!`,
+which already means unchecked or emphatic in `?!`, `=>!`, and `!!!`.
+
+> **Pre-existing issue this surfaced:** `FORMAL_DRAFT` 08.5 specifies macro
+> invocation as `name!(args)`, so `!` already carries two unrelated meanings in
+> the language — macro invocation, and unchecked/emphatic. That is a blueprint
+> violation independent of this decision and needs its own resolution.
+
+---
+
+## D-046 — Resolving `!`'s multiple meanings — **SETTLED**
+
+`!` currently carries **three** unrelated meanings. Enumerated:
+
+| Form | Meaning | Position |
+|---|---|---|
+| `!x` | logical NOT | leading, standalone |
+| `!=` | inequality | leading, compound |
+| `?!` | emphatic unwrap → `failsafe` | **trailing** |
+| `=>!` | unchecked cast | **trailing** |
+| `_!` | raw unwrap shorthand | **trailing** |
+| `!!!` | failsafe abort | **repeated** |
+| `sys!!`, `asm!!` | full-tier / supervised modifier | **repeated** |
+| `name!(args)` | **macro invocation** | trailing on an identifier |
+
+Three groups: **negation**, **unchecked/emphatic**, and **macro invocation**.
+
+### 1. Macros move to `#name(args)` — the actual violation
+
+`name!(args)` is the genuine collision: `foo!(x)` is visually indistinguishable
+from an emphatic operation, and it is the only one of the three that has no
+positional cue.
+
+Macros become **`#name(args)`**, unified with builtins under D-020's
+compiler-directive sigil:
+
+```nitpick
+macro:assert_positive = (x) { … };      // definition unchanged
+#assert_positive(count);                 // invocation
+```
+
+This is correct rather than merely convenient. A macro **is** a compile-time
+construct addressed to the compiler, which is exactly what `#` denotes — the same
+category as `#size_of<T>` and `#[derive(…)]`. A caller does not need to know
+whether `#foo(x)` is compiler-provided or user-defined; both expand at compile
+time and both are type-checked after expansion.
+
+**Cost: zero.** No macros are defined anywhere in the ecosystem — not in `libn`,
+`stdlib`, `ncrypto`, or `nlists` — and there are no real call sites. This is
+free to change now and would not be later.
+
+### 2. `!!` is eliminated
+
+After D-001 removed `sys!!!` and `asm!!!`, the `!!` tier marker is nearly
+vestigial:
+
+| Now | Becomes | Why |
+|---|---|---|
+| `asm!!<T>(…)` | **`asm<T>(…)`** | it is the *only* remaining assembly form, so the tier marker distinguishes nothing |
+| `sys!!(…)` | **`sys_full(…)`** | a word states the tier as clearly as `!!` and is equally greppable |
+
+`sys` versus `sys_full` also matches `libn`'s own naming — its wrappers are
+already `sys_safe` and `sys_full`.
+
+This removes `!!` from the language entirely.
+
+### 3. What remains, and the rule
+
+After the above, `!` has **two** meanings, distinguished **lexically** rather than
+by context:
+
+> **Leading `!` negates** — `!x`, `!=`.
+> **Trailing or repeated `!` marks unchecked or emphatic** — `?!`, `=>!`, `_!`, `!!!`.
+
+This is a real rule and it should be **stated in `OP_REFERENCE.md`** rather than
+left for a reader to infer. It is weaker than "one symbol, one meaning", and the
+honest position is that it is a compromise rather than a clean result.
+
+**Recommendation: accept it.** The alternatives are worse:
+
+- Renaming negation to `not` breaks up the `&&` / `||` / `!` family, which hangs
+  together as a set.
+- Renaming the emphatic family loses genuinely good notation — `!` reads as
+  urgency, and `?!` / `!!!` convey their severity at a glance, which is facet 2
+  of the blueprint philosophy working as intended.
+
+Crucially, the distinction is **lexical, not contextual**: a reader can tell which
+meaning applies from the token itself, without knowing what surrounds it. That is
+categorically different from the `->` problem D-006 fixed, where the *same* token
+in the *same* position meant different things depending on the operand's type.
+
+### Consequences
+
+- `LEXICAL_REFERENCE.md` — remove `!!` from `ModifierToken`; macros use `#`.
+- `OP_REFERENCE.md` — state the leading/trailing rule explicitly.
+- `BUILTIN_REFERENCE.md` — `asm!!` becomes `asm`; `sys!!` becomes `sys_full`.
+- `FORMAL_DRAFT` 08.5 (macro invocation) and 08.2 / 10.2 (syscall tiers) need
+  updating on adoption.
+- `nlibc`'s `sys_full` wrapper name now matches the language builtin — check for
+  shadowing.
+
+---
+
+## D-047 — `nlibc` drops its syscall wrapper layer; the whitelist policy moves into the builtin — **SETTLED**
+
+Surfaced by D-046's `sys!!` → `sys_full` rename, which collided with an existing
+`libn` function of the same name. Investigating that turned up something larger.
+
+### `libn`'s syscall foundation is built on a removed construct
+
+```nitpick
+pub func:sys_full = int64(int64:nr, int64:a1, …, int64:a6) {
+    int64:ret = sys!!!(nr, a1, a2, a3, a4, a5, a6);   // D-001 removed this tier
+    return err_from_syscall(ret);
+};
+```
+
+**Every syscall in `libn` reaches the kernel through `sys!!!`**, the raw tier
+D-001 deleted for returning a bare `int64` and accepting an arbitrary expression
+as the syscall number. `sys_safe` sits on the same foundation.
+
+### The wrapper layer becomes redundant
+
+The language builtins now do what these wrappers were built to do:
+
+| `libn` wrapper | Builtin | Verdict |
+|---|---|---|
+| `sys_full` (7-arg) + `sys_full1`…`sys_full5` | `sys_full(CONST, ..*int64[])` | **delete** — the builtin returns `Result<int64>` directly |
+| `sys_safe` (whitelist check) + `sys1`…`sys5` | `sys(CONST, ..*int64[])` | **delete** — but see below |
+| `err_from_syscall` | — | **delete** — the builtin already produces `Result.error`; converting a negative return by hand is exactly the double-encoding D-012 objected to |
+
+So the syscall layer collapses to **nothing**: callers use the builtins directly.
+That is a larger reduction than the variadic collapse alone implied — roughly a
+dozen functions plus their error-conversion helper disappear rather than being
+ported.
+
+### But `sys_safe` holds policy the builtin leaves unspecified
+
+`BUILTIN_REFERENCE.md` §3 describes `sys` as "restricted to a curated whitelist"
+without ever saying **which** syscalls. `libn`'s `sys_safe` is that whitelist,
+written out — and it is more specific than a list of numbers:
+
+- an explicit enumeration covering read/write/open/close/stat/lseek, the epoll and
+  select family, and the socket family;
+- **per-argument filtering**: `SYS_IOCTL` is admitted only for three specific
+  request codes (`TCGETS` among them), rejecting everything else with `-EINVAL`.
+
+That second point is real safety policy. An `ioctl` whitelist that admits the call
+but not arbitrary request codes is doing meaningful work, and it would be lost if
+the wrapper were simply deleted.
+
+**The policy is extracted into the `sys` builtin's specification** before the
+wrapper is removed. `sys_safe` is the input to that specification, not something
+to discard — the builtin's whitelist must be written down, including the
+argument-level constraints, and the extraction reviewed against the original.
+
+### Ordering
+
+This precedes the variadic collapse for the `sys` families. `VARIADIC_COLLAPSE.md`
+lists `sysN` (5) and `sys_fullN` (5) as collapsing to two functions; they instead
+**collapse to zero**. Doing the collapse first would mean carefully rewriting
+functions about to be deleted — the same trap the collapse itself was meant to
+avoid.
+
+### Consequences
+
+- `VARIADIC_COLLAPSE.md` — `sys`/`sys_full` move from "collapse to 2" to "delete".
+- `BUILTIN_REFERENCE.md` §3 — the `sys` whitelist must be specified in full,
+  including per-argument constraints, sourced from `sys_safe`.
+- `nlibc` — `syscall/syscall.npk` (680 lines, 63 public functions) shrinks
+  substantially; audit what remains once the wrappers go.
+- Every `libn` call site reaching a syscall through `sys_safe` / `sys_full` is
+  rewritten to the builtin.

@@ -72,8 +72,14 @@ Direct access to operating system syscalls.
 | Built-in | Return | Description |
 |---|---|---|
 | `sys(CONST, args...)` | `Result<int64>` | Safe-tier syscall. Restricted to curated whitelist. Returns `tbb32` error codes (negative for system errors). |
-| `sys!!(CONST, args...)` | `Result<int64>` | Full-tier syscall. Allows any OS syscall. Returns `tbb32` error codes. |
+| `sys_full(CONST, args...)` | `Result<int64>` | Full-tier syscall. Allows any OS syscall. Returns `tbb32` error codes. |
 
+> **`sys!!` is renamed `sys_full`** and **`asm!!` is renamed `asm`** (D-046).
+> After the raw tiers were removed the `!!` marker distinguished nothing — `asm`
+> is the only assembly form left — and `sys_full` states the tier in a word,
+> matching `libn`'s existing `sys_safe` / `sys_full` naming. `!!` no longer
+> exists in the language.
+>
 > **`sys!!!` is removed** (D-001). The raw tier returned a bare `int64`, bypassing
 > `Result<T>` entirely, and permitted an arbitrary expression as the syscall
 > number — an unchecked failure in the place it is most likely to be
@@ -91,6 +97,7 @@ compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
 | Form | Purpose |
 |---|---|
 | `#name<T>(...)` | builtin producing a value |
+| `#name(...)` | **macro invocation** (D-046) — replaces `name!(args)` |
 | `#[name(...)]` | attribute annotating a declaration |
 
 > **`@` is never a builtin prefix.** `@` is the address-of operator and nothing
@@ -116,16 +123,16 @@ Nitpick supports direct inline assembly for `x86_64` and `aarch64` targets.
 
 | Built-in | Return | Description |
 |---|---|---|
-| `asm!!<T>(arch, code, constraints, args)` | `Result<T>` | Executes assembly and wraps the output in `Result<T>`. Negative integer returns are implicitly treated as errors. |
+| `asm<T>(arch, code, constraints, args)` | `Result<T>` | Executes assembly and wraps the output in `Result<T>`. Negative integer returns are implicitly treated as errors. |
 
 > **`asm!!!` is removed** (D-001), for the same reason as `sys!!!` — raw inline
 > assembly returning an unwrapped value is precisely where an unchecked failure
-> is most dangerous.
+> is most dangerous. The surviving form is spelled **`asm`** (D-046).
 
 **Example:**
 ```nitpick
 // Executing x86_64 assembly, returning a Result<int32>
-Result<int32>:val = asm!!<int32>(
+Result<int32>:val = asm<int32>(
     "x86_64", 
     "mov %1, %0\nadd $1, %0", 
     "=r,r", 
