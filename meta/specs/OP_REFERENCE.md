@@ -13,41 +13,57 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 | | Level | Operators |
 |---|---|---|
 | 1 | Postfix | `++` `--` `()` `[]` `.` `?.` |
-| 2 | Pipeline | `\|>` `<\|` |
-| 3 | Cast | `=>` `=>!` |
-| 4 | Unary | `!` `~` `-` `@` `<-` `$$i` `$$m` |
-| 5 | Multiplicative | `*` `/` `%` |
-| 6 | Additive | `+` `-` |
-| 7 | Shift | `<<` `>>` |
-| 8 | Range / Spread | `..` `...` `..*` `..^` |
-| 9 | Relational | `<` `<=` `>` `>=` `<=>` |
-| 10 | Equality | `==` `!=` |
-| 11 | Bitwise AND | `&` |
-| 12 | Bitwise XOR | `^` |
-| 13 | Bitwise OR | `\|` |
-| 14 | Logical AND | `&&` (short-circuiting) |
-| 15 | Logical OR | `\|\|` (short-circuiting) |
-| 16 | Null Coalescing | `??` |
-| 17 | Ternary / Defaults | `is` `?\|` `defaults` |
-| 18 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
+| **2** | **Result unary** *(right-assoc)* | **`raw` `_!`** · **`drop` `_?`** · **`await`** · **`relay` `_^`** |
+| 3 | Pipeline | `\|>` `<\|` |
+| 4 | Cast | `=>` `=>!` |
+| 5 | Unary | `!` `~` `-` `@` `<-` `$$i` `$$m` |
+| 6 | Multiplicative | `*` `/` `%` |
+| 7 | Additive | `+` `-` |
+| 8 | Shift | `<<` `>>` |
+| 9 | Range / Spread | `..` `...` `..*` `..^` |
+| 10 | Relational | `<` `<=` `>` `>=` `<=>` |
+| 11 | Equality | `==` `!=` |
+| 12 | Bitwise AND | `&` |
+| 13 | Bitwise XOR | `^` |
+| 14 | Bitwise OR | `\|` |
+| 15 | Logical AND | `&&` (short-circuiting) |
+| 16 | Logical OR | `\|\|` (short-circuiting) |
+| 17 | Null Coalescing | `??` |
+| 18 | Ternary / Defaults | `is` `?\|` `defaults` |
+| 19 | Assignment | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` |
+
+> **Level 2 is new (D-081).** `raw`, `drop`, `await`, and `relay` previously
+> appeared in **no** level, leaving their binding undefined — whether
+> `raw a.eq(b)` takes the receiver or the call, whether `raw f() => int32` casts
+> the `Result` or the value. The position is forced, not chosen: looser than
+> Postfix so the operand is the whole call; tighter than Cast and Pipeline so it
+> is the *value* that gets cast or piped, a `Result` being meaningless to either.
+> `discard` / `_~` is absent because D-060 makes it a statement.
+
 
 **Corrections against `FORMAL_DRAFT` 04 §4.2:**
 
 - **`->` removed from level 1.** It was listed as a postfix member-access
   operator; `->` is type-position only, and `.` handles all member access with
   automatic dereference (D-006).
-- **`=>!` added to level 3.** Only `=>` was listed, but both are cast operators
-  and they must share a precedence level (D-021).
-- **`#` removed from level 4.** It was the pin operator; pinning is obsolete
+- **`=>!` added to the Cast level** (now level 4). Only `=>` was listed, but both
+  are cast operators and they must share a precedence level (D-021).
+- **`#` removed from the Unary level** (now level 5). It was the pin operator; pinning is obsolete
   without a collector, and `#` is now the compiler-directive sigil (D-020).
 
 ### 0.1 Expression semantics
 
-- **Assignment is an expression** and evaluates to the assigned value, so
-  `int32:y = (x = 5i32) + 2i32;` sets `x` to 5 and `y` to 7.
-  > Assignment is nonetheless **rejected inside an `if` condition** — the
-  > condition must be a strict `bool`, and `if (x = 3)` is a compile error
-  > (`NITPICK-IF-002`). Use `==`.
+- **Assignment is a statement, not an expression** (D-060). It yields nothing, so
+  `int32:y = (x = 5i32) + 2i32;` does not parse.
+  > ⚠️ **Corrected.** A previous revision stated the opposite — *"assignment is an
+  > expression and evaluates to the assigned value"* — and gave that example as
+  > working. D-060 settled the statement/expression split against `FORMAL_DRAFT`
+  > 04 §4.1 and made assignment a statement, which is also what the prototype
+  > does.
+  >
+  > A consequence worth keeping: `if (x = 3)` needs no dedicated rule rejecting
+  > it. It is **not expressible**, so `NITPICK-IF-002` describes a diagnostic for
+  > a program that cannot be written. Conditions must still be a strict `bool`.
 - **`&&` and `||` short-circuit** and require strictly boolean operands.
 - **`<=>`** (spaceship) yields `int32`: `-1`, `0`, or `1`.
 - **`?|` / `defaults`** is a scoped fallback for an entire expression chain, where
@@ -172,6 +188,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `?\|` | Defaults | Desugars to the `defaults` keyword at parse time. | `expr ?\| default;` |
 | `_?` | Drop | Desugars to `drop expr` — discards the Result without checking it. | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unsafely bypasses error checking. | `val = _! my_func();` |
+| **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |
 | `_~` | Discard | Desugars to `discard(expr)` — suppresses unused variable warnings. | `_~ unused;` |
 | `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)`. | `!!! errCode;` |
 

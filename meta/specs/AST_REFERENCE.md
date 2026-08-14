@@ -282,6 +282,14 @@ the parse path — so it is recorded here rather than left to the semantic phase
 | `DefaultsExpr` | `expr`, `fallback` | `?\|` / `defaults` |
 | `RawUnwrapExpr` | `expr` | `raw e` / `_! e` |
 | `DropExpr` | `expr` | `drop e` / `_? e` |
+| **`RelayExpr`** | `expr` | **`relay e` / `_^ e`** (D-080) — on error, returns the same code from the enclosing function; otherwise yields `.value` |
+
+- **`RelayExpr` is a normal exit path**, so `defer` runs on the error branch —
+  unlike `EmphaticUnwrapExpr`, which traps and runs nothing (D-014, amended).
+- It is **illegal in `main` and `failsafe`**, the two functions that return a bare
+  `int32` and leave through `exit`, so there is no `Result` to relay into.
+- These five, plus `await`, occupy **precedence level 2** (D-081); they had no
+  level at all before.
 
 ## 3.5 Casts
 

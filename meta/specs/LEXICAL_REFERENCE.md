@@ -57,7 +57,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "when" | "then" | "end" | "pick" | "fall" | "where"
                       | "give" | "break" | "continue" | "return" | "pass"
                       | "fail" | "exit" | "raw" | "drop" | "nodrop" | "ok"
-                      | "defaults" | "discard" | "move"
+                      | "defaults" | "discard" | "move" | "relay"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "invariant" | "fails" | "on" | "with" | "never"
@@ -112,6 +112,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | **`stream`, `process`, `pipe`, `debug`, `log` removed** | D-074 — all five were reserved and **defined nowhere**; `TYPE_REFERENCE` skips §24, which is where `stream` presumably went. A reserved word that names nothing costs userland an identifier and gives a reader a keyword they cannot look up. Same reasoning as D-041's 35 collection keywords. The I/O model is `IO_REFERENCE.md` and needs no language syntax. |
 | **`binary` removed** | D-074 — `{ptr, i64 length}` is *identical* to a slice (D-070), with identical non-owning behaviour and sub-ranging. Its remaining distinction, immutability, is a **binding** property in Nitpick, not a type property, so an immutable byte view is `fixed uint8[]`. Redundant twice over. `buffer` is retained: a slice cannot own. |
 | **`move` moved** from `MemoryQualifier` to `ControlFlow` | D-065 — it is not a qualifier. `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`, and it belongs beside the other ownership keywords `drop` and `nodrop`. |
+| **`relay` and `_^` added** | D-080 — the language had **no way to propagate an error**. With every function returning `Result<T>`, propagation is the most common operation there is, and its absence pushed callers toward `raw` (bypasses the discipline), `?!` (escalates a recoverable error to shutdown), or `?` with a default (silent success). `relay` forwards the code verbatim and runs `defer`. |
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 
@@ -126,7 +127,7 @@ Operator ::= "+" | "-" | "*" | "/" | "%" | "++" | "--"
            | "&" | "|" | "^" | "~" | "<<" | ">>"
            | "->" | "<-" | "=>" | "=>!"
            | "@" | "$" | "$$i" | "$$m"
-           | "?" | "?." | "??" | "?!" | "?|" | "_?" | "_!" | "_~"
+           | "?" | "?." | "??" | "?!" | "?|" | "_?" | "_!" | "_~" | "_^"
            | "!!!" | "|>" | "<|" | ".." | "..." | "..*" | "..^"
 
 CompilerSigil ::= "#"

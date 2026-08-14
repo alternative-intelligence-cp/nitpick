@@ -3938,8 +3938,12 @@ position.
 Literals, identifiers, unary/binary/comparison/logical operators, calls, member
 access, indexing, casts (`=>`, `=>!`), address-of and dereference, the ternary
 `is (cond) : a : b`, range and spread, the `$` iteration variable, string
-interpolation, `await`, macro invocation, `comptime(expr)`, and **`pick` whose
-arms `give`** (D-059).
+interpolation, `await`, **`raw`**, **`drop`**, **`relay`** *(D-080)*, macro
+invocation, `comptime(expr)`, and **`pick` whose arms `give`** (D-059).
+
+> `raw` and `drop` were **missing from this enumeration** and should always have
+> been in it — `int32:y = raw f();` is plainly an expression. Corrected alongside
+> the addition of `relay`.
 
 Everything else is a statement and yields nothing: `if`, `while`, `for`, `loop`,
 `till`, `when`, `pick` without `give`, assignment, `defer`, `pass` / `fail` /
@@ -5379,3 +5383,126 @@ second, independently obtained stage 0 and confirm the stage 2 outputs match. It
 is not required today — the prototype is our own code on our own machine — and it
 is recorded here so that the option is understood before it is needed rather than
 discovered during a trial.
+
+---
+
+## D-080 — `relay` propagates an error to the caller — **SETTLED**
+
+Nitpick had **no way to propagate an error.** The complete `Result` surface was
+`?` (unwrap with a *mandatory* default), `??`, `?!` (trap to `failsafe`), `?.`,
+`?|`, `_?` / `drop`, `_!` / `raw`, and `!!!`; the return forms were `pass`,
+`fail`, and the literal `return Result{…}`. Nothing meant *"if this is an error,
+return that error to my caller."*
+
+Verified against the prototype before being called a gap: `token.h` has
+`TOKEN_QUESTION`, `TOKEN_QUESTION_BANG`, `TOKEN_QUESTION_PIPE`, and
+`TOKEN_UNDERSCORE_QUESTION`, and nothing else in the family.
+
+### Why the absence is a safety problem, not an ergonomic one
+
+In a language where **every function returns `Result<T>`**, propagation is the
+single most common operation, and hand-writing it costs three or four lines at
+every call site. The three convenient alternatives are all worse:
+
+| Reached for instead | What it actually does |
+|---|---|
+| `raw` / `_!` | bypasses the `Result` discipline entirely — the one escape hatch the language has |
+| `?!` | escalates a **recoverable** error into whole-program shutdown |
+| `?` with a default | substitutes a value for an error — the D-002 failure mode, silent success |
+
+So the missing operator applies steady pressure toward exactly the constructs the
+safety case exists to make rare.
+
+**The evidence that hand-writing does not hold up**, measured across the
+ecosystem: `libn` forwards the original error code in **92 of 126** sites — mostly
+right. The prototype's own standard library forwards it in **0 of 19**; every one
+is `fail 1;`, a fabricated code that discards what actually went wrong.
+
+That second number is the finding. A mechanism that must be written by hand at
+every call site gets written wrong some of the time, and when it is wrong the code
+reaching `failsafe` did not come from the fault. D-014 rests on the opposite —
+*"the person who knows the real conditions is the application author"* — and a
+handler cannot distinguish an out-of-memory from a device fault if every layer
+rewrote the code to `1`.
+
+### The form
+
+```nitpick
+int32:v = relay parse(s);        // keyword
+int32:v = _^ parse(s);           // shorthand
+```
+
+- **If the operand is an error**, the enclosing function returns immediately with
+  `Result{ value: zero, error: <the same code, verbatim> }`.
+- **Otherwise** the expression evaluates to `.value`.
+
+`relay` joins `raw` / `_!`, `drop` / `_?`, and `discard` / `_~` as a keyword with
+an underscore-family shorthand — the family of unary operations on a `Result`.
+
+> **On the choice of `^`.** `..^` already uses the character, for spread. The
+> objection is worth stating rather than hiding: the family prefix — `..` or `_` —
+> is what names the family, and the trailing character discriminates *within* it,
+> so `^` is not carrying a global meaning that two uses would contradict. Within
+> the `_` family it reads as upward, to the caller, which is what the operation
+> does.
+
+**`relay` rather than `try`.** `try` belongs to languages with exceptions, and
+Nitpick has none; the word would import an expectation of catching that nothing
+here provides. `relay` states the actual behaviour — forward it onward,
+unaltered — and sits naturally beside `pass` and `fail` as the third thing that
+can go back to a caller.
+
+### It is a normal exit path
+
+**`defer` runs.** `relay` is an ordinary return, not a trap, so it belongs in
+D-014's list of paths that execute `defer` — *"scope exit, `return`, `pass`,
+`fail`, and `exit`"* — which is **amended to include `relay`**.
+
+This distinguishes it sharply from `?!`, which traps and therefore runs nothing.
+
+It also leaves **no `unknown` taint**: on the success path the value is a real
+value that was checked, unlike `raw`, which produces a value that was not.
+
+### Where it is illegal
+
+**In `main` and `failsafe`.** They return a bare `int32` and leave through
+`exit`, so there is no `Result` for an error to be relayed into. A compile error,
+and a precise one — those are exactly the two functions D-013 exempts from the
+universal `Result` rule, so the restriction needs no new concept.
+
+### Amendments this forces
+
+1. **D-014's `defer` list** gains `relay`.
+2. **D-060's closed expression list** gains `relay` — and gains **`raw`, which was
+   already missing from it.** `int32:y = raw f();` is plainly an expression and
+   the enumeration did not include it.
+3. **The precedence table** gains a level. `raw`, `drop`, `await`, and now `relay`
+   were **absent from all eighteen levels**, so nothing said whether
+   `raw a.eq(b)` binds to `a` or to the call, or whether `raw f() => int32` casts
+   the `Result` or the value. See D-081.
+
+---
+
+## D-081 — The unary `Result` operators get a precedence level — **SETTLED**
+
+`raw` / `_!`, `drop` / `_?`, `await`, and `relay` / `_^` appear nowhere in
+`OP_REFERENCE.md`'s eighteen-level precedence table, so their binding was
+undefined. They are the most frequently written operators in the language.
+
+**They occupy one new level, immediately below Postfix and above Pipeline**, and
+are right-associative, as prefix unary operators must be.
+
+The level is fixed by three requirements, each forced rather than chosen:
+
+| Must parse as | Therefore |
+|---|---|
+| `raw a.eq(b)` → `raw (a.eq(b))` | **looser** than Postfix — the operand is the whole call, not the receiver |
+| `raw f() => int32` → `(raw f()) => int32` | **tighter** than Cast — casting a `Result` is meaningless; the value is what is cast |
+| `raw f() \|> g()` → `g(raw f())` | **tighter** than Pipeline — the value is piped, not the `Result` |
+| `raw f() + 1i32` → `(raw f()) + 1i32` | tighter than Additive, which the above already implies |
+
+Levels 2 through 18 shift down by one. Nothing implements the table yet, so
+correcting it now costs a renumbering and no rework.
+
+`discard` / `_~` is **not** included: D-060 makes it a statement, not an
+expression, so it has no place in an expression precedence table.
