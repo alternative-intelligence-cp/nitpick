@@ -3470,3 +3470,87 @@ classic filesystem vulnerability set. Building the type after `nlibc`'s callers
 exist would mean revisiting them; building it now costs nothing downstream,
 because D-051 already fixed the boundary at `to_cstring` and `nlibc`'s signatures
 do not change.
+
+---
+
+## D-055 — GPU and GUI run out of process; `#[gpu_kernel]` is a codegen target, not a call — **SETTLED**
+
+`MACRO_AUTHORING_GUIDE.md` documents `#[gpu_kernel]` and `#[gpu_device]`, which
+`PROTOTYPE_DELTA.md` §5 flagged as conflicting with the zero-dependency rule.
+They do not, given the architecture — but their **meaning has to be narrowed** so
+they cannot reintroduce the conflict.
+
+### The architecture
+
+Anything requiring GPU access — CUDA included, which Nikola requires — and any
+complex GUI runs as a **separate server process**, not linked into the Nitpick
+program.
+
+This is not a workaround for the dependency rule. It satisfies the rule's actual
+purpose. The prohibition exists because **past the FFI barrier the runtime cannot
+intercept a fault and route it through `failsafe`**. Process isolation restores
+precisely that: the vendor runtime lives elsewhere, so its failure arrives as a
+closed socket or a reaped child — **a value**, handled through `Result<T>` like
+any other error. A segfault inside libcuda becomes an error return rather than a
+dead process with actuators live.
+
+The architecture therefore draws a **TCB boundary**. The Nitpick process is
+verified; the server is explicitly outside the trusted computing base and does
+not need verification, because its failure is contained and observable. That is a
+stronger position than in-process CUDA could ever reach, since no amount of
+verification makes a linked vendor blob analysable.
+
+The rejected alternative — writing our own NVIDIA drivers and CUDA libraries —
+would move an undocumented, enormous surface *into* the TCB. Worse on every axis
+that matters.
+
+### What the attributes mean now
+
+`#[gpu_kernel]` marks a function as a **codegen target**, not a callable:
+
+- The body compiles to GPU ISA through LLVM's NVPTX or AMDGPU backend. **No
+  vendor toolchain is required for this** — LLVM 20 emits PTX directly, so
+  kernels stay written in Nitpick, stay type-checked, and stay analysable.
+- **No host-callable symbol is emitted.** This is the load-bearing part: if
+  `#[gpu_kernel] func:foo` could be called as `foo(x)`, a process boundary and a
+  vendor runtime would sit behind something that looks like an ordinary call —
+  exactly the hidden FFI crossing that breaks failsafe reasoning. A kernel is
+  **dispatched**, never called.
+- Kernel bodies are more constrained than ordinary functions, not less: no
+  allocation, no syscalls, no unbounded recursion.
+
+`#[gpu_device]` marks a device-side helper — same restrictions, callable only
+from kernel or device code.
+
+Launching is an explicit dispatch to the server, returning `Result<T>` that
+reflects the round trip.
+
+### Four requirements on the boundary
+
+**1. Every dispatch carries a deadline.** A hung kernel is worse than a crashed
+one — a crash is observable, a hang is not, and Nikola may have actuators live.
+Timeout is an ordinary error, not a special case.
+
+**2. No partial results.** A failed or retried dispatch must never yield output
+that looks complete. Nikola's entire safety rationale is that small numeric drift
+produces behaviour resembling PTSD or schizophrenia; a half-finished GPU
+computation is exactly that drift, arriving through the door the safety
+architecture was built to close. Dispatch is all-or-nothing, and a retry is only
+permitted where the operation is idempotent.
+
+**3. The server is a supervised child**, spawned and monitored by the Nitpick
+runtime, so its lifecycle is a `Result`-typed concern rather than an external
+dependency that may or may not be running.
+
+**4. GUI failure must never stop control logic.** For a companion robot the
+display crashing cannot take the robot with it — an independent argument for the
+same split, and a reason the GUI server is separate from the GPU compute server
+rather than sharing one process.
+
+### Portability note
+
+Nothing here depends on CUDA specifically. Vulkan compute with SPIR-V would fit
+the same boundary unchanged, since the isolation is what provides the safety
+property, not the API behind it. The choice affects portability and vendor
+lock-in, not the safety architecture — so it can be revisited without disturbing
+anything decided here.

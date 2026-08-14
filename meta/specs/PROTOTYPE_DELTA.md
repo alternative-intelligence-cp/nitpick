@@ -190,7 +190,7 @@ predates several decisions taken here.
 | 4 | `pre!` text-substitution preprocessor | the spec's own opening line | see below |
 | 5 | `#[comptime]` attribute *and* `comptime func:` modifier | blueprint philosophy | one spelling. Keep the **modifier**; `AST_REFERENCE` already carries `comptime` in `FunctionDecl.modifiers` |
 | 6 | Derive list of 6 traits | `TRAITS_REFERENCE.md` §129 lists 8 | `TRAITS_REFERENCE` is newer — `Default` and `PartialOrd` are also derivable |
-| 7 | `#[gpu_kernel]`, `#[gpu_device]` | zero-dependency rule | **open — needs its own decision.** LLVM can emit NVPTX/AMDGPU without a vendor toolchain, but *launching* a kernel requires a vendor runtime, which is an FFI crossing the runtime cannot route through `failsafe` |
+| 7 | `#[gpu_kernel]`, `#[gpu_device]` | zero-dependency rule | **SETTLED by D-055.** Kept, with narrowed meaning: a codegen target emitting no host-callable symbol. GPU and GUI run out of process, so the vendor runtime's failure arrives as a value rather than an unroutable fault |
 
 ### `pre!` should be removed outright
 
