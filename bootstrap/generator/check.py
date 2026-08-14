@@ -57,6 +57,18 @@ class Scope:
         return None
 
 
+# Supplied by the runtime floor (cycle 0.0.4), declared here so calls type-check.
+# alloc/dalloc do NOT return Result -- MEMORY_REFERENCE writes them bare.
+BUILTINS = {
+    "alloc":         (T.Ptr(T.Prim("int8")), False),
+    "calloc":        (T.Ptr(T.Prim("int8")), False),
+    "ralloc":        (T.Ptr(T.Prim("int8")), False),
+    "dalloc":        (T.NIL, False),
+    "string_concat": (T.STRING, True),
+    "int_to_string": (T.STRING, True),
+}
+
+
 class Program:
     """Everything resolved across the module set."""
 
@@ -121,7 +133,14 @@ class Checker:
                         raise RungError("enum variant with more than one payload "
                                         "field", "0.9", item)
                     payload = self.resolve_type(v.payload[0])
-                variants[v.name] = (idx, payload)
+                # The tag is the DECLARED value where one is given -- `Red = 5i32`
+                # must lower to 5, not to its position in the list.
+                tag = idx
+                if v.value is not None:
+                    if not isinstance(v.value, S.IntLit):
+                        raise CheckError("enum value must be an integer literal", item)
+                    tag = v.value.value
+                variants[v.name] = (tag, payload)
             self.p.enums[item.name] = variants
             return
 
@@ -353,6 +372,9 @@ class Checker:
                 self._expr(a)
             if isinstance(e.callee, S.Ident):
                 e.target = e.callee.name
+                b = BUILTINS.get(e.target)
+                if b is not None and b[1]:
+                    self.result_of(b[0])
             return
 
         if isinstance(e, S.Binary):
@@ -458,6 +480,9 @@ class Checker:
             if fn is not None:
                 r = self.resolve_type(fn.ret)
                 return r if fn.name in ("main", "failsafe") else T.ResultT(r)
+            b = BUILTINS.get(e.callee.name)
+            if b is not None:
+                return self.result_of(b[0]) if b[1] else b[0]
             return None
         if isinstance(e, S.Field):
             ctor = getattr(e, "enum_ctor", None)

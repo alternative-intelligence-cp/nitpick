@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lex          # noqa: E402
 import parse        # noqa: E402
 import check        # noqa: E402
+import emit         # noqa: E402
 
 
 def parse_file(path):
@@ -29,20 +30,30 @@ def parse_file(path):
 
 
 def main(argv):
-    if len(argv) < 2:
-        sys.stderr.write("usage: npkseed.py <file.npk> [...]\n")
+    args, out_path = [], None
+    i = 1
+    while i < len(argv):
+        if argv[i] == "-o" and i + 1 < len(argv):
+            out_path = argv[i + 1]
+            i += 2
+            continue
+        args.append(argv[i])
+        i += 1
+    if not args:
+        sys.stderr.write("usage: npkseed.py [-o out.ll] <file.npk> [...]\n")
         return 2
 
     mods = []
-    for path in argv[1:]:
+    for path in args:
         try:
             mods.append(parse_file(path))
         except (lex.LexError, parse.ParseError) as e:
             print("PARSE-FAIL  %s" % e)
             return 1
 
+    ck = check.Checker()
     try:
-        check.Checker().check(mods)
+        prog = ck.check(mods)
     except check.RungError as e:
         print("RUNG  %s" % e)
         return 1
@@ -50,7 +61,17 @@ def main(argv):
         print("CHECK %s" % e)
         return 1
 
-    print("ok    %d module(s) parsed and checked" % len(mods))
+    try:
+        ir = emit.emit_module(prog, ck, module_id=mods[0]._path)
+    except emit.EmitError as e:
+        print("EMIT  %s" % e)
+        return 1
+
+    if out_path:
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(ir)
+    else:
+        sys.stdout.write(ir)
     return 0
 
 
