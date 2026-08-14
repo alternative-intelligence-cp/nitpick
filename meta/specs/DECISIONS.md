@@ -3132,3 +3132,87 @@ portable code holds, and the conversion between them is the seam.
 **Decided now, built later.** The interface above is fixed, so `nlibc`'s
 signatures are final and no downstream churn is pending — `Path` can be
 implemented on the frontend's schedule without any signature being revisited.
+
+---
+
+## D-052 — Format strings are lowered at compile time, not parsed at runtime; `%n` never exists — **SETTLED**
+
+D-045 established that `fmt` is inhabited only by string literals and that the
+compiler checks each specifier against its argument's type. This settles what the
+compiler does with that knowledge: **it lowers the format string to a
+straight-line sequence of typed emitters.** No runtime format parser exists.
+
+```nitpick
+str_snprintf(buf, size, "x=%d y=%s\n", x, name)
+```
+
+becomes
+
+```
+fmt_lit(st, "x=", 2)
+fmt_i64(st, x, <flags, width, precision as constants>)
+fmt_lit(st, " y=", 3)
+fmt_str(st, name)
+fmt_lit(st, "\n", 1)
+```
+
+Each emitter is monomorphic; its flags, width, and precision are compile-time
+constants. `%*` and `%.*` remain expressible — the width becomes a runtime
+integer parameter, type-checked like any other argument.
+
+### Why checking is not sufficient on its own
+
+`libn`'s formatter demonstrates the limit. `str_format_args` bounds-checks its
+argument index correctly at all three read sites, so too few arguments degrades
+to zeros rather than reading out of bounds — the failure mode most hand-written
+formatters get wrong, handled properly.
+
+It still contains an arbitrary-read primitive, because every argument arrives
+erased to `int64`:
+
+```nitpick
+str_snprintf1(buf, size, "%s", 42i64)   // passes every bounds check
+```
+
+The engine then dereferences `42` as a pointer and scans for a zero byte. The
+information needed to reject that was destroyed at the call site; no check inside
+the engine can recover it.
+
+Checking at compile time fixes the call. **Lowering removes the engine**, and
+with it:
+
+- the ~300-line format state machine, which otherwise has to be proven correct
+  and proven unreachable-into-type-confusion for every call site;
+- the erased argument vector, so arity mismatch is unrepresentable rather than
+  merely handled;
+- the `strlen` scan behind `%s`, since the emitter uses the length carried by
+  `string`/`cstring` (D-049). No format operation performs an unbounded read.
+
+The trade is a shared runtime parser for per-call-site code — five calls instead
+of one for a four-specifier format. That is the right side of the trade here:
+format strings are short, the emitters themselves are shared, and the alternative
+is carrying an interpreter through verification. The engine is code that must be
+proven correct; the lowering is code that cannot be wrong in that way.
+
+### `%n` is permanently prohibited
+
+`%n` writes the running output count through a pointer argument. It is the reason
+format-string bugs escalate from information disclosure to arbitrary write and
+then to code execution.
+
+`libn` does not implement it. That becomes a **decision rather than an
+accident**: `%n` is never added to Nitpick's format language, for any caller, at
+any privilege level, including behind `raw` or `wild`. There is no legitimate use
+that a return value does not serve better — every emitter already returns what it
+wrote.
+
+### Consequences
+
+- The `fmt` machinery in the frontend gains a lowering pass, not just a checker.
+- `nlibc` deletes `str_format_args` and every arity variant; no erased entry
+  point survives, since one beside the checked wrappers would repeat the
+  `sys_safe` mistake of a typed API with an untyped bypass.
+- **`scanf` is where this pays most.** A mismatched `printf` specifier reads
+  through a bad pointer; a mismatched `scanf` specifier *writes* through one.
+  Lowering emits a typed reader per specifier, so `%d` paired with a `string` is
+  a compile error rather than a four-byte write into a string header.
