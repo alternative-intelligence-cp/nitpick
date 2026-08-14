@@ -368,12 +368,15 @@ work does not silently invent answers.
    makes unresolved-in-defining-scope an error rather than a caller-scope
    fallback, and bounds expansion so the fixed-point loop terminates.
 
-3. **`Future<T>` visibility.** `TYPE_REFERENCE.md` §17 defines it; no chapter uses
-   it. Whether it is surface syntax — awaitable, composable, cancellable — or
-   purely a lowering artifact determines whether it needs expression nodes.
-4. **`give` and `pick`-as-expression.** `GiveStmt` implies `pick` can be an
-   expression, but the statement/expression boundary is stated inconsistently
-   across `FORMAL_DRAFT` 04 §4.1 and 05 §5.1.
+3. ~~**`Future<T>` visibility.**~~ — **settled by D-058: internal lowering
+   artifact.** `await f()` yields `T` and `drop work()` discards, so no construct
+   produces one. No `Future` type node is needed here.
+4. ~~**`give` and `pick`-as-expression.**~~ — **settled by D-059: `pick` is
+   both, and the arms decide.** Arms containing `give` form an exhaustive,
+   single-typed expression-pick usable anywhere an expression is; arms without
+   form a statement-pick. Kept because uninitialized variables are a compile
+   error, so without it nothing can initialize a variable by matching. Rules
+   recovered from `nitpick/TMP/audit037/`; `GiveStmt` is correct as represented.
 5. **`comptime` blocks** — **three documents, three answers.**
    `macros_meta_specs.txt` §2 gives a `comptime func:` modifier and a
    `comptime(expr)` forcing form. `FORMAL_DRAFT` 07 §7.2 gives the modifier and a
