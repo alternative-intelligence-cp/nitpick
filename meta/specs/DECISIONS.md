@@ -3216,3 +3216,26 @@ wrote.
   through a bad pointer; a mismatched `scanf` specifier *writes* through one.
   Lowering emits a typed reader per specifier, so `%d` paired with a `string` is
   a compile error rather than a four-byte write into a string header.
+
+### A guarantee that follows: formatted output never allocates
+
+Because every emitter's output length is either a compile-time constant (literal
+text; the digit bound of a numeric specifier) or a value already in hand
+(`string` and `cstring` carry `len`, D-049), the **total output size is a sum
+computed before emitting** — not a measuring render.
+
+`libn` establishes what the alternative costs. Its `io_fprintf` formats twice —
+once into a null buffer to obtain the length, once for real — then writes, and
+past 4096 bytes of output allocates a heap buffer, renders into it, writes, and
+frees. So `printf` currently has an **`ENOMEM` failure path**.
+
+Under lowering, output accumulates into one stack buffer sized from the computed
+bound, flushing in chunks if it exceeds it. **Formatted output performs no
+allocation and cannot fail for want of memory.** Removing a failure mode from the
+call used *to report failures* matters more than the cycles saved.
+
+One constraint on the implementation: emitters must accumulate and flush once,
+never issue a write per emitter. Per-emitter writes would turn
+`printf("x=%d\n", n)` into three syscalls and destroy output atomicity between
+concurrent writers. Buffered streams accumulate into the `FILE` buffer instead —
+same shape, different destination.
