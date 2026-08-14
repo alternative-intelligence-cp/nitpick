@@ -398,11 +398,22 @@ escape hatches and are now removed (D-001).
 - **ban allocation inside `failsafe`**, partially enforcing the preallocation
   discipline (D-014).
 
-### N5. Runtime constraint violation is unspecified
+### N5. Runtime constraint violation is unspecified — **settled by D-068**
 
 §12.6.1 says that without `--verify`, `limit<Rules>` constraints are "enforced
 dynamically at runtime" — but not what a runtime violation *does*. Presumably it
 traps to `failsafe`; it should say so.
+
+It does trap to `failsafe`, and `VERIFICATION_REFERENCE.md` §2 already said so.
+
+The larger issue this exposed: §2 read as though the runtime check existed *only*
+under `--verify`, which would mean `limit<Rules>` constrains nothing in a build
+that omits the flag. **D-068 rejects that reading** — constraints are enforced in
+every build, and `--verify` decides only whether a check is discharged statically
+and therefore elided. A safety property must not depend on a compiler flag, and
+the literal reading made the shipped binary the weakest one. The useful corollary
+is that proving a constraint *removes* its runtime check, so verification pays for
+itself in speed.
 
 ## Part O — What chapter 12 gets right, and adds
 
@@ -430,7 +441,7 @@ traps to `failsafe`; it should say so.
 | 46 | §2.3.2 | `TFPType ::= "tfp32" \| "tfp64"` only | **D-036** — four widths exist: `tfp32`, `tfp64`, `tfp128`, `tfp256` (`TYPE_REFERENCE.md` §5) |
 | 47 | §2.4 vs ch. 01 §1.6.2 | balanced literals use **prefix** form (`0t1T0`, `0n2A`) here, **suffix** form there (`1T0t`, `2An`) | suffix form wins — uniform with hex/binary/octal, which all use suffixes |
 | 48 | §2.5 | `complex<T>` laid out as `{ *T:real; *T:imag; }` | `*` is C pointer syntax, reserved for `extern` only. Also real/imag are **values**, not pointers: `{ T:real; T:imag; }` |
-| 49 | §2.7.1 | `StructType ::= "struct" \| "opaque" "struct"` | `TRAITS_REFERENCE.md` §2.7 (from ch. 13) uses a standalone declaration, `opaque:DatabaseHandle;`. Two forms for one concept — pick one |
+| 49 | §2.7.1 | `StructType ::= "struct" \| "opaque" "struct"` | **settled by D-066** — `opaque struct:Name;` wins. The standalone form has zero prototype usage; the modifier form has a test directory, a negative test (`OPAQUE-COPY-001`), and a K `loadStructs` rule. `extern`-only, no value semantics. |
 | 50 | §2.1 | "there are zero implicit **implicit** conversions" | typo |
 
 ## Part Q — `tryte` / `nyte` packing: chapter 02 is right, `TYPE_REFERENCE` is wrong
@@ -581,7 +592,7 @@ of what fat pointers buy is already provided statically at zero cost.
 **This needs deciding before any pointer lowering is implemented**, and it is an
 ABI decision, so it is expensive to change later.
 
-## Part X — **Open question**: the LLVM and Z3 dependency boundary
+## Part X — ~~**Open question**~~: the LLVM and Z3 dependency boundary — **settled by D-067**
 
 Chapter 00b §0 describes the native compiler as enforcing zero C/C++ dependencies
 **"with the only explicit and isolated exceptions being the LLVM IR generator and
@@ -603,3 +614,13 @@ The same split applies to Z3: invoking it over SMT-LIB2 text versus linking
 
 Worth settling explicitly, since "no C/C++ dependencies" and "except LLVM and Z3"
 cannot both stand unqualified — and an auditor will ask.
+
+**Settled: invoked, never linked.** There is no exception, because neither is a
+dependency in the sense the rule means — the compiler emits text (LLVM IR,
+SMT-LIB2) and `llc` / `opt` / `z3` are subprocesses, so nothing C++ enters the
+compiler binary and nothing enters a compiled Nitpick program either way. This is
+D-055's argument applied to the toolchain: a subprocess boundary is not an FFI
+barrier, so a crash in the tool is a nonzero exit status rather than an
+uninterceptable fault. D-067 also records what this does *not* claim — LLVM's
+IR-to-machine-code translation stays outside the verified boundary, which is
+inherent to any toolchain short of a CompCert-style verified compiler.

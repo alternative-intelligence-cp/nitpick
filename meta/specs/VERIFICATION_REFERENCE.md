@@ -44,7 +44,16 @@ func:main = int32() {
 };
 ```
 
-When you compile with `--verify`, the compiler's integrated Z3 solver will mathematically prove that the assigned value (`5i32`) satisfies the constraint (`$ > 0i32`). If it cannot prove it statically (for instance, reading user input), it will enforce the check at runtime. If the runtime check fails, it triggers the `failsafe` handler.
+**`limit<Rules>` is enforced in every build.** `--verify` decides only whether a
+given check is *discharged statically and therefore elided*, never whether it
+exists (D-068). With `--verify`, the integrated Z3 solver proves that the assigned
+value (`5i32`) satisfies the constraint (`$ > 0i32`) and the check is removed.
+Where it cannot be proven statically — reading user input, say — the check remains
+at runtime, and a violation **traps to `failsafe`**.
+
+> A safety property must not depend on a compiler flag. The useful consequence is
+> that **proving a constraint removes its runtime check**, so `--verify` is also
+> the mechanism by which constrained code reaches the speed of unconstrained code.
 
 > `FORMAL_DRAFT` 12.6.1 says only that constraints are "enforced dynamically at
 > runtime" without saying what a violation *does*. It traps to `failsafe`, as

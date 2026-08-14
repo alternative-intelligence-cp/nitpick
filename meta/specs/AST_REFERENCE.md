@@ -40,7 +40,7 @@ Top-level items. A source file parses to `ModuleDecl`.
 | `RuleDecl` | `name`, `subject_type`, `body: Expr`, `refines: Ident[]` | `Rules<int32>:r = { $ > 0i32 }`; `refines` holds `limit<Other>` composition |
 | `MacroDecl` | `name`, `params`, `body` | invoked as **`#name(args)`** (D-046) |
 | `ExternBlock` | `library`, `items: ExternFn[]` | |
-| `OpaqueDecl` | `name`, `visibility` | `opaque:DatabaseHandle;` |
+| `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066) |
 | `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |
 
 ## 1.1 Function declaration detail

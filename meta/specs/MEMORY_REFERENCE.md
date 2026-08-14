@@ -71,6 +71,31 @@ The `nodrop` keyword acts as a per-binding RAII opt-out. It prevents an outer in
 wild int8->:manual_buf = nodrop alloc(16i64);
 ```
 
+### 2.3 Transferring ownership — `move`
+
+`move(place)` transfers ownership out of a binding and invalidates the source
+(D-065). It is what makes single-owner discipline checkable on `wild` memory, and
+so what prevents double-free:
+
+```nitpick
+wild int8->:buffer = malloc(100i64);
+wild int8->:moved  = move(buffer);
+
+free(buffer);   // NITPICK-019 — use after move, and separately
+                // "cannot free moved variable"
+```
+
+- **Ownership moves only where `move` is written.** Passing an owning value to a
+  function borrows it (D-004); there are no implicit moves, because an implicit
+  one would change ownership with nothing visible at the point it happens.
+- **A moved-from binding is invalid, not "valid but unspecified."** Any read is
+  an error. It may be **reinitialized by assignment**, after which it is live
+  again — ordinary definite-assignment analysis. A `fixed` binding cannot be,
+  since it cannot be assigned at all.
+- `move` is **not** a memory qualifier, despite older grammar listing it as one.
+  It is a keyword operator with a parenthesized operand, the same shape as
+  `comptime(expr)`.
+
 ## 3. Allocation Built-ins (NitpickAlloc)
 
 Nitpick provides raw, slab-backed compiler intrinsics for dynamic sizing. All return `wild int8->` and must be handled appropriately.

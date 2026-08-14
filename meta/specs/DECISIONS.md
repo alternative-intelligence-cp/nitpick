@@ -4422,3 +4422,234 @@ is.
 - `checkFixedReassignInSpecialized` is **not** ported — the bug it patches cannot
   occur once bodies are checked at their definition.
 - `comptime` is added to the generic-parameter grammar.
+
+---
+
+## D-065 — `move` is an operator, not a memory qualifier — **SETTLED**
+
+Settles the `LEXICAL_REFERENCE.md` open item. The production
+
+```ebnf
+MemoryQualifier ::= "wild" | "wildx" | "stack" | "defer" | "move"
+```
+
+is **wrong about `move`**, which is not a qualifier and never was. The prototype
+spells it as a parenthesized operator on a place:
+
+```nitpick
+wild int8->:buffer = malloc(100i64);
+wild int8->:moved  = move(buffer);
+
+free(buffer);   // NITPICK-019 — use after move
+```
+
+`move` is removed from `MemoryQualifier`, leaving four qualifiers — `wild`,
+`wildx`, `stack`, `defer` — which is what the memory model actually has.
+
+### Spelling: `move(place)`, unchanged
+
+`move` does not return `Result<T>` and its operand is a **place**, not a value, so
+it is not a function and could not be one. The obvious inference is that it should
+therefore take the `#` sigil under D-020, as `#size_of<T>()` and `#wild_ptr<T>()`
+do.
+
+**It should not**, because Nitpick already has this exact shape: `comptime(expr)`
+is a keyword operator with a parenthesized operand that returns no `Result` and is
+not a call. `move(place)` is the same construct with a different keyword, and both
+are keywords rather than identifiers, so no parse ambiguity exists. Introducing a
+sigil here would add a second spelling convention for a form the language already
+has one for.
+
+### Ownership transfer is explicit only
+
+**Ownership moves only where `move` is written.** Passing an owning value to a
+function borrows it, per D-004 — borrows pass down the call stack and never up —
+and returns it on return.
+
+An implicit move would change ownership with nothing visible at the point it
+happens, which is unreadable at review time and ungreppable at audit time. The
+same reasoning already governs `raw`, `wild`, and `=>!`: the bypass is explicit or
+it does not exist.
+
+### The moved-from binding
+
+- It is **invalid**, not "valid but unspecified". Any read is `NITPICK-019`. This
+  is the `UNDEFINED_STATE_PREVENTION` discipline — there is no such thing as a
+  value you may hold but not inspect.
+- Freeing it is separately rejected — the prototype's negative test requires both
+  *"Use after move"* and *"Cannot free moved variable"*, which is what makes
+  `move` the mechanism that prevents double-free on `wild` allocations.
+- **It may be reinitialized by assignment**, after which it is live again. This is
+  ordinary definite-assignment analysis, which the frontend already needs and the
+  prototype already has. A `fixed` binding cannot be, since it cannot be assigned
+  at all.
+
+### One meaning for every type
+
+`move` means the same thing on every type: the source binding is invalidated and
+ownership transfers. Applying it to a primitive is legal and merely pointless.
+
+The tempting alternative is to reject `move` on trivially-copyable types, since
+there it can only destroy information. **Rejected** — it would make the operator's
+legality vary by the type it is applied to, and under D-064 a generic body is
+checked against its bounds alone, so `move(x)` inside `func:consume<T>` would be
+un-checkable without inventing an ownership bound to carry the distinction. A
+uniform operator costs one avoidable footgun, which use-after-move catches
+immediately; a type-varying one costs a new trait and a context-dependent reading.
+
+---
+
+## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED**
+
+Resolves conflict **49**, which recorded two spellings for one concept:
+`FORMAL_DRAFT` 02 §2.7.1's `StructType ::= "struct" | "opaque" "struct"` against
+`TRAITS_REFERENCE.md` §2.7's standalone `opaque:DatabaseHandle;`.
+
+**`opaque struct:Name;` wins.** The standalone form has **zero** occurrences in
+the prototype; the modifier form has real usage, its own test directory, a
+negative test, and a K-semantics `loadStructs` rule.
+
+```nitpick
+extern "libc" {
+    opaque struct:OpHandle;
+    func:opaque_make = OpHandle();
+    func:opaque_use  = int32(OpHandle:h);
+}
+```
+
+It also reads correctly: `opaque` modifies `struct`, saying *what the thing is* and
+*what you do not know about it*, where the standalone form says only the latter.
+
+### Legal only inside an `extern` block
+
+An opaque type exists because a foreign library owns a layout Nitpick cannot see.
+That is its entire purpose, and outside `extern` there is nothing it does that
+module visibility does not already do — so permitting it there would create a
+second encapsulation mechanism competing with `pub`.
+
+### No value semantics
+
+Opaque values **cannot be copied**. The prototype enforces this as
+`OPAQUE-COPY-001`:
+
+```nitpick
+Handle:h  = handle_create();
+Handle:h2 = h;              // rejected — OPAQUE-COPY-001
+```
+
+The reason is that a copy would have to know the size, which is precisely what an
+opaque type withholds. Initialization from a call is fine, passing borrows per
+D-004, and transferring ownership is `move(h)` per D-065 — for which an opaque
+handle is the canonical case.
+
+### Consequence
+
+`AST_REFERENCE.md`'s `OpaqueDecl` is corrected: the form is `opaque struct:Name;`,
+it carries no fields, and it is valid only as an item inside `ExternBlock`.
+
+---
+
+## D-067 — LLVM and Z3 are invoked, never linked — **SETTLED**
+
+Resolves Part X. `FORMAL_DRAFT` 00b §0 describes the native compiler as enforcing
+zero C/C++ dependencies *"with the only explicit and isolated exceptions being the
+LLVM IR generator and the Z3 SMT Subsystem."*
+
+**There is no exception, because neither is a dependency in the sense the rule
+means.**
+
+| | Linked (`libLLVM`, `libz3`) | **Invoked (adopted)** |
+|---|---|---|
+| C++ in the compiler binary | yes | **no** |
+| Interface | C++ API | **text** — LLVM IR, SMT-LIB2 |
+| A crash in the tool | takes the compiler with it | **a failed subprocess — a value** |
+| In a compiled Nitpick program | never | never |
+
+The compiler emits **text**: hand-written LLVM IR (D-011, D-015) and SMT-LIB2 for
+the solver. `llc`, `opt`, and `z3` are subprocesses. `--debug-z3` already dumps
+SMT-LIB2 in the prototype, so the text interface is not hypothetical.
+
+### This is D-055's argument applied to the toolchain
+
+D-055 put GPU and GUI work behind a process boundary so a vendor runtime's failure
+reaches the Nitpick program as a closed socket or a dead child — an ordinary
+`Result` error rather than an uninterceptable fault. The same reasoning applies
+here: a segfault inside `libLLVM` linked into the compiler is a compiler crash
+with no diagnostic, while a segfault in an `llc` subprocess is a nonzero exit
+status the driver reports and recovers from.
+
+The zero-dependency rule exists because **past the FFI barrier a fault cannot be
+intercepted**. A subprocess boundary is not an FFI barrier. Nothing crosses it but
+bytes.
+
+### What this does not claim
+
+Stated plainly, because an auditor will ask and a hedge would be worse than the
+admission:
+
+**LLVM's translation from IR to machine code is outside the verified boundary.**
+Verification establishes properties of the Nitpick source and of the IR the
+compiler emits. It does not establish that `llc` translated that IR faithfully.
+
+This is inherent rather than a Nitpick shortcoming — every verified toolchain has
+a trusted backend unless it is a CompCert-style verified compiler, and writing our
+own code generator for every target is not a serious proposition against the
+alternative of an enormously exercised one. The residual is bounded by keeping the
+IR the artifact of record, by differential testing against the prototype as a
+behavioral oracle, and by translation validation should it later be wanted. It is
+recorded here rather than left for someone to discover in the middle of the
+Astrée trial.
+
+### Consequence
+
+`nitpick-native` links **nothing**. The IR emitter and the SMT-LIB2 emitter are
+Nitpick source in this repository, and the toolchain requirement is the presence
+of `llc`, `opt`, and `z3` on `PATH` — the same status `ld.lld` already has.
+
+---
+
+## D-068 — `limit<Rules>` is always enforced; `--verify` decides only whether the check survives — **SETTLED**
+
+Resolves N5, which recorded that `FORMAL_DRAFT` 12.6.1 says constraints are
+*"enforced dynamically at runtime"* without saying what a violation does.
+
+**A runtime constraint violation traps to `failsafe`**, like every other
+unrecoverable condition. `VERIFICATION_REFERENCE.md` §2 already says so; the
+`FORMAL_DRAFT` sentence is the incomplete one.
+
+### The larger question N5 exposed
+
+`VERIFICATION_REFERENCE.md` §2 reads *"When you compile with `--verify`, the
+compiler's integrated Z3 solver will prove … If it cannot prove it statically … it
+will enforce the check at runtime."* Read literally, a build **without**
+`--verify` has neither the proof nor the check, and `limit<Rules>` constrains
+nothing at all.
+
+**That reading is rejected.** `limit<Rules>` is enforced in every build.
+`--verify` decides only whether a given check is **discharged statically and
+therefore elided**, never whether it exists.
+
+Three reasons, in order of weight:
+
+1. **A safety property must not depend on a compiler flag.** A constraint that
+   silently evaporates in a build someone forgot to pass a flag to is a default
+   that varies by circumstance, which the blueprint philosophy treats as a defect
+   in the design rather than a configuration choice.
+2. **It inverts the risk.** Verification is most likely to be run in development
+   and least likely in a hurried rebuild. The literal reading makes the shipped
+   binary the *weakest* one — checks present exactly where they are least needed
+   and absent where they are most.
+3. **It makes `limit` unreadable at the point of use.** A reader of
+   `limit<r_positive> int32:x` could not tell whether anything is enforced without
+   knowing how the build was invoked.
+
+### Verification therefore pays for itself
+
+The useful consequence: **proving a constraint removes its runtime check.**
+`--verify` is not only a safety flag but the mechanism by which constrained code
+reaches the speed of unconstrained code, and an unproven constraint has a visible,
+attributable cost rather than a hidden one.
+
+That is the correct ordering of the project's priorities — performance is a
+first-class requirement, obtained here by proving more rather than by checking
+less.

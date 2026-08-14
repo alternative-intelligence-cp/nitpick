@@ -49,7 +49,7 @@ IdentifierPart  ::= [a-zA-Z0-9_]
 Keyword ::= MemoryQualifier | MemoryOrdering | ControlFlow | AsyncKeyword
           | ModuleKeyword | TypeKeyword | VerificationKeyword | BuiltinHelper
 
-MemoryQualifier     ::= "wild" | "wildx" | "stack" | "defer" | "move"
+MemoryQualifier     ::= "wild" | "wildx" | "stack" | "defer"
 
 MemoryOrdering      ::= "relaxed" | "acquire" | "release" | "acq_rel" | "seq_cst"
 
@@ -57,7 +57,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "when" | "then" | "end" | "pick" | "fall" | "where"
                       | "give" | "break" | "continue" | "return" | "pass"
                       | "fail" | "exit" | "raw" | "drop" | "nodrop" | "ok"
-                      | "defaults" | "discard"
+                      | "defaults" | "discard" | "move"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
                       | "invariant" | "fails" | "on" | "with" | "never"
@@ -110,6 +110,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | **35 `a*` collection keywords removed** | D-041 — `astack`, `alist`, `ahash`, `astringlist` and their operations are not language builtins; collections belong in a library. Returns 35 reserved words to userland and removes the last major `aria` naming artifact from the language surface. |
 | `fd`, `pid`, `tid`, `uid`, `gid` added | D-042 — kernel identifiers are distinct types permitting comparison but not arithmetic. Combined with `Result<T>`, an `fd` is always valid: POSIX's `-1` goes to `Result.error` and is not representable. |
 | `assoc` added | D-028 — declares an associated type; `Type` is namespace-only |
+| **`move` moved** from `MemoryQualifier` to `ControlFlow` | D-065 — it is not a qualifier. `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`, and it belongs beside the other ownership keywords `drop` and `nodrop`. |
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 
@@ -304,8 +305,13 @@ Interpolation   ::= "&{" /* syntactic expression */ "}"
   settles `tfp` and `dim` as distinct types with `fix256` obsolete; no live spec
   in `meta/specs/` says `fix256` any longer. `FORMAL_DRAFT` still does, and is
   read-only reference — recorded in `PROTOTYPE_DELTA.md` §4.
-- **`move` is listed as a memory qualifier but is not specified anywhere.**
-  **Still open** — one of the four remaining decisions.
+- ~~**`move` is listed as a memory qualifier but is not specified anywhere.**~~ —
+  **settled by D-065: it is not a qualifier.** `move(place)` is a keyword operator
+  with a parenthesized operand, exactly the shape `comptime(expr)` already has. It
+  is removed from `MemoryQualifier`, which leaves the four the memory model
+  actually has. Ownership transfers only where `move` is written — never
+  implicitly — and the moved-from binding is invalid until reinitialized, not
+  "valid but unspecified".
 - ~~`for` occupies two grammatical roles~~ — **closed by D-031.** `impl` now takes
   no connector (`impl:Message:Serializable`), so `for` reverts to the loop keyword
   alone and has exactly one meaning.

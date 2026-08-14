@@ -35,8 +35,8 @@ avoid.
 | # | Item | Blocks | Source |
 |---|---|---|---|
 | ~~3~~ | ~~**Generics**~~ — **settled by D-064.** Bodies checked at their definition against bounds alone; turbofish is the only expression-position form, which confines `>>`-splitting to a delimited context; `comptime` value parameters added for D-056's lock levels; monomorphization depth-capped at 64, deduplicated, reversibly mangled with no hash. No specialization, no variance, no duck-typed bodies. | — | `PRE_PLANNING_REVIEW.md` §4; `SPEC_GAPS` §3 |
-| 4 | **`move` memory qualifier** — present in the `MemoryQualifier` production, specified nowhere. | lexer/parser; ownership rules; channel `send` | `LEXICAL_REFERENCE.md` open items |
-| 5 | **`opaque` declaration form** — `struct \| opaque struct` versus the standalone `opaque:DatabaseHandle;`. Two spellings for one concept; blueprint philosophy says pick one. | parser | conflict 49 |
+| ~~4~~ | ~~**`move` memory qualifier**~~ — **settled by D-065: it is not a qualifier.** `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`. Moved to `ControlFlow`. Explicit only, no implicit moves; moved-from bindings are invalid until reinitialized. | — | `LEXICAL_REFERENCE.md` open items |
+| ~~5~~ | ~~**`opaque` declaration form**~~ — **settled by D-066.** `opaque struct:Name;` wins on evidence: the standalone form has zero prototype usage. `extern`-only, and no value semantics (`OPAQUE-COPY-001`). | — | conflict 49 |
 | 6 | **LBIM sticky ERR** — `int1024`…`int4096` are specified to propagate a sticky ERR sentinel, which makes them twisted types under D-036's own definition while wearing an `int` name. Three ways out are laid out in Part R. | builtin-type table; `ncrypto` port (34,925 lines) | Part R |
 
 ### ABI and lowering
@@ -50,8 +50,8 @@ avoid.
 
 | # | Item | Blocks | Source |
 |---|---|---|---|
-| 9 | **LLVM / Z3 dependency boundary** — ch. 00b exempts "the LLVM IR generator and the Z3 SMT Subsystem" from the zero-dependency rule. Invoked as subprocesses over hand-written IR and SMT-LIB2 text (nothing in the TCB at runtime, which is what D-011 and D-015 already assume) is a very different claim from linking `libLLVM` and `libz3`. Never stated either way. | the zero-dependency claim as an auditor will read it | Part X |
-| 10 | **Runtime `limit<Rules>` violation** — without `--verify`, constraints are "enforced dynamically at runtime", but not what a violation *does*. Presumably a trap to `failsafe`; it has to say so. | `limit` lowering | N5 |
+| ~~9~~ | ~~**LLVM / Z3 dependency boundary**~~ — **settled by D-067: invoked, never linked.** There is no exception to the zero-dependency rule, because neither is a dependency in the sense the rule means. D-055's argument applied to the toolchain. D-067 also records what it does *not* claim — LLVM's IR-to-machine-code translation stays outside the verified boundary. | — | Part X |
+| ~~10~~ | ~~**Runtime `limit<Rules>` violation**~~ — **settled by D-068.** It traps to `failsafe`. More importantly, constraints are enforced in **every** build; `--verify` decides only whether a check is discharged statically and therefore elided. A safety property must not depend on a compiler flag. | — | N5 |
 
 ---
 

@@ -162,13 +162,35 @@ impls take priority** over blanket-generated ones.
 ### 2.7 Data Hiding and Opaque Types
 
 Struct fields follow module visibility — private by default, exported with `pub`.
-To hide a representation completely, declare it `opaque`:
+That is the mechanism for hiding a representation written in Nitpick.
+
+`opaque` is a **different thing and is not a second way to do it**: it declares a
+type whose layout belongs to a foreign library, and it is legal **only inside an
+`extern` block** (D-066).
 
 ```nitpick
-opaque:DatabaseHandle;
+extern "libc" {
+    opaque struct:OpHandle;
+    func:opaque_make = OpHandle();
+    func:opaque_use  = int32(OpHandle:h);
+}
 ```
 
-The consumer cannot see the internal memory layout.
+**Opaque values have no value semantics** — they cannot be copied, because a copy
+would have to know the size, which is exactly what the type withholds:
+
+```nitpick
+Handle:h  = handle_create();     // initialization from a call — fine
+Handle:h2 = h;                   // rejected — OPAQUE-COPY-001
+```
+
+Passing borrows (D-004); transferring ownership is `move(h)` (D-065), for which an
+opaque handle is the canonical case.
+
+> The standalone `opaque:DatabaseHandle;` form previously shown here is **struck**
+> (conflict 49, D-066). It has zero occurrences in the prototype, while
+> `opaque struct:` has its own test directory, a negative test, and a K-semantics
+> `loadStructs` rule.
 
 ---
 
