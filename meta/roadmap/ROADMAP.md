@@ -56,7 +56,7 @@ is why the whole frontend precedes any backend work.
 
 | Cycle | Topic |
 |---|---|
-| **0.0** | **Foundations** — repo layout, subset 1, the seed generator, diagnostics core, test harness |
+| **0.0** | **Foundations** — repo layout, subset 1, the **seed** (lexer/parser, checker/emitter, runtime floor), test harness, diagnostics core. Ends with Nitpick compiling and running. |
 | **0.1** | **Lexer** — `LEXICAL_REFERENCE.md` in full, including `>>` splitting, positional `!`, the `#` sigil, and every literal form |
 | **0.2** | **AST and parser** — `AST_REFERENCE.md` in full, the 19-level precedence table, generics, contracts, `pick` patterns |
 | **0.3** | **Modules, symbols, visibility** — `MODULE_REFERENCE.md`, dependency roots, ambiguity-is-an-error resolution |

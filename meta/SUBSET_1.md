@@ -113,6 +113,17 @@ sidestep needing `arena<T>` — which is generic and therefore out.
 | `defer` | runs on normal exit paths |
 | casts `=>` / `=>!` | |
 
+**Integer literals require a width suffix in expression position** — `42i32`,
+never `42`. This is `--extra-picky=literal-suffixes` (`SAFETY_ARCHITECTURE.md`)
+applied unconditionally to our own sources: width is never inferred in the code
+that can least afford sizing ambiguity, and the seed needs no inference rule.
+
+The exception, found while writing the parser: **an array size in *type* position
+is a bare count** — `int32[4]`, as `TYPE_REFERENCE.md` §9.2 writes it. It is a
+count, not a typed value, so the rule does not reach it. The lexer stays
+positionless and records an unsuffixed literal without complaint; the *parser*
+enforces the rule where it applies.
+
 **`fixed` is enforced rather than parsed-and-ignored.** It costs the seed a
 trivial "no assignment to this binding" check, and it buys a real correctness
 property in our own source from the first line. Parsing a safety annotation and
