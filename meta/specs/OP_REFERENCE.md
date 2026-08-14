@@ -78,10 +78,28 @@ Behavior is selected by **operand type**, not by context (D-007). The type is
 written explicitly at every declaration, so which discipline applies is visible
 at a glance.
 
-| Operand type | Divide by zero / overflow | Intended for |
-|---|---|---|
-| `tbb8/16/32/64` | yields **ERR** — sticky, propagates, checkable | control loops, actuator paths, anything that must degrade rather than stop |
-| `int32`, `uint64`, `flt64`, … | traps to `failsafe` | ordinary code, parsing, setup, tooling |
+**Divide by zero and overflow are different events and are not decided together**
+(D-037). Overflow has a defined two's-complement result; division by zero has no
+result at all.
+
+| Operand type | **Overflow / underflow** | **Divide by zero** | Intended for |
+|---|---|---|---|
+| `tbb8`…`tbb256` | yields **ERR** — sticky, propagates, checkable | yields **ERR** | control loops, actuator paths, anything that must degrade rather than stop |
+| `int32`, `uint64`, … | **wraps** — defined, no check, no trap | **traps to `failsafe`** | ordinary code, parsing, setup, tooling |
+| `flt32`…`flt512` | **IEEE 754** — `inf` / `nan`, no trap | **IEEE 754** — `inf` / `nan` | numeric work |
+
+> ⚠️ **Corrected.** A previous revision of this table gave one column for
+> "divide by zero / overflow" and had plain integers **trapping on overflow**.
+> That contradicts **D-037**, which struck exactly that reading: wrapping is
+> *defined* behaviour in two's complement and is routinely what is wanted —
+> hashing, checksums, PRNGs, modular arithmetic — so trapping there would make
+> ordinary correct code unrunnable and leave no way to express wrapping at all.
+> D-037 corrected `TYPE_REFERENCE.md` §1.2 and §1.3 at the time; this table was
+> missed. The float row was wrong for the same reason — IEEE 754 produces `inf`
+> and `nan` rather than trapping.
+>
+> **`tbb` is how you ask for overflow to be an error**, and that choice is made at
+> the declaration, visible at every use.
 
 ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
 `ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.

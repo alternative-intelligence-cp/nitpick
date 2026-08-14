@@ -12,6 +12,29 @@ often not a well-formed statement — that is itself the main finding.
 
 # Part 1 — The garbage collector decision
 
+> # ⛔ SETTLED BY D-003 — AND NOT THE WAY THIS PART RECOMMENDS
+>
+> **This Part is a historical record of the review, not current guidance.** It is
+> preserved because the reasoning is still worth reading; it is fenced because
+> `CLAUDE.md` names this document as required reading before planning, and §1.5
+> below recommends **option D — keeping `gc` as an opt-in modifier**.
+>
+> **D-003 chose no collector at all.** There is no `gc` keyword, no `gc` memory
+> qualifier, and no collector anywhere in the language. `MemoryQualifier` is
+> `wild | wildx | stack | defer` (D-065 also removed `move` from that list). The
+> four regimes are the default managed/RAII one, `stack`, `wild`, and `wildx`.
+>
+> The escape question §1.5 leaves open — *"what stops someone taking `@local` and
+> passing it out of scope"* — was answered by **D-004**: borrows are
+> **second-class**, they pass down the call stack and never up, and the same
+> escape analysis that governs `stack` enforces it. That is also property 1 of the
+> three that give data-race freedom (`CONCURRENCY_REFERENCE.md` §5.3), and D-062
+> and D-072 later extended the identical rule to task frames and channel
+> endpoints.
+>
+> Read the rest of this Part as *why the question was hard*, never as *what the
+> language does*.
+
 This is the largest open question and it gates the memory subsystem, the type
 checker, and most of the backend.
 
