@@ -1,0 +1,40 @@
+// Exercises the diagnostics core (cycle 0.0.6).
+//
+// The sink is a PARAMETER, never a global (D-075), which is what makes this
+// testable at all: the same code path that writes to stderr in production
+// writes to a memory buffer here, and the test reads it back.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+
+func:main = int32() {
+    DiagList:list = raw diaglist_init();
+    Sink:out = raw sink_to_buffer(4096i64);
+
+    // Pushed OUT OF ORDER on purpose. Rendering sorts by span, so that two runs
+    // over the same input produce byte-identical output (D-078) -- discovery
+    // order is not a property of the program being compiled.
+    Span:late  = raw span_point(0i32, 90i32, 9i32, 1i32);
+    Span:early = raw span_point(0i32, 30i32, 3i32, 5i32);
+
+    drop diaglist_push(@list, raw diag_error("NITPICK-019", "use after move", late));
+    drop diaglist_push(@list, raw diag_warning("NITPICK-040", "await outside async", early));
+
+    if (raw diaglist_count(@list) != 2i64) { exit 11i32; }
+    if (!(raw diaglist_has_errors(@list)))  { exit 12i32; }
+
+    drop diaglist_render(@list, @out);
+
+    if (raw sink_length(@out) == 0i64) { exit 13i32; }
+
+    // The line-3 warning must render FIRST, so byte 0 is '3' (51), not '9'.
+    // That is the sort, asserted rather than assumed.
+    uint8:first = raw sink_byte_at(@out, 0i64);
+    if (first != 51u8) { exit 14i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

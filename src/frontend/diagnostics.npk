@@ -1,0 +1,234 @@
+// Diagnostics.
+//
+// Subset 1 (meta/SUBSET_1.md). Written early, in cycle 0.0.6, because
+// diagnostics are how every later cycle is TESTED: the lexer is verified as much
+// by what it rejects as by what it accepts, and a negative test is only
+// checkable if its diagnostic can be captured and compared.
+
+use "source_location.npk".*;
+
+pub enum:Severity = {
+    Note    = 0i32;
+    Warning = 1i32;
+    Error   = 2i32;
+};
+
+// Codes are STABLE IDENTIFIERS and messages are not. Tests assert on the code
+// and the span, never on the message text, so that wording stays free to
+// improve without breaking the suite (BUILD_REFERENCE.md section 7.1).
+pub struct:Diagnostic = {
+    int32:severity;
+    string:code;
+    string:message;
+    Span:span;
+};
+
+pub func:diag_make = Diagnostic(int32:severity, string:code, string:message,
+                                Span:span) {
+    Diagnostic:d = Diagnostic{ severity: severity, code: code,
+                               message: message, span: span };
+    pass d;
+};
+
+pub func:diag_error = Diagnostic(string:code, string:message, Span:span) {
+    pass (raw diag_make(2i32, code, message, span));
+};
+
+pub func:diag_warning = Diagnostic(string:code, string:message, Span:span) {
+    pass (raw diag_make(1i32, code, message, span));
+};
+
+pub func:diag_note = Diagnostic(string:code, string:message, Span:span) {
+    pass (raw diag_make(0i32, code, message, span));
+};
+
+// ---------------------------------------------------------------------------
+// Collection
+//
+// Bounded, with an explicit overflow flag rather than unbounded growth. A
+// compiler that emits ten thousand diagnostics has already failed usefully at
+// the first few, and a fixed bound keeps the memory deterministic -- which is
+// worth more here than the ability to report an unbounded number of errors
+// nobody will read.
+// ---------------------------------------------------------------------------
+
+pub struct:DiagList = {
+    Diagnostic[256]:items;
+    int64:count;
+    bool:overflowed;
+};
+
+pub func:diaglist_init = DiagList() {
+    DiagList:l = DiagList{ items: [], count: 0i64, overflowed: false };
+    pass l;
+};
+
+pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) {
+    if (list.count >= 256i64) {
+        list.overflowed = true;
+        pass NIL;
+    }
+    list.items[list.count] = d;
+    list.count = list.count + 1i64;
+    pass NIL;
+};
+
+pub func:diaglist_count = int64(DiagList->:list) {
+    pass list.count;
+};
+
+pub func:diaglist_has_errors = bool(DiagList->:list) {
+    int64:i = 0i64;
+    while (i < list.count) {
+        if (list.items[i].severity == 2i32) {
+            pass true;
+        }
+        i = i + 1i64;
+    }
+    pass false;
+};
+
+// Insertion sort by span. Diagnostics are sorted before rendering so that two
+// runs over the same input produce byte-identical output (D-078) -- discovery
+// order is not a property of the program being compiled.
+pub func:diaglist_sort = NIL(DiagList->:list) {
+    int64:i = 1i64;
+    while (i < list.count) {
+        Diagnostic:cur = list.items[i];
+        int64:j = i;
+        while (j > 0i64) {
+            Diagnostic:prev = list.items[j - 1i64];
+            if (raw span_before(cur.span, prev.span)) {
+                list.items[j] = prev;
+                j = j - 1i64;
+            } else {
+                j = 0i64 - 1i64;
+            }
+        }
+        if (j < 0i64) {
+            j = 0i64;
+            // walk back to the insertion point
+            int64:k = i;
+            while (k > 0i64) {
+                Diagnostic:p2 = list.items[k - 1i64];
+                if (raw span_before(cur.span, p2.span)) {
+                    k = k - 1i64;
+                } else {
+                    j = k;
+                    k = 0i64;
+                }
+            }
+        }
+        list.items[j] = cur;
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// ---------------------------------------------------------------------------
+// The sink
+//
+// THE SINK IS A PARAMETER, NEVER A GLOBAL. That is the one property D-075 exists
+// for: production writes to stderr and the test harness writes to a memory
+// buffer, through one code path, so diagnostics are capturable and comparable.
+//
+// The runtime `kind` tag is a SUBSET-1 WORKAROUND, not a design choice. D-075
+// specifies `dyn Writer`, and a runtime mode tag is exactly the pattern D-072
+// rejected for channels. Traits arrive in cycle 1.0 and this becomes a trait
+// object; the tag is scheduled for removal, not permanent.
+// ---------------------------------------------------------------------------
+
+pub struct:Sink = {
+    int32:kind;            // 0 = file descriptor, 1 = capture buffer
+    int32:fd;
+    wild int8->:buf;
+    int64:len;
+    int64:cap;
+};
+
+pub func:sink_to_fd = Sink(int32:fd) {
+    Sink:s = Sink{ kind: 0i32, fd: fd, buf: NULL, len: 0i64, cap: 0i64 };
+    pass s;
+};
+
+pub func:sink_to_buffer = Sink(int64:cap) {
+    wild int8->:b = alloc(cap);
+    Sink:s = Sink{ kind: 1i32, fd: 0i32, buf: b, len: 0i64, cap: cap };
+    pass s;
+};
+
+pub func:sink_write = NIL(Sink->:out, string:text) {
+    if (out.kind == 0i32) {
+        drop write_raw(out.fd, text.ptr, text.len);
+        pass NIL;
+    }
+    int64:i = 0i64;
+    while (i < text.len) {
+        if (out.len >= out.cap) {
+            pass NIL;                     // full; drop the rest
+        }
+        out.buf[out.len] = text.ptr[i];
+        out.len = out.len + 1i64;
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+pub func:sink_length = int64(Sink->:out) {
+    pass out.len;
+};
+
+pub func:sink_byte_at = uint8(Sink->:out, int64:i) {
+    pass out.buf[i];
+};
+
+// ---------------------------------------------------------------------------
+// Rendering
+//
+// Deterministic: no colour, and no terminal detection. D-076 settled the general
+// form of that rule -- behaviour must not depend on whether the output is a
+// terminal, because the configuration that gets debugged would not be the one
+// that ships.
+//
+// No string interpolation in subset 1, so messages are built by explicit
+// concatenation.
+// ---------------------------------------------------------------------------
+
+pub func:severity_name = string(int32:sev) {
+    if (sev == 2i32) {
+        pass "error";
+    }
+    if (sev == 1i32) {
+        pass "warning";
+    }
+    pass "note";
+};
+
+pub func:diag_render = NIL(Diagnostic:d, Sink->:out) {
+    if (raw span_has_location(d.span)) {
+        drop sink_write(out, raw int_to_string(d.span.line => int64));
+        drop sink_write(out, ":");
+        drop sink_write(out, raw int_to_string(d.span.col => int64));
+        drop sink_write(out, ": ");
+    }
+    drop sink_write(out, raw severity_name(d.severity));
+    drop sink_write(out, "[");
+    drop sink_write(out, d.code);
+    drop sink_write(out, "]: ");
+    drop sink_write(out, d.message);
+    drop sink_write(out, "\n");
+    pass NIL;
+};
+
+pub func:diaglist_render = NIL(DiagList->:list, Sink->:out) {
+    drop diaglist_sort(list);
+    int64:i = 0i64;
+    while (i < list.count) {
+        drop diag_render(list.items[i], out);
+        i = i + 1i64;
+    }
+    if (list.overflowed) {
+        drop sink_write(out, "note[NITPICK-DIAG-001]: further diagnostics suppressed\n");
+    }
+    pass NIL;
+};

@@ -36,6 +36,7 @@ RUNTIME_ARGS = {
     "dalloc":        ["ptr"],
     "string_concat": ["{ ptr, i64, i64 }", "{ ptr, i64, i64 }"],
     "int_to_string": ["i64"],
+    "write_raw":     ["i32", "ptr", "i64"],
 }
 
 
@@ -241,10 +242,7 @@ class Emitter:
             self.locals[st.name] = (slot, ty)
 
         elif isinstance(st, S.Assign):
-            if not isinstance(st.target, S.Ident):
-                raise EmitError("only simple-name assignment is lowered at this "
-                                "rung", st)
-            slot, ty = self.lookup(st.target.name, st)
+            slot, ty = self.addr_of(st.target)
             if st.op == "=":
                 v = self.expr(st.value, want=ty)
             else:
@@ -464,6 +462,81 @@ class Emitter:
         self.ck.scope = sc
         return self.ck.type_of(node)
 
+    def _addressable(self, e):
+        """Is this expression rooted in a local? Only then does it have an address."""
+        while isinstance(e, (S.Field, S.Index)):
+            e = e.obj
+        return isinstance(e, S.Ident) and e.name in self.locals
+
+    def addr_of(self, e):
+        """The ADDRESS of a place expression: Ident, Field, or Index.
+
+        Everything else in the emitter is value-based, which was enough for the
+        conformance suite but not for writing a compiler: `list.items[n] = d`
+        needs a place, not a value. Added in 0.0.6, when the first real source
+        demanded it.
+        """
+        if isinstance(e, S.Ident):
+            slot, ty = self.lookup(e.name, e)
+            return slot, ty
+
+        if isinstance(e, S.Field):
+            base, oty = self.addr_of(e.obj)
+            # `.` auto-dereferences a pointer (D-006), so a pointer operand is
+            # loaded first and the field taken from what it points at.
+            if isinstance(oty, T.Ptr):
+                loaded = self.tmp()
+                self.w("%s = load ptr, ptr %s" % (loaded, base))
+                base, oty = loaded, oty.elem
+            if isinstance(oty, T.Prim) and oty.name == "string":
+                idx = {"ptr": 0, "len": 1, "cap": 2}.get(e.name)
+                if idx is None:
+                    raise EmitError("string has no field %r" % e.name, e)
+                fty = T.Ptr(T.Prim("int8")) if idx == 0 else T.I64
+                r = self.tmp()
+                self.w("%s = getelementptr { ptr, i64, i64 }, ptr %s, i32 0, i32 %d"
+                       % (r, base, idx))
+                return r, fty
+            if not (isinstance(oty, T.Named) and oty.name in self.p.structs):
+                raise EmitError("cannot take the address of field %r on %r"
+                                % (e.name, oty), e)
+            fields = self.p.structs[oty.name]
+            if e.name not in fields:
+                raise EmitError("no field %r on %s" % (e.name, oty.name), e)
+            i = list(fields).index(e.name)
+            r = self.tmp()
+            self.w("%s = getelementptr %s, ptr %s, i32 0, i32 %d"
+                   % (r, T.llvm(oty), base, i))
+            return r, fields[e.name]
+
+        if isinstance(e, S.Index):
+            oty = self.ty(e.obj)
+            idx = self.expr(e.index, want=T.I64)
+            if isinstance(oty, T.Slice):
+                v = self._expr(e.obj)
+                base = self.tmp()
+                self.w("%s = extractvalue %s %s, 0" % (base, v.ty, v.ref))
+                r = self.tmp()
+                self.w("%s = getelementptr %s, ptr %s, i64 %s"
+                       % (r, T.llvm(oty.elem), base, idx.ref))
+                return r, oty.elem
+            if isinstance(oty, T.Ptr):
+                v = self._expr(e.obj)
+                r = self.tmp()
+                self.w("%s = getelementptr %s, ptr %s, i64 %s"
+                       % (r, T.llvm(oty.elem), v.ref, idx.ref))
+                return r, oty.elem
+            if isinstance(oty, T.Array):
+                base, _ = self.addr_of(e.obj)
+                r = self.tmp()
+                self.w("%s = getelementptr %s, ptr %s, i64 0, i64 %s"
+                       % (r, T.llvm(oty), base, idx.ref))
+                return r, oty.elem
+            raise EmitError("cannot index %r" % oty, e)
+
+        raise EmitError("%s is not a place expression"
+                        % type(e).__name__, e)
+
     def lookup(self, name, node):
         if name not in self.locals:
             raise EmitError("unknown name %r" % name, node)
@@ -536,6 +609,20 @@ class Emitter:
             return self.coerce(v, target)
 
         if isinstance(e, S.Unary):
+            if e.op == "@":
+                # `@x` yields a SECOND-CLASS borrow (D-004): it passes down the
+                # call stack and never up. The seed lowers it as a plain address;
+                # the escape analysis that enforces the rule is the compiler's
+                # (cycle 0.5), not the seed's.
+                addr, ty = self.addr_of(e.operand)
+                return Val("ptr", addr, T.Ptr(ty))
+            if e.op == "<-":
+                addr = self._expr(e.operand)
+                inner = self.ty(e.operand)
+                elem = inner.elem if isinstance(inner, T.Ptr) else inner
+                r = self.tmp()
+                self.w("%s = load %s, ptr %s" % (r, T.llvm(elem), addr.ref))
+                return Val(T.llvm(elem), r, elem)
             v = self._expr(e.operand)
             r = self.tmp()
             if e.op == "-":
@@ -761,6 +848,22 @@ class Emitter:
             return Val(ll, b, T.Named(ename))
 
         obj_ty = self.ty(e.obj)
+
+        # `.` auto-dereferences a pointer (D-006), and a field of a place is
+        # itself a place -- so take the address where one exists and load from
+        # it. That covers `ptr.field`, which the value path cannot: there is no
+        # aggregate value to extract from.
+        if isinstance(obj_ty, T.Ptr) or self._addressable(e.obj):
+            if not isinstance(obj_ty, T.ResultT):
+                try:
+                    addr, fty = self.addr_of(e)
+                except EmitError:
+                    pass
+                else:
+                    r = self.tmp()
+                    self.w("%s = load %s, ptr %s" % (r, T.llvm(fty), addr))
+                    return Val(T.llvm(fty), r, fty)
+
         obj = self._expr(e.obj)
 
         if isinstance(obj_ty, T.ResultT):
@@ -782,6 +885,15 @@ class Emitter:
                 r = self.tmp()
                 self.w("%s = extractvalue %s %s, 0" % (r, obj.ty, obj.ref))
                 return Val(T.llvm(obj_ty.inner), r, obj_ty.inner)
+
+        if isinstance(obj_ty, T.Prim) and obj_ty.name == "string":
+            idx = {"ptr": 0, "len": 1, "cap": 2}.get(e.name)
+            if idx is None:
+                raise EmitError("string has no field %r" % e.name, e)
+            r = self.tmp()
+            self.w("%s = extractvalue %s %s, %d" % (r, obj.ty, obj.ref, idx))
+            fty = T.Ptr(T.Prim("int8")) if idx == 0 else T.I64
+            return Val(T.llvm(fty), r, fty)
 
         if isinstance(obj_ty, T.Slice) and e.name == "len":
             r = self.tmp()
@@ -819,26 +931,21 @@ class Emitter:
             self.w("%s = insertvalue { ptr, i64 } %s, i64 %s, 1" % (b, a, n))
             return Val("{ ptr, i64 }", b, T.Slice(elem))
 
-        idx = self.expr(e.index, want=T.I64)
-        elem = obj_ty.elem
-        base = self.base_ptr(e.obj, obj_ty)
-        gep = self.tmp()
-        self.w("%s = getelementptr %s, ptr %s, i64 %s"
-               % (gep, T.llvm(elem), base, idx.ref))
+        gep, elem = self.addr_of(e)
         r = self.tmp()
         self.w("%s = load %s, ptr %s" % (r, T.llvm(elem), gep))
         return Val(T.llvm(elem), r, elem)
 
     def base_ptr(self, obj_node, obj_ty):
-        """The data pointer of an array local or a slice value."""
+        """The data pointer of an array place or a slice value."""
         if isinstance(obj_ty, T.Slice):
             v = self._expr(obj_node)
             r = self.tmp()
             self.w("%s = extractvalue %s %s, 0" % (r, v.ty, v.ref))
             return r
-        if isinstance(obj_ty, T.Array) and isinstance(obj_node, S.Ident):
-            slot, _ = self.lookup(obj_node.name, obj_node)
-            return slot        # an alloca of [N x T] is already the element base
+        if isinstance(obj_ty, T.Array):
+            base, _ = self.addr_of(obj_node)
+            return base        # an alloca of [N x T] is already the element base
         raise EmitError("cannot index %r at this rung" % obj_ty, obj_node)
 
 

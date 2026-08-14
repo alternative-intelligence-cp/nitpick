@@ -1,0 +1,57 @@
+// Source locations.
+//
+// The first Nitpick written for the compiler itself. Subset 1 (meta/SUBSET_1.md)
+// until the backend climbs past it: no generics, no traits, no UFCS, `while` as
+// the only loop.
+//
+// Every AST node carries a Span (AST_REFERENCE.md "Conventions").
+
+// Offsets are BYTE offsets, not character counts. Nitpick source is UTF-8
+// (LEXICAL_REFERENCE.md section 1) and the lexer works in bytes, so a character
+// count would be a second, differently-wrong number to keep in step.
+pub struct:Span = {
+    int32:file;      // index into the source manager's file table
+    int32:offset;    // byte offset from the start of the file
+    int32:line;      // 1-based
+    int32:col;       // 1-based, in bytes
+    int32:len;       // length in bytes; 0 for a point
+};
+
+pub func:span_make = Span(int32:file, int32:offset, int32:line,
+                          int32:col, int32:len) {
+    Span:s = Span{ file: file, offset: offset, line: line, col: col, len: len };
+    pass s;
+};
+
+pub func:span_point = Span(int32:file, int32:offset, int32:line, int32:col) {
+    Span:s = Span{ file: file, offset: offset, line: line, col: col, len: 0i32 };
+    pass s;
+};
+
+// A span with no file. Used for diagnostics that are not about a place in the
+// source -- a missing entry point, say.
+pub func:span_none = Span() {
+    Span:s = Span{ file: 0i32 - 1i32, offset: 0i32, line: 0i32,
+                   col: 0i32, len: 0i32 };
+    pass s;
+};
+
+pub func:span_has_location = bool(Span:s) {
+    pass (s.file >= 0i32);
+};
+
+// Ordering, so diagnostics can be sorted before rendering. Two runs over the
+// same input must produce byte-identical output (D-078), which means the order
+// cannot depend on the order things happened to be discovered in.
+pub func:span_before = bool(Span:a, Span:b) {
+    if (a.file != b.file) {
+        pass (a.file < b.file);
+    }
+    if (a.line != b.line) {
+        pass (a.line < b.line);
+    }
+    if (a.col != b.col) {
+        pass (a.col < b.col);
+    }
+    pass (a.len < b.len);
+};

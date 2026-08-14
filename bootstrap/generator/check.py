@@ -72,6 +72,7 @@ BUILTINS = {
     "dalloc":        (T.NIL, False),
     "string_concat": (T.STRING, True),
     "int_to_string": (T.STRING, True),
+    "write_raw":     (T.I64, False),
 }
 
 
@@ -473,7 +474,14 @@ class Checker:
                 return T.BOOL
             return self.type_of(e.lhs)
         if isinstance(e, S.Unary):
-            return T.BOOL if e.op == "!" else self.type_of(e.operand)
+            if e.op == "!":
+                return T.BOOL
+            if e.op == "@":
+                return T.Ptr(self.type_of(e.operand))
+            if e.op == "<-":
+                inner = self.type_of(e.operand)
+                return inner.elem if isinstance(inner, T.Ptr) else inner
+            return self.type_of(e.operand)
         if isinstance(e, S.ResultUnary):
             inner = self.type_of(e.operand)
             if isinstance(inner, T.ResultT):
@@ -497,6 +505,11 @@ class Checker:
             obj = self.type_of(e.obj)
             if isinstance(obj, T.Ptr):
                 obj = obj.elem
+            if isinstance(obj, T.Prim) and obj.name == "string":
+                if e.name == "ptr":
+                    return T.Ptr(T.Prim("int8"))
+                if e.name in ("len", "cap"):
+                    return T.I64
             if isinstance(obj, T.Slice) and e.name == "len":
                 return T.I64
             if isinstance(obj, T.ResultT):
@@ -513,7 +526,7 @@ class Checker:
             return None
         if isinstance(e, S.Index):
             obj = self.type_of(e.obj)
-            if isinstance(obj, (T.Slice, T.Array)):
+            if isinstance(obj, (T.Slice, T.Array, T.Ptr)):
                 return obj.elem
             return None
         if isinstance(e, S.StructLit):

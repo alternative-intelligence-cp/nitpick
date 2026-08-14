@@ -106,12 +106,24 @@ sidestep needing `arena<T>` — which is generic and therefore out.
 | bare blocks `{ }` | lexical scope; how a critical section is written (D-082) |
 | assignment | a **statement**, not an expression (D-060) |
 | arithmetic, comparison, logical, bitwise | on integers; wrapping per D-037 |
+| `@` address-of | yields a **second-class borrow** (D-004) |
+| `<-` dereference | |
+| `p[i]` on a pointer, `a[i]` on an array or slice | |
+| assignment to a **place** — `x.f = v`, `a[i] = v` | not just to a bare name |
+| `s.ptr` / `s.len` / `s.cap` on a `string` | |
 | `raw` / `_!` | unwrap without checking |
 | `relay` / `_^` | **propagate** (D-080) |
 | `drop` / `_?` | discard a `Result` |
 | `fixed` | immutable binding — **enforced by the seed** |
 | `defer` | runs on normal exit paths |
 | casts `=>` / `=>!` | |
+
+> **These last five were added in cycle 0.0.6**, when the first real compiler
+> source was written. The conformance suite had exercised every construct
+> *individually* and passed, but not in the combinations a compiler actually
+> needs: `list.items[n] = d` requires assignment to a **place** rather than to a
+> bare name, and the seed had only ever lowered values. A suite that covers
+> constructs one at a time can still miss what using them together requires.
 
 **Integer literals require a width suffix in expression position** — `42i32`,
 never `42`. This is `--extra-picky=literal-suffixes` (`SAFETY_ARCHITECTURE.md`)
@@ -154,6 +166,7 @@ IR**, which is what D-015 already specifies for the first rung:
 | `exit` | raw syscall |
 | `memcpy` / `memset` | the symbols LLVM emits calls to |
 | `string_concat`, `int_to_string` | enough to build a diagnostic message |
+| `write_raw(fd, ptr, len)` | the write syscall; **not** `Result`-wrapped, like `alloc` |
 
 **Never freeing is correct here, not a shortcut.** The compiler is a process that
 runs once and exits; reclamation buys nothing and an allocator is exactly the kind

@@ -48,7 +48,7 @@ define void @npk_exit(i32 %code) noreturn {
   unreachable
 }
 
-define i64 @npk_write(i32 %fd, ptr %buf, i64 %len) {
+define i64 @npk_write_raw(i32 %fd, ptr %buf, i64 %len) {
   %f = sext i32 %fd to i64
   %p = ptrtoint ptr %buf to i64
   %r = call i64 @npk_sys6(i64 1, i64 %f, i64 %p, i64 %len, i64 0, i64 0, i64 0)
