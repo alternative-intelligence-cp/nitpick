@@ -5,7 +5,8 @@ Written rather than adopted — the carried-over spec set has no build chapter, 
 ladder"*.
 
 Grounded on D-064 (cross-module monomorphization), D-067 (LLVM and Z3 are invoked,
-never linked), D-075 (diagnostics through `dyn Writer`), and D-077 … D-079.
+never linked), D-075 (diagnostics through `dyn Writer`), D-077 … D-079, and
+D-085 (the seed is purpose-built, not the prototype).
 
 Two tools:
 
@@ -171,28 +172,43 @@ that was verified, and §6's fixpoint check is impossible without it.
 The prototype builds with **CMake**, which is barred here, and nitpick-native
 cannot build itself before it can compile anything.
 
-| Stage | Built by | Status |
-|---|---|---|
-| **0** | the prototype `npkc` (`../nitpick/build/npkc`) | scaffolding; **not** the verified artifact |
-| **1** | stage 0, compiling nitpick-native's sources | first self-hosted compiler |
-| **2** | stage 1, compiling the same sources again | **the artifact of record** |
+| Stage | What it is | Written in | Fate |
+|---|---|---|---|
+| **Seed** | a **subset-1** → LLVM IR compiler | a throwaway generator script | discarded once stage 1 exists; its emitted IR is **committed** as the reproducible seed |
+| **1** | the real compiler — **full frontend**, rung-1 backend | **Nitpick, subset 1** | permanent |
+| **2** | the same source, compiled by stage 1 | Nitpick | **the artifact of record** |
 
-**Stage 1 and stage 2 must be byte-identical.** If they differ, something from
-stage 0 still influences the output and the result is not self-hosted.
+**Stage 1 and stage 2 must be byte-identical.** If they differ, something from the
+seed still influences the output and the result is not self-hosted.
 
-Using the prototype as stage 0 is consistent with the dependency rule for the same
-reason D-067 gives for LLVM: a tool that is *invoked* and produces output is not a
-dependency; a library that is *linked* is. After the fixpoint, nothing of stage 0
-is in the artifact.
+> **The prototype `npkc` is not the seed** (D-085, superseding D-079). It
+> implements the language Nitpick *used to be* — no `relay`, no `cstring` — so
+> seeding from it would force our own sources into a foreign dialect and create a
+> migration debt to undo later. It remains a **behavioural oracle**, which is the
+> only role it ever had.
+
+**The parser never restricts; the backend does.** The frontend accepts the whole
+grammar from day one, and a construct the current rung cannot lower produces a
+*backend* diagnostic rather than a parse error. That is what stops the grammar
+being partial and re-widened rung by rung — the failure that ended
+`nitpick-bootstrap`.
+
+The seed is **invoked once, ever** — weaker than D-067's invoked-never-linked,
+since `llc` runs at every build. Because its emitted IR is committed, rebuilding
+needs only the LLVM toolchain; the generator is needed to *regenerate* the seed,
+never to build.
 
 > **What the fixpoint does not prove.** A self-reproducing compiler backdoor
-> introduced at stage 0 would survive it — Thompson's *Reflections on Trusting
-> Trust*, a property of bootstrapping in general rather than of this arrangement.
-> The check establishes self-consistency, not the absence of an adversarial stage
-> 0. The mitigation, if ever required, is **diverse double-compilation**: build
-> stage 1 from a second, independently obtained stage 0 and confirm the stage 2
-> outputs match. Recorded so the option is understood before it is needed
-> (D-079).
+> introduced at the **seed** would survive it — Thompson's *Reflections on
+> Trusting Trust*, a property of bootstrapping in general rather than of this
+> arrangement. The check establishes self-consistency, not the absence of an
+> adversarial seed. The mitigation, if ever required, is **diverse
+> double-compilation**: build stage 1 from a second, independently obtained seed
+> and confirm the stage 2 outputs match.
+>
+> That exposure is **smaller under D-085 than it was under D-079**, and it is the
+> second reason for the change: a purpose-built seed of a few thousand readable
+> lines can actually be audited. A 26,000-file C++ prototype cannot.
 
 ### 6.1 The capability ladder is orthogonal
 
@@ -202,8 +218,17 @@ built once in full, and the backend grows rung by rung.
 
 They interact in one place. A backend rung that cannot yet compile the compiler's
 own sources cannot host stage 1, so **the rung that closes self-hosting is the
-milestone that matters**, and rungs before it are validated against stage 0's
+milestone that matters**, and rungs before it are validated against the seed's
 output rather than by self-compilation.
+
+**Subset 1 is what the two ladders share.** It is bounded from both sides: large
+enough to write a complete frontend in, small enough for a throwaway seed to lower.
+Roughly — integers and chars, `bool`, pointers, slices, structs, tagged enums,
+arrays, functions returning `Result<T>`, `if` / `while` / `pick`, `pass` / `fail` /
+`raw`, and allocation. Not generics, traits, `async`, macros, `comptime`, or
+contracts. The AST is expressible without generics because it is **tagged enums
+over composable structs**, which `CLAUDE.md` already records as the transferable
+frontend technique — and that is precisely what makes the subset viable.
 
 ---
 

@@ -5348,7 +5348,15 @@ nothing in a symbol name depends on how the compiler happened to be invoked.
 
 ---
 
-## D-079 — Three-stage bootstrap with a fixpoint check — **SETTLED**
+## D-079 — Three-stage bootstrap with a fixpoint check — **SUPERSEDED by D-085**
+
+> ⛔ **The fixpoint check and its honest limits survive; the choice of stage 0 does
+> not.** This decision made the prototype `npkc` the bootstrap compiler. D-085
+> replaces it with a purpose-built seed, because the prototype implements the
+> language Nitpick *used to be* — so seeding from it forces our own sources into a
+> foreign dialect and creates a migration debt to undo later. Read D-085 for the
+> ladder; the reproducibility requirement and the Thompson caveat below are
+> unchanged and carry forward.
 
 The prototype builds with **CMake**, which is barred here, and nitpick-native
 cannot build itself before it can compile anything. The ladder:
@@ -5703,3 +5711,102 @@ not assumed in either direction. Specifically —
 Recording this now means the performance argument rests on numbers when it is
 made, which is the standing requirement that performance is first-class but
 strictly subordinate to safety.
+
+---
+
+## D-085 — The bootstrap seed is purpose-built, not the prototype — **SETTLED**
+
+Supersedes **D-079**'s choice of stage 0. The three-stage structure, the
+byte-identical fixpoint check, and the Thompson caveat all carry forward
+unchanged; what changes is what sits at the bottom.
+
+### Why the prototype cannot be stage 0
+
+D-079 made `../nitpick/build/npkc` the bootstrap compiler on the grounds that a
+tool which is *invoked* is not a dependency, and that the fixpoint washes out its
+lineage. Both remain true, and both miss the decisive objection.
+
+1. **It implements a different language.** Checked against
+   `src/frontend/lexer/lexer.cpp`: no `relay` (D-080), no `cstring` (D-049). The
+   prototype is the language Nitpick *used to be*.
+2. **So it forces our own sources into a foreign dialect**, and creates a debt to
+   undo later. The plan built on D-079 scheduled an entire cycle to migrate off
+   that dialect — **a bootstrap that needs a migration phase to escape its seed is
+   telling you the seed is wrong.**
+3. **It is unaudited and unverified**, which is the opposite of the property this
+   project exists to establish, and `nitpick-repo-lineage` already frames the
+   prototype as a **behavioural oracle, not a structural model**. Stage 0 is a
+   structural role.
+
+### The ladder
+
+| | What it is | Written in | Fate |
+|---|---|---|---|
+| **Seed** | a **subset-1** → LLVM IR compiler | a throwaway generator script | discarded once stage 1 exists; its emitted IR is committed as the reproducible seed |
+| **Stage 1** | the real compiler — **full frontend**, rung-1 backend | **Nitpick, subset 1** | permanent |
+| **Stage 2** | same source, compiled by stage 1 | Nitpick | **must be byte-identical to a stage-1 rebuild** |
+
+We therefore **write in our own language from day one**. "Subset 1" is an honest
+statement about what our own backend can lower yet — the capability ladder working
+as designed — rather than a workaround for someone else's compiler.
+
+### The rule that keeps the frontend intact
+
+> **The parser never restricts. The backend does.**
+
+The real frontend accepts the **whole grammar from day one**, per `CLAUDE.md`'s
+build-the-frontend-once strategy. A construct the current rung cannot lower
+produces a **backend** diagnostic — *not supported at this rung* — never a parse
+error.
+
+This is the decision's most important consequence, and it is aimed at a specific
+past failure: `nitpick-bootstrap` was abandoned because **the parser was rewritten
+at every stage.** That happens when the grammar is partial and gets re-widened
+rung by rung. Here it cannot: the grammar is complete before the backend exists,
+and capability restriction lives entirely in lowering.
+
+It also bounds the seed. **The seed only needs to compile the subset the real
+compiler's source is written in**, not the full language — so a seed implementing
+the full parser would mean writing the full parser twice, in two languages, and
+letting them drift.
+
+### Subset 1
+
+Constrained from both sides: expressive enough to write a complete compiler
+frontend in, small enough that a throwaway seed can lower it. Roughly — integer
+and char types, `bool`, pointers, slices, structs, tagged enums, arrays,
+functions returning `Result<T>`, `if` / `while` / `pick`, `pass` / `fail` / `raw`,
+and allocation.
+
+Explicitly **not** in subset 1: generics, traits and `dyn`, `async`, macros,
+`comptime`, contracts, verification constructs. The AST is expressible without
+generics because it is **tagged enums over composable structs** — which
+`CLAUDE.md` already records as the transferable frontend technique, and which is
+what makes this subset viable.
+
+Defining subset 1 precisely is the first real work of cycle 0.0.
+
+### The seed
+
+A small throwaway generator emitting `.ll` text. It is **invoked once, ever** —
+weaker than D-067's "invoked, never linked", since `llc` runs at every build and
+the seed runs at the beginning of history.
+
+**Its emitted IR is committed**, so rebuilding from source needs only the LLVM
+toolchain; the generator is needed to *regenerate* the seed, never to build. That
+is what keeps the standing target true: **a machine with only the LLVM toolchain
+should be able to build the compiler**, plus Z3 and NIKOS for verification.
+
+Nothing from the generator reaches any artifact, and D-079's fixpoint check —
+carried forward — is what demonstrates it.
+
+### What is unchanged from D-079
+
+The stage-1/stage-2 byte-identical comparison, its dependence on D-078's
+reproducible builds, the fact that **stage 2 is the artifact of record**, and the
+honest limit: a self-reproducing backdoor introduced at the seed would survive the
+fixpoint, with diverse double-compilation as the mitigation if ever required.
+
+That limit is **smaller now than under D-079**, and worth noting as a second
+benefit: a purpose-built seed of a few thousand readable lines can actually be
+audited, where a 26,000-file C++ prototype cannot.

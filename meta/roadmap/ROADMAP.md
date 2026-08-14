@@ -1,6 +1,6 @@
 # Roadmap — cycle map
 
-The specification set is closed at **D-084**. This is the plan built on it.
+The specification set is closed at **D-085**. This is the plan built on it.
 
 ## How this is organised
 
@@ -19,23 +19,32 @@ something about. That is the same reason the specs came first.
 
 ## The constraint that shapes everything
 
-**Stage 0 is the prototype compiler, and it does not speak the language we
-specified.**
+**We write in our own language from day one**, against a backend that starts
+small and grows (D-085).
 
-D-079 makes the prototype `npkc` the stage-0 bootstrap compiler. But the
-prototype's lexer has **no `relay` and no `cstring`** — verified directly against
-`src/frontend/lexer/lexer.cpp`. It does have `comptime` and turbofish.
+The bootstrap does **not** seed from the prototype compiler. The prototype
+implements the language Nitpick *used to be* — its lexer has no `relay` and no
+`cstring`, verified directly — so seeding from it would force our sources into a
+foreign dialect and create a migration debt to undo later. It stays what it always
+was: a **behavioural oracle**.
 
-So every source file in this repository must, until stage 1 exists, be written in
-the **intersection** of what stage 0 accepts and what the new language means. That
-is not a temporary inconvenience to work around ad hoc; it is a defined subset
-that needs writing down, testing against, and eventually migrating off
-(cycle **1.3**).
+Instead, a **throwaway generator emits a seed compiler in LLVM IR** for
+**subset 1**, and the seed's IR is committed. Rebuilding needs only the LLVM
+toolchain; the generator is needed to regenerate the seed, never to build.
 
-The practical shape of it: error propagation is spelled
-`if (r.is_error) { fail r.error; }` rather than `relay` until we can compile
-ourselves — and per D-080's own evidence, that idiom is written wrong often
-enough to matter, so the conformance tests in **0.0.1** exist partly to catch it.
+The rule that makes this work, and the one that ends the failure that killed
+`nitpick-bootstrap`:
+
+> **The parser never restricts. The backend does.**
+
+The frontend accepts the **whole grammar from day one**. A construct the current
+rung cannot lower produces a *backend* diagnostic — *not supported at this rung* —
+never a parse error. The grammar is therefore never partial, never re-widened,
+never rewritten.
+
+"Subset 1" is consequently an honest statement about **what our own backend can
+lower yet**, not a workaround for someone else's compiler. It shrinks to nothing
+as the rungs are climbed, rather than needing a migration phase to escape.
 
 ---
 
@@ -47,7 +56,7 @@ is why the whole frontend precedes any backend work.
 
 | Cycle | Topic |
 |---|---|
-| **0.0** | **Foundations** — repo layout, the bootstrap subset, diagnostics core, test harness |
+| **0.0** | **Foundations** — repo layout, subset 1, the seed generator, diagnostics core, test harness |
 | **0.1** | **Lexer** — `LEXICAL_REFERENCE.md` in full, including `>>` splitting, positional `!`, the `#` sigil, and every literal form |
 | **0.2** | **AST and parser** — `AST_REFERENCE.md` in full, the 19-level precedence table, generics, contracts, `pick` patterns |
 | **0.3** | **Modules, symbols, visibility** — `MODULE_REFERENCE.md`, dependency roots, ambiguity-is-an-error resolution |
@@ -72,15 +81,14 @@ completely and emits nothing.
 |---|---|
 | **1.0** | **Generics, traits, `dyn`** — monomorphization, depth cap, reversible mangling (D-064) |
 | **1.1** | **Async and concurrency** — coroutine lowering, executors, channels, the D-071 suspension model |
-| **1.2** | **Self-hosting** — stage 1, the stage-1/stage-2 fixpoint, byte-reproducible builds (D-078, D-079) |
-| **1.3** | **Migration off the bootstrap subset** — rewrite our own sources into full Nitpick, re-establish the fixpoint |
-| **1.4** | **Verification integration** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, NIKOS |
-| **1.5** | **Astrée preparation** — the single non-renewable 30-day run |
+| **1.2** | **Self-hosting** — stage 1, the stage-1/stage-2 fixpoint, byte-reproducible builds (D-078, D-085) |
+| **1.3** | **Verification integration** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, NIKOS |
+| **1.4** | **Astrée preparation** — the single non-renewable 30-day run |
 
 **1.2 is the milestone that matters.** Everything before it is validated against
-stage 0's output; after it, the compiler validates itself.
+the seed's output; after it, the compiler validates itself.
 
-**1.5 is the one that cannot be retried.** Confirm the accepted input format with
+**1.4 is the one that cannot be retried.** Confirm the accepted input format with
 AbsInt long before the clock starts — that item has been carried since the spec
 work began and does not belong at the end of a queue.
 
@@ -94,8 +102,8 @@ work began and does not belong at the end of a queue.
 - **0.7 precedes 0.8** deliberately. The first rung's programs only need to
   `exit`, so a runtime is not required to prove the emitter works; `nlibc` then
   makes those programs able to do something.
-- **Verification is 1.4, but is not an afterthought.** Every cycle carries its own
-  obligations forward; 1.4 is where the tooling is wired up, not where correctness
+- **Verification is 1.3, but is not an afterthought.** Every cycle carries its own
+  obligations forward; 1.3 is where the tooling is wired up, not where correctness
   starts being considered.
 - **Cycle numbers stay single-digit per major** so the file explorer sorts them.
   Phase C rolls to `1.x` for that reason, not because it implies a release.
