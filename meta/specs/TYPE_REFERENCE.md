@@ -224,6 +224,7 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | `string` | `string<char8>` | `{ptr, i64, i64}` | 24 bytes | 8 |
 | `string<char16>` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
 | `string<char32>` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
+| `cstring` | — | `{ptr, i64}` | 16 bytes | 8 |
 
 **Struct fields:**
 ```llvm
@@ -270,7 +271,39 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | `toLower` | `(string) → string` | Lowercase (ASCII) |
 | `toCharArray` | `(string) → char8[]` | Convert to character array (copy) |
 | `fromCharArray` | `(char8[]) → string` | Convert char array to string (copy) |
-| `as_cstring` | `(string) → char8[]` | **Builtin**: Produces null-terminated char8 array |
+| `to_cstring` | `(string) → Result<cstring>` | **Builtin**: NUL-terminated `cstring` (D-049). **Fails on an interior NUL** |
+| `to_string` | `(cstring) → string` | **Builtin**: copies out of a `cstring` |
+
+### 3.2.1 `cstring` — the kernel-bound string type (D-049)
+
+`string` is `{ptr, len, cap}` and is **not NUL-terminated**, so it cannot be
+handed to a syscall. `cstring` is the type that can.
+
+```
+cstring   { ptr: wild char8->, len: int64 }
+```
+
+The buffer is `len + 1` bytes with `buf[len] == 0u8`. **The length is retained**,
+so `nlibc` never calls `strlen` — the unbounded "scan until NUL" read is absent
+from every path and name in the library, which is what makes these calls
+tractable for Astrée.
+
+**`to_cstring` fails on an interior NUL.** A `string` may contain `0u8` anywhere;
+a NUL-terminated form silently truncates there, so a validator inspecting the
+`string` and a kernel reading the bytes would be examining *different strings* —
+the poison-NUL bypass (`"avatar.png\0.sh"`). Rejecting it once at the boundary
+replaces a check every validator would otherwise have to repeat.
+
+Two ways to obtain one, mirroring `fmt` (D-045):
+
+| Source | Checked | Cost |
+|---|---|---|
+| string literal in `cstring` position | compile time — interior NUL is a compile error | zero |
+| `to_cstring(s)` on a runtime `string` | runtime — interior NUL is `Result.error` | one scan |
+
+`cstring` is immutable: mutation could break the terminator invariant, and
+construction is `string`'s job. `cstring` → `string` is an explicit `to_string`,
+since it copies.
 
 ### 3.3 String Literals & LLVM IR Emission
 

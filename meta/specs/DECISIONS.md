@@ -2940,3 +2940,195 @@ carries multiplication and C pointer syntax, but the second is **confined to
 `extern` blocks**, which contains it in the place where C conventions are
 expected anyway. Neither is a deal-breaker, and both are documented rather than
 implicit.
+
+---
+
+## D-049 — `cstring`: a NUL-terminated string type, not a convention — **SETTLED**
+
+`as_cstring(string) → char8[]` is replaced by **`to_cstring(string) → Result<cstring>`**,
+producing a distinct type.
+
+### Why the `char8[]` form cannot stay
+
+`TYPE_REFERENCE.md` §3.1: a Nitpick `string` is `{ptr, len, cap}` — length-carrying
+and **not NUL-terminated**. Every kernel-bound string therefore needs a
+conversion, and today's answer produces a `char8[]`.
+
+A `char8[]` does not carry the guarantee. It is an ordinary char array; one built
+by hand need not end in `0u8`. The termination lives in `as_cstring`'s
+*behaviour*, not in the type, so nothing stops a caller passing an unterminated
+array to `execve` and nothing in the type system flags it. This is the D-042
+argument exactly: an `fd` is always valid because `-1` is not representable, and
+a `cstring` should always be terminated because there is no way to build an
+unterminated one.
+
+### The property that makes this a safety decision, not ergonomics
+
+A `string` may contain `0u8` **anywhere in its interior** — it is length-carrying,
+so an embedded NUL is just a byte. Converting such a string to a NUL-terminated
+form silently truncates at the first one, and the caller has no indication.
+
+That is the **poison-NUL** class of vulnerability, and it is a disagreement
+between two layers about where a string ends:
+
+```
+attacker supplies:   "avatar.png\0.sh"
+validator sees:      len 14, suffix ".sh" rejected — or suffix ".png" accepted,
+                     depending on which end it checks
+kernel sees:         "avatar.png"        — stops at the NUL
+```
+
+Any check performed on the length-carrying `string` and any use made of the
+NUL-terminated bytes are examining **different strings**. Historically this has
+produced authentication bypasses, extension-check bypasses, and path-validation
+bypasses across essentially every language that talks to a C API.
+
+**`to_cstring` rejects an interior NUL.** It is the whole reason the conversion
+is fallible, and it is enforced once at the boundary rather than at every
+validator.
+
+### Representation
+
+```
+cstring   { ptr: wild char8->, len: int64 }
+```
+
+The buffer is `len + 1` bytes with `buf[len] == 0u8`. **The length is retained**,
+which is strictly better than C and matters for verification:
+
+- `nlibc` never calls `strlen`. The **unbounded "scan forward until NUL" read
+  disappears** from every path, name, and argument in the library — the pattern
+  static analysers cannot discharge, and the one Astrée would otherwise stall on.
+- Bounds are known before the call, so every length precondition is checkable.
+- `ptr` is still exactly what the kernel wants, so there is no cost at the syscall
+  boundary.
+
+`cstring` is immutable. Mutation could break the terminator invariant, and no
+caller needs it — building strings is `string`'s job, and conversion happens once
+at the edge.
+
+### Literals: checked at compile time, exactly like `fmt`
+
+Requiring `to_cstring("/bin/ls")?` at every call site would add a runtime check
+and a `Result` for something the compiler already knows. So `cstring` has two
+inhabitants:
+
+| Source | When checked | Cost |
+|---|---|---|
+| **string literal** in `cstring` position | compile time — interior NUL is a compile error, terminator emitted into the constant | zero |
+| **`to_cstring(s)`** for a runtime `string` | runtime — interior NUL is `Result.error` | one scan |
+
+This deliberately mirrors **D-045's `fmt`**: a type inhabited by literals whose
+constraint the compiler discharges. Two types, one mechanism — nothing new for a
+reader to learn.
+
+Implicit conversion in the other direction does not exist. `cstring` → `string`
+is an explicit `to_string`, because it copies.
+
+### Naming
+
+`to_`, not `as_`. The conversion allocates and can fail; `as_` reads as a free
+reinterpretation of existing bytes, which this is not. This also matches the
+`to_cstring` spelling intended for the string API.
+
+### Consequences
+
+- `TYPE_REFERENCE.md` §3.2 — the `as_cstring` row is replaced; §3.1 gains
+  `cstring`'s layout.
+- Every path, name, and kernel-bound string parameter in `nlibc` becomes
+  `cstring`: `open`, `stat`, `execve`, `getenv`, `chdir`, `mkdir`, `readlink`,
+  `unlink`, and the rest.
+- `EXEC_FAMILY.md` §3's open question is answered; those signatures take
+  `cstring`.
+- `char8[]` remains an ordinary array type. It simply stops being the thing
+  handed to the kernel.
+
+---
+
+## D-050 — Line endings are a property of a stream, never of a string — **SETTLED**
+
+A `string` holds the bytes it holds. Whether those bytes contain `\n` or `\r\n`
+is not something its type can or should express.
+
+Line endings matter at exactly two moments: **reading** text and **writing** it.
+Both are stream operations, so that is where the policy lives.
+
+- **Reading text normalizes.** A text reader accepts `\r\n`, `\n`, and a lone
+  `\r`, and yields `\n`. Code downstream of a read never branches on platform.
+- **Writing emits `\n`** unless the writer was explicitly opened requesting
+  platform-native or `\r\n` endings. The opt-in is greppable, in one place, and
+  named at the point the stream is created.
+
+Binary streams do no translation at all, ever. There is no "text mode by
+accident."
+
+### Why not a string type
+
+A string type that carried a line-ending discipline would mean different things
+depending on which OS produced it — a construct whose meaning varies by context,
+which the blueprint philosophy rejects outright. It would also be unenforceable:
+concatenating a `\n` string and a `\r\n` string yields something that is neither,
+with no place to report the error.
+
+Normalizing at the boundary means there is exactly one representation in memory
+and one rule to remember.
+
+---
+
+## D-051 — No `ostring`; portability lives in a `Path` type above `nlibc` — **SETTLED**
+
+The proposal was an `ostring` type handling OS-specific string concerns — line
+endings, path syntax, and a future Windows build. Those are **three separate
+concerns**, and bundling them into one type would produce exactly the
+context-dependent construct the blueprint philosophy exists to prevent: what
+`ostring` *meant* would depend on which of the three you were using it for.
+
+Taken separately:
+
+| Concern | Where it belongs |
+|---|---|
+| Line endings | the stream (D-050) |
+| Path syntax — separators, roots, traversal | a **`Path`** type |
+| Kernel string encoding | `cstring` (D-049) on Unix; a Windows backend's problem |
+
+### Why `nlibc` says `cstring` and never needs to change
+
+`nlibc` **is** the POSIX syscall surface. Linux syscalls take NUL-terminated byte
+strings with no encoding guarantee, so `cstring` is not an approximation there —
+it is precisely and permanently the right type.
+
+A Windows build of Nikola would not route through `nlibc`'s syscall layer at all;
+it would need a Win32 backend, where the OS string is UTF-16LE and essentially
+every call differs. Putting an `ostring` in `nlibc` would be future-proofing the
+wrong layer — adding a representation that the verified Linux target never uses,
+widening the state space Astrée has to consider, for a platform that would
+replace the module wholesale anyway.
+
+### `Path` earns its place on Linux today
+
+This is not a Windows-only concern deferred until Windows exists. Building paths
+by string concatenation is a live defect source right now:
+
+```nitpick
+string:p = dir + "/" + name;      // "/etc/" + "/passwd" → "/etc//passwd"
+                                  // name = "../../etc/shadow" → traversal
+```
+
+A `Path` type that cannot be built by naive concatenation prevents both. It
+carries:
+
+- **join** that cannot produce doubled or missing separators
+- **explicit** absolute-vs-relative status
+- **normalization** with `..` resolution, so a traversal check inspects the same
+  path the kernel will open — the D-049 poison-NUL lesson applied to `..`
+- `parent`, `basename`, `extension` as operations rather than string surgery
+- **`to_cstring`** as the single, explicit way it reaches a syscall
+
+`Path` lives in the **stdlib, above `nlibc`**. That placement is what makes a
+Windows port a matter of adding a backend rather than re-signing every function:
+`nlibc` keeps saying `cstring` because it is the Unix layer, `Path` is what
+portable code holds, and the conversion between them is the seam.
+
+**Decided now, built later.** The interface above is fixed, so `nlibc`'s
+signatures are final and no downstream churn is pending — `Path` can be
+implemented on the frontend's schedule without any signature being revisited.

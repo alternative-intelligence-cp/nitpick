@@ -295,6 +295,7 @@ are ordinary values referenced by `IdentifierExpr`.
 | `FuncType` | `params`, `return_type` | |
 | `DynType` | `traits: TypeNode[]` | `dyn A & B` |
 | `FmtType` | — | **`fmt`** — inhabited only by string literals (D-045) |
+| `CStringType` | — | **`cstring`** — NUL-terminated, `{ptr, len}` (D-049). Inhabited by string literals (checked at compile time) and by `to_cstring` |
 | `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
 
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
