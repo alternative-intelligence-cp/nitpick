@@ -9,8 +9,8 @@ is deleted at self-hosting.
     compiler is committed as bootstrap/seed/stage1.ll. The script is needed to
     REGENERATE that seed, never to build.
 
-Cycle 0.0.2 implements lexing and parsing. Checking and emission are 0.0.3, the
-runtime floor and linking are 0.0.4.
+Cycle 0.0.2 implements lexing and parsing; 0.0.3 checking and emission; 0.0.4
+the runtime floor and linking.
 """
 
 import sys
@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import lex          # noqa: E402
 import parse        # noqa: E402
+import check        # noqa: E402
 
 
 def parse_file(path):
@@ -32,15 +33,25 @@ def main(argv):
         sys.stderr.write("usage: npkseed.py <file.npk> [...]\n")
         return 2
 
-    failures = 0
+    mods = []
     for path in argv[1:]:
         try:
-            mod = parse_file(path)
-            print("ok    %s  (%d items)" % (path, len(mod.items)))
+            mods.append(parse_file(path))
         except (lex.LexError, parse.ParseError) as e:
-            print("FAIL  %s" % e)
-            failures += 1
-    return 1 if failures else 0
+            print("PARSE-FAIL  %s" % e)
+            return 1
+
+    try:
+        check.Checker().check(mods)
+    except check.RungError as e:
+        print("RUNG  %s" % e)
+        return 1
+    except check.CheckError as e:
+        print("CHECK %s" % e)
+        return 1
+
+    print("ok    %d module(s) parsed and checked" % len(mods))
+    return 0
 
 
 if __name__ == "__main__":

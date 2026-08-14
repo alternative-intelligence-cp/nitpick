@@ -11,24 +11,31 @@ representation and not one the seed needs.
 
 
 class Node:
-    __slots__ = ("line", "col", "path")
+    # Underscore-prefixed so a node FIELD can never be shadowed by its location.
+    # VariantPat has a field called `path` (the Enum.Variant path); with the
+    # location stored as `self.path`, _at() silently overwrote it and the pattern
+    # lost its identity. Cost an hour; worth the two characters.
+    _line = _col = 0
+    _path = "?"
 
     def _at(self, tok):
-        self.line, self.col, self.path = tok.line, tok.col, tok.path
+        self._line, self._col, self._path = tok.line, tok.col, tok.path
         return self
 
     def __repr__(self):
-        fields = []
-        for cls in type(self).__mro__:
-            for s in getattr(cls, "__slots__", ()):
-                if s in ("line", "col", "path"):
-                    continue
-                fields.append("%s=%r" % (s, getattr(self, s, None)))
+        fields = ["%s=%r" % (f, getattr(self, f, None))
+                  for f in getattr(type(self), "_fields", ())]
         return "%s(%s)" % (type(self).__name__, ", ".join(fields))
 
 
 def _mk(name, *slots):
-    ns = {"__slots__": slots}
+    """Build a node class.
+
+    Deliberately NOT __slots__: the checker annotates nodes with resolved types
+    and call targets, and a throwaway seed is better served by annotatable nodes
+    than by saving a dict per node.
+    """
+    ns = {"_fields": slots}
 
     def __init__(self, *args, **kw):
         for s, a in zip(slots, args):
