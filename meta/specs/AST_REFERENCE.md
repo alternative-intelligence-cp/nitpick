@@ -68,17 +68,18 @@ FunctionDecl
 
 ```
 VariadicSpec
-  kind      : Homogeneous | FormatDirected
-  elem_type : TypeNode?    // Homogeneous only — ..*string[] etc.
+  elem_type : TypeNode     // ..*T[] — a typed slice
 ```
 
-Two forms, and the distinction is load-bearing (D-045):
+**One form: homogeneous.** `..*T[]:name` is a typed slice, and a variadic call
+lowers to building one.
 
-- **`Homogeneous`** — `..*T[]:name`, a typed slice.
-- **`FormatDirected`** — a preceding parameter of type `fmt`, with a bare `..*`.
-  The `fmt` type is inhabited **only by string literals**, and the semantic phase
-  checks each specifier against the corresponding argument's type. A format
-  string cannot be computed, stored, or received.
+The format-directed form — a bare `..*` following a `fmt` parameter — was
+**removed by D-053** along with the `fmt` type itself. Formatting is ordinary
+functions returning `string`, spliced by `&{ }` interpolation, so no signature
+needs a format string and there is no specifier language to check.
+
+The surviving consumer is the `sys` builtin, `sys(CONST, ..*int64[])`.
 
 ## 1.2 `ExternFn`
 
@@ -294,7 +295,6 @@ are ordinary values referenced by `IdentifierExpr`.
 | `ArrayType` | `element`, `size: Expr?` | value type; does not decay |
 | `FuncType` | `params`, `return_type` | |
 | `DynType` | `traits: TypeNode[]` | `dyn A & B` |
-| `FmtType` | — | **`fmt`** — inhabited only by string literals (D-045) |
 | `CStringType` | — | **`cstring`** — NUL-terminated, `{ptr, len}` (D-049). Inhabited by string literals (checked at compile time) and by `to_cstring` |
 | `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
 

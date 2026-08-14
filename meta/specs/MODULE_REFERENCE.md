@@ -79,9 +79,9 @@ func:add = int32(int32:a, int32:b) {
 ### 5.1 Extern Syntax
 
 ```nitpick
-extern "libc" {
-    func:printf = int32(any->:fmt);
-    func:malloc = wild any->(int64:size);
+extern "somelib" {
+    func:some_query = int32(int8->:name);
+    func:some_alloc = wild any->(int64:size);
 }
 ```
 
@@ -115,13 +115,13 @@ second meaning.
 If you do not care about the error from an `extern` function, append `raw` or use the `_!` prefix to unwrap the value directly. The optimizer strips the wrapper at compile time, guaranteeing **zero runtime overhead**.
 
 ```nitpick
-int32:n = raw printf("Hello"); 
+int32:n = raw some_query(name); 
 // OR
-int32:x = _! printf("World");
+int32:x = _! some_query(name);
 ```
 
 ### 5.3 ABI Pointers
-*   **Strings**: Do not pass native `string` types directly to C functions expecting `char*`. Use the `as_cstring(string)` builtin to generate a null-terminated `char8[]` array, and pass a pointer to that array instead.
+*   **Strings**: Do not pass native `string` types directly to C functions expecting `char*` — a `string` is `{ptr, len, cap}` and is **not** NUL-terminated. Use **`cstring`** (D-049): a string literal converts at compile time, and `to_cstring(s)` converts a runtime `string`, failing if it contains an interior NUL. Do not use `char8[]` for this — an ordinary char array carries no termination guarantee.
 *   **Pointers**:
     *   `int32->`: Scalar pointer (`int32_t*`).
     *   `MyStruct->`: Struct pointer (`struct MyStruct*`).

@@ -2575,7 +2575,15 @@ constants; they need grouping into types rather than inventing from scratch.
 
 ---
 
-## D-045 — Variadic functions: format strings are checked at compile time — **SETTLED**
+## D-045 — Variadic functions: format strings are checked at compile time — **SUPERSEDED by D-053**
+
+> **The `fmt` type described here no longer exists.** D-053 removed format
+> strings from the language entirely — formatting is ordinary functions returning
+> `string`, spliced by `&{ }` interpolation — so there is nothing for `fmt` to
+> govern. The homogeneous `..*T[]` variadic below survives, with the `sys`
+> builtin as its consumer. Retained as the record of why the format-directed form
+> was introduced.
+
 
 **This blocks the variadic collapse and needs settling before it starts.**
 
@@ -3135,7 +3143,15 @@ implemented on the frontend's schedule without any signature being revisited.
 
 ---
 
-## D-052 — Format strings are lowered at compile time, not parsed at runtime; `%n` never exists — **SETTLED**
+## D-052 — Format strings are lowered at compile time, not parsed at runtime; `%n` never exists — **NARROWED by D-053**
+
+> **Still correct, with no format strings left to apply it to.** D-053 removed
+> the format language, so the lowering mechanism below now applies to **`&{ }`
+> interpolation**, which lowers to the same straight-line typed emitters. The
+> `%n` prohibition becomes moot rather than wrong. The evidence gathered here —
+> the erased `%s` read, the discarded length modifiers, the off-by-one width — is
+> what led to D-053.
+
 
 D-045 established that `fmt` is inhabited only by string literals and that the
 compiler checks each specifier against its argument's type. This settles what the

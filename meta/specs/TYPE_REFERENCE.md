@@ -192,9 +192,10 @@ char32:emoji = '\u{1F600}';  // Unicode escape (char32 only)
 // char arrays do NOT implicitly add a null byte
 char8[5]:hello = ['H', 'e', 'l', 'l', 'o'];
 
-// To create a C-compatible string (null-terminated char array):
-char8[]:cstr = as_cstring("Hello");  // Produces ['H','e','l','l','o','\0']
-// as_cstring works with string literals, char arrays, or Nitpick strings
+// To create a C-compatible string, use the cstring type (D-049):
+cstring:cs = "Hello";                        // literal — checked at compile time
+Result<cstring>:r = to_cstring(some_string);  // runtime — fails on an interior NUL
+// NOT char8[] — an ordinary char array carries no termination guarantee
 
 // char arrays are NOT strings. This is a compile error:
 // string:s = hello;  // ERROR: cannot assign char8[] to string
@@ -307,12 +308,15 @@ a NUL-terminated form silently truncates there, so a validator inspecting the
 the poison-NUL bypass (`"avatar.png\0.sh"`). Rejecting it once at the boundary
 replaces a check every validator would otherwise have to repeat.
 
-Two ways to obtain one, mirroring `fmt` (D-045):
+Two ways to obtain one:
 
 | Source | Checked | Cost |
 |---|---|---|
 | string literal in `cstring` position | compile time — interior NUL is a compile error | zero |
 | `to_cstring(s)` on a runtime `string` | runtime — interior NUL is `Result.error` | one scan |
+
+This literal-checked-at-compile-time mechanism was shared with `fmt` (D-045)
+until D-053 removed that type; `cstring` is now its only consumer.
 
 `cstring` is immutable: mutation could break the terminator invariant, and
 construction is `string`'s job. `cstring` → `string` is an explicit `to_string`,

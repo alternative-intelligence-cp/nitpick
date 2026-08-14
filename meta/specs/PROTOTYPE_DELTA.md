@@ -50,7 +50,7 @@ The open items in §3 are unresolved and block frontend work that depends on the
 | **Verification levels table** | `VERIFICATION_REFERENCE.md` §5.1 | Levels 0–3 given explicit contents; prototype had a one-line parenthetical. |
 | **Sugar operator family** | `OP_REFERENCE.md` §5 | `_?` (drop), `_!` (raw), `_~` (discard), `?\|` (defaults), `??` (null coalesce), `?.` (safe navigation). Prototype had `raw`/`drop` as bare keywords only. |
 | **`<=>` spaceship** | `OP_REFERENCE.md` §3 | Three-way comparison. New. |
-| **`as_cstring(string)`** | `MODULE_REFERENCE.md` §5.3 | Replaces the prototype's implicit `string` → `const char*` passing. Native strings must not be passed to C directly. |
+| **`cstring` type + `to_cstring`** | `TYPE_REFERENCE.md` §3.2.1 | Replaces the prototype's implicit `string` → `const char*` passing, and supersedes the interim `as_cstring(string) → char8[]`. A `char8[]` carries no termination guarantee; `cstring` does, and `to_cstring` rejects interior NULs (D-049). |
 | **`any->` opaque pointer** | `MODULE_REFERENCE.md` §5.3 | Replaces the prototype's `?*` / `?->`. |
 | **Operator overloading banned** | `OP_REFERENCE.md` header | Stated as a formal-verification rule; operator meaning fixed at language level. |
 
@@ -150,7 +150,7 @@ would reach the wrong conclusion.
 
 | Passage | Claim | Settled as |
 |---|---|---|
-| §15.1.3 | "`string` guarantees internal null-termination" | **No.** `string` is `{ptr, len, cap}` and is not NUL-terminated. `to_cstring` exists because it is not — D-049 |
+| §15.1.3 | "`string` guarantees internal null-termination" | **No.** `string` is `{ptr, len, cap}` and is not NUL-terminated. `to_cstring` exists because it is not — D-049. Also logged as conflict 53 in `GRAMMAR_ADOPTION_CONFLICTS.md`, now settled |
 | §15.1.3 | "`int8->` is a Fat Pointer containing bounds metadata" | **No.** Pointers are thin — D-038 |
 | §15.1.2 | raw strings `r"…"` and multi-line `"""…"""` are "currently unsupported and will throw syntax errors in v0.61.82" | A statement about a prototype build, not a language decision. The grammar carries `RawStringLiteral` |
 
