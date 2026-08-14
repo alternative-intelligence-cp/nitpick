@@ -1,0 +1,21 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// Traits, impl, and dyn are excluded from subset 1. The diagnostic sink is a
+// concrete type until D-075's `dyn Writer` is lowerable. Lifted by cycle 1.0.
+
+trait:Renderable = {
+    func:render = string(Self:self);
+};
+
+struct:Point = { int32:x; };
+
+impl:Renderable:for:Point = {
+    func:render = string(Point:self) { pass "point"; };
+};
+
+func:main = int32() {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

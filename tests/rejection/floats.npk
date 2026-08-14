@@ -1,0 +1,17 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// Floats are excluded so the seed does no float arithmetic. The lexer still
+// LEXES float literals -- it stores them as text and the seed never evaluates
+// them, which is why this file must parse cleanly. Lifted by cycle 0.9.
+
+func:average = flt64(flt64:a, flt64:b) {
+    pass ((a + b) / 2.0f64);
+};
+
+func:main = int32() {
+    flt64:m = raw average(1.5f64, 2.5f64);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

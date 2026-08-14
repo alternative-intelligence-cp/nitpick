@@ -1,0 +1,20 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// tbb32 IS in subset 1 -- Result's error field is one (D-069) and failsafe
+// takes one (D-013), so it could not be excluded. But only assignment,
+// comparison, and passing are permitted. ARITHMETIC is not, which is precisely
+// what keeps ERR, stickiness, and saturation out of the seed entirely.
+//
+// Lifted by cycle 0.9.
+
+func:accumulate = tbb32(tbb32:a, tbb32:b) {
+    pass (a + b);                  // arithmetic on tbb -- outside subset 1
+};
+
+func:main = int32() {
+    tbb32:total = raw accumulate(1i32, 2i32);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

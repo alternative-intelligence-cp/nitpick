@@ -1,0 +1,40 @@
+// Subset 1 — scalar types and casts.
+// No floats: the compiler needs none, so the seed does no float arithmetic.
+// tbb32 appears as an error-code type only: assignment and comparison, never
+// arithmetic, so the seed needs no ERR or saturation logic.
+
+func:widths = NIL() {
+    int8:a   = 1i8;
+    int16:b  = 2i16;
+    int32:c  = 3i32;
+    int64:d  = 4i64;
+    uint8:e  = 5u8;
+    uint16:f = 6u16;
+    uint32:g = 7u32;
+    uint64:h = 8u64;
+
+    bool:flag  = true;
+    char8:ch   = 'x';
+
+    // Widening is explicit (D-021): the only two cast forms are => and =>!.
+    int64:wide = c => int64;
+
+    // Wrapping on overflow is defined behaviour for plain integers (D-037).
+    int32:wrapped = c + 1i32;
+
+    pass NIL;
+};
+
+func:error_codes = NIL() {
+    tbb32:code = 0i32;
+    bool:clean = (code == 0i32);      // comparison only — no arithmetic
+    pass NIL;
+};
+
+func:main = int32() {
+    drop widths();
+    drop error_codes();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

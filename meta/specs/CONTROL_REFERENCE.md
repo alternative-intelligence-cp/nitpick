@@ -53,11 +53,19 @@ pick (event) {
 
 *   **`fall label;`** — falls through to the labelled arm. There is no implicit fallthrough.
 *   **`give expr;`** — yields a value out of the `pick` block when it is used as an expression.
-*   **`(!)`** — the *unreachable* marker. Asserts that execution can never reach this arm; traps to `failsafe` if it is reached at runtime.
 
-> **`(!)` does not satisfy exhaustiveness for a `tbb` selector.** `pick` must be
-> exhaustive, and a `tbb` selector additionally **requires an explicit `ERR:`
-> arm** (D-008 §5.1) — neither `(*)` nor `(!)` may absorb the ERR case, or a
+> ⚠️ **`(!)` is removed** (D-061). An earlier revision of this section listed it as
+> the *unreachable* marker. It let an arm be **elided from exhaustiveness**, and
+> the arm most likely to be elided is the one D-008 requires for a `tbb`
+> selector — asserting that a value cannot be ERR, which is the least safe
+> assumption available in the type.
+>
+> An arm the author believes cannot occur is written as an ordinary arm whose body
+> is `#unreachable()`: explicit, greppable, and it traps rather than silently
+> proceeding. That also retires a second spelling of one idea.
+
+> **`pick` must be exhaustive**, and a `tbb` selector additionally **requires an
+> explicit `ERR:` arm** (D-008 §5.1). `(*)` may not absorb the ERR case, or a
 > tainted value ends up steering a branch.
 
 ### 1.3 `pick` Guards and Macros

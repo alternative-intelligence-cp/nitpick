@@ -1,0 +1,16 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// The compiler is synchronous; nothing in it needs suspension. Coroutine
+// lowering arrives in cycle 1.1.
+
+async func:fetch = int32() {
+    pass 1i32;
+};
+
+async func:main = int32() {
+    int32:v = raw await fetch();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

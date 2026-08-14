@@ -1,0 +1,28 @@
+// Subset 1 — structs and field access.
+// `.` handles all member access and auto-dereferences pointers (D-006).
+
+pub struct:Span = {
+    int32:file;
+    int32:start;
+    int32:len;
+};
+
+pub struct:Diagnostic = {
+    int32:severity;
+    int32:code;
+    Span:span;
+};
+
+func:span_end = int32(Span:s) {
+    pass (s.start + s.len);
+};
+
+func:main = int32() {
+    Span:s = Span{ file: 0i32, start: 10i32, len: 5i32 };
+    Diagnostic:d = Diagnostic{ severity: 2i32, code: 19i32, span: s };
+
+    int32:e = raw span_end(d.span);       // nested field access
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

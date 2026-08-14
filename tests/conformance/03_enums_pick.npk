@@ -1,0 +1,42 @@
+// Subset 1 — tagged enums with single-word payloads, and pick.
+//
+// The payload restriction is what makes enum lowering trivial in the seed:
+// every enum is {i32 tag, i64 payload}. The frontend satisfies it naturally --
+// identifiers are interned to an int32 index, and AST nodes are indices into
+// concrete node arrays rather than pointers.
+
+pub enum:Severity = {
+    Note    = 0i32;
+    Warning = 1i32;
+    Error   = 2i32;
+};
+
+pub enum:Expr = {
+    IntLit(int64);
+    Ident(int32);        // interned name index
+    Binary(int32);       // index into the BinaryExpr node array
+};
+
+func:describe = int32(Severity:s) {
+    pick (s) {
+        (Severity.Note)    { pass 0i32; },
+        (Severity.Warning) { pass 1i32; },
+        (Severity.Error)   { pass 2i32; }
+    }
+};
+
+func:payload_of = int64(Expr:e) {
+    pick (e) {
+        (Expr.IntLit(v))  { pass v; },
+        (Expr.Ident(n))   { pass (n => int64); },
+        (Expr.Binary(ix)) { pass (ix => int64); }
+    }
+};
+
+func:main = int32() {
+    Expr:lit = Expr.IntLit(42i64);
+    int64:v  = raw payload_of(lit);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

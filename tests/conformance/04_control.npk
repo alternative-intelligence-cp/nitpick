@@ -1,0 +1,42 @@
+// Subset 1 — control flow.
+// `while` is the only loop. Every extra loop form is seed work, and while
+// expresses all of them; the compiler's source is slightly more verbose for it.
+
+func:count_to = int32(int32:limit) {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+
+    while (i < limit) {
+        if (i == 3i32) {
+            acc = acc + 10i32;
+        } else if (i == 5i32) {
+            acc = acc + 100i32;
+        } else {
+            acc = acc + 1i32;
+        }
+        i = i + 1i32;
+    }
+
+    pass acc;
+};
+
+func:scoped = int32() {
+    int32:outer = 1i32;
+
+    // A bare block introduces a lexical scope. This is how a critical section
+    // is written -- there is no `with` construct (D-082).
+    {
+        fixed int32:pinned = 7i32;      // immutable binding, enforced by the seed
+        outer = outer + pinned;
+    }
+
+    pass outer;
+};
+
+func:main = int32() {
+    int32:a = raw count_to(6i32);
+    int32:b = raw scoped();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

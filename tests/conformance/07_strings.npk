@@ -1,0 +1,21 @@
+// Subset 1 — strings.
+// No interpolation: &{ } needs to know a formatting function per type, which is
+// more than the seed should carry. Diagnostics build messages by explicit
+// concatenation instead, which is mechanical.
+
+func:render = string(int32:code) {
+    string:head = "error[";
+    string:num  = raw int_to_string(code => int64);
+    string:tail = "]: unexpected token";
+
+    string:a = raw string_concat(head, num);
+    string:b = raw string_concat(a, tail);
+    pass b;
+};
+
+func:main = int32() {
+    string:msg = raw render(19i32);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

@@ -1,0 +1,24 @@
+// Subset 1 — pointers, allocation, and defer.
+//
+// Allocation at seed time is a bump allocator that never frees, and dalloc is a
+// no-op. That is correct rather than a shortcut: the compiler runs once and
+// exits, so reclamation buys nothing, and an allocator is exactly the kind of
+// subtle code that should not live in the least-audited artifact.
+//
+// The source is written as though it frees anyway, so that it stays correct
+// when real allocation arrives with nlibc in cycle 0.8.
+
+func:build = int32() {
+    wild int8->:buf = alloc(64i64);
+    defer { dalloc(buf); }             // runs on every normal exit path (D-014)
+
+    int32:n = 0i32;
+    pass n;
+};
+
+func:main = int32() {
+    int32:r = raw build();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

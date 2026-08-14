@@ -1,0 +1,42 @@
+// Subset 1 — Result<T>, the only parameterized type, and the operators that
+// consume it. Result<T> is builtin with shape {T, tbb32} (D-069); the seed
+// hard-codes it rather than implementing generics.
+
+func:might_fail = int32(int32:x) {
+    if (x < 0i32) {
+        fail 19i32;
+    }
+    pass (x * 2i32);
+};
+
+// relay forwards the error code verbatim and returns early (D-080). This is
+// the ordinary way to propagate, and it is why subset 1 includes it despite
+// being otherwise minimal: hand-written propagation gets written wrong.
+func:doubled_plus_one = int32(int32:x) {
+    int32:d = relay might_fail(x);
+    pass (d + 1i32);
+};
+
+func:with_explicit_check = int32(int32:x) {
+    Result<int32>:r = might_fail(x);
+
+    // .is_error is a derived accessor for .error != 0i32 (D-069).
+    if (r.is_error) {
+        fail r.error;                  // forward the code, never a constant
+    }
+
+    pass (raw r);
+};
+
+func:nothing_useful = NIL() {
+    pass NIL;                          // Result<NIL> is {i32} -- NIL is zero-sized
+};
+
+func:main = int32() {
+    int32:a = raw doubled_plus_one(5i32);
+    int32:b = raw with_explicit_check(5i32);
+    drop nothing_useful();             // discard the Result entirely
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

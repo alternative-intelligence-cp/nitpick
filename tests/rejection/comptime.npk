@@ -1,0 +1,17 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// comptime evaluation and macros are excluded from subset 1 -- written out
+// longhand instead. Lifted by cycle 0.6 in the compiler, and never needed by
+// the seed at all.
+
+comptime func:table_size = int32() {
+    pass 256i32;
+};
+
+func:main = int32() {
+    int32:n = comptime(table_size());
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

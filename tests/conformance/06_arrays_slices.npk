@@ -1,0 +1,29 @@
+// Subset 1 — fixed arrays and slices.
+// T[N] is a value type with static bounds (TYPE_REFERENCE 9.2).
+// T[] is a slice, {ptr, i64 len}, a non-owning second-class view whose indexing
+// is bounds-checked against the runtime length (D-070). Bounds live on the
+// array type, which is why pointers stay one word (D-038).
+
+func:sum = int32(int32[]:xs) {
+    int32:i = 0i32;
+    int32:acc = 0i32;
+
+    while ((i => int64) < xs.len) {
+        acc = acc + xs[i => int64];
+        i = i + 1i32;
+    }
+
+    pass acc;
+};
+
+func:main = int32() {
+    int32[4]:fixed_arr = [1i32, 2i32, 3i32, 4i32];
+
+    // Ranging a fixed array yields a slice. `...` is the exclusive range form.
+    int32[]:view = fixed_arr[0...4];
+
+    int32:total = raw sum(view);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };
