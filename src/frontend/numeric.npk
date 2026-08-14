@@ -1,0 +1,265 @@
+// Numeric literal scanning.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.3.
+//
+// The base is given by a SUFFIX, uniform across every base
+// (LEXICAL_REFERENCE.md §6.2): `FFhex`, `1010bin`, `777oct`, `1T0t`, `2An`.
+// C-style prefixes are retained only for FFI compatibility and are discouraged.
+//
+// That has a consequence worth stating plainly: a hex literal can BEGIN WITH A
+// LETTER, so `FFhex` and an identifier are the same characters until the very
+// end. The only way to tell them apart is to scan the whole run and then read it
+// from the RIGHT -- strip the type suffix, strip the base suffix, and see
+// whether what remains is a valid digit string for that base. If it is not, the
+// run was an identifier all along.
+//
+// It also means `FFhex` cannot be a variable name. That is what "the suffix
+// determines the base" costs, and it is the price of one rule for every base
+// rather than a different prefix per base.
+
+use "num_width.npk".*;
+use "intern.npk".*;
+
+pub enum:NumBase = {
+    BaseDecimal = 0i32;
+    BaseHex     = 1i32;
+    BaseBinary  = 2i32;
+    BaseOctal   = 3i32;
+    BaseTernary = 4i32;   // balanced: T/t is -1
+    BaseNonary  = 5i32;   // balanced: a..d / A..D are -1..-4
+};
+
+pub struct:NumScan = {
+    bool:is_numeric;    // false means the run was an identifier
+    bool:is_float;
+    bool:overflow;
+    bool:bad_digit;
+    int64:value;        // integers only; a float keeps its text
+    NumBase:base;
+    NumWidth:width;
+};
+
+func:num_fail = NumScan() {
+    NumScan:r = NumScan{ is_numeric: false, is_float: false, overflow: false,
+                         bad_digit: false, value: 0i64,
+                         base: NumBase.BaseDecimal, width: NumWidth.WNone };
+    pass r;
+};
+
+// --- digit values -----------------------------------------------------------
+//
+// Returns the digit's value, or a sentinel far outside any base's range. The
+// caller compares against the base's radix rather than against a magic number.
+
+func:digit_value = int64(uint8:c, NumBase:base) {
+    if (base == NumBase.BaseTernary) {
+        // Balanced ternary: T and t denote -1.
+        if (c == 48u8) { pass 0i64; }
+        if (c == 49u8) { pass 1i64; }
+        if (c == 84u8) { pass 0i64 - 1i64; }
+        if (c == 116u8) { pass 0i64 - 1i64; }
+        pass 99i64;
+    }
+    if (base == NumBase.BaseNonary) {
+        // Balanced nonary: a..d and A..D denote -1..-4.
+        if ((c >= 48u8) && (c <= 52u8)) { pass (c - 48u8) => int64; }
+        if ((c >= 97u8) && (c <= 100u8)) { pass 0i64 - (((c - 96u8) => int64)); }
+        if ((c >= 65u8) && (c <= 68u8)) { pass 0i64 - (((c - 64u8) => int64)); }
+        pass 99i64;
+    }
+    if ((c >= 48u8) && (c <= 57u8)) { pass (c - 48u8) => int64; }
+    if ((c >= 97u8) && (c <= 102u8)) { pass ((c - 97u8) => int64) + 10i64; }
+    if ((c >= 65u8) && (c <= 70u8)) { pass ((c - 65u8) => int64) + 10i64; }
+    pass 99i64;
+};
+
+func:base_radix = int64(NumBase:base) {
+    if (base == NumBase.BaseHex)     { pass 16i64; }
+    if (base == NumBase.BaseBinary)  { pass 2i64; }
+    if (base == NumBase.BaseOctal)   { pass 8i64; }
+    if (base == NumBase.BaseTernary) { pass 3i64; }
+    if (base == NumBase.BaseNonary)  { pass 9i64; }
+    pass 10i64;
+};
+
+// Balanced bases admit negative digits, so their bound is |digit| < radix rather
+// than 0 <= digit < radix.
+func:digit_in_base = bool(int64:d, NumBase:base) {
+    int64:r = raw base_radix(base);
+    if (d == 99i64) { pass false; }
+    if (d < 0i64) {
+        if (base == NumBase.BaseTernary) { pass ((0i64 - d) <= 1i64); }
+        if (base == NumBase.BaseNonary)  { pass ((0i64 - d) <= 4i64); }
+        pass false;
+    }
+    pass (d < r);
+};
+
+// --- suffix stripping -------------------------------------------------------
+
+func:ends_with = bool(string:s, string:tail) {
+    if (tail.len > s.len) { pass false; }
+    string:back = relay string_slice(s, s.len - tail.len, s.len);
+    pass (raw string_eq(back, tail));
+};
+
+// Longest first, so "tri" beats "t" and "non" beats "n".
+func:strip_base_suffix = int64(string:run) {
+    if (raw ends_with(run, "hex")) { pass 3i64; }
+    if (raw ends_with(run, "bin")) { pass 3i64; }
+    if (raw ends_with(run, "oct")) { pass 3i64; }
+    if (raw ends_with(run, "ter")) { pass 3i64; }
+    if (raw ends_with(run, "tri")) { pass 3i64; }
+    if (raw ends_with(run, "non")) { pass 3i64; }
+    if (raw ends_with(run, "t"))   { pass 1i64; }
+    if (raw ends_with(run, "n"))   { pass 1i64; }
+    pass 0i64;
+};
+
+func:base_from_suffix = NumBase(string:sfx) {
+    if (raw string_eq(sfx, "hex")) { pass NumBase.BaseHex; }
+    if (raw string_eq(sfx, "bin")) { pass NumBase.BaseBinary; }
+    if (raw string_eq(sfx, "oct")) { pass NumBase.BaseOctal; }
+    if (raw string_eq(sfx, "ter")) { pass NumBase.BaseTernary; }
+    if (raw string_eq(sfx, "tri")) { pass NumBase.BaseTernary; }
+    if (raw string_eq(sfx, "t"))   { pass NumBase.BaseTernary; }
+    if (raw string_eq(sfx, "non")) { pass NumBase.BaseNonary; }
+    if (raw string_eq(sfx, "n"))   { pass NumBase.BaseNonary; }
+    pass NumBase.BaseDecimal;
+};
+
+// The longest type suffix the run ends with, leaving a non-empty remainder.
+func:strip_type_suffix = int64(string:run) {
+    int64:n = 6i64;
+    while (n >= 2i64) {
+        if (run.len > n) {
+            string:tail = relay string_slice(run, run.len - n, run.len);
+            NumWidth:w = raw num_width_of(tail);
+            if (w != NumWidth.WNone) {
+                pass n;
+            }
+        }
+        n = n - 1i64;
+    }
+    pass 0i64;
+};
+
+// The width suffix on a float literal's text, or WNone.
+pub func:num_float_width = NumWidth(string:text) {
+    int64:tlen = relay strip_type_suffix(text);
+    if (tlen == 0i64) {
+        pass NumWidth.WNone;
+    }
+    pass (raw num_width_of(relay string_slice(text, text.len - tlen, text.len)));
+};
+
+// --- the scan ---------------------------------------------------------------
+
+// `run` is a maximal [0-9a-zA-Z_] sequence. Returns is_numeric = false when it
+// was an identifier after all.
+pub func:num_scan = NumScan(string:run) {
+    if (run.len == 0i64) {
+        pass (raw num_fail());
+    }
+
+    NumScan:out = raw num_fail();
+
+    int64:tlen = relay strip_type_suffix(run);
+    string:body = relay string_slice(run, 0i64, run.len - tlen);
+    NumWidth:width = NumWidth.WNone;
+    if (tlen > 0i64) {
+        width = raw num_width_of(relay string_slice(run, run.len - tlen, run.len));
+    }
+
+    int64:blen = relay strip_base_suffix(body);
+    NumBase:base = NumBase.BaseDecimal;
+    if (blen > 0i64) {
+        base = raw base_from_suffix(
+            relay string_slice(body, body.len - blen, body.len));
+    }
+    string:digits = relay string_slice(body, 0i64, body.len - blen);
+
+    // A base suffix with no digits in front of it is just an identifier --
+    // `hex`, `bin` and `non` are perfectly good names.
+    if (digits.len == 0i64) {
+        pass out;
+    }
+
+    // Legacy C-style prefixes, kept only for FFI compatibility (§6.2). Handled
+    // after the suffix path so the canonical form always wins.
+    if (blen == 0i64) {
+        if (digits.len > 2i64) {
+            if (digits.ptr[0i64] == 48u8) {
+                uint8:p = digits.ptr[1i64];
+                bool:legacy = false;
+                if (p == 120u8) { base = NumBase.BaseHex;     legacy = true; }
+                if (p == 88u8)  { base = NumBase.BaseHex;     legacy = true; }
+                if (p == 98u8)  { base = NumBase.BaseBinary;  legacy = true; }
+                if (p == 111u8) { base = NumBase.BaseOctal;   legacy = true; }
+                if (legacy) {
+                    digits = relay string_slice(digits, 2i64, digits.len);
+                }
+            }
+        }
+    }
+
+    int64:radix = raw base_radix(base);
+    int64:acc = 0i64;
+    bool:any = false;
+    bool:bad = false;
+    bool:over = false;
+
+    int64:i = 0i64;
+    while (i < digits.len) {
+        uint8:c = digits.ptr[i] => uint8;
+        if (c == 95u8) {
+            // Underscores are permitted for readability and ignored (§6.2).
+            i = i + 1i64;
+        } else {
+            int64:d = raw digit_value(c, base);
+            if (!(raw digit_in_base(d, base))) {
+                bad = true;
+                i = digits.len;
+            } else {
+                // Overflow is DETECTED, not wrapped. A literal too large for
+                // int64 is a source error the caller reports; silently wrapping
+                // it would put a different number in the program than the one
+                // written (D-037 makes wrapping defined for arithmetic, which is
+                // not the same as inventing a value at scan time).
+                if (acc > 922337203685477580i64) {
+                    over = true;
+                }
+                acc = (acc * radix) + d;
+                any = true;
+                i = i + 1i64;
+            }
+        }
+    }
+
+    if (bad) {
+        // Digits that started with an ASCII letter were never a number: the run
+        // is an identifier. Digits that started with 0-9 were meant to be one,
+        // so that is a real error.
+        uint8:first = run.ptr[0i64] => uint8;
+        if ((first >= 48u8) && (first <= 57u8)) {
+            out.is_numeric = true;
+            out.bad_digit = true;
+            out.base = base;
+            out.width = width;
+            pass out;
+        }
+        pass out;
+    }
+
+    if (!any) {
+        pass out;
+    }
+
+    out.is_numeric = true;
+    out.is_float = false;
+    out.overflow = over;
+    out.value = acc;
+    out.base = base;
+    out.width = width;
+    pass out;
+};

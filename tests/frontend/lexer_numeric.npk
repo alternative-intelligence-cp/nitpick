@@ -1,0 +1,104 @@
+// Numeric literals (cycle 0.1.3).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/numeric.npk".*;
+use "../../src/frontend/keywords.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/lexer.npk".*;
+
+func:one = Token(string:src, InternTable->:it, DiagList->:dg) {
+    TokenList:ts = raw lex_all(0i32, src, it, dg);
+    pass (relay tokenlist_at(@ts, 0i64));
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:dg = raw diaglist_init();
+
+    // --- decimal, with a width suffix --------------------------------------
+    Token:a = raw one("42i32", @it, @dg);
+    if (a.kind != TokenKind.IntLit)   { exit 10i32; }
+    if (a.payload != 42i64)           { exit 11i32; }
+    if (a.width != NumWidth.WI32)     { exit 12i32; }
+
+    // Underscores are for readability and are ignored.
+    Token:u = raw one("1_000_000i64", @it, @dg);
+    if (u.payload != 1000000i64)      { exit 13i32; }
+    if (u.width != NumWidth.WI64)     { exit 14i32; }
+
+    // --- the base is a SUFFIX, uniform across every base --------------------
+    // A hex literal can BEGIN WITH A LETTER, so this is also the case that
+    // proves the run is read from the right rather than the left.
+    Token:h = raw one("FFhex", @it, @dg);
+    if (h.kind != TokenKind.IntLit)   { exit 20i32; }
+    if (h.payload != 255i64)          { exit 21i32; }
+
+    Token:b = raw one("1010bin", @it, @dg);
+    if (b.payload != 10i64)           { exit 22i32; }
+
+    Token:o = raw one("777oct", @it, @dg);
+    if (o.payload != 511i64)          { exit 23i32; }
+
+    // Balanced ternary: T is -1. 1T0t = 1*9 + (-1)*3 + 0 = 6.
+    Token:t3 = raw one("1T0t", @it, @dg);
+    if (t3.kind != TokenKind.IntLit)  { exit 24i32; }
+    if (t3.payload != 6i64)           { exit 25i32; }
+
+    // Balanced nonary: A is -1. 2An = 2*9 + (-1) = 17.
+    Token:n9 = raw one("2An", @it, @dg);
+    if (n9.payload != 17i64)          { exit 26i32; }
+
+    // Legacy C prefixes are retained for FFI compatibility.
+    Token:lx = raw one("0xFF", @it, @dg);
+    if (lx.payload != 255i64)         { exit 27i32; }
+
+    // --- a base suffix with no digits is just an identifier -----------------
+    // `hex`, `bin` and `non` are perfectly good names.
+    Token:kw = raw one("hex", @it, @dg);
+    if (kw.kind != TokenKind.Ident)   { exit 30i32; }
+    Token:kw2 = raw one("nonsense", @it, @dg);
+    if (kw2.kind != TokenKind.Ident)  { exit 31i32; }
+
+    // --- floats -------------------------------------------------------------
+    Token:f = raw one("1.5f64", @it, @dg);
+    if (f.kind != TokenKind.FloatLit) { exit 40i32; }
+    if (f.width != NumWidth.WF64)     { exit 41i32; }
+
+    Token:e = raw one("1.0e10f32", @it, @dg);
+    if (e.kind != TokenKind.FloatLit) { exit 42i32; }
+    if (e.width != NumWidth.WF32)     { exit 43i32; }
+
+    // Everything above must have been clean.
+    if (raw diaglist_count(@dg) != 0i64) { exit 44i32; }
+
+    // --- `0...4` is a RANGE, not a malformed float --------------------------
+    // A float needs a digit after the dot. The seed walked into this exact case
+    // in 0.0.2, which is why it has its own test.
+    DiagList:dg2 = raw diaglist_init();
+    TokenList:r = raw lex_all(0i32, "0...4", @it, @dg2);
+    Token:r0 = raw tokenlist_at(@r, 0i64);
+    if (r0.kind != TokenKind.IntLit)  { exit 50i32; }
+    if (r0.payload != 0i64)           { exit 51i32; }
+    if (r0.span.len != 1i32)          { exit 52i32; }   // just the `0`
+
+    // --- errors are reported, not silently wrong ----------------------------
+    DiagList:dg3 = raw diaglist_init();
+    drop lex_all(0i32, "9999bin", @it, @dg3);           // 9 is not a bit
+    if (raw diaglist_count(@dg3) == 0i64) { exit 60i32; }
+
+    // Overflow is DETECTED rather than wrapped: wrapping would put a different
+    // number in the program than the one written.
+    DiagList:dg4 = raw diaglist_init();
+    drop lex_all(0i32, "99999999999999999999999i64", @it, @dg4);
+    if (raw diaglist_count(@dg4) == 0i64) { exit 61i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

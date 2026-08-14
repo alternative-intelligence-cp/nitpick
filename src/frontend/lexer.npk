@@ -12,6 +12,8 @@ use "token_kind.npk".*;
 use "token.npk".*;
 use "intern.npk".*;
 use "keywords.npk".*;
+use "num_width.npk".*;
+use "numeric.npk".*;
 use "diagnostics.npk".*;
 
 pub struct:Lexer = {
@@ -195,11 +197,66 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         }
     }
 
-    if (raw is_ident_start(c)) {
+    if ((raw is_ident_start(c)) || (raw is_digit(c))) {
+        // One maximal [0-9a-zA-Z_] run. A hex literal can begin with a letter
+        // (`FFhex`), so a numeric literal and an identifier are the same
+        // characters until the end -- only reading the run from the RIGHT tells
+        // them apart (numeric.npk).
         while (raw is_ident_part(raw lexer_peek(lx))) {
             drop lexer_advance(lx);
         }
+
+        // A float needs a DIGIT after the dot. `0...4` is a range, not a
+        // malformed float, and this is the check that keeps it one.
+        if (raw is_digit(c)) {
+            if ((raw lexer_peek(lx)) == 46u8) {
+                if (raw is_digit(raw lexer_peek2(lx))) {
+                    drop lexer_advance(lx);                    // the dot
+                    while (raw is_ident_part(raw lexer_peek(lx))) {
+                        drop lexer_advance(lx);
+                    }
+                    // An exponent may carry a sign, which is not an ident part.
+                    uint8:e = raw lexer_peek(lx);
+                    if ((e == 43u8) || (e == 45u8)) {
+                        drop lexer_advance(lx);
+                        while (raw is_ident_part(raw lexer_peek(lx))) {
+                            drop lexer_advance(lx);
+                        }
+                    }
+                    string:ftext = raw string_slice(lx.text, start, lx.pos);
+                    Span:fsp = raw lexer_span_from(lx, start, line, col);
+                    // A float keeps its TEXT, interned, rather than a converted
+                    // value: converting at scan time would round once here and
+                    // again later, and the source form is what the const
+                    // evaluator needs to get it right the first time.
+                    pass (raw token_numeric(TokenKind.FloatLit, fsp,
+                              (raw intern_add(interns, ftext)) => int64,
+                              raw num_float_width(ftext)));
+                }
+            }
+        }
+
         string:text = raw string_slice(lx.text, start, lx.pos);
+
+        NumScan:ns = raw num_scan(text);
+        if (ns.is_numeric) {
+            Span:nsp = raw lexer_span_from(lx, start, line, col);
+            if (ns.bad_digit) {
+                drop diaglist_push(diags,
+                    raw diag_error("NITPICK-LEX-003",
+                        "digit is not valid for this base", nsp));
+                pass (raw token_make(TokenKind.Error, nsp, 0i64));
+            }
+            if (ns.overflow) {
+                // Detected, never wrapped. Wrapping here would put a different
+                // number in the program than the one written.
+                drop diaglist_push(diags,
+                    raw diag_error("NITPICK-LEX-004",
+                        "integer literal does not fit in 64 bits", nsp));
+                pass (raw token_make(TokenKind.Error, nsp, 0i64));
+            }
+            pass (raw token_numeric(TokenKind.IntLit, nsp, ns.value, ns.width));
+        }
         // Keywords are recognised from the WHOLE identifier, never by prefix,
         // so `iffy` is an identifier rather than `if` followed by `fy`.
         TokenKind:kind = raw keyword_kind_of(text);

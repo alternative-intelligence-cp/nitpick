@@ -4,6 +4,7 @@
 
 use "source_location.npk".*;
 use "token_kind.npk".*;
+use "num_width.npk".*;
 
 // The payload is ONE MACHINE WORD (SUBSET_1 section 1.2), which is what keeps a
 // token small and the AST pointer-free:
@@ -20,16 +21,17 @@ pub struct:Token = {
     TokenKind:kind;
     Span:span;
     int64:payload;
-    int32:width;      // an index into the width table; 0 when not numeric
+    NumWidth:width;   // WNone when the token is not numeric
 };
 
 pub func:token_make = Token(TokenKind:kind, Span:span, int64:payload) {
-    Token:t = Token{ kind: kind, span: span, payload: payload, width: 0i32 };
+    Token:t = Token{ kind: kind, span: span, payload: payload,
+                     width: NumWidth.WNone };
     pass t;
 };
 
 pub func:token_numeric = Token(TokenKind:kind, Span:span, int64:value,
-                               int32:width) {
+                               NumWidth:width) {
     Token:t = Token{ kind: kind, span: span, payload: value, width: width };
     pass t;
 };

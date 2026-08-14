@@ -448,14 +448,20 @@ class Checker:
         raise CheckError("unsupported expression %s" % type(e).__name__, e)
 
     def _enum_ctor(self, field):
-        """Field(Ident(Enum), Variant) -> (enum, variant, index, payload) or None."""
+        """Field(Ident(Enum), Variant) -> (enum, variant, tag, payload) or None."""
         if not isinstance(field.obj, S.Ident):
             return None
         variants = self.p.enums.get(field.obj.name)
-        if variants is None or field.name not in variants:
+        if variants is None:
             return None
-        idx, payload = variants[field.name]
-        return (field.obj.name, field.name, idx, payload)
+        if field.name not in variants:
+            # The enum exists but has no such variant. Falling through to "this
+            # is a field access" would report `unknown name 'NumWidth'`, which
+            # points at the wrong half of the expression entirely.
+            raise CheckError("enum %s has no variant %r"
+                             % (field.obj.name, field.name), field)
+        tag, payload = variants[field.name]
+        return (field.obj.name, field.name, tag, payload)
 
     # --- typing --------------------------------------------------------------
 

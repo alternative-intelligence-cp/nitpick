@@ -123,21 +123,45 @@ def compile_files(paths):
     return out
 
 
-def group_for(path, all_paths):
-    """A test file plus whatever it imports, in dependency order."""
-    deps = []
-    with open(path, "r", encoding="utf-8") as fh:
-        for m in USE_RE.finditer(fh.read()):
-            cand = os.path.join(os.path.dirname(path), m.group(1))
+def group_for(path, all_paths=None):
+    """A test file plus everything it imports, TRANSITIVELY, in dependency order.
+
+    Following `use` only one level deep worked until a frontend module imported
+    another one, and then failed as an "unknown name" in a file that looked
+    fine. Dependencies are transitive; resolution has to be too.
+
+    Depth-first post-order, so a module is always emitted after everything it
+    depends on. Cycles are broken rather than diagnosed -- the seed has no module
+    system worth the name, and cycle detection belongs in the real one
+    (MODULE_REFERENCE.md).
+    """
+    seen, order = set(), []
+
+    def visit(p):
+        real = os.path.abspath(p)
+        if real in seen:
+            return
+        seen.add(real)
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError:
+            return
+        for m in USE_RE.finditer(text):
+            cand = os.path.normpath(os.path.join(os.path.dirname(p), m.group(1)))
             if os.path.exists(cand):
-                deps.append(cand)
-    return deps + [path]
+                visit(cand)
+        order.append(p)
+
+    visit(path)
+    return order
 
 
 def imported_by_others(paths):
+    """Files that some other test imports, so they are not run standalone."""
     used = set()
     for p in paths:
-        for d in group_for(p, paths)[:-1]:
+        for d in group_for(p)[:-1]:
             used.add(os.path.abspath(d))
     return used
 
