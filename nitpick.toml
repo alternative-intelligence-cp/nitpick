@@ -18,6 +18,27 @@ opt-level = 0
 # and needs to be argued as one.
 [dependencies]
 
+# Test targets. Closes BUILD_REFERENCE section 8's first open item.
+#
+# Three kinds:
+#   positive    compiles, links, runs, exits with the expected code
+#   negative    FAILS to compile, emitting exactly the expected diagnostics
+#   diagnostic  compiles, emitting exactly the expected warnings
+#
+# Expectations live in the test file itself, next to the code, so a test and its
+# expectation cannot drift apart -- and they assert on stable CODES and spans,
+# never on message text.
+
+[[test]]
+name = "conformance"
+kind = "positive"
+path = "tests/conformance"
+
+[[test]]
+name = "rejection"
+kind = "negative"
+path = "tests/rejection"
+
 # Verification configuration belongs to the project, not to whoever typed the
 # command (D-077). These are the settings this project must be verified under.
 #

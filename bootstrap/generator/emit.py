@@ -16,11 +16,13 @@ Everything below iterates in source order and numbers temporaries sequentially.
 import syntax as S
 import ntypes as T
 import check
+import diag
 
 
-class EmitError(Exception):
+class EmitError(diag.NpkError):
     def __init__(self, msg, node):
-        super().__init__("%s:%d:%d: %s" % (node._path, node._line, node._col, msg))
+        super().__init__(diag.Diag("NITPICK-EMIT-001", node._path, node._line,
+                                   node._col, msg, "emit"))
 
 
 # Argument types of the runtime floor. The RETURN type is derived from

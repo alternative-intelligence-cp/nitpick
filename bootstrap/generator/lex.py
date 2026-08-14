@@ -68,10 +68,12 @@ INT_SUFFIXES.sort(key=len, reverse=True)
 FLOAT_SUFFIXES.sort(key=len, reverse=True)
 
 
-class LexError(Exception):
+import diag
+
+
+class LexError(diag.NpkError):
     def __init__(self, msg, line, col, path):
-        super().__init__("%s:%d:%d: %s" % (path, line, col, msg))
-        self.msg, self.line, self.col, self.path = msg, line, col, path
+        super().__init__(diag.Diag("NITPICK-LEX-001", path, line, col, msg, "lex"))
 
 
 class Token:

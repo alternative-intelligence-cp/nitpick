@@ -22,22 +22,28 @@ first line -- parsing a safety annotation and ignoring it is the worse option.
 
 import syntax as S
 import ntypes as T
+import diag
 
 
-class RungError(Exception):
-    """NITPICK-RUNG-001 -- construct not supported at this backend rung."""
+class RungError(diag.NpkError):
+    """NITPICK-RUNG-001 -- construct not supported at this backend rung.
+
+    Raised from the CHECKER, never from the parser: the parser never restricts,
+    the backend does (D-085).
+    """
 
     def __init__(self, construct, rung, node):
         self.construct, self.rung, self.node = construct, rung, node
-        loc = "%s:%d:%d" % (node._path, node._line, node._col)
-        super().__init__("%s: NITPICK-RUNG-001: %s is not supported at this "
-                         "backend rung; enabled by cycle %s" % (loc, construct, rung))
+        super().__init__(diag.Diag(
+            "NITPICK-RUNG-001", node._path, node._line, node._col,
+            "%s is not supported at this backend rung; enabled by cycle %s"
+            % (construct, rung), "check"))
 
 
-class CheckError(Exception):
+class CheckError(diag.NpkError):
     def __init__(self, msg, node):
-        loc = "%s:%d:%d" % (node._path, node._line, node._col)
-        super().__init__("%s: %s" % (loc, msg))
+        super().__init__(diag.Diag("NITPICK-CHECK-001", node._path, node._line,
+                                   node._col, msg, "check"))
 
 
 class Scope:

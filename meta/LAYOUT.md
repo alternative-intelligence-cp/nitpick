@@ -26,9 +26,8 @@ nitpick-native/
 ├── bootstrap/              # THROWAWAY. Not the compiler. (D-085)
 │   ├── generator/          #   the seed: subset-1 .npk -> .ll
 │   ├── runtime/            #   the runtime floor, hand-written .ll (D-015)
+│   ├── harness/            #   the test runner, until `npkg test` exists
 │   └── seed/               #   committed seed IR (.ll), from cycle 0.7
-├── tools/
-│   └── harness/            # test runner (cycle 0.0.5)
 └── tests/
     ├── conformance/        # subset 1 must compile (cycle 0.0.1)
     └── rejection/          # outside subset 1 → backend diagnostic, not parse error
@@ -77,6 +76,13 @@ bump allocator that never frees, the `memcpy`/`memset` symbols LLVM emits calls
 to, and enough string support to build a diagnostic. Hand-written LLVM IR is what
 D-015 specifies for the first rung; real allocation and real I/O arrive with
 `nlibc` in cycle 0.8.
+
+**The harness is in `bootstrap/`, not `tools/`,** because it cannot yet be
+written in Nitpick: subset 1 has no directory reading and no process spawning,
+and the runtime floor has no `exec`. The permanent harness is `npkg test`
+(`BUILD_REFERENCE.md` §7.1). `tools/` was created at 0.0.0 in anticipation of it
+and removed at 0.0.5 — which is this document's own rule about not guessing at
+directories, applied to itself.
 
 ## What is not here yet
 

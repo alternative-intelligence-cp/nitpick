@@ -17,13 +17,15 @@ unary operators, which bind looser than postfix and tighter than cast (D-081).
 """
 
 import lex
+import diag
 from lex import EOF, IDENT, KEYWORD, INT, FLOAT, CHAR, STRING, OP
 import syntax as S
 
 
-class ParseError(Exception):
+class ParseError(diag.NpkError):
     def __init__(self, msg, tok):
-        super().__init__("%s:%d:%d: %s" % (tok.path, tok.line, tok.col, msg))
+        super().__init__(diag.Diag("NITPICK-PARSE-001", tok.path, tok.line,
+                                   tok.col, msg, "parse"))
         self.tok = tok
 
 

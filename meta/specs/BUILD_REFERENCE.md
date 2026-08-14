@@ -271,18 +271,76 @@ even for edits at the very bottom of the language.
 | Command | Behaviour |
 |---|---|
 | `npkg build` | reads lock + vendored source; never resolves, never fetches |
-| `npkg test` | builds and runs the test targets; diagnostics captured through `dyn Writer` (D-075), so expected output is compared rather than eyeballed |
+| `npkg test` | builds and runs the `[[test]]` targets (§7.1); diagnostics captured through `dyn Writer` (D-075), so expected output is compared rather than eyeballed |
 | `npkg update` | the **only** command that resolves versions; writes `nitpick.lock` and vendors source |
 | `npkg verify` | a clean build with `[verify]` enforced, ending in the stage-1/stage-2 comparison for the compiler itself |
+
+### 7.1 Test targets
+
+Declared in the manifest as an array of tables:
+
+```toml
+[[test]]
+name = "conformance"
+kind = "positive"
+path = "tests/conformance"
+
+[[test]]
+name = "rejection"
+kind = "negative"
+path = "tests/rejection"
+```
+
+| Kind | Passes when |
+|---|---|
+| `positive` | compiles, links, runs, and exits with the expected code |
+| `negative` | **fails to compile, emitting exactly the expected diagnostics** |
+| `diagnostic` | compiles, emitting exactly the expected warnings |
+
+**Expectations live in the test file**, next to the code, so a test and its
+expectation cannot drift apart:
+
+```nitpick
+// expect-error: NITPICK-RUNG-001
+// expect-error-at: 14:9
+// expect-exit: 7
+// expect-no-parse-error
+```
+
+Three rules make this worth having rather than decorative:
+
+- **Assert on codes and spans, never on message text.** Messages must stay free
+  to improve without breaking the suite, which is why diagnostic codes are
+  stable identifiers rather than prose.
+- **A negative test with no `expect-error` is a failing test.** Asserting only
+  *"it did not compile"* stops noticing when a test starts failing for a
+  different reason than the one it was written to guard.
+- **Unexpected diagnostics fail a test as surely as missing ones.** A suite that
+  ignores extras stops noticing new problems.
+
+**`expect-no-parse-error` is the load-bearing one.** It asserts that a file
+reached the *backend* to be rejected, rather than tripping the parser. That is
+D-085's rule — the parser never restricts, the backend does — made checkable, and
+it is what stops the grammar being quietly made partial.
+
+**The harness is itself tested.** A suite that only ever agrees with what it is
+handed is worse than no suite, because it reports green while checking nothing.
+So there is a self-check that feeds the harness wrong expectations — wrong code,
+wrong line, wrong exit status, a negative test that compiles, a negative test
+with no expectation, and a rejection file that fails at parse time — and requires
+it to report every one as a failure.
 
 ---
 
 ## 8. Open items
 
-- **Test-target declaration.** `[test]` tables, discovery rules, and how a
-  negative test (one that must fail to compile, of which the prototype has many)
-  declares its expected diagnostic. The prototype's `WILL_FAIL TRUE` and
-  `// Expected: COMPILER ERROR` conventions are the material to work from.
+- ~~**Test-target declaration.**~~ — **settled; see §7.1.** `[[test]]` tables
+  with three kinds, in-file expectations asserting on codes and spans rather
+  than message text, and a harness that is itself tested against wrong
+  expectations. The prototype's `WILL_FAIL TRUE` and
+  `// Expected: COMPILER ERROR` conventions were the material; what they lacked
+  was any assertion about *which* diagnostic, which is the half that makes a
+  negative test worth keeping.
 - **Cross-compilation.** `--target` and how `[build]` expresses more than one.
   Not needed until a second target exists, but the manifest shape should not have
   to change when it does.
