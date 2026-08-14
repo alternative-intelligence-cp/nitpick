@@ -162,3 +162,86 @@ bounds living in the types that own them.
 
 `nitpick-docs/` is read-only reference material and is not edited to match. This
 table is the correction of record.
+
+
+---
+
+## 5. Macro documentation — located, and what it conflicts with
+
+The claim that macros had no governing document was **wrong**. Two exist in
+`nitpick-docs`:
+
+| Document | Lines | Content |
+|---|---:|---|
+| `specs/macros_meta_specs.txt` | 40 | `macro:` definitions, `comptime`, `cfg`, inlining hints, the `pre!` preprocessor |
+| `reference/MACRO_AUTHORING_GUIDE.md` | 122 | derive macros, attribute macros, `comptime` intrinsics and budget |
+
+Neither was among the ten spec files carried into `meta/specs/`, which is why the
+gap appeared. The system they describe is substantial and mostly sound; it
+predates several decisions taken here.
+
+### Conflicts to resolve before adoption
+
+| # | Documented | Conflicts with | Resolution |
+|---|---|---|---|
+| 1 | Invocation `name!(args)` | D-046 | **`#name(args)`.** Both documents predate the change |
+| 2 | `cfg!(target_os = "linux")` | D-046 | **`#cfg(...)`** |
+| 3 | `@type_name(T)`, `@has_field(T, "f")`, `@field_names(T)` | D-020, `BUILTIN_REFERENCE` | **`@` is address-of and is never a builtin prefix.** Becomes `#type_name<T>` etc. — same error class already corrected for `@sizeof` and `@cast` |
+| 4 | `pre!` text-substitution preprocessor | the spec's own opening line | see below |
+| 5 | `#[comptime]` attribute *and* `comptime func:` modifier | blueprint philosophy | one spelling. Keep the **modifier**; `AST_REFERENCE` already carries `comptime` in `FunctionDecl.modifiers` |
+| 6 | Derive list of 6 traits | `TRAITS_REFERENCE.md` §129 lists 8 | `TRAITS_REFERENCE` is newer — `Default` and `PartialOrd` are also derivable |
+| 7 | `#[gpu_kernel]`, `#[gpu_device]` | zero-dependency rule | **open — needs its own decision.** LLVM can emit NVPTX/AMDGPU without a vendor toolchain, but *launching* a kernel requires a vendor runtime, which is an FFI crossing the runtime cannot route through `failsafe` |
+
+### `pre!` should be removed outright
+
+`macros_meta_specs.txt` opens by stating that Nitpick *"rejects C-style
+text-substitution macros in favor of AST-aware, hygienic macros"* — and then §5
+documents a text-substitution preprocessor with positional `#%1` parameters. The
+document contradicts itself.
+
+For a compiler under formal verification the objection is decisive: **text
+substitution runs before parsing, so the artifact analysed is not the text anyone
+reviewed.** Every hygiene and type-safety guarantee the language offers is
+bypassed, which both documents say explicitly.
+
+It is also already on the way out — the authoring guide calls `pre!` "deprecated
+and will be removed in a future cycle," having itself replaced `%macro`. The
+migration path simply terminates one step earlier than written: `%macro` and
+`pre!` both migrate to `macro:` or `comptime`, and neither survives.
+
+Removing it also retires another `!` suffix form, after D-001 removed `sys!!!`
+and D-046 removed `!!`.
+
+### What is worth adopting as-is
+
+`comptime` is well specified and needs no change beyond the `@` → `#` correction:
+the `comptime func:` modifier, the `comptime(expr)` forcing form, LLVM global
+embedding for returned structs and arrays, `--trace-comptime`, `--comptime-budget
+<N>`, and a blocklist during evaluation of allocation, I/O, closures, and raw
+pointer access. That blocklist is the property that makes compile-time evaluation
+verifiable, and it is already stated.
+
+### The `comptime` block question, settled
+
+Three documents give three answers. `macros_meta_specs.txt` §2 has the
+`comptime func:` modifier and a `comptime(expr)` forcing form. `FORMAL_DRAFT` 07
+§7.2 has the modifier and a `comptime { … };` **block**. `AST_REFERENCE` had only
+the modifier.
+
+**Settled as modifier + `comptime(expr)`; the block does not exist.**
+`FORMAL_DRAFT`'s own example binds `int32[]:baked_data` inside the braces and
+then expects to use it, which requires a block that does *not* introduce a scope
+— contradicting 05 §5.2, where every block does. A brace form that scopes
+everywhere except here changes meaning by context. `comptime(expr)` says the same
+thing with an ordinary expression and an ordinary binding, and `AST_REFERENCE`
+now carries `ComptimeExpr`.
+
+### Where `comptime` ends and macros begin
+
+`FORMAL_DRAFT` 07 §7.2 claims `comptime` allows "macro-like metaprogramming
+without requiring a separate macro language." It does not replace macros, and the
+boundary is worth stating: **`comptime` computes values; macros generate
+declarations.** Baking a lookup table is `comptime`. Synthesising an
+`impl:Trait:for:T` from `#[derive(...)]` is a macro. Neither subsumes the other,
+so both stay — but nothing else should be added to either without checking which
+side of that line it falls on.

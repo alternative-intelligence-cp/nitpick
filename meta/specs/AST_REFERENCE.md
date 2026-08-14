@@ -231,6 +231,7 @@ a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 | `CallExpr` | `callee`, `generic_args`, `args`, `turbofish: bool` | `generic_args` may arrive implicitly (`f<int32>(x)`) or via turbofish (`f::<int32>(x)`); `turbofish` records which, since the parser needs lookahead to tell a generic call from a `<` comparison |
 | `MethodCallExpr` | `receiver`, `method`, `generic_args`, `args` | UFCS — `p.magnitude()` resolves to `Point_magnitude(p)` (D-006) |
 | `BuiltinExpr` | `name`, `generic_args`, `args` | **`#name<T>(…)`** (D-020) — `#size_of<T>`, `#wild_ptr<T>(addr)` |
+| `ComptimeExpr` | `expr` | **`comptime(expr)`** — forces compile-time resolution; a compile error if it cannot be resolved |
 | `MacroInvocationExpr` | `name`, `args` | **`#name(args)`** (D-046) — expanded before semantic analysis |
 
 ### Two kinds of builtin, and why the parser must distinguish them
@@ -356,17 +357,35 @@ work does not silently invent answers.
 
 1. **`MacroPattern` in `pick`** (§2.1) — `FORMAL_DRAFT` 05 §5.6.2 spells it
    `MyMacro!(a, b)`, but D-046 moved macro invocation to `#name(args)`. The
-   pattern form needs the same treatment.
-2. **Macros have no governing specification.** `MacroDecl` and
-   `MacroInvocationExpr` are represented here, but hygiene, expansion order,
-   pattern matching over AST fragments, and what a macro may produce are
-   unspecified. `FORMAL_DRAFT` 08.5 is a paragraph.
+   pattern form needs the same treatment. Note that **both** macro documents
+   located in `nitpick-docs` also predate D-046 and use `name!(args)`.
+2. ~~**Macros have no governing specification.**~~ — **they do; located.**
+   `specs/macros_meta_specs.txt` (40 lines) and
+   `reference/MACRO_AUTHORING_GUIDE.md` (122 lines) specify definitions,
+   derive and attribute macros, `cfg`, and `comptime`. Neither was among the ten
+   files carried into `meta/specs/`, which is why the gap appeared. Adoption
+   conflicts are tabled in `PROTOTYPE_DELTA.md` §5. **What genuinely remains
+   unspecified is hygiene, expansion order, and pattern matching over AST
+   fragments** — the documents describe what macros do, not the rules under which
+   they expand.
 3. **`Future<T>` visibility.** `TYPE_REFERENCE.md` §17 defines it; no chapter uses
    it. Whether it is surface syntax — awaitable, composable, cancellable — or
    purely a lowering artifact determines whether it needs expression nodes.
 4. **`give` and `pick`-as-expression.** `GiveStmt` implies `pick` can be an
    expression, but the statement/expression boundary is stated inconsistently
    across `FORMAL_DRAFT` 04 §4.1 and 05 §5.1.
-5. **`comptime` blocks.** `FORMAL_DRAFT` 07 §7.2 shows `comptime { … }` as a
-   statement form as well as a function modifier; only the modifier is
-   represented here.
+5. **`comptime` blocks** — **three documents, three answers.**
+   `macros_meta_specs.txt` §2 gives a `comptime func:` modifier and a
+   `comptime(expr)` forcing form. `FORMAL_DRAFT` 07 §7.2 gives the modifier and a
+   `comptime { … };` **block**. This document has only the modifier.
+
+   **Resolved as: modifier + `comptime(expr)`, no block.** The block form is
+   incoherent — `FORMAL_DRAFT`'s own example binds `int32[]:baked_data` inside
+   `comptime { … }` and then expects to use it, so the construct would have to be
+   a block that does **not** introduce a scope, contradicting 05 §5.2 where every
+   block does. A brace form that scopes everywhere except here is exactly the
+   context-dependent meaning the blueprint philosophy rejects. `comptime(expr)`
+   expresses the same thing as an ordinary expression with an ordinary binding.
+
+   `ComptimeExpr` is therefore added to §3; `FunctionDecl.modifiers` already
+   carries `comptime`.

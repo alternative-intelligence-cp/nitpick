@@ -3387,3 +3387,86 @@ not.
 it is accepted: the shorter form is shorter because it omits the information the
 type system needs, and every defect in the table above is the consequence of
 that omission.
+
+---
+
+## D-054 — The `Path` type — **SETTLED**
+
+D-051 fixed `Path`'s place in the layering — stdlib, above `nlibc`, reaching a
+syscall by `to_cstring` — and deferred nothing but its shape. This is the shape.
+
+```
+Path   { bytes: char8[] }      // absolute, lexically normalized, no interior NUL
+```
+
+### Four invariants, each removing a defect class
+
+**1. A `Path` is always absolute.**
+
+Constructing one from a relative string requires an explicit base:
+`Path.from(base, relative)`. There is no way to obtain a relative `Path`.
+
+This makes CWD-relative opens **unrepresentable**. The working directory is
+process-global mutable state, so a relative path resolved at open time is a race
+against any other thread calling `chdir` — and in a system with Nikola's
+concurrency that is not hypothetical. Relative fragments stay ordinary `string`s
+until they are joined onto a base, at which point they become absolute.
+
+**2. `join` takes a component, not a fragment.**
+
+```nitpick
+Result<Path>:p = base.join(name);    // name is ONE component
+```
+
+A component containing `/` or `0u8` is an **error**, not a path. That single rule
+is the traversal defense: `join("../../etc/shadow")` cannot construct a path
+outside `base`, because it cannot construct a path at all. Contrast the string
+form, where `dir + "/" + name` silently accepts whatever `name` holds.
+
+**3. Bytes, not `string`.**
+
+Linux paths are arbitrary byte sequences and are not required to be valid UTF-8.
+A `readdir` that cannot represent what the kernel returned is a library that
+cannot report what is on disk. So `Path` holds `char8[]`, and `to_string()` is
+**fallible** — it fails on invalid UTF-8 rather than lying.
+
+This is also the second half of D-051's answer on `ostring`. Non-UTF-8 byte
+strings realistically appear in exactly one place — filesystem paths — and `Path`
+is that place. A general OS-string type is not needed to cover it.
+
+**4. No interior NUL**, checked at construction, so `to_cstring` at the syscall
+boundary cannot fail for that reason and the D-049 poison-NUL split cannot
+reopen between a path check and a path use.
+
+### Lexical normalization is not kernel resolution — and this must be loud
+
+`Path` normalizes `..` **lexically** at construction, so `/a/b/../c` becomes
+`/a/c`.
+
+**That is not what the kernel does when a symlink is involved.** If `/a/b` is a
+symlink to `/x/y`, the kernel resolves `/a/b/../c` to `/x/c`, not `/a/c`. A
+security check performed on the lexically normalized path therefore inspects a
+**different path than the one that gets opened** — structurally the same failure
+as the poison-NUL split in D-049, with `..` in place of `\0`.
+
+So lexical normalization is for **hygiene**, never for authorization:
+
+- `resolve()` performs kernel-level resolution and returns the real path.
+- **A containment check must not use lexical normalization.** The correct
+  mechanism is `openat` traversal: open the base directory, then open each
+  component with `O_NOFOLLOW` relative to the previous fd. That is TOCTOU-safe,
+  where "normalize, compare prefix, then open" is not — the filesystem can change
+  between the compare and the open.
+
+`Path` exposes that traversal as the supported way to open something under a
+base. The lexical form exists so paths print and compare sensibly, and the
+documentation must say plainly that it proves nothing about containment.
+
+### Why this is worth building before it is needed
+
+Not Windows preparation. Every defect above is reachable on Linux today, and
+three of them — CWD races, `..` traversal, and the symlink split — are the
+classic filesystem vulnerability set. Building the type after `nlibc`'s callers
+exist would mean revisiting them; building it now costs nothing downstream,
+because D-051 already fixed the boundary at `to_cstring` and `nlibc`'s signatures
+do not change.
