@@ -1,0 +1,106 @@
+// Tokens.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.1.
+
+use "source_location.npk".*;
+use "token_kind.npk".*;
+
+// The payload is ONE MACHINE WORD (SUBSET_1 section 1.2), which is what keeps a
+// token small and the AST pointer-free:
+//
+//   Ident / StringLit / FloatLit   an intern-table index
+//   IntLit                         the value
+//   CharLit                        the code point
+//   everything else                unused, zero
+//
+// The WIDTH of a numeric literal is a separate field rather than more payload,
+// because a literal's width is part of its type and not part of its value --
+// and in expression position it is never inferred (SUBSET_1).
+pub struct:Token = {
+    TokenKind:kind;
+    Span:span;
+    int64:payload;
+    int32:width;      // an index into the width table; 0 when not numeric
+};
+
+pub func:token_make = Token(TokenKind:kind, Span:span, int64:payload) {
+    Token:t = Token{ kind: kind, span: span, payload: payload, width: 0i32 };
+    pass t;
+};
+
+pub func:token_numeric = Token(TokenKind:kind, Span:span, int64:value,
+                               int32:width) {
+    Token:t = Token{ kind: kind, span: span, payload: value, width: width };
+    pass t;
+};
+
+pub func:token_is = bool(Token:t, TokenKind:kind) {
+    pass (t.kind == kind);
+};
+
+pub func:token_is_eof = bool(Token:t) {
+    pass (t.kind == TokenKind.Eof);
+};
+
+// ---------------------------------------------------------------------------
+// TokenList
+//
+// Growable over alloc/ralloc and #size_of<Token>, because subset 1 has no
+// generics. Doubling rather than incrementing: a source file's token count is
+// not knowable in advance, and repeated ralloc of a large buffer is the one
+// place a bump allocator that never frees actually hurts.
+// ---------------------------------------------------------------------------
+
+pub struct:TokenList = {
+    wild Token->:items;
+    int64:count;
+    int64:cap;
+};
+
+pub func:tokenlist_init = TokenList() {
+    int64:n = 256i64;
+    wild int8->:raw_mem = alloc(n * #size_of<Token>());
+    TokenList:l = TokenList{ items: raw_mem => wild Token->, count: 0i64, cap: n };
+    pass l;
+};
+
+func:tokenlist_grow = NIL(TokenList->:l) {
+    int64:newcap = l.cap * 2i64;
+    wild int8->:bigger = ralloc(l.items => wild int8->,
+                                newcap * #size_of<Token>());
+    l.items = bigger => wild Token->;
+    l.cap = newcap;
+    pass NIL;
+};
+
+pub func:tokenlist_push = NIL(TokenList->:l, Token:t) {
+    if (l.count >= l.cap) {
+        drop tokenlist_grow(l);
+    }
+    l.items[l.count] = t;
+    l.count = l.count + 1i64;
+    pass NIL;
+};
+
+pub func:tokenlist_count = int64(TokenList->:l) {
+    pass l.count;
+};
+
+pub func:tokenlist_at = Token(TokenList->:l, int64:i) {
+    if (i < 0i64) {
+        fail 4i32;
+    }
+    if (i >= l.count) {
+        fail 4i32;
+    }
+    pass l.items[i];
+};
+
+// The last token, which a lexer needs when deciding whether `!` is leading or
+// trailing (D-046) and whether `>>` sits inside a type-argument list (D-064).
+pub func:tokenlist_last = Token(TokenList->:l) {
+    if (l.count == 0i64) {
+        fail 4i32;
+    }
+    pass l.items[l.count - 1i64];
+};

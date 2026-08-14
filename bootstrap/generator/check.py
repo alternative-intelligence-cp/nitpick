@@ -97,6 +97,7 @@ class Checker:
     # --- entry ---------------------------------------------------------------
 
     def check(self, modules):
+        T.reset_enums()
         self.p.modules = modules
         for m in modules:
             for item in m.items:
@@ -149,6 +150,8 @@ class Checker:
                     tag = v.value.value
                 variants[v.name] = (tag, payload)
             self.p.enums[item.name] = variants
+            T.ENUM_HAS_PAYLOAD[item.name] = any(
+                p is not None for _, p in variants.values())
             return
 
         if isinstance(item, S.FuncDecl):

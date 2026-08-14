@@ -1,0 +1,279 @@
+// Token kinds.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.1.
+//
+// GENERATED FROM meta/specs/LEXICAL_REFERENCE.md sections 4 and 5, and checked
+// against it by bootstrap/harness/spec_coverage.py. Hand-typing two hundred
+// variants is a good way to silently omit one, and an omitted keyword is a
+// keyword that lexes as an identifier -- which fails far from its cause.
+//
+// EVERY keyword and operator has a kind, including those for constructs no
+// backend rung can lower yet. They still LEX; capability rejection belongs in
+// the backend (D-085). A lexer that recognises only what today's rung supports
+// is a partial grammar by another name.
+
+pub enum:TokenKind = {
+    // --- structural ---------------------------------------------------
+    Eof                        = 0i32;   // end of input
+    Error                      = 1i32;   // an invalid token; the lexer recovers past it
+
+    // --- literals -----------------------------------------------------
+    IntLit                     = 2i32;   // payload: the value
+    FloatLit                   = 3i32;   // payload: intern index of the text
+    CharLit                    = 4i32;   // payload: the code point
+    StringLit                  = 5i32;   // payload: intern index
+    RawStringLit               = 6i32;   // r"..." (D-024)
+    MultiStringLit             = 7i32;   // """...""" (D-024)
+    TemplateStart              = 8i32;   // `...  before the first &{
+    TemplatePart               = 9i32;   // between } and &{
+    TemplateEnd                = 10i32;   // after the last }
+    Ident                      = 11i32;   // payload: intern index
+
+    // --- memory qualifiers -----------------------------------------
+    KwWild                     = 12i32;   // wild
+    KwWildx                    = 13i32;   // wildx
+    KwStack                    = 14i32;   // stack
+    KwDefer                    = 15i32;   // defer
+
+    // --- memory orderings ------------------------------------------
+    KwRelaxed                  = 16i32;   // relaxed
+    KwAcquire                  = 17i32;   // acquire
+    KwRelease                  = 18i32;   // release
+    KwAcqRel                   = 19i32;   // acq_rel
+    KwSeqCst                   = 20i32;   // seq_cst
+
+    // --- control flow ----------------------------------------------
+    KwIf                       = 21i32;   // if
+    KwElse                     = 22i32;   // else
+    KwWhile                    = 23i32;   // while
+    KwFor                      = 24i32;   // for
+    KwLoop                     = 25i32;   // loop
+    KwTill                     = 26i32;   // till
+    KwWhen                     = 27i32;   // when
+    KwThen                     = 28i32;   // then
+    KwEnd                      = 29i32;   // end
+    KwPick                     = 30i32;   // pick
+    KwFall                     = 31i32;   // fall
+    KwWhere                    = 32i32;   // where
+    KwGive                     = 33i32;   // give
+    KwBreak                    = 34i32;   // break
+    KwContinue                 = 35i32;   // continue
+    KwReturn                   = 36i32;   // return
+    KwPass                     = 37i32;   // pass
+    KwFail                     = 38i32;   // fail
+    KwExit                     = 39i32;   // exit
+    KwRaw                      = 40i32;   // raw
+    KwDrop                     = 41i32;   // drop
+    KwNodrop                   = 42i32;   // nodrop
+    KwOk                       = 43i32;   // ok
+    KwDefaults                 = 44i32;   // defaults
+    KwDiscard                  = 45i32;   // discard
+    KwMove                     = 46i32;   // move
+    KwRelay                    = 47i32;   // relay
+
+    // --- verification ----------------------------------------------
+    KwProve                    = 48i32;   // prove
+    KwAssertStatic             = 49i32;   // assert_static
+    KwRequires                 = 50i32;   // requires
+    KwEnsures                  = 51i32;   // ensures
+    KwInvariant                = 52i32;   // invariant
+    KwFails                    = 53i32;   // fails
+    KwOn                       = 54i32;   // on
+    KwWith                     = 55i32;   // with
+    KwNever                    = 56i32;   // never
+
+    // --- async -----------------------------------------------------
+    KwAsync                    = 57i32;   // async
+    KwAwait                    = 58i32;   // await
+
+    // --- modules ---------------------------------------------------
+    KwUse                      = 59i32;   // use
+    KwMod                      = 60i32;   // mod
+    KwPub                      = 61i32;   // pub
+    KwExtern                   = 62i32;   // extern
+    KwCfg                      = 63i32;   // cfg
+    KwAs                       = 64i32;   // as
+    KwComptime                 = 65i32;   // comptime
+    KwInline                   = 66i32;   // inline
+    KwNoinline                 = 67i32;   // noinline
+    KwMacro                    = 68i32;   // macro
+    KwDerive                   = 69i32;   // derive
+
+    // --- type keywords ---------------------------------------------
+    KwStruct                   = 70i32;   // struct
+    KwEnum                     = 71i32;   // enum
+    KwType                     = 72i32;   // Type
+    KwAssoc                    = 73i32;   // assoc
+    KwOpaque                   = 74i32;   // opaque
+    KwTrait                    = 75i32;   // trait
+    KwImpl                     = 76i32;   // impl
+    KwSelf                     = 77i32;   // Self
+    KwRules                    = 78i32;   // Rules
+    KwLimit                    = 79i32;   // limit
+    KwConst                    = 80i32;   // const
+    KwFixed                    = 81i32;   // fixed
+
+    // --- builtin types ---------------------------------------------
+    KwInt1                     = 82i32;   // int1
+    KwInt2                     = 83i32;   // int2
+    KwInt4                     = 84i32;   // int4
+    KwInt8                     = 85i32;   // int8
+    KwInt16                    = 86i32;   // int16
+    KwInt32                    = 87i32;   // int32
+    KwInt64                    = 88i32;   // int64
+    KwInt128                   = 89i32;   // int128
+    KwInt256                   = 90i32;   // int256
+    KwInt512                   = 91i32;   // int512
+    KwInt1024                  = 92i32;   // int1024
+    KwInt2048                  = 93i32;   // int2048
+    KwInt4096                  = 94i32;   // int4096
+    KwUint1                    = 95i32;   // uint1
+    KwUint2                    = 96i32;   // uint2
+    KwUint4                    = 97i32;   // uint4
+    KwUint8                    = 98i32;   // uint8
+    KwUint16                   = 99i32;   // uint16
+    KwUint32                   = 100i32;   // uint32
+    KwUint64                   = 101i32;   // uint64
+    KwUint128                  = 102i32;   // uint128
+    KwUint256                  = 103i32;   // uint256
+    KwUint512                  = 104i32;   // uint512
+    KwUint1024                 = 105i32;   // uint1024
+    KwUint2048                 = 106i32;   // uint2048
+    KwUint4096                 = 107i32;   // uint4096
+    KwTbb8                     = 108i32;   // tbb8
+    KwTbb16                    = 109i32;   // tbb16
+    KwTbb32                    = 110i32;   // tbb32
+    KwTbb64                    = 111i32;   // tbb64
+    KwTbb128                   = 112i32;   // tbb128
+    KwTbb256                   = 113i32;   // tbb256
+    KwFrac8                    = 114i32;   // frac8
+    KwFrac16                   = 115i32;   // frac16
+    KwFrac32                   = 116i32;   // frac32
+    KwFrac64                   = 117i32;   // frac64
+    KwTfp32                    = 118i32;   // tfp32
+    KwTfp64                    = 119i32;   // tfp64
+    KwTfp128                   = 120i32;   // tfp128
+    KwTfp256                   = 121i32;   // tfp256
+    KwDim256                   = 122i32;   // dim256
+    KwFlt32                    = 123i32;   // flt32
+    KwFlt64                    = 124i32;   // flt64
+    KwFlt128                   = 125i32;   // flt128
+    KwFlt256                   = 126i32;   // flt256
+    KwFlt512                   = 127i32;   // flt512
+    KwBool                     = 128i32;   // bool
+    KwChar8                    = 129i32;   // char8
+    KwChar16                   = 130i32;   // char16
+    KwChar32                   = 131i32;   // char32
+    KwString                   = 132i32;   // string
+    KwFd                       = 133i32;   // fd
+    KwPid                      = 134i32;   // pid
+    KwTid                      = 135i32;   // tid
+    KwUid                      = 136i32;   // uid
+    KwGid                      = 137i32;   // gid
+    KwDyn                      = 138i32;   // dyn
+    KwAny                      = 139i32;   // any
+    KwResult                   = 140i32;   // Result
+    KwOptional                 = 141i32;   // Optional
+    KwHandle                   = 142i32;   // Handle
+    KwArena                    = 143i32;   // arena
+    KwSharedArena              = 144i32;   // shared_arena
+    KwAtomic                   = 145i32;   // atomic
+    KwFuture                   = 146i32;   // Future
+    KwSimd                     = 147i32;   // simd
+    KwComplex                  = 148i32;   // complex
+    KwArray                    = 149i32;   // array
+    KwFunc                     = 150i32;   // func
+    KwTrit                     = 151i32;   // trit
+    KwTryte                    = 152i32;   // tryte
+    KwNit                      = 153i32;   // nit
+    KwNyte                     = 154i32;   // nyte
+    KwVec2                     = 155i32;   // vec2
+    KwVec3                     = 156i32;   // vec3
+    KwVec9                     = 157i32;   // vec9
+    KwMatrix                   = 158i32;   // matrix
+    KwTmatrix                  = 159i32;   // tmatrix
+    KwTensor                   = 160i32;   // tensor
+    KwTtensor                  = 161i32;   // ttensor
+    KwBuffer                   = 162i32;   // buffer
+
+    // --- builtin helpers -------------------------------------------
+    KwIs                       = 163i32;   // is
+    KwIn                       = 164i32;   // in
+    KwIsErr                    = 165i32;   // is_err
+
+    // --- the compiler-directive sigil (D-020) -------------------------
+    Hash                       = 166i32;   // # -- not a value operator
+
+    // --- operators ----------------------------------------------------
+    OpPlus                     = 167i32;   // +
+    OpMinus                    = 168i32;   // -
+    OpStar                     = 169i32;   // *
+    OpSlash                    = 170i32;   // /
+    OpPercent                  = 171i32;   // %
+    OpPlusPlus                 = 172i32;   // ++
+    OpMinusMinus               = 173i32;   // --
+    OpAssign                   = 174i32;   // =
+    OpPlusAssign               = 175i32;   // +=
+    OpMinusAssign              = 176i32;   // -=
+    OpStarAssign               = 177i32;   // *=
+    OpSlashAssign              = 178i32;   // /=
+    OpPercentAssign            = 179i32;   // %=
+    OpAmpAssign                = 180i32;   // &=
+    OpPipeAssign               = 181i32;   // |=
+    OpCaretAssign              = 182i32;   // ^=
+    OpShlAssign                = 183i32;   // <<=
+    OpShrAssign                = 184i32;   // >>=
+    OpEqEq                     = 185i32;   // ==
+    OpNotEq                    = 186i32;   // !=
+    OpLt                       = 187i32;   // <
+    OpLtEq                     = 188i32;   // <=
+    OpGt                       = 189i32;   // >
+    OpGtEq                     = 190i32;   // >=
+    OpSpaceship                = 191i32;   // <=>
+    OpAndAnd                   = 192i32;   // &&
+    OpOrOr                     = 193i32;   // ||
+    OpBang                     = 194i32;   // !
+    OpAmp                      = 195i32;   // &
+    OpPipe                     = 196i32;   // |
+    OpCaret                    = 197i32;   // ^
+    OpTilde                    = 198i32;   // ~
+    OpShl                      = 199i32;   // <<
+    OpShr                      = 200i32;   // >>
+    OpArrowTo                  = 201i32;   // ->
+    OpArrowBack                = 202i32;   // <-
+    OpFatArrow                 = 203i32;   // =>
+    OpFatArrowUnchecked        = 204i32;   // =>!
+    OpAt                       = 205i32;   // @
+    OpDollar                   = 206i32;   // $
+    OpBorrowImm                = 207i32;   // $$i
+    OpBorrowMut                = 208i32;   // $$m
+    OpQuestion                 = 209i32;   // ?
+    OpQuestionDot              = 210i32;   // ?.
+    OpQuestionQuestion         = 211i32;   // ??
+    OpQuestionBang             = 212i32;   // ?!
+    OpQuestionPipe             = 213i32;   // ?|
+    OpUnderQuestion            = 214i32;   // _?
+    OpUnderBang                = 215i32;   // _!
+    OpUnderTilde               = 216i32;   // _~
+    OpUnderCaret               = 217i32;   // _^
+    OpBangBangBang             = 218i32;   // !!!
+    OpPipeFwd                  = 219i32;   // |>
+    OpPipeBack                 = 220i32;   // <|
+    OpDotDot                   = 221i32;   // ..
+    OpDotDotDot                = 222i32;   // ...
+    OpDotDotStar               = 223i32;   // ..*
+    OpDotDotCaret              = 224i32;   // ..^
+
+    // --- punctuation --------------------------------------------------
+    PLParen                    = 225i32;   // (
+    PRParen                    = 226i32;   // )
+    PLBrace                    = 227i32;   // {
+    PRBrace                    = 228i32;   // }
+    PLBracket                  = 229i32;   // [
+    PRBracket                  = 230i32;   // ]
+    PDot                       = 231i32;   // .
+    PComma                     = 232i32;   // ,
+    PColon                     = 233i32;   // :
+    PSemi                      = 234i32;   // ;
+    PBacktick                  = 235i32;   // `
+};

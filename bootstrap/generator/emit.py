@@ -124,8 +124,11 @@ class Emitter:
             body = ", ".join(T.llvm(t) for t in fields.values()) or "i8"
             self.raw("%%%s = type { %s }" % (name, body))
         for name in self.p.enums:
-            # single-word payloads (SUBSET_1 1.2) make every enum this shape
-            self.raw("%%%s = type { i32, i64 }" % name)
+            # A payload-less enum is a plain i32 and needs no type definition
+            # (TYPE_REFERENCE 9.3). Only a tagged one gets a body, and the
+            # single-word payload rule (SUBSET_1 1.2) fixes its shape.
+            if T.ENUM_HAS_PAYLOAD.get(name):
+                self.raw("%%%s = type { i32, i64 }" % name)
         if self.p.structs or self.p.enums:
             self.raw("")
 
@@ -340,7 +343,8 @@ class Emitter:
     def emit_pick(self, st):
         sel_ty = self.ty(st.selector)
         sel = self.expr(st.selector)
-        if isinstance(sel_ty, T.Named) and sel_ty.name in self.p.enums:
+        if (isinstance(sel_ty, T.Named) and sel_ty.name in self.p.enums
+                and T.ENUM_HAS_PAYLOAD.get(sel_ty.name)):
             tag = self.tmp()
             self.w("%s = extractvalue %s %s, 0" % (tag, sel.ty, sel.ref))
             disc, disc_ty = tag, "i32"
@@ -807,6 +811,8 @@ class Emitter:
         ctor = getattr(e, "enum_ctor", None)
         if ctor is not None:
             ename, _, tag, payload_ty = ctor
+            if not T.ENUM_HAS_PAYLOAD.get(ename):
+                return Val("i32", str(tag), T.Named(ename))
             ll = T.llvm(T.Named(ename))
             a = self.tmp()
             self.w("%s = insertvalue %s undef, i32 %d, 0" % (a, ll, tag))
@@ -854,6 +860,8 @@ class Emitter:
         ctor = getattr(e, "enum_ctor", None)
         if ctor is not None:
             ename, _, tag, _ = ctor
+            if not T.ENUM_HAS_PAYLOAD.get(ename):
+                return Val("i32", str(tag), T.Named(ename))
             ll = T.llvm(T.Named(ename))
             a = self.tmp()
             self.w("%s = insertvalue %s undef, i32 %d, 0" % (a, ll, tag))

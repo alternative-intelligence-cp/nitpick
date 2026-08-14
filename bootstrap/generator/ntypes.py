@@ -50,6 +50,18 @@ OUT_OF_SUBSET_TYPES = {
 }
 
 
+# Which enums carry a payload. A payload-less enum lowers to a PLAIN i32
+# (TYPE_REFERENCE section 9.3: "Enum values are plain i32 constants"); only a
+# tagged one needs {i32, i64}. Populated per-compilation by the checker, because
+# llvm() has no other way to know and the seed compiles more than once per
+# process during the self-test.
+ENUM_HAS_PAYLOAD = {}
+
+
+def reset_enums():
+    ENUM_HAS_PAYLOAD.clear()
+
+
 class Type:
     __slots__ = ()
 
@@ -193,6 +205,8 @@ def llvm(t):
             return "{ i32 }"     # NIL is zero-sized (D-084)
         return "{ %s, i32 }" % llvm(t.inner)
     if isinstance(t, Named):
+        if t.name in ENUM_HAS_PAYLOAD and not ENUM_HAS_PAYLOAD[t.name]:
+            return "i32"
         return "%%%s" % t.name
     raise TypeError(repr(t))
 

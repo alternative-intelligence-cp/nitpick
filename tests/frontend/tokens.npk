@@ -1,0 +1,63 @@
+// Exercises token representation and TokenList (cycle 0.1.1).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+
+func:main = int32() {
+    Span:sp = raw span_point(0i32, 0i32, 1i32, 1i32);
+
+    // --- token construction ------------------------------------------------
+    Token:id = raw token_make(TokenKind.Ident, sp, 7i64);
+    if (!(raw token_is(id, TokenKind.Ident))) { exit 10i32; }
+    if (raw token_is(id, TokenKind.Eof))      { exit 11i32; }
+    if (id.payload != 7i64)                   { exit 12i32; }
+
+    Token:eof = raw token_make(TokenKind.Eof, sp, 0i64);
+    if (!(raw token_is_eof(eof)))             { exit 13i32; }
+
+    Token:num = raw token_numeric(TokenKind.IntLit, sp, 42i64, 3i32);
+    if (num.payload != 42i64)                 { exit 14i32; }
+    if (num.width != 3i32)                    { exit 15i32; }
+
+    // A payload-less enum is a plain i32 (TYPE_REFERENCE 9.3), so distinct
+    // variants must hold distinct values -- the generated table is dense and
+    // ordered, and a collision would make two keywords indistinguishable.
+    if (TokenKind.Eof == TokenKind.Ident)     { exit 16i32; }
+    if (TokenKind.KwRelay == TokenKind.KwRaw) { exit 17i32; }
+
+    // --- TokenList ---------------------------------------------------------
+    TokenList:list = raw tokenlist_init();
+    if (raw tokenlist_count(@list) != 0i64)   { exit 20i32; }
+
+    // Past the initial capacity of 256, so growth is exercised rather than
+    // assumed. Every token's payload is its index, so a lost or corrupted
+    // entry shows up as a mismatch rather than as a crash.
+    int64:i = 0i64;
+    while (i < 1000i64) {
+        drop tokenlist_push(@list, raw token_make(TokenKind.Ident, sp, i));
+        i = i + 1i64;
+    }
+    if (raw tokenlist_count(@list) != 1000i64) { exit 21i32; }
+
+    int64:j = 0i64;
+    while (j < 1000i64) {
+        Token:t = raw tokenlist_at(@list, j);
+        if (t.payload != j)                    { exit 22i32; }
+        if (!(raw token_is(t, TokenKind.Ident))) { exit 23i32; }
+        j = j + 1i64;
+    }
+
+    Token:last = raw tokenlist_last(@list);
+    if (last.payload != 999i64)                { exit 24i32; }
+
+    // Out of range is an error, not a sentinel.
+    Result<Token>:oob = tokenlist_at(@list, 5000i64);
+    if (!(oob.is_error))                       { exit 25i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
