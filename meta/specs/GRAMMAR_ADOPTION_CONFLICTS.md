@@ -461,7 +461,7 @@ leaving as a coincidence a reader has to notice.
 
 `TYPE_REFERENCE.md` §7 needs correcting.
 
-## Part R — **Open question**: do LBIM integers carry sticky ERR?
+## Part R — ~~**Open question**~~: do LBIM integers carry sticky ERR? — **settled by D-037**
 
 §2.2.1 states that `int1024` … `int4096` (and unsigned counterparts) are Large
 Binary Integer Math types for post-quantum cryptography, and:
@@ -493,6 +493,25 @@ Three ways out:
 
 **This affects `ncrypto` (34,925 lines)**, so it should be settled before that is
 ported.
+
+**Settled: option 1 — LBIM loses sticky ERR.** D-037 resolves this Part by name:
+`int*`, `uint*`, and `flt*` follow standard arithmetic at **every** width, and the
+§2.2.1 sticky-ERR sentinel is struck. The premise above — "plain integer types
+trap" — was itself wrong: D-037 also corrected `TYPE_REFERENCE` §1.2, so plain
+integers **wrap** on overflow rather than trapping, and `tbb` is what makes
+overflow an error.
+
+Crypto is served rather than harmed by this. Wrapping *is* modular arithmetic
+(mod 2^N), which is what the domain wants, and `ncrypto` already depends on it —
+`uint4096_shl` doubles up to 4095 times with no reduction
+(`src/math/uint4096_bridge.npk`), which only terminates usefully if multiplication
+wraps. Under a sticky-ERR reading every such shift would have yielded ERR.
+
+Completeness note, not an open question: the `tbb` ladder stops at `tbb256`, so
+LBIM widths have no twisted counterpart today. Nothing has been identified that
+wants sticky ERR at 1024 bits or more. Should one appear, `tbb1024` and friends
+are a width added to an existing family — no new mechanism, no semantics to
+decide.
 
 ## Part S — What chapter 02 confirms and adds
 

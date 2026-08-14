@@ -693,30 +693,46 @@ identical.
 ```nitpick
 struct<T>:Result = {
     T:value;        // Success value (zero-initialized if error — see fail desugar)
-    tbb32:error;    // Error code (NIL if no error). Convention: < 0 system, > 0 user.
-    bool:is_error;  // Error flag (false = success, true = error)
+    tbb32:error;    // 0 = no error. Convention: < 0 system, > 0 user. ERR unconstructible.
 };
 ```
 
 **LLVM IR layout:**
 ```llvm
-; Result<T> = { T value, i32 error, i8 is_error }
+; Result<T> = { T value, i32 error }
 ; Example: Result<int32>
-%Result_i32 = type { i32, i32, i8 }
+%Result_i32 = type { i32, i32 }
 ; .value at offset 0
 ; .error at offset 4 (tbb32, 4 bytes)
-; .is_error at offset 8 (bool, 1 byte)
-; padding: 3 bytes
-; Total: 12 bytes
+; Total: 8 bytes, align 4
 ```
 
 **Creating Results — `pass` / `fail` / explicit `return`:**
 
 | Syntax | Desugars to | Notes |
 |---|---|---|
-| `pass(retVal);` | `return Result{error: NIL, value: retVal, is_error: false};` | Success path |
-| `fail(errCode);` | `return Result{error: errCode, value: zero, is_error: true};` | Error path — value is zero-initialized |
-| `return Result{error: errCode, value: retVal, is_error: true};` | (literal, no desugar) | Special: return both value AND error |
+| `pass(retVal);` | `return Result{error: 0i32, value: retVal};` | Success path |
+| `fail(errCode);` | `return Result{error: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
+| `return Result{error: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
+
+> ### The error state is stored once (D-069)
+>
+> `is_error` was previously a **stored** `bool` alongside `error`, encoding the
+> same fact twice with no invariant relating them — `{error: 0, is_error: true}`
+> and `{error: 5, is_error: false}` were both constructible and neither had a
+> defined meaning. The field is removed.
+>
+> **`r.is_error` remains valid source** as a derived accessor for
+> `r.error != 0i32`, so existing `pick(r.is_error)` code is unaffected. The fact
+> is now computed rather than stored, and so cannot contradict the field it
+> summarises.
+>
+> The error field's value space is total: `0` is success, positive codes are user
+> errors, negative codes are system errors, and `INT32_MIN` — `tbb32`'s ERR
+> sentinel — is **unconstructible**. Building a `Result` whose code is ERR, or
+> whose code is `0` on a failure path, traps to `failsafe` where it would be
+> built: an error the caller cannot identify defeats the discipline that forces
+> the caller to handle it.
 
 **Unwrapping / accessing Result values:**
 
@@ -843,7 +859,8 @@ extern {
 ; func:add = int32(int32:a, int32:b) { ... };
 define {i32, i32, i8} @add(i32 %a, i32 %b) {
   ; Returns Result<int32> by default
-  ; {value, error, is_error} — error is tbb32 (i32), NOT a pointer payload.
+  ; {value, error} — error is tbb32 (i32), NOT a pointer payload.
+  ; The stored is_error flag was removed by D-069; r.is_error is derived.
   ; See §11.2; the {T, void*, i8} form is rejected (D-005).
 }
 
@@ -1126,9 +1143,12 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - Represents "nothing" at the type level (like `void` in C, but as a value)
 - Return type annotation for functions that produce no meaningful value: `func:f = NIL(...)`
 - "void functions" DO NOT EXIST in Nitpick — they return `Result<NIL>` instead
-- `pass(NIL)` desugars to `return Result{ value: NIL, error: NIL, is_error: false }`
+- `pass(NIL)` desugars to `return Result{ value: NIL, error: 0i32 }`
 - To call a NIL-returning function without checking: `drop(myFunc());`
-- IR: `Result<NIL>` is `{ ptr undef, ptr null, i8 0 }` at the struct level
+- IR: `Result<NIL>` is `{ i8 undef, i32 0 }` at the struct level — a `NIL` payload
+  and a zero error. *(A previous revision gave `{ ptr undef, ptr null, i8 0 }`,
+  which types the error field as a pointer and contradicts the canonical layout in
+  §11. Corrected per D-069.)*
 
 ### `NULL` — No Pointer
 

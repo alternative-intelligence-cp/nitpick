@@ -37,14 +37,14 @@ avoid.
 | ~~3~~ | ~~**Generics**~~ — **settled by D-064.** Bodies checked at their definition against bounds alone; turbofish is the only expression-position form, which confines `>>`-splitting to a delimited context; `comptime` value parameters added for D-056's lock levels; monomorphization depth-capped at 64, deduplicated, reversibly mangled with no hash. No specialization, no variance, no duck-typed bodies. | — | `PRE_PLANNING_REVIEW.md` §4; `SPEC_GAPS` §3 |
 | ~~4~~ | ~~**`move` memory qualifier**~~ — **settled by D-065: it is not a qualifier.** `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`. Moved to `ControlFlow`. Explicit only, no implicit moves; moved-from bindings are invalid until reinitialized. | — | `LEXICAL_REFERENCE.md` open items |
 | ~~5~~ | ~~**`opaque` declaration form**~~ — **settled by D-066.** `opaque struct:Name;` wins on evidence: the standalone form has zero prototype usage. `extern`-only, and no value semantics (`OPAQUE-COPY-001`). | — | conflict 49 |
-| 6 | **LBIM sticky ERR** — `int1024`…`int4096` are specified to propagate a sticky ERR sentinel, which makes them twisted types under D-036's own definition while wearing an `int` name. Three ways out are laid out in Part R. | builtin-type table; `ncrypto` port (34,925 lines) | Part R |
+| ~~6~~ | ~~**LBIM sticky ERR**~~ — **was already settled by D-037**, which resolves Part R by name and strikes the §2.2.1 sentinel. Listing it here was my error: Part R's heading still said "Open question" and I trusted the marker over the decision log. D-037 also corrects the premise — plain integers **wrap** rather than trap, which is what `ncrypto`'s `uint4096_shl` already relies on. | — | Part R |
 
 ### ABI and lowering
 
 | # | Item | Blocks | Source |
 |---|---|---|---|
 | 7 | **Fat vs thin pointers** — `FULL_specs` §15.1.3 says `int8->` carries bounds metadata; `TYPE_REFERENCE` §10 says `wild` and borrow pointers lower identically and the distinction is a type-checker matter. Interacts with D-004: if borrows are second-class and cannot escape, much of what fat pointers buy is already static and free. | all pointer lowering; FFI boundary; `--verify-memory`'s claim | Part W |
-| 8 | **`tbb32` ERR encoding** — how the sticky ERR state lives inside `Result`'s 4-byte error field. A bare `i32` either loses the encoding or implies an undocumented reserved bit pattern. | `Result` lowering | D-005 follow-up |
+| ~~8~~ | ~~**`tbb32` ERR encoding**~~ — **settled by D-069.** Nothing was undocumented: `INT32_MIN` *is* `tbb32`'s published sentinel. What was missing was its meaning in that field — an error whose identity was lost — now **unconstructible**, trapping where it would be built. The larger find: `is_error` stored the same fact as `error != 0` with no invariant relating them, and both `{error: 0, is_error: true}` and `{error: 5, is_error: false}` were constructible. Stored field removed; `r.is_error` survives as a derived accessor. | — | D-005 follow-up |
 
 ### Policy
 

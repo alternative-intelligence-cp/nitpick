@@ -210,6 +210,9 @@ sufficient for the throughput Nikola needs.
 ## 2.5 `tbb32:error` is stored as a plain `i32`
 
 `TYPE_REFERENCE.md` §11.2 gives `Result<T>` as `{ T value, i32 error, i8 is_error }`.
+*(Superseded by **D-069**: the stored `is_error` is removed, leaving
+`{ T value, i32 error }`. `r.is_error` remains valid source as a derived accessor
+for `r.error != 0i32`.)*
 But `tbb` types are specified elsewhere as having a **sticky ERR state** on
 overflow — that state has to live somewhere in the representation. Storing the
 error field as a bare `i32` either loses the ERR encoding or implies a reserved

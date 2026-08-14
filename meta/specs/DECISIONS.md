@@ -288,11 +288,14 @@ concept into a primitive because the layouts match.
 ### Follow-up
 
 - `FORMAL_DRAFT/09` §9.7.1 must be corrected if that draft is adopted.
-- **Still open:** how `tbb32`'s sticky ERR state is encoded within the 4-byte
-  error field. `PRE_PLANNING_REVIEW.md` §2.5 raised this and D-005 does not
-  resolve it — a bare `i32` either loses the ERR encoding or implies an
-  undocumented reserved bit pattern. Needs settling before `Result` lowering is
-  implemented.
+- ~~**Still open:** how `tbb32`'s sticky ERR state is encoded within the 4-byte
+  error field.~~ — **settled by D-069.** Nothing is lost and nothing is
+  undocumented: `INT32_MIN` *is* `tbb32`'s published ERR sentinel. What was
+  missing was its *meaning* in this field — an error whose identity was lost —
+  and it is now **unconstructible**, trapping where it would be built. D-069 also
+  removes the stored `is_error` field, which encoded the same fact as
+  `error != 0` with no invariant relating the two; `r.is_error` survives as a
+  derived accessor. **The layout below is superseded accordingly.**
 
 ---
 
@@ -4653,3 +4656,110 @@ attributable cost rather than a hidden one.
 That is the correct ordering of the project's priorities — performance is a
 first-class requirement, obtained here by proving more rather than by checking
 less.
+
+---
+
+## D-069 — `Result` stores the error once; `is_error` becomes derived — **SETTLED**
+
+Settles the D-005 follow-up: *"how `tbb32`'s sticky ERR state is encoded within
+the 4-byte error field. A bare `i32` either loses the ERR encoding or implies an
+undocumented reserved bit pattern."*
+
+### There is no undocumented bit pattern
+
+The premise was wrong in a useful way. `tbb32`'s ERR sentinel **is** a documented
+bit pattern — `INT32_MIN`, per `TYPE_REFERENCE.md` §6 — so storing the field as
+`i32` loses nothing. The real question is what that value *means* when it appears
+in `Result.error`, which nothing answered.
+
+It means **an error whose identity was lost**: the code itself went ERR, most
+often because it was computed from `tbb` arithmetic that saturated.
+
+### An error whose code is ERR is unconstructible
+
+`fail(e)` where `e` is ERR **traps to `failsafe` at the point of construction.**
+
+The `Result` discipline exists so that a caller is *forced to handle* the error.
+A caller cannot handle an error it cannot identify, so such a value defeats the
+mechanism it is travelling through — and it would do so silently, satisfying every
+`is_error` check while carrying no information.
+
+Trapping is also where the existing rules already lead. Branching or comparing on
+a `tbb` ERR value traps (`SAFETY_ARCHITECTURE.md`), so any attempt to *handle* an
+ERR-coded error traps anyway. Constructing-time trapping simply moves it to the
+point where the context that produced it still exists — the same argument D-014
+makes for entering `failsafe` without unwinding first.
+
+The error field's value space is therefore exact and total:
+
+| Value | Meaning |
+|---|---|
+| `0` | no error — this is what `NIL` denotes in this field |
+| `1 … 2^31-1` | user error codes |
+| `-(2^31-1) … -1` | system error codes |
+| `INT32_MIN` | ERR — **unconstructible**; traps where it would be built |
+
+### The larger defect: the error state is stored twice
+
+Examining the layout to answer the above surfaced a worse problem.
+
+```nitpick
+struct<T>:Result = {
+    T:value;
+    tbb32:error;     // NIL if no error
+    bool:is_error;   // false = success, true = error
+};
+```
+
+`is_error` and `error != NIL` encode **the same fact in two places, with no stated
+invariant relating them.** Nothing says what `{error: 0, is_error: true}` or
+`{error: 5, is_error: false}` mean, nothing rejects them, and both are
+constructible today through the explicit-literal form the spec documents:
+`return Result{error: errCode, value: retVal, is_error: true};`.
+
+Two representations of one fact that can disagree is precisely the latent
+inconsistency this project cannot carry. It is also the shape D-056 rejected in
+the old `mutex` API and D-062 rejected in preemptive cancellation — an invariant
+maintained by convention rather than by construction.
+
+**The stored `is_error` field is removed.**
+
+```nitpick
+struct<T>:Result = {
+    T:value;
+    tbb32:error;     // 0 = success; sign selects user/system; ERR unconstructible
+};
+```
+
+`r.is_error` **remains valid source** as a derived accessor for `r.error != 0i32`,
+so every existing `pick(r.is_error)` and every library using it continues to read
+and behave identically. What changes is that the fact is computed rather than
+stored, and so cannot contradict the field it summarises.
+
+### Consequences
+
+- **Layout.** `Result<int32>` goes from `{i32, i32, i8}` + 3 bytes padding = **12
+  bytes** to `{i32, i32}` = **8 bytes**, align 4. Wider payloads mostly break even
+  since the removed byte lived in padding. The saving is real but incidental — the
+  reason is the invariant, not the size.
+- **No performance cost.** Testing `i32 != 0` and testing an `i8` are the same
+  single instruction.
+- **`pass` / `fail` desugaring** loses its third initialiser:
+  `pass(v)` → `Result{value: v, error: 0i32}`; `fail(e)` → `Result{value: zero,
+  error: e}` with `e` checked non-zero and non-ERR.
+- **`fail(0i32)` is rejected** at compile time where the code is a literal, and
+  traps where it is computed. A failure with no code is the same unidentifiable
+  error as an ERR code, arrived at from the other direction.
+- **Returning a value *and* an error remains expressible** —
+  `Result{value: retVal, error: errCode}` — since that never depended on the
+  separate flag.
+- **ABI.** This changes the `Result` layout, which is the most pervasive type in
+  the language. It is free to change now and expensive later, and nothing external
+  links against it (D-067).
+
+### Correction to `TYPE_REFERENCE.md` §27
+
+The `Result<NIL>` IR is given as `{ ptr undef, ptr null, i8 0 }`, which types the
+error field as a **pointer**. The canonical layout four sections earlier gives
+`{ T value, i32 error, i8 is_error }`. The `ptr null` form is wrong; under this
+decision `Result<NIL>` is `{ i8 undef, i32 0 }` — a `NIL` payload and a zero error.
