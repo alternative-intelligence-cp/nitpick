@@ -18,7 +18,7 @@
 > | 3 | "Nitpick does **NOT** support object-oriented method calls… `.` is strictly for struct field access" | **D-006** — **wrong**. UFCS was never removed. Arenas and `atomic<T>` both use method syntax throughout the specs. |
 > | 3 | "`dim` (e.g. `dim256<Joules>`)" for dimensional analysis | Retained — but `TYPE_REFERENCE` §2.3.3 and `FORMAL_DRAFT` 2.3.3 still say `fix256`. Rename still owed. |
 > | 4 | Division by zero unaddressed; arithmetic uses sticky ERR | **D-007** — type-directed: `tbb` degrades, plain types trap. **D-008** specifies the ERR encoding. |
-> | 5 | Module resolution "deferred to Cycle 0.4.0" | Still open. `FORMAL_DRAFT` ch. 14 is the adoption candidate. |
+> | 5 | Module resolution "deferred to Cycle 0.4.0" | **Resolved** — `FORMAL_DRAFT` ch. 14 was adopted as `MODULE_REFERENCE.md`. |
 >
 > The §3 UFCS error is the instructive one: it was asserted confidently while
 > contradicted by arena and atomic code sitting in the same repository. Treat

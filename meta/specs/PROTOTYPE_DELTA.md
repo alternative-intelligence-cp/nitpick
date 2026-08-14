@@ -9,7 +9,8 @@ The two sets are organized differently — the prototype splits by topic across
 so this is a semantic diff, not a textual one.
 
 **Status of this document:** a record of what changed and what is still open.
-The open items in §3 are unresolved and block frontend work that depends on them.
+**§3's two items are now settled** — see the markers there. Sections 4 and 5 were
+added later and are current.
 
 ---
 
@@ -61,7 +62,14 @@ The open items in §3 are unresolved and block frontend work that depends on the
 These are contradictions or omissions that survive into the carried-over specs.
 They need a decision before the affected frontend components are built.
 
-### 3.1 Memory model — RAII or GC? (blocks: semantic analysis, codegen)
+### 3.1 Memory model — RAII or GC? — **SETTLED by D-003: no tracing GC**
+
+> Static ownership with RAII/NLL and arenas. `SPEC_GAPS` §1's hybrid generational
+> GC is rejected, and its claim that the borrow checker was removed is wrong —
+> arenas cover the cycle case, which was the collector's last advantage.
+> `MEMORY_REFERENCE.md` §1.1's "implicit RAII / deterministic destruction" is
+> correct as written.
+
 
 `MEMORY_REFERENCE.md` §1.1 describes default managed memory as
 "Implicit RAII/Scope-based" with "deterministic destruction". `SPEC_GAPS` §1
@@ -74,7 +82,13 @@ answer to what `nodrop` opts out of. `SPEC_GAPS` is newer (Aug 13 vs Aug 11), so
 its resolution presumably wins, but `MEMORY_REFERENCE.md` §1.1 was never updated
 to match.
 
-### 3.2 UFCS — banned, but arenas still use it (blocks: parser, name resolution)
+### 3.2 UFCS — banned, but arenas still use it — **SETTLED by D-006: UFCS is retained**
+
+> `SPEC_GAPS` §3 is simply wrong. UFCS and method-call syntax were never removed;
+> the only change in that area was dropping `->` as a member-access operator, so
+> `.` handles all member access and auto-dereferences. Arena and `atomic<T>` code
+> sitting in the same repository contradicted the claim as it was written.
+
 
 `SPEC_GAPS` §3 states plainly that Nitpick does **not** support method calls and
 that `.` is strictly struct field access. `MEMORY_REFERENCE.md` §5.2 is titled

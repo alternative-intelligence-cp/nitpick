@@ -173,7 +173,9 @@ default and suspended only through a named, greppable, auditable construct.
 
    Two genuine open questions surfaced, both expensive to change later:
    **fat versus thin pointers** (Part W) and **the LLVM/Z3 dependency boundary**
-   (Part X).
+   (Part X). **Both are now settled** — D-038 makes pointers thin, and LLVM and
+   Z3 are invoked as **tools**, not linked as libraries, with Z3 reached over a
+   text interface until a Nitpick equivalent exists.
 
    Chapter 10 contributes three things found nowhere else: strict left-to-right
    evaluation order, the symbol-mangling scheme, and the reserved failsafe error

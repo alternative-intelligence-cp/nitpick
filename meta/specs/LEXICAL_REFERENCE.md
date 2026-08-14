@@ -294,10 +294,12 @@ Interpolation   ::= "&{" /* syntactic expression */ "}"
 
 ## Open items
 
-- **`dim256` rename is not yet applied project-wide.** `TYPE_REFERENCE.md` §5a and
-  `FORMAL_DRAFT` 02 §2.3.3 still say `fix256`. This grammar uses `dim256` per
-  `SPEC_GAPS` §3; the rest of the specs need to follow.
-- **`move`** is listed as a memory qualifier but is not specified anywhere.
+- ~~**`dim256` rename is not yet applied project-wide.**~~ — **applied.** D-036
+  settles `tfp` and `dim` as distinct types with `fix256` obsolete; no live spec
+  in `meta/specs/` says `fix256` any longer. `FORMAL_DRAFT` still does, and is
+  read-only reference — recorded in `PROTOTYPE_DELTA.md` §4.
+- **`move` is listed as a memory qualifier but is not specified anywhere.**
+  **Still open** — one of the four remaining decisions.
 - ~~`for` occupies two grammatical roles~~ — **closed by D-031.** `impl` now takes
   no connector (`impl:Message:Serializable`), so `for` reverts to the loop keyword
   alone and has exactly one meaning.
