@@ -76,7 +76,9 @@ scope.
 
 Scope exit joins any unfinished task, under a **mandatory deadline** — the task is
 asked to wind up and observes the request at its next `await`, taking a normal
-error exit so `defer` runs. There is no unbounded join, and expiry **traps to
+error exit so `defer` runs. **The deadline is a property of the executor, fixed
+where the executor is created** (D-083), so it sits in one greppable place per
+thread rather than being repeated at every spawn. There is no unbounded join, and expiry **traps to
 `failsafe`** rather than detaching the task or continuing silently.
 
 This is the same two-layer shape as D-056: lexical lifetime makes "executor shuts
@@ -307,11 +309,18 @@ Race freedom comes from three structural properties, none of them runtime checks
 1. borrows cannot cross a thread spawn or `await` (D-004);
 2. tasks do not migrate between threads (D-032);
 3. shared arenas never move memory and never reuse slots (D-017);
-4. tasks cannot outlive the scope that spawned them (D-062).
+4. tasks cannot outlive the scope that spawned them (D-062);
+5. **threads** cannot outlive the scope that spawned them either (D-083).
 
-Property 4 is the same rule as property 1, applied to tasks instead of borrows:
-both nest inward and neither escapes outward. It is what keeps a task frame from
-referring to a scope that has already gone.
+Properties 4 and 5 are the same rule as property 1, applied to tasks and threads
+instead of borrows: all of them nest inward and none escapes outward. That is what
+keeps a frame from referring to a scope that has already gone.
+
+Note that 5 does **not** make property 1 redundant. Lexical thread lifetime closes
+the *dangling* half — the spawning scope now strictly outlives the thread — while
+the borrow ban closes the *aliasing* half, since two threads holding borrows of one
+piece of storage is a data race regardless of how long either lives. Both are
+needed.
 
 ## 6. Channels
 
@@ -462,8 +471,21 @@ it removes the second counter that made it expressible.
 | Condition variable | `CondVar<LEVEL>` | **`wait` is removed** — `timedwait` is the only form (D-056) |
 | Barrier | `Barrier<comptime int32:N>` | reimplemented natively; the prototype wraps three C shims |
 
-Every acquisition is deadline-bounded and returns `Result`. There is no infinitely
-blocking acquire anywhere in the concurrency surface.
+Every acquisition is **`async`**, deadline-bounded, and returns `Result`. There is
+no infinitely blocking acquire anywhere in the concurrency surface.
+
+```nitpick
+{
+    Guard<Config>:guard = relay await cfg_lock.acquire(deadline);
+    guard.value.retries = 3i32;
+}   // guard drops here; the lock is released
+```
+
+`await` is not optional here (D-071, D-082): an acquisition that parked the OS
+thread would stall every sibling task pinned to that executor, and a mutex is the
+likeliest place to hit that. The critical section is a **bare block** — there is
+no `with` construct; `CONTROL_REFERENCE.md` §4.1's ordinary lexical scope already
+releases the guard at the closing brace.
 
 **There is no lock-free queue.** `lockfree.npk` is not ported: a lock-free MPMC
 queue under SeqCst-only atomics (D-016) is hard to get right and expensive to

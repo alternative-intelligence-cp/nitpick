@@ -1169,10 +1169,17 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - "void functions" DO NOT EXIST in Nitpick — they return `Result<NIL>` instead
 - `pass(NIL)` desugars to `return Result{ value: NIL, error: 0i32 }`
 - To call a NIL-returning function without checking: `drop(myFunc());`
-- IR: `Result<NIL>` is `{ i8 undef, i32 0 }` at the struct level — a `NIL` payload
-  and a zero error. *(A previous revision gave `{ ptr undef, ptr null, i8 0 }`,
-  which types the error field as a pointer and contradicts the canonical layout in
-  §11. Corrected per D-069.)*
+- **`NIL` is zero-sized** (D-084). Its only value carries no information, so it
+  occupies nothing: a `NIL` struct field takes no space and `pass(NIL)` moves
+  nothing.
+- IR: `Result<NIL>` is therefore `{ i32 }` — **4 bytes, align 4, returned in a
+  single register.** Since void functions do not exist, this is the most common
+  return type in the language.
+  *(Two previous revisions were wrong here. One gave `{ ptr undef, ptr null, i8 0 }`,
+  typing the error field as a pointer against the canonical layout in §11
+  (corrected per D-069); the replacement gave `{ i8 undef, i32 0 }`, which is
+  8 bytes after padding to carry no information, because `NIL`'s size had never
+  been stated (corrected per D-084).)*
 
 ### `NULL` — No Pointer
 

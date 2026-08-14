@@ -960,7 +960,7 @@ Resolves the open follow-on from D-013.
 
 `!!!` and `?!` transfer control **directly** to `failsafe`, without unwinding.
 `defer` blocks run on normal exit paths only — scope exit, `return`, `pass`,
-`fail`, and `exit` — never on a trap.
+`fail`, `relay` *(added by D-080)*, and `exit` — never on a trap.
 
 **Rationale.** At trap time the state of the system is unknown, including *how
 degraded it is*. Running arbitrary cleanup code first means executing against
@@ -3588,10 +3588,16 @@ one taken there: **put the information in the type.**
 ```nitpick
 Mutex<Config, 2>:cfg_lock;
 
-with (cfg_lock.acquire(deadline)?) : guard {
+{
+    Guard<Config>:guard = relay await cfg_lock.acquire(deadline);
     guard.value.retries = 3i32;
-}
+}   // guard drops here; the lock is released
 ```
+
+> **Amended by D-082.** This example originally used a `with (…) : guard { … }`
+> construct that had no AST node and collided with `with errno`; and it predates
+> D-071, so the acquisition was not awaited. A bare block already provides the
+> scoping, and every blocking acquisition suspends the task.
 
 Three properties, each removing a class:
 
@@ -5506,3 +5512,194 @@ correcting it now costs a renumbering and no rework.
 
 `discard` / `_~` is **not** included: D-060 makes it a statement, not an
 expression, so it has no place in an expression precedence table.
+
+---
+
+## D-082 — Lock acquisition is a plain block and is awaited; the `with` construct is removed — **SETTLED**
+
+Two defects in D-056's surface syntax, both introduced by later decisions or by
+never having reached the grammar.
+
+### `with` had two unrelated meanings, and one of them did not exist
+
+| Use | Source |
+|---|---|
+| `func:open = int32(…) fails on result < 0i32 **with errno**;` | D-002 — binds the FFI error source |
+| `**with** (cfg_lock.acquire(deadline)?) : guard { … }` | D-056 — scoped acquisition |
+
+Unrelated jobs, one keyword — the exact defect **D-028** fixed for `Type`, which
+*"had two unrelated meanings distinguished only by position — a direct blueprint
+violation, and genuinely ambiguous to parse."*
+
+The scoped form was also **not in the grammar at all**: `with` appears only in
+`VerificationKeyword`, never in `ControlFlow`, and there is **no `WithStmt` in
+`AST_REFERENCE.md`** — checked against every other surface construct (`defaults`,
+`fall`, `give`, `where`, the ternary, macros, `comptime`, `await`), and it was the
+only one with no node. The syntax for *acquiring a mutex at all* was missing from
+the grammar the parser is being built from.
+
+### It is removed, not renamed
+
+The obvious repair is a new keyword. **The better one is no keyword**, because a
+bare block already does the job:
+
+```nitpick
+Mutex<Config, 2>:cfg_lock;
+
+{
+    Guard<Config>:guard = relay await cfg_lock.acquire(deadline);
+    guard.value.retries = 3i32;
+}   // guard drops here; the lock is released
+```
+
+`CONTROL_REFERENCE.md` §4.1 already specifies bare blocks — *"blocks introduce a
+lexical scope … scope-managed bindings are destroyed at the closing brace"* — and
+that is precisely and entirely what `with` was providing. The guard's lifetime is
+the block, release is RAII, and D-080's `relay` propagates a failed acquisition
+without ceremony.
+
+So the fix costs **one fewer keyword meaning, one fewer AST node, and no new
+grammar**, and `with` goes back to having exactly one meaning: the FFI error
+source binder.
+
+### Acquisition is awaited
+
+D-056 predates **D-071**, which requires that every blocking operation suspend the
+calling task rather than park the thread. A lock acquisition blocks.
+
+`await cfg_lock.acquire(deadline)` — an acquisition that parked the OS thread
+would stall every sibling task pinned to that executor, which is the precise
+hazard D-071 exists to remove, and a mutex is the most likely place to hit it.
+`CONCURRENCY_REFERENCE.md` §9 said acquisitions are deadline-bounded and return
+`Result`, and never said they suspend.
+
+This applies to the whole of §9: `Mutex`, `RwLock`, `CondVar.timedwait`, and
+`Barrier.wait` are all `async`.
+
+---
+
+## D-083 — Thread lifetime is lexical, like everything else; and where the join deadline comes from — **SETTLED**
+
+D-073 removed `Thread.detach` — it returned success while leaking a 2 MiB stack
+and a context page — but **nothing then said how a thread's lifetime is bounded or
+who joins it.** `Thread.spawn` appears nowhere in the spec set at all.
+
+### Threads nest, like everything else
+
+**A spawned thread cannot outlive the scope that spawned it.** Scope exit joins
+it, under a deadline, and expiry traps to `failsafe`.
+
+This is not a new rule; it is the fifth application of one the language already
+makes everywhere:
+
+| Thing | Cannot escape its scope | Decision |
+|---|---|---|
+| borrows | pass down, never up | D-004 |
+| task frames | joined at scope exit | D-062 |
+| channel endpoints | borrows of scope-owned storage | D-072 |
+| slices | non-owning second-class views | D-070 |
+| streams | closed at scope exit | `IO_REFERENCE.md` §6 |
+| **threads** | **joined at scope exit** | **this** |
+
+A thread that must live for the whole program is spawned in `main`'s scope —
+exactly as long-lived as "detached" ever meant in practice, which is the same
+answer D-062 gave for tasks.
+
+**There is no thread handle**, for the same reason D-058 leaves no way to name a
+task: with the lifetime structural, there is nothing a handle would be used for,
+and a handle is what makes leaking and double-joining expressible.
+
+### D-004's borrow ban stays, and for a different reason than lifetime
+
+It is worth being precise, because lexical thread lifetime *would* make a borrow
+crossing a spawn lifetime-safe — the spawning scope now strictly outlives the
+thread.
+
+**The ban remains**, because it is not a lifetime rule. Two threads holding
+borrows of the same storage is a **data race**, and race freedom is what
+`CONCURRENCY_REFERENCE.md` §5.3 lists it for. Lexical lifetime closes the
+dangling half; the ban closes the aliasing half. Both are needed and neither
+replaces the other.
+
+### Where the join deadline comes from
+
+D-062 requires that scope exit join unfinished tasks *"under a mandatory
+deadline"* and **never said where that deadline comes from.** `drop work()` has
+nowhere to put one.
+
+**The join deadline is a property of the executor, fixed where the executor is
+created**, and it applies to every task on it. A thread's is fixed at spawn, since
+spawning a thread creates its executor (D-071).
+
+That places it in exactly one greppable location per thread, keeps `drop work()`
+free of ceremony, and makes the value reviewable — which a per-call-site deadline
+scattered across a codebase would not be. A program-level default applies where
+nothing is stated, and the default is a stated constant rather than "whatever the
+runtime felt like", so it can be audited and overridden.
+
+---
+
+## D-084 — `NIL` is zero-sized; and the ABI cost of universal `Result<T>` is recorded — **SETTLED**
+
+Two performance findings from the final spec sweep. Neither weakens a safety
+rule; the first is free, the second is an obligation rather than a change.
+
+### `NIL` is a zero-sized type
+
+**`NIL`'s size was never specified.** `TYPE_REFERENCE.md` §27 describes it as
+*"nothing at the type level"* and then gives `Result<NIL>` as `{ i8 undef, i32 }`
+— which, with alignment, is **8 bytes to carry no information**: one byte, three
+of padding, four of error.
+
+Since "void functions do not exist" and every value-less function returns
+`Result<NIL>`, that is the most common return type in the language.
+
+**`NIL` is zero-sized.** `Result<NIL>` is therefore `{ i32 }` — **4 bytes, align 4,
+returned in a single register.** A zero-sized type is also the honest
+representation of a type whose only value carries no information, and LLVM
+represents it directly.
+
+Consequences are uniformly benign: a `NIL` struct field occupies nothing,
+`pass(NIL)` moves nothing, and `Optional<NIL>` degenerates to its tag.
+
+### The `Result<T>` ABI cost, and the obligation it creates
+
+**Nothing in the spec set analysed what universal `Result<T>` costs** — a search
+for any discussion of the return-ABI cost returns nothing. For a language where
+*every* function returns `{T, i32}`, and whose flagship consumer is
+computationally enormous, that gap should not survive into planning.
+
+This is **not** an argument for weakening D-013. It is the missing analysis.
+
+**Expected codegen**, x86-64 SysV:
+
+| Success type `T` | `Result<T>` | Returned |
+|---|---|---|
+| ≤ 12 bytes | ≤ 16 bytes | **in registers** — no worse than a two-word return |
+| **13–16 bytes** | 20–24 bytes | **memory (`sret`)** — where bare `T` would have been in registers |
+| > 16 bytes | > 16 bytes | memory either way — **no marginal cost** |
+
+So the cost is not uniform: it is nil for large types, small for small ones, and
+concentrated in a **cliff at 13–16 bytes**, where wrapping pushes a
+register-returned value into memory. `int128` and `complex<flt64>` are exactly
+there.
+
+**The branch is the other half**, and it is recoverable. After inlining, LLVM's
+SROA folds the `Result` apart and the check disappears wherever the error path is
+provably not taken; `raw` elides the check but not the struct. The cost therefore
+concentrates at **non-inlined call boundaries**, which is where to look.
+
+**The obligation:** this must be **measured before the performance case is made**,
+not assumed in either direction. Specifically —
+
+1. benchmark the 13–16 byte cliff against bare returns, since that is the only
+   place the ABI genuinely regresses;
+2. confirm SROA folds the `Result` at `-O2` across the inlining boundary in
+   practice, rather than trusting that it should;
+3. if the cliff proves to matter on a hot path, the answer is **layout** — the
+   error field's position and the struct's alignment are ours to choose — and
+   never an exemption from returning `Result`.
+
+Recording this now means the performance argument rests on numbers when it is
+made, which is the standing requirement that performance is first-class but
+strictly subordinate to safety.
