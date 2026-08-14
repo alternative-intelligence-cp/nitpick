@@ -28,7 +28,7 @@ nitpick-native/
 │   ├── runtime/            #   the runtime floor, hand-written .ll (D-015)
 │   └── seed/               #   committed seed IR (.ll), from cycle 0.7
 ├── tools/
-│   └── harness/            # test runner (cycle 0.0.4)
+│   └── harness/            # test runner (cycle 0.0.5)
 └── tests/
     ├── conformance/        # subset 1 must compile (cycle 0.0.1)
     └── rejection/          # outside subset 1 → backend diagnostic, not parse error
@@ -64,11 +64,13 @@ are `pub` items in a module, resolved per `MODULE_REFERENCE.md` §2.3. The
 directory was a C-shaped habit with nothing to put in it, and it is removed.
 
 **5. `bootstrap/` is new, and deliberately outside `src/`.** D-085 replaced the
-prototype-as-stage-0 plan with a purpose-built seed: a throwaway generator that
-emits a subset-1 compiler as LLVM IR, whose **emitted IR is committed** so that
-rebuilding needs only the LLVM toolchain. Neither half is the compiler, neither
-is ever in an artifact, and both are deleted once self-hosting closes — so
-putting them under `src/` would misrepresent what ships.
+prototype-as-stage-0 plan with a purpose-built seed: a throwaway program that
+reads subset-1 `.npk` and writes `.ll`. There is no separate "seed binary" — what
+gets **committed** is `seed/stage1.ll`, the IR of the *real* compiler, so
+rebuilding from nothing needs only the LLVM toolchain and the generator is needed
+to *regenerate* the seed rather than to build. Nothing here is the compiler,
+nothing here is ever in an artifact, and all of it is deleted once self-hosting
+closes — so putting it under `src/` would misrepresent what ships.
 
 `bootstrap/runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, a
 bump allocator that never frees, the `memcpy`/`memset` symbols LLVM emits calls
