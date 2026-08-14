@@ -80,7 +80,7 @@ range form require an explicit type on the loop variable?
 | 6 | §1.4 `BuiltinType` | `tbb8`…`tbb64` only | add `tbb128`, `tbb256` (`TYPE_REFERENCE` §6) |
 | 7 | §1.4 keywords | no `fails`, `on`, `never` | required by the FFI error contracts (D-002) |
 | 8 | §1.4 `BuiltinHelper` | no `is_err` | required by `tbb` ERR checking (D-008) |
-| 9 | §1.6.2 vs `FORMAL_DRAFT` 02 §2.4 | ternary literal is suffix-form here (`01Tt` + `"t"`), prefix-form there (`0t1T0`) | pick one |
+| 9 | §1.6.2 vs `FORMAL_DRAFT` 02 §2.4 | ternary literal is suffix-form here (`01Tt` + `"t"`), prefix-form there (`0t1T0`) | **SETTLED — same conflict as 47: suffix form wins**, uniform with hex/binary/octal |
 
 ### Chapter 04 — Expressions
 
@@ -94,7 +94,7 @@ range form require an explicit type on the loop variable?
 | 15 | §4.4.1 | "**`result ?! `**" — shown with **no argument** | takes exactly one `tbb32` error code (D-009) |
 | 16 | §4.6 | `sys!!!` documented | removed (D-001) |
 | 17 | §4.4 | "TBB (**Three-State Bit**)" | TBB is **Twisted Balanced Binary** |
-| 18 | §4.1 | "chained assignments (`a = b = 5`)" | tension with 05 §5.3.1 rejecting `=` in conditions; also a blueprint question — worth deciding whether assignment-as-expression survives |
+| 18 | §4.1 | "chained assignments (`a = b = 5`)" | **SETTLED by D-060.** Assignment is a **statement**; `a = b = 5` does not parse. 05 §5.3.1's rule rejecting `=` in conditions becomes unnecessary — `if (a = b)` is no longer expressible |
 
 ### Chapter 05 — Statements and Control Flow
 
@@ -103,10 +103,10 @@ range form require an explicit type on the loop variable?
 | 19 | §5.9 | "`defer` … executed when the scope exits (whether normally, by a `return`, or **via a panic**)" | **`defer` does not run on a trap** (D-014) |
 | 20 | §5.7 | "`pass expr;` … sugar for `return ok(expr);`" and "`fail expr;` … `return err(expr);`" | `ok()` is the taint-clearing builtin, not a `Result` constructor; `err()` is undefined. `pass`/`fail` construct `Result` directly (`TYPE_REFERENCE` §11.2) |
 | 21 | §5.6 | `pick` arms shown **without** separating commas | `CONTROL_REFERENCE` §1.2 requires commas between arms |
-| 22 | §5.6.3 | `(!)` "unreachable" marker introduced | interacts with `pick` exhaustiveness and the **required `ERR:` arm** for `tbb` selectors (D-008 §5.1) — needs reconciling, not just adopting |
-| 23 | §5.6.3 | `give` yields a value out of a `pick` | not in `CONTROL_REFERENCE`; also contradicts §5.1's "statements do not yield values" |
-| 24 | §5.1 vs 04 §4.1 | "statements do not yield values" vs "almost every construct is an expression" | the two chapters disagree on the fundamental expression/statement split |
-| 25 | §5.8 | `prove` — see **A2** | |
+| 22 | §5.6.3 | `(!)` "unreachable" marker introduced | **SETTLED by D-061: removed.** It would let the D-008 required `ERR:` arm be elided — asserting a `tbb` cannot be ERR, the least safe assumption in the type. Write the arm with `#unreachable()`, which traps |
+| 23 | §5.6.3 | `give` yields a value out of a `pick` | **SETTLED by D-059: kept.** No contradiction with §5.1 — a `pick` whose arms `give` **is** an expression (D-060 enumerates the expression forms) |
+| 24 | §5.1 vs 04 §4.1 | "statements do not yield values" vs "almost every construct is an expression" | **SETTLED by D-060.** 05 §5.1 is authoritative and 04 §4.1 is struck; Nitpick is statement-oriented with a **closed list** of expression forms |
+| 25 | §5.8 | `prove` — see **A2** | **SETTLED per A2:** compile-time Z3 obligation; 05 §5.8's runtime-assertion reading is struck |
 
 ---
 

@@ -3910,3 +3910,93 @@ its own nature is exactly the shape the blueprint philosophy asks for.
 
 **Zero usage is not evidence of uselessness here** — it reflects that `libn` and
 the stdlib were written before the feature existed, in a style that predates it.
+
+---
+
+## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED**
+
+Resolves conflicts **24** and **18**, which are the same question.
+
+`FORMAL_DRAFT` 04 §4.1 says "almost every construct is an expression". 05 §5.1
+says the opposite, and says it precisely:
+
+> Statements in Nitpick represent actions that do not yield values (unlike
+> expressions). The compiler strictly delineates between statement-level
+> constructs and expression-level constructs. Attempting to use a statement (such
+> as an `if` block) in an expression context is a compile-time error.
+
+**05 is authoritative; 04 §4.1 is struck.** It reads as Rust-influenced drafting,
+and nothing else in the corpus supports it — `AST_REFERENCE` already separates
+statements from expressions, and the prototype rejects `if` in expression
+position.
+
+### The expression forms, enumerated
+
+Literals, identifiers, unary/binary/comparison/logical operators, calls, member
+access, indexing, casts (`=>`, `=>!`), address-of and dereference, the ternary
+`is (cond) : a : b`, range and spread, the `$` iteration variable, string
+interpolation, `await`, macro invocation, `comptime(expr)`, and **`pick` whose
+arms `give`** (D-059).
+
+Everything else is a statement and yields nothing: `if`, `while`, `for`, `loop`,
+`till`, `when`, `pick` without `give`, assignment, `defer`, `pass` / `fail` /
+`return`, `discard`, `prove`, `assert_static`.
+
+The list is **closed**. "Almost every construct is an expression" requires a
+reader to know which constructs are the exceptions; an enumeration means the
+question is answered by looking, which is the whole point of the blueprint
+philosophy.
+
+### Assignment is a statement (conflict 18)
+
+`a = b = 5` does not parse. Assignment produces no value.
+
+This matters more than chained assignment is worth. `FORMAL_DRAFT` 05 §5.3.1
+currently carries a special rule *rejecting `=` in conditions* — the guard
+against `if (a = b)`. **That rule becomes unnecessary**: if assignment is not an
+expression, `if (a = b)` is not expressible, and there is nothing to reject.
+
+A grammar that cannot express the bug is strictly better than a rule that
+forbids it, because the rule is a thing to remember and to implement correctly in
+one more place. It also removes a context-dependent case — assignment being an
+expression *except* in conditions — which is exactly the shape the blueprint
+philosophy rejects.
+
+`AST_REFERENCE` already carries `AssignStmt` rather than an assignment
+expression, so the AST needs no change; this makes the grammar agree with it.
+
+---
+
+## D-061 — The `(!)` unreachable pattern marker is removed — **SETTLED**
+
+Resolves conflict **22**. `FORMAL_DRAFT` 05 §5.6.3 introduces `(!)` as a `pick`
+arm pattern marking a case unreachable.
+
+**Removed.** An unreachable claim is an assumption the compiler cannot verify in
+general, and there are only two honest treatments:
+
+- **Prove it unreachable** — in which case no marker is needed, because the
+  exhaustiveness checker already knows.
+- **Trap if reached** — which `#unreachable()` already does, lowering to
+  `AssertStaticStmt(false)`.
+
+So an arm the author believes cannot occur is written as an ordinary arm whose
+body is `#unreachable()`. Explicit, greppable, and it traps rather than
+silently proceeding.
+
+### The reason this is not merely tidying
+
+`(!)` lets an arm be **elided from exhaustiveness**. D-008 requires an `ERR:` arm
+for every `tbb` selector, because `tbb`'s ERR sentinel is sticky and absorbing —
+once a value is ERR, every operation on it yields ERR, so ERR is exactly the
+state that propagates furthest from where it originated.
+
+`(!)` on that arm is the author asserting "this value cannot be ERR." That is the
+single least safe assumption available in the type, and the marker exists to let
+it be written without a runtime consequence. Removing `(!)` means the required
+ERR arm **cannot be skipped** — it is written, and if the author truly believes
+it unreachable, `#unreachable()` traps and routes through `failsafe` rather than
+falling through.
+
+It also retires a second spelling of one idea, `(!)` and `#unreachable()`, in
+favour of the one that already exists and already has defined semantics.

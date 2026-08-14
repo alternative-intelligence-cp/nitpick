@@ -172,15 +172,21 @@ PickPattern = Value(Expr)                    // (200)
             | EnumDestructure(path, binds)   // (Net.Disconnect(reason))
             | ErrPattern                     // ERR:
             | Wildcard                       // (*)
-            | Unreachable                    // (!)
 ```
 
 - **`ErrPattern` matches the `tbb` error sentinel.** A `pick` on a `tbb` selector
-  **requires** an explicit `ERR:` arm — neither `Wildcard` nor `Unreachable` may
-  absorb it, or a tainted value steers a branch (D-008 §5.1).
-- `pick` must be exhaustive.
-- `MacroPattern` spelling needs revisiting against D-046: `FORMAL_DRAFT` 05 §5.6.2
-  shows `MyMacro!(a, b)`, but macro invocation is now `#name(args)`.
+  **requires** an explicit `ERR:` arm — `Wildcard` may not absorb it, or a
+  tainted value steers a branch (D-008 §5.1).
+- **There is no `Unreachable` pattern.** `FORMAL_DRAFT` 05 §5.6.3's `(!)` marker
+  is removed by D-061: it would let the required `ERR:` arm be elided, which is
+  the author asserting a `tbb` cannot be ERR — the least safe assumption the type
+  admits. An arm believed unreachable is written normally with `#unreachable()`
+  as its body, which traps.
+- **There is no `MacroPattern`.** Removed by D-057 rather than respelled: macros
+  expand to a fixed point before semantic analysis, so no macro invocation
+  survives to be matched.
+- `pick` must be exhaustive. A `pick` whose arms `give` is an **expression**
+  (D-059, D-060) and must additionally agree on one type across all arms.
 
 ## 2.2 Statement-level control transfers
 
