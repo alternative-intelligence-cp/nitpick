@@ -170,7 +170,6 @@ PickPattern = Value(Expr)                    // (200)
             | Range(lo, hi, inclusive)       // (500..599)
             | StructDestructure(type, binds) // (MouseClick { x, y })
             | EnumDestructure(path, binds)   // (Net.Disconnect(reason))
-            | MacroPattern(name, args)       // MyMacro!(a, b) — see note
             | ErrPattern                     // ERR:
             | Wildcard                       // (*)
             | Unreachable                    // (!)
@@ -355,19 +354,20 @@ deterministic RAII "bypassing standard GC", which is now the only behaviour
 These are gaps in the **grammar**, not in this document — recorded so the parser
 work does not silently invent answers.
 
-1. **`MacroPattern` in `pick`** (§2.1) — `FORMAL_DRAFT` 05 §5.6.2 spells it
-   `MyMacro!(a, b)`, but D-046 moved macro invocation to `#name(args)`. The
-   pattern form needs the same treatment. Note that **both** macro documents
-   located in `nitpick-docs` also predate D-046 and use `name!(args)`.
-2. ~~**Macros have no governing specification.**~~ — **they do; located.**
-   `specs/macros_meta_specs.txt` (40 lines) and
-   `reference/MACRO_AUTHORING_GUIDE.md` (122 lines) specify definitions,
-   derive and attribute macros, `cfg`, and `comptime`. Neither was among the ten
-   files carried into `meta/specs/`, which is why the gap appeared. Adoption
-   conflicts are tabled in `PROTOTYPE_DELTA.md` §5. **What genuinely remains
-   unspecified is hygiene, expansion order, and pattern matching over AST
-   fragments** — the documents describe what macros do, not the rules under which
-   they expand.
+1. ~~**`MacroPattern` in `pick`**~~ — **removed by D-057**, not respelled. Macros
+   expand to a fixed point *before* semantic analysis, so by the time a `pick`
+   executes no macro invocation exists to match and the pattern could never fire.
+   No test exercises it. AST-fragment matching, if wanted, is a separate feature
+   needing its own design.
+2. ~~**Macros have no governing specification.**~~ — **settled by D-057.** Two
+   documents exist in `nitpick-docs` (neither carried into `meta/specs/`), but
+   the real specification was in **49 regression tests**, keyed to decision codes
+   `MACRO2-DEC-001…007` and `COMPTIME-006/007`. Hygiene, expansion order,
+   declaration emission, and struct/impl splicing are all recovered there and now
+   recorded. D-057 additionally flips the hygiene default to defining-scope,
+   makes unresolved-in-defining-scope an error rather than a caller-scope
+   fallback, and bounds expansion so the fixed-point loop terminates.
+
 3. **`Future<T>` visibility.** `TYPE_REFERENCE.md` §17 defines it; no chapter uses
    it. Whether it is surface syntax — awaitable, composable, cancellable — or
    purely a lowering artifact determines whether it needs expression nodes.

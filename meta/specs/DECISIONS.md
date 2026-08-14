@@ -3672,3 +3672,107 @@ That distinction is the point of the whole decision. An honest narrow guarantee
 plus a stated containment mechanism is worth more than a broad claim nothing
 backs — particularly here, where the person relying on it is deciding whether a
 robot near a child can wedge.
+
+---
+
+## D-057 — Macro hygiene and expansion order — **SETTLED**
+
+The macro system is far larger than either document describes, and **its
+specification exists only in regression tests** — 49 `.npk` files under
+`nitpick/tests/`, carrying the semantics in comments keyed to decision codes
+(`MACRO2-DEC-001…007`, `COMPTIME-006/007`). No user code in `stdlib`, `ARCHIVE`,
+or the examples declares a macro; the entire corpus is tests.
+
+That is why it looked unspecified. It is not unspecified — it is **specified in
+the wrong artifact**, one that ships with no prose and cannot be read as a whole.
+
+### What actually exists, none of it documented
+
+| Capability | Evidence |
+|---|---|
+| Hygiene with defining-scope capture | `MACRO2-DEC-004/005` |
+| `NITPICK-061 MACRO_HYGIENE_VIOLATION` diagnostic | `MACRO2-DEC-007` |
+| `#caller(NAME)` explicit opt-out | `MACRO2-DEC-006` |
+| Emitting **multiple declarations** | `bug591`, `bug592` (with cross-references between them) |
+| **Struct field splicing** | `bug595`, `bug597`, `bug598` |
+| **Impl method splicing** | `bug596`, `bug599` |
+| Module-level invocation and nesting | `MACRO2-DEC-001` |
+| Macro ↔ `comptime` interaction, both directions | `COMPTIME-006/007` |
+
+The K semantics model none of it — `nitpick.k` handles zero- and one-argument
+substitution only, and `SEMANTIC_GAPS.md` rates macro expansion "Low". The 40-line
+spec and the authoring guide describe a fraction.
+
+**`macro:` stays.** Splicing fields into a struct and methods into an `impl`, and
+emitting mutually-referencing declarations, are things generics, `comptime`, and
+`#[derive]` cannot do. Months of regression tests exist because the feature is
+load-bearing, not vestigial.
+
+### Hygiene: the default is backwards, and flips
+
+Today, when an identifier in a macro body resolves to a **different symbol** in
+the defining scope than at the call site, the compiler emits `NITPICK-061` and
+**keeps the caller's binding**. `bug603` states the intent plainly: *"the macro
+doesn't use `#caller()`, so the back-compat path keeps the caller-scope binding
+while NITPICK-061 surfaces the hazard."*
+
+A back-compat path, not a design. And it is precisely the failure the blueprint
+philosophy exists to prevent: **the macro means something different depending on
+where it is invoked**, with a warning as the only guard. A warning is not a
+mechanism; it is a request that someone be paying attention.
+
+**Flipped:**
+
+1. An identifier in a macro body resolves in the **defining scope**. Always.
+2. If it does not resolve there, that is a **compile error** — never a silent
+   fallback to the caller's scope.
+3. **`#caller(NAME)`** is the sole way to reach the call site: explicit,
+   greppable, and already spelled with `#`, so D-046 needs no adjustment here.
+4. `NITPICK-061` disappears as a warning, because the hazard it reported is
+   structurally absent rather than detected.
+
+This is the standing pattern: explicit opt-outs (`raw`, `wild`, `=>!`,
+`#caller`) are consistent with the philosophy; silent contextual variation is
+not.
+
+### Expansion order, recovered from the tests
+
+1. **Module-level expansion iterates to a fixed point.** `bug594`: `outer!()`
+   expands to `{ inner!(); f3 }`, and `inner!()` expands to `{ f1; f2 }` on the
+   next iteration. The flatten loop repeats until no invocation remains.
+2. **Expansion precedes `comptime` folding.** `COMPTIME-006`: a macro body
+   containing `comptime(expr)` is folded *after* expansion.
+3. **`comptime` delegates to the expanded AST.** `COMPTIME-007`:
+   `comptime(double_it!(3))` expands first, then evaluates — and nests, as
+   `comptime(add_one!(double_it!(10)))`.
+
+One rule covers all three: **expansion always precedes evaluation, and runs to a
+fixed point first.**
+
+### Expansion is bounded, and this is new
+
+A fixed-point loop must terminate, and nothing in the tests bounds it.
+`macro:m = () { m!(); };` iterates forever, so **the compiler fails to
+terminate** — unacceptable in a compiler under formal verification, where
+termination is itself a property to be established.
+
+Expansion therefore carries a **depth and iteration limit**, exceeding it being
+an ordinary compile error naming the macro and the chain that reached the bound.
+`--comptime-budget <N>` is the existing precedent for exactly this shape, so the
+mechanism is already familiar rather than novel.
+
+### `MacroPattern` in `pick` is removed
+
+`FORMAL_DRAFT` 05 §5.6.2 allows `pick` arms to match macro invocations —
+`MyMacro!(a, b) where (a > b)` — which `AST_REFERENCE` §8 carried as an open item
+pending D-046's respelling.
+
+It should not be respelled; it should go. **Macros expand to a fixed point before
+semantic analysis, so by the time a `pick` executes no macro invocation exists to
+match.** The pattern can never fire. No test exercises it, and nothing in the
+corpus uses it.
+
+If matching over AST fragments is genuinely wanted — for a self-hosted compiler
+matching its own nodes — that is a different feature with different requirements,
+and it needs its own design rather than a pattern form that is inconsistent with
+the expansion order.

@@ -245,3 +245,23 @@ declarations.** Baking a lookup table is `comptime`. Synthesising an
 `impl:Trait:for:T` from `#[derive(...)]` is a macro. Neither subsumes the other,
 so both stay — but nothing else should be added to either without checking which
 side of that line it falls on.
+
+
+### Where the macro semantics actually live
+
+Neither macro document specifies hygiene, expansion order, or what a macro may
+emit. **The regression tests do** — 49 `.npk` files under `nitpick/tests/`, with
+the semantics stated in header comments keyed to `MACRO2-DEC-001…007` and
+`COMPTIME-006/007`. No user code anywhere declares a macro; the whole corpus is
+tests.
+
+Recovered and settled as D-057: defining-scope hygiene with `#caller(NAME)` as
+the sole opt-out, fixed-point module-level expansion preceding `comptime`
+folding, multi-declaration emission, struct-field and impl-method splicing, and a
+bound on expansion so the fixed-point loop terminates.
+
+Worth noting for the port: the K semantics (`nitpick.k`) model **zero- and
+one-argument substitution only**, and `SEMANTIC_GAPS.md` rates macro expansion
+"Low" priority. The K definition is therefore a much weaker model than the
+implementation, and re-deriving the semantics from K would have lost hygiene,
+splicing, and multi-declaration emission entirely.
