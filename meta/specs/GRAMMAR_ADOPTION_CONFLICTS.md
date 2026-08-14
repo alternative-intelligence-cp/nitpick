@@ -282,9 +282,13 @@ The chapter says nothing about:
 - **Arenas and threads.** D-017 splits `arena<T>` (single-threaded, full
   operations) from `shared_arena<T>` (allocation-only, non-moving chunks, atomic
   bump). Chapter 11 predates it entirely.
-- **`--verify-concurrency`** is listed in `VERIFICATION_REFERENCE.md` §5 as
-  verifying "data race & deadlock freedom", with **no mechanism described
-  anywhere** for either.
+- **`--verify-concurrency`** was listed in `VERIFICATION_REFERENCE.md` §5 as
+  verifying "data race & deadlock freedom" with **no mechanism described
+  anywhere** for either. **Both now have one.** Race freedom follows from D-004,
+  D-017 and D-032; deadlock is split by D-056 into lock-order freedom, proven
+  from a compile-time `LEVEL` carried by every blocking primitive, plus mandatory
+  deadlines containing what the analysis cannot reach. The flag's documented
+  claim is narrowed accordingly.
 
 ### J4. `Future<T>` is never mentioned
 
