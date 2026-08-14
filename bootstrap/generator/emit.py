@@ -146,6 +146,7 @@ class Emitter:
             head.append("")
         for _, (s, ret, args) in sorted(RUNTIME.items()):
             head.append("declare %s %s(%s)" % (ret, s, ", ".join(args)))
+        head.append("declare void @npk_exit(i32)")
         head.append("")
         self.out[body_start:body_start] = head
         return "\n".join(self.out) + "\n"
@@ -299,8 +300,16 @@ class Emitter:
         elif isinstance(st, S.Trap):
             # A trap runs NO defers (D-014). Deliberately not calling
             # run_defers here -- that omission is the decision.
+            #
+            # failsafe's return value IS the process exit code: it must be
+            # positive, because reaching failsafe means something failed and
+            # returning 0 would be a contradiction (D-014). So the trap path
+            # calls it and then exits with what it returned -- dropping that
+            # value on the floor would discard the whole point of the handler.
             e = self.expr(st.error, want=T.TBB32)
-            self.w("%s = call i32 @npk_failsafe(i32 %s)" % (self.tmp(), e.ref))
+            r = self.tmp()
+            self.w("%s = call i32 @npk_failsafe(i32 %s)" % (r, e.ref))
+            self.w("call void @npk_exit(i32 %s)" % r)
             self.w("unreachable")
             self.terminated = True
 

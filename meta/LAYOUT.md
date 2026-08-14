@@ -24,8 +24,9 @@ nitpick-native/
 │   │   └── layout/         #   type layout / ABI
 │   └── driver/             # manifest, module graph, subprocess invocation
 ├── bootstrap/              # THROWAWAY. Not the compiler. (D-085)
-│   ├── generator/          #   the seed generator
-│   └── seed/               #   committed seed IR (.ll)
+│   ├── generator/          #   the seed: subset-1 .npk -> .ll
+│   ├── runtime/            #   the runtime floor, hand-written .ll (D-015)
+│   └── seed/               #   committed seed IR (.ll), from cycle 0.7
 ├── tools/
 │   └── harness/            # test runner (cycle 0.0.4)
 └── tests/
@@ -68,6 +69,12 @@ emits a subset-1 compiler as LLVM IR, whose **emitted IR is committed** so that
 rebuilding needs only the LLVM toolchain. Neither half is the compiler, neither
 is ever in an artifact, and both are deleted once self-hosting closes — so
 putting them under `src/` would misrepresent what ships.
+
+`bootstrap/runtime/npkrt.ll` is the runtime floor — `_start`, raw syscalls, a
+bump allocator that never frees, the `memcpy`/`memset` symbols LLVM emits calls
+to, and enough string support to build a diagnostic. Hand-written LLVM IR is what
+D-015 specifies for the first rung; real allocation and real I/O arrive with
+`nlibc` in cycle 0.8.
 
 ## What is not here yet
 

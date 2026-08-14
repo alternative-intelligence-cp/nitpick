@@ -51,11 +51,24 @@ def _compile(group):
     return emit.emit_module(prog, ck, module_id="selftest")
 
 
+RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
+
+
+def _expected_exit(path):
+    """`// expect-exit: N` in the first few lines; 0 when absent."""
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh.read().splitlines()[:20]:
+            if "expect-exit:" in line:
+                return int(line.split("expect-exit:")[1].strip())
+    return 0
+
+
 def conformance():
-    """Must parse, check clean, and emit IR that llc accepts."""
+    """Must parse, check clean, emit IR llc accepts, then link and RUN."""
     paths = sorted(glob.glob(os.path.join(ROOT, "tests/conformance/*.npk")))
     bad = total = 0
     llc_bad = 0
+    built = []
     have_llc = shutil.which("llc") is not None
     tmp = tempfile.mkdtemp(prefix="npkseed-")
     for p in paths:
@@ -70,24 +83,62 @@ def conformance():
             print("  FAIL %s" % e)
             bad += 1
             continue
-        if have_llc:
-            ll = os.path.join(tmp, base + ".ll")
-            with open(ll, "w", encoding="utf-8") as fh:
-                fh.write(ir)
-            r = subprocess.run(["llc", "-filetype=obj", ll, "-o", os.devnull],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
-                print("  FAIL %s  llc rejected: %s" % (base, first.strip()[:120]))
-                llc_bad += 1
+        if not have_llc:
+            continue
+        ll = os.path.join(tmp, base + ".ll")
+        obj = os.path.join(tmp, base + ".o")
+        with open(ll, "w", encoding="utf-8") as fh:
+            fh.write(ir)
+        r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+                            ll, "-o", obj], capture_output=True, text=True)
+        if r.returncode != 0:
+            first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
+            print("  FAIL %s  llc rejected: %s" % (base, first.strip()[:120]))
+            llc_bad += 1
+            continue
+        built.append((base, obj, p))
+    ran, run_msg = run_all(built, tmp, have_llc)
     shutil.rmtree(tmp, ignore_errors=True)
     print("  conform   %2d/%2d parse + check clean" % (total - bad, total))
     if have_llc:
         print("  llc       %2d/%2d emitted IR accepted"
               % (total - bad - llc_bad, total - bad))
-    else:
-        print("  llc       skipped (not on PATH)")
-    return bad + llc_bad
+    print(run_msg)
+    return bad + llc_bad + ran
+
+
+def run_all(built, tmp, have_llc):
+    """Link each program against the runtime floor and execute it."""
+    if not have_llc or not shutil.which("ld.lld"):
+        return 0, "  run       skipped (llc or ld.lld not on PATH)"
+    rt = os.path.join(tmp, "npkrt.o")
+    r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+                        RUNTIME_LL, "-o", rt], capture_output=True, text=True)
+    if r.returncode != 0:
+        return 1, ("  FAIL runtime floor did not compile: %s"
+                   % r.stderr.strip()[:160])
+    bad = 0
+    for base, obj, src in built:
+        exe = os.path.join(tmp, base + ".bin")
+        # -static and -nostdlib: freestanding. _start comes from the runtime.
+        r = subprocess.run(["ld.lld", "-static", "-o", exe, obj, rt],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            print("  FAIL %s  link: %s" % (base, r.stderr.strip()[:140]))
+            bad += 1
+            continue
+        want = _expected_exit(src)
+        try:
+            got = subprocess.run([exe], capture_output=True, timeout=10).returncode
+        except subprocess.TimeoutExpired:
+            print("  FAIL %s  timed out" % base)
+            bad += 1
+            continue
+        if got != want:
+            print("  FAIL %s  exited %d, expected %d" % (base, got, want))
+            bad += 1
+    return bad, ("  run       %2d/%2d linked and ran with the expected exit code"
+                 % (len(built) - bad, len(built)))
 
 
 def determinism():
