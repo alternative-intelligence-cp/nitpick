@@ -1,0 +1,32 @@
+[project]
+name        = "npkc"
+version     = "0.0.0"
+description = "The Nitpick compiler — self-hosted, zero-dependency, formally verifiable"
+authors     = ["Randy"]
+target      = "executable"
+
+[build]
+entry     = "src/main.npk"
+output    = "build/npkc"
+# 0 during the bootstrap: `opt` is not invoked at all (BUILD_REFERENCE §4), which
+# keeps the pipeline short and the output easy to read while the backend is being
+# built. Raised once there is something worth optimising.
+opt-level = 0
+
+# Empty, and empty for a long while. The compiler depends on nothing until
+# `nlibc` exists in cycle 0.8. Anything added here is a zero-dependency decision
+# and needs to be argued as one.
+[dependencies]
+
+# Verification configuration belongs to the project, not to whoever typed the
+# command (D-077). These are the settings this project must be verified under.
+#
+# ⚠️ The tooling that honours them arrives in cycle 1.3. They are written now,
+# switched on, so that enabling verification is never a step someone has to
+# remember — a safety property must not depend on a flag being flipped later
+# (D-068).
+[verify]
+z3 = true
+
+[verify.nikos]
+domain = "interval"

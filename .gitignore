@@ -1,3 +1,16 @@
+# Build output. Never committed — the artifact of record is produced by a clean
+# build (BUILD_REFERENCE.md §4.2), not carried in the tree.
+build/
+*.o
+
+# Gitignored scratch. CLAUDE.md: never commit anything from here.
 .internal
 
 .claude/settings.local.json
+
+# NOT ignored, deliberately:
+#   bootstrap/seed/*.ll  — the committed bootstrap seed (D-085). Rebuilding must
+#                          need only the LLVM toolchain, which means the seed IR
+#                          lives in the repository rather than being regenerated.
+#   nitpick.lock         — read by every build, written only by `npkg update`
+#                          (D-078).

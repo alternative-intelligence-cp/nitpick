@@ -2,24 +2,35 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: greenfield
+## Status: specified, pre-implementation
 
-This repository currently contains **no source code**. It is an empty skeleton —
-`LICENSE` (Apache 2.0), an empty `README.md`, and a directory scaffold. There is no
-build system, no test runner, and no entry point yet.
+The **specification set is complete** — `meta/specs/` holds twenty documents and
+`DECISIONS.md` records 85 settled decisions. The **plan is in `meta/roadmap/`**,
+organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
+cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-Do not infer a build or test command from this file; none exists. When the first
-one is established, record it here. Until then, if a task requires building or
-running something, say so rather than guessing at an invocation.
+There is still **no compiler source and no build system.** Do not infer a build
+or test command from this file; none exists yet. When the first one is
+established, record it here. Until then, if a task requires building or running
+something, say so rather than guessing at an invocation.
 
 ```
-src/          # (empty) compiler sources
-src/inc/      # (empty) shared headers / includes
-tests/        # (empty)
+src/          # THE COMPILER — Nitpick source only; nothing else belongs here
+  frontend/   #   built once, in full (analysis/, macro/)
+  backend/    #   grown rung by rung (ir/, layout/)
+  driver/     #   manifest, module graph, subprocess invocation
+bootstrap/    # THROWAWAY seed + generator (D-085) — never in an artifact
+tools/        # harness/ — test runner; not part of the compiler
+tests/        # conformance/ (subset 1 compiles), rejection/ (backend rejects)
 meta/specs/   # language specs — see below
-meta/roadmap/ # (empty) roadmap; meta/roadmap/done/ archives completed items
+meta/roadmap/ # the plan; meta/roadmap/done/ archives completed cycles
+meta/LAYOUT.md# the tree, and why it departs from ../npkc-native
 .internal/    # gitignored scratch area — never commit anything from here
 ```
+
+**`src/inc/` is gone.** It was listed as "shared headers / includes"; Nitpick has
+modules, not headers. See `meta/LAYOUT.md` for that and the four other departures
+from the `npkc-native` decomposition, each with the decision that forced it.
 
 `meta/specs/` holds ten `.md` reference documents carried over from
 `../nitpick-next/meta/specs/` (the Gemini experiment), plus two written here:
