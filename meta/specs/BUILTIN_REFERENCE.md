@@ -71,14 +71,36 @@ Direct access to operating system syscalls.
 
 | Built-in | Return | Description |
 |---|---|---|
-| `sys(CONST, args...)` | `Result<int64>` | Safe-tier syscall. Restricted to curated whitelist. Returns `tbb32` error codes (negative for system errors). |
-| `sys_full(CONST, args...)` | `Result<int64>` | Full-tier syscall. Allows any OS syscall. Returns `tbb32` error codes. |
+| `sys(CONST, ..*int64[])` | `Result<int64>` | The only syscall form. Reaches any OS syscall; returns `tbb32` error codes (negative for system errors). |
 
-> **`sys!!` is renamed `sys_full`** and **`asm!!` is renamed `asm`** (D-046).
-> After the raw tiers were removed the `!!` marker distinguished nothing — `asm`
-> is the only assembly form left — and `sys_full` states the tier in a word,
-> matching `libn`'s existing `sys_safe` / `sys_full` naming. `!!` no longer
-> exists in the language.
+> ### There is one syscall form, not three (D-048)
+>
+> The original three tiers were a danger ladder along two axes — how many
+> syscalls are reachable, and whether the result is wrapped:
+>
+> | Tier | Reachable | Wrapped |
+> |---|---|---|
+> | `sys` | curated whitelist | **no** |
+> | `sys!!` | everything | yes |
+> | `sys!!!` | everything | **no** |
+>
+> The whitelist was small **because `sys` was unwrapped** — restricting the call
+> set compensated for the missing error wrapping. D-001 removed `sys!!!` and made
+> everything wrapped, so that justification disappeared, leaving two tiers
+> separated only by an arbitrary list of which calls are common enough.
+>
+> Restricting which syscalls a binary may make is **`--seccomp`**'s job: a
+> kernel-enforced allowlist that cannot be bypassed by choosing a different
+> spelling in source. Argument-level constraints belong in the **typed API** —
+> `io_set_nonblocking` and its siblings have no slot for an arbitrary `ioctl`
+> request code, which is a stronger guarantee than a primitive that rejects one
+> at runtime.
+>
+> `--extra-picky=no-sys` bans direct syscalls in high-level application code, the
+> way `no-wild` bans manual memory.
+>
+> **`asm!!` is spelled `asm`** (D-046) — it is the only assembly form left.
+> `!!` no longer exists in the language.
 >
 > **`sys!!!` is removed** (D-001). The raw tier returned a bare `int64`, bypassing
 > `Result<T>` entirely, and permitted an arbitrary expression as the syscall

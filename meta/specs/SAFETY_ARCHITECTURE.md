@@ -128,6 +128,8 @@ are parameterizable: `--extra-picky=warn-<rule>` downgrades one to a warning,
 | `wild` | rejects `wild`/`wildx` on declarations, parameters, and return types, keeping high-level code away from unchecked pointers |
 | **`require-tbb`** *(new, D-007)* | requires `tbb` arithmetic in designated real-time code, making the fail-operational path a **compile-time guarantee** rather than a convention |
 | **`no-failsafe-alloc`** *(new, D-014)* | rejects allocation inside `failsafe`, partially enforcing the preallocation discipline |
+| **`no-sys`** *(new, D-048)* | rejects direct `sys` calls in high-level application code, the way `wild` rejects manual memory. Syscalls belong in `nlibc`; application code reaches the kernel through the typed API |
+| **`no-wildx`** *(new, D-035)* | rejects runtime code generation independently of `no-wild`. Manual memory and JIT are very different risks and should not share one switch |
 
 Every escape hatch is explicit, named, and greppable. That is the standing shape
 of a Nitpick guarantee: absolute by default, suspended only through a construct an

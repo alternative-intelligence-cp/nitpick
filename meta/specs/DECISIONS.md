@@ -2725,12 +2725,13 @@ vestigial:
 | Now | Becomes | Why |
 |---|---|---|
 | `asm!!<T>(…)` | **`asm<T>(…)`** | it is the *only* remaining assembly form, so the tier marker distinguishes nothing |
-| `sys!!(…)` | **`sys_full(…)`** | a word states the tier as clearly as `!!` and is equally greppable |
-
-`sys` versus `sys_full` also matches `libn`'s own naming — its wrappers are
-already `sys_safe` and `sys_full`.
+| `sys!!(…)` | **removed** | superseded by D-048 — the tiers collapse to a single `sys`, so there is no second spelling to name |
 
 This removes `!!` from the language entirely.
+
+> **Superseded in part.** This decision originally renamed `sys!!` to `sys_full`.
+> D-048 then collapsed the syscall tiers altogether, so `sys_full` never enters
+> the language — there is only `sys`. The `asm!!` → `asm` rename stands.
 
 ### 3. What remains, and the rule
 
@@ -2817,10 +2818,18 @@ That second point is real safety policy. An `ioctl` whitelist that admits the ca
 but not arbitrary request codes is doing meaningful work, and it would be lost if
 the wrapper were simply deleted.
 
-**The policy is extracted into the `sys` builtin's specification** before the
-wrapper is removed. `sys_safe` is the input to that specification, not something
-to discard — the builtin's whitelist must be written down, including the
-argument-level constraints, and the extraction reviewed against the original.
+**The policy is extracted before the wrapper is removed** — but D-048 changed
+where it goes.
+
+The **syscall list** is no longer needed: D-048 collapsed the tiers, so there is
+no whitelist to specify, and restricting which syscalls a binary may make is
+`--seccomp`'s job instead.
+
+The **argument-level constraints** still matter and must be checked against
+`libn`'s typed `io_*` wrappers — `io_set_cloexec`, `io_set_nonblocking`,
+`io_set_append`, `io_fcntl_setown` — to confirm that everything `sys_safe`
+enforced is already unreachable through the typed API. That check happens before
+deletion, not after.
 
 ### Ordering
 
@@ -2842,7 +2851,7 @@ avoid.
 
 ---
 
-## D-048 — Collapse the syscall tiers to a single `sys` — **PROPOSED**
+## D-048 — Collapse the syscall tiers to a single `sys` — **SETTLED**
 
 Supersedes part of D-047, which assumed the two-tier split would survive.
 
