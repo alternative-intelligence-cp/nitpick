@@ -1,0 +1,161 @@
+// Escape-sequence decoding.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.4.
+//
+// LEXICAL_REFERENCE.md §6.3:
+//
+//   EscapeSequence ::= "\" ("n" | "r" | "t" | "\" | '"' | "'" | "0"
+//                           | "x" HexDigit HexDigit
+//                           | "u" "{" HexDigit+ "}")
+//
+// Decoding happens in the LEXER, not later: a string literal's value is what it
+// denotes, and carrying the raw text forward would mean every consumer decodes
+// it again -- and one of them eventually gets it wrong.
+
+use "intern.npk".*;
+
+pub struct:EscapeResult = {
+    bool:ok;
+    int64:codepoint;   // the decoded value
+    int64:consumed;    // bytes consumed INCLUDING the backslash
+};
+
+func:esc_fail = EscapeResult() {
+    EscapeResult:r = EscapeResult{ ok: false, codepoint: 0i64, consumed: 1i64 };
+    pass r;
+};
+
+func:esc_ok = EscapeResult(int64:cp, int64:used) {
+    EscapeResult:r = EscapeResult{ ok: true, codepoint: cp, consumed: used };
+    pass r;
+};
+
+func:hex_value = int64(uint8:c) {
+    if ((c >= 48u8) && (c <= 57u8))  { pass (c - 48u8) => int64; }
+    if ((c >= 97u8) && (c <= 102u8)) { pass ((c - 97u8) => int64) + 10i64; }
+    if ((c >= 65u8) && (c <= 70u8))  { pass ((c - 65u8) => int64) + 10i64; }
+    pass 0i64 - 1i64;
+};
+
+// `text` starts at the backslash. Returns how much was consumed so the caller
+// can advance without re-deciding the shape of the escape.
+pub func:escape_decode = EscapeResult(string:text, int64:at) {
+    if ((at + 1i64) >= text.len) {
+        pass (raw esc_fail());
+    }
+    uint8:e = text.ptr[at + 1i64] => uint8;
+
+    if (e == 110u8) { pass (raw esc_ok(10i64, 2i64)); }   // \n
+    if (e == 114u8) { pass (raw esc_ok(13i64, 2i64)); }   // \r
+    if (e == 116u8) { pass (raw esc_ok(9i64,  2i64)); }   // \t
+    if (e == 92u8)  { pass (raw esc_ok(92i64, 2i64)); }   // backslash
+    if (e == 34u8)  { pass (raw esc_ok(34i64, 2i64)); }   // "
+    if (e == 39u8)  { pass (raw esc_ok(39i64, 2i64)); }   // '
+    if (e == 48u8)  { pass (raw esc_ok(0i64,  2i64)); }   // \0
+
+    if (e == 120u8) {                                     // \xHH -- exactly two
+        if ((at + 3i64) >= text.len) {
+            pass (raw esc_fail());
+        }
+        int64:h1 = raw hex_value(text.ptr[at + 2i64] => uint8);
+        int64:h2 = raw hex_value(text.ptr[at + 3i64] => uint8);
+        if (h1 < 0i64) { pass (raw esc_fail()); }
+        if (h2 < 0i64) { pass (raw esc_fail()); }
+        pass (raw esc_ok((h1 * 16i64) + h2, 4i64));
+    }
+
+    if (e == 117u8) {                                     // \u{...}
+        if ((at + 2i64) >= text.len) {
+            pass (raw esc_fail());
+        }
+        if ((text.ptr[at + 2i64] => uint8) != 123u8) {    // {
+            pass (raw esc_fail());
+        }
+        int64:i = at + 3i64;
+        int64:acc = 0i64;
+        bool:any = false;
+        while (i < text.len) {
+            uint8:c = text.ptr[i] => uint8;
+            if (c == 125u8) {                             // }
+                if (!any) { pass (raw esc_fail()); }
+                // Above the Unicode maximum is a source error, not something to
+                // silently truncate into a different character.
+                if (acc > 1114111i64) { pass (raw esc_fail()); }
+                pass (raw esc_ok(acc, (i - at) + 1i64));
+            }
+            int64:h = raw hex_value(c);
+            if (h < 0i64) { pass (raw esc_fail()); }
+            acc = (acc * 16i64) + h;
+            any = true;
+            i = i + 1i64;
+        }
+        pass (raw esc_fail());                            // unterminated
+    }
+
+    pass (raw esc_fail());
+};
+
+// --- UTF-8 encoding ---------------------------------------------------------
+//
+// A decoded code point goes back into the buffer as UTF-8, because the source is
+// UTF-8 and a string's bytes are what the program will actually hold.
+
+pub func:utf8_encode = int64(wild int8->:buf, int64:at, int64:cp) {
+    if (cp < 128i64) {
+        buf[at] = cp => int8;
+        pass 1i64;
+    }
+    if (cp < 2048i64) {
+        buf[at] = (192i64 + (cp / 64i64)) => int8;
+        buf[at + 1i64] = (128i64 + (cp % 64i64)) => int8;
+        pass 2i64;
+    }
+    if (cp < 65536i64) {
+        buf[at] = (224i64 + (cp / 4096i64)) => int8;
+        buf[at + 1i64] = (128i64 + ((cp / 64i64) % 64i64)) => int8;
+        buf[at + 2i64] = (128i64 + (cp % 64i64)) => int8;
+        pass 3i64;
+    }
+    buf[at] = (240i64 + (cp / 262144i64)) => int8;
+    buf[at + 1i64] = (128i64 + ((cp / 4096i64) % 64i64)) => int8;
+    buf[at + 2i64] = (128i64 + ((cp / 64i64) % 64i64)) => int8;
+    buf[at + 3i64] = (128i64 + (cp % 64i64)) => int8;
+    pass 4i64;
+};
+
+pub struct:DecodedString = {
+    bool:ok;
+    string:value;
+};
+
+// Decode a string literal's CONTENT (between the quotes) into its value.
+// The output is never longer than the input: every escape is at least two bytes
+// and produces at most four, and \u{10FFFF} is eight bytes producing four.
+pub func:decode_string = DecodedString(string:content) {
+    wild int8->:buf = alloc(content.len + 4i64);
+    int64:out = 0i64;
+    int64:i = 0i64;
+    bool:ok = true;
+
+    while (i < content.len) {
+        uint8:c = content.ptr[i] => uint8;
+        if (c == 92u8) {
+            EscapeResult:e = raw escape_decode(content, i);
+            if (!(e.ok)) {
+                ok = false;
+                i = i + 1i64;
+            } else {
+                out = out + (raw utf8_encode(buf, out, e.codepoint));
+                i = i + e.consumed;
+            }
+        } else {
+            buf[out] = content.ptr[i];
+            out = out + 1i64;
+            i = i + 1i64;
+        }
+    }
+
+    DecodedString:d = DecodedString{ ok: ok,
+                                     value: raw string_from_bytes(buf, out) };
+    pass d;
+};

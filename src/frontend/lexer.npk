@@ -14,6 +14,7 @@ use "intern.npk".*;
 use "keywords.npk".*;
 use "num_width.npk".*;
 use "numeric.npk".*;
+use "escapes.npk".*;
 use "diagnostics.npk".*;
 
 pub struct:Lexer = {
@@ -22,10 +23,22 @@ pub struct:Lexer = {
     int64:pos;       // byte offset of the next unread byte
     int32:line;      // 1-based
     int32:col;       // 1-based, in bytes
+
+    // Template state. `&{ ... }` interpolation means the lexer must know
+    // whether a `}` closes an interpolation or a block -- after the former it
+    // resumes TEMPLATE scanning, after the latter it does not
+    // (LEXICAL_REFERENCE 6.4). Bounded at 8: templates nested deeper than that
+    // are pathological, and a fixed bound keeps the memory deterministic.
+    bool:in_template;
+    int32:interp_depth;
+    int32:brace_depth;
+    int32[8]:interp_brace;   // brace depth at each open interpolation
 };
 
 pub func:lexer_init = Lexer(int32:file, string:text) {
-    Lexer:lx = Lexer{ text: text, file: file, pos: 0i64, line: 1i32, col: 1i32 };
+    Lexer:lx = Lexer{ text: text, file: file, pos: 0i64, line: 1i32, col: 1i32,
+                      in_template: false, interp_depth: 0i32, brace_depth: 0i32,
+                      interp_brace: [] };
     pass lx;
 };
 
@@ -195,6 +208,218 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             pass (raw token_make(op,
                                  raw lexer_span_from(lx, start, line, col), 0i64));
         }
+    }
+
+    // --- template content ---------------------------------------------------
+    if (lx.in_template) {
+        // Accumulate until ` or &{ . A part is emitted even when empty only if
+        // nothing else follows, so `&{x}` produces no spurious empty part.
+        int64:tstart = lx.pos;
+        while (true) {
+            uint8:t = raw lexer_peek(lx);
+            if (t == 0u8) {
+                Span:sp = raw lexer_span_from(lx, start, line, col);
+                drop diaglist_push(diags,
+                    raw diag_error("NITPICK-LEX-006",
+                        "unterminated template literal", sp));
+                lx.in_template = false;
+                pass (raw token_make(TokenKind.Error, sp, 0i64));
+            }
+            if (t == 96u8) { break; }                       // `
+            if (t == 38u8) {                                // &
+                if ((raw lexer_peek2(lx)) == 123u8) { break; }   // &{
+            }
+            drop lexer_advance(lx);
+        }
+
+        if (lx.pos > tstart) {
+            string:part = raw string_slice(lx.text, tstart, lx.pos);
+            pass (raw token_make(TokenKind.TemplatePart,
+                      raw lexer_span_from(lx, tstart, line, col),
+                      (raw intern_add(interns, part)) => int64));
+        }
+
+        uint8:t2 = raw lexer_peek(lx);
+        if (t2 == 96u8) {
+            drop lexer_advance(lx);
+            lx.in_template = false;
+            pass (raw token_make(TokenKind.TemplateEnd,
+                                 raw lexer_span_from(lx, start, line, col), 0i64));
+        }
+        // &{ -- leave template mode; the expression is lexed normally.
+        drop lexer_advance(lx);
+        drop lexer_advance(lx);
+        lx.in_template = false;
+        if (lx.interp_depth < 8i32) {
+            lx.interp_brace[lx.interp_depth => int64] = lx.brace_depth;
+            lx.interp_depth = lx.interp_depth + 1i32;
+        }
+        pass (raw token_make(TokenKind.InterpStart,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+
+    // --- a `}` that closes an interpolation ---------------------------------
+    if (c == 125u8) {
+        if (lx.interp_depth > 0i32) {
+            if (lx.brace_depth == lx.interp_brace[(lx.interp_depth - 1i32) => int64]) {
+                drop lexer_advance(lx);
+                lx.interp_depth = lx.interp_depth - 1i32;
+                lx.in_template = true;
+                pass (raw token_make(TokenKind.InterpEnd,
+                                     raw lexer_span_from(lx, start, line, col), 0i64));
+            }
+        }
+        drop lexer_advance(lx);
+        lx.brace_depth = lx.brace_depth - 1i32;
+        pass (raw token_make(TokenKind.PRBrace,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+    if (c == 123u8) {
+        drop lexer_advance(lx);
+        lx.brace_depth = lx.brace_depth + 1i32;
+        pass (raw token_make(TokenKind.PLBrace,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+    if (c == 96u8) {
+        drop lexer_advance(lx);
+        lx.in_template = true;
+        pass (raw token_make(TokenKind.TemplateStart,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+
+    // --- strings ------------------------------------------------------------
+    // Raw strings first: `r"..."` must not be read as the identifier `r`
+    // followed by a string (D-024).
+    if (c == 114u8) {
+        if ((raw lexer_peek2(lx)) == 34u8) {
+            drop lexer_advance(lx);
+            drop lexer_advance(lx);
+            int64:rstart = lx.pos;
+            while (true) {
+                uint8:q = raw lexer_peek(lx);
+                if (q == 0u8) {
+                    Span:sp = raw lexer_span_from(lx, start, line, col);
+                    drop diaglist_push(diags,
+                        raw diag_error("NITPICK-LEX-005",
+                            "unterminated raw string literal", sp));
+                    pass (raw token_make(TokenKind.Error, sp, 0i64));
+                }
+                if (q == 34u8) { break; }
+                drop lexer_advance(lx);
+            }
+            string:body = raw string_slice(lx.text, rstart, lx.pos);
+            drop lexer_advance(lx);
+            // No escape processing at all -- that is what "raw" means.
+            pass (raw token_make(TokenKind.RawStringLit,
+                      raw lexer_span_from(lx, start, line, col),
+                      (raw intern_add(interns, body)) => int64));
+        }
+    }
+
+    if (c == 34u8) {
+        bool:block = false;
+        if ((raw lexer_peek2(lx)) == 34u8) {
+            drop lexer_advance(lx);
+            drop lexer_advance(lx);
+            if ((raw lexer_peek(lx)) == 34u8) {
+                drop lexer_advance(lx);
+                block = true;
+            } else {
+                // An empty plain string: the two quotes were the whole literal.
+                pass (raw token_make(TokenKind.StringLit,
+                          raw lexer_span_from(lx, start, line, col),
+                          (raw intern_add(interns, "")) => int64));
+            }
+        } else {
+            drop lexer_advance(lx);
+        }
+
+        int64:sstart = lx.pos;
+        while (true) {
+            uint8:q = raw lexer_peek(lx);
+            if (q == 0u8) {
+                Span:sp = raw lexer_span_from(lx, start, line, col);
+                drop diaglist_push(diags,
+                    raw diag_error("NITPICK-LEX-005",
+                        "unterminated string literal", sp));
+                pass (raw token_make(TokenKind.Error, sp, 0i64));
+            }
+            if (block) {
+                if (q == 34u8) {
+                    if ((raw lexer_peek2(lx)) == 34u8) { break; }
+                }
+            } else {
+                // A newline inside a plain string is an error: the closing quote
+                // is almost certainly missing, and running on would swallow the
+                // rest of the file into one literal.
+                if (q == 10u8) {
+                    Span:sp = raw lexer_span_from(lx, start, line, col);
+                    drop diaglist_push(diags,
+                        raw diag_error("NITPICK-LEX-005",
+                            "newline in a string literal", sp));
+                    pass (raw token_make(TokenKind.Error, sp, 0i64));
+                }
+                if (q == 34u8) { break; }
+            }
+            if (q == 92u8) {
+                drop lexer_advance(lx);
+            }
+            drop lexer_advance(lx);
+        }
+
+        string:content = raw string_slice(lx.text, sstart, lx.pos);
+        drop lexer_advance(lx);
+        if (block) {
+            drop lexer_advance(lx);
+            drop lexer_advance(lx);
+        }
+        Span:ssp = raw lexer_span_from(lx, start, line, col);
+        DecodedString:dec = raw decode_string(content);
+        if (!(dec.ok)) {
+            drop diaglist_push(diags,
+                raw diag_error("NITPICK-LEX-007", "invalid escape sequence", ssp));
+        }
+        TokenKind:sk = TokenKind.StringLit;
+        if (block) { sk = TokenKind.MultiStringLit; }
+        pass (raw token_make(sk, ssp,
+                  (raw intern_add(interns, dec.value)) => int64));
+    }
+
+    // --- characters ----------------------------------------------------------
+    if (c == 39u8) {
+        drop lexer_advance(lx);
+        int64:cp = 0i64;
+        uint8:q = raw lexer_peek(lx);
+        if (q == 92u8) {
+            EscapeResult:e = raw escape_decode(lx.text, lx.pos);
+            if (!(e.ok)) {
+                Span:sp = raw lexer_span_from(lx, start, line, col);
+                drop diaglist_push(diags,
+                    raw diag_error("NITPICK-LEX-007",
+                        "invalid escape sequence", sp));
+                pass (raw token_make(TokenKind.Error, sp, 0i64));
+            }
+            cp = e.codepoint;
+            int64:k = 0i64;
+            while (k < e.consumed) {
+                drop lexer_advance(lx);
+                k = k + 1i64;
+            }
+        } else {
+            cp = q => int64;
+            drop lexer_advance(lx);
+        }
+        if ((raw lexer_peek(lx)) != 39u8) {
+            Span:sp = raw lexer_span_from(lx, start, line, col);
+            drop diaglist_push(diags,
+                raw diag_error("NITPICK-LEX-008",
+                    "unterminated character literal", sp));
+            pass (raw token_make(TokenKind.Error, sp, 0i64));
+        }
+        drop lexer_advance(lx);
+        pass (raw token_numeric(TokenKind.CharLit,
+                  raw lexer_span_from(lx, start, line, col), cp,
+                  NumWidth.WNone));
     }
 
     if ((raw is_ident_start(c)) || (raw is_digit(c))) {

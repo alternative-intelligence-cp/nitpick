@@ -291,3 +291,13 @@ ok:
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 }
+
+; The dual of .ptr / .len: wrap a buffer the caller already owns. Used by the
+; lexer to build a decoded string literal, where the decoded bytes are not a
+; slice of the source.
+define { ptr, i64, i64 } @npk_string_from_bytes(ptr %p, i64 %n) {
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %p, 0
+  %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
+  ret { ptr, i64, i64 } %s2
+}

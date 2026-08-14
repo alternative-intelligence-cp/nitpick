@@ -1,0 +1,122 @@
+// String, character and template literals (cycle 0.1.4).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/escapes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/lexer.npk".*;
+
+func:kind_at = TokenKind(TokenList->:ts, int64:i) {
+    Token:t = relay tokenlist_at(ts, i);
+    pass t.kind;
+};
+
+func:text_at = string(TokenList->:ts, InternTable->:it, int64:i) {
+    Token:t = relay tokenlist_at(ts, i);
+    pass (relay intern_get(it, t.payload => int32));
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:dg = raw diaglist_init();
+
+    // --- plain strings, with escapes decoded IN THE LEXER -------------------
+    TokenList:s1 = raw lex_all(0i32, "\"a\\nb\"", @it, @dg);
+    if ((raw kind_at(@s1, 0i64)) != TokenKind.StringLit)      { exit 10i32; }
+    string:v1 = raw text_at(@s1, @it, 0i64);
+    if (v1.len != 3i64)                                       { exit 11i32; }
+    if (v1.ptr[1i64] != 10i8)                                 { exit 12i32; }  // real LF
+
+    // \x and \u{...}
+    TokenList:s2 = raw lex_all(0i32, "\"\\x41\\u{42}\"", @it, @dg);
+    string:v2 = raw text_at(@s2, @it, 0i64);
+    if (v2.len != 2i64)                                       { exit 13i32; }
+    if (v2.ptr[0i64] != 65i8)                                 { exit 14i32; }  // A
+    if (v2.ptr[1i64] != 66i8)                                 { exit 15i32; }  // B
+
+    // A multi-byte code point becomes UTF-8, because that is what the program
+    // will actually hold.
+    TokenList:s3 = raw lex_all(0i32, "\"\\u{20AC}\"", @it, @dg);
+    string:v3 = raw text_at(@s3, @it, 0i64);
+    if (v3.len != 3i64)                                       { exit 16i32; }
+
+    // --- raw strings: no escape processing at all --------------------------
+    // `r"..."` must not read as the identifier `r` followed by a string (D-024).
+    TokenList:s4 = raw lex_all(0i32, "r\"a\\nb\"", @it, @dg);
+    if ((raw kind_at(@s4, 0i64)) != TokenKind.RawStringLit)   { exit 20i32; }
+    string:v4 = raw text_at(@s4, @it, 0i64);
+    if (v4.len != 4i64)                                       { exit 21i32; }  // a \ n b
+    if (v4.ptr[1i64] != 92i8)                                 { exit 22i32; }  // backslash survives
+
+    // --- block strings ------------------------------------------------------
+    TokenList:s5 = raw lex_all(0i32, "\"\"\"one\ntwo\"\"\"", @it, @dg);
+    if ((raw kind_at(@s5, 0i64)) != TokenKind.MultiStringLit) { exit 30i32; }
+    string:v5 = raw text_at(@s5, @it, 0i64);
+    if (v5.len != 7i64)                                       { exit 31i32; }
+
+    // An empty plain string is still a plain string.
+    TokenList:s6 = raw lex_all(0i32, "\"\"", @it, @dg);
+    if ((raw kind_at(@s6, 0i64)) != TokenKind.StringLit)      { exit 32i32; }
+
+    // --- characters ---------------------------------------------------------
+    TokenList:c1 = raw lex_all(0i32, "'x' '\\n'", @it, @dg);
+    Token:ch0 = raw tokenlist_at(@c1, 0i64);
+    Token:ch1 = raw tokenlist_at(@c1, 1i64);
+    if (ch0.kind != TokenKind.CharLit)                        { exit 40i32; }
+    if (ch0.payload != 120i64)                                { exit 41i32; }
+    if (ch1.payload != 10i64)                                 { exit 42i32; }
+
+    if (raw diaglist_count(@dg) != 0i64)                      { exit 43i32; }
+
+    // --- templates ----------------------------------------------------------
+    // `&{ }` is the WHOLE formatting mechanism (D-053): formatting is ordinary
+    // functions returning string, spliced by interpolation, with no specifier
+    // language. So the lexer is where formatting begins.
+    DiagList:dt = raw diaglist_init();
+    TokenList:t1 = raw lex_all(0i32, "`n=&{x}!`", @it, @dt);
+    if ((raw kind_at(@t1, 0i64)) != TokenKind.TemplateStart)  { exit 50i32; }
+    if ((raw kind_at(@t1, 1i64)) != TokenKind.TemplatePart)   { exit 51i32; }
+    if ((raw kind_at(@t1, 2i64)) != TokenKind.InterpStart)    { exit 52i32; }
+    if ((raw kind_at(@t1, 3i64)) != TokenKind.Ident)          { exit 53i32; }
+    if ((raw kind_at(@t1, 4i64)) != TokenKind.InterpEnd)      { exit 54i32; }
+    if ((raw kind_at(@t1, 5i64)) != TokenKind.TemplatePart)   { exit 55i32; }
+    if ((raw kind_at(@t1, 6i64)) != TokenKind.TemplateEnd)    { exit 56i32; }
+
+    // A `}` closing a BLOCK inside an interpolation is not an InterpEnd. This
+    // is the case that needs brace tracking rather than a bare flag.
+    // (parentheses are 0.1.5, so this uses braces only)
+    TokenList:t2 = raw lex_all(0i32, "`&{{a}}`", @it, @dt);
+    if ((raw kind_at(@t2, 0i64)) != TokenKind.TemplateStart)  { exit 60i32; }
+    if ((raw kind_at(@t2, 1i64)) != TokenKind.InterpStart)    { exit 61i32; }
+    if ((raw kind_at(@t2, 2i64)) != TokenKind.PLBrace)        { exit 62i32; }
+    if ((raw kind_at(@t2, 3i64)) != TokenKind.Ident)          { exit 63i32; }
+    if ((raw kind_at(@t2, 4i64)) != TokenKind.PRBrace)        { exit 64i32; }
+    if ((raw kind_at(@t2, 5i64)) != TokenKind.InterpEnd)      { exit 65i32; }
+    if ((raw kind_at(@t2, 6i64)) != TokenKind.TemplateEnd)    { exit 66i32; }
+    if (raw diaglist_count(@dt) != 0i64)                      { exit 67i32; }
+
+    // --- errors are reported -------------------------------------------------
+    DiagList:de = raw diaglist_init();
+    drop lex_all(0i32, "\"never closed", @it, @de);
+    if (raw diaglist_count(@de) == 0i64)                      { exit 70i32; }
+
+    DiagList:de2 = raw diaglist_init();
+    drop lex_all(0i32, "\"line\nbreak\"", @it, @de2);
+    if (raw diaglist_count(@de2) == 0i64)                     { exit 71i32; }
+
+    DiagList:de3 = raw diaglist_init();
+    drop lex_all(0i32, "`unterminated", @it, @de3);
+    if (raw diaglist_count(@de3) == 0i64)                     { exit 72i32; }
+
+    DiagList:de4 = raw diaglist_init();
+    drop lex_all(0i32, "\"\\q\"", @it, @de4);
+    if (raw diaglist_count(@de4) == 0i64)                     { exit 73i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
