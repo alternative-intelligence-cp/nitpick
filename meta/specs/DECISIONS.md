@@ -4763,3 +4763,108 @@ The `Result<NIL>` IR is given as `{ ptr undef, ptr null, i8 0 }`, which types th
 error field as a **pointer**. The canonical layout four sections earlier gives
 `{ T value, i32 error, i8 is_error }`. The `ptr null` form is wrong; under this
 decision `Result<NIL>` is `{ i8 undef, i32 0 }` — a `NIL` payload and a zero error.
+
+---
+
+## D-070 — `T[]` is a slice: bounds live in the array type, not the pointer type — **SETTLED**
+
+Closing Part W required checking what carries bounds if pointers do not. Part W
+itself was already answered — **D-038 settled that pointers are thin**, struck
+`FORMAL_DRAFT` 15 §15.1.3 by name, and gave the reasoning. Its heading still read
+"Open question", which is how it reached the queue; conflict 52's note that this
+is *"a real open question, not stale text"* is likewise out of date.
+
+**But the fat/thin question was asked about the wrong type**, and the type it
+should have been asked about is unspecified.
+
+### The gap
+
+`TYPE_REFERENCE.md` §9.2 specifies **fixed** arrays only — `T[N]`, a value type,
+copied on pass, bounds known statically and checked at every index with a branch
+to `failsafe_oob`. That is complete and correct.
+
+`T[]` — the **unsized** form — has no layout, no bounds story, and no statement of
+whether it owns or views. It is used throughout the language and the libraries:
+
+| Use | Where |
+|---|---|
+| `char8[]` character arrays | `TYPE_REFERENCE` §2.3 |
+| `..*T[]` variadic parameter | `AST_REFERENCE` `VariadicSpec` (D-047) |
+| `cstring[]:args` | every `exec` signature in `nlibc` (D-048) |
+| `toCharArray` / `fromCharArray` | `TYPE_REFERENCE` §3 string table |
+
+D-038's argument depends on this type. It says the hazards fat pointers address
+are closed statically and at zero cost — which is true, but only because an array
+knows its own length. With `T[]` unspecified, nothing said that it did.
+
+### The decision
+
+**`T[]` is a slice — `{ptr, i64 len}`, 16 bytes, align 8 — and it is a
+non-owning view.**
+
+```llvm
+%slice = type { ptr, i64 }    ; data, element count
+```
+
+- **Indexing is bounds-checked against the runtime `len`**, trapping to
+  `failsafe` exactly as a fixed array's static check does. This is where
+  out-of-bounds detection actually comes from, and it is why pointers do not need
+  to carry it.
+- **`.len` is available** on every slice.
+- **A slice is a second-class borrow (D-004).** It passes down the call stack and
+  never up, cannot outlive the storage it views, and cannot cross a thread spawn
+  or an `await`. That is what makes a non-owning view safe without a generation
+  counter, and it is the same rule every other borrow follows.
+
+### Why the bounds belong here rather than on the pointer
+
+This is the distinction Part W missed. A pointer is *one address*; there is no
+correct length to attach to it, which is why fat pointers have to invent one and
+carry it everywhere. An **array** is an address *and* an extent by definition —
+the length is not metadata bolted onto it, it is half of what the type means.
+
+So bounds are carried exactly once, by the type that actually has them, and every
+pointer stays one word. `string` (`{ptr, len, cap}`) and `cstring` (`{ptr, len}`)
+already work this way; slices make the rule general rather than special-cased per
+type.
+
+### Constructing a slice
+
+| From | Form |
+|---|---|
+| fixed array or another slice | ranging — `arr[0...n]`, with `..` and `...` keeping their existing inclusive/exclusive meanings |
+| a raw pointer and a length | **`#wild_slice<T>(ptr, len)`, `wild` context only** |
+
+The second is deliberately parallel to D-019's `#wild_ptr<T>(addr)`: constructing
+an extent the compiler cannot verify is exactly as privileged as constructing an
+address it cannot verify, and it should be as greppable. It is how a slice is
+obtained across the FFI boundary.
+
+### Owning sequences are a library concern
+
+`T[]` never owns. A growable, owning sequence is a library type, which is what
+D-041 already decided when it returned the 35 `a*` collection keywords to
+userland — collections belong in a library.
+
+### Consequence: an API documented as returning a copy cannot return `T[]`
+
+`TYPE_REFERENCE.md` §3 lists `toCharArray : (string) → char8[]` as *"Convert to
+character array (copy)"*. **That is now ill-formed**: the copy needs an owner, and
+a `T[]` view cannot be one, so the returned slice would view a buffer nobody owns.
+
+It should take a destination instead —
+`toCharArray(string, char8[]:dest) → Result<int64>`, returning elements written —
+which is the same shape the `nlibc` collapse settled on for every other
+buffer-filling call, and which lets the caller own the storage. `fromCharArray`
+is unaffected: it consumes a view and produces an owning `string`.
+
+### What does not change
+
+- Pointers remain thin (D-038). Nothing here reopens it.
+- Fixed arrays remain value types with static bounds (§9.2).
+- `--verify-memory` keeps proving bounds **statically**; the runtime check is what
+  remains where a proof is not available, which is the same two-layer arrangement
+  as D-068's `limit<Rules>`.
+- The C ABI is unaffected for pointers. A slice is not C-compatible and does not
+  cross an `extern` boundary — `extern` signatures take a pointer and a length as
+  separate parameters, as C does.

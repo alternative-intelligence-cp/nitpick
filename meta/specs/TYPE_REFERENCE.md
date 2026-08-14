@@ -283,7 +283,7 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | `indexOf` | `(string, char8) → int64` | First occurrence (-1 if not found) |
 | `toUpper` | `(string) → string` | Uppercase (ASCII) |
 | `toLower` | `(string) → string` | Lowercase (ASCII) |
-| `toCharArray` | `(string) → char8[]` | Convert to character array (copy) |
+| `toCharArray` | `(string, char8[]:dest) → Result<int64>` | Copy into a caller-owned destination; returns elements written. *(Previously `(string) → char8[]`, which is ill-formed under D-070 — the copy needs an owner and a `T[]` view cannot be one.)* |
 | `fromCharArray` | `(char8[]) → string` | Convert char array to string (copy) |
 | `to_cstring` | `(string) → Result<cstring>` | **Builtin**: NUL-terminated `cstring` (D-049). **Fails on an interior NUL** |
 | `to_string` | `(cstring) → string` | **Builtin**: copies out of a `cstring` |
@@ -617,6 +617,34 @@ access:
   %elem_ptr = getelementptr [4 x i32], ptr %arr, i64 0, i64 %idx
   %val = load i32, ptr %elem_ptr
 ```
+
+### 9.2.1 Slices (Unsized Arrays)
+
+`T[]` is a **slice** — a non-owning view of contiguous elements (D-070).
+
+```llvm
+%slice = type { ptr, i64 }    ; data, element count — 16 bytes, align 8
+```
+
+- **Indexing is bounds-checked against the runtime `len`**, trapping to
+  `failsafe` exactly as a fixed array's static check does. This is where
+  out-of-bounds detection comes from, and it is why pointers carry no bounds
+  metadata (D-038).
+- **`.len`** is available on every slice.
+- **A slice is a second-class borrow** (D-004): it passes down the call stack and
+  never up, cannot outlive the storage it views, and cannot cross a thread spawn
+  or an `await`.
+
+Constructed by ranging a fixed array or another slice — `arr[0...n]` — or, in
+`wild` context only, from a raw pointer and a length with
+**`#wild_slice<T>(ptr, len)`**. That form is deliberately parallel to
+`#wild_ptr<T>(addr)` (D-019): an unverifiable extent is as privileged as an
+unverifiable address, and as greppable.
+
+`T[]` **never owns**. Growable owning sequences are a library concern, per D-041.
+
+A slice does not cross an `extern` boundary — it is not C-compatible. `extern`
+signatures take a pointer and a length as separate parameters, as C does.
 
 ### 9.3 Enums (Tagged)
 

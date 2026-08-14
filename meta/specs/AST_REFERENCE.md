@@ -85,7 +85,7 @@ GenericParam
 
 ```
 VariadicSpec
-  elem_type : TypeNode     // ..*T[] — a typed slice
+  elem_type : TypeNode     // ..*T[] — a typed slice, {ptr, i64 len} (D-070)
 ```
 
 **One form: homogeneous.** `..*T[]:name` is a typed slice, and a variadic call

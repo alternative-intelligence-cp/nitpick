@@ -43,7 +43,7 @@ avoid.
 
 | # | Item | Blocks | Source |
 |---|---|---|---|
-| 7 | **Fat vs thin pointers** — `FULL_specs` §15.1.3 says `int8->` carries bounds metadata; `TYPE_REFERENCE` §10 says `wild` and borrow pointers lower identically and the distinction is a type-checker matter. Interacts with D-004: if borrows are second-class and cannot escape, much of what fat pointers buy is already static and free. | all pointer lowering; FFI boundary; `--verify-memory`'s claim | Part W |
+| ~~7~~ | ~~**Fat vs thin pointers**~~ — **was already settled by D-038: thin.** Part W's heading still said "Open question" and conflict 52 still said "a real open question, not stale text"; both predate D-038. Second stale marker of the day. **But the question was aimed at the wrong type** — if pointers carry no bounds, something must, and `T[]` was entirely unspecified. **D-070** settles that: `T[]` is a slice, `{ptr, i64 len}`, a non-owning second-class view, bounds-checked against the runtime length. | — | Part W |
 | ~~8~~ | ~~**`tbb32` ERR encoding**~~ — **settled by D-069.** Nothing was undocumented: `INT32_MIN` *is* `tbb32`'s published sentinel. What was missing was its meaning in that field — an error whose identity was lost — now **unconstructible**, trapping where it would be built. The larger find: `is_error` stored the same fact as `error != 0` with no invariant relating them, and both `{error: 0, is_error: true}` and `{error: 5, is_error: false}` were constructible. Stored field removed; `r.is_error` survives as a derived accessor. | — | D-005 follow-up |
 
 ### Policy

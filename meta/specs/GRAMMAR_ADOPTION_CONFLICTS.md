@@ -541,7 +541,7 @@ catalogued in `FORMAL_DRAFT_AUDIT.md` §3–§4.
 | # | Location | Issue | Fix |
 |---|---|---|---|
 | 51 | §15.1.1 | "Nitpick **deliberately omits a discrete `char` type**. Single-character literals evaluate directly to an `int8` or `uint8` scalar." | **Flatly contradicted.** `TYPE_REFERENCE.md` §2 defines `char8`/`char16`/`char32` as semantically distinct, with arithmetic and bitwise operations **rejected at compile time**. This is also the worked example behind D-005's governing principle — a character is not an integer at the semantic level. **Strike §15.1.1 entirely.** |
-| 52 | §15.1.3 | "`int8->` is a **Fat Pointer** containing bounds metadata. `int8*` is a standard Thin Pointer" | conflicts with `TYPE_REFERENCE.md` §10, which states the LLVM IR for pointer kinds is **identical** and the distinction is enforced by the type checker. See **Part W** — this is a real open question, not stale text. |
+| 52 | §15.1.3 | "`int8->` is a **Fat Pointer** containing bounds metadata. `int8*` is a standard Thin Pointer" | conflicts with `TYPE_REFERENCE.md` §10, which states the LLVM IR for pointer kinds is **identical** and the distinction is enforced by the type checker. **Settled by D-038: thin** — `TYPE_REFERENCE` is correct and §15.1.3 is struck. (This row previously read "a real open question, not stale text"; that was written before D-038 and is itself now stale. See Part W.) |
 | 53 | §15.1.3 | "`string` guarantees internal null-termination … `extern` signature **must** use `string`" | **SETTLED by D-049.** `string` is `{ptr, len, cap}` and is not NUL-terminated; native `string` is not passed to C. The resolution is the **`cstring`** type, not the interim `as_cstring → char8[]`, since a char array carries no termination guarantee. Recorded in `PROTOTYPE_DELTA.md` §4 |
 | 54 | §15.1.2 | raw and multi-line strings "currently unsupported" | **D-024** — both retained; that note described a prototype parser gap |
 | 55 | §15.2 | collections "managed via opaque `int64` handles" | **D-012** — `int64` handles defeat leak checking, escape analysis, and Z3 pointer reasoning. Use `Handle<T>` or a typed handle. |
@@ -585,7 +585,7 @@ Mostly consistent. Adds, with no counterpart elsewhere:
 - **`--emit-ptx`, `--target=gpu`, `--emit-wasm`** — GPU and WebAssembly targets.
 - **`-test` with `#[test]`** — synthesised test-runner `main`.
 
-## Part W — **Open question**: are pointers fat or thin?
+## Part W — ~~**Open question**~~: are pointers fat or thin? — **settled by D-038**
 
 Chapter 15 §15.1.3 states:
 
@@ -610,6 +610,20 @@ of what fat pointers buy is already provided statically at zero cost.
 
 **This needs deciding before any pointer lowering is implemented**, and it is an
 ABI decision, so it is expensive to change later.
+
+**Settled: thin.** D-038 decided this and struck §15.1.3 by name — every pointer
+is one machine word, all pointer kinds lower to identical IR, and the wild/borrow
+distinction is enforced entirely by the type checker. Second-class borrows (D-004)
+and generation-counted `Handle<T>` already close the dangling and use-after-free
+classes statically, so runtime metadata would pay twice.
+
+**The question was aimed at the wrong type, though.** If pointers carry no
+bounds, something must, and `T[]` turned out to be unspecified — layout, bounds,
+and ownership all absent, while being used by the variadic form, every `exec`
+signature, and the string API. **D-070** settles it: `T[]` is a slice,
+`{ptr, i64 len}`, a non-owning second-class view whose indexing is bounds-checked
+against the runtime length. Bounds are carried by the type that has an extent by
+definition, exactly once, and every pointer stays one word.
 
 ## Part X — ~~**Open question**~~: the LLVM and Z3 dependency boundary — **settled by D-067**
 
