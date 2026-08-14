@@ -153,7 +153,7 @@ def check_positive(name, group, exp, tmp, tools):
     base = os.path.join(tmp, name.replace("/", "_"))
     with open(base + ".ll", "w", encoding="utf-8") as fh:
         fh.write(out.ir)
-    r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                         base + ".ll", "-o", base + ".o"],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -247,7 +247,7 @@ def main(argv):
     tools = shutil.which("llc") and shutil.which("ld.lld")
     tmp = tempfile.mkdtemp(prefix="npk-harness-")
     if tools:
-        r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+        r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                             RUNTIME_LL, "-o", os.path.join(tmp, "npkrt.o")],
                            capture_output=True, text=True)
         if r.returncode != 0:

@@ -37,6 +37,7 @@ RUNTIME_ARGS = {
     "string_concat": ["{ ptr, i64, i64 }", "{ ptr, i64, i64 }"],
     "int_to_string": ["i64"],
     "write_raw":     ["i32", "ptr", "i64"],
+    "string_slice":  ["{ ptr, i64, i64 }", "i64", "i64"],
 }
 
 
@@ -76,6 +77,7 @@ class Val:
 
 class Emitter:
     def __init__(self, program, checker):
+        self.loops = []        # (continue_label, break_label)
         self.p = program
         self.ck = checker
         self.out = []
@@ -272,7 +274,9 @@ class Emitter:
             self.w("br i1 %s, label %%%s, label %%%s" % (c, body, done))
             self.terminated = True
             self.start_block(body)
+            self.loops.append((head, done))
             self.block(st.body)
+            self.loops.pop()
             self.br(head)
             self.start_block(done)
 
@@ -319,9 +323,25 @@ class Emitter:
         elif isinstance(st, S.Defer):
             self.defers[-1].append(st.body)
 
-        elif isinstance(st, (S.Break, S.Continue, S.Fall)):
-            raise EmitError("`%s` is not lowered at this rung"
-                            % type(st).__name__.lower(), st)
+        elif isinstance(st, S.Break):
+            if st.label is not None:
+                raise EmitError("labelled `break` is not lowered at this rung", st)
+            if not self.loops:
+                raise EmitError("`break` outside a loop", st)
+            # Note: defers registered INSIDE the loop body do not run here. That
+            # is a gap the real compiler must close -- scope exit is a normal
+            # exit path (D-014) -- and it is recorded rather than papered over.
+            self.br(self.loops[-1][1])
+
+        elif isinstance(st, S.Continue):
+            if st.label is not None:
+                raise EmitError("labelled `continue` is not lowered at this rung", st)
+            if not self.loops:
+                raise EmitError("`continue` outside a loop", st)
+            self.br(self.loops[-1][0])
+
+        elif isinstance(st, S.Fall):
+            raise EmitError("`fall` is not lowered at this rung", st)
         else:
             raise EmitError("cannot lower %s" % type(st).__name__, st)
 

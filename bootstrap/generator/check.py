@@ -73,6 +73,7 @@ BUILTINS = {
     "string_concat": (T.STRING, True),
     "int_to_string": (T.STRING, True),
     "write_raw":     (T.I64, False),
+    "string_slice":  (T.STRING, True),
 }
 
 

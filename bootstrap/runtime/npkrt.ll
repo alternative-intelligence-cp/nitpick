@@ -262,3 +262,32 @@ build:
   %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
   ret { { ptr, i64, i64 }, i32 } %r1
 }
+
+define { { ptr, i64, i64 }, i32 } @npk_string_slice({ ptr, i64, i64 } %s,
+                                                    i64 %start, i64 %end) {
+entry:
+  %p = extractvalue { ptr, i64, i64 } %s, 0
+  %l = extractvalue { ptr, i64, i64 } %s, 1
+  ; Bounds are CHECKED, not assumed. A slice is a view, and a view past the end
+  ; of its backing store is the defect the whole type exists to prevent (D-070).
+  %b1 = icmp ult i64 %end, %start
+  %b2 = icmp ugt i64 %end, %l
+  %bad = or i1 %b1, %b2
+  br i1 %bad, label %err, label %ok
+
+err:
+  %e0 = insertvalue { { ptr, i64, i64 }, i32 } undef,
+                    { ptr, i64, i64 } zeroinitializer, 0
+  %e1 = insertvalue { { ptr, i64, i64 }, i32 } %e0, i32 5, 1
+  ret { { ptr, i64, i64 }, i32 } %e1
+
+ok:
+  %np = getelementptr i8, ptr %p, i64 %start
+  %n = sub i64 %end, %start
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %np, 0
+  %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %n, 1
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %n, 2
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %r1
+}

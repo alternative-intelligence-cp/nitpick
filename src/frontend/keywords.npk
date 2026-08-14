@@ -1,0 +1,203 @@
+// Keyword recognition.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.2.
+//
+// GENERATED from meta/specs/LEXICAL_REFERENCE.md section 4, from the same
+// extraction that produced token_kind.npk, and checked against it by
+// bootstrap/harness/spec_coverage.py.
+//
+// Keywords are recognised AFTER a whole identifier has been scanned, never by
+// prefix matching -- so `iffy` is an identifier and not `if` followed by `fy`.
+// Dispatching on LENGTH first turns 154 comparisons into a handful: most
+// identifiers share a length with only a few keywords, and none at all with
+// many.
+
+use "token_kind.npk".*;
+use "intern.npk".*;
+
+pub func:keyword_kind_of = TokenKind(string:text) {
+    int64:n = text.len;
+
+    if (n == 2i64) {
+        if (raw string_eq(text, "as")) { pass TokenKind.KwAs; }
+        if (raw string_eq(text, "fd")) { pass TokenKind.KwFd; }
+        if (raw string_eq(text, "if")) { pass TokenKind.KwIf; }
+        if (raw string_eq(text, "in")) { pass TokenKind.KwIn; }
+        if (raw string_eq(text, "is")) { pass TokenKind.KwIs; }
+        if (raw string_eq(text, "ok")) { pass TokenKind.KwOk; }
+        if (raw string_eq(text, "on")) { pass TokenKind.KwOn; }
+    }
+    if (n == 3i64) {
+        if (raw string_eq(text, "any")) { pass TokenKind.KwAny; }
+        if (raw string_eq(text, "cfg")) { pass TokenKind.KwCfg; }
+        if (raw string_eq(text, "dyn")) { pass TokenKind.KwDyn; }
+        if (raw string_eq(text, "end")) { pass TokenKind.KwEnd; }
+        if (raw string_eq(text, "for")) { pass TokenKind.KwFor; }
+        if (raw string_eq(text, "gid")) { pass TokenKind.KwGid; }
+        if (raw string_eq(text, "mod")) { pass TokenKind.KwMod; }
+        if (raw string_eq(text, "nit")) { pass TokenKind.KwNit; }
+        if (raw string_eq(text, "pid")) { pass TokenKind.KwPid; }
+        if (raw string_eq(text, "pub")) { pass TokenKind.KwPub; }
+        if (raw string_eq(text, "raw")) { pass TokenKind.KwRaw; }
+        if (raw string_eq(text, "tid")) { pass TokenKind.KwTid; }
+        if (raw string_eq(text, "uid")) { pass TokenKind.KwUid; }
+        if (raw string_eq(text, "use")) { pass TokenKind.KwUse; }
+    }
+    if (n == 4i64) {
+        if (raw string_eq(text, "Self")) { pass TokenKind.KwSelf; }
+        if (raw string_eq(text, "Type")) { pass TokenKind.KwType; }
+        if (raw string_eq(text, "bool")) { pass TokenKind.KwBool; }
+        if (raw string_eq(text, "drop")) { pass TokenKind.KwDrop; }
+        if (raw string_eq(text, "else")) { pass TokenKind.KwElse; }
+        if (raw string_eq(text, "enum")) { pass TokenKind.KwEnum; }
+        if (raw string_eq(text, "exit")) { pass TokenKind.KwExit; }
+        if (raw string_eq(text, "fail")) { pass TokenKind.KwFail; }
+        if (raw string_eq(text, "fall")) { pass TokenKind.KwFall; }
+        if (raw string_eq(text, "func")) { pass TokenKind.KwFunc; }
+        if (raw string_eq(text, "give")) { pass TokenKind.KwGive; }
+        if (raw string_eq(text, "impl")) { pass TokenKind.KwImpl; }
+        if (raw string_eq(text, "int1")) { pass TokenKind.KwInt1; }
+        if (raw string_eq(text, "int2")) { pass TokenKind.KwInt2; }
+        if (raw string_eq(text, "int4")) { pass TokenKind.KwInt4; }
+        if (raw string_eq(text, "int8")) { pass TokenKind.KwInt8; }
+        if (raw string_eq(text, "loop")) { pass TokenKind.KwLoop; }
+        if (raw string_eq(text, "move")) { pass TokenKind.KwMove; }
+        if (raw string_eq(text, "nyte")) { pass TokenKind.KwNyte; }
+        if (raw string_eq(text, "pass")) { pass TokenKind.KwPass; }
+        if (raw string_eq(text, "pick")) { pass TokenKind.KwPick; }
+        if (raw string_eq(text, "simd")) { pass TokenKind.KwSimd; }
+        if (raw string_eq(text, "tbb8")) { pass TokenKind.KwTbb8; }
+        if (raw string_eq(text, "then")) { pass TokenKind.KwThen; }
+        if (raw string_eq(text, "till")) { pass TokenKind.KwTill; }
+        if (raw string_eq(text, "trit")) { pass TokenKind.KwTrit; }
+        if (raw string_eq(text, "vec2")) { pass TokenKind.KwVec2; }
+        if (raw string_eq(text, "vec3")) { pass TokenKind.KwVec3; }
+        if (raw string_eq(text, "vec9")) { pass TokenKind.KwVec9; }
+        if (raw string_eq(text, "when")) { pass TokenKind.KwWhen; }
+        if (raw string_eq(text, "wild")) { pass TokenKind.KwWild; }
+        if (raw string_eq(text, "with")) { pass TokenKind.KwWith; }
+    }
+    if (n == 5i64) {
+        if (raw string_eq(text, "Rules")) { pass TokenKind.KwRules; }
+        if (raw string_eq(text, "arena")) { pass TokenKind.KwArena; }
+        if (raw string_eq(text, "array")) { pass TokenKind.KwArray; }
+        if (raw string_eq(text, "assoc")) { pass TokenKind.KwAssoc; }
+        if (raw string_eq(text, "async")) { pass TokenKind.KwAsync; }
+        if (raw string_eq(text, "await")) { pass TokenKind.KwAwait; }
+        if (raw string_eq(text, "break")) { pass TokenKind.KwBreak; }
+        if (raw string_eq(text, "char8")) { pass TokenKind.KwChar8; }
+        if (raw string_eq(text, "const")) { pass TokenKind.KwConst; }
+        if (raw string_eq(text, "defer")) { pass TokenKind.KwDefer; }
+        if (raw string_eq(text, "fails")) { pass TokenKind.KwFails; }
+        if (raw string_eq(text, "fixed")) { pass TokenKind.KwFixed; }
+        if (raw string_eq(text, "flt32")) { pass TokenKind.KwFlt32; }
+        if (raw string_eq(text, "flt64")) { pass TokenKind.KwFlt64; }
+        if (raw string_eq(text, "frac8")) { pass TokenKind.KwFrac8; }
+        if (raw string_eq(text, "int16")) { pass TokenKind.KwInt16; }
+        if (raw string_eq(text, "int32")) { pass TokenKind.KwInt32; }
+        if (raw string_eq(text, "int64")) { pass TokenKind.KwInt64; }
+        if (raw string_eq(text, "limit")) { pass TokenKind.KwLimit; }
+        if (raw string_eq(text, "macro")) { pass TokenKind.KwMacro; }
+        if (raw string_eq(text, "never")) { pass TokenKind.KwNever; }
+        if (raw string_eq(text, "prove")) { pass TokenKind.KwProve; }
+        if (raw string_eq(text, "relay")) { pass TokenKind.KwRelay; }
+        if (raw string_eq(text, "stack")) { pass TokenKind.KwStack; }
+        if (raw string_eq(text, "tbb16")) { pass TokenKind.KwTbb16; }
+        if (raw string_eq(text, "tbb32")) { pass TokenKind.KwTbb32; }
+        if (raw string_eq(text, "tbb64")) { pass TokenKind.KwTbb64; }
+        if (raw string_eq(text, "tfp32")) { pass TokenKind.KwTfp32; }
+        if (raw string_eq(text, "tfp64")) { pass TokenKind.KwTfp64; }
+        if (raw string_eq(text, "trait")) { pass TokenKind.KwTrait; }
+        if (raw string_eq(text, "tryte")) { pass TokenKind.KwTryte; }
+        if (raw string_eq(text, "uint1")) { pass TokenKind.KwUint1; }
+        if (raw string_eq(text, "uint2")) { pass TokenKind.KwUint2; }
+        if (raw string_eq(text, "uint4")) { pass TokenKind.KwUint4; }
+        if (raw string_eq(text, "uint8")) { pass TokenKind.KwUint8; }
+        if (raw string_eq(text, "where")) { pass TokenKind.KwWhere; }
+        if (raw string_eq(text, "while")) { pass TokenKind.KwWhile; }
+        if (raw string_eq(text, "wildx")) { pass TokenKind.KwWildx; }
+    }
+    if (n == 6i64) {
+        if (raw string_eq(text, "Future")) { pass TokenKind.KwFuture; }
+        if (raw string_eq(text, "Handle")) { pass TokenKind.KwHandle; }
+        if (raw string_eq(text, "Result")) { pass TokenKind.KwResult; }
+        if (raw string_eq(text, "atomic")) { pass TokenKind.KwAtomic; }
+        if (raw string_eq(text, "buffer")) { pass TokenKind.KwBuffer; }
+        if (raw string_eq(text, "char16")) { pass TokenKind.KwChar16; }
+        if (raw string_eq(text, "char32")) { pass TokenKind.KwChar32; }
+        if (raw string_eq(text, "derive")) { pass TokenKind.KwDerive; }
+        if (raw string_eq(text, "dim256")) { pass TokenKind.KwDim256; }
+        if (raw string_eq(text, "extern")) { pass TokenKind.KwExtern; }
+        if (raw string_eq(text, "flt128")) { pass TokenKind.KwFlt128; }
+        if (raw string_eq(text, "flt256")) { pass TokenKind.KwFlt256; }
+        if (raw string_eq(text, "flt512")) { pass TokenKind.KwFlt512; }
+        if (raw string_eq(text, "frac16")) { pass TokenKind.KwFrac16; }
+        if (raw string_eq(text, "frac32")) { pass TokenKind.KwFrac32; }
+        if (raw string_eq(text, "frac64")) { pass TokenKind.KwFrac64; }
+        if (raw string_eq(text, "inline")) { pass TokenKind.KwInline; }
+        if (raw string_eq(text, "int128")) { pass TokenKind.KwInt128; }
+        if (raw string_eq(text, "int256")) { pass TokenKind.KwInt256; }
+        if (raw string_eq(text, "int512")) { pass TokenKind.KwInt512; }
+        if (raw string_eq(text, "is_err")) { pass TokenKind.KwIsErr; }
+        if (raw string_eq(text, "matrix")) { pass TokenKind.KwMatrix; }
+        if (raw string_eq(text, "nodrop")) { pass TokenKind.KwNodrop; }
+        if (raw string_eq(text, "opaque")) { pass TokenKind.KwOpaque; }
+        if (raw string_eq(text, "return")) { pass TokenKind.KwReturn; }
+        if (raw string_eq(text, "string")) { pass TokenKind.KwString; }
+        if (raw string_eq(text, "struct")) { pass TokenKind.KwStruct; }
+        if (raw string_eq(text, "tbb128")) { pass TokenKind.KwTbb128; }
+        if (raw string_eq(text, "tbb256")) { pass TokenKind.KwTbb256; }
+        if (raw string_eq(text, "tensor")) { pass TokenKind.KwTensor; }
+        if (raw string_eq(text, "tfp128")) { pass TokenKind.KwTfp128; }
+        if (raw string_eq(text, "tfp256")) { pass TokenKind.KwTfp256; }
+        if (raw string_eq(text, "uint16")) { pass TokenKind.KwUint16; }
+        if (raw string_eq(text, "uint32")) { pass TokenKind.KwUint32; }
+        if (raw string_eq(text, "uint64")) { pass TokenKind.KwUint64; }
+    }
+    if (n == 7i64) {
+        if (raw string_eq(text, "acq_rel")) { pass TokenKind.KwAcqRel; }
+        if (raw string_eq(text, "acquire")) { pass TokenKind.KwAcquire; }
+        if (raw string_eq(text, "complex")) { pass TokenKind.KwComplex; }
+        if (raw string_eq(text, "discard")) { pass TokenKind.KwDiscard; }
+        if (raw string_eq(text, "ensures")) { pass TokenKind.KwEnsures; }
+        if (raw string_eq(text, "int1024")) { pass TokenKind.KwInt1024; }
+        if (raw string_eq(text, "int2048")) { pass TokenKind.KwInt2048; }
+        if (raw string_eq(text, "int4096")) { pass TokenKind.KwInt4096; }
+        if (raw string_eq(text, "relaxed")) { pass TokenKind.KwRelaxed; }
+        if (raw string_eq(text, "release")) { pass TokenKind.KwRelease; }
+        if (raw string_eq(text, "seq_cst")) { pass TokenKind.KwSeqCst; }
+        if (raw string_eq(text, "tmatrix")) { pass TokenKind.KwTmatrix; }
+        if (raw string_eq(text, "ttensor")) { pass TokenKind.KwTtensor; }
+        if (raw string_eq(text, "uint128")) { pass TokenKind.KwUint128; }
+        if (raw string_eq(text, "uint256")) { pass TokenKind.KwUint256; }
+        if (raw string_eq(text, "uint512")) { pass TokenKind.KwUint512; }
+    }
+    if (n == 8i64) {
+        if (raw string_eq(text, "Optional")) { pass TokenKind.KwOptional; }
+        if (raw string_eq(text, "comptime")) { pass TokenKind.KwComptime; }
+        if (raw string_eq(text, "continue")) { pass TokenKind.KwContinue; }
+        if (raw string_eq(text, "defaults")) { pass TokenKind.KwDefaults; }
+        if (raw string_eq(text, "noinline")) { pass TokenKind.KwNoinline; }
+        if (raw string_eq(text, "requires")) { pass TokenKind.KwRequires; }
+        if (raw string_eq(text, "uint1024")) { pass TokenKind.KwUint1024; }
+        if (raw string_eq(text, "uint2048")) { pass TokenKind.KwUint2048; }
+        if (raw string_eq(text, "uint4096")) { pass TokenKind.KwUint4096; }
+    }
+    if (n == 9i64) {
+        if (raw string_eq(text, "invariant")) { pass TokenKind.KwInvariant; }
+    }
+    if (n == 12i64) {
+        if (raw string_eq(text, "shared_arena")) { pass TokenKind.KwSharedArena; }
+    }
+    if (n == 13i64) {
+        if (raw string_eq(text, "assert_static")) { pass TokenKind.KwAssertStatic; }
+    }
+
+    // Not a keyword. The caller keeps it as an identifier.
+    pass TokenKind.Ident;
+};
+
+pub func:is_keyword = bool(string:text) {
+    TokenKind:k = raw keyword_kind_of(text);
+    pass (k != TokenKind.Ident);
+};

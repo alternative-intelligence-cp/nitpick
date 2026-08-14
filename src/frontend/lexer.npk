@@ -1,0 +1,238 @@
+// The lexer.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.2 covers trivia, identifiers and
+// keywords; literals are 0.1.3 and 0.1.4, operators 0.1.5.
+//
+// The lexer works in BYTES. Nitpick source is UTF-8 (LEXICAL_REFERENCE.md §1)
+// and a character count would be a second, differently-wrong number to keep in
+// step with the byte offsets every Span carries.
+
+use "source_location.npk".*;
+use "token_kind.npk".*;
+use "token.npk".*;
+use "intern.npk".*;
+use "keywords.npk".*;
+use "diagnostics.npk".*;
+
+pub struct:Lexer = {
+    string:text;
+    int32:file;
+    int64:pos;       // byte offset of the next unread byte
+    int32:line;      // 1-based
+    int32:col;       // 1-based, in bytes
+};
+
+pub func:lexer_init = Lexer(int32:file, string:text) {
+    Lexer:lx = Lexer{ text: text, file: file, pos: 0i64, line: 1i32, col: 1i32 };
+    pass lx;
+};
+
+pub func:lexer_at_end = bool(Lexer->:lx) {
+    pass (lx.pos >= lx.text.len);
+};
+
+// Reading past the end yields 0, which is not a legal source byte, so callers
+// need no separate bounds test before every peek.
+func:lexer_peek = uint8(Lexer->:lx) {
+    if (lx.pos >= lx.text.len) {
+        pass 0u8;
+    }
+    pass lx.text.ptr[lx.pos] => uint8;
+};
+
+func:lexer_peek2 = uint8(Lexer->:lx) {
+    if ((lx.pos + 1i64) >= lx.text.len) {
+        pass 0u8;
+    }
+    pass lx.text.ptr[lx.pos + 1i64] => uint8;
+};
+
+func:lexer_advance = uint8(Lexer->:lx) {
+    uint8:c = raw lexer_peek(lx);
+    lx.pos = lx.pos + 1i64;
+    if (c == 10u8) {
+        lx.line = lx.line + 1i32;
+        lx.col = 1i32;
+    } else {
+        lx.col = lx.col + 1i32;
+    }
+    pass c;
+};
+
+// --- classification ---------------------------------------------------------
+//
+// On uint8 rather than char8: these are raw source bytes, and `char8` is a
+// semantic type that permits no arithmetic. The distinction is the point --
+// a byte in a buffer is not a character.
+
+pub func:is_space = bool(uint8:c) {
+    if (c == 32u8) { pass true; }      // space
+    if (c == 9u8)  { pass true; }      // tab
+    if (c == 13u8) { pass true; }      // carriage return
+    if (c == 10u8) { pass true; }      // newline
+    pass false;
+};
+
+pub func:is_digit = bool(uint8:c) {
+    pass ((c >= 48u8) && (c <= 57u8));
+};
+
+pub func:is_alpha = bool(uint8:c) {
+    if ((c >= 97u8) && (c <= 122u8)) { pass true; }   // a-z
+    if ((c >= 65u8) && (c <= 90u8))  { pass true; }   // A-Z
+    pass false;
+};
+
+pub func:is_ident_start = bool(uint8:c) {
+    if (raw is_alpha(c)) { pass true; }
+    pass (c == 95u8);                                  // _
+};
+
+pub func:is_ident_part = bool(uint8:c) {
+    if (raw is_alpha(c))  { pass true; }
+    if (raw is_digit(c))  { pass true; }
+    pass (c == 95u8);
+};
+
+// --- trivia -----------------------------------------------------------------
+
+func:lexer_span_from = Span(Lexer->:lx, int64:start, int32:line, int32:col) {
+    pass (raw span_make(lx.file, start => int32, line, col,
+                        (lx.pos - start) => int32));
+};
+
+// Whitespace and both comment forms. Returns NIL; trivia produces no tokens.
+func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) {
+    while (true) {
+        uint8:c = raw lexer_peek(lx);
+
+        if (raw is_space(c)) {
+            drop lexer_advance(lx);
+        } else {
+            if (c == 47u8) {                            // '/'
+                uint8:d = raw lexer_peek2(lx);
+
+                if (d == 47u8) {                        // line comment
+                    while (true) {
+                        uint8:e = raw lexer_peek(lx);
+                        if (e == 0u8)  { pass NIL; }
+                        if (e == 10u8) { break; }
+                        drop lexer_advance(lx);
+                    }
+                } else {
+                    if (d == 42u8) {                    // block comment
+                        int64:start = lx.pos;
+                        int32:sl = lx.line;
+                        int32:sc = lx.col;
+                        drop lexer_advance(lx);
+                        drop lexer_advance(lx);
+                        // Block comments do NOT nest (LEXICAL_REFERENCE §2).
+                        // That is a decision to preserve, not a limitation to
+                        // fix: nesting makes an unterminated comment swallow
+                        // the rest of the file silently.
+                        while (true) {
+                            uint8:e = raw lexer_peek(lx);
+                            if (e == 0u8) {
+                                Span:sp = raw lexer_span_from(lx, start, sl, sc);
+                                drop diaglist_push(diags,
+                                    raw diag_error("NITPICK-LEX-002",
+                                        "unterminated block comment", sp));
+                                pass NIL;
+                            }
+                            if (e == 42u8) {
+                                if ((raw lexer_peek2(lx)) == 47u8) {
+                                    drop lexer_advance(lx);
+                                    drop lexer_advance(lx);
+                                    break;
+                                }
+                            }
+                            drop lexer_advance(lx);
+                        }
+                    } else {
+                        pass NIL;                       // a real '/' operator
+                    }
+                }
+            } else {
+                pass NIL;
+            }
+        }
+    }
+    pass NIL;
+};
+
+// --- tokens -----------------------------------------------------------------
+
+pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
+                            DiagList->:diags) {
+    drop lexer_skip_trivia(lx, diags);
+
+    int64:start = lx.pos;
+    int32:line = lx.line;
+    int32:col = lx.col;
+    uint8:c = raw lexer_peek(lx);
+
+    if (raw lexer_at_end(lx)) {
+        pass (raw token_make(TokenKind.Eof,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+
+    // `_?`, `_!`, `_~` and `_^` are OPERATORS, and they are resolved BEFORE
+    // identifiers that begin with an underscore (LEXICAL_REFERENCE §3). An
+    // identifier scanner that ran first would eat the `_` and strand the `^`.
+    if (c == 95u8) {
+        uint8:d = raw lexer_peek2(lx);
+        TokenKind:op = TokenKind.Error;
+        bool:matched = false;
+        if (d == 63u8) { op = TokenKind.OpUnderQuestion; matched = true; }  // _?
+        if (d == 33u8) { op = TokenKind.OpUnderBang;     matched = true; }  // _!
+        if (d == 126u8) { op = TokenKind.OpUnderTilde;   matched = true; }  // _~
+        if (d == 94u8) { op = TokenKind.OpUnderCaret;    matched = true; }  // _^
+        if (matched) {
+            drop lexer_advance(lx);
+            drop lexer_advance(lx);
+            pass (raw token_make(op,
+                                 raw lexer_span_from(lx, start, line, col), 0i64));
+        }
+    }
+
+    if (raw is_ident_start(c)) {
+        while (raw is_ident_part(raw lexer_peek(lx))) {
+            drop lexer_advance(lx);
+        }
+        string:text = raw string_slice(lx.text, start, lx.pos);
+        // Keywords are recognised from the WHOLE identifier, never by prefix,
+        // so `iffy` is an identifier rather than `if` followed by `fy`.
+        TokenKind:kind = raw keyword_kind_of(text);
+        int64:payload = 0i64;
+        if (kind == TokenKind.Ident) {
+            payload = (raw intern_add(interns, text)) => int64;
+        }
+        pass (raw token_make(kind,
+                             raw lexer_span_from(lx, start, line, col), payload));
+    }
+
+    // Literals are 0.1.3 and 0.1.4; operators are 0.1.5. Until then an
+    // unhandled byte is an Error token with a diagnostic -- never silently
+    // skipped, which would make a lexer bug look like a parser bug.
+    drop lexer_advance(lx);
+    Span:sp = raw lexer_span_from(lx, start, line, col);
+    drop diaglist_push(diags,
+        raw diag_error("NITPICK-LEX-001", "unexpected character", sp));
+    pass (raw token_make(TokenKind.Error, sp, 0i64));
+};
+
+// Lex a whole file. Always ends with exactly one Eof token, so consumers need
+// no separate end test.
+pub func:lex_all = TokenList(int32:file, string:text, InternTable->:interns,
+                             DiagList->:diags) {
+    Lexer:lx = raw lexer_init(file, text);
+    TokenList:out = raw tokenlist_init();
+    while (true) {
+        Token:t = raw lexer_next(@lx, interns, diags);
+        drop tokenlist_push(@out, t);
+        if (raw token_is_eof(t)) {
+            break;
+        }
+    }
+    pass out;
+};

@@ -119,7 +119,7 @@ manifest + lock
    → module graph            (§3)
    → npkc: module → LLVM IR text (.ll)
    → opt          (subprocess, if opt-level > 0)
-   → llc          (subprocess) → object
+   → llc          (subprocess, AT opt-level) → object
    → ld.lld       (subprocess) → executable or library
 ```
 
@@ -129,6 +129,13 @@ before linking, over **SMT-LIB2 text** to `z3` (D-067).
 A failure in any subprocess is a nonzero exit status the driver reports — a value,
 not an uninterceptable fault, which is the whole reason for the subprocess
 boundary.
+
+> **`llc` must be invoked at the manifest's `opt-level`, not at its own default.**
+> `llc` defaults to `-O2`, so a driver that omits the flag optimises even when the
+> manifest says not to. On the bootstrap's naive alloca-heavy IR that measured
+> **68 seconds against 2.7** for one module — a 25× cost for optimisation the
+> manifest had already declined. The general rule: every subprocess is invoked
+> with settings derived from the manifest, never with its defaults.
 
 ### 4.1 Separate compilation, not whole-program
 

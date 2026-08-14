@@ -1,0 +1,79 @@
+// Whitespace, comments, identifiers and keywords (cycle 0.1.2).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/keywords.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/lexer.npk".*;
+
+func:kind_at = TokenKind(TokenList->:toks, int64:i) {
+    Token:t = relay tokenlist_at(toks, i);
+    pass t.kind;
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:dg = raw diaglist_init();
+
+    // --- keywords are whole identifiers, never prefixes --------------------
+    // `iffy` must be one identifier, not `if` followed by `fy`. Prefix matching
+    // is the classic way to get this wrong.
+    TokenList:t1 = raw lex_all(0i32, "if iffy relay relayed", @it, @dg);
+    if (raw tokenlist_count(@t1) != 5i64)                    { exit 10i32; }
+    if ((raw kind_at(@t1, 0i64)) != TokenKind.KwIf)          { exit 11i32; }
+    if ((raw kind_at(@t1, 1i64)) != TokenKind.Ident)         { exit 12i32; }
+    if ((raw kind_at(@t1, 2i64)) != TokenKind.KwRelay)       { exit 13i32; }
+    if ((raw kind_at(@t1, 3i64)) != TokenKind.Ident)         { exit 14i32; }
+    if ((raw kind_at(@t1, 4i64)) != TokenKind.Eof)           { exit 15i32; }
+
+    // Same identifier text interns to the same payload; different text does not.
+    Token:a = raw tokenlist_at(@t1, 1i64);
+    Token:b = raw tokenlist_at(@t1, 3i64);
+    if (a.payload == b.payload)                              { exit 16i32; }
+
+    // --- the underscore operators ------------------------------------------
+    // `_?`, `_!`, `_~`, `_^` are OPERATORS resolved before identifiers that
+    // begin with an underscore. A scanner that ran identifiers first would eat
+    // the `_` and strand the `^`.
+    TokenList:t2 = raw lex_all(0i32, "_^ _! _? _~ _name", @it, @dg);
+    if ((raw kind_at(@t2, 0i64)) != TokenKind.OpUnderCaret)    { exit 20i32; }
+    if ((raw kind_at(@t2, 1i64)) != TokenKind.OpUnderBang)     { exit 21i32; }
+    if ((raw kind_at(@t2, 2i64)) != TokenKind.OpUnderQuestion) { exit 22i32; }
+    if ((raw kind_at(@t2, 3i64)) != TokenKind.OpUnderTilde)    { exit 23i32; }
+    // A bare leading underscore is still an identifier.
+    if ((raw kind_at(@t2, 4i64)) != TokenKind.Ident)           { exit 24i32; }
+    if (raw tokenlist_count(@t2) != 6i64)                      { exit 25i32; }
+
+    // --- trivia -------------------------------------------------------------
+    TokenList:t3 = raw lex_all(0i32,
+        "  // line comment\n  /* block */ pub\t\n  mod  ", @it, @dg);
+    if (raw tokenlist_count(@t3) != 3i64)                    { exit 30i32; }
+    if ((raw kind_at(@t3, 0i64)) != TokenKind.KwPub)         { exit 31i32; }
+    if ((raw kind_at(@t3, 1i64)) != TokenKind.KwMod)         { exit 32i32; }
+
+    // Spans survive trivia: `pub` is on line 2, `mod` on line 3.
+    Token:pub_tok = raw tokenlist_at(@t3, 0i64);
+    Token:mod_tok = raw tokenlist_at(@t3, 1i64);
+    if (pub_tok.span.line != 2i32)                           { exit 33i32; }
+    if (mod_tok.span.line != 3i32)                           { exit 34i32; }
+    if (pub_tok.span.len != 3i32)                            { exit 35i32; }
+
+    // Nothing above should have produced a diagnostic.
+    if (raw diaglist_count(@dg) != 0i64)                     { exit 36i32; }
+
+    // --- errors are reported, never skipped silently ------------------------
+    // Block comments do NOT nest (LEXICAL_REFERENCE 2), so this one is
+    // unterminated and must be diagnosed rather than swallowing the file.
+    DiagList:dg2 = raw diaglist_init();
+    drop lex_all(0i32, "pub /* /* never closed", @it, @dg2);
+    if (raw diaglist_count(@dg2) == 0i64)                    { exit 40i32; }
+    if (!(raw diaglist_has_errors(@dg2)))                    { exit 41i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

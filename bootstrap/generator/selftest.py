@@ -89,7 +89,7 @@ def conformance():
         obj = os.path.join(tmp, base + ".o")
         with open(ll, "w", encoding="utf-8") as fh:
             fh.write(ir)
-        r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+        r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                             ll, "-o", obj], capture_output=True, text=True)
         if r.returncode != 0:
             first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
@@ -112,7 +112,7 @@ def run_all(built, tmp, have_llc):
     if not have_llc or not shutil.which("ld.lld"):
         return 0, "  run       skipped (llc or ld.lld not on PATH)"
     rt = os.path.join(tmp, "npkrt.o")
-    r = subprocess.run(["llc", "-filetype=obj", "-relocation-model=static",
+    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
                         RUNTIME_LL, "-o", rt], capture_output=True, text=True)
     if r.returncode != 0:
         return 1, ("  FAIL runtime floor did not compile: %s"
