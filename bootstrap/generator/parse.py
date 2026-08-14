@@ -772,6 +772,29 @@ class Parser:
             self.expect(")")
             return S.Unary("move", e)._at(t)
 
+        if t.text == "#":
+            # The compiler-directive sigil (D-020). `#name<T>(...)` keeps bare
+            # brackets because the sigil is itself the disambiguator -- `#size_of`
+            # cannot be a variable, so `<` after it is unambiguously a
+            # type-argument list (D-064).
+            self.next()
+            name = self.expect_ident().text
+            gargs = []
+            if self.accept("<"):
+                while not self.at(">"):
+                    gargs.append(self.parse_type())
+                    if not self.accept(","):
+                        break
+                self.expect(">")
+            args = []
+            if self.accept("("):
+                while not self.at(")"):
+                    args.append(self.parse_expr())
+                    if not self.accept(","):
+                        break
+                self.expect(")")
+            return S.Builtin(name, gargs, args)._at(t)
+
         if t.text == "$":
             # the counted-loop iteration variable (D-060 lists it as an
             # expression form). The loops themselves are outside subset 1.

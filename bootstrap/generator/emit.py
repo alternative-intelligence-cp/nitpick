@@ -654,6 +654,20 @@ class Emitter:
         if isinstance(e, S.Index):
             return self.index(e)
 
+        if isinstance(e, S.Builtin):
+            if e.name == "size_of":
+                # Ask LLVM for the size rather than computing layout by hand. A
+                # hand-rolled size that disagrees with the one LLVM lays out
+                # survives testing and corrupts memory later; this costs two
+                # instructions that opt folds away.
+                ll = T.llvm(e.size_type)
+                g = self.tmp()
+                self.w("%s = getelementptr %s, ptr null, i32 1" % (g, ll))
+                r = self.tmp()
+                self.w("%s = ptrtoint ptr %s to i64" % (r, g))
+                return Val("i64", r, T.I64)
+            raise EmitError("unsupported builtin #%s" % e.name, e)
+
         if isinstance(e, S.StructLit):
             ty = T.Named(e.name)
             ll = T.llvm(ty)

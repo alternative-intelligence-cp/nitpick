@@ -1,0 +1,68 @@
+// Exercises the source manager and the intern table (cycle 0.1.0).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/intern.npk".*;
+
+func:main = int32() {
+    // --- #size_of matches what llc lays out --------------------------------
+    // A hand-rolled size that disagrees with LLVM's survives testing and
+    // corrupts memory later, so this is asserted rather than assumed.
+    if (#size_of<int32>() != 4i64)  { exit 10i32; }
+    if (#size_of<int64>() != 8i64)  { exit 11i32; }
+    if (#size_of<Span>() != 20i64)  { exit 12i32; }   // five int32s
+
+    // --- source manager ----------------------------------------------------
+    SourceManager:sm = raw srcmgr_init();
+
+    int32:a = raw srcmgr_add(@sm, "a.npk", "func:main = int32() { };");
+    int32:b = raw srcmgr_add(@sm, "b.npk", "hi");
+
+    if (a != 0i32)                        { exit 20i32; }
+    if (b != 1i32)                        { exit 21i32; }
+    if (raw srcmgr_count(@sm) != 2i32)    { exit 22i32; }
+    if (raw srcmgr_length(@sm, b) != 2i64) { exit 23i32; }
+
+    // 'h' is 104
+    if (raw srcmgr_byte_at(@sm, b, 0i64) != 104u8) { exit 24i32; }
+
+    // Growth past the initial capacity of 8 must not lose or corrupt entries.
+    int32:i = 0i32;
+    while (i < 40i32) {
+        drop srcmgr_add(@sm, "x.npk", "y");
+        i = i + 1i32;
+    }
+    if (raw srcmgr_count(@sm) != 42i32)            { exit 25i32; }
+    if (raw srcmgr_byte_at(@sm, b, 0i64) != 104u8) { exit 26i32; }
+
+    // Out of range is an ERROR, not a sentinel: an fd-style -1 would be a value
+    // the caller could mistake for data (D-042's reasoning).
+    Result<string>:bad = srcmgr_text(@sm, 999i32);
+    if (!(bad.is_error)) { exit 27i32; }
+
+    // --- intern table ------------------------------------------------------
+    InternTable:it = raw intern_init();
+
+    int32:n1 = raw intern_add(@it, "lexer");
+    int32:n2 = raw intern_add(@it, "parser");
+    int32:n3 = raw intern_add(@it, "lexer");     // same text -> same index
+
+    if (n1 != 0i32)  { exit 30i32; }
+    if (n2 != 1i32)  { exit 31i32; }
+    if (n3 != n1)    { exit 32i32; }
+    if (raw intern_count(@it) != 2i32) { exit 33i32; }
+
+    // Round-trip.
+    if (!(raw string_eq(raw intern_get(@it, n2), "parser"))) { exit 34i32; }
+
+    // string_eq must compare CONTENT, not length alone.
+    if (raw string_eq("abc", "abd"))  { exit 35i32; }
+    if (raw string_eq("abc", "ab"))   { exit 36i32; }
+    if (!(raw string_eq("abc", "abc"))) { exit 37i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

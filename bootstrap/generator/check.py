@@ -428,6 +428,15 @@ class Checker:
             for v in e.elems:
                 self._expr(v)
             return
+        if isinstance(e, S.Builtin):
+            if e.name != "size_of":
+                raise RungError("the #%s builtin" % e.name, "0.6", e)
+            if len(e.generic_args) != 1 or e.args:
+                raise CheckError("#size_of takes one type argument and no "
+                                 "value arguments", e)
+            e.size_type = self.resolve_type(e.generic_args[0])
+            return
+
         if isinstance(e, (S.IntLit, S.StringLit, S.CharLit, S.BoolLit,
                           S.NilLit, S.NullLit, S.Ident)):
             return
@@ -467,6 +476,8 @@ class Checker:
             if e.name in self.p.globals:
                 return self.p.globals[e.name]
             return None
+        if isinstance(e, S.Builtin):
+            return T.I64
         if isinstance(e, S.Cast):
             return self.resolve_type(e.target)
         if isinstance(e, S.Binary):

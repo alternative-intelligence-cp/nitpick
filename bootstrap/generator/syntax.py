@@ -125,3 +125,4 @@ SafeUnwrap  = _mk("SafeUnwrap", "expr", "default")      # e ? d
 Emphatic    = _mk("Emphatic", "expr", "code")           # e ?! code
 Comptime    = _mk("Comptime", "expr")                   # outside subset 1
 Ternary     = _mk("Ternary", "cond", "a", "b")          # is (c) : a : b
+Builtin     = _mk("Builtin", "name", "generic_args", "args")   # #size_of<T>()

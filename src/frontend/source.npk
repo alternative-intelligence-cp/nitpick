@@ -1,0 +1,97 @@
+// The source manager.
+//
+// Subset 1 (meta/SUBSET_1.md).
+//
+// `Span.file` is an INDEX into this table, which is why a Span stays five
+// int32s rather than carrying a path string. Every AST node carries a Span, so
+// that difference is multiplied by the size of the tree.
+
+use "source_location.npk".*;
+
+pub struct:SourceFile = {
+    string:path;      // as given on the command line or resolved from a `use`
+    string:text;      // the whole file; the lexer works over these bytes
+};
+
+// Growable over alloc/ralloc. Subset 1 has no generics, so every container is
+// hand-written -- the cost SUBSET_1 accepted deliberately, to keep
+// monomorphization out of the least-audited artifact in the chain.
+pub struct:SourceManager = {
+    wild SourceFile->:files;
+    int32:count;
+    int32:cap;
+};
+
+pub func:srcmgr_init = SourceManager() {
+    int64:n = 8i64;
+    wild int8->:raw_mem = alloc(n * #size_of<SourceFile>());
+    SourceManager:m = SourceManager{
+        files: raw_mem => wild SourceFile->,
+        count: 0i32,
+        cap: 8i32
+    };
+    pass m;
+};
+
+func:srcmgr_grow = NIL(SourceManager->:m) {
+    int32:newcap = m.cap * 2i32;
+    wild int8->:bigger = ralloc(m.files => wild int8->,
+                                (newcap => int64) * #size_of<SourceFile>());
+    m.files = bigger => wild SourceFile->;
+    m.cap = newcap;
+    pass NIL;
+};
+
+// Returns the file index, which is what a Span carries.
+pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) {
+    if (m.count >= m.cap) {
+        drop srcmgr_grow(m);
+    }
+    SourceFile:f = SourceFile{ path: path, text: text };
+    m.files[m.count => int64] = f;
+    int32:index = m.count;
+    m.count = m.count + 1i32;
+    pass index;
+};
+
+pub func:srcmgr_count = int32(SourceManager->:m) {
+    pass m.count;
+};
+
+pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
+    if (file < 0i32) {
+        fail 1i32;
+    }
+    if (file >= m.count) {
+        fail 1i32;
+    }
+    pass m.files[file => int64].path;
+};
+
+pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
+    if (file < 0i32) {
+        fail 1i32;
+    }
+    if (file >= m.count) {
+        fail 1i32;
+    }
+    pass m.files[file => int64].text;
+};
+
+// Byte access, because the lexer works in bytes: the source is UTF-8 and a
+// character count would be a second, differently-wrong number to keep in step.
+pub func:srcmgr_byte_at = uint8(SourceManager->:m, int32:file, int64:offset) {
+    string:t = relay srcmgr_text(m, file);
+    if (offset < 0i64) {
+        fail 2i32;
+    }
+    if (offset >= t.len) {
+        fail 2i32;
+    }
+    pass t.ptr[offset] => uint8;
+};
+
+pub func:srcmgr_length = int64(SourceManager->:m, int32:file) {
+    string:t = relay srcmgr_text(m, file);
+    pass t.len;
+};
