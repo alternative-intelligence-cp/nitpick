@@ -2839,3 +2839,95 @@ avoid.
   substantially; audit what remains once the wrappers go.
 - Every `libn` call site reaching a syscall through `sys_safe` / `sys_full` is
   rewritten to the builtin.
+
+---
+
+## D-048 — Collapse the syscall tiers to a single `sys` — **PROPOSED**
+
+Supersedes part of D-047, which assumed the two-tier split would survive.
+
+### The original scheme, and why it no longer applies
+
+The three tiers were a **danger-escalation ladder along two axes** — how many
+syscalls are reachable, and whether the result is wrapped:
+
+| Tier | Reachable | Wrapped |
+|---|---|---|
+| `sys` | curated whitelist | **no** |
+| `sys!!` | everything | yes |
+| `sys!!!` | everything | **no** |
+
+The whitelist was small **because `sys` was unwrapped**. Restricting which calls
+could be made compensated for the absence of error wrapping — a narrow set of
+well-understood calls is tolerable to use raw; the full syscall table is not.
+
+**D-001 removed `sys!!!` and made everything wrapped.** The whitelist's entire
+justification went with it. What remains is two tiers distinguished only by an
+arbitrary list of which syscalls are "common enough".
+
+### Recommendation: one `sys`
+
+```nitpick
+Result<int64>:r = sys(READ, fd, buf, size);
+```
+
+The escalation ladder collapses because both surviving rungs now sit on the same
+rung of the axis that mattered.
+
+Keeping two tiers would mean every author remembering **which list a call is on**
+— exactly the per-case knowledge the blueprint philosophy exists to eliminate —
+in exchange for a boundary that any code can step over by writing `sys_full`.
+
+### Where the two real safety properties go instead
+
+The whitelist was carrying two things worth keeping. Neither belongs in the
+syscall primitive.
+
+**1. Restricting which syscalls a binary may make → `--seccomp`.**
+
+`FORMAL_DRAFT` 14.5.3 already provides `--seccomp`, embedding a seccomp-bpf
+sandbox with a syscall allowlist into the binary. That is **kernel-enforced at
+runtime** and cannot be bypassed by choosing a different spelling in source.
+
+A compile-time whitelist with an escape hatch beside it is strictly weaker: it
+constrains only the author who chooses to stay inside it. Seccomp constrains the
+process. For Nikola's mini-VM isolation this is the mechanism that matters
+anyway.
+
+**2. Argument-level filtering → the typed API above it.**
+
+`sys_safe`'s genuinely valuable behaviour was not the syscall list but the
+per-argument constraint — `SYS_IOCTL` admitted only for three specific request
+codes, everything else rejected with `-EINVAL`.
+
+That belongs in the typed layer, and **`libn` already has it**:
+`io_set_cloexec`, `io_set_nonblocking`, `io_set_append`, `io_fcntl_setown`, and
+the rest express the permitted operations as named functions. A caller reaching
+those cannot pass an arbitrary `ioctl` request code because the API has no slot
+for one. Under D-044 the flag types make this stronger still.
+
+So the constraint is better expressed as **"there is no function that does the
+wrong thing"** than as **"the primitive rejects it at runtime"**.
+
+### Consequences
+
+- `BUILTIN_REFERENCE.md` §3 — one entry, `sys(CONST, ..*int64[]) → Result<int64>`.
+  The unspecified "curated whitelist" question dissolves rather than needing an
+  answer.
+- **D-047's extraction task changes shape**: `sys_safe`'s syscall list is no longer
+  needed, but its **`ioctl` argument constraints must be checked against `libn`'s
+  typed `io_*` wrappers** to confirm nothing is lost. That check still happens.
+- `--extra-picky` gains **`no-sys`**, banning direct syscalls in high-level
+  application code the way `no-wild` bans manual memory.
+- `FORMAL_DRAFT` 10.2's three-tier section is struck entirely.
+- `sys_full` never enters the language, so D-046's `sys!!` → `sys_full` rename
+  becomes moot — there is only `sys`.
+
+### Note on `!` and `*`
+
+Accepted as-is. `!` reading as both negation and emphasis matches ordinary usage —
+it marks *not* and it marks *attention* or *danger* in plain writing too. `*`
+carries multiplication and C pointer syntax, but the second is **confined to
+`extern` blocks**, which contains it in the place where C conventions are
+expected anyway. Neither is a deal-breaker, and both are documented rather than
+implicit.
