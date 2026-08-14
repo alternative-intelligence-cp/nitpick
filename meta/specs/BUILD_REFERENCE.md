@@ -230,6 +230,40 @@ contracts. The AST is expressible without generics because it is **tagged enums
 over composable structs**, which `CLAUDE.md` already records as the transferable
 frontend technique — and that is precisely what makes the subset viable.
 
+### 6.2 Changing a primitive after self-hosting
+
+A property worth stating, because it is the practical payoff of D-085 and it is
+easy to assume the opposite.
+
+**Once stage 2 exists, primitives are implemented in Nitpick.** A primitive's
+lowering lives in the compiler's backend, which is Nitpick source like everything
+else — so changing one is editing Nitpick and rebuilding. **The seed is not
+involved**, and there is no separate language or toolchain to drop into.
+
+This is exactly what a C-based bootstrap cannot offer. There, a primitive is
+whatever the C beneath it made it, the only place to change it is back in that C,
+and even then the result is bounded by C's own semantics. The binding is
+contagious: it survives every rung climbed above it, because the rungs are built
+on it.
+
+**One nuance.** A change that alters a *layout or ABI* needs **two rebuild
+passes**, not one:
+
+| Pass | Produces a compiler that is… | …and emits |
+|---|---|---|
+| build with the current compiler | the **old** form | the **new** form |
+| build again with that one | the **new** form | the **new** form |
+| build a third time | identical to the second | — |
+
+The second and third are byte-identical, and **that is precisely what §6's
+fixpoint check tests.** So the machinery for confirming a primitive change has
+fully converged already exists and is already required; an ABI change costs one
+extra pass and nothing more.
+
+**The seed is re-run essentially never** — only to rebuild the world from nothing,
+or to verify that path still works. It is not part of the ordinary edit cycle,
+even for edits at the very bottom of the language.
+
 ---
 
 ## 7. Commands
