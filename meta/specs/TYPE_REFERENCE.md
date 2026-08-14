@@ -855,7 +855,20 @@ define i32 @add_elided(i32 %a, i32 %b) {
 
 ---
 
-## 17. Future\<T\> — Async Types (Tier 1)
+## 17. Future\<T\> — **internal lowering artifact, not a user type (D-058)**
+
+> **Not surface syntax.** Nothing in the language produces a `Future<T>`:
+> `await f()` yields `T` directly, and spawning via `drop work()` discards the
+> result. It cannot be named in a signature or held in a variable. The IR shape
+> below is documented in `CONCURRENCY_REFERENCE.md` §2.4, where the `@llvm.coro`
+> lowering is described; it is retained here only so the layout has one
+> authoritative statement.
+>
+> Making it user-visible would require committing to composition, cancellation,
+> polling, and a lifetime story for a suspended coroutine frame — and would force
+> an answer to `Future<Result<T>>` versus `Result<Future<T>>`, which staying
+> internal avoids entirely.
+
 
 ```llvm
 ; future<T> is a coroutine handle + result slot

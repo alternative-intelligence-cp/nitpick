@@ -85,9 +85,13 @@ allocated**, released on task completion (D-034). Because tasks are pinned, that
 arena is single-threaded — plain `arena<T>` at zero cost, not `shared_arena<T>`'s
 atomic bump.
 
-> Chapter 11 never mentions `Future<T>` at all, despite `TYPE_REFERENCE.md` §17
-> defining it. Whether `Future<T>` is user-visible or purely an internal lowering
-> artifact is **still open** — see §6.
+> **`Future<T>` is an internal lowering artifact, not surface syntax (D-058).**
+> Nothing in the language produces one: `await f()` yields `T` directly and
+> `drop work()` discards the result, so a user can neither name it nor hold it.
+> The prototype already behaves this way — `type_checker.cpp`'s `AWAIT` case
+> returns the operand's type with the `Future` unwrap sitting in a comment.
+> Consequence to know: there is **no spawn-now-await-later**; fan-out and collect
+> goes through `channel`.
 
 ## 3. System Threading
 
@@ -276,7 +280,7 @@ Race freedom comes from three structural properties, none of them runtime checks
   flag now claims lock-order freedom rather than deadlock freedom. Note this
   changes the `mutex` API: `Mutex<T, LEVEL>` owns its data, `create_recursive` is
   removed, and the `int64` handle form is what made the old API unanalysable.
-- **Is `Future<T>` user-visible?** It is a specified type
+- ~~**Is `Future<T>` user-visible?**~~ — **settled by D-058: no.** It is a specified type
   (`TYPE_REFERENCE.md` §17) that no chapter uses. Either it is part of the
   surface language — in which case awaiting, composing, and cancelling futures
   need specifying — or it is an internal lowering artifact and should be marked

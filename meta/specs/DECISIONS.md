@@ -3776,3 +3776,137 @@ If matching over AST fragments is genuinely wanted — for a self-hosted compile
 matching its own nodes — that is a different feature with different requirements,
 and it needs its own design rather than a pattern form that is inconsistent with
 the expansion order.
+
+---
+
+## D-058 — `Future<T>` is an internal lowering artifact, not surface syntax — **SETTLED**
+
+`TYPE_REFERENCE.md` §17 defines `Future<T>` as a user-facing type. No chapter
+uses it, and `CONCURRENCY_REFERENCE.md` §2.4 recorded its visibility as open.
+
+**It is not user-visible.** The evidence is that nothing in the language produces
+one:
+
+| Construct | Yields |
+|---|---|
+| `await f()` | **`T`** — the inner type directly |
+| `drop work()` (spawn) | nothing; the result is discarded |
+
+There is no third form. A type no construct can produce and no signature can name
+is not part of the surface language.
+
+The prototype already behaves this way and says so. `type_checker.cpp`'s `AWAIT`
+case returns the operand's type, with the unwrap sitting in a comment:
+
+```cpp
+// Async functions return i8* at the IR level but their semantic return
+// type is already the inner T (set by checkFuncDecl). When Future<T> is
+// added to the trait system, unwrap it here:
+//   if (operandType->getKind() == TypeKind::FUTURE)
+//       return static_cast<FutureType*>(operandType)->getInnerType();
+```
+
+A `FutureType` class exists; nothing routes through it. `Future<T>` was
+aspirational, and the aspiration never landed.
+
+### Why it should stay internal
+
+Making it surface syntax means committing to everything a first-class future
+implies — composition (`join`, `select`), cancellation, manual polling, and a
+lifetime story for a value holding a suspended coroutine frame. Each is a
+verification surface, and none has a caller asking for it.
+
+It also **dodges a genuinely nasty interaction**. Every function returns
+`Result<T>` (except `main` and `failsafe`), so a visible future forces an answer
+to `Future<Result<T>>` versus `Result<Future<T>>` — where the first is "the task
+may fail" and the second is "spawning may fail," and both are true. Keeping the
+future internal means `await` yields `Result<T>` like every other call and the
+question never arises.
+
+### The expressiveness limit, stated
+
+`drop work()` discards the result, so there is **no spawn-now-await-later**. Fan
+out and collect is done through the existing `channel`: spawn tasks that send,
+then receive N results. That is expressible today, is already specified, and
+keeps the coroutine frame's lifetime inside the executor's arena (D-034) rather
+than in a user-held value.
+
+Recorded so the limit is a known consequence rather than a later surprise.
+
+### Consequences
+
+- `TYPE_REFERENCE.md` §17 stops presenting `Future<T>` as a user type. The IR
+  shape `%Future = { ptr, ptr }` moves to `CONCURRENCY_REFERENCE.md` §2.4, where
+  the coroutine lowering is described.
+- `AST_REFERENCE.md` needs no `Future` type node.
+- If a first-class future is ever wanted, it is a new feature with its own
+  decision — not the completion of a half-built one.
+
+---
+
+## D-059 — `give` and expression-`pick` are kept — **SETTLED**
+
+`give` yields a value from an expression-`pick` arm. Its provenance was doubted;
+it is real, and it is in the prototype:
+
+- `token.h`: `TOKEN_KW_GIVE, // give - yield a value from an expression-pick arm`
+- the lexer keyword table and the parser
+- a dedicated audit suite, `nitpick/TMP/audit037/`, with error cases
+- `k-semantics/tests/core/215_pick_expr_wildcard_pass.npk`
+
+It is **not** part of the original `pick` design. `pick` began as a pure switch
+replacement — no implicit fallthrough, explicit fallthrough via labelled
+conditions and `fall(label)` — and was deliberately **renamed from `switch` so
+the C instinct would not carry over**. Expression-`pick` came later.
+
+It also has **zero uses** in `stdlib`, `ARCHIVE`, or the examples. On that
+evidence alone the case for removing it looked strong.
+
+### Why it is kept anyway
+
+**Uninitialized variables are a compile error.**
+`UNDEFINED_STATE_PREVENTION.md`: *"Uninitialized variables → Compiler enforces
+initialization."*
+
+So the obvious alternative does not exist:
+
+```nitpick
+int32:r;                                  // COMPILE ERROR — no initializer
+pick(x) { (1i32) { r = 10i32; } ... };
+```
+
+Without expression-`pick` there is **no way to initialize a variable by matching
+on something.** The value would have to be computed by a helper function whose
+body is a statement `pick` writing to a local it then returns — replacing a
+checked construct with a hand-written one, in a language whose entire posture is
+the opposite.
+
+Expression-`pick` also makes exhaustiveness a **type-checked property**: the
+construct must produce a value, so every path must give one. The statement form
+plus definite-assignment analysis would have to prove the same thing indirectly.
+
+### Rules, recovered from `audit037`
+
+| Rule | Test |
+|---|---|
+| The pick must be **exhaustive** | `e_nonexh` — missing arms is an error |
+| **All arms give the same type** | `e_mismatch` — `give 10i32` beside `give 99i64` is an error |
+| `give` is legal **only inside an expression-pick arm** | `e_outside` — `give` at function level is an error |
+| An expression-pick is usable as a **function argument** | `e_arg` |
+| Expression-picks **nest** | `e_nested` |
+| Tagged-union selectors work | `e_tagged` |
+
+### The statement/expression boundary, resolved
+
+`AST_REFERENCE` §8 recorded that `FORMAL_DRAFT` 04 §4.1 and 05 §5.1 state the
+boundary inconsistently. Settled: **`pick` is both, and the arms decide.** Arms
+containing `give` form an expression-pick — exhaustive, single-typed, usable
+anywhere an expression is. Arms without form a statement-pick.
+
+This is not context-dependent meaning: `pick` means "select one arm by matching
+the selector" in both cases, and `give` is an explicit marker inside the
+construct rather than a property of its surroundings. A construct that declares
+its own nature is exactly the shape the blueprint philosophy asks for.
+
+**Zero usage is not evidence of uselessness here** — it reflects that `libn` and
+the stdlib were written before the feature existed, in a style that predates it.
