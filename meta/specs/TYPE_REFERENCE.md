@@ -226,6 +226,19 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | `string<char32>` | — | `{ptr, i64, i64}` | 24 bytes | 8 |
 | `cstring` | — | `{ptr, i64}` | 16 bytes | 8 |
 
+> **Superseded claim.** `FULL_specs.txt` §15.1.3 states that *"the `string` type
+> guarantees internal null-termination for zero-cost abstraction when interfacing
+> with C."* **That is prototype-era text and does not hold here.** `string` is
+> `{ptr, len, cap}` as above and is not NUL-terminated; `to_cstring` (D-049)
+> exists precisely because it is not. The same passage calls `int8->` a *"Fat
+> Pointer containing bounds metadata"*, which D-038 settled the other way —
+> pointers are thin. Both claims are superseded; see `PROTOTYPE_DELTA.md` §4.
+>
+> Note that D-049 would survive either way: a `string` may carry an interior NUL
+> regardless of whether it also carries a trailing one, so the poison-NUL check
+> is needed under both readings. Only the conversion cost differs — a copy rather
+> than a scan.
+
 **Struct fields:**
 ```llvm
 ; %String = type { ptr, i64, i64 }

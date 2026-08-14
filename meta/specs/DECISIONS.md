@@ -3282,3 +3282,92 @@ wrong, absent, or thrown away.
 Lowering deletes the description and reads the arguments directly. On the output
 side that converts an arbitrary read into a compile error; on the input side it
 converts three classes of arbitrary write into compile errors.
+
+---
+
+## D-053 — Formatting is functions, not a format language — **SETTLED**
+
+**Supersedes D-045** (the `fmt` type) and **narrows D-052** (format-string
+lowering). `printf`, `scanf`, and every relative are removed from `nlibc`.
+
+Output is `print` / `println` / `fprint` / `eprint`, each taking **one `string`**.
+Formatting happens before the call, as ordinary functions returning `string`,
+spliced by `&{ }` interpolation:
+
+```nitpick
+println(`Total: &{x.prec(2).pad_left(8)}  Name: &{name.pad_right(20)}`);
+```
+
+### This restores the original design
+
+The prototype's print took only a string, and formatting was handled separately.
+`nitpick/stdlib/fmt.npk` already implements it — `fmt_int`, `fmt_bool`,
+`fmt_hex`, `fmt_float(x, decimals)`, `fmt_pad_left`, `fmt_pad_right`,
+`fmt_repeat`, each taking a typed value and returning a `string` — and its header
+records that it uses **no extern calls, only compiler builtins**. The `printf`
+family in `libn` was added by the implementation, not designed in.
+
+`fmt.npk`'s own `fmt` / `fmt2` / `fmt3` / `fmt4` placeholder-substitution helpers
+are **not** carried over: they are a template mini-language, arity-expanded,
+which interpolation replaces exactly.
+
+### The reasoning: what to print, separate from how to print it
+
+A format string fuses three things into one literal. `"%-8.2f"` is at once the
+output text, the layout instruction, and a type assertion about an argument
+sitting elsewhere in the call. Every format defect found while porting `libn` is
+that fusion coming apart:
+
+| Defect | The fused thing that disagreed |
+|---|---|
+| `%s` against an integer → arbitrary read | type assertion vs. actual type |
+| length modifiers discarded → 8-byte store into 4 bytes | width assertion vs. destination |
+| `%32s` into a `char8[32]` → one-byte overflow | bound assertion vs. buffer |
+| more specifiers than arguments | count assertion vs. arity |
+
+Separating them means there is nothing left to disagree. `x.prec(2)` returns a
+`string`; `pad_left(8)` pads a `string`; interpolation splices a `string`. Each
+step is checked by the ordinary type checker, and the value's type is consulted
+directly rather than described in a second language.
+
+### What this removes from the compiler
+
+D-052 established that a format string should be lowered at compile time rather
+than parsed at runtime. D-053 goes one step further: **there is no format
+language to lower.**
+
+- No runtime format parser — already true under D-052.
+- **No compile-time specifier grammar either**, and no specifier/argument
+  checker. Option "add format specs to interpolation" (`&{x:>8.2}`) was rejected
+  for precisely this reason: it would reintroduce a second mini-language, with
+  its own grammar, its own diagnostics, and its own conformance surface for
+  Astrée, purely to save characters.
+- **`fmt` (D-045) has no remaining consumer** and is removed from the language.
+  Its only users were the format-directed variadics. A literal-only parameter
+  type may be worth having some day; it needs its own justification then, not a
+  vestige now.
+- **Format-directed `..*` is removed.** Homogeneous `..*` survives — the `sys`
+  builtin, `sys(CONST, ..*int64[])`, is its consumer.
+
+D-052's lowering mechanism itself survives and is still correct; it now applies to
+**interpolation**, which lowers to the same straight-line typed emitters. Its
+`%n` prohibition becomes moot rather than wrong — there is no `%` language for
+`%n` to be part of.
+
+### Complex composition uses a string builder
+
+For output too complex to read well inline, the answer is a builder, not a
+richer format string. `libn`'s `StrBuf` (27 public functions, C-free) is that
+tool and stays — minus `strbuf_appendf`, which is format-directed and goes with
+the rest.
+
+The prototype's `stdlib/string_builder.npk` is **superseded**: it depends on an
+`extern "nitpick_libc_string"` block of three C functions, where `StrBuf` does
+not.
+
+### Cost, stated plainly
+
+`` `&{x.prec(2).pad_left(8)}` `` is longer than `"%8.2f"`. That is the trade, and
+it is accepted: the shorter form is shorter because it omits the information the
+type system needs, and every defect in the table above is the consequence of
+that omission.

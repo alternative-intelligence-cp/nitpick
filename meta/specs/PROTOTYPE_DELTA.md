@@ -136,3 +136,29 @@ the layer's mechanisms.
 cycle (Cycle 0.4.0)", and the search-path order documented in the prototype was
 dropped without replacement. `MODULE_REFERENCE.md` gives the syntax but not
 resolution order.
+
+
+---
+
+## 4. Superseded claims in `FULL_specs.txt`
+
+`FULL_specs.txt` is the ~14k-line consolidated prototype specification and
+remains the authority on language semantics generally. These specific passages
+are **prototype-era and have been settled the other way** here. Recorded because
+each is load-bearing for a decision, and a reader who finds the passage first
+would reach the wrong conclusion.
+
+| Passage | Claim | Settled as |
+|---|---|---|
+| §15.1.3 | "`string` guarantees internal null-termination" | **No.** `string` is `{ptr, len, cap}` and is not NUL-terminated. `to_cstring` exists because it is not — D-049 |
+| §15.1.3 | "`int8->` is a Fat Pointer containing bounds metadata" | **No.** Pointers are thin — D-038 |
+| §15.1.2 | raw strings `r"…"` and multi-line `"""…"""` are "currently unsupported and will throw syntax errors in v0.61.82" | A statement about a prototype build, not a language decision. The grammar carries `RawStringLiteral` |
+
+The first two sit in the same paragraph, which is about FFI and C-string decay —
+an area the prototype handled by making `string` C-shaped and pointers
+bounds-carrying. Both choices were reversed: `cstring` carries the C-shaped
+representation as a distinct type (D-049) and pointers are thin (D-038), with
+bounds living in the types that own them.
+
+`nitpick-docs/` is read-only reference material and is not edited to match. This
+table is the correction of record.
