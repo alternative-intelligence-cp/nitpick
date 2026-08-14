@@ -23,6 +23,18 @@ Concurrency splits strictly in two:
 Keeping the thread model out of the language core means bare-metal and embedded
 targets are not forced to carry it.
 
+**The connecting rule: threads supply parallelism, tasks supply concurrency, and
+waiting is always a task-level event** (D-071). Every thread runs an executor, and
+every blocking operation suspends the calling *task* rather than parking the
+thread it is pinned to.
+
+Without that rule the two halves collide. Tasks are pinned (D-032) and
+communicate through channels (D-058), so a channel that parked the OS thread
+would stall every sibling task on that executor — one task waiting on a sensor
+queue silently stopping the control task beside it. There is consequently no
+blocking-versus-async split in the API: `await ch.recv(deadline)` is written the
+same way everywhere.
+
 ## 2. Asynchronous Execution
 
 ### 2.1 Declaring and awaiting
@@ -161,11 +173,27 @@ source, so the project had identified them independently.
 > (→ `nitpick_runtime`). **Only `mutex`, `rwlock`, and `condvar` are genuinely
 > clean.**
 >
-> The taint has few roots, so this is a targeted job rather than a rewrite:
 > `atomic.npk` is superseded outright by the language-level `atomic<T>`, and
-> `core.npk` / `string.npk` are superseded by `ARCHIVE/nstr`. Clearing those
-> clears the entire concurrency stack **without touching `thread`, `channel`, or
-> `actor` themselves**.
+> `core.npk` / `string.npk` are superseded by `ARCHIVE/nstr`.
+
+> ### ⛔ "Clean in themselves" was wrong — corrected
+>
+> An earlier revision of this section concluded that clearing those two roots
+> would clear the whole stack *"without touching `thread`, `channel`, or `actor`
+> themselves"*. **That assessment measured `extern` counts and nothing else, and
+> it does not survive reading the code.**
+>
+> `meta/CONCURRENCY_STDLIB_AUDIT.md` records the full read. Three of those four
+> modules carry defects that cannot be carried across at any level of effort — a
+> thread-pool dequeue race that calls unwritten queue slots as functions, a
+> `shutdown` that writes its stop flag to the wrong offset and reports success, a
+> `try_send` that delivers the value and returns failure, an actor runner that
+> reads its argument block as the actor state, and `Thread.sleep_*` implemented as
+> `pass NIL;` so every sleeping loop is a spin loop.
+>
+> The correct conclusion is a **specification-first rewrite**, not a harder port.
+> §§6–9 are that specification, and each rule there names the defect it exists to
+> prevent.
 
 `atomic.npk` in particular is superseded rather than merely stale: `atomic<T>` is
 a **language type emitting native LLVM atomic IR with no shim**
@@ -285,18 +313,179 @@ Property 4 is the same rule as property 1, applied to tasks instead of borrows:
 both nest inward and neither escapes outward. It is what keeps a task frame from
 referring to a scope that has already gone.
 
-## 6. Open items
+## 6. Channels
 
-- **Port the concurrency stdlib**, in dependency order. `mutex`, `rwlock`, and
-  `condvar` are genuinely C-free and can go first. `thread`, `thread_pool`,
-  `channel`, and `actor` are clean in themselves but must wait until `atomic.npk`
-  is dropped and `core.npk`/`string.npk` are replaced by `nstr`. All go through
-  the same D-012 signature classification as the rest of `nlibc`. `barrier` and `lockfree`
-  need native reimplementation to drop their C shims; `atomic.npk` is superseded
-  by the language-level `atomic<T>` and should not be ported at all.
-- **Specify the omitted surface.** Channels, actors, and thread pools have real
-  implementations and no specification. The concurrency model is not fully
-  described until they are covered.
+`CONCURRENCY_REFERENCE` previously recorded channels as implemented-but-unspecified.
+The implementation was read in full before this section was written; what it
+actually does is catalogued in **`meta/CONCURRENCY_STDLIB_AUDIT.md`**, and several
+rules below exist because of specific defects found there.
+
+### 6.1 Shape
+
+```nitpick
+Channel<T, LEVEL, CAP>
+```
+
+| Parameter | Meaning |
+|---|---|
+| `T` | element type |
+| `LEVEL` | D-056 lock level — a channel blocks, so it is a blocking primitive |
+| `CAP` | `comptime int64` capacity. `0` is a rendezvous channel; `> 0` is buffered. |
+
+Capacity lives in the **type**, so each instantiation monomorphizes to one
+behaviour with no runtime branch (D-064). The prototype dispatched on an `int32`
+`mode` field at every operation, and its rendezvous path stored the payload in the
+buffer *pointer* — which only type-checks because everything was `int64`.
+
+There is no `oneshot` mode. It is a capacity-1 channel the sender closes.
+
+### 6.2 Operations
+
+```nitpick
+await ch.send(move(v), deadline)   -> Result<NIL>
+await ch.recv(deadline)            -> Result<T>
+ch.close()                         -> Result<NIL>
+ch.len()                           -> Result<int64>
+```
+
+- **`recv` returns `Result<T>`.** A closed channel is an **error code, never a
+  value**. The prototype returned `0i64` for a bad handle, a closed channel, *and*
+  a received zero — and its actor loop, built on that ambiguity, silently
+  discarded any message whose value was zero.
+- **Deadlines are mandatory** (D-056). There is no unbounded `recv`, and a zero
+  deadline expresses "do not wait" — which is why `try_send` and `try_recv` do not
+  exist as separate operations.
+- **`send` takes ownership**, written `move(v)` (D-065), so the transfer is visible
+  at the call site.
+- **Every operation suspends the task, never the thread** (D-071).
+
+### 6.3 What may be sent
+
+**`T` may not contain a borrow.** Borrows are second-class and cannot cross a
+thread spawn or an `await` (D-004), so a slice — which is a borrow (D-070) —
+cannot be sent. Send an owning type.
+
+### 6.4 There is no `select`
+
+Waiting on N channels means acquiring N channel locks, and D-056 requires lock
+acquisition to strictly **increase** in level, which two channels at the same
+level cannot do. Making a general `select` sound would mean giving every channel a
+distinct level, which does not compose, or exempting `select` from the level
+discipline, which is the mechanism that makes lock-order freedom provable.
+
+The common case is already covered: `select`'s usual job is *"receive work, but
+also notice shutdown"*, and a `recv` that returns `DEADLINE_EXCEEDED` is exactly
+that opportunity. Genuine fan-in uses several producers and **one** channel — one
+lock, not N (D-072).
+
+### 6.5 Lifetime
+
+A channel's storage belongs to the scope that created it; endpoints are
+second-class borrows of it and cannot outlive that scope — the same rule tasks
+(D-062) and borrows (D-004) follow.
+
+There is therefore **no `destroy` and no endpoint reference counting**. It also
+closes a teardown race: the prototype's `destroy` freed the mutex and both
+condition variables with no check for parked waiters, and scope exit cannot run
+while a task holding an endpoint is live, because D-062 joins those tasks first.
+
+---
+
+## 7. Actors
+
+```nitpick
+Actor<M, R, LEVEL>                      // message type, reply type, lock level
+
+await actor.tell(move(m), deadline)     -> Result<NIL>
+await actor.ask(move(m), deadline)      -> Result<R>
+```
+
+An actor is a **task with a mailbox**, not a thread with a mailbox. The prototype
+spawns an OS thread per actor; under D-071 a waiting task suspends rather than
+parking a thread, so the thread bought nothing and cost every defect in
+`thread.npk`.
+
+The mailbox is a `Channel<M, LEVEL, CAP>` — §6, not a second queue.
+
+**`ask` is how a reply is obtained.** The prototype's `set_reply_channel`,
+`get_reply_channel`, and `reply` are all stubs returning zero or failure. The
+obvious alternative — putting a reply channel inside the message — is not
+available: an endpoint is a second-class borrow and borrows may not cross a thread
+spawn (D-004). `ask` keeps the reply channel in the caller's scope, where it is
+legal, and the runtime routes the reply to it.
+
+`R = NIL` for an actor that does not reply; `ask` is still useful there as an
+acknowledgement, which is how backpressure is expressed.
+
+**Lifetime is lexical** (D-062): an actor cannot outlive the scope that spawned
+it, and scope exit closes the mailbox, drains it, and joins under a deadline.
+`alive` is an `atomic<bool>` — the prototype writes a plain `int32` from the
+stopping thread and reads it in the actor loop with no synchronization.
+
+---
+
+## 8. Thread pools
+
+```nitpick
+ThreadPool<LEVEL, CAP>:pool = ThreadPool.create(worker_count)?;
+await pool.submit(move(job), deadline)?;
+```
+
+**A thread pool is N worker tasks receiving from one channel.** One count, one
+lock, one implementation to verify.
+
+That is not a simplification for its own sake. The prototype hand-rolls a second
+queue with independent `pending`, `head`, and `tail` fields, advancing `head` at
+dequeue but decrementing `pending` only after the task has run — so a second
+worker reads a still-positive count, takes a slot that was never written, and
+calls its contents as a function. Building the pool on §6 does not fix that race;
+it removes the second counter that made it expressible.
+
+- **Submitted work is lexically scoped** (D-062). The pool's owning scope does not
+  exit until every submitted job has finished, under a deadline, and expiry traps.
+  This is what replaces `shutdown`, which wrote its stop flag to the wrong field,
+  could not join because the thread ids were discarded at spawn, and returned
+  success regardless.
+- **The job type is checked.** The prototype took a `?->` and an `int64`, and
+  silently zeroed every closure's captured environment.
+- **`wait_idle` does not exist** — it busy-spun with no deadline, and waiting for
+  the work to finish is now what scope exit *does*.
+
+---
+
+## 9. Synchronization primitives
+
+| Primitive | Form | Notes |
+|---|---|---|
+| Mutex | `Mutex<T, LEVEL>` | owns its data (D-056); no recursive variant |
+| Read/write lock | `RwLock<T, LEVEL>` | owns its data |
+| Condition variable | `CondVar<LEVEL>` | **`wait` is removed** — `timedwait` is the only form (D-056) |
+| Barrier | `Barrier<comptime int32:N>` | reimplemented natively; the prototype wraps three C shims |
+
+Every acquisition is deadline-bounded and returns `Result`. There is no infinitely
+blocking acquire anywhere in the concurrency surface.
+
+**There is no lock-free queue.** `lockfree.npk` is not ported: a lock-free MPMC
+queue under SeqCst-only atomics (D-016) is hard to get right and expensive to
+verify, a channel already provides the operation, and a second queue with a harder
+proof obligation spends verification budget against the single Astrée run for a
+case nothing has been shown to need (D-073).
+
+---
+
+## 10. Open items
+
+- **Build the concurrency stdlib**, in dependency order — **build, not port.**
+  `mutex`, `rwlock`, and `condvar` are genuinely C-free and are the only three
+  that carry across as ports, and even they change shape: D-056 makes the mutex
+  `Mutex<T, LEVEL>` owning its data, and D-056 removes `CondVar.wait` in favour of
+  the timed form. `channel`, `actor`, `thread_pool`, and `thread` are **written
+  against §§6–9 rather than ported** — `meta/CONCURRENCY_STDLIB_AUDIT.md` records
+  why, defect by defect. `barrier` is reimplemented natively; `lockfree` and
+  `atomic.npk` are not carried across at all (D-073). All go through the same
+  D-012 signature classification as the rest of `nlibc`.
+- ~~**Specify the omitted surface.**~~ — **done.** Channels, actors, thread pools,
+  and the synchronization primitives are specified in §§6–9 (D-071, D-072, D-073).
 - ~~**Deadlock freedom has no mechanism.**~~ — **settled by D-056.** Every
   blocking primitive carries a compile-time `LEVEL`; acquisition must strictly
   increase, making circular wait impossible by construction. What the static

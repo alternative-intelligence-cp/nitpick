@@ -59,7 +59,7 @@ avoid.
 
 | Spec | Why it is needed | Depends on |
 |---|---|---|
-| **Channels, actors, thread pools** | Real implementations exist with no specification. The concurrency model is not fully described until they are covered. | decisions 1, 2, 3, 4 |
+| ~~**Channels, actors, thread pools**~~ — **written.** `CONCURRENCY_REFERENCE.md` §§6–9, backed by D-071/D-072/D-073 and the defect catalogue in `meta/CONCURRENCY_STDLIB_AUDIT.md`. The premise was wrong: the implementations could not serve as the specification, because three of the four do not work. | — | decisions 1, 2, 3, 4 |
 | **Streams / IO** | Needed for the driver and for diagnostics. D-050 (line endings are a stream property) and D-051 (`Path` above `nlibc`) already constrain it. | decision 3 |
 | **Build system** | Needed early for the bootstrap ladder. | — |
 
@@ -67,13 +67,13 @@ avoid.
 
 ## 3. Carried, not blocking
 
-- **Port the concurrency stdlib in dependency order.** `mutex`, `rwlock`, and
-  `condvar` are genuinely C-free and go first — but D-056 changes the `mutex`
-  API, so the port is against `Mutex<T, LEVEL>`, not the old `int64` handle.
-  `thread`, `thread_pool`, `channel`, and `actor` wait on dropping `atomic.npk`
-  and replacing `core.npk`/`string.npk` with `nstr`. `barrier` and `lockfree`
-  need native reimplementation to drop their C shims. **`atomic.npk` should not
-  be ported at all** — it is superseded by the language-level `atomic<T>`.
+- **Build the concurrency stdlib in dependency order — build, not port.**
+  `mutex`, `rwlock`, and `condvar` are genuinely C-free and go first, though
+  D-056 changes the `mutex` API to `Mutex<T, LEVEL>` and removes the untimed
+  `CondVar.wait`. `channel`, `actor`, `thread_pool`, and `thread` are **written
+  against `CONCURRENCY_REFERENCE.md` §§6–9 rather than ported** — see
+  `meta/CONCURRENCY_STDLIB_AUDIT.md`. `barrier` is reimplemented natively;
+  `lockfree` and `atomic.npk` are not carried across at all (D-073).
 - **Confirm Astrée's accepted input format with AbsInt**, well before the trial
   clock starts. The trial is a single non-renewable 30 days.
 

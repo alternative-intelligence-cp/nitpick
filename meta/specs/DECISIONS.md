@@ -4868,3 +4868,229 @@ is unaffected: it consumes a view and produces an owning `string`.
 - The C ABI is unaffected for pointers. A slice is not C-compatible and does not
   cross an `extern` boundary — `extern` signatures take a pointer and a length as
   separate parameters, as C does.
+
+---
+
+## D-071 — Every thread runs an executor; blocking is always task suspension — **SETTLED**
+
+Specifying channels surfaced an interaction between D-032, D-034, and D-058 that
+nothing had stated, and that has a safety consequence.
+
+### The hazard
+
+- **Tasks are pinned to threads** and never migrate (D-032).
+- **Each thread's executor owns the arena its task frames come from** (D-034).
+- **Fan-out and collect goes through `channel`** — D-058 says so explicitly, since
+  removing user-visible `Future<T>` removed spawn-now-await-later.
+
+So tasks use channels. But the prototype's channel blocks the *operating system
+thread*, on a mutex and a condition variable. A task that receives from an empty
+channel therefore parks the thread it is pinned to — **and with it every sibling
+task on that executor**, none of which had anything to do with the channel.
+
+On a system with actuators live, one task waiting on a sensor queue silently
+stalling the control task that shares its executor is exactly the class of event
+the safety architecture exists to prevent. Nothing in the current specs forbids
+it, and nothing would have caught it.
+
+### Two bad ways out, and the one taken
+
+| | Approach | Why not |
+|---|---|---|
+| A | Channels are thread-only; tasks may not use them | contradicts D-058, and leaves tasks with no way to communicate at all |
+| B | Two APIs — a blocking one and an `async` one | two mechanisms for one job, and the choice varies by caller context, which is the blueprint violation D-064 §3 rejected for the turbofish |
+| **C** | **Every thread runs an executor. All blocking is suspension.** | adopted |
+
+**Every thread has an executor** — D-034 already gives it one — **and every
+blocking operation suspends the calling task rather than parking the thread.**
+When the executor has another runnable task it runs it; when it has none it parks
+the thread on a futex, which is exactly what the blocking implementation would
+have done anyway.
+
+### What this buys
+
+- **One channel API.** `await ch.recv(deadline)` is written the same way
+  everywhere, because there is no context in which it means something different.
+- **The stall is structurally impossible.** A waiting task cannot prevent a
+  sibling from running, because waiting is a suspension point rather than a
+  syscall.
+- **No cost when there is nothing else to run.** A thread doing bulk numeric work
+  that never spawns a task and never awaits pays for an arena it does not
+  allocate from. The executor is a few words of thread-local state.
+- **D-034 becomes universal** rather than a rule that applies only to threads that
+  happen to be running `async` code.
+
+### Consequences
+
+- **A thread's entry point is an `async func`.** `await` is legal in it, which
+  `CONCURRENCY_REFERENCE.md` §2.1's rule already implies — the restriction is that
+  `await` requires an `async func`, and a thread body now is one.
+- **`main` is `async`** in a program that uses concurrency, which the existing
+  examples already show (`async func:main`).
+- **There is no `block_on`.** It would be an adapter between two disciplines, and
+  after this decision there is only one.
+- **`failsafe` remains non-`async`** (D-063). It runs on the trapping thread as a
+  plain call, with every executor already stopped, so there is nothing for it to
+  suspend into.
+- The §1 table's split stands, but gains a connecting rule: **threads supply
+  parallelism, tasks supply concurrency, and waiting is always a task-level
+  event.**
+
+---
+
+## D-072 — `Channel<T, LEVEL, CAP>`: typed, capacity in the type, deadline required, no `select` — **SETTLED**
+
+Specifies the channel surface `CONCURRENCY_REFERENCE.md` §6 recorded as missing.
+Evidence for each rule is in `meta/CONCURRENCY_STDLIB_AUDIT.md`.
+
+### Shape
+
+```nitpick
+Channel<T, LEVEL, CAP>          // element type, lock level, capacity
+```
+
+- **`T` is the element type.** The prototype's `send(int64, int64)` /
+  `recv → int64` erases it, which is the defect pattern this project has now found
+  five times (audit §3).
+- **`LEVEL` is the D-056 lock level.** A channel blocks, so it is a blocking
+  primitive and carries a level like every other one.
+- **`CAP` is a `comptime int64`.** Capacity belongs in the type, not in a runtime
+  `mode` field dispatched by `if` chains at every operation. `CAP == 0` is a
+  rendezvous channel and `CAP > 0` is buffered; each instantiation monomorphizes
+  to one behaviour with no branch (D-064).
+
+**The `oneshot` mode is not carried across.** It is a capacity-1 channel that the
+sender closes, and a mode flag that selects a behaviour expressible in the two
+that already exist is a third mechanism for no gain.
+
+### Operations
+
+```nitpick
+await ch.send(move(v), deadline)   -> Result<NIL>
+await ch.recv(deadline)            -> Result<T>
+ch.close()                         -> Result<NIL>
+```
+
+- **`recv` returns `Result<T>`.** The prototype returns `0i64` for a bad handle,
+  for a closed channel, and for a received value of zero — three meanings on one
+  encoding (audit §3). A closed channel is an **error code**, never a value.
+- **Deadlines are mandatory** (D-056). There is no unbounded `recv`.
+- **`send` takes ownership**, so the value is written `move(v)` (D-065). Ownership
+  transfer across a channel must be visible at the call site.
+- **`T` may not contain a borrow.** Borrows are second-class and may not cross a
+  thread spawn or an `await` (D-004), which makes `T[]` — a slice, and therefore a
+  borrow (D-070) — unsendable. Send an owning type instead.
+- **`try_send` / `try_recv` are removed.** They existed to avoid blocking, which
+  a deadline already does, and the unbuffered `try_send` shipped a defect where
+  the value was delivered *and* failure was reported (audit §1.3). A zero deadline
+  expresses "do not wait" exactly, in the same call, with the same result type.
+
+### There is no `select`
+
+`select2` busy-waits forever on any non-zero timeout, reports a closed channel as
+ready, and races its own follow-up `recv`; `select3` and `select4` are stubs that
+always return "nothing ready" (audit §2, §4). None of it is salvageable, and it
+should not be replaced.
+
+**A correct `select` is incompatible with D-056.** Waiting on N channels means
+holding, or at least acquiring, N channel locks — and D-056 requires that lock
+acquisition strictly *increase* in level, which two channels at the same level
+cannot do. Making a general `select` sound would mean either giving every channel
+a distinct level, which does not compose, or exempting `select` from the level
+discipline, which is the one mechanism that makes lock-order freedom provable.
+
+**The common use of `select` is already covered.** Its usual job is "receive work,
+but also notice shutdown", and a mandatory deadline provides that directly: a
+`recv` that returns `DEADLINE_EXCEEDED` is the loop's opportunity to check for
+shutdown. Genuine fan-in is done the way it is done in practice anyway — several
+producers sending to **one** channel — which needs one lock, not N.
+
+### Endpoints and lifetime
+
+A channel's storage belongs to the scope that created it, and endpoints are
+second-class borrows of it. They cannot outlive that scope, which is the same rule
+tasks (D-062) and borrows (D-004) already follow.
+
+This is what closes the teardown race in audit §5, where `destroy` freed the mutex
+and condition variables out from under parked waiters. With lexical ownership,
+scope exit cannot run while a task holding an endpoint is still live, because
+D-062 already joins those tasks first.
+
+It also means **no reference counting on endpoints** and no `destroy` in the
+surface at all.
+
+---
+
+## D-073 — Actors and thread pools are built from channels; `lockfree` is not ported — **SETTLED**
+
+### One queue primitive
+
+`thread_pool` hand-rolls a second queue — a raw mmap'd ring with independent
+`pending`, `head`, and `tail` fields — and that is where its worst defect lives:
+`head` advances at dequeue while `pending` is decremented only after the task
+runs, so a second worker reads a still-positive count, takes an unwritten slot,
+and calls whatever it contains as a function (audit §1.1).
+
+**A thread pool is N worker tasks receiving from one `Channel<Job, LEVEL, CAP>`.**
+One count, one lock, one implementation to verify. The race is not fixed; it
+becomes unexpressible, because there is no second counter to disagree with the
+first.
+
+The same applies to the actor mailbox, which the prototype already built on a
+channel and should continue to.
+
+### Thread pools
+
+```nitpick
+ThreadPool<LEVEL, CAP>:pool = ThreadPool.create(worker_count)?;
+await pool.submit(move(job), deadline)?;
+```
+
+- **Submitted work is lexically scoped** (D-062): the pool's owning scope does not
+  exit until every submitted job has finished, under a deadline, and expiry traps.
+  This replaces a `shutdown` that wrote its stop flag to the wrong field, never
+  joined because the thread ids were discarded at spawn, and returned success
+  regardless (audit §1.2).
+- **The job type is checked.** `submit(int64:pool, ?->:func, int64:arg)` erased it
+  and silently zeroed every closure's captured environment (audit §6).
+- **`wait_idle` is removed** — it busy-spun with no deadline, and lexical scoping
+  makes "wait for the work to finish" the behaviour of scope exit rather than a
+  call.
+
+### Actors
+
+```nitpick
+Actor<M, R, LEVEL>              // message type, reply type, lock level
+await actor.tell(move(m), deadline)   -> Result<NIL>
+await actor.ask(move(m), deadline)    -> Result<R>
+```
+
+An actor is a **task** with a mailbox, not a thread with a mailbox. The prototype
+spawns an OS thread per actor and inherits every defect in `thread.npk`; under
+D-071 a task suspends rather than parking a thread, so the thread was never
+buying anything.
+
+**`ask` replaces the reply-channel machinery**, all three functions of which are
+stubs returning failure or zero (audit §2). The obvious alternative — put a reply
+channel *in* the message — cannot work here: an endpoint is a second-class borrow
+(D-072) and borrows may not cross a thread spawn (D-004). `ask` keeps the reply
+channel in the caller's scope, where it is legal, and the runtime routes the reply
+to it.
+
+`R = NIL` for an actor that does not reply. `ask` remains useful there as an
+acknowledgement, which is how backpressure is expressed.
+
+`alive` becomes `atomic<bool>` — the prototype writes a plain `int32` from the
+stopping thread and reads it in the actor loop with no synchronization at all.
+
+### What is not ported
+
+| Module | Disposition |
+|---|---|
+| `lockfree.npk` | **not ported.** A lock-free MPMC queue under SeqCst-only atomics (D-016) is both hard to get right and expensive to verify, and a channel already provides the operation. Adding a second queue with a harder proof obligation, for a case nothing has been shown to need, spends verification budget against the one Astrée run. |
+| `barrier.npk` | reimplemented natively — 34 lines wrapping three C shims, and the operation is a count, a mutex, and a condition variable |
+| `atomic.npk` | not ported (already settled) — superseded by the language-level `atomic<T>` |
+| `Thread.detach` | **removed.** It returns success and leaks a 2 MiB stack and a context page, and lexical lifetime means nothing is detached. |
+| `Thread.sleep_ns/ms` | reimplemented — the prototype's are `pass NIL;` with no syscall, so every sleeping loop is a spin loop (audit §2) |
+| `Thread.hardware_concurrency` | reimplemented — hardcoded to `4` |
+| `CondVar.wait` | **removed**; `timedwait` is the only form, per D-056 |
