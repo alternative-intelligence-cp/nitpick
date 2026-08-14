@@ -3239,3 +3239,46 @@ never issue a write per emitter. Per-emitter writes would turn
 `printf("x=%d\n", n)` into three syscalls and destroy output atomicity between
 concurrent writers. Buffered streams accumulate into the `FILE` buffer instead —
 same shape, different destination.
+
+### The `scanf` side: the store width comes from the destination's type
+
+`libn`'s scanner shows why checking the specifier is not enough on the input
+side either. It parses length modifiers and **discards them** — its own comment
+reads *"Skip length modifiers (l, h, hh, ll, z, j, t) — all use int64 anyway"* —
+and every integer conversion ends at the same store, writing **8 bytes**:
+
+```nitpick
+int32:n;
+sscanf1(str, "%d", cast_unchecked<int64>(@n));   // 8 bytes into a 4-byte slot
+```
+
+`%d` means 32 bits in C, so that call is the conventionally *correct* spelling
+and it overflows by four bytes. `%hhd` into an `int8` overflows by seven.
+
+Under lowering the modifier is not needed and not consulted: `%d` against an
+`int32->` emits `scan_i32`, which stores four bytes because that is what its
+parameter type is. A specifier that disagrees with its destination is a compile
+error rather than a silently wider write.
+
+The same applies to string input. C's `%Ns` reads N characters plus a NUL, so the
+number in the format string is the buffer size *minus one* and `char8[32]` paired
+with `%32s` overflows by one. Under lowering the bound comes from **the
+destination's own length**, so there is no number to transcribe and nothing to
+get off by one. A width specifier on `%s` becomes redundant and, if written, must
+agree.
+
+`%n` is prohibited on the input side for the same reason as the output side, and
+with the same replacement: the consumed count is a return value or a typed
+accessor, never a pseudo-conversion that writes through a caller pointer. It
+exists in C only because there is no other way to retrieve it.
+
+### The general statement
+
+**C's format string carries a description of the arguments, and the arguments
+carry no description of themselves.** Every defect above — the erased `%s` read,
+the discarded length modifier, the off-by-one width — is that description being
+wrong, absent, or thrown away.
+
+Lowering deletes the description and reads the arguments directly. On the output
+side that converts an arbitrary read into a compile error; on the input side it
+converts three classes of arbitrary write into compile errors.
