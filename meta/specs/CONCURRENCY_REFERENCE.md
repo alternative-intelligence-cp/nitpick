@@ -57,6 +57,26 @@ drop work();        // runs concurrently; result discarded
 > it entirely, leaving no documented way to *start* a concurrent task — only to
 > await one.
 
+**A spawned task cannot outlive the scope that spawned it (D-062).** The task runs
+concurrently, but the enclosing `async` function does not return until it has
+finished. A task that must live for the whole program is spawned in `main`'s
+scope.
+
+Scope exit joins any unfinished task, under a **mandatory deadline** — the task is
+asked to wind up and observes the request at its next `await`, taking a normal
+error exit so `defer` runs. There is no unbounded join, and expiry **traps to
+`failsafe`** rather than detaching the task or continuing silently.
+
+This is the same two-layer shape as D-056: lexical lifetime makes "executor shuts
+down with live frames" unreachable in a well-formed program, and the deadline
+contains the residue. It is also the same rule borrows already follow (D-004) —
+tasks nest inward and never escape outward.
+
+> **There is no cancellation operation.** D-058 leaves no way to name a task, so
+> there is nothing to cancel; the prototype's preemptive `Executor::cancel` is
+> removed outright because it destroyed a live frame without running `defer`
+> (D-062).
+
 ### 2.3 Tasks are pinned to threads
 
 **A task resumes on the thread it suspended on.** The runtime does not migrate
@@ -258,7 +278,12 @@ Race freedom comes from three structural properties, none of them runtime checks
 
 1. borrows cannot cross a thread spawn or `await` (D-004);
 2. tasks do not migrate between threads (D-032);
-3. shared arenas never move memory and never reuse slots (D-017).
+3. shared arenas never move memory and never reuse slots (D-017);
+4. tasks cannot outlive the scope that spawned them (D-062).
+
+Property 4 is the same rule as property 1, applied to tasks instead of borrows:
+both nest inward and neither escapes outward. It is what keeps a task frame from
+referring to a scope that has already gone.
 
 ## 6. Open items
 
@@ -285,10 +310,22 @@ Race freedom comes from three structural properties, none of them runtime checks
   surface language — in which case awaiting, composing, and cancelling futures
   need specifying — or it is an internal lowering artifact and should be marked
   as such.
-- **Task cancellation is unspecified.** A pinned executor owning an arena of task
-  frames needs a defined answer for what happens when a task is cancelled or its
-  executor shuts down while frames are live — this interacts with the
-  K-semantics `exit` rule.
-- **`async` + `failsafe`.** If a trap fires inside a suspended task, D-014 says
-  `defer` does not run and control transfers directly to `failsafe`. What becomes
-  of other in-flight tasks on that executor, and of their frames, is undefined.
+- ~~**Task cancellation is unspecified.**~~ — **settled by D-062.** Task lifetime
+  is **lexical**: a spawned task cannot outlive its spawning scope, which makes
+  frame lifetimes nest and so makes D-034's arena correct rather than merely
+  stated. Scope exit joins under a mandatory deadline; expiry traps. The
+  prototype's *preemptive* cancellation is removed — it destroyed a live frame
+  without running `defer`, left an admitted dangling handle, and after D-058 had
+  nothing that could call it. The cooperative token survives as the join
+  mechanism, not as surface syntax. On the K-semantics tie-in: `exit` already
+  routes to `failsafe` when `<wild-live>` is non-empty (`nitpick.k:4215-4237`), so
+  a live task set joins that same emptiness precondition.
+- ~~**`async` + `failsafe`.**~~ — **settled by D-063.** A trap is a
+  **whole-program event**. No coroutine is resumed on any thread, no `defer` runs
+  anywhere, and no frame is destroyed — frames freeze as they are, because
+  `coro.destroy()` would execute exactly the cleanup D-014 forbids. Other threads
+  stop *before* `failsafe` gets control, so the handler cannot be racing a sibling
+  task driving the same actuator. `failsafe` runs on the trapping thread as a
+  plain call and **may not be `async`**. Async adds no new safing requirement: it
+  makes D-014's existing one visible, since a synchronous function already could
+  not rely on `defer` at trap time.

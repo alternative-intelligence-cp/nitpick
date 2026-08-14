@@ -16,12 +16,14 @@ with the deciding D-number recorded.
 
 | # | Item | Blocks | Source |
 |---|---|---|---|
-| 1 | **Task cancellation** — what happens to a pinned executor's arena of live task frames when a task is cancelled or the executor shuts down while frames are live. Interacts with the K-semantics `exit` rule. | concurrency spec; executor implementation | `CONCURRENCY_REFERENCE.md` §6 |
-| 2 | **`async` + `failsafe`** — D-014 says a trap runs no `defer` and transfers directly to `failsafe`. What becomes of *other* in-flight tasks on that executor, and of their frames, is undefined. | concurrency spec; `failsafe` lowering | `CONCURRENCY_REFERENCE.md` §6 |
+| ~~1~~ | ~~**Task cancellation**~~ — **settled by D-062.** Task lifetime is lexical; a spawned task cannot outlive its spawning scope, so frame lifetimes nest and D-034's arena is doing the job arenas are for. Scope exit joins under a mandatory deadline; expiry traps. Preemptive `Executor::cancel` is not ported. | — | `CONCURRENCY_REFERENCE.md` §6 |
+| ~~2~~ | ~~**`async` + `failsafe`**~~ — **settled by D-063.** A trap is a whole-program event: no coroutine resumes on any thread, no `defer` runs, frames freeze. Other threads stop before the handler runs. `failsafe` may not be `async`. | — | `CONCURRENCY_REFERENCE.md` §6 |
 
-Item 2 is the uncontrolled-shutdown scenario `failsafe` exists to prevent: a trap
-inside a suspended task with sibling tasks live on the same executor. Nothing
-currently says what happens, which is why these two lead the queue.
+Both closed. The finding that shaped them: the prototype implements cancellation
+**twice** — preemptively via `coro.destroy()` (no `defer`, admitted dangling
+handle) and cooperatively via a token polled at `await` points (defers run). Two
+disciplines for one job; the unsafe one is removed and the safe one survives as
+the join mechanism rather than as surface syntax.
 
 ### Frontend-blocking
 

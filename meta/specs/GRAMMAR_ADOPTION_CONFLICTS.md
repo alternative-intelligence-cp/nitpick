@@ -290,19 +290,30 @@ The chapter says nothing about:
   deadlines containing what the analysis cannot reach. The flag's documented
   claim is narrowed accordingly.
 
-### J4. `Future<T>` is never mentioned
+### J4. `Future<T>` is never mentioned — **settled by D-058**
 
 `TYPE_REFERENCE.md` §17 defines it as `{ coroutine_handle, result_slot }`.
 Chapter 11 contains **zero** occurrences. The relationship between `async
 func`, `await`, and `Future<T>` is unspecified — in particular whether `Future<T>`
 is ever user-visible or purely an internal lowering artifact.
 
-### J5. Task spawning was dropped
+It is **purely internal**: `await f()` yields `T` and `drop work()` discards, so
+no surface construct produces one. D-062 draws the consequence — with no way to
+name a task there is nothing a cancellation operation could take as an argument,
+which is one of the three reasons the prototype's preemptive `Executor::cancel`
+is not ported.
+
+### J5. Task spawning was dropped — **settled by D-062**
 
 The prototype's `concurrency_specs.txt` §1.3 states that a task may be spawned on
 the runtime executor with `drop work();` — that is, calling an `async` function
 without `await` and discarding the `Future`. Chapter 11 omits it, leaving **no
 documented way to start a concurrent task at all**, only to await one.
+
+`drop work()` is restored, with a lifetime the prototype never stated: **the task
+cannot outlive the scope that spawned it.** Scope exit joins it under a mandatory
+deadline, and expiry traps rather than detaching. That is what makes D-034's
+frame arena correct — nesting lifetimes are what an arena is for.
 
 ## Part K — The consequence nobody has costed
 

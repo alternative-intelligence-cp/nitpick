@@ -4000,3 +4000,224 @@ falling through.
 
 It also retires a second spelling of one idea, `(!)` and `#unreachable()`, in
 favour of the one that already exists and already has defined semantics.
+
+---
+
+## D-062 — Task lifetime is lexical; preemptive cancellation is removed — **SETTLED**
+
+Settles the **task cancellation** open item in `CONCURRENCY_REFERENCE.md` §6.
+
+### The prototype implements cancellation twice, incompatibly
+
+| | Mechanism | Runs `defer`? | Frame |
+|---|---|---|---|
+| **Preemptive** | `Executor::cancel(id)` → `coro.destroy()` (`src/runtime/async/executor.cpp:150`) | **no** | destroyed immediately |
+| **Cooperative** | `CancellationToken`, polled by compiler-inserted code at every `await` (`include/runtime/async/cancellation.h`) | **yes** | unwinds normally |
+
+`cancellation.h`'s own header states the split as deliberate: *"Separate from
+preemptive cancellation (`Executor::cancel`) which destroys the frame
+immediately. Cooperative cancellation allows the task to see the request and
+execute defers/drops normally."*
+
+Two disciplines for one job means remembering which one applies where — the exact
+cost the blueprint philosophy exists to avoid. One of them has to go, and which
+one is not a close call.
+
+### Preemptive cancellation is removed
+
+`Executor::cancel` destroys a live coroutine frame at a point the task did not
+choose. Three separate failures:
+
+1. **It runs no cleanup.** D-014 is precise about when `defer` does and does not
+   run: it runs on *every normal exit path* and never on a trap. Preemptive
+   cancel is neither — it is a third path that skips cleanup without being a
+   fault. A task holding a `wild` allocation leaks it; a task holding a device
+   handle leaves the device mid-operation. For a system with actuators live that
+   is a physical safety event with no fault to explain it.
+2. **It leaves an admitted dangling handle.** The implementation comment says so
+   directly — *"After `destroy()`, the handle is dangling — the Task destructor
+   must NOT call `coro_destroy` again, so we null the handle via a state check."*
+   The invariant is maintained by a runtime state convention rather than
+   structurally, which is precisely the shape D-056 rejected in the old `mutex`
+   API.
+3. **Nothing can call it.** D-058 makes `Future<T>` an internal lowering artifact:
+   `await f()` yields `T` and `drop work()` discards, so **no surface construct
+   produces a task handle**. There is nothing to name in a `cancel(x)` call. The
+   operation is unreachable from the language it supposedly serves.
+
+### Task lifetime is lexical
+
+**A spawned task cannot outlive the scope that spawned it.** `drop work()` starts
+the task concurrently, as before, but the enclosing `async` function does not
+return until that task has finished.
+
+This is a real change to `drop work()`. It previously read as fire-and-forget with
+no stated lifetime at all; it now reads as *run concurrently within this scope*. A
+task that must live for the whole program is spawned in `main`'s scope, which is
+exactly as long-lived as "detached" ever meant in practice.
+
+**This is what makes D-034 correct rather than merely stated.** D-034 allocates
+frames from the executor's `arena<T>`, released on task completion. An arena is a
+batch-lifetime allocator: it is the right structure precisely when lifetimes
+nest. If a task may outlive an arbitrary scope, frame lifetimes are arbitrary,
+and the executor's arena needs a free-list, reuse, and a generation counter —
+rebuilding a general-purpose allocator inside the thing D-003 removed. Lexical
+task lifetime makes frame lifetimes nest, and the arena is then doing the job
+arenas are for.
+
+It also matches D-004 exactly. Borrows are second-class: they pass down the call
+stack and never up. Tasks now obey the same rule — they nest inward and never
+escape outward. One rule covering both, rather than two.
+
+### Scope exit joins, with a deadline
+
+The joining scope asks each unfinished task to wind up, and the **cooperative
+token is the mechanism** — the task observes the request at its next `await` and
+takes a normal error exit, so `defer` runs, per D-014.
+
+A task that never reaches another `await` never observes the request, so the join
+carries a **mandatory deadline**, exactly as every blocking operation does under
+D-056. There is no unbounded join. On expiry the scope exit **traps to
+`failsafe`**; it does not detach the task and it does not continue silently.
+
+Hanging is not the safe failure here. For a robot, a shutdown that never
+completes is as dangerous as one that never started — which is why the deadline
+is mandatory rather than optional, and why expiry is a fault rather than a
+warning.
+
+### The K-semantics `exit` rule already sets the precedent
+
+`nitpick.k` does not let `exit` succeed with unmanaged resources outstanding.
+`exit V;` completes only when `<wild-live>`, `<wildx-states>`, and
+`<defer-stack>` are all empty; the very next rule routes an `exit` with a
+**non-empty `<wild-live>` to `failsafe`** instead (`nitpick.k:4215-4237`). A
+leaked `wild` allocation at exit is already a fault, not a silent success.
+
+**A live task frame at shutdown is the same shape as a leaked `wild` allocation
+at exit**, so it gets the same answer: the executor's task set joins the
+emptiness precondition on `exit`, and a non-empty one traps.
+
+### Two layers, the same shape as D-056
+
+| Layer | Mechanism | Covers |
+|---|---|---|
+| **Structural** | lexical task lifetime — a task cannot outlive its spawning scope | makes "executor shuts down with live frames" unreachable in a well-formed program |
+| **Containment** | deadline on join; non-empty task set at `exit` traps | the residue — a task that stops awaiting, or a frame live at exit anyway |
+
+D-056 proves the common case with lock levels and contains the rest with
+deadlines. D-062 proves the common case with lexical lifetime and contains the
+rest with deadlines. Same problem shape, same answer shape, one thing to
+remember instead of two.
+
+### Consequences
+
+- `Executor::cancel`, `TaskState::CANCELLED`, and the `tasksCancelled` counter
+  are **not ported**.
+- `CancellationToken` **is** ported, as the join mechanism rather than as a
+  user-facing feature. It is not nameable from source.
+- `work_stealing.cpp` (381 lines) was already dead under D-032; lexical lifetime
+  gives a second independent reason, since a stolen task's scope lives on another
+  thread.
+- `gc_integration.cpp` (269 lines) and
+  `tests/runtime/test_async_gc_suspended_frames_v03106.cpp` are dead under D-003
+  and are not ported.
+- No surface syntax is added. Lexical lifetime is a property of `drop work()`,
+  not a new construct.
+
+---
+
+## D-063 — A trap is a whole-program event; no task is ever resumed after one — **SETTLED**
+
+Settles the **`async` + `failsafe`** open item in `CONCURRENCY_REFERENCE.md` §6.
+
+D-014 says a trap transfers control directly to `failsafe` without unwinding, and
+that `defer` does not run. It was written for synchronous code and says nothing
+about the tasks suspended alongside the one that trapped.
+
+### No task is resumed — the trapping one or any other
+
+On a trap, **no coroutine is resumed on any thread**, no `defer` runs anywhere,
+and no frame is destroyed. Frames freeze exactly as they are.
+
+The rationale is D-014's own, applied one step further. `defer` does not run in
+the *trapping* task because at trap time the state of the system is unknown,
+including how degraded it is, and running arbitrary cleanup against possibly
+corrupt state in an order nobody chose is worse than not running it. Resuming a
+**sibling** task is strictly worse again: it is not cleanup but arbitrary
+application code — allocating, taking locks, driving hardware — run against the
+same unknown state, and chosen by the scheduler rather than by anyone.
+
+Freezing rather than destroying follows for the same reason. `coro.destroy()`
+executes the frame's cleanup block, which is exactly the code D-014 forbids. The
+frames are not freed either: the process is ending, the executor's arena is
+preallocated, and freeing buys nothing that reaching `failsafe` sooner does not
+buy more.
+
+### `failsafe` never runs on an executor
+
+`failsafe` runs on the trapping thread, as a plain call. It is **not a task, is
+never scheduled, and is not `async`.**
+
+A scheduler on a broken program is not trustworthy, and the handler that exists
+to contain the fault must not be preemptable by the tasks it is containing. This
+also keeps entry to `failsafe` deterministic, which D-014 lists as a primary
+benefit.
+
+### Other threads stop before `failsafe` runs
+
+A trap on one thread stops every other thread's executor **before** `failsafe`
+gets control. Threads park where they are without running further user code.
+
+`libn`'s syscall layer already wraps what this needs — `tkill`, `futex`, and
+`set_robust_list`. Two checkable constraints follow:
+
+1. **A Nitpick thread may not block signals indefinitely.** A thread that could
+   refuse the stop would leave application code running concurrently with
+   `failsafe`, which defeats the purpose. Bounded blocking regions are fine;
+   indefinite masking is a compile-time rejection.
+2. **The stop must itself be bounded.** A thread that has not parked within the
+   deadline is reported to `failsafe` as still-running rather than waited on
+   forever — the D-056 discipline again.
+
+Without this, `failsafe` safes an actuator while a sibling thread's task drives
+it back the other way. That is not a hypothetical for a system with robotics.
+
+### Async adds no new safing requirement — it makes the existing one visible
+
+The tempting conclusion is that suspended tasks need some new cleanup path so
+their resources get released. They do not, and adding one would be a mistake.
+
+D-014 already established that **`defer` does not run on a trap in synchronous
+code.** A synchronous function holding an actuator open therefore already cannot
+rely on `defer` to safe it. The rule has always been that safing belongs to
+`failsafe`, reached through **state preallocated before the fault** — the global
+allocation registry `failsafe` receives intact, per D-014.
+
+Async changes nothing about this. A suspended task is in exactly the position a
+mid-call synchronous function is in, and gets exactly the same treatment. Stating
+it once, uniformly, is worth more than a task-local cleanup path that would be a
+second discipline for the same job and would run user code after a trap.
+
+**The standing guidance sharpens accordingly:** anything whose abandonment is
+physically unsafe must be reachable from `failsafe` without traversing a task
+frame, because task frames are frozen and unreadable as live objects at that
+point.
+
+### What this rules out
+
+- **No task-local trap handling.** A trap inside a task is not catchable by that
+  task, and `async` introduces no per-task recovery. There is one handler.
+- **No partial shutdown.** The executor is not drained, quiesced, or given a
+  chance to finish in-flight work. D-062's join has a deadline and runs on the
+  *normal* exit path; a trap is not a normal exit path and does not join.
+- **No `async failsafe`.** `failsafe` may not be declared `async`; a handler that
+  could suspend could be starved by the executor it is shutting down. Compile
+  error, alongside D-014's existing three checkable requirements.
+
+### Consequences
+
+- `failsafe` gains a fourth checkable requirement: **it may not be `async`.**
+- The trap path gains a stop-the-world step ahead of the handler call, ordered
+  before any `failsafe` code runs.
+- `--extra-picky`'s no-allocation-in-`failsafe` rule (D-014) extends naturally to
+  **no `await` in `failsafe`**, which the `async` prohibition already implies.
