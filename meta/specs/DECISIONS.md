@@ -5094,3 +5094,160 @@ stopping thread and reads it in the actor loop with no synchronization at all.
 | `Thread.sleep_ns/ms` | reimplemented — the prototype's are `pass NIL;` with no syscall, so every sleeping loop is a spin loop (audit §2) |
 | `Thread.hardware_concurrency` | reimplemented — hardcoded to `4` |
 | `CondVar.wait` | **removed**; `timedwait` is the only form, per D-056 |
+
+---
+
+## D-074 — Five reserved words return to userland; `binary` folds into `uint8[]` — **SETTLED**
+
+Specifying I/O began by looking for what `stream` means. It means nothing:
+`stream` is in `LEXICAL_REFERENCE.md`'s `BuiltinType` production and **has no
+definition anywhere in the spec set.** Neither do four of its neighbours.
+
+| Reserved word | Definition |
+|---|---|
+| `stream` | none — `TYPE_REFERENCE.md` skips from §23 to §25, which is where it presumably went |
+| `process` | none |
+| `pipe` | none — the only `pipe` in `TYPE_REFERENCE` is the `\|>` operator |
+| `debug` | none |
+| `log` | none |
+
+**All five are removed from `BuiltinType`.** A reserved word that names nothing
+costs userland an identifier and gives a reader a keyword they cannot look up.
+D-041 set the precedent exactly: it removed 35 `a*` collection keywords on the
+grounds that collections belong in a library, and returned them to userland.
+
+Streams, processes, pipes, and logging belong in a library for the same reason.
+The I/O model is `IO_REFERENCE.md`; none of it needs language syntax.
+
+### `binary` is `uint8[]`
+
+`TYPE_REFERENCE.md` §22 defines `binary` as `{ ptr, i64 length }` — *"immutable
+blob … like `string` but without encoding semantics"*, with `binary_slice` a
+zero-copy sub-range.
+
+**D-070 defines a slice as `{ ptr, i64 len }`.** Identical layout, identical
+non-owning behaviour, identical sub-ranging.
+
+The remaining difference is immutability, and that is not a difference either:
+immutability in Nitpick is **a binding property, not a type property** — the
+prototype's own `bug403` comment states the rule — so an immutable byte view is
+`fixed uint8[]`, which the language already provides.
+
+`binary` is therefore redundant twice over and is **removed**, along with its
+seven `binary_*` operations, which are slice operations under other names.
+`buffer` (`{ptr, len, cap}`) is retained: a slice cannot own, and the owning byte
+container is what a read fills and a write drains.
+
+### Consequence
+
+`BuiltinType` loses six entries. `TYPE_REFERENCE.md` §22 is deleted and §24's
+absence is explained rather than filled.
+
+---
+
+## D-075 — I/O is a `Stream` trait, asynchronous, with end-of-input as an error code — **SETTLED**
+
+The I/O model, specified in full in `IO_REFERENCE.md`. This records the decisions
+behind it.
+
+### `Stream` is a trait, not a type
+
+Concrete streams — files, pipes, sockets, memory — are stdlib types implementing
+it. The decisive reason is specific to this project: **the compiler's diagnostics
+must be capturable.** Writing them through `dyn Stream` means production writes to
+stderr and the test harness writes to a memory buffer, with one code path. A
+concrete stream type would need a second mechanism for that, or an internal tag
+selecting behaviour at runtime — which is the mode-field pattern D-072 rejected
+for channels.
+
+Object safety holds: every method takes `self`, none returns `Self`, none has
+comptime type parameters (`TRAITS_REFERENCE.md` §4.2).
+
+### Every operation is `async`
+
+Required by D-071. A read that parks the OS thread stalls every sibling task on
+that executor, and a compiler driver reading source files while diagnostics stream
+out is exactly that shape.
+
+The executor's readiness mechanism is `io_uring` or `epoll` **through raw
+syscalls**, which is not a dependency question — `nlibc` is the syscall surface
+and neither is a library.
+
+### End-of-input is an error code, never a value
+
+`libn`'s buffered layer returns `FILE_EOF = -1` for **both** end-of-file and
+error, requiring `feof`/`ferror` to disambiguate — the C design, inherited
+wholesale.
+
+That is the same defect this project has now removed three times: `Result` encoded
+its error state twice (D-069), a channel `recv` returned `0` for a closed channel
+and for a received zero alike (D-072), and now one sentinel means EOF, error, and
+in `fgetc`'s case a legitimate byte value would if the type were narrower.
+
+**One rule, stated once:** a stream operation returns `Result<T>`; end-of-input is
+an error code; no operation returns a sentinel. It is the same rule as "a closed
+channel is an error code, never a value", and it exists so that a caller is forced
+to handle a condition it cannot otherwise distinguish.
+
+### `fd` is an `fd`
+
+`FILE.fd` is an `int64` with `-1` meaning not-open. D-042 already settled this:
+kernel identifiers are distinct types, and **POSIX's `-1` goes to `Result.error`
+and is not representable** in an `fd`. The unopened state is not a value of the
+field; it is the absence of the stream.
+
+### Text and byte streams are different types
+
+D-050 puts line-ending policy on the stream. Two types rather than a mode flag:
+a text stream normalizes `\r\n`, `\n`, and lone `\r` to `\n` on read and emits
+`\n` on write unless opened otherwise; a byte stream never translates anything.
+
+The line-ending choice is a **creation parameter held in the writer**, not a
+comptime parameter. A comptime parameter would put the policy in the type, which
+sounds better until every function that accepts a writer has to be generic over it
+for no benefit.
+
+---
+
+## D-076 — Buffering is fixed; it is never inferred from whether the output is a terminal — **SETTLED**
+
+C decides `stdout`'s buffering by calling `isatty`: line-buffered to a terminal,
+fully buffered to a pipe. **Nitpick does not.**
+
+| Stream | Buffering |
+|---|---|
+| `stdin` | fully buffered |
+| `stdout` | **line buffered, always** |
+| `stderr` | **unbuffered, always** |
+
+The C behaviour is a default that varies by circumstance, which the blueprint
+philosophy treats as a defect in the design rather than a convenience. Its
+practical cost is well known: a program's output interleaves differently, or
+vanishes on a crash, depending on whether it was run in a terminal or through a
+pipe — so the configuration that gets debugged is not the configuration that
+ships.
+
+`io_isatty` remains available (it is the one `ioctl` the D-049 syscall audit
+retained). It answers a question; it does not silently change behaviour.
+
+A program wanting throughput on `stdout` wraps it in its own buffered writer,
+explicitly.
+
+### Buffered data is not flushed on a trap
+
+`defer` does not run on a trap (D-014), and D-063 makes a trap a whole-program
+event in which no task resumes and no cleanup executes. **Pending buffered output
+is therefore lost**, and no flush is attempted, because flushing means running
+code against state the fault may have corrupted.
+
+This is stated rather than mitigated, because the mitigation belongs to the
+program:
+
+- `stderr` is unbuffered, so **diagnostics written to it survive a trap** — which
+  is the reason it is unbuffered rather than a performance judgement.
+- The registry of open streams is reachable from `failsafe`, alongside the
+  allocation registry D-014 already hands it. `failsafe` may choose to flush; the
+  runtime may not choose for it.
+- Anything whose loss is unacceptable goes to `stderr` or an unbuffered stream, on
+  the same reasoning that puts actuator safing in `failsafe` rather than in
+  `defer`.

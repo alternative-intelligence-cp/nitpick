@@ -88,8 +88,7 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "simd" | "complex" | "array" | "func"
                       | "trit" | "tryte" | "nit" | "nyte"
                       | "vec2" | "vec3" | "vec9" | "matrix" | "tmatrix"
-                      | "tensor" | "ttensor" | "binary" | "buffer" | "stream"
-                      | "process" | "pipe" | "debug" | "log"
+                      | "tensor" | "ttensor" | "buffer"
 
 BuiltinHelper       ::= "is" | "in" | "is_err"
 ```
@@ -110,6 +109,8 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | **35 `a*` collection keywords removed** | D-041 — `astack`, `alist`, `ahash`, `astringlist` and their operations are not language builtins; collections belong in a library. Returns 35 reserved words to userland and removes the last major `aria` naming artifact from the language surface. |
 | `fd`, `pid`, `tid`, `uid`, `gid` added | D-042 — kernel identifiers are distinct types permitting comparison but not arithmetic. Combined with `Result<T>`, an `fd` is always valid: POSIX's `-1` goes to `Result.error` and is not representable. |
 | `assoc` added | D-028 — declares an associated type; `Type` is namespace-only |
+| **`stream`, `process`, `pipe`, `debug`, `log` removed** | D-074 — all five were reserved and **defined nowhere**; `TYPE_REFERENCE` skips §24, which is where `stream` presumably went. A reserved word that names nothing costs userland an identifier and gives a reader a keyword they cannot look up. Same reasoning as D-041's 35 collection keywords. The I/O model is `IO_REFERENCE.md` and needs no language syntax. |
+| **`binary` removed** | D-074 — `{ptr, i64 length}` is *identical* to a slice (D-070), with identical non-owning behaviour and sub-ranging. Its remaining distinction, immutability, is a **binding** property in Nitpick, not a type property, so an immutable byte view is `fixed uint8[]`. Redundant twice over. `buffer` is retained: a slice cannot own. |
 | **`move` moved** from `MemoryQualifier` to `ControlFlow` | D-065 — it is not a qualifier. `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`, and it belongs beside the other ownership keywords `drop` and `nodrop`. |
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |

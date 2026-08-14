@@ -998,38 +998,34 @@ Operations:
 
 ---
 
-> **Memory Model Note (string, binary, buffer):**
+> **Memory Model Note (string, buffer):**
 > Nitpick supports multiple memory spaces: managed/`stack` (default, scope-determined), `wild` (unmanaged C-like memory), and `wildx` (JIT executable memory). There is no `gc` space and no collector (D-003).
-> By default, `string` and `binary` are scope-managed (stack-allocated where escape analysis permits, otherwise arena- or `wild`-backed with a determined owner). `buffer` is often allocated in `wild` memory, hence the existence of manual `buffer_free()`. No pin operator is needed: nothing relocates memory implicitly, so a pointer taken for FFI stays valid for the lifetime its owner guarantees (D-020).
+> By default, `string` and `uint8[]`-backed storage are scope-managed (stack-allocated where escape analysis permits, otherwise arena- or `wild`-backed with a determined owner). `buffer` is often allocated in `wild` memory, hence the existence of manual `buffer_free()`. No pin operator is needed: nothing relocates memory implicitly, so a pointer taken for FFI stays valid for the lifetime its owner guarantees (D-020).
 
-## 22. binary — Raw Binary Data (Tier 0/1)
+## 22. binary — **REMOVED (D-074)**
 
-Immutable blob of binary data. Like `string` but without encoding semantics.
+`binary` was `{ ptr, i64 length }` — an immutable, zero-copy-sliceable blob.
 
-```llvm
-; binary layout: struct { ptr data, i64 length }
-; Same as string but WITHOUT capacity (always exact-sized)
-%binary = type { ptr, i64 }
-```
+**D-070 defines a slice as `{ ptr, i64 len }`.** Identical layout, identical
+non-owning behaviour, identical sub-ranging. The remaining difference was
+immutability, and that is a **binding** property in Nitpick rather than a type
+property, so an immutable byte view is `fixed uint8[]`.
 
-```nitpick
-binary:b = load_file("data.bin");
-int32:magic = binary_read_i32(b, 0i64);  // read first 4 bytes as int32
-```
+Redundant twice over. `binary` and its seven `binary_*` operations are removed;
+use `uint8[]`. `buffer` (§23) is retained, because a slice cannot own and the
+owning byte container is what a read fills and a write drains.
 
-Operations:
-- `binary_length(b)` — byte count
-- `binary_byte_at(b, idx)` — single byte
-- `binary_slice(b, start, len)` — sub-range (zero-copy, shares pointer)
-- `binary_read_i32(b, offset)`, `binary_read_i64(b, offset)` — typed reads
-- `binary_from_string(s)` — reinterpret string bytes as binary
-- `binary_to_string(b)` — reinterpret binary as UTF-8 string (no copy)
+> §24 is absent. It is where `stream` presumably belonged — a `BuiltinType`
+> keyword that was never defined. D-074 returns it to userland along with
+> `process`, `pipe`, `debug`, and `log`; the I/O model is `IO_REFERENCE.md`.
 
 ---
 
 ## 23. buffer — Mutable Raw Memory Buffer (Tier 0/1)
 
-Like `binary` but mutable. Used for I/O buffers, serialization, etc.
+The **owning** byte container — what a read fills and a write drains. A slice
+(`uint8[]`) cannot own, which is why this type survives D-074's removal of
+`binary`.
 
 ```llvm
 ; buffer layout: struct { ptr data, i64 length, i64 capacity }
@@ -1047,7 +1043,7 @@ Operations:
 - `buffer_free(buf)` — deallocate
 - `buffer_write_i8/i16/i32/i64(buf, offset, val)` — typed writes
 - `buffer_read_i8/i16/i32/i64(buf, offset)` — typed reads
-- `buffer_to_binary(buf)` — snapshot as immutable binary
+- `buffer_bytes(buf)` — borrow the contents as `uint8[]`; `fixed` for a read-only view *(was `buffer_to_binary`; D-074)*
 - `buffer_resize(buf, new_cap)` — grow/shrink (ralloc)
 
 ---
@@ -1307,5 +1303,5 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 | **P2 — Advanced** | Handle\<T\>, arena\<T\>->, tbb8/16/32/64, tfp32/64 | 4-5 |
 | **P3 — Specialized** | int128+, tfp128/256, dim256, char16/32, string\<char16/32\>, simd, atomic | 6 |
 | **P4 — Extended** | vec/matrix/tensor/vec9/tmatrix/ttensor, trit/tryte/nit/nyte, dyn Trait, Future | 6-7 |
-| **P5 — Scientific** | frac8/16/32/64, complex\<T\>, binary, buffer | 7+ |
+| **P5 — Scientific** | frac8/16/32/64, complex\<T\>, buffer | 7+ |
 

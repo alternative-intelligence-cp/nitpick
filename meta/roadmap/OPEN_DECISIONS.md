@@ -60,7 +60,7 @@ avoid.
 | Spec | Why it is needed | Depends on |
 |---|---|---|
 | ~~**Channels, actors, thread pools**~~ — **written.** `CONCURRENCY_REFERENCE.md` §§6–9, backed by D-071/D-072/D-073 and the defect catalogue in `meta/CONCURRENCY_STDLIB_AUDIT.md`. The premise was wrong: the implementations could not serve as the specification, because three of the four do not work. | — | decisions 1, 2, 3, 4 |
-| **Streams / IO** | Needed for the driver and for diagnostics. D-050 (line endings are a stream property) and D-051 (`Path` above `nlibc`) already constrain it. | decision 3 |
+| ~~**Streams / IO**~~ — **written:** `meta/specs/IO_REFERENCE.md`, backed by D-074/D-075/D-076. `Reader`/`Writer` traits so diagnostics are capturable; every operation `async` per D-071; end-of-input is an error code, not a sentinel; buffering fixed and never inferred from `isatty`; stream lifetime lexical. | — | decision 3 |
 | **Build system** | Needed early for the bootstrap ladder. | — |
 
 ---
