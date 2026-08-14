@@ -46,6 +46,23 @@ use std.collections.{HashMap, HashSet};
 
 ### 2.3 Search Paths & Transitivity
 *   **Transitivity**: `use` imports are strictly **not transitive**. Symbols imported into a module are not automatically re-exported. You must explicitly wrap or use `pub use` to expose them.
+*   **Search paths.** This heading previously promised search paths and defined
+    only transitivity. A `use` path resolves in exactly one way, decided by its
+    first character:
+
+    | Form | Resolves against |
+    |---|---|
+    | `use "./util.npk"`, `use "../x/y.npk"` | the **importing file's** directory |
+    | `use "nfs/path.npk"` | the **dependency roots** |
+    | `use std.math.*` | the standard library |
+
+    A dependency named `nfs` declared at `../nfs` roots at **`../nfs/src/`**, so
+    `use "nfs/path.npk"` is `../nfs/src/path.npk`.
+
+    **An ambiguous path is an error, not a first match.** If two dependencies both
+    supply `x/y.npk` the build fails and names both, because resolution order must
+    never be something a reader has to know the manifest's declaration order to
+    predict. See `BUILD_REFERENCE.md` §3.
 
 ## 3. Visibility (`pub`)
 

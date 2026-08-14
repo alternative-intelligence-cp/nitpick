@@ -1,6 +1,8 @@
 # Open decisions and unwritten specs
 
-The work queue as of D-061. Every item here blocks something concrete; the
+The work queue, opened at D-061 and **fully closed at D-079** — all ten
+decisions settled and all three specs written. Retained as the record of what was
+open and how each item closed. Every item here blocks something concrete; the
 "blocks" column says what. Nothing in this file is optional and nothing in it is
 deferrable — per the standing constraint, anything going into the language has to
 be in before the Astrée trial starts, because re-verification is unaffordable.
@@ -61,7 +63,7 @@ avoid.
 |---|---|---|
 | ~~**Channels, actors, thread pools**~~ — **written.** `CONCURRENCY_REFERENCE.md` §§6–9, backed by D-071/D-072/D-073 and the defect catalogue in `meta/CONCURRENCY_STDLIB_AUDIT.md`. The premise was wrong: the implementations could not serve as the specification, because three of the four do not work. | — | decisions 1, 2, 3, 4 |
 | ~~**Streams / IO**~~ — **written:** `meta/specs/IO_REFERENCE.md`, backed by D-074/D-075/D-076. `Reader`/`Writer` traits so diagnostics are capturable; every operation `async` per D-071; end-of-input is an error code, not a sentinel; buffering fixed and never inferred from `isatty`; stream lifetime lexical. | — | decision 3 |
-| **Build system** | Needed early for the bootstrap ladder. | — |
+| ~~**Build system**~~ — **written:** `meta/specs/BUILD_REFERENCE.md`, backed by D-077/D-078/D-079. One manifest schema (two were in use for one filename), no network during a build, byte-reproducible output, three-stage bootstrap with a stage-1/stage-2 fixpoint check. | — | — |
 
 ---
 

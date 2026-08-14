@@ -5251,3 +5251,131 @@ program:
 - Anything whose loss is unacceptable goes to `stderr` or an unbuffered stream, on
   the same reasoning that puts actuator safing in `failsafe` rather than in
   `defer`.
+
+---
+
+## D-077 — One manifest schema; no editions — **SETTLED**
+
+`nitpick.toml` currently has **two incompatible schemas in the wild**, one
+filename:
+
+| | `nitpick`, `nlibc`, `npkc-native` | `npkg` |
+|---|---|---|
+| Identity table | `[project]` | `[package]` |
+| Build settings | `entry` inside `[project]` | a separate `[build]` table |
+| Dependencies | `nfs = { path = "../nfs" }` | `ntoml = "1.0.0"` |
+| Extra keys | `target`, `[nikos]` | `edition`, `license` |
+
+A tool reading one cannot read the other, and nothing says which is correct.
+This is the same defect shape as the two spellings of `opaque` (D-066) and the
+two encodings of the error state in `Result` (D-069).
+
+**The canonical schema is `[project]` for identity, `[build]` for build settings,
+`[dependencies]` for dependencies, and `[verify]` for verification
+configuration** — the three-repo form, with `npkg`'s genuinely useful `[build]`
+separation adopted rather than folding `entry` into `[project]`.
+
+`[nikos]` in `npkc-native`'s manifest is retained as a subtable of `[verify]`:
+verification configuration in the manifest is established practice here and is
+correct, since the flags a project must be verified under are a property of the
+project, not of whoever typed the command.
+
+### There are no editions
+
+`npkg`'s manifest carries `edition = "2027"`. **Rejected.**
+
+An edition is a mechanism for keeping incompatible language versions alive in one
+compiler. For Nitpick that means the frontend accepts more than one language, the
+type checker branches on which, and **every verification obligation has to be
+discharged for each edition**. That is a direct multiplier on the one thing this
+project cannot afford more of.
+
+There is one language. When it changes incompatibly before 1.0, the source
+changes with it; after 1.0, it does not change incompatibly.
+
+---
+
+## D-078 — A build never touches the network; dependencies are locked and vendored; output is reproducible — **SETTLED**
+
+### No resolution at build time
+
+`npkg` today resolves version strings (`ntoml = "1.0.0"`) against a registry, with
+`registry.json`, `downloaded_registry.json`, and a PubGrub solver
+(`npkg/src/pubgrub.npk`) to do it.
+
+**A build must not do that.** Three reasons, in order of weight:
+
+1. **The artifact verified must be the artifact shipped.** If dependency
+   resolution can produce a different graph tomorrow, verification establishes a
+   property of something that no longer exists. Against a single non-renewable
+   30-day Astrée run, that is disqualifying.
+2. **It is a supply-chain surface.** The zero-dependency rule exists because code
+   outside the trusted computing base cannot be intercepted or reasoned about;
+   fetching source at build time reintroduces exactly that, over a channel nobody
+   is watching.
+3. **A build that needs a network is not a build.** It fails in a locked-down
+   environment, which is where safety-critical software is built.
+
+**Dependencies are pinned in a lock file by exact version and content hash, and
+their source is vendored into the repository.** Resolution — including any
+version-range solving — happens only during an explicit, human-invoked
+`npkg update`, whose output is the lock file and the vendored tree. The build
+itself reads the lock and the filesystem, and nothing else.
+
+### Builds are reproducible
+
+**The same inputs must produce a byte-identical output.** No timestamps, no build
+paths, no hostnames, no environment leakage into the artifact, and deterministic
+ordering everywhere it could vary — module compilation order, and the order
+monomorphized instantiations are emitted and deduplicated (D-064).
+
+This is not tidiness. It is what lets anyone confirm that the binary they are
+running is the binary that was verified, and D-079's fixpoint check is impossible
+without it.
+
+D-064 already helps: mangled names are readable and reversible with no hash, so
+nothing in a symbol name depends on how the compiler happened to be invoked.
+
+---
+
+## D-079 — Three-stage bootstrap with a fixpoint check — **SETTLED**
+
+The prototype builds with **CMake**, which is barred here, and nitpick-native
+cannot build itself before it can compile anything. The ladder:
+
+| Stage | Built by | Purpose |
+|---|---|---|
+| **0** | the prototype `npkc` (`../nitpick/build/npkc`) | scaffolding — compiles nitpick-native's sources once. **Not** the verified artifact. |
+| **1** | stage 0's output, compiling nitpick-native's own sources | the first self-hosted compiler |
+| **2** | stage 1, compiling the same sources again | the artifact of record |
+
+**Stage 1 and stage 2 must be byte-identical.** That is the fixpoint check, and
+it is the whole point of the arrangement: if they differ, something from stage 0
+is still influencing the output, and the result is not self-hosted. D-078's
+reproducibility requirement is what makes the comparison meaningful.
+
+**The verified artifact is stage 2**, and stage 0's C++ lineage does not appear in
+it.
+
+### Using the prototype as stage 0 is consistent with the dependency rule
+
+The rule concerns what is in the shipped artifact's trusted computing base, and
+after the fixpoint nothing of stage 0 is. This is the same distinction D-067 drew
+for LLVM: a tool that is *invoked* and produces text is not a dependency; a
+library that is *linked* is.
+
+### What the fixpoint does not prove
+
+Stated because an auditor will ask, and because a hedge would be worse than the
+admission.
+
+**A self-reproducing compiler backdoor introduced at stage 0 would survive the
+fixpoint check.** This is Thompson's *Reflections on Trusting Trust*, and it is a
+property of bootstrapping in general rather than of this arrangement. The check
+proves self-consistency, not the absence of an adversarial stage 0.
+
+The available mitigation is **diverse double-compilation**: build stage 1 from a
+second, independently obtained stage 0 and confirm the stage 2 outputs match. It
+is not required today — the prototype is our own code on our own machine — and it
+is recorded here so that the option is understood before it is needed rather than
+discovered during a trial.
