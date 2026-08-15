@@ -129,25 +129,41 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@t3) != 0i64)                                 { exit 33i32; }
     if (t3.result != t3.types.t_bool)                          { exit 34i32; }
 
-    // --- WIDENING, and where it stops (D-092) -------------------------------------
-    // Same signedness widens to the wider type.
+    // --- THERE IS NO IMPLICIT WIDENING (D-092) --------------------------------------
+    //
+    // Two typed operands share a type or the programmer writes the cast. Not
+    // because a same-signedness widening could lose a value -- it cannot -- but
+    // because it decides WHICH WIDTH THE OPERATION HAPPENS IN, and that decision
+    // then follows from the operands rather than from the source. Narrow `b` to
+    // an `int32` a year from now and `a + b` overflows where it used to fit,
+    // with the expression unchanged.
     Ex:w1 = raw ex("1i32 + 2i64", @it);
-    if (raw errs(@w1) != 0i64)                                 { exit 40i32; }
-    if ((raw type_int_bits(@w1.types, w1.result)) != 64i32)    { exit 41i32; }
+    if (raw errs(@w1) != 1i64)                                 { exit 40i32; }
+    if (!(raw string_eq(raw code0(@w1), raw TYPE_MISMATCH())))  { exit 41i32; }
 
     Ex:w2 = raw ex("1u32 + 2u64", @it);
-    if (raw errs(@w2) != 0i64)                                 { exit 42i32; }
-    if (raw type_is_signed(@w2.types, w2.result))              { exit 43i32; }
+    if (raw errs(@w2) != 1i64)                                 { exit 42i32; }
 
-    // MIXED SIGNEDNESS NEVER WIDENS, at any pair of widths. `int32 -> uint64` is
-    // not a widening: it maps every negative value onto an enormous positive one.
-    // Calling it a widening because the destination has more bits is the C rule.
+    // …and mixed signedness is refused for the second, stronger reason: they are
+    // not two sizes of one thing.
     Ex:w3 = raw ex("1i32 + 2u32", @it);
     if (raw errs(@w3) != 1i64)                                 { exit 44i32; }
     if (!(raw string_eq(raw code0(@w3), raw TYPE_MISMATCH())))  { exit 45i32; }
 
     Ex:w4 = raw ex("1i32 + 2u64", @it);
     if (raw errs(@w4) != 1i64)                                 { exit 46i32; }
+
+    // The cast is the answer, and `(1i32 => int64) + 2i64` is asserted in 0.4.3
+    // where casts acquire a type. Asserting it here would pass for the wrong
+    // reason: an untyped cast yields the INVALID type, which suppresses the very
+    // mismatch the case exists to show is gone.
+
+    // A LITERAL IS NOT A WIDENING. `x + 1` where `x` is `int64` still works,
+    // because the literal never had a width of its own — nothing is converted.
+    // This is the `literal-suffixes` boundary: the default takes the width from a
+    // context that states it, and `--extra-picky` requires it written anyway.
+    Ex:w6 = raw ex("1i64 + 2", @it);
+    if (raw errs(@w6) != 0i64)                                 { exit 49i32; }
 
     // --- comparison is wider than arithmetic -------------------------------------------
     // A comparison yields a bool whatever it compared.
@@ -162,10 +178,16 @@ func:main = int32(cstring[]:_~argv) {
     Ex:c3 = raw ex("true < false", @it);
     if (raw errs(@c3) != 1i64)                                 { exit 53i32; }
 
-    // Comparing across signedness is still refused: the operands have no common
-    // type whether they are being added or ordered.
+    // Comparing across signedness is refused: the operands have no common type
+    // whether they are being added or ordered.
     Ex:c4 = raw ex("1i32 == 2u32", @it);
     if (raw errs(@c4) != 1i64)                                 { exit 54i32; }
+
+    // …and so is comparing across WIDTHS. `==` on an int32 and an int64 is
+    // lossless and still requires the cast: one rule, not one rule with an
+    // exception for the operators where the conversion happens to be safe.
+    Ex:c5 = raw ex("1i32 == 2i64", @it);
+    if (raw errs(@c5) != 1i64)                                 { exit 55i32; }
 
     // --- unary ------------------------------------------------------------------------
     Ex:u1 = raw ex("-5i32", @it);

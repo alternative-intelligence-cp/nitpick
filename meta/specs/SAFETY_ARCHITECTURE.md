@@ -125,13 +125,26 @@ are parameterizable: `--extra-picky=warn-<rule>` downgrades one to a warning,
 | Rule | Effect |
 |---|---|
 | `literal-suffixes` | every integer literal must carry an explicit bit-size suffix (`42i32`, not `42`), eliminating sizing ambiguity |
-| `explicit-widening` | bans implicit widening; all widenings use an explicit cast. *(`FORMAL_DRAFT` 12.7.2 says "using `as`" — wrong, `as` is the module-alias keyword. The cast forms are `=>` and `=>!`, D-021.)* |
 | `shadow` | bans inner scopes redefining outer names, ignoring macro-generated hygiene names |
 | `wild` | rejects `wild`/`wildx` on declarations, parameters, and return types, keeping high-level code away from unchecked pointers |
 | **`require-tbb`** *(new, D-007)* | requires `tbb` arithmetic in designated real-time code, making the fail-operational path a **compile-time guarantee** rather than a convention |
 | **`no-failsafe-alloc`** *(new, D-014)* | rejects allocation inside `failsafe`, partially enforcing the preallocation discipline |
 | **`no-sys`** *(new, D-048)* | rejects direct `sys` calls in high-level application code, the way `wild` rejects manual memory. Syscalls belong in `nlibc`; application code reaches the kernel through the typed API |
 | **`no-wildx`** *(new, D-035)* | rejects runtime code generation independently of `no-wild`. Manual memory and JIT are very different risks and should not share one switch |
+
+> **`explicit-widening` was removed from this table (D-092, corrected).** It read
+> "bans implicit widening; all widenings use an explicit cast", and a rule can
+> only be *optional* if the default permits what it bans — which would have made
+> implicit widening the default. It is not. Widening always requires a cast, so
+> the rule has nothing left to switch off.
+>
+> The misreading is worth recording because the table invites it. **Every rule
+> here adds pedantry beyond what safety requires; none of them gates a safety
+> property.** `shadow` bans shadowing, which is confusing rather than unsafe.
+> `wild` and `no-wildx` ban constructs that are already explicit and greppable.
+> `literal-suffixes` requires a suffix where the width could be inferred safely.
+> Reading any row as "the default permits the unsafe thing" inverts the sentence
+> immediately below this table.
 
 Every escape hatch is explicit, named, and greppable. That is the standing shape
 of a Nitpick guarantee: absolute by default, suspended only through a construct an

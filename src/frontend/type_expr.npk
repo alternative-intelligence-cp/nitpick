@@ -114,32 +114,33 @@ pub func:type_display = string(ExprTyper->:e, int32:t) {
     pass "<type>";
 };
 
-// --- widening (D-092) ------------------------------------------------------------------
+// --- the common type of two operands (D-092, corrected) ----------------------------------
 //
-// APPLIED AT ONE POINT, not scattered through the operator rules. That is
-// deliberate: D-092 keeps the permissive default because `--extra-picky=
-// explicit-widening` is a flag, and if it should become mandatory this is the
-// single function that changes.
+// THERE IS NO IMPLICIT WIDENING. Two operands share a type or they do not, and
+// when they do not the programmer writes the cast.
 //
-// An integer may widen to a wider integer OF THE SAME SIGNEDNESS. Mixed
-// signedness never widens at any pair of widths — `int32 → uint64` is not a
-// widening but a reinterpretation that maps every negative value onto an enormous
-// positive one, and calling it a widening because the destination has more bits
-// is the C rule and the most productive source of integer bugs in that language.
-pub func:can_widen = bool(ExprTyper->:e, int32:from, int32:to) {
-    if (!(raw type_is_integer(e.types, from))) { pass false; }
-    if (!(raw type_is_integer(e.types, to)))   { pass false; }
-    if ((raw type_is_signed(e.types, from)) != (raw type_is_signed(e.types, to))) {
-        pass false;
-    }
-    pass ((raw type_int_bits(e.types, from)) < (raw type_int_bits(e.types, to)));
-};
-
-// The common type of two operands, or 0 if there is none.
+// An earlier reading of this had `int32 + int64` widen to `int64` on the grounds
+// that `explicit-widening` appears in the `--extra-picky` table, so the default
+// must permit what the rule bans. That inference is wrong: every rule in that
+// table adds pedantry BEYOND safety -- `shadow` bans shadowing, `wild` bans a
+// construct that is already explicit -- and none of them gates a safety property.
+// `SAFETY_ARCHITECTURE.md` says so directly a few lines below the table: a
+// Nitpick guarantee is "absolute by default, suspended only through a construct
+// an auditor can search for."
+//
+// The concrete harm is not that a same-signedness widening loses a value; it
+// cannot. It is that the widening decides WHICH WIDTH THE OPERATION HAPPENS IN.
+// `a + b` computing in 64 bits because `b` is an `int64` today will silently
+// compute in 32 bits when someone narrows `b` tomorrow, and overflow where it
+// used to fit. The expression is unchanged and its meaning is not -- which is a
+// small drift in numbers arriving through a conversion nobody wrote.
+//
+// A LITERAL IS DIFFERENT and is handled before this is reached: an unsuffixed
+// literal takes its type from context, so `x + 1` where `x` is `int64` has two
+// `int64` operands by the time they get here. Nothing is converted; the literal
+// simply had no width of its own to begin with.
 pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) {
     if (a == b) { pass a; }
-    if (raw can_widen(e, a, b)) { pass b; }
-    if (raw can_widen(e, b, a)) { pass a; }
     pass 0i32;
 };
 
@@ -262,14 +263,17 @@ func:te_mismatch = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
     string:m1 = relay string_concat("`", relay type_display(e, lt));
     string:m2 = relay string_concat(m1, "` and `");
     string:m3 = relay string_concat(m2, relay type_display(e, rt));
-    string:m4 = relay string_concat(m3, "` have no common type");
-    // Mixed signedness is the case worth naming: it looks like a widening and is
-    // not one.
+    string:m4 = relay string_concat(m3, "` are different types; write the cast you mean");
+    // Two integers differing only in width is the case that looks like it ought
+    // to work, so it gets the reason rather than just the refusal.
     if (raw type_is_integer(e.types, lt)) {
         if (raw type_is_integer(e.types, rt)) {
-            if ((raw type_is_signed(e.types, lt)) != (raw type_is_signed(e.types, rt))) {
+            if ((raw type_is_signed(e.types, lt)) == (raw type_is_signed(e.types, rt))) {
                 m4 = relay string_concat(m4,
-                    "; signed and unsigned do not widen into each other, because that maps every negative value onto a large positive one rather than preserving it");
+                    "; a widening would decide which width this operation happens in, and that decision must be visible in the source rather than following from the operands");
+            } else {
+                m4 = relay string_concat(m4,
+                    "; signed and unsigned are not two sizes of one thing, and converting between them maps every negative value onto a large positive one");
             }
         }
     }

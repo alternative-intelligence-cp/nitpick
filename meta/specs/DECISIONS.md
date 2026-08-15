@@ -6300,50 +6300,75 @@ would be a type nobody wrote, chosen by a rule nobody read, and every subsequent
 diagnostic about that expression would name it — which is exactly the shape of a
 bug that takes an afternoon.
 
-### 2. Implicit widening is permitted, and narrowly
+### 2. There is no implicit widening
 
-`explicit-widening` is likewise an **optional** rule that "bans implicit widening;
-all widenings use an explicit cast". Optional means the default permits it, so:
+> ⚠️ **Corrected.** This section previously read *"Implicit widening is permitted,
+> and narrowly"* and allowed an integer operand to widen to the wider operand's
+> type within one signedness. That was wrong, and the reasoning that produced it
+> is recorded below because the same mistake is easy to make again.
 
-**An integer operand may widen implicitly to the wider operand's type, and only
-when both have the same signedness.**
+**Two typed operands share a type or the programmer writes the cast.** Widening
+is never implicit, at any pair of widths, in either signedness, for any operator.
 
 ```nitpick
-int32:a; int64:b;      a + b      // int64 — legal
-uint32:c; uint64:d;    c + d      // uint64 — legal
-int32:e; uint32:f;     e + f      // REFUSED
-int32:g; uint64:h;     g + h      // REFUSED
+int32:a; int64:b;      a + b                 // REFUSED
+int32:a; int64:b;      (a => int64) + b      // int64
+uint32:c; uint64:d;    c + d                 // REFUSED
+int32:e; uint32:f;     e + f                 // REFUSED
+int64:g;               g + 1                 // int64 — see below
 ```
 
-**Mixed signedness never widens**, at any pair of widths, and that is not an
-exception to the rule but the rule stated correctly. `int32 → uint64` is not a
-widening: it is a reinterpretation that maps every negative value onto an enormous
-positive one. Calling it a widening because the destination has more bits is the
-C rule, and it is the single most productive source of integer bugs in that
-language.
+### Why the earlier reading was wrong
 
-**Nothing else participates.** `bool`, `char8`, every `tbb`, and the five kernel
-identifiers (D-042) do not widen to anything and nothing widens to them — they are
-not numbers (D-090), and a widening lattice that included them would be the place
-that quietly undid it.
+`SAFETY_ARCHITECTURE.md` listed `explicit-widening` among the `--extra-picky`
+rules, described as "bans implicit widening; all widenings use an explicit cast".
+The inference drawn was that a rule can only be *optional* if the default permits
+what it bans, so implicit widening must be the default.
 
-### Why the permissive default is kept
+**That inverts the document.** Its own summary, three lines below the table,
+reads: *"Every escape hatch is explicit, named, and greppable. That is the
+standing shape of a Nitpick guarantee: absolute by default, suspended only
+through a construct an auditor can search for."* Every rule in that table adds
+**pedantry beyond what safety requires** — `shadow` bans shadowing, which is
+confusing rather than unsafe; `wild` and `no-wildx` ban constructs that are
+already explicit; `literal-suffixes` demands a suffix where the width could be
+inferred safely. **None of them gates a safety property**, so none of them
+implies the default is unsafe. The row has been removed and the reasoning
+recorded there.
 
-The strict form is one flag away and the spec chose to make it a flag. Two things
-make that defensible rather than a hole to close:
+The prototype's own name for the policy is **"Zero Implicit Conversion"**, and
+its newer, self-hosting-oriented checker (`src/runtime/sema/sema_helpers.cpp`)
+requires binary operands to be *identical*: `"Arithmetic operands must have
+matching types"`, and the same for comparison and bitwise. Its older C++ path
+does widen via `findCommonType`, so the prototype contains both — with the
+direction of travel toward the strict rule.
 
-- **A widening within one signedness loses nothing.** It is the one implicit
-  conversion in the language that cannot change a value, which is a different
-  category from the conversions `=>` refuses (D-021).
-- **The pedantic setting is the recommended one.** `--extra-picky` is "optional
-  but strongly recommended", and `SUBSET_1` already runs the compiler's own
-  sources under the strictest reading of it.
+### The safety argument, which is not the obvious one
 
-That said: **this is the one place in the language where a conversion happens that
-nobody wrote.** If `explicit-widening` should be mandatory rather than
-recommended, this decision is the place to reverse, and the checker is built so
-that reversing it is a flag rather than a rewrite — the widening is applied at one
-point, not scattered through the operator rules.
+A same-signedness widening **cannot lose a value**, and that is the reason the
+permissive reading looked defensible. It is also beside the point.
+
+**The widening decides which width the operation happens in.** `a + b` computing
+in 64 bits because `b` is an `int64` today computes in 32 bits the day someone
+narrows `b`, and overflows where it used to fit. The expression is unchanged and
+its meaning is not. That is a small drift in numbers arriving through a
+conversion nobody wrote — the exact failure mode the language exists to prevent —
+and it is invisible at the call site in both states.
+
+It also interacts with D-008: `tbb` arithmetic saturates to ERR at the type's
+width, so a rule that silently changes the width changes where saturation fires.
+
+### Literals are not an exception to this
+
+`g + 1` where `g` is `int64` is `int64`, and nothing has been widened: the
+literal never had a width of its own. Section 1 above governs it, and the default
+is not "guess a width" but "take the width from a context that states it, and
+refuse when no context does". `--extra-picky=literal-suffixes` then requires the
+suffix written even where the context is unambiguous.
+
+This is the boundary between the two halves of this decision, and it is a real
+one: an unsuffixed literal has no type yet, while an `int32` variable already has
+one and converting it is a decision somebody must make in the source.
 
 ---
 
