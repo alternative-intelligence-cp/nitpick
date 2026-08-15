@@ -304,25 +304,16 @@ def check_kinds_reachable():
     return []
 
 
-# --- the real parser, on real files ------------------------------------------
+# --- the real FRONTEND, on real programs --------------------------------------
 
-PARSE_CHECK = os.path.join(ROOT, "tools", "parse_check.npk")
-
-
-def build_parse_check(tmp, tools):
-    """Compile tools/parse_check.npk and return its path, or None.
-
-    Everything above tests the SEED's parser. This builds the REAL one, so the
-    rule D-085 states -- every file in tests/rejection/ must PARSE and be refused
-    later -- can be checked against the parser it was written about instead of
-    the throwaway one that happens to be running.
-    """
+def build_tool(tmp, tools, source, name):
+    """Compile a tool under tools/ and return its path, or an error string."""
     if not tools:
         return None
-    out = compile_files(group_for(PARSE_CHECK))
+    out = compile_files(group_for(source))
     if out.diags:
         return "DIAG %s" % out.diags[0]
-    base = os.path.join(tmp, "parse_check")
+    base = os.path.join(tmp, name)
     with open(base + ".ll", "w", encoding="utf-8") as fh:
         fh.write(out.ir)
     r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
@@ -335,6 +326,65 @@ def build_parse_check(tmp, tools):
     if r.returncode != 0:
         return "LINK %s" % r.stderr.strip()[:160]
     return base
+
+
+def check_module_rejection(binary, path, name, exp):
+    """A whole program that must be refused BY THE LOADER, with these codes.
+
+    Distinct from tests/rejection/, whose files parse cleanly and are refused
+    LATER by the checker -- that is D-085's rule and the point of that suite. A
+    file naming a module that does not exist never reaches a checker at all, and
+    running both kinds through one tool would make the two sorts of "correctly
+    refused" indistinguishable.
+    """
+    try:
+        r = subprocess.run([binary, path], capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        return ["%s: the frontend did not terminate" % name]
+    if r.returncode == 3:
+        return ["%s: the frontend TRAPPED -- a defect in the compiler, not in "
+                "this file" % name]
+    if r.returncode == 0:
+        return ["%s: expected %s, but it resolved cleanly"
+                % (name, [c for c, _, _ in exp.errors])]
+
+    got = []
+    for line in r.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and ":" in parts[1]:
+            ln, _, cl = parts[1].partition(":")
+            got.append((parts[0], int(ln), int(cl)))
+
+    fails = []
+    for code, line, col in exp.errors:
+        hit = [g for g in got if g[0] == code]
+        if not hit:
+            fails.append("%s: expected %s, got %s"
+                         % (name, code, sorted(set(g[0] for g in got))))
+            continue
+        if line is not None:
+            if not any(g[1] == line and (col is None or g[2] == col) for g in hit):
+                fails.append("%s: %s at %s, expected %d:%s"
+                             % (name, code, [(g[1], g[2]) for g in hit], line,
+                                col if col is not None else "*"))
+    return fails
+
+
+# --- the real parser, on real files ------------------------------------------
+
+PARSE_CHECK = os.path.join(ROOT, "tools", "parse_check.npk")
+RESOLVE_CHECK = os.path.join(ROOT, "tools", "resolve_check.npk")
+
+
+def build_parse_check(tmp, tools):
+    """Compile tools/parse_check.npk.
+
+    Everything above tests the SEED's parser. This builds the REAL one, so the
+    rule D-085 states -- every file in tests/rejection/ must PARSE and be refused
+    later -- can be checked against the parser it was written about instead of
+    the throwaway one that happens to be running.
+    """
+    return build_tool(tmp, tools, PARSE_CHECK, "parse_check")
 
 
 def check_parses(binary, path, name):
@@ -427,6 +477,23 @@ def main(argv):
             failures += check_parses(pc, p, name)
             n += 1
         print("  %-11s %2d real-parser check(s)" % ("grammar", n))
+
+    # Whole programs that must be refused BY THE LOADER. A file here with no
+    # `expect-error:` is a fixture another one imports, not a test.
+    rc = build_tool(tmp, tools, RESOLVE_CHECK, "resolve_check")
+    if isinstance(rc, str) and not os.path.exists(rc):
+        failures.append("tools/resolve_check.npk did not build: %s" % rc)
+    elif rc:
+        n = 0
+        for p in sorted(glob.glob(os.path.join(ROOT, "tests", "modules",
+                                               "rejection", "**", "*.npk"),
+                                  recursive=True)):
+            exp = read_expectations(p)
+            if not exp.errors:
+                continue
+            failures += check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp)
+            n += 1
+        print("  %-11s %2d module-rejection test(s)" % ("modules", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -618,3 +618,107 @@ pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
     }
     pass unbound;
 };
+
+// --- `const` initialiser cycles ----------------------------------------------------------
+//
+// The second half of D-086's unresolvable-cycle rule. The first — a struct whose
+// size depends on itself — is checked in `module_graph.npk`, because a field's
+// type is already in the AST and needs no name resolution.
+//
+// THIS ONE COULD NOT BE CHECKED THERE. `pub const int32:A = B;` is a question
+// about an EXPRESSION, and until every identifier in a body is bound there is no
+// way to ask which global `B` refers to. So it waits for phase 2 and runs on the
+// bindings phase 2 produced.
+//
+//     pub const int32:A = B + 1i32;
+//     pub const int32:B = A + 1i32;      // neither can be computed
+//
+// Unlike the struct case there is no `->` to break it: a value is a value.
+
+// Does the expression reach `target` by following bound identifiers into other
+// globals? `fuel` bounds the walk so a graph the checker has not yet rejected
+// cannot spin.
+func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) {
+    if (fuel <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:e = relay ast_expr(r.ast, id);
+
+    if (e.kind == ExprKind.ExprIdentifierExpr) {
+        if (e.a == 0i32) { pass false; }
+        if (e.a == target) { pass true; }
+        Symbol:s = raw symtab_get(r.tab, e.a);
+        if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+        DeclId:d = DeclId{ index: s.origin };
+        DeclNode:dn = relay ast_decl(r.ast, d);
+        if (dn.kind != DeclKind.DeclGlobalDecl) { pass false; }
+        pass (relay init_reaches(r, raw global_init(dn), target, fuel - 1i32));
+    }
+
+    // Otherwise walk every slot that can hold an expression. This mirrors
+    // `resolve_expr`'s shape rather than repeating its case list: anything with a
+    // window is walked as a window, anything else through `a`, `b` and `c`.
+    if (e.kind == ExprKind.ExprCallExpr) {
+        pass (relay init_reaches_window(r, raw expr_list_start(e),
+                                        raw expr_list_count(e), target, fuel));
+    }
+    if (e.kind == ExprKind.ExprArrayLiteralExpr) {
+        pass (relay init_reaches_window(r, raw expr_list_start(e),
+                                        raw expr_list_count(e), target, fuel));
+    }
+    if (e.kind == ExprKind.ExprStructLiteralExpr) {
+        pass (relay init_reaches_window(r, raw expr_list_start(e),
+                                        raw expr_list_count(e), target, fuel));
+    }
+
+    ExprId:a = ExprId{ index: e.a };
+    if (relay init_reaches(r, a, target, fuel - 1i32)) { pass true; }
+    if (raw expr_has_second(e)) {
+        ExprId:b = ExprId{ index: e.b };
+        if (relay init_reaches(r, b, target, fuel - 1i32)) { pass true; }
+    }
+    if (e.kind == ExprKind.ExprTernaryExpr) {
+        ExprId:c = ExprId{ index: e.c };
+        if (relay init_reaches(r, c, target, fuel - 1i32)) { pass true; }
+    }
+    pass false;
+};
+
+func:init_reaches_window = bool(Resolver->:r, int32:start, int32:count,
+                                int32:target, int32:fuel) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:x = ExprId{ index: raw ast_id_at(r.ast, start, i) };
+        if (relay init_reaches(r, x, target, fuel - 1i32)) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// Report every global whose initialiser depends on itself.
+//
+// Declaration order, so the output is identical on every run — the same
+// order-independence D-086 requires of the result, applied to the diagnostics.
+pub func:check_global_cycles = NIL(Resolver->:r, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(r.ast, mod_id);
+    int32:n = raw item_member_count(r.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:item = raw item_member(r.ast, m, i);
+        DeclNode:d = relay ast_decl(r.ast, item);
+        if (d.kind == DeclKind.DeclGlobalDecl) {
+            int32:sym = raw scope_lookup_local(r.tab, scope, raw decl_name(d));
+            if (sym != 0i32) {
+                if (relay init_reaches(r, raw global_init(d), sym, 64i32)) {
+                    string:nm = relay intern_get(r.interns, raw decl_name(d));
+                    string:m1 = relay string_concat("`", nm);
+                    string:m2 = relay string_concat(m1,
+                        "` is initialised from itself, so its value cannot be computed");
+                    drop diaglist_push(r.diags,
+                        raw diag_error(raw RESOLVE_CYCLE(), m2, d.span));
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};

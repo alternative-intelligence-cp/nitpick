@@ -1,0 +1,126 @@
+// resolve_check -- load a module graph, resolve it, and report.
+//
+// Cycle 0.3.6. Not part of the compiler: this is how the harness asks the REAL
+// frontend a question about a REAL program.
+//
+// `parse_check` answers "does this file parse". This answers the whole of what
+// cycle 0.3 built: does the module graph load, do the imports bind, does every
+// name resolve. It is the driver's shape without the driver's job — nothing is
+// emitted, which is Phase B.
+//
+// WHY IT IS A SECOND TOOL. `tests/rejection/` holds files that PARSE and are
+// refused later by the checker (D-085). Module errors are refused EARLIER, by the
+// loader, and a file that cannot resolve never reaches a checker at all. Running
+// both through one tool would make those two kinds of "correctly refused"
+// indistinguishable, and the distinction is the whole point of the rejection
+// suite.
+//
+// Exit codes are the interface, so the harness never parses prose:
+//
+//   0   loaded, resolved, no diagnostics
+//   1   diagnostics (one per line on stdout, as CODE line:col)
+//   2   the root file could not be read
+//
+// Output is codes and spans only. The harness asserts on those and never on
+// message text, so messages stay free to improve (0.1.6).
+
+use "../src/frontend/source_location.npk".*;
+use "../src/frontend/source.npk".*;
+use "../src/frontend/token_kind.npk".*;
+use "../src/frontend/token.npk".*;
+use "../src/frontend/intern.npk".*;
+use "../src/frontend/ast_kind.npk".*;
+use "../src/frontend/ast.npk".*;
+use "../src/frontend/diag_codes.npk".*;
+use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/parse_codes.npk".*;
+use "../src/frontend/resolve_codes.npk".*;
+use "../src/frontend/builtins.npk".*;
+use "../src/frontend/lexer.npk".*;
+use "../src/frontend/parser.npk".*;
+use "../src/frontend/parse_type.npk".*;
+use "../src/frontend/parse_expr.npk".*;
+use "../src/frontend/parse_decorate.npk".*;
+use "../src/frontend/parse_stmt.npk".*;
+use "../src/frontend/parse_pick.npk".*;
+use "../src/frontend/parse_decl.npk".*;
+use "../src/frontend/paths.npk".*;
+use "../src/frontend/resolve_path.npk".*;
+use "../src/frontend/symbols.npk".*;
+use "../src/frontend/module_graph.npk".*;
+use "../src/frontend/resolve.npk".*;
+
+func:emit_line = NIL(Diagnostic:d) {
+    string:m1 = relay string_concat(d.code, " ");
+    string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
+    string:m3 = relay string_concat(m2, ":");
+    string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
+    string:m5 = relay string_concat(m4, "\n");
+    drop write_raw(1i32, m5.ptr, m5.len);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop write_raw(2i32, "usage: resolve_check <root.npk>\n".ptr, 31i64);
+        exit 2i32;
+    }
+    cstring:arg = argv[1i64];
+    string:root = raw string_from_bytes(arg.ptr, arg.len);
+
+    InternTable:it = raw intern_init();
+    DiagList:diags = raw diaglist_init();
+    RootList:roots = raw rootlist_init();
+    ModuleGraph:g = raw graph_init(@it, @diags, @roots, "");
+
+    int32:first = raw graph_load_all(@g, root);
+    if (first < 0i32) {
+        exit 2i32;
+    }
+
+    // The order is the cycle's whole architecture, and it is not negotiable:
+    // every module collected, THEN imports bound to a fixed point, THEN bodies
+    // resolved. Each stage needs the previous one complete for every module, and
+    // that is what makes a `use` cycle resolvable (D-086) rather than a problem
+    // to be broken.
+    drop graph_apply_imports(@g);
+
+    Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);
+    int32:i = 0i32;
+    while (i < (raw graph_count(@g))) {
+        ModuleEntry:e = raw graph_at(@g, i);
+        DeclId:mod_id = DeclId{ index: e.root };
+        drop resolve_module(@r, mod_id, e.scope);
+        i = i + 1i32;
+    }
+
+    // The two unresolvable-cycle checks, both from D-086. Structs need only the
+    // AST; globals need the bindings phase 2 just produced.
+    drop graph_check_struct_cycles(@g);
+    int32:k = 0i32;
+    while (k < (raw graph_count(@g))) {
+        ModuleEntry:e2 = raw graph_at(@g, k);
+        DeclId:mid = DeclId{ index: e2.root };
+        drop check_global_cycles(@r, mid, e2.scope);
+        k = k + 1i32;
+    }
+
+    int64:n = raw diaglist_count(@diags);
+    int64:d = 0i64;
+    while (d < n) {
+        drop emit_line(raw diaglist_at(@diags, d));
+        d = d + 1i64;
+    }
+
+    if (n != 0i64) {
+        exit 1i32;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    // Reaching here is a defect in the FRONTEND, not in the file being read. A
+    // distinct code so the harness never reports it as "this test file has an
+    // error".
+    exit 3i32;
+};

@@ -38,23 +38,23 @@ on entry order differs between the stage-1 and stage-2 compilers, and the
 bootstrap fixpoint check (D-085) would then fail for a reason that has nothing to
 do with correctness. Chasing that would be a genuinely awful week.
 
-## Two decisions this cycle must settle first
+## Two decisions this cycle had to settle first — both now settled
 
-Both are named in 0.3.0 and neither can be worked around.
+### How a Nitpick program receives its command-line arguments — **D-089**
 
-### How a Nitpick program receives its command-line arguments
+**Nothing in the spec set said.** `main` is written `func:main = int32()`
+everywhere it appears, with no parameters and no alternative form.
 
-**Nothing in the spec set says.** `main` is written `func:main = int32()`
-everywhere it appears — `VERIFICATION_REFERENCE.md`, `CONCURRENCY_REFERENCE.md`,
-`TYPE_REFERENCE.md` §715 — with no parameters and no alternative form. A compiler
-driver needs to know what to compile.
+This plan recommended that `main` keep that signature and that arguments come
+from a runtime function. **That recommendation was wrong, and the way it was
+wrong is the lesson.** The spec set had *lost* the parameter form; the prototype
+has it, and so does the origin of the `_~` operator, which exists because `main`'s
+unused `argc` and `argv` produced warnings with no placeholder to silence them.
 
-**Recommendation: `main` keeps its signature, and arguments come from a runtime
-function.** `main` is already special — a bare `int32`, no `Result`, `exit` only
-— and giving it a second, optional-parameter form makes it two shapes for one
-thing, which is exactly what D-088 just finished removing elsewhere. Command-line
-arguments are process state like the environment and the working directory; they
-belong to `nlibc`, not to the language.
+The settled form is `func:main = int32(cstring[]:argv)` — one parameter, always,
+with no `argc` because a slice carries its length. **Absence from `meta/specs/` is
+not evidence of absence**: the set was assembled partly from a verbal retelling
+and has dropped real things silently. Check the prototype.
 
 ### The file-reading primitive
 
@@ -80,6 +80,28 @@ more of it than one call that returns bytes. The real I/O model is
 | **0.3.5** | Name resolution — binding every identifier to the symbol it names |
 | **0.3.6** | Diagnostics, the suites, and closing the cycle |
 
+## What the cycle produced
+
+`src/frontend/` gained `symbols.npk`, `paths.npk`, `resolve_path.npk`,
+`module_graph.npk`, `resolve.npk`, `resolve_codes.npk` and a generated
+`builtins.npk`; `tools/resolve_check.npk` runs the whole frontend on a real
+program. `tests/modules/` is the first multi-file fixture directory — every
+suite before it was single-file, which a module system cannot be tested from.
+
+**Three passes, and the order is the architecture:**
+
+1. **Load and collect.** Each module parsed and its declarations recorded, needing
+   nothing from any other module. This is what lets the graph contain a cycle.
+2. **Bind imports, to a fixed point.** Not one pass: `pub use` means a module's
+   exports can depend on another's, and with cycles legal there is no dependency
+   order to visit in. The fixed point is what makes the result independent of
+   which module was entered first.
+3. **Resolve bodies.** Every identifier bound, against a table that is already
+   complete.
+
+Each stage needs the previous one finished *for every module*. That is D-086
+working, rather than being worked around.
+
 ## What "done" looks like
 
 A driver that takes a root `.npk` file, loads its whole module graph, and reports
@@ -93,8 +115,14 @@ almost none announced itself: a kind nothing constructs is never an error, and a
 rejection suite aimed at the wrong parser passes cheerfully. `check_kinds_reachable`
 and `tests/grammar/` now run on every harness invocation because of it.
 
-The equivalent question here is worth asking early, since the answer is not
-obvious: **what is the mechanical check that a symbol table is complete?** A
-plausible one is that every `Ident` token in every parsed file resolves to
-exactly one symbol or to exactly one diagnostic — no third outcome, and nothing
-silently unbound. If that holds, it belongs in the harness beside the other two.
+The equivalent question here was asked early and answered: **every
+`IdentifierExpr` is bound, is a builtin, or produced a diagnostic — no fourth
+outcome.** That is `resolve_audit`, and it guards the same class as
+`check_kinds_reachable`: if the resolver's walk forgets a construct, the names
+inside it are never visited, stay unbound, and nothing reports it until the type
+checker asks what one of them means.
+
+**It was verified rather than assumed.** Blinding the walk to `when` statements
+makes the audit fire while every other test in the suite still passes — which is
+exactly the failure mode it exists for. A check nobody has seen fail is a check
+nobody should trust.
