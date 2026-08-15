@@ -202,7 +202,7 @@ class Checker:
                 raise RungError("the type %s" % name, T.OUT_OF_SUBSET_TYPES[name], node)
             if node.generic_args:
                 raise RungError("generic type instantiation", "1.0", node)
-            if name in T.INT_TYPES or name in ("bool", "char8", "string", "NIL"):
+            if name in T.INT_TYPES or name in ("bool", "char8", "string", "cstring", "NIL"):
                 return T.Prim(name)
             if name in self.p.structs or name in self.p.enums:
                 return T.Named(name)
@@ -562,6 +562,13 @@ class Checker:
                 if e.name == "ptr":
                     return T.Ptr(T.Prim("int8"))
                 if e.name in ("len", "cap"):
+                    return T.I64
+            if isinstance(obj, T.Prim) and obj.name == "cstring":
+                # {ptr, i64} and no cap: a cstring is never grown and is not ours
+                # to free (D-049).
+                if e.name == "ptr":
+                    return T.Ptr(T.Prim("int8"))
+                if e.name == "len":
                     return T.I64
             if isinstance(obj, T.Slice) and e.name == "len":
                 return T.I64

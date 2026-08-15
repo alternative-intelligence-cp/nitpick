@@ -33,10 +33,10 @@ func:payload_of = int64(Expr:e) {
     }
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     Expr:lit = Expr.IntLit(42i64);
     int64:v  = raw payload_of(lit);
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) { exit 1i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

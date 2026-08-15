@@ -46,7 +46,7 @@ func:emit_line = NIL(Diagnostic:d) {
     pass NIL;
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,
     // so there is no Result to relay into.
     Result<string>:input = read_stdin();
@@ -89,7 +89,7 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     // Reaching here means the parser itself failed, which is a defect in the
     // compiler and not in the file being parsed. A distinct code so the harness
     // never reports it as "this test file has a parse error".

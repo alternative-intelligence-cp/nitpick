@@ -189,7 +189,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `_?` | Drop | Desugars to `drop expr` — discards the Result without checking it. | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unsafely bypasses error checking. | `val = _! my_func();` |
 | **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |
-| `_~` | Discard | Desugars to `discard(expr)` — suppresses unused variable warnings. | `_~ unused;` |
+| `_~` | Discard | **Two positions** (D-089). As a statement it desugars to `discard(expr)` and suppresses the unused-variable warning. At a **declaration site**, `Type:_~name` marks a parameter the body deliberately does not read — and reading it anyway is an error, not a warning. | `_~ unused;` / `cstring[]:_~argv` |
 | `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)`. | `!!! errCode;` |
 
 > ### The two meanings of `!` (D-046)

@@ -32,11 +32,11 @@ func:nothing_useful = NIL() {
     pass NIL;                          // Result<NIL> is {i32} -- NIL is zero-sized
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     int32:a = raw doubled_plus_one(5i32);
     int32:b = raw with_explicit_check(5i32);
     drop nothing_useful();             // discard the Result entirely
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) { exit 1i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

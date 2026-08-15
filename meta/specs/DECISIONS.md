@@ -6050,3 +6050,119 @@ identifier and gives a reader a keyword they cannot look up.**
 - `TRAITS_REFERENCE.md` and `GRAMMAR_ADOPTION_CONFLICTS.md` — the notes
   contrasting `assoc` with `Type` now record that `Type` is gone entirely, which
   is a stronger form of the same point.
+
+---
+
+## D-089 — `main` takes `cstring[]:argv` and nothing else; the declaration-site `_~` is restored — **SETTLED**
+
+Two features the prototype implements and the carried-over spec set lost. Both
+are recovered here, and one of them is corrected on the way in.
+
+### 1. `main` has parameters, and the specs dropped them
+
+Every document in `meta/specs/` writes `func:main = int32()`. The prototype
+writes:
+
+```nitpick
+pub func:main = int32(int32:argc, wild int8->:argv) {     // nitpick/tests/regression/
+pub func:main = int32(int64:argc, int8*:argv) {           // nitpick-bootstrap/
+```
+
+`argc` was an integer whose width moved between revisions; `argv` changed
+repeatedly — `wild int8->`, `wildx int8->`, `int8*` — none of which is really
+`char**`, which is a fair sign the type was never settled.
+
+### 2. `argc` goes
+
+**A slice carries its length.** `T[]` is `{ptr, i64 len}` (D-070), so a separate
+count is a second copy of a fact the value already holds — and two things
+carrying one fact can disagree. That disagreement is the specific C bug where a
+loop trusts `argc` past the end of `argv`, and here the type system removes it
+rather than discouraging it.
+
+C needs `argc` because `char**` carries no length. Nitpick does not.
+
+### 3. The type is `cstring[]`
+
+```nitpick
+func:main = int32(cstring[]:argv) { … };
+```
+
+`argv` is kernel-supplied, NUL-terminated, and not ours. `cstring` is exactly
+that type — NUL-terminated, `{ptr, i64}`, and impossible to construct
+unterminated (D-049). **`nlibc` already spells this same data `cstring[]:args`
+in every `exec` signature** (D-048), so the language and the library agree
+without anyone arranging it.
+
+The alternative — converting to owned `string[]` at entry — allocates and copies
+before `main` runs, for data most programs read once or never.
+
+### 4. The signature is FIXED, not optional
+
+`main` always takes exactly this one parameter. A program that ignores the
+command line writes:
+
+```nitpick
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+```
+
+The prototype accepted both arities. That is one more thing to remember for
+nothing, and **`failsafe` already sets the precedent in the other direction**:
+`func:failsafe = int32(tbb32:err)` takes its parameter always, and most handlers
+never read it. Entry-point signatures are fixed. One rule, both of them.
+
+### 5. `Type:_~name` — the declaration-site discard
+
+This is what `_~` was invented for, and the spec set kept only the other half.
+
+| Form | Position | Meaning |
+|---|---|---|
+| `Type:_~name` | declaration | this parameter is **deliberately** unused |
+| `discard(e)` / `_~ e` | statement | suppress the unused warning for a variable |
+
+`AST_REFERENCE.md` §2 had only the second; `OP_REFERENCE.md` described `_~` as
+"suppresses unused variable warnings" and nothing more. The prototype's parser
+carries the note that names the case exactly:
+
+> `_~` declaration-site discard annotation: `Type:_~paramName`. Marks this
+> parameter as intentionally unused without requiring a body-level `discard()`
+> call. Parser strips the `_~` prefix so the stored paramName is the plain
+> identifier (e.g. `"argc"`, not `"_~argc"`).
+
+**The parameter keeps its name.** That is the point, and it is why this is better
+than the `_` placeholder other languages use: `cstring[]:_~argv` still documents
+what the slot *is*, so a reader learns the signature from the signature. A
+parameter named `_` teaches nothing and a second one is a name collision.
+
+The origin is worth recording because it explains the whole `_` family. The
+compiler warned about `main`'s unused `argc` and `argv`; the only escape was a
+compiler flag, and there was no placeholder to assign them to. So `discard` was
+added beside the operator that already existed for unwanted *return* values:
+
+| Operator | Keyword | Discards |
+|---|---|---|
+| `_!` | `raw` | the `Result` wrapper, unchecked |
+| `_?` | `drop` | a return value |
+| `_~` | `discard` | a binding nobody reads |
+
+### 6. Using a discarded parameter is an error
+
+**Not a warning, and not merely unenforced.** `Type:_~name` is a claim about the
+function, and a claim the compiler does not check is decoration. If the body
+reads `argv` after the signature said it would not, one of the two is wrong and
+the compiler knows which line to point at.
+
+This is D-002's reasoning applied to a smaller thing: `never fails` is required
+rather than implied so that infallibility is an auditable claim. `_~` is the same
+shape — the author asserting something a reviewer can rely on.
+
+### Follow-up
+
+- `AST_REFERENCE.md` — `ParamDecl` gains `discarded: bool`; §2's `DiscardStmt`
+  note gains the declaration-site form.
+- `OP_REFERENCE.md` — the `_~` row covers both positions.
+- `LEXICAL_REFERENCE.md` — the annotation in the parameter production.
+- Every `func:main = int32()` in the specs, the tests and the compiler's own
+  sources becomes `int32(cstring[]:_~argv)`, and `failsafe`'s unused `err`
+  becomes `tbb32:_~err`.
+- The runtime floor gains `argv` capture in `_start`; cycle 0.3.0 does it.

@@ -18,7 +18,7 @@ func:text_at = string(TokenList->:ts, InternTable->:it, int64:i) {
     pass (relay intern_get(it, t.payload => int32));
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
     DiagList:dg = raw diaglist_init();
 
@@ -117,6 +117,6 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };

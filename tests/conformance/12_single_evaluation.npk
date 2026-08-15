@@ -17,7 +17,7 @@ func:bump = bool(Counter->:c) {
     pass true;
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     Counter:a = Counter{ n: 0i32 };
     if (!(raw bump(@a))) { exit 90i32; }
     if (a.n != 1i32) { exit 91i32; }
@@ -35,4 +35,4 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) { exit 1i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

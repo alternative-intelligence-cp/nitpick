@@ -1,0 +1,41 @@
+// Subset 1 — `main` receives the command line (D-089).
+//
+// expect-exit: 0
+//
+// `func:main = int32(cstring[]:argv)`. ONE parameter, always: a slice carries
+// its length (D-070), so there is no `argc` and no second copy of a fact that
+// could disagree with the first. That disagreement is the C bug where a loop
+// trusts `argc` past the end of `argv`.
+//
+// The harness runs a test with no arguments, so `argv` holds exactly the
+// program path — which is what this asserts, since asserting a count nobody
+// controls would test the harness rather than the runtime.
+
+func:main = int32(cstring[]:argv) {
+    // argv[0] is always present: the kernel supplies the program path even when
+    // the command line is otherwise empty.
+    if (argv.len < 1i64)          { exit 10i32; }
+
+    cstring:prog = argv[0i64];
+
+    // A cstring carries its length, measured once at the process boundary
+    // (D-049). Nothing here scans for a NUL.
+    if (prog.len == 0i64)         { exit 11i32; }
+
+    // The path ends in ".npk"-derived binary name, so at minimum it has a `/`
+    // -- the harness runs it by absolute path. Checking a BYTE rather than the
+    // whole string keeps this a runtime test and not a string-library test.
+    bool:found_slash = false;
+    int64:i = 0i64;
+    while (i < prog.len) {
+        if (prog.ptr[i] == 47i8) { found_slash = true; }
+        i = i + 1i64;
+    }
+    if (!found_slash)             { exit 12i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

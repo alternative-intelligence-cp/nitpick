@@ -23,12 +23,77 @@ target triple = "x86_64-unknown-linux-gnu"
 module asm ".globl _start"
 module asm "_start:"
 module asm "  xorq %rbp, %rbp"
+module asm "  movq %rsp, %rdi"         ; the ORIGINAL rsp, before alignment
 module asm "  andq $-16, %rsp"
-module asm "  callq main"
-module asm "  movl %eax, %edi"
-module asm "  movl $60, %eax"          ; SYS_exit
-module asm "  syscall"
+module asm "  callq npk_start"
 module asm "  hlt"
+
+; ---------------------------------------------------------------------------
+; The process boundary.
+;
+; `main` takes `cstring[]:argv` and nothing else (D-089): a slice carries its
+; length (D-070), so there is no argc to pass and no second copy of a fact to
+; disagree with the first.
+;
+; At _start the stack holds argc, then argv[0..argc-1], then a NULL, then envp.
+; That layout is only reachable through the ORIGINAL %rsp, which is why the
+; prologue above captures it into %rdi BEFORE the alignment that destroys it.
+;
+; This runs before `main`, so it allocates the cstring array from the bump
+; allocator and never frees it -- which is what the allocator does anyway, and
+; argv outlives everything regardless.
+; ---------------------------------------------------------------------------
+
+declare i32 @main({ ptr, i64 })
+
+define internal void @npk_start(i64 %sp) noreturn {
+entry:
+  %spp = inttoptr i64 %sp to ptr
+  %argc = load i64, ptr %spp
+  %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
+  %bytes = mul i64 %argc, 16                      ; sizeof(cstring) = {ptr,i64}
+  %buf = call ptr @npk_alloc(i64 %bytes)
+  br label %loop
+
+loop:                                             ; preds = %entry, %next
+  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
+  %done = icmp uge i64 %i, %argc
+  br i1 %done, label %ready, label %body
+
+body:                                             ; preds = %loop
+  %slotp = getelementptr ptr, ptr %argvp, i64 %i
+  %s = load ptr, ptr %slotp
+  br label %slen
+
+; A cstring carries its length (D-049), and the kernel hands over a bare
+; NUL-terminated pointer -- so the length is measured exactly once, here, at the
+; boundary. Nothing downstream scans for a NUL again.
+slen:                                             ; preds = %body, %slen
+  %k = phi i64 [ 0, %body ], [ %k1, %slen ]
+  %cp = getelementptr i8, ptr %s, i64 %k
+  %ch = load i8, ptr %cp
+  %k1 = add i64 %k, 1
+  %atnul = icmp eq i8 %ch, 0
+  br i1 %atnul, label %store, label %slen
+
+store:                                            ; preds = %slen
+  %pf = getelementptr { ptr, i64 }, ptr %buf, i64 %i, i32 0
+  store ptr %s, ptr %pf
+  %lf = getelementptr { ptr, i64 }, ptr %buf, i64 %i, i32 1
+  store i64 %k, ptr %lf
+  br label %next
+
+next:                                             ; preds = %store
+  %i1 = add i64 %i, 1
+  br label %loop
+
+ready:                                            ; preds = %loop
+  %sl0 = insertvalue { ptr, i64 } undef, ptr %buf, 0
+  %sl1 = insertvalue { ptr, i64 } %sl0, i64 %argc, 1
+  %rc = call i32 @main({ ptr, i64 } %sl1)
+  call void @npk_exit(i32 %rc)
+  unreachable
+}
 
 ; ---------------------------------------------------------------------------
 ; Raw syscall

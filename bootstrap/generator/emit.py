@@ -949,6 +949,19 @@ class Emitter:
             fty = T.Ptr(T.Prim("int8")) if idx == 0 else T.I64
             return Val(T.llvm(fty), r, fty)
 
+        if isinstance(obj_ty, T.Prim) and obj_ty.name == "cstring":
+            # {ptr, i64} -- NUL-terminated and NOT ours, so there is no `cap`
+            # (D-049). The length was measured once at the process boundary and
+            # nothing scans for the NUL again.
+            idx = {"ptr": 0, "len": 1}.get(e.name)
+            if idx is None:
+                raise EmitError("cstring has no field %r; it has ptr and len, "
+                                "and no cap because it is never grown" % e.name, e)
+            r = self.tmp()
+            self.w("%s = extractvalue %s %s, %d" % (r, obj.ty, obj.ref, idx))
+            fty = T.Ptr(T.Prim("int8")) if idx == 0 else T.I64
+            return Val(T.llvm(fty), r, fty)
+
         if isinstance(obj_ty, T.Slice) and e.name == "len":
             r = self.tmp()
             self.w("%s = extractvalue %s %s, 1" % (r, obj.ty, obj.ref))

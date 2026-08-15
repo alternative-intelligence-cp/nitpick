@@ -49,6 +49,7 @@ Two consequences follow, and they are the two biggest exclusions below:
 | `uint8` `uint16` `uint32` `uint64` | |
 | `bool`, `char8` | not integers; no arithmetic (semantic types) |
 | `string` | `{ptr, i64 len, i64 cap}` |
+| `cstring` | `{ptr, i64}` — NUL-terminated, not ours to free (D-049). Added by D-089: it is `main`'s parameter type |
 | `T[]` slices | `{ptr, i64 len}` (D-070) |
 | `T[N]` fixed arrays | value types, static bounds |
 | `T->` pointers | thin, one word (D-038) |
@@ -90,6 +91,12 @@ sidestep needing `arena<T>` — which is generic and therefore out.
 ### 1.3 Functions
 
 - `func:name = RetType(Type:param, …) { … };`, `pub` for export.
+- **`func:main = int32(cstring[]:argv)`** — one parameter, always (D-089). A
+  program that ignores the command line writes `cstring[]:_~argv`, the
+  declaration-site discard, which is what `_~` was invented for.
+- **`Type:_~name`** on any parameter: deliberately unused. The seed records the
+  annotation and does not enforce it — "a discarded parameter may not be read"
+  is a check, and the seed lowers rather than checks (§2).
 - **Every function returns `Result<T>`** (D-013), except `main` and `failsafe`.
 - `main` and `failsafe` exactly as specified — `failsafe` mandatory, non-empty,
   returning a positive value (D-014).

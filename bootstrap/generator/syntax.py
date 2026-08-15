@@ -60,7 +60,7 @@ Module      = _mk("Module", "items", "path")
 ImportDecl  = _mk("ImportDecl", "target", "kind")        # use "p.npk".*;
 FuncDecl    = _mk("FuncDecl", "name", "visibility", "modifiers", "generics",
                   "params", "ret", "body")
-ParamDecl   = _mk("ParamDecl", "type", "name")
+ParamDecl   = _mk("ParamDecl", "type", "name", "discarded")
 StructDecl  = _mk("StructDecl", "name", "visibility", "generics", "fields")
 FieldDecl   = _mk("FieldDecl", "type", "name")
 EnumDecl    = _mk("EnumDecl", "name", "visibility", "generics", "variants")

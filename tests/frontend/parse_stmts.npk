@@ -15,7 +15,7 @@ use "../../src/frontend/parse_type.npk".*;
 use "../../src/frontend/parse_expr.npk".*;
 use "../../src/frontend/parse_stmt.npk".*;
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
     DiagList:ld = raw diaglist_init();
 
@@ -307,6 +307,6 @@ func:stmt_kind_at = StmtKind(Ast->:ast, int32:start, int32:i) {
     pass n.kind;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };

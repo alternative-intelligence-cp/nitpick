@@ -7,7 +7,7 @@
 use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/diagnostics.npk".*;
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     DiagList:list = raw diaglist_init();
     Sink:out = raw sink_to_buffer(4096i64);
 
@@ -35,6 +35,6 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };

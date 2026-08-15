@@ -222,8 +222,13 @@ class Parser:
         while not self.at(")"):
             ptype = self.parse_type()
             self.expect(":")
+            # `Type:_~name` -- the declaration-site discard (D-089). The seed
+            # records it and does nothing with it: enforcing "a discarded
+            # parameter may not be read" is the compiler's job, and the seed
+            # lowers rather than checks (SUBSET_1 section 2).
+            discarded = self.accept("_~") is not None
             pname = self.expect_ident().text
-            params.append(S.ParamDecl(ptype, pname))
+            params.append(S.ParamDecl(ptype, pname, discarded))
             if not self.accept(","):
                 break
         self.expect(")")
@@ -546,7 +551,7 @@ class Parser:
             binding_type = self.parse_type()
             self.expect(":")
             bname = self.expect_ident().text
-            binding = S.ParamDecl(binding_type, bname)
+            binding = S.ParamDecl(binding_type, bname, False)
             self.expect("in")
             iterable = self.parse_expr()
         else:

@@ -159,6 +159,7 @@ NIL = Prim("NIL")
 BOOL = Prim("bool")
 CHAR8 = Prim("char8")
 STRING = Prim("string")
+CSTRING = Prim("cstring")
 TBB32 = Prim("tbb32")
 I32 = Prim("int32")
 I64 = Prim("int64")
@@ -214,6 +215,10 @@ def llvm(t):
             return "i8"
         if t.name == "string":
             return "{ ptr, i64, i64 }"
+        if t.name == "cstring":
+            # NUL-terminated, {ptr, i64} (D-049). No capacity: a cstring is never
+            # grown, and it is not ours to free -- `argv` comes from the kernel.
+            return "{ ptr, i64 }"
         if t.name == "NIL":
             return "void"        # only ever appears as Result<NIL>, handled below
         raise KeyError(t.name)
@@ -238,6 +243,8 @@ def zero(t):
     """The LLVM zero value for a type, used for the value slot of a failed Result."""
     if isinstance(t, Prim) and (t.name in INT_TYPES or t.name in ("bool", "char8")):
         return "0"
+    if isinstance(t, Prim) and t.name == "cstring":
+        return "zeroinitializer"
     if isinstance(t, Ptr):
         return "null"
     return "zeroinitializer"

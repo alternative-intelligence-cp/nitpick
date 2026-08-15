@@ -17,7 +17,7 @@ use "../../src/frontend/parse_decorate.npk".*;
 use "../../src/frontend/parse_stmt.npk".*;
 use "../../src/frontend/parse_decl.npk".*;
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
     DiagList:ld = raw diaglist_init();
 
@@ -293,7 +293,7 @@ func:main = int32() {
 
     // --- a whole file is a ModuleDecl ---------------------------------------------------------
     TokenList:ko = raw lex_all(0i32,
-        "use \"a.npk\".*; struct:S = { int32:f; }; func:main = int32() { exit 0i32; };",
+        "use \"a.npk\".*; struct:S = { int32:f; }; func:main = int32(cstring[]:_~argv) { exit 0i32; };",
         @it, @ld);
     Ast:ao = raw ast_init();
     DiagList:go = raw diaglist_init();
@@ -343,6 +343,6 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };

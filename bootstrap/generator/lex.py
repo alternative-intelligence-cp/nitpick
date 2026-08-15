@@ -268,8 +268,16 @@ def lex(src, path="<input>"):
 
         # operators BEFORE identifiers: "_?", "_!", "_~", "_^" are operators even
         # though they begin with an underscore (LEXICAL_REFERENCE section 3).
+        #
+        # There used to be a guard here refusing the match when an identifier
+        # character followed -- so `_~argv` lexed as `_`, `~`, `argv`. It
+        # protected nothing: every underscore operator has PUNCTUATION as its
+        # second character, so no identifier can begin with one, and
+        # `src.startswith` has already required both characters. What it did do
+        # was break the declaration-site discard `Type:_~name` (D-089), which is
+        # the form the operator was invented for.
         op = next((o for o in OPERATORS if src.startswith(o, i)), None)
-        if op is not None and (op[0] != "_" or not (i + len(op) < n and _is_ident_part(src[i + len(op)]))):
+        if op is not None:
             toks.append(Token(OP, op, line, scol, path))
             i += len(op)
             continue

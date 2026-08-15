@@ -40,13 +40,13 @@ func:parse_module_text = int64(string:src, InternTable->:it) {
     pass (raw diaglist_count(@diags));
 };
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
 
     // --- a clean file reports nothing -------------------------------------------
     // Asserted first, because every count below is only meaningful if zero is
     // reachable at all.
-    string:clean = "func:main = int32() { int32:x = 1i32; exit 0i32; };";
+    string:clean = "func:main = int32(cstring[]:_~argv) { int32:x = 1i32; exit 0i32; };";
     if ((raw parse_module_text(clean, @it)) != 0i64)          { exit 10i32; }
 
     // --- three independent errors, three diagnostics ------------------------------
@@ -186,6 +186,6 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };

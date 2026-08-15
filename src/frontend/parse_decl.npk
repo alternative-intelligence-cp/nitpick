@@ -51,6 +51,12 @@ pub func:DECL_COMPTIME = int32()  { pass 8i32; };
 pub func:DECL_ASYNC = int32()     { pass 16i32; };
 pub func:DECL_VARIADIC = int32()  { pass 32i32; };
 
+// On a ParamDecl: `Type:_~name`, the declaration-site discard (D-089). Reading
+// such a parameter is an ERROR rather than a warning -- the annotation is a
+// claim about the function, and a claim the compiler does not check is
+// decoration. Same shape as D-002's `never fails`.
+pub func:DECL_DISCARDED = int32() { pass 2048i32; };
+
 // Memory qualifiers on a RETURN type, folded into the declaration's flags.
 // They shift up so they never collide with the visibility and modifier bits.
 pub func:DECL_RET_WILD = int32()  { pass 64i32; };
@@ -278,6 +284,9 @@ pub func:rule_clause = ExprId(Ast->:ast, DeclNode:d, int32:i) {
 
 pub func:param_type = TypeId(DeclNode:d)  { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:param_limit = VerifyId(DeclNode:d) { VerifyId:v = VerifyId{ index: d.b }; pass v; };
+pub func:param_is_discarded = bool(DeclNode:d) {
+    pass ((d.c & (raw DECL_DISCARDED())) != 0i32);
+};
 pub func:field_type = TypeId(DeclNode:d)  { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_init = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.b }; pass e; };
@@ -365,9 +374,24 @@ pub func:p_parse_param = DeclId(Parser->:p) {
     }
     TypeId:ty = relay p_parse_type(p);
     drop p_expect(p, TokenKind.PColon);
+
+    // `Type:_~name` -- this parameter is DELIBERATELY unused (D-089). The marker
+    // sits between the colon and the name, and the name is kept: `cstring[]:_~argv`
+    // still says what the slot is, where a `_` placeholder would say nothing and
+    // a second one would collide.
+    //
+    // This is what `_~` was invented for. `main` used to take `argc` and `argv`,
+    // the compiler warned about them going unread, and the only escape was a
+    // compiler flag -- so `discard` was added beside `raw` and `drop`, which
+    // already existed for unwanted Results and return values.
+    int32:flags = 0i32;
+    if (relay p_accept(p, TokenKind.OpUnderTilde)) {
+        flags = flags | (raw DECL_DISCARDED());
+    }
+
     Token:name = relay p_advance(p);
     pass (relay ast_add_decl(p.ast, DeclKind.DeclParamDecl, sp,
-                             ty.index, lim, 0i32, name.payload));
+                             ty.index, lim, flags, name.payload));
 };
 
 // --- the entry point ---------------------------------------------------------------------------------

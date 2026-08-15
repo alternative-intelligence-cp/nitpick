@@ -74,6 +74,16 @@ GenericParam
   `comptime` function, legal nowhere else, and produces no specialization
   (D-064 §5).
 
+- **`ParamDecl` carries `discarded: bool`** — the `Type:_~name` annotation
+  (D-089), marking a parameter the body deliberately does not read. The name is
+  kept: `cstring[]:_~argv` still says what the slot is, which a `_` placeholder
+  would not. **Reading a discarded parameter is an error**, because an unchecked
+  claim is decoration.
+- **`main` has a fixed signature: `func:main = int32(cstring[]:argv)`** (D-089).
+  One parameter, always — `failsafe` sets the same precedent with `tbb32:err`, so
+  entry-point signatures are fixed and `_~` covers the unused case. There is no
+  `argc`: a slice carries its length (D-070), and a second copy of that fact is
+  the C bug where a loop trusts `argc` past the end of `argv`.
 - **`return_type` is the success type.** Every function returns `Result<T>`
   implicitly, except `main` and `failsafe`. The AST stores the declared type; the
   wrapping is a semantic-phase concern, not a syntactic one.
@@ -169,7 +179,7 @@ so `Type` is no longer a keyword at all and the ambiguity cannot recur.
 | `ExitStmt` | `code: Expr` — legal only in `main` / `failsafe` |
 | `TrapStmt` | `error: Expr` — `!!! errCode;` |
 | `DeferStmt` | `body: BlockStmt` |
-| `DiscardStmt` | `expr` — `discard(e)` / `_~ e` |
+| `DiscardStmt` | `expr` — `discard(e)` / `_~ e`. The **statement** form; the declaration-site form is `ParamDecl.discarded` (§1.1, D-089) |
 | `ProveStmt` | `condition: Expr` — **compile-time** obligation |
 | `AssertStaticStmt` | `condition: Expr` |
 | `FallStmt` | `target: Ident` — `fall label;`, legal only in a `PickArm` body (§2.2) |

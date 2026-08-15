@@ -4,7 +4,7 @@ use "../../src/frontend/source_location.npk".*;
 use "../../src/frontend/source.npk".*;
 use "../../src/frontend/intern.npk".*;
 
-func:main = int32() {
+func:main = int32(cstring[]:_~argv) {
     // --- #size_of matches what llc lays out --------------------------------
     // A hand-rolled size that disagrees with LLVM's survives testing and
     // corrupts memory later, so this is asserted rather than assumed.
@@ -15,7 +15,7 @@ func:main = int32() {
     // --- source manager ----------------------------------------------------
     SourceManager:sm = raw srcmgr_init();
 
-    int32:a = raw srcmgr_add(@sm, "a.npk", "func:main = int32() { };");
+    int32:a = raw srcmgr_add(@sm, "a.npk", "func:main = int32(cstring[]:_~argv) { };");
     int32:b = raw srcmgr_add(@sm, "b.npk", "hi");
 
     if (a != 0i32)                        { exit 20i32; }
@@ -70,6 +70,6 @@ func:main = int32() {
     exit 0i32;
 };
 
-func:failsafe = int32(tbb32:err) {
+func:failsafe = int32(tbb32:_~err) {
     exit 1i32;
 };
