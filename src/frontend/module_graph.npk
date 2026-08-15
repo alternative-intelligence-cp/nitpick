@@ -382,3 +382,234 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) {
     }
     pass NIL;
 };
+
+// --- binding imports ---------------------------------------------------------------------
+//
+// A THIRD PASS, after every module is loaded and collected.
+//
+// It cannot run during loading: `use "b.npk".*` needs b's declarations, and in a
+// cycle b's import of a needs a's. Running imports only once everything is
+// collected removes the ordering question entirely rather than answering it —
+// the same move D-086 makes for bodies, applied one level earlier.
+//
+// Modules are visited in graph order and imports in declaration order, so the
+// bindings and any diagnostics come out identically on every run.
+
+pub func:graph_find_by_path = int32(ModuleGraph->:g, string:path) {
+    int32:file = raw srcmgr_find(@g.sm, relay path_normalise(path));
+    if (file < 0i32) {
+        pass (0i32 - 1i32);
+    }
+    pass (raw graph_find(g, file));
+};
+
+// RUN TO A FIXED POINT, then report once.
+//
+// A single pass is not enough and the reason is `pub use`. If `user` imports
+// `middle` and `middle` re-exports something from `other`, then binding `user`
+// before `middle` finds nothing to bring across — and with cycles legal (D-086)
+// there is no dependency order to visit in, because a cycle has none.
+//
+// So the pass repeats until a whole round adds no binding. THE FIXED POINT IS
+// WHAT MAKES THE RESULT INDEPENDENT OF MODULE ORDER: it is the same set of
+// bindings whichever module is visited first, which is D-086's third obligation
+// and a reproducibility requirement before it is a convenience. It terminates
+// because bindings only ever grow and the number of names is finite.
+//
+// Binding is IDEMPOTENT, so the repeats cost nothing and a re-export chain
+// reaching one declaration by two routes is not a conflict. Diagnostics are held
+// back to a final pass, or every round would report the same collision again.
+pub func:graph_apply_imports = NIL(ModuleGraph->:g) {
+    while (true) {
+        int32:before = raw symtab_count(@g.tab);
+        int32:i = 0i32;
+        while (i < g.count) {
+            drop module_apply_imports(g, i, false);
+            i = i + 1i32;
+        }
+        if ((raw symtab_count(@g.tab)) == before) {
+            break;
+        }
+    }
+
+    int32:k = 0i32;
+    while (k < g.count) {
+        drop module_apply_imports(g, k, true);
+        k = k + 1i32;
+    }
+    pass NIL;
+};
+
+func:module_apply_imports = NIL(ModuleGraph->:g, int32:index, bool:report) {
+    ModuleEntry:e = raw graph_at(g, index);
+    string:from = relay srcmgr_path(@g.sm, e.file);
+    DeclId:rootId = DeclId{ index: e.root };
+    DeclNode:m = relay ast_decl(@g.ast, rootId);
+
+    int32:n = raw item_member_count(@g.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:item = raw item_member(@g.ast, m, i);
+        DeclNode:d = relay ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclImportDecl) {
+            drop apply_one_import(g, from, e.scope, d, report);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
+                            DeclNode:d, bool:report) {
+    int32:path_idx = raw import_path(d);
+    if (raw intern_is_none(path_idx)) {
+        pass NIL;          // a logical path; the driver resolves those
+    }
+    string:target = relay intern_get(g.interns, path_idx);
+    Resolution:r = relay resolve_use(from, target, g.roots, g.stdlib);
+    if (r.status != (raw RESOLVED_OK())) {
+        pass NIL;          // already reported while loading
+    }
+    int32:mi = raw graph_find_by_path(g, r.path);
+    if (mi < 0i32) {
+        pass NIL;
+    }
+    ModuleEntry:src = raw graph_at(g, mi);
+
+    // `pub use` re-exports; a plain `use` does not. The bit set here is the whole
+    // of "imports do not chain" -- nothing downstream has to check for it.
+    int32:extra = 0i32;
+    if (raw import_is_reexport(@g.ast, d)) {
+        extra = raw SYM_PUB();
+    }
+
+    int32:kind = raw import_kind(d);
+
+    // `use "m.npk" as math;` binds the MODULE, so `math.sqrt` resolves through
+    // it in 0.3.5.
+    if (kind == (raw IMPORT_NAMESPACE())) {
+        int32:alias = raw import_alias(@g.ast, d);
+        DeclId:srcRoot = DeclId{ index: src.root };
+        drop bind_or_report(g, scope, alias, raw SYM_DECL(), srcRoot.index,
+                            extra, d.span, target, report);
+        pass NIL;
+    }
+
+    if (kind == (raw IMPORT_WILDCARD())) {
+        drop bind_wildcard(g, scope, src.scope, extra, d.span, target, report);
+        pass NIL;
+    }
+
+    // Single and selective differ only in how many names they name.
+    int32:count = raw import_name_count(@g.ast, d);
+    int32:k = 0i32;
+    while (k < count) {
+        int32:want = raw import_name(@g.ast, d, k);
+        drop bind_named(g, scope, src.scope, want, extra, d.span, target, report);
+        k = k + 1i32;
+    }
+    pass NIL;
+};
+
+// A named import: the symbol must exist AND be exported, and the two failures get
+// different diagnostics.
+//
+// "not found" and "found but private" are different mistakes and the reader can
+// act on exactly one of them: the first means check the spelling, the second
+// means the other module has to decide to share it. Collapsing them into one
+// message makes the reader test both.
+func:bind_named = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
+                      int32:name, int32:extra, Span:at, string:target,
+                      bool:report) {
+    int32:sym = raw scope_lookup_local(@g.tab, src_scope, name);
+    string:nm = relay intern_get(g.interns, name);
+
+    if (sym == 0i32) {
+        if (!report) { pass NIL; }
+        string:m1 = relay string_concat("`", target);
+        string:m2 = relay string_concat(m1, "` has no `");
+        string:m3 = relay string_concat(m2, nm);
+        string:m4 = relay string_concat(m3, "`");
+        drop diaglist_push(g.diags,
+            raw diag_error(raw RESOLVE_NO_SUCH_NAME(), m4, at));
+        pass NIL;
+    }
+
+    Symbol:s = raw symtab_get(@g.tab, sym);
+    if (!(raw symbol_is_exported(s))) {
+        if (!report) { pass NIL; }
+        string:p1 = relay string_concat("`", nm);
+        string:p2 = relay string_concat(p1, "` is private to `");
+        string:p3 = relay string_concat(p2, target);
+        string:p4 = relay string_concat(p3, "`");
+        drop diaglist_push(g.diags,
+            raw diag_error(raw RESOLVE_PRIVATE(), p4, at));
+        drop diaglist_push(g.diags,
+            raw diag_note(raw RESOLVE_PRIVATE(), "declared here",
+                          relay symbol_span(@g.ast, @g.tab, sym)));
+        pass NIL;
+    }
+
+    drop bind_or_report(g, scope, name, s.origin_kind, s.origin, extra, at,
+                        target, report);
+    pass NIL;
+};
+
+// Every exported symbol of the source module.
+//
+// A NAME THE IMPORTING FILE ALREADY DECLARES IS NOT OVERWRITTEN, and the
+// collision is reported as a warning. The local declaration wins, which is the
+// only defensible rule -- a file's own declarations cannot be at the mercy of
+// what a dependency happens to export this week -- but a bare name that two
+// things could plausibly mean is worth a word to the reader.
+func:bind_wildcard = NIL(ModuleGraph->:g, int32:scope, int32:src_scope,
+                         int32:extra, Span:at, string:target, bool:report) {
+    int32:n = raw scope_symbol_count(@g.tab, src_scope);
+    int32:i = 0i32;
+    while (i < n) {
+        int32:sym = raw scope_symbol_at(@g.tab, src_scope, i);
+        if (sym != 0i32) {
+            Symbol:s = raw symtab_get(@g.tab, sym);
+            if (raw symbol_is_exported(s)) {
+                int32:bound = raw symtab_bind_import(@g.tab, scope, s.name,
+                                                     s.origin_kind, s.origin, extra);
+                if (bound == 0i32) {
+                    if (report) {
+                    string:nm = relay intern_get(g.interns, s.name);
+                    string:m1 = relay string_concat("`", nm);
+                    string:m2 = relay string_concat(m1,
+                        "` is declared here and also exported by `");
+                    string:m3 = relay string_concat(m2, target);
+                    string:m4 = relay string_concat(m3,
+                        "`; the local declaration wins");
+                    drop diaglist_push(g.diags,
+                        raw diag_warning(raw RESOLVE_SHADOWED(), m4, at));
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// Bind one name, reporting the collision a NAMED import causes.
+//
+// A named import that collides is louder than a wildcard one: the author wrote
+// this name on this line, so silently doing nothing would be the wrong answer to
+// something they asked for explicitly.
+func:bind_or_report = NIL(ModuleGraph->:g, int32:scope, int32:name,
+                          int32:origin_kind, int32:origin, int32:extra,
+                          Span:at, string:target, bool:report) {
+    int32:bound = raw symtab_bind_import(@g.tab, scope, name,
+                                         origin_kind, origin, extra);
+    if (bound == 0i32) {
+        if (!report) { pass NIL; }
+        string:nm = relay intern_get(g.interns, name);
+        string:m1 = relay string_concat("`", nm);
+        string:m2 = relay string_concat(m1, "` is already declared in this module");
+        drop diaglist_push(g.diags,
+            raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
+    }
+    pass NIL;
+};

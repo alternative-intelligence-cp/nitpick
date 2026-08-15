@@ -1,0 +1,140 @@
+// Visibility and the four import kinds (cycle 0.3.4).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/paths.npk".*;
+use "../../src/frontend/resolve_path.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/module_graph.npk".*;
+
+struct:Loaded = {
+    ModuleGraph:g;
+    int32:scope;      // the ROOT module's scope
+};
+
+func:load = Loaded(string:root, InternTable->:it, DiagList->:diags) {
+    RootList:roots = raw rootlist_init();
+    ModuleGraph:g = raw graph_init(it, diags, @roots, "");
+    drop graph_load_all(@g, root);
+    drop graph_apply_imports(@g);
+    ModuleEntry:e = relay graph_at(@g, 0i32);
+    Loaded:l = Loaded{ g: g, scope: e.scope };
+    pass l;
+};
+
+func:has = bool(Loaded->:l, string:name, InternTable->:it) {
+    int32:n = raw intern_add(it, name);
+    pass ((raw scope_lookup(@l.g.tab, l.scope, n)) != 0i32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- a wildcard brings in the `pub` symbols and only those ----------------
+    DiagList:d1 = raw diaglist_init();
+    Loaded:l1 = raw load("tests/modules/vis/middle.npk", @it, @d1);
+    if (!(raw has(@l1, "shared", @it)))               { exit 10i32; }
+    if (!(raw has(@l1, "Shared", @it)))               { exit 11i32; }
+    // `hidden` is private to lib.npk and invisible here. Private means "this
+    // module and no other" -- there is no `pub(crate)` middle ground.
+    if (raw has(@l1, "hidden", @it))                  { exit 12i32; }
+    // The `pub use` target arrived too.
+    if (!(raw has(@l1, "relayed", @it)))              { exit 13i32; }
+    if (raw diaglist_count(@d1) != 0i64)              { exit 14i32; }
+
+    // --- IMPORTS DO NOT CHAIN ---------------------------------------------------
+    // user imports middle. `middle_own` arrives, and so does `relayed` because
+    // middle re-exported it with `pub use`. `shared` does NOT: middle imported it
+    // with a plain `use`, which keeps a module's surface its own rather than the
+    // transitive closure of everything its dependencies happened to import.
+    DiagList:d2 = raw diaglist_init();
+    Loaded:l2 = raw load("tests/modules/vis/user.npk", @it, @d2);
+    if (!(raw has(@l2, "middle_own", @it)))           { exit 20i32; }
+    if (!(raw has(@l2, "relayed", @it)))              { exit 21i32; }
+    if (raw has(@l2, "shared", @it))                  { exit 22i32; }
+    if (raw has(@l2, "Shared", @it))                  { exit 23i32; }
+    if (raw diaglist_count(@d2) != 0i64)              { exit 24i32; }
+
+    // --- a named import of a PRIVATE symbol says PRIVATE --------------------------
+    // Not "not found". Those are different mistakes: one means check the
+    // spelling, the other means the owning module has to decide to share it.
+    DiagList:d3 = raw diaglist_init();
+    Loaded:l3 = raw load("tests/modules/vis/private_import.npk", @it, @d3);
+    if (raw diaglist_count(@d3) != 2i64)              { exit 30i32; }
+    if (!(raw string_eq((raw diaglist_at(@d3, 0i64)).code, raw RESOLVE_PRIVATE()))) {
+        exit 31i32;
+    }
+    // …and a note points at where it was declared, so the reader can go and
+    // decide whether it should be `pub`.
+    if ((raw diaglist_at(@d3, 1i64)).severity != ((Severity.Note => int32))) {
+        exit 32i32;
+    }
+    if (raw has(@l3, "hidden", @it))                  { exit 33i32; }
+
+    // --- a named import of a MISSING symbol names the module ------------------------
+    DiagList:d4 = raw diaglist_init();
+    Loaded:l4 = raw load("tests/modules/vis/missing_import.npk", @it, @d4);
+    if (raw diaglist_count(@d4) != 1i64)              { exit 40i32; }
+    if (!(raw string_eq((raw diaglist_at(@d4, 0i64)).code, raw RESOLVE_NO_SUCH_NAME()))) {
+        exit 41i32;
+    }
+
+    // --- a wildcard does not silently shadow a local declaration ---------------------
+    // The local wins -- a file's own declarations cannot be at the mercy of what
+    // a dependency exports this week -- and the collision gets a warning, because
+    // a bare name two things could plausibly mean is worth a word.
+    DiagList:d5 = raw diaglist_init();
+    Loaded:l5 = raw load("tests/modules/vis/shadow.npk", @it, @d5);
+    if (raw diaglist_count(@d5) != 1i64)              { exit 50i32; }
+    Diagnostic:w = raw diaglist_at(@d5, 0i64);
+    if (!(raw string_eq(w.code, raw RESOLVE_SHADOWED())) ) { exit 51i32; }
+    if (w.severity != ((Severity.Warning => int32)))  { exit 52i32; }
+    // The local declaration is what `shared` means here, so the symbol is NOT an
+    // import.
+    int32:shared_n = raw intern_add(@it, "shared");
+    Symbol:s = raw symtab_get(@l5.g.tab, raw scope_lookup(@l5.g.tab, l5.scope, shared_n));
+    if (raw symbol_is_imported(s))                    { exit 53i32; }
+    // `Shared` had no local declaration, so that one IS an import.
+    int32:cap_n = raw intern_add(@it, "Shared");
+    Symbol:s2 = raw symtab_get(@l5.g.tab, raw scope_lookup(@l5.g.tab, l5.scope, cap_n));
+    if (!(raw symbol_is_imported(s2)))                { exit 54i32; }
+
+    // --- `as` binds the MODULE ---------------------------------------------------------
+    DiagList:d6 = raw diaglist_init();
+    Loaded:l6 = raw load("tests/modules/vis/aliased.npk", @it, @d6);
+    if (raw diaglist_count(@d6) != 0i64)              { exit 60i32; }
+    if (!(raw has(@l6, "lib", @it)))                  { exit 61i32; }
+    // The alias binds the module, NOT its contents: `shared` is reached through
+    // `lib.shared` and is not a bare name here.
+    if (raw has(@l6, "shared", @it))                  { exit 62i32; }
+    int32:lib_n = raw intern_add(@it, "lib");
+    Symbol:libs = raw symtab_get(@l6.g.tab, raw scope_lookup(@l6.g.tab, l6.scope, lib_n));
+    DeclId:libd = DeclId{ index: libs.origin };
+    if ((relay ast_decl(@l6.g.ast, libd)).kind != DeclKind.DeclModuleDecl) {
+        exit 63i32;
+    }
+
+    // --- what a module EXPORTS is exactly `pub` ------------------------------------------
+    // A plain import never sets that bit, so "imports do not chain" is not a
+    // check anywhere -- it falls out of how the flags are assigned.
+    int32:mid = raw graph_find_by_path(@l2.g, "tests/modules/vis/middle.npk");
+    if (mid < 0i32)                                   { exit 70i32; }
+    ModuleEntry:me = relay graph_at(@l2.g, mid);
+    int32:sh = raw scope_lookup_local(@l2.g.tab, me.scope, shared_n);
+    if (sh == 0i32)                                   { exit 71i32; }
+    Symbol:shs = raw symtab_get(@l2.g.tab, sh);
+    // Present in middle, and not exported from it.
+    if (raw symbol_is_exported(shs))                  { exit 72i32; }
+    if (!(raw symbol_is_imported(shs)))               { exit 73i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

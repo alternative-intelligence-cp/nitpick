@@ -213,13 +213,16 @@ pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) {
 // --- ImportDecl -----------------------------------------------------------------------
 //
 //   [0] alias intern (0 = none)   [1] path-segment count   [2] name count
+//   [3] flags -- `pub use` is a RE-EXPORT and the only way to have one, so the
+//       bit has to survive parsing. It lives here because `a` already holds the
+//       import kind and there is no fourth slot on the node.
 //   then path segments, then imported names.
 //
 // `payload` is the quoted path's intern index for a file import and 0 for a
 // logical one, which is what tells the two apart with no separate flag: a file
 // import has a path string and no segments, a logical one has segments and no
 // string.
-func:IMPORT_HDR = int32() { pass 3i32; };
+func:IMPORT_HDR = int32() { pass 4i32; };
 
 pub func:IMPORT_WILDCARD = int32() { pass 1i32; };
 pub func:IMPORT_SINGLE = int32()   { pass 2i32; };
@@ -231,6 +234,10 @@ pub func:import_path = int32(DeclNode:d) { pass (d.payload => int32); };
 pub func:import_alias = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 0i32)); };
 pub func:import_segment_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
 pub func:import_name_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
+pub func:import_flags = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 3i32)); };
+pub func:import_is_reexport = bool(Ast->:ast, DeclNode:d) {
+    pass (((raw import_flags(ast, d)) & (raw DECL_PUB())) != 0i32);
+};
 pub func:import_segment = int32(Ast->:ast, DeclNode:d, int32:i) {
     pass (raw d_at(ast, d, (raw IMPORT_HDR()) + i));
 };
@@ -423,7 +430,7 @@ pub func:p_parse_decl = DeclId(Parser->:p) {
 
     TokenKind:k = relay p_kind(p);
 
-    if (k == TokenKind.KwUse)    { pass (relay p_parse_import(p, sp)); }
+    if (k == TokenKind.KwUse)    { pass (relay p_parse_import(p, sp, flags)); }
     if (k == TokenKind.KwMod)    { pass (relay p_parse_mod(p, sp, flags)); }
     if (k == TokenKind.KwExtern) { pass (relay p_parse_extern(p, sp, flags)); }
     if (k == TokenKind.KwFunc)   { pass (relay p_parse_func(p, sp, flags, attrs)); }
@@ -443,13 +450,14 @@ pub func:p_parse_decl = DeclId(Parser->:p) {
     pass (relay p_parse_global(p, sp, flags));
 };
 
-func:p_parse_import = DeclId(Parser->:p, Span:sp) {
+func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
     drop p_expect(p, TokenKind.KwUse);
     int32:path = 0i32;
     int32:mark = raw ast_scratch_mark(p.ast);
     drop ast_scratch_push(p.ast, 0i32);   // [0] alias, filled in below
     drop ast_scratch_push(p.ast, 0i32);   // [1] segment count
     drop ast_scratch_push(p.ast, 0i32);   // [2] name count
+    drop ast_scratch_push(p.ast, flags);  // [3] flags -- `pub use` re-exports
 
     int32:segments = 0i32;
     if (relay p_at(p, TokenKind.StringLit)) {

@@ -35,6 +35,31 @@ pub func:SYM_STMT = int32() { pass 2i32; };   // a local `VarDeclStmt`
 pub func:SYM_PAT = int32()  { pass 3i32; };   // a `pick` destructuring binding
 
 pub func:SYM_PUB = int32() { pass 1i32; };
+// Bound by a `use` rather than declared here. Kept for diagnostics -- "you
+// imported this" reads differently from "you declared this" -- and NOT consulted
+// when deciding what a module exports.
+pub func:SYM_IMPORTED = int32() { pass 2i32; };
+
+// WHAT A MODULE EXPORTS IS EXACTLY `SYM_PUB`, and the flags are arranged so that
+// no second rule is needed:
+//
+//   own declaration, `pub`      PUB                  exported
+//   own declaration, private    --                   not exported
+//   plain `use`                 IMPORTED             not exported
+//   `pub use`                   IMPORTED | PUB       exported
+//
+// So "imports do not chain" (MODULE_REFERENCE 2.3) is not a check anywhere: a
+// plain import simply never sets the bit that makes something visible outward.
+// Re-export is `pub use` and nothing else, which keeps a module's surface its
+// own rather than the transitive closure of everything its dependencies
+// happened to import.
+pub func:symbol_is_exported = bool(Symbol:s) {
+    pass ((s.flags & (raw SYM_PUB())) != 0i32);
+};
+
+pub func:symbol_is_imported = bool(Symbol:s) {
+    pass ((s.flags & (raw SYM_IMPORTED())) != 0i32);
+};
 
 pub struct:Symbol = {
     int32:name;          // intern index; 0 is the reserved empty string
@@ -239,6 +264,76 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     sc.first = id;
     t.scopes[scope => int64] = sc;
     pass id;
+};
+
+// Bind a name that came from a `use`.
+//
+// Returns 0 without complaint when the scope already has the name. A LOCAL
+// DECLARATION WINS over an import, and the caller decides whether that silence
+// deserves a diagnostic: for a wildcard it does (0.3.4), because a program whose
+// meaning turns on which of two things a bare name refers to is worth a word.
+// IDEMPOTENT. Binding the same name to the same origin twice succeeds and
+// changes nothing, which is what lets the import pass run repeatedly to a fixed
+// point (0.3.4) without every repetition looking like a collision.
+pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
+                                    int32:origin_kind, int32:origin, int32:flags) {
+    int32:prior = raw scope_lookup_local(t, scope, name);
+    if (prior != 0i32) {
+        Symbol:p = t.syms[prior => int64];
+        if (p.origin_kind == origin_kind) {
+            if (p.origin == origin) {
+                // The same thing, bound again. A re-export chain reaching the
+                // same declaration by two routes is not a conflict.
+                pass prior;
+            }
+        }
+        pass 0i32;
+    }
+    if (t.sym_count >= t.sym_cap) {
+        drop symtab_grow_syms(t);
+    }
+    Symbol:s = Symbol{ name: name, scope: scope,
+                       origin_kind: origin_kind, origin: origin,
+                       flags: flags | (raw SYM_IMPORTED()),
+                       next: t.scopes[scope => int64].first };
+    t.syms[t.sym_count => int64] = s;
+    int32:id = t.sym_count;
+    t.sym_count = t.sym_count + 1i32;
+    Scope:sc = t.scopes[scope => int64];
+    sc.first = id;
+    t.scopes[scope => int64] = sc;
+    pass id;
+};
+
+// Every symbol declared directly in a scope, in declaration order.
+//
+// The chain is built head-first, so walking it yields the REVERSE of declaration
+// order -- and anything that iterates a module's exports must be deterministic
+// (D-086), so this reverses it back rather than leaving the order to how the
+// list happens to be built.
+pub func:scope_symbol_at = int32(SymbolTable->:t, int32:scope, int32:i) {
+    int32:n = raw scope_symbol_count(t, scope);
+    if (i < 0i32) { pass 0i32; }
+    if (i >= n) { pass 0i32; }
+    int32:want = n - 1i32 - i;
+    int32:cur = t.scopes[scope => int64].first;
+    int32:k = 0i32;
+    while (cur != 0i32) {
+        if (k == want) { pass cur; }
+        cur = t.syms[cur => int64].next;
+        k = k + 1i32;
+    }
+    pass 0i32;
+};
+
+pub func:scope_symbol_count = int32(SymbolTable->:t, int32:scope) {
+    int32:cur = t.scopes[scope => int64].first;
+    int32:n = 0i32;
+    while (cur != 0i32) {
+        cur = t.syms[cur => int64].next;
+        n = n + 1i32;
+    }
+    pass n;
 };
 
 // --- phase 1: collect declarations ----------------------------------------------------
