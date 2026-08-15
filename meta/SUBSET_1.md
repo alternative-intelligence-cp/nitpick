@@ -169,7 +169,9 @@ IR**, which is what D-015 already specifies for the first rung:
 |---|---|
 | allocation | **a bump allocator that never frees** |
 | `dalloc` | a no-op |
-| `read_stdin` | the read(2) loop, growing until EOF — added by 0.2.7 so the real parser could run on real files |
+| `read_stdin` | the read(2) loop, growing until EOF — 0.2.7 |
+| `to_cstring` | copies and NUL-terminates, and **fails on an interior NUL** (D-049) — 0.3.0 |
+| `read_file` | `openat`/`read`/`close`, returning the **positive errno** on failure so ENOENT is distinguishable from EACCES — 0.3.0 |
 | `exit` | raw syscall |
 | `memcpy` / `memset` | the symbols LLVM emits calls to |
 | `string_concat`, `int_to_string` | enough to build a diagnostic message |

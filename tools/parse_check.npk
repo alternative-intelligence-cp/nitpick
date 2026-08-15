@@ -1,4 +1,4 @@
-// parse_check -- read a Nitpick source file on stdin, parse it, report.
+// parse_check -- parse a Nitpick source file and report.
 //
 // Cycle 0.2.7. Not part of the compiler: this is the harness's way of asking the
 // REAL parser a question about a REAL file.
@@ -12,7 +12,7 @@
 //
 //   0   parsed with no diagnostics
 //   1   parsed with diagnostics (the count and codes go to stdout)
-//   2   could not read stdin
+//   2   could not read the file -- the errno goes to stdout
 //
 // Output is one line per diagnostic, `CODE line:col`. Codes and spans only --
 // the harness asserts on those and never on message text, so messages stay free
@@ -35,6 +35,7 @@ use "../src/frontend/parse_decorate.npk".*;
 use "../src/frontend/parse_stmt.npk".*;
 use "../src/frontend/parse_pick.npk".*;
 use "../src/frontend/parse_decl.npk".*;
+use "../src/frontend/source.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = raw string_concat(d.code, " ");
@@ -46,14 +47,30 @@ func:emit_line = NIL(Diagnostic:d) {
     pass NIL;
 };
 
-func:main = int32(cstring[]:_~argv) {
-    // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,
-    // so there is no Result to relay into.
-    Result<string>:input = read_stdin();
-    if (input.is_error) {
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop write_raw(2i32, "usage: parse_check <file.npk>\n".ptr, 30i64);
         exit 2i32;
     }
-    string:text = input.value;
+
+    // argv arrives as `cstring` -- kernel-supplied and NUL-terminated (D-089).
+    // The source manager works in `string`, so the path converts once, here.
+    cstring:arg = argv[1i64];
+    string:path = raw string_from_bytes(arg.ptr, arg.len);
+
+    SourceManager:sm = raw srcmgr_init();
+    // `raw`, not `relay`: `main` returns a bare int32 and leaves through `exit`,
+    // so there is no Result to relay into.
+    Result<int32>:loaded = srcmgr_load(@sm, path);
+    if (loaded.is_error) {
+        string:e = raw int_to_string(loaded.error => int64);
+        drop write_raw(2i32, "cannot read: errno ".ptr, 19i64);
+        drop write_raw(2i32, e.ptr, e.len);
+        drop write_raw(2i32, "\n".ptr, 1i64);
+        exit 2i32;
+    }
+    int32:file = loaded.value;
+    string:text = raw srcmgr_text(@sm, file);
 
     InternTable:it = raw intern_init();
 
@@ -62,7 +79,7 @@ func:main = int32(cstring[]:_~argv) {
     // broken token stream, and merging the two would let a single bad escape
     // look like a grammar problem.
     DiagList:lexed = raw diaglist_init();
-    TokenList:toks = raw lex_all(0i32, text, @it, @lexed);
+    TokenList:toks = raw lex_all(file, text, @it, @lexed);
 
     Ast:ast = raw ast_init();
     DiagList:parsed = raw diaglist_init();

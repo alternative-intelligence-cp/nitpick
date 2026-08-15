@@ -338,15 +338,20 @@ def build_parse_check(tmp, tools):
 
 
 def check_parses(binary, path, name):
-    """The real parser must accept this file with no diagnostics at all."""
-    with open(path, "rb") as fh:
-        src = fh.read()
+    """The real parser must accept this file with no diagnostics at all.
+
+    The file is passed BY PATH rather than piped (0.3.0). That is not cosmetic:
+    it means the compiler opens it, so this exercises `read_file`, `to_cstring`
+    and the source manager on every run, and a span's `file` field is a real
+    entry in that manager rather than a hardcoded zero.
+    """
     try:
-        r = subprocess.run([binary], input=src, capture_output=True, timeout=20)
+        r = subprocess.run([binary, path], capture_output=True, timeout=20)
     except subprocess.TimeoutExpired:
         return ["%s: the real parser did not terminate" % name]
     if r.returncode == 2:
-        return ["%s: parse_check could not read stdin" % name]
+        return ["%s: parse_check could not read the file: %s"
+                % (name, r.stderr.decode("utf-8", "replace").strip())]
     if r.returncode == 3:
         return ["%s: the real parser TRAPPED -- a defect in the compiler, not in "
                 "this file" % name]

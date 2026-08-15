@@ -40,6 +40,8 @@ RUNTIME_ARGS = {
     "string_slice":  ["{ ptr, i64, i64 }", "i64", "i64"],
     "string_from_bytes": ["ptr", "i64"],
     "read_stdin":    [],
+    "to_cstring":    ["{ ptr, i64, i64 }"],
+    "read_file":     ["{ ptr, i64 }"],
 }
 
 

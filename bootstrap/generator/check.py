@@ -76,6 +76,8 @@ BUILTINS = {
     "string_slice":  (T.STRING, True),
     "string_from_bytes": (T.STRING, False),
     "read_stdin":    (T.STRING, True),
+    "to_cstring":    (T.CSTRING, True),
+    "read_file":     (T.STRING, True),
 }
 
 

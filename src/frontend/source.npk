@@ -7,6 +7,7 @@
 // that difference is multiplied by the size of the tree.
 
 use "source_location.npk".*;
+use "intern.npk".*;
 
 pub struct:SourceFile = {
     string:path;      // as given on the command line or resolved from a `use`
@@ -56,6 +57,46 @@ pub func:srcmgr_add = int32(SourceManager->:m, string:path, string:text) {
 
 pub func:srcmgr_count = int32(SourceManager->:m) {
     pass m.count;
+};
+
+// --- loading by path -----------------------------------------------------------
+//
+// Cycle 0.3.0. Until now the frontend had never opened a file: `parse_check` read
+// stdin because that needed no path handling, which was the honest scope at the
+// time. A module loader cannot dodge either.
+
+// Already loaded? Returns the existing file id, or -1.
+//
+// THE SAME PATH MUST NEVER PRODUCE TWO FILE IDS. A module loaded twice has every
+// one of its symbols declared twice, and the duplicate-declaration diagnostic
+// then fires on a file the reader never edited (0.3.1). This is the check that
+// prevents it, and 0.3.2 adds the normalisation that makes it reliable --
+// `./a/../b.npk` and `b.npk` must arrive here as the same text.
+pub func:srcmgr_find = int32(SourceManager->:m, string:path) {
+    int32:i = 0i32;
+    while (i < m.count) {
+        if (raw string_eq(m.files[i => int64].path, path)) {
+            pass i;
+        }
+        i = i + 1i32;
+    }
+    pass (0i32 - 1i32);
+};
+
+// Read a file and register it. Returns its id.
+//
+// The path converts through `to_cstring`, which FAILS on an interior NUL
+// (D-049) -- and that fallibility is the point. A `string` is length-carrying,
+// so an embedded `0u8` is just a byte; terminating it silently would mean the
+// path that was checked and the path that was opened are different paths.
+pub func:srcmgr_load = int32(SourceManager->:m, string:path) {
+    int32:existing = raw srcmgr_find(m, path);
+    if (existing >= 0i32) {
+        pass existing;
+    }
+    cstring:cpath = relay to_cstring(path);
+    string:text = relay read_file(cpath);
+    pass (raw srcmgr_add(m, path, text));
 };
 
 pub func:srcmgr_path = string(SourceManager->:m, int32:file) {

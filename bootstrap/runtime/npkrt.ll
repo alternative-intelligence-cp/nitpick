@@ -121,6 +121,151 @@ define i64 @npk_write_raw(i32 %fd, ptr %buf, i64 %len) {
 }
 
 ; ---------------------------------------------------------------------------
+; string -> cstring, and reading a file by path.
+;
+; `to_cstring` FAILS ON AN INTERIOR NUL, and that is the entire point of D-049.
+; A Nitpick `string` is {ptr, len, cap} and length-carrying, so an embedded 0u8
+; is just a byte. Converting such a string by copying up to the first NUL
+; silently truncates it, and the caller has no indication -- so a path that was
+; validated and a path that was opened become DIFFERENT PATHS.
+;
+;     attacker supplies:   "avatar.png\0.sh"
+;     validator sees:      len 14, suffix ".sh"
+;     kernel sees:         "avatar.png"
+;
+; That is the poison-NUL class, and it is why `read_file` takes a cstring rather
+; than accepting a string and terminating it itself. The conversion is explicit,
+; fallible, and the caller handles the failure like any other.
+;
+; Error codes: 22 is EINVAL, used for the interior NUL. read_file returns the
+; POSITIVE errno from the failing syscall, so a caller can tell ENOENT (2) from
+; EACCES (13) without a second mechanism.
+; ---------------------------------------------------------------------------
+
+define { { ptr, i64 }, i32 } @npk_to_cstring({ ptr, i64, i64 } %s) {
+entry:
+  %p = extractvalue { ptr, i64, i64 } %s, 0
+  %n = extractvalue { ptr, i64, i64 } %s, 1
+  br label %scan
+
+scan:                                     ; preds = %entry, %step
+  %i = phi i64 [ 0, %entry ], [ %i1, %step ]
+  %done = icmp uge i64 %i, %n
+  br i1 %done, label %copy, label %check
+
+check:                                    ; preds = %scan
+  %cp = getelementptr i8, ptr %p, i64 %i
+  %ch = load i8, ptr %cp
+  %isnul = icmp eq i8 %ch, 0
+  br i1 %isnul, label %interior, label %step
+
+step:                                     ; preds = %check
+  %i1 = add i64 %i, 1
+  br label %scan
+
+copy:                                     ; preds = %scan
+  ; One byte more than the length, for the terminator the kernel needs.
+  %sz = add i64 %n, 1
+  %buf = call ptr @npk_alloc(i64 %sz)
+  call ptr @memcpy(ptr %buf, ptr %p, i64 %n)
+  %end = getelementptr i8, ptr %buf, i64 %n
+  store i8 0, ptr %end
+  %c0 = insertvalue { ptr, i64 } undef, ptr %buf, 0
+  %c1 = insertvalue { ptr, i64 } %c0, i64 %n, 1
+  %r0 = insertvalue { { ptr, i64 }, i32 } undef, { ptr, i64 } %c1, 0
+  %r1 = insertvalue { { ptr, i64 }, i32 } %r0, i32 0, 1
+  ret { { ptr, i64 }, i32 } %r1
+
+interior:                                 ; preds = %check
+  %e0 = insertvalue { ptr, i64 } undef, ptr null, 0
+  %e1 = insertvalue { ptr, i64 } %e0, i64 0, 1
+  %q0 = insertvalue { { ptr, i64 }, i32 } undef, { ptr, i64 } %e1, 0
+  %q1 = insertvalue { { ptr, i64 }, i32 } %q0, i32 22, 1
+  ret { { ptr, i64 }, i32 } %q1
+}
+
+define { { ptr, i64, i64 }, i32 } @npk_read_file({ ptr, i64 } %path) {
+entry:
+  %pp = extractvalue { ptr, i64 } %path, 0
+  %ppi = ptrtoint ptr %pp to i64
+  ; openat(AT_FDCWD, path, O_RDONLY, 0). AT_FDCWD is -100.
+  %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %fd, 0
+  br i1 %bad, label %openfail, label %start
+
+start:                                    ; preds = %entry
+  %buf0 = call ptr @npk_alloc(i64 65536)
+  br label %loop
+
+loop:                                     ; preds = %start, %iter
+  %buf = phi ptr [ %buf0, %start ], [ %rbuf, %iter ]
+  %cap = phi i64 [ 65536, %start ], [ %rcap, %iter ]
+  %len = phi i64 [ 0, %start ], [ %len_n, %iter ]
+  %room = sub i64 %cap, %len
+  %full = icmp eq i64 %room, 0
+  br i1 %full, label %grow, label %read
+
+grow:                                     ; preds = %loop
+  %cap2 = mul i64 %cap, 2
+  %buf2 = call ptr @npk_alloc(i64 %cap2)
+  call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
+  br label %read
+
+read:                                     ; preds = %loop, %grow
+  %rbuf = phi ptr [ %buf, %loop ], [ %buf2, %grow ]
+  %rcap = phi i64 [ %cap, %loop ], [ %cap2, %grow ]
+  %rroom = sub i64 %rcap, %len
+  %dst = getelementptr i8, ptr %rbuf, i64 %len
+  %dsti = ptrtoint ptr %dst to i64
+  %n = call i64 @npk_sys6(i64 0, i64 %fd, i64 %dsti, i64 %rroom, i64 0, i64 0, i64 0)
+  %rbad = icmp slt i64 %n, 0
+  br i1 %rbad, label %readfail, label %check
+
+check:                                    ; preds = %read
+  ; A SHORT READ IS NOT END OF FILE. Treating it as one is the classic way to
+  ; truncate a file silently, and here it would mean parsing a prefix of a module
+  ; and reporting success.
+  %eof = icmp eq i64 %n, 0
+  br i1 %eof, label %done, label %iter
+
+iter:                                     ; preds = %check
+  %len_n = add i64 %len, %n
+  br label %loop
+
+done:                                     ; preds = %check
+  %cr = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %rbuf, 0
+  %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %rcap, 2
+  %o0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %o1 = insertvalue { { ptr, i64, i64 }, i32 } %o0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %o1
+
+readfail:                                 ; preds = %read
+  ; Close before returning. The process is about to report an error, not exit,
+  ; and a driver that reports many missing files must not leak a descriptor each
+  ; time it succeeds partway.
+  %cr2 = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %rerr = sub i64 0, %n
+  %rerr32 = trunc i64 %rerr to i32
+  br label %fail
+
+openfail:                                 ; preds = %entry
+  %oerr = sub i64 0, %fd
+  %oerr32 = trunc i64 %oerr to i32
+  br label %fail
+
+fail:                                     ; preds = %readfail, %openfail
+  %code = phi i32 [ %rerr32, %readfail ], [ %oerr32, %openfail ]
+  %f0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %f1 = insertvalue { ptr, i64, i64 } %f0, i64 0, 1
+  %f2 = insertvalue { ptr, i64, i64 } %f1, i64 0, 2
+  %g0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %f2, 0
+  %g1 = insertvalue { { ptr, i64, i64 }, i32 } %g0, i32 %code, 1
+  ret { { ptr, i64, i64 }, i32 } %g1
+}
+
+; ---------------------------------------------------------------------------
 ; Reading standard input, whole.
 ;
 ; The frontend needs to run on REAL FILES for the rejection suite to mean what
