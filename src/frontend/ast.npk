@@ -106,6 +106,31 @@ pub struct:Ast = {
     wild DeclNode->:decls;  int32:decl_count;  int32:decl_cap;
     wild TypeNode->:types;  int32:type_count;  int32:type_cap;
     wild PatNode->:pats;    int32:pat_count;   int32:pat_cap;
+
+    // A flat pool of child handles. A node that owns a SEQUENCE -- generic
+    // arguments, function parameters, `dyn A & B` traits -- stores a (start,
+    // count) window into this pool rather than owning an array of its own.
+    // Same reasoning as the node arrays: one growable container instead of one
+    // per node kind, and indices that survive the pool being reallocated.
+    wild int32->:ids;       int32:id_count;    int32:id_cap;
+
+    // A SCRATCH stack, distinct from the pool above. Children are gathered here
+    // while a node is being parsed and copied into the pool when it completes.
+    //
+    // Pushing straight into the pool does not work, and the reason is worth
+    // stating: parsing a child may itself push, so a (mark, count-since) window
+    // taken on the pool CONTAINS the children of nested nodes as well as its
+    // own. `Handle<Node<int64>>` reported two arguments instead of one. The
+    // windows nest in ORDER but not in EXTENT, which is the trap.
+    //
+    // With scratch, a nested node copies its entries out and pops them, so what
+    // remains above the outer node's mark is exactly its own children.
+    wild int32->:scratch;   int32:scratch_count;  int32:scratch_cap;
+};
+
+pub struct:IdSpan = {
+    int32:start;
+    int32:count;
 };
 
 pub func:ast_init = Ast() {
@@ -117,13 +142,17 @@ pub func:ast_init = Ast() {
     wild int8->:d = alloc(n * #size_of<DeclNode>());
     wild int8->:t = alloc(n * #size_of<TypeNode>());
     wild int8->:p = alloc(n * #size_of<PatNode>());
+    wild int8->:q = alloc(n * #size_of<int32>());
+    wild int8->:r = alloc(n * #size_of<int32>());
 
     Ast:ast = Ast{
         exprs: e => wild ExprNode->,  expr_count: 0i32,  expr_cap: 256i32,
         stmts: s => wild StmtNode->,  stmt_count: 0i32,  stmt_cap: 256i32,
         decls: d => wild DeclNode->,  decl_count: 0i32,  decl_cap: 256i32,
         types: t => wild TypeNode->,  type_count: 0i32,  type_cap: 256i32,
-        pats:  p => wild PatNode->,   pat_count:  0i32,  pat_cap:  256i32
+        pats:  p => wild PatNode->,   pat_count:  0i32,  pat_cap:  256i32,
+        ids:   q => wild int32->,     id_count:   0i32,  id_cap:   256i32,
+        scratch: r => wild int32->,   scratch_count: 0i32, scratch_cap: 256i32
     };
 
     // Reserve index 0 in every array as the NONE node.
@@ -317,3 +346,78 @@ pub func:ast_pat = PatNode(Ast->:ast, PatId:id) {
 };
 
 pub func:ast_pat_count = int32(Ast->:ast) { pass ast.pat_count; };
+
+// --- the child-handle pool ------------------------------------------------------
+//
+// Usage is always: mark, push each child, then window. The mark is taken BEFORE
+// the children are parsed, and parsing a child may itself push into the pool --
+// which is fine, because a nested sequence completes before the outer one
+// resumes pushing, so the windows nest rather than interleave.
+
+pub func:ast_scratch_mark = int32(Ast->:ast) {
+    pass ast.scratch_count;
+};
+
+func:ast_grow_scratch = NIL(Ast->:ast) {
+    int32:nc = ast.scratch_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.scratch => wild int8->,
+                                (nc => int64) * #size_of<int32>());
+    ast.scratch = bigger => wild int32->;
+    ast.scratch_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_scratch_push = NIL(Ast->:ast, int32:value) {
+    if (ast.scratch_count >= ast.scratch_cap) {
+        drop ast_grow_scratch(ast);
+    }
+    ast.scratch[ast.scratch_count => int64] = value;
+    ast.scratch_count = ast.scratch_count + 1i32;
+    pass NIL;
+};
+
+// Copy everything pushed since `mark` into the permanent pool, pop it from
+// scratch, and return the window. After this the caller's children are
+// contiguous in the pool and scratch is exactly as it was.
+pub func:ast_scratch_commit = IdSpan(Ast->:ast, int32:mark) {
+    int32:n = ast.scratch_count - mark;
+    int32:start = ast.id_count;
+    int32:i = 0i32;
+    while (i < n) {
+        drop ast_ids_push(ast, ast.scratch[(mark + i) => int64]);
+        i = i + 1i32;
+    }
+    ast.scratch_count = mark;
+    IdSpan:sp = IdSpan{ start: start, count: n };
+    pass sp;
+};
+
+func:ast_grow_ids = NIL(Ast->:ast) {
+    int32:nc = ast.id_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.ids => wild int8->,
+                                (nc => int64) * #size_of<int32>());
+    ast.ids = bigger => wild int32->;
+    ast.id_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_ids_push = NIL(Ast->:ast, int32:value) {
+    if (ast.id_count >= ast.id_cap) {
+        drop ast_grow_ids(ast);
+    }
+    ast.ids[ast.id_count => int64] = value;
+    ast.id_count = ast.id_count + 1i32;
+    pass NIL;
+};
+
+pub func:ast_ids_count_since = int32(Ast->:ast, int32:mark) {
+    pass (ast.id_count - mark);
+};
+
+pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) {
+    if (i < 0i32) { fail 8i32; }
+    int32:at = start + i;
+    if (at < 0i32) { fail 8i32; }
+    if (at >= ast.id_count) { fail 8i32; }
+    pass ast.ids[at => int64];
+};

@@ -1,0 +1,185 @@
+// Type parsing.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.2.2.
+//
+// Two facts from AST_REFERENCE.md §4 shape this whole file, and neither is
+// obvious from the type system alone:
+//
+// 1. THERE IS NO SLICE NODE. `T[]` is an `ArrayType` whose `size` is absent, and
+//    `T[N]` is one whose size is present. They are wildly different TYPES --
+//    D-070 makes one a non-owning second-class view and the other a value type
+//    with static bounds -- but they differ in SYNTAX only by the size
+//    expression. The AST records syntax; the type checker assigns meaning.
+//
+// 2. QUALIFIERS ARE NOT PART OF THE TYPE. `stack`, `wild`, `wildx`, `const`,
+//    `fixed` and the borrow markers live on the `VarDeclStmt`, not on the type
+//    node. So `wild int8->:buf` is a declaration qualified `wild` whose type is
+//    `int8->` -- and this parser must not consume the qualifier, or the
+//    declaration loses it.
+
+use "source_location.npk".*;
+use "token_kind.npk".*;
+use "token.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "parse_codes.npk".*;
+use "parser.npk".*;
+use "token_name.npk".*;
+
+// --- named accessors ---------------------------------------------------------
+//
+// Slots are interpreted HERE and nowhere else (ast.npk). A call site that reads
+// `.a` directly is a call site that will break silently when a slot's meaning
+// moves.
+
+pub func:type_name_index = int64(TypeNode:t)    { pass t.payload; };
+pub func:type_args_start = int32(TypeNode:t)    { pass t.a; };
+pub func:type_args_count = int32(TypeNode:t)    { pass t.b; };
+pub func:type_pointee = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_inner = TypeId(TypeNode:t)        { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_element = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
+pub func:type_array_size = ExprId(TypeNode:t)   { ExprId:i = ExprId{ index: t.b }; pass i; };
+pub func:type_return = TypeId(TypeNode:t)       { TypeId:i = TypeId{ index: t.c }; pass i; };
+
+// `T[]` versus `T[N]`: an absent size is the slice.
+pub func:type_is_slice = bool(TypeNode:t) {
+    if (t.kind != TypeKind.TypeArrayType) { pass false; }
+    pass (t.b == 0i32);
+};
+
+// --- closing a type-argument list --------------------------------------------
+
+// The lexer emits `>>` as ONE token because a type position is not lexically
+// detectable (0.1.5): `Handle<Node<int64>>` is indistinguishable from a chain of
+// comparisons until something knows it is reading a type. The parser is that
+// something, so it asks for the split exactly when it needs a `>`.
+//
+// This is what D-064 bought by confining type-argument context to a type
+// position or `::<` and nowhere else: no feedback channel into the lexer, no
+// lookahead heuristic, no speculative parse.
+pub func:p_expect_gt = bool(Parser->:p) {
+    if (relay p_accept(p, TokenKind.OpGt)) {
+        pass true;
+    }
+    if (relay p_at(p, TokenKind.OpShr)) {
+        if (raw tokenlist_split_shr(p.tokens, p.pos)) {
+            // The first `>` closes this list; the second stays for the level
+            // above, which is the whole reason nested generics work.
+            drop p_advance(p);
+            pass true;
+        }
+    }
+    pass (relay p_expect(p, TokenKind.OpGt));
+};
+
+// --- types --------------------------------------------------------------------
+
+pub func:p_parse_type = TypeId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    TokenKind:k = relay p_kind(p);
+
+    // `dyn A & B` -- a set of traits, combined with `&` (D-029).
+    if (k == TokenKind.KwDyn) {
+        drop p_advance(p);
+        int32:mark = raw ast_scratch_mark(p.ast);
+        TypeId:first = relay p_parse_type(p);
+        drop ast_scratch_push(p.ast, first.index);
+        while (relay p_accept(p, TokenKind.OpAmp)) {
+            TypeId:more = relay p_parse_type(p);
+            drop ast_scratch_push(p.ast, more.index);
+        }
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+        pass (relay ast_add_type(p.ast, TypeKind.TypeDynType, sp,
+                                 w.start, w.count, 0i32, 0i64));
+    }
+
+    if (k == TokenKind.KwSelf) {
+        drop p_advance(p);
+        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeSelfType,
+                                                     sp, 0i32, 0i32, 0i32, 0i64)));
+    }
+
+    // A named type: any identifier, and every builtin type keyword. The parser
+    // does not check that the name EXISTS -- that is the type checker's job, and
+    // a parser that rejected unknown names could not report more than one.
+    bool:named = (k == TokenKind.Ident);
+    if (raw token_kind_is_builtin_type(k)) { named = true; }
+
+    if (!named) {
+        drop p_error(p, raw PARSE_EXPECTED(), "expected a type");
+        pass (raw type_none());
+    }
+
+    Token:nt = relay p_advance(p);
+    int64:name = nt.payload;
+    if (nt.kind != TokenKind.Ident) {
+        // A builtin type keyword carries no intern index, so record the KIND as
+        // the name. The checker maps it back; nothing else needs to.
+        name = (nt.kind => int32) => int64;
+    }
+
+    int32:astart = 0i32;
+    int32:acount = 0i32;
+    if (relay p_at(p, TokenKind.OpLt)) {
+        drop p_advance(p);
+        int32:mark = raw ast_scratch_mark(p.ast);
+        if (!(relay p_at(p, TokenKind.OpGt))) {
+            TypeId:a1 = relay p_parse_type(p);
+            drop ast_scratch_push(p.ast, a1.index);
+            while (relay p_accept(p, TokenKind.PComma)) {
+                TypeId:an = relay p_parse_type(p);
+                drop ast_scratch_push(p.ast, an.index);
+            }
+        }
+        drop p_expect_gt(p);
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+        astart = w.start;
+        acount = w.count;
+    }
+
+    TypeId:base = relay ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
+                                     astart, acount, 0i32, name);
+    pass (relay p_suffixes(p, base));
+};
+
+// `->`, `[]`, `[N]`, `?` -- applied left to right, so `int8->[]` is a slice of
+// pointers rather than a pointer to a slice.
+pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
+    TypeId:cur = base;
+    while (true) {
+        Span:sp = relay p_span(p);
+
+        if (relay p_accept(p, TokenKind.OpArrowTo)) {
+            cur = relay ast_add_type(p.ast, TypeKind.TypePointerType, sp,
+                                     cur.index, 0i32, 0i32, 0i64);
+        } else {
+            if (relay p_accept(p, TokenKind.OpQuestion)) {
+                cur = relay ast_add_type(p.ast, TypeKind.TypeOptionalType, sp,
+                                         cur.index, 0i32, 0i32, 0i64);
+            } else {
+                if (relay p_at(p, TokenKind.PLBracket)) {
+                    drop p_advance(p);
+                    // An absent size is a SLICE; a present one is a fixed array.
+                    // Size expressions arrive with 0.2.3; until then only the
+                    // empty form and a bare integer are recognised.
+                    int32:size = 0i32;
+                    if (!(relay p_at(p, TokenKind.PRBracket))) {
+                        Token:n = relay p_advance(p);
+                        ExprId:se = relay ast_add_expr(p.ast,
+                                        ExprKind.ExprIntLiteral, n.span,
+                                        0i32, 0i32, 0i32, n.payload);
+                        size = se.index;
+                    }
+                    drop p_expect(p, TokenKind.PRBracket);
+                    cur = relay ast_add_type(p.ast, TypeKind.TypeArrayType, sp,
+                                             cur.index, size, 0i32, 0i64);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    pass cur;
+};

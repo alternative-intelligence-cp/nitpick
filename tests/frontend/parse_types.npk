@@ -1,0 +1,138 @@
+// Type parsing, and the `>>` split (cycle 0.2.2).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+
+struct:Fixture = {
+    TokenList:tokens;
+    Ast:ast;
+    DiagList:diags;
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:ld = raw diaglist_init();
+
+    // --- a plain named type -------------------------------------------------
+    TokenList:k1 = raw lex_all(0i32, "int32", @it, @ld);
+    Ast:a1 = raw ast_init();
+    DiagList:g1 = raw diaglist_init();
+    Parser:p1 = raw parser_init(@k1, @a1, @g1, @it);
+    TypeId:t1 = raw p_parse_type(@p1);
+    TypeNode:n1 = raw ast_type(@a1, t1);
+    if (n1.kind != TypeKind.TypeNamedType)            { exit 10i32; }
+    if (raw diaglist_count(@g1) != 0i64)              { exit 11i32; }
+
+    // --- suffixes apply left to right ---------------------------------------
+    // `int8->[]` is a SLICE OF POINTERS, not a pointer to a slice.
+    TokenList:k2 = raw lex_all(0i32, "int8->[]", @it, @ld);
+    Ast:a2 = raw ast_init();
+    DiagList:g2 = raw diaglist_init();
+    Parser:p2 = raw parser_init(@k2, @a2, @g2, @it);
+    TypeId:t2 = raw p_parse_type(@p2);
+    TypeNode:n2 = raw ast_type(@a2, t2);
+    if (n2.kind != TypeKind.TypeArrayType)            { exit 20i32; }
+    // There is NO slice node: `T[]` is an ArrayType with no size (AST_REFERENCE 4).
+    if (!(raw type_is_slice(n2)))                     { exit 21i32; }
+    TypeNode:inner2 = raw ast_type(@a2, raw type_element(n2));
+    if (inner2.kind != TypeKind.TypePointerType)      { exit 22i32; }
+
+    // A fixed array has a size, so it is not a slice.
+    TokenList:k3 = raw lex_all(0i32, "int32[4]", @it, @ld);
+    Ast:a3 = raw ast_init();
+    DiagList:g3 = raw diaglist_init();
+    Parser:p3 = raw parser_init(@k3, @a3, @g3, @it);
+    TypeNode:n3 = raw ast_type(@a3, raw p_parse_type(@p3));
+    if (n3.kind != TypeKind.TypeArrayType)            { exit 23i32; }
+    if (raw type_is_slice(n3))                        { exit 24i32; }
+
+    // --- generic arguments ---------------------------------------------------
+    TokenList:k4 = raw lex_all(0i32, "Result<int32>", @it, @ld);
+    Ast:a4 = raw ast_init();
+    DiagList:g4 = raw diaglist_init();
+    Parser:p4 = raw parser_init(@k4, @a4, @g4, @it);
+    TypeNode:n4 = raw ast_type(@a4, raw p_parse_type(@p4));
+    if (raw type_args_count(n4) != 1i32)              { exit 30i32; }
+    if (raw diaglist_count(@g4) != 0i64)              { exit 31i32; }
+
+    // --- THE `>>` SPLIT -------------------------------------------------------
+    // `Handle<Node<int64>>` must parse. The lexer emitted `>>` as one token
+    // because a type position is not lexically detectable; the parser asks for
+    // the split when it needs a `>`, and the second half closes the outer list.
+    //
+    // The failure mode here is SILENT: a wrong split produces a valid parse of a
+    // different program, which is why this is asserted rather than eyeballed.
+    TokenList:k5 = raw lex_all(0i32, "Handle<Node<int64>>", @it, @ld);
+    Ast:a5 = raw ast_init();
+    DiagList:g5 = raw diaglist_init();
+    Parser:p5 = raw parser_init(@k5, @a5, @g5, @it);
+    TypeId:t5 = raw p_parse_type(@p5);
+    TypeNode:n5 = raw ast_type(@a5, t5);
+    if (n5.kind != TypeKind.TypeNamedType)            { exit 40i32; }
+    if (raw type_args_count(n5) != 1i32)              { exit 41i32; }
+    if (raw diaglist_count(@g5) != 0i64)              { exit 42i32; }
+    // Everything was consumed: no `>` left stranded.
+    if (!(raw p_at_end(@p5)))                         { exit 43i32; }
+
+    int32:inner_ix = raw ast_id_at(@a5, raw type_args_start(n5), 0i32);
+    TypeId:innerId = TypeId{ index: inner_ix };
+    TypeNode:node = raw ast_type(@a5, innerId);
+    if (node.kind != TypeKind.TypeNamedType)          { exit 44i32; }
+    if (raw type_args_count(node) != 1i32)            { exit 45i32; }
+
+    // Three deep, so two splits happen in sequence.
+    TokenList:k6 = raw lex_all(0i32, "A<B<C<int64>>>", @it, @ld);
+    Ast:a6 = raw ast_init();
+    DiagList:g6 = raw diaglist_init();
+    Parser:p6 = raw parser_init(@k6, @a6, @g6, @it);
+    drop p_parse_type(@p6);
+    if (raw diaglist_count(@g6) != 0i64)              { exit 46i32; }
+    if (!(raw p_at_end(@p6)))                         { exit 47i32; }
+
+    // --- a SHIFT is left alone -----------------------------------------------
+    // Splitting is driven by the parser needing a `>`. Outside a type-argument
+    // list nothing asks, so `>>` stays one token.
+    TokenList:k7 = raw lex_all(0i32, "x >> 2i32", @it, @ld);
+    if (raw tokenlist_count(@k7) != 4i64)             { exit 50i32; }
+    Token:shift = raw tokenlist_at(@k7, 1i64);
+    if (shift.kind != TokenKind.OpShr)                { exit 51i32; }
+
+    // --- dyn A & B -------------------------------------------------------------
+    TokenList:k8 = raw lex_all(0i32, "dyn Read & Write", @it, @ld);
+    Ast:a8 = raw ast_init();
+    DiagList:g8 = raw diaglist_init();
+    Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
+    TypeNode:n8 = raw ast_type(@a8, raw p_parse_type(@p8));
+    if (n8.kind != TypeKind.TypeDynType)              { exit 60i32; }
+    if (raw type_args_count(n8) != 2i32)              { exit 61i32; }
+
+    // --- qualifiers are NOT part of the type ---------------------------------
+    // `stack`, `wild` and friends belong to the VarDeclStmt (AST_REFERENCE 4),
+    // so the type parser must leave them for the declaration -- consuming one
+    // here would lose it.
+    TokenList:k9 = raw lex_all(0i32, "wild int8->", @it, @ld);
+    Ast:a9 = raw ast_init();
+    DiagList:g9 = raw diaglist_init();
+    Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
+    if (!(raw p_at(@p9, TokenKind.KwWild)))           { exit 70i32; }
+    drop p_parse_type(@p9);
+    // It refused to start on `wild`, leaving the cursor untouched.
+    if (!(raw p_at(@p9, TokenKind.KwWild)))           { exit 71i32; }
+    if (raw diaglist_count(@g9) != 1i64)              { exit 72i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
