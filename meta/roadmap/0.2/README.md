@@ -27,6 +27,7 @@ here it enforces it against the real parser, which is what it was written for.
 | **0.2.5** | Declarations — plus contracts and attributes |
 | **0.2.6** | `pick` patterns, guards, and destructuring |
 | **0.2.7** | Parser diagnostics, recovery, and the suites |
+| **0.2.8** | The type grammar's unreachable corners — added by 0.2.4 |
 
 ## What the AST must be
 
@@ -47,3 +48,19 @@ because a type position is not lexically detectable; the parser splits it when i
 needs a `>` to close a type-argument list. That is the mechanism D-064 bought by
 confining type-argument context to a type position or `::<` and nowhere else —
 no feedback channel, no speculative parse.
+
+## Why 0.2.8 exists
+
+It was not in the original plan. **0.2.4 compared `AST_REFERENCE.md`'s node
+tables against the kind tables generated from them**, and the comparison found
+four nodes the parser could not build, could not reach, or built wrongly —
+including two the document declares only in prose and one, `FuncType`, that no
+document in the set gives a spelling for.
+
+Two lessons are worth carrying into later cycles. First, **the generator reads
+tables and the document also says things in prose**; anything declared outside a
+table is invisible to it, which is how `FallStmt`, `GiveStmt` and
+`IdentifierExpr` went missing. Second, and more useful: **diff the two lists
+mechanically.** Every one of the four was found in a few seconds by a script
+comparing names in the spec against variants in the generated enum, and none of
+them would have surfaced from reading either file on its own.
