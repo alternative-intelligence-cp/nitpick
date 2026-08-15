@@ -286,26 +286,42 @@ names neither the construct nor the rule it broke.
 | `SpreadExpr` | `operand` | **`..^`** — expands a collection at a call site (D-026) |
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
 | `MoveExpr` | `place` | **`move(place)`** — transfers ownership and invalidates the source (D-065) |
-| **`OkExpr`** | `operand` | **`ok(value)`** — wraps a value in a `Result` and clears the taint (D-096) |
-| **`IsErrExpr`** | `operand` | **`is_err(result)`** — tests for failure **without trapping** (D-008, D-096) |
+| **`IsErrExpr`** | `operand` | **`is_err(tbbValue)`** — tests a `tbb` for ERR **without trapping** (D-008, D-096) |
+| **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v, error: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097) |
 
-> **`OkExpr` and `IsErrExpr` were missing, and nothing could have noticed.**
-> `LEXICAL_REFERENCE.md` makes `ok` a `ControlFlow` keyword and `is_err` a
-> `BuiltinHelper`, `TYPE_REFERENCE.md` §27 says a taint "must be cleared via
-> `ok(val)`", and `OP_REFERENCE.md` §5 says to "use `is_err(x)` to test without
-> trapping" — so both are specified, required, and had no node to parse into.
-> Being keywords, they never reached the identifier path either, which means
-> `ok(1i32)` was simply **"expected an expression"**.
+> **`ResultLiteralExpr` and `IsErrExpr` were missing, and nothing could have
+> noticed.** Three constructs the specs require could not be written down,
+> because each is spelled with a KEYWORD and the parser only builds these forms
+> from an identifier.
 >
-> They take the same shape as `MoveExpr`: a keyword operator with a parenthesised
-> operand. They are not `UnaryExpr`s and not calls — `is_err` is the one test in
-> the language that is guaranteed not to trap, and giving it a node of its own is
-> what lets 0.5 and 0.7 honour that rather than inferring it from a callee's name.
+> - **`Result{value: v, error: e}`** is the language's only constructor and, per
+>   `ReturnStmt` in §2, the only legal operand of `return`. `TYPE_REFERENCE.md`
+>   §11 gives the full desugar table for `pass`/`fail` over it. The struct-literal
+>   path is gated on `TokenKind.Ident`, and `Result` is `KwResult`, so the real
+>   parser answered `NITPICK-PARSE-002`.
+> - **`is_err(x)`** is the one test guaranteed not to trap: branching on a `tbb`
+>   ERR value traps to `failsafe`, so a program needs a way to ask "did this go
+>   ERR" that is safe on every value. Its operand is a **`tbb`**, not a `Result`
+>   — `OP_REFERENCE.md` §5 is explicit and an earlier reading of this document got
+>   it backwards.
+> - **`ok(val)`** was removed instead (D-097). It tested user-writable `unknown`,
+>   which D-007 had already removed, so it was an operator whose subject no longer
+>   existed.
 >
-> A comment in `resolve.npk` had described both as *bare-name builtins* that
-> "resolve to nothing and that is correct". They are not in `builtins.npk`, and
-> they are keywords, so nothing about that sentence was true — it described a
-> path neither name could reach.
+> `ResultLiteralExpr` has a FIXED SHAPE — exactly `value` and `error`, in either
+> written order — rather than reusing `StructLiteralExpr`. A struct literal's
+> window alternates interned NAMES with values, and a keyword has no intern index;
+> reusing it would put a token kind where a name index belongs, which is the same
+> confusion that made `Result<int32>` report "there is no type named" (D-096).
+>
+> `IsErrExpr` takes `MoveExpr`'s shape: a keyword operator with a parenthesised
+> operand. It is not a call, because 0.5 and 0.7 have to *see* which construct
+> carries the no-trap guarantee rather than recover it from a callee's name.
+>
+> A comment in `resolve.npk` had described `ok` and `is_err` as *bare-name
+> builtins* that "resolve to nothing and that is correct". They are not in
+> `builtins.npk`, and they are keywords, so nothing about that sentence was true
+> — it described a path neither name could reach.
 
 > **`MoveExpr` was missing.** D-065 settled `move(place)` as a keyword operator
 > with a parenthesised operand — the same shape `comptime(expr)` has — and it is

@@ -119,7 +119,8 @@ result at all.
 
 ERR is **absorbing and overrides identities**: `ERR * 0` is `ERR`, not `0`; so is
 `ERR - ERR`. Once a value is ERR, no arithmetic yields a non-ERR result from it.
-Only an explicit check (`is_err`), a fallback (`?`), or `ok()` leaves the state.
+Only an explicit check (`is_err`) or a fallback (`?`) leaves the state.
+*(`ok()` was listed here and is removed — D-097.)*
 
 Because `bool` has exactly two values and cannot represent ERR, **comparing or
 branching on an ERR value traps to `failsafe`**. ERR flows freely through data

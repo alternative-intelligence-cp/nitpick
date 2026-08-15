@@ -56,7 +56,7 @@ MemoryOrdering      ::= "relaxed" | "acquire" | "release" | "acq_rel" | "seq_cst
 ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "when" | "then" | "end" | "pick" | "fall" | "where"
                       | "give" | "break" | "continue" | "return" | "pass"
-                      | "fail" | "exit" | "raw" | "drop" | "nodrop" | "ok"
+                      | "fail" | "exit" | "raw" | "drop" | "nodrop"
                       | "defaults" | "discard" | "move" | "relay"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
@@ -101,6 +101,7 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | `gc` removed from `MemoryQualifier` | D-003 — no collector |
 | `fails`, `on`, `with`, `never` added | D-002 — FFI error contracts. `with` binds the error source (`with errno`) and was missed in the first pass. |
 | `is_err` added | D-008 — non-trapping ERR test |
+| **`ok` removed** | D-097 — it tested user-writable `unknown`, which D-007 removed. `is_err` is the non-trapping test for `tbb`; `.is_error` covers `Result`. |
 | `discard` added to `ControlFlow` | it is a statement keyword and was absent |
 | `tbb128`, `tbb256` added | `TYPE_REFERENCE.md` §6 defines them |
 | `fix256` → `dim256` | D-036 — `dim256` has dimensional analysis; `fix256` is its obsolete name. Also removes the `fix` / `fixed` near-miss, `fixed` being the immutability qualifier. |

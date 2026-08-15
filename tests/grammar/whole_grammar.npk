@@ -265,12 +265,15 @@ func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) {
     v = #wild_ptr<int8>(0i64) => int32;
     v = comptime(1i32 + 2i32);
     v = move(a);
-    // `ok` and `is_err` — keyword operators with a parenthesised operand, the
-    // same shape as `move`. Both are in LEXICAL_REFERENCE's keyword grammar and
-    // neither had an AST node until D-096, so `ok(1i32)` read as "expected an
-    // expression" while the specs required it.
-    Result<int32>:okr = ok(1i32);
-    bool:bad = is_err(okr);
+    // `Result{...}` is the language's ONLY constructor and the only legal operand
+    // of `return`, and it did not parse: the struct-literal path is gated on an
+    // identifier and `Result` is a keyword (D-097).
+    Result<int32>:okr = Result{value: 1i32, error: 0tbb32};
+    Result<int32>:okr2 = Result{error: 0tbb32, value: 1i32};
+    bool:bad = okr.is_error;
+    // `is_err` tests a `tbb` for ERR without trapping — the one test that is safe
+    // on every value, since branching on ERR otherwise traps.
+    bool:tainted = is_err(1tbb32);
     v = #user_macro(a, b);
 
     Point:made = Point{ x: 1.0f64, y: 2.0f64 };

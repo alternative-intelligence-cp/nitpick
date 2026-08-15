@@ -101,7 +101,6 @@ KEYWORDS = {
     "nodrop",
     "noinline",
     "nyte",
-    "ok",
     "on",
     "opaque",
     "pass",

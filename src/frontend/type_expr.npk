@@ -639,37 +639,86 @@ func:type_member = int32(ExprTyper->:e, ExprNode:n) {
                          relay string_concat(m1, "`"), n.span));
 };
 
-// `ok(value)` wraps a value and CLEARS THE TAINT explicitly.
-func:type_ok = int32(ExprTyper->:e, ExprNode:n) {
-    int32:t = relay type_of_expr(e, raw expr_operand(n));
-    if (t == 0i32) { pass 0i32; }
-    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
-    // `ok` of a `Result` would nest one inside another — the same confusion
-    // D-091 refuses in a return type.
-    if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
-        pass (relay te_error(e, raw TYPE_RESULT_RETURN(),
-            "`ok` wraps a value in a `Result`, and this is already one", n.span));
-    }
-    pass (raw tt_result(e.types, t,
-                        raw type_size(e.types, t),
-                        raw type_align(e.types, t)));
-};
-
-// `is_err(result)` — the one test in the language GUARANTEED NOT TO TRAP.
+// `is_err(tbbValue)` — THE ONE TEST IN THE LANGUAGE GUARANTEED NOT TO TRAP.
 //
-// That guarantee is why it has a node of its own rather than being a call whose
-// name the backend recognises: branching on a `tbb` ERR value traps
-// (`SAFETY_ARCHITECTURE.md`), so a program needs one way to ask "did this fail"
-// that is safe on every value, and 0.5 and 0.7 have to be able to see which
-// construct that is.
+// ITS OPERAND IS A `tbb`, NOT A `Result`. An earlier reading had it testing a
+// `Result`, which is a different question that `.is_error` already answers.
+// `OP_REFERENCE` §5 is explicit about what this is for: **comparing or branching
+// on an ERR value traps to `failsafe`**, because `bool` has two values and cannot
+// represent ERR. So a program needs one way to ask "did this go ERR" that is safe
+// on every value, and this is it.
+//
+// It has a node of its own rather than being a recognised call name because 0.5's
+// flow analysis and 0.7's lowering both have to SEE which construct carries that
+// guarantee. Recovering it from a callee's spelling is a string comparison
+// standing in for a language rule.
 func:type_is_err = int32(ExprTyper->:e, ExprNode:n) {
     int32:t = relay type_of_expr(e, raw expr_operand(n));
     if (t == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
-    if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
-        pass (relay te_not_result(e, n, t, "is_err"));
+    if ((raw type_kind(e.types, t)) != (raw TY_TBB())) {
+        string:m1 = relay string_concat("`is_err` tests a `tbb` for ERR, and this is `",
+                                        relay type_display(e.types, e.interns, t));
+        string:m2 = relay string_concat(m1, "`");
+        if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
+            m2 = relay string_concat(m2, "; a `Result` answers that with `.is_error`");
+        }
+        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     pass (e.types.t_bool);
+};
+
+// `Result{value: v, error: e}` — THE ONLY CONSTRUCTOR IN THE LANGUAGE.
+//
+// `<T>` is never written: it comes from the enclosing function's declared success
+// type. That is what lets `pass(v)` and `fail(e)` be sugar over this form rather
+// than primitives of their own (TYPE_REFERENCE §11):
+//
+//     pass(retVal);   ->  return Result{error: 0i32, value: retVal};
+//     fail(errCode);  ->  return Result{error: errCode, value: zero};
+//
+// THERE IS NO `is_error` FIELD (D-069). It is derived as `error != 0` on every
+// read, so there is nothing for it to disagree with — a stored flag would be a
+// second source of truth about one fact, and two sources of truth eventually
+// differ. The prototype stored one; this is a deliberate departure.
+func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
+    int32:want = e.fn_success;
+
+    int32:saved = e.expected;
+    e.expected = want;
+    int32:vt = relay type_of_expr(e, raw expr_lhs(n));
+    e.expected = e.types.t_tbb32;
+    int32:et = relay type_of_expr(e, raw expr_rhs(n));
+    e.expected = saved;
+
+    // An omitted field is the zero for its side, which is what the desugar of
+    // `pass` and `fail` produces — each writes one field and leaves the other.
+    if (vt == 0i32) { vt = want; }
+    if (et == 0i32) { et = e.types.t_tbb32; }
+
+    if (et != e.types.t_tbb32) {
+        if (!(raw type_is_invalid(e.types, et))) {
+            string:m1 = relay string_concat("a `Result`'s `error` is a `tbb32`, and this is `",
+                                            relay type_display(e.types, e.interns, et));
+            drop te_error(e, raw TYPE_MISMATCH(),
+                          relay string_concat(m1, "`"), n.span);
+        }
+    }
+    // OUTSIDE A FUNCTION there is no success type to infer from, and inventing one
+    // would make the literal mean whatever the value field happened to be.
+    if (want == 0i32) {
+        pass (raw tt_result(e.types, vt,
+                            raw type_size(e.types, vt),
+                            raw type_align(e.types, vt)));
+    }
+    if (vt != want) {
+        if (!(raw type_is_invalid(e.types, vt))) {
+            drop te_mismatch(e, n, want, vt);
+        }
+    }
+    pass (raw tt_result(e.types, want,
+                        raw type_size(e.types, want),
+                        raw type_align(e.types, want)));
 };
 
 // Is this an integer literal with no width suffix? The one node whose type
@@ -819,8 +868,8 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     // operations. General call typing is 0.4.5; these two belong with the rest of
     // the discipline, and without `ok` there is no way to write a `Result` value
     // at all — nothing else in the language constructs one.
-    if (n.kind == ExprKind.ExprOkExpr)    { pass (relay type_ok(e, n)); }
-    if (n.kind == ExprKind.ExprIsErrExpr) { pass (relay type_is_err(e, n)); }
+    if (n.kind == ExprKind.ExprIsErrExpr)        { pass (relay type_is_err(e, n)); }
+    if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (relay type_result_literal(e, n)); }
 
     // A `Result`'s THREE MEMBERS. General member access needs a struct's fields
     // and is 0.4.5; these three are `Result`'s own and belong with the rest of

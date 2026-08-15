@@ -739,9 +739,23 @@ struct<T>:Result = {
 
 | Syntax | Desugars to | Notes |
 |---|---|---|
-| `pass(retVal);` | `return Result{error: 0i32, value: retVal};` | Success path |
+| `pass(retVal);` | `return Result{error: 0tbb32, value: retVal};` | Success path |
 | `fail(errCode);` | `return Result{error: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
 | `return Result{error: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
+
+> **The suffixes here read `0i32` in an earlier revision**, from before D-069
+> settled the field as a `tbb32`. The struct definition directly above already
+> said `tbb32:error`, so the table was contradicting it two lines later — and
+> `0i32` is not assignable to a `tbb32`, there being no implicit conversion
+> between them (D-092, corrected). Corrected to `0tbb32`.
+
+**Either field may be omitted**, and each defaults to the zero for its side. That
+is not a convenience: it is what makes the two desugars above expressible as
+literals, since `pass` writes only `value` and `fail` writes only `error`. **Field
+order is free** — the names are matched, so `Result{value: v, error: e}` and
+`Result{error: e, value: v}` are the same node.
+
+**There is no `is_error` field to write** (D-069). It is derived on every read.
 
 > ### The error state is stored once (D-069)
 >
@@ -1216,7 +1230,13 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - Not a type the user can write directly — it's a compiler-assigned taint
 - Assigned to the `value` field when `fail(errCode)` is used
 - Propagates through operations: `unknown + 1` → result is also `unknown`
-- Must be cleared via `ok(val)` or by checking `Result.is_error` first
+- Must be cleared by checking `Result.is_error` first
+
+  > ⚠️ **Corrected (D-097).** This read "cleared via `ok(val)` or by checking
+  > `Result.is_error` first". `ok` tested the **user-writable** `unknown` that
+  > D-007 removed, so it was an operator whose subject no longer existed, and it
+  > has been removed from the language. Checking `is_error` is the remaining
+  > route, and it was always the one that composed with the `Result` discipline.
 - IR: uses `undef` value with taint metadata in debug builds
 
 ---

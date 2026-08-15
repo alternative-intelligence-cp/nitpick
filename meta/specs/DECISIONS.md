@@ -6589,7 +6589,13 @@ artifact here. Recorded in `PROTOTYPE_DELTA.md`.
 
 ---
 
-## D-096 — `ok` and `is_err` are keyword operators with nodes of their own
+## D-096 — `is_err` and `Result{…}` are keyword forms with nodes of their own
+
+> ⚠️ **Corrected by D-097.** This decision originally covered `ok` as well and
+> gave it a meaning it never had — a `Result` **constructor**. `ok` tested the
+> user-writable `unknown` that D-007 removed, and it has now left the language.
+> `is_err`'s operand was also recorded wrongly as a `Result`; it is a `tbb`.
+> What survives here is the shape argument, which was right.
 
 **Settled in cycle 0.4.4, by finding that neither could be written.**
 
@@ -6652,3 +6658,97 @@ outcome before unwrapping. `builtin_generic_kind` and `builtin_is_generic` are
 now generated beside the scalar table, and a constructor whose kind arrives at a
 later rung — `Handle`, `arena`, `simd` — **names the rung** instead of claiming
 the type does not exist (D-085).
+
+---
+
+## D-097 — `ok` leaves the language; `Result{…}` is the constructor
+
+**Settled in cycle 0.4.4, correcting D-096.** Three findings, one root cause.
+
+### 1. `ok` tested a feature that no longer exists
+
+The prototype settles what `ok` was, in `tests/special/test_unknown_ok.npk`:
+
+```nitpick
+int32:x = unknown;
+if (ok(x) != 0i32) { exit 2; }    // ok() is false for unknown
+int32:y = 42i32;
+if (ok(y) == 0i32) { exit 3; }    // true for known values
+```
+
+**`ok(x)` asked whether an ordinary value was `unknown`.** It has nothing to do
+with `Result`. And **D-007 already removed user-writable `unknown`** — "it should
+stay removed… `tbb` sticky ERR covers degraded computation better… keeping both
+would leave two mechanisms for one job". What remained was a compiler-assigned
+taint on `Result.value`, which `TYPE_REFERENCE.md` §27 says is cleared "via
+`ok(val)` **or by checking `Result.is_error` first**".
+
+So `ok` was an operator whose subject had been removed, offering a second route
+to something `.is_error` already does. **It is removed from the language** — from
+the `ControlFlow` keyword list, the AST, and the parser. `is_err` remains the
+non-trapping test for `tbb`; `.is_error`, `?` and a `pick` with an `ERR:` arm
+cover `Result`.
+
+D-096 had instead invented `ok(x) → Result<T>`, a constructor, from that one
+§27 sentence. Nothing in the language or the prototype ever worked that way.
+
+### 2. `is_err` takes a `tbb`, not a `Result`
+
+`OP_REFERENCE.md` §5 states the purpose plainly: *"Because `bool` has exactly two
+values and cannot represent ERR, **comparing or branching on an ERR value traps to
+`failsafe`**… Use `is_err(x)` to test without trapping."*
+
+The operand is a `tbb`. Asking whether a `Result` failed is a different question
+and `.is_error` answers it. D-096 recorded the operand as a `Result`; corrected.
+
+### 3. `Result{…}` is the constructor, and it did not parse
+
+`TYPE_REFERENCE.md` §11 has always carried the full table:
+
+| Syntax | Desugars to |
+|---|---|
+| `pass(retVal);` | `return Result{error: 0tbb32, value: retVal};` |
+| `fail(errCode);` | `return Result{error: errCode, value: zero};` |
+| `return Result{error: e, value: v};` | (literal, no desugar) |
+
+and `AST_REFERENCE.md` §2 restricts `ReturnStmt` to *"the literal `Result{…}`
+form only"*. `<T>` is never written — it comes from the enclosing function's
+declared success type, which is exactly what lets `pass` and `fail` be sugar
+rather than primitives.
+
+**It could not be written.** The struct-literal path is gated on
+`TokenKind.Ident` and `Result` is `KwResult`, so the real parser answered
+`NITPICK-PARSE-002` for the form every function in the language ultimately
+returns.
+
+`ResultLiteralExpr` has a **fixed shape** — exactly `value` and `error`, in
+either written order, either one omissible — rather than reusing
+`StructLiteralExpr`, whose window alternates *interned names* with values. A
+keyword has no intern index, and putting a token kind where a name index belongs
+is the same confusion that made `Result<int32>` report "there is no type named"
+(D-096).
+
+### The root cause, and the countermeasure
+
+All three are one mistake: **giving semantics to a construct on the strength of a
+passing mention, without establishing its shape.** `ok` came from half a sentence
+in §27. `is_err` came from half a sentence in §5, read without the sentence
+before it. `Result{…}` was never looked for at all — and the 0.4.4 notes then
+asserted that nothing in the language constructs a `Result`, which the same
+document had a table for.
+
+**A passing mention is not a specification.** Before implementing a named
+construct: find the grammar production, the defining table, or the prototype test
+that fixes its shape — and if none exists, say so rather than filling the gap.
+The invented version typechecks, passes its own tests, and is wrong.
+
+The corollary that would have caught it in one step: **before claiming something
+is the only way to do X, search for the other ways.**
+
+### `is_error` stays derived
+
+Confirmed rather than changed. The prototype stores it as an `i8` third field —
+`{T value, void* error, i8 is_error}` — and D-069 deliberately departed: the
+error becomes a `tbb32` and `is_error` is derived as `error != 0`. A stored flag
+is a second source of truth about one fact, and two sources of truth eventually
+disagree. The literal therefore has **two fields and no `is_error` to write**.

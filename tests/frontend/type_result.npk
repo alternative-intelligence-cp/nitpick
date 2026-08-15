@@ -52,6 +52,9 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
     DiagList:diags = raw diaglist_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
     e.fn_terminal = terminal;
+    // The enclosing function returns `int32`, which is where a `Result{...}`
+    // literal gets its `<T>` — nothing writes it.
+    e.fn_success = raw tt_int(@types, 32i32, true);
     int32:t = relay type_of_expr(@e, node);
 
     Rx:out = Rx{ types: types, diags: diags, result: t,
@@ -150,7 +153,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- THE UNARY FAMILY -------------------------------------------------------
     // Each takes a `Result<T>` and yields `T`; they differ in what happens to the
     // error, which is why they are separate nodes rather than one with a mode.
-    Rx:u1 = raw rx("raw (ok(1i32))", false, @it);
+    Rx:u1 = raw rx("raw (Result{value: 1i32, error: 0tbb32})", false, @it);
     if (raw errs(@u1) != 0i64)                                 { exit 20i32; }
 
     // APPLYING ONE TO A PLAIN VALUE IS AN ERROR, not a no-op. A permissive `raw`
@@ -166,45 +169,45 @@ func:main = int32(cstring[]:_~argv) {
     // `drop` YIELDS NOTHING. That it is `NIL` rather than `T` is the point:
     // `drop f()` in a value position is then a type error instead of silently
     // being the value with its error thrown away.
-    Rx:u4 = raw rx("drop (ok(1i32))", false, @it);
+    Rx:u4 = raw rx("drop (Result{value: 1i32, error: 0tbb32})", false, @it);
     if (raw errs(@u4) != 0i64)                                 { exit 24i32; }
     if (u4.result != u4.types.t_nil)                           { exit 25i32; }
 
     // …so using one as a number is caught.
-    Rx:u5 = raw rx("(drop (ok(1i32))) + 1i32", false, @it);
+    Rx:u5 = raw rx("(drop (Result{value: 1i32, error: 0tbb32})) + 1i32", false, @it);
     if (raw errs(@u5) != 1i64)                                 { exit 26i32; }
 
     // --- `relay` IN A TERMINAL FUNCTION IS REFUSED ------------------------------
     // `main` and `failsafe` return no `Result`, so an error propagating out of
     // them has nowhere to go — which is exactly the uncontrolled stop the whole
     // discipline exists to prevent, not an arbitrary restriction.
-    Rx:rl1 = raw rx("relay (ok(1i32))", false, @it);
+    Rx:rl1 = raw rx("relay (Result{value: 1i32, error: 0tbb32})", false, @it);
     if (raw errs(@rl1) != 0i64)                                { exit 30i32; }
 
-    Rx:rl2 = raw rx("relay (ok(1i32))", true, @it);
+    Rx:rl2 = raw rx("relay (Result{value: 1i32, error: 0tbb32})", true, @it);
     if (raw errs(@rl2) != 1i64)                                { exit 31i32; }
     if (!(raw string_eq(raw code0(@rl2), raw TYPE_RESULT_RETURN()))) { exit 32i32; }
 
     // `_^` is the same operator, so it is refused in the same place.
-    Rx:rl3 = raw rx("_^ (ok(1i32))", true, @it);
+    Rx:rl3 = raw rx("_^ (Result{value: 1i32, error: 0tbb32})", true, @it);
     if (raw errs(@rl3) != 1i64)                                { exit 33i32; }
 
     // --- `?` UNWRAPS A `Result`, `??` UNWRAPS AN `Optional` ---------------------
     // Two operators one character apart doing different things, so both are
     // pinned rather than assumed.
-    Rx:q1 = raw rx("(ok(1i32)) ? 0i32", false, @it);
+    Rx:q1 = raw rx("(Result{value: 1i32, error: 0tbb32}) ? 0i32", false, @it);
     if (raw errs(@q1) != 0i64)                                 { exit 40i32; }
     if ((raw type_int_bits(@q1.types, q1.result)) != 32i32)    { exit 41i32; }
 
     // The fallback must be the SUCCESS type: a default of another type would make
     // the expression's type depend on which way it went at runtime.
-    Rx:q2 = raw rx("(ok(1i32)) ? true", false, @it);
+    Rx:q2 = raw rx("(Result{value: 1i32, error: 0tbb32}) ? true", false, @it);
     if (raw errs(@q2) != 1i64)                                 { exit 42i32; }
 
     // `??` ON A `Result` SAYS WHICH OPERATOR WAS MEANT, which is the whole value
     // of keeping them apart — mistaking one for the other is a one-character slip
     // and the message has to close it.
-    Rx:q3 = raw rx("(ok(1i32)) ?? 0i32", false, @it);
+    Rx:q3 = raw rx("(Result{value: 1i32, error: 0tbb32}) ?? 0i32", false, @it);
     if (raw errs(@q3) != 1i64)                                 { exit 43i32; }
     if (!(raw string_eq(raw code0(@q3), raw TYPE_MISMATCH())))  { exit 44i32; }
 
@@ -217,11 +220,11 @@ func:main = int32(cstring[]:_~argv) {
     // --- `?!` TAKES EXACTLY ONE `tbb32` (D-009) ---------------------------------
     // The arity and the type both FOLLOW from `failsafe`'s signature —
     // `func:failsafe = int32(tbb32:err)` — rather than being chosen.
-    Rx:b1 = raw rx("(ok(1i32)) ?! 99tbb32", false, @it);
+    Rx:b1 = raw rx("(Result{value: 1i32, error: 0tbb32}) ?! 99tbb32", false, @it);
     if (raw errs(@b1) != 0i64)                                 { exit 50i32; }
     if ((raw type_int_bits(@b1.types, b1.result)) != 32i32)    { exit 51i32; }
 
-    Rx:b2 = raw rx("(ok(1i32)) ?! 99i32", false, @it);
+    Rx:b2 = raw rx("(Result{value: 1i32, error: 0tbb32}) ?! 99i32", false, @it);
     if (raw errs(@b2) != 1i64)                                 { exit 52i32; }
     if (!(raw string_eq(raw code0(@b2), raw TYPE_MISMATCH())))  { exit 53i32; }
 
@@ -229,24 +232,68 @@ func:main = int32(cstring[]:_~argv) {
     // The layout is `{T, tbb32}` with no third field, so there is nothing for
     // `.is_error` to disagree with. A stored flag would be a second source of
     // truth about one fact, and two sources of truth eventually differ.
-    Rx:m1 = raw rx("(ok(1i32)).value", false, @it);
+    Rx:m1 = raw rx("(Result{value: 1i32, error: 0tbb32}).value", false, @it);
     if (raw errs(@m1) != 0i64)                                 { exit 60i32; }
     if ((raw type_int_bits(@m1.types, m1.result)) != 32i32)    { exit 61i32; }
 
-    Rx:m2 = raw rx("(ok(1i32)).error", false, @it);
+    Rx:m2 = raw rx("(Result{value: 1i32, error: 0tbb32}).error", false, @it);
     if (raw errs(@m2) != 0i64)                                 { exit 62i32; }
     if ((raw type_kind(@m2.types, m2.result)) != (raw TY_TBB())) { exit 63i32; }
 
-    Rx:m3 = raw rx("(ok(1i32)).is_error", false, @it);
+    Rx:m3 = raw rx("(Result{value: 1i32, error: 0tbb32}).is_error", false, @it);
     if (raw errs(@m3) != 0i64)                                 { exit 64i32; }
     if (m3.result != m3.types.t_bool)                          { exit 65i32; }
 
     // …and it is a `bool`, so it is usable as a condition WITHOUT truthiness.
-    Rx:m4 = raw rx("(ok(1i32)).is_error && true", false, @it);
+    Rx:m4 = raw rx("(Result{value: 1i32, error: 0tbb32}).is_error && true", false, @it);
     if (raw errs(@m4) != 0i64)                                 { exit 66i32; }
 
+    // `is_err` TESTS A `tbb`, NOT A `Result` — a different question, which
+    // `.is_error` already answers. The message says which one was meant.
+    Rx:ie1 = raw rx("is_err(1tbb32)", false, @it);
+    if (raw errs(@ie1) != 0i64)                                { exit 100i32; }
+    if (ie1.result != ie1.types.t_bool)                        { exit 101i32; }
+
+    Rx:ie2 = raw rx("is_err(Result{value: 1i32, error: 0tbb32})", false, @it);
+    if (raw errs(@ie2) != 1i64)                                { exit 102i32; }
+
+    // --- THE LITERAL IS THE CONSTRUCTOR (D-097) --------------------------------
+    // `<T>` is never written: it comes from the enclosing function's success
+    // type, which is what makes `pass(v)` and `fail(e)` sugar over this form.
+    Rx:cl1 = raw rx("Result{value: 1i32, error: 0tbb32}", false, @it);
+    if (raw errs(@cl1) != 0i64)                                { exit 110i32; }
+    if ((raw type_kind(@cl1.types, cl1.result)) != (raw TY_RESULT())) { exit 111i32; }
+
+    // FIELD ORDER DOES NOT MATTER — the names are matched, so the node's slots
+    // mean one thing however it was written. The spec's own desugar table writes
+    // `error` first and its examples write `value` first.
+    Rx:cl2 = raw rx("Result{error: 0tbb32, value: 1i32}", false, @it);
+    if (raw errs(@cl2) != 0i64)                                { exit 112i32; }
+    if (cl2.result != cl1.result)                              { exit 113i32; }
+
+    // ONE FIELD IS ENOUGH, which is exactly what the desugars produce: `pass`
+    // writes `value` and leaves `error`, `fail` writes `error` and leaves `value`.
+    Rx:cl3 = raw rx("Result{value: 1i32}", false, @it);
+    if (raw errs(@cl3) != 0i64)                                { exit 114i32; }
+    Rx:cl4 = raw rx("Result{error: 5tbb32}", false, @it);
+    if (raw errs(@cl4) != 0i64)                                { exit 115i32; }
+
+    // The value must be the enclosing function's SUCCESS type.
+    Rx:cl5 = raw rx("Result{value: true, error: 0tbb32}", false, @it);
+    if (raw errs(@cl5) != 1i64)                                { exit 116i32; }
+
+    // …and the error is a `tbb32`, never an arbitrary integer.
+    Rx:cl6 = raw rx("Result{value: 1i32, error: true}", false, @it);
+    if (raw errs(@cl6) != 1i64)                                { exit 117i32; }
+
+    // THERE IS NO `is_error` FIELD (D-069). The prototype stored one as an `i8`
+    // third field; it is derived here, so a literal naming it is naming nothing.
+    Rx:cl7 = raw rx("Result{value: 1i32, error: 0tbb32, is_error: true}", false, @it);
+    if (raw errs(@cl7) != 0i64)                                { exit 118i32; }
+    if ((raw type_size(@cl7.types, cl7.result)) != 8i64)       { exit 119i32; }
+
     // A member a `Result` does not have is named.
-    Rx:m5 = raw rx("(ok(1i32)).ok", false, @it);
+    Rx:m5 = raw rx("(Result{value: 1i32, error: 0tbb32}).ok", false, @it);
     if (raw errs(@m5) != 1i64)                                 { exit 67i32; }
 
     // The size assertion is the one that would catch a stored flag being added:
