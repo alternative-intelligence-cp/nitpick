@@ -43,14 +43,21 @@ func:main = int32() {
     // --- intern table ------------------------------------------------------
     InternTable:it = raw intern_init();
 
+    // Index 0 is the reserved empty string, so a real name never lands on it and
+    // "no name" has a value of its own.
+    if ((raw intern_count(@it)) != 1i32)                { exit 28i32; }
+    if (!(raw string_eq(raw intern_get(@it, 0i32), ""))) { exit 29i32; }
+
     int32:n1 = raw intern_add(@it, "lexer");
     int32:n2 = raw intern_add(@it, "parser");
     int32:n3 = raw intern_add(@it, "lexer");     // same text -> same index
 
-    if (n1 != 0i32)  { exit 30i32; }
-    if (n2 != 1i32)  { exit 31i32; }
+    if (n1 != 1i32)  { exit 30i32; }
+    if (n2 != 2i32)  { exit 31i32; }
     if (n3 != n1)    { exit 32i32; }
-    if (raw intern_count(@it) != 2i32) { exit 33i32; }
+    if (raw intern_none() != 0i32) { exit 33i32; }
+    if (raw intern_is_none(n1))    { exit 38i32; }
+    if (raw intern_count(@it) != 3i32) { exit 39i32; }
 
     // Round-trip.
     if (!(raw string_eq(raw intern_get(@it, n2), "parser"))) { exit 34i32; }

@@ -397,6 +397,24 @@ class Checker:
                 # tbb32 is an error-code type here: comparison only. Arithmetic
                 # would drag ERR, stickiness and saturation into the seed.
                 raise RungError("arithmetic on a `tbb` type", "0.9", e)
+
+            # Every operator below `&&`/`||` lowers to ONE LLVM instruction over
+            # the left operand's type, and those instructions accept only `iN`
+            # (plus `ptr`, for icmp). Without this the seed accepted
+            # `"a" + "b"` -- which is REAL Nitpick, since `+` concatenates
+            # strings (TYPE_REFERENCE section 4) -- and emitted
+            # `add { ptr, i64, i64 }`, invalid IR that llc rejected a stage
+            # later with no idea which source line meant it.
+            #
+            # The seed does not lower it, and the place to say so is here, where
+            # the message can name the operator and the type.
+            if lt is not None and e.op not in ("&&", "||"):
+                ordered = e.op in ("==", "!=", "<", "<=", ">", ">=")
+                ok = T.is_ll_scalar_int(lt)
+                if ordered and T.is_ll_pointer(lt):
+                    ok = True
+                if not ok:
+                    raise RungError("`%s` on `%r`" % (e.op, lt), "0.9", e)
             return
 
         if isinstance(e, S.Unary):

@@ -586,7 +586,11 @@ func:p_primary = ExprId(Parser->:p) {
                 }
             }
         }
-        pass (relay ast_add_expr(p.ast, ExprKind.ExprMemberAccessExpr, sp,
+        // A NAME, not an access with a missing operand. Emitting a
+        // MemberAccessExpr with a zero base would make `x` and `(nothing).x` the
+        // same node, and every walker of an access chain would have to know that
+        // a zero base secretly means "stop, this was a name" (AST_REFERENCE §3.3).
+        pass (relay ast_add_expr(p.ast, ExprKind.ExprIdentifierExpr, sp,
                                  0i32, 0i32, 0i32, t.payload));
     }
 

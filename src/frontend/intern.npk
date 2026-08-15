@@ -38,8 +38,20 @@ pub func:intern_init = InternTable() {
         count: 0i32,
         cap: 64i32
     };
+    // INDEX 0 IS RESERVED for the empty string, the same convention the AST node
+    // arrays use for their NONE node -- and for the same reason. An AST node
+    // records an optional name as an intern index, and without a reserved zero
+    // there is no value that means "absent": a `while` with no label and a
+    // `while` labelled with whatever identifier happened to be interned first
+    // would carry the identical payload. `break outer;` would then match an
+    // unlabelled loop. Reserving the slot costs one entry and makes that state
+    // unrepresentable.
+    drop intern_add(@t, "");
     pass t;
 };
+
+pub func:intern_none = int32() { pass 0i32; };
+pub func:intern_is_none = bool(int32:i) { pass (i == 0i32); };
 
 func:intern_grow = NIL(InternTable->:t) {
     int32:newcap = t.cap * 2i32;

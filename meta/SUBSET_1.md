@@ -192,6 +192,7 @@ arrives with `nlibc` in cycle 0.8.
 | **`tbb` arithmetic, LBIM, `frac`, `tfp`, `dim`** | not needed by a compiler |
 | **`wildx`, atomics, threads, channels** | not needed by a compiler |
 | **`Optional<T>`, `arena<T>`, `Handle<T>`** | parameterized; index-based node arrays replace the arena |
+| **operators on anything but `iN`** — notably **`+` on `string`**, which the language defines as concatenation | `string_concat`. §1.4 already said "on integers"; this row exists because `a + b` on two strings *looks* included, and the checker now refuses it by name rather than letting the emitter write `add { ptr, i64, i64 }` for llc to reject a stage later |
 
 ### Known gaps in the seed, recorded rather than worked around
 

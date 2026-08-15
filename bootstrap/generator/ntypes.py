@@ -172,6 +172,29 @@ def is_tbb(t):
     return isinstance(t, Prim) and t.name.startswith("tbb")
 
 
+def is_ll_scalar_int(t):
+    """True when this type lowers to a plain LLVM `iN`.
+
+    The seed emits ONE instruction for a binary operator -- `add`, `icmp`, and
+    so on -- and those are valid only over `iN`. Asking the question this way
+    rather than listing type names means the answer cannot drift from what the
+    emitter can actually lower: a payload-free enum is `i32` and passes, a
+    payload-carrying one is a struct and does not.
+    """
+    try:
+        ll = llvm(t)
+    except (KeyError, TypeError):
+        return False
+    return len(ll) > 1 and ll[0] == "i" and ll[1:].isdigit()
+
+
+def is_ll_pointer(t):
+    try:
+        return llvm(t) == "ptr"
+    except (KeyError, TypeError):
+        return False
+
+
 def int_bits(t):
     return int(INT_TYPES[t.name][0][1:])
 

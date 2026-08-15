@@ -1,0 +1,312 @@
+// Statement parsing (cycle 0.2.4).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:ld = raw diaglist_init();
+
+    // --- blocks ---------------------------------------------------------------
+    TokenList:k1 = raw lex_all(0i32, "{ f(); g(); h(); }", @it, @ld);
+    Ast:a1 = raw ast_init();
+    DiagList:g1 = raw diaglist_init();
+    Parser:p1 = raw parser_init(@k1, @a1, @g1, @it);
+    StmtNode:n1 = raw ast_stmt(@a1, raw p_parse_stmt(@p1));
+    if (n1.kind != StmtKind.StmtBlockStmt)               { exit 10i32; }
+    if (raw stmt_list_count(n1) != 3i32)                 { exit 11i32; }
+    if (raw diaglist_count(@g1) != 0i64)                 { exit 12i32; }
+
+    // A nested block must not leave its children inside the outer window --
+    // the scratch-stack property from 0.2.2, now under a statement.
+    TokenList:k2 = raw lex_all(0i32, "{ f(); { g(); h(); } }", @it, @ld);
+    Ast:a2 = raw ast_init();
+    DiagList:g2 = raw diaglist_init();
+    Parser:p2 = raw parser_init(@k2, @a2, @g2, @it);
+    StmtNode:n2 = raw ast_stmt(@a2, raw p_parse_stmt(@p2));
+    if (raw stmt_list_count(n2) != 2i32)                 { exit 13i32; }
+    int32:inner_ix = raw ast_id_at(@a2, raw stmt_list_start(n2), 1i32);
+    StmtId:innerId = StmtId{ index: inner_ix };
+    StmtNode:inner = raw ast_stmt(@a2, innerId);
+    if (inner.kind != StmtKind.StmtBlockStmt)            { exit 14i32; }
+    if (raw stmt_list_count(inner) != 2i32)              { exit 15i32; }
+
+    // --- declaration versus assignment ---------------------------------------
+    // Both start with a name. What separates them is a `:` after a whole TYPE.
+    TokenList:k3 = raw lex_all(0i32, "int32:x = 5i32;", @it, @ld);
+    Ast:a3 = raw ast_init();
+    DiagList:g3 = raw diaglist_init();
+    Parser:p3 = raw parser_init(@k3, @a3, @g3, @it);
+    StmtNode:n3 = raw ast_stmt(@a3, raw p_parse_stmt(@p3));
+    if (n3.kind != StmtKind.StmtVarDeclStmt)             { exit 20i32; }
+    if (raw expr_is_none(raw stmt_decl_init(n3)))        { exit 21i32; }
+
+    TokenList:k4 = raw lex_all(0i32, "x = 5i32;", @it, @ld);
+    Ast:a4 = raw ast_init();
+    DiagList:g4 = raw diaglist_init();
+    Parser:p4 = raw parser_init(@k4, @a4, @g4, @it);
+    StmtNode:n4 = raw ast_stmt(@a4, raw p_parse_stmt(@p4));
+    if (n4.kind != StmtKind.StmtAssignStmt)              { exit 22i32; }
+    if ((raw stmt_op(n4)) != TokenKind.OpAssign)         { exit 23i32; }
+
+    // A generic type carries a comma; a comma is otherwise a hard stop. If the
+    // lookahead did not track angle depth this would parse as an assignment.
+    TokenList:k5 = raw lex_all(0i32, "Handle<Node<int64>>:h;", @it, @ld);
+    Ast:a5 = raw ast_init();
+    DiagList:g5 = raw diaglist_init();
+    Parser:p5 = raw parser_init(@k5, @a5, @g5, @it);
+    StmtNode:n5 = raw ast_stmt(@a5, raw p_parse_stmt(@p5));
+    if (n5.kind != StmtKind.StmtVarDeclStmt)             { exit 24i32; }
+    if (!(raw expr_is_none(raw stmt_decl_init(n5))))     { exit 25i32; }
+    if (raw diaglist_count(@g5) != 0i64)                 { exit 26i32; }
+
+    // An indexed assignment has brackets too, and must NOT read as a declaration.
+    TokenList:k6 = raw lex_all(0i32, "a[0i64] = 1i32;", @it, @ld);
+    Ast:a6 = raw ast_init();
+    DiagList:g6 = raw diaglist_init();
+    Parser:p6 = raw parser_init(@k6, @a6, @g6, @it);
+    StmtNode:n6 = raw ast_stmt(@a6, raw p_parse_stmt(@p6));
+    if (n6.kind != StmtKind.StmtAssignStmt)              { exit 27i32; }
+
+    // …while a fixed-array declaration does.
+    TokenList:k7 = raw lex_all(0i32, "int32[4]:buf;", @it, @ld);
+    Ast:a7 = raw ast_init();
+    DiagList:g7 = raw diaglist_init();
+    Parser:p7 = raw parser_init(@k7, @a7, @g7, @it);
+    StmtNode:n7 = raw ast_stmt(@a7, raw p_parse_stmt(@p7));
+    if (n7.kind != StmtKind.StmtVarDeclStmt)             { exit 28i32; }
+
+    // A member assignment: `.` at depth zero ends any hope of a type.
+    TokenList:k8 = raw lex_all(0i32, "s.field = 2i32;", @it, @ld);
+    Ast:a8 = raw ast_init();
+    DiagList:g8 = raw diaglist_init();
+    Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
+    StmtNode:n8 = raw ast_stmt(@a8, raw p_parse_stmt(@p8));
+    if (n8.kind != StmtKind.StmtAssignStmt)              { exit 29i32; }
+
+    // Qualifiers belong to the DECLARATION, not the type (AST_REFERENCE §4).
+    TokenList:k9 = raw lex_all(0i32, "wild int8->:mem;", @it, @ld);
+    Ast:a9 = raw ast_init();
+    DiagList:g9 = raw diaglist_init();
+    Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
+    StmtNode:n9 = raw ast_stmt(@a9, raw p_parse_stmt(@p9));
+    if (n9.kind != StmtKind.StmtVarDeclStmt)             { exit 30i32; }
+    if ((raw stmt_quals(n9)) != (raw QUAL_WILD()))       { exit 31i32; }
+    TypeNode:t9 = raw ast_type(@a9, raw stmt_decl_type(n9));
+    if (t9.kind != TypeKind.TypePointerType)             { exit 32i32; }
+
+    // A compound assignment is still an AssignStmt, discriminated by its op.
+    TokenList:ka = raw lex_all(0i32, "n += 1i32;", @it, @ld);
+    Ast:aa = raw ast_init();
+    DiagList:ga = raw diaglist_init();
+    Parser:pa = raw parser_init(@ka, @aa, @ga, @it);
+    StmtNode:na = raw ast_stmt(@aa, raw p_parse_stmt(@pa));
+    if (na.kind != StmtKind.StmtAssignStmt)              { exit 33i32; }
+    if ((raw stmt_op(na)) != TokenKind.OpPlusAssign)     { exit 34i32; }
+
+    // --- if / else ------------------------------------------------------------
+    TokenList:kb = raw lex_all(0i32,
+        "if (a) { f(); } else if (b) { g(); } else { h(); }", @it, @ld);
+    Ast:ab = raw ast_init();
+    DiagList:gb = raw diaglist_init();
+    Parser:pb = raw parser_init(@kb, @ab, @gb, @it);
+    StmtNode:nb = raw ast_stmt(@ab, raw p_parse_stmt(@pb));
+    if (nb.kind != StmtKind.StmtIfStmt)                  { exit 40i32; }
+    StmtNode:eb = raw ast_stmt(@ab, raw stmt_else(nb));
+    // `else if` chains as a nested IfStmt, not a block wrapping one.
+    if (eb.kind != StmtKind.StmtIfStmt)                  { exit 41i32; }
+    StmtNode:eb2 = raw ast_stmt(@ab, raw stmt_else(eb));
+    if (eb2.kind != StmtKind.StmtBlockStmt)              { exit 42i32; }
+    if (raw diaglist_count(@gb) != 0i64)                 { exit 43i32; }
+
+    // No `else` at all: the branch is the reserved NONE handle.
+    TokenList:kc = raw lex_all(0i32, "if (a) { f(); }", @it, @ld);
+    Ast:ac = raw ast_init();
+    DiagList:gc = raw diaglist_init();
+    Parser:pc = raw parser_init(@kc, @ac, @gc, @it);
+    StmtNode:nc = raw ast_stmt(@ac, raw p_parse_stmt(@pc));
+    if (!(raw stmt_is_none(raw stmt_else(nc))))          { exit 44i32; }
+
+    // --- loops ----------------------------------------------------------------
+    TokenList:kd = raw lex_all(0i32, "while (a < b) { f(); }", @it, @ld);
+    Ast:ad = raw ast_init();
+    DiagList:gd = raw diaglist_init();
+    Parser:pd = raw parser_init(@kd, @ad, @gd, @it);
+    StmtNode:nd = raw ast_stmt(@ad, raw p_parse_stmt(@pd));
+    if (nd.kind != StmtKind.StmtWhileStmt)               { exit 50i32; }
+    if ((raw stmt_label(nd)) != (raw intern_none()))     { exit 51i32; }
+
+    // `for` binds with a REQUIRED type (D-023).
+    TokenList:ke = raw lex_all(0i32, "for (int64:i in 1i64..3i64) { f(); }", @it, @ld);
+    Ast:ae = raw ast_init();
+    DiagList:ge = raw diaglist_init();
+    Parser:pe = raw parser_init(@ke, @ae, @ge, @it);
+    StmtNode:ne = raw ast_stmt(@ae, raw p_parse_stmt(@pe));
+    if (ne.kind != StmtKind.StmtForStmt)                 { exit 52i32; }
+    DeclNode:bind = raw ast_decl(@ae, raw stmt_for_binding(ne));
+    if (bind.kind != DeclKind.DeclParamDecl)             { exit 53i32; }
+    ExprNode:iter = raw ast_expr(@ae, raw stmt_for_iter(ne));
+    if (iter.kind != ExprKind.ExprRangeExpr)             { exit 54i32; }
+    if (raw diaglist_count(@ge) != 0i64)                 { exit 55i32; }
+
+    // `loop` is COUNTED: start, limit, step (D-022).
+    TokenList:kf = raw lex_all(0i32, "loop (0i64, 10i64, 1i64) { f(); }", @it, @ld);
+    Ast:af = raw ast_init();
+    DiagList:gf = raw diaglist_init();
+    Parser:pf = raw parser_init(@kf, @af, @gf, @it);
+    StmtNode:nf = raw ast_stmt(@af, raw p_parse_stmt(@pf));
+    if (nf.kind != StmtKind.StmtLoopStmt)                { exit 56i32; }
+    if (raw stmt_counted_argc(nf) != 3i32)               { exit 57i32; }
+    StmtNode:fbody = raw ast_stmt(@af, raw stmt_counted_body(nf));
+    if (fbody.kind != StmtKind.StmtBlockStmt)            { exit 58i32; }
+
+    // `till` is counted too, with limit and step.
+    TokenList:kg = raw lex_all(0i32, "till (10i64, 2i64) { f(); }", @it, @ld);
+    Ast:ag = raw ast_init();
+    DiagList:gg = raw diaglist_init();
+    Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
+    StmtNode:ng = raw ast_stmt(@ag, raw p_parse_stmt(@pg));
+    if (ng.kind != StmtKind.StmtTillStmt)                { exit 59i32; }
+    if (raw stmt_counted_argc(ng) != 2i32)               { exit 60i32; }
+
+    // A label attaches to the loop, and `break label;` names it. Absence is
+    // intern index 0, which is why a real label can never collide with it.
+    TokenList:kh = raw lex_all(0i32,
+        "outer: while (a) { break outer; }", @it, @ld);
+    Ast:ah = raw ast_init();
+    DiagList:gh = raw diaglist_init();
+    Parser:ph = raw parser_init(@kh, @ah, @gh, @it);
+    StmtNode:nh = raw ast_stmt(@ah, raw p_parse_stmt(@ph));
+    if (nh.kind != StmtKind.StmtWhileStmt)               { exit 61i32; }
+    int32:outer = raw stmt_label(nh);
+    if (raw intern_is_none(outer))                       { exit 62i32; }
+    StmtNode:hbody = raw ast_stmt(@ah, raw stmt_body(nh));
+    int32:brk_ix = raw ast_id_at(@ah, raw stmt_list_start(hbody), 0i32);
+    StmtId:brkId = StmtId{ index: brk_ix };
+    StmtNode:brk = raw ast_stmt(@ah, brkId);
+    if (brk.kind != StmtKind.StmtBreakStmt)              { exit 63i32; }
+    if ((raw stmt_label(brk)) != outer)                  { exit 64i32; }
+    if (raw diaglist_count(@gh) != 0i64)                 { exit 65i32; }
+
+    // An unlabelled `break` is distinguishable from a labelled one.
+    TokenList:ki = raw lex_all(0i32, "break;", @it, @ld);
+    Ast:ai = raw ast_init();
+    DiagList:gi = raw diaglist_init();
+    Parser:pi = raw parser_init(@ki, @ai, @gi, @it);
+    StmtNode:ni = raw ast_stmt(@ai, raw p_parse_stmt(@pi));
+    if (ni.kind != StmtKind.StmtBreakStmt)               { exit 66i32; }
+    if (!(raw intern_is_none(raw stmt_label(ni))))       { exit 67i32; }
+
+    // --- when / then / end (D-027) --------------------------------------------
+    TokenList:kj = raw lex_all(0i32,
+        "when (a) { f(); } then { g(); } end { h(); }", @it, @ld);
+    Ast:aj = raw ast_init();
+    DiagList:gj = raw diaglist_init();
+    Parser:pj = raw parser_init(@kj, @aj, @gj, @it);
+    StmtNode:nj = raw ast_stmt(@aj, raw p_parse_stmt(@pj));
+    if (nj.kind != StmtKind.StmtWhenStmt)                { exit 70i32; }
+    // Always three entries, so "which block is missing" needs no working out.
+    if (raw stmt_list_count(nj) != 3i32)                 { exit 71i32; }
+    if (raw stmt_is_none(raw stmt_when_body(@aj, nj)))   { exit 72i32; }
+    if (raw stmt_is_none(raw stmt_when_then(@aj, nj)))   { exit 73i32; }
+    if (raw stmt_is_none(raw stmt_when_end(@aj, nj)))    { exit 74i32; }
+
+    TokenList:kk = raw lex_all(0i32, "when (a) { f(); }", @it, @ld);
+    Ast:ak = raw ast_init();
+    DiagList:gk = raw diaglist_init();
+    Parser:pk = raw parser_init(@kk, @ak, @gk, @it);
+    StmtNode:nk = raw ast_stmt(@ak, raw p_parse_stmt(@pk));
+    if (raw stmt_list_count(nk) != 3i32)                 { exit 75i32; }
+    if (!(raw stmt_is_none(raw stmt_when_then(@ak, nk)))) { exit 76i32; }
+    if (!(raw stmt_is_none(raw stmt_when_end(@ak, nk))))  { exit 77i32; }
+    if (raw diaglist_count(@gk) != 0i64)                 { exit 78i32; }
+
+    // --- exits, traps, and the rest -------------------------------------------
+    // `raw`, not `relay`: `relay` is illegal in `main`, which returns a bare
+    // `int32` and leaves through `exit`, so there is no Result to relay into.
+    string:src1 = raw string_concat(
+        "{ pass; pass 1i32; fail 3i32; return r; exit 0i32; !!! 9i32; ",
+        "defer { f(); } discard(g()); prove(a); assert_static(b); ");
+    string:src = raw string_concat(src1, "continue; give 4i32; fall two; }");
+    TokenList:kl = raw lex_all(0i32, src, @it, @ld);
+    Ast:al = raw ast_init();
+    DiagList:gl = raw diaglist_init();
+    Parser:pl = raw parser_init(@kl, @al, @gl, @it);
+    StmtNode:nl = raw ast_stmt(@al, raw p_parse_stmt(@pl));
+    if (nl.kind != StmtKind.StmtBlockStmt)               { exit 80i32; }
+    if (raw stmt_list_count(nl) != 13i32)                { exit 81i32; }
+    if (raw diaglist_count(@gl) != 0i64)                 { exit 82i32; }
+
+    int32:base = raw stmt_list_start(nl);
+    if ((raw stmt_kind_at(@al, base, 0i32)) != StmtKind.StmtPassStmt)   { exit 83i32; }
+    if ((raw stmt_kind_at(@al, base, 2i32)) != StmtKind.StmtFailStmt)   { exit 84i32; }
+    if ((raw stmt_kind_at(@al, base, 5i32)) != StmtKind.StmtTrapStmt)   { exit 85i32; }
+    if ((raw stmt_kind_at(@al, base, 6i32)) != StmtKind.StmtDeferStmt)  { exit 86i32; }
+    if ((raw stmt_kind_at(@al, base, 11i32)) != StmtKind.StmtGiveStmt)  { exit 87i32; }
+    if ((raw stmt_kind_at(@al, base, 12i32)) != StmtKind.StmtFallStmt)  { exit 88i32; }
+
+    // `pass;` carries no value; `pass 1i32;` does. One node, two shapes, told
+    // apart by the reserved NONE handle rather than by guessing.
+    StmtId:p0 = StmtId{ index: raw ast_id_at(@al, base, 0i32) };
+    StmtId:p1x = StmtId{ index: raw ast_id_at(@al, base, 1i32) };
+    if (!(raw expr_is_none(raw stmt_expr(raw ast_stmt(@al, p0)))))  { exit 89i32; }
+    if (raw expr_is_none(raw stmt_expr(raw ast_stmt(@al, p1x))))    { exit 90i32; }
+
+    // --- spans ------------------------------------------------------------------
+    // A statement's span starts at its first token, not at whatever the last
+    // sub-parse left behind.
+    TokenList:km = raw lex_all(0i32, "  while (a) { f(); }", @it, @ld);
+    Ast:am = raw ast_init();
+    DiagList:gm = raw diaglist_init();
+    Parser:pm = raw parser_init(@km, @am, @gm, @it);
+    StmtNode:nm = raw ast_stmt(@am, raw p_parse_stmt(@pm));
+    if (nm.span.line != 1i32)                            { exit 95i32; }
+    if (nm.span.col != 3i32)                             { exit 96i32; }
+
+    // --- `a = b = 5` (D-060) ----------------------------------------------------
+    // Not "rejected by a rule" -- there is no grammar for it, and the diagnostic
+    // says which rule the reader ran into rather than "expected `;`".
+    TokenList:kn = raw lex_all(0i32, "a = b = 5i32;", @it, @ld);
+    Ast:an = raw ast_init();
+    DiagList:gn = raw diaglist_init();
+    Parser:pn = raw parser_init(@kn, @an, @gn, @it);
+    drop p_parse_stmt(@pn);
+    if (raw diaglist_count(@gn) != 1i64)                 { exit 100i32; }
+    Diagnostic:d = raw diaglist_at(@gn, 0i64);
+    if (!(raw string_eq(d.code, raw PARSE_ASSIGN_EXPR()))) { exit 101i32; }
+
+    // `if (a = b)` is not expressible at all: the condition parses as `a`, and
+    // the `=` then has nowhere to go.
+    TokenList:ko = raw lex_all(0i32, "if (a = b) { f(); }", @it, @ld);
+    Ast:ao = raw ast_init();
+    DiagList:go = raw diaglist_init();
+    Parser:po = raw parser_init(@ko, @ao, @go, @it);
+    drop p_parse_stmt(@po);
+    if (raw diaglist_count(@go) == 0i64)                 { exit 102i32; }
+
+    exit 0i32;
+};
+
+// Reading the kind of the i-th statement in a window, which the block tests do
+// often enough that spelling it out each time buries what is being asserted.
+func:stmt_kind_at = StmtKind(Ast->:ast, int32:start, int32:i) {
+    StmtId:id = StmtId{ index: raw ast_id_at(ast, start, i) };
+    StmtNode:n = raw ast_stmt(ast, id);
+    pass n.kind;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

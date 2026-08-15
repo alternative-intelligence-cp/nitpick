@@ -156,6 +156,8 @@ struct and a nested namespace; `assoc` is not.
 | `DiscardStmt` | `expr` — `discard(e)` / `_~ e` |
 | `ProveStmt` | `condition: Expr` — **compile-time** obligation |
 | `AssertStaticStmt` | `condition: Expr` |
+| `FallStmt` | `target: Ident` — `fall label;`, legal only in a `PickArm` body (§2.2) |
+| `GiveStmt` | `value: Expr` — `give e;`, legal only in a `PickArm` body (§2.2) |
 
 ### Notes carrying decisions
 
@@ -210,6 +212,15 @@ PickPattern = Value(Expr)                    // (200)
 `FallStmt { target: Ident }` and `GiveStmt { value: Expr }` are legal only inside
 a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 
+**Both are ordinary statement nodes and now appear in §2's table.** They were
+declared here in prose only, so the node-kind table generated from §2 did not
+have them and the parser had nothing to build. "Legal only inside a `PickArm`" is
+a **semantic** restriction, not a syntactic one: the parser accepts them anywhere
+a statement is accepted and the placement check belongs to semantic analysis
+(D-085 — the parser never restricts). Writing the restriction into the grammar
+would give `fall` outside a `pick` the diagnostic "expected a statement", which
+names neither the construct nor the rule it broke.
+
 ---
 
 # 3. Expressions
@@ -256,6 +267,7 @@ a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 
 | Node | Fields | Notes |
 |---|---|---|
+| `IdentifierExpr` | `name` | a bare name — a variable, a function, a type in expression position |
 | `MemberAccessExpr` | `base`, `field` | **`.` only** — auto-dereferences pointers; `->` is type-position only (D-006) |
 | `SafeNavExpr` | `base`, `field` | `?.` |
 | `IndexExpr` | `base`, `index` | bounds-checked |
@@ -264,6 +276,17 @@ a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 | `BuiltinExpr` | `name`, `generic_args`, `args` | **`#name<T>(…)`** (D-020) — `#size_of<T>`, `#wild_ptr<T>(addr)` |
 | `ComptimeExpr` | `expr` | **`comptime(expr)`** — forces compile-time resolution; a compile error if it cannot be resolved |
 | `MacroInvocationExpr` | `name`, `args` | **`#name(args)`** (D-046) — expanded before semantic analysis |
+
+> **`IdentifierExpr` was missing**, exactly as `MoveExpr` was: §3.6 refers to it
+> by name ("function pointers are ordinary values referenced by
+> `IdentifierExpr`") but no table ever declared it. The parser found it by
+> needing it, and the shape it had reached for in the meantime is the reason this
+> matters: a bare name became a `MemberAccessExpr` with a **zero base**. That
+> makes one encoding carry two meanings — `x` and `(nothing).x` become the same
+> node, told apart only by a base that happens to be zero — and every consumer
+> walking an access chain then has to know that a zero base silently means "stop,
+> this was a name". A name is not an access with a missing operand. It gets its
+> own node.
 
 ### Two kinds of builtin, and why the parser must distinguish them
 
