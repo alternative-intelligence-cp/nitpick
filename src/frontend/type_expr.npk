@@ -32,6 +32,7 @@ use "symbols.npk".*;
 use "resolve_type.npk".*;
 use "type_names.npk".*;
 use "type_cast.npk".*;
+use "type_decl.npk".*;
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -721,6 +722,65 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
                         raw type_align(e.types, want)));
 };
 
+// AN IDENTIFIER'S TYPE IS ITS DECLARATION'S.
+//
+// Resolution already did the hard part: `resolve_ident` stored the SYMBOL INDEX
+// in slot `a` (0.3.5), so this is a lookup rather than a second search. That the
+// slot holds a symbol index and not a child expression is safe because
+// `expr_shape` files this kind as a LEAF — which is the difference between an
+// undocumented reuse and a declared one (D-094).
+func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
+    int32:sym = n.a;
+    if (sym == 0i32) {
+        // A bare-name builtin resolves to no symbol and that is correct
+        // (AST_REFERENCE 3.3). Its signature arrives with call checking.
+        pass 0i32;
+    }
+    Symbol:s = raw symtab_get(e.tab, sym);
+    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+
+    // A LOCAL — its annotation is the type. Nitpick has no inferred bindings:
+    // every declaration states its type, which is why this needs no unification.
+    if (s.origin_kind == (raw SYM_STMT())) {
+        StmtId:sid = StmtId{ index: s.origin };
+        StmtNode:sn = relay ast_stmt(e.ast, sid);
+        TypeId:ty = TypeId{ index: sn.a };
+        pass (relay resolve_type(@r, ty, e.scope));
+    }
+
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclId:did = DeclId{ index: s.origin };
+        DeclNode:dn = relay ast_decl(e.ast, did);
+        if (dn.kind == DeclKind.DeclParamDecl) {
+            // READING A DISCARDED PARAMETER IS AN ERROR (D-089). `Type:_~name`
+            // says the parameter is deliberately unused, so a later use is either
+            // a mistake or a stale annotation — and both are worth hearing about.
+            if (raw param_is_discarded(dn)) {
+                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                    "this parameter is declared discarded with `_~`, so it cannot be read; drop the `_~` if it is wanted",
+                    n.span));
+            }
+            pass (relay resolve_type(@r, raw param_type(dn), e.scope));
+        }
+        if (dn.kind == DeclKind.DeclFunctionDecl) {
+            pass (relay fn_type(@r, dn, s.name, e.scope));
+        }
+        if (dn.kind == DeclKind.DeclGlobalDecl) {
+            TypeId:ty = TypeId{ index: dn.a };
+            pass (relay resolve_type(@r, ty, e.scope));
+        }
+        // A TYPE NAME IN VALUE POSITION says what it is rather than "unknown".
+        string:text = relay intern_get(e.interns, s.name);
+        string:m1 = relay string_concat("`", text);
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            relay string_concat(m1, "` is a type, not a value"), n.span));
+    }
+
+    // A `pick` destructuring binding takes its type from the scrutinee, which
+    // needs the pattern checked against it — 0.4.6, with the enum variants.
+    pass 0i32;
+};
+
 // Is this an integer literal with no width suffix? The one node whose type
 // depends on where it sits, so the one node the order has to account for.
 pub func:is_untyped_literal = bool(ExprTyper->:e, ExprId:id) {
@@ -878,10 +938,8 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
         pass (relay type_member(e, n));
     }
 
-    // An identifier's type is its symbol's, which 0.4.5 supplies once
-    // declarations carry types. Until then it is unresolved rather than wrong.
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        pass 0i32;
+        pass (relay type_ident(e, n));
     }
 
     pass 0i32;

@@ -1,0 +1,206 @@
+// Statement checking.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.4, completing the `Result` discipline.
+//
+// Three jobs, and they are the ones that make the expression rules load-bearing:
+//
+//   * A DECLARATION'S INITIALISER MUST MATCH ITS ANNOTATION. Nitpick has no
+//     inferred bindings, so every local states its type and this is where the
+//     statement is held to it.
+//   * `pass` AND `fail` ARE SUGAR over `return Result{…}` (TYPE_REFERENCE §11),
+//     so they are checked as what they desugar to rather than as their own rules.
+//   * EVERY CONDITION IS A STRICT `bool`. There is no truthiness, and a condition
+//     is where a tainted or mistyped value would otherwise steer a decision.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "token_kind.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "type_names.npk".*;
+use "parse_stmt.npk".*;
+use "parse_expr.npk".*;
+use "parse_decl.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+use "type_decl.npk".*;
+use "type_expr.npk".*;
+
+pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = relay ast_stmt(e.ast, id);
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) { drop check_var_decl(e, s); pass NIL; }
+    if (s.kind == StmtKind.StmtPassStmt)    { drop check_pass(e, s);     pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt)    { drop check_fail(e, s);     pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt)  { drop check_return(e, s);   pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt)    { drop check_exit(e, s);     pass NIL; }
+
+    // EVERY CONDITION IS A `bool`, and the check is one line because
+    // `require_bool` already says why (0.4.2). Grouped rather than listed
+    // per-statement so a new conditional form cannot arrive without one.
+    if (s.kind == StmtKind.StmtIfStmt)    { drop check_cond(e, s); }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop check_cond(e, s); }
+    if (s.kind == StmtKind.StmtTillStmt)  { drop check_cond(e, s); }
+    if (s.kind == StmtKind.StmtWhenStmt)  { drop check_cond(e, s); }
+    pass NIL;
+};
+
+func:check_cond = NIL(ExprTyper->:e, StmtNode:s) {
+    ExprId:c = raw stmt_cond(s);
+    if (raw expr_is_none(c)) { pass NIL; }
+    int32:t = relay type_of_expr(e, c);
+    if (t == 0i32) { pass NIL; }
+    drop require_bool(e, t, s.span);
+    pass NIL;
+};
+
+// `Type:name = init;` — the initialiser is checked against the ANNOTATION, and
+// the annotation is also what an unsuffixed literal in the initialiser takes its
+// type from. `int8:n = 10;` works for that reason and for no other: nothing is
+// inferred, the type was written down and the literal reads it.
+func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
+    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeId:ann = raw stmt_decl_type(s);
+    int32:want = relay resolve_type(@r, ann, e.scope);
+
+    ExprId:init = raw stmt_decl_init(e.ast, s);
+    if (raw expr_is_none(init)) { pass NIL; }
+
+    int32:saved = e.expected;
+    e.expected = want;
+    int32:got = relay type_of_expr(e, init);
+    e.expected = saved;
+
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (raw type_is_invalid(e.types, want)) { pass NIL; }
+    if (got != want) {
+        drop te_assign_mismatch(e, want, got, s.span);
+    }
+    pass NIL;
+};
+
+// `pass v;` desugars to `return Result{error: 0tbb32, value: v};` — so `v` is
+// checked against the function's SUCCESS type, not its `Result` type.
+func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
+    ExprId:v = raw stmt_operand(s);
+    int32:want = e.fn_success;
+
+    // `pass;` with no value is `pass NIL;`. Void functions do not exist, so the
+    // bare form is the one that returns `Result<NIL>`.
+    if (raw expr_is_none(v)) {
+        if (want != 0i32) {
+            if (want != e.types.t_nil) {
+                drop te_assign_mismatch(e, want, e.types.t_nil, s.span);
+            }
+        }
+        pass NIL;
+    }
+
+    int32:saved = e.expected;
+    e.expected = want;
+    int32:got = relay type_of_expr(e, v);
+    e.expected = saved;
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (want == 0i32) { pass NIL; }
+    if (got != want) {
+        drop te_assign_mismatch(e, want, got, s.span);
+    }
+    pass NIL;
+};
+
+// `fail c;` desugars to `return Result{error: c, value: zero};` — so `c` is a
+// `tbb32`, the same type `Result.error` holds and the same one `failsafe` takes.
+//
+// `fail` IN `main` OR `failsafe` IS REFUSED for the reason `relay` is: there is
+// no `Result` to fail into, and an error leaving the program's last frame has
+// nowhere to go. That is the uncontrolled stop the discipline exists to prevent.
+func:check_fail = NIL(ExprTyper->:e, StmtNode:s) {
+    if (e.fn_terminal) {
+        drop te_error(e, raw TYPE_RESULT_RETURN(),
+            "`fail` returns an error from the enclosing function, and `main` and `failsafe` return no `Result` to fail into; `exit` is how a program stops",
+            s.span);
+    }
+    ExprId:c = raw stmt_operand(s);
+    if (raw expr_is_none(c)) { pass NIL; }
+
+    int32:saved = e.expected;
+    e.expected = e.types.t_tbb32;
+    int32:got = relay type_of_expr(e, c);
+    e.expected = saved;
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (got != e.types.t_tbb32) {
+        drop te_assign_mismatch(e, e.types.t_tbb32, got, s.span);
+    }
+    pass NIL;
+};
+
+// `return` TAKES A `Result{…}` LITERAL AND NOTHING ELSE (AST_REFERENCE §2).
+//
+// The restriction is what keeps `pass` and `fail` honest: they are sugar over
+// this form, so the form has to exist and has to be the only other way in. A
+// `return v;` accepting a bare value would give the language two spellings for
+// the success path, one of which silently supplies an error field nobody wrote.
+func:check_return = NIL(ExprTyper->:e, StmtNode:s) {
+    ExprId:v = raw stmt_operand(s);
+    if (raw expr_is_none(v)) {
+        drop te_error(e, raw TYPE_RESULT_RETURN(),
+            "`return` takes a `Result{…}` literal; `pass` and `fail` are the shorthands for one field at a time",
+            s.span);
+        pass NIL;
+    }
+    ExprNode:n = relay ast_expr(e.ast, v);
+    if (n.kind != ExprKind.ExprResultLiteralExpr) {
+        drop te_error(e, raw TYPE_RESULT_RETURN(),
+            "`return` takes a `Result{…}` literal and nothing else; write `pass v;` for a value or `fail c;` for an error",
+            s.span);
+        pass NIL;
+    }
+    drop type_of_expr(e, v);
+    pass NIL;
+};
+
+// `exit` IS LEGAL ONLY IN `main` AND `failsafe` — the whole reason those two are
+// shaped differently. Anywhere else, stopping the program bypasses every caller's
+// error handling and every `defer` between here and the top, which is exactly the
+// uncontrolled shutdown the language exists to make impossible.
+func:check_exit = NIL(ExprTyper->:e, StmtNode:s) {
+    if (!e.fn_terminal) {
+        drop te_error(e, raw TYPE_RESULT_RETURN(),
+            "`exit` is legal only in `main` and `failsafe`; elsewhere it would stop the program past every caller's error handling and every pending `defer` — `fail` is how a function reports failure",
+            s.span);
+    }
+    ExprId:c = raw stmt_operand(s);
+    if (raw expr_is_none(c)) { pass NIL; }
+    int32:saved = e.expected;
+    e.expected = raw tt_int(e.types, 32i32, true);
+    drop type_of_expr(e, c);
+    e.expected = saved;
+    pass NIL;
+};
+
+// One message for every "this value does not fit there", naming both types in
+// the order the reader wrote them.
+pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+    string:m1 = relay string_concat("expected `",
+                                    relay type_display(e.types, e.interns, want));
+    string:m2 = relay string_concat(m1, "`, found `");
+    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
+    string:m4 = relay string_concat(m3, "`");
+    // The widths case is worth naming, since it is the one that looks like it
+    // ought to work and no longer does (D-092, corrected).
+    if (raw type_is_integer(e.types, want)) {
+        if (raw type_is_integer(e.types, got)) {
+            m4 = relay string_concat(m4,
+                "; there is no implicit widening, so write the cast");
+        }
+    }
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MISMATCH(), m4, at));
+    pass NIL;
+};

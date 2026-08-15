@@ -71,7 +71,16 @@ pub func:stmt_then = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.b }
 pub func:stmt_else = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.c }; pass i; };
 pub func:stmt_expr = ExprId(StmtNode:s)        { ExprId:i = ExprId{ index: s.a }; pass i; };
 pub func:stmt_target = ExprId(StmtNode:s)      { ExprId:i = ExprId{ index: s.a }; pass i; };
-pub func:stmt_value = ExprId(StmtNode:s)       { ExprId:i = ExprId{ index: s.b }; pass i; };
+// ASSIGNMENT'S right-hand side, in slot `b`. The name is deliberately about the
+// assignment and not about "the value a statement carries" -- 0.4.4 reached for
+// it on a `pass` and got slot `b` of a node whose operand is in slot `a`, which
+// typed as whatever node index happened to sit there. `stmt_operand` below is
+// the one the value-statements want.
+pub func:stmt_assigned = ExprId(StmtNode:s)    { ExprId:i = ExprId{ index: s.b }; pass i; };
+
+// `pass v;` `fail c;` `return r;` `exit n;` `discard e;` -- the single operand a
+// value-statement carries, in slot `a`.
+pub func:stmt_operand = ExprId(StmtNode:s)     { ExprId:i = ExprId{ index: s.a }; pass i; };
 pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload => int32) => TokenKind); };
 pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload => int32); };
 pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload => int32); };
