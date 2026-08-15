@@ -6275,3 +6275,183 @@ position where the wrapper is already implied.
 
 `main` and `failsafe` return a bare `int32` and are unaffected: they are outside
 the `Result` discipline entirely (D-013), which is why `relay` is illegal in them.
+
+---
+
+## D-092 — When the compiler chooses a numeric type for you — **SETTLED**
+
+Two questions cycle 0.4.2 could not start without, neither stated outright, both
+implied by `SAFETY_ARCHITECTURE.md`'s `--extra-picky` table.
+
+### 1. An unsuffixed integer literal takes its type from CONTEXT
+
+`literal-suffixes` is an **optional** `--extra-picky` rule — "every integer
+literal must carry an explicit bit-size suffix" — so a bare `42` is legal in the
+language by default. `SUBSET_1.md` §1.4 applies the rule unconditionally to the
+compiler's **own** sources, which is why every literal we write is `42i32`; that
+is our discipline, not the language's.
+
+So an unsuffixed literal is typed by the position it appears in: the declared type
+of what it initialises, the parameter it is passed to, the other operand it is
+combined with.
+
+**With no context at all, it is an error rather than a silent `int32`.** A default
+would be a type nobody wrote, chosen by a rule nobody read, and every subsequent
+diagnostic about that expression would name it — which is exactly the shape of a
+bug that takes an afternoon.
+
+### 2. Implicit widening is permitted, and narrowly
+
+`explicit-widening` is likewise an **optional** rule that "bans implicit widening;
+all widenings use an explicit cast". Optional means the default permits it, so:
+
+**An integer operand may widen implicitly to the wider operand's type, and only
+when both have the same signedness.**
+
+```nitpick
+int32:a; int64:b;      a + b      // int64 — legal
+uint32:c; uint64:d;    c + d      // uint64 — legal
+int32:e; uint32:f;     e + f      // REFUSED
+int32:g; uint64:h;     g + h      // REFUSED
+```
+
+**Mixed signedness never widens**, at any pair of widths, and that is not an
+exception to the rule but the rule stated correctly. `int32 → uint64` is not a
+widening: it is a reinterpretation that maps every negative value onto an enormous
+positive one. Calling it a widening because the destination has more bits is the
+C rule, and it is the single most productive source of integer bugs in that
+language.
+
+**Nothing else participates.** `bool`, `char8`, every `tbb`, and the five kernel
+identifiers (D-042) do not widen to anything and nothing widens to them — they are
+not numbers (D-090), and a widening lattice that included them would be the place
+that quietly undid it.
+
+### Why the permissive default is kept
+
+The strict form is one flag away and the spec chose to make it a flag. Two things
+make that defensible rather than a hole to close:
+
+- **A widening within one signedness loses nothing.** It is the one implicit
+  conversion in the language that cannot change a value, which is a different
+  category from the conversions `=>` refuses (D-021).
+- **The pedantic setting is the recommended one.** `--extra-picky` is "optional
+  but strongly recommended", and `SUBSET_1` already runs the compiler's own
+  sources under the strictest reading of it.
+
+That said: **this is the one place in the language where a conversion happens that
+nobody wrote.** If `explicit-widening` should be mandatory rather than
+recommended, this decision is the place to reverse, and the checker is built so
+that reversing it is a flag rather than a rewrite — the widening is applied at one
+point, not scattered through the operator rules.
+
+---
+
+## D-093 — A range is a typed value, and ordering is narrower than equality
+
+**Settled in cycle 0.4.2.** Two questions the specs left implicit, decided
+together because they are the same question asked twice: *which types can be
+put in order?*
+
+### 1. `lo..hi` has a type of its own
+
+`TYPE_REFERENCE` §"Range" lists `a..b` and `a...b` and says only "used in `for`,
+`pick` patterns". Nothing says what a range *is*, and the two obvious readings
+disagree about a real program.
+
+**A range is a value of type `range<T>`,** where `T` is the common type of its
+endpoints. It is interned like every other type (D-090), and `..` and `...`
+produce the *same* type — the bound is a property of the value, not of the type,
+so a function taking a range accepts both spellings.
+
+The alternative was to give the expression its element type and let `for` and
+`pick` — the only two consumers — check the node kind. That is simpler and
+wrong: it makes
+
+```nitpick
+int32:x = 1i32..5i32;      // would typecheck, silently, as int32
+```
+
+legal. A construct that means one thing in a `for` header and another in an
+assignment is exactly the context-dependence the blueprint philosophy exists to
+forbid. Giving the range a type means the mismatch is reported where it is
+written and names what was found.
+
+### 2. `tbb` and the kernel identifiers compare, and do not sort
+
+D-042 says the five kernel identifiers "compare and do not add", and D-008 says
+the same of `tbb`. Neither says whether *comparison* includes `<`. It does not.
+
+**Ordering (`< <= > >= <=>`) requires an ordered type: integers, floats, and
+characters. Equality (`== !=`) is available to every type that has one.**
+
+- An **`fd` is an opaque handle.** Its number is an artifact of the order the
+  kernel happened to hand it out, so `fd1 < fd2` invites code that reads meaning
+  into that order — the same mistake as `fd + 1`, one operator over.
+- An **error code is compared against a named constant**, not sorted. `err < ERR`
+  is not a question anyone means to ask.
+- A **`bool` is two values.** `false < true` is a fact about the representation,
+  not about booleans.
+
+**`char8` does order.** Code-point order is a real ordering and `'a' <= c` asks a
+question about letters rather than about numbers — which is why `'a'..'z'` is a
+legitimate range while `true..false` is not. **Ordering is not arithmetic**, and
+this is the decision that keeps those two separate: D-005 bars `'a' * 2` without
+barring `'a' < 'b'`.
+
+Where the number really is what is meant, `=>` says so.
+
+---
+
+## D-094 — Slots `a`, `b`, `c` of a node hold node references, never scalars
+
+**Settled in cycle 0.4.2, by a bug that was never an error at any point.**
+
+The AST is six arrays of `{kind, span, a, b, c, payload}`, and the kind decides
+what the slots mean. 0.4.2 needed a literal's width suffix — `42i32` and `42` are
+different types and the parser had been discarding the difference — and slot `a`
+was unused on a literal, so the width went there.
+
+`resolve_expr` walked slot `a` as a child expression on every kind it did not
+name, on the strength of a comment reading *"slot `a` is an operand on every node
+that has one"*. Nothing checked that. So `42i32` began resolving whatever node
+sat at index `WI32`, and the only symptom was a name in an unrelated file
+failing to bind. No crash, no diagnostic, no bad output — one test, two cycles
+away, exiting non-zero.
+
+The same assumption had been copied into `init_reaches`, the global-initialiser
+cycle check, where it also carried its own partial list of window kinds: three
+named, four missed, so a self-reference reached through a template literal or a
+method call's arguments went unseen.
+
+### The rule
+
+**Slots `a`, `b` and `c` hold node references or window bounds. A scalar goes in
+`payload`, or — when the payload is already spoken for, as on a literal whose
+value lives there — in a field of its own.** `Token` had already made exactly
+this choice, keeping `width` beside `payload` rather than packed into it.
+
+### The check
+
+The rule alone would have prevented this instance. It would not have prevented
+the next one, because the walkers were each deciding a node's shape privately and
+neither could be shown to be right. So:
+
+- **`expr_shape(kind)`** in `ast.npk` states, once, which slots of each kind hold
+  children. Both walkers are driven by it.
+- **`EXPR_KIND_MAX`** is generated from `AST_REFERENCE.md` alongside the kind
+  enum, and `tests/frontend/ast_storage.npk` walks `1..EXPR_KIND_MAX` asserting
+  every kind has an entry. A node kind added to the specification and left out of
+  the table fails there, naming the kind, rather than being walked as whatever
+  shape the last author assumed.
+- **`NITPICK-RESOLVE-009`** is what a walker emits when it meets an unclassified
+  kind — a diagnostic about the *compiler*, not the program, because the only
+  honest thing to do with a node whose layout nobody has described is refuse to
+  read it.
+
+Verified by making it fail: removing `ExprPipeExpr` from the table exits `116`,
+which is `100 + 16`, and 16 is `ExprPipeExpr`.
+
+This is the third mechanical completeness check in the compiler, after
+`check_kinds_reachable` (0.2) and `resolve_audit` (0.3.5), and it was found the
+same way all three were: **two lists that had to agree, with nothing making them.**

@@ -1,0 +1,324 @@
+// Expression typing, and the semantic-type rules (cycle 0.4.2).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+
+struct:Ex = {
+    TypeTable:types;
+    DiagList:diags;
+    int32:result;
+    int64:parse_errs;
+};
+
+// Type a bare expression.
+func:ex = Ex(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    ExprId:node = relay p_parse_expr(@p);
+
+    TypeTable:types = raw typetable_init();
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags);
+    int32:t = relay type_of_expr(@e, node, 0i32);
+
+    Ex:out = Ex{ types: types, diags: diags, result: t,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+func:code0 = string(Ex->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+
+// EVERY EXPRESSION HERE MUST PARSE, and this is where that is enforced.
+//
+// Counting only TYPE diagnostics let a positive case pass for the wrong reason:
+// an expression the parser choked on yields node 0, `type_of_expr` returns
+// immediately, and "no type errors" is trivially true. So the parse count is
+// folded into the same question, and a test asserting a form typechecks is also
+// asserting the parser produced it.
+func:errs = int64(Ex->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- literals carry their width suffix -----------------------------------
+    // The parser drops nothing: a literal's width is part of its TYPE, and
+    // without it every literal would look contextually typed.
+    Ex:a = raw ex("42i32", @it);
+    if (raw errs(@a) != 0i64)                                  { exit 10i32; }
+    if ((raw type_int_bits(@a.types, a.result)) != 32i32)      { exit 11i32; }
+    if (!(raw type_is_signed(@a.types, a.result)))             { exit 12i32; }
+
+    Ex:b = raw ex("42u64", @it);
+    if ((raw type_int_bits(@b.types, b.result)) != 64i32)      { exit 13i32; }
+    if (raw type_is_signed(@b.types, b.result))                { exit 14i32; }
+
+    // An UNSUFFIXED literal with no context is an ERROR, not a silent int32
+    // (D-092). A default would be a type nobody wrote, chosen by a rule nobody
+    // read, and every later diagnostic would name it.
+    Ex:c = raw ex("42", @it);
+    if (raw errs(@c) != 1i64)                                  { exit 15i32; }
+
+    // …but one beside a typed operand takes that operand's type.
+    Ex:d = raw ex("42i64 + 1", @it);
+    if (raw errs(@d) != 0i64)                                  { exit 16i32; }
+    if ((raw type_int_bits(@d.types, d.result)) != 64i32)      { exit 17i32; }
+    // …in either order.
+    Ex:d2 = raw ex("1 + 42i64", @it);
+    if (raw errs(@d2) != 0i64)                                 { exit 18i32; }
+    if ((raw type_int_bits(@d2.types, d2.result)) != 64i32)    { exit 19i32; }
+
+    // --- THE SEMANTIC-TYPE RULES ------------------------------------------------
+    // Each of these is representationally an integer and none is a number.
+
+    // `true + 1i32` -- a bool is two values, not a small integer.
+    Ex:e1 = raw ex("true + 1i32", @it);
+    if (raw errs(@e1) != 1i64)                                 { exit 20i32; }
+    if (!(raw string_eq(raw code0(@e1), raw TYPE_NOT_NUMERIC()))) { exit 21i32; }
+
+    // `'a' * 2i32` -- a character is not its code point (D-005).
+    Ex:e2 = raw ex("'a' * 2i32", @it);
+    if (raw errs(@e2) != 1i64)                                 { exit 22i32; }
+    if (!(raw string_eq(raw code0(@e2), raw TYPE_NOT_NUMERIC()))) { exit 23i32; }
+
+    // A bool has no bitwise operations either, and the message points at `&&`.
+    Ex:e3 = raw ex("true & false", @it);
+    if (raw errs(@e3) != 1i64)                                 { exit 24i32; }
+    if (!(raw string_eq(raw code0(@e3), raw TYPE_NOT_NUMERIC()))) { exit 25i32; }
+
+    // --- NO TRUTHINESS ------------------------------------------------------------
+    // An integer is not a condition. `if (n)` is not shorthand for `if (n != 0)`.
+    Ex:t1 = raw ex("1i32 && true", @it);
+    if (raw errs(@t1) != 1i64)                                 { exit 30i32; }
+    if (!(raw string_eq(raw code0(@t1), raw TYPE_MISMATCH())))  { exit 31i32; }
+
+    Ex:t2 = raw ex("!1i32", @it);
+    if (raw errs(@t2) != 1i64)                                 { exit 32i32; }
+
+    // …and a real bool expression is fine.
+    Ex:t3 = raw ex("(1i32 < 2i32) && (3i32 > 2i32)", @it);
+    if (raw errs(@t3) != 0i64)                                 { exit 33i32; }
+    if (t3.result != t3.types.t_bool)                          { exit 34i32; }
+
+    // --- WIDENING, and where it stops (D-092) -------------------------------------
+    // Same signedness widens to the wider type.
+    Ex:w1 = raw ex("1i32 + 2i64", @it);
+    if (raw errs(@w1) != 0i64)                                 { exit 40i32; }
+    if ((raw type_int_bits(@w1.types, w1.result)) != 64i32)    { exit 41i32; }
+
+    Ex:w2 = raw ex("1u32 + 2u64", @it);
+    if (raw errs(@w2) != 0i64)                                 { exit 42i32; }
+    if (raw type_is_signed(@w2.types, w2.result))              { exit 43i32; }
+
+    // MIXED SIGNEDNESS NEVER WIDENS, at any pair of widths. `int32 -> uint64` is
+    // not a widening: it maps every negative value onto an enormous positive one.
+    // Calling it a widening because the destination has more bits is the C rule.
+    Ex:w3 = raw ex("1i32 + 2u32", @it);
+    if (raw errs(@w3) != 1i64)                                 { exit 44i32; }
+    if (!(raw string_eq(raw code0(@w3), raw TYPE_MISMATCH())))  { exit 45i32; }
+
+    Ex:w4 = raw ex("1i32 + 2u64", @it);
+    if (raw errs(@w4) != 1i64)                                 { exit 46i32; }
+
+    // --- comparison is wider than arithmetic -------------------------------------------
+    // A comparison yields a bool whatever it compared.
+    Ex:c1 = raw ex("1i32 < 2i32", @it);
+    if (raw errs(@c1) != 0i64)                                 { exit 50i32; }
+    if (c1.result != c1.types.t_bool)                          { exit 51i32; }
+
+    // `==` on a bool is ordinary…
+    Ex:c2 = raw ex("true == false", @it);
+    if (raw errs(@c2) != 0i64)                                 { exit 52i32; }
+    // …and `<` on one is a question nobody means to ask.
+    Ex:c3 = raw ex("true < false", @it);
+    if (raw errs(@c3) != 1i64)                                 { exit 53i32; }
+
+    // Comparing across signedness is still refused: the operands have no common
+    // type whether they are being added or ordered.
+    Ex:c4 = raw ex("1i32 == 2u32", @it);
+    if (raw errs(@c4) != 1i64)                                 { exit 54i32; }
+
+    // --- unary ------------------------------------------------------------------------
+    Ex:u1 = raw ex("-5i32", @it);
+    if (raw errs(@u1) != 0i64)                                 { exit 60i32; }
+
+    // NEGATING AN UNSIGNED VALUE is a question with no good answer, so it is not
+    // asked: the result would be either wrong or a different type.
+    Ex:u2 = raw ex("-5u32", @it);
+    if (raw errs(@u2) != 1i64)                                 { exit 61i32; }
+
+    Ex:u3 = raw ex("~5i32", @it);
+    if (raw errs(@u3) != 0i64)                                 { exit 62i32; }
+    // `~` on a bool is the bitwise complement of a two-valued type.
+    Ex:u4 = raw ex("~true", @it);
+    if (raw errs(@u4) != 1i64)                                 { exit 63i32; }
+
+    // --- ONE BAD OPERAND, ONE DIAGNOSTIC -------------------------------------------------
+    // A failed sub-expression yields the INVALID type and produces no second
+    // complaint from the operator above it -- the same anti-cascade the parser's
+    // panic mode and the type resolver's invalid type provide.
+    Ex:x1 = raw ex("(true + 1i32) + 2i32", @it);
+    if (raw errs(@x1) != 1i64)                                 { exit 70i32; }
+
+    // --- strings and characters type as themselves ------------------------------------------
+    Ex:s1 = raw ex("\"hello\"", @it);
+    if (s1.result != s1.types.t_string)                        { exit 80i32; }
+    Ex:s2 = raw ex("`a &{1i32} b`", @it);
+    if (s2.result != s2.types.t_string)                        { exit 81i32; }
+    Ex:s3 = raw ex("'x'", @it);
+    if ((raw type_kind(@s3.types, s3.result)) != (raw TY_CHAR())) { exit 82i32; }
+
+    // --- floats follow the literal rule, in their own family --------------------------------
+    Ex:f1 = raw ex("1.5f64", @it);
+    if (raw errs(@f1) != 0i64)                                 { exit 90i32; }
+    if ((raw type_kind(@f1.types, f1.result)) != (raw TY_FLOAT())) { exit 91i32; }
+    // An unsuffixed float has no context here either.
+    Ex:f2 = raw ex("1.5", @it);
+    if (raw errs(@f2) != 1i64)                                 { exit 92i32; }
+    // A float and an integer have no common type: there is no implicit
+    // int-to-float conversion any more than there is a signed-to-unsigned one.
+    Ex:f3 = raw ex("1i32 + 2.5f64", @it);
+    if (raw errs(@f3) != 1i64)                                 { exit 93i32; }
+    // Floats do not do bitwise.
+    Ex:f4 = raw ex("1.5f64 & 2.5f64", @it);
+    if (raw errs(@f4) != 1i64)                                 { exit 94i32; }
+
+    // --- THE THREE SENTINELS ------------------------------------------------------------------
+    Ex:n1 = raw ex("NIL", @it);
+    if (n1.result != n1.types.t_nil)                           { exit 100i32; }
+    // `ERR` is the `tbb` taint value (D-008), so it types as one.
+    Ex:n2 = raw ex("ERR", @it);
+    if (n2.result != n2.types.t_tbb32)                         { exit 101i32; }
+    // `NULL` is valid only in a pointer context (TYPE_REFERENCE §27), and with
+    // nothing to say WHICH pointer it is an error rather than some default — a
+    // null `int32->` and a null `Frame->` are not the same value downstream.
+    Ex:n3 = raw ex("NULL", @it);
+    if (raw errs(@n3) != 1i64)                                 { exit 102i32; }
+
+    // --- `@`, `<-`, `$$i`, `$$m` (OP_REFERENCE §0 level 5) ------------------------------------
+    // `@x` is a pointer to x; `<-` brings the value back. The arrows point the
+    // way the data moves, which is the whole reason they are spelled that way.
+    Ex:p1 = raw ex("<-@1i32", @it);
+    if (raw errs(@p1) != 0i64)                                 { exit 110i32; }
+    if ((raw type_int_bits(@p1.types, p1.result)) != 32i32)    { exit 111i32; }
+
+    Ex:p2 = raw ex("@1i32", @it);
+    if ((raw type_kind(@p2.types, p2.result)) != (raw TY_POINTER())) { exit 112i32; }
+
+    // DEREFERENCING A NON-POINTER is caught here, not by the backend.
+    Ex:p3 = raw ex("<-1i32", @it);
+    if (raw errs(@p3) != 1i64)                                 { exit 113i32; }
+    if (!(raw string_eq(raw code0(@p3), raw TYPE_MISMATCH())))  { exit 114i32; }
+
+    // A second-class borrow is a pointer at the type level (D-004); what makes it
+    // second-class is where it may travel, which is the borrow checker's job.
+    Ex:p4 = raw ex("$$i 1i32", @it);
+    if ((raw type_kind(@p4.types, p4.result)) != (raw TY_POINTER())) { exit 115i32; }
+
+    // --- RANGES ARE VALUES WITH A TYPE (D-093) ------------------------------------------------
+    Ex:r1 = raw ex("1i32..10i32", @it);
+    if (raw errs(@r1) != 0i64)                                 { exit 120i32; }
+    if ((raw type_kind(@r1.types, r1.result)) != (raw TY_RANGE())) { exit 121i32; }
+    // The element type is the endpoints', so `for` and `pick` can read it off.
+    if ((raw type_int_bits(@r1.types, raw type_elem(@r1.types, r1.result))) != 32i32) {
+        exit 122i32;
+    }
+    // `..` is INCLUSIVE and `...` EXCLUSIVE (the reverse of Rust), and both are
+    // the same type: the bound belongs to the value, not to the type.
+    Ex:r2 = raw ex("1i32...10i32", @it);
+    if (r2.result != r1.result)                                { exit 123i32; }
+
+    // A character range is legitimate — code-point order is a real ordering, and
+    // `'a'..'z'` asks a question about letters, not about numbers.
+    Ex:r3 = raw ex("'a'..'z'", @it);
+    if (raw errs(@r3) != 0i64)                                 { exit 124i32; }
+
+    // A range of something with NO ORDERING is not a range of anything.
+    Ex:r4 = raw ex("true..false", @it);
+    if (raw errs(@r4) != 1i64)                                 { exit 125i32; }
+
+    // --- ORDERING IS NARROWER THAN EQUALITY (D-093) -------------------------------------------
+    // `tbb32` and the kernel identifiers compare for equality and do not sort:
+    // an `fd`'s number is an allocation artifact, and reading meaning into the
+    // order the kernel handed them out is the same mistake as `fd + 1`.
+    Ex:o1 = raw ex("ERR == ERR", @it);
+    if (raw errs(@o1) != 0i64)                                 { exit 130i32; }
+    Ex:o2 = raw ex("ERR < ERR", @it);
+    if (raw errs(@o2) != 1i64)                                 { exit 131i32; }
+    if (!(raw string_eq(raw code0(@o2), raw TYPE_NOT_NUMERIC()))) { exit 132i32; }
+
+    // --- the ternary, which is `is (c) : a : b` and NOT `? :` ---------------------------------
+    Ex:tn1 = raw ex("is (true) : 1i32 : 2i32", @it);
+    if (raw errs(@tn1) != 0i64)                                { exit 140i32; }
+    if ((raw type_int_bits(@tn1.types, tn1.result)) != 32i32)  { exit 141i32; }
+
+    // The condition is a strict `bool` like every other condition in the language.
+    Ex:tn2 = raw ex("is (1i32) : 1i32 : 2i32", @it);
+    if (raw errs(@tn2) != 1i64)                                { exit 142i32; }
+
+    // THE TWO ARMS MUST AGREE. A conditional whose type depended on which way it
+    // went would have no type at all.
+    Ex:tn3 = raw ex("is (true) : 1i32 : true", @it);
+    if (raw errs(@tn3) != 1i64)                                { exit 143i32; }
+
+    // …and an unsuffixed literal in one arm takes the other arm's type.
+    Ex:tn4 = raw ex("is (true) : 1i64 : 2", @it);
+    if (raw errs(@tn4) != 0i64)                                { exit 144i32; }
+    if ((raw type_int_bits(@tn4.types, tn4.result)) != 64i32)  { exit 145i32; }
+
+    // --- `?|` and `defaults` are the same operator, spelled twice -----------------------------
+    Ex:df1 = raw ex("1i32 ?| 0i32", @it);
+    if (raw errs(@df1) != 0i64)                                { exit 150i32; }
+    Ex:df2 = raw ex("1i32 defaults 0i32", @it);
+    if (raw errs(@df2) != 0i64)                                { exit 151i32; }
+    if (df2.result != df1.result)                              { exit 152i32; }
+    // A fallback of a different type defeats the point: the reader cannot tell
+    // which one they got, so both must land on one type.
+    Ex:df3 = raw ex("1i32 defaults true", @it);
+    if (raw errs(@df3) != 1i64)                                { exit 153i32; }
+
+    // --- `++` / `--` are arithmetic, and answer to the same rule ------------------------------
+    Ex:pp1 = raw ex("1i32++", @it);
+    if (raw errs(@pp1) != 0i64)                                { exit 160i32; }
+    // A `char8++` walking to the next code point would make a character an
+    // integer in exactly one corner of the grammar.
+    Ex:pp2 = raw ex("'a'++", @it);
+    if (raw errs(@pp2) != 1i64)                                { exit 161i32; }
+    Ex:pp3 = raw ex("true--", @it);
+    if (raw errs(@pp3) != 1i64)                                { exit 162i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

@@ -57,6 +57,7 @@ pub func:TY_DYN = int32()      { pass 19i32; };  // a,b = trait window
 pub func:TY_FUNC = int32()     { pass 20i32; };  // a = return, b,c = param window
 pub func:TY_SELF = int32()     { pass 21i32; };
 pub func:TY_PARAM = int32()    { pass 22i32; };  // a generic parameter; a = DeclId
+pub func:TY_RANGE = int32()    { pass 23i32; };  // a = element (D-093)
 
 pub struct:Type = {
     int32:kind;
@@ -196,6 +197,19 @@ pub func:tt_array = int32(TypeTable->:t, int32:elem, int32:count,
                           int64:elem_size, int32:elem_align) {
     int64:total = elem_size * (count => int64);
     pass (raw tt_intern(t, raw TY_ARRAY(), elem, count, 0i32, total, elem_align, 0i32));
+};
+
+// `lo..hi` IS A TYPED VALUE (D-093), not the type of its endpoints.
+//
+// A range is consumed by `for` and by `pick` patterns and by nothing else, so it
+// would have been tempting to give the expression its element type and let those
+// two check the node kind. That would make `int32:x = 1i32..5i32;` typecheck,
+// silently, as `int32`. Giving the range a type of its own means the mismatch is
+// reported where it happens and names what it found.
+pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
+                          int32:elem_align) {
+    pass (raw tt_intern(t, raw TY_RANGE(), elem, 0i32, 0i32,
+                        elem_size * 2i64, elem_align, 0i32));
 };
 
 pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
@@ -352,6 +366,26 @@ pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) {
     int32:k = raw type_kind(t, id);
     if (k == (raw TY_TBB()))    { pass true; }
     if (k == (raw TY_KERNEL())) { pass true; }
+    pass false;
+};
+
+// DOES THIS TYPE HAVE AN ORDERING? Narrower than equality, and narrower than
+// `type_is_comparable_only` — which answers a different question.
+//
+// `tbb` and the kernel identifiers compare for EQUALITY and nothing more. An
+// error code is compared against a named constant; `err < ERR` is not a question.
+// An `fd` is an opaque handle whose number is an allocation artifact, so `fd1 <
+// fd2` invites code that reads meaning into the order the kernel handed them out
+// — the same mistake as `fd + 1`, one operator over. Cast if the number is what
+// is meant.
+//
+// A `char8` DOES order: code-point order is a real ordering, and `'a' <= c` is a
+// question about letters rather than about numbers. Ordering is not arithmetic.
+pub func:type_is_ordered = bool(TypeTable->:t, int32:id) {
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_INT()))   { pass true; }
+    if (k == (raw TY_FLOAT())) { pass true; }
+    if (k == (raw TY_CHAR()))  { pass true; }
     pass false;
 };
 

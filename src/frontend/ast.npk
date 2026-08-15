@@ -20,6 +20,7 @@
 // whole class of mixup from a structure built almost entirely of indices.
 
 use "source_location.npk".*;
+use "num_width.npk".*;
 use "ast_kind.npk".*;
 
 pub struct:ExprId = { int32:index; };
@@ -58,6 +59,18 @@ pub func:verify_is_none = bool(VerifyId:i) { pass (i.index == 0i32); };
 // growable array per node shape -- ninety hand-written containers -- and the
 // accessor layer buys the same readability at no runtime cost.
 
+// SLOTS `a`, `b` AND `c` HOLD NODE REFERENCES OR WINDOW BOUNDS. NEVER A SCALAR.
+//
+// This is load-bearing, and it is stated here because breaking it produced a bug
+// that was never an error at any point. 0.4.2 needed a literal's width suffix and
+// put it in slot `a`, which was free on a literal -- and `resolve_expr`'s
+// fall-through walks slot `a` as a child on every kind it does not name, so a
+// `42i32` began resolving whatever node happened to sit at index `WI32`. Nothing
+// crashed; a name in an unrelated file simply started failing to resolve.
+//
+// A scalar therefore goes in `payload`, or -- when the payload is already spoken
+// for, as it is on a literal whose value lives there -- in a field of its own.
+// `Token` had already made exactly this choice for exactly this reason.
 pub struct:ExprNode = {
     ExprKind:kind;
     Span:span;
@@ -65,6 +78,7 @@ pub struct:ExprNode = {
     int32:b;
     int32:c;
     int64:payload;
+    NumWidth:width;   // WNone unless the node is a numeric literal
 };
 
 pub struct:StmtNode = {
@@ -176,7 +190,8 @@ pub func:ast_init = Ast() {
 
     // Reserve index 0 in every array as the NONE node.
     ExprNode:en = ExprNode{ kind: ExprKind.ExprNone, span: z,
-                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64,
+                            width: NumWidth.WNone };
     ast.exprs[0i64] = en;
     ast.expr_count = 1i32;
 
@@ -221,11 +236,20 @@ func:ast_grow_exprs = NIL(Ast->:ast) {
 
 pub func:ast_add_expr = ExprId(Ast->:ast, ExprKind:kind, Span:span,
                                int32:a, int32:b, int32:c, int64:payload) {
+    pass (relay ast_add_expr_w(ast, kind, span, a, b, c, payload, NumWidth.WNone));
+};
+
+// The numeric-literal form. Separate rather than an eighth parameter on every
+// call site, because only two kinds have a width and the other forty-two should
+// not have to say so.
+pub func:ast_add_expr_w = ExprId(Ast->:ast, ExprKind:kind, Span:span,
+                                 int32:a, int32:b, int32:c, int64:payload,
+                                 NumWidth:width) {
     if (ast.expr_count >= ast.expr_cap) {
         drop ast_grow_exprs(ast);
     }
     ExprNode:n = ExprNode{ kind: kind, span: span,
-                           a: a, b: b, c: c, payload: payload };
+                           a: a, b: b, c: c, payload: payload, width: width };
     ast.exprs[ast.expr_count => int64] = n;
     ExprId:id = ExprId{ index: ast.expr_count };
     ast.expr_count = ast.expr_count + 1i32;
@@ -541,4 +565,93 @@ pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) {
     if (at < 0i32) { fail 8i32; }
     if (at >= ast.id_count) { fail 8i32; }
     pass ast.ids[at => int64];
+};
+
+// --- expression SHAPES ---------------------------------------------------------------------
+//
+// WHICH SLOTS OF A NODE HOLD CHILD EXPRESSIONS, stated once for every kind.
+//
+// Before this existed, `resolve_expr` walked slot `a` on every kind it did not
+// name, on the strength of a comment saying "slot `a` is an operand on every node
+// that has one". Nothing checked that. It was true until a literal needed
+// somewhere to keep its width suffix, and then a `42i32` quietly began resolving
+// whatever node sat at index `WI32`.
+//
+// The list below is the assumption written down, and `EXPR_SHAPE_NONE` is what a
+// kind gets when nobody has written it down yet -- which `tests/frontend/ast.npk`
+// turns into a failure rather than a guess.
+pub func:EXPR_SHAPE_NONE   = int32() { pass 0i32; };  // UNCLASSIFIED -- a bug
+pub func:EXPR_SHAPE_LEAF   = int32() { pass 1i32; };  // no child expressions
+pub func:EXPR_SHAPE_ONE    = int32() { pass 2i32; };  // a
+pub func:EXPR_SHAPE_TWO    = int32() { pass 3i32; };  // a, b
+pub func:EXPR_SHAPE_THREE  = int32() { pass 4i32; };  // a, b, c
+pub func:EXPR_SHAPE_LIST   = int32() { pass 5i32; };  // window at b, count c
+pub func:EXPR_SHAPE_ONELIST = int32() { pass 6i32; }; // a, plus that window
+pub func:EXPR_SHAPE_CUSTOM = int32() { pass 7i32; };  // the walker names it
+
+pub func:expr_shape = int32(ExprKind:k) {
+    // Leaves. Every one of these has a payload and no children, which is exactly
+    // the group that a slot-`a` walk got wrong.
+    if (k == ExprKind.ExprIntLiteral)        { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprFloatLiteral)      { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprCharLiteral)       { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprStringLiteral)     { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprRawStringLiteral)  { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprBlockStringLiteral){ pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprBoolLiteral)       { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprSentinelLiteral)   { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprIdentifierExpr)    { pass (raw EXPR_SHAPE_LEAF()); }
+    if (k == ExprKind.ExprIterationVarExpr)  { pass (raw EXPR_SHAPE_LEAF()); }
+
+    // One operand in slot `a`.
+    if (k == ExprKind.ExprUnaryExpr)         { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprPostfixExpr)       { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprAddressOfExpr)     { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprDerefExpr)         { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprBorrowExpr)        { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprSpreadExpr)        { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprMoveExpr)          { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprComptimeExpr)      { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprRawUnwrapExpr)     { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprDropExpr)          { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprRelayExpr)         { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprAwaitExpr)         { pass (raw EXPR_SHAPE_ONE()); }
+    // The cast family carries a TYPE in slot `b`, not an expression, so it is
+    // one-operand here and the type is walked by the type resolver.
+    if (k == ExprKind.ExprCastExpr)          { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprUncheckedCastExpr) { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprDynCastExpr)       { pass (raw EXPR_SHAPE_ONE()); }
+    // Member access resolves its base and stops: the member name needs the base's
+    // TYPE, which is why it is an interned name rather than a node.
+    if (k == ExprKind.ExprMemberAccessExpr)  { pass (raw EXPR_SHAPE_ONE()); }
+    if (k == ExprKind.ExprSafeNavExpr)       { pass (raw EXPR_SHAPE_ONE()); }
+
+    // Two operands, `a` and `b`.
+    if (k == ExprKind.ExprBinaryExpr)        { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprRangeExpr)         { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprIndexExpr)         { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprPipeExpr)          { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprSafeUnwrapExpr)    { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprNullCoalesceExpr)  { pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprEmphaticUnwrapExpr){ pass (raw EXPR_SHAPE_TWO()); }
+    if (k == ExprKind.ExprDefaultsExpr)      { pass (raw EXPR_SHAPE_TWO()); }
+
+    if (k == ExprKind.ExprTernaryExpr)       { pass (raw EXPR_SHAPE_THREE()); }
+
+    // A window of ids at `b`, `c`.
+    if (k == ExprKind.ExprTemplateLiteral)   { pass (raw EXPR_SHAPE_LIST()); }
+    if (k == ExprKind.ExprArrayLiteralExpr)  { pass (raw EXPR_SHAPE_LIST()); }
+    if (k == ExprKind.ExprVectorCtorExpr)    { pass (raw EXPR_SHAPE_LIST()); }
+    if (k == ExprKind.ExprMethodCallExpr)    { pass (raw EXPR_SHAPE_ONELIST()); }
+
+    // Kinds whose window is not a plain list of expressions, so a walker has to
+    // say what it means: a struct literal alternates NAME and VALUE, a call and a
+    // builtin put generic TYPE arguments before the value ones, and a `pick`
+    // holds arms rather than expressions.
+    if (k == ExprKind.ExprStructLiteralExpr) { pass (raw EXPR_SHAPE_CUSTOM()); }
+    if (k == ExprKind.ExprCallExpr)          { pass (raw EXPR_SHAPE_CUSTOM()); }
+    if (k == ExprKind.ExprBuiltinExpr)       { pass (raw EXPR_SHAPE_CUSTOM()); }
+    if (k == ExprKind.ExprPickExpr)          { pass (raw EXPR_SHAPE_CUSTOM()); }
+
+    pass (raw EXPR_SHAPE_NONE());
 };

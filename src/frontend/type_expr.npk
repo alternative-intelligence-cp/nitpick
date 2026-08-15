@@ -1,0 +1,670 @@
+// Expression typing.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.2.
+//
+// Every expression gets a type, and the operators enforce the rules that make a
+// type mean more than its bits.
+//
+// THIS IS WHERE THE LANGUAGE WINS OVER THE MACHINE. Four families are
+// representationally identical to integers and none of them is a number:
+//
+//   `bool`          one byte, two values. `true + 1i32` means nothing.
+//   `char8`         a character is not its code point (D-005).
+//   `tbb32`         an error-code type whose arithmetic drags in ERR,
+//                   stickiness and saturation (D-008) — operations that belong
+//                   to the type, not to `+`.
+//   `fd` and family an `fd` plus one is not an `fd` (D-042).
+//
+// To LLVM all four are `iN`. Nothing downstream will object. This file is the
+// only place that can.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "token_kind.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "num_width.npk".*;
+use "parse_expr.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+
+pub struct:ExprTyper = {
+    Ast->:ast;
+    TypeTable->:types;
+    SymbolTable->:tab;
+    InternTable->:interns;
+    DiagList->:diags;
+
+    // The type an unsuffixed literal should take, pushed by whatever position it
+    // appears in (D-092). Zero when there is none, and a literal reaching that
+    // state is an error rather than a silent `int32`.
+    int32:expected;
+};
+
+pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
+                                 InternTable->:interns, DiagList->:diags) {
+    ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
+                             diags: diags, expected: 0i32 };
+    pass e;
+};
+
+func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
+    drop diaglist_push(e.diags, raw diag_error(code, message, at));
+    pass 0i32;
+};
+
+// A type's name, for a message. The whole value of a type error is which type
+// was wrong, so this is never elided.
+pub func:type_display = string(ExprTyper->:e, int32:t) {
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_INVALID())) { pass "<unresolved>"; }
+    if (k == (raw TY_BOOL()))    { pass "bool"; }
+    if (k == (raw TY_STRING()))  { pass "string"; }
+    if (k == (raw TY_CSTRING())) { pass "cstring"; }
+    if (k == (raw TY_NIL()))     { pass "NIL"; }
+    if (k == (raw TY_ANY()))     { pass "any"; }
+    if (k == (raw TY_CHAR())) {
+        pass (relay string_concat("char",
+                  raw int_to_string((raw type_int_bits(e.types, t)) => int64)));
+    }
+    if (k == (raw TY_TBB())) {
+        pass (relay string_concat("tbb",
+                  raw int_to_string((raw type_int_bits(e.types, t)) => int64)));
+    }
+    if (k == (raw TY_KERNEL())) {
+        int32:w = raw type_elem(e.types, t);
+        if (w == (raw KERNEL_FD()))  { pass "fd"; }
+        if (w == (raw KERNEL_PID())) { pass "pid"; }
+        if (w == (raw KERNEL_TID())) { pass "tid"; }
+        if (w == (raw KERNEL_UID())) { pass "uid"; }
+        pass "gid";
+    }
+    if (k == (raw TY_INT())) {
+        string:base = "int";
+        if (!(raw type_is_signed(e.types, t))) { base = "uint"; }
+        pass (relay string_concat(base,
+                  raw int_to_string((raw type_int_bits(e.types, t)) => int64)));
+    }
+    if (k == (raw TY_FLOAT())) {
+        pass (relay string_concat("flt",
+                  raw int_to_string((raw type_int_bits(e.types, t)) => int64)));
+    }
+    if (k == (raw TY_POINTER())) {
+        pass (relay string_concat(relay type_display(e, raw type_elem(e.types, t)), "->"));
+    }
+    if (k == (raw TY_SLICE())) {
+        pass (relay string_concat(relay type_display(e, raw type_elem(e.types, t)), "[]"));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (relay string_concat(relay type_display(e, raw type_elem(e.types, t)), "?"));
+    }
+    if (k == (raw TY_RESULT())) {
+        string:r1 = relay string_concat("Result<",
+                        relay type_display(e, raw type_elem(e.types, t)));
+        pass (relay string_concat(r1, ">"));
+    }
+    // Named types carry their own name.
+    int32:nm = raw type_name(e.types, t);
+    if (!(raw intern_is_none(nm))) {
+        pass (relay intern_get(e.interns, nm));
+    }
+    pass "<type>";
+};
+
+// --- widening (D-092) ------------------------------------------------------------------
+//
+// APPLIED AT ONE POINT, not scattered through the operator rules. That is
+// deliberate: D-092 keeps the permissive default because `--extra-picky=
+// explicit-widening` is a flag, and if it should become mandatory this is the
+// single function that changes.
+//
+// An integer may widen to a wider integer OF THE SAME SIGNEDNESS. Mixed
+// signedness never widens at any pair of widths — `int32 → uint64` is not a
+// widening but a reinterpretation that maps every negative value onto an enormous
+// positive one, and calling it a widening because the destination has more bits
+// is the C rule and the most productive source of integer bugs in that language.
+pub func:can_widen = bool(ExprTyper->:e, int32:from, int32:to) {
+    if (!(raw type_is_integer(e.types, from))) { pass false; }
+    if (!(raw type_is_integer(e.types, to)))   { pass false; }
+    if ((raw type_is_signed(e.types, from)) != (raw type_is_signed(e.types, to))) {
+        pass false;
+    }
+    pass ((raw type_int_bits(e.types, from)) < (raw type_int_bits(e.types, to)));
+};
+
+// The common type of two operands, or 0 if there is none.
+pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) {
+    if (a == b) { pass a; }
+    if (raw can_widen(e, a, b)) { pass b; }
+    if (raw can_widen(e, b, a)) { pass a; }
+    pass 0i32;
+};
+
+// --- literals ---------------------------------------------------------------------------
+
+// An unsuffixed literal takes its type from CONTEXT (D-092), and with none it is
+// an error rather than a silent `int32`. A default would be a type nobody wrote,
+// chosen by a rule nobody read, and every later diagnostic about the expression
+// would name it.
+func:type_int_literal = int32(ExprTyper->:e, ExprNode:n) {
+    NumWidth:w = raw expr_num_width(n);
+    if (raw num_width_is_integer(w)) {
+        pass (raw tt_int(e.types, raw num_width_bits(w), raw num_width_signed(w)));
+    }
+    if (e.expected != 0i32) {
+        if (raw type_is_integer(e.types, e.expected)) {
+            pass (e.expected);
+        }
+    }
+    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+        "this literal has no width suffix and nothing here says what it should be; write `42i32` or give the surrounding expression a type",
+        n.span));
+};
+
+// A float literal follows the same rule for the same reason.
+func:type_float_literal = int32(ExprTyper->:e, ExprNode:n) {
+    NumWidth:w = raw expr_num_width(n);
+    if (raw num_width_is_float(w)) {
+        pass (raw tt_float(e.types, raw num_width_bits(w)));
+    }
+    if (e.expected != 0i32) {
+        if ((raw type_kind(e.types, e.expected)) == (raw TY_FLOAT())) {
+            pass (e.expected);
+        }
+    }
+    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+        "this literal has no width suffix and nothing here says what it should be; write `1.5f64` or give the surrounding expression a type",
+        n.span));
+};
+
+// `NIL`, `NULL`, `ERR` — three sentinels, three types (TYPE_REFERENCE §27).
+//
+// `NULL` IS CONTEXTUAL, and for the same reason an unsuffixed literal is: it is
+// "only valid in pointer contexts", so a pointer type has to come from somewhere.
+// With nothing to take it from it is an error rather than a pointer to some
+// default, because a null `int32->` and a null `Frame->` are not the same value
+// to anything downstream.
+func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
+    int64:which = n.payload;
+    if (which == 0i64) { pass (e.types.t_nil); }
+    if (which == 2i64) { pass (e.types.t_tbb32); }
+
+    if (e.expected != 0i32) {
+        if ((raw type_kind(e.types, e.expected)) == (raw TY_POINTER())) {
+            pass (e.expected);
+        }
+    }
+    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+        "`NULL` is valid only where a pointer type is expected, and nothing here says which pointer",
+        n.span));
+};
+
+// --- the operators ----------------------------------------------------------------------
+
+// Arithmetic: `+ - * / %`. NUMBERS ONLY, and `type_is_numeric` is deliberately
+// narrow (0.4.0).
+func:type_arithmetic = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+    // A type that already failed produces no second complaint.
+    if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
+
+    if (!(raw type_is_numeric(e.types, lt))) {
+        pass (relay te_operand_error(e, n, lt));
+    }
+    if (!(raw type_is_numeric(e.types, rt))) {
+        pass (relay te_operand_error(e, n, rt));
+    }
+
+    int32:common = raw unify(e, lt, rt);
+    if (common == 0i32) {
+        pass (relay te_mismatch(e, n, lt, rt));
+    }
+    pass common;
+};
+
+// The message names the TYPE that made it wrong, and says why that type is not a
+// number — because "invalid operand" leaves the reader to work out which of two
+// familiar-looking things the compiler objected to.
+func:te_operand_error = int32(ExprTyper->:e, ExprNode:n, int32:t) {
+    string:d = relay type_display(e, t);
+    string:m1 = relay string_concat("`", d);
+    string:m2 = relay string_concat(m1, "` is not a number, so it has no arithmetic: ");
+    string:m3 = relay string_concat(m2, relay why_not_numeric(e, t));
+    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m3, n.span));
+};
+
+// Each of these is representationally an integer, so the reason has to be stated
+// or the diagnostic looks arbitrary.
+pub func:why_not_numeric = string(ExprTyper->:e, int32:t) {
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_BOOL())) {
+        pass "a `bool` is two values, not a small integer";
+    }
+    if (k == (raw TY_CHAR())) {
+        pass "a character is not its code point (D-005); cast if you mean the number";
+    }
+    if (k == (raw TY_TBB())) {
+        pass "a `tbb` is an error-code type, and its arithmetic carries ERR, stickiness and saturation (D-008) rather than being `+`";
+    }
+    if (k == (raw TY_KERNEL())) {
+        pass "a kernel identifier compares but does not compute (D-042): an `fd` plus one is not an `fd`";
+    }
+    if (k == (raw TY_POINTER())) {
+        pass "pointer arithmetic goes through `#ptr_add<T>(p, n)`";
+    }
+    pass "it is not a numeric type";
+};
+
+func:te_mismatch = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+    string:m1 = relay string_concat("`", relay type_display(e, lt));
+    string:m2 = relay string_concat(m1, "` and `");
+    string:m3 = relay string_concat(m2, relay type_display(e, rt));
+    string:m4 = relay string_concat(m3, "` have no common type");
+    // Mixed signedness is the case worth naming: it looks like a widening and is
+    // not one.
+    if (raw type_is_integer(e.types, lt)) {
+        if (raw type_is_integer(e.types, rt)) {
+            if ((raw type_is_signed(e.types, lt)) != (raw type_is_signed(e.types, rt))) {
+                m4 = relay string_concat(m4,
+                    "; signed and unsigned do not widen into each other, because that maps every negative value onto a large positive one rather than preserving it");
+            }
+        }
+    }
+    pass (relay te_error(e, raw TYPE_MISMATCH(), m4, n.span));
+};
+
+// Comparison: `== != < <= > >= <=>`. Wider than arithmetic — the types that
+// COMPARE but do not compute are exactly `tbb` and the kernel identifiers, and
+// comparison is what they are for.
+func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
+                             bool:ordered) {
+    if (raw type_is_invalid(e.types, lt)) { pass (e.types.t_bool); }
+    if (raw type_is_invalid(e.types, rt)) { pass (e.types.t_bool); }
+
+    int32:common = raw unify(e, lt, rt);
+    if (common == 0i32) {
+        drop te_mismatch(e, n, lt, rt);
+        pass (e.types.t_bool);
+    }
+
+    // EQUALITY IS WIDER THAN ORDERING (D-093). `==` on a `bool` or an `fd` is
+    // ordinary; `<` on either is a question nobody means to ask.
+    if (ordered) {
+        if (!(raw type_is_ordered(e.types, common))) {
+            string:m1 = relay string_concat("`", relay type_display(e, common));
+            string:m2 = relay string_concat(m1, "` has no ordering: ");
+            m2 = relay string_concat(m2, relay why_not_ordered(e, common));
+            drop te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span);
+        }
+    }
+    pass (e.types.t_bool);
+};
+
+pub func:why_not_ordered = string(ExprTyper->:e, int32:t) {
+    int32:k = raw type_kind(e.types, t);
+    if (k == (raw TY_BOOL())) {
+        pass "`false < true` is an accident of representation, not a fact about booleans";
+    }
+    if (k == (raw TY_TBB())) {
+        pass "error codes are compared against named constants, not sorted";
+    }
+    if (k == (raw TY_KERNEL())) {
+        pass "a kernel identifier is an opaque handle, and the order the kernel handed them out means nothing (D-042); cast if the number is what is meant";
+    }
+    pass "only integers, floats and characters have one";
+};
+
+// `&& || !` take `bool` AND NOTHING ELSE. There is no truthiness: an integer is
+// not a condition, a pointer is not a condition, and `if (n)` is not a shorthand
+// for `if (n != 0i32)`.
+func:type_logical = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+    drop require_bool(e, lt, n.span);
+    drop require_bool(e, rt, n.span);
+    pass (e.types.t_bool);
+};
+
+pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) {
+    if (raw type_is_invalid(e.types, t)) { pass NIL; }
+    if (t == e.types.t_bool) { pass NIL; }
+    string:m1 = relay string_concat("this must be a `bool`, and is `",
+                                    relay type_display(e, t));
+    string:m2 = relay string_concat(m1,
+        "`; there is no truthiness in Nitpick, so write the comparison you mean");
+    drop te_error(e, raw TYPE_MISMATCH(), m2, at);
+    pass NIL;
+};
+
+// Bitwise `& | ^ << >>`: INTEGERS ONLY. Not `bool` — `&&` is the logical
+// operator and a bitwise `&` on two booleans is someone reaching for it.
+func:type_bitwise = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+    if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
+
+    if (!(raw type_is_integer(e.types, lt))) {
+        pass (relay te_bitwise_error(e, n, lt));
+    }
+    if (!(raw type_is_integer(e.types, rt))) {
+        pass (relay te_bitwise_error(e, n, rt));
+    }
+    int32:common = raw unify(e, lt, rt);
+    if (common == 0i32) {
+        pass (relay te_mismatch(e, n, lt, rt));
+    }
+    pass common;
+};
+
+func:te_bitwise_error = int32(ExprTyper->:e, ExprNode:n, int32:t) {
+    string:d = relay type_display(e, t);
+    string:m1 = relay string_concat("`", d);
+    string:m2 = relay string_concat(m1, "` has no bitwise operations");
+    if (t == e.types.t_bool) {
+        m2 = relay string_concat(m2, "; `&&` and `||` are the logical operators");
+    }
+    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+};
+
+// `++` / `--`. Numbers only — the same rule as `+`, because that is what they
+// are, and a `char8++` that walked to the next code point would make a character
+// an integer in exactly one place in the grammar.
+func:type_postfix = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_operand(n), 0i32);
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if (t == 0i32) { pass 0i32; }
+    if (!(raw type_is_numeric(e.types, t))) {
+        pass (relay te_operand_error(e, n, t));
+    }
+    pass t;
+};
+
+// `<-p` — full dereference. The arrow points back because it brings the value
+// back (the blueprint reading), and the type is what it points at.
+func:type_deref = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_operand(n), 0i32);
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if (t == 0i32) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_POINTER())) {
+        string:m1 = relay string_concat("`<-` needs a pointer, and this is `",
+                                        relay type_display(e, t));
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+                             relay string_concat(m1, "`"), n.span));
+    }
+    int32:pointee = raw type_elem(e.types, t);
+    // DEREFERENCING AN `any->` IS REFUSED HERE, not left to the backend. The
+    // pointee is type-erased, so there is no type to produce and no size to load;
+    // `p => T` first is the only correct route (TYPE_REFERENCE §27).
+    if ((raw type_kind(e.types, pointee)) == (raw TY_ANY())) {
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            "`any->` is type-erased and cannot be dereferenced; cast it to a concrete pointer first",
+            n.span));
+    }
+    pass pointee;
+};
+
+// `lo..hi` / `lo...hi` (D-093). The endpoints must have a common type AND that
+// type must have an ordering, because a range whose ends cannot be ordered
+// describes no set of values.
+func:type_range = int32(ExprTyper->:e, ExprNode:n) {
+    int32:saved = e.expected;
+    int32:lo = 0i32;
+    int32:hi = 0i32;
+    if (raw is_untyped_literal(e, raw expr_lhs(n))) {
+        hi = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+        if (hi != 0i32) { e.expected = hi; }
+        lo = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+        e.expected = saved;
+    } else {
+        lo = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+        if (lo != 0i32) { e.expected = lo; }
+        hi = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+        e.expected = saved;
+    }
+    if (raw type_is_invalid(e.types, lo)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, hi)) { pass 0i32; }
+
+    int32:common = raw unify(e, lo, hi);
+    if (common == 0i32) {
+        pass (relay te_mismatch(e, n, lo, hi));
+    }
+    if (!(raw type_is_ordered(e.types, common))) {
+        string:m1 = relay string_concat("a range needs an ordered type, and `",
+                                        relay type_display(e, common));
+        string:m2 = relay string_concat(m1, "` has none: ");
+        pass (relay te_error(e, raw TYPE_NOT_NUMERIC(),
+                             relay string_concat(m2, relay why_not_ordered(e, common)),
+                             n.span));
+    }
+    pass (raw tt_range(e.types, common,
+                       raw type_size(e.types, common),
+                       raw type_align(e.types, common)));
+};
+
+// `is (c) : a : b`. The condition is a strict `bool` like every other condition,
+// and the two arms must have a common type — a conditional that produced one type
+// or another depending on which way it went would have no type at all.
+func:type_ternary = int32(ExprTyper->:e, ExprNode:n) {
+    int32:c = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+    drop require_bool(e, c, n.span);
+
+    int32:saved = e.expected;
+    int32:a = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+    if (a != 0i32) { e.expected = a; }
+    int32:b = relay type_of_expr(e, raw expr_third(n), 0i32);
+    e.expected = saved;
+
+    if (raw type_is_invalid(e.types, a)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, b)) { pass 0i32; }
+    int32:common = raw unify(e, a, b);
+    if (common == 0i32) {
+        pass (relay te_mismatch(e, n, a, b));
+    }
+    pass common;
+};
+
+// `expr ?| fallback` / `expr defaults fallback` — a scoped fallback for an entire
+// expression chain (OP_REFERENCE §0.1). Both sides must land on one type, since
+// the point is that the reader cannot tell which one they got.
+func:type_defaults = int32(ExprTyper->:e, ExprNode:n) {
+    int32:saved = e.expected;
+    int32:a = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+    if (a != 0i32) { e.expected = a; }
+    int32:b = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+    e.expected = saved;
+
+    if (raw type_is_invalid(e.types, a)) { pass 0i32; }
+    if (raw type_is_invalid(e.types, b)) { pass 0i32; }
+    int32:common = raw unify(e, a, b);
+    if (common == 0i32) {
+        pass (relay te_mismatch(e, n, a, b));
+    }
+    pass common;
+};
+
+// Is this an integer literal with no width suffix? The one node whose type
+// depends on where it sits, so the one node the order has to account for.
+pub func:is_untyped_literal = bool(ExprTyper->:e, ExprId:id) {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = relay ast_expr(e.ast, id);
+    if (n.kind != ExprKind.ExprIntLiteral) { pass false; }
+    pass (!(raw num_width_is_integer(raw expr_num_width(n))));
+};
+
+// --- the walk ----------------------------------------------------------------------------
+
+pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id, int32:_~scope) {
+    if (raw expr_is_none(id)) {
+        pass 0i32;
+    }
+    ExprNode:n = relay ast_expr(e.ast, id);
+
+    if (n.kind == ExprKind.ExprIntLiteral)   { pass (relay type_int_literal(e, n)); }
+    if (n.kind == ExprKind.ExprFloatLiteral) { pass (relay type_float_literal(e, n)); }
+    if (n.kind == ExprKind.ExprBoolLiteral)  { pass (e.types.t_bool); }
+    if (n.kind == ExprKind.ExprCharLiteral)  { pass (raw tt_char(e.types, 8i32)); }
+    if (n.kind == ExprKind.ExprStringLiteral)      { pass (e.types.t_string); }
+    if (n.kind == ExprKind.ExprRawStringLiteral)   { pass (e.types.t_string); }
+    if (n.kind == ExprKind.ExprBlockStringLiteral) { pass (e.types.t_string); }
+    if (n.kind == ExprKind.ExprTemplateLiteral)    { pass (e.types.t_string); }
+
+    if (n.kind == ExprKind.ExprSentinelLiteral) {
+        pass (relay type_sentinel(e, n));
+    }
+
+    // `$` inside `loop`/`till` — a counter with a type and no declaration.
+    if (n.kind == ExprKind.ExprIterationVarExpr) {
+        pass (raw tt_int(e.types, 64i32, true));
+    }
+
+    if (n.kind == ExprKind.ExprBinaryExpr) {
+        pass (relay type_binary(e, id, n));
+    }
+
+    if (n.kind == ExprKind.ExprUnaryExpr) {
+        pass (relay type_unary(e, id, n));
+    }
+
+    if (n.kind == ExprKind.ExprPostfixExpr) {
+        pass (relay type_postfix(e, n));
+    }
+
+    // --- the pointer family (OP_REFERENCE §0 level 5) -----------------------------
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        int32:t = relay type_of_expr(e, raw expr_operand(n), 0i32);
+        if (t == 0i32) { pass 0i32; }
+        pass (raw tt_pointer(e.types, t));
+    }
+    if (n.kind == ExprKind.ExprDerefExpr) {
+        pass (relay type_deref(e, n));
+    }
+    // `$$i` / `$$m` — a SECOND-CLASS borrow (D-004). It is a pointer at the type
+    // level and the borrow checker (0.5) is what makes it second-class; the
+    // distinction is about where the value may travel, not about what it is.
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        int32:t = relay type_of_expr(e, raw expr_operand(n), 0i32);
+        if (t == 0i32) { pass 0i32; }
+        pass (raw tt_pointer(e.types, t));
+    }
+
+    if (n.kind == ExprKind.ExprRangeExpr) {
+        pass (relay type_range(e, n));
+    }
+    if (n.kind == ExprKind.ExprTernaryExpr) {
+        pass (relay type_ternary(e, n));
+    }
+    if (n.kind == ExprKind.ExprDefaultsExpr) {
+        pass (relay type_defaults(e, n));
+    }
+
+    // `move(place)` (D-065) transfers ownership and yields the same type; what it
+    // does to the SOURCE is the borrow checker's business in 0.5.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        pass (relay type_of_expr(e, raw expr_operand(n), 0i32));
+    }
+    // `..^coll` (D-026) expands a collection AT A CALL SITE and nowhere else.
+    // Its type here is the collection's; 0.4.5 is where the position is checked,
+    // because that is where an argument list exists to check it against.
+    if (n.kind == ExprKind.ExprSpreadExpr) {
+        pass (relay type_of_expr(e, raw expr_operand(n), 0i32));
+    }
+
+    // An identifier's type is its symbol's, which 0.4.5 supplies once
+    // declarations carry types. Until then it is unresolved rather than wrong.
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        pass 0i32;
+    }
+
+    pass 0i32;
+};
+
+func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+    TokenKind:op = raw expr_op(n);
+
+    // An unsuffixed literal on one side takes the OTHER side's type (D-092), so
+    // `x + 1` where `x` is `int64` is `int64` rather than an error about a
+    // literal with no context.
+    //
+    // THE ORDER IS DECIDED UP FRONT rather than by typing one side and retrying.
+    // A retry would have already emitted the "no context" diagnostic by the time
+    // it succeeded, so `1 + x` reported an error and then produced the right
+    // type -- the worst of both. One look at the node kind avoids it.
+    int32:saved = e.expected;
+    int32:lt = 0i32;
+    int32:rt = 0i32;
+
+    if (raw is_untyped_literal(e, raw expr_lhs(n))) {
+        rt = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+        if (rt != 0i32) { e.expected = rt; }
+        lt = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+        e.expected = saved;
+    } else {
+        lt = relay type_of_expr(e, raw expr_lhs(n), 0i32);
+        if (lt != 0i32) { e.expected = lt; }
+        rt = relay type_of_expr(e, raw expr_rhs(n), 0i32);
+        e.expected = saved;
+    }
+
+    if (op == TokenKind.OpPlus)    { pass (relay type_arithmetic(e, n, lt, rt)); }
+    if (op == TokenKind.OpMinus)   { pass (relay type_arithmetic(e, n, lt, rt)); }
+    if (op == TokenKind.OpStar)    { pass (relay type_arithmetic(e, n, lt, rt)); }
+    if (op == TokenKind.OpSlash)   { pass (relay type_arithmetic(e, n, lt, rt)); }
+    if (op == TokenKind.OpPercent) { pass (relay type_arithmetic(e, n, lt, rt)); }
+
+    if (op == TokenKind.OpEqEq)  { pass (relay type_comparison(e, n, lt, rt, false)); }
+    if (op == TokenKind.OpNotEq) { pass (relay type_comparison(e, n, lt, rt, false)); }
+    if (op == TokenKind.OpLt)    { pass (relay type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpLtEq)  { pass (relay type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpGt)    { pass (relay type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpGtEq)  { pass (relay type_comparison(e, n, lt, rt, true)); }
+    if (op == TokenKind.OpSpaceship) {
+        drop type_comparison(e, n, lt, rt, true);
+        pass (raw tt_int(e.types, 32i32, true));
+    }
+
+    if (op == TokenKind.OpAndAnd) { pass (relay type_logical(e, n, lt, rt)); }
+    if (op == TokenKind.OpOrOr)   { pass (relay type_logical(e, n, lt, rt)); }
+
+    if (op == TokenKind.OpAmp)   { pass (relay type_bitwise(e, n, lt, rt)); }
+    if (op == TokenKind.OpPipe)  { pass (relay type_bitwise(e, n, lt, rt)); }
+    if (op == TokenKind.OpCaret) { pass (relay type_bitwise(e, n, lt, rt)); }
+    if (op == TokenKind.OpShl)   { pass (relay type_bitwise(e, n, lt, rt)); }
+    if (op == TokenKind.OpShr)   { pass (relay type_bitwise(e, n, lt, rt)); }
+
+    pass 0i32;
+};
+
+func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+    TokenKind:op = raw expr_op(n);
+    int32:t = relay type_of_expr(e, raw expr_operand(n), 0i32);
+
+    if (op == TokenKind.OpBang) {
+        drop require_bool(e, t, n.span);
+        pass (e.types.t_bool);
+    }
+    if (op == TokenKind.OpMinus) {
+        if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+        if (!(raw type_is_numeric(e.types, t))) {
+            pass (relay te_operand_error(e, n, t));
+        }
+        // Negating an UNSIGNED value is a question with no good answer, so it is
+        // not asked: the result is either wrong or a different type.
+        if (raw type_is_integer(e.types, t)) {
+            if (!(raw type_is_signed(e.types, t))) {
+                string:m1 = relay string_concat("`", relay type_display(e, t));
+                string:m2 = relay string_concat(m1,
+                    "` is unsigned, so it has no negation");
+                pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+            }
+        }
+        pass t;
+    }
+    if (op == TokenKind.OpTilde) {
+        if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+        if (!(raw type_is_integer(e.types, t))) {
+            pass (relay te_bitwise_error(e, n, t));
+        }
+        pass t;
+    }
+    pass t;
+};

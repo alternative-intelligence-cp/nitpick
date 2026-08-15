@@ -165,57 +165,51 @@ pub func:resolve_expr = NIL(Resolver->:r, ExprId:id, int32:scope) {
         pass NIL;
     }
 
-    // Everything else: recurse into whichever slots hold expressions. The kinds
-    // are grouped by SHAPE rather than listed one by one, because a new node with
-    // a familiar shape should not need a new case.
-    if (e.kind == ExprKind.ExprArrayLiteralExpr) {
+    // EVERYTHING ELSE IS DRIVEN BY `expr_shape` (ast.npk), not by a guess about
+    // slot `a`.
+    //
+    // What stood here walked slot `a` unconditionally, on the strength of a
+    // comment claiming it "is an operand on every node that has one". Nothing
+    // checked that, and it stopped being true the moment a literal needed
+    // somewhere to keep its width suffix: `42i32` began resolving whatever node
+    // sat at index `WI32`, and the only symptom was an unrelated name failing to
+    // bind two files away. The shape table is that comment, made answerable.
+    int32:shape = raw expr_shape(e.kind);
+
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+
+    if (shape == (raw EXPR_SHAPE_LIST())) {
         drop resolve_expr_window(r, raw expr_list_start(e),
                                  raw expr_list_count(e), scope);
-        pass NIL;
-    }
-    if (e.kind == ExprKind.ExprVectorCtorExpr) {
-        drop resolve_expr_window(r, raw expr_list_start(e),
-                                 raw expr_list_count(e), scope);
-        pass NIL;
-    }
-    if (e.kind == ExprKind.ExprTemplateLiteral) {
-        drop resolve_expr_window(r, raw expr_list_start(e),
-                                 raw expr_list_count(e), scope);
-        pass NIL;
-    }
-    if (e.kind == ExprKind.ExprDynCastExpr) {
-        drop resolve_expr(r, raw expr_operand(e), scope);
         pass NIL;
     }
 
-    // Two-operand and one-operand shapes. Slot `a` is an operand on every node
-    // that has one, and slot `b` on every binary node, so this covers the
-    // arithmetic, comparison, Result, cast, range, ternary and unwrap families
-    // without naming them.
-    drop resolve_expr(r, raw expr_lhs(e), scope);
-    if (raw expr_has_second(e)) {
-        drop resolve_expr(r, raw expr_rhs(e), scope);
+    // A KIND NOBODY HAS CLASSIFIED. Reported rather than walked, because walking
+    // means reading slots whose meaning is unknown -- the bug above, again.
+    // `tests/frontend/ast.npk` asserts the table is total, so arriving here means
+    // the table and the kind list have drifted apart.
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so its slots cannot be walked",
+            e.span));
+        pass NIL;
     }
-    if (e.kind == ExprKind.ExprTernaryExpr) {
+
+    drop resolve_expr(r, raw expr_lhs(e), scope);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop resolve_expr_window(r, raw expr_list_start(e),
+                                 raw expr_list_count(e), scope);
+        pass NIL;
+    }
+
+    drop resolve_expr(r, raw expr_rhs(e), scope);
+    if (shape == (raw EXPR_SHAPE_THREE())) {
         ExprId:third = ExprId{ index: e.c };
         drop resolve_expr(r, third, scope);
     }
     pass NIL;
-};
-
-// Which nodes carry a second operand in slot `b`. Nodes whose `b` is a WINDOW
-// START are excluded above and never reach here.
-pub func:expr_has_second = bool(ExprNode:e) {
-    if (e.kind == ExprKind.ExprBinaryExpr)          { pass true; }
-    if (e.kind == ExprKind.ExprRangeExpr)           { pass true; }
-    if (e.kind == ExprKind.ExprTernaryExpr)         { pass true; }
-    if (e.kind == ExprKind.ExprSafeUnwrapExpr)      { pass true; }
-    if (e.kind == ExprKind.ExprNullCoalesceExpr)    { pass true; }
-    if (e.kind == ExprKind.ExprEmphaticUnwrapExpr)  { pass true; }
-    if (e.kind == ExprKind.ExprDefaultsExpr)        { pass true; }
-    if (e.kind == ExprKind.ExprIndexExpr)           { pass true; }
-    if (e.kind == ExprKind.ExprPipeExpr)            { pass true; }
-    pass false;
 };
 
 func:resolve_expr_window = NIL(Resolver->:r, int32:start, int32:count, int32:scope) {
@@ -654,29 +648,53 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) {
         pass (relay init_reaches(r, raw global_init(dn), target, fuel - 1i32));
     }
 
-    // Otherwise walk every slot that can hold an expression. This mirrors
-    // `resolve_expr`'s shape rather than repeating its case list: anything with a
-    // window is walked as a window, anything else through `a`, `b` and `c`.
-    if (e.kind == ExprKind.ExprCallExpr) {
+    // THE SAME SHAPE TABLE, for the same reason. This walk had its own copy of
+    // the slot-`a` assumption and its own partial list of window kinds -- it
+    // named three and missed four, so a self-reference through a template
+    // literal or a method call's arguments went unseen. One table, two callers,
+    // and a kind that gains a shape gains it in both.
+    int32:shape = raw expr_shape(e.kind);
+
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass false; }
+
+    if (shape == (raw EXPR_SHAPE_LIST())) {
         pass (relay init_reaches_window(r, raw expr_list_start(e),
                                         raw expr_list_count(e), target, fuel));
     }
-    if (e.kind == ExprKind.ExprArrayLiteralExpr) {
-        pass (relay init_reaches_window(r, raw expr_list_start(e),
-                                        raw expr_list_count(e), target, fuel));
+    // A struct literal's window alternates NAME, VALUE; a call's and a builtin's
+    // begins with generic TYPE arguments. Walking a name or a type as an
+    // expression reads a node from the wrong array, so each is walked as what it
+    // is. An id that is not an expression resolves to node 0 and stops.
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        if (e.kind == ExprKind.ExprPickExpr) {
+            ExprId:sel = raw pickx_selector(e);
+            pass (relay init_reaches(r, sel, target, fuel - 1i32));
+        }
+        int32:gcount = 0i32;
+        if (e.kind == ExprKind.ExprCallExpr)    { gcount = raw expr_generic_count(e); }
+        if (e.kind == ExprKind.ExprBuiltinExpr) { gcount = raw expr_generic_count(e); }
+        if (e.kind == ExprKind.ExprCallExpr) {
+            ExprId:callee = raw expr_callee(e);
+            if (relay init_reaches(r, callee, target, fuel - 1i32)) { pass true; }
+        }
+        pass (relay init_reaches_window(r, (raw expr_list_start(e)) + gcount,
+                                        (raw expr_list_count(e)) - gcount,
+                                        target, fuel));
     }
-    if (e.kind == ExprKind.ExprStructLiteralExpr) {
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass false; }
+
+    ExprId:a = ExprId{ index: e.a };
+    if (relay init_reaches(r, a, target, fuel - 1i32)) { pass true; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass false; }
+
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
         pass (relay init_reaches_window(r, raw expr_list_start(e),
                                         raw expr_list_count(e), target, fuel));
     }
 
-    ExprId:a = ExprId{ index: e.a };
-    if (relay init_reaches(r, a, target, fuel - 1i32)) { pass true; }
-    if (raw expr_has_second(e)) {
-        ExprId:b = ExprId{ index: e.b };
-        if (relay init_reaches(r, b, target, fuel - 1i32)) { pass true; }
-    }
-    if (e.kind == ExprKind.ExprTernaryExpr) {
+    ExprId:b = ExprId{ index: e.b };
+    if (relay init_reaches(r, b, target, fuel - 1i32)) { pass true; }
+    if (shape == (raw EXPR_SHAPE_THREE())) {
         ExprId:c = ExprId{ index: e.c };
         if (relay init_reaches(r, c, target, fuel - 1i32)) { pass true; }
     }

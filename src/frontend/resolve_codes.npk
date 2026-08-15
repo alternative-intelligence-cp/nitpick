@@ -14,3 +14,12 @@ pub func:RESOLVE_NO_SUCH_FILE = string(){ pass "NITPICK-RESOLVE-005"; };
 pub func:RESOLVE_CYCLE = string()       { pass "NITPICK-RESOLVE-006"; };
 pub func:RESOLVE_NO_SUCH_NAME = string(){ pass "NITPICK-RESOLVE-007"; };
 pub func:RESOLVE_SHADOWED = string()    { pass "NITPICK-RESOLVE-008"; };
+
+// NOT A DIAGNOSTIC ABOUT THE PROGRAM — a diagnostic about the compiler. It
+// reports that a walker met a node kind whose slot layout nothing has described,
+// and the only honest thing to do with such a node is refuse to read it.
+//
+// It exists because the alternative was what 0.4.2 found: a walk that assumed a
+// layout, guessed wrong, and produced a wrong answer in silence. A code here
+// means the failure has a name and a test can assert it never fires.
+pub func:RESOLVE_INTERNAL = string()    { pass "NITPICK-RESOLVE-009"; };
