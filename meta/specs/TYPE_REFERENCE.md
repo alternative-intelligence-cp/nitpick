@@ -1225,6 +1225,19 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
   > work, and hides the most consequential unchecked operation in the language
   > from the audit that exists to find it.
 
+### Auto-dereference is one level (D-098)
+
+`.` dereferences a pointer once. `p.x` where `p` is `T->` reaches the field;
+`pp.x` where `pp` is `T->->` is an error telling the reader to write `(<-pp).x`.
+
+Peeling until a struct appears would make the number of indirections invisible at
+the use site — `pp.x` and `p.x` would read identically while doing different
+amounts of work, and widening a declaration from `T->` to `T->->` would leave
+every use compiling. The same rule applies to UFCS: `q.method()` peels exactly one
+level, because `q.x` does.
+
+`any->` has no members at any level.
+
 ### `unknown` — Layer 2 Safety Taint
 
 - Not a type the user can write directly — it's a compiler-assigned taint

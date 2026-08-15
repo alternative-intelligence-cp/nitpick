@@ -393,6 +393,18 @@ pub func:type_elem = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).a);
 };
 
+// A FUNCTION TYPE's parameter window — `b` is the start, `c` the count, and the
+// window lives in the AST's id pool because that is where `resolve_func_type`
+// built it. Named accessors so no call site reads `b` and `c` raw and has to
+// remember which of the several window-shaped kinds it is looking at.
+pub func:type_param_count_of = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).c);
+};
+
+pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).b);
+};
+
 pub func:type_decl = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).a);
 };

@@ -1,0 +1,247 @@
+// Member access, indexing, calls and UFCS (cycle 0.4.5, D-006/D-098).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_layout.npk".*;
+use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_access.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+use "../../src/frontend/type_stmt.npk".*;
+
+struct:Ax = { TypeTable:types; DiagList:diags; int64:parse_errs; };
+
+// A fixed preamble of declarations, plus whatever the case adds. Every case is a
+// whole module so that names, types and bodies all go through the real pipeline.
+func:ax = Ax(string:body, InternTable->:it) {
+    // ONE STRING, not adjacent literals — Nitpick has no implicit string
+    // concatenation, which the real parser said plainly.
+    // THE VALUES COME IN AS PARAMETERS rather than as locals initialised to
+    // `NULL`. `NULL` is valid only where a pointer is expected (TYPE_REFERENCE
+    // §27), so a `NULL`-initialised slice is itself an error and every case built
+    // on one would have been measuring that instead of what it meant to.
+    string:head = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num) { ", body);
+    string:src = relay string_concat(head, " pass NIL; };");
+
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope);
+
+    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(@ast, mn))) {
+        DeclId:item = raw item_member(@ast, mn, i);
+        DeclNode:d = relay ast_decl(@ast, item);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            int32:name = d.payload => int32;
+            if (raw string_eq(relay intern_get(it, name), "f")) {
+                FnSig:sg = relay fn_signature(@tr, d, name, scope);
+                e.fn_success = sg.success;
+                e.fn_terminal = sg.terminal;
+                drop check_block(@e, raw fn_body(@ast, d));
+            }
+        }
+        i = i + 1i32;
+    }
+    Ax:out = Ax{ types: types, diags: diags,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+func:check_block = NIL(ExprTyper->:e, StmtId:body) {
+    if (raw stmt_is_none(body)) { pass NIL; }
+    StmtNode:b = relay ast_stmt(e.ast, body);
+    int32:i = 0i32;
+    while (i < (raw stmt_list_count(b))) {
+        StmtId:st = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(b), i) };
+        drop check_stmt(e, st);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:errs = int64(Ax->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- STRUCT LAYOUT IS REAL ------------------------------------------------
+    // 0.4.1 interned a named type from its declaration and left the size at zero.
+    // A `Result<Point>` built from that would be four bytes where it should be
+    // twelve, and nothing downstream would have said so.
+    TypeTable:t0 = raw typetable_init();
+    int32:i32t = raw tt_int(@t0, 32i32, true);
+    int32:i8t = raw tt_int(@t0, 8i32, true);
+    if ((raw align_up(0i64, 4i32)) != 0i64)                    { exit 10i32; }
+    if ((raw align_up(1i64, 4i32)) != 4i64)                    { exit 11i32; }
+    if ((raw align_up(4i64, 4i32)) != 4i64)                    { exit 12i32; }
+    if ((raw align_up(5i64, 8i32)) != 8i64)                    { exit 13i32; }
+    // Alignment of 1 never pads, and the guard matters because `% 1` is a
+    // division the layout would otherwise perform on every byte-sized field.
+    if ((raw align_up(7i64, 1i32)) != 7i64)                    { exit 14i32; }
+
+    // --- `.` REACHES A FIELD --------------------------------------------------
+    Ax:m1 = raw ax("int32:v = pt.x;", @it);
+    if (raw errs(@m1) != 0i64)                                 { exit 20i32; }
+
+    // The field's TYPE is checked, not just its existence.
+    Ax:m2 = raw ax("bool:v = pt.x;", @it);
+    if (raw errs(@m2) != 1i64)                                 { exit 21i32; }
+
+    // A MISSING MEMBER NAMES THE TYPE it was sought on. "no member `z`" would
+    // leave the reader working out which of a chain's types was being asked.
+    Ax:m3 = raw ax("int32:v = pt.z;", @it);
+    if (raw errs(@m3) != 1i64)                                 { exit 22i32; }
+
+    // Chained through an embedded field (D-006).
+    Ax:m4 = raw ax("int32:v = wr.p.x;", @it);
+    if (raw errs(@m4) != 0i64)                                 { exit 23i32; }
+
+    // --- AUTO-DEREFERENCE IS ONE LEVEL (D-098) --------------------------------
+    // `.` is the only member operator and it dereferences once. A rule that
+    // peeled until it found a struct would make the number of indirections
+    // invisible at the use site.
+    Ax:d1 = raw ax("int32:v = pp.x;", @it);
+    if (raw errs(@d1) != 0i64)                                 { exit 30i32; }
+
+    // TWO LEVELS IS AN ERROR that says to write the dereference.
+    Ax:d2 = raw ax("int32:v = ppp.x;", @it);
+    if (raw errs(@d2) != 1i64)                                 { exit 31i32; }
+
+    // …and writing it works, because `<-` brings the value back one level.
+    Ax:d3 = raw ax("int32:v = (<-ppp).x;", @it);
+    if (raw errs(@d3) != 0i64)                                 { exit 32i32; }
+
+    // An `any->` has no members: it is type-erased, so there is nothing to reach.
+    Ax:d4 = raw ax("int32:v = ap.x;", @it);
+    if (raw errs(@d4) != 1i64)                                 { exit 33i32; }
+
+    // --- AN ENUM VARIANT AND A MODULE MEMBER ARE THE SAME NODE ---------------
+    // Told apart HERE, by what the base resolved to — exactly what 0.3.5 left.
+    Ax:v1 = raw ax("Net:n = Net.Connect;", @it);
+    if (raw errs(@v1) != 0i64)                                 { exit 40i32; }
+
+    // A variant's type is the ENUM, not a type of its own — which is what stops a
+    // signature from naming one arm.
+    Ax:v2 = raw ax("Point:n = Net.Connect;", @it);
+    if (raw errs(@v2) != 1i64)                                 { exit 41i32; }
+
+    Ax:v3 = raw ax("Net:n = Net.Nonexistent;", @it);
+    if (raw errs(@v3) != 1i64)                                 { exit 42i32; }
+
+    // --- A SLICE CARRIES ITS LENGTH, A POINTER DOES NOT (D-038/D-070) --------
+    // The whole reason the two are different types.
+    Ax:s1 = raw ax("int64:n = sl.len;", @it);
+    if (raw errs(@s1) != 0i64)                                 { exit 50i32; }
+    Ax:s2 = raw ax("int64:n = ip.len;", @it);
+    if (raw errs(@s2) != 1i64)                                 { exit 51i32; }
+
+    // --- INDEXING -------------------------------------------------------------
+    Ax:x1 = raw ax("int32:v = ar[0i64];", @it);
+    if (raw errs(@x1) != 0i64)                                 { exit 60i32; }
+    Ax:x2 = raw ax("int32:v = sl[0i64];", @it);
+    if (raw errs(@x2) != 0i64)                                 { exit 61i32; }
+    // A pointer indexes and carries no length, so it cannot be bounds-checked —
+    // which is why slices exist and why a function should take one.
+    Ax:x3 = raw ax("int32:v = ip[0i64];", @it);
+    if (raw errs(@x3) != 0i64)                                 { exit 62i32; }
+
+    // An index is an INTEGER, and a `bool` is not one.
+    Ax:x4 = raw ax("int32:v = sl[true];", @it);
+    if (raw errs(@x4) != 1i64)                                 { exit 63i32; }
+    // …and a struct cannot be indexed at all.
+    Ax:x5 = raw ax("int32:v = pt[0i64];", @it);
+    if (raw errs(@x5) != 1i64)                                 { exit 64i32; }
+
+    // --- CALLS: ARITY AND ARGUMENT TYPES -------------------------------------
+    // A call yields the function's RESULT, so it needs unwrapping — which is the
+    // D-013 discipline showing up at every call site, on purpose.
+    Ax:c1 = raw ax("int32:v = raw add2(1i32, 2i32);", @it);
+    if (raw errs(@c1) != 0i64)                                 { exit 70i32; }
+
+    // BOTH COUNTS ARE NAMED in the message; making the reader count the
+    // parameters is the one thing the compiler already did.
+    Ax:c2 = raw ax("int32:v = raw add2(1i32);", @it);
+    if (raw errs(@c2) != 1i64)                                 { exit 71i32; }
+    Ax:c3 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
+    if (raw errs(@c3) != 1i64)                                 { exit 72i32; }
+
+    Ax:c4 = raw ax("int32:v = raw add2(1i32, true);", @it);
+    if (raw errs(@c4) != 1i64)                                 { exit 73i32; }
+
+    // Calling something that is not a function.
+    Ax:c5 = raw ax("int32:v = raw pt(1i32);", @it);
+    if (raw errs(@c5) != 1i64)                                 { exit 74i32; }
+
+    // A call's result is a `Result`, so using it unwrapped is caught.
+    Ax:c6 = raw ax("int32:v = add2(1i32, 2i32);", @it);
+    if (raw errs(@c6) != 1i64)                                 { exit 75i32; }
+
+    // --- UFCS (D-006) ---------------------------------------------------------
+    // `p.magnitude()` resolves to the free function with `p` as its first
+    // argument. The receiver is already apart from the callee in the AST, which
+    // is what makes this a lookup rather than a rewrite.
+    Ax:u1 = raw ax("int32:v = raw pt.magnitude();", @it);
+    if (raw errs(@u1) != 0i64)                                 { exit 80i32; }
+
+    // A METHOD THAT DOES NOT EXIST NAMES THE TYPE it was sought on. "unknown
+    // function `nope`" would send the reader looking for a free function when
+    // what they wrote was a method call.
+    Ax:u2 = raw ax("int32:v = raw pt.nope();", @it);
+    if (raw errs(@u2) != 1i64)                                 { exit 81i32; }
+
+    // The receiver is checked as the first parameter, so a method of another type
+    // is refused rather than silently accepted.
+    Ax:u3 = raw ax("int32:v = raw num.magnitude();", @it);
+    if (raw errs(@u3) != 1i64)                                 { exit 82i32; }
+
+    // …and it auto-dereferences one level like plain access does.
+    Ax:u4 = raw ax("int32:v = raw pp.magnitude();", @it);
+    if (raw errs(@u4) != 0i64)                                 { exit 83i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

@@ -1,0 +1,146 @@
+// Struct and enum layout — sizes, alignments, and field offsets.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.5.
+//
+// 0.4.1 interned a named type from its DECLARATION and left the size at zero:
+// "the layout is computed once every field's type is known". Field types become
+// known here, so this is where that debt is paid — and it was a debt worth
+// tracking, because a `Result<Point>` built from a zero-sized `Point` is 4 bytes
+// where it should be twelve, and nothing downstream would have said so.
+//
+// A HAND-WRITTEN SIZE THAT DISAGREES WITH THE MACHINE SURVIVES TESTING AND
+// CORRUPTS MEMORY LATER. `tests/frontend/types.npk` already asserts every scalar
+// against `#size_of<T>` for that reason; the same discipline applies here, and
+// the rules below are the C/LLVM ones because that is what `llc` will lay out.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "parse_decl.npk".*;
+use "parse_type.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+
+pub struct:FieldInfo = {
+    bool:found;
+    int32:type_id;
+    int64:offset;
+    int32:index;
+};
+
+func:fi_none = FieldInfo() {
+    FieldInfo:f = FieldInfo{ found: false, type_id: 0i32, offset: 0i64,
+                             index: 0i32 };
+    pass f;
+};
+
+// Round `n` up to the next multiple of `align`. The one arithmetic rule the whole
+// layout rests on, so it is a function rather than three copies of the same
+// expression.
+pub func:align_up = int64(int64:n, int32:align) {
+    if (align <= 1i32) { pass n; }
+    int64:a = align => int64;
+    int64:rem = n % a;
+    if (rem == 0i64) { pass n; }
+    pass (n + (a - rem));
+};
+
+// LOOK UP A FIELD BY NAME, and compute its offset on the way.
+//
+// The walk and the layout are the same walk. Splitting them would mean two
+// traversals that have to agree about padding, which is two chances to disagree.
+pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
+                                  int32:name, int32:scope) {
+    if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
+        pass (raw fi_none());
+    }
+    DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
+    DeclNode:d = relay ast_decl(r.ast, did);
+
+    int64:offset = 0i64;
+    int32:i = 0i32;
+    while (i < (raw item_member_count(r.ast, d))) {
+        DeclId:mid = raw item_member(r.ast, d, i);
+        DeclNode:m = relay ast_decl(r.ast, mid);
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            int32:fa = raw type_align(r.types, ft);
+            offset = raw align_up(offset, fa);
+            if ((raw decl_name(m)) == name) {
+                FieldInfo:f = FieldInfo{ found: true, type_id: ft,
+                                         offset: offset, index: i };
+                pass f;
+            }
+            offset = offset + (raw type_size(r.types, ft));
+        }
+        i = i + 1i32;
+    }
+    pass (raw fi_none());
+};
+
+// The whole struct: size rounded up to its own alignment, which is the widest
+// alignment any field wanted.
+//
+// A ZERO-FIELD STRUCT IS ONE BYTE, not zero. Two distinct empty structs must have
+// distinct addresses, and a zero-sized one would place them on top of each other
+// — the same reason C++ gives, and the reason `NIL` being genuinely zero-sized
+// (D-084) is a property of `NIL` rather than of empty aggregates.
+pub func:struct_layout = int32(TypeResolver->:r, int32:struct_type, int32:scope) {
+    if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
+        pass struct_type;
+    }
+    DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
+    DeclNode:d = relay ast_decl(r.ast, did);
+
+    int64:size = 0i64;
+    int32:align = 1i32;
+    int32:i = 0i32;
+    while (i < (raw item_member_count(r.ast, d))) {
+        DeclId:mid = raw item_member(r.ast, d, i);
+        DeclNode:m = relay ast_decl(r.ast, mid);
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            int32:fa = raw type_align(r.types, ft);
+            if (fa > align) { align = fa; }
+            size = raw align_up(size, fa);
+            size = size + (raw type_size(r.types, ft));
+        }
+        i = i + 1i32;
+    }
+    size = raw align_up(size, align);
+    if (size == 0i64) { size = 1i64; }
+    pass (raw tt_struct(r.types, did.index,
+                        raw type_name(r.types, struct_type), size, align));
+};
+
+// AN ENUM VARIANT'S TYPE IS THE ENUM, whatever the variant carries.
+//
+// `Net.Disconnect` and `Net.Connect(reason)` are both `Net` — the payload is
+// reached by destructuring in a `pick`, never by member access, which is what
+// keeps a variant from being a type of its own that a signature could name.
+pub func:enum_variant = FieldInfo(TypeResolver->:r, int32:enum_type, int32:name) {
+    if ((raw type_kind(r.types, enum_type)) != (raw TY_ENUM())) {
+        pass (raw fi_none());
+    }
+    DeclId:did = DeclId{ index: raw type_decl(r.types, enum_type) };
+    DeclNode:d = relay ast_decl(r.ast, did);
+
+    int32:i = 0i32;
+    while (i < (raw item_member_count(r.ast, d))) {
+        DeclId:mid = raw item_member(r.ast, d, i);
+        DeclNode:m = relay ast_decl(r.ast, mid);
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw decl_name(m)) == name) {
+                FieldInfo:f = FieldInfo{ found: true, type_id: enum_type,
+                                         offset: 0i64, index: i };
+                pass f;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass (raw fi_none());
+};

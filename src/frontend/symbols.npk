@@ -68,6 +68,16 @@ pub struct:Symbol = {
     int32:origin;        // index into the array `origin_kind` names
     int32:flags;
     int32:next;          // next symbol in the SAME scope, or 0
+
+    // THE SCOPE THIS NAME OPENS, for a symbol that names a NAMESPACE — a nested
+    // `mod:name = { … }`. Zero for everything else.
+    //
+    // A `Scope` records its parent and not its owner, so without this a module's
+    // members were unreachable from its name: `math.sqrt` had the symbol for
+    // `math` and no way to get from there to the scope holding `sqrt`. Walking
+    // the scope tree looking for one whose parent matches would find every
+    // sibling block as well.
+    int32:inner;
 };
 
 // A scope is a node in a tree. `first` heads a chain through `Symbol.next`, so a
@@ -103,7 +113,7 @@ pub func:symtab_init = SymbolTable() {
     // handle is a well-defined absence rather than a silent reference to whatever
     // was created first.
     Symbol:none = Symbol{ name: 0i32, scope: 0i32, origin_kind: 0i32,
-                          origin: 0i32, flags: 0i32, next: 0i32 };
+                          origin: 0i32, flags: 0i32, next: 0i32, inner: 0i32 };
     t.syms[0i64] = none;
     t.sym_count = 1i32;
 
@@ -152,6 +162,16 @@ func:symtab_grow_syms = NIL(SymbolTable->:t) {
                                 (nc => int64) * #size_of<Symbol>());
     t.syms = bigger => wild Symbol->;
     t.sym_cap = nc;
+    pass NIL;
+};
+
+// A module's name and the scope it opens, tied together. `math.sqrt` needs to
+// get from one to the other, and a `Scope` records only its parent.
+pub func:symtab_set_inner = NIL(SymbolTable->:t, int32:sym, int32:scope) {
+    if (sym == 0i32) { pass NIL; }
+    Symbol:s = t.syms[sym => int64];
+    s.inner = scope;
+    t.syms[sym => int64] = s;
     pass NIL;
 };
 
@@ -253,7 +273,7 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     }
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
-                       flags: flags, next: t.scopes[scope => int64].first };
+                       flags: flags, next: t.scopes[scope => int64].first, inner: 0i32 };
     t.syms[t.sym_count => int64] = s;
     int32:id = t.sym_count;
     t.sym_count = t.sym_count + 1i32;
@@ -296,7 +316,7 @@ pub func:symtab_bind_import = int32(SymbolTable->:t, int32:scope, int32:name,
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,
                        flags: flags | (raw SYM_IMPORTED()),
-                       next: t.scopes[scope => int64].first };
+                       next: t.scopes[scope => int64].first, inner: 0i32 };
     t.syms[t.sym_count => int64] = s;
     int32:id = t.sym_count;
     t.sym_count = t.sym_count + 1i32;
@@ -366,9 +386,13 @@ pub func:collect_decl = NIL(SymbolTable->:t, Ast->:ast, DiagList->:diags,
     // A nested `mod:name = { … };` is a namespace of its own, so it declares its
     // name here and its members in a scope of its own.
     if (d.kind == DeclKind.DeclModuleDecl) {
-        drop symtab_declare(t, ast, diags, scope, raw decl_name(d),
-                            raw SYM_DECL(), id.index, raw decl_flag_bits(d));
-        drop collect_module(t, ast, diags, id, scope);
+        int32:sym = relay symtab_declare(t, ast, diags, scope, raw decl_name(d),
+                                         raw SYM_DECL(), id.index,
+                                         raw decl_flag_bits(d));
+        int32:inner = relay collect_module(t, ast, diags, id, scope);
+        // The name and the scope it opens, tied together — `math.sqrt` needs to
+        // get from one to the other and a `Scope` records only its parent.
+        drop symtab_set_inner(t, sym, inner);
         pass NIL;
     }
 

@@ -6752,3 +6752,35 @@ Confirmed rather than changed. The prototype stores it as an `i8` third field �
 error becomes a `tbb32` and `is_error` is derived as `error != 0`. A stored flag
 is a second source of truth about one fact, and two sources of truth eventually
 disagree. The literal therefore has **two fields and no `is_error` to write**.
+
+---
+
+## D-098 — Auto-dereference is one level, and only one
+
+**Settled in cycle 0.4.5.** D-006 made `.` the only member operator and gave it
+automatic dereference, which left one question the plan flagged and nobody had
+answered: what does `pp.x` mean when `pp` is `Point->->`?
+
+**One level. `p.x` on a `Point->` works; `pp.x` on a `Point->->` is an error that
+says to write `<-`.**
+
+The alternative — peel until a struct appears — is what most languages with
+auto-dereference do, and it is wrong here for the reason the notation exists.
+Nitpick spells direction deliberately: `->` points *to* a target, `<-` brings a
+value *back*, `@` takes an address. A rule that peeled an arbitrary number of
+levels would make **the number of indirections invisible at the use site**, so
+`pp.x` and `p.x` would read identically while doing different amounts of work,
+and changing a declaration from `Point->` to `Point->->` would silently keep
+every use compiling.
+
+One level is also the level that is *not* a choice: a member access on a pointer
+has exactly one sensible reading, and every level past the first is a decision
+the writer should be making.
+
+The rule applies identically to **UFCS**. `q.magnitude()` where `q` is a `Point->`
+peels one level, because `q.x` does — a method call that behaved differently
+would make `.` mean two things one character apart, which is the
+context-dependence the blueprint philosophy exists to forbid.
+
+`any->` has **no members at any level**: it is type-erased, so there is nothing
+to reach into and `p =>! T->` comes first (D-095).

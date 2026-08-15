@@ -69,6 +69,10 @@ pub func:expr_name = int64(ExprNode:e)      { pass e.payload; };
 // A call's window holds its generic arguments first, then its value arguments.
 // `payload` records how many of the leading entries are generic, so the two are
 // separable without a second window.
+// GENERIC ARGUMENTS AT THE FRONT OF A CALL'S WINDOW -- and ONLY on `CallExpr`
+// and `BuiltinExpr`, which are the two kinds whose payload is a count. A
+// `MethodCallExpr`'s payload is the method NAME, so asking it for a generic count
+// yields an intern index and slices the argument window by it.
 pub func:expr_generic_count = int32(ExprNode:e) { pass (e.payload => int32); };
 
 // A numeric literal's width suffix, in slot `a`. `WNone` when none was written,

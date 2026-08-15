@@ -33,6 +33,7 @@ use "resolve_type.npk".*;
 use "type_names.npk".*;
 use "type_cast.npk".*;
 use "type_decl.npk".*;
+use "type_access.npk".*;
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -608,38 +609,6 @@ func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) {
                          relay string_concat(m3, "`"), n.span));
 };
 
-// `.value`, `.error` and `.is_error` — and `.is_error` IS DERIVED (D-069).
-//
-// The `Result` layout is `{T, tbb32}` and there is no third field. That is the
-// point: a stored flag is a second source of truth about the same fact, and two
-// sources of truth eventually disagree. `.is_error` is `error != 0`, computed on
-// every read, so there is nothing for it to disagree with.
-//
-// The error field is exact and total (D-069): `0` is no error, positive values
-// are user codes, negative ones are system codes, and `INT32_MIN` — ERR — is
-// unconstructible, because `fail(e)` traps where it would be built. A caller
-// cannot handle an error it cannot identify, and such a value would satisfy every
-// `is_error` check while carrying no information.
-func:type_member = int32(ExprTyper->:e, ExprNode:n) {
-    int32:base = relay type_of_expr(e, raw expr_operand(n));
-    if (base == 0i32) { pass 0i32; }
-    if (raw type_is_invalid(e.types, base)) { pass 0i32; }
-    if ((raw type_kind(e.types, base)) != (raw TY_RESULT())) {
-        // A struct's fields are 0.4.5's business; this is not one.
-        pass 0i32;
-    }
-
-    string:field = relay intern_get(e.interns, (n.payload => int32));
-    if (raw string_eq(field, "value"))    { pass (raw type_elem(e.types, base)); }
-    if (raw string_eq(field, "error"))    { pass (e.types.t_tbb32); }
-    if (raw string_eq(field, "is_error")) { pass (e.types.t_bool); }
-
-    string:m1 = relay string_concat("a `Result` has `value`, `error` and `is_error`, not `",
-                                    field);
-    pass (relay te_error(e, raw TYPE_MISMATCH(),
-                         relay string_concat(m1, "`"), n.span));
-};
-
 // `is_err(tbbValue)` — THE ONE TEST IN THE LANGUAGE GUARANTEED NOT TO TRAP.
 //
 // ITS OPERAND IS A `tbb`, NOT A `Result`. An earlier reading had it testing a
@@ -931,18 +900,17 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     if (n.kind == ExprKind.ExprIsErrExpr)        { pass (relay type_is_err(e, n)); }
     if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (relay type_result_literal(e, n)); }
 
-    // A `Result`'s THREE MEMBERS. General member access needs a struct's fields
-    // and is 0.4.5; these three are `Result`'s own and belong with the rest of
-    // the discipline.
-    if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (relay type_member(e, n));
-    }
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         pass (relay type_ident(e, n));
     }
 
-    pass 0i32;
+    // Member access, indexing and calls live in `type_access.npk` — they are one
+    // subject ("reaching into a value") and they all need the layout rules. The
+    // hook keeps this module from depending on that one, since the traffic runs
+    // the other way.
+    pass (relay type_access(e, id, n));
+
 };
 
 func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
