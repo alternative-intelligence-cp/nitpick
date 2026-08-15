@@ -16,6 +16,7 @@ use "num_width.npk".*;
 use "numeric.npk".*;
 use "escapes.npk".*;
 use "operators.npk".*;
+use "diag_codes.npk".*;
 use "diagnostics.npk".*;
 
 pub struct:Lexer = {
@@ -151,7 +152,7 @@ func:lexer_skip_trivia = NIL(Lexer->:lx, DiagList->:diags) {
                             if (e == 0u8) {
                                 Span:sp = raw lexer_span_from(lx, start, sl, sc);
                                 drop diaglist_push(diags,
-                                    raw diag_error("NITPICK-LEX-002",
+                                    raw diag_error(raw LEX_UNTERMINATED_COMMENT(),
                                         "unterminated block comment", sp));
                                 pass NIL;
                             }
@@ -221,7 +222,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             if (t == 0u8) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
                 drop diaglist_push(diags,
-                    raw diag_error("NITPICK-LEX-006",
+                    raw diag_error(raw LEX_UNTERMINATED_TEMPLATE(),
                         "unterminated template literal", sp));
                 lx.in_template = false;
                 pass (raw token_make(TokenKind.Error, sp, 0i64));
@@ -301,7 +302,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 if (q == 0u8) {
                     Span:sp = raw lexer_span_from(lx, start, line, col);
                     drop diaglist_push(diags,
-                        raw diag_error("NITPICK-LEX-005",
+                        raw diag_error(raw LEX_UNTERMINATED_STRING(),
                             "unterminated raw string literal", sp));
                     pass (raw token_make(TokenKind.Error, sp, 0i64));
                 }
@@ -341,7 +342,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             if (q == 0u8) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
                 drop diaglist_push(diags,
-                    raw diag_error("NITPICK-LEX-005",
+                    raw diag_error(raw LEX_UNTERMINATED_STRING(),
                         "unterminated string literal", sp));
                 pass (raw token_make(TokenKind.Error, sp, 0i64));
             }
@@ -356,7 +357,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 if (q == 10u8) {
                     Span:sp = raw lexer_span_from(lx, start, line, col);
                     drop diaglist_push(diags,
-                        raw diag_error("NITPICK-LEX-005",
+                        raw diag_error(raw LEX_UNTERMINATED_STRING(),
                             "newline in a string literal", sp));
                     pass (raw token_make(TokenKind.Error, sp, 0i64));
                 }
@@ -378,7 +379,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         DecodedString:dec = raw decode_string(content);
         if (!(dec.ok)) {
             drop diaglist_push(diags,
-                raw diag_error("NITPICK-LEX-007", "invalid escape sequence", ssp));
+                raw diag_error(raw LEX_BAD_ESCAPE(), "invalid escape sequence", ssp));
         }
         TokenKind:sk = TokenKind.StringLit;
         if (block) { sk = TokenKind.MultiStringLit; }
@@ -396,7 +397,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             if (!(e.ok)) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
                 drop diaglist_push(diags,
-                    raw diag_error("NITPICK-LEX-007",
+                    raw diag_error(raw LEX_BAD_ESCAPE(),
                         "invalid escape sequence", sp));
                 pass (raw token_make(TokenKind.Error, sp, 0i64));
             }
@@ -413,7 +414,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         if ((raw lexer_peek(lx)) != 39u8) {
             Span:sp = raw lexer_span_from(lx, start, line, col);
             drop diaglist_push(diags,
-                raw diag_error("NITPICK-LEX-008",
+                raw diag_error(raw LEX_UNTERMINATED_CHAR(),
                     "unterminated character literal", sp));
             pass (raw token_make(TokenKind.Error, sp, 0i64));
         }
@@ -469,7 +470,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
             Span:nsp = raw lexer_span_from(lx, start, line, col);
             if (ns.bad_digit) {
                 drop diaglist_push(diags,
-                    raw diag_error("NITPICK-LEX-003",
+                    raw diag_error(raw LEX_BAD_DIGIT(),
                         "digit is not valid for this base", nsp));
                 pass (raw token_make(TokenKind.Error, nsp, 0i64));
             }
@@ -477,7 +478,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 // Detected, never wrapped. Wrapping here would put a different
                 // number in the program than the one written.
                 drop diaglist_push(diags,
-                    raw diag_error("NITPICK-LEX-004",
+                    raw diag_error(raw LEX_INT_TOO_LARGE(),
                         "integer literal does not fit in 64 bits", nsp));
                 pass (raw token_make(TokenKind.Error, nsp, 0i64));
             }
@@ -514,10 +515,27 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
 
     // An unhandled byte is an Error token WITH a diagnostic -- never silently
     // skipped, which would make a lexer bug look like a parser bug.
+    //
+    // Recovery consumes the whole run of unrecognised bytes rather than one at a
+    // time. A multi-byte UTF-8 character outside a literal is a single mistake
+    // and should read as one, not as three; and a lexer that reports per byte
+    // buries the real first error under its own noise.
     drop lexer_advance(lx);
+    while (true) {
+        uint8:r = raw lexer_peek(lx);
+        if (r == 0u8) { break; }
+        if (raw is_space(r)) { break; }
+        if (raw is_ident_start(r)) { break; }
+        if (raw is_digit(r)) { break; }
+        OpMatch:rec = raw op_match(lx.text, lx.pos);
+        if (rec.found) { break; }
+        if (r == 34u8) { break; }
+        if (r == 39u8) { break; }
+        drop lexer_advance(lx);
+    }
     Span:sp = raw lexer_span_from(lx, start, line, col);
     drop diaglist_push(diags,
-        raw diag_error("NITPICK-LEX-001", "unexpected character", sp));
+        raw diag_error(raw LEX_UNEXPECTED_CHAR(), "unexpected character", sp));
     pass (raw token_make(TokenKind.Error, sp, 0i64));
 };
 

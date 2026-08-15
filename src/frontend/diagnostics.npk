@@ -77,6 +77,16 @@ pub func:diaglist_count = int64(DiagList->:list) {
     pass list.count;
 };
 
+pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) {
+    if (i < 0i64) {
+        fail 6i32;
+    }
+    if (i >= list.count) {
+        fail 6i32;
+    }
+    pass list.items[i];
+};
+
 pub func:diaglist_has_errors = bool(DiagList->:list) {
     int64:i = 0i64;
     while (i < list.count) {

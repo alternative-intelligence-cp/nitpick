@@ -193,6 +193,17 @@ arrives with `nlibc` in cycle 0.8.
 | **`wildx`, atomics, threads, channels** | not needed by a compiler |
 | **`Optional<T>`, `arena<T>`, `Handle<T>`** | parameterized; index-based node arrays replace the arena |
 
+### Known gaps in the seed, recorded rather than worked around
+
+- **Global `const` initialisers are not lowered.** The checker collects a
+  `GlobalDecl` and the emitter ignores it, so `pub const string:CODE = "…";`
+  compiles and then does nothing. Diagnostic codes are centralised as functions
+  returning a literal instead (`src/frontend/diag_codes.npk`) — the
+  centralisation is what matters, and the spelling changes when the rung lands.
+- **`break` does not run `defer` blocks registered inside the loop body.** Scope
+  exit is a normal exit path (D-014), so the real compiler must close this; the
+  emitter carries a comment at the site.
+
 ### What the seed does *not* check
 
 The seed lowers; **stage 1 checks.** The seed does not verify `pick`

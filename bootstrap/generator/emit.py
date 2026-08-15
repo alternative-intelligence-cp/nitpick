@@ -732,6 +732,9 @@ class Emitter:
         raise EmitError("cannot lower %s" % type(e).__name__, e)
 
     def string_lit(self, text):
+        # Encode to UTF-8 first, then view as latin-1 so each BYTE is one char.
+        # Nitpick strings are byte sequences (LEXICAL_REFERENCE 1); a codepoint
+        # above 127 must reach the program as its UTF-8 bytes.
         data = text.encode("utf-8").decode("latin-1")
         gname = "@.str.%d" % len(self.strings)
         self.strings.append((gname, data))

@@ -151,6 +151,21 @@ def lex(src, path="<input>"):
                     if i + 1 >= n:
                         raise LexError("unterminated escape", line, scol, path)
                     esc = src[i + 1]
+                    # \xHH and \u{...} are part of the grammar
+                    # (LEXICAL_REFERENCE 6.3), not extras: our own sources use
+                    # them, and a seed that silently dropped the backslash
+                    # produced a DIFFERENT string than the one written.
+                    if esc == "x" and i + 3 < n:
+                        buf.append(chr(int(src[i + 2:i + 4], 16)))
+                        i += 4
+                        continue
+                    if esc == "u" and i + 2 < n and src[i + 2] == "{":
+                        close = src.find("}", i + 3)
+                        if close < 0:
+                            raise LexError("unterminated \\u escape", line, scol, path)
+                        buf.append(chr(int(src[i + 3:close], 16)))
+                        i = close + 1
+                        continue
                     buf.append({"n": "\n", "t": "\t", "r": "\r", "0": "\0",
                                 "\\": "\\", '"': '"', "'": "'"}.get(esc, esc))
                     i += 2

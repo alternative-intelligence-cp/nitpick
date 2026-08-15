@@ -1,0 +1,23 @@
+// Lexical diagnostic codes.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.1.6.
+//
+// Codes are STABLE IDENTIFIERS: tests assert on them and never on message text,
+// so wording stays free to improve without breaking the suite
+// (BUILD_REFERENCE.md §7.1). That only holds if a code is written once --
+// a mistyped string literal at a call site silently invents a NEW code, and the
+// test asserting the old one then fails for a reason that has nothing to do
+// with the bug.
+//
+// These are functions rather than `const` globals because the seed does not
+// lower global initialisers yet (recorded in SUBSET_1.md). The centralisation is
+// what matters; the spelling is temporary.
+
+pub func:LEX_UNEXPECTED_CHAR = string()    { pass "NITPICK-LEX-001"; };
+pub func:LEX_UNTERMINATED_COMMENT = string() { pass "NITPICK-LEX-002"; };
+pub func:LEX_BAD_DIGIT = string()          { pass "NITPICK-LEX-003"; };
+pub func:LEX_INT_TOO_LARGE = string()      { pass "NITPICK-LEX-004"; };
+pub func:LEX_UNTERMINATED_STRING = string(){ pass "NITPICK-LEX-005"; };
+pub func:LEX_UNTERMINATED_TEMPLATE = string() { pass "NITPICK-LEX-006"; };
+pub func:LEX_BAD_ESCAPE = string()         { pass "NITPICK-LEX-007"; };
+pub func:LEX_UNTERMINATED_CHAR = string()  { pass "NITPICK-LEX-008"; };

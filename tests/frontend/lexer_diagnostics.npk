@@ -1,0 +1,102 @@
+// Lexical diagnostics and error recovery (cycle 0.1.6).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/lexer.npk".*;
+
+func:code_at = string(DiagList->:dg, int64:i) {
+    Diagnostic:d = relay diaglist_at(dg, i);
+    pass d.code;
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+
+    // --- recovery: several errors are several diagnostics -------------------
+    // A lexer that stops at the first bad byte reports one problem per run, so
+    // fixing a file becomes one compile per mistake. Recovery is what makes the
+    // second and third errors visible at all.
+    DiagList:d1 = raw diaglist_init();
+    drop lex_all(0i32, "9999bin 8888bin 7777bin", @it, @d1);
+    if (raw diaglist_count(@d1) != 3i64)                      { exit 10i32; }
+
+    // Recovery must also make PROGRESS past the error: the good token after the
+    // bad ones has to still be lexed, or "recovery" is just a nicer word for
+    // giving up.
+    DiagList:d2 = raw diaglist_init();
+    TokenList:t2 = raw lex_all(0i32, "9999bin pub", @it, @d2);
+    if (raw diaglist_count(@d2) != 1i64)                      { exit 11i32; }
+    Token:after = raw tokenlist_at(@t2, 1i64);
+    if (after.kind != TokenKind.KwPub)                        { exit 12i32; }
+
+    // --- codes are stable identifiers ---------------------------------------
+    // Tests assert on CODES, never on message text, so wording stays free to
+    // improve. That only holds if a code is written once -- these come from
+    // diag_codes.npk, and a mistyped literal at a call site would silently
+    // invent a new one.
+    DiagList:d3 = raw diaglist_init();
+    drop lex_all(0i32, "9999bin", @it, @d3);
+    if (!(raw string_eq(raw code_at(@d3, 0i64), raw LEX_BAD_DIGIT())))
+                                                              { exit 20i32; }
+
+    DiagList:d4 = raw diaglist_init();
+    drop lex_all(0i32, "\"unclosed", @it, @d4);
+    if (!(raw string_eq(raw code_at(@d4, 0i64), raw LEX_UNTERMINATED_STRING())))
+                                                              { exit 21i32; }
+
+    DiagList:d5 = raw diaglist_init();
+    drop lex_all(0i32, "/* unclosed", @it, @d5);
+    if (!(raw string_eq(raw code_at(@d5, 0i64), raw LEX_UNTERMINATED_COMMENT())))
+                                                              { exit 22i32; }
+
+    DiagList:d6 = raw diaglist_init();
+    drop lex_all(0i32, "\"\\q\"", @it, @d6);
+    if (!(raw string_eq(raw code_at(@d6, 0i64), raw LEX_BAD_ESCAPE())))
+                                                              { exit 23i32; }
+
+    DiagList:d7 = raw diaglist_init();
+    drop lex_all(0i32, "99999999999999999999999i64", @it, @d7);
+    if (!(raw string_eq(raw code_at(@d7, 0i64), raw LEX_INT_TOO_LARGE())))
+                                                              { exit 24i32; }
+
+    DiagList:d8 = raw diaglist_init();
+    drop lex_all(0i32, "'ab", @it, @d8);
+    if (!(raw string_eq(raw code_at(@d8, 0i64), raw LEX_UNTERMINATED_CHAR())))
+                                                              { exit 25i32; }
+
+    DiagList:d9 = raw diaglist_init();
+    drop lex_all(0i32, "`unclosed", @it, @d9);
+    if (!(raw string_eq(raw code_at(@d9, 0i64), raw LEX_UNTERMINATED_TEMPLATE())))
+                                                              { exit 26i32; }
+
+    // --- one bad CHARACTER is one diagnostic --------------------------------
+    // A multi-byte UTF-8 character outside a literal is a single mistake. A
+    // lexer that reports per BYTE buries the real first error under its own
+    // noise.
+    DiagList:da = raw diaglist_init();
+    TokenList:ta = raw lex_all(0i32, "pub \xC2\xA7 mod", @it, @da);
+    if (raw diaglist_count(@da) != 1i64)                      { exit 30i32; }
+    if (!(raw string_eq(raw code_at(@da, 0i64), raw LEX_UNEXPECTED_CHAR())))
+                                                              { exit 31i32; }
+    // and lexing continues past it
+    Token:last = raw tokenlist_at(@ta, 2i64);
+    if (last.kind != TokenKind.KwMod)                         { exit 32i32; }
+
+    // --- diagnostics carry an accurate location -----------------------------
+    DiagList:db = raw diaglist_init();
+    drop lex_all(0i32, "pub\nmod\n9999bin", @it, @db);
+    Diagnostic:loc = raw diaglist_at(@db, 0i64);
+    if (loc.span.line != 3i32)                                { exit 40i32; }
+    if (loc.span.col != 1i32)                                 { exit 41i32; }
+    if (loc.severity != 2i32)                                 { exit 42i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
