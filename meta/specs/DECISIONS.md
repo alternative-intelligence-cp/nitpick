@@ -5967,3 +5967,86 @@ machine word and what makes `->` on it mean the ordinary thing.
 - `AST_REFERENCE.md` §4 — the note column, done.
 - The parser reads it in 0.2.8. Lowering waits for a rung that needs indirect
   calls; the parser never restricts (D-085).
+
+---
+
+## D-088 — `mod` and `extern` take the declaration shape; the `Type` namespace is removed — **SETTLED**
+
+Supersedes the namespace half of D-028.
+
+### 1. Every declaration has one shape
+
+`keyword : name = value ;` — and until now two declarations did not:
+
+```nitpick
+mod network  {  … }          // no colon, no `=`, no terminator
+extern "libc" { … }          // the same
+```
+
+against `func:`, `struct:`, `enum:`, `trait:`, `impl:`, `Rules<T>:`, `macro:`
+and `assoc:`, all of which do. The forms become:
+
+```nitpick
+mod:network = { … };         // inline
+mod:network;                 // the body is in network.npk
+extern:"libc" = { … };
+```
+
+`mod:network;` with no `=` matches `assoc:Item;` exactly: a declaration with no
+bound value is a declaration that something exists elsewhere.
+
+**Why the string stays a string in `extern:"libc"`.** A library name is not an
+identifier — `libc++`, a bare `m`, a path — so the name position holds a string
+literal. That is a *value* in the name slot, not a second shape.
+
+**An earlier attempt at a rule failed, and the failure is the argument.** During
+0.2.5 this was written up as "`mod` and `extern` GROUP rather than bind, so they
+take no `=`". It does not survive contact with `trait`, `impl` and `Type`, which
+group *and* bind. There was no rule — only two constructs that happened to be
+spelled the way another language spells them.
+
+The cost of a special case is not the character count. It is that **every
+exception is one more thing a reader has to remember**, and nothing was bought
+here in exchange.
+
+### 2. `Type:Name = { … }` is removed
+
+D-028 gave `Type` two jobs — namespace and associated type — and moved the
+associated type to `assoc`, keeping `Type` as the namespace on the grounds that
+it was "the older and more visible construct".
+
+**That left two constructs for one job.** `AST_REFERENCE.md` §1 called `TypeDecl`
+"the namespace construct"; `MODULE_REFERENCE.md` §1 opens "Modules allow the
+organization of code into hierarchical namespaces". D-028's own table names the
+`Type` row "namespace / **module** grouping". An inline `mod` holds functions and
+structs and nothing else, which is exactly what `GRAMMAR_ADOPTION_CONFLICTS.md`
+records `Type:Counter` as holding.
+
+So `Type` goes and `mod` stays. `mod` is strictly the more capable of the two: it
+can name a **file**, it participates in the module graph, and `use` imports from
+it. `Type` could do none of that.
+
+**Its origin supports removal.** The construct appears to be a survivor of an
+earlier design in which OOP was emulated through a text preprocessor and macros;
+it was carried forward into the current macro system without anyone re-deciding
+that it should be. No document motivates it, and nothing in the ecosystem uses
+it. A construct nobody chose is exactly the kind that accumulates.
+
+### 3. `Type` stops being a reserved word
+
+With no construct left to name, `Type` returns to userland — the same reasoning
+D-041 applied to 35 collection keywords and D-074 to `stream`, `process`, `pipe`,
+`debug` and `log`. **A reserved word that names nothing costs a user an
+identifier and gives a reader a keyword they cannot look up.**
+
+`assoc` is unaffected and keeps the job D-028 gave it.
+
+### Follow-up
+
+- `MODULE_REFERENCE.md` §1.1 — the two `mod` forms.
+- `LEXICAL_REFERENCE.md` — `Type` leaves `TypeKeyword`.
+- `AST_REFERENCE.md` §1 — `TypeDecl` removed; `ModuleDecl` and `ExternBlock`
+  keep their nodes and change only their spelling.
+- `TRAITS_REFERENCE.md` and `GRAMMAR_ADOPTION_CONFLICTS.md` — the notes
+  contrasting `assoc` with `Type` now record that `Type` is gone entirely, which
+  is a stronger form of the same point.

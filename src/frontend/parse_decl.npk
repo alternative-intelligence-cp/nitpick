@@ -5,11 +5,18 @@
 // Every top-level item in `AST_REFERENCE.md` section 1, plus the contracts
 // (section 5) and attributes (section 6) that decorate them.
 //
-// One shape runs through nearly all of it: `keyword : name = value ;`. `func`,
-// `struct`, `enum`, `trait`, `impl`, `Type`, `Rules` and `macro` all bind a name
-// to something, with `=`. `mod` and `extern` do not, because they GROUP rather
-// than bind -- there is no value on the right, only a scope. That is the whole
-// rule for knowing which form a declaration takes.
+// ONE SHAPE, no exceptions: `keyword : name = value ;`. `func`, `struct`,
+// `enum`, `trait`, `impl`, `Rules`, `macro`, `mod` and `extern` all take it.
+//
+// `mod` and `extern` used to be spelled `mod name { … }` and
+// `extern "libc" { … }` -- no colon, no `=`, no terminator -- and 0.2.5 wrote
+// that up as "they GROUP rather than bind". The rule does not survive contact
+// with `trait` and `impl`, which group AND bind. There was no rule, only two
+// constructs spelled the way another language spells them (D-088).
+//
+// A declaration with no `=` declares that something exists ELSEWHERE:
+// `mod:network;` names a file, exactly as `assoc:Item;` names a type an impl
+// must supply.
 //
 // Declarations carry more children than a node's three slots hold, so they use
 // the fixed-header window described in ast.npk. Each header is defined once,
@@ -400,7 +407,6 @@ pub func:p_parse_decl = DeclId(Parser->:p) {
     if (k == TokenKind.KwEnum)   { pass (relay p_parse_record(p, sp, flags, attrs, false)); }
     if (k == TokenKind.KwTrait)  { pass (relay p_parse_trait(p, sp, flags, attrs)); }
     if (k == TokenKind.KwImpl)   { pass (relay p_parse_impl(p, sp, flags, attrs)); }
-    if (k == TokenKind.KwType)   { pass (relay p_parse_namespace(p, sp, flags, attrs)); }
     if (k == TokenKind.KwRules)  { pass (relay p_parse_rules(p, sp, flags)); }
     if (k == TokenKind.KwMacro)  { pass (relay p_parse_macro(p, sp, flags, attrs)); }
     if (k == TokenKind.KwAssoc)  { pass (relay p_parse_assoc(p, sp, flags)); }
@@ -482,29 +488,18 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp) {
                              kind, w.start, w.count, path => int64));
 };
 
-// `mod name { … }` or `mod name;` -- a GROUPING, so no `=` and no bound value.
+// `mod:network = { … };` or `mod:network;` (D-088).
 func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) {
     drop p_expect(p, TokenKind.KwMod);
+    drop p_expect(p, TokenKind.PColon);
     Token:name = relay p_advance(p);
-    int32:mark = raw ast_scratch_mark(p.ast);
-    if (relay p_at(p, TokenKind.PLBrace)) {
-        drop p_advance(p);
-        while (true) {
-            if (relay p_at(p, TokenKind.PRBrace)) { break; }
-            if (relay p_at_end(p)) { break; }
-            int64:before = raw p_position(p);
-            DeclId:item = relay p_parse_decl(p);
-            drop ast_scratch_push(p.ast, item.index);
-            drop p_recover(p);
-        if ((raw p_position(p)) == before) { drop p_sync(p); }
-        }
-        drop p_expect(p, TokenKind.PRBrace);
-    } else {
-        // `mod network;` -- the body is in network.npk. Same node, empty member
-        // list; the module loader fills it (MODULE_REFERENCE section 1.1).
-        drop p_expect(p, TokenKind.PSemi);
+    IdSpan:members = raw idspan_empty();
+    if (relay p_accept(p, TokenKind.OpAssign)) {
+        members = relay p_parse_item_block(p);
     }
-    IdSpan:members = raw ast_scratch_commit(p.ast, mark);
+    // With no `=` the body is in network.npk: the same node with an empty member
+    // list, which the module loader fills (MODULE_REFERENCE section 1.1).
+    drop p_expect(p, TokenKind.PSemi);
     IdSpan:none = raw idspan_empty();
     pass (relay p_finish_item(p, sp, DeclKind.DeclModuleDecl, flags,
                               name.payload, none, members, none, none));
@@ -704,20 +699,6 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
                              flags, w.start, w.count, 0i64));
 };
 
-// `Type:Name = { … };` -- the NAMESPACE construct (D-028). Not an associated
-// type: that is `assoc`, precisely so this spelling means one thing.
-func:p_parse_namespace = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
-    drop p_expect(p, TokenKind.KwType);
-    drop p_expect(p, TokenKind.PColon);
-    Token:name = relay p_advance(p);
-    drop p_expect(p, TokenKind.OpAssign);
-    IdSpan:members = relay p_parse_item_block(p);
-    drop p_expect(p, TokenKind.PSemi);
-    IdSpan:none = raw idspan_empty();
-    pass (relay p_finish_item(p, sp, DeclKind.DeclTypeDecl, flags, name.payload,
-                              none, members, attrs, none));
-};
-
 // `assoc:Item;` declares, `assoc:Item = int32;` binds (D-028).
 func:p_parse_assoc = DeclId(Parser->:p, Span:sp, int32:flags) {
     drop p_expect(p, TokenKind.KwAssoc);
@@ -829,14 +810,20 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
                              flags, w.start, w.count, name.payload));
 };
 
-// `extern "libc" { … }` -- a GROUPING, like `mod`. Its items are `ExternFn`, not
-// ordinary functions, because each carries a mandatory failure contract (D-002).
+// `extern:"libc" = { … };` (D-088). Its items are `ExternFn`, not ordinary
+// functions, because each carries a mandatory failure contract (D-002).
+//
+// The name slot holds a STRING rather than an identifier, because a library name
+// is not one -- `libc++`, a bare `m`, a path. That is a value in the name
+// position, not a second shape.
 func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) {
     drop p_expect(p, TokenKind.KwExtern);
+    drop p_expect(p, TokenKind.PColon);
     int32:lib = 0i32;
     if (relay p_at(p, TokenKind.StringLit)) {
         lib = ((relay p_advance(p)).payload) => int32;
     }
+    drop p_expect(p, TokenKind.OpAssign);
     drop p_expect(p, TokenKind.PLBrace);
     int32:mark = raw ast_scratch_mark(p.ast);
     while (true) {
@@ -854,6 +841,7 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) {
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     drop p_expect(p, TokenKind.PRBrace);
+    drop p_expect(p, TokenKind.PSemi);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_decl(p.ast, DeclKind.DeclExternBlock, sp,
                              flags, w.start, w.count, lib => int64));

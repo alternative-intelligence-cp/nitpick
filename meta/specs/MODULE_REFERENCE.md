@@ -11,19 +11,19 @@ Modules can be defined inline or exist in external files.
 
 *   **Inline Modules**:
     ```nitpick
-    mod network {
+    mod:network = {
         pub func:connect = int32() { pass 0i32; };
         func:internal = int32() { pass 1i32; }; // Private
-    }
+    };
     ```
 
 *   **External File Modules**:
     ```nitpick
-    mod network;
+    mod:network;
     ```
     The compiler searches for `network.npk` or `network/mod.npk` relative to the declaring file.
 
-*   **Nested Modules**: Modules can be arbitrarily nested (e.g., `mod core { mod math { ... } }`).
+*   **Nested Modules**: Modules can be arbitrarily nested (e.g., `mod:core = { mod:math = { … }; };`).
 *   **Visibility**: Modules are private by default. Use `pub mod` to expose them to outer scopes.
 
 ## 2. Imports (`use`)
@@ -113,7 +113,7 @@ Nitpick uses a strict binary visibility model: **Public** or **Private**.
     pub func:compute = int32() { ... };
     pub struct:Point = { ... };
     pub const int32:MAX = 100i32;
-    pub mod utils { ... }
+    pub mod:utils = { ... };
     ```
 
 ## 4. Functions (`func:`)
@@ -135,10 +135,10 @@ func:add = int32(int32:a, int32:b) {
 ### 5.1 Extern Syntax
 
 ```nitpick
-extern "somelib" {
+extern:"somelib" = {
     func:some_query = int32(int8->:name);
     func:some_alloc = wild any->(int64:size);
-}
+};
 ```
 
 ### 5.2 Mandatory `Result<T>` Wrapping and error contracts
@@ -152,11 +152,11 @@ cannot be inferred from the type. Every `extern` declaration therefore states it
 own failure condition, and **omitting it is a compile error** (D-002):
 
 ```nitpick
-extern "libc" {
+extern:"libc" = {
     func:open   = int32(int8->:path, int32:flags)  fails on result < 0i32 with errno;
     func:malloc = wild any->(int64:size)           fails on result == NULL;
     func:strlen = int64(int8->:s)                  never fails;
-}
+};
 ```
 
 *   `fails on <expr>` — predicate over `result` marking the call as failed.

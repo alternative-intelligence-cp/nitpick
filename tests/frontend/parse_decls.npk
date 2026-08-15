@@ -198,7 +198,7 @@ func:main = int32() {
 
     // --- extern, and the contract that may not be omitted (D-002) --------------------
     TokenList:kf = raw lex_all(0i32,
-        "extern \"libc\" { func:open = int32(int8->:path) fails on result < 0i32 with errno; func:strlen = int64(int8->:s) never fails; };",
+        "extern:\"libc\" = { func:open = int32(int8->:path) fails on result < 0i32 with errno; func:strlen = int64(int8->:s) never fails; };",
         @it, @ld);
     Ast:af = raw ast_init();
     DiagList:gf = raw diaglist_init();
@@ -224,7 +224,7 @@ func:main = int32() {
     // Omitting it is an ERROR. Not a warning, and not a default: silence must
     // not become a silent `Ok`.
     TokenList:kg = raw lex_all(0i32,
-        "extern \"libc\" { func:puts = int32(int8->:s); };", @it, @ld);
+        "extern:\"libc\" = { func:puts = int32(int8->:s); };", @it, @ld);
     Ast:ag = raw ast_init();
     DiagList:gg = raw diaglist_init();
     Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
@@ -246,15 +246,9 @@ func:main = int32() {
     if (raw rule_refine_count(@ah, nh) != 1i32)               { exit 91i32; }
     if (raw rule_clause_count(@ah, nh) != 1i32)               { exit 92i32; }
 
-    TokenList:ki = raw lex_all(0i32, "Type:Counter = { func:tick = int32(); };", @it, @ld);
-    Ast:ai = raw ast_init();
-    DiagList:gi = raw diaglist_init();
-    Parser:pi = raw parser_init(@ki, @ai, @gi, @it);
-    DeclNode:ni = raw ast_decl(@ai, raw p_parse_decl(@pi));
-    if (ni.kind != DeclKind.DeclTypeDecl)                     { exit 93i32; }
-
-    // `assoc:Item;` -- NOT `Type:Item`, which is the namespace above. One
-    // spelling, one meaning (D-028).
+    // `assoc:Item;` declares an associated type. `Type:` used to be a second
+    // spelling in this area; D-088 removed the namespace construct outright, so
+    // `Type` is not even a keyword any more.
     TokenList:kj = raw lex_all(0i32, "assoc:Item;", @it, @ld);
     Ast:aj = raw ast_init();
     DiagList:gj = raw diaglist_init();
@@ -272,7 +266,7 @@ func:main = int32() {
 
     // --- modules and globals ----------------------------------------------------------------
     TokenList:kl = raw lex_all(0i32,
-        "mod network { pub func:connect = int32() { pass 0i32; }; }", @it, @ld);
+        "mod:network = { pub func:connect = int32() { pass 0i32; }; };", @it, @ld);
     Ast:al = raw ast_init();
     DiagList:gl = raw diaglist_init();
     Parser:pl = raw parser_init(@kl, @al, @gl, @it);
@@ -280,7 +274,7 @@ func:main = int32() {
     if (nl.kind != DeclKind.DeclModuleDecl)                   { exit 100i32; }
     if (raw item_member_count(@al, nl) != 1i32)               { exit 101i32; }
 
-    TokenList:km = raw lex_all(0i32, "mod network;", @it, @ld);
+    TokenList:km = raw lex_all(0i32, "mod:network;", @it, @ld);
     Ast:am = raw ast_init();
     DiagList:gm = raw diaglist_init();
     Parser:pm = raw parser_init(@km, @am, @gm, @it);

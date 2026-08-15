@@ -101,11 +101,13 @@ impl:Range:Iterator = {
 Associated types may carry defaults — `assoc:Error = string;` — inherited by any
 impl that omits the binding.
 
-> The keyword is **`assoc`**, not `Type` (D-028). `Type` declares a namespace
+> The keyword is **`assoc`**, not `Type` (D-028). `Type` used to declare a namespace
 > (`FORMAL_DRAFT` 02 §2.7.4) and cannot also mean "associated type" inside a trait
 > body — that is a construct changing meaning by context, and it made
 > `Type:Foo = { … };` genuinely ambiguous between an associated type bound to an
-> anonymous struct and a nested namespace.
+> anonymous struct and a nested namespace. **D-088 has since removed the namespace
+> construct outright** — `mod` already did that job and can additionally name a
+> file — so `Type` is not a keyword at all any more.
 
 ### 2.4 Inherent Impls
 
@@ -169,7 +171,7 @@ type whose layout belongs to a foreign library, and it is legal **only inside an
 `extern` block** (D-066).
 
 ```nitpick
-extern "libc" {
+extern:"libc" = {
     opaque struct:OpHandle;
     func:opaque_make = OpHandle();
     func:opaque_use  = int32(OpHandle:h);

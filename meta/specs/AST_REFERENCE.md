@@ -29,17 +29,16 @@ Top-level items. A source file parses to `ModuleDecl`.
 
 | Node | Fields | Notes |
 |---|---|---|
-| `ModuleDecl` | `name`, `visibility`, `items: Decl[]` | file scope or `mod name { … }` |
+| `ModuleDecl` | `name`, `visibility`, `items: Decl[]` | file scope, **`mod:name = { … };`**, or **`mod:name;`** for a file (D-088) |
 | `ImportDecl` | `path`, `kind`, `names: Ident[]`, `alias` | `kind` ∈ wildcard / single / selective / namespace |
 | `FunctionDecl` | `name`, `visibility`, `modifiers`, `generics: GenericParam[]`, `params: ParamDecl[]`, `return_type: TypeNode`, `contracts: ContractNode[]`, `body: BlockStmt?` | see §1.1 |
 | `StructDecl` | `name`, `visibility`, `generics`, `fields: FieldDecl[]`, `attributes` | |
 | `EnumDecl` | `name`, `visibility`, `generics`, `variants: EnumVariant[]` | variants may carry payloads |
 | `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
 | `ImplDecl` | `target: TypeNode \| GenericParam`, `trait: TypeNode?`, `items` | **`impl:Type`** or **`impl:Type:Trait`** — type always first, no connector (D-031) |
-| `TypeDecl` | `name`, `visibility`, `items` | the **namespace** construct, `Type:Name = { … }` (D-028) |
 | `RuleDecl` | `name`, `subject_type`, `body: Expr`, `refines: Ident[]` | `Rules<int32>:r = { $ > 0i32 }`; `refines` holds `limit<Other>` composition |
 | `MacroDecl` | `name`, `params`, `body` | invoked as **`#name(args)`** (D-046) |
-| `ExternBlock` | `library`, `items: ExternFn[]` | |
+| `ExternBlock` | `library`, `items: ExternFn[]` | **`extern:"libc" = { … };`** (D-088) — the name slot holds a string because a library name is not an identifier |
 | `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066) |
 | `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |
 
@@ -139,9 +138,11 @@ misread by ignoring a field undoes it.
 > fact, one slot: an absent body is a declaration, a present one is a default
 > implementation, and that is the whole distinction the wrapper was carrying.
 
-`assoc` rather than `Type`, which declares a namespace. `Type:Foo = { … }` inside
-a trait body was ambiguous between an associated type bound to an anonymous
-struct and a nested namespace; `assoc` is not.
+`assoc` rather than `Type`. D-028 moved associated types off `Type` because
+`Type:Foo = { … };` inside a trait body was ambiguous between an associated type
+bound to an anonymous struct and a nested namespace. **D-088 then removed the
+namespace construct entirely** — `mod` already did that job and does it better —
+so `Type` is no longer a keyword at all and the ambiguity cannot recur.
 
 ---
 

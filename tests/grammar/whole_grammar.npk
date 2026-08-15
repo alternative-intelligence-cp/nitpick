@@ -22,11 +22,17 @@ use "a/b.npk" as alias;
 use std.collections.{HashMap, HashSet};
 use std.math.*;
 
-mod inline_module {
+mod:inline_module = {
     pub func:helper = int32() { pass 0i32; };
-}
+};
 
-mod external_module;
+mod:external_module;
+
+pub mod:nested = {
+    mod:deeper = {
+        func:leaf = int32() { pass 0i32; };
+    };
+};
 
 // --- types ---------------------------------------------------------------------
 
@@ -58,11 +64,6 @@ pub enum:Net = {
 pub enum:Color = {
     Red = 1i32;
     Green = 2i32;
-};
-
-Type:Counter = {
-    pub func:tick = int32() { pass 1i32; };
-    struct:State = { int64:n; };
 };
 
 // --- traits ------------------------------------------------------------------------
@@ -117,13 +118,13 @@ async func:fetch = int32() { int32:v = raw await inner(); pass v; };
 
 macro:assert_positive = (x) { prove(x > 0i32); };
 
-extern "libc" {
+extern:"libc" = {
     opaque struct:OpHandle;
     func:open = int32(int8->:path, int32:flags) fails on result < 0i32 with errno;
     func:malloc = wild any->(int64:size) fails on result == NULL;
     func:strlen = int64(int8->:s) never fails;
     func:printf = int32(int8->:fmt, ..*) fails on result < 0i32;
-}
+};
 
 pub const int32:MAX = 100i32;
 wild int8->:global_buffer;
