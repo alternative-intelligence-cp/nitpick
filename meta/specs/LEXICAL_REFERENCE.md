@@ -88,7 +88,7 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "simd" | "complex" | "array" | "func"
                       | "trit" | "tryte" | "nit" | "nyte"
                       | "vec2" | "vec3" | "vec9" | "matrix" | "tmatrix"
-                      | "tensor" | "ttensor" | "buffer"
+                      | "tensor" | "ttensor" | "buffer" | "NIL"
 
 BuiltinHelper       ::= "is" | "in" | "is_err"
 ```

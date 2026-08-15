@@ -51,7 +51,7 @@ func:main = int32() {
     Parser:p3 = raw parser_init(@k3, @a3, @g3, @it);
     StmtNode:n3 = raw ast_stmt(@a3, raw p_parse_stmt(@p3));
     if (n3.kind != StmtKind.StmtVarDeclStmt)             { exit 20i32; }
-    if (raw expr_is_none(raw stmt_decl_init(n3)))        { exit 21i32; }
+    if (raw expr_is_none(raw stmt_decl_init(@a3, n3)))        { exit 21i32; }
 
     TokenList:k4 = raw lex_all(0i32, "x = 5i32;", @it, @ld);
     Ast:a4 = raw ast_init();
@@ -69,7 +69,7 @@ func:main = int32() {
     Parser:p5 = raw parser_init(@k5, @a5, @g5, @it);
     StmtNode:n5 = raw ast_stmt(@a5, raw p_parse_stmt(@p5));
     if (n5.kind != StmtKind.StmtVarDeclStmt)             { exit 24i32; }
-    if (!(raw expr_is_none(raw stmt_decl_init(n5))))     { exit 25i32; }
+    if (!(raw expr_is_none(raw stmt_decl_init(@a5, n5))))     { exit 25i32; }
     if (raw diaglist_count(@g5) != 0i64)                 { exit 26i32; }
 
     // An indexed assignment has brackets too, and must NOT read as a declaration.
@@ -103,7 +103,7 @@ func:main = int32() {
     Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
     StmtNode:n9 = raw ast_stmt(@a9, raw p_parse_stmt(@p9));
     if (n9.kind != StmtKind.StmtVarDeclStmt)             { exit 30i32; }
-    if ((raw stmt_quals(n9)) != (raw QUAL_WILD()))       { exit 31i32; }
+    if ((raw stmt_quals(@a9, n9)) != (raw QUAL_WILD()))       { exit 31i32; }
     TypeNode:t9 = raw ast_type(@a9, raw stmt_decl_type(n9));
     if (t9.kind != TypeKind.TypePointerType)             { exit 32i32; }
 
@@ -157,7 +157,7 @@ func:main = int32() {
     if (ne.kind != StmtKind.StmtForStmt)                 { exit 52i32; }
     DeclNode:bind = raw ast_decl(@ae, raw stmt_for_binding(ne));
     if (bind.kind != DeclKind.DeclParamDecl)             { exit 53i32; }
-    ExprNode:iter = raw ast_expr(@ae, raw stmt_for_iter(ne));
+    ExprNode:iter = raw ast_expr(@ae, raw stmt_for_iter(@ae, ne));
     if (iter.kind != ExprKind.ExprRangeExpr)             { exit 54i32; }
     if (raw diaglist_count(@ge) != 0i64)                 { exit 55i32; }
 
@@ -168,7 +168,7 @@ func:main = int32() {
     Parser:pf = raw parser_init(@kf, @af, @gf, @it);
     StmtNode:nf = raw ast_stmt(@af, raw p_parse_stmt(@pf));
     if (nf.kind != StmtKind.StmtLoopStmt)                { exit 56i32; }
-    if (raw stmt_counted_argc(nf) != 3i32)               { exit 57i32; }
+    if (raw stmt_counted_argc(@af, nf) != 3i32)               { exit 57i32; }
     StmtNode:fbody = raw ast_stmt(@af, raw stmt_counted_body(nf));
     if (fbody.kind != StmtKind.StmtBlockStmt)            { exit 58i32; }
 
@@ -179,7 +179,7 @@ func:main = int32() {
     Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
     StmtNode:ng = raw ast_stmt(@ag, raw p_parse_stmt(@pg));
     if (ng.kind != StmtKind.StmtTillStmt)                { exit 59i32; }
-    if (raw stmt_counted_argc(ng) != 2i32)               { exit 60i32; }
+    if (raw stmt_counted_argc(@ag, ng) != 2i32)               { exit 60i32; }
 
     // A label attaches to the loop, and `break label;` names it. Absence is
     // intern index 0, which is why a real label can never collide with it.
@@ -192,7 +192,7 @@ func:main = int32() {
     if (nh.kind != StmtKind.StmtWhileStmt)               { exit 61i32; }
     int32:outer = raw stmt_label(nh);
     if (raw intern_is_none(outer))                       { exit 62i32; }
-    StmtNode:hbody = raw ast_stmt(@ah, raw stmt_body(nh));
+    StmtNode:hbody = raw ast_stmt(@ah, raw stmt_body(@ah, nh));
     int32:brk_ix = raw ast_id_at(@ah, raw stmt_list_start(hbody), 0i32);
     StmtId:brkId = StmtId{ index: brk_ix };
     StmtNode:brk = raw ast_stmt(@ah, brkId);
@@ -218,7 +218,7 @@ func:main = int32() {
     StmtNode:nj = raw ast_stmt(@aj, raw p_parse_stmt(@pj));
     if (nj.kind != StmtKind.StmtWhenStmt)                { exit 70i32; }
     // Always three entries, so "which block is missing" needs no working out.
-    if (raw stmt_list_count(nj) != 3i32)                 { exit 71i32; }
+    if (raw stmt_list_count(nj) != 4i32)                 { exit 71i32; }
     if (raw stmt_is_none(raw stmt_when_body(@aj, nj)))   { exit 72i32; }
     if (raw stmt_is_none(raw stmt_when_then(@aj, nj)))   { exit 73i32; }
     if (raw stmt_is_none(raw stmt_when_end(@aj, nj)))    { exit 74i32; }
@@ -228,7 +228,7 @@ func:main = int32() {
     DiagList:gk = raw diaglist_init();
     Parser:pk = raw parser_init(@kk, @ak, @gk, @it);
     StmtNode:nk = raw ast_stmt(@ak, raw p_parse_stmt(@pk));
-    if (raw stmt_list_count(nk) != 3i32)                 { exit 75i32; }
+    if (raw stmt_list_count(nk) != 4i32)                 { exit 75i32; }
     if (!(raw stmt_is_none(raw stmt_when_then(@ak, nk)))) { exit 76i32; }
     if (!(raw stmt_is_none(raw stmt_when_end(@ak, nk))))  { exit 77i32; }
     if (raw diaglist_count(@gk) != 0i64)                 { exit 78i32; }

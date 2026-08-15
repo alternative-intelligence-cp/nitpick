@@ -269,16 +269,20 @@ class Parser:
     def parse_impl(self, start):
         self.expect("impl")
         self.expect(":")
-        first = self.expect_ident().text
-        trait_name, type_name = None, first
+        # SLOT 1 IS THE TYPE, with or without a trait (D-031). This used to read
+        # the first segment as the trait and accept `impl:Trait:for:Type`, which
+        # is FORMAL_DRAFT 13's superseded form -- the connector went entirely
+        # because `for` already means "iterate over", and the type went first so
+        # that `impl:Point` and `impl:Message:Serializable` put the same thing in
+        # the same place.
+        #
+        # Nothing here compiles an `impl` -- traits are outside subset 1 and the
+        # checker refuses them -- but a grammar that states the old syntax is a
+        # wrong claim about the language sitting in the tree.
+        type_name = self.expect_ident().text
+        trait_name = None
         if self.accept(":"):
-            # impl:Trait:for:Type
-            if self.at("for"):
-                self.next()
-                self.expect(":")
-                trait_name, type_name = first, self.expect_ident().text
-            else:
-                trait_name, type_name = first, self.expect_ident().text
+            trait_name = self.expect_ident().text
         self.expect("=")
         self.expect("{")
         items = []

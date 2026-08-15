@@ -1,0 +1,354 @@
+// Declarations, contracts, and attributes (cycle 0.2.5).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:ld = raw diaglist_init();
+
+    // --- functions ------------------------------------------------------------
+    TokenList:k1 = raw lex_all(0i32,
+        "pub func:add = int32(int32:a, int32:b) { pass a; };", @it, @ld);
+    Ast:a1 = raw ast_init();
+    DiagList:g1 = raw diaglist_init();
+    Parser:p1 = raw parser_init(@k1, @a1, @g1, @it);
+    DeclNode:n1 = raw ast_decl(@a1, raw p_parse_decl(@p1));
+    if (n1.kind != DeclKind.DeclFunctionDecl)                 { exit 10i32; }
+    if (!(raw decl_has(n1, raw DECL_PUB())))                  { exit 11i32; }
+    if (raw fn_param_count(@a1, n1) != 2i32)                  { exit 12i32; }
+    if (raw stmt_is_none(raw fn_body(@a1, n1)))               { exit 13i32; }
+    if (raw diaglist_count(@g1) != 0i64)                      { exit 14i32; }
+    // The declared type is the SUCCESS type; `Result<T>` is implicit and is not
+    // the parser's business.
+    TypeNode:r1 = raw ast_type(@a1, raw fn_return(@a1, n1));
+    if (r1.kind != TypeKind.TypeNamedType)                    { exit 15i32; }
+
+    // A trait method has no body, and that is a real absence rather than an
+    // empty block.
+    TokenList:k2 = raw lex_all(0i32, "func:to_bytes = buffer(Self:self);", @it, @ld);
+    Ast:a2 = raw ast_init();
+    DiagList:g2 = raw diaglist_init();
+    Parser:p2 = raw parser_init(@k2, @a2, @g2, @it);
+    DeclNode:n2 = raw ast_decl(@a2, raw p_parse_decl(@p2));
+    if (!(raw stmt_is_none(raw fn_body(@a2, n2))))            { exit 16i32; }
+
+    // --- generics come AFTER the name (D-030) ----------------------------------
+    TokenList:k3 = raw lex_all(0i32,
+        "func:process<T: Renderable & Serializable> = NIL(T:item) { pass NIL; };",
+        @it, @ld);
+    Ast:a3 = raw ast_init();
+    DiagList:g3 = raw diaglist_init();
+    Parser:p3 = raw parser_init(@k3, @a3, @g3, @it);
+    DeclNode:n3 = raw ast_decl(@a3, raw p_parse_decl(@p3));
+    if (raw fn_generic_count(@a3, n3) != 1i32)                { exit 20i32; }
+    DeclNode:gp = raw ast_decl(@a3, raw fn_generic(@a3, n3, 0i32));
+    if (gp.kind != DeclKind.DeclGenericParam)                 { exit 21i32; }
+    // Two bounds, combined with `&` -- the same symbol as supertraits and
+    // `dyn A & B` (D-029).
+    if (raw generic_bound_count(gp) != 2i32)                  { exit 22i32; }
+    if (raw generic_is_value(gp))                             { exit 23i32; }
+    if (raw diaglist_count(@g3) != 0i64)                      { exit 24i32; }
+
+    // `<comptime int32:LEVEL>` is a compile-time VALUE parameter. It needs no
+    // flag: only a value parameter has a type, and it always has one (D-064).
+    TokenList:k4 = raw lex_all(0i32,
+        "func:emit<comptime int32:LEVEL> = NIL() { pass NIL; };", @it, @ld);
+    Ast:a4 = raw ast_init();
+    DiagList:g4 = raw diaglist_init();
+    Parser:p4 = raw parser_init(@k4, @a4, @g4, @it);
+    DeclNode:n4 = raw ast_decl(@a4, raw p_parse_decl(@p4));
+    DeclNode:gv = raw ast_decl(@a4, raw fn_generic(@a4, n4, 0i32));
+    if (!(raw generic_is_value(gv)))                          { exit 25i32; }
+    if (raw generic_bound_count(gv) != 0i32)                  { exit 26i32; }
+
+    // --- contracts (D-002's sibling: declaration-site keywords) ----------------
+    TokenList:k5 = raw lex_all(0i32,
+        "func:divide = int32(int32:a, int32:b) requires b != 0i32 ensures result > 0i32 { pass a; };",
+        @it, @ld);
+    Ast:a5 = raw ast_init();
+    DiagList:g5 = raw diaglist_init();
+    Parser:p5 = raw parser_init(@k5, @a5, @g5, @it);
+    DeclNode:n5 = raw ast_decl(@a5, raw p_parse_decl(@p5));
+    if (raw fn_contract_count(@a5, n5) != 2i32)               { exit 30i32; }
+    VerifyNode:c0 = raw ast_verify(@a5, raw fn_contract(@a5, n5, 0i32));
+    if (c0.kind != VerifyKind.VerifyContractNode)             { exit 31i32; }
+    if ((raw contract_kind(c0)) != (raw CONTRACT_REQUIRES()))  { exit 32i32; }
+    VerifyNode:c1 = raw ast_verify(@a5, raw fn_contract(@a5, n5, 1i32));
+    if ((raw contract_kind(c1)) != (raw CONTRACT_ENSURES()))   { exit 33i32; }
+    if (raw diaglist_count(@g5) != 0i64)                      { exit 34i32; }
+
+    // --- attributes -------------------------------------------------------------
+    TokenList:k6 = raw lex_all(0i32,
+        "#[align(16i32)] #[derive(Copy)] struct:Point = { flt64:x; flt64:y; };",
+        @it, @ld);
+    Ast:a6 = raw ast_init();
+    DiagList:g6 = raw diaglist_init();
+    Parser:p6 = raw parser_init(@k6, @a6, @g6, @it);
+    DeclNode:n6 = raw ast_decl(@a6, raw p_parse_decl(@p6));
+    if (n6.kind != DeclKind.DeclStructDecl)                   { exit 40i32; }
+    if (raw item_member_count(@a6, n6) != 2i32)               { exit 41i32; }
+    if (raw item_attr_count(@a6, n6) != 2i32)                 { exit 42i32; }
+    DeclNode:at0 = raw ast_decl(@a6, raw item_attr(@a6, n6, 0i32));
+    if (at0.kind != DeclKind.DeclAttribute)                   { exit 43i32; }
+    if (raw attr_arg_count(at0) != 1i32)                      { exit 44i32; }
+    if (raw diaglist_count(@g6) != 0i64)                      { exit 45i32; }
+
+    // --- enums ---------------------------------------------------------------------
+    TokenList:k7 = raw lex_all(0i32,
+        "enum:Net = { Connected; Disconnect(int32, string); Retry = 3i32; };",
+        @it, @ld);
+    Ast:a7 = raw ast_init();
+    DiagList:g7 = raw diaglist_init();
+    Parser:p7 = raw parser_init(@k7, @a7, @g7, @it);
+    DeclNode:n7 = raw ast_decl(@a7, raw p_parse_decl(@p7));
+    if (n7.kind != DeclKind.DeclEnumDecl)                     { exit 50i32; }
+    if (raw item_member_count(@a7, n7) != 3i32)               { exit 51i32; }
+    DeclNode:v1 = raw ast_decl(@a7, raw item_member(@a7, n7, 1i32));
+    if (raw variant_payload_count(v1) != 2i32)                { exit 52i32; }
+    DeclNode:v2 = raw ast_decl(@a7, raw item_member(@a7, n7, 2i32));
+    if (raw expr_is_none(raw variant_value(v2)))              { exit 53i32; }
+    if (raw diaglist_count(@g7) != 0i64)                      { exit 54i32; }
+
+    // --- traits and impls -------------------------------------------------------------
+    TokenList:k8 = raw lex_all(0i32,
+        "trait:Ordered = Equatable & { func:cmp = int32(Self:self); };", @it, @ld);
+    Ast:a8 = raw ast_init();
+    DiagList:g8 = raw diaglist_init();
+    Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
+    DeclNode:n8 = raw ast_decl(@a8, raw p_parse_decl(@p8));
+    if (n8.kind != DeclKind.DeclTraitDecl)                    { exit 60i32; }
+    if (raw item_extra_count(@a8, n8) != 1i32)                { exit 61i32; }
+    if (raw item_member_count(@a8, n8) != 1i32)               { exit 62i32; }
+
+    // `impl:Point` -- inherent. SLOT 1 IS THE TYPE (D-031).
+    TokenList:k9 = raw lex_all(0i32,
+        "impl:Point = { func:magnitude = flt64(Point:self) { pass 0.0f64; }; };",
+        @it, @ld);
+    Ast:a9 = raw ast_init();
+    DiagList:g9 = raw diaglist_init();
+    Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
+    DeclNode:n9 = raw ast_decl(@a9, raw p_parse_decl(@p9));
+    if (n9.kind != DeclKind.DeclImplDecl)                     { exit 63i32; }
+    if (raw type_is_none(raw impl_target(@a9, n9)))           { exit 64i32; }
+    if (!(raw type_is_none(raw impl_trait(@a9, n9))))         { exit 65i32; }
+
+    // `impl:Message:Serializable` -- the SAME slot holds the type. Trait-first
+    // ordering would have made slot 1's meaning depend on how many segments
+    // were written.
+    TokenList:ka = raw lex_all(0i32, "impl:Message:Serializable = { };", @it, @ld);
+    Ast:aa = raw ast_init();
+    DiagList:ga = raw diaglist_init();
+    Parser:pa = raw parser_init(@ka, @aa, @ga, @it);
+    DeclNode:na = raw ast_decl(@aa, raw p_parse_decl(@pa));
+    if (raw type_is_none(raw impl_target(@aa, na)))           { exit 66i32; }
+    if (raw type_is_none(raw impl_trait(@aa, na)))            { exit 67i32; }
+    if (raw diaglist_count(@ga) != 0i64)                      { exit 68i32; }
+
+    // --- imports -----------------------------------------------------------------------
+    TokenList:kb = raw lex_all(0i32, "use \"path/module.npk\".*;", @it, @ld);
+    Ast:ab = raw ast_init();
+    DiagList:gb = raw diaglist_init();
+    Parser:pb = raw parser_init(@kb, @ab, @gb, @it);
+    DeclNode:nb = raw ast_decl(@ab, raw p_parse_decl(@pb));
+    if (nb.kind != DeclKind.DeclImportDecl)                   { exit 70i32; }
+    if ((raw import_kind(nb)) != (raw IMPORT_WILDCARD()))     { exit 71i32; }
+    if (raw intern_is_none(raw import_path(nb)))              { exit 72i32; }
+
+    TokenList:kc = raw lex_all(0i32, "use \"m.npk\".{square, pi};", @it, @ld);
+    Ast:ac = raw ast_init();
+    DiagList:gc = raw diaglist_init();
+    Parser:pc = raw parser_init(@kc, @ac, @gc, @it);
+    DeclNode:nc = raw ast_decl(@ac, raw p_parse_decl(@pc));
+    if ((raw import_kind(nc)) != (raw IMPORT_SELECTIVE()))    { exit 73i32; }
+    if (raw import_name_count(@ac, nc) != 2i32)               { exit 74i32; }
+
+    TokenList:kd = raw lex_all(0i32, "use \"m.npk\" as math;", @it, @ld);
+    Ast:ad = raw ast_init();
+    DiagList:gd = raw diaglist_init();
+    Parser:pd = raw parser_init(@kd, @ad, @gd, @it);
+    DeclNode:nd = raw ast_decl(@ad, raw p_parse_decl(@pd));
+    if ((raw import_kind(nd)) != (raw IMPORT_NAMESPACE()))    { exit 75i32; }
+    if (raw intern_is_none(raw import_alias(@ad, nd)))        { exit 76i32; }
+
+    // A logical path keeps its segments; the path string stays absent, which is
+    // what tells the two forms apart with no extra flag.
+    TokenList:ke = raw lex_all(0i32, "use std.collections.{HashMap};", @it, @ld);
+    Ast:ae = raw ast_init();
+    DiagList:ge = raw diaglist_init();
+    Parser:pe = raw parser_init(@ke, @ae, @ge, @it);
+    DeclNode:ne = raw ast_decl(@ae, raw p_parse_decl(@pe));
+    if (!(raw intern_is_none(raw import_path(ne))))           { exit 77i32; }
+    if (raw import_segment_count(@ae, ne) != 2i32)            { exit 78i32; }
+    if (raw import_name_count(@ae, ne) != 1i32)               { exit 79i32; }
+
+    // --- extern, and the contract that may not be omitted (D-002) --------------------
+    TokenList:kf = raw lex_all(0i32,
+        "extern \"libc\" { func:open = int32(int8->:path) fails on result < 0i32 with errno; func:strlen = int64(int8->:s) never fails; };",
+        @it, @ld);
+    Ast:af = raw ast_init();
+    DiagList:gf = raw diaglist_init();
+    Parser:pf = raw parser_init(@kf, @af, @gf, @it);
+    DeclNode:nf = raw ast_decl(@af, raw p_parse_decl(@pf));
+    if (nf.kind != DeclKind.DeclExternBlock)                  { exit 80i32; }
+    if (raw decl_win_count(nf) != 2i32)                       { exit 81i32; }
+    DeclId:fn0 = DeclId{ index: raw ast_id_at(@af, raw decl_win_start(nf), 0i32) };
+    DeclNode:ef0 = raw ast_decl(@af, fn0);
+    if (ef0.kind != DeclKind.DeclExternFn)                    { exit 82i32; }
+    DeclNode:fc0 = raw ast_decl(@af, raw externfn_failure(@af, ef0));
+    if (fc0.kind != DeclKind.DeclFailsOn)                     { exit 83i32; }
+    if (!(raw failson_uses_errno(fc0)))                       { exit 84i32; }
+    // `never fails` is its OWN kind, not a flag on a shared one -- so an
+    // unwritten contract and a written assertion of infallibility can never read
+    // the same.
+    DeclId:fn1 = DeclId{ index: raw ast_id_at(@af, raw decl_win_start(nf), 1i32) };
+    DeclNode:ef1 = raw ast_decl(@af, fn1);
+    DeclNode:fc1 = raw ast_decl(@af, raw externfn_failure(@af, ef1));
+    if (fc1.kind != DeclKind.DeclNeverFails)                  { exit 85i32; }
+    if (raw diaglist_count(@gf) != 0i64)                      { exit 86i32; }
+
+    // Omitting it is an ERROR. Not a warning, and not a default: silence must
+    // not become a silent `Ok`.
+    TokenList:kg = raw lex_all(0i32,
+        "extern \"libc\" { func:puts = int32(int8->:s); };", @it, @ld);
+    Ast:ag = raw ast_init();
+    DiagList:gg = raw diaglist_init();
+    Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
+    drop p_parse_decl(@pg);
+    if (raw diaglist_count(@gg) != 1i64)                      { exit 87i32; }
+    Diagnostic:dg = raw diaglist_at(@gg, 0i64);
+    if (!(raw string_eq(dg.code, raw PARSE_EXTERN_NO_CONTRACT()))) { exit 88i32; }
+
+    // --- Rules, limit, and namespaces ----------------------------------------------------
+    TokenList:kh = raw lex_all(0i32,
+        "Rules<int32>:r_small = { limit<r_pos>, $ < 100i32 };", @it, @ld);
+    Ast:ah = raw ast_init();
+    DiagList:gh = raw diaglist_init();
+    Parser:ph = raw parser_init(@kh, @ah, @gh, @it);
+    DeclNode:nh = raw ast_decl(@ah, raw p_parse_decl(@ph));
+    if (nh.kind != DeclKind.DeclRuleDecl)                     { exit 90i32; }
+    // A refinement is not a predicate, and they are stored apart because they
+    // are different things.
+    if (raw rule_refine_count(@ah, nh) != 1i32)               { exit 91i32; }
+    if (raw rule_clause_count(@ah, nh) != 1i32)               { exit 92i32; }
+
+    TokenList:ki = raw lex_all(0i32, "Type:Counter = { func:tick = int32(); };", @it, @ld);
+    Ast:ai = raw ast_init();
+    DiagList:gi = raw diaglist_init();
+    Parser:pi = raw parser_init(@ki, @ai, @gi, @it);
+    DeclNode:ni = raw ast_decl(@ai, raw p_parse_decl(@pi));
+    if (ni.kind != DeclKind.DeclTypeDecl)                     { exit 93i32; }
+
+    // `assoc:Item;` -- NOT `Type:Item`, which is the namespace above. One
+    // spelling, one meaning (D-028).
+    TokenList:kj = raw lex_all(0i32, "assoc:Item;", @it, @ld);
+    Ast:aj = raw ast_init();
+    DiagList:gj = raw diaglist_init();
+    Parser:pj = raw parser_init(@kj, @aj, @gj, @it);
+    DeclNode:nj = raw ast_decl(@aj, raw p_parse_decl(@pj));
+    if (nj.kind != DeclKind.DeclAssocTypeDecl)                { exit 94i32; }
+    if (!(raw type_is_none(raw assoc_default(nj))))           { exit 95i32; }
+
+    TokenList:kk = raw lex_all(0i32, "opaque struct:OpHandle;", @it, @ld);
+    Ast:ak = raw ast_init();
+    DiagList:gk = raw diaglist_init();
+    Parser:pk = raw parser_init(@kk, @ak, @gk, @it);
+    DeclNode:nk = raw ast_decl(@ak, raw p_parse_decl(@pk));
+    if (nk.kind != DeclKind.DeclOpaqueDecl)                   { exit 96i32; }
+
+    // --- modules and globals ----------------------------------------------------------------
+    TokenList:kl = raw lex_all(0i32,
+        "mod network { pub func:connect = int32() { pass 0i32; }; }", @it, @ld);
+    Ast:al = raw ast_init();
+    DiagList:gl = raw diaglist_init();
+    Parser:pl = raw parser_init(@kl, @al, @gl, @it);
+    DeclNode:nl = raw ast_decl(@al, raw p_parse_decl(@pl));
+    if (nl.kind != DeclKind.DeclModuleDecl)                   { exit 100i32; }
+    if (raw item_member_count(@al, nl) != 1i32)               { exit 101i32; }
+
+    TokenList:km = raw lex_all(0i32, "mod network;", @it, @ld);
+    Ast:am = raw ast_init();
+    DiagList:gm = raw diaglist_init();
+    Parser:pm = raw parser_init(@km, @am, @gm, @it);
+    DeclNode:nm = raw ast_decl(@am, raw p_parse_decl(@pm));
+    if (nm.kind != DeclKind.DeclModuleDecl)                   { exit 102i32; }
+    if (raw item_member_count(@am, nm) != 0i32)               { exit 103i32; }
+
+    TokenList:kn = raw lex_all(0i32, "pub const int32:MAX = 100i32;", @it, @ld);
+    Ast:an = raw ast_init();
+    DiagList:gn = raw diaglist_init();
+    Parser:pn = raw parser_init(@kn, @an, @gn, @it);
+    DeclNode:nn = raw ast_decl(@an, raw p_parse_decl(@pn));
+    if (nn.kind != DeclKind.DeclGlobalDecl)                   { exit 104i32; }
+    if (raw expr_is_none(raw global_init(nn)))                { exit 105i32; }
+    if ((raw global_quals(nn)) != (raw QUAL_CONST()))         { exit 106i32; }
+
+    // --- a whole file is a ModuleDecl ---------------------------------------------------------
+    TokenList:ko = raw lex_all(0i32,
+        "use \"a.npk\".*; struct:S = { int32:f; }; func:main = int32() { exit 0i32; };",
+        @it, @ld);
+    Ast:ao = raw ast_init();
+    DiagList:go = raw diaglist_init();
+    Parser:po = raw parser_init(@ko, @ao, @go, @it);
+    DeclNode:no = raw ast_decl(@ao, raw p_parse_module(@po));
+    if (no.kind != DeclKind.DeclModuleDecl)                   { exit 110i32; }
+    if (raw item_member_count(@ao, no) != 3i32)               { exit 111i32; }
+    if (raw diaglist_count(@go) != 0i64)                      { exit 112i32; }
+
+    // --- decorations on statements -------------------------------------------------------------
+    // `limit<Rule>` and attributes reach local declarations too, which is why
+    // they live in a module both parsers share rather than in either one.
+    TokenList:kp = raw lex_all(0i32, "limit<r_pos> int32:x = 5i32;", @it, @ld);
+    Ast:ap = raw ast_init();
+    DiagList:gp = raw diaglist_init();
+    Parser:pp = raw parser_init(@kp, @ap, @gp, @it);
+    StmtNode:np = raw ast_stmt(@ap, raw p_parse_stmt(@pp));
+    if (np.kind != StmtKind.StmtVarDeclStmt)                  { exit 120i32; }
+    if (raw verify_is_none(raw stmt_decl_limit(@ap, np)))     { exit 121i32; }
+    VerifyNode:lv = raw ast_verify(@ap, raw stmt_decl_limit(@ap, np));
+    if (lv.kind != VerifyKind.VerifyLimitNode)                { exit 122i32; }
+    if (raw diaglist_count(@gp) != 0i64)                      { exit 123i32; }
+
+    // --- loop invariants ---------------------------------------------------------------------------
+    TokenList:kq = raw lex_all(0i32,
+        "while (i < n) invariant total >= 0i32, i >= 0i32 { i = i + 1i32; }", @it, @ld);
+    Ast:aq = raw ast_init();
+    DiagList:gq = raw diaglist_init();
+    Parser:pq = raw parser_init(@kq, @aq, @gq, @it);
+    StmtNode:nq = raw ast_stmt(@aq, raw p_parse_stmt(@pq));
+    if (nq.kind != StmtKind.StmtWhileStmt)                    { exit 130i32; }
+    VerifyNode:iv = raw ast_verify(@aq, raw stmt_while_invariant(@aq, nq));
+    if (iv.kind != VerifyKind.VerifyInvariantNode)            { exit 131i32; }
+    // All the conditions of one loop are ONE node holding a list -- they are
+    // conjuncts of a single obligation, not separate obligations.
+    if (raw invariant_count(iv) != 2i32)                      { exit 132i32; }
+    if (raw diaglist_count(@gq) != 0i64)                      { exit 133i32; }
+
+    // No clause is the reserved NONE handle, not an empty invariant node.
+    TokenList:kr = raw lex_all(0i32, "while (a) { f(); }", @it, @ld);
+    Ast:ar = raw ast_init();
+    DiagList:gr = raw diaglist_init();
+    Parser:pr = raw parser_init(@kr, @ar, @gr, @it);
+    StmtNode:nr = raw ast_stmt(@ar, raw p_parse_stmt(@pr));
+    if (!(raw verify_is_none(raw stmt_while_invariant(@ar, nr)))) { exit 134i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

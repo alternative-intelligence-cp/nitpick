@@ -26,6 +26,7 @@ use "parse_codes.npk".*;
 use "parser.npk".*;
 use "parse_type.npk".*;
 use "parse_expr.npk".*;
+use "parse_decorate.npk".*;
 
 // Declaration qualifiers, as bits. They live on the VarDeclStmt and NOT on the
 // type node (AST_REFERENCE section 4), which is why the type parser refuses to
@@ -42,17 +43,22 @@ pub func:QUAL_NODROP = int32() { pass 32i32; };
 // Slots are interpreted HERE and nowhere else, as ast.npk requires.
 //
 //   BlockStmt      b,c = child window
-//   VarDeclStmt    a = type, b = init, c = qualifier bits, payload = name
 //   AssignStmt     a = target, b = value, payload = operator kind
 //   ExprStmt       a = expr
 //   IfStmt         a = cond, b = then-block, c = else-branch
-//   WhileStmt      a = cond, b = body, payload = label
-//   ForStmt        a = binding, b = iterable, c = body, payload = label
-//   LoopStmt       a = body, b,c = head-argument window, payload = label
-//   TillStmt       a = body, b,c = head-argument window, payload = label
 //   WhenStmt       a = cond, b,c = window of exactly {body, then, end}
 //   Break/Continue payload = label      Fall  payload = target
 //   Pass/Fail/Return/Exit/Trap/Discard/Prove/AssertStatic/Give   a = expr
+//
+// The rest carry more than three children and use the fixed-header window
+// described in ast.npk, with `payload` holding the label or name:
+//
+//   VarDeclStmt    a = type;  [0] init, [1] qualifier bits, [2] limit,
+//                             [3] attribute count, then attributes
+//   WhileStmt      a = cond;  [0] body, [1] invariant
+//   ForStmt        a = binding; [0] iterable, [1] body, [2] invariant
+//   Loop/TillStmt  a = body;  [0] invariant, [1] head-argument count,
+//                             then the head arguments
 //
 // An absent label, name or target is intern index 0, which intern.npk reserves
 // for the empty string precisely so that absence has a value of its own.
@@ -62,46 +68,88 @@ pub func:stmt_list_count = int32(StmtNode:s)   { pass s.c; };
 pub func:stmt_cond = ExprId(StmtNode:s)        { ExprId:i = ExprId{ index: s.a }; pass i; };
 pub func:stmt_then = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.b }; pass i; };
 pub func:stmt_else = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.c }; pass i; };
-pub func:stmt_body = StmtId(StmtNode:s)        { StmtId:i = StmtId{ index: s.b }; pass i; };
 pub func:stmt_expr = ExprId(StmtNode:s)        { ExprId:i = ExprId{ index: s.a }; pass i; };
 pub func:stmt_target = ExprId(StmtNode:s)      { ExprId:i = ExprId{ index: s.a }; pass i; };
 pub func:stmt_value = ExprId(StmtNode:s)       { ExprId:i = ExprId{ index: s.b }; pass i; };
 pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload => int32) => TokenKind); };
 pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload => int32); };
-pub func:stmt_decl_type = TypeId(StmtNode:s)   { TypeId:i = TypeId{ index: s.a }; pass i; };
-pub func:stmt_decl_init = ExprId(StmtNode:s)   { ExprId:i = ExprId{ index: s.b }; pass i; };
-pub func:stmt_quals = int32(StmtNode:s)        { pass s.c; };
 pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload => int32); };
+
+func:s_at = int32(Ast->:ast, StmtNode:s, int32:i) {
+    pass (raw ast_id_at(ast, s.b, i));
+};
+
+// VarDeclStmt: a = type; header [0] init, [1] qualifier bits, [2] limit,
+// [3] attribute count, then the attributes.
+func:VAR_HDR = int32() { pass 4i32; };
+
+pub func:stmt_decl_type = TypeId(StmtNode:s) { TypeId:i = TypeId{ index: s.a }; pass i; };
+pub func:stmt_decl_init = ExprId(Ast->:ast, StmtNode:s) {
+    ExprId:e = ExprId{ index: raw s_at(ast, s, 0i32) }; pass e;
+};
+pub func:stmt_quals = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 1i32)); };
+pub func:stmt_decl_limit = VerifyId(Ast->:ast, StmtNode:s) {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
+};
+pub func:stmt_decl_attr_count = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 3i32)); };
+pub func:stmt_decl_attr = DeclId(Ast->:ast, StmtNode:s, int32:i) {
+    DeclId:d = DeclId{ index: raw s_at(ast, s, (raw VAR_HDR()) + i) }; pass d;
+};
+
+// WhileStmt: a = cond; header [0] body, [1] invariant.
+pub func:stmt_body = StmtId(Ast->:ast, StmtNode:s) {
+    StmtId:i = StmtId{ index: raw s_at(ast, s, 0i32) }; pass i;
+};
+pub func:stmt_while_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 1i32) }; pass v;
+};
+
+// ForStmt: a = binding; header [0] iterable, [1] body, [2] invariant.
 pub func:stmt_for_binding = DeclId(StmtNode:s) { DeclId:i = DeclId{ index: s.a }; pass i; };
-pub func:stmt_for_iter = ExprId(StmtNode:s)    { ExprId:i = ExprId{ index: s.b }; pass i; };
-pub func:stmt_for_body = StmtId(StmtNode:s)    { StmtId:i = StmtId{ index: s.c }; pass i; };
+pub func:stmt_for_iter = ExprId(Ast->:ast, StmtNode:s) {
+    ExprId:e = ExprId{ index: raw s_at(ast, s, 0i32) }; pass e;
+};
+pub func:stmt_for_body = StmtId(Ast->:ast, StmtNode:s) {
+    StmtId:i = StmtId{ index: raw s_at(ast, s, 1i32) }; pass i;
+};
+pub func:stmt_for_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 2i32) }; pass v;
+};
+
+// Loop/TillStmt: a = body; header [0] invariant, [1] head-argument count, then
+// the head arguments.
+func:COUNTED_HDR = int32() { pass 2i32; };
+
 pub func:stmt_counted_body = StmtId(StmtNode:s){ StmtId:i = StmtId{ index: s.a }; pass i; };
-pub func:stmt_counted_argc = int32(StmtNode:s) { pass s.c; };
+pub func:stmt_counted_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 0i32) }; pass v;
+};
+pub func:stmt_counted_argc = int32(Ast->:ast, StmtNode:s) { pass (raw s_at(ast, s, 1i32)); };
 
 // `loop(start, limit, step)` and `till(limit, step)` -- the head arguments, by
-// position. Reading them out of the window is the same operation for both, and
-// the checker is what knows how many each requires (D-022).
+// position. Reading them out is the same operation for both, and the checker is
+// what knows how many each requires (D-022).
 pub func:stmt_counted_arg = ExprId(Ast->:ast, StmtNode:s, int32:i) {
-    if (i >= s.c) { pass (raw expr_none()); }
-    ExprId:e = ExprId{ index: raw ast_id_at(ast, s.b, i) };
+    if (i >= (raw stmt_counted_argc(ast, s))) { pass (raw expr_none()); }
+    ExprId:e = ExprId{ index: raw s_at(ast, s, (raw COUNTED_HDR()) + i) };
     pass e;
 };
 
-// `when` always commits exactly three entries -- body, `then`, `end` -- so an
-// absent block is a zero handle in a fixed slot rather than a shorter window.
-// A variable-length window would make "which block is missing" something every
-// reader has to work out for itself.
+// `when` always commits exactly four entries -- body, `then`, `end`, invariant --
+// so an absent block is a zero handle in a fixed slot rather than a shorter
+// window. A variable-length window would make "which block is missing" something
+// every reader has to work out for itself.
 pub func:stmt_when_body = StmtId(Ast->:ast, StmtNode:s) {
-    StmtId:i = StmtId{ index: raw ast_id_at(ast, s.b, 0i32) };
-    pass i;
+    StmtId:i = StmtId{ index: raw s_at(ast, s, 0i32) }; pass i;
 };
 pub func:stmt_when_then = StmtId(Ast->:ast, StmtNode:s) {
-    StmtId:i = StmtId{ index: raw ast_id_at(ast, s.b, 1i32) };
-    pass i;
+    StmtId:i = StmtId{ index: raw s_at(ast, s, 1i32) }; pass i;
 };
 pub func:stmt_when_end = StmtId(Ast->:ast, StmtNode:s) {
-    StmtId:i = StmtId{ index: raw ast_id_at(ast, s.b, 2i32) };
-    pass i;
+    StmtId:i = StmtId{ index: raw s_at(ast, s, 2i32) }; pass i;
+};
+pub func:stmt_when_invariant = VerifyId(Ast->:ast, StmtNode:s) {
+    VerifyId:v = VerifyId{ index: raw s_at(ast, s, 3i32) }; pass v;
 };
 
 // --- qualifiers ---------------------------------------------------------------
@@ -145,6 +193,9 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
         // A qualifier can begin nothing else, so this is settled already.
         pass true;
     }
+    // So can `limit<Rule>`: it binds a ruleset to a declaration and appears in no
+    // other statement position.
+    if (relay p_at(p, TokenKind.KwLimit)) { pass true; }
     TokenKind:first = relay p_kind(p);
     bool:startable = (first == TokenKind.Ident);
     if (raw token_kind_is_builtin_type(first)) { startable = true; }
@@ -223,6 +274,12 @@ pub func:p_parse_block = StmtId(Parser->:p) {
 
 pub func:p_parse_stmt = StmtId(Parser->:p) {
     Span:sp = relay p_span(p);
+
+    // Attributes attach to the declaration they precede; on anything else they
+    // are gathered and the semantic phase reports them, because "attribute on a
+    // `while`" is a better diagnostic than "expected a statement".
+    IdSpan:attrs = relay p_parse_attributes(p);
+
     TokenKind:k = relay p_kind(p);
 
     if (k == TokenKind.PLBrace) { pass (relay p_parse_block(p)); }
@@ -316,7 +373,7 @@ pub func:p_parse_stmt = StmtId(Parser->:p) {
     // treated as something else.
 
     if (raw p_looks_like_decl(p)) {
-        pass (relay p_parse_vardecl(p, sp));
+        pass (relay p_parse_vardecl(p, sp, attrs));
     }
 
     // An expression, then possibly an assignment.
@@ -389,13 +446,20 @@ func:p_label_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) {
     pass (relay ast_add_stmt(p.ast, kind, sp, 0i32, 0i32, 0i32, lbl));
 };
 
-func:p_parse_vardecl = StmtId(Parser->:p, Span:sp) {
+func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) {
     int32:quals = 0i32;
     while (true) {
         int32:bit = raw p_qualifier_bit(relay p_kind(p));
         if (bit == 0i32) { break; }
         drop p_advance(p);
         quals = quals | bit;
+    }
+    // `limit<r_pos> int32:x = 5i32;` -- the rule binds to the DECLARATION, so it
+    // sits with the qualifiers rather than inside the type (AST_REFERENCE
+    // section 4: qualifiers are not part of the type).
+    int32:lim = 0i32;
+    if (relay p_at(p, TokenKind.KwLimit)) {
+        lim = (relay p_parse_limit(p)).index;
     }
     TypeId:ty = relay p_parse_type(p);
     drop p_expect(p, TokenKind.PColon);
@@ -405,8 +469,16 @@ func:p_parse_vardecl = StmtId(Parser->:p, Span:sp) {
         init = (relay p_parse_expr(p)).index;
     }
     drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, init);
+    drop ast_scratch_push(p.ast, quals);
+    drop ast_scratch_push(p.ast, lim);
+    drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_copy_window(p.ast, attrs);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_stmt(p.ast, StmtKind.StmtVarDeclStmt, sp,
-                             ty.index, init, quals, name.payload));
+                             ty.index, w.start, w.count, name.payload));
 };
 
 func:p_parse_if = StmtId(Parser->:p) {
@@ -441,9 +513,17 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
         drop p_expect(p, TokenKind.PLParen);
         ExprId:c = relay p_parse_expr(p);
         drop p_expect(p, TokenKind.PRParen);
+        // `while (i < n) invariant total >= 0i32, i >= 0i32 { … }` -- between the
+        // head and the body, comma-separated and unparenthesised like the
+        // contracts it belongs with.
+        VerifyId:inv = relay p_parse_invariant(p);
         StmtId:b = relay p_parse_block(p);
+        int32:mark = raw ast_scratch_mark(p.ast);
+        drop ast_scratch_push(p.ast, b.index);
+        drop ast_scratch_push(p.ast, inv.index);
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (relay ast_add_stmt(p.ast, StmtKind.StmtWhileStmt, sp,
-                                 c.index, b.index, 0i32, label));
+                                 c.index, w.start, w.count, label));
     }
 
     if (k == TokenKind.KwFor) {
@@ -465,9 +545,15 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
         drop p_expect(p, TokenKind.KwIn);
         ExprId:iter = relay p_parse_expr(p);
         drop p_expect(p, TokenKind.PRParen);
+        VerifyId:inv = relay p_parse_invariant(p);
         StmtId:b = relay p_parse_block(p);
+        int32:mark = raw ast_scratch_mark(p.ast);
+        drop ast_scratch_push(p.ast, iter.index);
+        drop ast_scratch_push(p.ast, b.index);
+        drop ast_scratch_push(p.ast, inv.index);
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (relay ast_add_stmt(p.ast, StmtKind.StmtForStmt, sp,
-                                 binding.index, iter.index, b.index, label));
+                                 binding.index, w.start, w.count, label));
     }
 
     // `loop(start, limit, step)` and `till(limit, step)` are both COUNTED and
@@ -495,6 +581,10 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
     drop p_expect(p, TokenKind.PLParen);
     ExprId:wc = relay p_parse_expr(p);
     drop p_expect(p, TokenKind.PRParen);
+    // `when` takes an invariant like every other loop. AST_REFERENCE section 2
+    // omitted the field while VERIFICATION_REFERENCE section 4 listed `when`
+    // among the constructs that accept one; the spec now says so too.
+    VerifyId:winv = relay p_parse_invariant(p);
     int32:mark = raw ast_scratch_mark(p.ast);
     StmtId:wb = relay p_parse_block(p);
     drop ast_scratch_push(p.ast, wb.index);
@@ -510,6 +600,7 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
     } else {
         drop ast_scratch_push(p.ast, 0i32);
     }
+    drop ast_scratch_push(p.ast, winv.index);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_stmt(p.ast, StmtKind.StmtWhenStmt, sp,
                              wc.index, w.start, w.count, label));
@@ -517,17 +608,27 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
 
 func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) {
     drop p_expect(p, TokenKind.PLParen);
-    int32:mark = raw ast_scratch_mark(p.ast);
+    int32:amark = raw ast_scratch_mark(p.ast);
+    int32:argc = 0i32;
     if (!(relay p_at(p, TokenKind.PRParen))) {
         ExprId:a1 = relay p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
+        argc = 1i32;
         while (relay p_accept(p, TokenKind.PComma)) {
             ExprId:an = relay p_parse_expr(p);
             drop ast_scratch_push(p.ast, an.index);
+            argc = argc + 1i32;
         }
     }
+    IdSpan:args = raw ast_scratch_commit(p.ast, amark);
     drop p_expect(p, TokenKind.PRParen);
+    VerifyId:inv = relay p_parse_invariant(p);
     StmtId:b = relay p_parse_block(p);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, inv.index);
+    drop ast_scratch_push(p.ast, argc);
+    drop ast_copy_window(p.ast, args);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_stmt(p.ast, kind, sp, b.index, w.start, w.count, label));
 };

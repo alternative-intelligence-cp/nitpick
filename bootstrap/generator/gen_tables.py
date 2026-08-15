@@ -373,9 +373,18 @@ pub func:is_keyword = bool(string:text) {
                    "ErrPattern", "Wildcard"]
 
     # Sub-structures defined as code blocks rather than table rows -- 1.1, 1.2,
-    # 2.1. They are real nodes and need kinds; the table scan cannot see them.
+    # 2.1, 6. They are real nodes and need kinds; the table scan cannot see them.
+    #
+    # `FailsOn` and `NeverFails` are two kinds rather than one `FailureContract`
+    # with a flag, matching PickPattern's six arms. D-002 wants "this C function
+    # is infallible" to be an auditable claim, and a shared kind would make an
+    # unwritten contract and a written `never fails` the same node.
+    #
+    # `Attribute` lives in the declaration array because that array is already
+    # where declaration sub-structures live.
     cats["Decl"] += ["GenericParam", "ParamDecl", "FieldDecl", "EnumVariant",
-                     "ExternFn", "VariadicSpec", "FailureContract"]
+                     "ExternFn", "VariadicSpec", "FailsOn", "NeverFails",
+                     "Attribute"]
     cats["Stmt"] += ["PickArm"]
 
     al = []

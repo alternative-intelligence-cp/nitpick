@@ -27,6 +27,7 @@ pub struct:StmtId = { int32:index; };
 pub struct:DeclId = { int32:index; };
 pub struct:TypeId = { int32:index; };
 pub struct:PatId  = { int32:index; };
+pub struct:VerifyId = { int32:index; };
 
 // Index 0 of every array is a reserved NONE node, so a zeroed handle is a
 // well-defined absence rather than a silent reference to whatever was created
@@ -36,12 +37,14 @@ pub func:stmt_none = StmtId() { StmtId:i = StmtId{ index: 0i32 }; pass i; };
 pub func:decl_none = DeclId() { DeclId:i = DeclId{ index: 0i32 }; pass i; };
 pub func:type_none = TypeId() { TypeId:i = TypeId{ index: 0i32 }; pass i; };
 pub func:pat_none  = PatId()  { PatId:i  = PatId{ index: 0i32 };  pass i; };
+pub func:verify_none = VerifyId() { VerifyId:i = VerifyId{ index: 0i32 }; pass i; };
 
 pub func:expr_is_none = bool(ExprId:i) { pass (i.index == 0i32); };
 pub func:stmt_is_none = bool(StmtId:i) { pass (i.index == 0i32); };
 pub func:decl_is_none = bool(DeclId:i) { pass (i.index == 0i32); };
 pub func:type_is_none = bool(TypeId:i) { pass (i.index == 0i32); };
 pub func:pat_is_none  = bool(PatId:i)  { pass (i.index == 0i32); };
+pub func:verify_is_none = bool(VerifyId:i) { pass (i.index == 0i32); };
 
 // --- nodes ------------------------------------------------------------------
 //
@@ -100,12 +103,26 @@ pub struct:PatNode = {
     int64:payload;
 };
 
+// `requires` / `ensures`, loop invariants, and `limit<Rule>`. A SIXTH array,
+// because there are six kind enums and 0.2.0 built five -- the verification
+// nodes had a `VerifyKind` and nowhere to put one, which 0.2.5 found by needing
+// to attach a contract to a function.
+pub struct:VerifyNode = {
+    VerifyKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
 pub struct:Ast = {
     wild ExprNode->:exprs;  int32:expr_count;  int32:expr_cap;
     wild StmtNode->:stmts;  int32:stmt_count;  int32:stmt_cap;
     wild DeclNode->:decls;  int32:decl_count;  int32:decl_cap;
     wild TypeNode->:types;  int32:type_count;  int32:type_cap;
     wild PatNode->:pats;    int32:pat_count;   int32:pat_cap;
+    wild VerifyNode->:verifies; int32:verify_count; int32:verify_cap;
 
     // A flat pool of child handles. A node that owns a SEQUENCE -- generic
     // arguments, function parameters, `dyn A & B` traits -- stores a (start,
@@ -142,6 +159,7 @@ pub func:ast_init = Ast() {
     wild int8->:d = alloc(n * #size_of<DeclNode>());
     wild int8->:t = alloc(n * #size_of<TypeNode>());
     wild int8->:p = alloc(n * #size_of<PatNode>());
+    wild int8->:v = alloc(n * #size_of<VerifyNode>());
     wild int8->:q = alloc(n * #size_of<int32>());
     wild int8->:r = alloc(n * #size_of<int32>());
 
@@ -151,6 +169,7 @@ pub func:ast_init = Ast() {
         decls: d => wild DeclNode->,  decl_count: 0i32,  decl_cap: 256i32,
         types: t => wild TypeNode->,  type_count: 0i32,  type_cap: 256i32,
         pats:  p => wild PatNode->,   pat_count:  0i32,  pat_cap:  256i32,
+        verifies: v => wild VerifyNode->, verify_count: 0i32, verify_cap: 256i32,
         ids:   q => wild int32->,     id_count:   0i32,  id_cap:   256i32,
         scratch: r => wild int32->,   scratch_count: 0i32, scratch_cap: 256i32
     };
@@ -180,6 +199,11 @@ pub func:ast_init = Ast() {
                           a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
     ast.pats[0i64] = pn;
     ast.pat_count = 1i32;
+
+    VerifyNode:vn = VerifyNode{ kind: VerifyKind.VerifyNone, span: z,
+                                a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.verifies[0i64] = vn;
+    ast.verify_count = 1i32;
 
     pass ast;
 };
@@ -347,12 +371,62 @@ pub func:ast_pat = PatNode(Ast->:ast, PatId:id) {
 
 pub func:ast_pat_count = int32(Ast->:ast) { pass ast.pat_count; };
 
+// --- verification nodes -----------------------------------------------------------
+
+func:ast_grow_verifies = NIL(Ast->:ast) {
+    int32:nc = ast.verify_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.verifies => wild int8->,
+                                (nc => int64) * #size_of<VerifyNode>());
+    ast.verifies = bigger => wild VerifyNode->;
+    ast.verify_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_verify = VerifyId(Ast->:ast, VerifyKind:kind, Span:span,
+                                   int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.verify_count >= ast.verify_cap) {
+        drop ast_grow_verifies(ast);
+    }
+    VerifyNode:n = VerifyNode{ kind: kind, span: span,
+                               a: a, b: b, c: c, payload: payload };
+    ast.verifies[ast.verify_count => int64] = n;
+    VerifyId:id = VerifyId{ index: ast.verify_count };
+    ast.verify_count = ast.verify_count + 1i32;
+    pass id;
+};
+
+pub func:ast_verify = VerifyNode(Ast->:ast, VerifyId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.verify_count) { fail 7i32; }
+    pass ast.verifies[id.index => int64];
+};
+
+pub func:ast_verify_count = int32(Ast->:ast) { pass ast.verify_count; };
+
 // --- the child-handle pool ------------------------------------------------------
 //
 // Usage is always: mark, push each child, then window. The mark is taken BEFORE
 // the children are parsed, and parsing a child may itself push into the pool --
 // which is fine, because a nested sequence completes before the outer one
 // resumes pushing, so the windows nest rather than interleave.
+//
+// WINDOWS MAY CARRY A FIXED HEADER. A node with more children than `a`/`b`/`c`
+// can hold -- a `FunctionDecl` has a return type, a body, generics, parameters,
+// contracts and attributes -- puts a fixed-length header at the FRONT of its
+// window and the variable-length lists after it, with their counts in the
+// header. One rule, applied wherever it is needed, rather than a different
+// improvisation per node.
+//
+// Two properties make this safe, and both are the point:
+//
+//   * the header is FIXED-LENGTH per node kind, so an absent child is a zero
+//     handle in a known slot -- never a shorter window that a reader has to
+//     measure to find out what is missing;
+//   * only the node's own accessor functions ever index it, so a header slot
+//     is named exactly once.
+//
+// `when`/`then`/`end` in parse_stmt.npk is the smallest instance: three slots,
+// always three, two of which are often zero.
 
 pub func:ast_scratch_mark = int32(Ast->:ast) {
     pass ast.scratch_count;
@@ -412,6 +486,37 @@ pub func:ast_ids_push = NIL(Ast->:ast, int32:value) {
 
 pub func:ast_ids_count_since = int32(Ast->:ast, int32:mark) {
     pass (ast.id_count - mark);
+};
+
+pub func:idspan_empty = IdSpan() {
+    IdSpan:s = IdSpan{ start: 0i32, count: 0i32 };
+    pass s;
+};
+
+// Overwrite an entry pushed since `mark`. A header slot whose value is a count of
+// things not yet parsed has to be reserved first and filled in afterwards; this
+// is that fill-in, and it is bounds-checked so a wrong index is an error rather
+// than a silent write into somebody else's window.
+pub func:ast_scratch_set = NIL(Ast->:ast, int32:mark, int32:i, int32:value) {
+    if (i < 0i32) { fail 9i32; }
+    int32:at = mark + i;
+    if (at >= ast.scratch_count) { fail 9i32; }
+    ast.scratch[at => int64] = value;
+    pass NIL;
+};
+
+// Push a committed window's contents back onto scratch. A node that gathers
+// several lists parses each into its own window and then assembles them behind a
+// header; without this the lists would have to be parsed in final order, which
+// they cannot be -- a function's parameter count is not known until after the
+// parameters are parsed, and the header holding it comes first.
+pub func:ast_copy_window = NIL(Ast->:ast, IdSpan:w) {
+    int32:i = 0i32;
+    while (i < w.count) {
+        drop ast_scratch_push(ast, raw ast_id_at(ast, w.start, i));
+        i = i + 1i32;
+    }
+    pass NIL;
 };
 
 pub func:ast_id_at = int32(Ast->:ast, int32:start, int32:i) {

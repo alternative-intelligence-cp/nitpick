@@ -1,0 +1,974 @@
+// Declaration parsing.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.2.5.
+//
+// Every top-level item in `AST_REFERENCE.md` section 1, plus the contracts
+// (section 5) and attributes (section 6) that decorate them.
+//
+// One shape runs through nearly all of it: `keyword : name = value ;`. `func`,
+// `struct`, `enum`, `trait`, `impl`, `Type`, `Rules` and `macro` all bind a name
+// to something, with `=`. `mod` and `extern` do not, because they GROUP rather
+// than bind -- there is no value on the right, only a scope. That is the whole
+// rule for knowing which form a declaration takes.
+//
+// Declarations carry more children than a node's three slots hold, so they use
+// the fixed-header window described in ast.npk. Each header is defined once,
+// beside the accessors that read it, and nothing else indexes it.
+
+use "source_location.npk".*;
+use "token_kind.npk".*;
+use "token_name.npk".*;
+use "token.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "parse_codes.npk".*;
+use "parser.npk".*;
+use "parse_type.npk".*;
+use "parse_expr.npk".*;
+use "parse_decorate.npk".*;
+use "parse_stmt.npk".*;
+
+// --- flags --------------------------------------------------------------------
+//
+// Visibility and the function modifiers, in one int32. `extern` is deliberately
+// absent: FFI functions are `ExternFn` inside an `ExternBlock`, not ordinary
+// functions wearing a modifier, because they carry failure contracts that
+// ordinary functions do not (D-002).
+
+pub func:DECL_PUB = int32()       { pass 1i32; };
+pub func:DECL_INLINE = int32()    { pass 2i32; };
+pub func:DECL_NOINLINE = int32()  { pass 4i32; };
+pub func:DECL_COMPTIME = int32()  { pass 8i32; };
+pub func:DECL_ASYNC = int32()     { pass 16i32; };
+pub func:DECL_VARIADIC = int32()  { pass 32i32; };
+
+pub func:decl_flags = int32(DeclNode:d) { pass d.a; };
+pub func:decl_name = int32(DeclNode:d)  { pass (d.payload => int32); };
+pub func:decl_has = bool(DeclNode:d, int32:bit) { pass ((d.a & bit) != 0i32); };
+pub func:decl_win_start = int32(DeclNode:d) { pass d.b; };
+pub func:decl_win_count = int32(DeclNode:d) { pass d.c; };
+
+func:d_at = int32(Ast->:ast, DeclNode:d, int32:i) {
+    pass (raw ast_id_at(ast, d.b, i));
+};
+
+// --- the item header ------------------------------------------------------------
+//
+// `struct`, `enum`, `trait` and `Type` share one layout, because they are the
+// same shape: a name, optional generics, a list of members, attributes, and at
+// most one kind-specific extra list.
+//
+//   [0] generic count  [1] member count  [2] attribute count  [3] extra count
+//   then generics, members, attributes, extras.
+//
+// `extras` is a trait's supertraits and is empty for the rest. A fourth list
+// rather than a single handle, because a supertrait clause is a LIST and a slot
+// holding only its start would lose the count -- the exact mistake this header
+// exists to prevent.
+func:ITEM_HDR = int32() { pass 4i32; };
+
+pub func:item_generic_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 0i32)); };
+pub func:item_member_count = int32(Ast->:ast, DeclNode:d)  { pass (raw d_at(ast, d, 1i32)); };
+pub func:item_attr_count = int32(Ast->:ast, DeclNode:d)    { pass (raw d_at(ast, d, 2i32)); };
+pub func:item_extra_count = int32(Ast->:ast, DeclNode:d)   { pass (raw d_at(ast, d, 3i32)); };
+
+pub func:item_generic = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:g = DeclId{ index: raw d_at(ast, d, (raw ITEM_HDR()) + i) }; pass g;
+};
+pub func:item_member = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw ITEM_HDR()) + (raw item_generic_count(ast, d));
+    DeclId:m = DeclId{ index: raw d_at(ast, d, base + i) }; pass m;
+};
+pub func:item_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw ITEM_HDR()) + (raw item_generic_count(ast, d))
+                 + (raw item_member_count(ast, d));
+    DeclId:a = DeclId{ index: raw d_at(ast, d, base + i) }; pass a;
+};
+// A trait's supertraits, joined by `&` -- the same symbol that joins generic
+// bounds and `dyn A & B`, so one operator means "and also this trait" wherever
+// it appears (D-029).
+pub func:item_extra = TypeId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw ITEM_HDR()) + (raw item_generic_count(ast, d))
+                 + (raw item_member_count(ast, d)) + (raw item_attr_count(ast, d));
+    TypeId:t = TypeId{ index: raw d_at(ast, d, base + i) }; pass t;
+};
+
+// --- FunctionDecl ---------------------------------------------------------------
+//
+//   [0] return TypeId   [1] body StmtId    [2] variadic DeclId
+//   [3] generic count   [4] param count    [5] contract count  [6] attr count
+//   then generics, params, contracts, attributes.
+func:FN_HDR = int32() { pass 7i32; };
+
+pub func:fn_return = TypeId(Ast->:ast, DeclNode:d) {
+    TypeId:t = TypeId{ index: raw d_at(ast, d, 0i32) }; pass t;
+};
+pub func:fn_body = StmtId(Ast->:ast, DeclNode:d) {
+    StmtId:s = StmtId{ index: raw d_at(ast, d, 1i32) }; pass s;
+};
+pub func:fn_variadic = DeclId(Ast->:ast, DeclNode:d) {
+    DeclId:v = DeclId{ index: raw d_at(ast, d, 2i32) }; pass v;
+};
+pub func:fn_generic_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 3i32)); };
+pub func:fn_param_count = int32(Ast->:ast, DeclNode:d)   { pass (raw d_at(ast, d, 4i32)); };
+pub func:fn_contract_count = int32(Ast->:ast, DeclNode:d){ pass (raw d_at(ast, d, 5i32)); };
+pub func:fn_attr_count = int32(Ast->:ast, DeclNode:d)    { pass (raw d_at(ast, d, 6i32)); };
+
+pub func:fn_generic = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:g = DeclId{ index: raw d_at(ast, d, (raw FN_HDR()) + i) }; pass g;
+};
+pub func:fn_param = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d));
+    DeclId:p = DeclId{ index: raw d_at(ast, d, base + i) }; pass p;
+};
+pub func:fn_contract = VerifyId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
+                 + (raw fn_param_count(ast, d));
+    VerifyId:c = VerifyId{ index: raw d_at(ast, d, base + i) }; pass c;
+};
+pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw FN_HDR()) + (raw fn_generic_count(ast, d))
+                 + (raw fn_param_count(ast, d)) + (raw fn_contract_count(ast, d));
+    DeclId:a = DeclId{ index: raw d_at(ast, d, base + i) }; pass a;
+};
+
+// --- ImplDecl ---------------------------------------------------------------------
+//
+//   [0] target TypeId   [1] trait TypeId (0 = inherent)
+//   [2] member count    [3] attribute count
+//   then members, attributes.
+//
+// SLOT 0 IS ALWAYS THE TYPE, with or without a trait (D-031). Trait-first
+// ordering was rejected for exactly this reason: it would make the one-segment
+// form `impl:Point` put a type in slot 1 while the two-segment form put a trait
+// there, so the first slot's meaning would change with arity.
+func:IMPL_HDR = int32() { pass 4i32; };
+
+pub func:impl_target = TypeId(Ast->:ast, DeclNode:d) {
+    TypeId:t = TypeId{ index: raw d_at(ast, d, 0i32) }; pass t;
+};
+pub func:impl_trait = TypeId(Ast->:ast, DeclNode:d) {
+    TypeId:t = TypeId{ index: raw d_at(ast, d, 1i32) }; pass t;
+};
+pub func:impl_member_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
+pub func:impl_attr_count = int32(Ast->:ast, DeclNode:d)   { pass (raw d_at(ast, d, 3i32)); };
+pub func:impl_member = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:m = DeclId{ index: raw d_at(ast, d, (raw IMPL_HDR()) + i) }; pass m;
+};
+
+// --- MacroDecl ----------------------------------------------------------------------
+//
+//   [0] body StmtId   [1] param count   [2] attribute count
+//   then parameter names (intern indices), then attributes.
+func:MACRO_HDR = int32() { pass 3i32; };
+
+pub func:macro_body = StmtId(Ast->:ast, DeclNode:d) {
+    StmtId:s = StmtId{ index: raw d_at(ast, d, 0i32) }; pass s;
+};
+pub func:macro_param_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
+pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) {
+    pass (raw d_at(ast, d, (raw MACRO_HDR()) + i));
+};
+
+// --- ImportDecl -----------------------------------------------------------------------
+//
+//   [0] alias intern (0 = none)   [1] path-segment count   [2] name count
+//   then path segments, then imported names.
+//
+// `payload` is the quoted path's intern index for a file import and 0 for a
+// logical one, which is what tells the two apart with no separate flag: a file
+// import has a path string and no segments, a logical one has segments and no
+// string.
+func:IMPORT_HDR = int32() { pass 3i32; };
+
+pub func:IMPORT_WILDCARD = int32() { pass 1i32; };
+pub func:IMPORT_SINGLE = int32()   { pass 2i32; };
+pub func:IMPORT_SELECTIVE = int32(){ pass 3i32; };
+pub func:IMPORT_NAMESPACE = int32(){ pass 4i32; };
+
+pub func:import_kind = int32(DeclNode:d) { pass d.a; };
+pub func:import_path = int32(DeclNode:d) { pass (d.payload => int32); };
+pub func:import_alias = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 0i32)); };
+pub func:import_segment_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
+pub func:import_name_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
+pub func:import_segment = int32(Ast->:ast, DeclNode:d, int32:i) {
+    pass (raw d_at(ast, d, (raw IMPORT_HDR()) + i));
+};
+pub func:import_name = int32(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw IMPORT_HDR()) + (raw import_segment_count(ast, d));
+    pass (raw d_at(ast, d, base + i));
+};
+
+// --- ExternFn -------------------------------------------------------------------------
+//
+//   [0] return TypeId   [1] failure-contract DeclId   [2] param count
+//   then params.
+func:EXTERN_HDR = int32() { pass 3i32; };
+
+pub func:externfn_return = TypeId(Ast->:ast, DeclNode:d) {
+    TypeId:t = TypeId{ index: raw d_at(ast, d, 0i32) }; pass t;
+};
+pub func:externfn_failure = DeclId(Ast->:ast, DeclNode:d) {
+    DeclId:f = DeclId{ index: raw d_at(ast, d, 1i32) }; pass f;
+};
+pub func:externfn_param_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
+pub func:externfn_param = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:p = DeclId{ index: raw d_at(ast, d, (raw EXTERN_HDR()) + i) }; pass p;
+};
+
+pub func:failson_predicate = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.a }; pass e; };
+// `with errno` is optional; without it a generic FFI error code is used (D-002).
+pub func:failson_uses_errno = bool(DeclNode:d) { pass (d.b != 0i32); };
+
+// --- RuleDecl --------------------------------------------------------------------------
+//
+//   [0] refinement count   [1] clause count
+//   then refined rule names (intern indices), then clause expressions.
+//
+// A `limit<Other>` clause REFINES another ruleset; the rest are predicates. They
+// are stored apart because they are different things, not two spellings of one.
+func:RULE_HDR = int32() { pass 2i32; };
+
+pub func:rule_subject = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:rule_refine_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 0i32)); };
+pub func:rule_clause_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
+pub func:rule_refine = int32(Ast->:ast, DeclNode:d, int32:i) {
+    pass (raw d_at(ast, d, (raw RULE_HDR()) + i));
+};
+pub func:rule_clause = ExprId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw RULE_HDR()) + (raw rule_refine_count(ast, d));
+    ExprId:e = ExprId{ index: raw d_at(ast, d, base + i) }; pass e;
+};
+
+// --- nodes that fit in three slots --------------------------------------------------------
+
+pub func:param_type = TypeId(DeclNode:d)  { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:param_limit = VerifyId(DeclNode:d) { VerifyId:v = VerifyId{ index: d.b }; pass v; };
+pub func:field_type = TypeId(DeclNode:d)  { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:global_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:global_init = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.b }; pass e; };
+pub func:global_quals = int32(DeclNode:d) { pass d.c; };
+pub func:assoc_default = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:variant_value = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.a }; pass e; };
+pub func:variant_payload_start = int32(DeclNode:d) { pass d.b; };
+pub func:variant_payload_count = int32(DeclNode:d) { pass d.c; };
+pub func:variadic_elem = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:extern_lib = int32(DeclNode:d) { pass (d.payload => int32); };
+
+// GenericParam: a = value type, b,c = bounds window, payload = name.
+//
+// The two kinds need no flag, and this is not a shortcut. A compile-time value
+// parameter ALWAYS has a type -- `<comptime int32:LEVEL>` cannot be written
+// without one -- and a type parameter NEVER has one, since its bounds are traits
+// and live in the bounds window. So a non-zero type slot is an exact
+// discriminator rather than a coincidence that usually holds.
+pub func:generic_is_value = bool(DeclNode:d) { pass (d.a != 0i32); };
+pub func:generic_value_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:generic_bound_start = int32(DeclNode:d) { pass d.b; };
+pub func:generic_bound_count = int32(DeclNode:d) { pass d.c; };
+
+// --- generics ---------------------------------------------------------------------------------
+//
+// AFTER the name, never before (D-030): `func:process<T: Renderable>`, matching
+// `struct:name = ` and every other declaration's shape. Chapter 06 of the draft
+// put them before the name and was the outlier.
+func:p_parse_generics = IdSpan(Parser->:p) {
+    int32:mark = raw ast_scratch_mark(p.ast);
+    if (!(relay p_at(p, TokenKind.OpLt))) {
+        pass (raw ast_scratch_commit(p.ast, mark));
+    }
+    drop p_advance(p);
+    while (true) {
+        if (relay p_at(p, TokenKind.OpGt)) { break; }
+        if (relay p_at(p, TokenKind.OpShr)) { break; }
+        if (relay p_at_end(p)) { break; }
+        Span:sp = relay p_span(p);
+        if (relay p_accept(p, TokenKind.KwComptime)) {
+            // `<comptime int32:LEVEL>` -- a compile-time VALUE parameter. Type
+            // first, name after the colon, the same order a variable declaration
+            // uses. A bare `<T>` introduces its name on the OTHER side of that
+            // colon, which is why the marker is needed to read them apart
+            // (D-064).
+            TypeId:vt = relay p_parse_type(p);
+            drop p_expect(p, TokenKind.PColon);
+            Token:vn = relay p_advance(p);
+            DeclId:g = relay ast_add_decl(p.ast, DeclKind.DeclGenericParam, sp,
+                                          vt.index, 0i32, 0i32, vn.payload);
+            drop ast_scratch_push(p.ast, g.index);
+        } else {
+            Token:gn = relay p_advance(p);
+            int32:bstart = 0i32;
+            int32:bcount = 0i32;
+            if (relay p_accept(p, TokenKind.PColon)) {
+                int32:bmark = raw ast_scratch_mark(p.ast);
+                TypeId:b1 = relay p_parse_type(p);
+                drop ast_scratch_push(p.ast, b1.index);
+                while (relay p_accept(p, TokenKind.OpAmp)) {
+                    TypeId:bn = relay p_parse_type(p);
+                    drop ast_scratch_push(p.ast, bn.index);
+                }
+                IdSpan:bw = raw ast_scratch_commit(p.ast, bmark);
+                bstart = bw.start;
+                bcount = bw.count;
+            }
+            DeclId:g = relay ast_add_decl(p.ast, DeclKind.DeclGenericParam, sp,
+                                          0i32, bstart, bcount, gn.payload);
+            drop ast_scratch_push(p.ast, g.index);
+        }
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    drop p_expect_gt(p);
+    pass (raw ast_scratch_commit(p.ast, mark));
+};
+
+// --- parameters ---------------------------------------------------------------------------------
+
+pub func:p_parse_param = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    int32:lim = 0i32;
+    if (relay p_at(p, TokenKind.KwLimit)) {
+        lim = (relay p_parse_limit(p)).index;
+    }
+    TypeId:ty = relay p_parse_type(p);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclParamDecl, sp,
+                             ty.index, lim, 0i32, name.payload));
+};
+
+// --- the entry point ---------------------------------------------------------------------------------
+
+pub func:p_parse_decl = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+
+    // Attributes come first and attach to whatever follows.
+    int32:amark = raw ast_scratch_mark(p.ast);
+    while (raw p_at_attribute(p)) {
+        DeclId:a = relay p_parse_attribute(p);
+        drop ast_scratch_push(p.ast, a.index);
+    }
+    IdSpan:attrs = raw ast_scratch_commit(p.ast, amark);
+
+    int32:flags = 0i32;
+    if (relay p_accept(p, TokenKind.KwPub)) { flags = flags | (raw DECL_PUB()); }
+    while (true) {
+        TokenKind:m = relay p_kind(p);
+        int32:bit = 0i32;
+        if (m == TokenKind.KwInline)   { bit = raw DECL_INLINE(); }
+        if (m == TokenKind.KwNoinline) { bit = raw DECL_NOINLINE(); }
+        if (m == TokenKind.KwComptime) { bit = raw DECL_COMPTIME(); }
+        if (m == TokenKind.KwAsync)    { bit = raw DECL_ASYNC(); }
+        if (bit == 0i32) { break; }
+        flags = flags | bit;
+        drop p_advance(p);
+    }
+
+    TokenKind:k = relay p_kind(p);
+
+    if (k == TokenKind.KwUse)    { pass (relay p_parse_import(p, sp)); }
+    if (k == TokenKind.KwMod)    { pass (relay p_parse_mod(p, sp, flags)); }
+    if (k == TokenKind.KwExtern) { pass (relay p_parse_extern(p, sp, flags)); }
+    if (k == TokenKind.KwFunc)   { pass (relay p_parse_func(p, sp, flags, attrs)); }
+    if (k == TokenKind.KwStruct) { pass (relay p_parse_record(p, sp, flags, attrs, true)); }
+    if (k == TokenKind.KwEnum)   { pass (relay p_parse_record(p, sp, flags, attrs, false)); }
+    if (k == TokenKind.KwTrait)  { pass (relay p_parse_trait(p, sp, flags, attrs)); }
+    if (k == TokenKind.KwImpl)   { pass (relay p_parse_impl(p, sp, flags, attrs)); }
+    if (k == TokenKind.KwType)   { pass (relay p_parse_namespace(p, sp, flags, attrs)); }
+    if (k == TokenKind.KwRules)  { pass (relay p_parse_rules(p, sp, flags)); }
+    if (k == TokenKind.KwMacro)  { pass (relay p_parse_macro(p, sp, flags, attrs)); }
+    if (k == TokenKind.KwAssoc)  { pass (relay p_parse_assoc(p, sp, flags)); }
+    // `opaque struct:Name;` is an `extern`-block item (D-066). Parsing it here
+    // too means a misplaced one gets "an opaque struct is only legal inside an
+    // extern block" from the semantic phase rather than "expected a declaration"
+    // from the parser. The parser never restricts (D-085).
+    if (k == TokenKind.KwOpaque) { pass (relay p_parse_opaque(p, sp, flags)); }
+
+    pass (relay p_parse_global(p, sp, flags));
+};
+
+func:p_parse_import = DeclId(Parser->:p, Span:sp) {
+    drop p_expect(p, TokenKind.KwUse);
+    int32:path = 0i32;
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, 0i32);   // [0] alias, filled in below
+    drop ast_scratch_push(p.ast, 0i32);   // [1] segment count
+    drop ast_scratch_push(p.ast, 0i32);   // [2] name count
+
+    int32:segments = 0i32;
+    if (relay p_at(p, TokenKind.StringLit)) {
+        // A file path: `use "path/module.npk".*;`
+        path = ((relay p_advance(p)).payload) => int32;
+    } else {
+        // A logical path: `use std.math.*;` -- kept as segments rather than one
+        // joined string, because joining would mean building and interning a
+        // name that appears nowhere in the source.
+        Token:s1 = relay p_advance(p);
+        drop ast_scratch_push(p.ast, s1.payload => int32);
+        segments = 1i32;
+        while (true) {
+            if (!(relay p_at(p, TokenKind.PDot))) { break; }
+            if ((relay p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
+            drop p_advance(p);
+            Token:sn = relay p_advance(p);
+            drop ast_scratch_push(p.ast, sn.payload => int32);
+            segments = segments + 1i32;
+        }
+    }
+
+    int32:kind = raw IMPORT_WILDCARD();
+    int32:alias = 0i32;
+    int32:names = 0i32;
+    if (relay p_accept(p, TokenKind.KwAs)) {
+        kind = raw IMPORT_NAMESPACE();
+        alias = ((relay p_advance(p)).payload) => int32;
+    } else {
+        if (relay p_accept(p, TokenKind.PDot)) {
+            if (relay p_accept(p, TokenKind.OpStar)) {
+                kind = raw IMPORT_WILDCARD();
+            } else {
+                if (relay p_accept(p, TokenKind.PLBrace)) {
+                    kind = raw IMPORT_SELECTIVE();
+                    while (!(relay p_at(p, TokenKind.PRBrace))) {
+                        if (relay p_at_end(p)) { break; }
+                        Token:n = relay p_advance(p);
+                        drop ast_scratch_push(p.ast, n.payload => int32);
+                        names = names + 1i32;
+                        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+                    }
+                    drop p_expect(p, TokenKind.PRBrace);
+                } else {
+                    kind = raw IMPORT_SINGLE();
+                    Token:n = relay p_advance(p);
+                    drop ast_scratch_push(p.ast, n.payload => int32);
+                    names = 1i32;
+                }
+            }
+        }
+    }
+    drop p_expect(p, TokenKind.PSemi);
+
+    drop ast_scratch_set(p.ast, mark, 0i32, alias);
+    drop ast_scratch_set(p.ast, mark, 1i32, segments);
+    drop ast_scratch_set(p.ast, mark, 2i32, names);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclImportDecl, sp,
+                             kind, w.start, w.count, path => int64));
+};
+
+// `mod name { … }` or `mod name;` -- a GROUPING, so no `=` and no bound value.
+func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) {
+    drop p_expect(p, TokenKind.KwMod);
+    Token:name = relay p_advance(p);
+    int32:mark = raw ast_scratch_mark(p.ast);
+    if (relay p_at(p, TokenKind.PLBrace)) {
+        drop p_advance(p);
+        while (true) {
+            if (relay p_at(p, TokenKind.PRBrace)) { break; }
+            if (relay p_at_end(p)) { break; }
+            int64:before = raw p_position(p);
+            DeclId:item = relay p_parse_decl(p);
+            drop ast_scratch_push(p.ast, item.index);
+            if ((raw p_position(p)) == before) { drop p_sync(p); }
+        }
+        drop p_expect(p, TokenKind.PRBrace);
+    } else {
+        // `mod network;` -- the body is in network.npk. Same node, empty member
+        // list; the module loader fills it (MODULE_REFERENCE section 1.1).
+        drop p_expect(p, TokenKind.PSemi);
+    }
+    IdSpan:members = raw ast_scratch_commit(p.ast, mark);
+    IdSpan:none = raw idspan_empty();
+    pass (relay p_finish_item(p, sp, DeclKind.DeclModuleDecl, flags,
+                              name.payload, none, members, none, none));
+};
+
+func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
+    drop p_expect(p, TokenKind.KwFunc);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    IdSpan:generics = relay p_parse_generics(p);
+
+    drop p_expect(p, TokenKind.OpAssign);
+    // The declared type is the SUCCESS type. `Result<T>` is implicit, and the
+    // wrapping is a semantic-phase concern -- the AST records what was written.
+    TypeId:ret = relay p_parse_type(p);
+
+    drop p_expect(p, TokenKind.PLParen);
+    int32:pmark = raw ast_scratch_mark(p.ast);
+    int32:variadic = 0i32;
+    while (true) {
+        if (relay p_at(p, TokenKind.PRParen)) { break; }
+        if (relay p_at_end(p)) { break; }
+        if (relay p_at(p, TokenKind.OpDotDotStar)) {
+            // `..*T[]:name` -- ONE variadic form, homogeneous and typed (D-070).
+            // The format-directed form went with `fmt` itself (D-053), so there
+            // is no second shape to tell apart from this one.
+            Span:vs = relay p_span(p);
+            drop p_advance(p);
+            TypeId:et = relay p_parse_type(p);
+            drop p_expect(p, TokenKind.PColon);
+            Token:vn = relay p_advance(p);
+            DeclId:v = relay ast_add_decl(p.ast, DeclKind.DeclVariadicSpec, vs,
+                                          et.index, 0i32, 0i32, vn.payload);
+            variadic = v.index;
+            break;
+        }
+        DeclId:prm = relay p_parse_param(p);
+        drop ast_scratch_push(p.ast, prm.index);
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
+    drop p_expect(p, TokenKind.PRParen);
+
+    IdSpan:contracts = relay p_parse_contracts(p);
+
+    int32:body = 0i32;
+    if (relay p_at(p, TokenKind.PLBrace)) {
+        // Absent in a trait declaration, which gives a signature and no body.
+        body = (relay p_parse_block(p)).index;
+    }
+    drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, ret.index);
+    drop ast_scratch_push(p.ast, body);
+    drop ast_scratch_push(p.ast, variadic);
+    drop ast_scratch_push(p.ast, generics.count);
+    drop ast_scratch_push(p.ast, params.count);
+    drop ast_scratch_push(p.ast, contracts.count);
+    drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_copy_window(p.ast, generics);
+    drop ast_copy_window(p.ast, params);
+    drop ast_copy_window(p.ast, contracts);
+    drop ast_copy_window(p.ast, attrs);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclFunctionDecl, sp,
+                             flags, w.start, w.count, name.payload));
+};
+
+// struct and enum: one shape, two member rules.
+func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
+                             bool:is_struct) {
+    drop p_advance(p);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    IdSpan:generics = relay p_parse_generics(p);
+    drop p_expect(p, TokenKind.OpAssign);
+    drop p_expect(p, TokenKind.PLBrace);
+
+    int32:imark = raw ast_scratch_mark(p.ast);
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        int64:before = raw p_position(p);
+        if (is_struct) {
+            DeclId:f = relay p_parse_field(p);
+            drop ast_scratch_push(p.ast, f.index);
+        } else {
+            DeclId:v = relay p_parse_variant(p);
+            drop ast_scratch_push(p.ast, v.index);
+        }
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    }
+    IdSpan:members = raw ast_scratch_commit(p.ast, imark);
+    drop p_expect(p, TokenKind.PRBrace);
+    drop p_expect(p, TokenKind.PSemi);
+
+    DeclKind:kind = DeclKind.DeclEnumDecl;
+    if (is_struct) { kind = DeclKind.DeclStructDecl; }
+    IdSpan:none = raw idspan_empty();
+    pass (relay p_finish_item(p, sp, kind, flags, name.payload,
+                              generics, members, attrs, none));
+};
+
+func:p_parse_field = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    TypeId:ty = relay p_parse_type(p);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclFieldDecl, sp,
+                             ty.index, 0i32, 0i32, name.payload));
+};
+
+func:p_parse_variant = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    Token:name = relay p_advance(p);
+    int32:value = 0i32;
+    int32:pstart = 0i32;
+    int32:pcount = 0i32;
+    if (relay p_accept(p, TokenKind.PLParen)) {
+        int32:mark = raw ast_scratch_mark(p.ast);
+        if (!(relay p_at(p, TokenKind.PRParen))) {
+            TypeId:t1 = relay p_parse_type(p);
+            drop ast_scratch_push(p.ast, t1.index);
+            while (relay p_accept(p, TokenKind.PComma)) {
+                TypeId:tn = relay p_parse_type(p);
+                drop ast_scratch_push(p.ast, tn.index);
+            }
+        }
+        drop p_expect(p, TokenKind.PRParen);
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+        pstart = w.start;
+        pcount = w.count;
+    } else {
+        if (relay p_accept(p, TokenKind.OpAssign)) {
+            value = (relay p_parse_expr(p)).index;
+        }
+    }
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclEnumVariant, sp,
+                             value, pstart, pcount, name.payload));
+};
+
+// `trait:Ordered = Equatable & { … };` -- supertraits sit before the body, joined
+// by `&`.
+func:p_parse_trait = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
+    drop p_expect(p, TokenKind.KwTrait);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    IdSpan:generics = relay p_parse_generics(p);
+    drop p_expect(p, TokenKind.OpAssign);
+
+    int32:smark = raw ast_scratch_mark(p.ast);
+    while (!(relay p_at(p, TokenKind.PLBrace))) {
+        if (relay p_at_end(p)) { break; }
+        TypeId:s = relay p_parse_type(p);
+        drop ast_scratch_push(p.ast, s.index);
+        if (!(relay p_accept(p, TokenKind.OpAmp))) { break; }
+    }
+    IdSpan:supers = raw ast_scratch_commit(p.ast, smark);
+
+    IdSpan:members = relay p_parse_item_block(p);
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay p_finish_item(p, sp, DeclKind.DeclTraitDecl, flags, name.payload,
+                              generics, members, attrs, supers));
+};
+
+// `impl:Point = { … };` / `impl:Message:Serializable = { … };`
+func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
+    drop p_expect(p, TokenKind.KwImpl);
+    drop p_expect(p, TokenKind.PColon);
+    TypeId:target = relay p_parse_type(p);
+    int32:trait_ty = 0i32;
+    if (relay p_accept(p, TokenKind.PColon)) {
+        trait_ty = (relay p_parse_type(p)).index;
+    }
+    drop p_expect(p, TokenKind.OpAssign);
+    IdSpan:members = relay p_parse_item_block(p);
+    drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, target.index);
+    drop ast_scratch_push(p.ast, trait_ty);
+    drop ast_scratch_push(p.ast, members.count);
+    drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_copy_window(p.ast, members);
+    drop ast_copy_window(p.ast, attrs);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclImplDecl, sp,
+                             flags, w.start, w.count, 0i64));
+};
+
+// `Type:Name = { … };` -- the NAMESPACE construct (D-028). Not an associated
+// type: that is `assoc`, precisely so this spelling means one thing.
+func:p_parse_namespace = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
+    drop p_expect(p, TokenKind.KwType);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.OpAssign);
+    IdSpan:members = relay p_parse_item_block(p);
+    drop p_expect(p, TokenKind.PSemi);
+    IdSpan:none = raw idspan_empty();
+    pass (relay p_finish_item(p, sp, DeclKind.DeclTypeDecl, flags, name.payload,
+                              none, members, attrs, none));
+};
+
+// `assoc:Item;` declares, `assoc:Item = int32;` binds (D-028).
+func:p_parse_assoc = DeclId(Parser->:p, Span:sp, int32:flags) {
+    drop p_expect(p, TokenKind.KwAssoc);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    int32:def = 0i32;
+    if (relay p_accept(p, TokenKind.OpAssign)) {
+        def = (relay p_parse_type(p)).index;
+    }
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclAssocTypeDecl, sp,
+                             def, 0i32, flags, name.payload));
+};
+
+// `opaque struct:OpHandle;` -- no fields, no value semantics (D-066).
+func:p_parse_opaque = DeclId(Parser->:p, Span:sp, int32:flags) {
+    drop p_expect(p, TokenKind.KwOpaque);
+    drop p_expect(p, TokenKind.KwStruct);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclOpaqueDecl, sp,
+                             flags, 0i32, 0i32, name.payload));
+};
+
+// `Rules<int32>:r = { $ > 0i32 };`
+// `Rules<int32>:r2 = { limit<r>, $ < 100i32 };`
+func:p_parse_rules = DeclId(Parser->:p, Span:sp, int32:flags) {
+    drop p_expect(p, TokenKind.KwRules);
+    drop p_expect(p, TokenKind.OpLt);
+    TypeId:subject = relay p_parse_type(p);
+    drop p_expect_gt(p);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.OpAssign);
+    drop p_expect(p, TokenKind.PLBrace);
+
+    // Refinements first, then predicates. Two lists in one window, and gathering
+    // them in this order is what keeps them contiguous -- `limit<Other>` clauses
+    // are conventionally written first, and one that appears later is still
+    // stored with its own kind rather than being mistaken for a predicate.
+    int32:rmark = raw ast_scratch_mark(p.ast);
+    int32:refines = 0i32;
+    int32:cmark = raw ast_scratch_mark(p.ast);
+    int32:clauses = 0i32;
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        if (relay p_at(p, TokenKind.KwLimit)) {
+            VerifyId:l = relay p_parse_limit(p);
+            VerifyNode:ln = relay ast_verify(p.ast, l);
+            drop ast_scratch_push(p.ast, raw limit_rule(ln));
+            refines = refines + 1i32;
+        } else {
+            break;
+        }
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        ExprId:c = relay p_parse_expr(p);
+        drop ast_scratch_push(p.ast, c.index);
+        clauses = clauses + 1i32;
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    IdSpan:body = raw ast_scratch_commit(p.ast, rmark);
+    drop p_expect(p, TokenKind.PRBrace);
+    drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, refines);
+    drop ast_scratch_push(p.ast, clauses);
+    drop ast_copy_window(p.ast, body);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclRuleDecl, sp,
+                             subject.index, w.start, w.count, name.payload));
+};
+
+// `macro:name = (params) { body };` (D-046). What expansion DOES with the body is
+// cycle 0.6; the declaration's shape is fixed here.
+func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
+    drop p_expect(p, TokenKind.KwMacro);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.OpAssign);
+    drop p_expect(p, TokenKind.PLParen);
+    int32:pmark = raw ast_scratch_mark(p.ast);
+    while (true) {
+        if (relay p_at(p, TokenKind.PRParen)) { break; }
+        if (relay p_at_end(p)) { break; }
+        Token:pn = relay p_advance(p);
+        drop ast_scratch_push(p.ast, pn.payload => int32);
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
+    drop p_expect(p, TokenKind.PRParen);
+    int32:body = (relay p_parse_block(p)).index;
+    drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, body);
+    drop ast_scratch_push(p.ast, params.count);
+    drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_copy_window(p.ast, params);
+    drop ast_copy_window(p.ast, attrs);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclMacroDecl, sp,
+                             flags, w.start, w.count, name.payload));
+};
+
+// `extern "libc" { … }` -- a GROUPING, like `mod`. Its items are `ExternFn`, not
+// ordinary functions, because each carries a mandatory failure contract (D-002).
+func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) {
+    drop p_expect(p, TokenKind.KwExtern);
+    int32:lib = 0i32;
+    if (relay p_at(p, TokenKind.StringLit)) {
+        lib = ((relay p_advance(p)).payload) => int32;
+    }
+    drop p_expect(p, TokenKind.PLBrace);
+    int32:mark = raw ast_scratch_mark(p.ast);
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        int64:before = raw p_position(p);
+        if (relay p_at(p, TokenKind.KwOpaque)) {
+            DeclId:o = relay p_parse_opaque(p, relay p_span(p), 0i32);
+            drop ast_scratch_push(p.ast, o.index);
+        } else {
+            DeclId:f = relay p_parse_extern_fn(p);
+            drop ast_scratch_push(p.ast, f.index);
+        }
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    }
+    drop p_expect(p, TokenKind.PRBrace);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclExternBlock, sp,
+                             flags, w.start, w.count, lib => int64));
+};
+
+func:p_parse_extern_fn = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    drop p_expect(p, TokenKind.KwFunc);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    drop p_expect(p, TokenKind.OpAssign);
+    TypeId:ret = relay p_parse_type(p);
+    drop p_expect(p, TokenKind.PLParen);
+    int32:pmark = raw ast_scratch_mark(p.ast);
+    int32:pcount = 0i32;
+    int32:flags = 0i32;
+    while (true) {
+        if (relay p_at(p, TokenKind.PRParen)) { break; }
+        if (relay p_at_end(p)) { break; }
+        if (relay p_accept(p, TokenKind.OpDotDotStar)) {
+            flags = flags | (raw DECL_VARIADIC());
+            break;
+        }
+        DeclId:prm = relay p_parse_param(p);
+        drop ast_scratch_push(p.ast, prm.index);
+        pcount = pcount + 1i32;
+        if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+    }
+    IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
+    drop p_expect(p, TokenKind.PRParen);
+
+    DeclId:failure = relay p_parse_failure(p);
+    drop p_expect(p, TokenKind.PSemi);
+
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, ret.index);
+    drop ast_scratch_push(p.ast, failure.index);
+    drop ast_scratch_push(p.ast, pcount);
+    drop ast_copy_window(p.ast, params);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclExternFn, sp,
+                             flags, w.start, w.count, name.payload));
+};
+
+// The failure contract is REQUIRED, and this is where D-002 is enforced: silence
+// must not become a silent `Ok`. `never fails` exists so that "this C function is
+// infallible" is a claim someone wrote down and a reviewer can audit, rather than
+// a default nobody chose.
+//
+// Refusing it HERE, in the grammar, is deliberate and does not contradict "the
+// parser never restricts" (D-085). D-085 is about constructs the backend cannot
+// yet lower. This is not one: an `extern` function without a contract is not a
+// construct at all, because the contract is part of its shape and there is no
+// node to build without one.
+func:p_parse_failure = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    if (relay p_accept(p, TokenKind.KwNever)) {
+        drop p_expect(p, TokenKind.KwFails);
+        pass (relay ast_add_decl(p.ast, DeclKind.DeclNeverFails, sp,
+                                 0i32, 0i32, 0i32, 0i64));
+    }
+    if (relay p_accept(p, TokenKind.KwFails)) {
+        drop p_expect(p, TokenKind.KwOn);
+        // Unparenthesised, matching `requires` / `ensures`.
+        ExprId:pred = relay p_parse_expr(p);
+        int32:errno = 0i32;
+        if (relay p_accept(p, TokenKind.KwWith)) {
+            drop p_advance(p);
+            errno = 1i32;
+        }
+        pass (relay ast_add_decl(p.ast, DeclKind.DeclFailsOn, sp,
+                                 pred.index, errno, 0i32, 0i64));
+    }
+    drop p_error(p, raw PARSE_EXTERN_NO_CONTRACT(),
+        "an `extern` function must state `fails on ...` or `never fails`; C has no universal failure convention, so it cannot be inferred");
+    pass (raw decl_none());
+};
+
+func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) {
+    int32:quals = 0i32;
+    while (true) {
+        int32:bit = raw p_qualifier_bit(relay p_kind(p));
+        if (bit == 0i32) { break; }
+        drop p_advance(p);
+        quals = quals | bit;
+    }
+    TypeId:ty = relay p_parse_type(p);
+    drop p_expect(p, TokenKind.PColon);
+    Token:name = relay p_advance(p);
+    int32:init = 0i32;
+    if (relay p_accept(p, TokenKind.OpAssign)) {
+        init = (relay p_parse_expr(p)).index;
+    }
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclGlobalDecl, sp,
+                             ty.index, init, quals, name.payload));
+};
+
+// --- shared helpers ----------------------------------------------------------------------------------
+
+func:p_parse_item_block = IdSpan(Parser->:p) {
+    drop p_expect(p, TokenKind.PLBrace);
+    int32:mark = raw ast_scratch_mark(p.ast);
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        int64:before = raw p_position(p);
+        DeclId:item = relay p_parse_decl(p);
+        drop ast_scratch_push(p.ast, item.index);
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    }
+    drop p_expect(p, TokenKind.PRBrace);
+    pass (raw ast_scratch_commit(p.ast, mark));
+};
+
+func:p_finish_item = DeclId(Parser->:p, Span:sp, DeclKind:kind, int32:flags,
+                            int64:name, IdSpan:generics, IdSpan:members,
+                            IdSpan:attrs, IdSpan:extras) {
+    int32:mark = raw ast_scratch_mark(p.ast);
+    drop ast_scratch_push(p.ast, generics.count);
+    drop ast_scratch_push(p.ast, members.count);
+    drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_scratch_push(p.ast, extras.count);
+    drop ast_copy_window(p.ast, generics);
+    drop ast_copy_window(p.ast, members);
+    drop ast_copy_window(p.ast, attrs);
+    drop ast_copy_window(p.ast, extras);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_decl(p.ast, kind, sp, flags, w.start, w.count, name));
+};
+
+// --- a whole file -------------------------------------------------------------------------------------
+
+// A source file parses to a ModuleDecl (AST_REFERENCE section 1), so the top
+// level is not a special case with a loop of its own -- it is a module whose name
+// is the reserved empty intern index.
+pub func:p_parse_module = DeclId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    int32:mark = raw ast_scratch_mark(p.ast);
+    while (!(relay p_at_end(p))) {
+        int64:before = raw p_position(p);
+        DeclId:item = relay p_parse_decl(p);
+        drop ast_scratch_push(p.ast, item.index);
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    }
+    IdSpan:members = raw ast_scratch_commit(p.ast, mark);
+    IdSpan:none = raw idspan_empty();
+    pass (relay p_finish_item(p, sp, DeclKind.DeclModuleDecl, 0i32, 0i64,
+                              none, members, none, none));
+};

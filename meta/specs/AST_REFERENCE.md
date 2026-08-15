@@ -117,6 +117,14 @@ FailureContract = FailsOn { predicate: Expr, source: ErrnoSource? }
 `never fails` is a required, greppable assertion rather than a default, so that
 "this C function is infallible" is a claim a reviewer can audit (D-002).
 
+**`FailsOn` and `NeverFails` are separate node kinds**, not one node with a flag,
+following `PickPattern` — whose six arms are six kinds. The difference is not
+cosmetic: "was a contract written, and which one" is then answerable from the
+node's kind, where a shared kind plus a boolean makes an unwritten contract and a
+`never fails` contract the same node until someone reads the right slot. D-002
+exists to make the infallibility claim explicit, and an encoding that can be
+misread by ignoring a field undoes it.
+
 ## 1.3 Trait items
 
 | Node | Fields |
@@ -144,7 +152,7 @@ struct and a nested namespace; `assoc` is not.
 | `ForStmt` | `label`, `binding: ParamDecl`, `iterable: Expr`, `invariants`, `body` |
 | `LoopStmt` | `label`, `start`, `limit`, `step`, `invariants`, `body` |
 | `TillStmt` | `label`, `limit`, `step`, `invariants`, `body` |
-| `WhenStmt` | `label`, `cond`, `body`, `then_block: BlockStmt?`, `end_block: BlockStmt?` |
+| `WhenStmt` | `label`, `cond`, `invariants`, `body`, `then_block: BlockStmt?`, `end_block: BlockStmt?` |
 | `BreakStmt` | `label: Ident?` |
 | `ContinueStmt` | `label: Ident?` |
 | `PassStmt` | `value: Expr?` |
@@ -170,6 +178,12 @@ struct and a nested namespace; `assoc` is not.
 - **`WhenStmt.then_block` runs when the body executed at least once, *including*
   after a `break`. `end_block` runs only when the condition was false initially**
   (D-027). Exactly one fires. `break` must lower to `then`, not `end`.
+- **`WhenStmt` carries `invariants` like every other loop.** This table omitted
+  them while `VERIFICATION_REFERENCE.md` §4 lists `when` among the constructs
+  that take an `invariant` clause — a straight contradiction, resolved in favour
+  of `VERIFICATION_REFERENCE`. `when` is a `while` that tracks how it terminated;
+  a loop form that could not state an invariant would be an exception to remember
+  for no reason anyone could give.
 - **`ProveStmt` is a compile-time proof obligation**, not a runtime assertion.
 - **`DeferStmt` does not run on a trap** (D-014) — a lowering property, but noted
   here because it is easy to assume otherwise.
@@ -364,6 +378,15 @@ are ordinary values referenced by `IdentifierExpr`.
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
 `const`, `fixed`, `borrow_imm`, `borrow_mut`. **`gc` does not exist** (D-003).
 
+**`NIL` is a type as well as a value**, and it is a `NamedType` like any other
+builtin — it needs no node of its own. `func:reset = NIL(Ast->:a)` declares the
+return type; `pass NIL;` yields the single value that inhabits it. This is not
+one word with two meanings: `NIL` is a type with exactly one inhabitant, so the
+type and the value are the same thing named once. It was missing from
+`LEXICAL_REFERENCE.md`'s `BuiltinType` production, which made the type parser
+reject a spelling the compiler's own sources use on nearly every mutating
+function.
+
 ### Types the parser must know as builtins
 
 Beyond the scalar families: `fd`, `pid`, `tid`, `uid`, `gid` (D-042); the bitflag
@@ -392,6 +415,12 @@ Attribute { name: Ident, args: Expr[] }      // #[align(16)], #[cfg(...)], #[der
 ```
 
 Attach to declarations. **`#[derive(…)]`**, not `@derive` (D-020).
+
+`Attribute` **is a node in the declaration array**, alongside `GenericParam`,
+`FieldDecl`, `VariadicSpec` and the failure contracts — the array is already
+where declaration sub-structures live, and an attribute is one. It had no kind at
+all until 0.2.5 needed to build one, because the kind table is generated from the
+node tables in §§1–5 and this section is neither one of those nor a table.
 
 `#[lexical_drop]` and `#[nll_drop]` are **removed** — they existed to force
 deterministic RAII "bypassing standard GC", which is now the only behaviour

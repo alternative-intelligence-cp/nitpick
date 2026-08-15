@@ -154,7 +154,7 @@ func:sum_range = int32(int32:n)
     while (i < n) invariant total >= 0i32, i >= 0i32 {
         total = total + 1i32;
         i = i + 1i32;
-    };
+    }
     pass(total);
 };
 ```
