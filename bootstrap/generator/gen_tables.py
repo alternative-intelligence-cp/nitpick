@@ -38,6 +38,17 @@ KEYWORD_GROUPS = [
     ("type keywords",       "TypeKeyword"),
     ("builtin types",       "BuiltinType"),
     ("builtin helpers",     "BuiltinHelper"),
+    # BooleanLiteral and SentinelLiteral are defined in section 6.1 rather than
+    # in the keyword productions, so a scan of section 4 alone misses them --
+    # and `true` then lexes as an ORDINARY IDENTIFIER. They are spelled like
+    # keywords and must be recognised like keywords.
+    #
+    # `unknown` is deliberately NOT here: the spec says it is a compiler-assigned
+    # taint on Result.value, not something the programmer writes (TYPE_REFERENCE
+    # section 27). `ERR` is, because it is the tbb sentinel and appears as a
+    # pick match label (D-008).
+    ("boolean literals",    "BooleanLiteral"),
+    ("sentinel literals",   "SentinelLiteral"),
 ]
 
 # Kinds that are not grammar terminals: structure, and the literal forms whose

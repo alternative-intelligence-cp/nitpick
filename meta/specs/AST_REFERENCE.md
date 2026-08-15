@@ -242,6 +242,15 @@ a `PickArm` body. `give` yields a value when `pick` is used as an expression.
 | `RangeExpr` | `lo`, `hi`, `inclusive` | `..` / `...` |
 | `SpreadExpr` | `operand` | **`..^`** — expands a collection at a call site (D-026) |
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
+| `MoveExpr` | `place` | **`move(place)`** — transfers ownership and invalidates the source (D-065) |
+
+> **`MoveExpr` was missing.** D-065 settled `move(place)` as a keyword operator
+> with a parenthesised operand — the same shape `comptime(expr)` has — and it is
+> in `LEXICAL_REFERENCE.md`'s `ControlFlow` keywords and specified in
+> `MEMORY_REFERENCE.md` §2.3. It simply never got a node here, which the parser
+> found by needing one. Its operand is a **place**, not a value, which is why it
+> is not a `UnaryExpr`: no other unary operator constrains what it may be applied
+> to.
 
 ## 3.3 Access and calls
 
