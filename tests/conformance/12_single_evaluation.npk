@@ -1,0 +1,38 @@
+// Subset 1 — an operand is evaluated exactly once.
+//
+// Regression guard. The emitter's `!` computed its operand into a value and then
+// re-derived the truth value from the SOURCE expression, emitting the operand a
+// second time. Harmless for a variable; wrong for a call. `!(raw split(x))` ran
+// the split, ran it again, and the second call correctly refused -- so the
+// negation returned the opposite of the truth, and the caller saw a working
+// function fail.
+//
+// Bugs of this shape are invisible without side effects, which is why this test
+// uses one deliberately rather than asserting on a value.
+
+struct:Counter = { int32:n; };
+
+func:bump = bool(Counter->:c) {
+    c.n = c.n + 1i32;
+    pass true;
+};
+
+func:main = int32() {
+    Counter:a = Counter{ n: 0i32 };
+    if (!(raw bump(@a))) { exit 90i32; }
+    if (a.n != 1i32) { exit 91i32; }
+
+    // The same guarantee under the other unary operators.
+    Counter:b = Counter{ n: 0i32 };
+    drop bump(@b);
+    if (b.n != 1i32) { exit 92i32; }
+
+    // And through a cast, which also wraps its operand.
+    Counter:c = Counter{ n: 0i32 };
+    int32:widened = (raw bump(@c)) => int32;
+    if (c.n != 1i32) { exit 93i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

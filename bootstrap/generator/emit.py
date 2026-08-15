@@ -653,7 +653,14 @@ class Emitter:
             if e.op == "-":
                 self.w("%s = sub %s 0, %s" % (r, v.ty, v.ref))
             elif e.op == "!":
-                c = self.cond(e.operand)
+                # Derive the truth value from the operand ALREADY evaluated into
+                # `v`. Calling self.cond(e.operand) here would emit the operand a
+                # SECOND time -- harmless for a variable, wrong for a call:
+                # `!(raw split(x))` ran the split twice, and the second call
+                # correctly refused, so the negation returned the opposite of
+                # the truth.
+                c = self.tmp()
+                self.w("%s = icmp ne %s %s, 0" % (c, v.ty, v.ref))
                 x = self.tmp()
                 self.w("%s = xor i1 %s, true" % (x, c))
                 self.w("%s = zext i1 %s to i8" % (r, x))

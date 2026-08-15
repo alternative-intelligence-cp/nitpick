@@ -15,6 +15,7 @@ use "keywords.npk".*;
 use "num_width.npk".*;
 use "numeric.npk".*;
 use "escapes.npk".*;
+use "operators.npk".*;
 use "diagnostics.npk".*;
 
 pub struct:Lexer = {
@@ -493,8 +494,25 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                              raw lexer_span_from(lx, start, line, col), payload));
     }
 
-    // Literals are 0.1.3 and 0.1.4; operators are 0.1.5. Until then an
-    // unhandled byte is an Error token with a diagnostic -- never silently
+    // --- operators and punctuation -------------------------------------------
+    // Longest match first, from the generated table: `<=>` beats `<=`, `..*`
+    // beats `..`, `=>!` beats `=>`, `!!!` beats `!`.
+    //
+    // `>>` is emitted as ONE token here. Splitting it into two `>` belongs to
+    // the parser, which is the only thing that knows whether it is inside a
+    // type-argument list -- see tokenlist_split_shr in token.npk.
+    OpMatch:om = raw op_match(lx.text, lx.pos);
+    if (om.found) {
+        int64:k = 0i64;
+        while (k < om.length) {
+            drop lexer_advance(lx);
+            k = k + 1i64;
+        }
+        pass (raw token_make(om.kind,
+                             raw lexer_span_from(lx, start, line, col), 0i64));
+    }
+
+    // An unhandled byte is an Error token WITH a diagnostic -- never silently
     // skipped, which would make a lexer bug look like a parser bug.
     drop lexer_advance(lx);
     Span:sp = raw lexer_span_from(lx, start, line, col);

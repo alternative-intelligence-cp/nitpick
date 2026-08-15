@@ -66,7 +66,7 @@ pub func:tokenlist_init = TokenList() {
     pass l;
 };
 
-func:tokenlist_grow = NIL(TokenList->:l) {
+pub func:tokenlist_grow = NIL(TokenList->:l) {
     int64:newcap = l.cap * 2i64;
     wild int8->:bigger = ralloc(l.items => wild int8->,
                                 newcap * #size_of<Token>());
@@ -98,11 +98,51 @@ pub func:tokenlist_at = Token(TokenList->:l, int64:i) {
     pass l.items[i];
 };
 
-// The last token, which a lexer needs when deciding whether `!` is leading or
-// trailing (D-046) and whether `>>` sits inside a type-argument list (D-064).
 pub func:tokenlist_last = Token(TokenList->:l) {
     if (l.count == 0i64) {
         fail 4i32;
     }
     pass l.items[l.count - 1i64];
+};
+
+// Split a `>>` at `i` into two `>` tokens.
+//
+// LEXICAL_REFERENCE 5.2 requires `>>` to split "when the parser is in a
+// type-argument context" -- and that context is the PARSER'S knowledge, not the
+// lexer's. A type-argument list is opened by a type position or by `::<`
+// (D-064), and a type position is not lexically detectable: `Handle<Node<int64>>`
+// is indistinguishable from a chain of comparisons until something knows it is
+// reading a type.
+//
+// So the lexer emits `>>` whole and the parser asks for the split when it needs
+// a `>`. That keeps the lexer context-free -- no feedback channel, no lookahead
+// heuristic, no speculative parse -- which is what D-064 bought by confining
+// type-argument context to two precisely delimited places.
+pub func:tokenlist_split_shr = bool(TokenList->:l, int64:i) {
+    if (i < 0i64) { pass false; }
+    if (i >= l.count) { pass false; }
+    if (l.items[i].kind != TokenKind.OpShr) { pass false; }
+
+    if (l.count >= l.cap) {
+        drop tokenlist_grow(l);
+    }
+
+    Token:orig = l.items[i];
+
+    // Shift the tail up by one to make room for the second `>`.
+    int64:j = l.count;
+    while (j > i) {
+        l.items[j] = l.items[j - 1i64];
+        j = j - 1i64;
+    }
+    l.count = l.count + 1i64;
+
+    // Two one-byte spans, so a diagnostic can point at either half.
+    Span:a = raw span_make(orig.span.file, orig.span.offset, orig.span.line,
+                           orig.span.col, 1i32);
+    Span:b = raw span_make(orig.span.file, orig.span.offset + 1i32,
+                           orig.span.line, orig.span.col + 1i32, 1i32);
+    l.items[i] = raw token_make(TokenKind.OpGt, a, 0i64);
+    l.items[i + 1i64] = raw token_make(TokenKind.OpGt, b, 0i64);
+    pass true;
 };

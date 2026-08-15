@@ -1,0 +1,100 @@
+// Operators, and the three interaction rules (cycle 0.1.5).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/operators.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/lexer.npk".*;
+
+func:kind_at = TokenKind(TokenList->:ts, int64:i) {
+    Token:t = relay tokenlist_at(ts, i);
+    pass t.kind;
+};
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:dg = raw diaglist_init();
+
+    // --- longest match wins -------------------------------------------------
+    // This is the whole content of the table. Shortest-first would silently
+    // produce a different program: `<=>` would become `<=` then `>`.
+    TokenList:a = raw lex_all(0i32, "<=> <= < =>! => == = ..* ..^ ... ..", @it, @dg);
+    if ((raw kind_at(@a, 0i64))  != TokenKind.OpSpaceship)        { exit 10i32; }
+    if ((raw kind_at(@a, 1i64))  != TokenKind.OpLtEq)             { exit 11i32; }
+    if ((raw kind_at(@a, 2i64))  != TokenKind.OpLt)               { exit 12i32; }
+    if ((raw kind_at(@a, 3i64))  != TokenKind.OpFatArrowUnchecked){ exit 13i32; }
+    if ((raw kind_at(@a, 4i64))  != TokenKind.OpFatArrow)         { exit 14i32; }
+    if ((raw kind_at(@a, 5i64))  != TokenKind.OpEqEq)             { exit 15i32; }
+    if ((raw kind_at(@a, 6i64))  != TokenKind.OpAssign)           { exit 16i32; }
+    if ((raw kind_at(@a, 7i64))  != TokenKind.OpDotDotStar)       { exit 17i32; }
+    if ((raw kind_at(@a, 8i64))  != TokenKind.OpDotDotCaret)      { exit 18i32; }
+    if ((raw kind_at(@a, 9i64))  != TokenKind.OpDotDotDot)        { exit 19i32; }
+    if ((raw kind_at(@a, 10i64)) != TokenKind.OpDotDot)           { exit 20i32; }
+
+    // --- positional `!` (D-046) ---------------------------------------------
+    // Leading is negation; trailing or repeated is unchecked or emphatic. A
+    // reader can tell which from the token alone, and so can the lexer -- it
+    // falls out of longest-match rather than needing a rule of its own.
+    TokenList:b = raw lex_all(0i32, "!!! != ! ?! _! =>!", @it, @dg);
+    if ((raw kind_at(@b, 0i64)) != TokenKind.OpBangBangBang)      { exit 30i32; }
+    if ((raw kind_at(@b, 1i64)) != TokenKind.OpNotEq)             { exit 31i32; }
+    if ((raw kind_at(@b, 2i64)) != TokenKind.OpBang)              { exit 32i32; }
+    if ((raw kind_at(@b, 3i64)) != TokenKind.OpQuestionBang)      { exit 33i32; }
+    if ((raw kind_at(@b, 4i64)) != TokenKind.OpUnderBang)         { exit 34i32; }
+    if ((raw kind_at(@b, 5i64)) != TokenKind.OpFatArrowUnchecked) { exit 35i32; }
+
+    // `!!` is NOT an error and NOT an operator. The tier marker was removed
+    // when D-001 removed sys!!! and asm!!!, so `!!x` is simply two negations.
+    TokenList:c = raw lex_all(0i32, "!!x", @it, @dg);
+    if ((raw kind_at(@c, 0i64)) != TokenKind.OpBang)              { exit 36i32; }
+    if ((raw kind_at(@c, 1i64)) != TokenKind.OpBang)              { exit 37i32; }
+    if ((raw kind_at(@c, 2i64)) != TokenKind.Ident)               { exit 38i32; }
+
+    // --- the `#` sigil (D-020) ----------------------------------------------
+    // Not a value operator, and no longer the pin operator -- pinning is
+    // obsolete without a collector.
+    TokenList:d = raw lex_all(0i32, "#[derive] #size_of", @it, @dg);
+    if ((raw kind_at(@d, 0i64)) != TokenKind.Hash)                { exit 40i32; }
+    if ((raw kind_at(@d, 1i64)) != TokenKind.PLBracket)           { exit 41i32; }
+    if ((raw kind_at(@d, 3i64)) != TokenKind.PRBracket)           { exit 42i32; }
+    if ((raw kind_at(@d, 4i64)) != TokenKind.Hash)                { exit 43i32; }
+    if ((raw kind_at(@d, 5i64)) != TokenKind.Ident)               { exit 44i32; }
+
+    // --- `>>` is ONE token; the parser splits it ----------------------------
+    // A type position is not lexically detectable, so the lexer cannot know it
+    // is inside a type-argument list. It emits `>>` whole and stays
+    // context-free.
+    TokenList:e = raw lex_all(0i32, "x >> 2i32", @it, @dg);
+    if ((raw kind_at(@e, 1i64)) != TokenKind.OpShr)               { exit 50i32; }
+    if (raw tokenlist_count(@e) != 4i64)                          { exit 51i32; }
+
+    TokenList:f = raw lex_all(0i32, "a >> b", @it, @dg);
+    if (raw tokenlist_count(@f) != 4i64)                          { exit 52i32; }
+    if (!(raw tokenlist_split_shr(@f, 1i64)))                     { exit 53i32; }
+    if (raw tokenlist_count(@f) != 5i64)                          { exit 54i32; }
+    if ((raw kind_at(@f, 1i64)) != TokenKind.OpGt)                { exit 55i32; }
+    if ((raw kind_at(@f, 2i64)) != TokenKind.OpGt)                { exit 56i32; }
+    if ((raw kind_at(@f, 3i64)) != TokenKind.Ident)               { exit 57i32; }
+
+    // Each half gets its own one-byte span, so a diagnostic can point at either.
+    Token:g1 = raw tokenlist_at(@f, 1i64);
+    Token:g2 = raw tokenlist_at(@f, 2i64);
+    if (g1.span.len != 1i32)                                      { exit 58i32; }
+    if (g2.span.col != (g1.span.col + 1i32))                      { exit 59i32; }
+
+    // Splitting something that is not a `>>` must refuse rather than corrupt.
+    if (raw tokenlist_split_shr(@f, 0i64))                        { exit 60i32; }
+
+    // --- the range and spread family ----------------------------------------
+    // One family, one dot prefix (LEXICAL_REFERENCE 5.1). `..*` collects at a
+    // declaration; `..^` expands at a call site.
+    if (raw diaglist_count(@dg) != 0i64)                          { exit 70i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
