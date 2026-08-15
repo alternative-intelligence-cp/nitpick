@@ -184,6 +184,31 @@ interior:                                 ; preds = %check
   ret { { ptr, i64 }, i32 } %q1
 }
 
+; Can this path be opened for reading?
+;
+; Ambiguity-is-an-error (BUILD_REFERENCE section 3) means the resolver must probe
+; EVERY dependency root before deciding, not stop at the first hit -- a resolver
+; that returns early cannot report the second candidate. Probing by full read
+; would be O(file size) per root, and most probes miss.
+;
+; It tests READABILITY rather than existence, which is the question actually
+; being asked: a file that exists and cannot be opened is not a candidate.
+define i8 @npk_path_exists({ ptr, i64 } %path) {
+entry:
+  %pp = extractvalue { ptr, i64 } %path, 0
+  %ppi = ptrtoint ptr %pp to i64
+  %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %fd, 0
+  br i1 %bad, label %no, label %yes
+
+yes:
+  %cr = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  ret i8 1
+
+no:
+  ret i8 0
+}
+
 define { { ptr, i64, i64 }, i32 } @npk_read_file({ ptr, i64 } %path) {
 entry:
   %pp = extractvalue { ptr, i64 } %path, 0

@@ -78,6 +78,7 @@ BUILTINS = {
     "read_stdin":    (T.STRING, True),
     "to_cstring":    (T.CSTRING, True),
     "read_file":     (T.STRING, True),
+    "path_exists":   (T.BOOL, False),
 }
 
 

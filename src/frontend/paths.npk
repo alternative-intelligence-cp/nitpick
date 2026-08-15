@@ -1,0 +1,172 @@
+// Path manipulation.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.3.2.
+//
+// Byte-level and deliberately small: enough to turn a `use` path into a file on
+// disk, and nothing more. There is no `Path` type here — `PATH_REFERENCE` and
+// D-078's `Path` are a later cycle's concern, and inventing half of one now would
+// leave two of them to reconcile.
+
+use "intern.npk".*;
+
+func:SLASH = uint8() { pass 47u8; };   // '/'
+func:DOT = uint8()   { pass 46u8; };   // '.'
+
+pub func:path_is_absolute = bool(string:p) {
+    if (p.len == 0i64) { pass false; }
+    pass (p.ptr[0i64] == ((raw SLASH()) => int8));
+};
+
+// `./x` and `../x` — the forms that resolve against the IMPORTING FILE's
+// directory rather than against a dependency root (BUILD_REFERENCE section 3).
+// The classification is by FIRST CHARACTER and there is no fallback between
+// classes: a `./` path that does not exist is an error, never a retry.
+pub func:path_is_relative = bool(string:p) {
+    if (p.len < 2i64) { pass false; }
+    if (p.ptr[0i64] != ((raw DOT()) => int8)) { pass false; }
+    if (p.ptr[1i64] == ((raw SLASH()) => int8)) { pass true; }
+    if (p.len < 3i64) { pass false; }
+    if (p.ptr[1i64] != ((raw DOT()) => int8)) { pass false; }
+    pass (p.ptr[2i64] == ((raw SLASH()) => int8));
+};
+
+// Everything before the last `/`. A path with no `/` has directory ".".
+pub func:path_dirname = string(string:p) {
+    int64:i = p.len;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (p.ptr[i] == ((raw SLASH()) => int8)) {
+            if (i == 0i64) {
+                pass "/";
+            }
+            pass (relay string_slice(p, 0i64, i));
+        }
+    }
+    pass ".";
+};
+
+pub func:path_join = string(string:dir, string:rest) {
+    if (dir.len == 0i64) { pass rest; }
+    if (rest.len == 0i64) { pass dir; }
+    if (raw path_is_absolute(rest)) { pass rest; }
+    string:withslash = relay string_concat(dir, "/");
+    pass (relay string_concat(withslash, rest));
+};
+
+// Collapse `.` and `..` segments and duplicate slashes.
+//
+// THIS IS WHAT MAKES ONE FILE ONE FILE ID. `./a/../b.npk` and `b.npk` name the
+// same file, and a source manager that stored both would load the module twice
+// — declaring every symbol in it twice, so 0.3.1's duplicate diagnostic fires on
+// a file the reader never edited.
+//
+// A leading `..` that cannot be cancelled is KEPT: `../x` has no directory above
+// it to fold into, and dropping it would silently change which file is meant.
+pub func:path_normalise = string(string:p) {
+    if (p.len == 0i64) { pass p; }
+
+    bool:absolute = raw path_is_absolute(p);
+    wild int8->:buf = alloc(p.len + 2i64);
+    // Segment starts, so a `..` can truncate back to the previous one.
+    wild int8->:raw_starts = alloc((p.len + 2i64) * 8i64);
+    wild int64->:starts = raw_starts => wild int64->;
+
+    int64:out = 0i64;
+    int64:nseg = 0i64;
+    int64:i = 0i64;
+
+    while (i <= p.len) {
+        // Scan one segment, ending at a `/` or at the end of the path.
+        int64:seg_start = i;
+        while (i < p.len) {
+            if (p.ptr[i] == ((raw SLASH()) => int8)) { break; }
+            i = i + 1i64;
+        }
+        int64:seg_len = i - seg_start;
+
+        bool:is_dot = false;
+        bool:is_dotdot = false;
+        if (seg_len == 1i64) {
+            if (p.ptr[seg_start] == ((raw DOT()) => int8)) { is_dot = true; }
+        }
+        if (seg_len == 2i64) {
+            if (p.ptr[seg_start] == ((raw DOT()) => int8)) {
+                if (p.ptr[seg_start + 1i64] == ((raw DOT()) => int8)) {
+                    is_dotdot = true;
+                }
+            }
+        }
+
+        if (seg_len == 0i64) {
+            // An empty segment is a duplicate or trailing slash. Skipped.
+        } else {
+        if (is_dot) {
+            // `.` is the current directory and contributes nothing.
+        } else {
+        if (is_dotdot) {
+            bool:can_pop = false;
+            if (nseg > 0i64) {
+                int64:last = starts[nseg - 1i64];
+                // Only pop a real segment. Popping a `..` would turn `../../x`
+                // into `../x`, which names a different file.
+                bool:last_is_dotdot = false;
+                if ((out - last) == 3i64) {
+                    if (buf[last] == ((raw DOT()) => int8)) {
+                        if (buf[last + 1i64] == ((raw DOT()) => int8)) {
+                            last_is_dotdot = true;
+                        }
+                    }
+                }
+                if (!last_is_dotdot) { can_pop = true; }
+            }
+            if (can_pop) {
+                out = starts[nseg - 1i64];
+                nseg = nseg - 1i64;
+            } else {
+                if (absolute) {
+                    // `/..` is `/`. There is nothing above the root, and keeping
+                    // the `..` would make an absolute path escape it.
+                } else {
+                    starts[nseg] = out;
+                    nseg = nseg + 1i64;
+                    buf[out] = (raw DOT()) => int8;
+                    buf[out + 1i64] = (raw DOT()) => int8;
+                    buf[out + 2i64] = (raw SLASH()) => int8;
+                    out = out + 3i64;
+                }
+            }
+        } else {
+            starts[nseg] = out;
+            nseg = nseg + 1i64;
+            int64:k = 0i64;
+            while (k < seg_len) {
+                buf[out + k] = p.ptr[seg_start + k];
+                k = k + 1i64;
+            }
+            out = out + seg_len;
+            buf[out] = (raw SLASH()) => int8;
+            out = out + 1i64;
+        } } }
+
+        i = i + 1i64;
+    }
+
+    // Drop the trailing separator the loop always appends.
+    if (out > 0i64) { out = out - 1i64; }
+
+    string:body = relay string_from_bytes(buf, out);
+    if (absolute) {
+        pass (relay string_concat("/", body));
+    }
+    if (out == 0i64) {
+        // Everything cancelled: `a/..` is the current directory.
+        pass ".";
+    }
+    pass body;
+};
+
+// Resolve `rest` against the directory holding `from`, normalised.
+pub func:path_relative_to = string(string:from, string:rest) {
+    string:dir = relay path_dirname(from);
+    pass (relay path_normalise(relay path_join(dir, rest)));
+};

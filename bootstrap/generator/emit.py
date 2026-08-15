@@ -42,6 +42,7 @@ RUNTIME_ARGS = {
     "read_stdin":    [],
     "to_cstring":    ["{ ptr, i64, i64 }"],
     "read_file":     ["{ ptr, i64 }"],
+    "path_exists":   ["{ ptr, i64 }"],
 }
 
 

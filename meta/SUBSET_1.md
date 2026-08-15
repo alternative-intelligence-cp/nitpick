@@ -172,6 +172,7 @@ IR**, which is what D-015 already specifies for the first rung:
 | `read_stdin` | the read(2) loop, growing until EOF — 0.2.7 |
 | `to_cstring` | copies and NUL-terminates, and **fails on an interior NUL** (D-049) — 0.3.0 |
 | `read_file` | `openat`/`read`/`close`, returning the **positive errno** on failure so ENOENT is distinguishable from EACCES — 0.3.0 |
+| `path_exists` | `openat`/`close`, testing READABILITY. Ambiguity-is-an-error means probing every root before deciding, and probing by full read would be O(file) per root — 0.3.2 |
 | `exit` | raw syscall |
 | `memcpy` / `memset` | the symbols LLVM emits calls to |
 | `string_concat`, `int_to_string` | enough to build a diagnostic message |
