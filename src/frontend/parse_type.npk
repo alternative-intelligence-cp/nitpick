@@ -27,6 +27,7 @@ use "diagnostics.npk".*;
 use "parse_codes.npk".*;
 use "parser.npk".*;
 use "token_name.npk".*;
+use "parse_expr.npk".*;
 
 // --- named accessors ---------------------------------------------------------
 //
@@ -41,7 +42,14 @@ pub func:type_pointee = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a 
 pub func:type_inner = TypeId(TypeNode:t)        { TypeId:i = TypeId{ index: t.a }; pass i; };
 pub func:type_element = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
 pub func:type_array_size = ExprId(TypeNode:t)   { ExprId:i = ExprId{ index: t.b }; pass i; };
+// FuncType: a,b = the parameter-type window, c = the return type.
 pub func:type_return = TypeId(TypeNode:t)       { TypeId:i = TypeId{ index: t.c }; pass i; };
+pub func:type_param_start = int32(TypeNode:t)   { pass t.a; };
+pub func:type_param_count = int32(TypeNode:t)   { pass t.b; };
+pub func:type_param_at = TypeId(Ast->:ast, TypeNode:t, int32:i) {
+    TypeId:p = TypeId{ index: raw ast_id_at(ast, t.a, i) };
+    pass p;
+};
 
 // `T[]` versus `T[N]`: an absent size is the slice.
 pub func:type_is_slice = bool(TypeNode:t) {
@@ -93,6 +101,47 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         IdSpan:w = raw ast_scratch_commit(p.ast, mark);
         pass (relay ast_add_type(p.ast, TypeKind.TypeDynType, sp,
                                  w.start, w.count, 0i32, 0i64));
+    }
+
+    // `cstring` and `any` are BUILTIN TYPE KEYWORDS with nodes of their own, so
+    // they must be taken before the named-type path folds every keyword into a
+    // NamedType. Both were unreachable until 0.2.8 for exactly that reason.
+    if (k == TokenKind.KwCstring) {
+        drop p_advance(p);
+        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeCStringType,
+                                                     sp, 0i32, 0i32, 0i32, 0i64)));
+    }
+    if (k == TokenKind.KwAny) {
+        drop p_advance(p);
+        // `any` is legal ONLY under `->` (TYPE_REFERENCE section 27). That is a
+        // type-checker rule, not a grammar one: bare `any` parses here and is
+        // refused there, with the message the spec already writes. Enforcing it
+        // in the parser would report "expected `->`" and name neither the type
+        // nor the rule (D-085).
+        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeAnyType,
+                                                     sp, 0i32, 0i32, 0i32, 0i64)));
+    }
+
+    // `func RetType(ParamTypes)` -- a function type (D-087). The same three parts
+    // in the same order as the declaration it is the type of, minus the name:
+    // there is nothing for a name to bind to in a type.
+    if (k == TokenKind.KwFunc) {
+        drop p_advance(p);
+        TypeId:ret = relay p_parse_type(p);
+        drop p_expect(p, TokenKind.PLParen);
+        int32:mark = raw ast_scratch_mark(p.ast);
+        while (true) {
+            if (relay p_at(p, TokenKind.PRParen)) { break; }
+            if (relay p_at_end(p)) { break; }
+            TypeId:pt = relay p_parse_type(p);
+            drop ast_scratch_push(p.ast, pt.index);
+            if (!(relay p_accept(p, TokenKind.PComma))) { break; }
+        }
+        drop p_expect(p, TokenKind.PRParen);
+        IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+        pass (relay p_suffixes(p, relay ast_add_type(p.ast, TypeKind.TypeFuncType,
+                                                     sp, w.start, w.count,
+                                                     ret.index, 0i64)));
     }
 
     if (k == TokenKind.KwSelf) {
@@ -162,15 +211,17 @@ pub func:p_suffixes = TypeId(Parser->:p, TypeId:base) {
                 if (relay p_at(p, TokenKind.PLBracket)) {
                     drop p_advance(p);
                     // An absent size is a SLICE; a present one is a fixed array.
-                    // Size expressions arrive with 0.2.3; until then only the
-                    // empty form and a bare integer are recognised.
+                    //
+                    // The size is an EXPRESSION (AST_REFERENCE section 4:
+                    // `size: Expr?`). This used to consume exactly one token and
+                    // call it an integer literal whatever it was -- so
+                    // `int32[COUNT]` produced an array sized by COUNT's
+                    // intern-table slot, and `int32[N + 1]` stopped after `N`.
+                    // Neither failed. Both meant something other than what was
+                    // written, which is the worse of the two ways to be wrong.
                     int32:size = 0i32;
                     if (!(relay p_at(p, TokenKind.PRBracket))) {
-                        Token:n = relay p_advance(p);
-                        ExprId:se = relay ast_add_expr(p.ast,
-                                        ExprKind.ExprIntLiteral, n.span,
-                                        0i32, 0i32, 0i32, n.payload);
-                        size = se.index;
+                        size = (relay p_parse_expr(p)).index;
                     }
                     drop p_expect(p, TokenKind.PRBracket);
                     cur = relay ast_add_type(p.ast, TypeKind.TypeArrayType, sp,

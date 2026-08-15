@@ -264,6 +264,46 @@ KINDS = {"positive": check_positive,
          "diagnostic": check_diagnostic}
 
 
+# --- every node kind must be reachable ---------------------------------------
+
+KIND_DECL_RE = re.compile(r'^\s+((?:Decl|Stmt|Expr|Type|Verify|Pat)\w+)\s+=\s+\d+i32;',
+                          re.M)
+KIND_USE_RE = re.compile(r'\b(?:Decl|Stmt|Expr|Type|Verify|Pat)Kind\.(\w+)')
+
+
+def check_kinds_reachable():
+    """Every generated node kind must be one the parser can actually build.
+
+    This is the check that found every defect in cycle 0.2, and it takes
+    milliseconds: `IdentifierExpr` missing entirely, `FallStmt` and `GiveStmt`
+    declared in prose the generator cannot see, `Attribute` in a section it does
+    not read, `FuncType` with no spelling in any document, `cstring` and `any`
+    unreachable behind the named-type path.
+
+    None of those announced itself. A kind nothing constructs is not an error at
+    any point -- it is simply dead, and stays dead until somebody needs it and
+    finds the gap the expensive way. Reading either file alone never reveals it;
+    the two lists have to be diffed.
+    """
+    kinds_path = os.path.join(ROOT, "src", "frontend", "ast_kind.npk")
+    with open(kinds_path, encoding="utf-8") as fh:
+        declared = set(KIND_DECL_RE.findall(fh.read()))
+
+    used = set()
+    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "*.npk")):
+        with open(p, encoding="utf-8") as fh:
+            used.update(KIND_USE_RE.findall(fh.read()))
+
+    # The reserved zeroes are absences, not constructs, and nothing builds one.
+    nones = {"DeclNone", "StmtNone", "ExprNone", "TypeNone", "VerifyNone", "PatNone"}
+    unreachable = sorted(declared - used - nones)
+    if unreachable:
+        return ["node kinds no parser rule can build: %s -- a kind nothing "
+                "constructs is dead, and stays dead until somebody needs it"
+                % ", ".join(unreachable)]
+    return []
+
+
 # --- the real parser, on real files ------------------------------------------
 
 PARSE_CHECK = os.path.join(ROOT, "tools", "parse_check.npk")
@@ -363,6 +403,8 @@ def main(argv):
     #
     # tests/grammar/ is NEVER compiled and never run. It exists only to be parsed,
     # which is what lets it use the whole language rather than subset 1.
+    failures += check_kinds_reachable()
+
     pc = build_parse_check(tmp, tools)
     if isinstance(pc, str) and not os.path.exists(pc):
         failures.append("tools/parse_check.npk did not build: %s" % pc)

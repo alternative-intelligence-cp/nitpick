@@ -5897,3 +5897,73 @@ are genuinely a shared layer, not because a rule demanded a file.
   there too.
 - 0.2.8 loses its blocking question; `ArrayType.size` can call the expression
   parser directly.
+
+---
+
+## D-087 — A function type is spelled `func RetType(ParamTypes)` — **SETTLED**
+
+`AST_REFERENCE.md` §4 has declared a `FuncType { params, return_type }` all
+along. **No document in the set gives its syntax.** The whole of the
+specification is one line of `FULL_specs.txt`:
+
+```ebnf
+FuncType   ::= "func"
+```
+
+followed by a note deferring the details to "Chapter 02: Declarations and Scope",
+which does not cover them. So the node existed, the parser had nothing to build
+it from, and a function-pointer-typed variable could not be declared — while §3.6
+states that "function pointers are ordinary values referenced by
+`IdentifierExpr`". Values with no type.
+
+### The spelling
+
+```nitpick
+func int32(int32, int32):op = @add;        // a variable holding a function
+func:apply = int32(func int32(int32):f, int32:x) { pass raw f(x); };
+func NIL():callback;                        // no parameters, no return value
+```
+
+**`func` then the return type then the parameter types.** Parameters are types
+only — a function *type* names no bindings, because there is nothing for a name
+to bind to.
+
+### Why not the prototype's form
+
+`../nitpick`'s parser accepts `(int32)(int32, int32)` — the return type
+parenthesised, then the parameters parenthesised. It is a real form that really
+works there, and it is being replaced rather than carried forward.
+
+- **It announces nothing.** Parentheses already group expressions, hold call
+  arguments, and wrap `move(…)` and `comptime(…)`. Giving them a fourth job means
+  a reader works out which one from what follows rather than from what they are
+  looking at. `func` says what it is in the first token, which is facet 2 of the
+  blueprint philosophy: maximum meaning in minimum space, and a symbol that could
+  mean four things carries less than a word that means one.
+- **It does not match the declaration.** `func:add = int32(int32:a, int32:b)`
+  declares a function: keyword, name, return type, parameters. The type of that
+  function should read the same way minus the name, and `func int32(int32, int32)`
+  does. `(int32)(int32, int32)` reorders nothing but re-spells everything, so a
+  reader has two shapes to hold for one idea — the exact cost facet 1 exists to
+  avoid.
+- **It keeps the one line of specification that exists true.** `FuncType ::=
+  "func"` becomes the head of the production rather than a fragment nobody
+  completed.
+
+### Where it may appear
+
+Anywhere a type may: a variable, a parameter, a struct field, a return type, a
+generic argument. It composes with the type suffixes like anything else —
+`func int32(int32)->` is a pointer to one, `func int32(int32)?` an optional one,
+`func int32(int32)[]` a slice of them.
+
+**There is no capture and no closure** (D-018), so a value of function type is a
+plain code address and the type carries no environment. That is what makes it one
+machine word and what makes `->` on it mean the ordinary thing.
+
+### Follow-up
+
+- `LEXICAL_REFERENCE.md` — the production, replacing the one-line fragment.
+- `AST_REFERENCE.md` §4 — the note column, done.
+- The parser reads it in 0.2.8. Lowering waits for a rung that needs indirect
+  calls; the parser never restricts (D-085).

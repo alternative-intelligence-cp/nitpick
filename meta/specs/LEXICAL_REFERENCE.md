@@ -82,6 +82,7 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "tfp32" | "tfp64" | "tfp128" | "tfp256" | "dim256"
                       | "flt32" | "flt64" | "flt128" | "flt256" | "flt512"
                       | "bool" | "char8" | "char16" | "char32" | "string"
+                      | "cstring"
                       | "fd" | "pid" | "tid" | "uid" | "gid"
                       | "dyn" | "any" | "Result" | "Optional"
                       | "Handle" | "arena" | "shared_arena" | "atomic" | "Future"
@@ -114,6 +115,8 @@ BuiltinHelper       ::= "is" | "in" | "is_err"
 | **`move` moved** from `MemoryQualifier` to `ControlFlow` | D-065 — it is not a qualifier. `move(place)` is a keyword operator with a parenthesized operand, the same shape as `comptime(expr)`, and it belongs beside the other ownership keywords `drop` and `nodrop`. |
 | **`relay` and `_^` added** | D-080 — the language had **no way to propagate an error**. With every function returning `Result<T>`, propagation is the most common operation there is, and its absence pushed callers toward `raw` (bypasses the discipline), `?!` (escalates a recoverable error to shutdown), or `?` with a default (silent success). `relay` forwards the code verbatim and runs `defer`. |
 | `Self` added | D-030 — used six times in `FORMAL_DRAFT` 13 but never declared a keyword |
+| `NIL` added to `BuiltinType` | It is a type as well as a value — `func:reset = NIL(Ast->:a)` — and was listed only among the sentinels, so the type parser refused a spelling the compiler's own sources use on nearly every mutating function (0.2.5) |
+| `cstring` added to `BuiltinType` | D-049 — `AST_REFERENCE.md` §4 declares a `CStringType` node and `TYPE_REFERENCE.md` §3.2.1 writes `cstring:cs = "Hello";`, but the production never listed it, so `cstring` lexed as an identifier, the node was unreachable, and a user type of that name would have silently shadowed the builtin (0.2.8) |
 | — | `for` is **not** duplicated: it is one reserved token already in `ControlFlow`, used in two grammatical positions (see below) |
 
 ## 5. Operators and Punctuation

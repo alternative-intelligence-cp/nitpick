@@ -11,6 +11,7 @@ use "../../src/frontend/diagnostics.npk".*;
 use "../../src/frontend/parse_codes.npk".*;
 use "../../src/frontend/lexer.npk".*;
 use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
 use "../../src/frontend/parse_type.npk".*;
 
 struct:Fixture = {
@@ -129,6 +130,116 @@ func:main = int32() {
     // It refused to start on `wild`, leaving the cursor untouched.
     if (!(raw p_at(@p9, TokenKind.KwWild)))           { exit 71i32; }
     if (raw diaglist_count(@g9) != 1i64)              { exit 72i32; }
+
+    // --- 0.2.8: the corners nothing could reach ------------------------------
+
+    // An array SIZE IS AN EXPRESSION. This used to consume one token and call it
+    // an integer literal whatever it was, so `int32[COUNT]` produced an array
+    // sized by COUNT's intern-table slot -- a plausible wrong number, with no
+    // diagnostic.
+    TokenList:kc = raw lex_all(0i32, "int32[COUNT]", @it, @ld);
+    Ast:ac = raw ast_init();
+    DiagList:gc = raw diaglist_init();
+    Parser:pc = raw parser_init(@kc, @ac, @gc, @it);
+    TypeNode:nc = raw ast_type(@ac, raw p_parse_type(@pc));
+    if (nc.kind != TypeKind.TypeArrayType)            { exit 100i32; }
+    if (raw type_is_slice(nc))                        { exit 101i32; }
+    ExprNode:sizec = raw ast_expr(@ac, raw type_array_size(nc));
+    if (sizec.kind != ExprKind.ExprIdentifierExpr)    { exit 102i32; }
+    if (raw diaglist_count(@gc) != 0i64)              { exit 103i32; }
+
+    // A compound size expression parses whole. `int32[N + 1]` used to stop after
+    // `N` and report a missing `]`.
+    TokenList:kd = raw lex_all(0i32, "int32[N + 1i32]", @it, @ld);
+    Ast:ad = raw ast_init();
+    DiagList:gd = raw diaglist_init();
+    Parser:pd = raw parser_init(@kd, @ad, @gd, @it);
+    TypeNode:nd = raw ast_type(@ad, raw p_parse_type(@pd));
+    ExprNode:sized = raw ast_expr(@ad, raw type_array_size(nd));
+    if (sized.kind != ExprKind.ExprBinaryExpr)        { exit 104i32; }
+    if (raw diaglist_count(@gd) != 0i64)              { exit 105i32; }
+
+    // `func RetType(ParamTypes)` -- a function type (D-087). It had no spelling
+    // in any document until now, so this node could never be built.
+    TokenList:ke = raw lex_all(0i32, "func int32(int32, int64)", @it, @ld);
+    Ast:ae = raw ast_init();
+    DiagList:ge = raw diaglist_init();
+    Parser:pe = raw parser_init(@ke, @ae, @ge, @it);
+    TypeNode:ne = raw ast_type(@ae, raw p_parse_type(@pe));
+    if (ne.kind != TypeKind.TypeFuncType)             { exit 110i32; }
+    if (raw type_param_count(ne) != 2i32)             { exit 111i32; }
+    TypeNode:rete = raw ast_type(@ae, raw type_return(ne));
+    if (rete.kind != TypeKind.TypeNamedType)          { exit 112i32; }
+    if (raw diaglist_count(@ge) != 0i64)              { exit 113i32; }
+
+    // It composes with the suffixes like any other type: a POINTER to a
+    // function, not a function returning a pointer.
+    TokenList:kf = raw lex_all(0i32, "func NIL()->", @it, @ld);
+    Ast:af = raw ast_init();
+    DiagList:gf = raw diaglist_init();
+    Parser:pf = raw parser_init(@kf, @af, @gf, @it);
+    TypeNode:nf = raw ast_type(@af, raw p_parse_type(@pf));
+    if (nf.kind != TypeKind.TypePointerType)          { exit 114i32; }
+    TypeNode:pointee = raw ast_type(@af, raw type_pointee(nf));
+    if (pointee.kind != TypeKind.TypeFuncType)        { exit 115i32; }
+    if (raw type_param_count(pointee) != 0i32)        { exit 116i32; }
+
+    // `cstring` is its OWN node, not a NamedType that happens to be spelled
+    // that way -- so a user type of the same name cannot shadow it (D-049).
+    TokenList:kg = raw lex_all(0i32, "cstring", @it, @ld);
+    Ast:ag = raw ast_init();
+    DiagList:gg = raw diaglist_init();
+    Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
+    TypeNode:ng = raw ast_type(@ag, raw p_parse_type(@pg));
+    if (ng.kind != TypeKind.TypeCStringType)          { exit 120i32; }
+
+    // `any` likewise. Bare `any` PARSES -- the "must be used as `any->`" rule is
+    // the type checker's, and enforcing it here would report "expected `->`" and
+    // name neither the type nor the rule (D-085).
+    TokenList:kh = raw lex_all(0i32, "any->", @it, @ld);
+    Ast:ah = raw ast_init();
+    DiagList:gh = raw diaglist_init();
+    Parser:ph = raw parser_init(@kh, @ah, @gh, @it);
+    TypeNode:nh = raw ast_type(@ah, raw p_parse_type(@ph));
+    if (nh.kind != TypeKind.TypePointerType)          { exit 121i32; }
+    TypeNode:anyp = raw ast_type(@ah, raw type_pointee(nh));
+    if (anyp.kind != TypeKind.TypeAnyType)            { exit 122i32; }
+
+    TokenList:ki = raw lex_all(0i32, "any", @it, @ld);
+    Ast:ai = raw ast_init();
+    DiagList:gi = raw diaglist_init();
+    Parser:pi = raw parser_init(@ki, @ai, @gi, @it);
+    TypeNode:ni = raw ast_type(@ai, raw p_parse_type(@pi));
+    if (ni.kind != TypeKind.TypeAnyType)              { exit 123i32; }
+    if (raw diaglist_count(@gi) != 0i64)              { exit 124i32; }
+
+    // --- EVERY node kind in section 4 is reachable ------------------------------
+    // The list below is the whole of TypeKind, and each entry was produced above
+    // or here. A kind the parser cannot build is a kind a reader has to work out
+    // is dead -- and three of these were exactly that until 0.2.8.
+    TokenList:kj = raw lex_all(0i32, "Self", @it, @ld);
+    Ast:aj = raw ast_init();
+    DiagList:gj = raw diaglist_init();
+    Parser:pj = raw parser_init(@kj, @aj, @gj, @it);
+    if ((raw ast_type(@aj, raw p_parse_type(@pj))).kind != TypeKind.TypeSelfType) {
+        exit 130i32;
+    }
+
+    TokenList:kk = raw lex_all(0i32, "dyn Drawable & Printable", @it, @ld);
+    Ast:ak = raw ast_init();
+    DiagList:gk = raw diaglist_init();
+    Parser:pk = raw parser_init(@kk, @ak, @gk, @it);
+    if ((raw ast_type(@ak, raw p_parse_type(@pk))).kind != TypeKind.TypeDynType) {
+        exit 131i32;
+    }
+
+    TokenList:kl = raw lex_all(0i32, "int32?", @it, @ld);
+    Ast:al = raw ast_init();
+    DiagList:gl = raw diaglist_init();
+    Parser:pl = raw parser_init(@kl, @al, @gl, @it);
+    if ((raw ast_type(@al, raw p_parse_type(@pl))).kind != TypeKind.TypeOptionalType) {
+        exit 132i32;
+    }
 
     exit 0i32;
 };

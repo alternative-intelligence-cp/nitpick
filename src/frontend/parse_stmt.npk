@@ -197,6 +197,13 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
     // So can `limit<Rule>`: it binds a ruleset to a declaration and appears in no
     // other statement position.
     if (relay p_at(p, TokenKind.KwLimit)) { pass true; }
+    // And so can `func`, which in a STATEMENT can only begin a function type
+    // (D-087) -- there is no `func` expression. It needs its own early exit
+    // because the scan below bails at a `(` seen outside any nesting, and a
+    // function type's parameter list is exactly that: `func int32(int32):op`.
+    // The rule the scan encodes -- "a `(` at depth zero means this was never a
+    // declaration" -- was true until a type could contain one.
+    if (relay p_at(p, TokenKind.KwFunc)) { pass true; }
     TokenKind:first = relay p_kind(p);
     bool:startable = (first == TokenKind.Ident);
     if (raw token_kind_is_builtin_type(first)) { startable = true; }

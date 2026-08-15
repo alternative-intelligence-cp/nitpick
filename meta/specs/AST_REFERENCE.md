@@ -129,8 +129,15 @@ misread by ignoring a field undoes it.
 
 | Node | Fields |
 |---|---|
-| `TraitMethod` | `signature: FunctionDecl`, `default_body: BlockStmt?` |
 | `AssocTypeDecl` | `name`, `default: TypeNode?` — **`assoc:Item;`** (D-028) |
+
+> **`TraitMethod` is removed. A method in a trait body is an ordinary
+> `FunctionDecl`.** It was specified as `{ signature: FunctionDecl, default_body:
+> BlockStmt? }` — and a `FunctionDecl` already carries `body: BlockStmt?`, whose
+> §1.1 note reads "absent in trait declarations". So a default body had two
+> places to live, and a reader had to know which one a given producer used. One
+> fact, one slot: an absent body is a declaration, a present one is a default
+> implementation, and that is the whole distinction the wrapper was carrying.
 
 `assoc` rather than `Type`, which declares a namespace. `Type:Foo = { … }` inside
 a trait body was ambiguous between an associated type bound to an anonymous
@@ -286,10 +293,9 @@ names neither the construct nor the rule it broke.
 | `SafeNavExpr` | `base`, `field` | `?.` |
 | `IndexExpr` | `base`, `index` | bounds-checked |
 | `CallExpr` | `callee`, `generic_args`, `args`, `turbofish: bool` | `generic_args` may arrive implicitly (`f<int32>(x)`) or via turbofish (`f::<int32>(x)`); `turbofish` records which, since the parser needs lookahead to tell a generic call from a `<` comparison |
-| `MethodCallExpr` | `receiver`, `method`, `generic_args`, `args` | UFCS — `p.magnitude()` resolves to `Point_magnitude(p)` (D-006) |
+| `MethodCallExpr` | `receiver`, `method`, `generic_args`, `args` | UFCS — `p.magnitude()` resolves to `Point_magnitude(p)` (D-006). **A member access followed by `(` is this node, not a `CallExpr` over a `MemberAccessExpr`** — UFCS resolution needs the receiver kept apart from the callee, and two shapes for one call would leave every consumer testing for both |
 | `BuiltinExpr` | `name`, `generic_args`, `args` | **`#name<T>(…)`** (D-020) — `#size_of<T>`, `#wild_ptr<T>(addr)` |
 | `ComptimeExpr` | `expr` | **`comptime(expr)`** — forces compile-time resolution; a compile error if it cannot be resolved |
-| `MacroInvocationExpr` | `name`, `args` | **`#name(args)`** (D-046) — expanded before semantic analysis |
 
 > **`IdentifierExpr` was missing**, exactly as `MoveExpr` was: §3.6 refers to it
 > by name ("function pointers are ordinary values referenced by
@@ -306,8 +312,21 @@ names neither the construct nor the rule it broke.
 
 | Form | Parsed as | Examples |
 |---|---|---|
-| **`#`-prefixed** | `BuiltinExpr` / `MacroInvocationExpr` | `#size_of<T>`, `#wild_ptr<T>(addr)`, `#derive`, user macros |
+| **`#`-prefixed** | `BuiltinExpr` | `#size_of<T>`, `#wild_ptr<T>(addr)`, `#derive`, user macros |
 | **bare name** | ordinary `CallExpr` | `alloc`, `calloc`, `ralloc`, `dalloc`, `mcpy`, `mmov`, `memset`, `sys`, `asm`, `ok`, `is_err`, the `string_*` intrinsics |
+
+> **`MacroInvocationExpr` is removed; `#name(args)` is a `BuiltinExpr`.** D-046
+> settles that "a caller does not need to know whether `#foo(x)` is
+> compiler-provided or user-defined; both expand at compile time and both are
+> type-checked after expansion." The parser is a caller in exactly that sense: it
+> sees `#`, a name, and arguments, and **nothing in the syntax says which kind of
+> name it is.** A macro may be imported, so the file being parsed need not
+> contain its declaration.
+>
+> Two node kinds for one syntactic form, discriminated by a fact the parser does
+> not have, is a kind that can never be built — and it was one, until 0.2.8's
+> reachability check named it. Resolution happens after macro expansion, where
+> the answer is actually available.
 
 The `#` sigil marks something **the compiler must treat specially** — evaluate at
 compile time, permit an otherwise-forbidden construction, or expand before
@@ -355,7 +374,7 @@ Only these two. `cast<T>` / `#cast<T>` / `@cast<T>` do not exist (D-021).
 | `VectorCtorExpr` | `type`, `components` — `vec3(1.0, 2.0, 3.0)` |
 | `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-040`) |
 | `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
-| `DynCastExpr` | `expr`, `traits: TypeNode[]` — `dyn A & B` (D-029) |
+| `DynCastExpr` | `expr`, `traits: TypeNode[]` — `dyn A & B` (D-029). **A `=>` whose target is a `dyn` type is this node, not a `CastExpr`** — building a fat pointer is not the same operation as a checked scalar conversion, and giving them one node would hide that at every use |
 | `PickExpr` | `selector: Expr`, `arms: PickArm[]` — a `pick` whose arms `give` (D-059) |
 
 > **`PickExpr` was missing.** D-059 settled that `pick` is **both** a statement
@@ -391,11 +410,33 @@ are ordinary values referenced by `IdentifierExpr`.
 | `ArrayType` | `element`, `size: Expr?` | value type; does not decay |
 | `FuncType` | `params`, `return_type` | |
 | `DynType` | `traits: TypeNode[]` | `dyn A & B` |
+| `FuncType` | `params`, `return_type` | **`func RetType(ParamTypes)`** (D-087) — the same three parts, in the same order, as the declaration it is the type of |
 | `CStringType` | — | **`cstring`** — NUL-terminated, `{ptr, len}` (D-049). Inhabited by string literals (checked at compile time) and by `to_cstring` |
+| `AnyType` | — | **`any`** — the type-erased pointer, C's `void*`. **Only legal under `->`**; bare `any` is a type error |
 | `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
 
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
 `const`, `fixed`, `borrow_imm`, `borrow_mut`. **`gc` does not exist** (D-003).
+
+> **Three of these were unreachable and one built the wrong node**, all found by
+> 0.2.4's comparison of this table against the generated kinds and fixed in 0.2.8:
+>
+> - **`FuncType` had no spelling in any document.** `FULL_specs.txt` gives
+>   `FuncType ::= "func"` and defers to a chapter that does not cover it, so
+>   function pointers were values with no type while §3.6 says they are ordinary
+>   values. D-087 settles the spelling.
+> - **`cstring` was not in `LEXICAL_REFERENCE.md`'s `BuiltinType`**, so it lexed
+>   as an identifier and became a `NamedType`. A user type named `cstring` would
+>   have silently shadowed the builtin.
+> - **`any` was the mirror image** — the keyword existed and the node did not.
+> - **`ArrayType.size` consumed one token and called it an integer literal**
+>   whatever it was, so `int32[COUNT]` produced an array sized by `COUNT`'s
+>   intern-table slot. Not an error; a plausible wrong number.
+>
+> The shared trait is worth stating: **none of them failed.** Each produced a
+> different program than the source said. A parser that rejects something is a
+> parser you argue with; a parser that accepts something and means something else
+> is a parser you trust and should not.
 
 **`NIL` is a type as well as a value**, and it is a `NamedType` like any other
 builtin — it needs no node of its own. `func:reset = NIL(Ast->:a)` declares the

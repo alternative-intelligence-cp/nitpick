@@ -259,7 +259,18 @@ func:p_cast = ExprId(Parser->:p) {
         if (node == ExprKind.ExprNone) { break; }
         drop p_advance(p);
         TypeId:t = relay p_parse_type(p);
-        e = relay ast_add_expr(p.ast, node, sp, e.index, t.index, 0i32, 0i64);
+        // A cast TO a `dyn` type is its own node (AST_REFERENCE 3.6). Building a
+        // fat pointer is not a checked scalar conversion, and one node for both
+        // would hide that at every use. The DynType already holds the trait
+        // window, so the node carries it directly rather than through the type.
+        TypeNode:tn = relay ast_type(p.ast, t);
+        if (tn.kind == TypeKind.TypeDynType) {
+            e = relay ast_add_expr(p.ast, ExprKind.ExprDynCastExpr, sp,
+                                   e.index, raw type_args_start(tn),
+                                   raw type_args_count(tn), 0i64);
+        } else {
+            e = relay ast_add_expr(p.ast, node, sp, e.index, t.index, 0i32, 0i64);
+        }
     }
     pass e;
 };
@@ -333,8 +344,17 @@ func:p_postfix = ExprId(Parser->:p) {
         if (k == TokenKind.PDot) {
             drop p_advance(p);
             Token:n = relay p_advance(p);
-            e = relay ast_add_expr(p.ast, ExprKind.ExprMemberAccessExpr, sp,
-                                   e.index, 0i32, 0i32, n.payload);
+            // `p.magnitude()` is a METHOD CALL, not a call over a member access
+            // (AST_REFERENCE 3.3). UFCS resolves it to `Point_magnitude(p)`
+            // (D-006), which needs the receiver kept apart from the callee --
+            // and a `CallExpr` whose callee is a `MemberAccessExpr` buries it one
+            // level down, leaving every consumer to test for both shapes.
+            if (relay p_at(p, TokenKind.PLParen)) {
+                e = relay p_method_call(p, e, sp, n.payload);
+            } else {
+                e = relay ast_add_expr(p.ast, ExprKind.ExprMemberAccessExpr, sp,
+                                       e.index, 0i32, 0i32, n.payload);
+            }
         } else {
             if (k == TokenKind.OpQuestionDot) {
                 drop p_advance(p);
@@ -385,6 +405,25 @@ func:p_postfix = ExprId(Parser->:p) {
         } }
     }
     pass e;
+};
+
+// `receiver.method(args)`. The receiver stays in slot `a` and the method name in
+// `payload`, so UFCS resolution reads both without unwrapping anything.
+func:p_method_call = ExprId(Parser->:p, ExprId:receiver, Span:sp, int64:method) {
+    drop p_expect(p, TokenKind.PLParen);
+    int32:mark = raw ast_scratch_mark(p.ast);
+    if (!(relay p_at(p, TokenKind.PRParen))) {
+        ExprId:a1 = relay p_parse_expr(p);
+        drop ast_scratch_push(p.ast, a1.index);
+        while (relay p_accept(p, TokenKind.PComma)) {
+            ExprId:argN = relay p_parse_expr(p);
+            drop ast_scratch_push(p.ast, argN.index);
+        }
+    }
+    drop p_expect(p, TokenKind.PRParen);
+    IdSpan:w = raw ast_scratch_commit(p.ast, mark);
+    pass (relay ast_add_expr(p.ast, ExprKind.ExprMethodCallExpr, sp,
+                             receiver.index, w.start, w.count, method));
 };
 
 // A call, optionally with generic arguments already on scratch above `gmark`.

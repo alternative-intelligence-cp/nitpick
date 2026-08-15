@@ -185,6 +185,49 @@ func:main = int32() {
     if (raw expr_list_count(ninner) != 2i32)             { exit 93i32; }
     if (raw diaglist_count(@gf) != 0i64)                 { exit 94i32; }
 
+    // --- 0.2.8: two nodes the parser could not build --------------------------
+
+    // `p.magnitude()` is a METHOD CALL, not a CallExpr over a MemberAccessExpr.
+    // UFCS resolves it to `Point_magnitude(p)` (D-006), which needs the receiver
+    // kept apart from the callee rather than buried one level down.
+    TokenList:kg = raw lex_all(0i32, "p.magnitude(1i32)", @it, @ld);
+    Ast:ag = raw ast_init();
+    DiagList:gg = raw diaglist_init();
+    Parser:pg = raw parser_init(@kg, @ag, @gg, @it);
+    ExprNode:ng = raw ast_expr(@ag, raw p_parse_expr(@pg));
+    if (ng.kind != ExprKind.ExprMethodCallExpr)          { exit 95i32; }
+    if (raw expr_list_count(ng) != 1i32)                 { exit 96i32; }
+    ExprNode:recv = raw ast_expr(@ag, raw expr_operand(ng));
+    if (recv.kind != ExprKind.ExprIdentifierExpr)        { exit 97i32; }
+
+    // A bare member access is still a MemberAccessExpr -- it is the `(` that
+    // makes the difference, and only that.
+    TokenList:kh = raw lex_all(0i32, "p.magnitude", @it, @ld);
+    Ast:ah = raw ast_init();
+    DiagList:gh = raw diaglist_init();
+    Parser:ph = raw parser_init(@kh, @ah, @gh, @it);
+    if ((raw ast_expr(@ah, raw p_parse_expr(@ph))).kind
+            != ExprKind.ExprMemberAccessExpr)            { exit 98i32; }
+
+    // A cast TO a `dyn` type builds a fat pointer, which is not a checked scalar
+    // conversion -- so it is its own node (D-029).
+    TokenList:ki = raw lex_all(0i32, "obj => dyn Drawable & Printable", @it, @ld);
+    Ast:ai = raw ast_init();
+    DiagList:gi = raw diaglist_init();
+    Parser:pi = raw parser_init(@ki, @ai, @gi, @it);
+    ExprNode:ni = raw ast_expr(@ai, raw p_parse_expr(@pi));
+    if (ni.kind != ExprKind.ExprDynCastExpr)             { exit 99i32; }
+    if (raw expr_list_count(ni) != 2i32)                 { exit 105i32; }
+
+    // …while a cast to an ordinary type is still a CastExpr.
+    TokenList:kj = raw lex_all(0i32, "obj => int32", @it, @ld);
+    Ast:aj = raw ast_init();
+    DiagList:gj = raw diaglist_init();
+    Parser:pj = raw parser_init(@kj, @aj, @gj, @it);
+    if ((raw ast_expr(@aj, raw p_parse_expr(@pj))).kind
+            != ExprKind.ExprCastExpr)                    { exit 106i32; }
+    if (raw diaglist_count(@gj) != 0i64)                 { exit 107i32; }
+
     exit 0i32;
 };
 
