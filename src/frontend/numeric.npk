@@ -205,7 +205,7 @@ pub func:num_scan = NumScan(string:run) {
 
     int64:radix = raw base_radix(base);
     int64:acc = 0i64;
-    bool:any = false;
+    bool:seen_digit = false;
     bool:bad = false;
     bool:over = false;
 
@@ -230,7 +230,7 @@ pub func:num_scan = NumScan(string:run) {
                     over = true;
                 }
                 acc = (acc * radix) + d;
-                any = true;
+                seen_digit = true;
                 i = i + 1i64;
             }
         }
@@ -251,7 +251,7 @@ pub func:num_scan = NumScan(string:run) {
         pass out;
     }
 
-    if (!any) {
+    if (!seen_digit) {
         pass out;
     }
 

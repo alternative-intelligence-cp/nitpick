@@ -17,32 +17,17 @@ CHAR = "CHAR"
 STRING = "STRING"
 OP = "OP"
 
-# Subset 1 keywords only. The full set is LEXICAL_REFERENCE.md section 4; anything
-# outside subset 1 still lexes as a keyword so the PARSER can accept it and the
-# CHECKER can reject it with NITPICK-RUNG-001 (D-085: the parser never restricts).
-KEYWORDS = {
-    # declarations
-    "func", "struct", "enum", "pub", "use", "mod", "extern", "opaque",
-    "trait", "impl", "Type", "assoc", "Self", "macro", "derive",
-    # control flow
-    "if", "else", "while", "for", "loop", "till", "when", "then", "end",
-    "pick", "fall", "where", "give", "break", "continue", "return",
-    "pass", "fail", "exit", "raw", "drop", "nodrop", "ok", "defaults",
-    "discard", "move", "relay",
-    # memory
-    "wild", "wildx", "stack", "defer",
-    # types
-    "const", "fixed", "Rules", "limit",
-    # async / meta — outside subset 1, still lexed
-    "async", "await", "comptime", "inline", "noinline", "cfg", "as",
-    # verification — outside subset 1, still lexed
-    "prove", "assert_static", "requires", "ensures", "invariant",
-    "fails", "on", "with", "never",
-    # helpers
-    "is", "in", "is_err",
-    # literals
-    "true", "false", "NIL", "NULL", "unknown",
-}
+# Every keyword the language has, GENERATED from LEXICAL_REFERENCE.md.
+#
+# This was a hand-written subset and it diverged from the language three times --
+# `ok`/`limit` missing, `Type` outliving D-088, and every builtin type name
+# absent. Each one let the seed ACCEPT a program stage 1 rejects, which is the
+# dangerous direction: source written against the seed fails at self-hosting
+# instead, in the stage with the worst diagnostics.
+#
+# Anything outside subset 1 still lexes as a keyword, so the parser accepts it and
+# the CHECKER refuses it by rung (D-085).
+from seed_keywords import KEYWORDS   # noqa: F401
 
 # Longest-first: the lexer must try "..*" before "..", "=>!" before "=>",
 # and "_^" before an identifier starting with "_" (LEXICAL_REFERENCE section 3).

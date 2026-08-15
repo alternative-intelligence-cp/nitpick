@@ -1,0 +1,368 @@
+// The type representation.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.0.
+//
+// NITPICK IS NOMINALLY TYPED AND TYPES ARE INTERNED (D-090).
+//
+// One `int32` for the whole program: constructing `int32->` twice yields the same
+// index, and **type equality is an integer compare**. There is no structural walk,
+// so there is nothing structural to get subtly wrong — which matters here more
+// than usual, because a comparison that is *almost* right produces a program that
+// compiles and misbehaves rather than one that fails.
+//
+// Nominal identity is the language half of the same decision:
+//
+//     struct:Meters = { flt64:v; };
+//     struct:Seconds = { flt64:v; };      // a DIFFERENT type
+//
+// The reason to declare two structs rather than one is that they mean different
+// things, and a type system that ignored the declaration would ignore the only
+// place that meaning was written down. Nitpick already makes this choice
+// everywhere: `bool`/`char8`/`uint8` are one byte and three types; `fd`, `pid`,
+// `tid`, `uid` and `gid` are integers and five types (D-042); `cstring` and a
+// byte slice share a layout and are two types (D-049).
+//
+// A LAYOUT HERE IS NOT THROWAWAY. The seed's layouts and this table's have to
+// agree until the bootstrap fixpoint closes, because their output interoperates
+// (bootstrap/generator/ntypes.py says the same thing from the other side).
+
+use "source_location.npk".*;
+use "intern.npk".*;
+
+// --- kinds -------------------------------------------------------------------------
+//
+// A kind plus its operands. The operands mean different things per kind, and —
+// as in the AST — the accessors are the only place that is interpreted.
+
+pub func:TY_INVALID = int32()  { pass 0i32; };   // a type that failed to resolve
+pub func:TY_NIL = int32()      { pass 1i32; };
+pub func:TY_BOOL = int32()     { pass 2i32; };
+pub func:TY_INT = int32()      { pass 3i32; };   // a = bits, b = signed
+pub func:TY_CHAR = int32()     { pass 4i32; };   // a = bits
+pub func:TY_FLOAT = int32()    { pass 5i32; };   // a = bits
+pub func:TY_TBB = int32()      { pass 6i32; };   // a = bits
+pub func:TY_KERNEL = int32()   { pass 7i32; };   // fd/pid/tid/uid/gid; a = which
+pub func:TY_STRING = int32()   { pass 8i32; };
+pub func:TY_CSTRING = int32()  { pass 9i32; };
+pub func:TY_ANY = int32()      { pass 10i32; };
+pub func:TY_POINTER = int32()  { pass 11i32; };  // a = pointee
+pub func:TY_SLICE = int32()    { pass 12i32; };  // a = element
+pub func:TY_ARRAY = int32()    { pass 13i32; };  // a = element, b = count
+pub func:TY_OPTIONAL = int32() { pass 14i32; };  // a = inner
+pub func:TY_RESULT = int32()   { pass 15i32; };  // a = success type
+pub func:TY_STRUCT = int32()   { pass 16i32; };  // a = DeclId
+pub func:TY_ENUM = int32()     { pass 17i32; };  // a = DeclId
+pub func:TY_TRAIT = int32()    { pass 18i32; };  // a = DeclId
+pub func:TY_DYN = int32()      { pass 19i32; };  // a,b = trait window
+pub func:TY_FUNC = int32()     { pass 20i32; };  // a = return, b,c = param window
+pub func:TY_SELF = int32()     { pass 21i32; };
+pub func:TY_PARAM = int32()    { pass 22i32; };  // a generic parameter; a = DeclId
+
+pub struct:Type = {
+    int32:kind;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:size;      // bytes
+    int32:align;
+    int32:name;      // intern index, for a named type; 0 otherwise
+};
+
+pub struct:TypeTable = {
+    wild Type->:items;
+    int32:count;
+    int32:cap;
+
+    // The scalars, interned once at startup so the common comparisons need no
+    // lookup at all.
+    int32:t_nil;
+    int32:t_bool;
+    int32:t_string;
+    int32:t_cstring;
+    int32:t_any;
+    int32:t_tbb32;
+};
+
+// --- construction ----------------------------------------------------------------------
+
+func:tt_grow = NIL(TypeTable->:t) {
+    int32:nc = t.cap * 2i32;
+    wild int8->:bigger = ralloc(t.items => wild int8->,
+                                (nc => int64) * #size_of<Type>());
+    t.items = bigger => wild Type->;
+    t.cap = nc;
+    pass NIL;
+};
+
+// THE INTERNING. A type already present returns its existing index, which is what
+// makes equality an integer compare everywhere else.
+pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
+                           int64:size, int32:align, int32:name) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        Type:e = t.items[i => int64];
+        if (e.kind == kind) {
+            if (e.a == a) {
+                if (e.b == b) {
+                    if (e.c == c) {
+                        if (e.name == name) {
+                            pass i;
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    if (t.count >= t.cap) {
+        drop tt_grow(t);
+    }
+    Type:n = Type{ kind: kind, a: a, b: b, c: c,
+                   size: size, align: align, name: name };
+    t.items[t.count => int64] = n;
+    int32:id = t.count;
+    t.count = t.count + 1i32;
+    pass id;
+};
+
+pub func:tt_get = Type(TypeTable->:t, int32:id) {
+    if (id < 0i32) { fail 14i32; }
+    if (id >= t.count) { fail 14i32; }
+    pass t.items[id => int64];
+};
+
+pub func:tt_count = int32(TypeTable->:t) { pass t.count; };
+
+// --- the scalars ---------------------------------------------------------------------
+//
+// Sizes and alignments are `TYPE_REFERENCE.md` §§1–2, 9–11. They are asserted
+// against `#size_of` in the test rather than trusted, because a hand-written size
+// that disagrees with what LLVM lays out survives testing and corrupts memory
+// later.
+
+pub func:tt_int = int32(TypeTable->:t, int32:bits, bool:signed) {
+    int32:sg = 0i32;
+    if (signed) { sg = 1i32; }
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_INT(), bits, sg, 0i32, bytes, bits / 8i32, 0i32));
+};
+
+pub func:tt_char = int32(TypeTable->:t, int32:bits) {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_CHAR(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
+};
+
+pub func:tt_float = int32(TypeTable->:t, int32:bits) {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_FLOAT(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
+};
+
+pub func:tt_tbb = int32(TypeTable->:t, int32:bits) {
+    int64:bytes = (bits => int64) / 8i64;
+    pass (raw tt_intern(t, raw TY_TBB(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
+};
+
+// `fd`, `pid`, `tid`, `uid`, `gid` — five DISTINCT types that all lower to `i32`
+// (D-042). They compare and they do not add, and this is the layer that has to
+// hold that line because nothing downstream will: to LLVM they are identical.
+pub func:KERNEL_FD = int32()  { pass 0i32; };
+pub func:KERNEL_PID = int32() { pass 1i32; };
+pub func:KERNEL_TID = int32() { pass 2i32; };
+pub func:KERNEL_UID = int32() { pass 3i32; };
+pub func:KERNEL_GID = int32() { pass 4i32; };
+
+pub func:tt_kernel = int32(TypeTable->:t, int32:which) {
+    pass (raw tt_intern(t, raw TY_KERNEL(), which, 0i32, 0i32, 4i64, 4i32, 0i32));
+};
+
+// --- composites ------------------------------------------------------------------------
+
+// A pointer is THIN: one word, no bounds metadata (D-038). That is why a slice
+// exists as a separate type rather than a pointer knowing its length.
+pub func:tt_pointer = int32(TypeTable->:t, int32:pointee) {
+    pass (raw tt_intern(t, raw TY_POINTER(), pointee, 0i32, 0i32, 8i64, 8i32, 0i32));
+};
+
+// `{ptr, i64 len}` (D-070). Non-owning, and a second-class view.
+pub func:tt_slice = int32(TypeTable->:t, int32:elem) {
+    pass (raw tt_intern(t, raw TY_SLICE(), elem, 0i32, 0i32, 16i64, 8i32, 0i32));
+};
+
+// A VALUE type with static bounds, which does not decay. Its size is the
+// element's times the count — which is exactly why a struct containing one of
+// itself cannot be sized, and why 0.3.3 treats a fixed array as containment and a
+// slice as not.
+pub func:tt_array = int32(TypeTable->:t, int32:elem, int32:count,
+                          int64:elem_size, int32:elem_align) {
+    int64:total = elem_size * (count => int64);
+    pass (raw tt_intern(t, raw TY_ARRAY(), elem, count, 0i32, total, elem_align, 0i32));
+};
+
+pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
+                             int32:inner_align) {
+    // A tag beside the value, rounded to the value's alignment.
+    int64:total = inner_size + (inner_align => int64);
+    pass (raw tt_intern(t, raw TY_OPTIONAL(), inner, 0i32, 0i32, total, inner_align, 0i32));
+};
+
+// `{T, tbb32}` (D-069) — NO is_error field, because `.is_error` is derived as
+// `error != 0`. A stored flag would be a second place for one fact to live, and
+// the two could then disagree about whether a call failed.
+//
+// `Result<NIL>` is `{i32}`: NIL is zero-sized (D-084).
+pub func:tt_result = int32(TypeTable->:t, int32:inner, int64:inner_size,
+                           int32:inner_align) {
+    int64:total = inner_size + 4i64;
+    int32:al = inner_align;
+    if (al < 4i32) { al = 4i32; }
+    pass (raw tt_intern(t, raw TY_RESULT(), inner, 0i32, 0i32, total, al, 0i32));
+};
+
+// A named aggregate. Its identity is its DECLARATION (D-090): two structs with
+// identical fields and different names are different types, and interning on the
+// DeclId is what makes that true by construction rather than by a comparison
+// somebody has to remember to write.
+pub func:tt_struct = int32(TypeTable->:t, int32:decl, int32:name,
+                           int64:size, int32:align) {
+    pass (raw tt_intern(t, raw TY_STRUCT(), decl, 0i32, 0i32, size, align, name));
+};
+
+pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
+                         int64:size, int32:align) {
+    pass (raw tt_intern(t, raw TY_ENUM(), decl, 0i32, 0i32, size, align, name));
+};
+
+pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
+    // A trait is not a value type; it has no size of its own.
+    pass (raw tt_intern(t, raw TY_TRAIT(), decl, 0i32, 0i32, 0i64, 0i32, name));
+};
+
+// `dyn A & B` — a fat pointer: the value and its vtable.
+pub func:tt_dyn = int32(TypeTable->:t, int32:start, int32:count) {
+    pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, 16i64, 8i32, 0i32));
+};
+
+// `func RetType(ParamTypes)` (D-087). One word: a code address, with no captured
+// environment, because closures are removed (D-018).
+pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count) {
+    pass (raw tt_intern(t, raw TY_FUNC(), ret, start, count, 8i64, 8i32, 0i32));
+};
+
+pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
+    // A generic parameter has no layout: its size is not known at the definition,
+    // which is the point of checking the body there (D-064).
+    pass (raw tt_intern(t, raw TY_PARAM(), decl, 0i32, 0i32, 0i64, 0i32, name));
+};
+
+// --- startup ------------------------------------------------------------------------------
+
+pub func:typetable_init = TypeTable() {
+    int64:n = 64i64;
+    wild int8->:mem = alloc(n * #size_of<Type>());
+    TypeTable:t = TypeTable{
+        items: mem => wild Type->, count: 0i32, cap: 64i32,
+        t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
+        t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32
+    };
+
+    // Index 0 is the INVALID type, reserved like every other index-0 in this
+    // compiler: a type that failed to resolve is a value rather than an absence,
+    // so one bad annotation produces one diagnostic instead of a cascade of
+    // "cannot compare" from everything that touched it.
+    drop tt_intern(@t, raw TY_INVALID(), 0i32, 0i32, 0i32, 0i64, 0i32, 0i32);
+
+    // NIL is ZERO-SIZED (D-084). It is the absence of a value, not a value that
+    // happens to be empty, and giving it a byte would put it in structs.
+    t.t_nil = raw tt_intern(@t, raw TY_NIL(), 0i32, 0i32, 0i32, 0i64, 1i32, 0i32);
+
+    // `bool` is `i1` STORED AS `i8` — one byte, and not an integer. `i1` appears
+    // only inside a condition.
+    t.t_bool = raw tt_intern(@t, raw TY_BOOL(), 0i32, 0i32, 0i32, 1i64, 1i32, 0i32);
+
+    // `{ptr, len, cap}` and NOT NUL-terminated, which is the entire reason
+    // `cstring` exists as a separate type (D-049).
+    t.t_string = raw tt_intern(@t, raw TY_STRING(), 0i32, 0i32, 0i32, 24i64, 8i32, 0i32);
+    t.t_cstring = raw tt_intern(@t, raw TY_CSTRING(), 0i32, 0i32, 0i32, 16i64, 8i32, 0i32);
+
+    // `any` is the type-erased pointer. It has a layout because `any->` needs one;
+    // a BARE `any` is a type error, and 0.4.1 is where that is said.
+    t.t_any = raw tt_intern(@t, raw TY_ANY(), 0i32, 0i32, 0i32, 8i64, 8i32, 0i32);
+
+    t.t_tbb32 = raw tt_tbb(@t, 32i32);
+    pass t;
+};
+
+// --- questions the checker asks constantly ----------------------------------------------------
+
+pub func:type_kind = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).kind);
+};
+
+pub func:type_size = int64(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).size);
+};
+
+pub func:type_align = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).align);
+};
+
+// Equality IS an integer compare. Written as a function anyway, so that the one
+// place it could ever stop being true has a name.
+pub func:type_eq = bool(int32:a, int32:b) {
+    pass (a == b);
+};
+
+pub func:type_is_invalid = bool(TypeTable->:t, int32:id) {
+    pass ((raw type_kind(t, id)) == (raw TY_INVALID()));
+};
+
+// IS THIS A NUMBER? Deliberately narrow, and the narrowness is the point.
+//
+// `bool` is not: it is one byte and two values, and `true + 1i32` means nothing.
+// `char8` is not: a character is not its code point (D-005).
+// `tbb32` is not: it is an error-code type whose arithmetic drags in ERR,
+//   stickiness and saturation (D-008), which belong to the type's own operations.
+// `fd` and its family are not: an `fd` plus one is not an `fd` (D-042).
+//
+// Every one of those is representationally identical to an integer. This function
+// is where the language wins over the machine.
+pub func:type_is_numeric = bool(TypeTable->:t, int32:id) {
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_INT()))   { pass true; }
+    if (k == (raw TY_FLOAT())) { pass true; }
+    pass false;
+};
+
+pub func:type_is_integer = bool(TypeTable->:t, int32:id) {
+    pass ((raw type_kind(t, id)) == (raw TY_INT()));
+};
+
+pub func:type_int_bits = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).a);
+};
+
+pub func:type_is_signed = bool(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).b != 0i32);
+};
+
+// Types that COMPARE but do not compute: `tbb` error codes and the kernel
+// identifiers. Grouped because the rule is the same and stating it twice would
+// be two places to change it.
+pub func:type_is_comparable_only = bool(TypeTable->:t, int32:id) {
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_TBB()))    { pass true; }
+    if (k == (raw TY_KERNEL())) { pass true; }
+    pass false;
+};
+
+pub func:type_elem = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).a);
+};
+
+pub func:type_decl = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).a);
+};
+
+pub func:type_name = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).name);
+};

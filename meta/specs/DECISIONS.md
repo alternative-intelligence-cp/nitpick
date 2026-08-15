@@ -6166,3 +6166,112 @@ shape — the author asserting something a reviewer can rely on.
   sources becomes `int32(cstring[]:_~argv)`, and `failsafe`'s unused `err`
   becomes `tbb32:_~err`.
 - The runtime floor gains `argv` capture in `_start`; cycle 0.3.0 does it.
+
+---
+
+## D-090 — Nitpick is nominally typed, and types are interned — **SETTLED**
+
+`TYPE_REFERENCE.md` gives every type a layout and **no identity rule**. That is
+not a small omission: every comparison the type checker makes depends on the
+answer, and the question has a language-visible half and an implementation half.
+
+### The language half: two types with the same shape are different types
+
+```nitpick
+struct:Meters = { flt64:v; };
+struct:Seconds = { flt64:v; };
+```
+
+**These are different types, and one may not be passed where the other is
+expected.** Nitpick is **nominally** typed: a type's identity is its declaration,
+not its shape.
+
+This is the same decision the language already makes everywhere else, and
+recording it here only makes it explicit:
+
+- `bool`, `char8` and `uint8` are all one byte and are three types (semantic types
+  over representation).
+- `fd`, `pid`, `tid`, `uid` and `gid` are all integers and are five types, which
+  is the whole of D-042.
+- `cstring` and a slice of bytes have the same layout and are different types,
+  which is the whole of D-049.
+
+Structural typing would undo every one of those. `Meters` and `Seconds` are the
+general case of the same argument: the reason to declare two structs rather than
+one is that they mean different things, and a type system that ignores the
+declaration ignores the only place that meaning was written down.
+
+**A named alias is therefore a distinct type, not a synonym.** There is no
+`typedef` in the C sense, and nothing that produces two names for one type.
+
+### The implementation half: canonical interned types, compared by index
+
+One `int32` for the whole program. Constructing `int32->` twice yields the same
+index, and **type equality is an integer compare**.
+
+- There is no structural walk, so there is nothing structural to get subtly
+  wrong — which matters, because a comparison that is *almost* right produces a
+  program that compiles and misbehaves.
+- A type becomes usable as a **key**, which D-064's monomorphization needs in
+  order to deduplicate instantiations at all.
+- It matches the AST's own arrangement — index-based, never pointer-based — for
+  the same reasons: an index survives the table growing, and an index graph is
+  easier to verify than a pointer graph.
+
+The cost is a lookup when a type is constructed. In a compiler whose most
+repeated question is "are these the same type", that is the right side of the
+trade.
+
+### What this does not decide
+
+Whether a *generic instantiation* is the same type as another with equal
+arguments — `Container<int32>` twice — is the same question and gets the same
+answer by construction, because interning makes it one index. Recorded here so
+that D-064's deduplication is not mistaken for a separate mechanism.
+
+---
+
+## D-091 — `Result<T>` may not be written as a return type — **SETTLED**
+
+Every function returns `Result<T>` (D-013), and the declared type is the
+**success** type: `func:f = int32()` returns `Result<int32>`. So what does
+
+```nitpick
+func:f = Result<int32>() { … };
+```
+
+mean — `Result<int32>`, or `Result<Result<int32>>`?
+
+**Neither. Writing it is a compile error that says so.**
+
+Both readings are defensible and that is precisely the problem. If it means the
+first, the spelling is redundant and two ways to write one signature exist. If it
+means the second, the language has grown a nesting nobody asked for and every
+caller has to unwrap twice. A reader would have to know which, and the answer
+would be invisible in the signature they are reading.
+
+Refusing the spelling keeps **one way to write a return type**, which is the
+blueprint philosophy's first facet: a construct does not change meaning by
+context, and here it does not acquire a second spelling either.
+
+The diagnostic says the rule rather than just refusing:
+
+> every function returns `Result<T>` already, so a return type is written as the
+> success type — `func:f = int32()` returns `Result<int32>`
+
+### `Result<T>` stays writable everywhere else
+
+In a **variable** declaration it is the ordinary way to hold a call's outcome
+before unwrapping, and the compiler's own sources are full of it:
+
+```nitpick
+Result<string>:r = read_file(path);
+if (r.is_error) { … }
+```
+
+It is also writable as a parameter type, a field type and a generic argument. The
+restriction is exactly one position — the return type — because that is the only
+position where the wrapper is already implied.
+
+`main` and `failsafe` return a bare `int32` and are unaffected: they are outside
+the `Result` discipline entirely (D-013), which is why `relay` is illegal in them.

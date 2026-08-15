@@ -150,26 +150,26 @@ pub func:diaglist_sort = NIL(DiagList->:list) {
 
 pub struct:Sink = {
     int32:kind;            // 0 = file descriptor, 1 = capture buffer
-    int32:fd;
+    int32:handle;          // `fd` is a TYPE (D-042), not a name
     wild int8->:buf;
     int64:len;
     int64:cap;
 };
 
-pub func:sink_to_fd = Sink(int32:fd) {
-    Sink:s = Sink{ kind: 0i32, fd: fd, buf: NULL, len: 0i64, cap: 0i64 };
+pub func:sink_to_fd = Sink(int32:descriptor) {
+    Sink:s = Sink{ kind: 0i32, handle: descriptor, buf: NULL, len: 0i64, cap: 0i64 };
     pass s;
 };
 
 pub func:sink_to_buffer = Sink(int64:cap) {
     wild int8->:b = alloc(cap);
-    Sink:s = Sink{ kind: 1i32, fd: 0i32, buf: b, len: 0i64, cap: cap };
+    Sink:s = Sink{ kind: 1i32, handle: 0i32, buf: b, len: 0i64, cap: cap };
     pass s;
 };
 
 pub func:sink_write = NIL(Sink->:out, string:text) {
     if (out.kind == 0i32) {
-        drop write_raw(out.fd, text.ptr, text.len);
+        drop write_raw(out.handle, text.ptr, text.len);
         pass NIL;
     }
     int64:i = 0i64;

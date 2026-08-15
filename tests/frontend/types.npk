@@ -1,0 +1,146 @@
+// The type representation (cycle 0.4.0).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/types.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    TypeTable:t = raw typetable_init();
+
+    // --- INTERNING: the same type twice is the same index (D-090) -------------
+    // This is what makes equality an integer compare everywhere else, so it is
+    // the first thing asserted rather than assumed.
+    int32:i32a = raw tt_int(@t, 32i32, true);
+    int32:i32b = raw tt_int(@t, 32i32, true);
+    if (i32a != i32b)                                     { exit 10i32; }
+    if (!(raw type_eq(i32a, i32b)))                       { exit 11i32; }
+
+    int32:p1 = raw tt_pointer(@t, i32a);
+    int32:p2 = raw tt_pointer(@t, i32a);
+    if (p1 != p2)                                         { exit 12i32; }
+    // …and a pointer to something else is a different type.
+    int32:i64t = raw tt_int(@t, 64i32, true);
+    if ((raw tt_pointer(@t, i64t)) == p1)                 { exit 13i32; }
+
+    // --- SEMANTIC TYPES: same representation, different types ------------------
+    // Each of these is one byte, or four, and they are all distinct. This is the
+    // layer that holds that line -- to LLVM they are identical.
+    int32:u8t = raw tt_int(@t, 8i32, false);
+    int32:i8t = raw tt_int(@t, 8i32, true);
+    int32:c8t = raw tt_char(@t, 8i32);
+    if (u8t == i8t)                                       { exit 20i32; }
+    if (u8t == c8t)                                       { exit 21i32; }
+    if (u8t == t.t_bool)                                  { exit 22i32; }
+    if (c8t == t.t_bool)                                  { exit 23i32; }
+    // All one byte, all different.
+    if ((raw type_size(@t, u8t)) != 1i64)                 { exit 24i32; }
+    if ((raw type_size(@t, c8t)) != 1i64)                 { exit 25i32; }
+    if ((raw type_size(@t, t.t_bool)) != 1i64)            { exit 26i32; }
+
+    // `tbb32` and `int32` are both four bytes and are not the same type.
+    if (t.t_tbb32 == i32a)                                { exit 27i32; }
+    if ((raw type_size(@t, t.t_tbb32)) != 4i64)           { exit 28i32; }
+
+    // The five kernel identifiers are five types, not one (D-042).
+    int32:fd_t = raw tt_kernel(@t, raw KERNEL_FD());
+    int32:pid_t = raw tt_kernel(@t, raw KERNEL_PID());
+    int32:uid_t = raw tt_kernel(@t, raw KERNEL_UID());
+    if (fd_t == pid_t)                                        { exit 30i32; }
+    if (fd_t == uid_t)                                        { exit 31i32; }
+    if (fd_t == i32a)                                       { exit 32i32; }
+    if ((raw tt_kernel(@t, raw KERNEL_FD())) != fd_t)       { exit 33i32; }
+
+    // --- WHAT IS A NUMBER -------------------------------------------------------
+    // Deliberately narrow. Every type refused here is representationally an
+    // integer, and none of them is one.
+    if (!(raw type_is_numeric(@t, i32a)))                 { exit 40i32; }
+    if (raw type_is_numeric(@t, t.t_bool))                { exit 41i32; }
+    if (raw type_is_numeric(@t, c8t))                     { exit 42i32; }
+    if (raw type_is_numeric(@t, t.t_tbb32))               { exit 43i32; }
+    if (raw type_is_numeric(@t, fd_t))                      { exit 44i32; }
+
+    // …and the two families that compare without computing.
+    if (!(raw type_is_comparable_only(@t, t.t_tbb32)))    { exit 45i32; }
+    if (!(raw type_is_comparable_only(@t, fd_t)))           { exit 46i32; }
+    if (raw type_is_comparable_only(@t, i32a))            { exit 47i32; }
+
+    // --- LAYOUTS, checked against what LLVM actually lays out ---------------------
+    // A hand-written size that disagrees with the machine survives testing and
+    // corrupts memory later, so these are asserted rather than trusted.
+    if ((raw type_size(@t, i32a)) != #size_of<int32>())   { exit 50i32; }
+    if ((raw type_size(@t, i64t)) != #size_of<int64>())   { exit 51i32; }
+    if ((raw type_size(@t, u8t)) != #size_of<uint8>())    { exit 52i32; }
+    if ((raw type_size(@t, t.t_string)) != #size_of<string>()) { exit 53i32; }
+    // A pointer is THIN -- one word, no bounds metadata (D-038).
+    if ((raw type_size(@t, p1)) != 8i64)                  { exit 54i32; }
+    // A slice is {ptr, i64 len} (D-070): the bounds live on the slice, which is
+    // why the pointer does not carry them.
+    int32:sl = raw tt_slice(@t, i32a);
+    if ((raw type_size(@t, sl)) != 16i64)                 { exit 55i32; }
+    // A cstring is {ptr, i64} and NOT a string -- no capacity, because it is
+    // never grown and is not ours to free (D-049).
+    if ((raw type_size(@t, t.t_cstring)) != 16i64)        { exit 56i32; }
+    if (t.t_cstring == t.t_string)                        { exit 57i32; }
+
+    // NIL is ZERO-SIZED (D-084): the absence of a value, not a value that
+    // happens to be empty.
+    if ((raw type_size(@t, t.t_nil)) != 0i64)             { exit 58i32; }
+
+    // --- ARRAYS CONTAIN, SLICES REFER --------------------------------------------
+    // The distinction 0.3.3's struct-cycle check relies on: an array's size
+    // depends on its element's and a slice's does not.
+    int32:arr = raw tt_array(@t, i32a, 4i32, 4i64, 4i32);
+    if ((raw type_size(@t, arr)) != 16i64)                { exit 60i32; }
+    if (arr == sl)                                        { exit 61i32; }
+    // Different lengths are different types.
+    if ((raw tt_array(@t, i32a, 8i32, 4i64, 4i32)) == arr) { exit 62i32; }
+
+    // --- Result<T> is {T, tbb32} with NO stored is_error (D-069) --------------------
+    int32:ri32 = raw tt_result(@t, i32a, 4i64, 4i32);
+    if ((raw type_size(@t, ri32)) != 8i64)                { exit 70i32; }
+    // Result<NIL> is {i32}: NIL contributes nothing (D-084).
+    int32:rnil = raw tt_result(@t, t.t_nil, 0i64, 1i32);
+    if ((raw type_size(@t, rnil)) != 4i64)                { exit 71i32; }
+    if (ri32 == rnil)                                     { exit 72i32; }
+
+    // --- NOMINAL IDENTITY: same shape, different types (D-090) ----------------------
+    //
+    //     struct:Meters  = { flt64:v; };
+    //     struct:Seconds = { flt64:v; };
+    //
+    // Identical layouts and DIFFERENT TYPES. The reason to declare two structs
+    // rather than one is that they mean different things, and a type system that
+    // ignored the declaration would ignore the only place that meaning was
+    // written down. Interning on the DeclId makes that true by construction
+    // rather than by a comparison somebody has to remember to write.
+    //
+    // The two here stand for declarations 7 and 8, with the same size, the same
+    // alignment, and different names.
+    InternTable:names = raw intern_init();
+    int32:n_meters = raw intern_add(@names, "Meters");
+    int32:n_seconds = raw intern_add(@names, "Seconds");
+
+    int32:meters = raw tt_struct(@t, 7i32, n_meters, 8i64, 8i32);
+    int32:seconds = raw tt_struct(@t, 8i32, n_seconds, 8i64, 8i32);
+    if (meters == seconds)                                { exit 80i32; }
+    if ((raw type_size(@t, meters)) != (raw type_size(@t, seconds))) { exit 81i32; }
+    // …and the same declaration reached twice is the same type.
+    if ((raw tt_struct(@t, 7i32, n_meters, 8i64, 8i32)) != meters)   { exit 82i32; }
+
+    // A struct and an enum with the same declaration index are still different
+    // types: the kind is part of the identity.
+    if ((raw tt_enum(@t, 7i32, n_meters, 8i64, 8i32)) == meters)     { exit 83i32; }
+
+    // --- the INVALID type is index 0, and is a value -------------------------------
+    // Reserved like every other index-0 in this compiler. A type that failed to
+    // resolve is a value rather than an absence, so one bad annotation produces
+    // one diagnostic instead of a cascade from everything that touched it.
+    if (!(raw type_is_invalid(@t, 0i32)))                 { exit 90i32; }
+    if (raw type_is_invalid(@t, i32a))                    { exit 91i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

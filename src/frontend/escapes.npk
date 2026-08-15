@@ -73,11 +73,11 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) {
         }
         int64:i = at + 3i64;
         int64:acc = 0i64;
-        bool:any = false;
+        bool:seen_digit = false;
         while (i < text.len) {
             uint8:c = text.ptr[i] => uint8;
             if (c == 125u8) {                             // }
-                if (!any) { pass (raw esc_fail()); }
+                if (!seen_digit) { pass (raw esc_fail()); }
                 // Above the Unicode maximum is a source error, not something to
                 // silently truncate into a different character.
                 if (acc > 1114111i64) { pass (raw esc_fail()); }
@@ -86,7 +86,7 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) {
             int64:h = raw hex_value(c);
             if (h < 0i64) { pass (raw esc_fail()); }
             acc = (acc * 16i64) + h;
-            any = true;
+            seen_digit = true;
             i = i + 1i64;
         }
         pass (raw esc_fail());                            // unterminated
