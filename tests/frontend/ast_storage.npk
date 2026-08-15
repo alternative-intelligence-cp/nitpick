@@ -1,0 +1,91 @@
+// AST storage (cycle 0.2.0).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+
+func:main = int32() {
+    Ast:ast = raw ast_init();
+    Span:sp = raw span_point(0i32, 0i32, 1i32, 1i32);
+
+    // --- index 0 is a reserved NONE node in every array ---------------------
+    // A zeroed handle must be a well-defined absence, not a silent reference to
+    // whichever node happened to be created first.
+    if (!(raw expr_is_none(raw expr_none())))            { exit 10i32; }
+    if (!(raw stmt_is_none(raw stmt_none())))            { exit 11i32; }
+    ExprNode:n0 = raw ast_expr(@ast, raw expr_none());
+    if (n0.kind != ExprKind.ExprNone)                    { exit 12i32; }
+    if (raw ast_expr_count(@ast) != 1i32)                { exit 13i32; }
+
+    // --- nodes round-trip ---------------------------------------------------
+    ExprId:lit = raw ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
+                                  0i32, 0i32, 0i32, 42i64);
+    if (raw expr_is_none(lit))                           { exit 20i32; }
+    ExprNode:got = raw ast_expr(@ast, lit);
+    if (got.kind != ExprKind.ExprIntLiteral)             { exit 21i32; }
+    if (got.payload != 42i64)                            { exit 22i32; }
+    if (got.span.line != 1i32)                           { exit 23i32; }
+
+    // A node referring to another does so by INDEX, which survives growth.
+    ExprId:rhs = raw ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
+                                  0i32, 0i32, 0i32, 7i64);
+    ExprId:bin = raw ast_add_expr(@ast, ExprKind.ExprBinaryExpr, sp,
+                                  lit.index, rhs.index, 0i32, 0i64);
+    ExprNode:b = raw ast_expr(@ast, bin);
+    if (b.a != lit.index)                                { exit 24i32; }
+    if (b.b != rhs.index)                                { exit 25i32; }
+
+    // --- growth preserves every node ----------------------------------------
+    // Past the initial capacity of 256, with each payload equal to its index, so
+    // a lost or corrupted node shows up as a mismatch rather than a crash. A
+    // pointer-based AST would have needed the handles to survive the realloc;
+    // indices do it for free, which is the reason for the design.
+    int32:i = 0i32;
+    while (i < 1000i32) {
+        drop ast_add_expr(@ast, ExprKind.ExprIntLiteral, sp,
+                          0i32, 0i32, 0i32, i => int64);
+        i = i + 1i32;
+    }
+    if (raw ast_expr_count(@ast) != 1004i32)             { exit 30i32; }
+
+    // The nodes created BEFORE growth must still read correctly.
+    ExprNode:again = raw ast_expr(@ast, lit);
+    if (again.payload != 42i64)                          { exit 31i32; }
+    ExprNode:b2 = raw ast_expr(@ast, bin);
+    if (b2.a != lit.index)                               { exit 32i32; }
+
+    int32:j = 0i32;
+    while (j < 1000i32) {
+        ExprId:h = ExprId{ index: 4i32 + j };
+        ExprNode:e = raw ast_expr(@ast, h);
+        if (e.payload != (j => int64))                   { exit 33i32; }
+        j = j + 1i32;
+    }
+
+    // --- every category works the same way ----------------------------------
+    StmtId:st = raw ast_add_stmt(@ast, StmtKind.StmtBlockStmt, sp,
+                                 0i32, 0i32, 0i32, 0i64);
+    DeclId:dc = raw ast_add_decl(@ast, DeclKind.DeclFunctionDecl, sp,
+                                 0i32, 0i32, 0i32, 0i64);
+    TypeId:ty = raw ast_add_type(@ast, TypeKind.TypeNamedType, sp,
+                                 0i32, 0i32, 0i32, 5i64);
+    PatId:pt  = raw ast_add_pat(@ast, PatKind.PatWildcard, sp,
+                                0i32, 0i32, 0i32, 0i64);
+    if ((raw ast_stmt(@ast, st)).kind != StmtKind.StmtBlockStmt)    { exit 40i32; }
+    if ((raw ast_decl(@ast, dc)).kind != DeclKind.DeclFunctionDecl) { exit 41i32; }
+    if ((raw ast_type(@ast, ty)).payload != 5i64)                   { exit 42i32; }
+    if ((raw ast_pat(@ast, pt)).kind != PatKind.PatWildcard)        { exit 43i32; }
+
+    // --- an out-of-range handle is an ERROR, never a sentinel ---------------
+    // Returning the NONE node would let a corrupt handle read as a legitimate
+    // absence, which is the failure D-042's "an fd is always valid" prevents.
+    ExprId:bad = ExprId{ index: 99999i32 };
+    Result<ExprNode>:r = ast_expr(@ast, bad);
+    if (!(r.is_error))                                   { exit 50i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

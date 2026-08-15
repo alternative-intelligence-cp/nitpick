@@ -1,0 +1,319 @@
+// AST storage.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.2.0.
+//
+// A tagged enum over a composable struct, which is what Nitpick has instead of
+// base/derived nodes (`CLAUDE.md`): each node is a `kind` plus a `Span` plus a
+// small fixed set of slots, and the kind decides what the slots mean.
+//
+// INDEX-BASED, NEVER POINTER-BASED. A node refers to another by an index into a
+// node array. Three things follow, and all three are the point:
+//
+//   * an index survives the array growing, where a pointer would dangle;
+//   * an index graph is easier to verify than a pointer graph;
+//   * an index fits in one machine word, which is what lets an enum payload
+//     hold one (SUBSET_1 section 1.2).
+//
+// Handles are DISTINCT TYPES rather than bare int32. An ExprId must not be
+// passable where a StmtId is wanted -- the same reasoning that makes `fd` a type
+// rather than an integer (D-042). It costs nothing at runtime and removes a
+// whole class of mixup from a structure built almost entirely of indices.
+
+use "source_location.npk".*;
+use "ast_kind.npk".*;
+
+pub struct:ExprId = { int32:index; };
+pub struct:StmtId = { int32:index; };
+pub struct:DeclId = { int32:index; };
+pub struct:TypeId = { int32:index; };
+pub struct:PatId  = { int32:index; };
+
+// Index 0 of every array is a reserved NONE node, so a zeroed handle is a
+// well-defined absence rather than a silent reference to whatever was created
+// first. `Expr?` in the spec is this, not a nullable pointer.
+pub func:expr_none = ExprId() { ExprId:i = ExprId{ index: 0i32 }; pass i; };
+pub func:stmt_none = StmtId() { StmtId:i = StmtId{ index: 0i32 }; pass i; };
+pub func:decl_none = DeclId() { DeclId:i = DeclId{ index: 0i32 }; pass i; };
+pub func:type_none = TypeId() { TypeId:i = TypeId{ index: 0i32 }; pass i; };
+pub func:pat_none  = PatId()  { PatId:i  = PatId{ index: 0i32 };  pass i; };
+
+pub func:expr_is_none = bool(ExprId:i) { pass (i.index == 0i32); };
+pub func:stmt_is_none = bool(StmtId:i) { pass (i.index == 0i32); };
+pub func:decl_is_none = bool(DeclId:i) { pass (i.index == 0i32); };
+pub func:type_is_none = bool(TypeId:i) { pass (i.index == 0i32); };
+pub func:pat_is_none  = bool(PatId:i)  { pass (i.index == 0i32); };
+
+// --- nodes ------------------------------------------------------------------
+//
+// The slots are deliberately few and deliberately unnamed-by-purpose: `a`, `b`,
+// `c` are child handles or auxiliary indices whose meaning is fixed by `kind`,
+// and `payload` carries a literal value or an intern index.
+//
+// CALL SITES DO NOT TOUCH SLOTS. Each construct gets named constructor and
+// accessor functions, added in the subcycle that parses it, and those are the
+// only place a slot is interpreted. Without generics the alternative was one
+// growable array per node shape -- ninety hand-written containers -- and the
+// accessor layer buys the same readability at no runtime cost.
+
+pub struct:ExprNode = {
+    ExprKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
+pub struct:StmtNode = {
+    StmtKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
+pub struct:DeclNode = {
+    DeclKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
+pub struct:TypeNode = {
+    TypeKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
+pub struct:PatNode = {
+    PatKind:kind;
+    Span:span;
+    int32:a;
+    int32:b;
+    int32:c;
+    int64:payload;
+};
+
+pub struct:Ast = {
+    wild ExprNode->:exprs;  int32:expr_count;  int32:expr_cap;
+    wild StmtNode->:stmts;  int32:stmt_count;  int32:stmt_cap;
+    wild DeclNode->:decls;  int32:decl_count;  int32:decl_cap;
+    wild TypeNode->:types;  int32:type_count;  int32:type_cap;
+    wild PatNode->:pats;    int32:pat_count;   int32:pat_cap;
+};
+
+pub func:ast_init = Ast() {
+    int64:n = 256i64;
+    Span:z = raw span_none();
+
+    wild int8->:e = alloc(n * #size_of<ExprNode>());
+    wild int8->:s = alloc(n * #size_of<StmtNode>());
+    wild int8->:d = alloc(n * #size_of<DeclNode>());
+    wild int8->:t = alloc(n * #size_of<TypeNode>());
+    wild int8->:p = alloc(n * #size_of<PatNode>());
+
+    Ast:ast = Ast{
+        exprs: e => wild ExprNode->,  expr_count: 0i32,  expr_cap: 256i32,
+        stmts: s => wild StmtNode->,  stmt_count: 0i32,  stmt_cap: 256i32,
+        decls: d => wild DeclNode->,  decl_count: 0i32,  decl_cap: 256i32,
+        types: t => wild TypeNode->,  type_count: 0i32,  type_cap: 256i32,
+        pats:  p => wild PatNode->,   pat_count:  0i32,  pat_cap:  256i32
+    };
+
+    // Reserve index 0 in every array as the NONE node.
+    ExprNode:en = ExprNode{ kind: ExprKind.ExprNone, span: z,
+                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.exprs[0i64] = en;
+    ast.expr_count = 1i32;
+
+    StmtNode:sn = StmtNode{ kind: StmtKind.StmtNone, span: z,
+                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.stmts[0i64] = sn;
+    ast.stmt_count = 1i32;
+
+    DeclNode:dn = DeclNode{ kind: DeclKind.DeclNone, span: z,
+                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.decls[0i64] = dn;
+    ast.decl_count = 1i32;
+
+    TypeNode:tn = TypeNode{ kind: TypeKind.TypeNone, span: z,
+                            a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.types[0i64] = tn;
+    ast.type_count = 1i32;
+
+    PatNode:pn = PatNode{ kind: PatKind.PatNone, span: z,
+                          a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
+    ast.pats[0i64] = pn;
+    ast.pat_count = 1i32;
+
+    pass ast;
+};
+
+// --- expressions -------------------------------------------------------------
+
+func:ast_grow_exprs = NIL(Ast->:ast) {
+    int32:nc = ast.expr_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.exprs => wild int8->,
+                                (nc => int64) * #size_of<ExprNode>());
+    ast.exprs = bigger => wild ExprNode->;
+    ast.expr_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_expr = ExprId(Ast->:ast, ExprKind:kind, Span:span,
+                               int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.expr_count >= ast.expr_cap) {
+        drop ast_grow_exprs(ast);
+    }
+    ExprNode:n = ExprNode{ kind: kind, span: span,
+                           a: a, b: b, c: c, payload: payload };
+    ast.exprs[ast.expr_count => int64] = n;
+    ExprId:id = ExprId{ index: ast.expr_count };
+    ast.expr_count = ast.expr_count + 1i32;
+    pass id;
+};
+
+// Out of range is an ERROR, not a sentinel node: returning the NONE node would
+// let a corrupt handle read as a legitimate absence, which is the failure
+// D-042's "an fd is always valid" reasoning exists to prevent.
+pub func:ast_expr = ExprNode(Ast->:ast, ExprId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.expr_count) { fail 7i32; }
+    pass ast.exprs[id.index => int64];
+};
+
+pub func:ast_expr_count = int32(Ast->:ast) { pass ast.expr_count; };
+
+// --- statements ---------------------------------------------------------------
+
+func:ast_grow_stmts = NIL(Ast->:ast) {
+    int32:nc = ast.stmt_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.stmts => wild int8->,
+                                (nc => int64) * #size_of<StmtNode>());
+    ast.stmts = bigger => wild StmtNode->;
+    ast.stmt_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_stmt = StmtId(Ast->:ast, StmtKind:kind, Span:span,
+                               int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.stmt_count >= ast.stmt_cap) {
+        drop ast_grow_stmts(ast);
+    }
+    StmtNode:n = StmtNode{ kind: kind, span: span,
+                           a: a, b: b, c: c, payload: payload };
+    ast.stmts[ast.stmt_count => int64] = n;
+    StmtId:id = StmtId{ index: ast.stmt_count };
+    ast.stmt_count = ast.stmt_count + 1i32;
+    pass id;
+};
+
+pub func:ast_stmt = StmtNode(Ast->:ast, StmtId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.stmt_count) { fail 7i32; }
+    pass ast.stmts[id.index => int64];
+};
+
+pub func:ast_stmt_count = int32(Ast->:ast) { pass ast.stmt_count; };
+
+// --- declarations -------------------------------------------------------------
+
+func:ast_grow_decls = NIL(Ast->:ast) {
+    int32:nc = ast.decl_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.decls => wild int8->,
+                                (nc => int64) * #size_of<DeclNode>());
+    ast.decls = bigger => wild DeclNode->;
+    ast.decl_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_decl = DeclId(Ast->:ast, DeclKind:kind, Span:span,
+                               int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.decl_count >= ast.decl_cap) {
+        drop ast_grow_decls(ast);
+    }
+    DeclNode:n = DeclNode{ kind: kind, span: span,
+                           a: a, b: b, c: c, payload: payload };
+    ast.decls[ast.decl_count => int64] = n;
+    DeclId:id = DeclId{ index: ast.decl_count };
+    ast.decl_count = ast.decl_count + 1i32;
+    pass id;
+};
+
+pub func:ast_decl = DeclNode(Ast->:ast, DeclId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.decl_count) { fail 7i32; }
+    pass ast.decls[id.index => int64];
+};
+
+pub func:ast_decl_count = int32(Ast->:ast) { pass ast.decl_count; };
+
+// --- types ---------------------------------------------------------------------
+
+func:ast_grow_types = NIL(Ast->:ast) {
+    int32:nc = ast.type_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.types => wild int8->,
+                                (nc => int64) * #size_of<TypeNode>());
+    ast.types = bigger => wild TypeNode->;
+    ast.type_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_type = TypeId(Ast->:ast, TypeKind:kind, Span:span,
+                               int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.type_count >= ast.type_cap) {
+        drop ast_grow_types(ast);
+    }
+    TypeNode:n = TypeNode{ kind: kind, span: span,
+                           a: a, b: b, c: c, payload: payload };
+    ast.types[ast.type_count => int64] = n;
+    TypeId:id = TypeId{ index: ast.type_count };
+    ast.type_count = ast.type_count + 1i32;
+    pass id;
+};
+
+pub func:ast_type = TypeNode(Ast->:ast, TypeId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.type_count) { fail 7i32; }
+    pass ast.types[id.index => int64];
+};
+
+pub func:ast_type_count = int32(Ast->:ast) { pass ast.type_count; };
+
+// --- patterns -------------------------------------------------------------------
+
+func:ast_grow_pats = NIL(Ast->:ast) {
+    int32:nc = ast.pat_cap * 2i32;
+    wild int8->:bigger = ralloc(ast.pats => wild int8->,
+                                (nc => int64) * #size_of<PatNode>());
+    ast.pats = bigger => wild PatNode->;
+    ast.pat_cap = nc;
+    pass NIL;
+};
+
+pub func:ast_add_pat = PatId(Ast->:ast, PatKind:kind, Span:span,
+                             int32:a, int32:b, int32:c, int64:payload) {
+    if (ast.pat_count >= ast.pat_cap) {
+        drop ast_grow_pats(ast);
+    }
+    PatNode:n = PatNode{ kind: kind, span: span,
+                         a: a, b: b, c: c, payload: payload };
+    ast.pats[ast.pat_count => int64] = n;
+    PatId:id = PatId{ index: ast.pat_count };
+    ast.pat_count = ast.pat_count + 1i32;
+    pass id;
+};
+
+pub func:ast_pat = PatNode(Ast->:ast, PatId:id) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.pat_count) { fail 7i32; }
+    pass ast.pats[id.index => int64];
+};
+
+pub func:ast_pat_count = int32(Ast->:ast) { pass ast.pat_count; };
