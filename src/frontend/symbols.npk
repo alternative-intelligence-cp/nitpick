@@ -1,0 +1,330 @@
+// The symbol table.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.3.1.
+//
+// One place that knows what every name in the program means.
+//
+// A symbol binds a NAME to the node that DECLARED it, in a SCOPE. It stores no
+// type, no span and no text of its own: all of that is already on the node, and
+// copying it here would make a second place for one fact to live — the defect
+// this cycle set has spent its whole length removing. `symbol_span` reads through
+// to the declaration rather than caching it.
+//
+// THE TWO-PHASE COLLECT (D-086). Every declaration in the graph is collected
+// before any body is resolved. That is not an optimisation: it is the property
+// that makes a `use` cycle resolvable at all, and it is the same one that already
+// lets a function call another declared below it in the same file. Phase 1 walks
+// declarations and never looks inside a `BlockStmt`; phase 2 (cycle 0.3.5)
+// resolves bodies against the finished table.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "resolve_codes.npk".*;
+use "parse_decl.npk".*;
+
+// --- what introduced a name ------------------------------------------------------
+//
+// Three node arrays can introduce one, so the symbol records WHICH along with the
+// index. A single discriminated index rather than three slots two of which are
+// always empty.
+pub func:SYM_DECL = int32() { pass 1i32; };   // func, struct, param, generic, …
+pub func:SYM_STMT = int32() { pass 2i32; };   // a local `VarDeclStmt`
+pub func:SYM_PAT = int32()  { pass 3i32; };   // a `pick` destructuring binding
+
+pub func:SYM_PUB = int32() { pass 1i32; };
+
+pub struct:Symbol = {
+    int32:name;          // intern index; 0 is the reserved empty string
+    int32:scope;
+    int32:origin_kind;
+    int32:origin;        // index into the array `origin_kind` names
+    int32:flags;
+    int32:next;          // next symbol in the SAME scope, or 0
+};
+
+// A scope is a node in a tree. `first` heads a chain through `Symbol.next`, so a
+// lookup walks only this scope's own symbols rather than the whole table --
+// which matters, because name resolution is the most-repeated operation in the
+// frontend after lexing.
+pub func:SCOPE_MODULE = int32()   { pass 1i32; };
+pub func:SCOPE_FUNCTION = int32() { pass 2i32; };
+pub func:SCOPE_BLOCK = int32()    { pass 3i32; };
+
+pub struct:Scope = {
+    int32:parent;
+    int32:kind;
+    int32:first;
+};
+
+pub struct:SymbolTable = {
+    wild Symbol->:syms;    int32:sym_count;   int32:sym_cap;
+    wild Scope->:scopes;   int32:scope_count; int32:scope_cap;
+};
+
+pub func:symtab_init = SymbolTable() {
+    int64:n = 128i64;
+    wild int8->:s = alloc(n * #size_of<Symbol>());
+    wild int8->:c = alloc(n * #size_of<Scope>());
+
+    SymbolTable:t = SymbolTable{
+        syms: s => wild Symbol->,   sym_count: 0i32,   sym_cap: 128i32,
+        scopes: c => wild Scope->,  scope_count: 0i32, scope_cap: 128i32
+    };
+
+    // Index 0 is reserved in BOTH arrays, matching the AST's convention: a zeroed
+    // handle is a well-defined absence rather than a silent reference to whatever
+    // was created first.
+    Symbol:none = Symbol{ name: 0i32, scope: 0i32, origin_kind: 0i32,
+                          origin: 0i32, flags: 0i32, next: 0i32 };
+    t.syms[0i64] = none;
+    t.sym_count = 1i32;
+
+    Scope:root = Scope{ parent: 0i32, kind: 0i32, first: 0i32 };
+    t.scopes[0i64] = root;
+    t.scope_count = 1i32;
+
+    pass t;
+};
+
+// --- scopes -------------------------------------------------------------------------
+
+func:symtab_grow_scopes = NIL(SymbolTable->:t) {
+    int32:nc = t.scope_cap * 2i32;
+    wild int8->:bigger = ralloc(t.scopes => wild int8->,
+                                (nc => int64) * #size_of<Scope>());
+    t.scopes = bigger => wild Scope->;
+    t.scope_cap = nc;
+    pass NIL;
+};
+
+pub func:scope_open = int32(SymbolTable->:t, int32:parent, int32:kind) {
+    if (t.scope_count >= t.scope_cap) {
+        drop symtab_grow_scopes(t);
+    }
+    Scope:s = Scope{ parent: parent, kind: kind, first: 0i32 };
+    t.scopes[t.scope_count => int64] = s;
+    int32:id = t.scope_count;
+    t.scope_count = t.scope_count + 1i32;
+    pass id;
+};
+
+pub func:scope_parent = int32(SymbolTable->:t, int32:scope) {
+    pass t.scopes[scope => int64].parent;
+};
+
+pub func:scope_kind = int32(SymbolTable->:t, int32:scope) {
+    pass t.scopes[scope => int64].kind;
+};
+
+// --- symbols ------------------------------------------------------------------------
+
+func:symtab_grow_syms = NIL(SymbolTable->:t) {
+    int32:nc = t.sym_cap * 2i32;
+    wild int8->:bigger = ralloc(t.syms => wild int8->,
+                                (nc => int64) * #size_of<Symbol>());
+    t.syms = bigger => wild Symbol->;
+    t.sym_cap = nc;
+    pass NIL;
+};
+
+pub func:symtab_get = Symbol(SymbolTable->:t, int32:id) {
+    if (id < 0i32) { fail 11i32; }
+    if (id >= t.sym_count) { fail 11i32; }
+    pass t.syms[id => int64];
+};
+
+pub func:symtab_count = int32(SymbolTable->:t) { pass t.sym_count; };
+
+// Look a name up in ONE scope, without walking outward.
+pub func:scope_lookup_local = int32(SymbolTable->:t, int32:scope, int32:name) {
+    int32:cur = t.scopes[scope => int64].first;
+    while (cur != 0i32) {
+        if (t.syms[cur => int64].name == name) {
+            pass cur;
+        }
+        cur = t.syms[cur => int64].next;
+    }
+    pass 0i32;
+};
+
+// Look outward through enclosing scopes, stopping AT the module boundary.
+//
+// It stops rather than continuing because a nested `mod` is a different module,
+// and reaching into an enclosing one would make a module's surface depend on
+// where it happens to be written. Crossing a module boundary is what `use` is
+// for, and 0.3.4 handles it.
+pub func:scope_lookup = int32(SymbolTable->:t, int32:scope, int32:name) {
+    int32:cur = scope;
+    while (cur != 0i32) {
+        int32:hit = raw scope_lookup_local(t, cur, name);
+        if (hit != 0i32) {
+            pass hit;
+        }
+        if ((raw scope_kind(t, cur)) == (raw SCOPE_MODULE())) {
+            break;
+        }
+        cur = raw scope_parent(t, cur);
+    }
+    pass 0i32;
+};
+
+// Where a symbol was declared. Read THROUGH the origin rather than stored, so
+// there is one span for one declaration and it cannot go stale.
+pub func:symbol_span = Span(Ast->:ast, SymbolTable->:t, int32:id) {
+    Symbol:s = raw symtab_get(t, id);
+    if (s.origin_kind == (raw SYM_DECL())) {
+        DeclId:d = DeclId{ index: s.origin };
+        pass ((relay ast_decl(ast, d)).span);
+    }
+    if (s.origin_kind == (raw SYM_STMT())) {
+        StmtId:st = StmtId{ index: s.origin };
+        pass ((relay ast_stmt(ast, st)).span);
+    }
+    if (s.origin_kind == (raw SYM_PAT())) {
+        PatId:pt = PatId{ index: s.origin };
+        pass ((relay ast_pat(ast, pt)).span);
+    }
+    pass (raw span_none());
+};
+
+// Declare a name in a scope.
+//
+// A DUPLICATE IS AN ERROR, and it names both places: the error sits on the second
+// declaration and a note points at the first. "First wins" is not a policy, it is
+// a coin toss the reader cannot see -- and the reader is the one who has to work
+// out which of two identical-looking declarations the program actually used.
+//
+// Returns the symbol id, or 0 when it was a duplicate.
+pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
+                                int32:scope, int32:name,
+                                int32:origin_kind, int32:origin, int32:flags) {
+    int32:prior = raw scope_lookup_local(t, scope, name);
+    if (prior != 0i32) {
+        Span:here = raw span_none();
+        if (origin_kind == (raw SYM_DECL())) {
+            DeclId:d = DeclId{ index: origin };
+            here = (relay ast_decl(ast, d)).span;
+        }
+        if (origin_kind == (raw SYM_STMT())) {
+            StmtId:st = StmtId{ index: origin };
+            here = (relay ast_stmt(ast, st)).span;
+        }
+        drop diaglist_push(diags,
+            raw diag_error(raw RESOLVE_DUPLICATE(),
+                           "this name is already declared in this scope", here));
+        drop diaglist_push(diags,
+            raw diag_note(raw RESOLVE_DUPLICATE(),
+                          "the first declaration is here",
+                          relay symbol_span(ast, t, prior)));
+        pass 0i32;
+    }
+
+    if (t.sym_count >= t.sym_cap) {
+        drop symtab_grow_syms(t);
+    }
+    Symbol:s = Symbol{ name: name, scope: scope,
+                       origin_kind: origin_kind, origin: origin,
+                       flags: flags, next: t.scopes[scope => int64].first };
+    t.syms[t.sym_count => int64] = s;
+    int32:id = t.sym_count;
+    t.sym_count = t.sym_count + 1i32;
+
+    // Push onto the head of the scope's chain. Order within a scope does not
+    // matter for lookup, because a duplicate is refused above -- so at most one
+    // symbol per name is ever reachable.
+    Scope:sc = t.scopes[scope => int64];
+    sc.first = id;
+    t.scopes[scope => int64] = sc;
+    pass id;
+};
+
+// --- phase 1: collect declarations ----------------------------------------------------
+//
+// Walks the declaration structure and NOTHING ELSE. It does not enter a function
+// body, an initialiser or a contract: those are phase 2, and entering them here
+// would defeat the whole arrangement by requiring a name to be declared before it
+// is used.
+
+pub func:collect_module = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
+                                DeclId:mod_id, int32:parent_scope) {
+    DeclNode:m = relay ast_decl(ast, mod_id);
+    int32:scope = raw scope_open(t, parent_scope, raw SCOPE_MODULE());
+
+    int32:n = raw item_member_count(ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:item = raw item_member(ast, m, i);
+        drop collect_decl(t, ast, diags, item, scope);
+        i = i + 1i32;
+    }
+    pass scope;
+};
+
+pub func:collect_decl = NIL(SymbolTable->:t, Ast->:ast, DiagList->:diags,
+                            DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(ast, id);
+
+    // A nested `mod:name = { … };` is a namespace of its own, so it declares its
+    // name here and its members in a scope of its own.
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        drop symtab_declare(t, ast, diags, scope, raw decl_name(d),
+                            raw SYM_DECL(), id.index, raw decl_flag_bits(d));
+        drop collect_module(t, ast, diags, id, scope);
+        pass NIL;
+    }
+
+    // An `extern` block declares its FUNCTIONS, not itself: a caller writes
+    // `open(...)`, never `libc.open(...)`. The block is a grouping and a place to
+    // hang the library name, which is why it has no name of its own to collide
+    // with anything.
+    if (d.kind == DeclKind.DeclExternBlock) {
+        int32:n = raw decl_win_count(d);
+        int32:i = 0i32;
+        while (i < n) {
+            DeclId:fn = DeclId{ index: raw ast_id_at(ast, raw decl_win_start(d), i) };
+            drop collect_decl(t, ast, diags, fn, scope);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    // An `impl` block declares nothing at module scope. Its methods are reached
+    // through the type, which needs the type to exist first -- so they are
+    // collected in cycle 0.4 where coherence is decided, not here.
+    if (d.kind == DeclKind.DeclImplDecl) {
+        pass NIL;
+    }
+
+    // `use` binds names too, but what it binds depends on another module having
+    // been collected already. That is 0.3.4.
+    if (d.kind == DeclKind.DeclImportDecl) {
+        pass NIL;
+    }
+
+    // Everything else declares its own name: func, struct, enum, trait, Rules,
+    // macro, opaque, global, extern fn, assoc.
+    int32:name = raw decl_name(d);
+    if (raw intern_is_none(name)) {
+        pass NIL;
+    }
+    drop symtab_declare(t, ast, diags, scope, name,
+                        raw SYM_DECL(), id.index, raw decl_flag_bits(d));
+    pass NIL;
+};
+
+// `pub` on the declaration becomes `pub` on the symbol. Visibility is BINARY
+// (MODULE_REFERENCE section 3) -- no `pub(crate)`, no friends -- so one bit
+// carries it.
+pub func:decl_flag_bits = int32(DeclNode:d) {
+    if (raw decl_has(d, raw DECL_PUB())) {
+        pass (raw SYM_PUB());
+    }
+    pass 0i32;
+};
+
+pub func:symbol_is_pub = bool(Symbol:s) {
+    pass ((s.flags & (raw SYM_PUB())) != 0i32);
+};

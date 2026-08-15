@@ -1,0 +1,173 @@
+// The symbol table and the two-phase collect (cycle 0.3.1).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+
+struct:Built = {
+    Ast:ast;
+    SymbolTable:tab;
+    DiagList:diags;
+    int32:scope;
+};
+
+// Parse a module and run phase 1 over it.
+func:collect = Built(string:src, InternTable->:it) {
+    DiagList:lexed = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @lexed);
+    Ast:ast = raw ast_init();
+    DiagList:pdiags = raw diaglist_init();
+    Parser:p = raw parser_init(@toks, @ast, @pdiags, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+
+    Built:b = Built{ ast: ast, tab: tab, diags: diags, scope: scope };
+    pass b;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- every declaration becomes a symbol -----------------------------------
+    Built:b1 = raw collect(
+        "pub func:add = int32(int32:a) { pass a; }; struct:Point = { int32:x; }; enum:Net = { Up; }; pub const int32:MAX = 1i32;",
+        @it);
+    if (raw diaglist_count(@b1.diags) != 0i64)              { exit 10i32; }
+    // 1 reserved NONE + four declarations
+    if (raw symtab_count(@b1.tab) != 5i32)                  { exit 11i32; }
+
+    int32:add = raw intern_add(@it, "add");
+    int32:sym_add = raw scope_lookup(@b1.tab, b1.scope, add);
+    if (sym_add == 0i32)                                    { exit 12i32; }
+    Symbol:s_add = raw symtab_get(@b1.tab, sym_add);
+    if (!(raw symbol_is_pub(s_add)))                        { exit 13i32; }
+
+    // Visibility is BINARY and comes from the declaration, so a private one is
+    // distinguishable from a public one and from a missing one.
+    int32:point = raw intern_add(@it, "Point");
+    Symbol:s_pt = raw symtab_get(@b1.tab, raw scope_lookup(@b1.tab, b1.scope, point));
+    if (raw symbol_is_pub(s_pt))                            { exit 14i32; }
+
+    // A name that was never declared is symbol 0 -- the reserved NONE, which is
+    // why "not found" needs no sentinel of its own.
+    int32:nope = raw intern_add(@it, "nowhere");
+    if ((raw scope_lookup(@b1.tab, b1.scope, nope)) != 0i32) { exit 15i32; }
+
+    // --- the span is read THROUGH the declaration -------------------------------
+    // Not copied into the symbol: one fact, one place, and it cannot go stale.
+    Span:sp_add = relay symbol_span(@b1.ast, @b1.tab, sym_add);
+    if (sp_add.line != 1i32)                                { exit 16i32; }
+    if (sp_add.col != 1i32)                                 { exit 17i32; }
+
+    // --- a duplicate names BOTH places --------------------------------------------
+    // An error on the second declaration and a NOTE on the first. "First wins" is
+    // a coin toss the reader cannot see.
+    Built:b2 = raw collect(
+        "func:f = int32() { pass 1i32; };\nfunc:f = int32() { pass 2i32; };", @it);
+    if (raw diaglist_count(@b2.diags) != 2i64)              { exit 20i32; }
+    Diagnostic:err = raw diaglist_at(@b2.diags, 0i64);
+    if (!(raw string_eq(err.code, raw RESOLVE_DUPLICATE()))) { exit 21i32; }
+    if (err.span.line != 2i32)                              { exit 22i32; }
+    Diagnostic:note = raw diaglist_at(@b2.diags, 1i64);
+    if (note.severity != ((Severity.Note => int32)))        { exit 23i32; }
+    if (note.span.line != 1i32)                             { exit 24i32; }
+    // The error is on the SECOND declaration and the note on the first, so the
+    // reader is taken to the line they just wrote and then shown what it clashes
+    // with -- not the other way round.
+    if (err.severity != ((Severity.Error => int32)))        { exit 25i32; }
+
+    // --- a nested `mod` is its own scope ---------------------------------------------
+    Built:b3 = raw collect(
+        "func:outer = int32() { pass 1i32; }; mod:inner = { func:hidden = int32() { pass 2i32; }; };",
+        @it);
+    if (raw diaglist_count(@b3.diags) != 0i64)              { exit 30i32; }
+    int32:inner = raw intern_add(@it, "inner");
+    int32:hidden = raw intern_add(@it, "hidden");
+    // The module's own name is visible at file scope...
+    if ((raw scope_lookup(@b3.tab, b3.scope, inner)) == 0i32) { exit 31i32; }
+    // ...and its contents are NOT.
+    if ((raw scope_lookup(@b3.tab, b3.scope, hidden)) != 0i32) { exit 32i32; }
+
+    // The same name in two different modules is not a duplicate. If nested `mod`
+    // did not open a scope, this would report one.
+    Built:b4 = raw collect(
+        "mod:a = { func:go = int32() { pass 1i32; }; }; mod:b = { func:go = int32() { pass 2i32; }; };",
+        @it);
+    if (raw diaglist_count(@b4.diags) != 0i64)              { exit 33i32; }
+
+    // --- lookup stops at the module boundary --------------------------------------------
+    // A nested `mod` is a different module, so it does not see the file's names.
+    // Reaching outward would make a module's surface depend on where it happens
+    // to be written; crossing that boundary is what `use` is for.
+    Built:b5 = raw collect(
+        "func:visible = int32() { pass 1i32; }; mod:inner = { func:probe = int32() { pass 2i32; }; };",
+        @it);
+    int32:inner5 = raw intern_add(@it, "inner");
+    Symbol:s_inner = raw symtab_get(@b5.tab, raw scope_lookup(@b5.tab, b5.scope, inner5));
+    // The module scope is the one opened right after the module's own symbol.
+    int32:mod_scope = b5.scope + 1i32;
+    if ((raw scope_kind(@b5.tab, mod_scope)) != (raw SCOPE_MODULE())) { exit 40i32; }
+    int32:visible = raw intern_add(@it, "visible");
+    if ((raw scope_lookup(@b5.tab, mod_scope, visible)) != 0i32)      { exit 41i32; }
+
+    // A BLOCK scope does reach outward -- it is the module boundary that stops
+    // the walk, not every boundary.
+    int32:blk = raw scope_open(@b5.tab, b5.scope, raw SCOPE_BLOCK());
+    if ((raw scope_lookup(@b5.tab, blk, visible)) == 0i32)            { exit 42i32; }
+
+    // --- an extern block declares its FUNCTIONS, not itself -----------------------------
+    // A caller writes `open(...)`, never `libc.open(...)`, so the block has no
+    // name of its own to collide with anything.
+    Built:b6 = raw collect(
+        "extern:\"libc\" = { func:open = int32(int8->:p) fails on result < 0i32 with errno; };",
+        @it);
+    if (raw diaglist_count(@b6.diags) != 0i64)              { exit 50i32; }
+    int32:open_n = raw intern_add(@it, "open");
+    if ((raw scope_lookup(@b6.tab, b6.scope, open_n)) == 0i32) { exit 51i32; }
+
+    // --- phase 1 does NOT enter bodies ----------------------------------------------------
+    // The whole point of the two phases: a local named `f` inside a body must not
+    // become a module-scope symbol, or it would collide with a real declaration
+    // and be visible to every other function.
+    Built:b7 = raw collect(
+        "func:g = int32() { int32:localvar = 1i32; pass localvar; };", @it);
+    if (raw diaglist_count(@b7.diags) != 0i64)              { exit 60i32; }
+    int32:lv = raw intern_add(@it, "localvar");
+    if ((raw scope_lookup(@b7.tab, b7.scope, lv)) != 0i32)  { exit 61i32; }
+    // 1 reserved + `g` and nothing else.
+    if (raw symtab_count(@b7.tab) != 2i32)                  { exit 62i32; }
+
+    // And a name used BEFORE it is declared resolves, which is what the two-phase
+    // arrangement buys and what makes a `use` cycle resolvable (D-086).
+    Built:b8 = raw collect(
+        "func:first = int32() { pass raw second(); }; func:second = int32() { pass 2i32; };",
+        @it);
+    if (raw diaglist_count(@b8.diags) != 0i64)              { exit 70i32; }
+    int32:second = raw intern_add(@it, "second");
+    if ((raw scope_lookup(@b8.tab, b8.scope, second)) == 0i32) { exit 71i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};
