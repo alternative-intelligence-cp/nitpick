@@ -1,0 +1,298 @@
+// Type resolution — `TypeNode` → `Type`.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.1.
+//
+// The parser records what was WRITTEN; this decides what it MEANS. A `NamedType`
+// is a name and a window of generic arguments until something looks the name up,
+// and that something is here.
+//
+// EVERY FAILURE RETURNS THE INVALID TYPE RATHER THAN NOTHING. Index 0 is a real
+// entry (0.4.0), so one bad annotation produces one diagnostic instead of a
+// cascade of "cannot compare" from everything downstream that touched it. This is
+// the same reasoning as the AST's reserved NONE nodes and the parser's panic
+// mode, applied one layer up.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "token_kind.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "builtin_types.npk".*;
+use "parse_type.npk".*;
+use "parse_expr.npk".*;
+use "parse_decl.npk".*;
+use "symbols.npk".*;
+
+pub struct:TypeResolver = {
+    Ast->:ast;
+    TypeTable->:types;
+    SymbolTable->:tab;
+    InternTable->:interns;
+    DiagList->:diags;
+
+    // `Self` is valid only inside a `trait` or `impl` body (D-030). Held as the
+    // type it stands for, or 0 when there is none — so "Self outside an impl" is
+    // a state the resolver can see rather than a rule it has to remember.
+    int32:self_type;
+};
+
+pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
+                                   SymbolTable->:tab, InternTable->:interns,
+                                   DiagList->:diags) {
+    TypeResolver:r = TypeResolver{ ast: ast, types: types, tab: tab,
+                                   interns: interns, diags: diags,
+                                   self_type: 0i32 };
+    pass r;
+};
+
+func:ty_error = int32(TypeResolver->:r, string:code, string:message, Span:at) {
+    drop diaglist_push(r.diags, raw diag_error(code, message, at));
+    pass 0i32;      // the INVALID type
+};
+
+// --- the entry ---------------------------------------------------------------------
+
+pub func:resolve_type = int32(TypeResolver->:r, TypeId:id, int32:scope) {
+    if (raw type_is_none(id)) {
+        pass 0i32;
+    }
+    TypeNode:n = relay ast_type(r.ast, id);
+
+    if (n.kind == TypeKind.TypeNamedType) {
+        pass (relay resolve_named(r, n, scope));
+    }
+
+    if (n.kind == TypeKind.TypePointerType) {
+        // `resolve_pointee`, NOT `resolve_type`: the pointee is the one position
+        // where a bare `any` is legal, and it is legal at every depth.
+        // `wild any->` in a struct field is the same case as one in a signature.
+        int32:pointee = relay resolve_pointee(r, raw type_pointee(n), scope);
+        pass (raw tt_pointer(r.types, pointee));
+    }
+
+    if (n.kind == TypeKind.TypeOptionalType) {
+        int32:inner = relay resolve_type(r, raw type_inner(n), scope);
+        pass (raw tt_optional(r.types, inner,
+                              raw type_size(r.types, inner),
+                              raw type_align(r.types, inner)));
+    }
+
+    // ONE NODE, TWO TYPES. `T[]` and `T[N]` differ in syntax only by the size
+    // expression and are wildly different types (D-070): a slice is a non-owning
+    // {ptr, len} view, a fixed array is a value that contains its elements. The
+    // AST records the syntax; this is where the meaning is assigned.
+    if (n.kind == TypeKind.TypeArrayType) {
+        int32:elem = relay resolve_type(r, raw type_element(n), scope);
+        if (raw type_is_slice(n)) {
+            pass (raw tt_slice(r.types, elem));
+        }
+        pass (relay resolve_fixed_array(r, n, elem, scope));
+    }
+
+    if (n.kind == TypeKind.TypeCStringType) {
+        pass (r.types.t_cstring);
+    }
+
+    // `any` IS LEGAL ONLY UNDER `->` (TYPE_REFERENCE section 27). A bare one is
+    // refused here rather than silently promoted, because a checker that
+    // helpfully fixed it would make `any` mean two different things depending on
+    // where it was written — and the spec already supplies the message.
+    //
+    // The pointer case never reaches this: `any->` resolves through the pointer
+    // branch above, which asks for `any` as a POINTEE and gets it from
+    // `resolve_pointee` rather than from here.
+    if (n.kind == TypeKind.TypeAnyType) {
+        pass (relay ty_error(r, raw TYPE_BARE_ANY(),
+            "`any` must be used as a pointer type: `any->`. Bare `any` is not a valid type.",
+            n.span));
+    }
+
+    if (n.kind == TypeKind.TypeFuncType) {
+        pass (relay resolve_func_type(r, n, scope));
+    }
+
+    if (n.kind == TypeKind.TypeDynType) {
+        pass (relay resolve_dyn(r, n, scope));
+    }
+
+    if (n.kind == TypeKind.TypeSelfType) {
+        if (r.self_type == 0i32) {
+            pass (relay ty_error(r, raw TYPE_SELF_OUTSIDE(),
+                "`Self` names the implementing type and is valid only inside a `trait` or `impl` body",
+                n.span));
+        }
+        pass (r.self_type);
+    }
+
+    pass 0i32;
+};
+
+// A pointer's pointee, which is the one position where a bare `any` is legal.
+func:resolve_pointee = int32(TypeResolver->:r, TypeId:id, int32:scope) {
+    if (raw type_is_none(id)) {
+        pass 0i32;
+    }
+    TypeNode:n = relay ast_type(r.ast, id);
+    if (n.kind == TypeKind.TypeAnyType) {
+        pass (r.types.t_any);
+    }
+    pass (relay resolve_type(r, id, scope));
+};
+
+// --- named types ---------------------------------------------------------------------
+
+func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
+    int64:payload = raw type_name_index(n);
+
+    // A BUILTIN TYPE KEYWORD carries no intern index: the parser stored the
+    // token KIND as the name, because a keyword is not an identifier (0.2.2).
+    // The two are told apart by which range the payload is in, and the generated
+    // table maps the kind to what it is.
+    TokenKind:as_kind = ((payload => int32) => TokenKind);
+    BuiltinTypeSpec:spec = raw builtin_type_spec(as_kind);
+    if (spec.known) {
+        pass (relay builtin_to_type(r, spec, n));
+    }
+
+    // …or it is a user name. Look it up.
+    int32:name = payload => int32;
+    int32:sym = raw scope_lookup(r.tab, scope, name);
+    if (sym == 0i32) {
+        string:text = relay intern_get(r.interns, name);
+        string:m1 = relay string_concat("there is no type named `", text);
+        string:m2 = relay string_concat(m1, "`");
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(), m2, n.span));
+    }
+
+    Symbol:s = raw symtab_get(r.tab, sym);
+    DeclId:d = DeclId{ index: s.origin };
+    DeclNode:dn = relay ast_decl(r.ast, d);
+
+    if (dn.kind == DeclKind.DeclStructDecl) {
+        // The layout is computed in 0.4.2 once every field's type is known; the
+        // identity is the declaration and is available now (D-090).
+        pass (raw tt_struct(r.types, d.index, name, 0i64, 1i32));
+    }
+    if (dn.kind == DeclKind.DeclEnumDecl) {
+        pass (raw tt_enum(r.types, d.index, name, 0i64, 1i32));
+    }
+    if (dn.kind == DeclKind.DeclTraitDecl) {
+        pass (raw tt_trait(r.types, d.index, name));
+    }
+    if (dn.kind == DeclKind.DeclGenericParam) {
+        pass (raw tt_param(r.types, d.index, name));
+    }
+
+    // A NAME THAT IS NOT A TYPE SAYS WHAT IT IS. "unknown type `helper`" would
+    // send the reader hunting for a missing declaration that is right there;
+    // "`helper` is a function, not a type" ends the search immediately.
+    string:text = relay intern_get(r.interns, name);
+    string:k1 = relay string_concat("`", text);
+    string:k2 = relay string_concat(k1, "` is ");
+    string:k3 = relay string_concat(k2, raw decl_kind_article(dn));
+    string:k4 = relay string_concat(k3, ", not a type");
+    pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(), k4, n.span));
+};
+
+pub func:decl_kind_article = string(DeclNode:d) {
+    if (d.kind == DeclKind.DeclFunctionDecl) { pass "a function"; }
+    if (d.kind == DeclKind.DeclGlobalDecl)   { pass "a global"; }
+    if (d.kind == DeclKind.DeclModuleDecl)   { pass "a module"; }
+    if (d.kind == DeclKind.DeclParamDecl)    { pass "a parameter"; }
+    if (d.kind == DeclKind.DeclFieldDecl)    { pass "a field"; }
+    if (d.kind == DeclKind.DeclEnumVariant)  { pass "an enum variant"; }
+    if (d.kind == DeclKind.DeclMacroDecl)    { pass "a macro"; }
+    if (d.kind == DeclKind.DeclRuleDecl)     { pass "a `Rules` block"; }
+    if (d.kind == DeclKind.DeclExternFn)     { pass "an extern function"; }
+    if (d.kind == DeclKind.DeclOpaqueDecl)   { pass "an opaque type"; }
+    pass "not a type";
+};
+
+func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n) {
+    if (spec.kind == (raw TY_INT()))    { pass (raw tt_int(r.types, spec.bits, spec.signed)); }
+    if (spec.kind == (raw TY_CHAR()))   { pass (raw tt_char(r.types, spec.bits)); }
+    if (spec.kind == (raw TY_FLOAT()))  { pass (raw tt_float(r.types, spec.bits)); }
+    if (spec.kind == (raw TY_TBB()))    { pass (raw tt_tbb(r.types, spec.bits)); }
+    if (spec.kind == (raw TY_KERNEL())) { pass (raw tt_kernel(r.types, spec.which)); }
+    if (spec.kind == (raw TY_BOOL()))   { pass (r.types.t_bool); }
+    if (spec.kind == (raw TY_STRING())) { pass (r.types.t_string); }
+    if (spec.kind == (raw TY_CSTRING())){ pass (r.types.t_cstring); }
+    if (spec.kind == (raw TY_NIL()))    { pass (r.types.t_nil); }
+    // A bare `any` reaching here is the same error as the node form.
+    if (spec.kind == (raw TY_ANY())) {
+        pass (relay ty_error(r, raw TYPE_BARE_ANY(),
+            "`any` must be used as a pointer type: `any->`. Bare `any` is not a valid type.",
+            n.span));
+    }
+    pass 0i32;
+};
+
+// --- the composites ---------------------------------------------------------------------
+
+// An array size is a CONSTANT EXPRESSION. 0.2.8 made it a real expression rather
+// than one token, so `int32[COUNT]` and `int32[N + 1]` both parse — and this is
+// where a size that cannot be computed is refused rather than becoming whatever
+// number happened to be lying around.
+func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
+                                 int32:_~scope) {
+    ExprId:size = raw type_array_size(n);
+    ExprNode:se = relay ast_expr(r.ast, size);
+
+    if (se.kind != ExprKind.ExprIntLiteral) {
+        // Folding a general constant expression is cycle 0.6's job (`comptime`).
+        // Until then a non-literal size is refused by NAME rather than silently
+        // taking a wrong value, which is what 0.2.8 found this path doing.
+        pass (relay ty_error(r, raw TYPE_ARRAY_SIZE(),
+            "an array size must be a constant, and only an integer literal is constant-folded at this rung",
+            se.span));
+    }
+
+    int64:count = se.payload;
+    if (count < 0i64) {
+        pass (relay ty_error(r, raw TYPE_ARRAY_SIZE(),
+            "an array size may not be negative", se.span));
+    }
+    pass (raw tt_array(r.types, elem, count => int32,
+                       raw type_size(r.types, elem),
+                       raw type_align(r.types, elem)));
+};
+
+// `func RetType(ParamTypes)` (D-087).
+func:resolve_func_type = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
+    int32:ret = relay resolve_type(r, raw type_return(n), scope);
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < (raw type_param_count(n))) {
+        int32:pt = relay resolve_type(r, relay type_param_at(r.ast, n, i), scope);
+        drop ast_scratch_push(r.ast, pt);
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    pass (raw tt_func(r.types, ret, w.start, w.count));
+};
+
+// `dyn A & B` — a trait object over a set of traits. Object safety is checked in
+// 0.4.6, where the trait's methods are known; this is only the type.
+func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < (raw type_args_count(n))) {
+        TypeId:operand = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), i) };
+        int32:t = relay resolve_type(r, operand, scope);
+        // EVERY OPERAND OF `dyn` MUST BE A TRAIT. `dyn int32` is not a dynamic
+        // anything, and catching it here means 0.4.6 can assume it has traits.
+        if (!(raw type_is_invalid(r.types, t))) {
+            if ((raw type_kind(r.types, t)) != (raw TY_TRAIT())) {
+                drop ty_error(r, raw TYPE_DYN_NOT_TRAIT(),
+                    "every operand of `dyn` must be a trait", n.span);
+            }
+        }
+        drop ast_scratch_push(r.ast, t);
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    pass (raw tt_dyn(r.types, w.start, w.count));
+};

@@ -1,0 +1,208 @@
+// Type resolution — `TypeNode` → `Type` (cycle 0.4.1).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+
+struct:Fix = {
+    Ast:ast;
+    TypeTable:types;
+    SymbolTable:tab;
+    DiagList:diags;
+    int32:scope;
+    int32:result;
+};
+
+// Parse a bare TYPE and resolve it, in a scope holding whatever `decls` declares.
+func:ty = Fix(string:decls, string:type_text, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+
+    // The declarations first, so a named type has something to find.
+    TokenList:dk = raw lex_all(0i32, decls, it, @ld);
+    Parser:dp = raw parser_init(@dk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@dp);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+
+    // …then the type itself.
+    TokenList:tk = raw lex_all(0i32, type_text, it, @ld);
+    Parser:tp = raw parser_init(@tk, @ast, @pd, it);
+    TypeId:node = relay p_parse_type(@tp);
+
+    TypeTable:types = raw typetable_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+    int32:resolved = relay resolve_type(@r, node, scope);
+
+    Fix:f = Fix{ ast: ast, types: types, tab: tab, diags: diags,
+                 scope: scope, result: resolved };
+    pass f;
+};
+
+func:errs = int64(Fix->:f) { pass (raw diaglist_count(@f.diags)); };
+func:code0 = string(Fix->:f) { pass ((raw diaglist_at(@f.diags, 0i64)).code); };
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- the builtin scalars, from the GENERATED table -------------------------
+    Fix:a = raw ty("", "int32", @it);
+    if (raw errs(@a) != 0i64)                                  { exit 10i32; }
+    if ((raw type_kind(@a.types, a.result)) != (raw TY_INT()))  { exit 11i32; }
+    if ((raw type_int_bits(@a.types, a.result)) != 32i32)      { exit 12i32; }
+    if (!(raw type_is_signed(@a.types, a.result)))             { exit 13i32; }
+
+    Fix:b = raw ty("", "uint64", @it);
+    if ((raw type_int_bits(@b.types, b.result)) != 64i32)      { exit 14i32; }
+    if (raw type_is_signed(@b.types, b.result))                { exit 15i32; }
+
+    // `bool` and `char8` are one byte each and are NOT integers.
+    Fix:c = raw ty("", "bool", @it);
+    if ((raw type_kind(@c.types, c.result)) != (raw TY_BOOL())) { exit 16i32; }
+    if (raw type_is_numeric(@c.types, c.result))               { exit 17i32; }
+    Fix:d = raw ty("", "char8", @it);
+    if ((raw type_kind(@d.types, d.result)) != (raw TY_CHAR())) { exit 18i32; }
+    if (raw type_is_numeric(@d.types, d.result))               { exit 19i32; }
+
+    // `fd` is its own type, not an integer (D-042).
+    Fix:e = raw ty("", "fd", @it);
+    if ((raw type_kind(@e.types, e.result)) != (raw TY_KERNEL())) { exit 20i32; }
+    if (raw type_is_numeric(@e.types, e.result))               { exit 21i32; }
+
+    // --- `cstring` is its own type, reachable since 0.2.8 -----------------------
+    Fix:cs = raw ty("", "cstring", @it);
+    if (raw errs(@cs) != 0i64)                                 { exit 25i32; }
+    if ((raw type_kind(@cs.types, cs.result)) != (raw TY_CSTRING())) { exit 26i32; }
+
+    // --- `any` IS LEGAL ONLY UNDER `->` (TYPE_REFERENCE §27) ---------------------
+    // A bare one is refused rather than silently promoted: a checker that
+    // helpfully fixed it would make `any` mean two things depending on where it
+    // was written.
+    Fix:bare = raw ty("", "any", @it);
+    if (raw errs(@bare) != 1i64)                               { exit 30i32; }
+    if (!(raw string_eq(raw code0(@bare), raw TYPE_BARE_ANY()))) { exit 31i32; }
+
+    Fix:ptr = raw ty("", "any->", @it);
+    if (raw errs(@ptr) != 0i64)                                { exit 32i32; }
+    if ((raw type_kind(@ptr.types, ptr.result)) != (raw TY_POINTER())) { exit 33i32; }
+    int32:pointee = raw type_elem(@ptr.types, ptr.result);
+    if ((raw type_kind(@ptr.types, pointee)) != (raw TY_ANY())) { exit 34i32; }
+
+    // …and it is legal at every DEPTH, not only at the top. A struct field's
+    // `wild any->` is the same case as one in a signature.
+    Fix:deep = raw ty("", "any->->", @it);
+    if (raw errs(@deep) != 0i64)                               { exit 35i32; }
+
+    // --- ONE NODE, TWO TYPES: `T[]` and `T[N]` (D-070) ----------------------------
+    Fix:sl = raw ty("", "int32[]", @it);
+    if ((raw type_kind(@sl.types, sl.result)) != (raw TY_SLICE())) { exit 40i32; }
+    // A slice is {ptr, len} whatever it points at.
+    if ((raw type_size(@sl.types, sl.result)) != 16i64)        { exit 41i32; }
+
+    Fix:ar = raw ty("", "int32[4]", @it);
+    if ((raw type_kind(@ar.types, ar.result)) != (raw TY_ARRAY())) { exit 42i32; }
+    // An array CONTAINS its elements, so its size depends on theirs.
+    if ((raw type_size(@ar.types, ar.result)) != 16i64)        { exit 43i32; }
+
+    // An array size that is not constant is refused BY NAME rather than taking
+    // whatever number happened to be lying around -- which is what 0.2.8 found
+    // this path doing before the size became a real expression.
+    Fix:bad = raw ty("", "int32[COUNT]", @it);
+    if (raw errs(@bad) != 1i64)                                { exit 44i32; }
+    if (!(raw string_eq(raw code0(@bad), raw TYPE_ARRAY_SIZE()))) { exit 45i32; }
+
+    // --- a NAMED type resolves to its declaration (D-090) --------------------------
+    Fix:st = raw ty("struct:Point = { int32:x; };", "Point", @it);
+    if (raw errs(@st) != 0i64)                                 { exit 50i32; }
+    if ((raw type_kind(@st.types, st.result)) != (raw TY_STRUCT())) { exit 51i32; }
+
+    // Two structs with the same shape are DIFFERENT TYPES.
+    Fix:two = raw ty("struct:Meters = { int32:v; }; struct:Seconds = { int32:v; };",
+                     "Meters", @it);
+    TypeResolver:r2 = raw tyres_init(@two.ast, @two.types, @two.tab, @it, @two.diags);
+    // Resolve `Seconds` in the same table and compare.
+    DiagList:ld2 = raw diaglist_init();
+    TokenList:sk = raw lex_all(0i32, "Seconds", @it, @ld2);
+    DiagList:pd2 = raw diaglist_init();
+    Parser:sp = raw parser_init(@sk, @two.ast, @pd2, @it);
+    TypeId:snode = relay p_parse_type(@sp);
+    int32:seconds = relay resolve_type(@r2, snode, two.scope);
+    if (two.result == seconds)                                 { exit 52i32; }
+
+    // --- a name that is NOT a type says what it IS ------------------------------------
+    // "unknown type `helper`" would send the reader hunting for a declaration
+    // that is right there.
+    Fix:fn = raw ty("func:helper = int32() { pass 1i32; };", "helper", @it);
+    if (raw errs(@fn) != 1i64)                                 { exit 60i32; }
+    if (!(raw string_eq(raw code0(@fn), raw TYPE_NOT_A_TYPE()))) { exit 61i32; }
+
+    // …while a name that is nowhere says THAT.
+    Fix:no = raw ty("", "Nowhere", @it);
+    if (raw errs(@no) != 1i64)                                 { exit 62i32; }
+    if (!(raw string_eq(raw code0(@no), raw TYPE_UNKNOWN())))   { exit 63i32; }
+
+    // --- `func RetType(Params)` (D-087) -------------------------------------------------
+    Fix:ft = raw ty("", "func int32(int32, int64)", @it);
+    if (raw errs(@ft) != 0i64)                                 { exit 70i32; }
+    if ((raw type_kind(@ft.types, ft.result)) != (raw TY_FUNC())) { exit 71i32; }
+    // One word: a code address with no captured environment, because closures
+    // are removed (D-018).
+    if ((raw type_size(@ft.types, ft.result)) != 8i64)         { exit 72i32; }
+
+    // --- `Self` is valid only inside a trait or impl (D-030) -----------------------------
+    Fix:sf = raw ty("", "Self", @it);
+    if (raw errs(@sf) != 1i64)                                 { exit 80i32; }
+    if (!(raw string_eq(raw code0(@sf), raw TYPE_SELF_OUTSIDE()))) { exit 81i32; }
+
+    // --- every operand of `dyn` must be a trait -------------------------------------------
+    Fix:dy = raw ty("trait:Drawable = { }; trait:Printable = { };",
+                    "dyn Drawable & Printable", @it);
+    if (raw errs(@dy) != 0i64)                                 { exit 90i32; }
+    if ((raw type_kind(@dy.types, dy.result)) != (raw TY_DYN())) { exit 91i32; }
+    // A fat pointer: the value and its vtable.
+    if ((raw type_size(@dy.types, dy.result)) != 16i64)        { exit 92i32; }
+
+    // `dyn int32` is not a dynamic anything, and catching it here means 0.4.6 can
+    // assume a `dyn` has traits.
+    Fix:dyn_bad = raw ty("", "dyn int32", @it);
+    if (raw errs(@dyn_bad) != 1i64)                            { exit 93i32; }
+    if (!(raw string_eq(raw code0(@dyn_bad), raw TYPE_DYN_NOT_TRAIT()))) { exit 94i32; }
+
+    // --- a failure yields the INVALID type, not nothing ------------------------------------
+    // One bad annotation produces ONE diagnostic. A pointer to something that did
+    // not resolve is still a pointer, so nothing downstream cascades.
+    Fix:cascade = raw ty("", "Nowhere->", @it);
+    if (raw errs(@cascade) != 1i64)                            { exit 100i32; }
+    if ((raw type_kind(@cascade.types, cascade.result)) != (raw TY_POINTER())) {
+        exit 101i32;
+    }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};
