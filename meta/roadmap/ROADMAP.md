@@ -57,7 +57,7 @@ is why the whole frontend precedes any backend work.
 | Cycle | Topic |
 |---|---|
 | ~~**0.0**~~ | ~~**Foundations**~~ — **DONE** (`done/0.0/`). Repo layout, subset 1, the seed (lexer/parser, checker/emitter, runtime floor), the test harness, and the diagnostics core. **Nitpick compiles, links, and runs.** |
-| **0.1** | **Lexer** — `LEXICAL_REFERENCE.md` in full, including `>>` splitting, positional `!`, the `#` sigil, and every literal form |
+| ~~**0.1**~~ | ~~**Lexer**~~ — **DONE** (`done/0.1/`). `LEXICAL_REFERENCE.md` in full: 238 token kinds, 154 keywords, every base and literal form, templates with `&{ }` interpolation, and the three interaction rules. |
 | **0.2** | **AST and parser** — `AST_REFERENCE.md` in full, the 19-level precedence table, generics, contracts, `pick` patterns |
 | **0.3** | **Modules, symbols, visibility** — `MODULE_REFERENCE.md`, dependency roots, ambiguity-is-an-error resolution |
 | **0.4** | **Type system and checking** — `TYPE_REFERENCE.md`, `Result<T>`, traits and coherence, generics checked **at their definition** (D-064) |
