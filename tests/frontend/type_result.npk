@@ -1,0 +1,295 @@
+// `Result<T>` — the wrapping, the unary family, and the three members
+// (cycle 0.4.4, D-013/D-009/D-069/D-091).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+
+struct:Rx = {
+    TypeTable:types;
+    DiagList:diags;
+    int32:result;
+    int64:parse_errs;
+};
+
+// Type an expression whose operands come from `decls`, inside a function that is
+// terminal (`main`/`failsafe`) or not.
+func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    ExprId:node = relay p_parse_expr(@p);
+
+    TypeTable:types = raw typetable_init();
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
+    e.fn_terminal = terminal;
+    int32:t = relay type_of_expr(@e, node);
+
+    Rx:out = Rx{ types: types, diags: diags, result: t,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+func:errs = int64(Rx->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+func:code0 = string(Rx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+
+// --- resolving a `Result<T>` ANNOTATION -------------------------------------------
+struct:Ty = { TypeTable:types; DiagList:diags; int32:result; };
+
+func:ty = Ty(string:text, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, text, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    TypeId:node = relay p_parse_type(@p);
+
+    TypeTable:types = raw typetable_init();
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+    int32:t = relay resolve_type(@r, node, 0i32);
+    Ty:out = Ty{ types: types, diags: diags, result: t };
+    pass out;
+};
+
+// --- a function SIGNATURE ---------------------------------------------------------
+struct:FnSig2 = { TypeTable:types; DiagList:diags; FnSig:sig; };
+
+func:sig = FnSig2(string:src, string:want, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+
+    TypeTable:types = raw typetable_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+
+    int32:name = raw intern_add(it, want);
+    int32:sym = raw scope_lookup(@tab, scope, name);
+    Symbol:sy = raw symtab_get(@tab, sym);
+    DeclId:origin = DeclId{ index: sy.origin };
+    // NOT `dn` — `an`, `bn`, `cn` and `dn` are balanced-NONARY literals, not
+    // identifiers, and the real parser is what caught it.
+    DeclNode:fnode = relay ast_decl(@ast, origin);
+    FnSig:fs = relay fn_signature(@r, fnode, name, scope);
+
+    FnSig2:out = FnSig2{ types: types, diags: diags, sig: fs };
+    pass out;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- `Result<T>` IS A WRITABLE TYPE (D-091) --------------------------------
+    // Everywhere except a return position. `Result<string>:r = read_file(p);` is
+    // how this compiler's own sources hold an outcome before unwrapping, so this
+    // failing would break the language's most common declaration.
+    //
+    // It did fail: `Result` is a builtin name that takes arguments, matched
+    // nothing in the scalar table, and fell through to the user-name lookup —
+    // where a TOKEN KIND was reinterpreted as an intern index and the error read
+    // "there is no type named" against whatever string sat there.
+    Ty:r1 = raw ty("Result<int32>", @it);
+    if ((raw diaglist_count(@r1.diags)) != 0i64)               { exit 10i32; }
+    if ((raw type_kind(@r1.types, r1.result)) != (raw TY_RESULT())) { exit 11i32; }
+    // `{T, tbb32}` and NO stored `is_error` (D-069).
+    if ((raw type_size(@r1.types, r1.result)) != 8i64)         { exit 12i32; }
+
+    Ty:r2 = raw ty("Optional<int32>", @it);
+    if ((raw type_kind(@r2.types, r2.result)) != (raw TY_OPTIONAL())) { exit 13i32; }
+
+    // `Result<NIL>` is `{i32}` — NIL contributes nothing (D-084) — and is the
+    // most common return type in the language, since void functions do not exist.
+    Ty:r3 = raw ty("Result<NIL>", @it);
+    if ((raw type_size(@r3.types, r3.result)) != 4i64)         { exit 14i32; }
+
+    // A constructor whose kind arrives at a later rung NAMES THE RUNG rather than
+    // claiming the type does not exist (D-085).
+    Ty:r4 = raw ty("Handle<int32>", @it);
+    if ((raw diaglist_count(@r4.diags)) != 1i64)               { exit 15i32; }
+
+    // --- THE UNARY FAMILY -------------------------------------------------------
+    // Each takes a `Result<T>` and yields `T`; they differ in what happens to the
+    // error, which is why they are separate nodes rather than one with a mode.
+    Rx:u1 = raw rx("raw (ok(1i32))", false, @it);
+    if (raw errs(@u1) != 0i64)                                 { exit 20i32; }
+
+    // APPLYING ONE TO A PLAIN VALUE IS AN ERROR, not a no-op. A permissive `raw`
+    // would survive a refactor after the operand stopped being a call, and the
+    // next reader would believe there is error handling there.
+    Rx:u2 = raw rx("raw 1i32", false, @it);
+    if (raw errs(@u2) != 1i64)                                 { exit 21i32; }
+    if (!(raw string_eq(raw code0(@u2), raw TYPE_MISMATCH())))  { exit 22i32; }
+
+    Rx:u3 = raw rx("_! 1i32", false, @it);
+    if (raw errs(@u3) != 1i64)                                 { exit 23i32; }
+
+    // `drop` YIELDS NOTHING. That it is `NIL` rather than `T` is the point:
+    // `drop f()` in a value position is then a type error instead of silently
+    // being the value with its error thrown away.
+    Rx:u4 = raw rx("drop (ok(1i32))", false, @it);
+    if (raw errs(@u4) != 0i64)                                 { exit 24i32; }
+    if (u4.result != u4.types.t_nil)                           { exit 25i32; }
+
+    // …so using one as a number is caught.
+    Rx:u5 = raw rx("(drop (ok(1i32))) + 1i32", false, @it);
+    if (raw errs(@u5) != 1i64)                                 { exit 26i32; }
+
+    // --- `relay` IN A TERMINAL FUNCTION IS REFUSED ------------------------------
+    // `main` and `failsafe` return no `Result`, so an error propagating out of
+    // them has nowhere to go — which is exactly the uncontrolled stop the whole
+    // discipline exists to prevent, not an arbitrary restriction.
+    Rx:rl1 = raw rx("relay (ok(1i32))", false, @it);
+    if (raw errs(@rl1) != 0i64)                                { exit 30i32; }
+
+    Rx:rl2 = raw rx("relay (ok(1i32))", true, @it);
+    if (raw errs(@rl2) != 1i64)                                { exit 31i32; }
+    if (!(raw string_eq(raw code0(@rl2), raw TYPE_RESULT_RETURN()))) { exit 32i32; }
+
+    // `_^` is the same operator, so it is refused in the same place.
+    Rx:rl3 = raw rx("_^ (ok(1i32))", true, @it);
+    if (raw errs(@rl3) != 1i64)                                { exit 33i32; }
+
+    // --- `?` UNWRAPS A `Result`, `??` UNWRAPS AN `Optional` ---------------------
+    // Two operators one character apart doing different things, so both are
+    // pinned rather than assumed.
+    Rx:q1 = raw rx("(ok(1i32)) ? 0i32", false, @it);
+    if (raw errs(@q1) != 0i64)                                 { exit 40i32; }
+    if ((raw type_int_bits(@q1.types, q1.result)) != 32i32)    { exit 41i32; }
+
+    // The fallback must be the SUCCESS type: a default of another type would make
+    // the expression's type depend on which way it went at runtime.
+    Rx:q2 = raw rx("(ok(1i32)) ? true", false, @it);
+    if (raw errs(@q2) != 1i64)                                 { exit 42i32; }
+
+    // `??` ON A `Result` SAYS WHICH OPERATOR WAS MEANT, which is the whole value
+    // of keeping them apart — mistaking one for the other is a one-character slip
+    // and the message has to close it.
+    Rx:q3 = raw rx("(ok(1i32)) ?? 0i32", false, @it);
+    if (raw errs(@q3) != 1i64)                                 { exit 43i32; }
+    if (!(raw string_eq(raw code0(@q3), raw TYPE_MISMATCH())))  { exit 44i32; }
+
+    // The `??`-on-an-Optional case is asserted in 0.4.5. NOTHING IN THE LANGUAGE
+    // CONSTRUCTS AN `Optional` VALUE YET — `ok` builds a `Result` and there is no
+    // counterpart — so a test written here would either pass vacuously or be
+    // testing a cast that D-095 refuses. It arrives with identifier typing, where
+    // an `Optional<int32>:o` declaration gives one a type.
+
+    // --- `?!` TAKES EXACTLY ONE `tbb32` (D-009) ---------------------------------
+    // The arity and the type both FOLLOW from `failsafe`'s signature —
+    // `func:failsafe = int32(tbb32:err)` — rather than being chosen.
+    Rx:b1 = raw rx("(ok(1i32)) ?! 99tbb32", false, @it);
+    if (raw errs(@b1) != 0i64)                                 { exit 50i32; }
+    if ((raw type_int_bits(@b1.types, b1.result)) != 32i32)    { exit 51i32; }
+
+    Rx:b2 = raw rx("(ok(1i32)) ?! 99i32", false, @it);
+    if (raw errs(@b2) != 1i64)                                 { exit 52i32; }
+    if (!(raw string_eq(raw code0(@b2), raw TYPE_MISMATCH())))  { exit 53i32; }
+
+    // --- THE THREE MEMBERS, AND `.is_error` IS DERIVED (D-069) ------------------
+    // The layout is `{T, tbb32}` with no third field, so there is nothing for
+    // `.is_error` to disagree with. A stored flag would be a second source of
+    // truth about one fact, and two sources of truth eventually differ.
+    Rx:m1 = raw rx("(ok(1i32)).value", false, @it);
+    if (raw errs(@m1) != 0i64)                                 { exit 60i32; }
+    if ((raw type_int_bits(@m1.types, m1.result)) != 32i32)    { exit 61i32; }
+
+    Rx:m2 = raw rx("(ok(1i32)).error", false, @it);
+    if (raw errs(@m2) != 0i64)                                 { exit 62i32; }
+    if ((raw type_kind(@m2.types, m2.result)) != (raw TY_TBB())) { exit 63i32; }
+
+    Rx:m3 = raw rx("(ok(1i32)).is_error", false, @it);
+    if (raw errs(@m3) != 0i64)                                 { exit 64i32; }
+    if (m3.result != m3.types.t_bool)                          { exit 65i32; }
+
+    // …and it is a `bool`, so it is usable as a condition WITHOUT truthiness.
+    Rx:m4 = raw rx("(ok(1i32)).is_error && true", false, @it);
+    if (raw errs(@m4) != 0i64)                                 { exit 66i32; }
+
+    // A member a `Result` does not have is named.
+    Rx:m5 = raw rx("(ok(1i32)).ok", false, @it);
+    if (raw errs(@m5) != 1i64)                                 { exit 67i32; }
+
+    // The size assertion is the one that would catch a stored flag being added:
+    // `{int32, tbb32}` is 8 bytes, and a third field could not hide in it.
+    if ((raw type_size(@m3.types, m3.result)) != 1i64)         { exit 68i32; }
+
+    // --- THE RETURN TYPE IS THE SUCCESS TYPE (D-013, D-091) --------------------
+    // `func:f = int32()` returns `Result<int32>`. The wrapping happens in the
+    // checker rather than the parser, because the AST records what was written
+    // and this records what it means.
+    FnSig2:s1 = raw sig("func:f = int32() { pass 1i32; };", "f", @it);
+    if ((raw type_kind(@s1.types, s1.sig.result)) != (raw TY_RESULT())) { exit 70i32; }
+    if ((raw type_int_bits(@s1.types, s1.sig.success)) != 32i32)  { exit 71i32; }
+    if (s1.sig.terminal)                                          { exit 72i32; }
+
+    // `main` AND `failsafe` ARE NOT WRAPPED. That is not an exception to D-013
+    // but to the shape it needs: the program ends there, so there is no caller to
+    // return a `Result` to.
+    FnSig2:s2 = raw sig("func:main = int32(cstring[]:a) { exit 0i32; };", "main", @it);
+    if (!s2.sig.terminal)                                         { exit 73i32; }
+    if (s2.sig.result != s2.sig.success)                          { exit 74i32; }
+    FnSig2:s3 = raw sig("func:failsafe = int32(tbb32:e) { exit 1i32; };",
+                       "failsafe", @it);
+    if (!s3.sig.terminal)                                         { exit 75i32; }
+
+    // WRITING `Result<T>` AS A RETURN TYPE IS AN ERROR THAT SAYS SO (D-091).
+    // It would mean either `Result<int32>` — two ways to write one signature — or
+    // `Result<Result<int32>>`, a nesting every caller unwraps twice. Both
+    // readings are defensible, and a reader cannot tell which from the signature
+    // in front of them.
+    FnSig2:s4 = raw sig("func:g = Result<int32>() { pass 1i32; };", "g", @it);
+    if ((raw diaglist_count(@s4.diags)) != 1i64)                  { exit 76i32; }
+    if (!(raw string_eq((raw diaglist_at(@s4.diags, 0i64)).code,
+                        raw TYPE_RESULT_RETURN())))               { exit 77i32; }
+
+    // …and it stays writable in a VARIABLE annotation, which is the case that
+    // matters: it is how this compiler's own sources hold an outcome.
+    Ty:v1 = raw ty("Result<string>", @it);
+    if ((raw diaglist_count(@v1.diags)) != 0i64)                  { exit 78i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

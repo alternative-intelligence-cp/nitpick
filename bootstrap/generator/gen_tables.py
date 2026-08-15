@@ -558,6 +558,37 @@ pub func:is_keyword = bool(string:text) {
                           % v)
     bt.append('    pass (raw bt_spec(false, 0i32, 0i32, false, 0i32));')
     bt.append('};')
+
+    # THE GENERIC CONSTRUCTORS -- `Result<T>`, `Optional<T>` and the rest of
+    # NOT_SCALAR. They are builtin type NAMES that take arguments, so they reach
+    # the resolver as a named type with a generic window and match nothing in the
+    # scalar table above. Before this existed they fell through to the user-name
+    # lookup and `Result<int32>` -- which D-091 requires to stay writable, and
+    # which the compiler's own sources use throughout -- reported "there is no
+    # type named" against a token kind reinterpreted as an intern index.
+    GENERIC = {"Result": "TY_RESULT", "Optional": "TY_OPTIONAL"}
+    bt.append('')
+    bt.append('// A builtin type name that takes GENERIC ARGUMENTS.')
+    bt.append('//')
+    bt.append('// `TY_INVALID` means the name is a real constructor whose kind')
+    bt.append('// arrives at a later rung -- `Handle`, `arena`, `simd`, `atomic`.')
+    bt.append('// `builtin_is_generic` tells that apart from a name that is not a')
+    bt.append('// builtin at all, so the resolver can name the rung instead of')
+    bt.append('// claiming the type does not exist (D-085).')
+    bt.append('pub func:builtin_generic_kind = int32(TokenKind:k) {')
+    for name in sorted(GENERIC):
+        if name in set(terminals(spec, "BuiltinType")):
+            bt.append('    if (k == TokenKind.%s) { pass (raw %s()); }'
+                      % (kw_variant(name), GENERIC[name]))
+    bt.append('    pass 0i32;')
+    bt.append('};')
+    bt.append('')
+    bt.append('pub func:builtin_is_generic = bool(TokenKind:k) {')
+    for name in sorted(NOT_SCALAR):
+        if name in set(terminals(spec, "BuiltinType")):
+            bt.append('    if (k == TokenKind.%s) { pass true; }' % kw_variant(name))
+    bt.append('    pass false;')
+    bt.append('};')
     write("builtin_types.npk", "\n".join(bt) + "\n")
 
     # --- the seed's own keyword set -------------------------------------------

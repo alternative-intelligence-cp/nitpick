@@ -157,6 +157,18 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
         pass (relay builtin_to_type(r, spec, n));
     }
 
+    // A BUILTIN THAT TAKES GENERIC ARGUMENTS — `Result<T>`, `Optional<T>`, and
+    // the constructors whose kinds arrive at a later rung. None of them matches
+    // the scalar table, and before this they fell through to the user-name
+    // lookup below, where a TOKEN KIND was reinterpreted as an intern index.
+    // `Result<int32>` therefore reported "there is no type named" against
+    // whatever string happened to sit at that index — and D-091 requires that
+    // spelling to keep working, since it is how the compiler's own sources hold
+    // a call's outcome before unwrapping.
+    if (raw builtin_is_generic(as_kind)) {
+        pass (relay resolve_generic_builtin(r, n, as_kind, scope));
+    }
+
     // …or it is a user name. Look it up.
     int32:name = payload => int32;
     int32:sym = raw scope_lookup(r.tab, scope, name);
@@ -209,6 +221,38 @@ pub func:decl_kind_article = string(DeclNode:d) {
     if (d.kind == DeclKind.DeclExternFn)     { pass "an extern function"; }
     if (d.kind == DeclKind.DeclOpaqueDecl)   { pass "an opaque type"; }
     pass "not a type";
+};
+
+// `Result<T>` and `Optional<T>` — one argument each, and the argument is a type.
+func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
+                                     TokenKind:as_kind, int32:scope) {
+    int32:kind = raw builtin_generic_kind(as_kind);
+    if (kind == 0i32) {
+        // A REAL constructor whose kind no rung supplies yet — `Handle`, `arena`,
+        // `simd`, `atomic`. Naming the rung beats "there is no type named", which
+        // would send the reader looking for a declaration that was never theirs
+        // to write (D-085).
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+            "this builtin type constructor is not available at this rung yet",
+            n.span));
+    }
+
+    int32:count = raw type_args_count(n);
+    if (count != 1i32) {
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+            "this type takes exactly one type argument", n.span));
+    }
+    TypeId:arg = TypeId{ index: raw ast_id_at(r.ast, raw type_args_start(n), 0i32) };
+    int32:inner = relay resolve_type(r, arg, scope);
+
+    if (kind == (raw TY_OPTIONAL())) {
+        pass (raw tt_optional(r.types, inner,
+                              raw type_size(r.types, inner),
+                              raw type_align(r.types, inner)));
+    }
+    pass (raw tt_result(r.types, inner,
+                        raw type_size(r.types, inner),
+                        raw type_align(r.types, inner)));
 };
 
 func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n) {

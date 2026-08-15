@@ -53,13 +53,22 @@ pub struct:ExprTyper = {
     // which was honest while nothing needed it and stopped being honest the
     // moment a cast had to resolve `x => MyStruct`.
     int32:scope;
+
+    // THE ENCLOSING FUNCTION'S SUCCESS TYPE, and whether it is `main` or
+    // `failsafe`. `relay` needs both: it returns the error from the enclosing
+    // function, so it needs something to return into, and in a terminal function
+    // there is nothing — which is the whole reason those two are excepted from
+    // D-013 rather than an oversight.
+    int32:fn_success;
+    bool:fn_terminal;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
                                  InternTable->:interns, DiagList->:diags,
                                  int32:scope) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
-                             diags: diags, expected: 0i32, scope: scope };
+                             diags: diags, expected: 0i32, scope: scope,
+                             fn_success: 0i32, fn_terminal: false };
     pass e;
 };
 
@@ -479,6 +488,190 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
     pass (relay check_cast(e.types, e.interns, e.diags, from, to, unchecked, n.span));
 };
 
+// --- unwrapping a `Result` -----------------------------------------------------------------
+//
+// The shared half of `raw`, `relay`, `drop` and `await`: the operand must be a
+// `Result<T>`, and the answer is `T`.
+//
+// APPLYING ONE OF THESE TO A PLAIN VALUE IS AN ERROR rather than a no-op. A
+// permissive `raw` on a non-`Result` would be the kind of harmless-looking
+// tolerance that lets `raw x` survive a refactor after `x` stopped being a call
+// — and then the next reader believes there is error handling there.
+func:type_unwrap = int32(ExprTyper->:e, ExprNode:n, string:op) {
+    int32:t = relay type_of_expr(e, raw expr_operand(n));
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+
+    if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
+        string:m1 = relay string_concat("`", op);
+        string:m2 = relay string_concat(m1, "` needs a `Result`, and this is `");
+        string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, t));
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+                             relay string_concat(m3, "`"), n.span));
+    }
+    pass (raw type_elem(e.types, t));
+};
+
+// `e ? d` — unwrap with a fallback. The fallback must be the SUCCESS type: a
+// default of another type would make the expression's type depend on which way it
+// went at runtime.
+func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
+        pass (relay te_not_result(e, n, t, "?"));
+    }
+    int32:inner = raw type_elem(e.types, t);
+
+    int32:saved = e.expected;
+    e.expected = inner;
+    int32:d = relay type_of_expr(e, raw expr_rhs(n));
+    e.expected = saved;
+
+    if (d == 0i32) { pass inner; }
+    if (raw type_is_invalid(e.types, d)) { pass inner; }
+    if (d != inner) {
+        drop te_mismatch(e, n, inner, d);
+    }
+    pass inner;
+};
+
+// `e ?? d` — the OPTIONAL one.
+func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_OPTIONAL())) {
+        string:m1 = relay string_concat("`??` unwraps an `Optional`, and this is `",
+                                        relay type_display(e.types, e.interns, t));
+        string:m2 = relay string_concat(m1, "`");
+        if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
+            m2 = relay string_concat(m2, "; `?` is the one that unwraps a `Result`");
+        }
+        pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
+    }
+    int32:inner = raw type_elem(e.types, t);
+
+    int32:saved = e.expected;
+    e.expected = inner;
+    int32:d = relay type_of_expr(e, raw expr_rhs(n));
+    e.expected = saved;
+    if (d == 0i32) { pass inner; }
+    if (raw type_is_invalid(e.types, d)) { pass inner; }
+    if (d != inner) { drop te_mismatch(e, n, inner, d); }
+    pass inner;
+};
+
+// `e ?! code` — trap on failure. EXACTLY ONE ARGUMENT, TYPED `tbb32` (D-009),
+// and the derivation is what fixes it: `?!` calls `failsafe`, whose signature is
+// `func:failsafe = int32(tbb32:err)`, so the arity and the type both follow from
+// there rather than being chosen.
+//
+// A `tbb32` that is itself ERR is LEGAL here and deliberately so — `failsafe`
+// receiving a tainted code means "the failure code could not itself be computed",
+// which is information, not a mistake.
+func:type_emphatic_unwrap = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_lhs(n));
+
+    int32:saved = e.expected;
+    e.expected = e.types.t_tbb32;
+    int32:c = relay type_of_expr(e, raw expr_rhs(n));
+    e.expected = saved;
+
+    if (c != 0i32) {
+        if (!(raw type_is_invalid(e.types, c))) {
+            if (c != e.types.t_tbb32) {
+                string:m1 = relay string_concat(
+                    "`?!` hands its argument to `failsafe`, which takes one `tbb32`, and this is `",
+                    relay type_display(e.types, e.interns, c));
+                drop te_error(e, raw TYPE_MISMATCH(),
+                              relay string_concat(m1, "`"), n.span);
+            }
+        }
+    }
+
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
+        pass (relay te_not_result(e, n, t, "?!"));
+    }
+    pass (raw type_elem(e.types, t));
+};
+
+func:te_not_result = int32(ExprTyper->:e, ExprNode:n, int32:t, string:op) {
+    string:m1 = relay string_concat("`", op);
+    string:m2 = relay string_concat(m1, "` needs a `Result`, and this is `");
+    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, t));
+    pass (relay te_error(e, raw TYPE_MISMATCH(),
+                         relay string_concat(m3, "`"), n.span));
+};
+
+// `.value`, `.error` and `.is_error` — and `.is_error` IS DERIVED (D-069).
+//
+// The `Result` layout is `{T, tbb32}` and there is no third field. That is the
+// point: a stored flag is a second source of truth about the same fact, and two
+// sources of truth eventually disagree. `.is_error` is `error != 0`, computed on
+// every read, so there is nothing for it to disagree with.
+//
+// The error field is exact and total (D-069): `0` is no error, positive values
+// are user codes, negative ones are system codes, and `INT32_MIN` — ERR — is
+// unconstructible, because `fail(e)` traps where it would be built. A caller
+// cannot handle an error it cannot identify, and such a value would satisfy every
+// `is_error` check while carrying no information.
+func:type_member = int32(ExprTyper->:e, ExprNode:n) {
+    int32:base = relay type_of_expr(e, raw expr_operand(n));
+    if (base == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, base)) { pass 0i32; }
+    if ((raw type_kind(e.types, base)) != (raw TY_RESULT())) {
+        // A struct's fields are 0.4.5's business; this is not one.
+        pass 0i32;
+    }
+
+    string:field = relay intern_get(e.interns, (n.payload => int32));
+    if (raw string_eq(field, "value"))    { pass (raw type_elem(e.types, base)); }
+    if (raw string_eq(field, "error"))    { pass (e.types.t_tbb32); }
+    if (raw string_eq(field, "is_error")) { pass (e.types.t_bool); }
+
+    string:m1 = relay string_concat("a `Result` has `value`, `error` and `is_error`, not `",
+                                    field);
+    pass (relay te_error(e, raw TYPE_MISMATCH(),
+                         relay string_concat(m1, "`"), n.span));
+};
+
+// `ok(value)` wraps a value and CLEARS THE TAINT explicitly.
+func:type_ok = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_operand(n));
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    // `ok` of a `Result` would nest one inside another — the same confusion
+    // D-091 refuses in a return type.
+    if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
+        pass (relay te_error(e, raw TYPE_RESULT_RETURN(),
+            "`ok` wraps a value in a `Result`, and this is already one", n.span));
+    }
+    pass (raw tt_result(e.types, t,
+                        raw type_size(e.types, t),
+                        raw type_align(e.types, t)));
+};
+
+// `is_err(result)` — the one test in the language GUARANTEED NOT TO TRAP.
+//
+// That guarantee is why it has a node of its own rather than being a call whose
+// name the backend recognises: branching on a `tbb` ERR value traps
+// (`SAFETY_ARCHITECTURE.md`), so a program needs one way to ask "did this fail"
+// that is safe on every value, and 0.5 and 0.7 have to be able to see which
+// construct that is.
+func:type_is_err = int32(ExprTyper->:e, ExprNode:n) {
+    int32:t = relay type_of_expr(e, raw expr_operand(n));
+    if (t == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, t)) { pass 0i32; }
+    if ((raw type_kind(e.types, t)) != (raw TY_RESULT())) {
+        pass (relay te_not_result(e, n, t, "is_err"));
+    }
+    pass (e.types.t_bool);
+};
+
 // Is this an integer literal with no width suffix? The one node whose type
 // depends on where it sits, so the one node the order has to account for.
 pub func:is_untyped_literal = bool(ExprTyper->:e, ExprId:id) {
@@ -524,6 +717,52 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
 
     if (n.kind == ExprKind.ExprPostfixExpr) {
         pass (relay type_postfix(e, n));
+    }
+
+    // --- the `Result` family (OP_REFERENCE §0 level 2, D-081) ------------------
+    //
+    // Each of these takes a `Result<T>` and differs in what it does with the
+    // error. They are separate nodes rather than one with a mode because 0.7 has
+    // to lower them differently — `relay` is a normal exit path and runs `defer`,
+    // `?!` traps and runs nothing (D-014, amended) — and a shared node would make
+    // that distinction something the backend had to reconstruct.
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) {
+        pass (relay type_unwrap(e, n, "raw"));
+    }
+    if (n.kind == ExprKind.ExprRelayExpr) {
+        // `relay` IN `main` OR `failsafe` IS REFUSED. There is no `Result` to
+        // relay into: the program ends there, so an error propagating out of it
+        // has nowhere to go — the uncontrolled stop the discipline prevents.
+        if (e.fn_terminal) {
+            drop te_error(e, raw TYPE_RESULT_RETURN(),
+                "`relay` returns the error from the enclosing function, and `main` and `failsafe` return no `Result` to relay into; handle it here with `?`, `?!` or a `pick`",
+                n.span);
+        }
+        pass (relay type_unwrap(e, n, "relay"));
+    }
+    // `drop` DISCARDS THE OUTCOME and yields nothing. That it yields `NIL` rather
+    // than `T` is the point: `drop f()` in a value position is then a type error
+    // instead of silently being the value with its error thrown away.
+    if (n.kind == ExprKind.ExprDropExpr) {
+        drop type_unwrap(e, n, "drop");
+        pass (e.types.t_nil);
+    }
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        pass (relay type_unwrap(e, n, "await"));
+    }
+
+    // `e ? d` — a fallback. `e ?! c` — trap with a code. Both yield `T`.
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
+        pass (relay type_safe_unwrap(e, n));
+    }
+    if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
+        pass (relay type_emphatic_unwrap(e, n));
+    }
+    // `??` IS THE OPTIONAL ONE, not the Result one (OP_REFERENCE §14). Two
+    // operators one character apart doing different things is worth being exact
+    // about: `?` unwraps a `Result`, `??` unwraps an `Optional`.
+    if (n.kind == ExprKind.ExprNullCoalesceExpr) {
+        pass (relay type_null_coalesce(e, n));
     }
 
     // --- casts (D-021) --------------------------------------------------------------
@@ -574,6 +813,20 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     // because that is where an argument list exists to check it against.
     if (n.kind == ExprKind.ExprSpreadExpr) {
         pass (relay type_of_expr(e, raw expr_operand(n)));
+    }
+
+    // `ok(x)` AND `is_err(x)` — the two bare-name builtins that are `Result`
+    // operations. General call typing is 0.4.5; these two belong with the rest of
+    // the discipline, and without `ok` there is no way to write a `Result` value
+    // at all — nothing else in the language constructs one.
+    if (n.kind == ExprKind.ExprOkExpr)    { pass (relay type_ok(e, n)); }
+    if (n.kind == ExprKind.ExprIsErrExpr) { pass (relay type_is_err(e, n)); }
+
+    // A `Result`'s THREE MEMBERS. General member access needs a struct's fields
+    // and is 0.4.5; these three are `Result`'s own and belong with the rest of
+    // the discipline.
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (relay type_member(e, n));
     }
 
     // An identifier's type is its symbol's, which 0.4.5 supplies once

@@ -676,6 +676,21 @@ func:p_primary = ExprId(Parser->:p) {
         }
     }
 
+    // `ok(value)` and `is_err(result)` -- KEYWORD OPERATORS with a parenthesised
+    // operand, the same shape `move(place)` has (D-065).
+    //
+    // Both are keywords, so neither ever reached the identifier path below and
+    // `ok(1i32)` read as "expected an expression" -- while the specs required
+    // both: a taint "must be cleared via `ok(val)`" and `is_err` is how a program
+    // tests for failure without trapping. Nothing could have caught it, because
+    // no node existed for either to parse into (D-096).
+    if (k == TokenKind.KwOk) {
+        pass (relay p_keyword_operand(p, sp, ExprKind.ExprOkExpr));
+    }
+    if (k == TokenKind.KwIs_err) {
+        pass (relay p_keyword_operand(p, sp, ExprKind.ExprIsErrExpr));
+    }
+
     // An expression-`pick` -- one whose arms `give` (D-059). It is the only way
     // to initialize a variable by matching, since an uninitialized variable is a
     // compile error, which is why D-059 kept it.
@@ -704,6 +719,16 @@ func:p_primary = ExprId(Parser->:p) {
 
     drop p_error(p, raw PARSE_UNEXPECTED(), "expected an expression");
     pass (raw expr_none());
+};
+
+// `kw ( expr )` -- the shape shared by `move`, `ok` and `is_err`. The parens are
+// part of the operator rather than a grouping, so they are required.
+func:p_keyword_operand = ExprId(Parser->:p, Span:sp, ExprKind:kind) {
+    drop p_advance(p);
+    drop p_expect(p, TokenKind.PLParen);
+    ExprId:o = relay p_parse_expr(p);
+    drop p_expect(p, TokenKind.PRParen);
+    pass (relay ast_add_expr(p.ast, kind, sp, o.index, 0i32, 0i32, 0i64));
 };
 
 // Each field contributes TWO entries to the window: the name's intern index and

@@ -286,6 +286,26 @@ names neither the construct nor the rule it broke.
 | `SpreadExpr` | `operand` | **`..^`** — expands a collection at a call site (D-026) |
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
 | `MoveExpr` | `place` | **`move(place)`** — transfers ownership and invalidates the source (D-065) |
+| **`OkExpr`** | `operand` | **`ok(value)`** — wraps a value in a `Result` and clears the taint (D-096) |
+| **`IsErrExpr`** | `operand` | **`is_err(result)`** — tests for failure **without trapping** (D-008, D-096) |
+
+> **`OkExpr` and `IsErrExpr` were missing, and nothing could have noticed.**
+> `LEXICAL_REFERENCE.md` makes `ok` a `ControlFlow` keyword and `is_err` a
+> `BuiltinHelper`, `TYPE_REFERENCE.md` §27 says a taint "must be cleared via
+> `ok(val)`", and `OP_REFERENCE.md` §5 says to "use `is_err(x)` to test without
+> trapping" — so both are specified, required, and had no node to parse into.
+> Being keywords, they never reached the identifier path either, which means
+> `ok(1i32)` was simply **"expected an expression"**.
+>
+> They take the same shape as `MoveExpr`: a keyword operator with a parenthesised
+> operand. They are not `UnaryExpr`s and not calls — `is_err` is the one test in
+> the language that is guaranteed not to trap, and giving it a node of its own is
+> what lets 0.5 and 0.7 honour that rather than inferring it from a callee's name.
+>
+> A comment in `resolve.npk` had described both as *bare-name builtins* that
+> "resolve to nothing and that is correct". They are not in `builtins.npk`, and
+> they are keywords, so nothing about that sentence was true — it described a
+> path neither name could reach.
 
 > **`MoveExpr` was missing.** D-065 settled `move(place)` as a keyword operator
 > with a parenthesised operand — the same shape `comptime(expr)` has — and it is

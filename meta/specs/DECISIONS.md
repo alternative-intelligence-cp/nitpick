@@ -6586,3 +6586,69 @@ The prototype's checked cast emits a **warning** and adds a runtime check for
 narrowing. `TYPE_REFERENCE` §5 supersedes that explicitly — *"not a runtime trap
 and not a warning"* — so the spec is followed and the prototype is the lagging
 artifact here. Recorded in `PROTOTYPE_DELTA.md`.
+
+---
+
+## D-096 — `ok` and `is_err` are keyword operators with nodes of their own
+
+**Settled in cycle 0.4.4, by finding that neither could be written.**
+
+Three documents require them:
+
+- `TYPE_REFERENCE.md` §27 — an `unknown` taint "must be cleared via `ok(val)`".
+- `OP_REFERENCE.md` §5 — "use `is_err(x)` to test without trapping".
+- `LEXICAL_REFERENCE.md` — `ok` is a `ControlFlow` keyword, `is_err` a
+  `BuiltinHelper`.
+
+**Neither had an AST node, and being keywords they never lexed as identifiers, so
+`ok(1i32)` was "expected an expression".** The language's only non-trapping
+failure test could not be written down.
+
+### They are `OkExpr` and `IsErrExpr`, not calls
+
+Same shape as `MoveExpr` (D-065): a keyword operator with a parenthesised
+operand. Three reasons they are not calls:
+
+1. **They are keywords.** A call's callee is an identifier, and these never lex
+   as one. Making them identifiers would have meant removing two keywords from a
+   grammar that lists them deliberately.
+2. **`is_err` carries a guarantee.** It is the one test in the language
+   guaranteed not to trap — branching on a `tbb` ERR value otherwise does
+   (`SAFETY_ARCHITECTURE.md`), so a program needs one way to ask "did this fail"
+   that is safe on every value. 0.5's flow analysis and 0.7's lowering both have
+   to *see* which construct that is, and recovering it from a callee's name is a
+   string comparison standing in for a language rule.
+3. **`ok` constructs.** Nothing else in the language builds a `Result` value, so
+   it is closer to a literal than to a call.
+
+### The comment that described an impossible path
+
+`resolve.npk` carried: *"A bare-name builtin is declared in no module: `alloc`,
+`string_concat`, `sys`, `ok`, `is_err`. They are ordinary calls the compiler
+happens to provide, so they resolve to nothing and that is correct."*
+
+Both halves were false for those two names — they are keywords, so they cannot
+reach name resolution at all, and they are not in `builtins.npk` either. A
+mechanical check settled the question in one pass: **cross the 36 bare-name
+builtins against the keyword list.** The overlap is zero, so `ok` and `is_err`
+were never in the set the comment placed them in.
+
+That check is the same technique that found the seed-keyword drift in 0.2 and the
+shape-table gap in 0.4.2: **two lists that had to agree, with nothing making
+them.** The comment was the only thing asserting the relationship, and comments
+do not fail.
+
+### `Result<T>` did not resolve either
+
+Found in the same subcycle and worth recording together. `Result` is a builtin
+type name that takes generic arguments, so it matched nothing in the scalar
+builtin table and fell through to the user-name lookup — where a **token kind was
+reinterpreted as an intern index** and the diagnostic read "there is no type
+named" against whatever string happened to sit at that index.
+
+D-091 requires `Result<T>` to stay writable outside a return position, and
+`Result<string>:r = read_file(p);` is how this compiler's own sources hold an
+outcome before unwrapping. `builtin_generic_kind` and `builtin_is_generic` are
+now generated beside the scalar table, and a constructor whose kind arrives at a
+later rung — `Handle`, `arena`, `simd` — **names the rung** instead of claiming
+the type does not exist (D-085).

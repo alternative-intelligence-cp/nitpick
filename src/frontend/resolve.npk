@@ -74,9 +74,14 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
     string:text = relay intern_get(r.interns, name);
 
     // A bare-name builtin is declared in no module (AST_REFERENCE 3.3): `alloc`,
-    // `string_concat`, `sys`, `ok`, `is_err`. They are ordinary calls the
-    // compiler happens to provide, so they resolve to nothing and that is
-    // correct — the binding stays 0 and the emitter recognises the name.
+    // `string_concat`, `sys` and the rest of `builtins.npk`. They are ordinary
+    // calls the compiler happens to provide, so they resolve to nothing and that
+    // is correct — the binding stays 0 and the emitter recognises the name.
+    //
+    // This used to name `ok` and `is_err` too, and both halves of that were
+    // false: they are KEYWORDS, so they never lex as identifiers and cannot
+    // arrive here, and they are not in `builtins.npk` either. They are keyword
+    // operators with their own nodes (D-096).
     if (raw is_builtin_name(text)) {
         pass NIL;
     }

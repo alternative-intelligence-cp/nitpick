@@ -1,0 +1,90 @@
+// Function signatures — where `Result<T>` is added.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.4.
+//
+// EVERY FUNCTION RETURNS `Result<T>` (D-013). The declared type is the SUCCESS
+// type, and the wrapping happens here rather than in the parser, because the AST
+// records what was written and this records what it means.
+//
+// This is the blueprint philosophy's first facet in its purest form: a caller
+// never has to ask whether *this particular* function needs error handling. One
+// rule, no exceptions to remember, and that is worth more than the keystrokes.
+//
+// The two exceptions are not exceptions to the rule but to the shape it needs.
+// `main` and `failsafe` are where the program ENDS, so there is no caller to
+// return a `Result` to — routing an error out of them would have nowhere to go,
+// which is precisely the uncontrolled stop the discipline exists to prevent.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "type_names.npk".*;
+use "parse_decl.npk".*;
+use "parse_type.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+
+// The two names whose signature is fixed by the runtime rather than by the
+// programmer. Checked by NAME, which is what the spec fixes them by.
+pub func:fn_is_terminal = bool(InternTable->:interns, int32:name) {
+    string:t = relay intern_get(interns, name);
+    if (raw string_eq(t, "main"))     { pass true; }
+    if (raw string_eq(t, "failsafe")) { pass true; }
+    pass false;
+};
+
+pub struct:FnSig = {
+    int32:success;    // the declared type — what `pass` must produce
+    int32:result;     // `Result<success>`, or the same as `success` for main/failsafe
+    bool:terminal;    // main or failsafe: no `Result`, and no `relay`
+};
+
+// THE DECLARED TYPE IS THE SUCCESS TYPE; the actual type is wrapped.
+pub func:fn_signature = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
+                              int32:scope) {
+    TypeId:ret_id = raw fn_return(r.ast, d);
+    drop check_not_result_return(r, ret_id, scope);
+
+    int32:success = relay resolve_type(r, ret_id, scope);
+    bool:terminal = raw fn_is_terminal(r.interns, name);
+
+    if (terminal) {
+        FnSig:s = FnSig{ success: success, result: success, terminal: true };
+        pass s;
+    }
+    int32:wrapped = raw tt_result(r.types, success,
+                                  raw type_size(r.types, success),
+                                  raw type_align(r.types, success));
+    FnSig:s = FnSig{ success: success, result: wrapped, terminal: false };
+    pass s;
+};
+
+// D-091 — `func:f = Result<int32>()` IS AN ERROR THAT SAYS SO.
+//
+// `func:f = int32()` already returns `Result<int32>`, so the spelling means
+// either that same type — in which case there are two ways to write one
+// signature — or `Result<Result<int32>>`, a nesting nobody asked for that every
+// caller unwraps twice. Both readings are defensible, which is exactly the
+// problem: a reader would have to know which, and the answer is invisible in the
+// signature they are reading.
+//
+// `Result<T>` stays writable everywhere else. `Result<string>:r = read_file(p);`
+// is the ordinary way to hold an outcome before unwrapping, and is how this
+// compiler's own sources are written.
+func:check_not_result_return = NIL(TypeResolver->:r, TypeId:id, int32:_~scope) {
+    if (raw type_is_none(id)) { pass NIL; }
+    TypeNode:n = relay ast_type(r.ast, id);
+    if (n.kind != TypeKind.TypeNamedType) { pass NIL; }
+
+    TokenKind:as_kind = ((raw type_name_index(n)) => int32) => TokenKind;
+    if (as_kind != TokenKind.KwResult) { pass NIL; }
+
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_RESULT_RETURN(),
+        "every function returns `Result<T>` already, so a return type is written as the success type — `func:f = int32()` returns `Result<int32>`",
+        n.span));
+    pass NIL;
+};
