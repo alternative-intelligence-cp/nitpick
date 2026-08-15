@@ -87,11 +87,33 @@ class Parser:
         return self.next()
 
     def expect_ident(self):
+        """A BINDING name. A reserved word is not one.
+
+        This used to accept any KEYWORD token, which made the seed more
+        permissive than the real parser in the dangerous direction: `int32:ok`
+        and `int32:limit` compiled here and are refused there, so source written
+        against the seed would have failed at self-hosting, in a stage with far
+        worse diagnostics. The real parser found two such files the first time it
+        was pointed at the suites (0.2.7).
+
+        The seed must never accept what stage 1 rejects.
+        """
         t = self.peek()
-        # Builtin type names lex as keywords but are legal in name position for
-        # things like `Result`, `Type`, `Self`.
-        if t.kind not in (IDENT, KEYWORD):
+        if t.kind != IDENT:
             raise ParseError("expected an identifier, found %r" % t.text, t)
+        return self.next()
+
+    def expect_type_name(self):
+        """A TYPE name, where a keyword is legitimate.
+
+        `int32`, `string`, `NIL`, `Result`, `Self` all lex as keywords and are
+        all real type names -- which is why this is a separate function rather
+        than a loosening of the one above. The two positions want different
+        things, and merging them cost the seed its agreement with stage 1.
+        """
+        t = self.peek()
+        if t.kind not in (IDENT, KEYWORD):
+            raise ParseError("expected a type name, found %r" % t.text, t)
         return self.next()
 
     # --- module --------------------------------------------------------------
@@ -279,10 +301,10 @@ class Parser:
         # Nothing here compiles an `impl` -- traits are outside subset 1 and the
         # checker refuses them -- but a grammar that states the old syntax is a
         # wrong claim about the language sitting in the tree.
-        type_name = self.expect_ident().text
+        type_name = self.expect_type_name().text
         trait_name = None
         if self.accept(":"):
-            trait_name = self.expect_ident().text
+            trait_name = self.expect_type_name().text
         self.expect("=")
         self.expect("{")
         items = []
@@ -312,7 +334,7 @@ class Parser:
         while self.peek().text in MEMORY_QUALS:
             quals.append(self.next().text)
 
-        t = self.expect_ident()
+        t = self.expect_type_name()
         generic_args = []
         if self.at("<"):
             # A type-argument list. Subset 1 has no user generics, but Result<T>

@@ -135,6 +135,21 @@ func:p_parse_pattern = PatId(Parser->:p) {
         }
     }
 
+    // Two mistakes get named rather than left to the expression parser, which
+    // could only say "expected an expression" -- true, unhelpful, and pointing
+    // at a construct the reader thought was a pattern.
+    if (relay p_at(p, TokenKind.PRParen)) {
+        drop p_error(p, raw PARSE_BAD_PATTERN(),
+            "a pattern may not be empty; the catch-all is `(*)`");
+        pass (raw pat_none());
+    }
+    if (raw token_kind_is_builtin_type(relay p_kind(p))) {
+        drop p_error(p, raw PARSE_BAD_PATTERN(),
+            "a pattern matches a value, and this is a type; to match on a type use a destructuring pattern");
+        drop p_advance(p);
+        pass (raw pat_none());
+    }
+
     // Anything else is a VALUE, and a range is a value expression the expression
     // parser already builds -- `(500..599)` is one `RangeExpr`. Splitting it back
     // out here rather than storing the expression whole keeps `lo`, `hi` and
@@ -284,6 +299,7 @@ func:p_parse_arms = IdSpan(Parser->:p) {
         int64:before = raw p_position(p);
         StmtId:arm = relay p_parse_arm(p);
         drop ast_scratch_push(p.ast, arm.index);
+        drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
         if (!(relay p_accept(p, TokenKind.PComma))) { break; }
     }

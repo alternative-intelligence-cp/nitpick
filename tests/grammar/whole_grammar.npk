@@ -1,0 +1,285 @@
+// THE WHOLE GRAMMAR, in one file.
+//
+// Cycle 0.2.7. This file is never compiled and never run. It is fed to the REAL
+// parser, which must accept every line of it with no diagnostics.
+//
+// That is the point cycle 0.2 exists to reach. `CLAUDE.md`: the frontend is
+// built once, in full, because rewriting the parser at every bootstrap stage is
+// the failure mode the predecessors hit repeatedly. So the parser accepts the
+// whole language from the first commit -- generics, traits, `async`, contracts,
+// macros -- even though no backend rung can lower most of it.
+//
+//     The parser never restricts. The backend does.  (D-085)
+//
+// `tests/rejection/` shows that constructs outside subset 1 parse and are refused
+// later. This shows the other half: that the grammar is COMPLETE, including the
+// corners no rejection test happens to use.
+
+use "a/b.npk".*;
+use "a/b.npk".one;
+use "a/b.npk".{one, two};
+use "a/b.npk" as alias;
+use std.collections.{HashMap, HashSet};
+use std.math.*;
+
+mod inline_module {
+    pub func:helper = int32() { pass 0i32; };
+}
+
+mod external_module;
+
+// --- types ---------------------------------------------------------------------
+
+pub struct:Point = {
+    flt64:x;
+    flt64:y;
+};
+
+#[align(16i32)]
+#[derive(Copy, Clone)]
+pub struct:Aligned = {
+    int64:value;
+};
+
+pub struct:Container<T> = {
+    T:value;
+    T[]:many;
+    T[8]:fixed_size;
+    T->:pointer;
+    T?:maybe;
+};
+
+pub enum:Net = {
+    Connected;
+    Disconnect(int32, string);
+    Retry = 3i32;
+};
+
+pub enum:Color = {
+    Red = 1i32;
+    Green = 2i32;
+};
+
+Type:Counter = {
+    pub func:tick = int32() { pass 1i32; };
+    struct:State = { int64:n; };
+};
+
+// --- traits ------------------------------------------------------------------------
+
+pub trait:Serializable = {
+    assoc:Item;
+    assoc:Output = int32;
+    func:to_bytes = buffer(Self:self);
+    func:described = string(Self:self) { pass "default body"; };
+};
+
+trait:Ordered = Equatable & Comparable & {
+    func:cmp = int32(Self:self, Self:other);
+};
+
+impl:Point = {
+    func:magnitude = flt64(Point:self) { pass 0.0f64; };
+};
+
+impl:Message:Serializable = {
+    func:to_bytes = buffer(Message:self) { pass 0i32; };
+};
+
+// --- verification ----------------------------------------------------------------------
+
+Rules<int32>:r_positive = { $ > 0i32 };
+Rules<int32>:r_small = { limit<r_positive>, $ < 100i32 };
+
+// --- functions -----------------------------------------------------------------------------
+
+pub func:divide = int32(int32:a, int32:b)
+    requires b != 0i32
+    ensures result > 0i32
+{
+    pass 1i32;
+};
+
+pub func:extract<T> = T(Container<T>:c) { pass c.value; };
+
+pub func:bounded<T: Renderable & Serializable> = NIL(T:item) { pass NIL; };
+
+pub func:staged<comptime int32:LEVEL> = int32() { pass LEVEL; };
+
+pub func:constrained = int32(limit<r_positive> int32:n) { pass n; };
+
+pub func:variadic_call = int32(int32:first, ..*int64[]:rest) { pass first; };
+
+inline func:hot = int32() { pass 1i32; };
+noinline func:cold = int32() { pass 1i32; };
+comptime func:at_build = int32() { pass 1i32; };
+async func:fetch = int32() { int32:v = raw await inner(); pass v; };
+
+macro:assert_positive = (x) { prove(x > 0i32); };
+
+extern "libc" {
+    opaque struct:OpHandle;
+    func:open = int32(int8->:path, int32:flags) fails on result < 0i32 with errno;
+    func:malloc = wild any->(int64:size) fails on result == NULL;
+    func:strlen = int64(int8->:s) never fails;
+    func:printf = int32(int8->:fmt, ..*) fails on result < 0i32;
+}
+
+pub const int32:MAX = 100i32;
+wild int8->:global_buffer;
+stack int32:scoped = 1i32;
+fixed int32:immutable = 2i32;
+
+// --- statements ------------------------------------------------------------------------------
+
+func:every_statement = NIL(int32:n) {
+    int32:plain = 0i32;
+    limit<r_positive> int32:ruled = 1i32;
+    #[cfg(debug)] int32:annotated = 2i32;
+    wild int8->:raw_mem = alloc(64i64);
+    Handle<Node<int64>>:nested_generic;
+    dyn Drawable & Printable:trait_object;
+    int32[4]:array_of;
+    int32[]:slice_of;
+    Self:self_typed;
+
+    plain = 1i32;
+    plain += 1i32;
+    plain -= 1i32;
+    plain *= 2i32;
+    plain /= 2i32;
+    plain %= 2i32;
+    plain &= 1i32;
+    plain |= 1i32;
+    plain ^= 1i32;
+    plain <<= 1i32;
+    plain >>= 1i32;
+
+    if (n == 0i32) { plain = 1i32; }
+    else if (n == 1i32) { plain = 2i32; }
+    else { plain = 3i32; }
+
+    while (n > 0i32) { n = n - 1i32; }
+    outer: while (n > 0i32) invariant n >= 0i32, plain >= 0i32 {
+        break outer;
+    }
+
+    for (int64:i in 1i64..3i64) { plain = plain + 1i32; }
+    counting: for (int64:j in 0i64...10i64) invariant j >= 0i64 { continue counting; }
+
+    loop (0i64, 10i64, 1i64) { plain = plain + ($ => int32); }
+    till (10i64, 2i64) invariant $ >= 0i64 { plain = plain + 1i32; }
+
+    when (n > 0i32) { plain = 1i32; } then { plain = 2i32; } end { plain = 3i32; }
+    tracked: when (n > 0i32) invariant n >= 0i32 { plain = 1i32; }
+
+    { plain = 9i32; }
+
+    defer { dalloc(raw_mem); }
+    discard(side_effect());
+    _~ side_effect();
+    prove(plain >= 0i32);
+    assert_static(1i32 == 1i32);
+
+    pick (n) {
+        (0i32) { plain = 1i32; },
+        one: (1i32) { fall two; },
+        two: (2i32) { plain = 2i32; },
+        (500i32..599i32) { plain = 3i32; },
+        (0i32...10i32) { plain = 4i32; },
+        (Point { x, y }) { plain = 5i32; },
+        (Net.Disconnect(reason)) { plain = 6i32; },
+        (Net.Connected) { plain = 7i32; },
+        (n) where (n > 100i32) { plain = 8i32; },
+        ERR: { plain = 9i32; },
+        (*) { plain = 0i32; }
+    }
+
+    int32:from_pick = pick (n) {
+        (0i32) { give 1i32; },
+        (*) { give 2i32; }
+    };
+
+    pass NIL;
+};
+
+func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) {
+    int32:v = 0i32;
+
+    v = 1i32 + 2i32 - 3i32 * 4i32 / 5i32 % 6i32;
+    v = a << 1i32 >> 1i32;
+    v = a & b | b ^ a;
+    v = (a < b) => int32;
+    v = (a <= b) => int32;
+    v = (a > b) => int32;
+    v = (a >= b) => int32;
+    v = (a == b) => int32;
+    v = (a != b) => int32;
+    v = (a <=> b);
+    v = ((a > 0i32) && (b > 0i32)) => int32;
+    v = ((a > 0i32) || (b > 0i32)) => int32;
+    v = -a;
+    v = ~a;
+    v = (!(a > 0i32)) => int32;
+    v = a =>! int32;
+
+    v = is (a > b) : a : b;
+    v = a ?| b;
+    v = a defaults b;
+    v = a ?? b;
+    v = a ? b;
+    v = a ?! 7i32;
+
+    v = raw fallible();
+    v = _! fallible();
+    v = relay_free();
+    v = _^ fallible();
+    drop fallible();
+    _? fallible();
+
+    v = a |> consume();
+    v = consume() <| a;
+
+    v = p.x => int32;
+    v = p?.x => int32;
+    v = ptr[0i64] => int32;
+    v = <-ptr => int32;
+    v = @a => int32;
+    v = $$i a => int32;
+    v = $$m a => int32;
+    v = a++;
+    v = a--;
+
+    v = call_it(a, b);
+    v = generic_call::<int32>(a);
+    v = p.method_call(a);
+    v = #size_of<int32>() => int32;
+    v = #wild_ptr<int8>(0i64) => int32;
+    v = comptime(1i32 + 2i32);
+    v = move(a);
+    v = #user_macro(a, b);
+
+    Point:made = Point{ x: 1.0f64, y: 2.0f64 };
+    int32[3]:literal = [1i32, 2i32, 3i32];
+    v = spread_into(..^literal);
+
+    v = 255hex + 1010bin + 777oct + 1T0t + 2An;
+    v = 1_000i32;
+    flt64:f = 1.5e10f64;
+    char8:c = 'x';
+    string:s = "escaped \n \t \x41 \u{1F600}";
+    string:r = r"no \n escapes";
+    string:t = `interpolated &{a} and &{b}`;
+    bool:yes = true;
+    bool:no = false;
+    int8->:nul = NULL;
+    tbb32:err = ERR;
+
+    v = dyn_target => dyn Drawable & Printable => int32;
+    v = vec3(1.0f64, 2.0f64, 3.0f64) => int32;
+
+    pass v;
+};
+
+func:main = int32() { exit 0i32; };
+func:failsafe = int32(tbb32:err) { exit 1i32; };

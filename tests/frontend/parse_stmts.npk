@@ -279,9 +279,9 @@ func:main = int32() {
     // Not "rejected by a rule" -- there is no grammar for it, and the diagnostic
     // says which rule the reader ran into rather than "expected `;`".
     TokenList:kn = raw lex_all(0i32, "a = b = 5i32;", @it, @ld);
-    Ast:an = raw ast_init();
+    Ast:argN = raw ast_init();
     DiagList:gn = raw diaglist_init();
-    Parser:pn = raw parser_init(@kn, @an, @gn, @it);
+    Parser:pn = raw parser_init(@kn, @argN, @gn, @it);
     drop p_parse_stmt(@pn);
     if (raw diaglist_count(@gn) != 1i64)                 { exit 100i32; }
     Diagnostic:d = raw diaglist_at(@gn, 0i64);

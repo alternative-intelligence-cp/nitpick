@@ -15,18 +15,18 @@
 use "intern.npk".*;
 
 pub struct:EscapeResult = {
-    bool:ok;
+    bool:valid;
     int64:codepoint;   // the decoded value
     int64:consumed;    // bytes consumed INCLUDING the backslash
 };
 
 func:esc_fail = EscapeResult() {
-    EscapeResult:r = EscapeResult{ ok: false, codepoint: 0i64, consumed: 1i64 };
+    EscapeResult:r = EscapeResult{ valid: false, codepoint: 0i64, consumed: 1i64 };
     pass r;
 };
 
 func:esc_ok = EscapeResult(int64:cp, int64:used) {
-    EscapeResult:r = EscapeResult{ ok: true, codepoint: cp, consumed: used };
+    EscapeResult:r = EscapeResult{ valid: true, codepoint: cp, consumed: used };
     pass r;
 };
 
@@ -124,7 +124,7 @@ pub func:utf8_encode = int64(wild int8->:buf, int64:at, int64:cp) {
 };
 
 pub struct:DecodedString = {
-    bool:ok;
+    bool:valid;
     string:value;
 };
 
@@ -135,14 +135,14 @@ pub func:decode_string = DecodedString(string:content) {
     wild int8->:buf = alloc(content.len + 4i64);
     int64:out = 0i64;
     int64:i = 0i64;
-    bool:ok = true;
+    bool:valid = true;
 
     while (i < content.len) {
         uint8:c = content.ptr[i] => uint8;
         if (c == 92u8) {
             EscapeResult:e = raw escape_decode(content, i);
-            if (!(e.ok)) {
-                ok = false;
+            if (!(e.valid)) {
+                valid = false;
                 i = i + 1i64;
             } else {
                 out = out + (raw utf8_encode(buf, out, e.codepoint));
@@ -155,7 +155,7 @@ pub func:decode_string = DecodedString(string:content) {
         }
     }
 
-    DecodedString:d = DecodedString{ ok: ok,
+    DecodedString:d = DecodedString{ valid: valid,
                                      value: raw string_from_bytes(buf, out) };
     pass d;
 };

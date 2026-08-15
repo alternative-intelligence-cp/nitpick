@@ -15,6 +15,16 @@ Three test kinds, declared in nitpick.toml:
   negative    FAILS to compile, and emits exactly the expected diagnostics
   diagnostic  compiles, and emits exactly the expected warnings
 
+Plus one cross-cutting check that is not a kind, because it applies to every file
+rather than to a target: every source in every suite, and everything in
+tests/grammar/, is fed to the REAL parser via tools/parse_check.npk and must come
+back with no diagnostics.
+
+That check is what makes tests/rejection/ mean what D-085 says. Its files must
+PARSE and be refused later -- and until 0.2.7 that was asserted against the seed's
+parser, the throwaway one, while the rule was written about the real one. A suite
+that tests the wrong parser tests nothing.
+
 Expectations live in the file, next to the code, so a test and its expectation
 cannot drift apart:
 
@@ -254,6 +264,59 @@ KINDS = {"positive": check_positive,
          "diagnostic": check_diagnostic}
 
 
+# --- the real parser, on real files ------------------------------------------
+
+PARSE_CHECK = os.path.join(ROOT, "tools", "parse_check.npk")
+
+
+def build_parse_check(tmp, tools):
+    """Compile tools/parse_check.npk and return its path, or None.
+
+    Everything above tests the SEED's parser. This builds the REAL one, so the
+    rule D-085 states -- every file in tests/rejection/ must PARSE and be refused
+    later -- can be checked against the parser it was written about instead of
+    the throwaway one that happens to be running.
+    """
+    if not tools:
+        return None
+    out = compile_files(group_for(PARSE_CHECK))
+    if out.diags:
+        return "DIAG %s" % out.diags[0]
+    base = os.path.join(tmp, "parse_check")
+    with open(base + ".ll", "w", encoding="utf-8") as fh:
+        fh.write(out.ir)
+    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+                        base + ".ll", "-o", base + ".o"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return "LLC %s" % r.stderr.strip()[:160]
+    r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
+                        os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return "LINK %s" % r.stderr.strip()[:160]
+    return base
+
+
+def check_parses(binary, path, name):
+    """The real parser must accept this file with no diagnostics at all."""
+    with open(path, "rb") as fh:
+        src = fh.read()
+    try:
+        r = subprocess.run([binary], input=src, capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        return ["%s: the real parser did not terminate" % name]
+    if r.returncode == 2:
+        return ["%s: parse_check could not read stdin" % name]
+    if r.returncode == 3:
+        return ["%s: the real parser TRAPPED -- a defect in the compiler, not in "
+                "this file" % name]
+    if r.returncode != 0:
+        got = r.stdout.decode("utf-8", "replace").strip().replace("\n", ", ")
+        return ["%s: the REAL parser rejected it (%s) -- every file here must "
+                "parse and be refused later, which is what D-085 says" % (name, got)]
+    return []
+
+
 # --- driver ------------------------------------------------------------------
 
 def load_targets():
@@ -280,6 +343,7 @@ def main(argv):
 
     total = 0
     failures = []
+    all_sources = []
     for t in targets:
         kind = t["kind"]
         paths = sorted(glob.glob(os.path.join(ROOT, t["path"], "*.npk")))
@@ -290,7 +354,26 @@ def main(argv):
             name = os.path.relpath(p, ROOT)
             exp = read_expectations(p)
             failures += KINDS[kind](name, group_for(p, paths), exp, tmp, tools)
+        all_sources += paths
         print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
+
+    # Every source in every suite, plus tests/grammar/, through the REAL parser.
+    # A rejection test the real parser cannot read is not testing D-085's rule;
+    # it is testing that the seed and the real parser happen to disagree.
+    #
+    # tests/grammar/ is NEVER compiled and never run. It exists only to be parsed,
+    # which is what lets it use the whole language rather than subset 1.
+    pc = build_parse_check(tmp, tools)
+    if isinstance(pc, str) and not os.path.exists(pc):
+        failures.append("tools/parse_check.npk did not build: %s" % pc)
+    elif pc:
+        grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
+        n = 0
+        for p in sorted(set(all_sources)) + grammar:
+            name = os.path.relpath(p, ROOT)
+            failures += check_parses(pc, p, name)
+            n += 1
+        print("  %-11s %2d real-parser check(s)" % ("grammar", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 

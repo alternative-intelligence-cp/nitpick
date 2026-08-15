@@ -315,6 +315,21 @@ func:p_postfix = ExprId(Parser->:p) {
         Span:sp = relay p_span(p);
         TokenKind:k = relay p_kind(p);
 
+        // `a++` / `a--` -- PostfixExpr (AST_REFERENCE 3.2). Its own node rather
+        // than a UnaryExpr, because the operator's POSITION is what distinguishes
+        // it from nothing else: there is no prefix `++` in Nitpick, so a single
+        // node discriminated by `op` would leave the position unrecorded.
+        if (k == TokenKind.OpPlusPlus) {
+            drop p_advance(p);
+            e = relay ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
+                                   e.index, 0i32, 0i32, (k => int32) => int64);
+        } else {
+        if (k == TokenKind.OpMinusMinus) {
+            drop p_advance(p);
+            e = relay ast_add_expr(p.ast, ExprKind.ExprPostfixExpr, sp,
+                                   e.index, 0i32, 0i32, (k => int32) => int64);
+        } else {
+
         if (k == TokenKind.PDot) {
             drop p_advance(p);
             Token:n = relay p_advance(p);
@@ -367,6 +382,7 @@ func:p_postfix = ExprId(Parser->:p) {
                 }
             }
         }
+        } }
     }
     pass e;
 };
@@ -387,8 +403,8 @@ func:p_call = ExprId(Parser->:p, ExprId:callee, Span:sp,
         ExprId:a1 = relay p_parse_expr(p);
         drop ast_scratch_push(p.ast, a1.index);
         while (relay p_accept(p, TokenKind.PComma)) {
-            ExprId:an = relay p_parse_expr(p);
-            drop ast_scratch_push(p.ast, an.index);
+            ExprId:argN = relay p_parse_expr(p);
+            drop ast_scratch_push(p.ast, argN.index);
         }
     }
     drop p_expect(p, TokenKind.PRParen);
@@ -494,8 +510,8 @@ func:p_primary = ExprId(Parser->:p) {
                 ExprId:a1 = relay p_parse_expr(p);
                 drop ast_scratch_push(p.ast, a1.index);
                 while (relay p_accept(p, TokenKind.PComma)) {
-                    ExprId:an = relay p_parse_expr(p);
-                    drop ast_scratch_push(p.ast, an.index);
+                    ExprId:argN = relay p_parse_expr(p);
+                    drop ast_scratch_push(p.ast, argN.index);
                 }
             }
             drop p_expect(p, TokenKind.PRParen);
@@ -574,6 +590,38 @@ func:p_primary = ExprId(Parser->:p) {
         drop p_advance(p);
         pass (relay ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
                                  0i32, 0i32, 0i32, 1i64));
+    }
+    // AST_REFERENCE 3.1 names THREE sentinels and only two were here. `ERR` is
+    // the `tbb` taint value (D-008), so a missing case meant no program could
+    // name the state the whole type exists to carry.
+    if (k == TokenKind.KwERR) {
+        drop p_advance(p);
+        pass (relay ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
+                                 0i32, 0i32, 0i32, 2i64));
+    }
+
+    // `vec3(x, y, z)` -- a VECTOR CONSTRUCTOR. The name is a builtin TYPE
+    // keyword, so it never reached the identifier path and `vec3(…)` read as
+    // "expected an expression" (AST_REFERENCE 3.6).
+    if (raw token_kind_is_builtin_type(k)) {
+        if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PLParen) {
+            Token:vt = relay p_advance(p);
+            drop p_advance(p);
+            int32:vmark = raw ast_scratch_mark(p.ast);
+            if (!(relay p_at(p, TokenKind.PRParen))) {
+                ExprId:c1 = relay p_parse_expr(p);
+                drop ast_scratch_push(p.ast, c1.index);
+                while (relay p_accept(p, TokenKind.PComma)) {
+                    ExprId:cN = relay p_parse_expr(p);
+                    drop ast_scratch_push(p.ast, cN.index);
+                }
+            }
+            drop p_expect(p, TokenKind.PRParen);
+            IdSpan:vw = raw ast_scratch_commit(p.ast, vmark);
+            pass (relay ast_add_expr(p.ast, ExprKind.ExprVectorCtorExpr, sp,
+                                     0i32, vw.start, vw.count,
+                                     (vt.kind => int32) => int64));
+        }
     }
 
     // An expression-`pick` -- one whose arms `give` (D-059). It is the only way

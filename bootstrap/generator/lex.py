@@ -242,12 +242,26 @@ def lex(src, path="<input>"):
             # writes it. Keeping the lexer positionless is why this is not an
             # error here.
             digits = (text[:-len(suf)] if suf else text).replace("_", "")
-            if radix == 16:
-                val = int(digits[2:] or "0", 16)
-            elif radix == 2:
-                val = int(digits[2:] or "0", 2)
-            else:
-                val = int(digits or "0", 10)
+            try:
+                if radix == 16:
+                    val = int(digits[2:] or "0", 16)
+                elif radix == 2:
+                    val = int(digits[2:] or "0", 2)
+                else:
+                    val = int(digits or "0", 10)
+            except ValueError:
+                # A SUFFIX-FORM BASE -- `FFhex`, `777oct`, `1T0t`, `2An`. Subset 1
+                # does not lower them, and the lexer is not where that gets said:
+                # value None reaches the checker, which refuses it by rung the way
+                # it refuses every other construct (D-085).
+                #
+                # This used to fall through to Python's own ValueError, killing
+                # the harness with a traceback and no file or line. That is the
+                # worst failure available to the least-audited artifact in the
+                # chain: a seed that dies uninformatively is a seed nobody can
+                # debug. Floats already took this route -- lexed, stored, never
+                # evaluated -- and this now matches them.
+                val = None
             toks.append(Token(INT, text, line, scol, path, value=val, width=suf))
             i = j
             continue

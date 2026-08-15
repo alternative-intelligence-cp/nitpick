@@ -377,7 +377,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         }
         Span:ssp = raw lexer_span_from(lx, start, line, col);
         DecodedString:dec = raw decode_string(content);
-        if (!(dec.ok)) {
+        if (!(dec.valid)) {
             drop diaglist_push(diags,
                 raw diag_error(raw LEX_BAD_ESCAPE(), "invalid escape sequence", ssp));
         }
@@ -394,7 +394,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
         uint8:q = raw lexer_peek(lx);
         if (q == 92u8) {
             EscapeResult:e = raw escape_decode(lx.text, lx.pos);
-            if (!(e.ok)) {
+            if (!(e.valid)) {
                 Span:sp = raw lexer_span_from(lx, start, line, col);
                 drop diaglist_push(diags,
                     raw diag_error(raw LEX_BAD_ESCAPE(),

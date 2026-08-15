@@ -289,10 +289,10 @@ func:main = int32() {
     if (raw item_member_count(@am, nm) != 0i32)               { exit 103i32; }
 
     TokenList:kn = raw lex_all(0i32, "pub const int32:MAX = 100i32;", @it, @ld);
-    Ast:an = raw ast_init();
+    Ast:argN = raw ast_init();
     DiagList:gn = raw diaglist_init();
-    Parser:pn = raw parser_init(@kn, @an, @gn, @it);
-    DeclNode:nn = raw ast_decl(@an, raw p_parse_decl(@pn));
+    Parser:pn = raw parser_init(@kn, @argN, @gn, @it);
+    DeclNode:nn = raw ast_decl(@argN, raw p_parse_decl(@pn));
     if (nn.kind != DeclKind.DeclGlobalDecl)                   { exit 104i32; }
     if (raw expr_is_none(raw global_init(nn)))                { exit 105i32; }
     if ((raw global_quals(nn)) != (raw QUAL_CONST()))         { exit 106i32; }

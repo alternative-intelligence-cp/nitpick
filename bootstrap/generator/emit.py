@@ -39,6 +39,7 @@ RUNTIME_ARGS = {
     "write_raw":     ["i32", "ptr", "i64"],
     "string_slice":  ["{ ptr, i64, i64 }", "i64", "i64"],
     "string_from_bytes": ["ptr", "i64"],
+    "read_stdin":    [],
 }
 
 

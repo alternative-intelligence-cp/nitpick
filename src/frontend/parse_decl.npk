@@ -44,6 +44,31 @@ pub func:DECL_COMPTIME = int32()  { pass 8i32; };
 pub func:DECL_ASYNC = int32()     { pass 16i32; };
 pub func:DECL_VARIADIC = int32()  { pass 32i32; };
 
+// Memory qualifiers on a RETURN type, folded into the declaration's flags.
+// They shift up so they never collide with the visibility and modifier bits.
+pub func:DECL_RET_WILD = int32()  { pass 64i32; };
+pub func:DECL_RET_WILDX = int32() { pass 128i32; };
+pub func:DECL_RET_STACK = int32() { pass 256i32; };
+pub func:DECL_RET_CONST = int32() { pass 512i32; };
+pub func:DECL_RET_FIXED = int32() { pass 1024i32; };
+
+func:p_return_quals = int32(Parser->:p) {
+    int32:q = 0i32;
+    while (true) {
+        TokenKind:k = relay p_kind(p);
+        int32:bit = 0i32;
+        if (k == TokenKind.KwWild)  { bit = raw DECL_RET_WILD(); }
+        if (k == TokenKind.KwWildx) { bit = raw DECL_RET_WILDX(); }
+        if (k == TokenKind.KwStack) { bit = raw DECL_RET_STACK(); }
+        if (k == TokenKind.KwConst) { bit = raw DECL_RET_CONST(); }
+        if (k == TokenKind.KwFixed) { bit = raw DECL_RET_FIXED(); }
+        if (bit == 0i32) { break; }
+        drop p_advance(p);
+        q = q | bit;
+    }
+    pass q;
+};
+
 pub func:decl_flags = int32(DeclNode:d) { pass d.a; };
 pub func:decl_name = int32(DeclNode:d)  { pass (d.payload => int32); };
 pub func:decl_has = bool(DeclNode:d, int32:bit) { pass ((d.a & bit) != 0i32); };
@@ -306,8 +331,8 @@ func:p_parse_generics = IdSpan(Parser->:p) {
                 TypeId:b1 = relay p_parse_type(p);
                 drop ast_scratch_push(p.ast, b1.index);
                 while (relay p_accept(p, TokenKind.OpAmp)) {
-                    TypeId:bn = relay p_parse_type(p);
-                    drop ast_scratch_push(p.ast, bn.index);
+                    TypeId:bindN = relay p_parse_type(p);
+                    drop ast_scratch_push(p.ast, bindN.index);
                 }
                 IdSpan:bw = raw ast_scratch_commit(p.ast, bmark);
                 bstart = bw.start;
@@ -470,7 +495,8 @@ func:p_parse_mod = DeclId(Parser->:p, Span:sp, int32:flags) {
             int64:before = raw p_position(p);
             DeclId:item = relay p_parse_decl(p);
             drop ast_scratch_push(p.ast, item.index);
-            if ((raw p_position(p)) == before) { drop p_sync(p); }
+            drop p_recover(p);
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
         }
         drop p_expect(p, TokenKind.PRBrace);
     } else {
@@ -491,6 +517,10 @@ func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     IdSpan:generics = relay p_parse_generics(p);
 
     drop p_expect(p, TokenKind.OpAssign);
+    // A RETURN TYPE MAY BE QUALIFIED. `func:malloc = wild any->(int64:size)` is
+    // D-002's own example, and the qualifier belongs to the function rather than
+    // to the type node (AST_REFERENCE section 4), so it joins the flags.
+    flags = flags | (raw p_return_quals(p));
     // The declared type is the SUCCESS type. `Result<T>` is implicit, and the
     // wrapping is a semantic-phase concern -- the AST records what was written.
     TypeId:ret = relay p_parse_type(p);
@@ -571,6 +601,7 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
             DeclId:v = relay p_parse_variant(p);
             drop ast_scratch_push(p.ast, v.index);
         }
+        drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:members = raw ast_scratch_commit(p.ast, imark);
@@ -819,6 +850,7 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) {
             DeclId:f = relay p_parse_extern_fn(p);
             drop ast_scratch_push(p.ast, f.index);
         }
+        drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     drop p_expect(p, TokenKind.PRBrace);
@@ -833,11 +865,11 @@ func:p_parse_extern_fn = DeclId(Parser->:p) {
     drop p_expect(p, TokenKind.PColon);
     Token:name = relay p_advance(p);
     drop p_expect(p, TokenKind.OpAssign);
+    int32:flags = raw p_return_quals(p);
     TypeId:ret = relay p_parse_type(p);
     drop p_expect(p, TokenKind.PLParen);
     int32:pmark = raw ast_scratch_mark(p.ast);
     int32:pcount = 0i32;
-    int32:flags = 0i32;
     while (true) {
         if (relay p_at(p, TokenKind.PRParen)) { break; }
         if (relay p_at_end(p)) { break; }
@@ -931,6 +963,7 @@ func:p_parse_item_block = IdSpan(Parser->:p) {
         int64:before = raw p_position(p);
         DeclId:item = relay p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);
+        drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     drop p_expect(p, TokenKind.PRBrace);
@@ -965,6 +998,7 @@ pub func:p_parse_module = DeclId(Parser->:p) {
         int64:before = raw p_position(p);
         DeclId:item = relay p_parse_decl(p);
         drop ast_scratch_push(p.ast, item.index);
+        drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:members = raw ast_scratch_commit(p.ast, mark);

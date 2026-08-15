@@ -1,0 +1,48 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// `an` IS A NUMBER. So are `bn`, `cn`, `dn`, `2An` and `a0n`.
+//
+// Balanced nonary uses the suffix `n`, and `a`..`d` denote the digits -1..-4
+// (`LEXICAL_REFERENCE.md` §7):
+//
+//     NonaryLiteral ::= [0-4a-dA-D] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
+//
+// So `an` lexes as a numeric literal and can never be an identifier -- and `an`
+// is an extremely natural name for "the AST node" or "argument n". The compiler's
+// own source used it in five places and two test files used it as a variable;
+// every one of them would have failed at self-hosting, in the stage with the
+// worst diagnostics, long after the code was written (0.2.7).
+//
+// Balanced ternary has the same shape with `t`/`ter`/`tri` and the digits
+// `0 1 T t`, so `1t`, `0t` and `1T0t` are numbers too.
+//
+// This file exists to keep the property VISIBLE. It is filed under rejection
+// rather than conformance because the suffix-form BASES are outside subset 1 --
+// the seed lowers decimal and the 0x/0b prefixes. They still PARSE, which is the
+// half being pinned here.
+
+// Every one of these is a LITERAL, not a name. They carry width suffixes for the
+// same reason every other literal in our sources does (SUBSET_1 §1.4): the base
+// suffix says which base, the width suffix says how wide, and neither implies
+// the other.
+func:nonary_digits = int32() {
+    int32:a = 2Ani32;
+    int32:b = ani32;
+    int32:c = bni32;
+    int32:d = 0_4ni32;
+    int32:e = 1T0ti32;
+
+    // The names to use instead. `argN`, not `an`.
+    int32:argN = 1i32;
+    int32:bindN = 2i32;
+    int32:condN = 3i32;
+
+    pass argN;
+};
+
+func:main = int32() {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) { exit 1i32; };

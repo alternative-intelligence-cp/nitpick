@@ -75,6 +75,7 @@ BUILTINS = {
     "write_raw":     (T.I64, False),
     "string_slice":  (T.STRING, True),
     "string_from_bytes": (T.STRING, False),
+    "read_stdin":    (T.STRING, True),
 }
 
 
@@ -387,6 +388,18 @@ class Checker:
                 b = BUILTINS.get(e.target)
                 if b is not None and b[1]:
                     self.result_of(b[0])
+            return
+
+        if isinstance(e, S.IntLit):
+            # A suffix-form base -- `FFhex`, `1T0t`, `2An` -- reaches here with no
+            # value, because the lexer records the literal and does not evaluate
+            # it (the route floats already take). Refusing it HERE and not in the
+            # lexer is D-085: the front of the compiler never restricts, so a
+            # construct outside the rung is a checker diagnostic naming the rung.
+            if e.value is None:
+                raise RungError("a suffix-form numeric base (hex/oct/ternary/"
+                                "nonary); subset 1 has decimal and the 0x/0b "
+                                "prefixes", "0.9", e)
             return
 
         if isinstance(e, S.Binary):

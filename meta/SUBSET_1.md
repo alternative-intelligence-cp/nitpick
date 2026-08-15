@@ -162,7 +162,7 @@ IR**, which is what D-015 already specifies for the first rung:
 |---|---|
 | allocation | **a bump allocator that never frees** |
 | `dalloc` | a no-op |
-| `open` / `read` / `close` / `write` | raw syscalls |
+| `read_stdin` | the read(2) loop, growing until EOF — added by 0.2.7 so the real parser could run on real files |
 | `exit` | raw syscall |
 | `memcpy` / `memset` | the symbols LLVM emits calls to |
 | `string_concat`, `int_to_string` | enough to build a diagnostic message |

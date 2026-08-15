@@ -124,6 +124,18 @@ pub func:p_error = NIL(Parser->:p, string:code, string:message) {
     pass NIL;
 };
 
+// An error about somewhere ELSE in the file. An unclosed `{` is discovered at
+// end of file and belongs at the brace; a diagnostic pointing at the last line
+// names the one place the mistake certainly is not.
+pub func:p_error_at = NIL(Parser->:p, string:code, string:message, Span:span) {
+    if (p.panic) {
+        pass NIL;
+    }
+    p.panic = true;
+    drop diaglist_push(p.diags, raw diag_error(code, message, span));
+    pass NIL;
+};
+
 pub func:p_expect = bool(Parser->:p, TokenKind:k) {
     if (relay p_accept(p, k)) {
         pass true;
@@ -200,6 +212,59 @@ pub func:p_sync = NIL(Parser->:p) {
     }
     // A `;` marks the end of the broken construct, so step over it: leaving it
     // would make the next rule start on a terminator and fail immediately.
+    if (relay p_at(p, TokenKind.PSemi)) {
+        drop p_advance(p);
+    }
+    p.panic = false;
+    pass NIL;
+};
+
+// Can this token begin a statement or a declaration? A superset of
+// `is_sync_point`, because recovery needs to STOP at a plausible item start
+// while `p_sync` needs a small, certain set to skip TO.
+pub func:p_can_start_item = bool(Parser->:p) {
+    TokenKind:k = relay p_kind(p);
+    if (raw is_sync_point(k))               { pass true; }
+    if (k == TokenKind.Ident)               { pass true; }
+    if (raw token_kind_is_builtin_type(k))  { pass true; }
+    if (k == TokenKind.Hash)                { pass true; }
+    if (k == TokenKind.PLBrace)             { pass true; }
+    if (k == TokenKind.KwStack)             { pass true; }
+    if (k == TokenKind.KwWild)              { pass true; }
+    if (k == TokenKind.KwWildx)             { pass true; }
+    if (k == TokenKind.KwConst)             { pass true; }
+    if (k == TokenKind.KwFixed)             { pass true; }
+    if (k == TokenKind.KwNodrop)            { pass true; }
+    if (k == TokenKind.KwLimit)             { pass true; }
+    pass false;
+};
+
+// Called by every loop that reads a SEQUENCE of items -- block statements,
+// module items, struct fields, `pick` arms.
+//
+// Panic mode is entered by the first diagnostic and must be left again, or one
+// mistake silences the rest of the file. It used to be cleared only by `p_sync`,
+// and `p_sync` ran only when a rule consumed nothing -- so a rule that erred and
+// then advanced left panic set forever. A file with three independent errors
+// reported one, which looks exactly like a file with one error (0.2.7).
+//
+// The rule now: at an item boundary, if the parser is still in panic, skip
+// forward to something that could begin the next item and leave panic. There is
+// NO mandatory advance here, unlike `p_sync` -- the caller may already be sitting
+// on a perfectly good next item, and eating it would turn one lost construct into
+// two.
+pub func:p_recover = NIL(Parser->:p) {
+    if (!p.panic) {
+        pass NIL;
+    }
+    while (true) {
+        if (relay p_at_end(p))        { break; }
+        if (relay p_can_start_item(p)) { break; }
+        drop p_advance(p);
+    }
+    // A `;` here terminates the construct that failed. Leaving it would make the
+    // next rule start on a terminator and fail immediately -- a phantom, which is
+    // the thing this whole mechanism exists to prevent.
     if (relay p_at(p, TokenKind.PSemi)) {
         drop p_advance(p);
     }

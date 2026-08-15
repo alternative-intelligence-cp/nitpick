@@ -66,8 +66,8 @@ pub func:p_parse_attribute = DeclId(Parser->:p) {
             ExprId:a1 = relay p_parse_expr(p);
             drop ast_scratch_push(p.ast, a1.index);
             while (relay p_accept(p, TokenKind.PComma)) {
-                ExprId:an = relay p_parse_expr(p);
-                drop ast_scratch_push(p.ast, an.index);
+                ExprId:argN = relay p_parse_expr(p);
+                drop ast_scratch_push(p.ast, argN.index);
             }
         }
         drop p_expect(p, TokenKind.PRParen);
@@ -150,8 +150,8 @@ pub func:p_parse_invariant = VerifyId(Parser->:p) {
     ExprId:c1 = relay p_parse_expr(p);
     drop ast_scratch_push(p.ast, c1.index);
     while (relay p_accept(p, TokenKind.PComma)) {
-        ExprId:cn = relay p_parse_expr(p);
-        drop ast_scratch_push(p.ast, cn.index);
+        ExprId:condN = relay p_parse_expr(p);
+        drop ast_scratch_push(p.ast, condN.index);
     }
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_verify(p.ast, VerifyKind.VerifyInvariantNode, sp,

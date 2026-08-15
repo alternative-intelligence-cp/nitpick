@@ -56,6 +56,84 @@ define i64 @npk_write_raw(i32 %fd, ptr %buf, i64 %len) {
 }
 
 ; ---------------------------------------------------------------------------
+; Reading standard input, whole.
+;
+; The frontend needs to run on REAL FILES for the rejection suite to mean what
+; D-085 says it means -- every file there must PARSE and be refused later, and
+; only the real parser can demonstrate that. Reading fd 0 rather than opening a
+; path is deliberate: it needs no argv (which `_start` does not pass, and which
+; would raise the separate question of what `main`'s signature is), and it does
+; not pre-commit the file-opening API that cycle 0.3's module loader will want.
+;
+; SUBSET_1 section 1.6 has listed open/read/close in the runtime floor since 0.0.4
+; while none of them existed, because nothing had needed one yet. This is the
+; first, and the entry there now says which.
+;
+; Grows by doubling and reads until read(2) returns 0. A short read is NOT
+; end-of-file -- treating it as one is the classic way to silently truncate a
+; file, and here it would mean parsing a prefix of a test and reporting success.
+; ---------------------------------------------------------------------------
+
+define { { ptr, i64, i64 }, i32 } @npk_read_stdin() {
+entry:
+  %buf0 = call ptr @npk_alloc(i64 65536)
+  br label %loop
+
+loop:                                     ; preds = %entry, %iter
+  %buf = phi ptr [ %buf0, %entry ], [ %rbuf, %iter ]
+  %cap = phi i64 [ 65536, %entry ], [ %rcap, %iter ]
+  %len = phi i64 [ 0, %entry ], [ %len_n, %iter ]
+  %room = sub i64 %cap, %len
+  %full = icmp eq i64 %room, 0
+  br i1 %full, label %grow, label %read
+
+grow:                                     ; preds = %loop
+  ; The bump allocator never frees, so growing copies into a fresh block and
+  ; abandons the old one. That is the trade the allocator's own comment already
+  ; accepted: this process runs once and exits.
+  %cap2 = mul i64 %cap, 2
+  %buf2 = call ptr @npk_alloc(i64 %cap2)
+  call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
+  br label %read
+
+read:                                     ; preds = %loop, %grow
+  %rbuf = phi ptr [ %buf, %loop ], [ %buf2, %grow ]
+  %rcap = phi i64 [ %cap, %loop ], [ %cap2, %grow ]
+  %rroom = sub i64 %rcap, %len
+  %dst = getelementptr i8, ptr %rbuf, i64 %len
+  %dsti = ptrtoint ptr %dst to i64
+  %n = call i64 @npk_sys6(i64 0, i64 0, i64 %dsti, i64 %rroom, i64 0, i64 0, i64 0)
+  %failed = icmp slt i64 %n, 0
+  br i1 %failed, label %err, label %check
+
+check:                                    ; preds = %read
+  %eof = icmp eq i64 %n, 0
+  br i1 %eof, label %done, label %iter
+
+iter:                                     ; preds = %check
+  %len_n = add i64 %len, %n
+  br label %loop
+
+done:                                     ; preds = %check
+  %s0 = insertvalue { ptr, i64, i64 } undef, ptr %rbuf, 0
+  %s1 = insertvalue { ptr, i64, i64 } %s0, i64 %len, 1
+  %s2 = insertvalue { ptr, i64, i64 } %s1, i64 %rcap, 2
+  %r0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %s2, 0
+  %r1 = insertvalue { { ptr, i64, i64 }, i32 } %r0, i32 0, 1
+  ret { { ptr, i64, i64 }, i32 } %r1
+
+err:
+  ; An errored Result carries a zeroed value, so a caller that unwraps without
+  ; checking gets an empty string rather than a pointer into nothing.
+  %e0 = insertvalue { ptr, i64, i64 } undef, ptr null, 0
+  %e1 = insertvalue { ptr, i64, i64 } %e0, i64 0, 1
+  %e2 = insertvalue { ptr, i64, i64 } %e1, i64 0, 2
+  %q0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %e2, 0
+  %q1 = insertvalue { { ptr, i64, i64 }, i32 } %q0, i32 5, 1
+  ret { { ptr, i64, i64 }, i32 } %q1
+}
+
+; ---------------------------------------------------------------------------
 ; Allocation: a bump allocator that never frees.
 ;
 ; This is CORRECT here, not a shortcut. The compiler is a process that runs once

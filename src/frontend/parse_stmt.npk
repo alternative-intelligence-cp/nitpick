@@ -258,12 +258,28 @@ pub func:p_parse_block = StmtId(Parser->:p) {
         int64:before = raw p_position(p);
         StmtId:s = relay p_parse_stmt(p);
         drop ast_scratch_push(p.ast, s.index);
+        // Leave panic mode at the statement boundary, or the first error in this
+        // block silences every one after it.
+        drop p_recover(p);
         // A rule that consumed nothing would loop here forever. Recovery
         // guarantees progress (0.2.1); this is the belt to those braces, because
         // a hung compiler is a worse failure than a bad diagnostic.
         if ((raw p_position(p)) == before) {
             drop p_sync(p);
         }
+    }
+    // Running out of file inside a block gets its own code and points at the
+    // OPENING brace. "expected `}`, found <eof>" names the end of the file,
+    // which is the one place the mistake certainly is not -- the reader needs to
+    // know which `{` never closed.
+    if (relay p_at_end(p)) {
+        drop p_error_at(p, raw PARSE_UNCLOSED(),
+            "this `{` is never closed", sp);
+        // Commit anyway. Abandoning the mark would leave this block's children
+        // on the scratch stack, where the NEXT node's window would swallow them.
+        IdSpan:partial = raw ast_scratch_commit(p.ast, mark);
+        pass (relay ast_add_stmt(p.ast, StmtKind.StmtBlockStmt, sp,
+                                 0i32, partial.start, partial.count, 0i64));
     }
     drop p_expect(p, TokenKind.PRBrace);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
@@ -355,6 +371,12 @@ pub func:p_parse_stmt = StmtId(Parser->:p) {
     }
     if (k == TokenKind.KwDiscard) {
         pass (relay p_paren_stmt(p, sp, StmtKind.StmtDiscardStmt));
+    }
+    // `_~ e;` -- the symbol spelling of `discard(e)`, and the SAME node
+    // (AST_REFERENCE section 2). Two spellings of one idea is the language's
+    // choice, not this parser's; what would be wrong is two nodes.
+    if (k == TokenKind.OpUnderTilde) {
+        pass (relay p_value_stmt(p, sp, StmtKind.StmtDiscardStmt, false));
     }
 
     if (k == TokenKind.KwBreak) {
@@ -537,13 +559,13 @@ func:p_parse_loop = StmtId(Parser->:p, Span:sp, int64:label) {
         // no shape here that accepts them, not by a rule that checks for them.
         TypeId:bt = relay p_parse_type(p);
         drop p_expect(p, TokenKind.PColon);
-        Token:bn = relay p_advance(p);
+        Token:bindN = relay p_advance(p);
         // ParamDecl slots: a = type, b = default value, c = flags,
         // payload = name. 0.2.5 builds the same node for function parameters and
         // keeps this layout.
         DeclId:binding = relay ast_add_decl(p.ast, DeclKind.DeclParamDecl,
-                                            bn.span, bt.index, 0i32, 0i32,
-                                            bn.payload);
+                                            bindN.span, bt.index, 0i32, 0i32,
+                                            bindN.payload);
         drop p_expect(p, TokenKind.KwIn);
         ExprId:iter = relay p_parse_expr(p);
         drop p_expect(p, TokenKind.PRParen);
@@ -617,8 +639,8 @@ func:p_counted = StmtId(Parser->:p, Span:sp, int64:label, StmtKind:kind) {
         drop ast_scratch_push(p.ast, a1.index);
         argc = 1i32;
         while (relay p_accept(p, TokenKind.PComma)) {
-            ExprId:an = relay p_parse_expr(p);
-            drop ast_scratch_push(p.ast, an.index);
+            ExprId:argN = relay p_parse_expr(p);
+            drop ast_scratch_push(p.ast, argN.index);
             argc = argc + 1i32;
         }
     }
