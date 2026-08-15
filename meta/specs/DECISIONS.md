@@ -6480,3 +6480,109 @@ which is `100 + 16`, and 16 is `ExprPipeExpr`.
 This is the third mechanical completeness check in the compiler, after
 `check_kinds_reachable` (0.2) and `resolve_audit` (0.3.5), and it was found the
 same way all three were: **two lists that had to agree, with nothing making them.**
+
+---
+
+## D-095 — What `=>` accepts: range containment, not type families
+
+**Settled in cycle 0.4.3.** D-021 fixed the spelling and `TYPE_REFERENCE` §5 fixed
+the discipline — *"`=>` is a compile-time error wherever data loss is possible —
+not a runtime trap and not a warning"*. Neither says which conversions those are.
+
+**A conversion is lossless when every value of the source type is representable
+in the target type, computed from the actual ranges.** Not "same signedness and
+wider", which is the rule the prototype uses and the rule this compiler first
+had.
+
+The difference is not academic. `uint8 => int16` is lossless — 0..255 sits
+inside −32768..32767 — and a family rule refuses it and forces `=>!`. That
+matters because **`=>!` is an audit tool**: it exists so that a search for one
+token finds every place a conversion was allowed to lose information. Every
+provably-safe conversion pushed into it is a false positive in that search, and a
+diluted signal is a lost one.
+
+Ranges are held as *(can it be negative, how many magnitude bits)* rather than as
+numbers, because the numbers do not fit: `int4096` is a real type.
+
+### Integer to float goes by significand, not by byte width
+
+`int32 => flt64` is accepted — a double represents every `int32` exactly, 53
+bits being more than 31. `int64 => flt64` is **refused**, because 53 is fewer
+than 63, and this is the conversion every mainstream language performs silently.
+`int32 => flt32` is refused too: 24 is fewer than 31.
+
+Float to integer is always lossy at every width, including `flt64 => int128`
+which has room for every magnitude and still drops the fractional part. Range
+containment cannot see that, so it is stated rather than computed.
+
+### Float significands are IEEE 754-2008 §3.6
+
+The spec names `flt32`, `flt64` and `flt128` against C's `float`, `double` and
+`fp128`, and names `flt256` and `flt512` without saying what they are. They
+follow the binary interchange format, defined for every width that is a multiple
+of 32 at or above 128: exponent = `round(4 * log2(k)) - 13`, significand = the
+rest plus the implicit bit.
+
+| | 32 | 64 | 128 | 256 | 512 |
+|---|---|---|---|---|---|
+| significand | 24 | 53 | 113 | 237 | 489 |
+
+A guess here would not have been visible as a guess — it would have quietly
+accepted or refused conversions at the two widest types with nothing to
+contradict it.
+
+### Three answers, not two
+
+A conversion is checked-legal, unchecked-only, or **not a conversion at all**,
+and `=>!` does not rescue the third.
+
+- **`intN => bool` is refused outright.** This is not a conversion that loses
+  information; it is one with no definition. Which integers are true? C answers
+  "everything but zero", and that answer is the truthiness this language does not
+  have. **`=>!` opts out of a check, not of a meaning.**
+- **`uint32 => char32` needs `=>!`** — not every 32-bit number is a Unicode
+  scalar value. The surrogates are excluded and the maximum is U+10FFFF, so this
+  is a validity question rather than a width one.
+- **`fd => int32` is accepted and `int32 => fd` needs `=>!`.** Reading a handle's
+  number loses nothing, and D-093 tells the programmer to cast when the number is
+  what they mean. Manufacturing one asserts what the compiler cannot check — that
+  this number is a live descriptor. `nlibc` needs it, a syscall returning an
+  integer that has to become an `fd`, and it should be the only place that does.
+
+### `any-> => T->` requires `=>!`, against `TYPE_REFERENCE` §27
+
+The spec spells it `p => T`. **This decision changes it to `=>!`**, and the
+reason is what the two spellings mean: `=>` says *nothing can be lost and the
+compiler proved it*. Nothing is proven here — an `any->` is type-erased, so
+giving it a type is an assertion about memory the checker cannot see. Calling
+that a checked cast misreports which of the two spellings is doing the work, and
+it hides the single most consequential unchecked operation in the language from
+the audit that exists to find it.
+
+> **Reversible in one place** if this is judged wrong: `cast_class`'s pointer
+> arm. Flagged rather than buried, because it contradicts a spec section.
+
+### `tbb` casts are conversions, never bit operations (D-008 §6)
+
+ERR is a **different bit pattern at every width**, so sign-extension and
+truncation are both wrong: `tbb8`'s ERR is −128, which sign-extended into a
+`tbb32` is an ordinary valid number. Every cast touching a `tbb` carries a
+sentinel test the backend must emit.
+
+**Narrowing a `tbb` is allowed, and that is not an exception to the narrowing
+rule.** Out of range becomes ERR, exactly as the type's arithmetic saturates
+(D-008 §3). The loss is not silent — it is a sticky taint the program is forced
+to handle, which is the entire purpose of the type. Refusing it would force the
+programmer to hand-write the range check that produces the same ERR.
+
+`tbb => intN` and `tbb => flt` trap to `failsafe` on ERR — the controlled
+shutdown path, never a silent reinterpretation. `intN => tbb` traps on the value
+equal to the target's sentinel, which would otherwise **forge a taint**: a number
+arriving from outside claiming to be an error state.
+
+### Against the prototype
+
+The prototype's checked cast emits a **warning** and adds a runtime check for
+narrowing. `TYPE_REFERENCE` §5 supersedes that explicitly — *"not a runtime trap
+and not a warning"* — so the spec is followed and the prototype is the lagging
+artifact here. Recorded in `PROTOTYPE_DELTA.md`.

@@ -1,0 +1,69 @@
+// Rendering a type as the name a programmer wrote.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.3.
+//
+// Its own module because two checkers need it and neither should depend on the
+// other: expression typing (0.4.2) and cast checking (0.4.3) both exist to say
+// WHICH TYPE was wrong, and a diagnostic that elides the name is most of the
+// value gone.
+
+use "intern.npk".*;
+use "types.npk".*;
+
+// A type's name, for a message. The whole value of a type error is which type
+// was wrong, so this is never elided.
+pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
+    int32:k = raw type_kind(tt, t);
+    if (k == (raw TY_INVALID())) { pass "<unresolved>"; }
+    if (k == (raw TY_BOOL()))    { pass "bool"; }
+    if (k == (raw TY_STRING()))  { pass "string"; }
+    if (k == (raw TY_CSTRING())) { pass "cstring"; }
+    if (k == (raw TY_NIL()))     { pass "NIL"; }
+    if (k == (raw TY_ANY()))     { pass "any"; }
+    if (k == (raw TY_CHAR())) {
+        pass (relay string_concat("char",
+                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+    }
+    if (k == (raw TY_TBB())) {
+        pass (relay string_concat("tbb",
+                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+    }
+    if (k == (raw TY_KERNEL())) {
+        int32:w = raw type_elem(tt, t);
+        if (w == (raw KERNEL_FD()))  { pass "fd"; }
+        if (w == (raw KERNEL_PID())) { pass "pid"; }
+        if (w == (raw KERNEL_TID())) { pass "tid"; }
+        if (w == (raw KERNEL_UID())) { pass "uid"; }
+        pass "gid";
+    }
+    if (k == (raw TY_INT())) {
+        string:base = "int";
+        if (!(raw type_is_signed(tt, t))) { base = "uint"; }
+        pass (relay string_concat(base,
+                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+    }
+    if (k == (raw TY_FLOAT())) {
+        pass (relay string_concat("flt",
+                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+    }
+    if (k == (raw TY_POINTER())) {
+        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "->"));
+    }
+    if (k == (raw TY_SLICE())) {
+        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "[]"));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "?"));
+    }
+    if (k == (raw TY_RESULT())) {
+        string:r1 = relay string_concat("Result<",
+                        relay type_display(tt, interns, raw type_elem(tt, t)));
+        pass (relay string_concat(r1, ">"));
+    }
+    // Named types carry their own name.
+    int32:nm = raw type_name(tt, t);
+    if (!(raw intern_is_none(nm))) {
+        pass (relay intern_get(interns, nm));
+    }
+    pass "<type>";
+};

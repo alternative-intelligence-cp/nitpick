@@ -279,3 +279,17 @@ one-argument substitution only**, and `SEMANTIC_GAPS.md` rates macro expansion
 "Low" priority. The K definition is therefore a much weaker model than the
 implementation, and re-deriving the semantics from K would have lost hygiene,
 splicing, and multi-declaration emission entirely.
+
+## Casts: the prototype warns, the spec errors (cycle 0.4.3)
+
+`src/frontend/sema/type_checker.cpp` treats a narrowing or signedness-changing
+`@cast` as a **warning** plus a runtime check, and computes its "safe" set as
+*same signedness and wider*.
+
+`TYPE_REFERENCE.md` §5 supersedes both explicitly: *"`=>` is a compile-time error
+wherever data loss is possible — not a runtime trap and not a warning."* This
+compiler follows the spec, and D-095 additionally computes the lossless set from
+**value ranges** rather than signedness families, so `uint8 => int16` is accepted
+where the prototype's rule would force `=>!`.
+
+The prototype is the lagging artifact here, not the authority.

@@ -1202,7 +1202,14 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - Bare `any` without `->` is a type error:
   `"'any' must be used as a pointer type: 'any->'. Bare 'any' is not a valid type."`
 - IR: `ptr` (opaque pointer — same as all other pointers in LLVM opaque pointer mode)
-- Cast to concrete type via `p => T` before dereferencing
+- Cast to concrete type via **`p =>! T`** before dereferencing
+
+  > ⚠️ **Corrected (D-095).** This read `p => T`. `=>` means *nothing can be lost
+  > and the compiler proved it*, and nothing is proven here: an `any->` is
+  > type-erased, so giving it a type is an assertion about memory the checker
+  > cannot see. Spelling it `=>` misreports which of the two forms is doing the
+  > work, and hides the most consequential unchecked operation in the language
+  > from the audit that exists to find it.
 
 ### `unknown` — Layer 2 Safety Taint
 

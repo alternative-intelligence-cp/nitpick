@@ -217,6 +217,7 @@ pub func:is_keyword = bool(string:text) {
     wl.append("};")
     wl.append("")
     wl.append('use "intern.npk".*;')
+    wl.append('use "types.npk".*;')
     wl.append("")
     wl.append("pub func:num_width_of = NumWidth(string:text) {")
     wl.append("    int64:n = text.len;")
@@ -268,6 +269,36 @@ pub func:is_keyword = bool(string:text) {
         if re.match(r'^[iu]\d+$', s2):
             wl.append("    if (w == NumWidth.%s) { pass true; }" % width_variant(s2))
     wl.append("    pass false;")
+    wl.append("};")
+
+    # WHICH TYPE A SUFFIX NAMES, as a TY_* kind rather than a yes/no per family.
+    #
+    # `num_width_is_integer` and `num_width_is_float` between them classified
+    # twenty-six of the forty-five suffixes, and the checker treated the rest as
+    # "no suffix at all". So `1tbb8` -- a literal the language plainly has --
+    # reported "this literal has no width suffix", and `1.5tfp256` typed as a
+    # `flt256` because the float predicate had swept `tfp` and `dim256` in with
+    # the floats.
+    #
+    # One function, derived from the suffix text, with every suffix accounted
+    # for. Emitted BY NAME so there is no numeric coupling to types.npk.
+    FAMILY = [(r'^u\d+$', "TY_INT"), (r'^i\d+$', "TY_INT"),
+              (r'^f\d+$', "TY_FLOAT"), (r'^tbb\d+$', "TY_TBB"),
+              (r'^char\d+$', "TY_CHAR")]
+    wl.append("")
+    wl.append("// The TYPE a suffix names, as a `TY_*` kind.")
+    wl.append("//")
+    wl.append("// TY_INVALID for a suffix whose type has no kind yet -- `frac`, `tfp`")
+    wl.append("// and `dim256` are REAL types arriving at a later rung, and the caller")
+    wl.append("// names the rung rather than pretending the suffix is absent (D-085).")
+    wl.append("pub func:num_width_kind = int32(NumWidth:w) {")
+    for s2 in sfx:
+        for pat, ty in FAMILY:
+            if re.match(pat, s2):
+                wl.append("    if (w == NumWidth.%s) { pass (raw %s()); }"
+                          % (width_variant(s2), ty))
+                break
+    wl.append("    pass 0i32;")
     wl.append("};")
     write("num_width.npk", '''// Numeric literal width suffixes.
 //

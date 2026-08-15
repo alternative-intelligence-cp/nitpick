@@ -1,0 +1,256 @@
+// Casts — `=>` converts only when nothing can be lost; `=>!` is the sole opt-out
+// (cycle 0.4.3, D-021).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+
+struct:Cx = {
+    TypeTable:types;
+    DiagList:diags;
+    int32:result;
+    int64:parse_errs;
+};
+
+func:cx = Cx(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    ExprId:node = relay p_parse_expr(@p);
+
+    TypeTable:types = raw typetable_init();
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
+    int32:t = relay type_of_expr(@e, node);
+
+    Cx:out = Cx{ types: types, diags: diags, result: t,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+// Parse failures count against the same total, so a case cannot pass because the
+// expression never got built (the lesson from 0.4.2's test).
+func:errs = int64(Cx->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+func:code0 = string(Cx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+
+// A shorthand for the two halves of the same pair: `=>` must refuse it and `=>!`
+// must accept it. Asserting both is the point — a rule that refused everything
+// would pass the first half.
+func:lossy_pair = bool(string:expr_checked, string:expr_unchecked, InternTable->:it) {
+    Cx:a = raw cx(expr_checked, it);
+    if (raw errs(@a) != 1i64) { pass false; }
+    if (!(raw string_eq(raw code0(@a), raw TYPE_LOSSY_CAST()))) { pass false; }
+    Cx:b = raw cx(expr_unchecked, it);
+    if (raw errs(@b) != 0i64) { pass false; }
+    pass true;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- FIRST, THE THING 0.4.2 COULD NOT ASSERT ------------------------------
+    // With implicit widening gone (D-092, corrected), the cast is the only way to
+    // combine operands of different widths — so this is the case that decides
+    // whether ordinary arithmetic is writable at all.
+    Cx:w = raw cx("(1i32 => int64) + 2i64", @it);
+    if (raw errs(@w) != 0i64)                                { exit 10i32; }
+    if ((raw type_int_bits(@w.types, w.result)) != 64i32)    { exit 11i32; }
+
+    // A cast has the type it names, whatever the operand was.
+    Cx:c0 = raw cx("1i64 =>! int8", @it);
+    if ((raw type_int_bits(@c0.types, c0.result)) != 8i32)   { exit 12i32; }
+
+    // An unsuffixed literal takes the TARGET's type: the one place a programmer
+    // states a type outright should not be the one place a bare literal fails.
+    Cx:c1 = raw cx("1 => int64", @it);
+    if (raw errs(@c1) != 0i64)                               { exit 13i32; }
+
+    // --- WIDENING IS ACCEPTED --------------------------------------------------
+    Cx:i1 = raw cx("1i8 => int64", @it);
+    if (raw errs(@i1) != 0i64)                               { exit 20i32; }
+    Cx:i2 = raw cx("1u8 => uint64", @it);
+    if (raw errs(@i2) != 0i64)                               { exit 21i32; }
+
+    // `uint8 => int16` IS LOSSLESS and is accepted, even though the signedness
+    // differs: 0..255 sits inside -32768..32767. A "same signedness only" rule
+    // would push this into `=>!` — and `=>!` is an audit tool, so every
+    // provably-safe conversion forced into it is a false positive in the one
+    // search that finds the dangerous ones.
+    Cx:i3 = raw cx("1u8 => int16", @it);
+    if (raw errs(@i3) != 0i64)                               { exit 22i32; }
+    Cx:i4 = raw cx("1u32 => int64", @it);
+    if (raw errs(@i4) != 0i64)                               { exit 23i32; }
+
+    // --- NARROWING IS REFUSED, WHATEVER THE VALUE ------------------------------
+    // The check is on TYPES. `1i64 => int32` fits fine and is still refused,
+    // because the rule is "loss is possible", not "loss occurs".
+    if (!(raw lossy_pair("1i64 => int32", "1i64 =>! int32", @it)))  { exit 30i32; }
+
+    // Same width, different signedness — both directions, both refused.
+    if (!(raw lossy_pair("1i32 => uint32", "1i32 =>! uint32", @it))) { exit 31i32; }
+    if (!(raw lossy_pair("1u32 => int32", "1u32 =>! int32", @it)))   { exit 32i32; }
+
+    // `int32 => uint64` is WIDER and still refused: the negatives have nowhere to
+    // go, and this is precisely the conversion C calls a widening.
+    if (!(raw lossy_pair("1i32 => uint64", "1i32 =>! uint64", @it))) { exit 33i32; }
+
+    // --- FLOATS ----------------------------------------------------------------
+    Cx:f1 = raw cx("1.5f32 => flt64", @it);
+    if (raw errs(@f1) != 0i64)                               { exit 40i32; }
+    if (!(raw lossy_pair("1.5f64 => flt32", "1.5f64 =>! flt32", @it))) { exit 41i32; }
+
+    // A FLOAT TO AN INTEGER ALWAYS LOSES, at every width. `flt64 => int128` has
+    // room for every magnitude and still drops the fractional part.
+    if (!(raw lossy_pair("1.5f64 => int128", "1.5f64 =>! int128", @it))) { exit 42i32; }
+
+    // INTEGER TO FLOAT IS BY SIGNIFICAND, not by byte width. A double represents
+    // every int32 exactly (53 > 31) and not every int64 (53 < 63) — and the
+    // second is the conversion every other language performs silently.
+    Cx:f2 = raw cx("1i32 => flt64", @it);
+    if (raw errs(@f2) != 0i64)                               { exit 43i32; }
+    if (!(raw lossy_pair("1i64 => flt64", "1i64 =>! flt64", @it))) { exit 44i32; }
+    // `int32 => flt32` is refused too: 24 significand bits is fewer than 31.
+    if (!(raw lossy_pair("1i32 => flt32", "1i32 =>! flt32", @it))) { exit 45i32; }
+    // …and `flt128` has 113, so an `int64` does fit there.
+    Cx:f3 = raw cx("1i64 => flt128", @it);
+    if (raw errs(@f3) != 0i64)                               { exit 46i32; }
+
+    // --- `bool` IS NOT A SMALL INTEGER, AND `=>!` DOES NOT ARGUE ----------------
+    // `bool => uint8` has an obvious meaning and loses nothing.
+    Cx:b1 = raw cx("true => uint8", @it);
+    if (raw errs(@b1) != 0i64)                               { exit 50i32; }
+
+    // `int32 => bool` is REFUSED OUTRIGHT — and `=>!` does not rescue it. This is
+    // not a conversion that loses information; it is one with no definition.
+    // Which integers are true? That answer is the truthiness this language does
+    // not have, and `=>!` opts out of a check, not of a meaning.
+    Cx:b2 = raw cx("1i32 => bool", @it);
+    if (raw errs(@b2) != 1i64)                               { exit 51i32; }
+    Cx:b3 = raw cx("1i32 =>! bool", @it);
+    if (raw errs(@b3) != 1i64)                               { exit 52i32; }
+
+    // --- CHARACTERS -------------------------------------------------------------
+    // `char8 => uint8` reads the code unit and loses nothing — D-093 tells the
+    // programmer to cast when the number is what they mean, so it must work.
+    Cx:h1 = raw cx("'a' => uint8", @it);
+    if (raw errs(@h1) != 0i64)                               { exit 60i32; }
+    Cx:h2 = raw cx("'a' => uint32", @it);
+    if (raw errs(@h2) != 0i64)                               { exit 61i32; }
+
+    // `uint32 => char32` is REFUSED: not every 32-bit number is a Unicode scalar
+    // value. The surrogates are excluded and the maximum is U+10FFFF, so this is
+    // a validity question rather than a width one.
+    if (!(raw lossy_pair("1u32 => char32", "1u32 =>! char32", @it))) { exit 62i32; }
+    // …while `uint8 => char8` is fine, every byte being a code unit.
+    Cx:h3 = raw cx("1u8 => char8", @it);
+    if (raw errs(@h3) != 0i64)                               { exit 63i32; }
+
+    // --- `tbb`: NEVER A STRAIGHT BIT OPERATION (D-008 §6) -----------------------
+    // ERR is a different bit pattern at every width — `tbb8`'s ERR is -128, and
+    // sign-extended into a `tbb32` that is an ordinary valid number. So every
+    // one of these is a conversion with a sentinel test in it, not a cast.
+    Cx:t1 = raw cx("1tbb8 => tbb32", @it);
+    if (raw errs(@t1) != 0i64)                               { exit 70i32; }
+
+    // NARROWING A `tbb` IS ALLOWED, and that is not an exception to the
+    // narrowing rule — it is the type's own discipline. Out of range becomes
+    // ERR, exactly as its arithmetic saturates (D-008 §3). The loss is not
+    // silent: it is a sticky taint the program is forced to handle.
+    Cx:t2 = raw cx("1tbb64 => tbb8", @it);
+    if (raw errs(@t2) != 0i64)                               { exit 71i32; }
+
+    // `tbb => intN` is legal and carries a MANDATORY runtime check: ERR has no
+    // representation in a plain integer, so it traps to `failsafe` — the
+    // controlled-shutdown path, never a silent reinterpretation.
+    Cx:t3 = raw cx("1tbb32 => int32", @it);
+    if (raw errs(@t3) != 0i64)                               { exit 72i32; }
+
+    // `intN => tbb` likewise: a source value equal to the target's sentinel would
+    // forge a taint, so it traps on that value.
+    Cx:t4 = raw cx("1i32 => tbb32", @it);
+    if (raw errs(@t4) != 0i64)                               { exit 73i32; }
+
+    // A `tbb` cannot become a `bool` or a character — there is nowhere to put
+    // the ERR state, and `=>!` does not invent one.
+    Cx:t5 = raw cx("1tbb32 =>! char8", @it);
+    if (raw errs(@t5) != 1i64)                               { exit 74i32; }
+
+    // --- KERNEL IDENTIFIERS: READABLE, NOT FORGEABLE ----------------------------
+    // Reading a handle's number loses nothing, and D-093's message tells the
+    // programmer to do exactly this.
+    Cx:k1 = raw cx("1i32 =>! fd", @it);
+    if (raw errs(@k1) != 0i64)                               { exit 80i32; }
+
+    // Manufacturing one asserts something the compiler cannot check — that this
+    // number is a live descriptor — so it needs `=>!`. `nlibc` needs it, since a
+    // syscall returns an integer that has to become an `fd`, and it should be the
+    // only place that does.
+    Cx:k2 = raw cx("1i32 => fd", @it);
+    if (raw errs(@k2) != 1i64)                               { exit 81i32; }
+
+    // --- THE THREE-WAY ANSWER MATTERS -------------------------------------------
+    // A lossy cast and an impossible one are different diagnostics, because a
+    // programmer who reaches for `=>!` after the first will reach for it again
+    // after the second. The impossible message says `=>!` will not help.
+    Cx:x1 = raw cx("\"hi\" => int32", @it);
+    if (raw errs(@x1) != 1i64)                               { exit 90i32; }
+    Cx:x2 = raw cx("\"hi\" =>! int32", @it);
+    if (raw errs(@x2) != 1i64)                               { exit 91i32; }
+
+    // A cast to the SAME type is a no-op and always fine, including for types
+    // that convert to nothing else.
+    Cx:x3 = raw cx("1tbb32 => tbb32", @it);
+    if (raw errs(@x3) != 0i64)                               { exit 92i32; }
+
+    // `=>!` WHERE `=>` WOULD DO is not an error. It is how a programmer writes a
+    // conversion whose safety they do not want depending on two types staying as
+    // they are.
+    Cx:x4 = raw cx("1i8 =>! int64", @it);
+    if (raw errs(@x4) != 0i64)                               { exit 93i32; }
+
+    // --- the significand table is asserted, not assumed ---------------------------
+    // IEEE 754-2008 §3.6 defines these for every width; a wrong entry would
+    // silently accept or refuse conversions at the two widest types with nothing
+    // to contradict it.
+    if ((raw float_significand_bits(32i32)) != 24i32)        { exit 100i32; }
+    if ((raw float_significand_bits(64i32)) != 53i32)        { exit 101i32; }
+    if ((raw float_significand_bits(128i32)) != 113i32)      { exit 102i32; }
+    if ((raw float_significand_bits(256i32)) != 237i32)      { exit 103i32; }
+    if ((raw float_significand_bits(512i32)) != 489i32)      { exit 104i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

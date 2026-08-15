@@ -1,0 +1,329 @@
+// Casts — `=>` and `=>!`.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.3.
+//
+// `=>` CONVERTS ONLY WHEN NOTHING CAN BE LOST. Not when nothing IS lost — when
+// nothing CAN be. The check is on types, the value is not known, and
+// `int64 => int32` is refused whatever number happens to be in the variable.
+//
+// `=>!` is the sole opt-out (D-021), deliberately ugly and greppable so that an
+// audit for lossy conversions is a search for one token. There is no third
+// spelling: `cast<T>`, `#cast<T>` and `@cast<T>` do not exist.
+//
+// This module carries most of the weight now that implicit widening is gone
+// (D-092, corrected) — a cast is the ONLY way to combine operands of different
+// widths, so getting the lossless set exactly right is what decides whether
+// ordinary arithmetic is writable.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "type_names.npk".*;
+
+// --- what a type can hold ----------------------------------------------------------------
+//
+// A range as two facts rather than two numbers, because the numbers do not fit:
+// `int4096` is a real type and its bounds are not expressible in anything this
+// compiler can compute with. Every question casting asks can be answered from
+// the magnitude and the sign.
+pub struct:ValueRange = {
+    bool:valid;        // false when the type holds no numbers at all
+    bool:negatives;    // can it represent a value below zero
+    int32:mag_bits;    // bits of magnitude, excluding any sign
+};
+
+func:vr = ValueRange(bool:negatives, int32:mag_bits) {
+    ValueRange:r = ValueRange{ valid: true, negatives: negatives,
+                               mag_bits: mag_bits };
+    pass r;
+};
+
+func:vr_none = ValueRange() {
+    ValueRange:r = ValueRange{ valid: false, negatives: false, mag_bits: 0i32 };
+    pass r;
+};
+
+// HOW MANY INTEGERS A FLOAT REPRESENTS EXACTLY — its significand width, which is
+// the only thing that matters for whether a conversion into it can lose.
+//
+// The spec names `flt32`, `flt64` and `flt128` against C's `float`, `double` and
+// `fp128`, and names `flt256` and `flt512` without saying what they are. Rather
+// than guess, these follow **IEEE 754-2008 §3.6**, which defines the binary
+// interchange format for every width that is a multiple of 32 at or above 128:
+// the exponent field is `round(4 * log2(k)) - 13` bits, and the significand is
+// what remains plus the implicit leading bit.
+//
+//   binary32   exponent  8   significand  24
+//   binary64   exponent 11   significand  53
+//   binary128  exponent 15   significand 113
+//   binary256  exponent 19   significand 237
+//   binary512  exponent 23   significand 489
+//
+// A guess here would not be visible as a guess: it would silently accept or
+// refuse conversions at the two widest types and nothing would contradict it.
+pub func:float_significand_bits = int32(int32:bits) {
+    if (bits == 32i32)  { pass 24i32; }
+    if (bits == 64i32)  { pass 53i32; }
+    if (bits == 128i32) { pass 113i32; }
+    if (bits == 256i32) { pass 237i32; }
+    if (bits == 512i32) { pass 489i32; }
+    pass 0i32;
+};
+
+// The largest Unicode scalar value is U+10FFFF, which needs 21 bits — and NOT
+// every 21-bit value is one, because the surrogate range D800..DFFF is excluded.
+// So `char32` is the one type whose validity is not a question about width, and
+// `uint32 => char32` is refused for that reason rather than for a range reason.
+pub func:CHAR32_MAG_BITS = int32() { pass 21i32; };
+
+pub func:type_range = ValueRange(TypeTable->:tt, int32:t) {
+    int32:k = raw type_kind(tt, t);
+    int32:bits = raw type_int_bits(tt, t);
+
+    if (k == (raw TY_INT())) {
+        if (raw type_is_signed(tt, t)) { pass (raw vr(true, bits - 1i32)); }
+        pass (raw vr(false, bits));
+    }
+    // A `tbb`'s valid range is SYMMETRIC about zero: the most negative value is
+    // the ERR sentinel and is excluded (D-008 §1), which is the "balanced" in
+    // Twisted Balanced Binary. So `tbbN` holds magnitudes up to `2^(N-1) - 1`,
+    // the same as `intN` minus one value.
+    if (k == (raw TY_TBB()))   { pass (raw vr(true, bits - 1i32)); }
+    if (k == (raw TY_FLOAT())) { pass (raw vr(true, raw float_significand_bits(bits))); }
+    if (k == (raw TY_BOOL()))  { pass (raw vr(false, 1i32)); }
+    if (k == (raw TY_CHAR())) {
+        if (bits == 32i32) { pass (raw vr(false, raw CHAR32_MAG_BITS())); }
+        pass (raw vr(false, bits));
+    }
+    // The five kernel identifiers are 32-bit handles (D-042). Their NUMBER is an
+    // ordinary integer even though the type is not.
+    if (k == (raw TY_KERNEL())) { pass (raw vr(true, 31i32)); }
+    pass (raw vr_none());
+};
+
+// CAN EVERY VALUE OF `from` BE REPRESENTED IN `to`?
+//
+// Computed from the ranges rather than from a table of type families, and the
+// difference is not academic: `uint8 => int16` is lossless — every value 0..255
+// sits inside -32768..32767 — and a "same signedness only" rule would refuse it
+// and force `=>!`.
+//
+// That matters because **`=>!` is an audit tool**. Every provably-safe conversion
+// pushed into it is a false positive in the one search an auditor runs to find
+// the dangerous ones, and a signal diluted is a signal lost.
+pub func:range_fits = bool(ValueRange:from, ValueRange:to) {
+    if (!from.valid) { pass false; }
+    if (!to.valid)   { pass false; }
+    if (from.negatives) {
+        if (!to.negatives) { pass false; }
+    }
+    pass (from.mag_bits <= to.mag_bits);
+};
+
+// --- what a cast is allowed to do at all ---------------------------------------------------
+//
+// Three answers, not two. A conversion can be checked-legal, unchecked-only, or
+// not a conversion at all — and collapsing the last two would let `=>!` invent
+// semantics that do not exist rather than opt out of a check that does.
+pub func:CAST_OK = int32()        { pass 0i32; };  // `=>` accepts it
+pub func:CAST_LOSSY = int32()     { pass 1i32; };  // `=>!` only
+pub func:CAST_IMPOSSIBLE = int32(){ pass 2i32; };  // neither; there is no such conversion
+
+pub func:cast_class = int32(TypeTable->:tt, int32:from, int32:to) {
+    // A type failing to resolve already produced a diagnostic (0.4.1).
+    if (raw type_is_invalid(tt, from)) { pass (raw CAST_OK()); }
+    if (raw type_is_invalid(tt, to))   { pass (raw CAST_OK()); }
+
+    // A cast to the same type is a no-op and always fine — including for the
+    // types below that convert to nothing else.
+    if (from == to) { pass (raw CAST_OK()); }
+
+    int32:fk = raw type_kind(tt, from);
+    int32:tk = raw type_kind(tt, to);
+
+    // --- `bool` is not a small integer, in either direction ---------------------
+    //
+    // `bool => uint8` has an obvious meaning and loses nothing, so it is allowed.
+    //
+    // `intN => bool` is REFUSED OUTRIGHT, and `=>!` does not rescue it. This is
+    // not a conversion that loses information — it is a conversion that has no
+    // definition. Which integers are true? C answers "everything but zero" and
+    // that answer is the truthiness this language does not have (0.4.2). `=>!`
+    // exists to opt out of a CHECK, not to invent a meaning.
+    if (tk == (raw TY_BOOL())) { pass (raw CAST_IMPOSSIBLE()); }
+
+    // --- `tbb` is never a straight bit operation (D-008 §6) ----------------------
+    //
+    // ERR is a DIFFERENT BIT PATTERN AT EVERY WIDTH, so sign-extension and
+    // truncation are both wrong: `tbb8`'s ERR is -128, and sign-extended to
+    // `tbb32` that is an ordinary valid number. Every cast touching a `tbb` is a
+    // conversion with a sentinel test in it, which the backend must emit and
+    // which 0.7 lowers.
+    if (fk == (raw TY_TBB())) { pass (relay cast_from_tbb(tt, to, tk)); }
+    if (tk == (raw TY_TBB())) { pass (relay cast_to_tbb(tt, from, fk)); }
+
+    // --- a handle's number is readable; a handle is not forgeable ----------------
+    //
+    // `fd => int32` loses nothing — it reads the number, which is what D-093 tells
+    // the programmer to do when the number is what they mean.
+    //
+    // `int32 => fd` goes the other way and asserts something the compiler cannot
+    // check: that this number is a live descriptor. That is exactly the `=>!`
+    // contract, and it keeps "where does this code manufacture a handle" a grep.
+    // `nlibc` needs it — a syscall returns an integer that has to become an `fd`
+    // — and it should be the only place that does.
+    if (tk == (raw TY_KERNEL())) { pass (raw CAST_LOSSY()); }
+
+    // --- pointers ------------------------------------------------------------------
+    //
+    // `any-> => T->` REQUIRES `=>!`, and this departs from TYPE_REFERENCE §27,
+    // which spells it with `=>`. The reason is that `=>` means "nothing can be
+    // lost and the compiler proved it", and nothing is proven here: an `any->` is
+    // type-erased, so giving it a type is an assertion about memory the checker
+    // cannot see. Calling that a checked cast is a lie about which of the two
+    // spellings is doing the work.
+    if (tk == (raw TY_POINTER())) {
+        if (fk == (raw TY_POINTER())) { pass (raw CAST_LOSSY()); }
+        pass (raw CAST_IMPOSSIBLE());
+    }
+    if (fk == (raw TY_POINTER())) { pass (raw CAST_IMPOSSIBLE()); }
+
+    // --- everything numeric, by range --------------------------------------------
+    ValueRange:fr = raw type_range(tt, from);
+    ValueRange:tr = raw type_range(tt, to);
+    if (!fr.valid) { pass (raw CAST_IMPOSSIBLE()); }
+    if (!tr.valid) { pass (raw CAST_IMPOSSIBLE()); }
+
+    // A FLOAT TO AN INTEGER ALWAYS LOSES, whatever the widths. `flt64 => int128`
+    // has room for every magnitude and still drops the fractional part, which is
+    // information the source had. Range containment cannot see that, so it is
+    // stated rather than computed.
+    if (fk == (raw TY_FLOAT())) {
+        if (tk != (raw TY_FLOAT())) { pass (raw CAST_LOSSY()); }
+    }
+
+    if (raw range_fits(fr, tr)) { pass (raw CAST_OK()); }
+    pass (raw CAST_LOSSY());
+};
+
+// `tbbN => X`. Widening between `tbb`s maps ERR to the target's ERR and
+// sign-extends everything else; narrowing maps ERR and anything out of range to
+// the target's ERR — which is not silent loss but the type's own discipline
+// (D-008 §3), the same saturation its arithmetic performs.
+func:cast_from_tbb = int32(TypeTable->:tt, int32:to, int32:tk) {
+    if (tk == (raw TY_TBB())) { pass (raw CAST_OK()); }
+    // `tbb => intN` and `tbb => flt`: ERR HAS NO REPRESENTATION THERE. The spec
+    // makes this trap to `failsafe` unless guarded, so it is a legal cast that
+    // carries a mandatory runtime check — the controlled-shutdown path, not a
+    // silent reinterpretation. 0.5's flow analysis is what can elide the check
+    // when `is_err` already guards it.
+    if (tk == (raw TY_INT()))   { pass (raw CAST_OK()); }
+    if (tk == (raw TY_FLOAT())) { pass (raw CAST_OK()); }
+    pass (raw CAST_IMPOSSIBLE());
+};
+
+// `X => tbbN`. A source value equal to the target's ERR sentinel would FORGE A
+// TAINT — a number arriving from outside claiming to be an error state — so it
+// traps, and everything else is range-checked.
+func:cast_to_tbb = int32(TypeTable->:tt, int32:from, int32:fk) {
+    if (fk == (raw TY_INT()))   { pass (raw CAST_OK()); }
+    if (fk == (raw TY_FLOAT())) { pass (raw CAST_OK()); }
+    pass (raw CAST_IMPOSSIBLE());
+};
+
+// --- the diagnostic ------------------------------------------------------------------------
+
+pub func:check_cast = int32(TypeTable->:tt, InternTable->:interns, DiagList->:diags,
+                            int32:from, int32:to, bool:unchecked, Span:at) {
+    int32:c = raw cast_class(tt, from, to);
+
+    if (c == (raw CAST_OK())) {
+        // `=>!` WHERE `=>` WOULD DO is not an error, and saying so would be
+        // wrong: it is how a programmer writes a conversion whose safety they do
+        // not want to depend on the two types staying as they are.
+        pass to;
+    }
+
+    if (c == (raw CAST_LOSSY())) {
+        if (unchecked) { pass to; }
+        string:m1 = relay string_concat("`", relay type_display(tt, interns, from));
+        string:m2 = relay string_concat(m1, "` does not fit in `");
+        string:m3 = relay string_concat(m2, relay type_display(tt, interns, to));
+        string:m4 = relay string_concat(m3,
+            "`, so this conversion can lose information: ");
+        m4 = relay string_concat(m4, relay why_lossy(tt, from, to));
+        m4 = relay string_concat(m4, ". Write `=>!` to accept that.");
+        drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), m4, at));
+        pass to;
+    }
+
+    // CAST_IMPOSSIBLE — and `=>!` does NOT rescue it, because there is nothing
+    // here to opt out of. The message says so, since a programmer who reaches for
+    // `=>!` after a lossy-cast error will reach for it again here.
+    string:n1 = relay string_concat("there is no conversion from `",
+                                    relay type_display(tt, interns, from));
+    string:n2 = relay string_concat(n1, "` to `");
+    string:n3 = relay string_concat(n2, relay type_display(tt, interns, to));
+    string:n4 = relay string_concat(n3, "`: ");
+    n4 = relay string_concat(n4, relay why_impossible(tt, from, to));
+    n4 = relay string_concat(n4, ". `=>!` does not help — it opts out of a check, not of a meaning.");
+    drop diaglist_push(diags, raw diag_error(raw TYPE_LOSSY_CAST(), n4, at));
+    pass to;
+};
+
+// The reason, not just the refusal. Which of two familiar-looking widths was too
+// small is the whole content of the message.
+pub func:why_lossy = string(TypeTable->:tt, int32:from, int32:to) {
+    int32:fk = raw type_kind(tt, from);
+    int32:tk = raw type_kind(tt, to);
+    if (fk == (raw TY_FLOAT())) {
+        if (tk != (raw TY_FLOAT())) {
+            pass "the fractional part has nowhere to go";
+        }
+    }
+    if (tk == (raw TY_KERNEL())) {
+        pass "a kernel identifier cannot be manufactured from a number the compiler has not seen the kernel return (D-042)";
+    }
+    if (tk == (raw TY_POINTER())) {
+        pass "giving a type-erased pointer a type is an assertion about memory that nothing here can check";
+    }
+    ValueRange:fr = raw type_range(tt, from);
+    ValueRange:tr = raw type_range(tt, to);
+    if (fr.negatives) {
+        if (!tr.negatives) {
+            pass "the source can be negative and the target cannot, so those values would come back as large positive ones";
+        }
+    }
+    if (tk == (raw TY_CHAR())) {
+        if ((raw type_int_bits(tt, to)) == 32i32) {
+            pass "not every 32-bit number is a Unicode scalar value — the surrogate range is excluded and the maximum is U+10FFFF";
+        }
+    }
+    if (tk == (raw TY_FLOAT())) {
+        pass "a float represents integers exactly only up to its significand width, and this source is wider than that";
+    }
+    pass "the target is narrower than the source";
+};
+
+pub func:why_impossible = string(TypeTable->:tt, int32:from, int32:to) {
+    int32:fk = raw type_kind(tt, from);
+    int32:tk = raw type_kind(tt, to);
+    if (tk == (raw TY_BOOL())) {
+        pass "there is no rule saying which values are true, and there is no truthiness in Nitpick — write the comparison you mean";
+    }
+    if (fk == (raw TY_BOOL())) {
+        pass "a `bool` converts to a number, but not to this";
+    }
+    if (fk == (raw TY_TBB())) {
+        pass "a `tbb` carries an ERR state that this type has nowhere to put (D-008)";
+    }
+    if (tk == (raw TY_TBB())) {
+        pass "only a number can become a `tbb`, because the conversion has to range-check against the ERR sentinel (D-008)";
+    }
+    if (fk == (raw TY_POINTER())) {
+        pass "a pointer converts only to another pointer; `#wild_ptr<T>(addr)` is how an address becomes one";
+    }
+    pass "these types have no values in common";
+};

@@ -56,6 +56,7 @@ pub enum:NumWidth = {
 };
 
 use "intern.npk".*;
+use "types.npk".*;
 
 pub func:num_width_of = NumWidth(string:text) {
     int64:n = text.len;
@@ -225,4 +226,53 @@ pub func:num_width_is_integer = bool(NumWidth:w) {
     if (w == NumWidth.WI2048) { pass true; }
     if (w == NumWidth.WI4096) { pass true; }
     pass false;
+};
+
+// The TYPE a suffix names, as a `TY_*` kind.
+//
+// TY_INVALID for a suffix whose type has no kind yet -- `frac`, `tfp`
+// and `dim256` are REAL types arriving at a later rung, and the caller
+// names the rung rather than pretending the suffix is absent (D-085).
+pub func:num_width_kind = int32(NumWidth:w) {
+    if (w == NumWidth.WU1) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU2) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU4) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU8) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU16) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU32) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU64) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU128) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU256) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU512) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU1024) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU2048) { pass (raw TY_INT()); }
+    if (w == NumWidth.WU4096) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI1) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI2) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI4) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI8) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI16) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI32) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI64) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI128) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI256) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI512) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI1024) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI2048) { pass (raw TY_INT()); }
+    if (w == NumWidth.WI4096) { pass (raw TY_INT()); }
+    if (w == NumWidth.WTbb8) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WTbb16) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WTbb32) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WTbb64) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WTbb128) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WTbb256) { pass (raw TY_TBB()); }
+    if (w == NumWidth.WF32) { pass (raw TY_FLOAT()); }
+    if (w == NumWidth.WF64) { pass (raw TY_FLOAT()); }
+    if (w == NumWidth.WF128) { pass (raw TY_FLOAT()); }
+    if (w == NumWidth.WF256) { pass (raw TY_FLOAT()); }
+    if (w == NumWidth.WF512) { pass (raw TY_FLOAT()); }
+    if (w == NumWidth.WChar8) { pass (raw TY_CHAR()); }
+    if (w == NumWidth.WChar16) { pass (raw TY_CHAR()); }
+    if (w == NumWidth.WChar32) { pass (raw TY_CHAR()); }
+    pass 0i32;
 };

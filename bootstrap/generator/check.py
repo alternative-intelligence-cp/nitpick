@@ -167,7 +167,7 @@ class Checker:
                 raise RungError("async function", "1.1", item)
             if "comptime" in item.modifiers:
                 raise RungError("comptime function", "0.6", item)
-            self.p.funcs[item.name] = item
+            self._claim(self.p.funcs, item.name, item, "function")
             return
 
         if isinstance(item, S.GlobalDecl):
@@ -175,6 +175,31 @@ class Checker:
             return
 
         raise CheckError("unsupported top-level item %s" % type(item).__name__, item)
+
+
+    def _claim(self, table, name, item, what):
+        """One name, one definition.
+
+        The seed used to write `self.p.funcs[name] = item` and let the last
+        definition win. That is not a lax rule, it is a silent one: 0.4.3 added a
+        `type_range` to type_cast.npk while type_expr.npk already had one, and
+        the seed picked whichever it saw last. It happened to fail in `llc`
+        because the two signatures differed -- had they matched, the compiler
+        would have been built calling the wrong function, correctly, forever.
+
+        The real resolver reports this as an ambiguous glob import
+        (NITPICK-RESOLVE-004). The seed has no module namespaces to reason with,
+        so it applies the blunt rule: within one compilation group, a name is
+        claimed once. Every source this seed compiles glob-imports its
+        dependencies, so any duplicate here is a genuine collision.
+        """
+        prev = table.get(name)
+        if prev is not None:
+            raise CheckError(
+                "%s `%s` is defined twice in this compilation; the real "
+                "resolver reports an ambiguous glob import here, and the seed "
+                "cannot tell which one you meant" % (what, name), item)
+        table[name] = item
 
     # --- types ---------------------------------------------------------------
 

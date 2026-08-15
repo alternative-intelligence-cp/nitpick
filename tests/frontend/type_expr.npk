@@ -45,8 +45,8 @@ func:ex = Ex(string:src, InternTable->:it) {
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags);
-    int32:t = relay type_of_expr(@e, node, 0i32);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
+    int32:t = relay type_of_expr(@e, node);
 
     Ex:out = Ex{ types: types, diags: diags, result: t,
                  parse_errs: raw diaglist_count(@pd) };
@@ -96,6 +96,39 @@ func:main = int32(cstring[]:_~argv) {
     Ex:d2 = raw ex("1 + 42i64", @it);
     if (raw errs(@d2) != 0i64)                                 { exit 18i32; }
     if ((raw type_int_bits(@d2.types, d2.result)) != 64i32)    { exit 19i32; }
+
+    // --- EVERY NUMERIC FAMILY HAS A SUFFIX, and each names its own type -------
+    //
+    // Integer and float were the only two families the width table classified,
+    // so the checker treated the other nineteen suffixes as absent. `1tbb8`
+    // reported "this literal has no width suffix" while carrying one, and
+    // `1.5tfp256` typed as a `flt256` because the float test had swept `tfp` in
+    // with the floats — a literal silently becoming a different type.
+    Ex:nt = raw ex("1tbb8", @it);
+    if (raw errs(@nt) != 0i64)                                 { exit 200i32; }
+    if ((raw type_kind(@nt.types, nt.result)) != (raw TY_TBB())) { exit 201i32; }
+    if ((raw type_int_bits(@nt.types, nt.result)) != 8i32)     { exit 202i32; }
+
+    Ex:nc = raw ex("65char8", @it);
+    if (raw errs(@nc) != 0i64)                                 { exit 203i32; }
+    if ((raw type_kind(@nc.types, nc.result)) != (raw TY_CHAR())) { exit 204i32; }
+
+    // A suffix naming a type NO RUNG SUPPLIES YET says exactly that. "No suffix"
+    // would be false and would send the reader to add one they already wrote.
+    Ex:nf = raw ex("1.5tfp256", @it);
+    if (raw errs(@nf) != 1i64)                                 { exit 205i32; }
+    if ((raw type_kind(@nf.types, nf.result)) == (raw TY_FLOAT())) { exit 206i32; }
+
+    // A `tbb` is still not a number: the suffix gives it a type, not arithmetic.
+    Ex:na = raw ex("1tbb32 + 2tbb32", @it);
+    if (raw errs(@na) != 1i64)                                 { exit 207i32; }
+    if (!(raw string_eq(raw code0(@na), raw TYPE_NOT_NUMERIC()))) { exit 208i32; }
+
+    // An unsuffixed literal takes a context type of its OWN family only: `42`
+    // becomes an `int64` and never a `flt64`, because `42` and `42.0` are
+    // different tokens and the one written is the one that counts.
+    Ex:nm = raw ex("1.5f64 + 2", @it);
+    if (raw errs(@nm) != 1i64)                                 { exit 209i32; }
 
     // --- THE SEMANTIC-TYPE RULES ------------------------------------------------
     // Each of these is representationally an integer and none is a number.
