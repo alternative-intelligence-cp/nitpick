@@ -414,7 +414,13 @@ def main(argv):
     if isinstance(pc, str) and not os.path.exists(pc):
         failures.append("tools/parse_check.npk did not build: %s" % pc)
     elif pc:
+        # tests/grammar/ is parse-only by design; tests/modules/ holds fixtures
+        # that a test loads through the real loader. Neither is compiled, and both
+        # must still PARSE -- a broken fixture would otherwise surface as a
+        # confusing failure inside whichever test loads it.
         grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
+        grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "modules", "**", "*.npk"),
+                                    recursive=True))
         n = 0
         for p in sorted(set(all_sources)) + grammar:
             name = os.path.relpath(p, ROOT)

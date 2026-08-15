@@ -1,0 +1,384 @@
+// The module graph.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.3.3.
+//
+// From a root file: the whole program, each module loaded once, in any order,
+// with the same result.
+//
+// EVERY MODULE SHARES ONE `Ast`. A `Span` carries its file id (0.1.0), so nodes
+// from different files are already distinguishable, and one arena means a
+// cross-module reference is an ordinary index rather than a pair of them.
+//
+// CYCLES ARE LEGAL (D-086) and need no special handling here, PROVIDED phase 1
+// completes for every module before phase 2 begins for any. That ordering is the
+// entire mechanism, and it falls out of the structure below: loading collects
+// declarations only, and body resolution (0.3.5) runs afterwards over the
+// finished table. There is no point at which a module's declarations are needed
+// and missing.
+
+use "source_location.npk".*;
+use "source.npk".*;
+use "intern.npk".*;
+use "token_kind.npk".*;
+use "token.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "resolve_codes.npk".*;
+use "paths.npk".*;
+use "resolve_path.npk".*;
+use "lexer.npk".*;
+use "parser.npk".*;
+use "parse_type.npk".*;
+use "parse_expr.npk".*;
+use "parse_decorate.npk".*;
+use "parse_stmt.npk".*;
+use "parse_pick.npk".*;
+use "parse_decl.npk".*;
+use "symbols.npk".*;
+
+pub struct:ModuleEntry = {
+    int32:file;      // index into the SourceManager
+    int32:root;      // the ModuleDecl
+    int32:scope;     // its module scope in the symbol table
+};
+
+pub struct:ModuleGraph = {
+    SourceManager:sm;
+    Ast:ast;
+    SymbolTable:tab;
+    InternTable->:interns;
+    DiagList->:diags;
+    RootList->:roots;
+    string:stdlib;
+
+    wild ModuleEntry->:mods;
+    int32:count;
+    int32:cap;
+};
+
+pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
+                                  RootList->:roots, string:stdlib) {
+    int64:n = 16i64;
+    wild int8->:mem = alloc(n * #size_of<ModuleEntry>());
+    ModuleGraph:g = ModuleGraph{
+        sm: raw srcmgr_init(),
+        ast: raw ast_init(),
+        tab: raw symtab_init(),
+        interns: interns,
+        diags: diags,
+        roots: roots,
+        stdlib: stdlib,
+        mods: mem => wild ModuleEntry->,
+        count: 0i32,
+        cap: 16i32
+    };
+    pass g;
+};
+
+func:graph_grow = NIL(ModuleGraph->:g) {
+    int32:nc = g.cap * 2i32;
+    wild int8->:bigger = ralloc(g.mods => wild int8->,
+                                (nc => int64) * #size_of<ModuleEntry>());
+    g.mods = bigger => wild ModuleEntry->;
+    g.cap = nc;
+    pass NIL;
+};
+
+pub func:graph_count = int32(ModuleGraph->:g) { pass g.count; };
+pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) {
+    if (i < 0i32) { fail 13i32; }
+    if (i >= g.count) { fail 13i32; }
+    pass g.mods[i => int64];
+};
+
+// Already in the graph? Returns its index, or -1.
+pub func:graph_find = int32(ModuleGraph->:g, int32:file) {
+    int32:i = 0i32;
+    while (i < g.count) {
+        if (g.mods[i => int64].file == file) {
+            pass i;
+        }
+        i = i + 1i32;
+    }
+    pass (0i32 - 1i32);
+};
+
+// --- loading -----------------------------------------------------------------------
+
+// Load one module, parse it, and collect its declarations. Returns its index in
+// the graph, or -1 if it could not be read.
+//
+// THE PATH IS NORMALISED HERE, unconditionally, rather than trusting the caller
+// to have done it. `./a/../b.npk` and `b.npk` name one file, and if two spellings
+// reach `srcmgr_load` the module loads twice — every symbol in it declared twice,
+// so 0.3.1's duplicate diagnostic fires on a file the reader never edited.
+//
+// Normalising is idempotent and costs a scan of a short string. Making the
+// guarantee structural rather than a convention every call site has to remember
+// is worth far more than that, and this function was written the other way first:
+// the comment said the path "has been through path_normalise by the time it
+// arrives", and the first caller that had not was a test.
+pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
+    string:path = relay path_normalise(raw_path);
+    Result<int32>:loaded = srcmgr_load(@g.sm, path);
+    if (loaded.is_error) {
+        string:m1 = relay string_concat("cannot read `", path);
+        string:m2 = relay string_concat(m1, "`");
+        drop diaglist_push(g.diags,
+            raw diag_error(raw RESOLVE_NO_SUCH_FILE(), m2, from));
+        pass (0i32 - 1i32);
+    }
+    int32:file = loaded.value;
+
+    int32:existing = raw graph_find(g, file);
+    if (existing >= 0i32) {
+        pass existing;
+    }
+
+    string:text = relay srcmgr_text(@g.sm, file);
+    TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
+    Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
+    DeclId:root = relay p_parse_module(@p);
+
+    // PHASE 1 RUNS HERE, per module, as it is loaded. It needs no other module:
+    // collecting a declaration records its name and where it was declared, and
+    // nothing else. That is what lets the graph contain a cycle without the
+    // loader having to break it.
+    int32:scope = relay collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
+
+    if (g.count >= g.cap) {
+        drop graph_grow(g);
+    }
+    ModuleEntry:e = ModuleEntry{ file: file, root: root.index, scope: scope };
+    g.mods[g.count => int64] = e;
+    int32:index = g.count;
+    g.count = g.count + 1i32;
+    pass index;
+};
+
+// Load a root file and everything it reaches, transitively.
+//
+// Breadth-first over discovery order, which is deterministic given the root: the
+// queue is the graph's own module list, walked with an index that never moves
+// backward. Nothing here is decided by "whichever came first" in a sense the
+// source does not define.
+pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) {
+    int32:first = relay graph_load(g, root_path, raw span_none());
+    if (first < 0i32) {
+        pass first;
+    }
+
+    // The list grows as imports are discovered, so this walks past its own tail.
+    int32:i = 0i32;
+    while (i < g.count) {
+        drop graph_load_imports(g, i);
+        i = i + 1i32;
+    }
+    pass first;
+};
+
+func:graph_load_imports = NIL(ModuleGraph->:g, int32:index) {
+    ModuleEntry:e = raw graph_at(g, index);
+    string:from = relay srcmgr_path(@g.sm, e.file);
+    DeclId:rootId = DeclId{ index: e.root };
+    DeclNode:m = relay ast_decl(@g.ast, rootId);
+
+    int32:n = raw item_member_count(@g.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:item = raw item_member(@g.ast, m, i);
+        DeclNode:d = relay ast_decl(@g.ast, item);
+
+        if (d.kind == DeclKind.DeclImportDecl) {
+            drop graph_load_import(g, from, d);
+        }
+        // `mod:name;` with an empty member list is an EXTERNAL FILE MODULE
+        // (MODULE_REFERENCE 1.1) -- the body lives in name.npk. An inline
+        // `mod:name = { … };` has its members already and loads nothing.
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            if ((raw item_member_count(@g.ast, d)) == 0i32) {
+                drop graph_load_file_module(g, from, d);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:graph_load_import = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
+    int32:path_idx = raw import_path(d);
+    if (raw intern_is_none(path_idx)) {
+        // A LOGICAL path (`use std.math.*`). Its segments are held separately;
+        // joining them to a file is the standard library's business and lands
+        // with the driver, which is what knows where the standard library is.
+        pass NIL;
+    }
+    string:target = relay intern_get(g.interns, path_idx);
+    Resolution:r = relay resolve_use(from, target, g.roots, g.stdlib);
+    if (r.status != (raw RESOLVED_OK())) {
+        drop report_resolution(g.diags, r, target, d.span);
+        pass NIL;
+    }
+    drop graph_load(g, r.path, d.span);
+    pass NIL;
+};
+
+// `mod:network;` searches for `network.npk` OR `network/mod.npk` relative to the
+// declaring file. FINDING BOTH IS AN ERROR by the same rule as 0.3.2: two files
+// can supply one module, and picking one silently makes the answer depend on
+// something the reader cannot see.
+func:graph_load_file_module = NIL(ModuleGraph->:g, string:from, DeclNode:d) {
+    string:name = relay intern_get(g.interns, raw decl_name(d));
+    string:dir = relay path_dirname(from);
+
+    string:flat = relay path_normalise(
+        relay path_join(dir, relay string_concat(name, ".npk")));
+    string:nested = relay path_normalise(
+        relay path_join(dir, relay string_concat(name, "/mod.npk")));
+
+    bool:has_flat = path_exists(relay to_cstring(flat));
+    bool:has_nested = path_exists(relay to_cstring(nested));
+
+    if (has_flat) {
+        if (has_nested) {
+            string:m1 = relay string_concat("module `", name);
+            string:m2 = relay string_concat(m1, "` is supplied by both ");
+            string:m3 = relay string_concat(m2, flat);
+            string:m4 = relay string_concat(m3, " and ");
+            string:m5 = relay string_concat(m4, nested);
+            drop diaglist_push(g.diags,
+                raw diag_error(raw RESOLVE_AMBIGUOUS(), m5, d.span));
+            pass NIL;
+        }
+        drop graph_load(g, flat, d.span);
+        pass NIL;
+    }
+    if (has_nested) {
+        drop graph_load(g, nested, d.span);
+        pass NIL;
+    }
+
+    string:n1 = relay string_concat("cannot find module `", name);
+    string:n2 = relay string_concat(n1, "`: neither ");
+    string:n3 = relay string_concat(n2, flat);
+    string:n4 = relay string_concat(n3, " nor ");
+    string:n5 = relay string_concat(n4, nested);
+    drop diaglist_push(g.diags,
+        raw diag_error(raw RESOLVE_NO_SUCH_FILE(), n5, d.span));
+    pass NIL;
+};
+
+// --- struct-size cycles ------------------------------------------------------------------
+//
+// D-086 says to report a cycle ONLY when it is genuinely unresolvable, and names
+// the first case: a struct whose size depends on itself other than through a
+// pointer.
+//
+//     struct:A = { B:b; };  struct:B = { A:a; };     // unresolvable
+//     struct:A = { B->:b; };  struct:B = { A:a; };   // fine: a pointer is one word
+//
+// A pointer breaks the cycle because its size does not depend on what it points
+// at (D-038, thin pointers). This is checked HERE rather than in cycle 0.4
+// because it needs no types — only the shape of the field's type node, which the
+// parser already built.
+//
+// The `const` case D-086 also names — an initialiser depending on itself — needs
+// name resolution and lands in 0.3.5.
+
+// Does this type node refer DIRECTLY to a named type, with no pointer between?
+func:direct_named_type = int32(Ast->:ast, TypeId:t) {
+    if (raw type_is_none(t)) {
+        pass 0i32;
+    }
+    TypeNode:n = relay ast_type(ast, t);
+    if (n.kind == TypeKind.TypeNamedType) {
+        pass (n.payload => int32);
+    }
+    // A fixed array of T contains its elements, so its size DOES depend on T.
+    // A slice does not: it is {ptr, i64} whatever it points at (D-070).
+    if (n.kind == TypeKind.TypeArrayType) {
+        if (raw type_is_slice(n)) {
+            pass 0i32;
+        }
+        pass (relay direct_named_type(ast, raw type_element(n)));
+    }
+    // A pointer or an optional breaks the dependency: one word, regardless.
+    pass 0i32;
+};
+
+// Walk from `start` following direct containment, looking for `start` again.
+// Returns the depth at which it closed, or 0.
+func:struct_reaches_self = bool(ModuleGraph->:g, int32:scope, int32:start,
+                                int32:current, int32:fuel) {
+    if (fuel <= 0i32) {
+        pass false;
+    }
+    int32:sym = raw scope_lookup(@g.tab, scope, current);
+    if (sym == 0i32) {
+        pass false;
+    }
+    Symbol:s = raw symtab_get(@g.tab, sym);
+    if (s.origin_kind != (raw SYM_DECL())) {
+        pass false;
+    }
+    DeclId:did = DeclId{ index: s.origin };
+    DeclNode:d = relay ast_decl(@g.ast, did);
+    if (d.kind != DeclKind.DeclStructDecl) {
+        pass false;
+    }
+
+    int32:n = raw item_member_count(@g.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:fid = raw item_member(@g.ast, d, i);
+        DeclNode:f = relay ast_decl(@g.ast, fid);
+        int32:named = relay direct_named_type(@g.ast, raw field_type(f));
+        if (named != 0i32) {
+            if (named == start) {
+                pass true;
+            }
+            if (relay struct_reaches_self(g, scope, start, named, fuel - 1i32)) {
+                pass true;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// Report every struct whose size depends on itself.
+//
+// Modules are visited in graph order and structs within a module in declaration
+// order, so the diagnostics come out in the same sequence on every run — which is
+// the order-independence D-086 requires, applied to the output as well as to the
+// result.
+pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) {
+    int32:mi = 0i32;
+    while (mi < g.count) {
+        ModuleEntry:e = raw graph_at(g, mi);
+        DeclId:rootId = DeclId{ index: e.root };
+        DeclNode:m = relay ast_decl(@g.ast, rootId);
+
+        int32:n = raw item_member_count(@g.ast, m);
+        int32:i = 0i32;
+        while (i < n) {
+            DeclId:item = raw item_member(@g.ast, m, i);
+            DeclNode:d = relay ast_decl(@g.ast, item);
+            if (d.kind == DeclKind.DeclStructDecl) {
+                int32:name = raw decl_name(d);
+                if (relay struct_reaches_self(g, e.scope, name, name, 64i32)) {
+                    string:nm = relay intern_get(g.interns, name);
+                    string:m1 = relay string_concat("`", nm);
+                    string:m2 = relay string_concat(m1,
+                        "` contains itself, so its size cannot be computed; a `->` breaks the cycle because a pointer is one word whatever it points at");
+                    drop diaglist_push(g.diags,
+                        raw diag_error(raw RESOLVE_CYCLE(), m2, d.span));
+                }
+            }
+            i = i + 1i32;
+        }
+        mi = mi + 1i32;
+    }
+    pass NIL;
+};

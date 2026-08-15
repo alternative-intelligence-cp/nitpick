@@ -1,0 +1,135 @@
+// The module graph (cycle 0.3.3).
+//
+// Loads the fixture under `tests/modules/` through the real loader. Assumes the
+// harness runs from the repository root, as every other suite already does.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/paths.npk".*;
+use "../../src/frontend/resolve_path.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/module_graph.npk".*;
+
+// Every module in the graph, keyed by name, so a lookup can assert that a symbol
+// lives in the module it was declared in and not somewhere else.
+func:find_symbol_anywhere = int32(ModuleGraph->:g, int32:name) {
+    int32:i = 0i32;
+    while (i < (raw graph_count(g))) {
+        ModuleEntry:e = relay graph_at(g, i);
+        int32:hit = raw scope_lookup(@g.tab, e.scope, name);
+        if (hit != 0i32) {
+            pass hit;
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags) {
+    RootList:roots = raw rootlist_init();
+    ModuleGraph:g = raw graph_init(it, diags, @roots, "");
+    drop graph_load_all(@g, root);
+    pass g;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- a graph WITH A CYCLE loads -----------------------------------------
+    // alpha imports beta, beta imports alpha. Legal (D-086), and it needs no
+    // special handling: collection is per-module and needs nothing from anywhere
+    // else, so there is no point at which a module's declarations are wanted and
+    // missing.
+    DiagList:d1 = raw diaglist_init();
+    ModuleGraph:g1 = raw load("tests/modules/graph/root.npk", @it, @d1);
+    if (raw diaglist_count(@d1) != 0i64)                 { exit 10i32; }
+
+    // root, alpha, beta, nested/mod -- four, each loaded ONCE despite alpha and
+    // beta each naming the other.
+    if (raw graph_count(@g1) != 4i32)                    { exit 11i32; }
+
+    int32:root_fn = raw intern_add(@it, "root_fn");
+    int32:alpha_fn = raw intern_add(@it, "alpha_fn");
+    int32:beta_fn = raw intern_add(@it, "beta_fn");
+    int32:nested_fn = raw intern_add(@it, "nested_fn");
+    if ((raw find_symbol_anywhere(@g1, root_fn)) == 0i32)   { exit 12i32; }
+    if ((raw find_symbol_anywhere(@g1, alpha_fn)) == 0i32)  { exit 13i32; }
+    if ((raw find_symbol_anywhere(@g1, beta_fn)) == 0i32)   { exit 14i32; }
+    // `mod:nested;` found nested/mod.npk.
+    if ((raw find_symbol_anywhere(@g1, nested_fn)) == 0i32) { exit 15i32; }
+
+    // --- ENTERING FROM A DIFFERENT ROOT GIVES THE SAME ANSWER -------------------
+    //
+    // This is D-086's third obligation and it is a REPRODUCIBILITY requirement
+    // before it is a convenience: a build that depends on entry order differs
+    // between the stage-1 and stage-2 compilers, and the bootstrap fixpoint check
+    // then fails for a reason unconnected to correctness.
+    //
+    // Entering at `beta` discovers the modules in a different order, so the file
+    // ids and symbol ids differ. What must NOT differ is which names exist.
+    DiagList:d2 = raw diaglist_init();
+    ModuleGraph:g2 = raw load("tests/modules/graph/beta.npk", @it, @d2);
+    if (raw diaglist_count(@d2) != 0i64)                 { exit 20i32; }
+    // beta reaches alpha, and alpha reaches beta -- but not root, which nothing
+    // imports. Two modules, and the cycle still terminates.
+    if (raw graph_count(@g2) != 2i32)                    { exit 21i32; }
+    if ((raw find_symbol_anywhere(@g2, alpha_fn)) == 0i32) { exit 22i32; }
+    if ((raw find_symbol_anywhere(@g2, beta_fn)) == 0i32)  { exit 23i32; }
+
+    // Entering at `alpha` reaches exactly the same two, and the total symbol
+    // count matches -- so the answer does not depend on which member of a cycle
+    // the loader happened to start from.
+    DiagList:d3 = raw diaglist_init();
+    ModuleGraph:g3 = raw load("tests/modules/graph/alpha.npk", @it, @d3);
+    if (raw diaglist_count(@d3) != 0i64)                 { exit 24i32; }
+    if (raw graph_count(@g3) != 2i32)                    { exit 25i32; }
+    if ((raw symtab_count(@g3.tab)) != (raw symtab_count(@g2.tab))) { exit 26i32; }
+
+    // --- the same path reached two ways is ONE module ---------------------------
+    // Normalisation (0.3.2) is what makes this hold. Without it the module loads
+    // twice and every symbol in it is declared twice, so the duplicate
+    // diagnostic fires on a file nobody edited.
+    DiagList:d4 = raw diaglist_init();
+    RootList:noroots = raw rootlist_init();
+    ModuleGraph:g4 = raw graph_init(@it, @d4, @noroots, "");
+    drop graph_load_all(@g4, "tests/modules/graph/alpha.npk");
+    int32:before = raw graph_count(@g4);
+    drop graph_load(@g4, "tests/modules/graph/nested/../alpha.npk", raw span_none());
+    if ((raw graph_count(@g4)) != before)                { exit 30i32; }
+    if (raw diaglist_count(@d4) != 0i64)                 { exit 31i32; }
+
+    // --- a missing file is reported, not ignored ---------------------------------
+    DiagList:d5 = raw diaglist_init();
+    ModuleGraph:g5 = raw load("tests/modules/graph/nothere.npk", @it, @d5);
+    if (raw diaglist_count(@d5) == 0i64)                 { exit 40i32; }
+    if (!(raw string_eq((raw diaglist_at(@d5, 0i64)).code,
+                        raw RESOLVE_NO_SUCH_FILE())))    { exit 41i32; }
+
+    // --- a struct that contains itself cannot be sized ------------------------------
+    // The case D-086 names first. A `->` breaks it, because a pointer is one word
+    // whatever it points at (D-038) -- so `OkA`/`OkB` in the same file are fine
+    // and only `Cyc`/`Two` are reported.
+    DiagList:d6 = raw diaglist_init();
+    ModuleGraph:g6 = raw load("tests/modules/cycle_struct.npk", @it, @d6);
+    if (raw diaglist_count(@d6) != 0i64)                 { exit 50i32; }
+    drop graph_check_struct_cycles(@g6);
+    // Both members of the by-value cycle are named; neither pointer-broken one is.
+    if (raw diaglist_count(@d6) != 2i64)                 { exit 51i32; }
+    if (!(raw string_eq((raw diaglist_at(@d6, 0i64)).code, raw RESOLVE_CYCLE()))) {
+        exit 52i32;
+    }
+    // In declaration order, so the output is the same on every run.
+    if ((raw diaglist_at(@d6, 0i64)).span.line != 3i32)  { exit 53i32; }
+    if ((raw diaglist_at(@d6, 1i64)).span.line != 4i32)  { exit 54i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};
