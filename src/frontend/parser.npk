@@ -1,0 +1,211 @@
+// Parser core.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.2.1: the cursor, the expectation
+// helpers, and the recovery strategy -- fixed BEFORE any rule depends on it,
+// because recovery is a design decision and not a detail.
+//
+// A parser that stops at the first error reports one problem per run, so fixing
+// a file becomes one compile per mistake. A parser that recovers BADLY is worse
+// than one that stops: it emits a cascade of phantom errors after the real one,
+// and the reader cannot tell which diagnostic is the cause. So the rule here is
+// one diagnostic per error region, and silence until the parser has genuinely
+// resynchronised.
+
+use "source_location.npk".*;
+use "token_kind.npk".*;
+use "token_name.npk".*;
+use "token.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "parse_codes.npk".*;
+
+pub struct:Parser = {
+    TokenList->:tokens;
+    Ast->:ast;
+    DiagList->:diags;
+    InternTable->:interns;
+
+    int64:pos;
+
+    // Panic mode: set when a diagnostic is reported, cleared only by a
+    // successful resynchronisation. While set, further diagnostics are
+    // suppressed -- that is the whole anti-cascade mechanism.
+    bool:panic;
+
+    int32:paren_depth;
+    int32:bracket_depth;
+    int32:brace_depth;
+};
+
+pub func:parser_init = Parser(TokenList->:tokens, Ast->:ast,
+                              DiagList->:diags, InternTable->:interns) {
+    Parser:p = Parser{ tokens: tokens, ast: ast, diags: diags,
+                       interns: interns, pos: 0i64, panic: false,
+                       paren_depth: 0i32, bracket_depth: 0i32,
+                       brace_depth: 0i32 };
+    pass p;
+};
+
+// --- cursor -----------------------------------------------------------------
+//
+// Reading past the end yields the Eof token rather than failing, so no rule
+// needs a bounds test before every peek. The lexer guarantees exactly one Eof
+// at the end (lex_all), which is what makes that safe.
+
+pub func:p_peek = Token(Parser->:p) {
+    int64:n = raw tokenlist_count(p.tokens);
+    if (p.pos >= n) {
+        pass (relay tokenlist_at(p.tokens, n - 1i64));
+    }
+    pass (relay tokenlist_at(p.tokens, p.pos));
+};
+
+pub func:p_peek_at = Token(Parser->:p, int64:k) {
+    int64:n = raw tokenlist_count(p.tokens);
+    int64:i = p.pos + k;
+    if (i >= n) {
+        pass (relay tokenlist_at(p.tokens, n - 1i64));
+    }
+    pass (relay tokenlist_at(p.tokens, i));
+};
+
+pub func:p_kind = TokenKind(Parser->:p) {
+    Token:t = relay p_peek(p);
+    pass t.kind;
+};
+
+pub func:p_at = bool(Parser->:p, TokenKind:k) {
+    pass ((relay p_kind(p)) == k);
+};
+
+pub func:p_at_end = bool(Parser->:p) {
+    pass ((relay p_kind(p)) == TokenKind.Eof);
+};
+
+pub func:p_span = Span(Parser->:p) {
+    Token:t = relay p_peek(p);
+    pass t.span;
+};
+
+pub func:p_advance = Token(Parser->:p) {
+    Token:t = relay p_peek(p);
+    if (t.kind == TokenKind.PLParen)   { p.paren_depth = p.paren_depth + 1i32; }
+    if (t.kind == TokenKind.PRParen)   { p.paren_depth = p.paren_depth - 1i32; }
+    if (t.kind == TokenKind.PLBracket) { p.bracket_depth = p.bracket_depth + 1i32; }
+    if (t.kind == TokenKind.PRBracket) { p.bracket_depth = p.bracket_depth - 1i32; }
+    if (t.kind == TokenKind.PLBrace)   { p.brace_depth = p.brace_depth + 1i32; }
+    if (t.kind == TokenKind.PRBrace)   { p.brace_depth = p.brace_depth - 1i32; }
+    if (t.kind != TokenKind.Eof) {
+        p.pos = p.pos + 1i64;
+    }
+    pass t;
+};
+
+pub func:p_accept = bool(Parser->:p, TokenKind:k) {
+    if (relay p_at(p, k)) {
+        drop p_advance(p);
+        pass true;
+    }
+    pass false;
+};
+
+// --- diagnostics -------------------------------------------------------------
+
+pub func:p_error = NIL(Parser->:p, string:code, string:message) {
+    // Suppressed while in panic mode. One error region, one diagnostic.
+    if (p.panic) {
+        pass NIL;
+    }
+    p.panic = true;
+    drop diaglist_push(p.diags,
+        raw diag_error(code, message, relay p_span(p)));
+    pass NIL;
+};
+
+pub func:p_expect = bool(Parser->:p, TokenKind:k) {
+    if (relay p_accept(p, k)) {
+        pass true;
+    }
+    // Naming both halves is the difference between a usable message and a
+    // riddle: the token carries a kind, not the text it was scanned from.
+    string:want = raw token_kind_name(k);
+    string:got = raw token_kind_name(relay p_kind(p));
+    string:m1 = relay string_concat("expected `", want);
+    string:m2 = relay string_concat(m1, "`, found `");
+    string:m3 = relay string_concat(m2, got);
+    string:m4 = relay string_concat(m3, "`");
+    drop p_error(p, raw PARSE_EXPECTED(), m4);
+    pass false;
+};
+
+// --- recovery -----------------------------------------------------------------
+
+// Tokens that can legitimately begin a statement or declaration. Skipping TO one
+// of these is what makes the next diagnostic trustworthy rather than an artefact
+// of where the previous one stopped.
+pub func:is_sync_point = bool(TokenKind:k) {
+    if (k == TokenKind.Eof)        { pass true; }
+    if (k == TokenKind.PSemi)      { pass true; }
+    if (k == TokenKind.PRBrace)    { pass true; }
+
+    if (k == TokenKind.KwPub)      { pass true; }
+    if (k == TokenKind.KwFunc)     { pass true; }
+    if (k == TokenKind.KwStruct)   { pass true; }
+    if (k == TokenKind.KwEnum)     { pass true; }
+    if (k == TokenKind.KwTrait)    { pass true; }
+    if (k == TokenKind.KwImpl)     { pass true; }
+    if (k == TokenKind.KwType)     { pass true; }
+    if (k == TokenKind.KwUse)      { pass true; }
+    if (k == TokenKind.KwMod)      { pass true; }
+    if (k == TokenKind.KwExtern)   { pass true; }
+    if (k == TokenKind.KwMacro)    { pass true; }
+
+    if (k == TokenKind.KwIf)       { pass true; }
+    if (k == TokenKind.KwWhile)    { pass true; }
+    if (k == TokenKind.KwFor)      { pass true; }
+    if (k == TokenKind.KwLoop)     { pass true; }
+    if (k == TokenKind.KwTill)     { pass true; }
+    if (k == TokenKind.KwWhen)     { pass true; }
+    if (k == TokenKind.KwPick)     { pass true; }
+    if (k == TokenKind.KwReturn)   { pass true; }
+    if (k == TokenKind.KwPass)     { pass true; }
+    if (k == TokenKind.KwFail)     { pass true; }
+    if (k == TokenKind.KwExit)     { pass true; }
+    if (k == TokenKind.KwDefer)    { pass true; }
+    if (k == TokenKind.KwBreak)    { pass true; }
+    if (k == TokenKind.KwContinue) { pass true; }
+    if (k == TokenKind.KwDiscard)  { pass true; }
+    if (k == TokenKind.KwProve)    { pass true; }
+    pass false;
+};
+
+// Skip to the next point a rule can restart from, then leave panic mode.
+//
+// Always consumes AT LEAST ONE token unless already at Eof. Without that, a rule
+// that fails on a sync point would call sync, get nowhere, and loop -- a
+// non-terminating parser is a worse failure than a bad diagnostic.
+pub func:p_sync = NIL(Parser->:p) {
+    if (relay p_at_end(p)) {
+        p.panic = false;
+        pass NIL;
+    }
+    drop p_advance(p);
+    while (true) {
+        TokenKind:k = relay p_kind(p);
+        if (k == TokenKind.Eof) { break; }
+        if (raw is_sync_point(k)) { break; }
+        drop p_advance(p);
+    }
+    // A `;` marks the end of the broken construct, so step over it: leaving it
+    // would make the next rule start on a terminator and fail immediately.
+    if (relay p_at(p, TokenKind.PSemi)) {
+        drop p_advance(p);
+    }
+    p.panic = false;
+    pass NIL;
+};
+
+pub func:p_in_panic = bool(Parser->:p) { pass p.panic; };
+pub func:p_position = int64(Parser->:p) { pass p.pos; };

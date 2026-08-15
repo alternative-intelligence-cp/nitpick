@@ -1,0 +1,115 @@
+// Parser core: cursor, expectation, and recovery (cycle 0.2.1).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token_name.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+
+    // --- cursor --------------------------------------------------------------
+    TokenList:t1 = raw lex_all(0i32, "pub func mod", @it, @ld);
+    DiagList:d1 = raw diaglist_init();
+    Parser:p1 = raw parser_init(@t1, @ast, @d1, @it);
+
+    if (!(raw p_at(@p1, TokenKind.KwPub)))              { exit 10i32; }
+    if ((raw p_peek_at(@p1, 1i64)).kind != TokenKind.KwFunc) { exit 11i32; }
+    drop p_advance(@p1);
+    if (!(raw p_at(@p1, TokenKind.KwFunc)))             { exit 12i32; }
+    if (!(raw p_accept(@p1, TokenKind.KwFunc)))         { exit 13i32; }
+    if (raw p_accept(@p1, TokenKind.KwStruct))          { exit 14i32; }
+    drop p_advance(@p1);
+    if (!(raw p_at_end(@p1)))                           { exit 15i32; }
+
+    // Advancing past Eof must not run off the end.
+    drop p_advance(@p1);
+    drop p_advance(@p1);
+    if (!(raw p_at_end(@p1)))                           { exit 16i32; }
+    if (raw diaglist_count(@d1) != 0i64)                { exit 17i32; }
+
+    // --- expect reports with both halves named -------------------------------
+    TokenList:t2 = raw lex_all(0i32, "pub", @it, @ld);
+    DiagList:d2 = raw diaglist_init();
+    Parser:p2 = raw parser_init(@t2, @ast, @d2, @it);
+    if (raw p_expect(@p2, TokenKind.PSemi))             { exit 20i32; }
+    if (raw diaglist_count(@d2) != 1i64)                { exit 21i32; }
+    Diagnostic:e0 = raw diaglist_at(@d2, 0i64);
+    if (!(raw string_eq(e0.code, raw PARSE_EXPECTED()))) { exit 22i32; }
+    if (e0.span.col != 1i32)                            { exit 23i32; }
+    // The message names what was wanted and what was there.
+    if (e0.message.len < 10i64)                         { exit 24i32; }
+
+    // A failed expect must NOT consume: the rule decides what to do next.
+    if (!(raw p_at(@p2, TokenKind.KwPub)))              { exit 25i32; }
+
+    // --- panic mode suppresses the cascade -----------------------------------
+    // A second error before resynchronising is an artefact of the first, not a
+    // new problem. Reporting it makes the real cause harder to find.
+    if (raw p_expect(@p2, TokenKind.PSemi))             { exit 30i32; }
+    if (raw p_expect(@p2, TokenKind.PSemi))             { exit 31i32; }
+    if (raw diaglist_count(@d2) != 1i64)                { exit 32i32; }
+    if (!(raw p_in_panic(@p2)))                         { exit 33i32; }
+
+    // Resynchronising clears panic, and only then is the next error real.
+    drop p_sync(@p2);
+    if (raw p_in_panic(@p2))                            { exit 34i32; }
+    drop p_error(@p2, raw PARSE_UNEXPECTED(), "second");
+    if (raw diaglist_count(@d2) != 2i64)                { exit 35i32; }
+
+    // --- sync makes progress and lands on a boundary -------------------------
+    // Without guaranteed progress a rule that fails ON a sync point would call
+    // sync, get nowhere, and loop -- a non-terminating parser is a worse
+    // failure than a bad diagnostic.
+    TokenList:t3 = raw lex_all(0i32, "a b c ; pub", @it, @ld);
+    DiagList:d3 = raw diaglist_init();
+    Parser:p3 = raw parser_init(@t3, @ast, @d3, @it);
+    int64:before = raw p_position(@p3);
+    drop p_sync(@p3);
+    if (raw p_position(@p3) <= before)                  { exit 40i32; }
+    // It skipped a b c and the `;`, landing on `pub`.
+    if (!(raw p_at(@p3, TokenKind.KwPub)))              { exit 41i32; }
+
+    // Sync ON a sync point still advances rather than standing still.
+    TokenList:t4 = raw lex_all(0i32, "; ; pub", @it, @ld);
+    DiagList:d4 = raw diaglist_init();
+    Parser:p4 = raw parser_init(@t4, @ast, @d4, @it);
+    drop p_sync(@p4);
+    if (raw p_position(@p4) == 0i64)                    { exit 42i32; }
+
+    // Sync at Eof terminates rather than spinning.
+    TokenList:t5 = raw lex_all(0i32, "", @it, @ld);
+    DiagList:d5 = raw diaglist_init();
+    Parser:p5 = raw parser_init(@t5, @ast, @d5, @it);
+    drop p_sync(@p5);
+    if (!(raw p_at_end(@p5)))                           { exit 43i32; }
+
+    // --- depth tracking -------------------------------------------------------
+    TokenList:t6 = raw lex_all(0i32, "{ [ ( ) ] }", @it, @ld);
+    DiagList:d6 = raw diaglist_init();
+    Parser:p6 = raw parser_init(@t6, @ast, @d6, @it);
+    int64:k = 0i64;
+    while (k < 6i64) {
+        drop p_advance(@p6);
+        k = k + 1i64;
+    }
+    if (p6.brace_depth != 0i32)                         { exit 50i32; }
+    if (p6.bracket_depth != 0i32)                       { exit 51i32; }
+    if (p6.paren_depth != 0i32)                         { exit 52i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};
