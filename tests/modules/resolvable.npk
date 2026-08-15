@@ -1,0 +1,108 @@
+// Every construct that can contain an identifier, with every name declared.
+//
+// This file exists for `resolve_audit`: after resolution it must contain ZERO
+// unbound identifiers. If the resolver's walk forgets a construct -- a `when`
+// body, a `pick` guard, a loop invariant -- the names inside it are never
+// visited, nothing reports it, and the hole stays invisible until cycle 0.4 asks
+// what one of them means and gets nothing.
+//
+// So a construct belongs here whether or not anyone has written a test for it.
+
+pub const int32:LIMIT = 10i32;
+
+struct:Point = { int32:x; int32:y; };
+enum:Net = { Connected; Disconnect(int32); };
+
+func:helper = int32(int32:v) { pass v; };
+func:pair_of = int32(int32:a, int32:b) { pass a; };
+
+func:every_form = int32(int32:n, Point:p) requires n > 0i32 ensures result > 0i32 {
+    int32:total = 0i32;
+    int32:other = LIMIT;
+
+    // assignment, compound assignment, and a call
+    total = raw helper(n);
+    total += other;
+    total = raw pair_of(total, other);
+
+    // if / else if / else
+    if (total > other) { total = total - 1i32; }
+    else if (total < other) { total = total + 1i32; }
+    else { total = other; }
+
+    // while, with an invariant
+    while (total < LIMIT) invariant total >= 0i32, other >= 0i32 {
+        total = total + 1i32;
+    }
+
+    // for, with a binding used in the body and in an invariant
+    for (int64:i in 1i64..3i64) invariant i >= 0i64 {
+        total = total + (i => int32);
+    }
+
+    // loop and till, whose counter is `$` and needs no symbol
+    loop (0i64, 4i64, 1i64) { total = total + ($ => int32); }
+    till (4i64, 1i64) invariant total >= 0i32 { total = total + 1i32; }
+
+    // when / then / end
+    when (total < LIMIT) invariant total >= 0i32 {
+        total = total + 1i32;
+    } then {
+        total = total + other;
+    } end {
+        total = LIMIT;
+    }
+
+    // a bare block, and a defer
+    { int32:scoped = other; total = total + scoped; }
+    defer { drop helper(total); }
+
+    // discard, in both spellings
+    discard(other);
+    _~ total;
+
+    // prove and assert_static
+    prove(total >= 0i32);
+    assert_static(1i32 == 1i32);
+
+    // a struct literal, an index, a member access, a range
+    Point:made = Point{ x: total, y: other };
+    int32[3]:arr = [total, other, LIMIT];
+    total = arr[0i64];
+    total = made.x;
+    total = p.y;
+
+    // the Result unary family and a cast
+    total = raw helper(total);
+    drop helper(other);
+    total = (total => int64) => int32;
+
+    // a ternary and the defaults family
+    total = is (total > other) : total : other;
+    total = total ?| other;
+
+    pass total;
+};
+
+func:with_pick = int32(Net:e, int32:bound) {
+    int32:out = 0i32;
+
+    pick (e) {
+        // a destructuring binding, used in the arm body
+        (Net.Disconnect(reason)) { out = reason; },
+        // a guard that sees a name from the enclosing scope
+        (Net.Connected) where (bound > 0i32) { out = bound; },
+        (*) { out = 0i32; }
+    }
+
+    // an expression-pick, whose arms `give`
+    int32:chosen = pick (out) {
+        (0i32) { give bound; },
+        (*) { give out; }
+    };
+
+    pass chosen;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

@@ -1,0 +1,232 @@
+// Name resolution — phase 2 (cycle 0.3.5).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/builtins.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/source.npk".*;
+use "../../src/frontend/paths.npk".*;
+use "../../src/frontend/resolve_path.npk".*;
+use "../../src/frontend/module_graph.npk".*;
+use "../../src/frontend/resolve.npk".*;
+
+struct:Run = {
+    Ast:ast;
+    SymbolTable:tab;
+    DiagList:diags;
+    int32:scope;
+};
+
+// Parse a module, collect it, then resolve every body.
+func:run = Run(string:src, InternTable->:it) {
+    DiagList:lexed = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @lexed);
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    Parser:p = raw parser_init(@toks, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+
+    Resolver:r = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@r, mod_id, scope);
+
+    Run:out = Run{ ast: ast, tab: tab, diags: diags, scope: scope };
+    pass out;
+};
+
+func:errors = int64(Run->:r) {
+    pass (raw diaglist_count(@r.diags));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- a parameter, a local, and a call all resolve ------------------------
+    Run:r1 = raw run(
+        "func:helper = int32() { pass 1i32; }; func:f = int32(int32:a) { int32:b = a; pass raw helper(); };",
+        @it);
+    if (raw errors(@r1) != 0i64)                          { exit 10i32; }
+
+    // --- an unknown name is reported ONCE ------------------------------------
+    Run:r2 = raw run("func:f = int32() { pass nope; };", @it);
+    if (raw errors(@r2) != 1i64)                          { exit 11i32; }
+    if (!(raw string_eq((raw diaglist_at(@r2.diags, 0i64)).code,
+                        raw RESOLVE_UNKNOWN())))          { exit 12i32; }
+
+    // --- a name used before it is DECLARED at module scope still resolves ------
+    // The two-phase load's whole purpose, and what makes a `use` cycle work.
+    Run:r3 = raw run(
+        "func:first = int32() { pass raw second(); }; func:second = int32() { pass 2i32; };",
+        @it);
+    if (raw errors(@r3) != 0i64)                          { exit 13i32; }
+
+    // --- but a LOCAL is in scope from its declaration onward -------------------
+    // `int32:x = x;` must not bind to itself. The initialiser is resolved before
+    // the name is declared, so the `x` on the right is a different question from
+    // the `x` on the left.
+    Run:r4 = raw run("func:f = int32() { int32:x = x; pass x; };", @it);
+    if (raw errors(@r4) != 1i64)                          { exit 14i32; }
+
+    // --- a block is a scope, and shadowing is permitted -------------------------
+    Run:r5 = raw run(
+        "func:f = int32() { int32:x = 1i32; { int32:x = 2i32; drop x; } pass x; };",
+        @it);
+    if (raw errors(@r5) != 0i64)                          { exit 20i32; }
+
+    // Two sibling blocks may each declare the same name.
+    Run:r6 = raw run(
+        "func:f = int32() { { int32:y = 1i32; drop y; } { int32:y = 2i32; drop y; } pass 0i32; };",
+        @it);
+    if (raw errors(@r6) != 0i64)                          { exit 21i32; }
+
+    // A local does NOT leak out of its block.
+    Run:r7 = raw run(
+        "func:f = int32() { { int32:z = 1i32; drop z; } pass z; };", @it);
+    if (raw errors(@r7) != 1i64)                          { exit 22i32; }
+
+    // --- `for` binds for the body and not for the iterable ------------------------
+    Run:r8 = raw run(
+        "func:f = int32() { for (int64:i in 1i64..3i64) { drop i; } pass 0i32; };", @it);
+    if (raw errors(@r8) != 0i64)                          { exit 30i32; }
+    // `for (int64:i in i)` names nothing: the binding is not in scope for the
+    // thing being iterated.
+    Run:r9 = raw run(
+        "func:f = int32() { for (int64:i in i) { drop i; } pass 0i32; };", @it);
+    if (raw errors(@r9) != 1i64)                          { exit 31i32; }
+    // …and it does not leak past the loop.
+    Run:ra = raw run(
+        "func:f = int32() { for (int64:i in 1i64..3i64) { drop i; } pass i; };", @it);
+    if (raw errors(@ra) != 1i64)                          { exit 32i32; }
+
+    // --- `pick` arm bindings, and the guard that sees them --------------------------
+    Run:rb = raw run(
+        "func:f = int32(Net:e) { pick (e) { (Net.Disconnect(reason)) { drop reason; }, (*) { } } pass 0i32; };",
+        @it);
+    if (raw errors(@rb) != 0i64)                          { exit 40i32; }
+
+    // The guard is inside the arm's scope, so it sees the pattern's bindings.
+    Run:rc = raw run(
+        "func:f = int32(Pr:v) { pick (v) { (Pr(a, b)) where (a > b) { drop a; }, (*) { } } pass 0i32; };",
+        @it);
+    if (raw errors(@rc) != 0i64)                          { exit 41i32; }
+
+    // A binding does not escape its arm.
+    Run:rd = raw run(
+        "func:f = int32(Net:e) { pick (e) { (Net.Disconnect(reason)) { }, (*) { drop reason; } } pass 0i32; };",
+        @it);
+    if (raw errors(@rd) != 1i64)                          { exit 42i32; }
+
+    // Two arms may bind the same name -- each arm is its own scope.
+    Run:re = raw run(
+        "func:f = int32(Net:e) { pick (e) { (A(x)) { drop x; }, (B(x)) { drop x; } } pass 0i32; };",
+        @it);
+    if (raw errors(@re) != 0i64)                          { exit 43i32; }
+
+    // --- bare-name builtins resolve to nothing, and that is correct ------------------
+    // They are declared in no module (AST_REFERENCE 3.3), so a resolver without
+    // the generated list would report every one of them.
+    Run:rf = raw run(
+        "func:f = int32() { wild int8->:p = alloc(8i64); string:s = raw string_concat(\"a\", \"b\"); dalloc(p); pass 0i32; };",
+        @it);
+    if (raw errors(@rf) != 0i64)                          { exit 50i32; }
+    if (!(raw is_builtin_name("alloc")))                  { exit 51i32; }
+    if (raw is_builtin_name("definitely_not_a_builtin"))  { exit 52i32; }
+
+    // --- `result` is a name only inside `ensures` ---------------------------------------
+    Run:rg = raw run(
+        "func:f = int32(int32:a) requires a > 0i32 ensures result > 0i32 { pass a; };",
+        @it);
+    if (raw errors(@rg) != 0i64)                          { exit 60i32; }
+    // …and nowhere else, so the exemption cannot hide a typo in a body.
+    Run:rh = raw run("func:f = int32() { pass result; };", @it);
+    if (raw errors(@rh) != 1i64)                          { exit 61i32; }
+
+    // --- member access resolves the BASE and stops -------------------------------------
+    // `p.x` needs `p`'s type to say anything about `x`, and that is cycle 0.4.
+    Run:ri = raw run("func:f = int32(Point:p) { pass p.x; };", @it);
+    if (raw errors(@ri) != 0i64)                          { exit 70i32; }
+    // An unknown BASE is still reported.
+    Run:rj = raw run("func:f = int32() { pass q.x; };", @it);
+    if (raw errors(@rj) != 1i64)                          { exit 71i32; }
+
+    // --- the binding is RECORDED on the node ---------------------------------------------
+    // Cycle 0.4 asks what a name means constantly; repeating the scope walk each
+    // time would make resolution quadratic in nesting depth for no reason.
+    Run:rk = raw run("func:f = int32(int32:a) { pass a; };", @it);
+    if (raw errors(@rk) != 0i64)                          { exit 80i32; }
+    bool:found_bound = false;
+    int32:i = 1i32;
+    while (i < (raw ast_expr_count(@rk.ast))) {
+        ExprId:eid = ExprId{ index: i };
+        ExprNode:e = raw ast_expr(@rk.ast, eid);
+        if (e.kind == ExprKind.ExprIdentifierExpr) {
+            if (e.a != 0i32) {
+                Symbol:s = raw symtab_get(@rk.tab, e.a);
+                if (s.origin_kind == (raw SYM_DECL())) { found_bound = true; }
+            }
+        }
+        i = i + 1i32;
+    }
+    if (!found_bound)                                     { exit 81i32; }
+
+    // --- invariants and contracts are walked too -------------------------------------------
+    Run:rl = raw run(
+        "func:f = int32(int32:n) { int32:t = 0i32; while (t < n) invariant t >= 0i32 { t = t + 1i32; } pass t; };",
+        @it);
+    if (raw errors(@rl) != 0i64)                          { exit 90i32; }
+    // An unknown name inside an invariant is reported like any other.
+    Run:rm = raw run(
+        "func:f = int32(int32:n) { while (n > 0i32) invariant bogus >= 0i32 { n = n - 1i32; } pass 0i32; };",
+        @it);
+    if (raw errors(@rm) != 1i64)                          { exit 91i32; }
+
+    // --- THE COMPLETENESS AUDIT ----------------------------------------------------------
+    //
+    // Every IdentifierExpr is bound, is a builtin, or produced a diagnostic --
+    // there is no fourth outcome. The counterpart to `check_kinds_reachable` in
+    // cycle 0.2, guarding the same class of defect: if the walk forgets a
+    // construct, the names inside it are never visited, they stay unbound, and
+    // NOTHING REPORTS IT. Invisible until 0.4 asks what one of them means.
+    //
+    // `tests/modules/resolvable.npk` uses every construct that can contain an
+    // identifier, with every name declared. A non-zero count means the walk has a
+    // hole -- which is a far sharper question than "did the tests pass", since a
+    // test only covers what somebody thought to write.
+    DiagList:ad = raw diaglist_init();
+    RootList:noroots = raw rootlist_init();
+    ModuleGraph:ag = raw graph_init(@it, @ad, @noroots, "");
+    drop graph_load_all(@ag, "tests/modules/resolvable.npk");
+    drop graph_apply_imports(@ag);
+    ModuleEntry:ae = raw graph_at(@ag, 0i32);
+    Resolver:ar = raw resolver_init(@ag.ast, @ag.tab, @it, @ad);
+    DeclId:aroot = DeclId{ index: ae.root };
+    drop resolve_module(@ar, aroot, ae.scope);
+
+    if (raw diaglist_count(@ad) != 0i64)                  { exit 100i32; }
+    if ((raw resolve_audit(@ag.ast, @ag.tab, @it)) != 0i32) { exit 101i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

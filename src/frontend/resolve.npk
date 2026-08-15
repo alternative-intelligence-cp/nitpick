@@ -1,0 +1,620 @@
+// Name resolution — phase 2 of the two-phase load.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.3.5.
+//
+// Every identifier in every body binds to exactly one symbol, or produces
+// exactly one diagnostic. There is no third outcome, and the harness checks
+// that there is not.
+//
+// It runs after every module is loaded, collected and imported, which is what
+// makes a `use` cycle resolvable (D-086) and what lets a function call another
+// declared below it. By the time anything here runs, every name that exists
+// exists.
+//
+// WHAT IS NOT RESOLVED HERE, and why:
+//
+//   `p.x`         needs `p`'s TYPE. Resolve `p`; leave `.x` for cycle 0.4.
+//   `p.method()`  the same — the receiver is resolved, the method is not.
+//   a type name   types are resolved in 0.4, where a type is more than a name.
+//
+// The line is not arbitrary: everything above needs to know what something IS,
+// and this pass only knows what names EXIST. Guessing across that line is how a
+// resolver ends up half a type checker.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "resolve_codes.npk".*;
+use "builtins.npk".*;
+use "parse_decl.npk".*;
+use "parse_stmt.npk".*;
+use "parse_expr.npk".*;
+use "parse_pick.npk".*;
+use "parse_decorate.npk".*;
+use "symbols.npk".*;
+
+pub struct:Resolver = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    InternTable->:interns;
+    DiagList->:diags;
+    int32:module_scope;
+
+    // `ensures result > 0i32` names the function's return value, which is
+    // declared nowhere (AST_REFERENCE section 5). Set only while a contract is
+    // being walked, so `result` is an ordinary name everywhere else and a
+    // variable may still be called that.
+    bool:in_ensures;
+};
+
+pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
+                                  InternTable->:interns, DiagList->:diags) {
+    Resolver:r = Resolver{ ast: ast, tab: tab, interns: interns, diags: diags,
+                           module_scope: 0i32, in_ensures: false };
+    pass r;
+};
+
+// --- the identifier ------------------------------------------------------------------
+
+func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
+    ExprNode:e = relay ast_expr(r.ast, id);
+    int32:name = (raw expr_name(e)) => int32;
+
+    int32:sym = raw scope_lookup(r.tab, scope, name);
+    if (sym != 0i32) {
+        // RECORD THE BINDING ON THE NODE. Cycle 0.4 asks what this name means
+        // constantly, and repeating the walk each time would make resolution
+        // quadratic in nesting depth for no reason.
+        drop ast_set_expr_a(r.ast, id, sym);
+        pass NIL;
+    }
+
+    string:text = relay intern_get(r.interns, name);
+
+    // A bare-name builtin is declared in no module (AST_REFERENCE 3.3): `alloc`,
+    // `string_concat`, `sys`, `ok`, `is_err`. They are ordinary calls the
+    // compiler happens to provide, so they resolve to nothing and that is
+    // correct — the binding stays 0 and the emitter recognises the name.
+    if (raw is_builtin_name(text)) {
+        pass NIL;
+    }
+
+    // `result` inside an `ensures` clause is the return value.
+    if (r.in_ensures) {
+        if (raw string_eq(text, "result")) {
+            pass NIL;
+        }
+    }
+
+    string:m1 = relay string_concat("cannot find `", text);
+    string:m2 = relay string_concat(m1, "` in this scope");
+    drop diaglist_push(r.diags,
+        raw diag_error(raw RESOLVE_UNKNOWN(), m2, e.span));
+    pass NIL;
+};
+
+// --- expressions ------------------------------------------------------------------------
+
+pub func:resolve_expr = NIL(Resolver->:r, ExprId:id, int32:scope) {
+    if (raw expr_is_none(id)) {
+        pass NIL;
+    }
+    ExprNode:e = relay ast_expr(r.ast, id);
+
+    if (e.kind == ExprKind.ExprIdentifierExpr) {
+        drop resolve_ident(r, id, scope);
+        pass NIL;
+    }
+
+    // A MEMBER ACCESS resolves its BASE and stops. `p.x` needs `p`'s type to say
+    // anything about `x`, and that is cycle 0.4. `Net.Disconnect` and
+    // `math.sqrt` look identical here and are told apart there, for the same
+    // reason: one needs to know that `Net` is an enum.
+    if (e.kind == ExprKind.ExprMemberAccessExpr) {
+        drop resolve_expr(r, raw expr_operand(e), scope);
+        pass NIL;
+    }
+    if (e.kind == ExprKind.ExprSafeNavExpr) {
+        drop resolve_expr(r, raw expr_operand(e), scope);
+        pass NIL;
+    }
+    // A method call resolves its RECEIVER and its arguments; the method name is
+    // UFCS and needs the receiver's type (D-006).
+    if (e.kind == ExprKind.ExprMethodCallExpr) {
+        drop resolve_expr(r, raw expr_operand(e), scope);
+        drop resolve_expr_window(r, raw expr_list_start(e),
+                                 raw expr_list_count(e), scope);
+        pass NIL;
+    }
+
+    // A struct literal's window alternates NAME, VALUE -- the names are fields
+    // and belong to 0.4, so only the odd entries are expressions.
+    if (e.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:n = raw expr_list_count(e);
+        int32:i = 1i32;
+        while (i < n) {
+            ExprId:v = ExprId{ index: raw ast_id_at(r.ast, raw expr_list_start(e), i) };
+            drop resolve_expr(r, v, scope);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+
+    // A call's window holds generic arguments first and value arguments after;
+    // the generics are TYPES and are skipped here.
+    if (e.kind == ExprKind.ExprCallExpr) {
+        drop resolve_expr(r, raw expr_callee(e), scope);
+        int32:gcount = raw expr_generic_count(e);
+        drop resolve_expr_window(r, (raw expr_list_start(e)) + gcount,
+                                 (raw expr_list_count(e)) - gcount, scope);
+        pass NIL;
+    }
+    if (e.kind == ExprKind.ExprBuiltinExpr) {
+        int32:gcount = raw expr_generic_count(e);
+        drop resolve_expr_window(r, (raw expr_list_start(e)) + gcount,
+                                 (raw expr_list_count(e)) - gcount, scope);
+        pass NIL;
+    }
+
+    // An expression-`pick` (D-059) carries statements, so it hands back.
+    if (e.kind == ExprKind.ExprPickExpr) {
+        drop resolve_expr(r, raw pickx_selector(e), scope);
+        drop resolve_arms(r, raw pickx_arm_start(e), raw pickx_arm_count(e), scope);
+        pass NIL;
+    }
+
+    // Everything else: recurse into whichever slots hold expressions. The kinds
+    // are grouped by SHAPE rather than listed one by one, because a new node with
+    // a familiar shape should not need a new case.
+    if (e.kind == ExprKind.ExprArrayLiteralExpr) {
+        drop resolve_expr_window(r, raw expr_list_start(e),
+                                 raw expr_list_count(e), scope);
+        pass NIL;
+    }
+    if (e.kind == ExprKind.ExprVectorCtorExpr) {
+        drop resolve_expr_window(r, raw expr_list_start(e),
+                                 raw expr_list_count(e), scope);
+        pass NIL;
+    }
+    if (e.kind == ExprKind.ExprTemplateLiteral) {
+        drop resolve_expr_window(r, raw expr_list_start(e),
+                                 raw expr_list_count(e), scope);
+        pass NIL;
+    }
+    if (e.kind == ExprKind.ExprDynCastExpr) {
+        drop resolve_expr(r, raw expr_operand(e), scope);
+        pass NIL;
+    }
+
+    // Two-operand and one-operand shapes. Slot `a` is an operand on every node
+    // that has one, and slot `b` on every binary node, so this covers the
+    // arithmetic, comparison, Result, cast, range, ternary and unwrap families
+    // without naming them.
+    drop resolve_expr(r, raw expr_lhs(e), scope);
+    if (raw expr_has_second(e)) {
+        drop resolve_expr(r, raw expr_rhs(e), scope);
+    }
+    if (e.kind == ExprKind.ExprTernaryExpr) {
+        ExprId:third = ExprId{ index: e.c };
+        drop resolve_expr(r, third, scope);
+    }
+    pass NIL;
+};
+
+// Which nodes carry a second operand in slot `b`. Nodes whose `b` is a WINDOW
+// START are excluded above and never reach here.
+pub func:expr_has_second = bool(ExprNode:e) {
+    if (e.kind == ExprKind.ExprBinaryExpr)          { pass true; }
+    if (e.kind == ExprKind.ExprRangeExpr)           { pass true; }
+    if (e.kind == ExprKind.ExprTernaryExpr)         { pass true; }
+    if (e.kind == ExprKind.ExprSafeUnwrapExpr)      { pass true; }
+    if (e.kind == ExprKind.ExprNullCoalesceExpr)    { pass true; }
+    if (e.kind == ExprKind.ExprEmphaticUnwrapExpr)  { pass true; }
+    if (e.kind == ExprKind.ExprDefaultsExpr)        { pass true; }
+    if (e.kind == ExprKind.ExprIndexExpr)           { pass true; }
+    if (e.kind == ExprKind.ExprPipeExpr)            { pass true; }
+    pass false;
+};
+
+func:resolve_expr_window = NIL(Resolver->:r, int32:start, int32:count, int32:scope) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:x = ExprId{ index: raw ast_id_at(r.ast, start, i) };
+        drop resolve_expr(r, x, scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- statements --------------------------------------------------------------------------
+
+pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) {
+    if (raw stmt_is_none(id)) {
+        pass NIL;
+    }
+    StmtNode:s = relay ast_stmt(r.ast, id);
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        // A BLOCK IS A SCOPE. Two blocks may each declare `x` without colliding,
+        // and an inner one may shadow an outer -- which the language permits and
+        // this must not report.
+        int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
+        drop resolve_stmt_window(r, raw stmt_list_start(s),
+                                 raw stmt_list_count(s), inner);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        // THE INITIALISER IS RESOLVED BEFORE THE NAME IS DECLARED, so
+        // `int32:x = x;` does not silently bind to itself. A local is in scope
+        // from its declaration onward, not from the start of the block.
+        drop resolve_expr(r, relay stmt_decl_init(r.ast, s), scope);
+        drop symtab_declare(r.tab, r.ast, r.diags, scope, raw stmt_name(s),
+                            raw SYM_STMT(), id.index, 0i32);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop resolve_expr(r, raw stmt_target(s), scope);
+        drop resolve_expr(r, raw stmt_value(s), scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop resolve_expr(r, raw stmt_cond(s), scope);
+        drop resolve_stmt(r, raw stmt_then(s), scope);
+        drop resolve_stmt(r, raw stmt_else(s), scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop resolve_expr(r, raw stmt_cond(s), scope);
+        drop resolve_invariant(r, relay stmt_while_invariant(r.ast, s), scope);
+        drop resolve_stmt(r, relay stmt_body(r.ast, s), scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtForStmt) {
+        // The BINDING is in scope for the body and not for the iterable:
+        // `for (int64:i in i)` names nothing.
+        drop resolve_expr(r, relay stmt_for_iter(r.ast, s), scope);
+        int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
+        DeclId:bind = raw stmt_for_binding(s);
+        DeclNode:bd = relay ast_decl(r.ast, bind);
+        drop symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(bd),
+                            raw SYM_DECL(), bind.index, 0i32);
+        drop resolve_invariant(r, relay stmt_for_invariant(r.ast, s), inner);
+        drop resolve_stmt(r, relay stmt_for_body(r.ast, s), inner);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        drop resolve_counted(r, s, scope);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        drop resolve_counted(r, s, scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop resolve_expr(r, raw stmt_cond(s), scope);
+        drop resolve_invariant(r, relay stmt_when_invariant(r.ast, s), scope);
+        drop resolve_stmt(r, relay stmt_when_body(r.ast, s), scope);
+        drop resolve_stmt(r, relay stmt_when_then(r.ast, s), scope);
+        drop resolve_stmt(r, relay stmt_when_end(r.ast, s), scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop resolve_expr(r, raw pick_selector(s), scope);
+        drop resolve_arms(r, raw pick_arm_start(s), raw pick_arm_count(s), scope);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        drop resolve_stmt(r, body, scope);
+        pass NIL;
+    }
+
+    // Everything left carries at most one expression in slot `a`: pass, fail,
+    // return, exit, trap, discard, prove, assert_static, give, and the plain
+    // expression statement. `break`, `continue` and `fall` carry a LABEL, which
+    // is not a name in this table.
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+    drop resolve_expr(r, raw stmt_expr(s), scope);
+    pass NIL;
+};
+
+func:resolve_counted = NIL(Resolver->:r, StmtNode:s, int32:scope) {
+    int32:n = relay stmt_counted_argc(r.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop resolve_expr(r, relay stmt_counted_arg(r.ast, s, i), scope);
+        i = i + 1i32;
+    }
+    // `$` is the counter and is its own node kind (IterationVarExpr), not an
+    // identifier -- so it needs no symbol and cannot be shadowed.
+    int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
+    drop resolve_invariant(r, relay stmt_counted_invariant(r.ast, s), inner);
+    drop resolve_stmt(r, raw stmt_counted_body(s), inner);
+    pass NIL;
+};
+
+func:resolve_stmt_window = NIL(Resolver->:r, int32:start, int32:count, int32:scope) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:x = StmtId{ index: raw ast_id_at(r.ast, start, i) };
+        drop resolve_stmt(r, x, scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- `pick` arms -------------------------------------------------------------------------
+
+func:resolve_arms = NIL(Resolver->:r, int32:start, int32:count, int32:scope) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:armId = raw pick_arm_at(r.ast, start, i);
+        StmtNode:arm = relay ast_stmt(r.ast, armId);
+
+        // EACH ARM IS ITS OWN SCOPE, so two arms may bind the same name.
+        int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
+        drop resolve_pattern(r, raw arm_pattern(arm), inner);
+        // The guard sees the pattern's bindings: `(Pair(a, b)) where (a > b)`.
+        drop resolve_expr(r, raw arm_guard(arm), inner);
+        drop resolve_stmt(r, raw arm_body(arm), inner);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// A pattern BINDS names rather than referring to them, which is the whole
+// difference between a pattern and an expression.
+func:resolve_pattern = NIL(Resolver->:r, PatId:id, int32:scope) {
+    if (raw pat_is_none(id)) {
+        pass NIL;
+    }
+    PatNode:p = relay ast_pat(r.ast, id);
+
+    if (p.kind == PatKind.PatValue) {
+        drop resolve_expr(r, raw pat_value(p), scope);
+        pass NIL;
+    }
+    if (p.kind == PatKind.PatRange) {
+        drop resolve_expr(r, raw pat_range_lo(p), scope);
+        drop resolve_expr(r, raw pat_range_hi(p), scope);
+        pass NIL;
+    }
+    if (p.kind == PatKind.PatStructDestructure) {
+        drop bind_pattern_names(r, id, raw pat_bind_start(p),
+                                raw pat_bind_count(p), scope);
+        pass NIL;
+    }
+    if (p.kind == PatKind.PatEnumDestructure) {
+        int32:n = relay pat_enum_bind_count(r.ast, p);
+        int32:i = 0i32;
+        while (i < n) {
+            int32:nm = relay pat_enum_bind(r.ast, p, i);
+            drop symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                                raw SYM_PAT(), id.index, 0i32);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+    // Wildcard and ERR bind nothing.
+    pass NIL;
+};
+
+func:bind_pattern_names = NIL(Resolver->:r, PatId:id, int32:start,
+                              int32:count, int32:scope) {
+    int32:i = 0i32;
+    while (i < count) {
+        int32:nm = raw ast_id_at(r.ast, start, i);
+        drop symtab_declare(r.tab, r.ast, r.diags, scope, nm,
+                            raw SYM_PAT(), id.index, 0i32);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- contracts and invariants ---------------------------------------------------------------
+
+func:resolve_invariant = NIL(Resolver->:r, VerifyId:id, int32:scope) {
+    if (raw verify_is_none(id)) {
+        pass NIL;
+    }
+    VerifyNode:v = relay ast_verify(r.ast, id);
+    drop resolve_expr_window(r, raw invariant_start(v),
+                             raw invariant_count(v), scope);
+    pass NIL;
+};
+
+func:resolve_contract = NIL(Resolver->:r, VerifyId:id, int32:scope) {
+    if (raw verify_is_none(id)) {
+        pass NIL;
+    }
+    VerifyNode:v = relay ast_verify(r.ast, id);
+    // `result` is only a name inside `ensures` (AST_REFERENCE section 5), so the
+    // exemption is scoped to exactly that and a variable may still be called
+    // `result` anywhere else.
+    if ((raw contract_kind(v)) == (raw CONTRACT_ENSURES())) {
+        r.in_ensures = true;
+    }
+    drop resolve_expr(r, raw contract_cond(v), scope);
+    r.in_ensures = false;
+    pass NIL;
+};
+
+// --- declarations ------------------------------------------------------------------------------
+
+pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(r.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        int32:fn = raw scope_open(r.tab, scope, raw SCOPE_FUNCTION());
+
+        int32:g = 0i32;
+        while (g < (relay fn_generic_count(r.ast, d))) {
+            DeclId:gp = relay fn_generic(r.ast, d, g);
+            DeclNode:gn = relay ast_decl(r.ast, gp);
+            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(gn),
+                                raw SYM_DECL(), gp.index, 0i32);
+            g = g + 1i32;
+        }
+
+        int32:pi = 0i32;
+        while (pi < (relay fn_param_count(r.ast, d))) {
+            DeclId:pd = relay fn_param(r.ast, d, pi);
+            DeclNode:pn = relay ast_decl(r.ast, pd);
+            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(pn),
+                                raw SYM_DECL(), pd.index, 0i32);
+            pi = pi + 1i32;
+        }
+
+        DeclId:vd = relay fn_variadic(r.ast, d);
+        if (!(raw decl_is_none(vd))) {
+            DeclNode:vn = relay ast_decl(r.ast, vd);
+            drop symtab_declare(r.tab, r.ast, r.diags, fn, raw decl_name(vn),
+                                raw SYM_DECL(), vd.index, 0i32);
+        }
+
+        int32:c = 0i32;
+        while (c < (relay fn_contract_count(r.ast, d))) {
+            drop resolve_contract(r, relay fn_contract(r.ast, d, c), fn);
+            c = c + 1i32;
+        }
+
+        drop resolve_stmt(r, relay fn_body(r.ast, d), fn);
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        drop resolve_expr(r, raw global_init(d), scope);
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclEnumDecl) {
+        int32:n = raw item_member_count(r.ast, d);
+        int32:i = 0i32;
+        while (i < n) {
+            DeclNode:v = relay ast_decl(r.ast, raw item_member(r.ast, d, i));
+            drop resolve_expr(r, raw variant_value(v), scope);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclRuleDecl) {
+        int32:n = relay rule_clause_count(r.ast, d);
+        int32:i = 0i32;
+        while (i < n) {
+            drop resolve_expr(r, relay rule_clause(r.ast, d, i), scope);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    // A nested `mod` has a scope of its own, opened during collection. Finding it
+    // again by name is what keeps the two passes agreeing about which scope is
+    // which.
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:sym = raw scope_lookup_local(r.tab, scope, raw decl_name(d));
+        if (sym != 0i32) {
+            drop resolve_members(r, d, raw module_scope_of(r, id, scope));
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        drop resolve_members(r, d, scope);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:n = relay impl_member_count(r.ast, d);
+        int32:i = 0i32;
+        while (i < n) {
+            drop resolve_decl(r, relay impl_member(r.ast, d, i), scope);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// A nested module's scope. Collection opened it immediately after declaring the
+// module's own name, so it is the scope whose parent is this one and which was
+// created in that order — recorded rather than recomputed would be better, and
+// 0.4 should move it onto the ModuleDecl.
+func:module_scope_of = int32(Resolver->:r, DeclId:id, int32:parent) {
+    int32:i = 1i32;
+    while (i < (raw symtab_scope_count(r.tab))) {
+        if ((raw scope_parent(r.tab, i)) == parent) {
+            if ((raw scope_kind(r.tab, i)) == (raw SCOPE_MODULE())) {
+                pass i;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass parent;
+};
+
+func:resolve_members = NIL(Resolver->:r, DeclNode:d, int32:scope) {
+    int32:n = raw item_member_count(r.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        drop resolve_decl(r, raw item_member(r.ast, d, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+pub func:resolve_module = NIL(Resolver->:r, DeclId:mod_id, int32:scope) {
+    r.module_scope = scope;
+    DeclNode:m = relay ast_decl(r.ast, mod_id);
+    drop resolve_members(r, m, scope);
+    pass NIL;
+};
+
+// --- the completeness audit --------------------------------------------------------------
+//
+// EVERY `IdentifierExpr` IS BOUND, IS A BUILTIN, OR PRODUCED A DIAGNOSTIC. There
+// is no fourth outcome, and this is what checks it.
+//
+// The counterpart to `check_kinds_reachable` in cycle 0.2, and it guards the same
+// class of defect. If the walk above forgets a construct — a `when` body, a
+// `pick` guard, an invariant — the identifiers inside it are never visited, so
+// they stay unbound and NOTHING REPORTS IT. Not an error at any point, and
+// invisible until cycle 0.4 asks what one of them means and gets nothing.
+//
+// Run over a program known to resolve cleanly, a non-zero count means the walk
+// has a hole. That is a far sharper question than "did the tests pass", because a
+// test only covers the constructs somebody thought to write.
+pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
+                               InternTable->:interns) {
+    int32:unbound = 0i32;
+    int32:i = 1i32;
+    while (i < (raw ast_expr_count(ast))) {
+        ExprId:id = ExprId{ index: i };
+        ExprNode:e = relay ast_expr(ast, id);
+        if (e.kind == ExprKind.ExprIdentifierExpr) {
+            if (e.a == 0i32) {
+                string:text = relay intern_get(interns,
+                                               (raw expr_name(e)) => int32);
+                bool:excused = raw is_builtin_name(text);
+                if (raw string_eq(text, "result")) { excused = true; }
+                if (!excused) {
+                    unbound = unbound + 1i32;
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass unbound;
+};
