@@ -356,6 +356,25 @@ Only these two. `cast<T>` / `#cast<T>` / `@cast<T>` do not exist (D-021).
 | `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-040`) |
 | `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
 | `DynCastExpr` | `expr`, `traits: TypeNode[]` — `dyn A & B` (D-029) |
+| `PickExpr` | `selector: Expr`, `arms: PickArm[]` — a `pick` whose arms `give` (D-059) |
+
+> **`PickExpr` was missing.** D-059 settled that `pick` is **both** a statement
+> and an expression and that the arms decide which, but only `PickStmt` ever got
+> a node — so the construct D-059 created could not be built. Since uninitialized
+> variables are a compile error, an expression-`pick` is the only way to
+> initialize a variable by matching, which is the reason D-059 kept it.
+>
+> It is a second node rather than one node used in both positions, and the reason
+> is **termination**, not taste. `CONTROL_REFERENCE.md`'s standing rule is that
+> control-flow blocks take no trailing `;` — `pick (x) { … }` as a statement ends
+> at its brace. An expression-`pick` ends wherever its enclosing statement does:
+> `int32:v = pick (y) { … };` takes the `;` of the declaration. Representing both
+> as one node in expression position would make the semicolon rule depend on what
+> the expression happened to contain, which is exactly the context-dependence the
+> rest of the grammar avoids.
+>
+> The two carry identical fields and identical slot layouts, so one set of arm
+> accessors reads both; only the kind differs.
 
 **No lambda or closure nodes.** Closures are removed (D-018); function pointers
 are ordinary values referenced by `IdentifierExpr`.

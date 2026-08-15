@@ -64,6 +64,45 @@ use std.collections.{HashMap, HashSet};
     never be something a reader has to know the manifest's declaration order to
     predict. See `BUILD_REFERENCE.md` §3.
 
+### 2.4 Cycles
+
+**A `use` cycle among modules is legal** (D-086). Two modules may import each
+other, and so may any longer ring.
+
+`use` names a namespace and imports **no initialisation order**. That is the
+whole reason it is safe. A cyclic import is a hazard in languages where importing
+a module *runs* it, because a cycle then has to pick a first module and some names
+are observably unbound while it runs. Nitpick has no module-level execution: a
+module is a set of declarations, globals are compile-time-initialised, and there
+is nothing to sequence.
+
+The language itself forces the cases. `pick` is both a statement and an
+expression (D-059), so the statement and expression parsers must reach the same
+arm-parsing code; a cast holds a type while an array size holds an expression, so
+the type and expression parsers each need the other. No ordering of files removes
+these, and no third file factors them out that is not the union of the two.
+
+The loader must therefore:
+
+1. **Collect every declaration in every module in the graph before resolving any
+   body** — the same two-phase load that already lets a function refer to one
+   declared below it in the same file.
+2. **Report a cycle only when it is genuinely unresolvable** — a struct whose size
+   depends on itself other than through a pointer, or a `const` whose initialiser
+   depends on itself. The diagnostic names the members in the order they refer to
+   each other; "circular import" is not something a reader can act on.
+3. **Never make resolution order-dependent.** The same module graph must produce
+   the same program regardless of which member the loader entered first. This is
+   a reproducibility requirement before it is a convenience: a build that depends
+   on entry order differs between the stage-1 and stage-2 compilers, and the
+   bootstrap fixpoint check would then fail for a reason unrelated to
+   correctness (D-078, D-085).
+
+Legal is not encouraged. A cycle that exists because two modules each grew a
+function belonging in the other is still a decomposition mistake; this says only
+that the language does not forbid it, so the fix is moving the function rather
+than inventing a file to satisfy a rule.
+
 ## 3. Visibility (`pub`)
 
 Nitpick uses a strict binary visibility model: **Public** or **Private**.

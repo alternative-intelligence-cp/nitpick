@@ -5810,3 +5810,90 @@ fixpoint, with diverse double-compilation as the mitigation if ever required.
 That limit is **smaller now than under D-079**, and worth noting as a second
 benefit: a purpose-built seed of a few thousand readable lines can actually be
 audited, where a 26,000-file C++ prototype cannot.
+
+---
+
+## D-086 — A cycle among modules is legal — **SETTLED**
+
+`MODULE_REFERENCE.md` says nothing about import cycles. The question arrived from
+the parser rather than from the module system: cycle 0.2.6 needed it, and 0.2.8
+had it scheduled behind work that could not start without the answer.
+
+**A `use` cycle among modules is legal. The module loader resolves it.**
+
+### What forced it
+
+Three constructs in the frontend want to import each other, and none of the three
+is a mistake in decomposition:
+
+| Construct | Needs | Which needs |
+|---|---|---|
+| `pick` as an expression (D-059) | the expression parser | the arm parser |
+| `pick` as a statement | the statement parser | the arm parser |
+| arm bodies | the statement parser | blocks |
+| `ArrayType.size` (0.2.8) | the type parser | the expression parser |
+| casts | the expression parser | the type parser |
+
+`pick` is the clearest case. D-059 settled that it is **both** a statement and an
+expression and that its arms decide which. Both parsers must therefore reach the
+same arm-parsing code, and the arms contain blocks, which belong to the statement
+parser. There is no ordering of these files that removes the cycle, and no third
+file to factor out that is not simply the union of the two.
+
+The type/expression pair is the same shape: a cast holds a type, an array size
+holds an expression. That is a property of the *language*, not of where the code
+was put.
+
+### Why legal, rather than forbidden
+
+**`use` names a namespace. It imports no initialisation order.** That is the
+whole argument. A cyclic import is a hazard in languages where importing a module
+*runs* it, because then a cycle has to pick a first module and some names are
+observably unbound while it runs. Nitpick has no module-level execution: a module
+is a set of declarations, globals are compile-time-initialised, and there is
+nothing to sequence. The cycle is a fact about the *name graph*, which is
+resolved by collecting declarations before resolving bodies — a two-phase load
+the compiler needs anyway for forward references within a single file.
+
+Forbidding cycles would mean splitting files whose only reason to exist is to
+satisfy the rule. Those files are worse than the cycle: they carry no idea, and a
+reader must reconstruct why the split happened before they can tell whether it
+still should.
+
+### What the loader must do
+
+1. **Collect every declaration in every module in the graph** before resolving
+   any body. This is the phase that already exists for within-file forward
+   references (`ast_scratch_commit` calls `ast_ids_push`, defined below it), now
+   applied across the graph.
+2. **Report a cycle only when it is genuinely unresolvable** — a struct whose
+   size depends on itself other than through a pointer, or a `const` whose
+   initialiser depends on itself. Those are errors about the *declarations*, and
+   the diagnostic must name the cycle's members in the order they refer to each
+   other. "Circular import" is not a diagnostic anyone can act on.
+3. **Never make resolution order-dependent.** The same module graph must produce
+   the same program regardless of which member the loader entered first. This is
+   a reproducibility requirement (D-078) before it is a convenience: a build that
+   depends on entry order is a build that differs between the stage-1 and stage-2
+   compilers, and the fixpoint check would fail for a reason unrelated to
+   correctness.
+
+### What it does not license
+
+**Cycles are legal, not encouraged.** A cycle that exists because two modules
+each grew a function that belonged in the other is still a decomposition mistake;
+this decision says only that the *language* does not forbid it, so the fix is
+moving the function rather than inventing a file. `parse_decorate.npk` — created
+in 0.2.5 to hold the attributes, `limit`, contracts and invariants that decorate
+both declarations and statements — is the good case: it exists because those four
+are genuinely a shared layer, not because a rule demanded a file.
+
+### Follow-up
+
+- `MODULE_REFERENCE.md` — a section stating cycles are legal and what the loader
+  guarantees.
+- Cycle 0.3, which builds the module loader, implements the two-phase collect and
+  the order-independence property. The unresolvable-cycle diagnostics belong
+  there too.
+- 0.2.8 loses its blocking question; `ArrayType.size` can call the expression
+  parser directly.

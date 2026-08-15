@@ -1,0 +1,230 @@
+// `pick` patterns, guards, and destructuring (cycle 0.2.6).
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+
+func:main = int32() {
+    InternTable:it = raw intern_init();
+    DiagList:ld = raw diaglist_init();
+
+    // --- arms, commas, and the catch-all ---------------------------------------
+    TokenList:k1 = raw lex_all(0i32,
+        "pick (x) { (0i32) { f(); }, (1i32) { g(); }, (*) { h(); } }", @it, @ld);
+    Ast:a1 = raw ast_init();
+    DiagList:g1 = raw diaglist_init();
+    Parser:p1 = raw parser_init(@k1, @a1, @g1, @it);
+    StmtNode:n1 = raw ast_stmt(@a1, raw p_parse_stmt(@p1));
+    if (n1.kind != StmtKind.StmtPickStmt)                     { exit 10i32; }
+    if (raw pick_arm_count(n1) != 3i32)                       { exit 11i32; }
+    if (raw diaglist_count(@g1) != 0i64)                      { exit 12i32; }
+
+    StmtNode:arm0 = raw ast_stmt(@a1, raw pick_arm_at(@a1, raw pick_arm_start(n1), 0i32));
+    if (arm0.kind != StmtKind.StmtPickArm)                    { exit 13i32; }
+    PatNode:pt0 = raw ast_pat(@a1, raw arm_pattern(arm0));
+    if (pt0.kind != PatKind.PatValue)                         { exit 14i32; }
+    StmtNode:arm2 = raw ast_stmt(@a1, raw pick_arm_at(@a1, raw pick_arm_start(n1), 2i32));
+    PatNode:pt2 = raw ast_pat(@a1, raw arm_pattern(arm2));
+    if (pt2.kind != PatKind.PatWildcard)                      { exit 15i32; }
+
+    // A trailing comma is accepted: adding an arm must not mean editing the line
+    // above it.
+    TokenList:k2 = raw lex_all(0i32, "pick (x) { (0i32) { f(); }, }", @it, @ld);
+    Ast:a2 = raw ast_init();
+    DiagList:g2 = raw diaglist_init();
+    Parser:p2 = raw parser_init(@k2, @a2, @g2, @it);
+    StmtNode:n2 = raw ast_stmt(@a2, raw p_parse_stmt(@p2));
+    if (raw pick_arm_count(n2) != 1i32)                       { exit 16i32; }
+    if (raw diaglist_count(@g2) != 0i64)                      { exit 17i32; }
+
+    // --- ranges: `..` INCLUSIVE, `...` EXCLUSIVE (OP_REFERENCE §6) --------------
+    // The reverse of the languages that spell them the other way round, so this
+    // is asserted rather than assumed.
+    TokenList:k3 = raw lex_all(0i32,
+        "pick (code) { (500i32..599i32) { f(); }, (0i32...10i32) { g(); }, (*) { h(); } }",
+        @it, @ld);
+    Ast:a3 = raw ast_init();
+    DiagList:g3 = raw diaglist_init();
+    Parser:p3 = raw parser_init(@k3, @a3, @g3, @it);
+    StmtNode:n3 = raw ast_stmt(@a3, raw p_parse_stmt(@p3));
+    PatNode:r0 = raw ast_pat(@a3, raw arm_pattern(
+        raw ast_stmt(@a3, raw pick_arm_at(@a3, raw pick_arm_start(n3), 0i32))));
+    if (r0.kind != PatKind.PatRange)                          { exit 20i32; }
+    if (!(raw pat_range_inclusive(r0)))                       { exit 21i32; }
+    PatNode:r1 = raw ast_pat(@a3, raw arm_pattern(
+        raw ast_stmt(@a3, raw pick_arm_at(@a3, raw pick_arm_start(n3), 1i32))));
+    if (r1.kind != PatKind.PatRange)                          { exit 22i32; }
+    if (raw pat_range_inclusive(r1))                          { exit 23i32; }
+    // The bounds live on the PATTERN, so an exhaustiveness check never has to
+    // know which expression shape hides them.
+    if (raw expr_is_none(raw pat_range_lo(r0)))               { exit 24i32; }
+    if (raw expr_is_none(raw pat_range_hi(r0)))               { exit 25i32; }
+    if (raw diaglist_count(@g3) != 0i64)                      { exit 26i32; }
+
+    // --- destructuring ------------------------------------------------------------
+    // `(Net.Disconnect(reason))` reads exactly like a call. In pattern position a
+    // `(` after a path is destructuring, full stop -- a pattern MATCHES where an
+    // expression COMPUTES, and no pattern calls anything.
+    TokenList:k4 = raw lex_all(0i32,
+        "pick (event) { (MouseClick { x, y }) { f(); }, (Net.Disconnect(reason)) { g(); }, (*) { h(); } }",
+        @it, @ld);
+    Ast:a4 = raw ast_init();
+    DiagList:g4 = raw diaglist_init();
+    Parser:p4 = raw parser_init(@k4, @a4, @g4, @it);
+    StmtNode:n4 = raw ast_stmt(@a4, raw p_parse_stmt(@p4));
+    if (raw pick_arm_count(n4) != 3i32)                       { exit 30i32; }
+    PatNode:sd = raw ast_pat(@a4, raw arm_pattern(
+        raw ast_stmt(@a4, raw pick_arm_at(@a4, raw pick_arm_start(n4), 0i32))));
+    if (sd.kind != PatKind.PatStructDestructure)              { exit 31i32; }
+    if (raw pat_bind_count(sd) != 2i32)                       { exit 32i32; }
+    if (raw type_is_none(raw pat_struct_type(sd)))            { exit 33i32; }
+
+    PatNode:ed = raw ast_pat(@a4, raw arm_pattern(
+        raw ast_stmt(@a4, raw pick_arm_at(@a4, raw pick_arm_start(n4), 1i32))));
+    if (ed.kind != PatKind.PatEnumDestructure)                { exit 34i32; }
+    if (raw pat_enum_segment_count(@a4, ed) != 2i32)          { exit 35i32; }
+    if (raw pat_enum_bind_count(@a4, ed) != 1i32)             { exit 36i32; }
+    if (raw diaglist_count(@g4) != 0i64)                      { exit 37i32; }
+
+    // A payload-free variant path still destructures, with no bindings.
+    TokenList:k5 = raw lex_all(0i32,
+        "pick (e) { (Net.Connected) { f(); }, (*) { g(); } }", @it, @ld);
+    Ast:a5 = raw ast_init();
+    DiagList:g5 = raw diaglist_init();
+    Parser:p5 = raw parser_init(@k5, @a5, @g5, @it);
+    StmtNode:n5 = raw ast_stmt(@a5, raw p_parse_stmt(@p5));
+    PatNode:pv = raw ast_pat(@a5, raw arm_pattern(
+        raw ast_stmt(@a5, raw pick_arm_at(@a5, raw pick_arm_start(n5), 0i32))));
+    if (pv.kind != PatKind.PatEnumDestructure)                { exit 38i32; }
+    if (raw pat_enum_bind_count(@a5, pv) != 0i32)             { exit 39i32; }
+
+    // --- labels and explicit fallthrough ----------------------------------------------
+    // There is NO implicit fallthrough, so a label exists only because something
+    // falls to it.
+    TokenList:k6 = raw lex_all(0i32,
+        "pick (x) { one: (1i32) { fall two; }, two: (2i32) { f(); }, (*) { g(); } }",
+        @it, @ld);
+    Ast:a6 = raw ast_init();
+    DiagList:g6 = raw diaglist_init();
+    Parser:p6 = raw parser_init(@k6, @a6, @g6, @it);
+    StmtNode:n6 = raw ast_stmt(@a6, raw p_parse_stmt(@p6));
+    StmtNode:la = raw ast_stmt(@a6, raw pick_arm_at(@a6, raw pick_arm_start(n6), 0i32));
+    int32:one = raw arm_label(la);
+    if (raw intern_is_none(one))                              { exit 40i32; }
+    StmtNode:lb = raw ast_stmt(@a6, raw pick_arm_at(@a6, raw pick_arm_start(n6), 1i32));
+    if (raw intern_is_none(raw arm_label(lb)))                { exit 41i32; }
+    if ((raw arm_label(lb)) == one)                           { exit 42i32; }
+    // An unlabelled arm is distinguishable from a labelled one, because absence
+    // is intern index 0 and no real name lands there.
+    StmtNode:lc = raw ast_stmt(@a6, raw pick_arm_at(@a6, raw pick_arm_start(n6), 2i32));
+    if (!(raw intern_is_none(raw arm_label(lc))))             { exit 43i32; }
+    if (raw diaglist_count(@g6) != 0i64)                      { exit 44i32; }
+
+    // --- guards ---------------------------------------------------------------------------
+    // `where (…)` is PARENTHESISED: a guard is an expression-site condition like
+    // `if`, not a declaration-site contract like `requires`.
+    TokenList:k7 = raw lex_all(0i32,
+        "pick (v) { (Pair(a, b)) where (a > b) { f(); }, (*) { g(); } }", @it, @ld);
+    Ast:a7 = raw ast_init();
+    DiagList:g7 = raw diaglist_init();
+    Parser:p7 = raw parser_init(@k7, @a7, @g7, @it);
+    StmtNode:n7 = raw ast_stmt(@a7, raw p_parse_stmt(@p7));
+    StmtNode:ga = raw ast_stmt(@a7, raw pick_arm_at(@a7, raw pick_arm_start(n7), 0i32));
+    if (raw expr_is_none(raw arm_guard(ga)))                  { exit 50i32; }
+    ExprNode:gx = raw ast_expr(@a7, raw arm_guard(ga));
+    if (gx.kind != ExprKind.ExprBinaryExpr)                   { exit 51i32; }
+    StmtNode:gb = raw ast_stmt(@a7, raw pick_arm_at(@a7, raw pick_arm_start(n7), 1i32));
+    if (!(raw expr_is_none(raw arm_guard(gb))))               { exit 52i32; }
+    if (raw diaglist_count(@g7) != 0i64)                      { exit 53i32; }
+
+    // --- the `ERR:` arm (D-008 §5.1) ---------------------------------------------------------
+    // No parentheses, and `ERR` is a KEYWORD, so it can never be read as the
+    // `label:` that precedes an ordinary arm.
+    TokenList:k8 = raw lex_all(0i32,
+        "pick (t) { ERR: { f(); }, (0i32) { g(); }, (*) { h(); } }", @it, @ld);
+    Ast:a8 = raw ast_init();
+    DiagList:g8 = raw diaglist_init();
+    Parser:p8 = raw parser_init(@k8, @a8, @g8, @it);
+    StmtNode:n8 = raw ast_stmt(@a8, raw p_parse_stmt(@p8));
+    if (raw pick_arm_count(n8) != 3i32)                       { exit 60i32; }
+    StmtNode:ea = raw ast_stmt(@a8, raw pick_arm_at(@a8, raw pick_arm_start(n8), 0i32));
+    PatNode:ep = raw ast_pat(@a8, raw arm_pattern(ea));
+    if (ep.kind != PatKind.PatErrPattern)                     { exit 61i32; }
+    if (!(raw intern_is_none(raw arm_label(ea))))             { exit 62i32; }
+    if (raw diaglist_count(@g8) != 0i64)                      { exit 63i32; }
+
+    // --- `pick` as an expression (D-059) -------------------------------------------------------
+    TokenList:k9 = raw lex_all(0i32,
+        "int32:v = pick (x) { (0i32) { give 1i32; }, (*) { give 2i32; } };", @it, @ld);
+    Ast:a9 = raw ast_init();
+    DiagList:g9 = raw diaglist_init();
+    Parser:p9 = raw parser_init(@k9, @a9, @g9, @it);
+    StmtNode:n9 = raw ast_stmt(@a9, raw p_parse_stmt(@p9));
+    if (n9.kind != StmtKind.StmtVarDeclStmt)                  { exit 70i32; }
+    ExprNode:px = raw ast_expr(@a9, raw stmt_decl_init(@a9, n9));
+    if (px.kind != ExprKind.ExprPickExpr)                     { exit 71i32; }
+    if (raw pickx_arm_count(px) != 2i32)                      { exit 72i32; }
+    // The arms decide whether a `pick` is an expression, so that question gets
+    // one answer computed once rather than re-derived by each consumer.
+    if (!(raw pick_arms_give(@a9, raw pickx_arm_start(px), raw pickx_arm_count(px)))) {
+        exit 73i32;
+    }
+    if (raw diaglist_count(@g9) != 0i64)                      { exit 74i32; }
+
+    // A statement-`pick` whose arms do not `give` answers the same question NO,
+    // and takes no trailing `;` -- which is the whole reason the two are separate
+    // node kinds.
+    if (raw pick_arms_give(@a1, raw pick_arm_start(n1), raw pick_arm_count(n1))) {
+        exit 75i32;
+    }
+
+    // --- `(!)` is removed (D-061) ---------------------------------------------------------------
+    // The diagnostic names its replacement, because anyone writing `(!)` learned
+    // it from an older document and needs to be told what to write instead.
+    TokenList:ka = raw lex_all(0i32,
+        "pick (x) { (0i32) { f(); }, (!) { g(); } }", @it, @ld);
+    Ast:aa = raw ast_init();
+    DiagList:ga2 = raw diaglist_init();
+    Parser:pa = raw parser_init(@ka, @aa, @ga2, @it);
+    drop p_parse_stmt(@pa);
+    if (raw diaglist_count(@ga2) != 1i64)                     { exit 80i32; }
+    Diagnostic:da = raw diaglist_at(@ga2, 0i64);
+    if (!(raw string_eq(da.code, raw PARSE_UNREACHABLE_MARKER()))) { exit 81i32; }
+
+    // --- nesting ---------------------------------------------------------------------------------
+    // An inner `pick`'s arms must not land inside the outer one's window -- the
+    // scratch-stack property, now two levels deep and through two node arrays.
+    TokenList:kb = raw lex_all(0i32,
+        "pick (x) { (0i32) { pick (y) { (1i32) { f(); }, (*) { g(); } } }, (*) { h(); } }",
+        @it, @ld);
+    Ast:ab = raw ast_init();
+    DiagList:gb = raw diaglist_init();
+    Parser:pb = raw parser_init(@kb, @ab, @gb, @it);
+    StmtNode:nb = raw ast_stmt(@ab, raw p_parse_stmt(@pb));
+    if (raw pick_arm_count(nb) != 2i32)                       { exit 90i32; }
+    StmtNode:outer0 = raw ast_stmt(@ab, raw pick_arm_at(@ab, raw pick_arm_start(nb), 0i32));
+    StmtNode:obody = raw ast_stmt(@ab, raw arm_body(outer0));
+    StmtId:innerId = StmtId{ index: raw ast_id_at(@ab, raw stmt_list_start(obody), 0i32) };
+    StmtNode:inner = raw ast_stmt(@ab, innerId);
+    if (inner.kind != StmtKind.StmtPickStmt)                  { exit 91i32; }
+    if (raw pick_arm_count(inner) != 2i32)                    { exit 92i32; }
+    if (raw diaglist_count(@gb) != 0i64)                      { exit 93i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    exit 1i32;
+};

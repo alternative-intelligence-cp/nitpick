@@ -16,3 +16,9 @@ pub func:PARSE_BAD_PATTERN = string()   { pass "NITPICK-PARSE-005"; };
 // than a semantic one because the contract is part of the declaration's SHAPE --
 // there is no `extern` function without one to build a node for.
 pub func:PARSE_EXTERN_NO_CONTRACT = string() { pass "NITPICK-PARSE-006"; };
+
+// D-061: `(!)`, the removed unreachable marker. It gets a code of its own rather
+// than a generic "bad pattern" so the diagnostic can name the replacement --
+// somebody writing `(!)` learned it from an older document and needs to be told
+// what to write instead, not merely that this is wrong.
+pub func:PARSE_UNREACHABLE_MARKER = string() { pass "NITPICK-PARSE-007"; };

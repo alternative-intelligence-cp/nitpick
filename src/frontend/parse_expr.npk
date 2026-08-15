@@ -45,6 +45,7 @@ use "diagnostics.npk".*;
 use "parse_codes.npk".*;
 use "parser.npk".*;
 use "parse_type.npk".*;
+use "parse_pick.npk".*;
 
 // --- named accessors ---------------------------------------------------------
 
@@ -573,6 +574,13 @@ func:p_primary = ExprId(Parser->:p) {
         drop p_advance(p);
         pass (relay ast_add_expr(p.ast, ExprKind.ExprSentinelLiteral, sp,
                                  0i32, 0i32, 0i32, 1i64));
+    }
+
+    // An expression-`pick` -- one whose arms `give` (D-059). It is the only way
+    // to initialize a variable by matching, since an uninitialized variable is a
+    // compile error, which is why D-059 kept it.
+    if (k == TokenKind.KwPick) {
+        pass (relay p_parse_pick_expr(p));
     }
 
     if (k == TokenKind.Ident) {

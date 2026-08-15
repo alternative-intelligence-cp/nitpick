@@ -27,6 +27,7 @@ use "parser.npk".*;
 use "parse_type.npk".*;
 use "parse_expr.npk".*;
 use "parse_decorate.npk".*;
+use "parse_pick.npk".*;
 
 // Declaration qualifiers, as bits. They live on the VarDeclStmt and NOT on the
 // type node (AST_REFERENCE section 4), which is why the type parser refuses to
@@ -368,9 +369,10 @@ pub func:p_parse_stmt = StmtId(Parser->:p) {
         pass (relay p_label_stmt(p, sp, StmtKind.StmtFallStmt, false));
     }
 
-    // `pick` is parsed in 0.2.6 with its patterns and guards. Until then it
-    // reaches the expression path and is reported there; it is not silently
-    // treated as something else.
+    // A statement-`pick`. The arms live in parse_pick.npk, which the expression
+    // parser also reaches -- `pick` is both, and its arms decide which (D-059).
+    // That mutual import is legal (D-086).
+    if (k == TokenKind.KwPick) { pass (relay p_parse_pick_stmt(p)); }
 
     if (raw p_looks_like_decl(p)) {
         pass (relay p_parse_vardecl(p, sp, attrs));
