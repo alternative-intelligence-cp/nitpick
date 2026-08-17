@@ -153,7 +153,25 @@ impl:<T: Printable>:Loggable = {
 ```
 
 `T` is substituted with each concrete type implementing `Printable`. **Concrete
-impls take priority** over blanket-generated ones.
+impls take priority** over blanket-generated ones — expressed as the *order* the
+method lookup asks its question, so there is never a moment at which two
+candidates exist and something has to choose (D-111).
+
+Three rules complete the form, all D-111:
+
+- **At most one blanket impl per trait.** The language has no negative bounds, so
+  nothing stops a type satisfying two different bounds — `impl:<T: A>:Loggable`
+  and `impl:<T: B>:Loggable` genuinely overlap, and with no specialization
+  (D-064 §7) there is no rule to choose by. Both are named in the diagnostic. A
+  blanket impl beside a *concrete* one is not a conflict: overlapping is the point.
+- **A blanket impl must name a trait.** `impl:<T: Bound> = { … };` parses, and
+  would add methods to every type satisfying a bound — methods on types the writer
+  does not own.
+- **A blanket impl does not apply to itself.** Otherwise
+  `impl:<T: Loggable>:Loggable` would be true of everything by circular reasoning.
+
+`Self` inside the block is the parameter, and the block is checked for
+completeness, supertraits and duplicate names exactly as a concrete impl is.
 
 > Chapter 13 spells this `impl:Loggable:for:T:where:Printable = { … };`, making
 > `where` a colon-separated path segment — a second, unrelated syntactic role for

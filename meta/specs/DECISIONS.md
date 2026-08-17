@@ -7754,3 +7754,77 @@ to report what it finds. Without deduplication, being thorough would mean being
 noisy, and both alternatives are worse: a resolver that reports on some paths and
 not others is a rule that depends on which path ran, and a checker that visits less
 to stay quiet is checking less.
+
+**A diagnostic must therefore carry the span of the thing that is wrong.** An
+argument's mismatch belongs at the *argument*, not at the call. Reported at the
+call, `vsum(1i32, 2i32, 3i32)` produced the same code, span and message twice, and
+deduplication folded one away — so a reader was told about one of two mistakes.
+Two findings that are only identical because the span is too coarse are a defect
+in the span, not an argument against deduplication.
+
+---
+
+## D-111 — A blanket impl's target is its parameter, and two of them for one trait conflict
+
+**Settled in cycle 0.4.7, closing it.** D-105 made `impl:<T: Printable>:Loggable`
+parse and recorded it with a **target of zero**, deferring every question to this
+subcycle. A zero is not a type, so every check that reads a target skipped it: its
+methods were unreachable, it satisfied no bound, and it collided with nothing.
+
+### The target is the parameter type
+
+That single change pays the whole schedule off. `Self` inside the block then
+resolves to the parameter through the substitution D-103 already built, and
+completeness, supertraits and duplicate-name checking all run on a blanket impl
+**unchanged** rather than being skipped. Nothing else had to learn what a blanket
+impl is.
+
+### Two blanket impls of one trait conflict, full stop
+
+The overlap question looks as though it needs bound satisfaction and does not.
+The language has **no negative bounds**, so nothing stops a type implementing both
+`A` and `B` — `impl:<T: A>:Loggable` and `impl:<T: B>:Loggable` genuinely overlap
+wherever a type satisfies both. With no specialization (D-064 §7) there is no rule
+to choose by, so choosing either would be a silent choice between two things a
+programmer wrote on purpose. Both are named, the shape the concrete conflict
+already uses.
+
+A blanket impl beside a **concrete** one is *not* a conflict (D-105): overlapping
+is the point, and §2.6 says the concrete one wins.
+
+### Concrete priority is the order the question is asked
+
+`find_method` asks the impl table first and the blanket impls only if nothing
+concrete answered. Expressing §2.6 as an *order* rather than a tie-break means
+there is never a moment at which two candidates exist and something has to choose.
+Among themselves, blanket impls are ordinary trait candidates: two supplying one
+name is the ambiguity two concrete trait impls would be.
+
+### `type_implements` is one question with three sources
+
+It was two functions with the third missing. A type implements a trait by having a
+**concrete impl**, by being a **parameter that declares it** (D-107), or by
+satisfying the bound of a **blanket impl**. Fuel-bounded, because a blanket impl's
+bound may itself be satisfied by another blanket impl and a program can write that
+chain. **A blanket impl does not apply to itself** — letting it satisfy the bound
+that admits it would make `impl:<T: Loggable>:Loggable` true of everything by
+circular reasoning.
+
+### An inherent blanket impl is refused
+
+`impl:<T: Bound> = { … };` parses, because the grammar is never partial (D-085),
+and would add methods to every type satisfying a bound — which is adding methods to
+types the writer does not own. §2.6 gives the form with a trait and only with one.
+
+### Two bindings a blanket impl needs
+
+- **A generic trait's parameters are bound by the impl.** `impl:Point:Into<int32>`
+  means `T = int32` in everything `Into` declares, so the trait's
+  `func:into = T(Self:self)` is `int32(Point:self)` here. Without it the
+  comparison is `Result<T>` against `Result<int32>` and *every* impl of a generic
+  trait is reported as having the wrong signature.
+- **A blanket method's parameter is bound to the receiver at the call.**
+  `func:l = int32(T:self)` called on a `Point` has `T = Point`; without saying so,
+  `T` resolves to "there is no type named `T`" at a call site nowhere near the
+  declaration. Only the first parameter is bound, because only the first is the
+  target.

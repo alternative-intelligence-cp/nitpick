@@ -108,23 +108,45 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
 
 func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
                             DeclNode:d, int32:scope) {
-    // A BLANKET IMPL HAS NO CONCRETE TARGET TO RESOLVE (D-105). Its target names
-    // a parameter it declared itself, which lives in the scope `resolve.npk`
-    // opened for the block — not in this one — and what it stands for is decided
-    // per instantiation.
+    // A BLANKET IMPL'S TARGET IS THE PARAMETER IT DECLARED (D-105, D-111).
     //
-    // It is RECORDED AND NOT CHECKED at this rung, and that is a schedule rather
-    // than a silence: 0.4.7 owns bound satisfaction and monomorphization, and
-    // every question about a blanket impl — which types it applies to, whether a
-    // concrete impl outranks it (2.6), what `Self` substitutes to — is one of
-    // those. Recording it now is what lets 0.4.7 find them.
+    // 0.4.6 recorded a zero here and skipped every check that reads a target,
+    // which was a schedule rather than a silence — bound satisfaction is 0.4.7's.
+    // Making the target the PARAMETER TYPE is what pays that schedule off, and it
+    // pays it in one line: `Self` inside the block then resolves to the parameter
+    // through the machinery D-103 already built, and completeness, supertraits and
+    // duplicate names all run on a blanket impl unchanged rather than being
+    // skipped. A zero could do none of that, because a zero is not a type.
     if (relay impl_is_blanket(r.ast, d)) {
-        int32:bt = 0i32;
         TypeId:btt = relay impl_trait(r.ast, d);
-        if (!(raw type_is_none(btt))) {
-            bt = relay resolve_type(r, btt, scope);
+
+        // A BLANKET IMPL IMPLEMENTS A TRAIT. `impl:<T: Bound> = { … };` parses —
+        // the grammar is never partial (D-085) — and means adding methods to every
+        // type satisfying a bound, which is adding methods to types the writer
+        // does not own. §2.6 gives the form with a trait and only with one.
+        if (raw type_is_none(btt)) {
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                "a blanket impl implements a TRAIT for every type satisfying its bound, so it is written `impl:<T: Bound>:Trait`; an inherent one would add methods to types it does not own",
+                d.span));
+            pass NIL;
         }
-        drop impl_push(t, 0i32, bt, id.index, true);
+
+        int32:bt = relay resolve_type(r, btt, scope);
+        if (bt == 0i32) { pass NIL; }
+        if (raw type_is_invalid(r.types, bt)) { pass NIL; }
+        if ((raw type_kind(r.types, bt)) != (raw TY_TRAIT())) {
+            string:n1 = relay string_concat("`", relay type_display(r.types, r.interns, bt));
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+                relay string_concat(n1,
+                    "` is not a trait, so it cannot be implemented; in `impl:<T: Bound>:Trait` the trait comes last"),
+                d.span));
+            pass NIL;
+        }
+
+        DeclId:gp = relay impl_generic(r.ast, d, 0i32);
+        DeclNode:gpn = relay ast_decl(r.ast, gp);
+        drop impl_push(t, raw tt_param(r.types, gp.index, raw decl_name(gpn)),
+                       bt, id.index, true);
         pass NIL;
     }
 
@@ -167,21 +189,34 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
 // groups of methods on one type, which is a formatting choice; what would be
 // wrong is the same METHOD twice, and that is a duplicate-name question rather
 // than a coherence one.
+// TWO BLANKET IMPLS OF ONE TRAIT CONFLICT, FULL STOP (D-111).
+//
+// The overlap question looks like it needs bound satisfaction and does not, and
+// the reason is that the language has NO NEGATIVE BOUNDS: nothing stops a type
+// implementing both `A` and `B`, so `impl:<T: A>:Loggable` and
+// `impl:<T: B>:Loggable` genuinely overlap wherever a type satisfies both. There
+// is no specialization to choose between them (D-064 §7), so choosing either
+// would be a silent choice between two things a programmer wrote on purpose.
+//
+// A BLANKET IMPL AND A CONCRETE ONE ARE NOT A CONFLICT (D-105) — overlapping is
+// the point, and §2.6 already says the concrete one wins.
 pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:a = relay impl_at(t, i);
-        // A blanket impl overlaps a concrete one BY DESIGN — 2.6 says the
-        // concrete one wins — so it is not a coherence conflict and cannot be
-        // decided without bound satisfaction (0.4.7).
-        if (a.blanket) { a.trait_id = 0i32; }
         if (a.trait_id != 0i32) {
             int32:j = i + 1i32;
             while (j < t.count) {
                 ImplEntry:b = relay impl_at(t, j);
                 if (b.trait_id == a.trait_id) {
-                    if (b.target == a.target) {
-                        drop coherence_error(r, a, b);
+                    if (a.blanket) {
+                        if (b.blanket) { drop blanket_overlap(r, a, b); }
+                    } else {
+                        if (!b.blanket) {
+                            if (b.target == a.target) {
+                                drop coherence_error(r, a, b);
+                            }
+                        }
                     }
                 }
                 j = j + 1i32;
@@ -189,6 +224,26 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
         }
         i = i + 1i32;
     }
+    pass NIL;
+};
+
+// BOTH ARE NAMED, the same shape the concrete conflict uses — a reader told only
+// that two blanket impls overlap has to go and find the other one, which is the
+// one thing the compiler already knows.
+func:blanket_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+    DeclId:fid = DeclId{ index: first.decl };
+    DeclNode:first_d = relay ast_decl(r.ast, fid);
+    DeclId:sid = DeclId{ index: second.decl };
+    DeclNode:second_d = relay ast_decl(r.ast, sid);
+
+    string:m1 = relay string_concat("`",
+                    relay type_display(r.types, r.interns, second.trait_id));
+    string:m2 = relay string_concat(m1, "` already has a blanket impl at line ");
+    string:m3 = relay string_concat(m2, raw int_to_string(first_d.span.line => int64));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
+        relay string_concat(m3,
+            "; a blanket impl applies to every type satisfying its bound, and nothing stops a type satisfying both bounds — with no specialization there is no rule to choose by (D-064)"),
+        second_d.span));
     pass NIL;
 };
 
@@ -317,6 +372,8 @@ pub func:param_declares = bool(BoundTable->:t, int32:param, int32:trait_id,
 // is a real ambiguity that only the programmer can settle.
 func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
                                  int32:param, int32:name) {
+    // A BOUND'S METHOD IS THE TRAIT'S DECLARATION, written in terms of `Self`, so
+    // there is no blanket parameter to bind -- the receiver IS the parameter.
     MethodFind:best = raw method_none();
     BoundEntry:e = relay bound_entry_of(bt, param);
     int32:i = 0i32;
@@ -540,11 +597,18 @@ pub struct:MethodFind = {
     int32:decl;        // the FunctionDecl's index
     int32:owner;       // the trait it came through, or 0 for an inherent method
     int32:other;       // the OTHER trait, when ambiguous
+    // THE BLANKET IMPL IT CAME FROM, or 0. A blanket impl's methods are written
+    // in terms of its PARAMETER -- `func:l = int32(T:self)` -- so the caller has
+    // to bind that parameter to the receiver before the signature means anything.
+    // Without it, `T` resolves to "there is no type named `T`" at a call site that
+    // is nowhere near the declaration.
+    int32:blanket_impl;
 };
 
 func:method_none = MethodFind() {
     MethodFind:m = MethodFind{ found: false, ambiguous: false,
-                               decl: 0i32, owner: 0i32, other: 0i32 };
+                               decl: 0i32, owner: 0i32, other: 0i32,
+                               blanket_impl: 0i32 };
     pass m;
 };
 
@@ -587,7 +651,8 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     // and a second inherent one is a duplicate-name error that
                     // belongs to the declaration, not to this lookup.
                     MethodFind:m = MethodFind{ found: true, ambiguous: false,
-                                               decl: mdecl, owner: 0i32, other: 0i32 };
+                                               decl: mdecl, owner: 0i32,
+                                               other: 0i32, blanket_impl: 0i32 };
                     pass m;
                 }
                 if (best.found) {
@@ -601,6 +666,38 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             }
         }
         i = i + 1i32;
+    }
+
+    // A BLANKET IMPL IS ASKED LAST, AND ONLY IF NOTHING CONCRETE ANSWERED. That
+    // ordering IS §2.6's "concrete impls take priority" — expressed as the order
+    // the question is asked rather than as a tie-break afterwards, so there is no
+    // moment at which two candidates exist and something has to choose.
+    //
+    // Among themselves blanket impls are ordinary trait candidates: two supplying
+    // one name is the same ambiguity two concrete trait impls would be.
+    if (!best.found) {
+        int32:j = 0i32;
+        while (j < t.count) {
+            ImplEntry:e = relay impl_at(t, j);
+            if (e.blanket) {
+                if (relay blanket_applies(t, bt, ast, types, e, target,
+                                          raw IMPL_FUEL())) {
+                    int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
+                    if (mdecl != 0i32) {
+                        if (best.found) {
+                            best.ambiguous = true;
+                            best.other = e.trait_id;
+                        } else {
+                            best.found = true;
+                            best.decl = mdecl;
+                            best.owner = e.trait_id;
+                            best.blanket_impl = e.decl;
+                        }
+                    }
+                }
+            }
+            j = j + 1i32;
+        }
     }
     pass best;
 };
@@ -649,14 +746,16 @@ func:assoc_required = bool(DeclNode:m) {
 // every method the trait asked for and satisfies nothing: a caller holding a
 // `dyn Sized` would call through a vtable slot typed one way and land in a body
 // typed another. Checking names without checking shapes is checking the label.
+// A BLANKET IMPL IS CHECKED LIKE ANY OTHER (D-111). It was skipped because its
+// target was a zero, and a zero cannot be compared against anything; now it is the
+// parameter type, so `Self` substitutes to the parameter and every question below
+// has an answer.
 pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r, int32:scope) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (e.trait_id != 0i32) {
-            if (!e.blanket) {
-                drop check_one_impl_complete(r, e, scope);
-            }
+            drop check_one_impl_complete(r, e, scope);
         }
         i = i + 1i32;
     }
@@ -802,11 +901,29 @@ func:a_or_an = string(string:what) {
 func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
                            int32:impl_fn, DeclNode:im, int32:scope) {
     int32:saved = r.self_type;
+    GenericScope:saved_enc = r.enclosing;
+
+    // A GENERIC TRAIT'S PARAMETERS ARE BOUND BY THE IMPL (D-111).
+    // `impl:Point:Into<int32>` means `T = int32` in everything `Into` declares, so
+    // the trait's `func:into = T(Self:self)` is `int32(Point:self)` here. Without
+    // this the comparison is between `Result<T>` and `Result<int32>` and every
+    // impl of a generic trait is reported as having the wrong signature.
+    r.enclosing = relay trait_binding(r, e.trait_id);
 
     DeclId:tfid = DeclId{ index: trait_fn };
     DeclNode:tf = relay ast_decl(r.ast, tfid);
     r.self_type = raw tt_self(r.types);
     int32:want = relay fn_type(r, tf, raw decl_name(tf), scope);
+
+    // THE IMPL'S SIGNATURE IS RESOLVED WITH THE IMPL'S OWN PARAMETERS, which for
+    // a blanket impl is where its `T` comes from — `func:log_str = string(T:self)`
+    // has no other binding to reach.
+    DeclId:iid = DeclId{ index: e.decl };
+    DeclNode:iblock = relay ast_decl(r.ast, iid);
+    IdSpan:ig = raw decl_generic_window(r.ast, iblock);
+    GenericScope:ige = GenericScope{ params_start: ig.start, params_count: ig.count,
+                                     args_start: 0i32, args_count: 0i32 };
+    r.enclosing = ige;
 
     DeclId:ifid = DeclId{ index: impl_fn };
     DeclNode:f = relay ast_decl(r.ast, ifid);
@@ -814,6 +931,7 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     int32:got = relay fn_type(r, f, raw decl_name(f), scope);
 
     r.self_type = saved;
+    r.enclosing = saved_enc;
 
     if (want == 0i32) { pass NIL; }
     if (got == 0i32) { pass NIL; }
@@ -830,6 +948,26 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     drop diaglist_push(r.diags,
         raw diag_error(raw TYPE_IMPL_INCOMPLETE(), m4, im.span));
     pass NIL;
+};
+
+// THE TRAIT'S PARAMETERS, BOUND TO WHAT THE IMPL NAMED. `Into<int32>` carries its
+// argument window, and the trait declaration carries its parameter window; putting
+// the two together is the binding every signature in the trait is read under.
+//
+// A NON-GENERIC TRAIT BINDS NOTHING, which is the empty scope rather than a
+// special case — `params_count == 0` makes every lookup miss, which is exactly
+// right for a trait that declares no parameters.
+func:trait_binding = GenericScope(TypeResolver->:r, int32:trait_id) {
+    int32:decl = raw type_decl_of(r.types, trait_id);
+    if (decl == 0i32) { pass (raw generic_scope_none()); }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:td = relay ast_decl(r.ast, did);
+    IdSpan:w = raw decl_generic_window(r.ast, td);
+    GenericScope:g = GenericScope{
+        params_start: w.start, params_count: w.count,
+        args_start: raw type_args_start_of(r.types, trait_id),
+        args_count: raw type_args_count_of(r.types, trait_id) };
+    pass g;
 };
 
 // EQUAL AFTER SUBSTITUTING `Self`. Two function types are interned, so the common
@@ -873,19 +1011,83 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got, int32:targe
 
 // --- `dyn` assignment (TRAITS_REFERENCE 5.2, 5.3) ----------------------------------------
 
-// DOES `target` IMPLEMENT `trait_id`? A table scan, and the table is the only
-// place that knows — an impl declares nothing at module scope, so there is no
-// symbol to ask.
-pub func:type_implements = bool(ImplTable->:t, int32:target, int32:trait_id) {
+// DOES `target` IMPLEMENT `trait_id`? ONE QUESTION, ONE ANSWER, THREE SOURCES.
+//
+// The three were two functions with the third missing entirely, which is how a
+// blanket impl could be recorded and satisfy nothing:
+//
+//   * A CONCRETE IMPL. The table is the only place that knows — an impl declares
+//     nothing at module scope, so there is no symbol to ask.
+//   * A PARAMETER'S DECLARED BOUNDS. `T` is a type that does not exist yet, so
+//     the impl table holds nothing about it and its bound list is everything
+//     known (D-107).
+//   * A BLANKET IMPL whose bound `target` satisfies (§2.6). This is what makes a
+//     blanket impl mean anything: without it the impl is recorded, its methods
+//     are unreachable, and every `dyn` and every bound behaves as though it were
+//     not written.
+//
+// FUEL, because the third case asks the same question again: a blanket impl's
+// bound may itself be satisfied by another blanket impl, and a program can write
+// that chain.
+func:IMPL_FUEL = int32() { pass 64i32; };
+
+pub func:type_implements = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
+                                TypeTable->:types, int32:target, int32:trait_id,
+                                int32:fuel) {
+    if (fuel <= 0i32) { pass false; }
+
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
-        if (e.target == target) {
-            if (e.trait_id == trait_id) { pass true; }
+        if (!e.blanket) {
+            if (e.target == target) {
+                if (e.trait_id == trait_id) { pass true; }
+            }
         }
         i = i + 1i32;
     }
+
+    if ((raw type_kind(types, target)) == (raw TY_PARAM())) {
+        pass (relay param_declares(bt, raw type_decl_of(types, target),
+                                   trait_id, ast));
+    }
+
+    int32:j = 0i32;
+    while (j < t.count) {
+        ImplEntry:e = relay impl_at(t, j);
+        if (e.blanket) {
+            if (e.trait_id == trait_id) {
+                if (relay blanket_applies(t, bt, ast, types, e, target, fuel)) {
+                    pass true;
+                }
+            }
+        }
+        j = j + 1i32;
+    }
     pass false;
+};
+
+// DOES THIS BLANKET IMPL REACH THIS TYPE? Its target is the parameter it
+// declared, so what has to be satisfied is that parameter's bounds — every one of
+// them, since `<T: A & B>` means both.
+//
+// A BLANKET IMPL DOES NOT APPLY TO ITSELF. Its own parameter is the target inside
+// the block, and letting the impl satisfy the bound that admits it would make
+// `impl:<T: Loggable>:Loggable` true of everything by circular reasoning.
+pub func:blanket_applies = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
+                                TypeTable->:types, ImplEntry:e, int32:target,
+                                int32:fuel) {
+    if (target == e.target) { pass false; }
+    BoundEntry:b = relay bound_entry_of(bt, raw type_decl_of(types, e.target));
+    int32:i = 0i32;
+    while (i < b.count) {
+        int32:need = relay ast_id_at(ast, b.start, i);
+        if (!(relay type_implements(t, bt, ast, types, target, need, fuel - 1i32))) {
+            pass false;
+        }
+        i = i + 1i32;
+    }
+    pass true;
 };
 
 // MAY A VALUE OF TYPE `got` BE STORED IN A `dyn` SLOT? Two cases, and the second
@@ -897,8 +1099,8 @@ pub func:type_implements = bool(ImplTable->:t, int32:target, int32:trait_id) {
 //   * ANOTHER `dyn` may WIDEN BY DROPPING BOUNDS — `dyn A & B` is assignable to
 //     `dyn A`. Every trait the destination names must be one the source already
 //     carries; the reverse would be inventing a vtable that was never built.
-pub func:dyn_accepts = bool(ImplTable->:t, Ast->:ast, TypeTable->:types,
-                            int32:want, int32:got) {
+pub func:dyn_accepts = bool(ImplTable->:t, BoundTable->:bt, Ast->:ast,
+                            TypeTable->:types, int32:want, int32:got) {
     int32:n = raw type_dyn_count(types, want);
     int32:start = raw type_dyn_start(types, want);
     bool:from_dyn = ((raw type_kind(types, got)) == (raw TY_DYN()));
@@ -909,7 +1111,8 @@ pub func:dyn_accepts = bool(ImplTable->:t, Ast->:ast, TypeTable->:types,
         if (from_dyn) {
             if (!(relay dyn_carries(ast, types, got, need))) { pass false; }
         } else {
-            if (!(relay type_implements(t, got, need))) { pass false; }
+            if (!(relay type_implements(t, bt, ast, types, got, need,
+                                        raw IMPL_FUEL()))) { pass false; }
         }
         i = i + 1i32;
     }
@@ -946,22 +1149,25 @@ func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) {
 // cap is stated rather than assumed unreachable.
 func:SUPER_FUEL = int32() { pass 64i32; };
 
-pub func:check_supertraits = NIL(ImplTable->:t, TypeResolver->:r, int32:scope) {
+// A BLANKET IMPL CARRIES ITS SUPERTRAIT REQUIREMENT TOO, and it lands on the
+// PARAMETER: `impl:<T: Printable>:Ordered` where `Ordered` requires `Equatable`
+// needs `T` to declare `Equatable`, which `type_implements` answers from the
+// bound list. Skipping blanket impls made that requirement unenforced.
+pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
+                                 TypeResolver->:r, int32:scope) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (e.trait_id != 0i32) {
-            if (!e.blanket) {
-                drop require_supers(t, r, e, e.trait_id, scope, raw SUPER_FUEL());
-            }
+            drop require_supers(t, bt, r, e, e.trait_id, scope, raw SUPER_FUEL());
         }
         i = i + 1i32;
     }
     pass NIL;
 };
 
-func:require_supers = NIL(ImplTable->:t, TypeResolver->:r, ImplEntry:e,
-                          int32:trait_id, int32:scope, int32:fuel) {
+func:require_supers = NIL(ImplTable->:t, BoundTable->:bt, TypeResolver->:r,
+                          ImplEntry:e, int32:trait_id, int32:scope, int32:fuel) {
     if (fuel <= 0i32) { pass NIL; }
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass NIL; }
@@ -977,14 +1183,15 @@ func:require_supers = NIL(ImplTable->:t, TypeResolver->:r, ImplEntry:e,
                 if ((raw type_kind(r.types, sup)) != (raw TY_TRAIT())) {
                     drop super_not_trait(r, trait_id, sup, td.span);
                 } else {
-                    if (!(raw type_implements(t, e.target, sup))) {
+                    if (!(relay type_implements(t, bt, r.ast, r.types, e.target,
+                                                sup, raw IMPL_FUEL()))) {
                         drop super_missing(r, e, trait_id, sup);
                     }
                     // TRANSITIVE (2.2). `C` requiring `B` requiring `A` requires
                     // all three, and the requirement is on the IMPLEMENTING TYPE
                     // rather than on the intermediate trait — so the walk carries
                     // `e` down rather than restarting from `sup`.
-                    drop require_supers(t, r, e, sup, scope, fuel - 1i32);
+                    drop require_supers(t, bt, r, e, sup, scope, fuel - 1i32);
                 }
             }
         }
@@ -1038,23 +1245,22 @@ pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:a = relay impl_at(t, i);
-        if (!a.blanket) {
-            drop dup_within(r, a);
-            // …and against every LATER inherent impl on the same type. Later
-            // rather than all, so one duplicate is reported once.
-            if (a.trait_id == 0i32) {
-                int32:j = i + 1i32;
-                while (j < t.count) {
-                    ImplEntry:b = relay impl_at(t, j);
-                    if (!b.blanket) {
-                        if (b.trait_id == 0i32) {
-                            if (b.target == a.target) {
-                                drop dup_across(r, a, b);
-                            }
-                        }
+        // INSIDE ONE BLOCK A REPEAT IS ALWAYS WRONG, and a blanket impl's block is
+        // a block. It was skipped along with everything else that read a target.
+        drop dup_within(r, a);
+        // …and against every LATER inherent impl on the same type. Later rather
+        // than all, so one duplicate is reported once. A blanket impl is never
+        // inherent (it must name a trait), so it does not reach this.
+        if (a.trait_id == 0i32) {
+            int32:j = i + 1i32;
+            while (j < t.count) {
+                ImplEntry:b = relay impl_at(t, j);
+                if (b.trait_id == 0i32) {
+                    if (b.target == a.target) {
+                        drop dup_across(r, a, b);
                     }
-                    j = j + 1i32;
                 }
+                j = j + 1i32;
             }
         }
         i = i + 1i32;

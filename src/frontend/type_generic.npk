@@ -293,11 +293,11 @@ pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
 // would put a fat pointer where a monomorphized body expects a value.
 func:arg_satisfies = bool(ImplTable->:impls, BoundTable->:bounds,
                           TypeResolver->:r, int32:arg, int32:need) {
-    if ((raw type_kind(r.types, arg)) == (raw TY_PARAM())) {
-        pass (relay param_declares(bounds, raw type_decl_of(r.types, arg),
-                                   need, r.ast));
-    }
-    pass (relay type_implements(impls, arg, need));
+    // THE PARAMETER CASE MOVED INTO `type_implements` (D-111), where it belongs:
+    // "does this type implement this trait" is one question, and it had two
+    // answers living in two places with the blanket case missing from both.
+    pass (relay type_implements(impls, bounds, r.ast, r.types, arg, need,
+                                raw IMPL_FUEL()));
 };
 
 // THE MESSAGE NAMES THREE THINGS: the argument, the bound it fails, and the

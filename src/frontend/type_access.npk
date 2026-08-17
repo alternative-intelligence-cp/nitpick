@@ -726,6 +726,20 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     // ONLY WHEN THE METHOD CAME THROUGH A TYPE. A free function found by scope
     // lookup is not a member of anything, so `Self` in one is the error it was.
     if (found.found) { r.self_type = recv; }
+
+    // A BLANKET IMPL'S METHOD IS WRITTEN IN TERMS OF ITS PARAMETER, so the
+    // parameter is bound to the receiver before the signature is read.
+    // `impl:<T: Pr>:Lo = { func:l = int32(T:self) … }` called on a `Point` has
+    // `T = Point`, and without saying so `T` resolves to "there is no type named
+    // `T`" at a call site nowhere near the declaration.
+    //
+    // ONLY THE FIRST PARAMETER IS BOUND, because only the first is the target —
+    // the window is one entry long and `generic_bind_in` leaves anything past its
+    // end opaque, which is the right answer for a parameter the receiver does not
+    // determine.
+    if (found.blanket_impl != 0i32) {
+        r.enclosing = relay bind_blanket(e, found.blanket_impl, recv);
+    }
     int32:ft = relay fn_type(@r, d, name, e.scope);
 
     // THE RECEIVER IS THE FIRST PARAMETER, so it is checked as one — and a method
@@ -842,6 +856,19 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         i = i + 1i32;
     }
     pass (raw type_elem(e.types, ft));
+};
+
+// The blanket impl's parameter window, bound to the receiver.
+func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
+    DeclId:bid = DeclId{ index: impl_decl };
+    DeclNode:bd = relay ast_decl(e.ast, bid);
+    IdSpan:pw = raw decl_generic_window(e.ast, bd);
+    int32:mark = raw ast_scratch_mark(e.ast);
+    drop ast_scratch_push(e.ast, recv);
+    IdSpan:aw = raw ast_scratch_commit(e.ast, mark);
+    GenericScope:g = GenericScope{ params_start: pw.start, params_count: pw.count,
+                                   args_start: aw.start, args_count: aw.count };
+    pass g;
 };
 
 // An argument's own span, falling back to the call's when the argument is the

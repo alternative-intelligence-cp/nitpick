@@ -59,15 +59,16 @@ func:fx = Fx(string:src, InternTable->:it) {
     // call resolves through this table, not through the scope (D-102).
     ImplTable:im = raw impltable_init();
     drop collect_impls(@im, @tr, mod_id, scope);
-    drop check_coherence(@im, @tr);
-    drop check_impls_complete(@im, @tr, scope);
-    drop check_supertraits(@im, @tr, scope);
-    drop check_duplicate_methods(@im, @tr);
-    // AND ITS GENERIC BOUNDS (0.4.7). Built before any body is walked, because a
-    // body's every use of a parameter is checked against them -- an unbuilt table
-    // does not weaken the check, it duck-types.
+    // ITS GENERIC BOUNDS COME NEXT, BEFORE ANY CHECK READS THEM. A body's every
+    // use of a parameter is checked against them -- an unbuilt table does not
+    // weaken the check, it duck-types -- and since 0.4.7 a blanket impl's
+    // applicability is a question about bounds too, so the impl checks need it.
     BoundTable:bd = raw boundtable_init();
     drop collect_bounds(@bd, @tr, mod_id, scope);
+    drop check_coherence(@im, @tr);
+    drop check_impls_complete(@im, @tr, scope);
+    drop check_supertraits(@im, @bd, @tr, scope);
+    drop check_duplicate_methods(@im, @tr);
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
