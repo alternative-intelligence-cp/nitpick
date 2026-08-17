@@ -17,7 +17,8 @@ compiler, written in Nitpick.
 ### Building and testing
 
 ```
-python3 bootstrap/harness/harness.py      # THE test command. Runs everything.
+python3 bootstrap/harness/harness.py                    # everything, ~11 minutes
+python3 bootstrap/harness/harness.py --only type_stmt   # one test, ~1 minute
 ```
 
 It compiles each suite with the **throwaway Python seed** in
@@ -27,14 +28,17 @@ result, and compares the exit code. It also feeds every source through the **rea
 parser (`tools/parse_check.npk`) and re-checks that every AST node kind is
 reachable.
 
-Two things to know before you use it:
+Three things to know before you use it:
 
-- **It takes about eleven minutes and has no filter argument.** Every run is the
-  whole suite. When iterating on one test, compile and run that test alone rather
-  than paying for the full sweep each time.
+- **`--only` is for iterating, never for concluding.** It skips every whole-suite
+  check — node-kind reachability, the real-parser sweep, module rejection — and
+  its output says so twice. **Nothing is committed on the strength of a filtered
+  run**; do a full one first.
 - **A test's expectation lives inside the test**, as an `exit` code per case. A
   failure reports `exited N, expected 0`; find `exit Ni32` in the file to see
   which case broke.
+- **Every test builds the whole frontend through the seed**, which is why even one
+  test costs about a minute. That is the floor, not something to optimise around.
 
 There is **no `npkc` build of this compiler yet** — Phase A's artifact is a
 checker, and the emitter arrives in cycle 0.7. The `npkc` on PATH is the *old*

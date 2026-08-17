@@ -9,6 +9,17 @@ nlibc lands in cycle 0.8.
 
 Run from the repository root:  python3 bootstrap/harness/harness.py
 
+A full run takes minutes, because every test builds the whole frontend through
+the seed. `--only SUBSTR` runs just the tests whose path contains SUBSTR, which
+is what makes iterating on one file bearable:
+
+  python3 bootstrap/harness/harness.py --only type_stmt
+
+A filtered run SKIPS every whole-suite check and says so, loudly, twice. That is
+deliberate: the danger of a filter is not that it runs too little, it is that
+somebody reads `ok` at the bottom of a partial run and believes the suite is
+green. Nothing is committed on the strength of a `--only` run.
+
 Three test kinds, declared in nitpick.toml:
 
   positive    compiles, links, runs, exits with the expected code
@@ -420,11 +431,70 @@ def load_targets():
     return manifest.get("test", [])
 
 
+USAGE = """usage: python3 bootstrap/harness/harness.py [--only SUBSTR]...
+
+  (no arguments)    run everything -- the only run whose result means the suite
+                    is green, and the only kind to commit on
+  --only SUBSTR     run only tests whose repo-relative path contains SUBSTR.
+                    Repeatable. Skips every whole-suite check, and says so.
+  -h, --help        this"""
+
+
+class Options:
+    def __init__(self):
+        self.only = []
+        self.help = False
+        self.error = None
+
+
+def parse_args(args):
+    """Hand-rolled rather than argparse, for the same reason everything else here
+    is: this file is throwaway and its replacement (`npkg test`) will not inherit
+    a line of it. Two flags do not justify a dependency on argparse's behaviour
+    around abbreviation and prefix matching, which is exactly the kind of thing
+    that makes `--onl` silently mean something."""
+    o = Options()
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-h", "--help"):
+            o.help = True
+        elif a == "--only":
+            i += 1
+            if i >= len(args):
+                o.error = "--only needs a substring to match test paths against"
+                return o
+            o.only.append(args[i])
+        elif a.startswith("--only="):
+            value = a[len("--only="):]
+            if not value:
+                o.error = "--only= needs a substring after the `=`"
+                return o
+            o.only.append(value)
+        else:
+            o.error = "unknown argument: %s" % a
+            return o
+        i += 1
+    return o
+
+
 def main(argv):
+    opts = parse_args(argv[1:])
+    if opts.error:
+        print("%s\n\n%s" % (opts.error, USAGE))
+        return 2
+    if opts.help:
+        print(USAGE)
+        return 0
+    filtering = bool(opts.only)
+
     targets = load_targets()
     if not targets:
         print("no [[test]] targets in nitpick.toml")
         return 2
+
+    if filtering:
+        print("PARTIAL RUN -- matching %s" % ", ".join(repr(s) for s in opts.only))
 
     tools = shutil.which("llc") and shutil.which("ld.lld")
     tmp = tempfile.mkdtemp(prefix="npk-harness-")
@@ -437,6 +507,7 @@ def main(argv):
             return 1
 
     total = 0
+    available = 0
     failures = []
     all_sources = []
     for t in targets:
@@ -444,6 +515,12 @@ def main(argv):
         paths = sorted(glob.glob(os.path.join(ROOT, t["path"], "*.npk")))
         skip = imported_by_others(paths)
         run_paths = [p for p in paths if os.path.abspath(p) not in skip]
+        available += len(run_paths)
+        if filtering:
+            run_paths = [p for p in run_paths
+                         if any(s in os.path.relpath(p, ROOT) for s in opts.only)]
+            if not run_paths:
+                continue
         for p in run_paths:
             total += 1
             name = os.path.relpath(p, ROOT)
@@ -452,48 +529,69 @@ def main(argv):
         all_sources += paths
         print("  %-11s %2d %s test(s)" % (t["name"], len(run_paths), kind))
 
-    # Every source in every suite, plus tests/grammar/, through the REAL parser.
-    # A rejection test the real parser cannot read is not testing D-085's rule;
-    # it is testing that the seed and the real parser happen to disagree.
+    # A FILTER THAT MATCHES NOTHING IS AN ERROR, not a pass. `--only tpye_stmt`
+    # otherwise reports `ok 0 test(s) passed` and reads exactly like success --
+    # the one outcome a filter must never be able to produce.
+    if filtering and total == 0:
+        shutil.rmtree(tmp, ignore_errors=True)
+        print("\nno test matched %s -- nothing ran"
+              % ", ".join(repr(s) for s in opts.only))
+        return 2
+
+    # THE WHOLE-SUITE CHECKS, and they are all-or-nothing by nature: each asks a
+    # question about the sources as a set -- is every node kind reachable from
+    # SOME rule, does every file parse -- which a subset cannot answer. Running
+    # them over whatever `--only` happened to match would give an answer to a
+    # question nobody asked, so a filtered run does not run them at all.
     #
-    # tests/grammar/ is NEVER compiled and never run. It exists only to be parsed,
-    # which is what lets it use the whole language rather than subset 1.
-    failures += check_kinds_reachable()
+    # They are also where most of the minutes go: each builds a whole tool through
+    # the seed, which is the cost `--only` exists to avoid.
+    if not filtering:
+        # Every source in every suite, plus tests/grammar/, through the REAL
+        # parser. A rejection test the real parser cannot read is not testing
+        # D-085's rule; it is testing that the seed and the real parser happen to
+        # disagree.
+        #
+        # tests/grammar/ is NEVER compiled and never run. It exists only to be
+        # parsed, which is what lets it use the whole language rather than
+        # subset 1.
+        failures += check_kinds_reachable()
 
-    pc = build_parse_check(tmp, tools)
-    if isinstance(pc, str) and not os.path.exists(pc):
-        failures.append("tools/parse_check.npk did not build: %s" % pc)
-    elif pc:
-        # tests/grammar/ is parse-only by design; tests/modules/ holds fixtures
-        # that a test loads through the real loader. Neither is compiled, and both
-        # must still PARSE -- a broken fixture would otherwise surface as a
-        # confusing failure inside whichever test loads it.
-        grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
-        grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "modules", "**", "*.npk"),
-                                    recursive=True))
-        n = 0
-        for p in sorted(set(all_sources)) + grammar:
-            name = os.path.relpath(p, ROOT)
-            failures += check_parses(pc, p, name)
-            n += 1
-        print("  %-11s %2d real-parser check(s)" % ("grammar", n))
+        pc = build_parse_check(tmp, tools)
+        if isinstance(pc, str) and not os.path.exists(pc):
+            failures.append("tools/parse_check.npk did not build: %s" % pc)
+        elif pc:
+            # tests/grammar/ is parse-only by design; tests/modules/ holds
+            # fixtures that a test loads through the real loader. Neither is
+            # compiled, and both must still PARSE -- a broken fixture would
+            # otherwise surface as a confusing failure inside whichever test
+            # loads it.
+            grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "modules", "**", "*.npk"),
+                                        recursive=True))
+            n = 0
+            for p in sorted(set(all_sources)) + grammar:
+                name = os.path.relpath(p, ROOT)
+                failures += check_parses(pc, p, name)
+                n += 1
+            print("  %-11s %2d real-parser check(s)" % ("grammar", n))
 
-    # Whole programs that must be refused BY THE LOADER. A file here with no
-    # `expect-error:` is a fixture another one imports, not a test.
-    rc = build_tool(tmp, tools, RESOLVE_CHECK, "resolve_check")
-    if isinstance(rc, str) and not os.path.exists(rc):
-        failures.append("tools/resolve_check.npk did not build: %s" % rc)
-    elif rc:
-        n = 0
-        for p in sorted(glob.glob(os.path.join(ROOT, "tests", "modules",
-                                               "rejection", "**", "*.npk"),
-                                  recursive=True)):
-            exp = read_expectations(p)
-            if not exp.errors:
-                continue
-            failures += check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp)
-            n += 1
-        print("  %-11s %2d module-rejection test(s)" % ("modules", n))
+        # Whole programs that must be refused BY THE LOADER. A file here with no
+        # `expect-error:` is a fixture another one imports, not a test.
+        rc = build_tool(tmp, tools, RESOLVE_CHECK, "resolve_check")
+        if isinstance(rc, str) and not os.path.exists(rc):
+            failures.append("tools/resolve_check.npk did not build: %s" % rc)
+        elif rc:
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "modules",
+                                                   "rejection", "**", "*.npk"),
+                                      recursive=True)):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d module-rejection test(s)" % ("modules", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -504,9 +602,31 @@ def main(argv):
         print("\n%d failure(s):" % len(failures))
         for f in failures:
             print("  - %s" % f)
+        if filtering:
+            print("\n%s" % partial_warning(total, available))
         return 1
+
+    # THE PASSING LINE FOR A FILTERED RUN DOES NOT SAY `ok`. Somebody scrolling
+    # back to the bottom of a run reads one line, and "ok N test(s) passed" at the
+    # end of a partial run is a false statement about the suite.
+    if filtering:
+        print("\n%d test(s) matched and passed." % total)
+        print(partial_warning(total, available))
+        return 0
     print("\nok  %d test(s) passed" % total)
     return 0
+
+
+def partial_warning(ran, available):
+    """Says what did NOT run, and says nothing about whether what did run passed
+    -- the failure list above already answers that, and a warning that claims
+    "ran and passed" while sitting under a list of failures is worse than no
+    warning at all."""
+    return ("PARTIAL RUN -- %d of %d test(s) ran. THE SUITE IS NOT KNOWN GREEN.\n"
+            "  Not run: %d other test(s), the node-kind reachability check, the\n"
+            "  real-parser sweep over every source, and the module-rejection\n"
+            "  suite. Run with no arguments before committing."
+            % (ran, available, available - ran))
 
 
 if __name__ == "__main__":
