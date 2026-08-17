@@ -30,6 +30,7 @@ use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_layout.npk".*;
 use "../../src/frontend/type_decl.npk".*;
 use "../../src/frontend/type_access.npk".*;
+use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 use "../../src/frontend/type_stmt.npk".*;
 
@@ -75,7 +76,12 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) {
 
     TypeTable:types = raw typetable_init();
     TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope);
+    // A WHOLE MODULE, so its `impl` blocks are collected for real -- a method
+    // call resolves through this table, not through the scope (D-102).
+    ImplTable:im = raw impltable_init();
+    drop collect_impls(@im, @tr, mod_id, scope);
+    drop check_coherence(@im, @tr);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;
@@ -394,6 +400,77 @@ func:main = int32(cstring[]:_~argv) {
     Ax:s7 = raw axd("func:bad = int32(..*int64:rest) { pass 1i32; };",
                     "int32:v = raw bad(1i64);", @it);
     if (raw errs(@s7) != 1i64)                                 { exit 136i32; }
+
+    // --- A METHOD DECLARED IN AN `impl` IS REACHABLE (D-102) ------------------
+    // Until 0.4.6 it was not. `impl` declares nothing at module scope, and
+    // `type_method_call` looked names up in the scope — so UFCS resolved only
+    // module-level free functions, and a method written where the spec puts it
+    // was invisible. The 0.4.5 UFCS tests passed because their fixture declared
+    // `magnitude` at module scope, which is the one form the spec does not use.
+    Ax:i1 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+                    "int32:v = raw pt.scaled(2i32);", @it);
+    if (raw errs(@i1) != 0i64)                                 { exit 140i32; }
+    // Its ARGUMENTS are checked, so the lookup produced a real signature rather
+    // than something that merely stopped the "no method" diagnostic.
+    Ax:i2 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+                    "int32:v = raw pt.scaled(true);", @it);
+    if (raw errs(@i2) != 1i64)                                 { exit 141i32; }
+    Ax:i3 = raw axd("impl:Point = { func:scaled = int32(Point:self, int32:k) { pass 1i32; }; };",
+                    "int32:v = raw pt.scaled();", @it);
+    if (raw errs(@i3) != 1i64)                                 { exit 142i32; }
+    // A method on ANOTHER type is not found on this one.
+    Ax:i4 = raw axd("impl:Wrap = { func:only_wrap = int32(Wrap:self) { pass 1i32; }; };",
+                    "int32:v = raw pt.only_wrap();", @it);
+    if (raw errs(@i4) != 1i64)                                 { exit 143i32; }
+
+    // A TRAIT IMPL'S METHOD IS REACHED THE SAME WAY. Nothing about the call site
+    // says which impl a method came from, and nothing should.
+    Ax:i5 = raw axd("trait:Sized2 = { func:area = int32(Self:self); }; impl:Point:Sized2 = { func:area = int32(Point:self) { pass 1i32; }; };",
+                    "int32:v = raw pt.area();", @it);
+    if (raw errs(@i5) != 0i64)                                 { exit 144i32; }
+
+    // A FREE FUNCTION IS STILL A METHOD (D-006). The impl table is the first
+    // place to look, not the only one.
+    Ax:i6 = raw ax("int32:v = raw pt.magnitude();", @it);
+    if (raw errs(@i6) != 0i64)                                 { exit 145i32; }
+
+    // TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS, and picking either would be a
+    // silent choice between two things somebody wrote on purpose.
+    Ax:i7 = raw axd("trait:Ta = { func:tag = int32(Self:self); }; trait:Tb = { func:tag = int32(Self:self); }; impl:Point:Ta = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Tb = { func:tag = int32(Point:self) { pass 2i32; }; };",
+                    "int32:v = raw pt.tag();", @it);
+    if (raw errs(@i7) != 1i64)                                 { exit 146i32; }
+
+    // …and an INHERENT METHOD OUTRANKS a trait one, which is the same rule
+    // TRAITS_REFERENCE 2.6 states for blanket impls: concrete wins.
+    Ax:i8 = raw axd("trait:Tc = { func:tag = int32(Self:self); }; impl:Point:Tc = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) { pass 2i32; }; };",
+                    "int32:v = raw pt.tag();", @it);
+    if (raw errs(@i8) != 0i64)                                 { exit 147i32; }
+
+    // --- COHERENCE (TRAITS_REFERENCE 4.1) ------------------------------------
+    // AT MOST ONE implementation of a trait for a type. There is no rule the
+    // compiler could pick by that would not be a silent choice between two things
+    // somebody wrote on purpose.
+    Ax:h1 = raw axd("trait:Td = { func:tag = int32(Self:self); }; impl:Point:Td = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Td = { func:tag = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@h1) != 1i64)                                 { exit 150i32; }
+
+    // The SAME TRAIT on a DIFFERENT TYPE is the ordinary case and is fine.
+    Ax:h2 = raw axd("trait:Te = { func:tag = int32(Self:self); }; impl:Point:Te = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Wrap:Te = { func:tag = int32(Wrap:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@h2) != 0i64)                                 { exit 151i32; }
+
+    // TWO INHERENT IMPLS ARE NOT A COHERENCE ERROR. Splitting a type's methods
+    // across two blocks is a formatting choice; what would be wrong is the same
+    // METHOD twice, which is a duplicate-name question and not this one.
+    Ax:h3 = raw axd("impl:Point = { func:one = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:two = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@h3) != 0i64)                                 { exit 152i32; }
+
+    // THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE. A struct name resolves
+    // there perfectly well and means nothing, so the diagnostic says which
+    // segment is wrong — the two are one character apart.
+    Ax:h4 = raw axd("impl:Point:Wrap = { };", "", @it);
+    if (raw errs(@h4) != 1i64)                                 { exit 153i32; }
 
     exit 0i32;
 };

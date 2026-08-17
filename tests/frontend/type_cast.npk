@@ -27,6 +27,7 @@ use "../../src/frontend/builtin_types.npk".*;
 use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 
 struct:Cx = {
@@ -47,7 +48,10 @@ func:cx = Cx(string:src, InternTable->:it) {
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
+    // No module here, so no `impl` blocks -- an EMPTY table rather than a
+    // skipped argument, so that a context without impls says so.
+    ImplTable:im = raw impltable_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im);
     int32:t = relay type_of_expr(@e, node);
 
     Cx:out = Cx{ types: types, diags: diags, result: t,

@@ -28,6 +28,7 @@ use "resolve_type.npk".*;
 use "type_layout.npk".*;
 use "type_decl.npk".*;
 use "type_expr.npk".*;
+use "type_trait.npk".*;
 
 // --- the dispatcher ----------------------------------------------------------------------
 //
@@ -372,20 +373,48 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     if (recv == 0i32) { pass 0i32; }
 
     int32:name = n.payload => int32;
-    int32:sym = raw scope_lookup(e.tab, e.scope, name);
-    if (sym == 0i32) {
-        // THE MESSAGE NAMES THE TYPE IT WAS SOUGHT ON. "unknown function
-        // `magnitude`" would send the reader looking for a free function when
-        // what they wrote was a method call.
-        string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, recv));
-        string:m2 = relay string_concat(m1, "` has no method `");
-        string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
+
+    // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
+    // asked first, and until 0.4.6 it was not asked at all: an `impl` declares
+    // nothing at module scope, so the lookup below could only ever reach a
+    // module-level free function. UFCS worked, and worked only for the one form
+    // the spec does not put methods in.
+    int32:did_index = 0i32;
+    MethodFind:found = relay find_method(e.impls, e.ast, e.interns, recv, name);
+    if (found.ambiguous) {
+        string:a1 = relay string_concat("`", relay intern_get(e.interns, name));
+        string:a2 = relay string_concat(a1, "` comes from both `");
+        string:a3 = relay string_concat(a2,
+                        relay type_display(e.types, e.interns, found.owner));
+        string:a4 = relay string_concat(a3, "` and `");
+        string:a5 = relay string_concat(a4,
+                        relay type_display(e.types, e.interns, found.other));
         pass (relay te_error(e, raw TYPE_MISMATCH(),
-                             relay string_concat(m3, "`"), n.span));
+            relay string_concat(a5, "`; call the one you mean by its function form"),
+            n.span));
+    }
+    if (found.found) { did_index = found.decl; }
+
+    // A FREE FUNCTION IS STILL A METHOD. UFCS is what makes `p.magnitude()` and
+    // `magnitude(p)` the same call (D-006), so the scope lookup stays — it is the
+    // second place to look rather than the only one.
+    if (did_index == 0i32) {
+        int32:sym = raw scope_lookup(e.tab, e.scope, name);
+        if (sym == 0i32) {
+            // THE MESSAGE NAMES THE TYPE IT WAS SOUGHT ON. "unknown function
+            // `magnitude`" would send the reader looking for a free function when
+            // what they wrote was a method call.
+            string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, recv));
+            string:m2 = relay string_concat(m1, "` has no method `");
+            string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
+                                 relay string_concat(m3, "`"), n.span));
+        }
+        Symbol:s = raw symtab_get(e.tab, sym);
+        did_index = s.origin;
     }
 
-    Symbol:s = raw symtab_get(e.tab, sym);
-    DeclId:did = DeclId{ index: s.origin };
+    DeclId:did = DeclId{ index: did_index };
     DeclNode:d = relay ast_decl(e.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) {
         string:m1 = relay string_concat("`", relay intern_get(e.interns, name));

@@ -34,6 +34,7 @@ use "type_names.npk".*;
 use "type_cast.npk".*;
 use "type_decl.npk".*;
 use "type_access.npk".*;
+use "type_trait.npk".*;
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -63,14 +64,26 @@ pub struct:ExprTyper = {
     // D-013 rather than an oversight.
     int32:fn_success;
     bool:fn_terminal;
+
+    // THE MODULE'S `impl` BLOCKS. A method call resolves through this rather than
+    // through the scope, because an `impl` declares nothing at module scope
+    // (0.3.1, deferring the question to here) — so before 0.4.6 the only method
+    // UFCS could find was a module-level free function, and a `magnitude` written
+    // where the spec puts it was invisible.
+    //
+    // It is a PARAMETER rather than something set afterwards, so that a caller
+    // cannot forget it and get the old behaviour back silently. A context with no
+    // impls passes an empty table and says so.
+    ImplTable->:impls;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
                                  InternTable->:interns, DiagList->:diags,
-                                 int32:scope) {
+                                 int32:scope, ImplTable->:impls) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
-                             fn_success: 0i32, fn_terminal: false };
+                             fn_success: 0i32, fn_terminal: false,
+                             impls: impls };
     pass e;
 };
 

@@ -28,6 +28,7 @@ use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 
 struct:Rx = {
@@ -50,7 +51,10 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32);
+    // No module here, so no `impl` blocks -- an EMPTY table rather than a
+    // skipped argument, so that a context without impls says so.
+    ImplTable:im = raw impltable_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im);
     e.fn_terminal = terminal;
     // The enclosing function returns `int32`, which is where a `Result{...}`
     // literal gets its `<T>` — nothing writes it.

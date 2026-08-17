@@ -1,0 +1,268 @@
+// Traits and implementations.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.6.
+//
+// `impl` BLOCKS DECLARE NOTHING AT MODULE SCOPE, and 0.3.1 said so in a comment:
+// "Its methods are reached through the type, which needs the type to exist first
+// -- so they are collected in cycle 0.4 where coherence is decided, not here."
+// This is that cycle, and this is the table it meant.
+//
+// The consequence of not having had one is worth stating plainly, because it made
+// a passing test in 0.4.5 mean less than it looked like it meant: `type_method_call`
+// resolves a method by ORDINARY SCOPE LOOKUP, so `p.magnitude()` only ever found a
+// module-level free function. The 0.4.5 fixture declared `func:magnitude` at
+// module scope and UFCS resolved it, exactly as designed -- but a `magnitude`
+// written where the spec puts it, inside `impl:Point`, was invisible. Nothing in
+// the language could call a method declared in an impl.
+//
+// THE TABLE IS BUILT ONCE PER MODULE and answers three questions that all need
+// the same walk: which impls exist (coherence), what methods a type has (UFCS),
+// and what a trait requires of them (completeness).
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "token_kind.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "type_names.npk".*;
+use "parse_decl.npk".*;
+use "parse_type.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+
+// One `impl` block. The TARGET IS ALWAYS SLOT ONE (D-031), with or without a
+// trait, so `inherent` is `trait_id == 0` rather than a different shape.
+pub struct:ImplEntry = {
+    int32:target;     // the type being implemented on
+    int32:trait_id;   // the trait, or 0 for an inherent impl
+    int32:decl;       // the `ImplDecl` node index
+};
+
+pub struct:ImplTable = {
+    wild ImplEntry->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:impltable_init = ImplTable() {
+    int64:n = 16i64;
+    wild int8->:mem = alloc(n * #size_of<ImplEntry>());
+    ImplTable:t = ImplTable{ items: mem => wild ImplEntry->,
+                             count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+func:impl_grow = NIL(ImplTable->:t) {
+    int32:nc = t.cap * 2i32;
+    wild int8->:bigger = ralloc(t.items => wild int8->,
+                                (nc => int64) * #size_of<ImplEntry>());
+    t.items = bigger => wild ImplEntry->;
+    t.cap = nc;
+    pass NIL;
+};
+
+pub func:impl_count = int32(ImplTable->:t) { pass t.count; };
+
+pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) {
+    if (i < 0i32) { fail 21i32; }
+    if (i >= t.count) { fail 21i32; }
+    pass (t.items[i => int64]);
+};
+
+func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl) {
+    if (t.count >= t.cap) { drop impl_grow(t); }
+    ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl };
+    t.items[t.count => int64] = e;
+    t.count = t.count + 1i32;
+    pass NIL;
+};
+
+// --- building ----------------------------------------------------------------------------
+
+// Walk a module's declarations and record every `impl`. The target and the trait
+// are RESOLVED HERE rather than at each use, so that two impls on the same type
+// compare as one integer and coherence does not depend on how the annotation was
+// spelled -- `Point` and an alias for it are the same interned type (D-090).
+pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
+                             int32:scope) {
+    DeclNode:m = relay ast_decl(r.ast, mod_id);
+    int32:n = raw item_member_count(r.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:id = raw item_member(r.ast, m, i);
+        DeclNode:d = relay ast_decl(r.ast, id);
+        if (d.kind == DeclKind.DeclImplDecl) {
+            drop collect_one_impl(t, r, id, d, scope);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
+                            DeclNode:d, int32:scope) {
+    int32:target = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+    if (target == 0i32) { pass NIL; }
+    if (raw type_is_invalid(r.types, target)) { pass NIL; }
+
+    TypeId:tt = relay impl_trait(r.ast, d);
+    if (raw type_is_none(tt)) {
+        drop impl_push(t, target, 0i32, id.index);
+        pass NIL;
+    }
+
+    int32:trait_id = relay resolve_type(r, tt, scope);
+    if (trait_id == 0i32) { pass NIL; }
+    if (raw type_is_invalid(r.types, trait_id)) { pass NIL; }
+
+    // `impl:Point:Point` — THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE. It
+    // resolves as a type like any other, so a struct name lands here perfectly
+    // well-formed and means nothing; saying which segment is wrong is the whole
+    // value of the diagnostic, since the two are one character apart.
+    if ((raw type_kind(r.types, trait_id)) != (raw TY_TRAIT())) {
+        string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, trait_id));
+        string:m2 = relay string_concat(m1,
+            "` is not a trait, so it cannot be implemented; in `impl:Type:Trait` the type comes first (D-031)");
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), m2, d.span));
+        pass NIL;
+    }
+    drop impl_push(t, target, trait_id, id.index);
+    pass NIL;
+};
+
+// --- coherence (TRAITS_REFERENCE 4.1) ----------------------------------------------------
+
+// AT MOST ONE IMPLEMENTATION OF A TRAIT FOR A TYPE. Two is not an ambiguity the
+// compiler could resolve by a rule -- there is no rule that would not be a
+// silent choice between two things a programmer wrote on purpose.
+//
+// INHERENT IMPLS ARE NOT SUBJECT TO THIS. `impl:Point = { … };` twice is two
+// groups of methods on one type, which is a formatting choice; what would be
+// wrong is the same METHOD twice, and that is a duplicate-name question rather
+// than a coherence one.
+pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:a = relay impl_at(t, i);
+        if (a.trait_id != 0i32) {
+            int32:j = i + 1i32;
+            while (j < t.count) {
+                ImplEntry:b = relay impl_at(t, j);
+                if (b.trait_id == a.trait_id) {
+                    if (b.target == a.target) {
+                        drop coherence_error(r, a, b);
+                    }
+                }
+                j = j + 1i32;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// BOTH IMPLS ARE NAMED, and the second one carries the span. "conflicting
+// implementations" with one location makes the reader search for the other, which
+// is the one thing the compiler already knows.
+func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+    DeclId:fid = DeclId{ index: first.decl };
+    DeclNode:first_d = relay ast_decl(r.ast, fid);
+    DeclId:sid = DeclId{ index: second.decl };
+    DeclNode:second_d = relay ast_decl(r.ast, sid);
+
+    string:m1 = relay string_concat("`",
+                    relay type_display(r.types, r.interns, second.trait_id));
+    string:m2 = relay string_concat(m1, "` is already implemented for `");
+    string:m3 = relay string_concat(m2,
+                    relay type_display(r.types, r.interns, second.target));
+    string:m4 = relay string_concat(m3, "` at line ");
+    string:m5 = relay string_concat(m4, raw int_to_string(first_d.span.line => int64));
+    drop diaglist_push(r.diags,
+        raw diag_error(raw TYPE_COHERENCE(), relay string_concat(m5,
+            "; a trait has at most one implementation per type"), second_d.span));
+    pass NIL;
+};
+
+// --- method lookup (UFCS, D-006) ---------------------------------------------------------
+
+// WHETHER ONE WAS FOUND IS A SEPARATE ANSWER FROM WHICH ONE, and from whether the
+// name was ambiguous. Three states, three fields -- the same `whether` versus
+// `which` split that `NsAccess` and `expr_shape` were rebuilt around, applied
+// before it could go wrong a fourth time.
+pub struct:MethodFind = {
+    bool:found;
+    bool:ambiguous;
+    int32:decl;        // the FunctionDecl's index
+    int32:owner;       // the trait it came through, or 0 for an inherent method
+    int32:other;       // the OTHER trait, when ambiguous
+};
+
+func:method_none = MethodFind() {
+    MethodFind:m = MethodFind{ found: false, ambiguous: false,
+                               decl: 0i32, owner: 0i32, other: 0i32 };
+    pass m;
+};
+
+// A method on `target`, by name. Inherent first, then trait impls.
+//
+// INHERENT WINS, and it is not a tie-break invented here: TRAITS_REFERENCE 2.6
+// settles the same question for blanket impls -- "concrete impls take priority" --
+// and an inherent method is the most concrete thing there is. A type's own method
+// is also the one its author wrote knowing the type, which is the reading a
+// programmer would expect to hold.
+//
+// TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS AND IS AN ERROR. Picking either
+// would be a silent choice, and the spec gives no rule to pick by -- so the
+// caller is told both, and disambiguates by calling the free-function form.
+pub func:find_method = MethodFind(ImplTable->:t, Ast->:ast, InternTable->:interns,
+                                  int32:target, int32:name) {
+    MethodFind:best = raw method_none();
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:e = relay impl_at(t, i);
+        if (e.target == target) {
+            int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
+            if (mdecl != 0i32) {
+                if (e.trait_id == 0i32) {
+                    // An inherent method ends the search: nothing outranks it,
+                    // and a second inherent one is a duplicate-name error that
+                    // belongs to the declaration, not to this lookup.
+                    MethodFind:m = MethodFind{ found: true, ambiguous: false,
+                                               decl: mdecl, owner: 0i32, other: 0i32 };
+                    pass m;
+                }
+                if (best.found) {
+                    best.ambiguous = true;
+                    best.other = e.trait_id;
+                } else {
+                    best.found = true;
+                    best.decl = mdecl;
+                    best.owner = e.trait_id;
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass best;
+};
+
+// A function member of one `impl` block, by name.
+func:impl_method_named = int32(Ast->:ast, InternTable->:interns, int32:decl,
+                               int32:name) {
+    DeclId:id = DeclId{ index: decl };
+    DeclNode:d = relay ast_decl(ast, id);
+    int32:n = relay impl_member_count(ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:mid = relay impl_member(ast, d, i);
+        DeclNode:m = relay ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == name) { pass (mid.index); }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};

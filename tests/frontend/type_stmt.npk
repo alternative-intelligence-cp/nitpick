@@ -29,6 +29,7 @@ use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 use "../../src/frontend/type_stmt.npk".*;
 
@@ -52,7 +53,12 @@ func:fx = Fx(string:src, InternTable->:it) {
 
     TypeTable:types = raw typetable_init();
     TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope);
+    // A WHOLE MODULE, so its `impl` blocks are collected for real -- a method
+    // call resolves through this table, not through the scope (D-102).
+    ImplTable:im = raw impltable_init();
+    drop collect_impls(@im, @tr, mod_id, scope);
+    drop check_coherence(@im, @tr);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;

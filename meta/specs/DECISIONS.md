@@ -7132,3 +7132,75 @@ unasked, so `int32:x = 1i32; x = true;` passed clean:
    `type_arithmetic` and `type_bitwise`, which now take a `Span` rather than an
    `ExprNode` since the node was only ever read for its span. Restating the rules
    would let `+=` refuse what `+` accepts, a difference nobody would predict.
+
+---
+
+## D-102 — An `impl` method is found through the type, not through the scope
+
+**Settled in cycle 0.4.6.** Cycle 0.3.1 left a comment on `collect_decl`:
+
+> An `impl` block declares nothing at module scope. Its methods are reached
+> through the type, which needs the type to exist first — so they are collected in
+> cycle 0.4 where coherence is decided, not here.
+
+Nothing was built to reach them, and `type_method_call` resolves a method by
+**ordinary scope lookup**. So UFCS found module-level free functions and nothing
+else: **a method written where the specification puts it — inside `impl:Point` —
+could not be called at all.**
+
+### The 0.4.5 tests passed, and meant less than they looked like they meant
+
+The UFCS fixture declared `func:magnitude = int32(Point:self)` at module scope,
+which is a perfectly good UFCS case and is what D-006 is about. It is also the one
+form `TRAITS_REFERENCE.md` §2.4 does *not* use — that section's example is
+`impl:Point = { func:magnitude = … };`, and the very next sentence calls inherent
+dispatch "an independent confirmation that UFCS is part of the language".
+
+The lesson is not that the tests were wrong. It is that **a feature can be tested
+through the one spelling that avoids the gap**, and the way to catch that is to
+write the test from the specification's example rather than from a convenient one.
+
+### The impl table
+
+Built once per module, holding `(target, trait, decl)` per `impl` block. The
+target and trait are **resolved at collection**, so two impls on the same type
+compare as one integer and coherence does not depend on how the annotation was
+spelled (D-090).
+
+It is a **parameter to `etyper_init`**, not a field set afterwards. A caller that
+forgets it would silently get the old scope-only behaviour back, which is the
+failure this decision exists to end; a context with no impls passes an empty table
+and says so in a comment.
+
+### Lookup order: inherent, then traits, and ambiguity is an error
+
+**Inherent wins**, and that is not a tie-break invented here — §2.6 settles the
+same question for blanket impls, *"concrete impls take priority"*, and an inherent
+method is the most concrete thing there is.
+
+**Two traits supplying one name is an error naming both.** The specification gives
+no rule to choose by, and any rule invented here would be a silent choice between
+two things somebody wrote deliberately. The caller disambiguates by writing the
+free-function form, which UFCS guarantees is available.
+
+**A free function is still a method.** The impl table is the first place to look,
+not the only one; D-006 makes `p.magnitude()` and `magnitude(p)` the same call.
+
+### Coherence (§4.1), and what is not subject to it
+
+At most one implementation of a trait for a type. Both impls are named and the
+diagnostic carries the second one's span with the first one's line — "conflicting
+implementations" with one location makes the reader search for the other, which is
+the one thing the compiler already knows.
+
+**Two inherent impls are not a coherence error.** Splitting a type's methods
+across two blocks is a formatting choice. What would be wrong is the same *method*
+twice, which is a duplicate-name question about a declaration rather than a
+coherence question about a trait.
+
+### The second segment is a trait and nothing else
+
+`impl:Point:Wrap` resolves perfectly well — `Wrap` is a type — and means nothing.
+The diagnostic says **which segment** is wrong and restates D-031's ordering,
+because the two segments are one character apart and a reader who got the order
+backwards needs to be told the order, not that a name was unusable.
