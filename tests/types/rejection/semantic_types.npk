@@ -1,0 +1,41 @@
+// A type's meaning outranks its representation (TYPE_REFERENCE, D-005, D-042).
+//
+// Four families are representationally identical to integers and none of them is
+// a number. To LLVM all four are `iN` and nothing downstream will object, so this
+// is the rule the checker exists to hold.
+
+// `bool` is one byte and two values. `true + 1i32` means nothing.
+// expect-error: NITPICK-TYPE-008
+func:bool_arithmetic = int32() {
+    bool:b = true;
+    int32:n = b + 1i32;
+    pass n;
+};
+
+// A character is not its code point (D-005).
+// expect-error: NITPICK-TYPE-008
+func:char_arithmetic = char8() {
+    char8:c = 'a';
+    char8:d = c + 1i32;
+    pass d;
+};
+
+// An `fd` plus one is not an `fd`. Its number is an allocation artifact, and
+// arithmetic on it invites code that reads meaning into what the kernel handed
+// out (D-042).
+// expect-error: NITPICK-TYPE-008
+func:fd_arithmetic = fd(fd:handle) {
+    fd:next = handle + 1i32;
+    pass next;
+};
+
+// `tbb32` is an error-code type whose arithmetic drags in ERR, stickiness and
+// saturation (D-008) — operations that belong to the type, not to `+`.
+// expect-error: NITPICK-TYPE-008
+func:tbb_arithmetic = tbb32(tbb32:err) {
+    tbb32:worse = err + 1tbb32;
+    pass worse;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

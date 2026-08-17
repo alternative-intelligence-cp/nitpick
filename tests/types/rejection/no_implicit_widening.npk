@@ -1,0 +1,23 @@
+// There is no implicit widening (D-092, corrected).
+//
+// The harm is not that a same-signedness widening loses a value; it cannot. It is
+// that the widening decides WHICH WIDTH the operation happens in — so `a + b`
+// computing in 64 bits today computes in 32 bits when someone narrows `b`
+// tomorrow, and overflows where it used to fit. The expression is unchanged and
+// its meaning is not: a small drift in numbers arriving through a conversion
+// nobody wrote.
+
+// expect-error: NITPICK-TYPE-007
+func:mixed_widths = int64(int32:a, int64:b) {
+    int64:sum = a + b;
+    pass sum;
+};
+
+// expect-error: NITPICK-TYPE-007
+func:narrowing_assignment = NIL(int64:big) {
+    int32:small = big;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

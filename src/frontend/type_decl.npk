@@ -73,7 +73,18 @@ pub func:fn_signature = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
 func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
                                 int32:scope) {
     TypeId:ret_id = raw fn_return(r.ast, d);
-    drop check_not_result_return(r, ret_id, scope);
+
+    // A REFUSED RETURN SPELLING YIELDS THE INVALID TYPE, so the body is not
+    // reported as well. `func:f = Result<int32>()` resolves perfectly well — that
+    // is the problem with it — so without this the declaration is refused AND
+    // every `pass` inside it is reported as returning the wrong type. One bad
+    // annotation, one diagnostic: the same rule index 0 of the type table exists
+    // for (0.4.0), applied one layer up.
+    if (relay check_not_result_return(r, ret_id, scope)) {
+        FnSig:bad = FnSig{ success: 0i32, result: 0i32,
+                           terminal: raw fn_is_terminal(r.interns, name) };
+        pass bad;
+    }
 
     int32:success = relay resolve_type(r, ret_id, scope);
     bool:terminal = raw fn_is_terminal(r.interns, name);
@@ -166,21 +177,21 @@ func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) {
 // `Result<T>` stays writable everywhere else. `Result<string>:r = read_file(p);`
 // is the ordinary way to hold an outcome before unwrapping, and is how this
 // compiler's own sources are written.
-func:check_not_result_return = NIL(TypeResolver->:r, TypeId:id, int32:_~scope) {
-    if (raw type_is_none(id)) { pass NIL; }
+func:check_not_result_return = bool(TypeResolver->:r, TypeId:id, int32:_~scope) {
+    if (raw type_is_none(id)) { pass false; }
     TypeNode:n = relay ast_type(r.ast, id);
-    if (n.kind != TypeKind.TypeNamedType) { pass NIL; }
+    if (n.kind != TypeKind.TypeNamedType) { pass false; }
 
     // THE PAYLOAD IS A TOKEN KIND ONLY WHEN THE NODE SAYS IT IS (D-104). Without
     // the guard this compared an intern index against `KwResult` and reported a
     // user type named at that index as a `Result` return — the same
     // reinterpretation, in a second place, reaching the opposite wrong answer.
-    if (!(raw type_name_is_builtin(n))) { pass NIL; }
+    if (!(raw type_name_is_builtin(n))) { pass false; }
     TokenKind:as_kind = ((raw type_name_index(n)) => int32) => TokenKind;
-    if (as_kind != TokenKind.KwResult) { pass NIL; }
+    if (as_kind != TokenKind.KwResult) { pass false; }
 
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_RESULT_RETURN(),
         "every function returns `Result<T>` already, so a return type is written as the success type — `func:f = int32()` returns `Result<int32>`",
         n.span));
-    pass NIL;
+    pass true;
 };

@@ -381,10 +381,30 @@ def check_module_rejection(binary, path, name, exp):
     return fails
 
 
+def check_type_rejection(binary, path, name, exp):
+    """A whole program that must be refused BY THE TYPE CHECKER, with these codes.
+
+    Three rejection suites, three stages, and the split is the whole point:
+
+      tests/modules/rejection/  refused by the LOADER -- never reaches a checker
+      tests/types/rejection/    refused HERE -- it loads and resolves, and a type
+                                rule says no
+      tests/rejection/          refused by the BACKEND -- it is a correct program
+                                at a rung that cannot lower it yet (D-085)
+
+    Collapsing any two of them would make "correctly refused" mean less, because
+    a file that stops early would satisfy a test written about a later stage.
+    A file here that RESOLVES but does not TYPE-CHECK is the only thing this
+    suite accepts as a pass.
+    """
+    return check_module_rejection(binary, path, name, exp)
+
+
 # --- the real parser, on real files ------------------------------------------
 
 PARSE_CHECK = os.path.join(ROOT, "tools", "parse_check.npk")
 RESOLVE_CHECK = os.path.join(ROOT, "tools", "resolve_check.npk")
+TYPE_CHECK = os.path.join(ROOT, "tools", "check.npk")
 
 
 def build_parse_check(tmp, tools):
@@ -569,6 +589,11 @@ def main(argv):
             grammar = sorted(glob.glob(os.path.join(ROOT, "tests", "grammar", "*.npk")))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "modules", "**", "*.npk"),
                                         recursive=True))
+            # tests/types/ likewise: every file there must PARSE, because a type
+            # rejection test that tripped the parser would be testing the wrong
+            # stage and passing for the wrong reason.
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "types", "**", "*.npk"),
+                                        recursive=True))
             n = 0
             for p in sorted(set(all_sources)) + grammar:
                 name = os.path.relpath(p, ROOT)
@@ -592,6 +617,23 @@ def main(argv):
                 failures += check_module_rejection(rc, p, os.path.relpath(p, ROOT), exp)
                 n += 1
             print("  %-11s %2d module-rejection test(s)" % ("modules", n))
+
+        # Whole programs that LOAD and RESOLVE and must be refused BY THE TYPE
+        # CHECKER. A file here with no `expect-error:` is a fixture, not a test.
+        tc = build_tool(tmp, tools, TYPE_CHECK, "check")
+        if isinstance(tc, str) and not os.path.exists(tc):
+            failures.append("tools/check.npk did not build: %s" % tc)
+        elif tc:
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "types",
+                                                   "rejection", "**", "*.npk"),
+                                      recursive=True)):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d type-rejection test(s)" % ("types", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 

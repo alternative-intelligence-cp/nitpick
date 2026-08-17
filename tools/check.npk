@@ -1,0 +1,217 @@
+// check -- load a program, resolve it, type-check it, and report.
+//
+// Cycle 0.4.8. Not part of the compiler: this is how the harness asks the REAL
+// frontend a question about a REAL program.
+//
+// AT THE END OF PHASE A THE ARTIFACT IS A CHECKER. It validates sources
+// completely and emits nothing; the emitter arrives in cycle 0.7. So this tool is
+// what "the frontend is finished" means in practice — everything cycles 0.1
+// through 0.4 built, wired together in the order the architecture requires, over
+// a whole program rather than a fixture.
+//
+// THREE TOOLS, THREE STAGES, AND THE SPLIT IS THE POINT.
+//
+//   `parse_check`    does this FILE parse
+//   `resolve_check`  does this PROGRAM load and bind every name
+//   `check`          and does every type check out
+//
+// A file that cannot parse never reaches a resolver; a program that cannot
+// resolve never reaches a checker. Running them through one tool would make three
+// different kinds of "correctly refused" indistinguishable, and telling them
+// apart is the whole reason the rejection suites are sited where they are —
+// `tests/modules/rejection/` is refused by the loader, `tests/types/rejection/`
+// by this, and `tests/rejection/` by the backend at a rung it cannot lower yet
+// (D-085).
+//
+// Exit codes are the interface, so the harness never parses prose:
+//
+//   0   loaded, resolved, type-checked, no diagnostics
+//   1   diagnostics (one per line on stdout, as CODE line:col)
+//   2   the root file could not be read
+//   3   the frontend trapped -- a defect in the compiler, not in the input
+//
+// Output is codes and spans only. The harness asserts on those and never on
+// message text, so messages stay free to improve (0.1.6, BUILD_REFERENCE 7.1).
+
+use "../src/frontend/source_location.npk".*;
+use "../src/frontend/source.npk".*;
+use "../src/frontend/token_kind.npk".*;
+use "../src/frontend/token.npk".*;
+use "../src/frontend/num_width.npk".*;
+use "../src/frontend/intern.npk".*;
+use "../src/frontend/ast_kind.npk".*;
+use "../src/frontend/ast.npk".*;
+use "../src/frontend/diag_codes.npk".*;
+use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/parse_codes.npk".*;
+use "../src/frontend/resolve_codes.npk".*;
+use "../src/frontend/type_codes.npk".*;
+use "../src/frontend/builtins.npk".*;
+use "../src/frontend/lexer.npk".*;
+use "../src/frontend/parser.npk".*;
+use "../src/frontend/parse_type.npk".*;
+use "../src/frontend/parse_expr.npk".*;
+use "../src/frontend/parse_decorate.npk".*;
+use "../src/frontend/parse_stmt.npk".*;
+use "../src/frontend/parse_pick.npk".*;
+use "../src/frontend/parse_decl.npk".*;
+use "../src/frontend/paths.npk".*;
+use "../src/frontend/resolve_path.npk".*;
+use "../src/frontend/symbols.npk".*;
+use "../src/frontend/module_graph.npk".*;
+use "../src/frontend/resolve.npk".*;
+use "../src/frontend/types.npk".*;
+use "../src/frontend/builtin_types.npk".*;
+use "../src/frontend/resolve_type.npk".*;
+use "../src/frontend/type_names.npk".*;
+use "../src/frontend/type_cast.npk".*;
+use "../src/frontend/type_layout.npk".*;
+use "../src/frontend/type_decl.npk".*;
+use "../src/frontend/type_trait.npk".*;
+use "../src/frontend/type_generic.npk".*;
+use "../src/frontend/type_access.npk".*;
+use "../src/frontend/type_expr.npk".*;
+use "../src/frontend/type_stmt.npk".*;
+
+func:emit_line = NIL(Diagnostic:d) {
+    string:m1 = relay string_concat(d.code, " ");
+    string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
+    string:m3 = relay string_concat(m2, ":");
+    string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
+    string:m5 = relay string_concat(m4, "\n");
+    drop write_raw(1i32, m5.ptr, m5.len);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        drop write_raw(2i32, "usage: check <root.npk>\n".ptr, 24i64);
+        exit 2i32;
+    }
+    cstring:arg = argv[1i64];
+    string:root = raw string_from_bytes(arg.ptr, arg.len);
+
+    InternTable:it = raw intern_init();
+    DiagList:diags = raw diaglist_init();
+    RootList:roots = raw rootlist_init();
+    ModuleGraph:g = raw graph_init(@it, @diags, @roots, "");
+
+    int32:first = raw graph_load_all(@g, root);
+    if (first < 0i32) {
+        exit 2i32;
+    }
+
+    // --- stage 1: names ------------------------------------------------------
+    //
+    // The order is cycle 0.3's whole architecture and is not negotiable: every
+    // module collected, THEN imports bound to a fixed point, THEN bodies
+    // resolved. Each stage needs the previous one complete for every module, and
+    // that is what makes a `use` cycle resolvable (D-086) rather than a problem
+    // to be broken.
+    drop graph_apply_imports(@g);
+
+    Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);
+    int32:i = 0i32;
+    while (i < (raw graph_count(@g))) {
+        ModuleEntry:e = raw graph_at(@g, i);
+        DeclId:mod_id = DeclId{ index: e.root };
+        drop resolve_module(@r, mod_id, e.scope);
+        i = i + 1i32;
+    }
+
+    drop graph_check_struct_cycles(@g);
+    int32:k = 0i32;
+    while (k < (raw graph_count(@g))) {
+        ModuleEntry:e2 = raw graph_at(@g, k);
+        DeclId:mid = DeclId{ index: e2.root };
+        drop check_global_cycles(@r, mid, e2.scope);
+        k = k + 1i32;
+    }
+
+    // A NAME THAT DID NOT BIND MAKES EVERY TYPE QUESTION ABOUT IT MEANINGLESS, so
+    // the type stage does not run over a program that failed to resolve. This is
+    // the same reason `check` is a separate tool from `resolve_check`: reporting
+    // "there is no type named `Foo`" beneath "unknown name `Foo`" is the same
+    // mistake twice, and the second sentence is the less useful one.
+    if ((raw diaglist_count(@diags)) != 0i64) {
+        drop report(@diags);
+        exit 1i32;
+    }
+
+    // --- stage 2: types ------------------------------------------------------
+    //
+    // ONE SET OF TABLES FOR THE WHOLE PROGRAM. Types are interned and compared by
+    // index (D-090), so a per-module table would make `Point` from one module a
+    // different type from `Point` in another — which is the one thing interning
+    // exists to prevent.
+    TypeTable:types = raw typetable_init();
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@g.ast, @types, @g.tab, @it, @diags, @inst);
+    ImplTable:im = raw impltable_init();
+    BoundTable:bd = raw boundtable_init();
+
+    // COLLECTION BEFORE CHECKING, ACROSS EVERY MODULE. An impl in one module may
+    // implement a trait declared in another, and a bound may name a trait a later
+    // module declares — so every table has to be complete for the whole program
+    // before any question is asked of it. Collecting and checking module by module
+    // would make the answer depend on the order the graph happened to load in.
+    int32:m = 0i32;
+    while (m < (raw graph_count(@g))) {
+        ModuleEntry:e3 = raw graph_at(@g, m);
+        DeclId:mid3 = DeclId{ index: e3.root };
+        drop collect_impls(@im, @tr, mid3, e3.scope);
+        drop collect_bounds(@bd, @tr, mid3, e3.scope);
+        m = m + 1i32;
+    }
+
+    // THE IMPL CHECKS RUN ONCE OVER THE WHOLE TABLE, not once per module. They
+    // are questions about the PROGRAM — is a trait implemented twice, does an
+    // impl supply what its trait requires — and each entry carries the scope it
+    // was collected in, so the answers do not depend on which module is being
+    // visited.
+    drop check_coherence(@im, @tr);
+    drop check_impls_complete(@im, @tr);
+    drop check_supertraits(@im, @bd, @tr);
+    drop check_duplicate_methods(@im, @tr);
+
+    ExprTyper:et = raw etyper_init(@g.ast, @types, @g.tab, @it, @diags, 0i32,
+                                   @im, @bd, @inst);
+    int32:b = 0i32;
+    while (b < (raw graph_count(@g))) {
+        ModuleEntry:e4 = raw graph_at(@g, b);
+        DeclId:mid4 = DeclId{ index: e4.root };
+        et.scope = e4.scope;
+        drop check_module(@et, mid4, e4.scope);
+        b = b + 1i32;
+    }
+
+    // INSTANTIATIONS ARE JUDGED LAST, once every one of them has been recorded —
+    // by a signature, by a field, or by an annotation inside a body. Deciding
+    // earlier would ask the impl table a question while it was still being filled
+    // (D-108).
+    drop check_instantiations(@inst, @im, @bd, @tr);
+
+    int64:n = raw diaglist_count(@diags);
+    if (n != 0i64) {
+        drop report(@diags);
+        exit 1i32;
+    }
+    exit 0i32;
+};
+
+func:report = NIL(DiagList->:diags) {
+    int64:n = raw diaglist_count(diags);
+    int64:d = 0i64;
+    while (d < n) {
+        drop emit_line(raw diaglist_at(diags, d));
+        d = d + 1i64;
+    }
+    pass NIL;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    // Reaching here is a defect in the FRONTEND, not in the file being read. A
+    // distinct code so the harness never reports it as "this test file has an
+    // error".
+    exit 3i32;
+};

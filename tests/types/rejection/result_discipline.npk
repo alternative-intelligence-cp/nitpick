@@ -1,0 +1,34 @@
+// `Result<T>` is universal (D-013), and a return type names the SUCCESS type.
+
+// D-091 — writing `Result<T>` as a return type is an error that says so. It means
+// either the same type there are now two ways to write, or a nesting nobody
+// wanted that every caller unwraps twice; both readings are worse than refusing
+// the spelling.
+//
+// ONE DIAGNOSTIC, NOT TWO. The spelling resolves perfectly well — that is the
+// problem with it — so a checker that reported the declaration and then every
+// `pass` inside it would say the same thing twice. The signature yields the
+// invalid type instead.
+// expect-error: NITPICK-TYPE-010
+// expect-error-at: 14:23
+func:double_wrapped = Result<int32>() {
+    pass 1i32;
+};
+
+// A well-formed function, so the case below is about the CALL rather than about
+// this declaration.
+func:width = int32() {
+    pass 4i32;
+};
+
+// A call yields a `Result` and using it as a value is a mistake — which is what
+// makes the discipline visible at every call site rather than at a boundary
+// somebody has to remember.
+// expect-error: NITPICK-TYPE-007
+func:unwrapped_call = int32() {
+    int32:v = width();
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

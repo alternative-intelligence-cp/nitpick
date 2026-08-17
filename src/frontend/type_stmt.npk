@@ -27,6 +27,7 @@ use "parse_decl.npk".*;
 use "symbols.npk".*;
 use "resolve_type.npk".*;
 use "type_decl.npk".*;
+use "type_layout.npk".*;
 use "type_expr.npk".*;
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
@@ -440,6 +441,215 @@ func:check_exit = NIL(ExprTyper->:e, StmtNode:s) {
     drop type_of_expr(e, c);
     e.expected = saved;
     pass NIL;
+};
+
+// --- the walk over a module (cycle 0.4.8) -------------------------------------------------
+//
+// EVERY DECLARATION, WHETHER OR NOT ANYTHING REACHES IT.
+//
+// Three gaps closed at once, and they were one gap wearing three faces — there
+// was no driver, so every test fixture hand-rolled a walk and each one walked
+// only what its own cases needed:
+//
+//   * AN `impl` METHOD'S BODY WAS NEVER TYPE-CHECKED. `resolve.npk` descends into
+//     impl members and binds their names; nothing type-checked them, in any
+//     cycle. A method written exactly where TRAITS_REFERENCE 2.4 puts it had its
+//     names resolved and its types never looked at.
+//   * A DECLARATION NOTHING REACHES WAS NEVER TYPE-RESOLVED. `tests/frontend/
+//     type_access.npk` says so in a comment — "a case testing a bad signature has
+//     to CALL the function" — so a bad return type in an uncalled function, or a
+//     bound violation in an unused global's annotation, went unreported.
+//   * A TRAIT'S DEFAULT METHOD BODY was in neither set.
+//
+// WHAT MADE THIS AFFORDABLE IS DIAGNOSTIC DEDUPLICATION (D-110). Resolving every
+// signature means resolving the reached ones twice — once here and once when
+// something reaches them — and each of those resolutions is correct to report
+// what it finds. Without deduplication, being complete would mean being noisy,
+// and the alternatives are worse: reporting on some paths and not others is a
+// rule that depends on which path ran, and visiting less to stay quiet is
+// checking less.
+// THE RESOLVER IS DERIVED FROM THE CHECKER, NEVER THREADED THROUGH IT.
+//
+// This walk first took a `TypeResolver` as a parameter, and the trait case then
+// set `Self` on the CHECKER while every signature was resolved through the
+// resolver that had been handed in — so a trait's own `func:show = string(Self:self)`
+// reported "`Self` is valid only inside a `trait` or `impl` body" from inside a
+// trait body. Two places holding one piece of context, and they disagreed.
+//
+// `etyper_resolver` exists precisely to stop that (D-110): context every
+// resolution needs belongs to the constructor rather than to whoever remembers to
+// pass it. So the walk sets the context on `e` and builds a resolver from `e`
+// wherever it needs one.
+pub func:check_module = NIL(ExprTyper->:e, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(e.ast, mod_id);
+    int32:n = raw item_member_count(e.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop check_decl(e, raw item_member(e.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(e.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        drop check_function(e, d, scope);
+        pass NIL;
+    }
+
+    // AN `impl` BLOCK'S MEMBERS ARE WALKED WITH THE BLOCK'S CONTEXT — its generic
+    // parameters as the enclosing scope, and its target as `Self`. A blanket
+    // impl's methods are written in terms of its parameter and a concrete impl's
+    // may be written in terms of `Self`; neither has any other binding to reach.
+    if (d.kind == DeclKind.DeclImplDecl) {
+        GenericScope:saved_enc = e.enclosing;
+        int32:saved_self = e.self_type;
+
+        IdSpan:gw = raw decl_generic_window(e.ast, d);
+        GenericScope:g = GenericScope{ params_start: gw.start, params_count: gw.count,
+                                       args_start: 0i32, args_count: 0i32 };
+        e.enclosing = g;
+        e.self_type = relay impl_self_type(e, d, scope);
+
+        int32:mn = relay impl_member_count(e.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            DeclId:mid = relay impl_member(e.ast, d, j);
+            DeclNode:mm = relay ast_decl(e.ast, mid);
+            if (mm.kind == DeclKind.DeclFunctionDecl) {
+                drop check_function(e, mm, scope);
+            }
+            j = j + 1i32;
+        }
+
+        e.enclosing = saved_enc;
+        e.self_type = saved_self;
+        pass NIL;
+    }
+
+    // A TRAIT'S DEFAULT METHOD BODY (2.1). `Self` there is the PLACEHOLDER, not a
+    // concrete type — the implementing type does not exist until an impl names
+    // one — which is exactly what `TY_SELF` is for (D-103).
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        GenericScope:saved_enc = e.enclosing;
+        int32:saved_self = e.self_type;
+
+        IdSpan:gw = raw decl_generic_window(e.ast, d);
+        GenericScope:g = GenericScope{ params_start: gw.start, params_count: gw.count,
+                                       args_start: 0i32, args_count: 0i32 };
+        e.enclosing = g;
+        e.self_type = raw tt_self(e.types);
+
+        int32:tn = raw item_member_count(e.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            DeclNode:tm = relay ast_decl(e.ast, raw item_member(e.ast, d, k));
+            if (tm.kind == DeclKind.DeclFunctionDecl) {
+                drop check_function(e, tm, scope);
+            }
+            k = k + 1i32;
+        }
+
+        e.enclosing = saved_enc;
+        e.self_type = saved_self;
+        pass NIL;
+    }
+
+    // A STRUCT'S FIELD TYPES, resolved so that a field annotation nothing reads is
+    // still checked. `struct_layout` does the walk and the binding; asking it for
+    // the layout is how the field types get resolved at all.
+    if (d.kind == DeclKind.DeclStructDecl) {
+        drop resolve_struct_fields(e, id, d, scope);
+        pass NIL;
+    }
+
+    // A GLOBAL'S ANNOTATION AND ITS INITIALISER. The annotation is a type nothing
+    // else resolves; the initialiser is an expression nothing else walks.
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        TypeResolver:gr = raw etyper_resolver(e);
+        int32:want = relay resolve_type(@gr, raw global_type(d), scope);
+        ExprId:init = raw global_init(d);
+        if (!(raw expr_is_none(init))) {
+            int32:saved = e.expected;
+            e.expected = want;
+            int32:got = relay type_of_expr(e, init);
+            e.expected = saved;
+            if (want != 0i32) {
+                if (got != 0i32) {
+                    if (!(raw type_is_invalid(e.types, got))) {
+                        if (!(raw fits(e, want, got))) {
+                            drop te_assign_mismatch(e, want, got, d.span);
+                        }
+                    }
+                }
+            }
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// A STRUCT'S FIELD TYPES. Resolving them IS the layout walk, so asking for the
+// layout is how they get resolved — and a field whose annotation is wrong is
+// reported whether or not anything ever reads that field.
+//
+// A GENERIC STRUCT IS RESOLVED WITH ITS PARAMETERS OPAQUE, which is the whole of
+// D-064 applied to a declaration: `T:value` is checked once, at the definition,
+// against a `T` that satisfies its bounds and nothing else.
+func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
+                                 int32:scope) {
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:t = raw tt_struct(e.types, id.index, raw decl_name(d), 0i64, 1i32);
+    drop struct_layout(@r, t, scope);
+    pass NIL;
+};
+
+// ONE FUNCTION, WITH ITS OWN SIGNATURE AND ITS OWN PARAMETERS IN HAND.
+//
+// `fn_type` rather than `fn_signature`, because the signature alone resolves only
+// the RETURN type — and a bad parameter type is a mistake in a declaration
+// exactly as much as a bad return is. That asymmetry is what let `..*int64`
+// without the brackets sit unreported in an uncalled function.
+func:check_function = NIL(ExprTyper->:e, DeclNode:d, int32:scope) {
+    int32:name = raw decl_name(d);
+    TypeResolver:r = raw etyper_resolver(e);
+    FnSig:sg = relay fn_signature(@r, d, name, scope);
+    drop fn_type(@r, d, name, scope);
+
+    GenericScope:saved = e.generics;
+    IdSpan:gw = raw decl_generic_window(e.ast, d);
+    GenericScope:g = GenericScope{ params_start: gw.start, params_count: gw.count,
+                                   args_start: 0i32, args_count: 0i32 };
+    e.generics = g;
+    e.fn_success = sg.success;
+    e.fn_terminal = sg.terminal;
+
+    // A TRAIT METHOD WITH NO BODY IS A DECLARATION, not an empty function. The
+    // absence is real (`parse_decls.npk` says so), so there is nothing to walk —
+    // and walking the NONE statement would report every required trait method as
+    // failing to return a value.
+    StmtId:body = raw fn_body(e.ast, d);
+    if (!(raw stmt_is_none(body))) {
+        drop check_stmt(e, body);
+    }
+    e.generics = saved;
+    pass NIL;
+};
+
+// `Self` INSIDE AN `impl` BLOCK IS THE TARGET, and for a blanket impl it is the
+// parameter (D-111) — which `impl_target` cannot give, because a blanket impl
+// writes no type in that position at all.
+func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) {
+    if (relay impl_is_blanket(e.ast, d)) {
+        if ((relay impl_generic_count(e.ast, d)) == 0i32) { pass 0i32; }
+        DeclId:gp = relay impl_generic(e.ast, d, 0i32);
+        DeclNode:gpn = relay ast_decl(e.ast, gp);
+        pass (raw tt_param(e.types, gp.index, raw decl_name(gpn)));
+    }
+    TypeResolver:r = raw etyper_resolver(e);
+    pass (relay resolve_type(@r, relay impl_target(e.ast, d), scope));
 };
 
 // One message for every "this value does not fit there", naming both types in

@@ -41,6 +41,14 @@ pub struct:ImplEntry = {
     int32:trait_id;   // the trait, or 0 for an inherent impl
     int32:decl;       // the `ImplDecl` node index
     bool:blanket;     // `impl:<T: Bound>:Trait` — the target is a parameter
+
+    // THE SCOPE IT WAS COLLECTED IN. Every later question about this impl —
+    // whether its methods match the trait's, whether its supertraits are
+    // satisfied — resolves type names, and those names mean what they mean IN
+    // THIS MODULE. A whole program has one impl table and many scopes, so a
+    // single scope passed to the checks would resolve one module's impls against
+    // another module's names: not an error, a different answer.
+    int32:scope;
 };
 
 pub struct:ImplTable = {
@@ -75,10 +83,10 @@ pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) {
 };
 
 func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
-                     bool:blanket) {
+                     bool:blanket, int32:scope) {
     if (t.count >= t.cap) { drop impl_grow(t); }
     ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl,
-                             blanket: blanket };
+                             blanket: blanket, scope: scope };
     t.items[t.count => int64] = e;
     t.count = t.count + 1i32;
     pass NIL;
@@ -146,7 +154,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         DeclId:gp = relay impl_generic(r.ast, d, 0i32);
         DeclNode:gpn = relay ast_decl(r.ast, gp);
         drop impl_push(t, raw tt_param(r.types, gp.index, raw decl_name(gpn)),
-                       bt, id.index, true);
+                       bt, id.index, true, scope);
         pass NIL;
     }
 
@@ -156,7 +164,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
 
     TypeId:tt = relay impl_trait(r.ast, d);
     if (raw type_is_none(tt)) {
-        drop impl_push(t, target, 0i32, id.index, false);
+        drop impl_push(t, target, 0i32, id.index, false, scope);
         pass NIL;
     }
 
@@ -175,7 +183,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), m2, d.span));
         pass NIL;
     }
-    drop impl_push(t, target, trait_id, id.index, false);
+    drop impl_push(t, target, trait_id, id.index, false, scope);
     pass NIL;
 };
 
@@ -750,12 +758,12 @@ func:assoc_required = bool(DeclNode:m) {
 // target was a zero, and a zero cannot be compared against anything; now it is the
 // parameter type, so `Self` substitutes to the parameter and every question below
 // has an answer.
-pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r, int32:scope) {
+pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (e.trait_id != 0i32) {
-            drop check_one_impl_complete(r, e, scope);
+            drop check_one_impl_complete(r, e, e.scope);
         }
         i = i + 1i32;
     }
@@ -1154,12 +1162,13 @@ func:SUPER_FUEL = int32() { pass 64i32; };
 // needs `T` to declare `Equatable`, which `type_implements` answers from the
 // bound list. Skipping blanket impls made that requirement unenforced.
 pub func:check_supertraits = NIL(ImplTable->:t, BoundTable->:bt,
-                                 TypeResolver->:r, int32:scope) {
+                                 TypeResolver->:r) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (e.trait_id != 0i32) {
-            drop require_supers(t, bt, r, e, e.trait_id, scope, raw SUPER_FUEL());
+            drop require_supers(t, bt, r, e, e.trait_id, e.scope,
+                                raw SUPER_FUEL());
         }
         i = i + 1i32;
     }

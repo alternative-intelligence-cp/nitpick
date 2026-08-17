@@ -95,6 +95,16 @@ pub struct:ExprTyper = {
     // checker's resolver has to record into the same table the collection passes
     // did, or a bound violation written inside a body would go unjudged.
     InstanceTable->:instances;
+
+    // WHAT `Self` MEANS IN THE BODY BEING WALKED. A method inside `impl:Point`
+    // may write `Self:other` and a trait's default body may too, so the checker
+    // has to carry it the way the resolver does — as the type it stands for, 0
+    // where there is none (D-030).
+    //
+    // `type_method_call` sets it locally around one signature; this is the other
+    // half, and until 0.4.8 nothing set it because no `impl` method body was ever
+    // walked.
+    int32:self_type;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
@@ -108,7 +118,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
-                             instances: instances };
+                             instances: instances, self_type: 0i32 };
     pass e;
 };
 
@@ -123,6 +133,7 @@ pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
     TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags, e.instances);
     r.generics = e.generics;
     r.enclosing = e.enclosing;
+    r.self_type = e.self_type;
     pass r;
 };
 
