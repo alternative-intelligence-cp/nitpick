@@ -6,6 +6,10 @@
 // checkable if its diagnostic can be captured and compared.
 
 use "source_location.npk".*;
+// For `string_eq`. `intern.npk` imports nothing, so this adds a leaf edge rather
+// than a cycle — which matters here, because the seed emits in dependency order
+// and 0.4.6 found a back edge making it emit a caller before its callee.
+use "intern.npk".*;
 
 pub enum:Severity = {
     Note    = 0i32;
@@ -63,7 +67,26 @@ pub func:diaglist_init = DiagList() {
     pass l;
 };
 
+// THE SAME MISTAKE REPORTED TWICE IS ONE MISTAKE.
+//
+// Same code, same span, same message is the same finding by construction: two
+// genuinely different findings never agree on all three, because the code says
+// which rule and the span says where. So a repeat is dropped rather than shown.
+//
+// This is not tidying. The checker legitimately resolves one annotation more than
+// once -- a struct's field types are resolved at every access, and 0.4.7's
+// inference has to type an argument to solve `T` before it can supply that
+// argument's expected type -- and each of those paths is CORRECT to report what
+// it finds. Without this, being thorough would mean being noisy, and the only
+// alternatives are worse: a resolver that reports on some paths and not others is
+// a rule that depends on which path ran, and a checker that visits less to stay
+// quiet is checking less.
+//
+// A LINEAR SCAN over a list bounded at 256 entries. A compiler emitting hundreds
+// of diagnostics has already failed usefully at the first few, which is what
+// bounds the list in the first place.
 pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) {
+    if (relay diaglist_has(list, d)) { pass NIL; }
     if (list.count >= 256i64) {
         list.overflowed = true;
         pass NIL;
@@ -71,6 +94,26 @@ pub func:diaglist_push = NIL(DiagList->:list, Diagnostic:d) {
     list.items[list.count] = d;
     list.count = list.count + 1i64;
     pass NIL;
+};
+
+func:diaglist_has = bool(DiagList->:list, Diagnostic:d) {
+    int64:i = 0i64;
+    while (i < list.count) {
+        Diagnostic:e = list.items[i];
+        if (e.severity == d.severity) {
+            if (e.span.file == d.span.file) {
+                if (e.span.offset == d.span.offset) {
+                    if (e.span.len == d.span.len) {
+                        if (raw string_eq(e.code, d.code)) {
+                            if (raw string_eq(e.message, d.message)) { pass true; }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i64;
+    }
+    pass false;
 };
 
 pub func:diaglist_count = int64(DiagList->:list) {

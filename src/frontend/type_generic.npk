@@ -32,6 +32,183 @@ use "symbols.npk".*;
 use "resolve_type.npk".*;
 use "type_trait.npk".*;
 
+// --- substitution -------------------------------------------------------------------------
+//
+// `Container<T>` WITH `T = int32` IS `Container<int32>`. A definition is checked
+// once with `T` opaque (D-107); a CALL then needs the signature it would have had
+// with the arguments filled in, and this is what fills them.
+//
+// IT REBUILDS RATHER THAN REWRITES, because types are interned and immutable: the
+// substituted type is a different type, constructed the same way the annotation
+// would have constructed it. That is what makes `extract(c)` return `int32` and
+// not "the `T` of `extract`".
+//
+// FUEL, because a substituted instance has its own arguments substituted in turn,
+// so the walk follows a type's structure — and a type's structure is something a
+// program writes.
+func:SUBST_FUEL = int32() { pass 64i32; };
+
+pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
+                            int32:fuel) {
+    if (fuel <= 0i32) { pass t; }
+    if (t == 0i32) { pass t; }
+    if (g.params_count == 0i32) { pass t; }
+    int32:k = raw type_kind(r.types, t);
+
+    // THE LEAF. A parameter of THIS declaration becomes its argument; a parameter
+    // of any other is left alone, which is what keeps one generic's `T` out of
+    // another's — two declarations may both call theirs `T` and they are two
+    // types, told apart by the declaration each was declared in.
+    if (k == (raw TY_PARAM())) { pass (relay subst_param(r, t, g)); }
+
+    if (k == (raw TY_POINTER())) {
+        pass (raw tt_pointer(r.types,
+                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32)));
+    }
+    if (k == (raw TY_SLICE())) {
+        pass (raw tt_slice(r.types,
+                  relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32)));
+    }
+    if (k == (raw TY_ARRAY())) {
+        int32:el = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        pass (raw tt_array(r.types, el, raw type_array_count(r.types, t),
+                           raw type_size(r.types, el),
+                           raw type_align(r.types, el)));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        pass (raw tt_optional(r.types, inner,
+                              raw type_size(r.types, inner),
+                              raw type_align(r.types, inner)));
+    }
+    if (k == (raw TY_RESULT())) {
+        int32:inner = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+        pass (raw tt_result(r.types, inner,
+                            raw type_size(r.types, inner),
+                            raw type_align(r.types, inner)));
+    }
+
+    // AN INSTANCE'S ARGUMENTS ARE SUBSTITUTED AND IT IS REBUILT — `Container<T>`
+    // becomes `Container<int32>`, a different interned type with its own mangled
+    // name. A trait instance is the same case: `Printable<T>` as a BOUND is a
+    // different bound once `T` is known.
+    if (k == (raw TY_STRUCT())) { pass (relay subst_instance(r, t, g, at, fuel)); }
+    if (k == (raw TY_ENUM()))   { pass (relay subst_instance(r, t, g, at, fuel)); }
+    if (k == (raw TY_TRAIT()))  { pass (relay subst_instance(r, t, g, at, fuel)); }
+
+    if (raw type_is_func(r.types, t)) { pass (relay subst_func(r, t, g, at, fuel)); }
+    if (k == (raw TY_DYN()))          { pass (relay subst_dyn(r, t, g, at, fuel)); }
+
+    // EVERY SCALAR, `Self`, and the comptime values. Nothing to substitute, and
+    // returning `t` is the answer rather than a fallthrough — a type with no
+    // parameter inside it is its own substitution.
+    pass t;
+};
+
+func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) {
+    int32:decl = raw type_decl_of(r.types, t);
+    int32:i = 0i32;
+    while (i < g.params_count) {
+        if ((relay ast_id_at(r.ast, g.params_start, i)) == decl) {
+            // AN UNSOLVED PARAMETER STAYS ITSELF. Inference reports what it could
+            // not solve; substituting a zero here would turn every later mention
+            // of it into "the invalid type", which reads as a cascade of unrelated
+            // failures rather than the one thing that went wrong.
+            if (i < g.args_count) {
+                int32:a = relay ast_id_at(r.ast, g.args_start, i);
+                if (a != 0i32) { pass a; }
+            }
+            pass t;
+        }
+        i = i + 1i32;
+    }
+    pass t;
+};
+
+func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
+                            int32:fuel) {
+    int32:n = raw type_args_count_of(r.types, t);
+    if (n == 0i32) { pass t; }
+    int32:start = raw type_args_start_of(r.types, t);
+    int32:decl = raw type_decl_of(r.types, t);
+
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    bool:changed = false;
+    while (i < n) {
+        int32:was = relay ast_id_at(r.ast, start, i);
+        int32:now = relay type_subst(r, was, g, at, fuel - 1i32);
+        if (now != was) { changed = true; }
+        drop ast_scratch_push(r.ast, now);
+        i = i + 1i32;
+    }
+    // NOTHING CHANGED MEANS NOTHING TO BUILD. Committing anyway would push a
+    // duplicate window into the pool for every substitution that touched nothing,
+    // which is most of them.
+    if (!changed) {
+        drop ast_scratch_drop(r.ast, mark);
+        pass t;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+
+    int32:mangled = relay intern_add(r.interns,
+                        relay mangle_instance(r, raw type_name_of_decl(r, decl), w));
+    int32:out = raw tt_instance(r.types, raw type_kind(r.types, t), decl, mangled,
+                                w.start, w.count, 0i64, 1i32);
+    // RECORDED LIKE ANY OTHER INSTANTIATION, so its bounds are judged. A
+    // `Container<T>` that becomes `Container<Point>` at a call site is exactly as
+    // much an instantiation as one somebody wrote down.
+    drop inst_record(r.instances, out, at);
+    pass out;
+};
+
+// The declaration's own name, which is what the mangled name is built from -- NOT
+// the instance's name, which is already mangled and would nest.
+func:type_name_of_decl = int32(TypeResolver->:r, int32:decl) {
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:d = relay ast_decl(r.ast, did);
+    pass (raw decl_name(d));
+};
+
+func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
+                        int32:fuel) {
+    int32:ret = relay type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32);
+    int32:n = raw type_param_count_of(r.types, t);
+    int32:start = raw type_param_start_of(r.types, t);
+
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < n) {
+        drop ast_scratch_push(r.ast,
+            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32));
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+
+    // THE KIND IS PRESERVED. A variadic function whose collector is substituted is
+    // still variadic, and rebuilding it as a fixed one would make every call check
+    // as fixed arity — which is the exact defect D-100 was written about.
+    if (raw type_is_variadic(r.types, t)) {
+        pass (raw tt_func_variadic(r.types, ret, w.start, w.count));
+    }
+    pass (raw tt_func(r.types, ret, w.start, w.count));
+};
+
+func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
+                       int32:fuel) {
+    int32:n = raw type_dyn_count(r.types, t);
+    int32:start = raw type_dyn_start(r.types, t);
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < n) {
+        drop ast_scratch_push(r.ast,
+            relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32));
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    pass (raw tt_dyn(r.types, w.start, w.count));
+};
+
 pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,
                                     BoundTable->:bounds, TypeResolver->:r) {
     int32:i = 0i32;
@@ -70,7 +247,7 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
     pass NIL;
 };
 
-func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
+pub func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
                             TypeResolver->:r, int32:arg, DeclId:gpid,
                             DeclNode:owner, Span:at) {
     // AN ARGUMENT THAT NEVER RESOLVED IS NOT CHECKED. Its own diagnostic was

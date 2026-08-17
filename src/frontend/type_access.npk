@@ -29,6 +29,7 @@ use "type_layout.npk".*;
 use "type_decl.npk".*;
 use "type_expr.npk".*;
 use "type_trait.npk".*;
+use "type_generic.npk".*;
 
 // --- the dispatcher ----------------------------------------------------------------------
 //
@@ -332,6 +333,26 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;
 
+    // A GENERIC CALL IS SUBSTITUTED BEFORE IT IS CHECKED. The generic arguments
+    // were parsed, stored, and SKIPPED -- `start` steps over them -- so
+    // `extract::<int32>(c)` checked as though the turbofish were not there and
+    // `extract(c)` returned `T` rather than the type it was called with.
+    DeclNode:d = relay callee_decl(e, n);
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        IdSpan:gp = raw decl_generic_window(e.ast, d);
+        if (gp.count > 0i32) {
+            pass (relay type_generic_call(e, n, d, gp, callee, gcount, start, count));
+        }
+        // NOT GENERIC AND GIVEN ARGUMENTS ANYWAY. The turbofish names type
+        // arguments, so a function with no type parameters has nowhere to put
+        // them -- and silently ignoring them is how this behaved until now.
+        if (gcount > 0i32) {
+            drop te_error(e, raw TYPE_GENERIC_ARITY(),
+                "this function is not generic, so it takes no type arguments",
+                n.span);
+        }
+    }
+
     if (callee == 0i32) {
         // A bare-name builtin has no signature yet. Its arguments are still
         // typed, so a mistake inside one is not hidden by the callee being
@@ -347,6 +368,259 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     pass (relay check_args(e, callee, start, count, 0i32, n.span));
+};
+
+// WHICH DECLARATION IS BEING CALLED, when one can be named at all.
+//
+// ONLY AN IDENTIFIER CAN BE GENERIC. A function VALUE cannot be — monomorphization
+// produces one body per instantiation and a code address is one body (D-018,
+// D-087) — so a callee that is any other expression has no type parameters by
+// construction, and this hands back the NONE declaration rather than guessing.
+func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass (relay ast_decl(e.ast, raw decl_none())); }
+    ExprNode:cn = relay ast_expr(e.ast, c);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) {
+        pass (relay ast_decl(e.ast, raw decl_none()));
+    }
+    if (cn.a == 0i32) { pass (relay ast_decl(e.ast, raw decl_none())); }
+    Symbol:s = raw symtab_get(e.tab, cn.a);
+    if (s.origin_kind != (raw SYM_DECL())) {
+        pass (relay ast_decl(e.ast, raw decl_none()));
+    }
+    DeclId:did = DeclId{ index: s.origin };
+    pass (relay ast_decl(e.ast, did));
+};
+
+// --- a generic call (TRAITS_REFERENCE 3.3, D-064 section 3) -------------------------------
+//
+// THREE STEPS, AND THE ORDER IS THE DESIGN:
+//
+//   1. EXPLICIT ARGUMENTS FIRST. The turbofish is the only expression-position
+//      form (D-064), and what it supplies is not inferred.
+//   2. INFERENCE FILLS THE REST, from the arguments that have a type of their
+//      own. Nothing is written at the overwhelming majority of call sites (3.3),
+//      so this is the normal path rather than the fallback.
+//   3. THE SIGNATURE IS SUBSTITUTED AND THEN CHECKED like any other. The body is
+//      NOT re-checked -- it was checked once at its definition -- so what happens
+//      here is only that the arguments satisfy the bounds and fill the parameters.
+func:type_generic_call = int32(ExprTyper->:e, ExprNode:n, DeclNode:d, IdSpan:gp,
+                               int32:generic_ft, int32:gcount, int32:start,
+                               int32:count) {
+    if (gcount > gp.count) {
+        string:m1 = relay string_concat("this call supplies ",
+                                        raw int_to_string(gcount => int64));
+        string:m2 = relay string_concat(m1, " type argument(s) and the function takes ");
+        drop te_error(e, raw TYPE_GENERIC_ARITY(),
+            relay string_concat(m2, raw int_to_string(gp.count => int64)), n.span);
+    }
+
+    // THE SOLUTION SET IS A WINDOW, one slot per parameter, zero for unsolved.
+    // Reserved first and filled in afterwards, which is exactly what
+    // `ast_scratch_set` exists for -- a count of things not yet known.
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:mark = raw ast_scratch_mark(e.ast);
+    int32:i = 0i32;
+    while (i < gp.count) {
+        drop ast_scratch_push(e.ast, 0i32);
+        i = i + 1i32;
+    }
+
+    int32:gstart = raw expr_list_start(n);
+    int32:j = 0i32;
+    while (j < gcount) {
+        if (j < gp.count) {
+            TypeId:a = TypeId{ index: relay ast_id_at(e.ast, gstart, j) };
+            DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, j) };
+            drop ast_scratch_set(e.ast, mark, j,
+                relay resolve_one_arg(@r, a, gpid, e.scope));
+        }
+        j = j + 1i32;
+    }
+
+    drop infer_from_args(e, @r, n, gp, generic_ft, mark, start, count);
+
+    IdSpan:args = raw ast_scratch_commit(e.ast, mark);
+    GenericScope:g = GenericScope{ params_start: gp.start, params_count: gp.count,
+                                   args_start: args.start, args_count: args.count };
+
+    // EVERY PARAMETER MUST BE SOLVED, and an unsolved one ENDS THE CHECK.
+    //
+    // Carrying on would check the call against a signature still mentioning `T` —
+    // a different signature from the one being called — and every argument and
+    // the return would then be reported as not fitting a type the programmer
+    // never wrote. One cause, three diagnostics, two of them misleading. Returning
+    // the invalid type here is the same discipline `resolve_type` follows and for
+    // the same reason.
+    //
+    // NOTHING IS LEFT UNTYPED BY STOPPING. Inference already typed every argument
+    // that has a type of its own; the ones it skipped are the context-dependent
+    // ones, which have nothing to be checked against precisely because `T` is
+    // unknown.
+    if (!(relay all_solved(e, d, gp, args, n.span))) { pass 0i32; }
+
+    // AND EVERY SOLVED ARGUMENT MUST SATISFY ITS BOUNDS -- the same check, from
+    // the same function, that an annotation gets. A call and a type annotation
+    // refusing the same thing for different reasons would be two rules.
+    int32:k = 0i32;
+    while (k < args.count) {
+        DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, k) };
+        drop check_arg_bounds(e.impls, e.bounds, @r,
+                              relay ast_id_at(e.ast, args.start, k), gpid, d,
+                              n.span);
+        k = k + 1i32;
+    }
+
+    int32:ft = relay type_subst(@r, generic_ft, g, n.span, 64i32);
+    if (ft == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, ft)) { pass 0i32; }
+    if (!(raw type_is_func(e.types, ft))) { pass 0i32; }
+    pass (relay check_args(e, ft, start, count, 0i32, n.span));
+};
+
+// SOLVE WHAT THE ARGUMENTS SAY, and nothing else.
+//
+// AN ARGUMENT THAT TAKES ITS TYPE FROM CONTEXT IS SKIPPED, and that is a rule
+// rather than an omission: an unsuffixed literal takes its type FROM the
+// parameter it fills, so it cannot also supply it. Typing one here would report
+// "this literal has no width suffix" at a call whose only problem is that
+// inference has nothing to go on -- and the honest message for that is that `T`
+// could not be inferred.
+//
+// The consequence is stated plainly because it is visible to programmers:
+// `identity(5)` needs `identity::<int32>(5)`. `identity(x)` does not.
+func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
+                           IdSpan:gp, int32:generic_ft, int32:mark,
+                           int32:start, int32:count) {
+    if (!(raw type_is_func(e.types, generic_ft))) { pass NIL; }
+    int32:np = raw type_param_count_of(e.types, generic_ft);
+    int32:i = 0i32;
+    while (i < count) {
+        if (i < np) {
+            ExprId:a = ExprId{ index: relay ast_id_at(e.ast, start, i) };
+            if (!(raw takes_type_from_context(e, a))) {
+                int32:saved = e.expected;
+                e.expected = 0i32;
+                int32:got = relay type_of_expr(e, a);
+                e.expected = saved;
+                if (got != 0i32) {
+                    drop unify_into(e, raw type_param_at_of(e.ast, e.types, generic_ft, i),
+                                    got, gp, mark, 32i32);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// MATCH A DECLARED PARAMETER TYPE AGAINST AN ACTUAL ARGUMENT TYPE, structurally,
+// writing whatever it learns into the solution window.
+//
+// IT LEARNS NOTHING WHERE THE SHAPES DISAGREE, and reports nothing either. A
+// genuine mismatch is the argument check's to report, against the SUBSTITUTED
+// signature, where the message can name both types; complaining here would name
+// `T` and be useless.
+//
+// FIRST WRITING WINS. `f(a, b)` where both parameters are `T` and the two
+// arguments differ leaves `T` as the first one, and the second argument is then
+// reported as not fitting -- which is the mismatch, at the argument that caused
+// it, rather than an inference failure the reader cannot locate.
+func:unify_into = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
+                      int32:mark, int32:fuel) {
+    if (fuel <= 0i32) { pass NIL; }
+    if (declared == 0i32) { pass NIL; }
+    if (actual == 0i32) { pass NIL; }
+    int32:k = raw type_kind(e.types, declared);
+
+    if (k == (raw TY_PARAM())) {
+        int32:decl = raw type_decl_of(e.types, declared);
+        int32:i = 0i32;
+        while (i < gp.count) {
+            if ((relay ast_id_at(e.ast, gp.start, i)) == decl) {
+                if ((relay ast_scratch_at(e.ast, mark, i)) == 0i32) {
+                    drop ast_scratch_set(e.ast, mark, i, actual);
+                }
+                pass NIL;
+            }
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (k != (raw type_kind(e.types, actual))) { pass NIL; }
+
+    // THE ONE-OPERAND SHAPES. `T->` against `Point->` teaches `T = Point`, and so
+    // does `T[]` against `Point[]`, `T?`, `Result<T>` and a fixed array.
+    if (k == (raw TY_POINTER()))  { drop unify_elem(e, declared, actual, gp, mark, fuel); pass NIL; }
+    if (k == (raw TY_SLICE()))    { drop unify_elem(e, declared, actual, gp, mark, fuel); pass NIL; }
+    if (k == (raw TY_ARRAY()))    { drop unify_elem(e, declared, actual, gp, mark, fuel); pass NIL; }
+    if (k == (raw TY_OPTIONAL())) { drop unify_elem(e, declared, actual, gp, mark, fuel); pass NIL; }
+    if (k == (raw TY_RESULT()))   { drop unify_elem(e, declared, actual, gp, mark, fuel); pass NIL; }
+
+    // AN INSTANCE TEACHES THROUGH ITS ARGUMENTS -- `Container<T>` against
+    // `Container<int32>` is where inference earns its keep, since it is the shape
+    // §3.3's own example uses. THE DECLARATIONS MUST MATCH: `Container<T>` against
+    // `Wrapper<int32>` is a mismatch, not a lesson.
+    if (raw same_instance_decl(e, declared, actual)) {
+        int32:n = raw type_args_count_of(e.types, declared);
+        if (n != (raw type_args_count_of(e.types, actual))) { pass NIL; }
+        // NOT `as` — a keyword, and a keyword is not an identifier.
+        int32:ds = raw type_args_start_of(e.types, declared);
+        int32:actual_start = raw type_args_start_of(e.types, actual);
+        int32:i = 0i32;
+        while (i < n) {
+            drop unify_into(e, relay ast_id_at(e.ast, ds, i),
+                            relay ast_id_at(e.ast, actual_start, i),
+                            gp, mark, fuel - 1i32);
+            i = i + 1i32;
+        }
+    }
+    pass NIL;
+};
+
+func:unify_elem = NIL(ExprTyper->:e, int32:declared, int32:actual, IdSpan:gp,
+                      int32:mark, int32:fuel) {
+    drop unify_into(e, raw type_elem(e.types, declared),
+                    raw type_elem(e.types, actual), gp, mark, fuel - 1i32);
+    pass NIL;
+};
+
+func:same_instance_decl = bool(ExprTyper->:e, int32:a, int32:b) {
+    int32:k = raw type_kind(e.types, a);
+    if (k != (raw TY_STRUCT())) {
+        if (k != (raw TY_ENUM())) {
+            if (k != (raw TY_TRAIT())) { pass false; }
+        }
+    }
+    if ((raw type_args_count_of(e.types, a)) == 0i32) { pass false; }
+    pass ((raw type_decl_of(e.types, a)) == (raw type_decl_of(e.types, b)));
+};
+
+func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
+                       Span:at) {
+    bool:ok = true;
+    int32:i = 0i32;
+    while (i < gp.count) {
+        int32:solved = 0i32;
+        if (i < args.count) { solved = relay ast_id_at(e.ast, args.start, i); }
+        if (solved == 0i32) {
+            ok = false;
+            DeclId:gpid = DeclId{ index: relay ast_id_at(e.ast, gp.start, i) };
+            DeclNode:gpn = relay ast_decl(e.ast, gpid);
+            string:m1 = relay string_concat("`",
+                            relay intern_get(e.interns, raw decl_name(gpn)));
+            string:m2 = relay string_concat(m1, "` cannot be inferred from this call to `");
+            string:m3 = relay string_concat(m2,
+                            relay intern_get(e.interns, raw decl_name(d)));
+            drop te_error(e, raw TYPE_CANNOT_INFER(),
+                relay string_concat(m3,
+                    "`; write it with the turbofish, which is the only expression-position form for an explicit type argument (D-064)"),
+                at);
+        }
+        i = i + 1i32;
+    }
+    pass ok;
 };
 
 // `p.magnitude()` — UFCS (D-006). The receiver is already apart from the callee
@@ -551,13 +825,31 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     // argument the same way an `int32?` declaration does (D-099).
                     // One rule for every slot; a call that differed from an
                     // initialiser would be one more thing to remember.
-                    if (!(raw fits(e, pt, got))) { drop te_mismatch_at(e, pt, got, at); }
+                    //
+                    // THE ARGUMENT'S SPAN, NOT THE CALL'S. It points at the thing
+                    // that is wrong, which is worth doing on its own — and it is
+                    // also what keeps two bad arguments two diagnostics. Reported
+                    // at the call, `vsum(1i32, 2i32, 3i32)` produced the same
+                    // code, span and message twice, so identical-diagnostic
+                    // deduplication folded the second away and the reader was told
+                    // about one of two mistakes.
+                    if (!(raw fits(e, pt, got))) {
+                        drop te_mismatch_at(e, pt, got, relay arg_span(e, a, at));
+                    }
                 }
             }
         }
         i = i + 1i32;
     }
     pass (raw type_elem(e.types, ft));
+};
+
+// An argument's own span, falling back to the call's when the argument is the
+// NONE node — a missing argument has no place of its own, and the call is where
+// the reader would look for it.
+func:arg_span = Span(ExprTyper->:e, ExprId:id, Span:at) {
+    if (raw expr_is_none(id)) { pass at; }
+    pass ((relay ast_expr(e.ast, id)).span);
 };
 
 pub func:is_spread = bool(ExprTyper->:e, ExprId:id) {

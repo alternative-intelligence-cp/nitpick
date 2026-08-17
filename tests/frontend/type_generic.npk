@@ -472,6 +472,106 @@ func:main = int32(cstring[]:_~argv) {
         "func:f<comptime int32:LEVEL> = NIL() { string:s = LEVEL; pass NIL; };", @it);
     if (raw errs(@c10) != 1i64)                                 { exit 74i32; }
 
+    // --- THE CALL SITE: INFERENCE AND THE TURBOFISH (3.3, D-064 section 3) ---
+    //
+    // The generic arguments were parsed, stored, and SKIPPED — `type_call`
+    // stepped over them — so `extract::<int32>(c)` checked as though the
+    // turbofish were not there, and `extract(c)` returned `T` rather than the
+    // type it was called with. Both halves show up as an assignment: the return
+    // type is what the local is checked against.
+    Gx:g1 = raw gx(
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) { pass c.value; }; func:f = NIL(Container<int32>:c) { int32:v = raw extract(c); pass NIL; };",
+        @it);
+    if (raw errs(@g1) != 0i64)                                  { exit 80i32; }
+
+    // …and the inferred type is the ARGUMENT's, not merely something that
+    // typechecks. `Container<string>` gives `string`, from the same declaration.
+    Gx:g2 = raw gx(
+        "struct:Container<T> = { T:value; }; func:extract<T> = T(Container<T>:c) { pass c.value; }; func:f = NIL(Container<string>:c) { int32:v = raw extract(c); pass NIL; };",
+        @it);
+    if (raw errs(@g2) != 1i64)                                  { exit 81i32; }
+    if (!(raw string_eq(raw code0(@g2), raw TYPE_MISMATCH())))   { exit 82i32; }
+
+    // THE TURBOFISH IS THE ONLY EXPRESSION-POSITION FORM (D-064). What it
+    // supplies is not inferred, so it decides even where inference could have.
+    Gx:g3 = raw gx(
+        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL(int32:n) { int32:v = raw identity::<int32>(n); pass NIL; };",
+        @it);
+    if (raw errs(@g3) != 0i64)                                  { exit 83i32; }
+
+    // AN UNSUFFIXED LITERAL CANNOT SOLVE A PARAMETER, because it takes its type
+    // FROM the parameter it fills — so it cannot also supply it. The honest
+    // message is that `T` could not be inferred, and the fix is the turbofish.
+    Gx:g4 = raw gx(
+        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL() { int32:v = raw identity(5); pass NIL; };",
+        @it);
+    if (raw errs(@g4) != 1i64)                                  { exit 84i32; }
+    if (!(raw string_eq(raw code0(@g4), raw TYPE_CANNOT_INFER()))) { exit 85i32; }
+
+    // …and with the turbofish the same call is fine, which is what makes the
+    // case above an inference limit rather than a refusal of literals.
+    Gx:g5 = raw gx(
+        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL() { int32:v = raw identity::<int32>(5); pass NIL; };",
+        @it);
+    if (raw errs(@g5) != 0i64)                                  { exit 86i32; }
+
+    // A SOLVED ARGUMENT IS CHECKED AGAINST THE BOUNDS — the same check, from the
+    // same function, that an annotation gets. A call and an annotation refusing
+    // the same thing for different reasons would be two rules.
+    Gx:g6 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Point = { int32:x; }; func:render<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; }; func:f = NIL(Point:p) { drop render(p); pass NIL; };",
+        @it);
+    if (raw errs(@g6) != 1i64)                                  { exit 87i32; }
+    if (!(raw string_eq(raw code0(@g6), raw TYPE_BOUND_UNMET()))) { exit 88i32; }
+
+    Gx:g7 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) { pass \"p\"; }; }; func:render<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; }; func:f = NIL(Point:p) { drop render(p); pass NIL; };",
+        @it);
+    if (raw errs(@g7) != 0i64)                                  { exit 89i32; }
+
+    // INFERENCE REACHES THROUGH A POINTER, a slice and an optional, because a
+    // parameter written `T->` against an argument `Point->` says just as much as
+    // a bare one does. A rule that only matched bare parameters would make the
+    // shape of the signature decide whether inference works.
+    Gx:g8 = raw gx(
+        "struct:Point = { int32:x; }; func:first<T> = T(T[]:xs) { pass xs[0i64]; }; func:f = NIL(Point[]:ps) { Point:p = raw first(ps); pass NIL; };",
+        @it);
+    if (raw errs(@g8) != 0i64)                                  { exit 90i32; }
+
+    // A NON-GENERIC FUNCTION GIVEN TYPE ARGUMENTS IS REFUSED. They were silently
+    // ignored — the window was stepped over — so `plain::<int32>(n)` checked as
+    // `plain(n)` and the turbofish meant nothing at all.
+    Gx:g9 = raw gx(
+        "func:plain = int32(int32:n) { pass n; }; func:f = NIL(int32:n) { int32:v = raw plain::<int32>(n); pass NIL; };",
+        @it);
+    if (raw errs(@g9) != 1i64)                                  { exit 91i32; }
+    if (!(raw string_eq(raw code0(@g9), raw TYPE_GENERIC_ARITY()))) { exit 92i32; }
+
+    // TOO MANY TYPE ARGUMENTS names both counts, the same shape the value-argument
+    // arity message uses.
+    Gx:g10 = raw gx(
+        "func:identity<T> = T(T:x) { pass x; }; func:f = NIL(int32:n) { int32:v = raw identity::<int32, string>(n); pass NIL; };",
+        @it);
+    if (raw errs(@g10) != 1i64)                                 { exit 93i32; }
+    if (!(raw string_eq(raw code0(@g10), raw TYPE_GENERIC_ARITY()))) { exit 94i32; }
+
+    // A GENERIC TRAIT IS INSTANTIATED TOO. `p_parse_trait` calls
+    // `p_parse_generics`, so `trait:Into<T>` parses — and the arguments were
+    // dropped, making `Into<int32>` and `Into<string>` one trait. The same hole as
+    // the struct one, a declaration kind over.
+    Gx:g11 = raw gx(
+        "trait:Into<T> = { func:into = T(Self:self); }; struct:Point = { int32:x; }; impl:Point:Into<int32> = { func:into = int32(Point:self) { pass 1i32; }; }; func:f = NIL(Point:p) { int32:v = raw p.into(); pass NIL; };",
+        @it);
+    if (raw errs(@g11) != 0i64)                                 { exit 95i32; }
+
+    // …and an impl of a DIFFERENT instantiation does not satisfy a bound naming
+    // this one, which is the property the arguments being read buys.
+    Gx:g12 = raw gx(
+        "trait:Into<T> = { func:into = T(Self:self); }; struct:Point = { int32:x; }; struct:Box<U: Into<string>> = { U:held; }; impl:Point:Into<int32> = { func:into = int32(Point:self) { pass 1i32; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        @it);
+    if (raw errs(@g12) != 1i64)                                 { exit 96i32; }
+    if (!(raw string_eq(raw code0(@g12), raw TYPE_BOUND_UNMET()))) { exit 97i32; }
+
     pass 0i32;
 };
 

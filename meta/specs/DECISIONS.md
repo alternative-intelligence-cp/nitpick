@@ -7662,3 +7662,95 @@ In a **body**, a value parameter reads as a value of its declared type — that 
 the entire content of `comptime int32:LEVEL`, and the reason a value parameter
 carries a type where a type parameter carries bounds. In a **type position** it is
 refused by name (D-107 §3).
+
+---
+
+## D-110 — Inference at a call, and what an unsolved parameter does
+
+**Settled in cycle 0.4.7.** `TRAITS_REFERENCE.md` §3.3 says type arguments are
+inferred at the overwhelming majority of call sites and nothing is written. The
+generic arguments were **parsed, stored, and skipped**: `type_call` stepped over
+them, so `extract::<int32>(c)` checked as though the turbofish were not there and
+`extract(c)` returned `T` rather than the type it was called with.
+
+### Only an identifier callee can be generic
+
+A function **value** cannot be. Monomorphization produces one body per
+instantiation and a code address is one body (D-018, D-087), so a callee that is
+any other expression has no type parameters by construction. Nothing is inferred
+there because there is nothing to infer.
+
+### Explicit first, then inference, then substitution
+
+1. **The turbofish is not inferred.** It is the only expression-position form
+   (D-064 §3), and what it supplies decides even where inference could have.
+2. **Inference is structural unification** of each declared parameter type against
+   the actual argument type, reaching through the shapes a parameter can appear
+   in — `T`, `T->`, `T[]`, `T[N]`, `T?`, `Result<T>`, and `Container<T>` against
+   `Container<int32>`. A rule that matched only bare parameters would make the
+   *shape* of a signature decide whether inference works.
+3. **The signature is substituted and then checked like any other.** The body is
+   never re-checked; it was checked once at its definition (D-064 §1).
+
+**Unification learns nothing where the shapes disagree, and reports nothing.** A
+genuine mismatch belongs to the argument check, against the *substituted*
+signature, where the message can name both types. Complaining during inference
+would name `T` and be useless.
+
+**First writing wins.** `f(a, b)` where both parameters are `T` and the arguments
+differ leaves `T` as the first, and the second argument is then reported as not
+fitting — the mismatch, at the argument that caused it, rather than an inference
+failure the reader cannot locate.
+
+### An unsuffixed literal cannot solve a parameter
+
+It takes its type **from** the parameter it fills (D-092), so it cannot also
+supply it. Inference therefore skips every argument that takes its type from
+context, and the honest message when nothing else solves `T` is that `T` could not
+be inferred. The consequence is visible to programmers and is stated rather than
+hidden: `identity(5)` needs `identity::<int32>(5)`; `identity(x)` does not.
+
+### An unsolved parameter ends the check
+
+Carrying on would check the call against a signature still mentioning `T` — a
+different signature from the one being called — so every argument and the return
+would be reported as not fitting a type the programmer never wrote. One cause,
+three diagnostics, two of them misleading. The call yields the invalid type
+instead, which is the discipline `resolve_type` already follows.
+
+**Nothing is left untyped by stopping.** Inference has already typed every
+argument that has a type of its own, and the ones it skipped are precisely the
+ones with nothing to be checked against.
+
+### A non-generic function given type arguments is refused
+
+They were silently ignored, so `plain::<int32>(n)` checked as `plain(n)` and the
+turbofish meant nothing at all.
+
+### Bounds are checked at a call by the same function as at an annotation
+
+A call and a type annotation refusing the same thing for different reasons would
+be two rules. `Container<Point>` written down and `render(p)` inferring `T = Point`
+reach the same check and the same sentence.
+
+### A generic trait is instantiated like a generic struct
+
+`p_parse_trait` calls `p_parse_generics`, so `trait:Into<T>` parses — and its
+arguments were dropped, making `Into<int32>` and `Into<string>` one trait. The same
+hole as the struct one (D-108), one declaration kind over, and it closes the same
+way.
+
+### Identical diagnostics are deduplicated
+
+Same code, same span, same message is the same finding by construction: two
+different findings never agree on all three, because the code says which rule and
+the span says where.
+
+This is not tidying, and it is what makes the above affordable. The checker
+legitimately resolves one annotation more than once — a struct's field types are
+resolved at every access, and inference must type an argument to solve `T` before
+it can supply that argument's expected type — and each of those paths is *correct*
+to report what it finds. Without deduplication, being thorough would mean being
+noisy, and both alternatives are worse: a resolver that reports on some paths and
+not others is a rule that depends on which path ran, and a checker that visits less
+to stay quiet is checking less.

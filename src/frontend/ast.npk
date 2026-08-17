@@ -549,6 +549,20 @@ pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) {
     pass (ast.scratch[at => int64]);
 };
 
+// ABANDON everything pushed since `mark`, committing nothing.
+//
+// The counterpart to committing, and it is needed wherever a walk builds a window
+// SPECULATIVELY -- 0.4.7's substitution pushes each substituted argument and then
+// finds nothing changed, which is the common case. Committing anyway would append
+// an identical window to the pool for every type a substitution walked past, and
+// the pool only grows.
+pub func:ast_scratch_drop = NIL(Ast->:ast, int32:mark) {
+    if (mark < 0i32) { fail 9i32; }
+    if (mark > ast.scratch_count) { fail 9i32; }
+    ast.scratch_count = mark;
+    pass NIL;
+};
+
 // Overwrite an entry pushed since `mark`. A header slot whose value is a count of
 // things not yet parsed has to be reserved first and filled in afterwards; this
 // is that fill-in, and it is bounds-checked so a wrong index is an error rather

@@ -87,7 +87,7 @@ pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
 // and `2` and `3` different ones. `2i32` and `2i64` differ in slot `a` and are
 // also different, which is right: a value parameter has a declared type and the
 // argument's has to be it.
-pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = return, b,c = param window
+pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = the value's type
 
 pub struct:Type = {
     int32:kind;
@@ -599,6 +599,14 @@ pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
 //
 // ZERO COUNT FOR EVERYTHING ELSE, so a caller that reaches here with a plain
 // `Point` gets an empty window rather than a window into somebody else's data.
+// A FIXED ARRAY'S ELEMENT COUNT. Slot `b` on `TY_ARRAY`, and a third accessor
+// over that slot -- a function's parameter start, an instance's argument start,
+// and now a count. Each answers a different question, which is why each has a
+// name rather than a comment saying which kind to read it as.
+pub func:type_array_count = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).b);
+};
+
 pub func:type_args_start_of = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).b);
 };

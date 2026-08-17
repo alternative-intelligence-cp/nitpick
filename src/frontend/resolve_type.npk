@@ -331,8 +331,12 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     if (dn.kind == DeclKind.DeclEnumDecl) {
         pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_ENUM()));
     }
+    // A TRAIT MAY BE GENERIC TOO, and it was the same hole one declaration kind
+    // over: `p_parse_trait` calls `p_parse_generics`, so `trait:Printable<T>`
+    // parses, and this built a `tt_trait` from the declaration and dropped the
+    // arguments — making `Printable<int32>` and `Printable<string>` one trait.
     if (dn.kind == DeclKind.DeclTraitDecl) {
-        pass (raw tt_trait(r.types, d.index, name));
+        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_TRAIT()));
     }
     if (dn.kind == DeclKind.DeclGenericParam) {
         pass (raw tt_param(r.types, d.index, name));
@@ -375,6 +379,9 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
     if (gp.count == 0i32) {
         if (kind == (raw TY_STRUCT())) {
             pass (raw tt_struct(r.types, d.index, name, 0i64, 1i32));
+        }
+        if (kind == (raw TY_TRAIT())) {
+            pass (raw tt_trait(r.types, d.index, name));
         }
         pass (raw tt_enum(r.types, d.index, name, 0i64, 1i32));
     }
@@ -424,7 +431,7 @@ func:GENERIC_DEPTH = int32() { pass 64i32; };
 //
 // SUPPLYING THE WRONG KIND SAYS WHICH KIND WAS WANTED. "there is no type named
 // `2`" would be true and useless; the mistake is that the position takes a value.
-func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:scope) {
+pub func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:scope) {
     DeclNode:gpn = relay ast_decl(r.ast, gpid);
     TypeNode:an = relay ast_type(r.ast, a);
     bool:wants_value = raw generic_is_value(gpn);
@@ -509,7 +516,7 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
 // This doubles as the DISPLAY name, because `type_display` prints a named type's
 // name — so every diagnostic about an instantiation says which one without
 // anything extra being written.
-func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) {
+pub func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) {
     string:m = relay string_concat(relay intern_get(r.interns, name), "<");
     int32:i = 0i32;
     while (i < w.count) {
