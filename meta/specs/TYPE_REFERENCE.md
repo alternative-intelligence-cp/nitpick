@@ -706,9 +706,55 @@ identical.
 ; .value at offset 4 (4 bytes)
 ; Total: 8 bytes
 
-; NIL = { i8 0, i32 undef }
-; Some(42) = { i8 1, i32 42 }
+; int32?:a = NIL;    = { i8 0, i32 undef }
+; int32?:b = 42i32;  = { i8 1, i32 42 }
 ```
+
+**There is no constructor, and none is needed (D-099).** An `Optional<T>` is built
+by writing the value; it is emptied by writing `NIL`. That is the pair the
+language has always had — **`NULL` is no pointer, `NIL` is no value** — and §27 is
+the authority on both.
+
+| Written | Is |
+|---|---|
+| `int32?:a = NIL;` | empty |
+| `int32?:b = 42i32;` | holding `42i32` |
+| `a == NIL`, `a != NIL` | the test |
+| `a ?? d` | the value, or `d` |
+| `a?.f` | the field, still wrapped |
+
+`T?` and `Optional<T>` are **one type with two spellings**, so every rule below
+applies to both — a rule written at one of them could be stepped around by using
+the other.
+
+The wrap from `T` to `Optional<T>` is the **one implicit conversion in the
+language**. It applies wherever a value meets a slot — a declaration's
+initialiser, a call argument, `pass`, a `Result{…}` field, an unwrap's default —
+and nothing else is coerced: no implicit widening (D-092), no numeric conversion,
+no pointer decay. A `NIL`-**typed value**, which is what `drop f()` yields, is
+deliberately *not* accepted; `drop` produces `NIL` precisely so that using a
+discarded outcome as a value is an error.
+
+> ⚠️ **`Some(42)` was struck (D-099).** It appeared in this IR comment and
+> **nowhere else** — no grammar production, no keyword, no AST node, and no trace
+> in the prototype. A replacement literal form `Optional{…}` was then drafted and
+> **also struck**, for the same reason: it was an invention arrived at by symmetry
+> with `Result{…}` rather than by looking for what already built an `Optional`.
+> `tests/special/test_nil_optional.npk` in the prototype had the answer.
+
+**An `Optional` has no readable members.** `.has_value` and `.value` are IR field
+names, not source-level members — neither exists in the prototype's source
+surface. `.has_value` duplicates `== NIL`, and `.value` is the unchecked read the
+wrapper exists to prevent; `??` and `?.` are the accessors that cannot be wrong.
+
+**Two inner types are refused**, both naming a state nobody can write down:
+
+- **`NIL?`** — `NIL?:x = NIL;` is ambiguous between empty and holding `NIL`'s one
+  value.
+- **`Optional<Optional<T>>`** — the inner absence is unreachable, since `x = NIL`
+  sets the outer tag. The postfix form cannot even be lexed: `??` is one token, so
+  `int32??` reads as `int32` followed by the null-coalesce operator. **`?.`
+  flattens** rather than manufacturing the type behind the rule's back.
 
 ### 11.2 Result\<T\>
 
@@ -784,7 +830,7 @@ The compiler WILL NOT allow accessing `.value` without first checking `.is_error
 | Operator | Syntax | Shorthand | Behavior |
 |---|---|---|---|
 | Safe unwrap | `expr ? defaultVal` | — | If error, use default value |
-| Null coalesce | `expr ?? defaultVal` | — | If NIL (optional), use default |
+| Null coalesce | `expr ?? defaultVal` | — | **On an `Optional`, not a `Result`** — if it is `NIL`, use the default (D-099) |
 | Emphatic unwrap | `expr ?! errCode` | — | If error, triggers failsafe (Layer 3) |
 | Raw unwrap | `raw(expr)` or `raw expr` | `_!` | Extract `.value` WITHOUT checking error (unsafe, auditable "TOS keyword") |
 | Drop | `drop(expr)` or `drop expr` | `_?` | Discard the entire Result, don't care about value or error |
@@ -1178,6 +1224,10 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 
 ### `NIL` — No Value
 
+**`NIL` and `NULL` are a designed pair: `NULL` is no pointer, `NIL` is no value.**
+Everything below follows from that one sentence, and nothing beyond it is part of
+`NIL`'s meaning.
+
 - Represents "nothing" at the type level (like `void` in C, but as a value)
 - Return type annotation for functions that produce no meaningful value: `func:f = NIL(...)`
 - "void functions" DO NOT EXIST in Nitpick — they return `Result<NIL>` instead
@@ -1186,6 +1236,16 @@ ARIA-XXX: 'const' is reserved for extern blocks only.
 - **`NIL` is zero-sized** (D-084). Its only value carries no information, so it
   occupies nothing: a `NIL` struct field takes no space and `pass(NIL)` moves
   nothing.
+- **`NIL` is also the empty `Optional<T>`** (D-099): `int32?:a = NIL;`, and
+  `a == NIL` is how an `Optional` is tested. That is not a second meaning — "no
+  value" is what it says in both positions, which is what lets one spelling do
+  both without breaking the rule that a construct means the same thing everywhere.
+- Consequently `NIL` **reads its context**, exactly as `NULL` does: where an
+  `Optional<T>` is expected it is the empty one, and anywhere else it is the unit
+  value. The two differ in one way, and it is forced — **`NULL` with no context is
+  an error and `NIL` is not**, because `NULL` has no type of its own to fall back
+  to and `NIL` does.
+- `NIL?` is refused: it would be empty in two ways with no way to tell them apart.
 - IR: `Result<NIL>` is therefore `{ i32 }` — **4 bytes, align 4, returned in a
   single register.** Since void functions do not exist, this is the most common
   return type in the language.

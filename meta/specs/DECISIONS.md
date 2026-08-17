@@ -6784,3 +6784,185 @@ context-dependence the blueprint philosophy exists to forbid.
 
 `any->` has **no members at any level**: it is type-erased, so there is nothing
 to reach into and `p =>! T->` comes first (D-095).
+
+---
+
+
+## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
+
+**Settled in cycle 0.4.5.** `Result` gained its constructor in D-097 and the same
+question was asked of `Optional`: **what builds one?** The first answer was wrong
+in the specific way D-097 was written to prevent, and the record of the wrong turn
+is kept here because the correction is the useful part.
+
+### `Some` was never designed
+
+The only trace of it in the entire specification set is one line of an IR comment
+in `TYPE_REFERENCE.md` §11.1:
+
+```llvm
+; Some(42) = { i8 1, i32 42 }
+```
+
+No grammar production, no keyword, no AST node, and **no occurrence anywhere in
+the prototype**. The user's response on being shown it: *"I do not know where
+`Some()` even came from. I think that is the first time I have heard about it."*
+It is struck.
+
+### `Optional{…}` was the wrong replacement, and shipped nothing
+
+Reasoning from symmetry with `Result{…}`, a literal form was drafted — a node
+kind, a shared parser, a typing rule, and tests that passed. **It was an invention
+too**, arrived at the same way `Some` was: by filling a gap rather than looking
+for what already filled it.
+
+**Nothing in the language was missing.** The prototype has the answer in two test
+files whose names say what they are for. `tests/special/test_nil_vs_null.npk`,
+header comment verbatim: *"NIL = optional-none (value type), NULL = null pointer
+(reference type)."* And `tests/special/test_nil_optional.npk` uses it in every
+position an expression can occupy:
+
+```nitpick
+func:get_none = int32?() { pass NIL; }        // returned
+int32?:a = NIL;                                // empty
+int32?:b = 42i32;                              // holding a value — no constructor
+if (a != NIL) { exit 1; }                      // tested
+int32:result = raw check_nil(NIL);             // passed as an argument
+```
+
+The countermeasure D-097 states — *find the grammar production, the defining
+table, or the prototype test that fixes its shape* — was applied to `Some` and
+not to the replacement. **Striking one invention is not the same as checking
+whether the thing it replaced needed inventing.**
+
+### `NULL` is no pointer; `NIL` is no value
+
+This is the user's original design, stated directly, and it is a **pair**:
+
+> *"My original design for NIL was as a complement to NULL where null means no
+> pointer and nil means no value. Also, since all functions return `Result<T>` it
+> serves as the return value for 'void' functions which don't return anything
+> useful."*
+
+Those two uses are **one meaning in two positions**, not two meanings sharing a
+spelling — "no value" is what it says in both — which is what lets it survive the
+blueprint rule that a construct means the same thing everywhere. Anything `NIL`
+was made to do beyond them was added by an implementing agent and is not carried.
+
+So an `Optional<T>` is:
+
+| Written | Is |
+|---|---|
+| `int32?:a = NIL;` | empty |
+| `int32?:b = 42i32;` | holding `42i32` |
+| `a == NIL`, `a != NIL` | the test |
+| `a ?? d` | the value, or `d` |
+| `a?.f` | the field, still wrapped |
+
+### The wrap is implicit, and that is the one exception in `fits`
+
+`int32?:b = 42i32;` puts a bare `int32` where an `Optional<int32>` is expected.
+Every "does this value fit that slot" question in the checker now goes through one
+predicate, `fits`, whose rule is **equality plus that single wrap** — no implicit
+widening (D-092), no numeric conversion, no pointer decay. One answer for a
+declaration's initialiser, a call argument, `pass`, a `Result{…}` field, and an
+unwrap's default, because a call that accepted what an initialiser refused would
+be one more thing to remember.
+
+`NIL` itself is not handled by `fits`. It reads its context directly, exactly as
+`NULL` does, and a `NIL`-**typed value** — what `drop f()` yields — is deliberately
+*not* accepted into an `Optional` slot: `drop` produces `NIL` precisely so that
+using a discarded outcome as a value is an error.
+
+### Only `NIL` was not reading its context
+
+`NULL` has been contextual since 0.4.2. `NIL` typed as the unit value everywhere,
+so `int32?:a = NIL;` — the spelling the prototype's own test file is built out of
+— reported a mismatch against the very type it constructs. Making it contextual
+surfaced a second defect of the same shape: the list of nodes that take their type
+from where they sit held **only unsuffixed integers**, so `NIL == opt` and
+`NULL == p` typed their left operand with no context and reported the sentinel as
+homeless, while `opt == NIL` and `p == NULL` — the same question the other way
+round — worked. The list is now named for what it answers.
+
+The two sentinels still differ in one way, and it is forced: **`NULL` with no
+context is an error and `NIL` is not.** `NULL` has no type of its own to fall back
+to; `NIL` is the zero-sized unit value (D-084), and `pass NIL;` is the most common
+statement in the language.
+
+### An `Optional` has no readable members
+
+The draft gave it `.value` and `.has_value`, mirroring the prototype's **IR field
+names** — neither is a source-level member there. Both are struck.
+
+`.has_value` duplicates `== NIL`, and two spellings for one question is how one of
+them ends up wrong. `.value` is worse than redundant: reading it on an empty
+`Optional` is the unchecked access the wrapper exists to prevent, offered as a
+one-word shortcut past `??` and `?.`, which are the accessors that cannot be
+wrong.
+
+### `??` unwraps an `Optional` and nothing else
+
+The prototype's checker also accepted a **pointer**, unwrapping it to its pointee
+— `ptr ?? 99i32` meaning "the pointed-to value, or the default if null". Its own
+test for that (`tests/null_coalesce_test.npk`) is a stub whose body is a comment
+waiting on `<-`, so the behaviour was specified and **never once ran**.
+
+It is not carried across, for two reasons. A `??` that dereferences hides the read
+behind an operator whose job everywhere else is to unwrap a wrapper, and `<-`
+exists precisely so that bringing a value back is visible in the source. And it
+would give one operator two meanings chosen by operand type, which is the first
+thing the blueprint philosophy forbids. Both halves remain writable: `p == NULL`
+asks whether a pointer points anywhere, and `<-p` brings the value back. The
+diagnostic names them, because somebody may arrive expecting the prototype's
+behaviour.
+
+### Two inner types are refused
+
+Both name a type with a state nobody can write down, and the check lives in one
+place because `T?` and `Optional<T>` are one type — a rule written at only one
+spelling could be stepped around by using the other.
+
+- **`NIL?`** — `NIL` is both the unit value and the empty `Optional`, so
+  `NIL?:x = NIL;` is genuinely ambiguous: empty, or holding the one value `NIL`
+  has? Both readings are defensible, which is what makes the spelling wrong rather
+  than merely unusual.
+- **`Optional<Optional<T>>`** — the inner absence is unreachable, since `x = NIL`
+  sets the outer tag and nothing sets the inner one. The postfix form cannot even
+  be lexed (`??` is one token, so `int32??` reads as `int32` followed by the
+  null-coalesce operator), which leaves the generic spelling as the only way in.
+
+**`?.` flattens for the same reason.** `op?.f` where `f` is itself an `Optional`
+stays one deep — the two absences are one absence, and both mean "there is no
+value here". Without that, safe navigation would manufacture behind the rule's
+back the exact type the resolver refuses. The prototype hit the other side of
+this and left a note about it: an `{ i1 true, {i1, T} }` whose outer tag says
+present while the inner says absent, so a test reads the wrong flag and passes.
+
+### What survives from `Result{…}` — the field rules
+
+The shared-parser draft is withdrawn, but one thing it found is independently
+right and is kept. `p_result_literal` matched the two names it knew and let
+anything else **fall through untouched**, so `Result{value: v, is_error: true}`
+parsed clean and silently dropped a field. A discarded field is a value the writer
+believed they had set — the failure the fixed shape exists to prevent — and
+`is_error` in particular is a spelling somebody arrives with, because the
+prototype stored it as a third field before D-069 made it derived.
+
+Three rules now, under `NITPICK-PARSE-008`, which earns its own code for the same
+reason `NITPICK-PARSE-007` does: the diagnostic has to name what replaced
+`is_error`, and a generic "unexpected token" cannot.
+
+- An unrecognised name is refused, and `is_error` is told it is derived.
+- A **repeated** field is refused rather than overwritten. Keeping the last one
+  discards the first — the same lost value, differently spelled.
+- The field name must be an **identifier before its payload is read as one**.
+  `field.payload` is an intern index only on an `Ident`; on anything else it is
+  that token's own payload, so `Result{5: v}` either named whatever string sat at
+  index five or ran `intern_get` off the end of the table, which fails the parse
+  through `relay` and produces no diagnostic at all.
+
+The test asserting the old behaviour asserted **zero errors** for the dropped
+field, recording the defect as correct. That is the second time in this cycle a
+test has certified a silent discard, and both times the test was written in the
+same commit as the code it was checking.

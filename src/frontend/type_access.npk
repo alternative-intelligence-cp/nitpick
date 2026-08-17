@@ -120,6 +120,17 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
     int32:found = relay member_type(e, base, name, n.span);
     if (found == 0i32) { pass 0i32; }
     if (optional) {
+        // A MEMBER THAT IS ITSELF AN `Optional` IS NOT WRAPPED TWICE. `op?.f`
+        // where `f` is an `int32?` is an `int32?`, not an `int32??` — the two
+        // absences are one absence, and both mean "there is no value here".
+        //
+        // Flattening is what keeps `Optional<Optional<T>>` unwritable rather than
+        // merely unspellable: `resolve_type` refuses the annotation, and this is
+        // the one operator that could otherwise manufacture the type behind its
+        // back. The prototype hit the other side of this and left a note about it
+        // — an `{ i1 true, {i1, T} }` whose outer tag says "present" while the
+        // inner one says "absent", so a test reads the wrong flag and passes.
+        if ((raw type_kind(e.types, found)) == (raw TY_OPTIONAL())) { pass found; }
         pass (raw tt_optional(e.types, found,
                               raw type_size(e.types, found),
                               raw type_align(e.types, found)));
@@ -207,6 +218,23 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
         if (raw string_eq(f, "error"))    { pass (e.types.t_tbb32); }
         if (raw string_eq(f, "is_error")) { pass (e.types.t_bool); }
         pass (relay te_no_member(e, base, name, at));
+    }
+
+    // AN `Optional` HAS NO READABLE MEMBERS, and that is the point (D-099).
+    //
+    // A draft gave it `.value` and `.has_value`, mirroring the prototype's IR
+    // field names. `.has_value` is redundant — `x == NIL` asks it, and two
+    // spellings for one question is the thing that gets one of them wrong. And
+    // `.value` is worse than redundant: reading it on an empty `Optional` is
+    // exactly the unchecked access the wrapper exists to prevent, offered as a
+    // one-word shortcut past `??` and `?.`, which are the accessors that cannot
+    // be wrong. Neither is in the prototype's source surface either.
+    if (k == (raw TY_OPTIONAL())) {
+        string:f = relay intern_get(e.interns, name);
+        string:g1 = relay string_concat("an `Optional` has no member `", f);
+        string:g2 = relay string_concat(g1,
+            "`; `?? d` takes the value or a default, `?.` reaches through it, and `== NIL` asks whether it holds anything");
+        pass (relay te_error(e, raw TYPE_MISMATCH(), g2, at));
     }
 
     // A SLICE CARRIES ITS LENGTH; a pointer does not (D-038/D-070), which is the
@@ -415,7 +443,11 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         if (pt != 0i32) {
             if (got != 0i32) {
                 if (!(raw type_is_invalid(e.types, got))) {
-                    if (got != pt) { drop te_mismatch_at(e, pt, got, at); }
+                    // `fits`, so an `int32?` parameter accepts a bare `int32`
+                    // argument the same way an `int32?` declaration does (D-099).
+                    // One rule for every slot; a call that differed from an
+                    // initialiser would be one more thing to remember.
+                    if (!(raw fits(e, pt, got))) { drop te_mismatch_at(e, pt, got, at); }
                 }
             }
         }

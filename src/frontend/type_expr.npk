@@ -144,9 +144,14 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
             n.span));
     }
 
-    if (e.expected != 0i32) {
-        if ((raw type_kind(e.types, e.expected)) == (raw kind_wanted(e, example))) {
-            pass (e.expected);
+    // `expected_value` rather than `e.expected`, so that `int32?:n = 10;` reads
+    // its width from the `int32` inside the wrapper. A literal is a value and an
+    // `Optional<U>` slot takes a `U` (D-099); asking the wrapper for a width would
+    // report "no width suffix" about a slot that plainly names one.
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
+            pass want;
         }
     }
     string:m = relay string_concat(
@@ -167,19 +172,41 @@ func:kind_wanted = int32(ExprTyper->:_~e, string:example) {
 
 // `NIL`, `NULL`, `ERR` — three sentinels, three types (TYPE_REFERENCE §27).
 //
-// `NULL` IS CONTEXTUAL, and for the same reason an unsuffixed literal is: it is
-// "only valid in pointer contexts", so a pointer type has to come from somewhere.
-// With nothing to take it from it is an error rather than a pointer to some
-// default, because a null `int32->` and a null `Frame->` are not the same value
-// to anything downstream.
+// `NULL` AND `NIL` ARE A PAIR, and it is the same pair the language has always
+// named: **`NULL` is no pointer, `NIL` is no value.** Both are contextual for the
+// same reason an unsuffixed literal is — a null `int32->` and a null `Frame->`
+// are not the same value to anything downstream, and neither are an empty
+// `int32?` and an empty `Point?`.
+//
+// `NIL` HAS TWO CONTEXTS AND ONE MEANING (D-099). Where an `Optional<T>` is
+// expected it is the empty one; anywhere else it is the zero-sized unit value
+// (D-084) that a function returning nothing useful passes. Those are not two
+// meanings wearing one spelling — "no value" is what it says in both, which is
+// what lets it survive the blueprint rule. Only `NIL` did not read its context
+// before this: it typed as the unit value everywhere, so `int32?:a = NIL;` — the
+// spelling the prototype's own `test_nil_optional.npk` is built out of — reported
+// a mismatch against the very type it constructs.
 func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
     int64:which = n.payload;
-    if (which == 0i64) { pass (e.types.t_nil); }
     if (which == 2i64) { pass (e.types.t_tbb32); }
 
-    if (e.expected != 0i32) {
-        if ((raw type_kind(e.types, e.expected)) == (raw TY_POINTER())) {
-            pass (e.expected);
+    if (which == 0i64) {
+        if (e.expected != 0i32) {
+            if ((raw type_kind(e.types, e.expected)) == (raw TY_OPTIONAL())) {
+                pass (e.expected);
+            }
+        }
+        // NOT AN ERROR WITH NO CONTEXT, and here the two sentinels part company.
+        // `NULL` has no type of its own to fall back to, but `NIL` does — it is
+        // the unit value, and `pass NIL;` is the most common statement in the
+        // language.
+        pass (e.types.t_nil);
+    }
+
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_POINTER())) {
+            pass want;
         }
     }
     pass (relay te_error(e, raw TYPE_UNKNOWN(),
@@ -398,7 +425,7 @@ func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
     int32:saved = e.expected;
     int32:lo = 0i32;
     int32:hi = 0i32;
-    if (raw is_untyped_literal(e, raw expr_lhs(n))) {
+    if (raw takes_type_from_context(e, raw expr_lhs(n))) {
         hi = relay type_of_expr(e, raw expr_rhs(n));
         if (hi != 0i32) { e.expected = hi; }
         lo = relay type_of_expr(e, raw expr_lhs(n));
@@ -533,13 +560,23 @@ func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
 
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
-    if (d != inner) {
+    if (!(raw fits(e, inner, d))) {
         drop te_mismatch(e, n, inner, d);
     }
     pass inner;
 };
 
-// `e ?? d` — the OPTIONAL one.
+// `e ?? d` — the OPTIONAL one, and ONLY the optional one (D-099).
+//
+// The prototype's checker also accepted a pointer here, unwrapping it to its
+// pointee — `ptr ?? 99i32` meaning "the pointed-to value, or the default if the
+// pointer is null". Its own test for that is a stub whose body is a comment
+// waiting on `<-`, so the behaviour was specified and never once ran. It is not
+// carried across: a `??` that dereferences hides the read behind an operator
+// whose whole job elsewhere is to unwrap a wrapper, and `<-` exists precisely so
+// that bringing a value back is visible in the source. It would also give one
+// operator two meanings chosen by operand type, which is the thing the blueprint
+// philosophy forbids first.
 func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
     int32:t = relay type_of_expr(e, raw expr_lhs(n));
     if (t == 0i32) { pass 0i32; }
@@ -551,6 +588,13 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
         if ((raw type_kind(e.types, t)) == (raw TY_RESULT())) {
             m2 = relay string_concat(m2, "; `?` is the one that unwraps a `Result`");
         }
+        // A POINTER IS THE MISTAKE WORTH NAMING, because the prototype accepted
+        // it and somebody may arrive expecting it to work. Both halves of what it
+        // did are still writable — they are just written down.
+        if ((raw type_kind(e.types, t)) == (raw TY_POINTER())) {
+            m2 = relay string_concat(m2,
+                "; a pointer is not an `Optional` — `p == NULL` asks whether it points anywhere and `<-p` brings the value back");
+        }
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     int32:inner = raw type_elem(e.types, t);
@@ -561,7 +605,7 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
     e.expected = saved;
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
-    if (d != inner) { drop te_mismatch(e, n, inner, d); }
+    if (!(raw fits(e, inner, d))) { drop te_mismatch(e, n, inner, d); }
     pass inner;
 };
 
@@ -681,7 +725,7 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
                             raw type_size(e.types, vt),
                             raw type_align(e.types, vt)));
     }
-    if (vt != want) {
+    if (!(raw fits(e, want, vt))) {
         if (!(raw type_is_invalid(e.types, vt))) {
             drop te_mismatch(e, n, want, vt);
         }
@@ -750,13 +794,59 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
     pass 0i32;
 };
 
-// Is this an integer literal with no width suffix? The one node whose type
-// depends on where it sits, so the one node the order has to account for.
-pub func:is_untyped_literal = bool(ExprTyper->:e, ExprId:id) {
+// DOES THIS NODE TAKE ITS TYPE FROM WHERE IT SITS? The nodes that do have to be
+// typed AFTER the thing that gives them their type, which is the whole reason
+// `type_binary` looks before it walks.
+//
+// It was named `is_untyped_literal` and answered only for unsuffixed integers,
+// on the strength of a comment calling that "the one node whose type depends on
+// where it sits". It never was: `NULL` has been contextual since 0.4.2 and `NIL`
+// became so with D-099, so `NULL == p` and `NIL == opt` typed their left side
+// with no context and reported the sentinel as homeless — while `p == NULL` and
+// `opt == NIL`, the same question asked the other way round, worked. One list,
+// and a sentinel that gains a context gains its place in the order with it.
+pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) {
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = relay ast_expr(e.ast, id);
+    // `ERR` is a `tbb32` wherever it appears and is deliberately absent here.
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass (n.payload != 2i64); }
     if (n.kind != ExprKind.ExprIntLiteral) { pass false; }
     pass (!(raw num_width_is_integer(raw expr_num_width(n))));
+};
+
+// THE TYPE AN OPERAND SHOULD AIM AT, given the slot it is going into.
+//
+// An `Optional<U>` slot accepts a bare `U` and wraps it (D-099), so the type a
+// VALUE wants there is `U` — the wrapper is supplied by `fits`, not written. The
+// sentinels are the exception and read `e.expected` itself, because `NIL` is a
+// fact about the wrapper rather than about a value inside it; that is why this is
+// a separate accessor instead of a rewrite of `e.expected` at the push sites.
+pub func:expected_value = int32(ExprTyper->:e) {
+    if (e.expected == 0i32) { pass 0i32; }
+    if ((raw type_kind(e.types, e.expected)) == (raw TY_OPTIONAL())) {
+        pass (raw type_elem(e.types, e.expected));
+    }
+    pass (e.expected);
+};
+
+// MAY A VALUE OF TYPE `got` BE WRITTEN WHERE `want` IS EXPECTED?
+//
+// One answer for every slot in the language — a declaration's initialiser, a call
+// argument, `pass`, a `Result{…}` field, an unwrap's default. Equality is the
+// rule, and D-099's wrap is the single exception: an `Optional<U>` slot takes a
+// `U`, which is how an `Optional` holding a value is built now that there is no
+// constructor to write.
+//
+// NOTHING ELSE IS COERCED. No implicit widening (D-092), no numeric conversion,
+// no pointer decay. And the wrap is ONE LEVEL, like D-098's dereference: an
+// `Optional<Optional<U>>` cannot be written down (see `resolve_type`), so there
+// is no second level for this to reach through.
+pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
+    if (want == got) { pass true; }
+    if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
+        if ((raw type_elem(e.types, want)) == got) { pass true; }
+    }
+    pass false;
 };
 
 // --- the walk ----------------------------------------------------------------------------
@@ -893,10 +983,10 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
         pass (relay type_of_expr(e, raw expr_operand(n)));
     }
 
-    // `ok(x)` AND `is_err(x)` — the two bare-name builtins that are `Result`
-    // operations. General call typing is 0.4.5; these two belong with the rest of
-    // the discipline, and without `ok` there is no way to write a `Result` value
-    // at all — nothing else in the language constructs one.
+    // `is_err(x)` tests a `tbb` without trapping, and `Result{…}` is the only way
+    // to construct a `Result` (D-097). An `Optional` has no counterpart to the
+    // second of these: `NIL` is its empty value and a bare `T` is its full one
+    // (D-099), so there is nothing here for it.
     if (n.kind == ExprKind.ExprIsErrExpr)        { pass (relay type_is_err(e, n)); }
     if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (relay type_result_literal(e, n)); }
 
@@ -928,7 +1018,7 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     int32:lt = 0i32;
     int32:rt = 0i32;
 
-    if (raw is_untyped_literal(e, raw expr_lhs(n))) {
+    if (raw takes_type_from_context(e, raw expr_lhs(n))) {
         rt = relay type_of_expr(e, raw expr_rhs(n));
         if (rt != 0i32) { e.expected = rt; }
         lt = relay type_of_expr(e, raw expr_lhs(n));

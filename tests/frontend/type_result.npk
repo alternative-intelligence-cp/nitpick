@@ -288,9 +288,40 @@ func:main = int32(cstring[]:_~argv) {
 
     // THERE IS NO `is_error` FIELD (D-069). The prototype stored one as an `i8`
     // third field; it is derived here, so a literal naming it is naming nothing.
+    //
+    // AND IT IS REFUSED RATHER THAN IGNORED. This asserted zero errors until
+    // 0.4.5 — the parser matched the two names it knew and let anything else fall
+    // through untouched, so the field was silently dropped and the test recorded
+    // that as correct. A discarded field is a value the writer believed they had
+    // set, which is the exact failure `Result{…}` has a fixed shape to prevent;
+    // `is_error` is also a spelling somebody arrives with from the prototype
+    // rather than an idle typo, so the diagnostic names what replaced it.
     Rx:cl7 = raw rx("Result{value: 1i32, error: 0tbb32, is_error: true}", false, @it);
-    if (raw errs(@cl7) != 0i64)                                { exit 118i32; }
-    if ((raw type_size(@cl7.types, cl7.result)) != 8i64)       { exit 119i32; }
+    if (raw errs(@cl7) != -1i64)                               { exit 118i32; }
+
+    // A NAME NOBODY HAS EVER HAD is the same refusal without the extra sentence.
+    Rx:cl8 = raw rx("Result{value: 1i32, valeu: 0tbb32}", false, @it);
+    if (raw errs(@cl8) != -1i64)                               { exit 120i32; }
+
+    // A REPEATED FIELD IS NOT AN OVERWRITE. Keeping the last one silently
+    // discards the first — the same lost value, differently spelled.
+    Rx:cl9 = raw rx("Result{value: 1i32, value: 2i32}", false, @it);
+    if (raw errs(@cl9) != -1i64)                               { exit 121i32; }
+    Rx:cla = raw rx("Result{error: 0tbb32, error: 5tbb32}", false, @it);
+    if (raw errs(@cla) != -1i64)                               { exit 122i32; }
+
+    // A FIELD NAME THAT IS NOT A NAME. `field.payload` is an intern index only on
+    // an `Ident`; on anything else it is that token's own payload, so this either
+    // named whatever string sat at index one or ran `intern_get` off the end of
+    // the table — which fails the parse through `relay` and produces no
+    // diagnostic at all.
+    Rx:clb = raw rx("Result{1i32: 2i32}", false, @it);
+    if (raw errs(@clb) != -1i64)                               { exit 123i32; }
+
+    // The size assertion that would catch a stored flag being added: `{int32,
+    // tbb32}` is 8 bytes, and a third field could not hide in it.
+    Rx:clc = raw rx("Result{value: 1i32, error: 0tbb32}", false, @it);
+    if ((raw type_size(@clc.types, clc.result)) != 8i64)       { exit 119i32; }
 
     // A member a `Result` does not have is named.
     Rx:m5 = raw rx("(Result{value: 1i32, error: 0tbb32}).ok", false, @it);

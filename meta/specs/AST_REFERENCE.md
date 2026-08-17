@@ -289,6 +289,11 @@ names neither the construct nor the rule it broke.
 | **`IsErrExpr`** | `operand` | **`is_err(tbbValue)`** — tests a `tbb` for ERR **without trapping** (D-008, D-096) |
 | **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v, error: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097) |
 
+> **There is no `OptionalLiteralExpr`, deliberately (D-099).** An `Optional` is
+> built by writing the value and emptied by writing `NIL`, so there is no
+> construct for a node to represent. One was drafted by symmetry with
+> `ResultLiteralExpr` and withdrawn — `NIL` had always been the answer.
+
 > **`ResultLiteralExpr` and `IsErrExpr` were missing, and nothing could have
 > noticed.** Three constructs the specs require could not be written down,
 > because each is spelled with a KEYWORD and the parser only builds these forms

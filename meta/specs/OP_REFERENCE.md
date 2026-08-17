@@ -182,16 +182,33 @@ value is ERR, so the taint cannot cross silently. See D-008.
 
 | Operator | Name | Description | Example |
 |---|---|---|---|
-| `?` | Safe Unwrap | Unwraps a Result/Optional. If error/NIL, evaluates to right-hand side default. | `val = fn() ? 0i32;` |
-| `??` | Null Coalesce | Unwraps an Optional. If NIL, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
+| `?` | Safe Unwrap | Unwraps a **`Result`**. If error, evaluates to right-hand side default. | `val = fn() ? 0i32;` |
+| `??` | Null Coalesce | Unwraps an **`Optional`**. If `NIL`, evaluates to right-hand side default. | `val = opt ?? 0i32;` |
 | `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(errCode)`. **Takes exactly one argument.** | `val = fn() ?! 99i32;` |
-| `?.` | Safe Navigation | Accesses a field of an Optional. Returns NIL if Optional is NIL. | `val = obj?.field;` |
+| `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |
 | `?\|` | Defaults | Desugars to the `defaults` keyword at parse time. | `expr ?\| default;` |
 | `_?` | Drop | Desugars to `drop expr` — discards the Result without checking it. | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unsafely bypasses error checking. | `val = _! my_func();` |
 | **`_^`** | **Relay** | Desugars to `relay expr` — **propagates the error to the caller, verbatim** (D-080). On error the enclosing function returns immediately with the same code; otherwise evaluates to `.value`. `defer` runs — it is a normal exit path, not a trap. Illegal in `main` / `failsafe`. | `val = _^ my_func();` |
 | `_~` | Discard | **Two positions** (D-089). As a statement it desugars to `discard(expr)` and suppresses the unused-variable warning. At a **declaration site**, `Type:_~name` marks a parameter the body deliberately does not read — and reading it anyway is an error, not a warning. | `_~ unused;` / `cstring[]:_~argv` |
 | `!!!` | Failsafe Shorthand | Immediately invokes `failsafe(err)`. | `!!! errCode;` |
+
+> ### One wrapper per unwrap operator (D-099)
+>
+> **`?` takes a `Result`. `??` takes an `Optional`. Neither takes a pointer.**
+>
+> The prototype overloaded both by operand type — its `?` accepted `Result<T>`,
+> `Optional<T>` *or* `ptr T`, and its `??` accepted `Optional<T>` or `ptr T`,
+> dereferencing the pointer to its pointee. The pointer half never ran: the test
+> for it is a stub whose body is a comment waiting on `<-`.
+>
+> It is not carried across. An operator whose meaning is chosen by its operand's
+> type is the context-dependence the blueprint philosophy forbids first, and a
+> `??` that dereferences hides the read behind an operator whose job everywhere
+> else is to unwrap a wrapper — `<-` exists precisely so that bringing a value
+> back is visible. Both halves stay writable and are simply written down:
+> `p == NULL` asks whether a pointer points anywhere, and `<-p` brings the value
+> back.
 
 > ### The two meanings of `!` (D-046)
 >

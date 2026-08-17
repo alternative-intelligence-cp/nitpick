@@ -22,3 +22,10 @@ pub func:PARSE_EXTERN_NO_CONTRACT = string() { pass "NITPICK-PARSE-006"; };
 // somebody writing `(!)` learned it from an older document and needs to be told
 // what to write instead, not merely that this is wrong.
 pub func:PARSE_UNREACHABLE_MARKER = string() { pass "NITPICK-PARSE-007"; };
+
+// A bad field in a `Result{…}` literal: a name that is not `value` or `error`,
+// one of them written twice, or something that is not a name at all. Its own
+// code for the same reason PARSE-007 has one -- `is_error` was a real field in
+// the prototype (D-069), so the diagnostic has to name what replaced it, and a
+// generic "unexpected token" cannot.
+pub func:PARSE_WRAPPER_FIELD = string() { pass "NITPICK-PARSE-008"; };

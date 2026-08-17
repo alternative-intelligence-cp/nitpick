@@ -75,9 +75,7 @@ pub func:resolve_type = int32(TypeResolver->:r, TypeId:id, int32:scope) {
 
     if (n.kind == TypeKind.TypeOptionalType) {
         int32:inner = relay resolve_type(r, raw type_inner(n), scope);
-        pass (raw tt_optional(r.types, inner,
-                              raw type_size(r.types, inner),
-                              raw type_align(r.types, inner)));
+        pass (relay make_optional(r, inner, n.span));
     }
 
     // ONE NODE, TWO TYPES. `T[]` and `T[N]` differ in syntax only by the size
@@ -246,13 +244,48 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     int32:inner = relay resolve_type(r, arg, scope);
 
     if (kind == (raw TY_OPTIONAL())) {
-        pass (raw tt_optional(r.types, inner,
-                              raw type_size(r.types, inner),
-                              raw type_align(r.types, inner)));
+        pass (relay make_optional(r, inner, n.span));
     }
     pass (raw tt_result(r.types, inner,
                         raw type_size(r.types, inner),
                         raw type_align(r.types, inner)));
+};
+
+// `T?` AND `Optional<T>` ARE ONE TYPE AND SO ARE ITS RULES. Two spellings reach
+// here — the postfix `?` and the generic form — and a check written at only one
+// of them would be a rule you could step around by changing how you wrote the
+// annotation, which is precisely the context-dependence to avoid.
+//
+// TWO INNER TYPES ARE REFUSED, and both for the same reason: they name a type
+// with a state nobody can write down.
+//
+//   `NIL?`  — `NIL` is the zero-sized unit value (D-084) and also the empty
+//             `Optional` (D-099), so `NIL?:x = NIL;` is genuinely ambiguous:
+//             empty, or holding the one value `NIL` has? Both readings are
+//             defensible, which is what makes the spelling wrong rather than
+//             merely unusual.
+//
+//   `T??`   — the inner absence is unreachable. `x = NIL` sets the OUTER tag and
+//             nothing sets the inner one, so `Optional<Optional<T>>` has a state
+//             that exists in the layout and not in the language. `?.` flattens
+//             for the same reason, which is what leaves this the only way in.
+func:make_optional = int32(TypeResolver->:r, int32:inner, Span:at) {
+    if (inner == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(r.types, inner)) { pass 0i32; }
+
+    if (inner == r.types.t_nil) {
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+            "`NIL` is already the empty value, so an `Optional` of it has two ways to be empty and no way to tell them apart; a function that returns nothing useful returns `NIL` on its own",
+            at));
+    }
+    if ((raw type_kind(r.types, inner)) == (raw TY_OPTIONAL())) {
+        pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+            "an `Optional` of an `Optional` has an inner absence nothing can set — `NIL` sets the outer one; the single wrapper already says the value may not be there",
+            at));
+    }
+    pass (raw tt_optional(r.types, inner,
+                          raw type_size(r.types, inner),
+                          raw type_align(r.types, inner)));
 };
 
 func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n) {

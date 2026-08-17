@@ -44,7 +44,7 @@ func:ax = Ax(string:body, InternTable->:it) {
     // `NULL`. `NULL` is valid only where a pointer is expected (TYPE_REFERENCE
     // §27), so a `NULL`-initialised slice is itself an error and every case built
     // on one would have been measuring that instead of what it meant to.
-    string:head = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num) { ", body);
+    string:head = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow) { ", body);
     string:src = relay string_concat(head, " pass NIL; };");
 
     DiagList:ld = raw diaglist_init();
@@ -238,6 +238,97 @@ func:main = int32(cstring[]:_~argv) {
     // …and it auto-dereferences one level like plain access does.
     Ax:u4 = raw ax("int32:v = raw pp.magnitude();", @it);
     if (raw errs(@u4) != 0i64)                                 { exit 83i32; }
+
+    // --- AN `Optional` IS BUILT BY WRITING THE VALUE (D-099) ------------------
+    // There is no constructor. `NIL` is "no value" as `NULL` is "no pointer", and
+    // a bare `T` in an `Optional<T>` slot is the one holding a value — which is
+    // how the prototype's own `test_nil_optional.npk` is written throughout.
+    Ax:o1 = raw ax("Optional<int32>:o = 1i32;", @it);
+    if (raw errs(@o1) != 0i64)                                 { exit 90i32; }
+    Ax:o2 = raw ax("int32?:o = NIL;", @it);
+    if (raw errs(@o2) != 0i64)                                 { exit 91i32; }
+
+    // BOTH SPELLINGS ARE ONE TYPE, so the rules cannot be stepped around by
+    // choosing the other annotation.
+    Ax:o3 = raw ax("Optional<int32>:o = NIL;", @it);
+    if (raw errs(@o3) != 0i64)                                 { exit 92i32; }
+    Ax:o4 = raw ax("int32?:o = 1i32;", @it);
+    if (raw errs(@o4) != 0i64)                                 { exit 93i32; }
+
+    // The value is still checked against `T` — the wrap is the ONLY thing added.
+    Ax:o5 = raw ax("Optional<int32>:o = true;", @it);
+    if (raw errs(@o5) != 1i64)                                 { exit 94i32; }
+
+    // AN UNSUFFIXED LITERAL READS ITS WIDTH THROUGH THE WRAPPER. Asking the
+    // `Optional` for a width would report "no width suffix" about a slot that
+    // plainly names one.
+    Ax:o6 = raw ax("int32?:o = 10;", @it);
+    if (raw errs(@o6) != 0i64)                                 { exit 95i32; }
+
+    // --- `NIL` IS THE TEST, AND IT READS BOTH WAYS ROUND ---------------------
+    Ax:e1 = raw ax("bool:b = (oi == NIL);", @it);
+    if (raw errs(@e1) != 0i64)                                 { exit 96i32; }
+    // The order used to matter: the left operand was typed with no context, so
+    // `NIL == oi` reported the sentinel as homeless while `oi == NIL` worked.
+    Ax:e2 = raw ax("bool:b = (NIL == oi);", @it);
+    if (raw errs(@e2) != 0i64)                                 { exit 97i32; }
+    // `NULL` had the same defect and is fixed by the same list.
+    Ax:e3 = raw ax("bool:b = (NULL == ip);", @it);
+    if (raw errs(@e3) != 0i64)                                 { exit 98i32; }
+
+    // `NIL` WITH NO `Optional` IN SIGHT IS STILL THE UNIT VALUE — unlike `NULL`,
+    // it has a type of its own to fall back to, and `pass NIL;` is the most
+    // common statement in the language.
+    Ax:e4 = raw ax("NIL:u = NIL;", @it);
+    if (raw errs(@e4) != 0i64)                                 { exit 99i32; }
+
+    // --- AN `Optional` HAS NO READABLE MEMBERS -------------------------------
+    // `.has_value` duplicates `== NIL`, and `.value` is the unchecked read the
+    // wrapper exists to prevent. A draft added both; neither is in the prototype.
+    Ax:m6 = raw ax("bool:b = oi.has_value;", @it);
+    if (raw errs(@m6) != 1i64)                                 { exit 100i32; }
+    Ax:m7 = raw ax("int32:v = oi.value;", @it);
+    if (raw errs(@m7) != 1i64)                                 { exit 101i32; }
+
+    // --- `??` UNWRAPS AN `Optional`, AND ONLY AN `Optional` ------------------
+    Ax:q1 = raw ax("int32:v = oi ?? 0i32;", @it);
+    if (raw errs(@q1) != 0i64)                                 { exit 102i32; }
+    // The default must be the inner type.
+    Ax:q2 = raw ax("int32:v = oi ?? true;", @it);
+    if (raw errs(@q2) != 1i64)                                 { exit 103i32; }
+    // A POINTER IS REFUSED. The prototype's checker accepted one and dereferenced
+    // it; the behaviour never ran, and a `??` that reads through a pointer hides
+    // the read that `<-` exists to show.
+    Ax:q3 = raw ax("int32:v = ip ?? 0i32;", @it);
+    if (raw errs(@q3) != 1i64)                                 { exit 104i32; }
+
+    // --- `?.` SHORT-CIRCUITS AND THE ABSENCE SURVIVES ------------------------
+    // Its result is an `Optional<U>`, not a `U`. If the absence did not survive
+    // the access, `?.` would be `.` with two extra characters.
+    Ax:n1 = raw ax("Optional<int32>:v = op?.x;", @it);
+    if (raw errs(@n1) != 0i64)                                 { exit 110i32; }
+    Ax:n2 = raw ax("int32:v = op?.x;", @it);
+    if (raw errs(@n2) != 1i64)                                 { exit 111i32; }
+    // `?.` on something that is not an `Optional` says which operator was meant.
+    Ax:n3 = raw ax("Optional<int32>:v = pt?.x;", @it);
+    if (raw errs(@n3) != 1i64)                                 { exit 112i32; }
+
+    // --- THE TWO INNER TYPES THAT ARE REFUSED --------------------------------
+    // `NIL?` would be empty in two ways with no way to tell them apart, and
+    // `T??` has an inner absence nothing can set.
+    Ax:b1 = raw ax("NIL?:o = NIL;", @it);
+    if (raw errs(@b1) != 1i64)                                 { exit 113i32; }
+    // THE POSTFIX FORM CANNOT EVEN BE LEXED: `??` is one token, so `int32??`
+    // reads as `int32` followed by the null-coalesce operator and never reaches
+    // the type resolver. Which leaves the generic spelling as the only way in,
+    // and it is refused there.
+    Ax:b3 = raw ax("Optional<Optional<int32>>:o = NIL;", @it);
+    if (raw errs(@b3) != 1i64)                                 { exit 115i32; }
+    // …and `?.` FLATTENS rather than manufacturing the type behind the rule's
+    // back. `wo` is an `Optional<Wrap>` whose `p` field is a `Point`; `oow` holds
+    // an `Optional<int32>` field, so reaching it through `?.` stays one deep.
+    Ax:b4 = raw ax("Optional<int32>:v = ow?.oi;", @it);
+    if (raw errs(@b4) != 0i64)                                 { exit 116i32; }
 
     exit 0i32;
 };

@@ -78,7 +78,10 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (raw type_is_invalid(e.types, want)) { pass NIL; }
-    if (got != want) {
+    // `fits` rather than equality, so that `int32?:b = 42i32;` builds the
+    // `Optional` holding a value (D-099). That wrap is the only thing `fits`
+    // permits beyond equality.
+    if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
     pass NIL;
@@ -92,9 +95,20 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
 
     // `pass;` with no value is `pass NIL;`. Void functions do not exist, so the
     // bare form is the one that returns `Result<NIL>`.
+    //
+    // AND IN A FUNCTION RETURNING AN `Optional` IT IS THE EMPTY ONE, because that
+    // is what `pass NIL;` means there (D-099) and the bare form is defined as that
+    // spelling. `func:find = int32?() { pass; }` therefore returns nothing found.
+    //
+    // This is written out rather than folded into `fits`, and the difference
+    // matters: `fits` answers about a VALUE of type `NIL`, and letting one become
+    // an empty `Optional` would make `int32?:x = drop f();` typecheck — `drop`
+    // yields `NIL` precisely so that using it as a value is an error.
     if (raw expr_is_none(v)) {
         if (want != 0i32) {
-            if (want != e.types.t_nil) {
+            bool:ok = (want == e.types.t_nil);
+            if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) { ok = true; }
+            if (!ok) {
                 drop te_assign_mismatch(e, want, e.types.t_nil, s.span);
             }
         }
@@ -108,7 +122,7 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) {
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
     if (want == 0i32) { pass NIL; }
-    if (got != want) {
+    if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
     pass NIL;

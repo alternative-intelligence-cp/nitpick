@@ -745,30 +745,93 @@ func:p_keyword_operand = ExprId(Parser->:p, Span:sp, ExprKind:kind) {
 
 // `Result{value: v, error: e}` -- A FIXED SHAPE, not a general struct literal.
 //
-// Exactly two fields, in either written order, held in slots `a` and `b`. It does
-// not reuse `StructLiteralExpr` because that node's window alternates INTERNED
-// NAMES with values, and `Result` is a keyword with no intern index -- putting a
-// token kind where a name index belongs is the same confusion that made
-// `Result<int32>` report "there is no type named" (D-096).
+// Exactly two fields, in either written order, either omissible, held in slots
+// `a` and `b`. It does not reuse `StructLiteralExpr` because that node's window
+// alternates INTERNED NAMES with values, and `Result` is a keyword with no intern
+// index -- putting a token kind where a name index belongs is the same confusion
+// that made `Result<int32>` report "there is no type named" (D-096).
 //
-// `<T>` is never written: it comes from the enclosing function's declared
-// success type, which is what makes `pass(v)` and `fail(e)` expressible as sugar.
+// `<T>` is never written: it comes from the enclosing function's declared success
+// type, which is what makes `pass(v)` and `fail(e)` expressible as sugar.
+//
+// `Optional` HAS NO COUNTERPART HERE and deliberately so (D-099). Its empty value
+// is `NIL` and its full one is the value itself, so there is nothing for a
+// literal form to build. A draft of this function was generalised to serve both
+// wrappers before that was checked; the note is left because the near-miss is the
+// same one D-097 records.
+//
+// EVERY NAME IS ANSWERED. What stood here matched the two it knew and let any
+// other fall through untouched, so `Result{value: v, is_error: true}` parsed
+// clean and dropped a field the writer believed they had set -- the prototype
+// stored `is_error` (D-069), so that is a spelling somebody arrives with rather
+// than an idle typo. A silently discarded field is the failure mode this whole
+// literal exists to avoid.
 func:p_result_literal = ExprId(Parser->:p, Span:sp) {
     drop p_advance(p);
     drop p_expect(p, TokenKind.PLBrace);
     int32:value = 0i32;
     int32:error = 0i32;
+    bool:saw_value = false;
+    bool:saw_error = false;
     while (true) {
         if (relay p_at(p, TokenKind.PRBrace)) { break; }
         if (relay p_at_end(p)) { break; }
+
+        // THE FIELD NAME MUST BE AN IDENTIFIER BEFORE ITS PAYLOAD IS READ AS ONE.
+        // `field.payload` is an intern index only for `Ident`; on any other token
+        // it is that token's own payload, so `Result{5: v}` either named whatever
+        // string sits at index five or ran `intern_get` off the end of the table,
+        // which fails the parse through `relay` instead of producing a diagnostic.
         Token:field = relay p_advance(p);
+        bool:named = (field.kind == TokenKind.Ident);
+        if (!named) {
+            drop p_error_at(p, raw PARSE_WRAPPER_FIELD(),
+                "a `Result{…}` field is named `value` or `error`, and this is not a name",
+                field.span);
+        }
         drop p_expect(p, TokenKind.PColon);
         ExprId:v = relay p_parse_expr(p);
-        // The names are matched here rather than kept, so the node's slots mean
+
+        // The names are matched HERE rather than kept, so the node's slots mean
         // one thing regardless of the order they were written in.
-        string:text = relay intern_get(p.interns, (field.payload => int32));
-        if (raw string_eq(text, "value")) { value = v.index; }
-        if (raw string_eq(text, "error")) { error = v.index; }
+        if (named) {
+            string:text = relay intern_get(p.interns, (field.payload => int32));
+            if (raw string_eq(text, "value")) {
+                // A REPEATED FIELD IS NOT AN OVERWRITE. Taking the last one
+                // silently discards the first, which is the same lost-value
+                // defect as an unknown name wearing different clothes.
+                if (saw_value) {
+                    drop p_error_at(p, raw PARSE_WRAPPER_FIELD(),
+                        "`value` is given twice here, and a `Result{…}` has one of each field",
+                        field.span);
+                }
+                saw_value = true;
+                value = v.index;
+            } else {
+                if (raw string_eq(text, "error")) {
+                    if (saw_error) {
+                        drop p_error_at(p, raw PARSE_WRAPPER_FIELD(),
+                            "`error` is given twice here, and a `Result{…}` has one of each field",
+                            field.span);
+                    }
+                    saw_error = true;
+                    error = v.index;
+                } else {
+                    // `is_error` EARNS ITS OWN SENTENCE. The prototype stored it
+                    // as a third field and D-069 made it derived, so somebody
+                    // writing it learned it somewhere real and needs to be told
+                    // what replaced it -- not merely that the name is unknown.
+                    string:m1 = relay string_concat("`", text);
+                    string:m2 = relay string_concat(m1,
+                        "` is not a field of `Result{…}`, which has `value` and `error`");
+                    if (raw string_eq(text, "is_error")) {
+                        m2 = relay string_concat(m2,
+                            "; `.is_error` is derived from `error` and is read, never written (D-069)");
+                    }
+                    drop p_error_at(p, raw PARSE_WRAPPER_FIELD(), m2, field.span);
+                }
+            }
+        }
         if (!(relay p_accept(p, TokenKind.PComma))) { break; }
     }
     drop p_expect(p, TokenKind.PRBrace);
