@@ -339,7 +339,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         pass 0i32;
     }
     if (raw type_is_invalid(e.types, callee)) { pass 0i32; }
-    if ((raw type_kind(e.types, callee)) != (raw TY_FUNC())) {
+    if (!(raw type_is_func(e.types, callee))) {
         drop type_args_only(e, start, count);
         string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, callee));
         string:m2 = relay string_concat(m1, "` is not a function");
@@ -413,33 +413,78 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
 
 // Arity and argument types. `skip` is 1 for a UFCS call, whose first parameter
 // the receiver already filled.
+//
+// TWO ARITY RULES, and which one applies comes from the callee's KIND rather than
+// from a flag somebody has to remember to read (D-100). A fixed function takes
+// exactly its parameter count; a variadic one takes at least its fixed count and
+// checks everything after that against the collected element type.
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                         int32:skip, Span:at) {
-    int32:want = (raw type_param_count_of(e.types, ft)) - skip;
+    bool:variadic = raw type_is_variadic(e.types, ft);
+    int32:total = (raw type_param_count_of(e.types, ft)) - skip;
+
+    // The variadic parameter is the LAST entry of the window and is a parameter
+    // like any other, so the fixed count is one short of the total. `element` is
+    // what each trailing argument is checked against — the slice's element, since
+    // the argument is one item and the parameter collects many.
+    int32:fixed_count = total;
+    int32:element = 0i32;
+    int32:collector = 0i32;
+    if (variadic) {
+        fixed_count = total - 1i32;
+        collector = raw type_param_at_of(e.ast, e.types, ft, fixed_count + skip);
+        if (!(raw type_is_invalid(e.types, collector))) {
+            element = raw type_elem(e.types, collector);
+        }
+    }
 
     // BOTH COUNTS ARE NAMED. "wrong number of arguments" makes the reader go and
     // count the parameters themselves, which is the one thing the compiler
     // already did.
-    if (count != want) {
+    bool:arity_ok = (count == total);
+    if (variadic) { arity_ok = (count >= fixed_count); }
+    if (!arity_ok) {
         string:m1 = relay string_concat("this call passes ",
                                         raw int_to_string(count => int64));
         string:m2 = relay string_concat(m1, " argument(s) and the function takes ");
-        string:m3 = relay string_concat(m2, raw int_to_string(want => int64));
-        drop te_error(e, raw TYPE_MISMATCH(),
-                      relay string_concat(m3, ""), at);
+        if (variadic) {
+            m2 = relay string_concat(m2, "at least ");
+            m2 = relay string_concat(m2, raw int_to_string(fixed_count => int64));
+        } else {
+            m2 = relay string_concat(m2, raw int_to_string(total => int64));
+        }
+        drop te_error(e, raw TYPE_MISMATCH(), m2, at);
     }
 
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
+
+        // `..^coll` EXPANDS A COLLECTION INTO THE VARIADIC TAIL, so it is the one
+        // argument checked against the collector rather than the element — it
+        // supplies the whole slice, not one item. 0.4.2 typed the spread as its
+        // operand and left the position to here, which is the only place an
+        // argument list exists to check it against.
+        bool:spread = raw is_spread(e, a);
         int32:pt = 0i32;
-        if (i < want) {
+        if (i < fixed_count) {
             pt = raw type_param_at_of(e.ast, e.types, ft, i + skip);
+        } else {
+            if (variadic) {
+                pt = element;
+                if (spread) { pt = collector; }
+            }
         }
+
         int32:saved = e.expected;
         e.expected = pt;
         int32:got = relay type_of_expr(e, a);
         e.expected = saved;
+
+        if (spread) {
+            drop check_spread_position(e, ft, variadic, i, fixed_count, count, at);
+        }
+
         if (pt != 0i32) {
             if (got != 0i32) {
                 if (!(raw type_is_invalid(e.types, got))) {
@@ -454,6 +499,40 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         i = i + 1i32;
     }
     pass (raw type_elem(e.types, ft));
+};
+
+pub func:is_spread = bool(ExprTyper->:e, ExprId:id) {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = relay ast_expr(e.ast, id);
+    pass (n.kind == ExprKind.ExprSpreadExpr);
+};
+
+// WHERE A SPREAD IS ALLOWED TO SIT (D-026, D-100). It expands a collection into
+// the variadic tail, so there has to be a tail to expand into, it has to be in
+// it, and it has to be the last thing there — arguments written after an
+// expansion have no position anyone can name.
+func:check_spread_position = NIL(ExprTyper->:e, int32:ft, bool:variadic,
+                                 int32:i, int32:fixed_count, int32:count, Span:at) {
+    if (!variadic) {
+        string:m1 = relay string_concat("`..^` expands a collection into a variadic parameter, and `",
+                                        relay type_display(e.types, e.interns, ft));
+        drop te_error(e, raw TYPE_MISMATCH(),
+            relay string_concat(m1, "` collects none; pass the elements, or give the function a `..*T[]` parameter"),
+            at);
+        pass NIL;
+    }
+    if (i < fixed_count) {
+        drop te_error(e, raw TYPE_MISMATCH(),
+            "`..^` expands into the variadic parameter, and this argument fills a fixed one",
+            at);
+        pass NIL;
+    }
+    if (i != (count - 1i32)) {
+        drop te_error(e, raw TYPE_MISMATCH(),
+            "`..^` expands to however many elements the collection holds, so nothing can follow it — an argument after an expansion has no position to be in",
+            at);
+    }
+    pass NIL;
 };
 
 // Type the arguments and nothing else, for a callee with no signature to check

@@ -302,7 +302,11 @@ pub func:assoc_default = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; p
 pub func:variant_value = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.a }; pass e; };
 pub func:variant_payload_start = int32(DeclNode:d) { pass d.b; };
 pub func:variant_payload_count = int32(DeclNode:d) { pass d.c; };
-pub func:variadic_elem = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
+// THE WHOLE `T[]`, NOT ITS ELEMENT. `..*T[]:rest` parses `T[]` with the ordinary
+// type parser, so this slot holds the slice the parameter is bound to. It was
+// named `variadic_elem`, which reads as the `T` and is what a caller would use it
+// as; the element comes from `type_elem` of this.
+pub func:variadic_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:extern_lib = int32(DeclNode:d) { pass (d.payload => int32); };
 
 // GenericParam: a = value type, b,c = bounds window, payload = name.

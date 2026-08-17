@@ -80,8 +80,45 @@ pub func:fn_type = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) 
         drop ast_scratch_push(r.ast, pt);
         i = i + 1i32;
     }
-    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_func(r.types, s.result, w.start, w.count));
+
+    // `..*T[]:rest` — THE VARIADIC PARAMETER IS A PARAMETER. It goes into the
+    // window like any other, typed as the slice it is bound to inside the body,
+    // and the function's KIND is what says the last one collects (D-070).
+    //
+    // Carried none of this until now: `fn_type` built a plain `TY_FUNC` from the
+    // fixed parameters and dropped the spec on the floor, so `sys(1i64)` and
+    // `sys(1i64, 2i64, 3i64)` were both checked against a one-parameter function
+    // and the second was reported as passing too many arguments.
+    DeclId:vd = raw fn_variadic(r.ast, d);
+    if (raw decl_is_none(vd)) {
+        IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+        pass (raw tt_func(r.types, s.result, w.start, w.count));
+    }
+
+    DeclNode:vn = relay ast_decl(r.ast, vd);
+    int32:vt = relay resolve_type(r, raw variadic_type(vn), scope);
+    drop ast_scratch_push(r.ast, relay require_variadic_slice(r, vt, vn.span));
+    IdSpan:wv = raw ast_scratch_commit(r.ast, mark);
+    pass (raw tt_func_variadic(r.types, s.result, wv.start, wv.count));
+};
+
+// `..*T[]` AND NOT `..*T`. The brackets are the type — `rest` is bound to a slice
+// inside the body (D-070), and the element every trailing argument is checked
+// against is that slice's element. Written without them there is no element to
+// recover and no slice to bind, so the parameter would name a type the call site
+// and the body disagree about.
+//
+// The invalid type is handed back rather than a guess, so the call checker refuses
+// to check arguments against something that was never a slice.
+func:require_variadic_slice = int32(TypeResolver->:r, int32:vt, Span:at) {
+    if (vt == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(r.types, vt)) { pass 0i32; }
+    if ((raw type_kind(r.types, vt)) == (raw TY_SLICE())) { pass vt; }
+    string:m1 = relay string_concat("a variadic parameter collects into a slice, so it is written `..*T[]`, and this is `",
+                                    relay type_display(r.types, r.interns, vt));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_UNKNOWN(),
+        relay string_concat(m1, "`"), at));
+    pass 0i32;
 };
 
 // D-091 — `func:f = Result<int32>()` IS AN ERROR THAT SAYS SO.

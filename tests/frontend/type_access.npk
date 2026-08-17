@@ -38,14 +38,27 @@ struct:Ax = { TypeTable:types; DiagList:diags; int64:parse_errs; };
 // A fixed preamble of declarations, plus whatever the case adds. Every case is a
 // whole module so that names, types and bodies all go through the real pipeline.
 func:ax = Ax(string:body, InternTable->:it) {
+    pass (relay axd("", body, it));
+};
+
+// The same, with EXTRA TOP-LEVEL DECLARATIONS in front. A signature can be wrong
+// on its own — `..*int64` without the brackets is — and a case that can only add
+// statements inside `f` has no way to write one down.
+//
+// A declaration is only type-resolved when something reaches it, so a case
+// testing a bad signature has to CALL the function; `fn_type` is what runs the
+// check, and nothing runs it for a function nobody names.
+func:axd = Ax(string:decls, string:body, InternTable->:it) {
     // ONE STRING, not adjacent literals — Nitpick has no implicit string
     // concatenation, which the real parser said plainly.
     // THE VALUES COME IN AS PARAMETERS rather than as locals initialised to
     // `NULL`. `NULL` is valid only where a pointer is expected (TYPE_REFERENCE
     // §27), so a `NULL`-initialised slice is itself an error and every case built
     // on one would have been measuring that instead of what it meant to.
-    string:head = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow) { ", body);
-    string:src = relay string_concat(head, " pass NIL; };");
+    string:pre = relay string_concat("struct:Point = { int32:x; int32:y; }; struct:Wrap = { Point:p; }; struct:OWrap = { Optional<int32>:oi; }; enum:Net = { Connect; Disconnect; }; func:magnitude = int32(Point:self) { pass 1i32; }; func:add2 = int32(int32:a, int32:b) { pass 1i32; }; func:vsum = int32(int32:first, ..*int64[]:rest) { pass 1i32; }; ", decls);
+    string:head = relay string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
+    string:with_body = relay string_concat(head, body);
+    string:src = relay string_concat(with_body, " pass NIL; };");
 
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
@@ -329,6 +342,62 @@ func:main = int32(cstring[]:_~argv) {
     // an `Optional<int32>` field, so reaching it through `?.` stays one deep.
     Ax:b4 = raw ax("Optional<int32>:v = ow?.oi;", @it);
     if (raw errs(@b4) != 0i64)                                 { exit 116i32; }
+
+    // --- VARIADIC CALLS (D-100) ----------------------------------------------
+    // `vsum` is `int32(int32:first, ..*int64[]:rest)`. Until now `fn_type` built
+    // a plain `TY_FUNC` from the fixed parameters and dropped the spec, so every
+    // one of these checked as a one-parameter function: the zero-extra case
+    // passed by accident and every other case was refused for the wrong reason.
+    Ax:v1 = raw ax("int32:v = raw vsum(1i32);", @it);
+    if (raw errs(@v1) != 0i64)                                 { exit 120i32; }
+    Ax:v2 = raw ax("int32:v = raw vsum(1i32, 2i64);", @it);
+    if (raw errs(@v2) != 0i64)                                 { exit 121i32; }
+    Ax:v3 = raw ax("int32:v = raw vsum(1i32, 2i64, 3i64, 4i64);", @it);
+    if (raw errs(@v3) != 0i64)                                 { exit 122i32; }
+
+    // THE FIXED PARAMETERS ARE STILL FIXED — the tail does not swallow them.
+    Ax:v4 = raw ax("int32:v = raw vsum();", @it);
+    if (raw errs(@v4) != 1i64)                                 { exit 123i32; }
+    Ax:v5 = raw ax("int32:v = raw vsum(true);", @it);
+    if (raw errs(@v5) != 1i64)                                 { exit 124i32; }
+
+    // …AND EVERY TRAILING ARGUMENT IS CHECKED AGAINST THE ELEMENT, not the slice.
+    // `..*int64[]` collects `int64`s, so an `int32` in the tail is refused — one
+    // diagnostic per bad argument, and the second one is not masked by the first.
+    Ax:v6 = raw ax("int32:v = raw vsum(1i32, 2i32);", @it);
+    if (raw errs(@v6) != 1i64)                                 { exit 125i32; }
+    Ax:v7 = raw ax("int32:v = raw vsum(1i32, 2i32, 3i32);", @it);
+    if (raw errs(@v7) != 2i64)                                 { exit 126i32; }
+
+    // A FIXED FUNCTION IS UNCHANGED. `add2` takes exactly two.
+    Ax:v8 = raw ax("int32:v = raw add2(1i32, 2i32, 3i32);", @it);
+    if (raw errs(@v8) != 1i64)                                 { exit 127i32; }
+
+    // --- `..^` EXPANDS INTO THE TAIL AND NOWHERE ELSE (D-026) ----------------
+    // Its type is the COLLECTOR, not the element: it supplies the whole slice.
+    Ax:s1 = raw ax("int32:v = raw vsum(1i32, ..^i64s);", @it);
+    if (raw errs(@s1) != 0i64)                                 { exit 130i32; }
+    // An element where a collection belongs, and a collection where an element
+    // belongs, are both refused.
+    Ax:s2 = raw ax("int32:v = raw vsum(1i32, ..^2i64);", @it);
+    if (raw errs(@s2) != 1i64)                                 { exit 131i32; }
+    Ax:s3 = raw ax("int32:v = raw vsum(1i32, i64s);", @it);
+    if (raw errs(@s3) != 1i64)                                 { exit 132i32; }
+    // A FUNCTION THAT COLLECTS NOTHING HAS NO TAIL TO EXPAND INTO.
+    Ax:s4 = raw ax("int32:v = raw add2(1i32, ..^i64s);", @it);
+    if (raw errs(@s4) != 2i64)                                 { exit 133i32; }
+    // AN EXPANSION FILLING A FIXED PARAMETER is refused where it sits.
+    Ax:s5 = raw ax("int32:v = raw vsum(..^i64s);", @it);
+    if (raw errs(@s5) != 2i64)                                 { exit 134i32; }
+    // NOTHING MAY FOLLOW ONE — an argument after an expansion has no position.
+    Ax:s6 = raw ax("int32:v = raw vsum(1i32, ..^i64s, 9i64);", @it);
+    if (raw errs(@s6) != 1i64)                                 { exit 135i32; }
+
+    // --- `..*T[]` AND NOT `..*T` ---------------------------------------------
+    // Without the brackets there is no slice to bind and no element to recover.
+    Ax:s7 = raw axd("func:bad = int32(..*int64:rest) { pass 1i32; };",
+                    "int32:v = raw bad(1i64);", @it);
+    if (raw errs(@s7) != 1i64)                                 { exit 136i32; }
 
     exit 0i32;
 };

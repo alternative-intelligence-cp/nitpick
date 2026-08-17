@@ -6966,3 +6966,89 @@ The test asserting the old behaviour asserted **zero errors** for the dropped
 field, recording the defect as correct. That is the second time in this cycle a
 test has certified a silent discard, and both times the test was written in the
 same commit as the code it was checking.
+
+---
+
+## D-100 — A variadic function is a different type kind, not a flag
+
+**Settled in cycle 0.4.5.** `..*T[]` parsed, resolved and bound its name from
+cycle 0.2 onward, and **nothing checked a call against it.** `fn_type` built a
+plain `TY_FUNC` from the fixed parameters and dropped the variadic spec on the
+floor, so `sys(1i64, 2i64, 3i64)` was checked against a one-parameter function
+and reported as passing too many arguments. Every variadic call in the language
+was either refused for the wrong reason or accepted by accident.
+
+### The representation, and why it is not a boolean
+
+**`TY_FUNC_VARIADIC` is a distinct kind.** The parameter window is the same shape
+and its **last entry is the variadic parameter, typed as the slice `T[]` it is
+actually bound to** inside the body (D-070). The element every trailing argument
+is checked against is `type_elem` of that, so nothing extra is stored and the
+fixed count is simply one less than the window length.
+
+The reason for a kind rather than a flag beside `TY_FUNC` is the one
+`AST_REFERENCE.md` already gives for `FailsOn` and `NeverFails` being separate
+node kinds:
+
+> a shared kind plus a boolean makes an unwritten contract and a `never fails`
+> contract the same node until someone reads the right slot … an encoding that
+> can be misread by ignoring a field undoes it.
+
+That argument is not hypothetical here — **it is a description of the defect being
+fixed.** A checker that forgets to read a variadic flag treats a variadic function
+as fixed-arity, which is exactly what happened. With two kinds, every site that
+switches on the kind has to account for it, and `type_is_func` exists so that no
+site accidentally answers "that is not a function" about a perfectly good variadic
+one.
+
+The caveat that governs the opposite choice — *"two node kinds for one syntactic
+form, discriminated by a fact the parser does not have, is a kind that can never
+be built"* — does not apply. The resolver knows whether the declaration carried a
+`..*` spec; it is written right there in the signature.
+
+### Two arity rules, chosen by kind
+
+| Callee | Arity | Trailing arguments |
+|---|---|---|
+| `TY_FUNC` | exactly the parameter count | — |
+| `TY_FUNC_VARIADIC` | **at least** the fixed count | each checked against the collected **element** |
+
+The diagnostic names both counts, and says "at least" when that is the rule — a
+reader told "takes 2" about a function that accepts any number above one would go
+and correct the wrong thing.
+
+### `..*T[]` and not `..*T`
+
+The brackets are the type. Written without them there is no slice to bind the
+parameter to and no element to recover, so the call site and the body would
+disagree about what `rest` is. It is refused where the signature is resolved, and
+the invalid type is handed back rather than a guess, so the call checker declines
+to check arguments against something that was never a slice.
+
+### `..^` expands into the tail, and nowhere else
+
+0.4.2 typed a spread as its operand's type and left the position rule to this
+subcycle, *"because that is where an argument list exists to check it against"*.
+Three rules, all of them about position rather than type:
+
+- **The callee must collect something.** `..^` expanding into a function with no
+  `..*T[]` parameter has nowhere to go.
+- **It must be in the tail.** An expansion filling a fixed parameter is refused
+  where it sits.
+- **Nothing may follow it.** `..^` expands to however many elements the collection
+  holds, so an argument written after one has no position anyone can name.
+
+Its type is the **collector, not the element** — `..^coll` supplies the whole
+slice, which is the one place a `T[]` rather than a `T` belongs in a variadic
+argument list. That makes the pair exact: `..*` collects `T`s into a `T[]`, `..^`
+expands a `T[]` back into `T`s, and D-026's claim that they are inverses is now
+enforced rather than merely asserted.
+
+### One accessor was named for the wrong thing
+
+`variadic_elem` returned the **slice**, not the element — `..*T[]:rest` parses
+`T[]` with the ordinary type parser, so the slot always held the whole thing. A
+caller trusting the name would have checked every trailing argument against
+`int64[]` instead of `int64`, accepting slices and refusing values, which is the
+defect inverted. Renamed `variadic_type`, and the same correction is made in
+`AST_REFERENCE.md`.

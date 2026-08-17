@@ -60,6 +60,20 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
                         relay type_display(tt, interns, raw type_elem(tt, t)));
         pass (relay string_concat(r1, ">"));
     }
+    // A FUNCTION PRINTS ITS RETURN AND ITS SHAPE, not `<type>`. `type_elem` on a
+    // function is its return type, and the two kinds are told apart in the one
+    // place a reader looks — a diagnostic saying "`func Result<int64>(…)` is not
+    // a function" would have been the only clue that the variadic kind existed.
+    if (k == (raw TY_FUNC())) {
+        string:f1 = relay string_concat("func ",
+                        relay type_display(tt, interns, raw type_elem(tt, t)));
+        pass (relay string_concat(f1, "(…)"));
+    }
+    if (k == (raw TY_FUNC_VARIADIC())) {
+        string:f1 = relay string_concat("func ",
+                        relay type_display(tt, interns, raw type_elem(tt, t)));
+        pass (relay string_concat(f1, "(…, ..*T[])"));
+    }
     // Named types carry their own name.
     int32:nm = raw type_name(tt, t);
     if (!(raw intern_is_none(nm))) {

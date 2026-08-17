@@ -94,11 +94,17 @@ GenericParam
 
 ```
 VariadicSpec
-  elem_type : TypeNode     // ..*T[] — a typed slice, {ptr, i64 len} (D-070)
+  slice_type : TypeNode    // ..*T[] — the whole T[], a slice {ptr, i64 len} (D-070)
 ```
 
 **One form: homogeneous.** `..*T[]:name` is a typed slice, and a variadic call
 lowers to building one.
+
+> **The slot holds `T[]`, not `T`.** `..*T[]:rest` parses `T[]` with the ordinary
+> type parser, so the node carries the slice the parameter is bound to inside the
+> body; the element each trailing argument is checked against is that slice's
+> element. It was called `elem_type`, which reads as the `T` and is what a caller
+> would use it as (D-100).
 
 The format-directed form — a bare `..*` following a `fmt` parameter — was
 **removed by D-053** along with the `fmt` type itself. Formatting is ordinary

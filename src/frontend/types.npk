@@ -59,6 +59,21 @@ pub func:TY_SELF = int32()     { pass 21i32; };
 pub func:TY_PARAM = int32()    { pass 22i32; };  // a generic parameter; a = DeclId
 pub func:TY_RANGE = int32()    { pass 23i32; };  // a = element (D-093)
 
+// A VARIADIC FUNCTION IS A DIFFERENT KIND, not `TY_FUNC` with a flag beside it.
+//
+// The window is the same shape and its LAST entry is the variadic parameter,
+// typed as the slice `T[]` it actually is inside the body (D-070) — so the
+// element every trailing argument is checked against is `type_elem` of it, and
+// nothing extra is stored.
+//
+// The reason for a kind rather than a boolean is the one `AST_REFERENCE.md` gives
+// for `FailsOn` and `NeverFails` being separate node kinds: a shared kind plus a
+// flag makes the two the same until somebody reads the right slot, and "an
+// encoding that can be misread by ignoring a field" is exactly what happened here
+// — `fn_type` carried no variadic information at all, so every variadic call
+// checked as fixed arity and said nothing.
+pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };  // a = return, b,c = param window
+
 pub struct:Type = {
     int32:kind;
     int32:a;
@@ -260,6 +275,26 @@ pub func:tt_dyn = int32(TypeTable->:t, int32:start, int32:count) {
 // environment, because closures are removed (D-018).
 pub func:tt_func = int32(TypeTable->:t, int32:ret, int32:start, int32:count) {
     pass (raw tt_intern(t, raw TY_FUNC(), ret, start, count, 8i64, 8i32, 0i32));
+};
+
+// `func RetType(ParamTypes, ..*T[])`. Same shape, different kind, and the last
+// entry of the window is the `T[]` the variadic parameter is bound to.
+pub func:tt_func_variadic = int32(TypeTable->:t, int32:ret, int32:start,
+                                  int32:count) {
+    pass (raw tt_intern(t, raw TY_FUNC_VARIADIC(), ret, start, count, 8i64, 8i32, 0i32));
+};
+
+// IS THIS CALLABLE AT ALL? Two kinds now, and every place that asked
+// `k == TY_FUNC()` has to ask this instead or it will report a perfectly good
+// variadic function as not being a function.
+pub func:type_is_func = bool(TypeTable->:t, int32:id) {
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_FUNC()))          { pass true; }
+    pass (k == (raw TY_FUNC_VARIADIC()));
+};
+
+pub func:type_is_variadic = bool(TypeTable->:t, int32:id) {
+    pass ((raw type_kind(t, id)) == (raw TY_FUNC_VARIADIC()));
 };
 
 pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
