@@ -79,6 +79,12 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
     // a trait's declared signature is written in terms of it.
     if (k == (raw TY_SELF())) { pass "Self"; }
 
+    // A `comptime` ARGUMENT PRINTS AS THE VALUE, which is what it is. It carries
+    // its rendering as its name, so it falls through to the named-type case below
+    // and comes out as `2` inside `Mutex<Config, 2>` — the mangled name of an
+    // instantiation is built out of exactly these, so getting it wrong here would
+    // rename every instance that carries one.
+
     // Named types carry their own name.
     int32:nm = raw type_name(tt, t);
     if (!(raw intern_is_none(nm))) {

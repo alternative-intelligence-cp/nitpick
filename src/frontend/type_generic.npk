@@ -80,7 +80,15 @@ func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
     if (arg == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, arg)) { pass NIL; }
 
+    // A `comptime` VALUE PARAMETER HAS A TYPE AND NO BOUNDS, so what it needs
+    // checking against is that type. The check happened where the argument was
+    // resolved -- the literal's suffix is right there and the parameter's declared
+    // type is one lookup away -- so this only has to know not to ask a value about
+    // traits it could never implement.
     BoundEntry:b = relay bound_entry_of(bounds, gpid.index);
+    if (b.value_type != 0i32) { pass NIL; }
+    if ((raw type_kind(r.types, arg)) == (raw TY_COMPTIME())) { pass NIL; }
+
     int32:i = 0i32;
     while (i < b.count) {
         int32:need = relay ast_id_at(r.ast, b.start, i);

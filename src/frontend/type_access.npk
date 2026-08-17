@@ -390,7 +390,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
         string:a4 = relay string_concat(a3, "` and `");
         string:a5 = relay string_concat(a4,
                         relay type_display(e.types, e.interns, found.other));
-        pass (relay te_error(e, raw TYPE_MISMATCH(),
+        pass (relay te_error(e, raw TYPE_AMBIGUOUS_METHOD(),
             relay string_concat(a5, "`; call the one you mean by its function form"),
             n.span));
     }
@@ -424,7 +424,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
             if (opaque_recv) {
                 m4 = relay string_concat(m4, relay bounds_note(e, recv));
             }
-            pass (relay te_error(e, raw TYPE_MISMATCH(), m4, n.span));
+            pass (relay te_error(e, raw TYPE_NO_METHOD(), m4, n.span));
         }
         Symbol:s = raw symtab_get(e.tab, sym);
         did_index = s.origin;

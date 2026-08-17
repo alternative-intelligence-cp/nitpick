@@ -72,7 +72,22 @@ pub func:TY_RANGE = int32()    { pass 23i32; };  // a = element (D-093)
 // encoding that can be misread by ignoring a field" is exactly what happened here
 // — `fn_type` carried no variadic information at all, so every variadic call
 // checked as fixed arity and said nothing.
-pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };  // a = return, b,c = param window
+pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
+
+// A COMPILE-TIME VALUE STANDING IN A TYPE-ARGUMENT WINDOW — `Mutex<Config, 2>`
+// (D-064 §2). `a` is the value's TYPE and `name` is its rendering.
+//
+// IT IS NOT A TYPE AND NOTHING CAN DECLARE ONE. A generic argument list is
+// positional and holds both kinds, so every entry has to be one index; making the
+// value an index too keeps the window uniform, rather than a mixture that only
+// the parameter list can tell apart — an encoding that can be misread by ignoring
+// a field is the mistake `TY_FUNC_VARIADIC` exists to avoid, one line above.
+//
+// IDENTITY IS THE RENDERING, and that is what makes `2` and `2` the same argument
+// and `2` and `3` different ones. `2i32` and `2i64` differ in slot `a` and are
+// also different, which is right: a value parameter has a declared type and the
+// argument's has to be it.
+pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = return, b,c = param window
 
 pub struct:Type = {
     int32:kind;
@@ -342,6 +357,14 @@ pub func:type_is_variadic = bool(TypeTable->:t, int32:id) {
 // rule the reader has to remember.
 pub func:tt_self = int32(TypeTable->:t) {
     pass (raw tt_intern(t, raw TY_SELF(), 0i32, 0i32, 0i32, 0i64, 1i32, 0i32));
+};
+
+// A comptime value argument. Zero-sized like `NIL`, because it is not a value the
+// program stores anywhere — it is a compile-time argument, and it is gone by the
+// time anything has a layout.
+pub func:tt_comptime = int32(TypeTable->:t, int32:value_type, int32:rendering) {
+    pass (raw tt_intern(t, raw TY_COMPTIME(), value_type, 0i32, 0i32,
+                        0i64, 1i32, rendering));
 };
 
 pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {

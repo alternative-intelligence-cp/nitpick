@@ -21,6 +21,7 @@ use "diagnostics.npk".*;
 use "type_codes.npk".*;
 use "types.npk".*;
 use "builtin_types.npk".*;
+use "num_width.npk".*;
 use "parse_type.npk".*;
 use "parse_expr.npk".*;
 use "parse_decl.npk".*;
@@ -399,7 +400,8 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
     int32:i = 0i32;
     while (i < given) {
         TypeId:a = TypeId{ index: relay ast_id_at(r.ast, raw type_args_start(n), i) };
-        drop ast_scratch_push(r.ast, relay resolve_type(r, a, scope));
+        DeclId:gpid = DeclId{ index: relay ast_id_at(r.ast, gp.start, i) };
+        drop ast_scratch_push(r.ast, relay resolve_one_arg(r, a, gpid, scope));
         i = i + 1i32;
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
@@ -414,6 +416,90 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
 };
 
 func:GENERIC_DEPTH = int32() { pass 64i32; };
+
+// ONE ARGUMENT, AGAINST THE PARAMETER IT FILLS. Which of the two kinds it must be
+// is decided by the PARAMETER, not by what was written -- the parser cannot tell
+// `Mutex<Config, LEVEL>`'s second argument apart from a type on its own, and the
+// declaration is the thing that knows (D-064 §2).
+//
+// SUPPLYING THE WRONG KIND SAYS WHICH KIND WAS WANTED. "there is no type named
+// `2`" would be true and useless; the mistake is that the position takes a value.
+func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:scope) {
+    DeclNode:gpn = relay ast_decl(r.ast, gpid);
+    TypeNode:an = relay ast_type(r.ast, a);
+    bool:wants_value = raw generic_is_value(gpn);
+    bool:is_value = (an.kind == TypeKind.TypeComptimeArg);
+
+    if (wants_value) {
+        if (!is_value) {
+            pass (relay arg_kind_error(r, gpn, an.span, true));
+        }
+        pass (relay resolve_value_arg(r, an, gpn, scope));
+    }
+    if (is_value) {
+        pass (relay arg_kind_error(r, gpn, an.span, false));
+    }
+    pass (relay resolve_type(r, a, scope));
+};
+
+func:arg_kind_error = int32(TypeResolver->:r, DeclNode:gpn, Span:at,
+                            bool:wants_value) {
+    string:m1 = relay string_concat("`", relay intern_get(r.interns, raw decl_name(gpn)));
+    if (wants_value) {
+        pass (relay ty_error(r, raw TYPE_GENERIC_KIND(),
+            relay string_concat(m1,
+                "` is declared `comptime`, so this position supplies a compile-time value, not a type"),
+            at));
+    }
+    pass (relay ty_error(r, raw TYPE_GENERIC_KIND(),
+        relay string_concat(m1,
+            "` is a type parameter, so this position supplies a type; a value belongs to a parameter declared `comptime`"),
+        at));
+};
+
+// `Mutex<Config, 2>` — THE VALUE, CHECKED AGAINST THE TYPE THE PARAMETER DECLARES.
+//
+// ONLY AN INTEGER LITERAL IS CONSTANT AT THIS RUNG, which is the same rule and the
+// same sentence `resolve_fixed_array` uses for `int32[N]`. Folding a general
+// constant expression is cycle 0.6's job (`comptime`), and until then a non-literal
+// is refused BY NAME rather than silently taking a wrong value -- 0.2.8 found this
+// exact path taking an intern-table slot as an array length.
+func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
+                               int32:scope) {
+    int32:want = relay resolve_type(r, raw generic_value_type(gpn), scope);
+    ExprNode:v = relay ast_expr(r.ast, raw type_comptime_value(an));
+
+    if (v.kind != ExprKind.ExprIntLiteral) {
+        pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
+            "a `comptime` argument must be a constant, and only an integer literal is constant-folded at this rung",
+            v.span));
+    }
+
+    // AN UNSUFFIXED LITERAL TAKES THE PARAMETER'S TYPE, which is D-092's context
+    // rule applied to the one context a generic argument has. A SUFFIXED one must
+    // already be that type: `Mutex<Config, 2i64>` against `comptime int32:LEVEL`
+    // is a mismatch somebody wrote, not a width to be adjusted.
+    NumWidth:w = raw expr_num_width(v);
+    if (raw num_width_is_integer(w)) {
+        int32:got = raw tt_int(r.types, raw num_width_bits(w),
+                               raw num_width_signed(w));
+        if (got != want) {
+            string:m1 = relay string_concat("this `comptime` argument is `",
+                            relay type_display(r.types, r.interns, got));
+            string:m2 = relay string_concat(m1, "` and `");
+            string:m3 = relay string_concat(m2,
+                            relay intern_get(r.interns, raw decl_name(gpn)));
+            string:m4 = relay string_concat(m3, "` is declared `");
+            string:m5 = relay string_concat(m4,
+                            relay type_display(r.types, r.interns, want));
+            pass (relay ty_error(r, raw TYPE_MISMATCH(),
+                relay string_concat(m5, "`"), v.span));
+        }
+    }
+
+    pass (raw tt_comptime(r.types, want,
+                          relay intern_add(r.interns, raw int_to_string(v.payload))));
+};
 
 // `Container<int32>` — THE SOURCE SPELLING, which is the most reversible mangling
 // there is. A nested instance renders through its own stored name, so
@@ -574,14 +660,14 @@ func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
         // Folding a general constant expression is cycle 0.6's job (`comptime`).
         // Until then a non-literal size is refused by NAME rather than silently
         // taking a wrong value, which is what 0.2.8 found this path doing.
-        pass (relay ty_error(r, raw TYPE_ARRAY_SIZE(),
+        pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
             "an array size must be a constant, and only an integer literal is constant-folded at this rung",
             se.span));
     }
 
     int64:count = se.payload;
     if (count < 0i64) {
-        pass (relay ty_error(r, raw TYPE_ARRAY_SIZE(),
+        pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
             "an array size may not be negative", se.span));
     }
     pass (raw tt_array(r.types, elem, count => int32,

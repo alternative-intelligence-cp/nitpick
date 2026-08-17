@@ -61,6 +61,56 @@ pub func:type_is_slice = bool(TypeNode:t) {
     pass (t.b == 0i32);
 };
 
+// A `ComptimeArg`'s value. Its own accessor because slot `a` holds an ExprId
+// here and a TypeId on every other node that uses it -- reading one through
+// `type_pointee` would hand a type-node index to something expecting an
+// expression, which is the misreading the named accessors exist to prevent.
+pub func:type_comptime_value = ExprId(TypeNode:t) {
+    ExprId:e = ExprId{ index: t.a };
+    pass e;
+};
+
+// --- one entry in a type-argument list ----------------------------------------
+//
+// A TYPE ARGUMENT OR A COMPILE-TIME VALUE, and the two are told apart by whether
+// the next token can begin a type at all (D-064 §2). `Mutex<Config, 2>` supplies
+// one of each, positionally, and `2` begins no type -- so this is a disjoint
+// token decision rather than a heuristic or a speculative parse.
+//
+// AN IDENTIFIER IS PARSED AS A TYPE, always. `Mutex<Config, LEVEL>` cannot be
+// told apart here and must not be guessed at: the parser records what was
+// WRITTEN, and which of the two a name means is decided where the parameter list
+// is known. That is the same division `T[]` versus `T[N]` already follows.
+//
+// ONE FUNCTION FOR ALL THREE LISTS -- a named type's arguments, the turbofish,
+// and a `#`-builtin's brackets. A value accepted in one and refused in the other
+// two would make the same list mean different things depending on what opened it,
+// which is exactly the context-dependence the blueprint philosophy forbids; a
+// builtin that takes no values says so in the checker, where the message can name
+// the builtin.
+pub func:p_parse_type_arg = TypeId(Parser->:p) {
+    Span:sp = relay p_span(p);
+    if (raw type_arg_starts_type(relay p_kind(p))) {
+        pass (relay p_parse_type(p));
+    }
+    ExprId:v = relay p_parse_const_arg(p);
+    pass (relay ast_add_type(p.ast, TypeKind.TypeComptimeArg, sp,
+                             v.index, 0i32, 0i32, 0i64));
+};
+
+// The tokens `p_parse_type` itself accepts as a first token. Written from that
+// function rather than guessed at, so the two cannot drift into disagreeing about
+// what a type looks like.
+func:type_arg_starts_type = bool(TokenKind:k) {
+    if (k == TokenKind.Ident)    { pass true; }
+    if (k == TokenKind.KwDyn)    { pass true; }
+    if (k == TokenKind.KwFunc)   { pass true; }
+    if (k == TokenKind.KwSelf)   { pass true; }
+    if (k == TokenKind.KwCstring){ pass true; }
+    if (k == TokenKind.KwAny)    { pass true; }
+    pass (raw token_kind_is_builtin_type(k));
+};
+
 // --- closing a type-argument list --------------------------------------------
 
 // The lexer emits `>>` as ONE token because a type position is not lexically
@@ -193,10 +243,10 @@ pub func:p_parse_type = TypeId(Parser->:p) {
         drop p_advance(p);
         int32:mark = raw ast_scratch_mark(p.ast);
         if (!(relay p_at(p, TokenKind.OpGt))) {
-            TypeId:a1 = relay p_parse_type(p);
+            TypeId:a1 = relay p_parse_type_arg(p);
             drop ast_scratch_push(p.ast, a1.index);
             while (relay p_accept(p, TokenKind.PComma)) {
-                TypeId:argN = relay p_parse_type(p);
+                TypeId:argN = relay p_parse_type_arg(p);
                 drop ast_scratch_push(p.ast, argN.index);
             }
         }

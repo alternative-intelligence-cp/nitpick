@@ -472,6 +472,7 @@ are ordinary values referenced by `IdentifierExpr`.
 | `CStringType` | — | **`cstring`** — NUL-terminated, `{ptr, len}` (D-049). Inhabited by string literals (checked at compile time) and by `to_cstring` |
 | `AnyType` | — | **`any`** — the type-erased pointer, C's `void*`. **Only legal under `->`**; bare `any` is a type error |
 | `SelfType` | — | `Self`, valid only in `trait` / `impl` bodies (D-030) |
+| `ComptimeArg` | `value: Expr` | **`Mutex<Config, 2>`** — a compile-time **value** in a type-argument list (D-064 §2, D-109). Not a type, and it appears nowhere else: a generic argument list is positional and holds both kinds, so every entry has to be one index |
 
 Qualifiers on `VarDeclStmt`, not on the type node: `stack`, `wild`, `wildx`,
 `const`, `fixed`, `borrow_imm`, `borrow_mut`. **`gc` does not exist** (D-003).

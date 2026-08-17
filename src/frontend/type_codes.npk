@@ -9,7 +9,12 @@
 pub func:TYPE_UNKNOWN = string()        { pass "NITPICK-TYPE-001"; };
 pub func:TYPE_NOT_A_TYPE = string()     { pass "NITPICK-TYPE-002"; };
 pub func:TYPE_BARE_ANY = string()       { pass "NITPICK-TYPE-003"; };
-pub func:TYPE_ARRAY_SIZE = string()     { pass "NITPICK-TYPE-004"; };
+// NOT A COMPILE-TIME CONSTANT. One code for one rule, and the rule reaches two
+// spellings: an array size `int32[N]` and a `comptime` generic argument
+// `Mutex<Config, 2>`. Both are refused for the same reason and with the same
+// sentence, so a reader filtering on this is asking one question -- splitting it
+// in two would make the shared rule look like a coincidence.
+pub func:TYPE_NOT_CONSTANT = string()   { pass "NITPICK-TYPE-004"; };
 pub func:TYPE_SELF_OUTSIDE = string()   { pass "NITPICK-TYPE-005"; };
 pub func:TYPE_DYN_NOT_TRAIT = string()  { pass "NITPICK-TYPE-006"; };
 pub func:TYPE_MISMATCH = string()       { pass "NITPICK-TYPE-007"; };
@@ -39,3 +44,21 @@ pub func:TYPE_NOT_OBJECT_SAFE = string(){ pass "NITPICK-TYPE-015"; };
 pub func:TYPE_GENERIC_ARITY = string()  { pass "NITPICK-TYPE-016"; };
 pub func:TYPE_BOUND_UNMET = string()    { pass "NITPICK-TYPE-017"; };
 pub func:TYPE_GENERIC_DEPTH = string()  { pass "NITPICK-TYPE-018"; };
+
+// THREE FINDINGS THAT WERE ALL `TYPE_MISMATCH` OR `TYPE_GENERIC_ARITY`, and are
+// not mismatches at all. Codes are the stable identifiers a test may assert on
+// (BUILD_REFERENCE 7.1), so a distinction that lives only in the wording is a
+// distinction nothing can check -- and each of these is a different mistake with
+// a different fix.
+//
+//   * NO SUCH METHOD -- the receiver has no member by that name. On a generic
+//     parameter this is the whole "no duck typing" property: without its own
+//     code it reads identically to the argument mismatch that arises when the
+//     free function IS wrongly reached.
+//   * AMBIGUOUS -- two traits or two bounds supply one name. The program is
+//     well-formed and the compiler will not choose (D-102).
+//   * WRONG KIND OF GENERIC ARGUMENT -- a type where a `comptime` value was
+//     wanted, or the reverse. Not arity: the count is right.
+pub func:TYPE_NO_METHOD = string()      { pass "NITPICK-TYPE-019"; };
+pub func:TYPE_AMBIGUOUS_METHOD = string(){ pass "NITPICK-TYPE-020"; };
+pub func:TYPE_GENERIC_KIND = string()   { pass "NITPICK-TYPE-021"; };

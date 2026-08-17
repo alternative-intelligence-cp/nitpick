@@ -243,6 +243,24 @@ Mutex<Config, 2>:cfg_lock;          // use site supplies type and value
 > sides of the same colon — unreadable without already knowing whether the other
 > identifier is a trait or a type.
 
+Four rules govern the argument, all D-109:
+
+- **A value argument stops below the binary operators.** Inside `<…>` a `>`
+  *closes the list*, so a comparison must be parenthesized: `Mutex<Config, (A > B)>`.
+  A literal, a name, or a unary expression needs no parentheses.
+- **An identifier is parsed as a type.** `Mutex<Config, LEVEL>` cannot be told
+  apart at the parser, so which kind it means is decided where the parameter list
+  is known — and supplying the wrong kind says *which kind was wanted*.
+- **Only an integer literal is constant at this rung.** The same rule and the same
+  sentence `int32[N]` uses; general constant folding is `comptime`'s, in cycle 0.6.
+- **An unsuffixed literal takes the parameter's declared type; a suffixed one must
+  already be it.** `Mutex<Config, 2i64>` against `comptime int32:LEVEL` is a
+  mismatch somebody wrote, not a width to be adjusted — there is no implicit
+  widening anywhere else either.
+
+Two values are two arguments and therefore two types: `Mutex<T, 2>` and
+`Mutex<T, 3>` are different lock levels, which is what D-056 exists to keep apart.
+
 ### 3.2 Checking happens at the definition
 
 **A generic body is type-checked once**, treating each parameter as an opaque type

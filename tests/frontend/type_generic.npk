@@ -113,40 +113,17 @@ func:errs = int64(Gx->:x) {
     pass (raw diaglist_count(@x.diags));
 };
 func:code0 = string(Gx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
-func:msg0 = string(Gx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).message); };
 
-// Does the first diagnostic mention this text? The message is most of the value
-// of these diagnostics — "`T` has no method `render`" is a different finding from
-// one that also says what `T` CAN do — so the assertions read it rather than
-// settling for the code.
-func:says = bool(Gx->:x, string:needle) {
-    pass (raw string_contains(relay msg0(x), needle));
-};
-
-// Substring search, written here because `intern.npk` has only equality: the
-// compiler compares interned names and never scans one. A diagnostic is a
-// sentence, so a test about a diagnostic needs the other question.
-func:string_contains = bool(string:hay, string:needle) {
-    if (needle.len > hay.len) { pass false; }
-    // NOT `limit` — that is the verification keyword (`limit<Rules>`), and a
-    // keyword is not an identifier.
-    int64:last = hay.len - needle.len;
-    int64:i = 0i64;
-    while (i <= last) {
-        int64:j = 0i64;
-        bool:same = true;
-        while (j < needle.len) {
-            if (hay.ptr[i + j] != needle.ptr[j]) {
-                same = false;
-                break;
-            }
-            j = j + 1i64;
-        }
-        if (same) { pass true; }
-        i = i + 1i64;
-    }
-    pass false;
-};
+// EVERY ASSERTION BELOW IS ON A CODE, never on message text. Codes are stable
+// identifiers and messages are not (BUILD_REFERENCE 7.1), so wording stays free
+// to improve — which matters here more than usual, because these diagnostics are
+// meant to keep getting better at saying what a parameter CAN do.
+//
+// The consequence to notice: a distinction that lives only in the wording is a
+// distinction nothing can check. Three of them earned codes of their own while
+// this file was written — `TYPE_NO_METHOD`, `TYPE_AMBIGUOUS_METHOD` and
+// `TYPE_GENERIC_KIND` — and each is what makes the case below it load-bearing
+// rather than merely a count.
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
@@ -169,18 +146,18 @@ func:main = int32(cstring[]:_~argv) {
         "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { drop x.render(); pass NIL; };",
         @it);
     if (raw errs(@v2) != 1i64)                                  { exit 11i32; }
-    if (!(raw string_eq(raw code0(@v2), raw TYPE_MISMATCH())))   { exit 12i32; }
-    // AND THE DIAGNOSTIC SAYS WHAT `T` CAN DO. A reader told only that the call
-    // is wrong has two candidate fixes — change the call, or widen the bound —
-    // and the compiler already knows which one is possible.
-    if (!(raw says(@v2, "Printable")))                          { exit 13i32; }
+    // ITS OWN CODE, not a mismatch. The message also names the bounds `T` does
+    // declare — a reader told only that the call is wrong has two candidate
+    // fixes, change the call or widen the bound, and the compiler knows which is
+    // possible — but the assertion stays on the code, per BUILD_REFERENCE 7.1.
+    if (!(raw string_eq(raw code0(@v2), raw TYPE_NO_METHOD())))  { exit 12i32; }
 
     // AN UNBOUNDED PARAMETER CAN DO NOTHING AT ALL. `<T>` with no bounds is a
     // type that satisfies nothing, so every method call on it is refused; the
     // message says so rather than listing an empty bound set.
     Gx:v3 = raw gx("func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };", @it);
     if (raw errs(@v3) != 1i64)                                  { exit 14i32; }
-    if (!(raw says(@v3, "no bounds")))                          { exit 15i32; }
+    if (!(raw string_eq(raw code0(@v3), raw TYPE_NO_METHOD())))  { exit 15i32; }
 
     // --- NO DUCK TYPING BY MODULE ACCIDENT -----------------------------------
     //
@@ -196,12 +173,12 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Point = { flt64:x; }; func:show = string(Point:p) { pass \"p\"; }; func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };",
         @it);
     if (raw errs(@v4) != 1i64)                                  { exit 16i32; }
-    // AND IT IS THE RIGHT ERROR. Without the guard the free function IS found,
-    // and the diagnostic becomes "expected `Point`, found `T`" — one error
-    // either way, so a count alone would not tell the two apart. The message is
-    // the difference between "`T` cannot do this" and "you passed the wrong
-    // thing to something `T` was never entitled to reach".
-    if (!(raw says(@v4, "has no method")))                      { exit 31i32; }
+    // AND IT IS THE RIGHT ERROR. Without the guard the free function IS found
+    // and the finding becomes an argument mismatch — one error either way, so a
+    // count alone cannot tell the two apart. That is exactly why "this type has
+    // no such method" is its own code rather than a `TYPE_MISMATCH` whose
+    // wording happens to differ.
+    if (!(raw string_eq(raw code0(@v4), raw TYPE_NO_METHOD())))  { exit 31i32; }
 
     // ...while the same call on the concrete type still resolves, which is what
     // makes the case above a rule about parameters rather than a regression in
@@ -240,8 +217,10 @@ func:main = int32(cstring[]:_~argv) {
         "trait:Ta = { func:tag = int32(Self:self); }; trait:Tb = { func:tag = int32(Self:self); }; func:f<T: Ta & Tb> = NIL(T:x) { drop x.tag(); pass NIL; };",
         @it);
     if (raw errs(@v8) != 1i64)                                  { exit 20i32; }
-    if (!(raw says(@v8, "Ta")))                                 { exit 21i32; }
-    if (!(raw says(@v8, "Tb")))                                 { exit 22i32; }
+    // AMBIGUITY IS NOT A MISMATCH. The program is well-formed and the compiler
+    // declines to choose, which is a different finding with a different fix —
+    // call the one you mean by its function form.
+    if (!(raw string_eq(raw code0(@v8), raw TYPE_AMBIGUOUS_METHOD()))) { exit 21i32; }
 
     // --- A BOUND NAMES TRAITS ------------------------------------------------
     //
@@ -314,7 +293,7 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) { string:v = c.value; pass NIL; };",
         @it);
     if (raw errs(@i2) != 1i64)                                  { exit 41i32; }
-    if (!(raw says(@i2, "int32")))                              { exit 42i32; }
+    if (!(raw string_eq(raw code0(@i2), raw TYPE_MISMATCH())))   { exit 42i32; }
 
     Gx:i3 = raw gx(
         "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) { string:v = c.value; pass NIL; };",
@@ -354,7 +333,7 @@ func:main = int32(cstring[]:_~argv) {
         "struct:Point = { int32:x; }; func:f = NIL(Point<int32>:p) { int32:v = p.x; pass NIL; };",
         @it);
     if (raw errs(@a2) != 1i64)                                  { exit 48i32; }
-    if (!(raw says(@a2, "not generic")))                        { exit 49i32; }
+    if (!(raw string_eq(raw code0(@a2), raw TYPE_GENERIC_ARITY()))) { exit 49i32; }
 
     // --- BOUND SATISFACTION AT THE INSTANTIATION ----------------------------
     //
@@ -365,12 +344,10 @@ func:main = int32(cstring[]:_~argv) {
         "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
         @it);
     if (raw errs(@b1) != 1i64)                                  { exit 50i32; }
+    // The message names three things — the argument, the bound it fails, and the
+    // parameter that asked — because any two leave the reader hunting for the
+    // third. The assertion stays on the code (BUILD_REFERENCE 7.1).
     if (!(raw string_eq(raw code0(@b1), raw TYPE_BOUND_UNMET()))) { exit 51i32; }
-    // THREE THINGS NAMED: the argument, the bound it fails, and the parameter
-    // that asked. Any two leave the reader hunting for the third.
-    if (!(raw says(@b1, "Point")))                              { exit 52i32; }
-    if (!(raw says(@b1, "Printable")))                          { exit 53i32; }
-    if (!(raw says(@b1, "Box")))                                { exit 54i32; }
 
     // …and with the impl present it is accepted. Without this the case above
     // would pass against a checker that refused every instantiation.
@@ -413,6 +390,87 @@ func:main = int32(cstring[]:_~argv) {
     // rather than a shape the checker cannot handle at all.
     Gx:d2 = raw gx(relay nested_generic(64i32), @it);
     if (raw errs(@d2) != 0i64)                                  { exit 60i32; }
+
+    // --- `comptime` VALUE PARAMETERS (D-064 section 2) ----------------------
+    //
+    // `Mutex<Config, 2>` is the specification's own example and it DID NOT PARSE:
+    // a type-argument list took a type per entry and `2` is not one, so the form
+    // D-056's lock levels are built on answered "expected a type". It was also
+    // absent from `whole_grammar.npk`, which is why nothing caught that.
+    Gx:c1 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2i32>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c1) != 0i64)                                  { exit 61i32; }
+
+    // AN UNSUFFIXED LITERAL TAKES THE PARAMETER'S TYPE, which is D-092's context
+    // rule applied to the one context a generic argument has.
+    Gx:c2 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c2) != 0i64)                                  { exit 62i32; }
+
+    // …and a SUFFIXED one must already be that type. `2i64` against `comptime
+    // int32:LEVEL` is a mismatch somebody wrote, not a width to be adjusted —
+    // there is no implicit widening anywhere else either.
+    Gx:c3 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, 2i64>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c3) != 1i64)                                  { exit 63i32; }
+    if (!(raw string_eq(raw code0(@c3), raw TYPE_MISMATCH())))   { exit 64i32; }
+
+    // TWO DIFFERENT VALUES ARE TWO DIFFERENT TYPES. That is the whole reason a
+    // value argument is interned like one: `Mutex<T, 2>` and `Mutex<T, 3>` are
+    // different lock levels, and D-056 exists to keep them apart.
+    Gx:c4 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) { Lock<Point, 3i32>:b = a; pass NIL; };",
+        @it);
+    if (raw errs(@c4) != 1i64)                                  { exit 65i32; }
+
+    // …and the same value twice is one type, which is the other half.
+    Gx:c5 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL(Lock<Point, 2i32>:a) { Lock<Point, 2i32>:b = a; pass NIL; };",
+        @it);
+    if (raw errs(@c5) != 0i64)                                  { exit 66i32; }
+
+    // THE WRONG KIND OF ARGUMENT SAYS WHICH KIND WAS WANTED. "there is no type
+    // named `2`" would be true and useless; the mistake is about the position.
+    Gx:c6 = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, int32>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c6) != 1i64)                                  { exit 67i32; }
+    if (!(raw string_eq(raw code0(@c6), raw TYPE_GENERIC_KIND()))) { exit 68i32; }
+
+    Gx:c7 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL() { Container<2i32>:c; pass NIL; };",
+        @it);
+    if (raw errs(@c7) != 1i64)                                  { exit 69i32; }
+    if (!(raw string_eq(raw code0(@c7), raw TYPE_GENERIC_KIND()))) { exit 70i32; }
+
+    // A NON-LITERAL VALUE IS REFUSED BY NAME, the same rule and the same sentence
+    // `int32[N]` already uses. Folding a general constant expression is cycle
+    // 0.6's job, and until then taking a wrong value silently is the one outcome
+    // worse than refusing.
+    Gx:c8 = raw gx(
+        "pub const int32:COUNT = 4i32; struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, (COUNT)>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c8) != 1i64)                                  { exit 71i32; }
+    // THE SAME CODE AN ARRAY SIZE GETS, because it is the same rule: only an
+    // integer literal is constant-folded at this rung. Two codes would make one
+    // rule look like a coincidence.
+    if (!(raw string_eq(raw code0(@c8), raw TYPE_NOT_CONSTANT()))) { exit 72i32; }
+
+    // A VALUE PARAMETER IS READABLE AS A VALUE IN THE BODY, with the type it was
+    // declared with. That is the entire content of `comptime int32:LEVEL`, and it
+    // is why a value parameter carries a type where a type parameter carries
+    // bounds.
+    Gx:c9 = raw gx("func:f<comptime int32:LEVEL> = int32() { pass LEVEL; };", @it);
+    if (raw errs(@c9) != 0i64)                                  { exit 73i32; }
+
+    // …and it is not interchangeable with the type it holds: `LEVEL` is an
+    // `int32` value, so a mismatched declaration is a mismatch.
+    Gx:c10 = raw gx(
+        "func:f<comptime int32:LEVEL> = NIL() { string:s = LEVEL; pass NIL; };", @it);
+    if (raw errs(@c10) != 1i64)                                 { exit 74i32; }
 
     pass 0i32;
 };

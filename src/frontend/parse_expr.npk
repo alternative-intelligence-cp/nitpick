@@ -204,6 +204,23 @@ func:p_binary = ExprId(Parser->:p, int32:level) {
 };
 
 // 5 -- unary prefixes
+// A COMPILE-TIME VALUE IN A TYPE-ARGUMENT LIST — `Mutex<Config, 2>` (D-064 §2).
+//
+// IT STOPS BELOW THE BINARY OPERATORS, and that is the whole reason it is a
+// separate entry point rather than `p_parse_expr`. Inside `<…>` a `>` CLOSES THE
+// LIST, so an expression parser that could take `>` as a comparison would read
+// `Mutex<Config, 2>` as `Mutex < Config, (2 > …)` and consume the closing bracket
+// as an operator. There is no lookahead that fixes that; there is only a rule
+// about where the value ends.
+//
+// So a value argument is a literal, a name, a unary expression, or a
+// PARENTHESIZED one — `Mutex<Config, (A > B)>` if a comparison is genuinely meant.
+// The parentheses are how the language already resolves this everywhere else, and
+// the alternative is a `>` whose meaning depends on what precedes it.
+pub func:p_parse_const_arg = ExprId(Parser->:p) {
+    pass (relay p_unary(p));
+};
+
 func:p_unary = ExprId(Parser->:p) {
     Span:sp = relay p_span(p);
     TokenKind:k = relay p_kind(p);
@@ -402,10 +419,10 @@ func:p_postfix = ExprId(Parser->:p) {
                         drop p_advance(p);
                         int32:mark = raw ast_scratch_mark(p.ast);
                         if (!(relay p_at(p, TokenKind.OpGt))) {
-                            TypeId:g1 = relay p_parse_type(p);
+                            TypeId:g1 = relay p_parse_type_arg(p);
                             drop ast_scratch_push(p.ast, g1.index);
                             while (relay p_accept(p, TokenKind.PComma)) {
-                                TypeId:gn = relay p_parse_type(p);
+                                TypeId:gn = relay p_parse_type_arg(p);
                                 drop ast_scratch_push(p.ast, gn.index);
                             }
                         }
@@ -551,10 +568,10 @@ func:p_primary = ExprId(Parser->:p) {
         int32:mark = raw ast_scratch_mark(p.ast);
         if (relay p_accept(p, TokenKind.OpLt)) {
             if (!(relay p_at(p, TokenKind.OpGt))) {
-                TypeId:g1 = relay p_parse_type(p);
+                TypeId:g1 = relay p_parse_type_arg(p);
                 drop ast_scratch_push(p.ast, g1.index);
                 while (relay p_accept(p, TokenKind.PComma)) {
-                    TypeId:gn = relay p_parse_type(p);
+                    TypeId:gn = relay p_parse_type_arg(p);
                     drop ast_scratch_push(p.ast, gn.index);
                 }
             }

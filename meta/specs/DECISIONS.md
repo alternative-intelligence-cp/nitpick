@@ -7594,3 +7594,71 @@ the depth cap is the binding limit and reports when it binds. Exhausting even 51
 is a diagnostic naming the reason rather than a `false` that reads as an answer.
 Two limits where only one is reachable is one limit; two where both are is a
 program whose refusal depends on which fires first.
+
+---
+
+## D-109 — A `comptime` value argument: where it ends, and what it is
+
+**Settled in cycle 0.4.7.** D-064 §2 introduced value parameters and gave
+`Mutex<Config, 2>` as the example. **That example did not parse**: a type-argument
+list took a type per entry and `2` is not one, so the form D-056's lock levels are
+built on answered "expected a type". It was also absent from `whole_grammar.npk`,
+which is why nothing caught it — the same gap that hid the blanket impl (D-105).
+
+### Where a value argument ends
+
+**It stops below the binary operators.** Inside `<…>` a `>` *closes the list*, so
+an expression parser that could take `>` as a comparison would read
+`Mutex<Config, 2>` as `Mutex < Config, (2 > …)` and consume the closing bracket as
+an operator. No lookahead fixes that; only a rule about where the value ends does.
+
+So a value argument is a literal, a name, a unary expression, or a **parenthesized**
+one — `Mutex<Config, (A > B)>` if a comparison is genuinely meant. Parentheses are
+how the language already resolves this everywhere else, and the alternative is a
+`>` whose meaning depends on what precedes it.
+
+**One function parses all three argument lists** — a named type's, the turbofish,
+and a `#`-builtin's. A value accepted in one and refused in the others would make
+the same list mean different things depending on what opened it. A builtin that
+takes no values says so in the checker, where the message can name the builtin.
+
+### Which kind an argument is, is decided by the parameter
+
+`Mutex<Config, LEVEL>` cannot be told apart at the parser, so **an identifier is
+always parsed as a type** and the declaration decides. The parser records what was
+*written*; the same division `T[]` versus `T[N]` already follows.
+
+Supplying the wrong kind **says which kind was wanted**. "There is no type named
+`2`" would be true and useless — the mistake is about the position.
+
+### What a value argument is, in the type table
+
+A **`TY_COMPTIME` entry**: slot `a` is the value's type, and the name is its
+rendering. It is not a type and nothing can declare one; it exists because a
+generic argument list is positional and holds both kinds, so every entry has to be
+one index. A mixture only the parameter list could tell apart is an encoding that
+can be misread by ignoring a field — the mistake `TY_FUNC_VARIADIC` (D-100) exists
+to avoid.
+
+**Identity is the rendering**, so `2` and `2` are one argument and `2` and `3` are
+two — and therefore `Mutex<T, 2>` and `Mutex<T, 3>` are two types, which is what
+D-056 exists to keep apart. It also renders inside the instantiation's mangled
+name (D-108), so `Mutex<Config, 2>` is what diagnostics print.
+
+### What the value may be
+
+**Only an integer literal**, which is the same rule and the same sentence
+`resolve_fixed_array` uses for `int32[N]`. General constant folding is `comptime`'s
+job in cycle 0.6, and until then a non-literal is refused **by name** rather than
+silently taking a wrong value — 0.2.8 found this exact path taking an intern-table
+slot as an array length.
+
+**An unsuffixed literal takes the parameter's declared type** (D-092's context rule
+applied to the one context a generic argument has); **a suffixed one must already
+be that type.** `Mutex<Config, 2i64>` against `comptime int32:LEVEL` is a mismatch
+somebody wrote, not a width to be adjusted.
+
+In a **body**, a value parameter reads as a value of its declared type — that is
+the entire content of `comptime int32:LEVEL`, and the reason a value parameter
+carries a type where a type parameter carries bounds. In a **type position** it is
+refused by name (D-107 §3).

@@ -28,6 +28,7 @@ use "type_codes.npk".*;
 use "types.npk".*;
 use "num_width.npk".*;
 use "parse_expr.npk".*;
+use "parse_decl.npk".*;
 use "symbols.npk".*;
 use "resolve_type.npk".*;
 use "type_names.npk".*;
@@ -832,6 +833,18 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
         if (dn.kind == DeclKind.DeclGlobalDecl) {
             TypeId:ty = TypeId{ index: dn.a };
             pass (relay resolve_type(@r, ty, e.scope));
+        }
+        // `<comptime int32:LEVEL>` IS A VALUE, and `pass LEVEL;` reads it as one.
+        // Its type is the one the parameter declares — that is the whole content
+        // of `comptime int32:LEVEL`, and the reason a value parameter carries a
+        // type where a type parameter carries bounds.
+        //
+        // A TYPE PARAMETER FALLS THROUGH to "is a type, not a value", which is
+        // exactly right: `T` names a type and `pass T;` names nothing.
+        if (dn.kind == DeclKind.DeclGenericParam) {
+            if (raw generic_is_value(dn)) {
+                pass (relay resolve_type(@r, raw generic_value_type(dn), e.scope));
+            }
         }
         // A TYPE NAME IN VALUE POSITION says what it is rather than "unknown".
         string:text = relay intern_get(e.interns, s.name);
