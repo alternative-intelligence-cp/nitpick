@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: Phase A, cycle 0.4 — the frontend is real and runs
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 106 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 111 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
