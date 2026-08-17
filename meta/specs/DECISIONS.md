@@ -7529,3 +7529,68 @@ and not two: **unbound** is the definition, where `T` is opaque and the body is
 checked once; **bound** is an instantiation, where `T` is the argument and the
 body is not re-examined. `T` means the same thing in both, and only the binding
 differs.
+
+---
+
+## D-108 — An instantiation's identity is its mangled name, and its bounds are judged in a pass
+
+**Settled in cycle 0.4.7.** D-064 §6 requires instantiations to be deduplicated
+and reversibly mangled with no hash. Making that work against an interned,
+nominally-typed table (D-090) settles three things.
+
+### 1. The name is the identity; the argument window is a derivation of it
+
+`tt_intern` compares every slot, and an argument **window** cannot be compared
+that way — two spellings of `Container<int32>` commit two windows at two different
+starts, so field equality would make one instantiation two types. `type_eq` is an
+integer compare everywhere else in the compiler, so the two would then silently
+differ in every comparison downstream.
+
+The **mangled name** identifies them instead. It is sound to key on it because the
+name is a *total function* of the declaration and the arguments: two entries
+carrying one name necessarily hold equal arguments, so the window can be read back
+for substitution without ever being compared.
+
+The mangling is the **source spelling** — `Container<int32>`, `Handle<Container<int32>>`
+— which is the most reversible form there is and doubles as the display name, so
+every diagnostic about an instantiation says which one without anything extra.
+A mangled name contains `<`, which no identifier does, so it cannot collide with a
+plain named type.
+
+### 2. Bound satisfaction is a pass; arity is decided at the annotation
+
+`resolve_type` runs during **collection** — `collect_impls` resolves an impl's
+target, `collect_bounds` resolves a bound — and the impl table is still being
+filled while it does. "Does `Point` implement `Printable`" would answer `false` for
+an impl recorded on the very next line, so a check written at the annotation would
+report correct programs as wrong.
+
+So the resolver **records** every instantiation, with the span it was first written
+at, and a later pass **decides**. Neither half has a mode: recording always
+happens, and the check always runs after collection.
+
+**Arity stays at the annotation**, because counting needs nothing but what was
+written. One record per distinct instantiation, so a bound violation is one mistake
+reported once, at a real site rather than at every site.
+
+A parameter satisfies a bound by **declaring** it, not by having an impl —
+`Container<T>` inside `func:f<T: Printable>` forwards a type that does not exist
+yet, and everything known about it is its bound list. A `dyn` is deliberately not a
+third case: `dyn Printable` is a type-erased value, not a type implementing
+`Printable`, and admitting it would put a fat pointer where a monomorphized body
+expects a value.
+
+### 3. Two limits, one of them binding
+
+`p_looks_like_decl` scanned at most **64 tokens** to tell `Container<int32>:c;`
+from a chain of comparisons, while D-064 caps instantiation at **64 levels** — and
+one level costs three tokens. A declaration could therefore sit well inside the
+type system's limit, outrun the scan, and be silently reparsed as an expression.
+That is D-104's failure one layer up: not a rejection, an agreement about
+something else.
+
+The scan budget is now **512**, above the deepest type the checker will accept, so
+the depth cap is the binding limit and reports when it binds. Exhausting even 512
+is a diagnostic naming the reason rather than a `false` that reads as an answer.
+Two limits where only one is reachable is one limit; two where both are is a
+program whose refusal depends on which fires first.

@@ -30,6 +30,7 @@ use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
 use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/type_generic.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 use "../../src/frontend/type_stmt.npk".*;
 
@@ -52,7 +53,8 @@ func:fx = Fx(string:src, InternTable->:it) {
     drop resolve_module(@rs, mod_id, scope);
 
     TypeTable:types = raw typetable_init();
-    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     // A WHOLE MODULE, so its `impl` blocks are collected for real -- a method
     // call resolves through this table, not through the scope (D-102).
     ImplTable:im = raw impltable_init();
@@ -66,7 +68,7 @@ func:fx = Fx(string:src, InternTable->:it) {
     // does not weaken the check, it duck-types.
     BoundTable:bd = raw boundtable_init();
     drop collect_bounds(@bd, @tr, mod_id, scope);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;
@@ -95,6 +97,12 @@ func:fx = Fx(string:src, InternTable->:it) {
         }
         i = i + 1i32;
     }
+    // THE INSTANTIATIONS ARE JUDGED LAST, once every one of them has been
+    // recorded. The resolver records as it builds; deciding at the annotation
+    // would ask the impl table a question while it was still being filled, and
+    // deciding before the bodies are walked would miss every `Container<int32>:c;`
+    // written inside one.
+    drop check_instantiations(@inst, @im, @bd, @tr);
     Fx:out = Fx{ types: types, diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;

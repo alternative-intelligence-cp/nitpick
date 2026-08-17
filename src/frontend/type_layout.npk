@@ -58,6 +58,39 @@ pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
     if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
         pass (raw fi_none());
     }
+    GenericScope:saved = raw bind_instance(r, struct_type);
+    FieldInfo:f = relay struct_field_bound(r, struct_type, name, scope);
+    r.generics = saved;
+    pass f;
+};
+
+// A FIELD OF A GENERIC STRUCT IS RESOLVED WITH THE INSTANCE'S ARGUMENTS BOUND.
+//
+// `Container<int32>`'s `value` is an `int32` and `Container<string>`'s is a
+// `string`, from one `T:value` written once. Without the binding, `T` resolves in
+// whatever scope the ACCESS was written in — where it does not exist — so
+// `c.value` reported "there is no type named `T`" against a program with no
+// mistake in it.
+//
+// A NON-GENERIC STRUCT BINDS AN EMPTY SCOPE rather than being left alone. That
+// matters: leaving the caller's binding in place would let a `T` from the
+// surrounding generic function leak into an unrelated struct's field types and
+// resolve to something plausible.
+func:bind_instance = GenericScope(TypeResolver->:r, int32:struct_type) {
+    GenericScope:saved = r.generics;
+    DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
+    DeclNode:d = relay ast_decl(r.ast, did);
+    IdSpan:gp = raw decl_generic_window(r.ast, d);
+    GenericScope:g = GenericScope{
+        params_start: gp.start, params_count: gp.count,
+        args_start: raw type_args_start_of(r.types, struct_type),
+        args_count: raw type_args_count_of(r.types, struct_type) };
+    r.generics = g;
+    pass saved;
+};
+
+func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
+                                    int32:name, int32:scope) {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
 
@@ -93,6 +126,13 @@ pub func:struct_layout = int32(TypeResolver->:r, int32:struct_type, int32:scope)
     if ((raw type_kind(r.types, struct_type)) != (raw TY_STRUCT())) {
         pass struct_type;
     }
+    GenericScope:saved = raw bind_instance(r, struct_type);
+    int32:t = relay struct_layout_bound(r, struct_type, scope);
+    r.generics = saved;
+    pass t;
+};
+
+func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scope) {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
 

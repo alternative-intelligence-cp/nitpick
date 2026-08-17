@@ -88,18 +88,26 @@ pub struct:ExprTyper = {
     // declaration and both are constant across one body.
     GenericScope:generics;
     GenericScope:enclosing;
+
+    // WHERE INSTANTIATIONS ARE RECORDED. A body's annotations instantiate as
+    // readily as a signature's — `Container<int32>:c;` is a statement — so the
+    // checker's resolver has to record into the same table the collection passes
+    // did, or a bound violation written inside a body would go unjudged.
+    InstanceTable->:instances;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
                                  InternTable->:interns, DiagList->:diags,
                                  int32:scope, ImplTable->:impls,
-                                 BoundTable->:bounds) {
+                                 BoundTable->:bounds,
+                                 InstanceTable->:instances) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
-                             enclosing: raw generic_scope_none() };
+                             enclosing: raw generic_scope_none(),
+                             instances: instances };
     pass e;
 };
 
@@ -111,7 +119,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
 // to exist. Context that every resolution needs belongs to the constructor, not
 // to whoever remembers.
 pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags, e.instances);
     r.generics = e.generics;
     r.enclosing = e.enclosing;
     pass r;

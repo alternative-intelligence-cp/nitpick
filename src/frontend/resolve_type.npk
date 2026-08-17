@@ -82,16 +82,27 @@ pub struct:TypeResolver = {
     // shadows rather than collides.
     GenericScope:generics;
     GenericScope:enclosing;
+
+    // EVERY INSTANTIATION BUILT, so that bound satisfaction can be decided after
+    // the impl table exists rather than while it is still being filled. A
+    // required pointer rather than something set afterwards: a resolver without
+    // one would record nothing and every bound would go unchecked, silently.
+    InstanceTable->:instances;
+
+    // HOW DEEP INTO NESTED TYPE ARGUMENTS THIS IS. Capped at 64 (D-064 §6), and
+    // exceeding it is an error naming the cap rather than a silent truncation.
+    int32:depth;
 };
 
 pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    SymbolTable->:tab, InternTable->:interns,
-                                   DiagList->:diags) {
+                                   DiagList->:diags, InstanceTable->:instances) {
     TypeResolver:r = TypeResolver{ ast: ast, types: types, tab: tab,
                                    interns: interns, diags: diags,
                                    self_type: 0i32,
                                    generics: raw generic_scope_none(),
-                                   enclosing: raw generic_scope_none() };
+                                   enclosing: raw generic_scope_none(),
+                                   instances: instances, depth: 0i32 };
     pass r;
 };
 
@@ -314,10 +325,10 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     if (dn.kind == DeclKind.DeclStructDecl) {
         // The layout is computed in 0.4.2 once every field's type is known; the
         // identity is the declaration and is available now (D-090).
-        pass (raw tt_struct(r.types, d.index, name, 0i64, 1i32));
+        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_STRUCT()));
     }
     if (dn.kind == DeclKind.DeclEnumDecl) {
-        pass (raw tt_enum(r.types, d.index, name, 0i64, 1i32));
+        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_ENUM()));
     }
     if (dn.kind == DeclKind.DeclTraitDecl) {
         pass (raw tt_trait(r.types, d.index, name));
@@ -335,6 +346,117 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     string:k3 = relay string_concat(k2, raw decl_kind_article(dn));
     string:k4 = relay string_concat(k3, ", not a type");
     pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(), k4, n.span));
+};
+
+// --- instantiation (TRAITS_REFERENCE 3.3, D-064) --------------------------------------
+//
+// `Container<int32>` AND `Container<string>` ARE DIFFERENT TYPES, and until this
+// existed they were the same one: the arguments were parsed, stored, and never
+// read, so every instantiation of a generic struct resolved to the bare
+// declaration. A field of type `T` then had nothing to substitute and `c.value`
+// answered "there is no type named `T`".
+//
+// ARITY IS ANSWERED HERE and bound satisfaction is not, and the split is not
+// arbitrary: counting needs nothing but the annotation, while "does `int32`
+// implement `Printable`" needs an impl table that is still being filled when this
+// runs. So this counts, records, and moves on; `type_generic.npk` decides.
+func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
+                               DeclId:d, DeclNode:dn, int32:scope, int32:kind) {
+    IdSpan:gp = raw decl_generic_window(r.ast, dn);
+    int32:given = raw type_args_count(n);
+
+    if (given != gp.count) {
+        pass (relay arity_error(r, n, name, gp.count, given));
+    }
+
+    // NOT GENERIC: the identity is the declaration (D-090), and there is nothing
+    // to substitute or to record.
+    if (gp.count == 0i32) {
+        if (kind == (raw TY_STRUCT())) {
+            pass (raw tt_struct(r.types, d.index, name, 0i64, 1i32));
+        }
+        pass (raw tt_enum(r.types, d.index, name, 0i64, 1i32));
+    }
+
+    // DEPTH IS CAPPED AT 64 (D-064 §6). What it bounds at this rung is the
+    // resolver's own recursion through nested type arguments — `Handle<Node<…>>`
+    // — since a body is checked once at its definition and nothing here expands
+    // an instantiation into more of them. Phase B's monomorphizer inherits the
+    // same constant for the expansion case, which is why it is one number rather
+    // than two that could drift apart.
+    //
+    // EXCEEDING IT IS AN ERROR THAT SAYS SO, never a silent truncation: a type
+    // quietly resolved to its 64th level would be a different type from the one
+    // written, and nothing downstream would know.
+    if (r.depth >= (raw GENERIC_DEPTH())) {
+        pass (relay ty_error(r, raw TYPE_GENERIC_DEPTH(),
+            "generic instantiation is nested more than 64 deep, which is the cap (D-064); the expansion is refused rather than truncated, because a type resolved to a different depth than the one written is a different type",
+            n.span));
+    }
+
+    r.depth = r.depth + 1i32;
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < given) {
+        TypeId:a = TypeId{ index: relay ast_id_at(r.ast, raw type_args_start(n), i) };
+        drop ast_scratch_push(r.ast, relay resolve_type(r, a, scope));
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    r.depth = r.depth - 1i32;
+
+    int32:mangled = relay intern_add(r.interns,
+                        relay mangle_instance(r, name, w));
+    int32:t = raw tt_instance(r.types, kind, d.index, mangled,
+                              w.start, w.count, 0i64, 1i32);
+    drop inst_record(r.instances, t, n.span);
+    pass t;
+};
+
+func:GENERIC_DEPTH = int32() { pass 64i32; };
+
+// `Container<int32>` — THE SOURCE SPELLING, which is the most reversible mangling
+// there is. A nested instance renders through its own stored name, so
+// `Handle<Container<int32>>` comes out whole and costs one lookup rather than a
+// re-walk.
+//
+// This doubles as the DISPLAY name, because `type_display` prints a named type's
+// name — so every diagnostic about an instantiation says which one without
+// anything extra being written.
+func:mangle_instance = string(TypeResolver->:r, int32:name, IdSpan:w) {
+    string:m = relay string_concat(relay intern_get(r.interns, name), "<");
+    int32:i = 0i32;
+    while (i < w.count) {
+        if (i > 0i32) { m = relay string_concat(m, ", "); }
+        m = relay string_concat(m,
+                relay type_display(r.types, r.interns,
+                                   relay ast_id_at(r.ast, w.start, i)));
+        i = i + 1i32;
+    }
+    pass (relay string_concat(m, ">"));
+};
+
+// BOTH COUNTS ARE NAMED, and the direction is named too. "wrong number of type
+// arguments" makes the reader go and count the parameters, which is the one thing
+// the compiler already did — and a generic type written with none is the common
+// case, so the message says plainly that the type is generic.
+func:arity_error = int32(TypeResolver->:r, TypeNode:n, int32:name,
+                         int32:want, int32:given) {
+    string:m1 = relay string_concat("`", relay intern_get(r.interns, name));
+    if (want == 0i32) {
+        pass (relay ty_error(r, raw TYPE_GENERIC_ARITY(),
+            relay string_concat(m1, "` is not generic, so it takes no type arguments"),
+            n.span));
+    }
+    string:m2 = relay string_concat(m1, "` takes ");
+    string:m3 = relay string_concat(m2, raw int_to_string(want => int64));
+    string:m4 = relay string_concat(m3, " type argument(s) and this supplies ");
+    string:m5 = relay string_concat(m4, raw int_to_string(given => int64));
+    if (given == 0i32) {
+        m5 = relay string_concat(m5,
+            "; a generic type is written with its arguments — `Container<int32>`, never bare `Container`");
+    }
+    pass (relay ty_error(r, raw TYPE_GENERIC_ARITY(), m5, n.span));
 };
 
 pub func:decl_kind_article = string(DeclNode:d) {

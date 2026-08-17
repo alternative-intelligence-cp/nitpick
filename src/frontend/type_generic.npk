@@ -1,0 +1,135 @@
+// Generic instantiation — do the arguments satisfy the bounds?
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.4.7.
+//
+// D-064 splits the work in two and this file owns the second half. A generic body
+// is checked ONCE, at its definition, against its bounds and nothing else
+// (`type_trait.npk` and D-107); INSTANTIATION then checks only that the concrete
+// arguments satisfy those bounds, and never re-examines the body.
+//
+// THIS IS A PASS RATHER THAN A CHECK AT THE ANNOTATION, and the reason is a phase
+// order rather than a preference. `resolve_type` runs during collection —
+// `collect_impls` resolves an impl's target, `collect_bounds` resolves a bound —
+// and the impl table is still being filled while it does. "Does `Point` implement
+// `Printable`" would answer `false` for an impl recorded on the very next line,
+// so a check written at the annotation would report correct programs as wrong.
+//
+// The resolver therefore RECORDS every instantiation it builds, with the span it
+// was first written at, and this decides afterwards. Neither half has a mode: the
+// recording always happens and the check always runs after collection.
+
+use "source_location.npk".*;
+use "intern.npk".*;
+use "ast_kind.npk".*;
+use "ast.npk".*;
+use "diagnostics.npk".*;
+use "type_codes.npk".*;
+use "types.npk".*;
+use "type_names.npk".*;
+use "parse_decl.npk".*;
+use "parse_type.npk".*;
+use "symbols.npk".*;
+use "resolve_type.npk".*;
+use "type_trait.npk".*;
+
+pub func:check_instantiations = NIL(InstanceTable->:inst, ImplTable->:impls,
+                                    BoundTable->:bounds, TypeResolver->:r) {
+    int32:i = 0i32;
+    while (i < (raw inst_count(inst))) {
+        Instance:e = relay inst_at(inst, i);
+        drop check_one_instance(impls, bounds, r, e);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
+                              TypeResolver->:r, Instance:e) {
+    int32:decl = raw type_decl_of(r.types, e.type_id);
+    if (decl == 0i32) { pass NIL; }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:dn = relay ast_decl(r.ast, did);
+    IdSpan:gp = raw decl_generic_window(r.ast, dn);
+
+    int32:astart = raw type_args_start_of(r.types, e.type_id);
+    int32:acount = raw type_args_count_of(r.types, e.type_id);
+
+    int32:i = 0i32;
+    while (i < acount) {
+        // ARITY WAS ALREADY DECIDED at the annotation, where the counts are, so a
+        // short window here means that error was already reported and this stops
+        // rather than reading past the parameter list to say it again.
+        if (i < gp.count) {
+            DeclId:gpid = DeclId{ index: relay ast_id_at(r.ast, gp.start, i) };
+            drop check_arg_bounds(impls, bounds, r,
+                                  relay ast_id_at(r.ast, astart, i),
+                                  gpid, dn, e.at);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_arg_bounds = NIL(ImplTable->:impls, BoundTable->:bounds,
+                            TypeResolver->:r, int32:arg, DeclId:gpid,
+                            DeclNode:owner, Span:at) {
+    // AN ARGUMENT THAT NEVER RESOLVED IS NOT CHECKED. Its own diagnostic was
+    // already written where the annotation is, and "the invalid type does not
+    // implement `Printable`" would be a second sentence about the same mistake
+    // naming a type the programmer did not write.
+    if (arg == 0i32) { pass NIL; }
+    if (raw type_is_invalid(r.types, arg)) { pass NIL; }
+
+    BoundEntry:b = relay bound_entry_of(bounds, gpid.index);
+    int32:i = 0i32;
+    while (i < b.count) {
+        int32:need = relay ast_id_at(r.ast, b.start, i);
+        if (!(relay arg_satisfies(impls, bounds, r, arg, need))) {
+            drop bound_unmet(r, arg, need, gpid, owner, at);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// DOES THIS ARGUMENT SATISFY THIS BOUND? Two cases, and the second is what makes
+// a generic usable from inside another generic.
+//
+//   * A CONCRETE TYPE satisfies a bound by having an IMPL. The impl table is the
+//     only place that knows, because an impl declares nothing at module scope.
+//   * A PARAMETER satisfies it by DECLARING it. `Container<T>` written inside
+//     `func:f<T: Printable>` passes `T` along, and everything known about `T` is
+//     its bound list — the impl table holds nothing about a type that does not
+//     exist yet, so asking it would refuse every generic that forwards a
+//     parameter, which is most of them.
+//
+// A `dyn` is deliberately NOT a third case. `dyn Printable` is a type-erased
+// value, not a type implementing `Printable`, and letting it satisfy the bound
+// would put a fat pointer where a monomorphized body expects a value.
+func:arg_satisfies = bool(ImplTable->:impls, BoundTable->:bounds,
+                          TypeResolver->:r, int32:arg, int32:need) {
+    if ((raw type_kind(r.types, arg)) == (raw TY_PARAM())) {
+        pass (relay param_declares(bounds, raw type_decl_of(r.types, arg),
+                                   need, r.ast));
+    }
+    pass (relay type_implements(impls, arg, need));
+};
+
+// THE MESSAGE NAMES THREE THINGS: the argument, the bound it fails, and the
+// parameter that asked for it. Any two of them leave the reader hunting for the
+// third — "`int32` does not implement `Printable`" is true of a great many
+// programs and says nothing about which declaration objected.
+func:bound_unmet = NIL(TypeResolver->:r, int32:arg, int32:need, DeclId:gpid,
+                       DeclNode:owner, Span:at) {
+    DeclNode:gp = relay ast_decl(r.ast, gpid);
+    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, arg));
+    string:m2 = relay string_concat(m1, "` does not implement `");
+    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, need));
+    string:m4 = relay string_concat(m3, "`, which `");
+    string:m5 = relay string_concat(m4, relay intern_get(r.interns, raw decl_name(owner)));
+    string:m6 = relay string_concat(m5, "`'s parameter `");
+    string:m7 = relay string_concat(m6, relay intern_get(r.interns, raw decl_name(gp)));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_BOUND_UNMET(),
+        relay string_concat(m7, "` requires"), at));
+    pass NIL;
+};

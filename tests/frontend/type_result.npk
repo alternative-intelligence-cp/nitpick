@@ -88,7 +88,10 @@ func:ty = Ty(string:text, InternTable->:it) {
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+    // NOTHING GENERIC HERE, so nothing to instantiate -- an EMPTY table rather
+    // than a skipped argument, so that a context without instantiations says so.
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     int32:t = relay resolve_type(@r, node, 0i32);
     Ty:out = Ty{ types: types, diags: diags, result: t };
     pass out;
@@ -110,7 +113,10 @@ func:sig = FnSig2(string:src, string:want, InternTable->:it) {
     int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
 
     TypeTable:types = raw typetable_init();
-    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+    // NOTHING GENERIC HERE, so nothing to instantiate -- an EMPTY table rather
+    // than a skipped argument, so that a context without instantiations says so.
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
 
     int32:name = raw intern_add(it, want);
     int32:sym = raw scope_lookup(@tab, scope, name);

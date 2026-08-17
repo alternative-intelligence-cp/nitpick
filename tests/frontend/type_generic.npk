@@ -40,6 +40,7 @@ use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
 use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/type_generic.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 use "../../src/frontend/type_stmt.npk".*;
 
@@ -63,7 +64,8 @@ func:gx = Gx(string:src, InternTable->:it) {
     drop resolve_module(@rs, mod_id, scope);
 
     TypeTable:types = raw typetable_init();
-    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     ImplTable:im = raw impltable_init();
     drop collect_impls(@im, @tr, mod_id, scope);
     // THE BOUNDS ARE COLLECTED BEFORE ANY BODY IS WALKED. A body's every use of
@@ -72,7 +74,7 @@ func:gx = Gx(string:src, InternTable->:it) {
     // table happened to hold.
     BoundTable:bd = raw boundtable_init();
     drop collect_bounds(@bd, @tr, mod_id, scope);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;
@@ -93,6 +95,12 @@ func:gx = Gx(string:src, InternTable->:it) {
         }
         i = i + 1i32;
     }
+    // THE INSTANTIATIONS ARE JUDGED LAST, once every one of them has been
+    // recorded. The resolver records as it builds; deciding at the annotation
+    // would ask the impl table a question while it was still being filled, and
+    // deciding before the bodies are walked would miss every `Container<int32>:c;`
+    // written inside one.
+    drop check_instantiations(@inst, @im, @bd, @tr);
     Gx:out = Gx{ types: types, diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
     pass out;
@@ -288,5 +296,143 @@ func:main = int32(cstring[]:_~argv) {
         @it);
     if (raw errs(@v13) != 1i64)                                 { exit 30i32; }
 
+    // --- INSTANTIATION: `Container<int32>` IS A TYPE ------------------------
+    //
+    // The arguments were parsed and stored from cycle 0.2 and NOTHING READ THEM,
+    // so every instantiation of a generic struct resolved to the bare
+    // declaration: `Container<int32>` and `Container<string>` were one type, and
+    // a field of type `T` had nothing to substitute.
+    Gx:i1 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) { int32:v = c.value; pass NIL; };",
+        @it);
+    if (raw errs(@i1) != 0i64)                                  { exit 40i32; }
+
+    // …and the substitution is the argument, not something that merely resolves.
+    // `c.value` is an `int32` HERE and a `string` in the next case, from one
+    // `T:value` written once.
+    Gx:i2 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:c) { string:v = c.value; pass NIL; };",
+        @it);
+    if (raw errs(@i2) != 1i64)                                  { exit 41i32; }
+    if (!(raw says(@i2, "int32")))                              { exit 42i32; }
+
+    Gx:i3 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<string>:c) { string:v = c.value; pass NIL; };",
+        @it);
+    if (raw errs(@i3) != 0i64)                                  { exit 43i32; }
+
+    // TWO SPELLINGS OF ONE INSTANTIATION ARE ONE TYPE. Each commits its own
+    // argument window at its own start, so field-by-field interning would make
+    // them two types — and `type_eq` is an integer compare everywhere else in the
+    // compiler, so the two would silently differ in every comparison downstream.
+    // The mangled name is the identity, and this is what says so.
+    Gx:i4 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) { Container<int32>:b = a; pass NIL; };",
+        @it);
+    if (raw errs(@i4) != 0i64)                                  { exit 44i32; }
+
+    // …and two DIFFERENT instantiations are two types, which is the other half of
+    // the same statement.
+    Gx:i5 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container<int32>:a) { Container<string>:b = a; pass NIL; };",
+        @it);
+    if (raw errs(@i5) != 1i64)                                  { exit 45i32; }
+
+    // --- ARITY IS ANSWERED AT THE ANNOTATION --------------------------------
+    //
+    // Counting needs nothing but what was written, so it is decided where it was
+    // written rather than in the later pass — and the message names both counts,
+    // because making the reader go and count the parameters is the one thing the
+    // compiler already did.
+    Gx:a1 = raw gx(
+        "struct:Container<T> = { T:value; }; func:f = NIL(Container:c) { int32:v = c.value; pass NIL; };",
+        @it);
+    if (raw errs(@a1) != 1i64)                                  { exit 46i32; }
+    if (!(raw string_eq(raw code0(@a1), raw TYPE_GENERIC_ARITY()))) { exit 47i32; }
+
+    Gx:a2 = raw gx(
+        "struct:Point = { int32:x; }; func:f = NIL(Point<int32>:p) { int32:v = p.x; pass NIL; };",
+        @it);
+    if (raw errs(@a2) != 1i64)                                  { exit 48i32; }
+    if (!(raw says(@a2, "not generic")))                        { exit 49i32; }
+
+    // --- BOUND SATISFACTION AT THE INSTANTIATION ----------------------------
+    //
+    // The other half of D-064: the definition is checked once against its bounds,
+    // and instantiation checks only that the arguments satisfy them. `Point` with
+    // no `Printable` impl is exactly what the bound exists to refuse.
+    Gx:b1 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        @it);
+    if (raw errs(@b1) != 1i64)                                  { exit 50i32; }
+    if (!(raw string_eq(raw code0(@b1), raw TYPE_BOUND_UNMET()))) { exit 51i32; }
+    // THREE THINGS NAMED: the argument, the bound it fails, and the parameter
+    // that asked. Any two leave the reader hunting for the third.
+    if (!(raw says(@b1, "Point")))                              { exit 52i32; }
+    if (!(raw says(@b1, "Printable")))                          { exit 53i32; }
+    if (!(raw says(@b1, "Box")))                                { exit 54i32; }
+
+    // …and with the impl present it is accepted. Without this the case above
+    // would pass against a checker that refused every instantiation.
+    Gx:b2 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; struct:Point = { int32:x; }; impl:Point:Printable = { func:show = string(Point:self) { pass \"p\"; }; }; func:f = NIL() { Box<Point>:b; pass NIL; };",
+        @it);
+    if (raw errs(@b2) != 0i64)                                  { exit 55i32; }
+
+    // A PARAMETER SATISFIES A BOUND BY DECLARING IT, not by having an impl. This
+    // is what makes a generic usable from inside another generic: `U` is a type
+    // that does not exist yet, so the impl table holds nothing about it, and
+    // everything known about it is its bound list.
+    Gx:b3 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; func:f<U: Printable> = NIL() { Box<U>:b; pass NIL; };",
+        @it);
+    if (raw errs(@b3) != 0i64)                                  { exit 56i32; }
+
+    // …and forwarding an UNBOUNDED parameter is refused, which is the same rule
+    // read the other way. Nothing is known about `U`, so nothing entitles it to
+    // stand where `Printable` was required.
+    Gx:b4 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; struct:Box<T: Printable> = { T:value; }; func:f<U> = NIL() { Box<U>:b; pass NIL; };",
+        @it);
+    if (raw errs(@b4) != 1i64)                                  { exit 57i32; }
+
+    // --- DEPTH IS CAPPED AT 64 AND SAYS SO (D-064 section 6) ----------------
+    //
+    // Written with spaces between the closing brackets on purpose: `>>` splitting
+    // is a separate rule with its own coverage, and a depth test that also
+    // exercised it would fail for two possible reasons.
+    //
+    // Exceeding the cap is an ERROR, never a silent truncation — a type resolved
+    // to a different depth than the one written is a different type, and nothing
+    // downstream would know.
+    Gx:d1 = raw gx(relay nested_generic(65i32), @it);
+    if (raw errs(@d1) != 1i64)                                  { exit 58i32; }
+    if (!(raw string_eq(raw code0(@d1), raw TYPE_GENERIC_DEPTH()))) { exit 59i32; }
+
+    // …and one level inside the cap resolves, so the number is the boundary
+    // rather than a shape the checker cannot handle at all.
+    Gx:d2 = raw gx(relay nested_generic(64i32), @it);
+    if (raw errs(@d2) != 0i64)                                  { exit 60i32; }
+
     pass 0i32;
+};
+
+// `struct:C<T> = { T:v; }; func:f = NIL() { C< C< … int32 … > >:x; pass NIL; };`
+// with `depth` levels of nesting. Built rather than written out, because sixty-five
+// levels typed by hand is a transcription error waiting to happen and the number
+// is the whole point of the test.
+func:nested_generic = string(int32:depth) {
+    string:s = "struct:C<T> = { T:v; }; func:f = NIL() { ";
+    int32:i = 0i32;
+    while (i < depth) {
+        s = relay string_concat(s, "C< ");
+        i = i + 1i32;
+    }
+    s = relay string_concat(s, "int32");
+    int32:j = 0i32;
+    while (j < depth) {
+        s = relay string_concat(s, " >");
+        j = j + 1i32;
+    }
+    pass (relay string_concat(s, ":x; pass NIL; };"));
 };

@@ -261,6 +261,41 @@ pub func:tt_enum = int32(TypeTable->:t, int32:decl, int32:name,
     pass (raw tt_intern(t, raw TY_ENUM(), decl, 0i32, 0i32, size, align, name));
 };
 
+// AN INSTANTIATION'S IDENTITY IS ITS MANGLED NAME (D-064 §6).
+//
+// `tt_intern` compares every slot, and an argument WINDOW cannot be compared that
+// way. Two spellings of `Container<int32>` commit two windows at two different
+// starts, so field equality would make them two types — and `type_eq` is an
+// integer compare everywhere else in this compiler, so the two would silently
+// fail to be the same type in every comparison downstream.
+//
+// The NAME identifies them instead, and doing so is sound rather than convenient:
+// the mangled name is a TOTAL FUNCTION of the declaration and the arguments, so
+// two entries carrying one name necessarily hold equal arguments. The window is
+// then a DERIVATION of the identity rather than part of it, which is exactly why
+// it can be read back for substitution without ever being compared.
+//
+// It cannot collide with a plain named type: a mangled name contains `<`, and no
+// identifier does. That is also why the name is readable and reversible with NO
+// HASH — `Container<int32>` maps back to its declaration by inspection, which is
+// what an auditor reading a verification report has to do, and a hash makes it a
+// lookup against a table that may not have survived.
+pub func:tt_instance = int32(TypeTable->:t, int32:kind, int32:decl, int32:name,
+                             int32:arg_start, int32:arg_count,
+                             int64:size, int32:align) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        Type:e = t.items[i => int64];
+        if (e.kind == kind) {
+            if (e.a == decl) {
+                if (e.name == name) { pass i; }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass (raw tt_intern(t, kind, decl, arg_start, arg_count, size, align, name));
+};
+
 pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
     // A trait is not a value type; it has no size of its own.
     pass (raw tt_intern(t, raw TY_TRAIT(), decl, 0i32, 0i32, 0i64, 0i32, name));
@@ -351,6 +386,75 @@ pub func:typetable_init = TypeTable() {
 
     t.t_tbb32 = raw tt_tbb(@t, 32i32);
     pass t;
+};
+
+// --- what was instantiated, and where ----------------------------------------------------
+
+// EVERY INSTANTIATION THE RESOLVER BUILDS, WITH THE SPAN IT WAS FIRST WRITTEN AT.
+//
+// BOUND SATISFACTION CANNOT BE DECIDED WHERE THE INSTANTIATION IS BUILT.
+// `resolve_type` runs during collection — `collect_impls` resolves an impl's
+// target, `collect_bounds` resolves a bound — and at that point the impl table is
+// still being filled. "Does `Point` implement `Printable`" would answer `false`
+// for an impl recorded on the very next line, so checking there would report a
+// correct program as wrong. That is the one failure worse than a missing check.
+//
+// So the resolver RECORDS and a later pass DECIDES. There is no mode and no flag
+// anywhere in this: resolution always records, the check always runs after
+// collection, and neither behaves differently depending on when it was called.
+//
+// ONE RECORD PER DISTINCT INSTANTIATION, keyed by the interned type. Two sites
+// writing `Container<Point>` are the same instantiation with the same arguments,
+// so a bound violation is ONE mistake — reported once, at the first site, which
+// is a real place in the source rather than a summary. Reporting it at every site
+// would be N copies of one sentence.
+pub struct:Instance = {
+    int32:type_id;
+    Span:at;
+};
+
+pub struct:InstanceTable = {
+    wild Instance->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:insttable_init = InstanceTable() {
+    int64:n = 16i64;
+    wild int8->:mem = alloc(n * #size_of<Instance>());
+    InstanceTable:t = InstanceTable{ items: mem => wild Instance->,
+                                     count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+func:inst_grow = NIL(InstanceTable->:t) {
+    int32:nc = t.cap * 2i32;
+    wild int8->:bigger = ralloc(t.items => wild int8->,
+                                (nc => int64) * #size_of<Instance>());
+    t.items = bigger => wild Instance->;
+    t.cap = nc;
+    pass NIL;
+};
+
+pub func:inst_count = int32(InstanceTable->:t) { pass t.count; };
+
+pub func:inst_at = Instance(InstanceTable->:t, int32:i) {
+    if (i < 0i32) { fail 23i32; }
+    if (i >= t.count) { fail 23i32; }
+    pass (t.items[i => int64]);
+};
+
+pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        if ((t.items[i => int64]).type_id == type_id) { pass NIL; }
+        i = i + 1i32;
+    }
+    if (t.count >= t.cap) { drop inst_grow(t); }
+    Instance:e = Instance{ type_id: type_id, at: at };
+    t.items[t.count => int64] = e;
+    t.count = t.count + 1i32;
+    pass NIL;
 };
 
 // --- questions the checker asks constantly ----------------------------------------------------
@@ -461,6 +565,22 @@ pub func:type_dyn_count = int32(TypeTable->:t, int32:id) {
 
 pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).b);
+};
+
+// AN INSTANTIATION'S ARGUMENT WINDOW. Slots `b` and `c` again, and reading one
+// through `type_param_start_of` would return a struct's arguments as a function's
+// parameters — which is the whole reason these are named accessors rather than a
+// comment saying which slot to read. `type_elem` of a slice is what it holds;
+// slot `b` of an instance is what it was instantiated with. Different questions,
+// different names, one slot.
+//
+// ZERO COUNT FOR EVERYTHING ELSE, so a caller that reaches here with a plain
+// `Point` gets an empty window rather than a window into somebody else's data.
+pub func:type_args_start_of = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).b);
+};
+pub func:type_args_count_of = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).c);
 };
 
 pub func:type_decl = int32(TypeTable->:t, int32:id) {

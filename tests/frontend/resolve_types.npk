@@ -54,7 +54,10 @@ func:ty = Fix(string:decls, string:type_text, InternTable->:it) {
     TypeId:node = relay p_parse_type(@tp);
 
     TypeTable:types = raw typetable_init();
-    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags);
+    // NOTHING GENERIC HERE, so nothing to instantiate -- an EMPTY table rather
+    // than a skipped argument, so that a context without instantiations says so.
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     int32:resolved = relay resolve_type(@r, node, scope);
 
     Fix:f = Fix{ ast: ast, types: types, tab: tab, diags: diags,
@@ -142,7 +145,8 @@ func:main = int32(cstring[]:_~argv) {
     // Two structs with the same shape are DIFFERENT TYPES.
     Fix:two = raw ty("struct:Meters = { int32:v; }; struct:Seconds = { int32:v; };",
                      "Meters", @it);
-    TypeResolver:r2 = raw tyres_init(@two.ast, @two.types, @two.tab, @it, @two.diags);
+    InstanceTable:inst2 = raw insttable_init();
+    TypeResolver:r2 = raw tyres_init(@two.ast, @two.types, @two.tab, @it, @two.diags, @inst2);
     // Resolve `Seconds` in the same table and compare.
     DiagList:ld2 = raw diaglist_init();
     TokenList:sk = raw lex_all(0i32, "Seconds", @it, @ld2);

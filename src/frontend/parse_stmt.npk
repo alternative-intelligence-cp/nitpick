@@ -198,6 +198,22 @@ pub func:p_is_assign_op = bool(TokenKind:k) {
 // contains brackets, neither of which ends a type -- while a comma or a `(` at
 // depth zero means this was never a declaration. Bounded, so a pathological line
 // cannot make the parser quadratic.
+//
+// THE BUDGET IS SET ABOVE WHAT THE TYPE SYSTEM WILL ACCEPT, and that is the whole
+// reason for the number. It was 64 TOKENS, while D-064 caps generic instantiation
+// at 64 LEVELS -- and one level of `C<…>` costs three tokens, so a declaration
+// could be well inside the type system's limit and still outrun this scan. The
+// answer when it did was `false`, silently, and `C<C<…>>:x;` was then parsed as a
+// chain of comparisons: a declaration reinterpreted as something else with no
+// diagnostic, which is D-104's failure exactly one layer up.
+//
+// 512 covers the deepest type the checker will accept -- 64 levels is under 200
+// tokens even before `>>` folds pairs of closers -- so the DEPTH CAP is the
+// binding limit and it says so when it binds. Two limits where one is reachable
+// is one limit; two where both are is a program whose refusal depends on which
+// fires first.
+func:DECL_SCAN_LIMIT = int64() { pass 512i64; };
+
 pub func:p_looks_like_decl = bool(Parser->:p) {
     if ((raw p_qualifier_bit(relay p_kind(p))) != 0i32) {
         // A qualifier can begin nothing else, so this is settled already.
@@ -224,7 +240,7 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
     int32:angle = 0i32;
     int32:paren = 0i32;
     int32:brack = 0i32;
-    while (k < 64i64) {
+    while (k < (raw DECL_SCAN_LIMIT())) {
         TokenKind:t = (relay p_peek_at(p, k)).kind;
         if (t == TokenKind.Eof)     { pass false; }
         if (t == TokenKind.PSemi)   { pass false; }
@@ -259,6 +275,15 @@ pub func:p_looks_like_decl = bool(Parser->:p) {
 
         k = k + 1i64;
     }
+
+    // RUNNING OUT OF BUDGET IS NOT AN ANSWER, and returning `false` as though it
+    // were is how the old limit misparsed. Nothing that reaches here terminated
+    // -- no `;`, no `{`, no end of file, and nothing at depth zero that ends a
+    // type -- so this is 512 tokens of unbroken type-shaped material, which no
+    // program the checker would accept can be. Saying so beats a cascade of
+    // comparison errors pointing at a declaration.
+    drop p_error(p, raw PARSE_EXPECTED(),
+        "this statement is more than 512 tokens long without a `;`, so the parser cannot tell a declaration from an expression; a type that large is past the 64-level cap on generic instantiation (D-064)");
     pass false;
 };
 
