@@ -90,6 +90,7 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) {
     drop check_coherence(@im, @tr);
     drop check_impls_complete(@im, @tr, scope);
     drop check_supertraits(@im, @tr, scope);
+    drop check_duplicate_methods(@im, @tr);
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
@@ -659,6 +660,44 @@ func:main = int32(cstring[]:_~argv) {
     Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
                     "", @it);
     if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
+
+    // --- ONE METHOD PER NAME (D-106) -----------------------------------------
+    // Two inherent blocks are legal and are ONE namespace, so the same name in
+    // both is a method nothing could ever call — `find_method` returned the first
+    // and the second was unreachable, with nothing saying so.
+    Ax:d1 = raw axd("impl:Point = { func:one = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:one = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d1) != 1i64)                                 { exit 220i32; }
+
+    // …and inside ONE block a repeat is wrong whichever kind of block it is.
+    Ax:d2 = raw axd("impl:Point = { func:two = int32(Point:self) { pass 1i32; }; func:two = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d2) != 1i64)                                 { exit 221i32; }
+
+    // DIFFERENT NAMES ACROSS TWO BLOCKS is the case that has to stay legal —
+    // splitting a type's methods is a formatting choice, not a coherence
+    // question.
+    Ax:d3 = raw axd("impl:Point = { func:three = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:four = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d3) != 0i64)                                 { exit 222i32; }
+
+    // TWO TRAITS MAY EACH SUPPLY ONE NAME. The trait qualifies it, and D-102
+    // already reports the ambiguity at the CALL, where the reader can act on it —
+    // refusing the declarations would refuse two traits that never meet.
+    Ax:d4 = raw axd("trait:Ua = { func:tag = int32(Self:self); }; trait:Ub = { func:tag = int32(Self:self); }; impl:Point:Ua = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point:Ub = { func:tag = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d4) != 0i64)                                 { exit 223i32; }
+
+    // …and an inherent method alongside a trait one is still fine: inherent wins
+    // at the call (D-102) rather than colliding at the declaration.
+    Ax:d5 = raw axd("trait:Uc = { func:tag = int32(Self:self); }; impl:Point:Uc = { func:tag = int32(Point:self) { pass 1i32; }; }; impl:Point = { func:tag = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d5) != 0i64)                                 { exit 224i32; }
+
+    // The same name on DIFFERENT TYPES is not a duplicate at all.
+    Ax:d6 = raw axd("impl:Point = { func:five = int32(Point:self) { pass 1i32; }; }; impl:Wrap = { func:five = int32(Wrap:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@d6) != 0i64)                                 { exit 225i32; }
 
     exit 0i32;
 };

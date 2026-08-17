@@ -687,3 +687,119 @@ func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:su
         relay string_concat(m5, "` does not implement it"), idl.span));
     pass NIL;
 };
+
+// --- one method per name (D-106) ---------------------------------------------------------
+
+// TWO INHERENT IMPLS ARE LEGAL AND THE SAME METHOD TWICE IS NOT. Coherence (4.1)
+// governs traits, so splitting a type's methods across two `impl:Point = { … };`
+// blocks is a formatting choice and deliberately allowed — which leaves the
+// duplicate-NAME question with nothing answering it. `find_method` returned the
+// first match and the second was unreachable: a method somebody wrote, that
+// nothing could ever call, with no diagnostic saying so.
+//
+// TWO NAMESPACES, and the difference is not cosmetic:
+//
+//   * A TYPE'S INHERENT METHODS are one namespace across every inherent block, so
+//     `scaled` in two of them is one name declared twice.
+//   * EACH TRAIT IMPL IS ITS OWN. `Point` implementing both `Ta::tag` and
+//     `Tb::tag` is legal — the trait qualifies the name, and D-102 already
+//     reports the ambiguity at the CALL, where the reader can act on it.
+//
+// Inside ONE block a repeat is always wrong, whichever kind of block it is.
+pub func:check_duplicate_methods = NIL(ImplTable->:t, TypeResolver->:r) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:a = relay impl_at(t, i);
+        if (!a.blanket) {
+            drop dup_within(r, a);
+            // …and against every LATER inherent impl on the same type. Later
+            // rather than all, so one duplicate is reported once.
+            if (a.trait_id == 0i32) {
+                int32:j = i + 1i32;
+                while (j < t.count) {
+                    ImplEntry:b = relay impl_at(t, j);
+                    if (!b.blanket) {
+                        if (b.trait_id == 0i32) {
+                            if (b.target == a.target) {
+                                drop dup_across(r, a, b);
+                            }
+                        }
+                    }
+                    j = j + 1i32;
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:dup_within = NIL(TypeResolver->:r, ImplEntry:e) {
+    DeclId:iid = DeclId{ index: e.decl };
+    DeclNode:d = relay ast_decl(r.ast, iid);
+    int32:n = relay impl_member_count(r.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:aid = relay impl_member(r.ast, d, i);
+        DeclNode:am = relay ast_decl(r.ast, aid);
+        if (am.kind == DeclKind.DeclFunctionDecl) {
+            int32:j = i + 1i32;
+            while (j < n) {
+                DeclId:bid = relay impl_member(r.ast, d, j);
+                DeclNode:bm = relay ast_decl(r.ast, bid);
+                if (bm.kind == DeclKind.DeclFunctionDecl) {
+                    if ((raw decl_name(bm)) == (raw decl_name(am))) {
+                        drop dup_error(r, e, am, bm);
+                    }
+                }
+                j = j + 1i32;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:dup_across = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+    DeclId:fid = DeclId{ index: first.decl };
+    DeclNode:first_block = relay ast_decl(r.ast, fid);
+    DeclId:sid = DeclId{ index: second.decl };
+    DeclNode:second_block = relay ast_decl(r.ast, sid);
+
+    int32:n = relay impl_member_count(r.ast, first_block);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:aid = relay impl_member(r.ast, first_block, i);
+        DeclNode:am = relay ast_decl(r.ast, aid);
+        if (am.kind == DeclKind.DeclFunctionDecl) {
+            int32:other = relay impl_member_named(r.ast, second_block, raw decl_name(am),
+                                                  DeclKind.DeclFunctionDecl);
+            if (other != 0i32) {
+                DeclId:oid = DeclId{ index: other };
+                DeclNode:om = relay ast_decl(r.ast, oid);
+                drop dup_error(r, first, am, om);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// The SECOND declaration carries the span and the first one's line is named, the
+// same shape the coherence diagnostic uses — a reader told only that something is
+// duplicated has to go and find the other one.
+func:dup_error = NIL(TypeResolver->:r, ImplEntry:e, DeclNode:first,
+                     DeclNode:second) {
+    string:m1 = relay string_concat("`",
+                    relay intern_get(r.interns, raw decl_name(second)));
+    string:m2 = relay string_concat(m1, "` is already a method of `");
+    string:m3 = relay string_concat(m2,
+                    relay type_display(r.types, r.interns, e.target));
+    string:m4 = relay string_concat(m3, "`, declared at line ");
+    string:m5 = relay string_concat(m4, raw int_to_string(first.span.line => int64));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
+        relay string_concat(m5,
+            "; two inherent blocks are one namespace, so a name may be declared in only one of them"),
+        second.span));
+    pass NIL;
+};

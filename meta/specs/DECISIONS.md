@@ -7398,3 +7398,61 @@ declaring their method at module scope (D-102). Both point the same way: **a
 corpus is only as good as its worst-covered construct**, and the way to keep it
 honest is to add each form from the specification's own example rather than from
 whatever was convenient to write.
+
+---
+
+## D-106 — A type's inherent methods are one namespace
+
+**Settled in cycle 0.4.6, closing it.** D-102 made two inherent `impl` blocks on
+one type legal — splitting a type's methods is a formatting choice, and coherence
+(§4.1) governs *traits*. That left the duplicate-**name** question with nothing
+answering it.
+
+`find_method` returned the first match, so the second `scaled` was **unreachable**:
+a method somebody wrote, that nothing could ever call, with no diagnostic saying
+so. Dead code the compiler knew about and did not mention.
+
+### Two namespaces, and the difference is not cosmetic
+
+- **A type's inherent methods are one namespace across every inherent block.**
+  `scaled` in two of them is one name declared twice, and is refused.
+- **Each trait impl is its own.** `Point` implementing both `Ta::tag` and
+  `Tb::tag` is legal — the trait qualifies the name, and refusing the
+  *declarations* would refuse two traits that never meet. D-102 already reports
+  the ambiguity **at the call**, which is where a reader can act on it.
+
+An inherent method alongside a trait one is likewise fine: inherent wins at the
+call (D-102) rather than colliding at the declaration.
+
+Inside **one** block a repeat is always wrong, whichever kind of block it is.
+
+The diagnostic carries the second declaration's span and names the first one's
+line — the same shape the coherence message uses, and for the same reason: a
+reader told only that something is duplicated has to go and find the other one.
+
+---
+
+# Cycle 0.4.6 closed
+
+Traits and impls, in seven decisions' worth of work across four commits. **Four of
+the seven plan items turned out to be repairs rather than construction**, which is
+the part worth carrying forward:
+
+| Found | Had been true since |
+|---|---|
+| a method in an `impl` could not be called at all (D-102) | cycle 0.3 |
+| supertraits parsed and nothing read them (D-105) | cycle 0.2 |
+| a blanket impl did not parse (D-105) | cycle 0.2 |
+| a type name could resolve to `int32` (D-104) | cycle 0.4.1 |
+
+The last of those is the one that mattered most and had nothing to do with traits.
+It was found because a two-trait `dyn` reported both of its perfectly good traits
+as "not a trait", and it would have silently mistyped any program with more than
+about ninety identifiers.
+
+**Three of the four survived because the thing meant to catch them did not cover
+the case** — the 0.4.5 UFCS tests declaring their method at module scope, the
+grammar corpus lacking the blanket impl form, and `tests/grammar/` never resolving
+anything at all. The standing lesson for 0.4.7 and 0.4.8: **write each test from
+the specification's own example**, not from whatever is convenient, and treat a
+construct missing from `whole_grammar.npk` as a construct nothing checks.

@@ -5,13 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: Phase A, cycle 0.4 — the frontend is real and runs
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 105 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 106 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
 **Cycles 0.0–0.3 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 and the module/symbol/visibility passes. **Cycle 0.4 — the type system — is in
-progress**, through subcycle 0.4.5. `src/frontend/` is ~40 `.npk` modules of real
+progress**, through subcycle 0.4.6. `src/frontend/` is ~40 `.npk` modules of real
 compiler, written in Nitpick.
 
 ### Building and testing
