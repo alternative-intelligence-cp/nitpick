@@ -859,6 +859,14 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
     if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
     }
+    // A `dyn` SLOT TAKES ANY TYPE THAT IMPLEMENTS ITS TRAITS (5.2), and another
+    // `dyn` that carries at least them (5.3). This is not a coercion in the sense
+    // the paragraph above rules out — nothing about the value changes, it is a
+    // fat pointer either way — it is a question about what was implemented, and
+    // the impl table is the only thing that can answer it.
+    if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
+        pass (relay dyn_accepts(e.impls, e.ast, e.types, want, got));
+    }
     pass false;
 };
 

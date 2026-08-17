@@ -36,6 +36,10 @@ use "parse_expr.npk".*;
 // moves.
 
 pub func:type_name_index = int64(TypeNode:t)    { pass t.payload; };
+// IS THE NAME A BUILTIN TYPE KEYWORD, or an interned identifier? The payload
+// means a different thing in each case and there is no way to tell from the
+// payload itself -- see the note where this is set.
+pub func:type_name_is_builtin = bool(TypeNode:t) { pass (t.c != 0i32); };
 pub func:type_args_start = int32(TypeNode:t)    { pass t.a; };
 pub func:type_args_count = int32(TypeNode:t)    { pass t.b; };
 pub func:type_pointee = TypeId(TypeNode:t)      { TypeId:i = TypeId{ index: t.a }; pass i; };
@@ -163,10 +167,24 @@ pub func:p_parse_type = TypeId(Parser->:p) {
 
     Token:nt = relay p_advance(p);
     int64:name = nt.payload;
+    // WHICH KIND OF NAME THIS IS, RECORDED RATHER THAN INFERRED.
+    //
+    // A builtin type keyword carries no intern index, so the KIND is stored as
+    // the name instead. That much was always true; what was missing is anything
+    // saying WHICH of the two a payload holds. The comment in `resolve_named`
+    // claimed "the two are told apart by which range the payload is in", and
+    // nothing separated the ranges: intern indices start at 1 and count up, and
+    // the builtin type keywords sit at TokenKind 80-175. So the 88th distinct
+    // identifier a program interns resolves as `int32` -- silently, with no
+    // diagnostic, in any program large enough to reach it.
+    //
+    // This is D-096's defect at its root. That decision fixed `Result<int32>`,
+    // where the same reinterpretation made a keyword read as an intern index; the
+    // representation that allowed it was left alone. One bit ends it.
+    int32:is_builtin = 0i32;
     if (nt.kind != TokenKind.Ident) {
-        // A builtin type keyword carries no intern index, so record the KIND as
-        // the name. The checker maps it back; nothing else needs to.
         name = (nt.kind => int32) => int64;
+        is_builtin = 1i32;
     }
 
     int32:astart = 0i32;
@@ -189,7 +207,7 @@ pub func:p_parse_type = TypeId(Parser->:p) {
     }
 
     TypeId:base = relay ast_add_type(p.ast, TypeKind.TypeNamedType, sp,
-                                     astart, acount, 0i32, name);
+                                     astart, acount, is_builtin, name);
     pass (relay p_suffixes(p, base));
 };
 

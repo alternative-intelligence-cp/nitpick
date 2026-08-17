@@ -74,6 +74,11 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
                         relay type_display(tt, interns, raw type_elem(tt, t)));
         pass (relay string_concat(f1, "(…, ..*T[])"));
     }
+    // `Self` HAS NO NAME TO CARRY, so without this it printed `<type>` — and it
+    // appears in exactly the diagnostics where the reader needs to see it, since
+    // a trait's declared signature is written in terms of it.
+    if (k == (raw TY_SELF())) { pass "Self"; }
+
     // Named types carry their own name.
     int32:nm = raw type_name(tt, t);
     if (!(raw intern_is_none(nm))) {

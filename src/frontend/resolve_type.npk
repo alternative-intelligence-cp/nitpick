@@ -25,6 +25,7 @@ use "parse_type.npk".*;
 use "parse_expr.npk".*;
 use "parse_decl.npk".*;
 use "symbols.npk".*;
+use "type_names.npk".*;
 
 pub struct:TypeResolver = {
     Ast->:ast;
@@ -147,8 +148,19 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
 
     // A BUILTIN TYPE KEYWORD carries no intern index: the parser stored the
     // token KIND as the name, because a keyword is not an identifier (0.2.2).
-    // The two are told apart by which range the payload is in, and the generated
-    // table maps the kind to what it is.
+    // WHICH ONE THIS IS COMES FROM THE NODE, not from the payload's value.
+    //
+    // What stood here said "the two are told apart by which range the payload is
+    // in" and then asked `builtin_type_spec` about every payload. Nothing
+    // separated the ranges. Intern indices start at 1 and count up; the builtin
+    // type keywords are TokenKind 80-175. So a program's 88th distinct identifier,
+    // used as a type name, resolved to `int32` -- no diagnostic, no trace, just a
+    // different type from the one written. Found while a two-trait `dyn` in a
+    // long test file reported both of its perfectly good traits as "not a trait".
+    if (!(raw type_name_is_builtin(n))) {
+        pass (relay resolve_user_named(r, n, payload => int32, scope));
+    }
+
     TokenKind:as_kind = ((payload => int32) => TokenKind);
     BuiltinTypeSpec:spec = raw builtin_type_spec(as_kind);
     if (spec.known) {
@@ -167,8 +179,15 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
         pass (relay resolve_generic_builtin(r, n, as_kind, scope));
     }
 
-    // …or it is a user name. Look it up.
-    int32:name = payload => int32;
+    // A BUILTIN TYPE KEYWORD THE TABLES DO NOT KNOW. Reaching here means the
+    // keyword list and the type tables have drifted apart, which is a compiler
+    // defect rather than a program one.
+    pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+        "this builtin type keyword has no entry in the type tables", n.span));
+};
+
+func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
+                                int32:scope) {
     int32:sym = raw scope_lookup(r.tab, scope, name);
     if (sym == 0i32) {
         string:text = relay intern_get(r.interns, name);
@@ -365,6 +384,12 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
             if ((raw type_kind(r.types, t)) != (raw TY_TRAIT())) {
                 drop ty_error(r, raw TYPE_DYN_NOT_TRAIT(),
                     "every operand of `dyn` must be a trait", n.span);
+            } else {
+                // EACH TRAIT MUST BE OBJECT-SAFE (4.2), and `dyn A & B` checks
+                // BOTH — §5.3 requires it of each, and a widening from `dyn A & B`
+                // to `dyn A` would otherwise pass through a vtable that could not
+                // have been built.
+                drop check_object_safe(r, t, n.span);
             }
         }
         drop ast_scratch_push(r.ast, t);
@@ -372,4 +397,105 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
     }
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
     pass (raw tt_dyn(r.types, w.start, w.count));
+};
+
+// --- object safety (TRAITS_REFERENCE 4.2) ------------------------------------------------
+
+// THREE RULES, AND THE DIAGNOSTIC SAYS WHICH ONE. "Trait is not object safe"
+// sends the reader to re-derive the list; "method `new` takes no `self`, so
+// `dyn Drawable` cannot dispatch it" does not. The plan for this subcycle called
+// that out by name, and it is the only reason these are three checks rather than
+// one predicate.
+//
+// The rules are not arbitrary and each has a mechanical reason:
+//
+//   1. EVERY METHOD TAKES `self`. A vtable dispatches on a receiver; a method
+//      with none has nothing to dispatch on.
+//   2. NO METHOD RETURNS `Self`. Behind `dyn` the concrete type is erased, so its
+//      size is unknown and there is nowhere to put the result.
+//   3. NO METHOD HAS COMPTIME PARAMETERS. Those monomorphize -- one body per
+//      argument -- and a vtable slot is one address.
+//
+// Verified against the prototype (`type_checker_stmts.cpp`, TRAIT-022), which
+// implements the same three. TWO DELIBERATE DEPARTURES, both stricter:
+//
+//   * It accepts a parameter named `self` ANYWHERE in the list. Here it must be
+//     FIRST, because UFCS binds the receiver to parameter zero (0.4.5) -- a
+//     `self` in position two would be dispatched with the receiver in position
+//     zero, which is a mismatch rather than a style.
+//   * It refuses comptime TYPE parameters and says nothing about value ones.
+//     Both are refused here: `<comptime int32:LEVEL>` monomorphizes exactly as a
+//     type parameter does, so it cannot sit in a vtable either, and the message
+//     names which kind it found.
+pub func:check_object_safe = NIL(TypeResolver->:r, int32:trait_id, Span:at) {
+    int32:decl = raw type_decl_of(r.types, trait_id);
+    if (decl == 0i32) { pass NIL; }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:td = relay ast_decl(r.ast, did);
+
+    int32:n = raw item_member_count(r.ast, td);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:mid = raw item_member(r.ast, td, i);
+        DeclNode:m = relay ast_decl(r.ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            drop object_safe_method(r, trait_id, m, at);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
+                              Span:at) {
+    string:mname = relay intern_get(r.interns, raw decl_name(m));
+
+    // Rule 1 — a receiver to dispatch on.
+    bool:has_self = false;
+    if ((relay fn_param_count(r.ast, m)) > 0i32) {
+        DeclId:p0 = raw fn_param(r.ast, m, 0i32);
+        DeclNode:pn = relay ast_decl(r.ast, p0);
+        has_self = raw string_eq(relay intern_get(r.interns, raw decl_name(pn)), "self");
+    }
+    if (!has_self) {
+        drop not_object_safe(r, trait_id, mname,
+            "takes no `self`, so there is no receiver to dispatch on", at);
+    }
+
+    // Rule 2 — a return whose size survives erasure.
+    TypeId:ret = raw fn_return(r.ast, m);
+    if (!(raw type_is_none(ret))) {
+        TypeNode:rn = relay ast_type(r.ast, ret);
+        if (rn.kind == TypeKind.TypeSelfType) {
+            drop not_object_safe(r, trait_id, mname,
+                "returns `Self`, whose size is unknown once the concrete type is erased", at);
+        }
+    }
+
+    // Rule 3 — nothing that monomorphizes.
+    int32:g = relay fn_generic_count(r.ast, m);
+    if (g > 0i32) {
+        DeclId:g0 = raw fn_generic(r.ast, m, 0i32);
+        DeclNode:gn = relay ast_decl(r.ast, g0);
+        string:what = "a comptime type parameter";
+        if (raw generic_is_value(gn)) { what = "a comptime value parameter"; }
+        string:w1 = relay string_concat("has ", what);
+        drop not_object_safe(r, trait_id, mname,
+            relay string_concat(w1,
+                ", which monomorphizes into one body per argument, and a vtable slot is one address"),
+            at);
+    }
+    pass NIL;
+};
+
+func:not_object_safe = NIL(TypeResolver->:r, int32:trait_id, string:mname,
+                           string:why, Span:at) {
+    string:m1 = relay string_concat("`",
+                    relay type_display(r.types, r.interns, trait_id));
+    string:m2 = relay string_concat(m1, "` cannot be used as `dyn`: method `");
+    string:m3 = relay string_concat(m2, mname);
+    string:m4 = relay string_concat(m3, "` ");
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_OBJECT_SAFE(),
+        relay string_concat(m4, why), at));
+    pass NIL;
 };

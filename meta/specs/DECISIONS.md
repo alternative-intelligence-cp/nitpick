@@ -7204,3 +7204,132 @@ coherence question about a trait.
 The diagnostic says **which segment** is wrong and restates D-031's ordering,
 because the two segments are one character apart and a reader who got the order
 backwards needs to be told the order, not that a name was unusable.
+
+---
+
+## D-103 — What a trait requires of an impl, and what `dyn` requires of a trait
+
+**Settled in cycle 0.4.6.** Three checks that all need the same thing — a trait's
+declared surface compared against an impl's — plus the object-safety rules that
+decide whether a trait can be a `dyn` at all.
+
+### `Self` needed a type before any of this could be checked
+
+`TypeResolver.self_type` existed from 0.4.1 and **was never set**, so `Self`
+resolved to an error everywhere it appeared. That was invisible while nothing
+compared signatures, because a trait method's body is not checked and its
+signature was not resolved.
+
+Inside a **trait body** `Self` is `TY_SELF`, a placeholder: the implementing type
+does not exist until an impl names one, and a trait's declared signature still has
+to *be* something to compare against. Inside an **impl body** it is the target
+type. The two are told apart by what the resolver was given, and `self_type` is
+saved and restored around each resolution — leaking it would make the next impl's
+`Self` mean this impl's target.
+
+### An impl is checked three ways, and each is a different mistake
+
+| Wrong | Fix |
+|---|---|
+| a **required** member is missing | supply it |
+| a member the trait **never declared** | move it to an inherent `impl:Type` |
+| a member whose **signature disagrees** | match the declaration |
+
+A trait member is required or defaulted, and the AST already says which: a method
+with **no body**, an `assoc` with **no bound type**. Both absences are real rather
+than a flag, which is what lets them be told apart without one.
+
+**The third check is the one that would otherwise pass.** An impl supplying
+`func:area = int32(Point:self)` where the trait declares `flt64(Self:self)` has
+every method the trait asked for and satisfies nothing — a caller holding a `dyn`
+would dispatch through a vtable slot typed one way into a body typed another.
+Checking names without checking shapes is checking the label.
+
+Comparison substitutes `Self` for the target, **one level**: `Self` is a whole
+type where it appears, and `Self->` or `Self[]` would need the substitution to
+rebuild the wrapper. Those are refused rather than silently mismatched, since a
+trait method taking `Self->` is a shape somebody meant.
+
+### Object safety names which of the three rules broke
+
+1. **Every method takes `self`** — a vtable dispatches on a receiver.
+2. **No method returns `Self`** — its size is unknown once the type is erased.
+3. **No method has comptime parameters** — those monomorphize, and a vtable slot
+   is one address.
+
+Verified against the prototype (`type_checker_stmts.cpp`, TRAIT-022), which
+implements the same three. **Two departures, both stricter:**
+
+- It accepts a parameter named `self` **anywhere** in the list. Here it must be
+  **first**, because UFCS binds the receiver to parameter zero — a `self` in
+  position two would be dispatched with the receiver in position zero.
+- It refuses comptime **type** parameters and says nothing about value ones. Both
+  are refused here: `<comptime int32:LEVEL>` monomorphizes exactly as a type
+  parameter does, and the message names which kind it found.
+
+A non-object-safe trait is still a perfectly good trait — **only `dyn` is
+refused**, because static dispatch has the concrete type and needs no vtable.
+
+### `dyn` assignment, which §5.2's own example did not typecheck
+
+`dyn Serializable:obj = msg;` is the specification's example and there was no rule
+admitting it. A `dyn` slot now accepts a concrete type that implements **every**
+trait it names, and another `dyn` that **carries at least** them — §5.3's widening
+by dropping bounds. The reverse would invent a vtable that was never built.
+
+This is not a coercion in the sense D-099's `fits` otherwise rules out. Nothing
+about the value changes; it is a fat pointer either way. It is a question about
+what was implemented, and the impl table is the only thing that can answer it.
+
+---
+
+## D-104 — A type name is not a token kind, and the node says which
+
+**Settled in cycle 0.4.6.** `resolve_named` asked `builtin_type_spec` about
+**every** payload, on the strength of a comment reading *"the two are told apart
+by which range the payload is in."*
+
+**Nothing separated the ranges.**
+
+- A **builtin type keyword** carries no intern index, so the parser stored the
+  `TokenKind` as the name. Those are **80–175**.
+- An **identifier** carries its intern index. Those start at **1** and count up.
+
+So a program's **88th distinct identifier, used as a type name, resolved to
+`int32`** — silently, with no diagnostic, producing a different type from the one
+written. The 129th became `bool`, the 133rd `string`.
+
+### How it was found, and why it took this long
+
+A two-trait `dyn` in a long test file reported **both** of its perfectly good
+traits as "not a trait". The traits were real, declared two lines above. They had
+simply been interned late enough to land in the keyword range, so they resolved to
+builtin scalars.
+
+It survived because nothing had resolved a user type name from a large intern
+table before. Each test builds its own AST but shares one `InternTable` across
+cases, and the cases that used user types ran early, while the ones that ran late
+used builtins. **`tests/grammar/` never resolves anything** — it is parse-only by
+design — so the corpus that exercises the whole language could not have caught it.
+
+### This is D-096's defect at its root
+
+D-096 fixed `Result<int32>`, where the same reinterpretation ran the other way: a
+keyword read as an intern index, reporting "there is no type named" against
+whatever string sat there. That decision fixed the symptom for one construct and
+**left the representation that allowed it**. The same confusion was still present
+in two places, reaching opposite wrong answers.
+
+**One bit ends it.** `TypeNamedType` records which kind of name it holds, and both
+readers consult the node rather than guessing from the payload's value. The
+second reader was `check_not_result_return`, which compared an intern index
+against `KwResult` and would report a user type named at that index as a `Result`
+return.
+
+### The regression test forces the collision rather than hoping for it
+
+A fresh intern table is padded so the next new identifier lands on **exactly 87**,
+`KwInt32`. A struct declared there is then assigned to an `int32` local: before
+the fix that typechecked, which is the whole shape of the bug — not a diagnostic,
+an agreement. Verified by reverting the fix, with the earlier dyn cases neutered
+so execution reaches it.

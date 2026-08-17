@@ -138,6 +138,11 @@ func:check_not_result_return = NIL(TypeResolver->:r, TypeId:id, int32:_~scope) {
     TypeNode:n = relay ast_type(r.ast, id);
     if (n.kind != TypeKind.TypeNamedType) { pass NIL; }
 
+    // THE PAYLOAD IS A TOKEN KIND ONLY WHEN THE NODE SAYS IT IS (D-104). Without
+    // the guard this compared an intern index against `KwResult` and reported a
+    // user type named at that index as a `Result` return — the same
+    // reinterpretation, in a second place, reaching the opposite wrong answer.
+    if (!(raw type_name_is_builtin(n))) { pass NIL; }
     TokenKind:as_kind = ((raw type_name_index(n)) => int32) => TokenKind;
     if (as_kind != TokenKind.KwResult) { pass NIL; }
 

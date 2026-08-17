@@ -60,7 +60,14 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) {
     string:head = relay string_concat(pre, " func:f = NIL(Point:pt, Wrap:wr, Point->:pp, Point->->:ppp, int32[]:sl, int32[4]:ar, int32->:ip, any->:ap, int32:num, Optional<Point>:op, Optional<int32>:oi, Optional<OWrap>:ow, int64[]:i64s) { ");
     string:with_body = relay string_concat(head, body);
     string:src = relay string_concat(with_body, " pass NIL; };");
+    pass (relay run_module(src, "f", it));
+};
 
+// The whole frontend over one module, checking the body of the function named
+// `want`. Split out of `axd` so a case can supply its OWN source rather than the
+// fixed preamble -- which the intern-collision case has to, since what it is
+// about is WHICH INDEX a name lands on.
+func:run_module = Ax(string:src, string:want, InternTable->:it) {
     DiagList:ld = raw diaglist_init();
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
@@ -81,6 +88,7 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) {
     ImplTable:im = raw impltable_init();
     drop collect_impls(@im, @tr, mod_id, scope);
     drop check_coherence(@im, @tr);
+    drop check_impls_complete(@im, @tr, scope);
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
@@ -90,7 +98,7 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) {
         DeclNode:d = relay ast_decl(@ast, item);
         if (d.kind == DeclKind.DeclFunctionDecl) {
             int32:name = d.payload => int32;
-            if (raw string_eq(relay intern_get(it, name), "f")) {
+            if (raw string_eq(relay intern_get(it, name), want)) {
                 FnSig:sg = relay fn_signature(@tr, d, name, scope);
                 e.fn_success = sg.success;
                 e.fn_terminal = sg.terminal;
@@ -116,6 +124,11 @@ func:errs = int64(Ax->:x) {
     if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
     pass (raw diaglist_count(@x.diags));
 };
+
+// The first diagnostic's CODE. Asserted on where a case is about which rule was
+// broken rather than about how many were -- object safety is three rules and the
+// whole point is that they are told apart.
+func:code0a = string(Ax->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
 
 func:main = int32(cstring[]:_~argv) {
     InternTable:it = raw intern_init();
@@ -471,6 +484,145 @@ func:main = int32(cstring[]:_~argv) {
     // segment is wrong — the two are one character apart.
     Ax:h4 = raw axd("impl:Point:Wrap = { };", "", @it);
     if (raw errs(@h4) != 1i64)                                 { exit 153i32; }
+
+    // --- AN IMPL SUPPLIES WHAT THE TRAIT REQUIRES (D-103) --------------------
+    // A trait method with no body is REQUIRED; the absence is real rather than a
+    // flag, which is what lets the two be told apart without one.
+    Ax:c1 = raw axd("trait:Tf = { func:one = int32(Self:self); }; impl:Point:Tf = { func:one = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@c1) != 0i64)                                 { exit 160i32; }
+    Ax:c2 = raw axd("trait:Tg = { func:one = int32(Self:self); }; impl:Point:Tg = { };",
+                    "", @it);
+    if (raw errs(@c2) != 1i64)                                 { exit 161i32; }
+
+    // A DEFAULT BODY MAKES IT OPTIONAL (2.1), and an impl may still override.
+    Ax:c3 = raw axd("trait:Th = { func:one = int32(Self:self) { pass 0i32; }; }; impl:Point:Th = { };",
+                    "", @it);
+    if (raw errs(@c3) != 0i64)                                 { exit 162i32; }
+    Ax:c4 = raw axd("trait:Ti = { func:one = int32(Self:self) { pass 0i32; }; }; impl:Point:Ti = { func:one = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@c4) != 0i64)                                 { exit 163i32; }
+
+    // …AND MAY NOT ADD ONE THE TRAIT NEVER DECLARED. An inherent impl is where a
+    // method with no trait behind it belongs, and it is one line away, so the
+    // diagnostic points there rather than merely refusing.
+    Ax:c5 = raw axd("trait:Tj = { func:one = int32(Self:self); }; impl:Point:Tj = { func:one = int32(Point:self) { pass 1i32; }; func:extra = int32(Point:self) { pass 2i32; }; };",
+                    "", @it);
+    if (raw errs(@c5) != 1i64)                                 { exit 164i32; }
+
+    // --- THE SIGNATURE HAS TO MATCH, WITH `Self` SUBSTITUTED -----------------
+    // The case that would otherwise pass: every method the trait asked for, and
+    // none of them interchangeable. A `dyn` caller would dispatch through a slot
+    // typed one way into a body typed another.
+    Ax:c6 = raw axd("trait:Tk = { func:one = flt64(Self:self); }; impl:Point:Tk = { func:one = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@c6) != 1i64)                                 { exit 165i32; }
+    Ax:c7 = raw axd("trait:Tl = { func:one = int32(Self:self, int32:k); }; impl:Point:Tl = { func:one = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@c7) != 1i64)                                 { exit 166i32; }
+    // `Self` IN A PARAMETER RESOLVES TO THE TARGET, so this matches rather than
+    // reporting `Self` against `Point` as two different types.
+    Ax:c8 = raw axd("trait:Tm = { func:eq = bool(Self:self, Self:other); }; impl:Point:Tm = { func:eq = bool(Point:self, Point:other) { pass true; }; };",
+                    "", @it);
+    if (raw errs(@c8) != 0i64)                                 { exit 167i32; }
+    // …and a parameter that is NOT the target is still refused.
+    Ax:c9 = raw axd("trait:Tn = { func:eq = bool(Self:self, Self:other); }; impl:Point:Tn = { func:eq = bool(Point:self, Wrap:other) { pass true; }; };",
+                    "", @it);
+    if (raw errs(@c9) != 1i64)                                 { exit 168i32; }
+
+    // --- `assoc` TYPES (2.3) -------------------------------------------------
+    // Declared in the trait, bound in the impl. `assoc:Item;` is required;
+    // `assoc:Error = string;` carries a default and is inherited if omitted.
+    Ax:a1 = raw axd("trait:To = { assoc:Item; }; impl:Point:To = { assoc:Item = int32; };",
+                    "", @it);
+    if (raw errs(@a1) != 0i64)                                 { exit 170i32; }
+    Ax:a2 = raw axd("trait:Tp = { assoc:Item; }; impl:Point:Tp = { };", "", @it);
+    if (raw errs(@a2) != 1i64)                                 { exit 171i32; }
+    Ax:a3 = raw axd("trait:Tq = { assoc:Item = int32; }; impl:Point:Tq = { };", "", @it);
+    if (raw errs(@a3) != 0i64)                                 { exit 172i32; }
+    // A BINDING THE TRAIT NEVER DECLARED is refused, the same as a method.
+    Ax:a4 = raw axd("trait:Tr = { assoc:Item; }; impl:Point:Tr = { assoc:Item = int32; assoc:Other = int32; };",
+                    "", @it);
+    if (raw errs(@a4) != 1i64)                                 { exit 173i32; }
+
+    // --- `Self` IS VALID ONLY INSIDE A TRAIT OR IMPL BODY --------------------
+    Ax:z1 = raw axd("func:loose = int32(Self:self) { pass 1i32; };",
+                    "int32:v = raw loose(1i32);", @it);
+    if (raw errs(@z1) != 1i64)                                 { exit 174i32; }
+
+    // --- OBJECT SAFETY, AND WHICH RULE BROKE (4.2) ---------------------------
+    // Three rules, three messages. "Trait is not object safe" sends the reader to
+    // re-derive the list; naming the method and the reason does not.
+    Ax:o1 = raw axd("trait:Ok1 = { func:draw = int32(Self:self); }; impl:Point:Ok1 = { func:draw = int32(Point:self) { pass 1i32; }; };",
+                    "dyn Ok1:d = pt;", @it);
+    if (raw errs(@o1) != 0i64)                                 { exit 180i32; }
+
+    // 1. A METHOD WITH NO `self` has no receiver to dispatch on.
+    Ax:o2 = raw axd("trait:Bad1 = { func:make = int32(); };",
+                    "dyn Bad1:d;", @it);
+    if (raw errs(@o2) != 1i64)                                 { exit 181i32; }
+    if (!(raw string_eq(raw code0a(@o2), raw TYPE_NOT_OBJECT_SAFE()))) { exit 182i32; }
+
+    // …and `self` must be FIRST, because UFCS binds the receiver to parameter
+    // zero. The prototype accepted it anywhere in the list; here that would be
+    // dispatched with the receiver in the wrong position.
+    Ax:o3 = raw axd("trait:Bad2 = { func:draw = int32(int32:k, Self:self); };",
+                    "dyn Bad2:d;", @it);
+    if (raw errs(@o3) != 1i64)                                 { exit 183i32; }
+
+    // 2. RETURNING `Self` — its size is unknown once the concrete type is erased.
+    Ax:o4 = raw axd("trait:Bad3 = { func:clone = Self(Self:self); };",
+                    "dyn Bad3:d;", @it);
+    if (raw errs(@o4) != 1i64)                                 { exit 184i32; }
+
+    // 3. A COMPTIME PARAMETER monomorphizes into one body per argument, and a
+    // vtable slot is one address.
+    Ax:o5 = raw axd("trait:Bad4 = { func:draw<T> = int32(Self:self); };",
+                    "dyn Bad4:d;", @it);
+    if (raw errs(@o5) != 1i64)                                 { exit 185i32; }
+
+    // `dyn A & B` CHECKS BOTH (5.3). A widening to `dyn A` would otherwise pass
+    // through a vtable that could not have been built.
+    Ax:o6 = raw axd("trait:Ok2 = { func:a = int32(Self:self); }; trait:Bad5 = { func:make = int32(); };",
+                    "dyn Ok2 & Bad5:d;", @it);
+    if (raw errs(@o6) != 1i64)                                 { exit 186i32; }
+
+    // A NON-OBJECT-SAFE TRAIT IS STILL A PERFECTLY GOOD TRAIT. Only `dyn` is
+    // refused — static dispatch has the concrete type and needs no vtable.
+    Ax:o7 = raw axd("trait:Bad6 = { func:make = int32(); }; impl:Point:Bad6 = { func:make = int32() { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@o7) != 0i64)                                 { exit 187i32; }
+
+    // --- A TYPE NAME IS NOT A TOKEN KIND (D-104) -----------------------------
+    // `resolve_named` asked `builtin_type_spec` about EVERY payload, on the
+    // strength of a comment saying the two were "told apart by which range the
+    // payload is in". Nothing separated the ranges: intern indices start at 1 and
+    // count up, and the builtin type keywords are TokenKind 80-175. So a
+    // program's 88th distinct identifier, used as a type name, silently resolved
+    // to `int32`.
+    //
+    // THE INDEX IS FORCED RATHER THAN HOPED FOR. A fresh intern table is padded
+    // so the next new identifier lands on exactly 87 — `KwInt32` — which is what
+    // makes this a regression test rather than a coincidence that held once.
+    InternTable:ct = raw intern_init();
+    int32:pad = raw intern_count(@ct);
+    while (pad < 87i32) {
+        drop intern_add(@ct, relay string_concat("pad", raw int_to_string(pad => int64)));
+        pad = raw intern_count(@ct);
+    }
+    // `Zzz` is the first identifier in the source, so it interns at 87. Before the
+    // fix it resolved to `int32`, and `int32:k = v;` therefore typechecked —
+    // silently, against a struct.
+    Ax:cz = raw run_module("struct:Zzz = { int32:x; }; func:g = NIL(Zzz:v) { int32:k = v; pass NIL; };",
+                           "g", @ct);
+    if (raw errs(@cz) != 1i64)                                 { exit 190i32; }
+
+    // …and the keyword itself still resolves, which is the half that has to keep
+    // working: `int32` is a payload of 87 too, and the node is what tells them
+    // apart now.
+    Ax:cy = raw run_module("func:g = NIL(int32:v) { int32:k = v; pass NIL; };",
+                           "g", @ct);
+    if (raw errs(@cy) != 0i64)                                 { exit 191i32; }
 
     exit 0i32;
 };

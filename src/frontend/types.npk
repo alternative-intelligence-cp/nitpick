@@ -297,6 +297,18 @@ pub func:type_is_variadic = bool(TypeTable->:t, int32:id) {
     pass ((raw type_kind(t, id)) == (raw TY_FUNC_VARIADIC()));
 };
 
+// `Self` INSIDE A TRAIT BODY, where the implementing type is not yet known.
+//
+// A trait's methods are written against a type that does not exist until an impl
+// names one, so `Self` there is a placeholder rather than a type — and it has to
+// BE something, because a trait's declared signature is what an impl's is compared
+// against (D-103). Inside an `impl` body `Self` is the target type itself and this
+// never appears; the two are told apart by what the resolver was given, not by a
+// rule the reader has to remember.
+pub func:tt_self = int32(TypeTable->:t) {
+    pass (raw tt_intern(t, raw TY_SELF(), 0i32, 0i32, 0i32, 0i64, 1i32, 0i32));
+};
+
 pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
     // A generic parameter has no layout: its size is not known at the definition,
     // which is the point of checking the body there (D-064).
@@ -436,6 +448,17 @@ pub func:type_param_count_of = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).c);
 };
 
+// A `dyn A & B`'s TRAIT WINDOW. Slots `a` and `b` this time rather than `b` and
+// `c`, which is exactly why these are named accessors — reading a `dyn` through
+// `type_param_start_of` would return its count and slice the window by whatever
+// followed it.
+pub func:type_dyn_start = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).a);
+};
+pub func:type_dyn_count = int32(TypeTable->:t, int32:id) {
+    pass ((raw tt_get(t, id)).b);
+};
+
 pub func:type_param_start_of = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).b);
 };
@@ -446,4 +469,22 @@ pub func:type_decl = int32(TypeTable->:t, int32:id) {
 
 pub func:type_name = int32(TypeTable->:t, int32:id) {
     pass ((raw tt_get(t, id)).name);
+};
+
+// THE DECLARATION A NAMED TYPE CAME FROM — a struct's, an enum's, a trait's, or a
+// generic parameter's. Slot `a` again, and `type_elem` would return it perfectly
+// well; the point of a second accessor over the same slot is that the two answer
+// different questions. `type_elem` of a slice is what it holds; slot `a` of a
+// trait is where it was written. Reading one through the other is how `expr_shape`
+// and `stmt_cond` each cost a defect, so the name is the guard.
+//
+// ZERO FOR ANYTHING ELSE, so a caller that reaches here with an `int32` gets an
+// answer it can test rather than an index into the declaration array.
+pub func:type_decl_of = int32(TypeTable->:t, int32:id) {
+    int32:k = raw type_kind(t, id);
+    if (k == (raw TY_STRUCT())) { pass ((raw tt_get(t, id)).a); }
+    if (k == (raw TY_ENUM()))   { pass ((raw tt_get(t, id)).a); }
+    if (k == (raw TY_TRAIT()))  { pass ((raw tt_get(t, id)).a); }
+    if (k == (raw TY_PARAM()))  { pass ((raw tt_get(t, id)).a); }
+    pass 0i32;
 };

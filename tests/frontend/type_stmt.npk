@@ -58,6 +58,7 @@ func:fx = Fx(string:src, InternTable->:it) {
     ImplTable:im = raw impltable_init();
     drop collect_impls(@im, @tr, mod_id, scope);
     drop check_coherence(@im, @tr);
+    drop check_impls_complete(@im, @tr, scope);
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
