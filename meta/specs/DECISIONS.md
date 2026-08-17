@@ -7333,3 +7333,68 @@ A fresh intern table is padded so the next new identifier lands on **exactly 87*
 the fix that typechecked, which is the whole shape of the bug — not a diagnostic,
 an agreement. Verified by reverting the fix, with the earlier dyn cases neutered
 so execution reaches it.
+
+---
+
+## D-105 — Supertraits are enforced, and a blanket impl parses
+
+**Settled in cycle 0.4.6.** Two features that had been written down, stored in the
+AST, and never read.
+
+### Supertraits parsed since 0.2 and nothing consumed them
+
+`trait:Ordered = Equatable & { … };` recorded its supertraits in the item node's
+extras window from cycle 0.2, and **no pass ever looked at it.** So a type could
+implement a trait while satisfying none of what that trait was declared to build
+on — which is the entire content of §2.2 — and a trait could name a **struct** as
+a supertrait with nothing objecting.
+
+Both are checked now, and **transitively**: `C` requiring `B` requiring `A` needs
+all three. The requirement is on the **implementing type**, not on the
+intermediate trait, so the walk carries the impl down rather than restarting.
+
+**The walk is fuel-bounded at 64.** Supertraits are a graph a *program* writes, so
+`trait:A = B & {…}; trait:B = A & {…};` is a cycle somebody can type and a
+recursive walk over it does not return. The cycle is a real error belonging to
+trait-declaration checking; what matters here is that the checker cannot hang
+before reporting anything, and the cap is stated rather than assumed unreachable.
+
+### A blanket impl did not parse, which is a D-085 violation
+
+`impl:<T: Printable>:Loggable = { … };` is §2.6's form and answered **"expected a
+type"** — the target position called `p_parse_type`, and `<` is not a type.
+
+That is not a missing feature, it is the rule the bootstrap strategy rests on
+being broken: **the frontend accepts the whole grammar from day one**, and a
+construct no rung can lower yet produces a *backend* diagnostic, never a parse
+error. The rule exists so the grammar is never partial and never has to be
+re-widened — which is the failure that killed `nitpick-bootstrap`.
+
+**The generic list stands in the target position.** `impl:<T: Printable>` writes
+no type there at all; the parameter it declares *is* what is being implemented on.
+So slot 0 is empty for a blanket impl and the generics window says which type it
+means, which makes `impl_generic_count > 0` the test for "is this blanket" with no
+separate flag needed. `resolve.npk` opens a scope for the block when it declares
+one, and only then — a concrete `impl:Point` opens nothing, since a block that
+opened a scope either way would put its methods where a later lookup does not
+reach.
+
+**Recorded, and not checked, at this rung.** Every question about a blanket impl —
+which types it applies to, whether a concrete impl outranks it (§2.6), what `Self`
+substitutes to — is bound satisfaction or monomorphization, and both are 0.4.7's.
+Recording them now is what lets 0.4.7 find them. It is also why a blanket impl is
+**not** a coherence conflict with a concrete one: overlapping is the point, and
+§2.6 already says which wins.
+
+### The corpus that should have caught it did not contain it
+
+`tests/grammar/whole_grammar.npk` exists so every construct in the language is fed
+to the real parser on every harness run. **The blanket impl form was absent**, so
+nothing checked the parser against it. It is there now.
+
+That is the second time in this subcycle that a gap survived because the thing
+meant to catch it did not cover the case — the other being the 0.4.5 UFCS tests
+declaring their method at module scope (D-102). Both point the same way: **a
+corpus is only as good as its worst-covered construct**, and the way to keep it
+honest is to add each form from the specification's own example rather than from
+whatever was convenient to write.

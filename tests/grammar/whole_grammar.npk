@@ -87,6 +87,15 @@ impl:Message:Serializable = {
     func:to_bytes = buffer(Message:self) { pass 0i32; };
 };
 
+// A BLANKET IMPL (TRAITS_REFERENCE 2.6). It was absent from this file and did not
+// parse — the target position took a type and `<` is not one — so the form the
+// specification gives for implementing a trait over every type satisfying a bound
+// answered "expected a type" (D-105). A construct missing from this corpus is a
+// construct nothing checks the parser against, which is exactly how that lasted.
+impl:<T: Printable>:Loggable = {
+    func:log_str = string(T:self) { pass "x"; };
+};
+
 // --- verification ----------------------------------------------------------------------
 
 Rules<int32>:r_positive = { $ > 0i32 };

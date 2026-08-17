@@ -536,10 +536,31 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) {
         pass NIL;
     }
     if (d.kind == DeclKind.DeclImplDecl) {
+        // A BLANKET IMPL'S PARAMETER IS IN SCOPE FOR THE WHOLE BLOCK (D-105), so
+        // the block opens a scope of its own when it declares one. `impl:<T:
+        // Printable>:Loggable` names `T` as its target and again in every method
+        // signature; without a scope holding it, those are unbound names.
+        //
+        // A CONCRETE IMPL OPENS NOTHING, so `impl:Point = { … };` resolves in the
+        // module scope exactly as it did — a block that opened a scope either way
+        // would put its methods somewhere a later lookup does not reach.
+        int32:inner = scope;
+        int32:g = 0i32;
+        int32:gn = relay impl_generic_count(r.ast, d);
+        if (gn > 0i32) {
+            inner = raw scope_open(r.tab, scope, raw SCOPE_FUNCTION());
+            while (g < gn) {
+                DeclId:gp = relay impl_generic(r.ast, d, g);
+                DeclNode:gd = relay ast_decl(r.ast, gp);
+                drop symtab_declare(r.tab, r.ast, r.diags, inner, raw decl_name(gd),
+                                    raw SYM_DECL(), gp.index, 0i32);
+                g = g + 1i32;
+            }
+        }
         int32:n = relay impl_member_count(r.ast, d);
         int32:i = 0i32;
         while (i < n) {
-            drop resolve_decl(r, relay impl_member(r.ast, d, i), scope);
+            drop resolve_decl(r, relay impl_member(r.ast, d, i), inner);
             i = i + 1i32;
         }
         pass NIL;

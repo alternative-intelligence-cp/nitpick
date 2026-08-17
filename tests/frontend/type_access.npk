@@ -89,6 +89,7 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) {
     drop collect_impls(@im, @tr, mod_id, scope);
     drop check_coherence(@im, @tr);
     drop check_impls_complete(@im, @tr, scope);
+    drop check_supertraits(@im, @tr, scope);
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
@@ -623,6 +624,41 @@ func:main = int32(cstring[]:_~argv) {
     Ax:cy = raw run_module("func:g = NIL(int32:v) { int32:k = v; pass NIL; };",
                            "g", @ct);
     if (raw errs(@cy) != 0i64)                                 { exit 191i32; }
+
+    // --- SUPERTRAITS ARE ENFORCED, AND TRANSITIVELY (2.2) --------------------
+    // They parsed and were stored from cycle 0.2 and nothing read them, so a type
+    // could implement a trait while satisfying none of what it was declared to
+    // build on — which is the whole content of the feature.
+    Ax:t1 = raw axd("trait:S1 = { func:a = int32(Self:self); }; trait:S2 = S1 & { func:b = int32(Self:self); }; impl:Point:S1 = { func:a = int32(Point:self) { pass 1i32; }; }; impl:Point:S2 = { func:b = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@t1) != 0i64)                                 { exit 200i32; }
+    // …and without the supertrait's impl it is refused, naming both.
+    Ax:t2 = raw axd("trait:S3 = { func:a = int32(Self:self); }; trait:S4 = S3 & { func:b = int32(Self:self); }; impl:Point:S4 = { func:b = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@t2) != 1i64)                                 { exit 201i32; }
+
+    // TRANSITIVE: `S7` requires `S6` requires `S5`, so implementing `S7` needs
+    // all three and the missing one is named wherever it sits in the chain.
+    Ax:t3 = raw axd("trait:S5 = { func:a = int32(Self:self); }; trait:S6 = S5 & { func:b = int32(Self:self); }; trait:S7 = S6 & { func:c = int32(Self:self); }; impl:Point:S6 = { func:b = int32(Point:self) { pass 1i32; }; }; impl:Point:S7 = { func:c = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@t3) != 2i64)                                 { exit 202i32; }
+
+    // A SUPERTRAIT CLAUSE NAMES TRAITS. A struct resolves there perfectly well
+    // and means nothing.
+    Ax:t4 = raw axd("trait:S8 = Wrap & { func:b = int32(Self:self); }; impl:Point:S8 = { func:b = int32(Point:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@t4) != 1i64)                                 { exit 203i32; }
+
+    // --- BLANKET IMPLS PARSE (D-105) -----------------------------------------
+    // `impl:<T: Printable>:Loggable` answered "expected a type" — this position
+    // took a TYPE and `<` is not one. That is a D-085 violation rather than a
+    // missing feature: the frontend accepts the whole grammar from day one, and a
+    // construct no rung can lower yet gets a BACKEND diagnostic, never a parse
+    // error. Bound satisfaction and monomorphization are 0.4.7's; this asserts it
+    // parses and is recorded, which is what lets 0.4.7 find them.
+    Ax:bl = raw axd("trait:Pr = { func:p = int32(Self:self); }; trait:Lo = { func:l = int32(Self:self); }; impl:<T: Pr>:Lo = { func:l = int32(T:self) { pass 1i32; }; };",
+                    "", @it);
+    if (raw errs(@bl) != 0i64)                                 { exit 210i32; }
 
     exit 0i32;
 };

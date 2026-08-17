@@ -175,14 +175,19 @@ pub func:fn_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
 // --- ImplDecl ---------------------------------------------------------------------
 //
 //   [0] target TypeId   [1] trait TypeId (0 = inherent)
-//   [2] member count    [3] attribute count
-//   then members, attributes.
+//   [2] member count    [3] attribute count   [4] generic count
+//   then generics, members, attributes.
 //
 // SLOT 0 IS ALWAYS THE TYPE, with or without a trait (D-031). Trait-first
 // ordering was rejected for exactly this reason: it would make the one-segment
 // form `impl:Point` put a type in slot 1 while the two-segment form put a trait
 // there, so the first slot's meaning would change with arity.
-func:IMPL_HDR = int32() { pass 4i32; };
+//
+// A BLANKET IMPL PUTS ITS PARAMETER IN THE SAME SLOT (D-105). `impl:<T: Printable>`
+// declares `T` in the generics window and names it as the target, so slot 0 keeps
+// meaning "the type being implemented on" for all three forms -- one concrete,
+// one inherent, one blanket -- rather than gaining a fourth reading.
+func:IMPL_HDR = int32() { pass 5i32; };
 
 pub func:impl_target = TypeId(Ast->:ast, DeclNode:d) {
     TypeId:t = TypeId{ index: raw d_at(ast, d, 0i32) }; pass t;
@@ -192,8 +197,17 @@ pub func:impl_trait = TypeId(Ast->:ast, DeclNode:d) {
 };
 pub func:impl_member_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
 pub func:impl_attr_count = int32(Ast->:ast, DeclNode:d)   { pass (raw d_at(ast, d, 3i32)); };
+pub func:impl_generic_count = int32(Ast->:ast, DeclNode:d){ pass (raw d_at(ast, d, 4i32)); };
+pub func:impl_generic = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:g = DeclId{ index: raw d_at(ast, d, (raw IMPL_HDR()) + i) }; pass g;
+};
 pub func:impl_member = DeclId(Ast->:ast, DeclNode:d, int32:i) {
-    DeclId:m = DeclId{ index: raw d_at(ast, d, (raw IMPL_HDR()) + i) }; pass m;
+    int32:base = (raw IMPL_HDR()) + (raw impl_generic_count(ast, d));
+    DeclId:m = DeclId{ index: raw d_at(ast, d, base + i) }; pass m;
+};
+// A blanket impl is the one whose target is a parameter it declared itself.
+pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) {
+    pass ((raw impl_generic_count(ast, d)) > 0i32);
 };
 
 // --- MacroDecl ----------------------------------------------------------------------
@@ -714,7 +728,27 @@ func:p_parse_trait = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
 func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     drop p_expect(p, TokenKind.KwImpl);
     drop p_expect(p, TokenKind.PColon);
-    TypeId:target = relay p_parse_type(p);
+
+    // `impl:<T: Printable>:Loggable` -- A BLANKET IMPL (TRAITS_REFERENCE 2.6),
+    // and it did not parse at all: this position expected a TYPE, and `<` is not
+    // one, so the form the specification gives for implementing a trait over
+    // every type satisfying a bound answered "expected a type".
+    //
+    // That is a D-085 violation rather than a missing feature. The frontend
+    // accepts the WHOLE GRAMMAR from day one; a construct no rung can lower yet
+    // produces a BACKEND diagnostic, never a parse error -- and the rule exists
+    // so the grammar is never partial and never has to be re-widened.
+    //
+    // THE GENERIC LIST STANDS IN THE TARGET POSITION. `impl:<T: Printable>:Loggable`
+    // writes no type there at all — the parameter it declares IS what is being
+    // implemented on — so slot 0 is empty for a blanket impl and the generics
+    // window is what says which type it means. Reading `impl_generic_count` is
+    // therefore the test for "is this blanket", and it needs no separate flag.
+    IdSpan:generics = relay p_parse_generics(p);
+    int32:target = 0i32;
+    if (generics.count == 0i32) {
+        target = (relay p_parse_type(p)).index;
+    }
     int32:trait_ty = 0i32;
     if (relay p_accept(p, TokenKind.PColon)) {
         trait_ty = (relay p_parse_type(p)).index;
@@ -724,10 +758,12 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     drop p_expect(p, TokenKind.PSemi);
 
     int32:mark = raw ast_scratch_mark(p.ast);
-    drop ast_scratch_push(p.ast, target.index);
+    drop ast_scratch_push(p.ast, target);
     drop ast_scratch_push(p.ast, trait_ty);
     drop ast_scratch_push(p.ast, members.count);
     drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_scratch_push(p.ast, generics.count);
+    drop ast_copy_window(p.ast, generics);
     drop ast_copy_window(p.ast, members);
     drop ast_copy_window(p.ast, attrs);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);

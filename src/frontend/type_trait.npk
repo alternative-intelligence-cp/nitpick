@@ -37,9 +37,10 @@ use "type_decl.npk".*;
 // One `impl` block. The TARGET IS ALWAYS SLOT ONE (D-031), with or without a
 // trait, so `inherent` is `trait_id == 0` rather than a different shape.
 pub struct:ImplEntry = {
-    int32:target;     // the type being implemented on
+    int32:target;     // the type being implemented on, or 0 for a blanket impl
     int32:trait_id;   // the trait, or 0 for an inherent impl
     int32:decl;       // the `ImplDecl` node index
+    bool:blanket;     // `impl:<T: Bound>:Trait` — the target is a parameter
 };
 
 pub struct:ImplTable = {
@@ -73,9 +74,11 @@ pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) {
     pass (t.items[i => int64]);
 };
 
-func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl) {
+func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
+                     bool:blanket) {
     if (t.count >= t.cap) { drop impl_grow(t); }
-    ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl };
+    ImplEntry:e = ImplEntry{ target: target, trait_id: trait_id, decl: decl,
+                             blanket: blanket };
     t.items[t.count => int64] = e;
     t.count = t.count + 1i32;
     pass NIL;
@@ -105,13 +108,33 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
 
 func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
                             DeclNode:d, int32:scope) {
+    // A BLANKET IMPL HAS NO CONCRETE TARGET TO RESOLVE (D-105). Its target names
+    // a parameter it declared itself, which lives in the scope `resolve.npk`
+    // opened for the block — not in this one — and what it stands for is decided
+    // per instantiation.
+    //
+    // It is RECORDED AND NOT CHECKED at this rung, and that is a schedule rather
+    // than a silence: 0.4.7 owns bound satisfaction and monomorphization, and
+    // every question about a blanket impl — which types it applies to, whether a
+    // concrete impl outranks it (2.6), what `Self` substitutes to — is one of
+    // those. Recording it now is what lets 0.4.7 find them.
+    if (relay impl_is_blanket(r.ast, d)) {
+        int32:bt = 0i32;
+        TypeId:btt = relay impl_trait(r.ast, d);
+        if (!(raw type_is_none(btt))) {
+            bt = relay resolve_type(r, btt, scope);
+        }
+        drop impl_push(t, 0i32, bt, id.index, true);
+        pass NIL;
+    }
+
     int32:target = relay resolve_type(r, relay impl_target(r.ast, d), scope);
     if (target == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, target)) { pass NIL; }
 
     TypeId:tt = relay impl_trait(r.ast, d);
     if (raw type_is_none(tt)) {
-        drop impl_push(t, target, 0i32, id.index);
+        drop impl_push(t, target, 0i32, id.index, false);
         pass NIL;
     }
 
@@ -130,7 +153,7 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(), m2, d.span));
         pass NIL;
     }
-    drop impl_push(t, target, trait_id, id.index);
+    drop impl_push(t, target, trait_id, id.index, false);
     pass NIL;
 };
 
@@ -148,6 +171,10 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:a = relay impl_at(t, i);
+        // A blanket impl overlaps a concrete one BY DESIGN — 2.6 says the
+        // concrete one wins — so it is not a coherence conflict and cannot be
+        // decided without bound satisfaction (0.4.7).
+        if (a.blanket) { a.trait_id = 0i32; }
         if (a.trait_id != 0i32) {
             int32:j = i + 1i32;
             while (j < t.count) {
@@ -299,7 +326,9 @@ pub func:check_impls_complete = NIL(ImplTable->:t, TypeResolver->:r, int32:scope
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
         if (e.trait_id != 0i32) {
-            drop check_one_impl_complete(r, e, scope);
+            if (!e.blanket) {
+                drop check_one_impl_complete(r, e, scope);
+            }
         }
         i = i + 1i32;
     }
@@ -568,4 +597,93 @@ func:dyn_carries = bool(Ast->:ast, TypeTable->:types, int32:d, int32:trait_id) {
         i = i + 1i32;
     }
     pass false;
+};
+
+// --- supertraits (TRAITS_REFERENCE 2.2, D-029) -------------------------------------------
+
+// `trait:Ordered = Equatable & { … };` — implementing `Ordered` requires an
+// implementation of `Equatable` too, and **transitively**: if `C` requires `B`
+// and `B` requires `A`, implementing `C` requires all three.
+//
+// The supertraits parsed and were stored from cycle 0.2 and NOTHING READ THEM.
+// A trait could name a struct as a supertrait, and a type could implement a trait
+// while satisfying none of what that trait was declared to build on — which is
+// the whole content of the feature.
+//
+// FUEL BOUNDS THE WALK. Supertraits are a graph a program writes, so
+// `trait:A = B & {…}; trait:B = A & {…};` is a cycle somebody can type, and a
+// recursive walk over it does not return. The cycle is a real error and belongs
+// to whoever owns trait declaration checking; what matters here is that the
+// checker does not hang before reporting anything, so the depth is capped and the
+// cap is stated rather than assumed unreachable.
+func:SUPER_FUEL = int32() { pass 64i32; };
+
+pub func:check_supertraits = NIL(ImplTable->:t, TypeResolver->:r, int32:scope) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        ImplEntry:e = relay impl_at(t, i);
+        if (e.trait_id != 0i32) {
+            if (!e.blanket) {
+                drop require_supers(t, r, e, e.trait_id, scope, raw SUPER_FUEL());
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:require_supers = NIL(ImplTable->:t, TypeResolver->:r, ImplEntry:e,
+                          int32:trait_id, int32:scope, int32:fuel) {
+    if (fuel <= 0i32) { pass NIL; }
+    int32:decl = raw type_decl_of(r.types, trait_id);
+    if (decl == 0i32) { pass NIL; }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:td = relay ast_decl(r.ast, did);
+
+    int32:n = raw item_extra_count(r.ast, td);
+    int32:i = 0i32;
+    while (i < n) {
+        int32:sup = relay resolve_type(r, relay item_extra(r.ast, td, i), scope);
+        if (sup != 0i32) {
+            if (!(raw type_is_invalid(r.types, sup))) {
+                if ((raw type_kind(r.types, sup)) != (raw TY_TRAIT())) {
+                    drop super_not_trait(r, trait_id, sup, td.span);
+                } else {
+                    if (!(raw type_implements(t, e.target, sup))) {
+                        drop super_missing(r, e, trait_id, sup);
+                    }
+                    // TRANSITIVE (2.2). `C` requiring `B` requiring `A` requires
+                    // all three, and the requirement is on the IMPLEMENTING TYPE
+                    // rather than on the intermediate trait — so the walk carries
+                    // `e` down rather than restarting from `sup`.
+                    drop require_supers(t, r, e, sup, scope, fuel - 1i32);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:super_not_trait = NIL(TypeResolver->:r, int32:trait_id, int32:sup, Span:at) {
+    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, sup));
+    string:m2 = relay string_concat(m1, "` is not a trait, so `");
+    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, trait_id));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+        relay string_concat(m3, "` cannot require it; a supertrait clause names traits"),
+        at));
+    pass NIL;
+};
+
+func:super_missing = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_id, int32:sup) {
+    DeclId:iid = DeclId{ index: e.decl };
+    DeclNode:idl = relay ast_decl(r.ast, iid);
+    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, trait_id));
+    string:m2 = relay string_concat(m1, "` requires `");
+    string:m3 = relay string_concat(m2, relay type_display(r.types, r.interns, sup));
+    string:m4 = relay string_concat(m3, "`, and `");
+    string:m5 = relay string_concat(m4, relay type_display(r.types, r.interns, e.target));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(),
+        relay string_concat(m5, "` does not implement it"), idl.span));
+    pass NIL;
 };
