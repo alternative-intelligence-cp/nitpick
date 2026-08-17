@@ -29,23 +29,188 @@ use "resolve_type.npk".*;
 use "type_decl.npk".*;
 use "type_expr.npk".*;
 
+// THE WALK IS TOTAL, AND IT WAS NOT.
+//
+// What stood here answered nine of the twenty-five statement kinds and returned
+// quietly for the other sixteen — including every kind that CONTAINS statements.
+// So an `if` had its condition checked and its body ignored, and nothing inside
+// any block, loop, `pick` arm or `defer` was type-checked at all. The tests did
+// not see it because the harness put each case at the top level of a function
+// body, with a comment saying so.
+//
+// That is the same hole `resolve_audit` and `check_kinds_reachable` were built
+// for, arriving a third time in a third pass, so it gets the same answer: every
+// kind reached explicitly, an out-loud "nothing to check" for the ones that carry
+// nothing, and an INTERNAL DIAGNOSTIC where a walk used to return quietly.
+// `stmt_is_classified` is the total table over that, and
+// `tests/frontend/type_stmt.npk` walks `1..STMT_KIND_MAX` against it so the next
+// statement kind cannot arrive unvisited the way sixteen of them did.
 pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     if (raw stmt_is_none(id)) { pass NIL; }
     StmtNode:s = relay ast_stmt(e.ast, id);
 
     if (s.kind == StmtKind.StmtVarDeclStmt) { drop check_var_decl(e, s); pass NIL; }
+    if (s.kind == StmtKind.StmtAssignStmt)  { drop check_assign(e, s);   pass NIL; }
     if (s.kind == StmtKind.StmtPassStmt)    { drop check_pass(e, s);     pass NIL; }
     if (s.kind == StmtKind.StmtFailStmt)    { drop check_fail(e, s);     pass NIL; }
     if (s.kind == StmtKind.StmtReturnStmt)  { drop check_return(e, s);   pass NIL; }
     if (s.kind == StmtKind.StmtExitStmt)    { drop check_exit(e, s);     pass NIL; }
 
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        drop check_stmt_window(e, raw stmt_list_start(s), raw stmt_list_count(s));
+        pass NIL;
+    }
+
     // EVERY CONDITION IS A `bool`, and the check is one line because
     // `require_bool` already says why (0.4.2). Grouped rather than listed
-    // per-statement so a new conditional form cannot arrive without one.
-    if (s.kind == StmtKind.StmtIfStmt)    { drop check_cond(e, s); }
-    if (s.kind == StmtKind.StmtWhileStmt) { drop check_cond(e, s); }
-    if (s.kind == StmtKind.StmtTillStmt)  { drop check_cond(e, s); }
-    if (s.kind == StmtKind.StmtWhenStmt)  { drop check_cond(e, s); }
+    // per-statement so a new conditional form cannot arrive without one — and
+    // each now walks its BODY, which is the part that was missing.
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop check_cond(e, s);
+        drop check_stmt(e, raw stmt_then(s));
+        drop check_stmt(e, raw stmt_else(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop check_cond(e, s);
+        drop check_stmt(e, relay stmt_body(e.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop check_cond(e, s);
+        drop check_stmt(e, relay stmt_when_body(e.ast, s));
+        drop check_stmt(e, relay stmt_when_then(e.ast, s));
+        drop check_stmt(e, relay stmt_when_end(e.ast, s));
+        pass NIL;
+    }
+    // `loop`/`till` — HEAD ARGUMENTS AND A BODY, AND NO CONDITION.
+    //
+    // `check_cond` used to be called on a `till`, and slot `a` on a counted
+    // statement is the BODY: a `StmtId` read as an `ExprId`, so the checker typed
+    // whatever expression node happened to sit at the body's index. `stmt_cond`
+    // and `stmt_counted_body` both read slot `a` and mean different things by it,
+    // which is the third time a slot meaning two things has cost this compiler a
+    // defect. `till(limit, step)` bounds itself with head arguments; there is no
+    // condition anywhere in either form.
+    if (s.kind == StmtKind.StmtLoopStmt) { drop check_counted(e, s); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt) { drop check_counted(e, s); pass NIL; }
+
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop type_of_expr(e, relay stmt_for_iter(e.ast, s));
+        drop check_stmt(e, relay stmt_for_body(e.ast, s));
+        pass NIL;
+    }
+
+    // A `pick`'s selector and its arms' bodies. The PATTERNS are checked against
+    // the selector's type in 0.4.6 with the enum variants — an arm binding takes
+    // its type from there, which is why `type_ident` has nothing for it yet.
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop type_of_expr(e, raw pick_selector(s));
+        drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop type_of_expr(e, raw arm_guard(s));
+        drop check_stmt(e, raw arm_body(s));
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        drop check_stmt(e, body);
+        pass NIL;
+    }
+
+    // `break`, `continue` and `fall` carry a LABEL and no expression, so there is
+    // nothing here to type. Said out loud rather than reached by falling off the
+    // end, because "nothing to check" and "nobody has looked" are the two answers
+    // this function exists to keep apart.
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+
+    // One expression in slot `a`, typed for its own sake: an expression
+    // statement, `trap`, `discard`, `give`, `prove`, `assert_static`. A mistake
+    // inside one is worth reporting even where the value goes nowhere.
+    if (raw stmt_carries_expr(s.kind)) {
+        drop type_of_expr(e, raw stmt_expr(s));
+        pass NIL;
+    }
+
+    drop te_error(e, raw TYPE_INTERNAL(),
+        "this statement kind has no entry in the checker's walk, so its contents cannot be checked",
+        s.span);
+    pass NIL;
+};
+
+// The kinds whose whole content is one expression in slot `a`. A LIST RATHER THAN
+// A FALL-THROUGH: `resolve_stmt` ends with an unguarded `resolve_expr(stmt_expr)`
+// for "everything left", which silently absorbs any kind added later and reads
+// slot `a` as an expression whether or not it holds one.
+pub func:stmt_carries_expr = bool(StmtKind:k) {
+    if (k == StmtKind.StmtExprStmt)         { pass true; }
+    if (k == StmtKind.StmtTrapStmt)         { pass true; }
+    if (k == StmtKind.StmtDiscardStmt)      { pass true; }
+    if (k == StmtKind.StmtGiveStmt)         { pass true; }
+    if (k == StmtKind.StmtProveStmt)        { pass true; }
+    pass (k == StmtKind.StmtAssertStaticStmt);
+};
+
+// EVERY STATEMENT KIND IS ACCOUNTED FOR — the mechanical half of the check, and
+// the half a test can prove. Whether each rule is RIGHT is not answerable this
+// way, which is what 0.4.8's negative coverage is for; whether each kind is
+// VISITED is, and that is the failure that just happened.
+pub func:stmt_is_classified = bool(StmtKind:k) {
+    if (k == StmtKind.StmtNone) { pass false; }
+    if (raw stmt_carries_expr(k)) { pass true; }
+    if (k == StmtKind.StmtBlockStmt)     { pass true; }
+    if (k == StmtKind.StmtVarDeclStmt)   { pass true; }
+    if (k == StmtKind.StmtAssignStmt)    { pass true; }
+    if (k == StmtKind.StmtIfStmt)        { pass true; }
+    if (k == StmtKind.StmtPickStmt)      { pass true; }
+    if (k == StmtKind.StmtPickArm)       { pass true; }
+    if (k == StmtKind.StmtWhileStmt)     { pass true; }
+    if (k == StmtKind.StmtForStmt)       { pass true; }
+    if (k == StmtKind.StmtLoopStmt)      { pass true; }
+    if (k == StmtKind.StmtTillStmt)      { pass true; }
+    if (k == StmtKind.StmtWhenStmt)      { pass true; }
+    if (k == StmtKind.StmtBreakStmt)     { pass true; }
+    if (k == StmtKind.StmtContinueStmt)  { pass true; }
+    if (k == StmtKind.StmtFallStmt)      { pass true; }
+    if (k == StmtKind.StmtPassStmt)      { pass true; }
+    if (k == StmtKind.StmtFailStmt)      { pass true; }
+    if (k == StmtKind.StmtReturnStmt)    { pass true; }
+    if (k == StmtKind.StmtExitStmt)      { pass true; }
+    pass (k == StmtKind.StmtDeferStmt);
+};
+
+pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
+        drop check_stmt(e, x);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_arms = NIL(ExprTyper->:e, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        drop check_stmt(e, raw pick_arm_at(e.ast, start, i));
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_counted = NIL(ExprTyper->:e, StmtNode:s) {
+    int32:n = relay stmt_counted_argc(e.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop type_of_expr(e, relay stmt_counted_arg(e.ast, s, i));
+        i = i + 1i32;
+    }
+    drop check_stmt(e, raw stmt_counted_body(s));
     pass NIL;
 };
 
@@ -84,6 +249,84 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
     if (!(raw fits(e, want, got))) {
         drop te_assign_mismatch(e, want, got, s.span);
     }
+    pass NIL;
+};
+
+// `x = v;` AND `x op= v;` — the statement that was never checked at all.
+//
+// It parsed from cycle 0.2, resolved both sides from 0.3, and `check_stmt` had no
+// case for it, so `int32:x = 1i32; x = true;` passed clean. Three separate
+// questions, and each was unasked:
+//
+//   1. IS THE TARGET SOMETHING THAT CAN BE ASSIGNED TO? `5i32 = x;` parses.
+//   2. DOES THE VALUE FIT? The same `fits` every other slot uses (D-099), so an
+//      `int32?` target takes a bare `int32` here exactly as it does in a
+//      declaration — a rule that differed between the two would be one more
+//      thing to remember.
+//   3. FOR `op=`, DO THE OPERANDS SUPPORT THE OPERATION? `x += 1i32` on a `bool`
+//      is the arithmetic rule asked of a type that has none.
+func:check_assign = NIL(ExprTyper->:e, StmtNode:s) {
+    ExprId:target = raw stmt_target(s);
+    ExprId:value = raw stmt_assigned(s);
+
+    int32:want = relay type_of_expr(e, target);
+    drop require_place(e, target, s.span);
+
+    int32:saved = e.expected;
+    e.expected = want;
+    int32:got = relay type_of_expr(e, value);
+    e.expected = saved;
+
+    if (want == 0i32) { pass NIL; }
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, want)) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+
+    // `x op= v` IS `x = x op v`, so it is held to the operator's own operand rule
+    // before the result is held to the target. Reusing `type_arithmetic` and
+    // `type_bitwise` rather than restating them is the point: `+=` refusing what
+    // `+` accepts, or the reverse, is a difference nobody would predict.
+    TokenKind:op = raw stmt_op(s);
+    if (op != TokenKind.OpAssign) {
+        if (raw is_bitwise_assign(op)) {
+            drop type_bitwise(e, s.span, want, got);
+        } else {
+            drop type_arithmetic(e, s.span, want, got);
+        }
+        pass NIL;
+    }
+
+    if (!(raw fits(e, want, got))) {
+        drop te_assign_mismatch(e, want, got, s.span);
+    }
+    pass NIL;
+};
+
+func:is_bitwise_assign = bool(TokenKind:op) {
+    if (op == TokenKind.OpAmpAssign)   { pass true; }
+    if (op == TokenKind.OpPipeAssign)  { pass true; }
+    if (op == TokenKind.OpCaretAssign) { pass true; }
+    if (op == TokenKind.OpShlAssign)   { pass true; }
+    pass (op == TokenKind.OpShrAssign);
+};
+
+// WHAT CAN BE ASSIGNED TO. A name, a field, an element, or a dereference — the
+// four forms that denote storage. Everything else denotes a value, and a value
+// has nowhere to put anything.
+//
+// The message names the form rather than saying "not assignable", because the
+// mistake is usually a comparison written with one `=` and the reader needs to
+// be pointed at that rather than at a definition.
+func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = relay ast_expr(e.ast, id);
+    if (n.kind == ExprKind.ExprIdentifierExpr)   { pass NIL; }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass NIL; }
+    if (n.kind == ExprKind.ExprIndexExpr)        { pass NIL; }
+    if (n.kind == ExprKind.ExprDerefExpr)        { pass NIL; }
+    drop te_error(e, raw TYPE_MISMATCH(),
+        "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",
+        at);
     pass NIL;
 };
 

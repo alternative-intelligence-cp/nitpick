@@ -77,17 +77,14 @@ func:fx = Fx(string:src, InternTable->:it) {
     pass out;
 };
 
-// Walk a block's statements. Nested blocks are not descended into here — every
-// case below puts its statement at the top level of the body.
+// THE BODY IS A BLOCK, and `check_stmt` walks one. This used to unroll the top
+// level by hand, with a comment saying nested blocks were not descended into —
+// which was true of the CHECKER, not of this helper, and reading it as a property
+// of the test harness is how sixteen unvisited statement kinds stayed invisible.
+// A test that works around a hole in the thing it tests reports the hole as a
+// convention.
 func:check_body = NIL(ExprTyper->:e, StmtId:body) {
-    if (raw stmt_is_none(body)) { pass NIL; }
-    StmtNode:b = relay ast_stmt(e.ast, body);
-    int32:i = 0i32;
-    while (i < (raw stmt_list_count(b))) {
-        StmtId:st = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(b), i) };
-        drop check_stmt(e, st);
-        i = i + 1i32;
-    }
+    drop check_stmt(e, body);
     pass NIL;
 };
 
@@ -206,6 +203,81 @@ func:main = int32(cstring[]:_~argv) {
     Fx:e3 = raw fx("func:f = int32() { exit 0i32; };", @it);
     if (raw errs(@e3) != 1i64)                                 { exit 62i32; }
     if (!(raw string_eq(raw code0(@e3), raw TYPE_RESULT_RETURN()))) { exit 63i32; }
+
+    // --- THE WALK IS TOTAL --------------------------------------------------
+    // The mechanical half of the check, and the counterpart to `expr_shape`'s
+    // table and `resolve_audit`. It caught nothing when it was written because
+    // the walk had just been completed; it exists so that the NEXT statement kind
+    // cannot arrive unvisited, which is exactly how sixteen of them did.
+    int32:k = 1i32;
+    while (k <= (raw STMT_KIND_MAX())) {
+        if (!(raw stmt_is_classified(k => StmtKind)))          { exit 70i32; }
+        k = k + 1i32;
+    }
+    if (raw stmt_is_classified(StmtKind.StmtNone))             { exit 71i32; }
+
+    // --- A NESTED BLOCK IS CHECKED ------------------------------------------
+    // Every kind that CONTAINS statements returned quietly before this, so an
+    // `if` had its condition checked and its body ignored. The test suite could
+    // not see it: the harness put every case at the top level of a function body
+    // and said so in a comment.
+    Fx:n1 = raw fx("func:f = NIL() { if (true) { int32:x = true; } pass NIL; };", @it);
+    if (raw errs(@n1) != 1i64)                                 { exit 72i32; }
+    Fx:n2 = raw fx("func:f = NIL() { if (true) { pass NIL; } else { int32:x = true; } pass NIL; };", @it);
+    if (raw errs(@n2) != 1i64)                                 { exit 73i32; }
+    Fx:n3 = raw fx("func:f = NIL() { while (true) { int32:x = true; } pass NIL; };", @it);
+    if (raw errs(@n3) != 1i64)                                 { exit 74i32; }
+    Fx:n4 = raw fx("func:f = NIL() { { int32:x = true; } pass NIL; };", @it);
+    if (raw errs(@n4) != 1i64)                                 { exit 75i32; }
+    Fx:n5 = raw fx("func:f = NIL() { defer { int32:x = true; } pass NIL; };", @it);
+    if (raw errs(@n5) != 1i64)                                 { exit 76i32; }
+    // …and TWO DEEP, so the recursion is real rather than one level of unrolling.
+    Fx:n6 = raw fx("func:f = NIL() { if (true) { while (true) { int32:x = true; } } pass NIL; };", @it);
+    if (raw errs(@n6) != 1i64)                                 { exit 77i32; }
+
+    // --- ASSIGNMENT ---------------------------------------------------------
+    // Parsed since 0.2, resolved since 0.3, and never type-checked.
+    Fx:a1 = raw fx("func:f = NIL() { int32:x = 1i32; x = 2i32; pass NIL; };", @it);
+    if (raw errs(@a1) != 0i64)                                 { exit 80i32; }
+    Fx:a2 = raw fx("func:f = NIL() { int32:x = 1i32; x = true; pass NIL; };", @it);
+    if (raw errs(@a2) != 1i64)                                 { exit 81i32; }
+    if (!(raw string_eq(raw code0(@a2), raw TYPE_MISMATCH())))  { exit 82i32; }
+    // The target's type is the context, so an unsuffixed literal reads it.
+    Fx:a3 = raw fx("func:f = NIL() { int8:x = 1i8; x = 10; pass NIL; };", @it);
+    if (raw errs(@a3) != 0i64)                                 { exit 83i32; }
+    // …and there is still no implicit widening.
+    Fx:a4 = raw fx("func:f = NIL() { int64:x = 1i64; x = 1i32; pass NIL; };", @it);
+    if (raw errs(@a4) != 1i64)                                 { exit 84i32; }
+    // AN `Optional` TARGET TAKES A BARE VALUE, the same rule a declaration uses
+    // (D-099). A call that differed from an initialiser would be one more thing
+    // to remember, and so would an assignment.
+    Fx:a5 = raw fx("func:f = NIL() { int32?:x = NIL; x = 5i32; pass NIL; };", @it);
+    if (raw errs(@a5) != 0i64)                                 { exit 85i32; }
+    Fx:a6 = raw fx("func:f = NIL() { int32?:x = 5i32; x = NIL; pass NIL; };", @it);
+    if (raw errs(@a6) != 0i64)                                 { exit 86i32; }
+
+    // ONLY STORAGE CAN BE ASSIGNED TO. The usual cause is a comparison written
+    // with one `=`, so the message names `==` rather than saying "not assignable".
+    Fx:a7 = raw fx("func:f = NIL() { 5i32 = 1i32; pass NIL; };", @it);
+    if (raw errs(@a7) != 1i64)                                 { exit 87i32; }
+    Fx:a8 = raw fx("func:f = NIL() { int32:x = 1i32; int32->:p = @x; <-p = 2i32; pass NIL; };", @it);
+    if (raw errs(@a8) != 0i64)                                 { exit 88i32; }
+
+    // `x op= v` IS `x = x op v`, so it answers to the operator's own rule.
+    Fx:c1 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i32; pass NIL; };", @it);
+    if (raw errs(@c1) != 0i64)                                 { exit 90i32; }
+    Fx:c2 = raw fx("func:f = NIL() { bool:b = true; b += 1i32; pass NIL; };", @it);
+    if (raw errs(@c2) != 1i64)                                 { exit 91i32; }
+    if (!(raw string_eq(raw code0(@c2), raw TYPE_NOT_NUMERIC()))) { exit 92i32; }
+    // A BITWISE COMPOUND ANSWERS TO THE BITWISE RULE, which is narrower —
+    // integers only, where arithmetic also admits floats.
+    Fx:c3 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x &= 2.0f64; pass NIL; };", @it);
+    if (raw errs(@c3) != 1i64)                                 { exit 93i32; }
+    Fx:c4 = raw fx("func:f = NIL() { flt64:x = 1.0f64; x += 2.0f64; pass NIL; };", @it);
+    if (raw errs(@c4) != 0i64)                                 { exit 94i32; }
+    // …and the two sides still have to be the same type.
+    Fx:c5 = raw fx("func:f = NIL() { int32:x = 1i32; x += 2i64; pass NIL; };", @it);
+    if (raw errs(@c5) != 1i64)                                 { exit 95i32; }
 
     exit 0i32;
 };

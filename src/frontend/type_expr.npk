@@ -218,21 +218,21 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
 
 // Arithmetic: `+ - * / %`. NUMBERS ONLY, and `type_is_numeric` is deliberately
 // narrow (0.4.0).
-func:type_arithmetic = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     // A type that already failed produces no second complaint.
     if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
 
     if (!(raw type_is_numeric(e.types, lt))) {
-        pass (relay te_operand_error(e, n, lt));
+        pass (relay te_operand_error(e, at, lt));
     }
     if (!(raw type_is_numeric(e.types, rt))) {
-        pass (relay te_operand_error(e, n, rt));
+        pass (relay te_operand_error(e, at, rt));
     }
 
     int32:common = raw unify(e, lt, rt);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n, lt, rt));
+        pass (relay te_mismatch(e, at, lt, rt));
     }
     pass common;
 };
@@ -240,12 +240,12 @@ func:type_arithmetic = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
 // The message names the TYPE that made it wrong, and says why that type is not a
 // number — because "invalid operand" leaves the reader to work out which of two
 // familiar-looking things the compiler objected to.
-func:te_operand_error = int32(ExprTyper->:e, ExprNode:n, int32:t) {
+func:te_operand_error = int32(ExprTyper->:e, Span:at, int32:t) {
     string:d = relay type_display(e.types, e.interns, t);
     string:m1 = relay string_concat("`", d);
     string:m2 = relay string_concat(m1, "` is not a number, so it has no arithmetic: ");
     string:m3 = relay string_concat(m2, relay why_not_numeric(e, t));
-    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m3, n.span));
+    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m3, at));
 };
 
 // Each of these is representationally an integer, so the reason has to be stated
@@ -270,7 +270,7 @@ pub func:why_not_numeric = string(ExprTyper->:e, int32:t) {
     pass "it is not a numeric type";
 };
 
-func:te_mismatch = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+pub func:te_mismatch = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, lt));
     string:m2 = relay string_concat(m1, "` and `");
     string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, rt));
@@ -288,7 +288,7 @@ func:te_mismatch = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
             }
         }
     }
-    pass (relay te_error(e, raw TYPE_MISMATCH(), m4, n.span));
+    pass (relay te_error(e, raw TYPE_MISMATCH(), m4, at));
 };
 
 // Comparison: `== != < <= > >= <=>`. Wider than arithmetic — the types that
@@ -301,7 +301,7 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
 
     int32:common = raw unify(e, lt, rt);
     if (common == 0i32) {
-        drop te_mismatch(e, n, lt, rt);
+        drop te_mismatch(e, n.span, lt, rt);
         pass (e.types.t_bool);
     }
 
@@ -354,31 +354,31 @@ pub func:require_bool = NIL(ExprTyper->:e, int32:t, Span:at) {
 
 // Bitwise `& | ^ << >>`: INTEGERS ONLY. Not `bool` — `&&` is the logical
 // operator and a bitwise `&` on two booleans is someone reaching for it.
-func:type_bitwise = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt) {
+pub func:type_bitwise = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
 
     if (!(raw type_is_integer(e.types, lt))) {
-        pass (relay te_bitwise_error(e, n, lt));
+        pass (relay te_bitwise_error(e, at, lt));
     }
     if (!(raw type_is_integer(e.types, rt))) {
-        pass (relay te_bitwise_error(e, n, rt));
+        pass (relay te_bitwise_error(e, at, rt));
     }
     int32:common = raw unify(e, lt, rt);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n, lt, rt));
+        pass (relay te_mismatch(e, at, lt, rt));
     }
     pass common;
 };
 
-func:te_bitwise_error = int32(ExprTyper->:e, ExprNode:n, int32:t) {
+func:te_bitwise_error = int32(ExprTyper->:e, Span:at, int32:t) {
     string:d = relay type_display(e.types, e.interns, t);
     string:m1 = relay string_concat("`", d);
     string:m2 = relay string_concat(m1, "` has no bitwise operations");
     if (t == e.types.t_bool) {
         m2 = relay string_concat(m2, "; `&&` and `||` are the logical operators");
     }
-    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, n.span));
+    pass (relay te_error(e, raw TYPE_NOT_NUMERIC(), m2, at));
 };
 
 // `++` / `--`. Numbers only — the same rule as `+`, because that is what they
@@ -389,7 +389,7 @@ func:type_postfix = int32(ExprTyper->:e, ExprNode:n) {
     if (raw type_is_invalid(e.types, t)) { pass 0i32; }
     if (t == 0i32) { pass 0i32; }
     if (!(raw type_is_numeric(e.types, t))) {
-        pass (relay te_operand_error(e, n, t));
+        pass (relay te_operand_error(e, n.span, t));
     }
     pass t;
 };
@@ -441,7 +441,7 @@ func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
 
     int32:common = raw unify(e, lo, hi);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n, lo, hi));
+        pass (relay te_mismatch(e, n.span, lo, hi));
     }
     if (!(raw type_is_ordered(e.types, common))) {
         string:m1 = relay string_concat("a range needs an ordered type, and `",
@@ -473,7 +473,7 @@ func:type_ternary = int32(ExprTyper->:e, ExprNode:n) {
     if (raw type_is_invalid(e.types, b)) { pass 0i32; }
     int32:common = raw unify(e, a, b);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n, a, b));
+        pass (relay te_mismatch(e, n.span, a, b));
     }
     pass common;
 };
@@ -492,7 +492,7 @@ func:type_defaults = int32(ExprTyper->:e, ExprNode:n) {
     if (raw type_is_invalid(e.types, b)) { pass 0i32; }
     int32:common = raw unify(e, a, b);
     if (common == 0i32) {
-        pass (relay te_mismatch(e, n, a, b));
+        pass (relay te_mismatch(e, n.span, a, b));
     }
     pass common;
 };
@@ -561,7 +561,7 @@ func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) {
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
     if (!(raw fits(e, inner, d))) {
-        drop te_mismatch(e, n, inner, d);
+        drop te_mismatch(e, n.span, inner, d);
     }
     pass inner;
 };
@@ -605,7 +605,7 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) {
     e.expected = saved;
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
-    if (!(raw fits(e, inner, d))) { drop te_mismatch(e, n, inner, d); }
+    if (!(raw fits(e, inner, d))) { drop te_mismatch(e, n.span, inner, d); }
     pass inner;
 };
 
@@ -727,7 +727,7 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) {
     }
     if (!(raw fits(e, want, vt))) {
         if (!(raw type_is_invalid(e.types, vt))) {
-            drop te_mismatch(e, n, want, vt);
+            drop te_mismatch(e, n.span, want, vt);
         }
     }
     pass (raw tt_result(e.types, want,
@@ -1030,11 +1030,11 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         e.expected = saved;
     }
 
-    if (op == TokenKind.OpPlus)    { pass (relay type_arithmetic(e, n, lt, rt)); }
-    if (op == TokenKind.OpMinus)   { pass (relay type_arithmetic(e, n, lt, rt)); }
-    if (op == TokenKind.OpStar)    { pass (relay type_arithmetic(e, n, lt, rt)); }
-    if (op == TokenKind.OpSlash)   { pass (relay type_arithmetic(e, n, lt, rt)); }
-    if (op == TokenKind.OpPercent) { pass (relay type_arithmetic(e, n, lt, rt)); }
+    if (op == TokenKind.OpPlus)    { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpMinus)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpStar)    { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpSlash)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpPercent) { pass (relay type_arithmetic(e, n.span, lt, rt)); }
 
     if (op == TokenKind.OpEqEq)  { pass (relay type_comparison(e, n, lt, rt, false)); }
     if (op == TokenKind.OpNotEq) { pass (relay type_comparison(e, n, lt, rt, false)); }
@@ -1050,11 +1050,11 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (op == TokenKind.OpAndAnd) { pass (relay type_logical(e, n, lt, rt)); }
     if (op == TokenKind.OpOrOr)   { pass (relay type_logical(e, n, lt, rt)); }
 
-    if (op == TokenKind.OpAmp)   { pass (relay type_bitwise(e, n, lt, rt)); }
-    if (op == TokenKind.OpPipe)  { pass (relay type_bitwise(e, n, lt, rt)); }
-    if (op == TokenKind.OpCaret) { pass (relay type_bitwise(e, n, lt, rt)); }
-    if (op == TokenKind.OpShl)   { pass (relay type_bitwise(e, n, lt, rt)); }
-    if (op == TokenKind.OpShr)   { pass (relay type_bitwise(e, n, lt, rt)); }
+    if (op == TokenKind.OpAmp)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpPipe)  { pass (relay type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpCaret) { pass (relay type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpShl)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
+    if (op == TokenKind.OpShr)   { pass (relay type_bitwise(e, n.span, lt, rt)); }
 
     pass 0i32;
 };
@@ -1070,7 +1070,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (op == TokenKind.OpMinus) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
         if (!(raw type_is_numeric(e.types, t))) {
-            pass (relay te_operand_error(e, n, t));
+            pass (relay te_operand_error(e, n.span, t));
         }
         // Negating an UNSIGNED value is a question with no good answer, so it is
         // not asked: the result is either wrong or a different type.
@@ -1087,7 +1087,7 @@ func:type_unary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (op == TokenKind.OpTilde) {
         if (raw type_is_invalid(e.types, t)) { pass 0i32; }
         if (!(raw type_is_integer(e.types, t))) {
-            pass (relay te_bitwise_error(e, n, t));
+            pass (relay te_bitwise_error(e, n.span, t));
         }
         pass t;
     }

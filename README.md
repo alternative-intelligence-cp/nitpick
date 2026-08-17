@@ -2,8 +2,10 @@
 
 A safety-critical systems language and its self-hosted compiler.
 
-**Status: pre-implementation.** The specification set is complete and the build-out
-has just begun. There is no working compiler in this repository yet.
+**Status: early, and building.** The specification set is complete. The frontend
+is real Nitpick source that lexes, parses, resolves and type-checks — cycles
+0.0–0.3 are done and the type system is in progress. **Nothing is emitted yet**:
+Phase A's artifact is a checker, and code generation begins in cycle 0.7.
 
 ## What it is
 

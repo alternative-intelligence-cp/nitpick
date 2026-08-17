@@ -7052,3 +7052,83 @@ caller trusting the name would have checked every trailing argument against
 `int64[]` instead of `int64`, accepting slices and refusing values, which is the
 defect inverted. Renamed `variadic_type`, and the same correction is made in
 `AST_REFERENCE.md`.
+
+---
+
+## D-101 — The statement walk is total, and assignment is checked
+
+**Settled in cycle 0.4.5.** `check_stmt` answered **nine of the twenty-five**
+statement kinds and returned quietly for the other sixteen — including **every
+kind that contains statements**. An `if` had its condition checked and its body
+ignored. Nothing inside any block, loop, `pick` arm or `defer` was type-checked at
+all.
+
+### The test suite reported the hole as a convention
+
+`tests/frontend/type_stmt.npk` unrolled a function body's top level by hand,
+under a comment reading *"Nested blocks are not descended into here — every case
+below puts its statement at the top level of the body."* That was true of the
+**checker**, not of the helper, and writing it as a property of the harness is how
+sixteen unvisited kinds stayed invisible through two subcycles.
+
+**A test that works around a hole in the thing it tests turns a defect into a
+house style.** The helper is now one call to `check_stmt` on the body, which is a
+block, and every case that nests is checked.
+
+### Total, in the way this project has answered twice already
+
+The same failure as `expr_shape` walking slot `a` on the strength of a comment,
+and as the resolve walk that `resolve_audit` was built to police. Third pass,
+third instance, same answer:
+
+- Every kind is reached **explicitly**.
+- The kinds that carry nothing — `break`, `continue`, `fall`, which hold a label —
+  say so **out loud** rather than being reached by falling off the end. *"Nothing
+  to check"* and *"nobody has looked"* are the two answers the function exists to
+  keep apart.
+- Where the walk used to return quietly there is now `NITPICK-TYPE-011`, an
+  **internal** diagnostic: a reader who sees it has found a hole in the compiler
+  and there is nothing in their source to change.
+- `stmt_is_classified` is a total table, and the suite walks `1..STMT_KIND_MAX`
+  against it.
+
+The audit and the block walk were each **verified by making them fail**.
+Un-classifying one kind trips the audit; not walking a block breaks the *first*
+declaration test, because a function body is itself a block — with blocks
+unwalked, nothing was checked at all.
+
+### `resolve_stmt`'s catch-all is the same shape of risk
+
+It ends with an unguarded `resolve_expr(stmt_expr(s))` for "everything left",
+which **silently absorbs any kind added later** and reads slot `a` as an
+expression whether or not it holds one. The checker's version is a named list,
+`stmt_carries_expr`, so a new kind falls into the internal diagnostic rather than
+into a wrong read.
+
+### `till` has no condition, and slot `a` is its body
+
+`check_stmt` called `check_cond` on a `StmtTillStmt`. On a counted statement slot
+`a` is the **body**, so this handed a `StmtId` to a function expecting an `ExprId`
+and typed whatever expression node happened to sit at that index. `stmt_cond` and
+`stmt_counted_body` both read slot `a` and mean different things by it — **the
+third slot-means-two-things defect in this compiler.** `loop` and `till` bound
+themselves with head arguments; there is no condition in either form.
+
+### Assignment
+
+Parsed since cycle 0.2, resolved since 0.3, never checked. Three questions, each
+unasked, so `int32:x = 1i32; x = true;` passed clean:
+
+1. **Is the target somewhere to store a value?** A name, a field, an element, or a
+   `<-` dereference. `5i32 = x;` parses. The diagnostic names `==`, because the
+   usual cause is a comparison written with one `=` and the reader needs pointing
+   at that rather than at a definition.
+2. **Does the value fit?** The same `fits` every other slot uses, so an `int32?`
+   target takes a bare `int32` here exactly as a declaration does (D-099). A rule
+   that differed between an assignment and an initialiser would be one more thing
+   to remember.
+3. **For `op=`, do the operands support the operation?** `x op= v` is `x = x op v`,
+   so it is held to the operator's own rule by **calling that rule** —
+   `type_arithmetic` and `type_bitwise`, which now take a `Span` rather than an
+   `ExprNode` since the node was only ever read for its span. Restating the rules
+   would let `+=` refuse what `+` accepts, a difference nobody would predict.

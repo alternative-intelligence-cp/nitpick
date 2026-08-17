@@ -98,15 +98,11 @@ func:axd = Ax(string:decls, string:body, InternTable->:it) {
     pass out;
 };
 
+// The body IS a block and `check_stmt` walks one (D-101). This unrolled the top
+// level by hand, which stopped being necessary when the checker's walk was
+// completed and would now quietly skip anything a case nested.
 func:check_block = NIL(ExprTyper->:e, StmtId:body) {
-    if (raw stmt_is_none(body)) { pass NIL; }
-    StmtNode:b = relay ast_stmt(e.ast, body);
-    int32:i = 0i32;
-    while (i < (raw stmt_list_count(b))) {
-        StmtId:st = StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(b), i) };
-        drop check_stmt(e, st);
-        i = i + 1i32;
-    }
+    drop check_stmt(e, body);
     pass NIL;
 };
 

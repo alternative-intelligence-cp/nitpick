@@ -2,17 +2,43 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: specified, pre-implementation
+## Status: Phase A, cycle 0.4 — the frontend is real and runs
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 100 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 101 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-There is still **no compiler source and no build system.** Do not infer a build
-or test command from this file; none exists yet. When the first one is
-established, record it here. Until then, if a task requires building or running
-something, say so rather than guessing at an invocation.
+**Cycles 0.0–0.3 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+and the module/symbol/visibility passes. **Cycle 0.4 — the type system — is in
+progress**, through subcycle 0.4.5. `src/frontend/` is ~40 `.npk` modules of real
+compiler, written in Nitpick.
+
+### Building and testing
+
+```
+python3 bootstrap/harness/harness.py      # THE test command. Runs everything.
+```
+
+It compiles each suite with the **throwaway Python seed** in
+`bootstrap/generator/` (D-085 — a generator, never a dependency of the artifact),
+links against `bootstrap/runtime/npkrt.ll` via `llc` and `ld.lld`, runs the
+result, and compares the exit code. It also feeds every source through the **real**
+parser (`tools/parse_check.npk`) and re-checks that every AST node kind is
+reachable.
+
+Two things to know before you use it:
+
+- **It takes about eleven minutes and has no filter argument.** Every run is the
+  whole suite. When iterating on one test, compile and run that test alone rather
+  than paying for the full sweep each time.
+- **A test's expectation lives inside the test**, as an `exit` code per case. A
+  failure reports `exited N, expected 0`; find `exit Ni32` in the file to see
+  which case broke.
+
+There is **no `npkc` build of this compiler yet** — Phase A's artifact is a
+checker, and the emitter arrives in cycle 0.7. The `npkc` on PATH is the *old*
+C++ prototype (`../nitpick/build/npkc`) and is not this project's output.
 
 ```
 src/          # THE COMPILER — Nitpick source only; nothing else belongs here

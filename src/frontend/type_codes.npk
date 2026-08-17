@@ -16,3 +16,10 @@ pub func:TYPE_MISMATCH = string()       { pass "NITPICK-TYPE-007"; };
 pub func:TYPE_NOT_NUMERIC = string()    { pass "NITPICK-TYPE-008"; };
 pub func:TYPE_LOSSY_CAST = string()     { pass "NITPICK-TYPE-009"; };
 pub func:TYPE_RESULT_RETURN = string()  { pass "NITPICK-TYPE-010"; };
+
+// A DEFECT IN THE COMPILER, not in the program: a statement kind the checker's
+// walk has no entry for. Its own code, and not `TYPE_UNKNOWN`, because a reader
+// who sees it has found a hole in the checker and there is nothing they can
+// change in their source to fix it. `resolve.npk` has `RESOLVE_INTERNAL` for the
+// same situation and for the same reason.
+pub func:TYPE_INTERNAL = string()       { pass "NITPICK-TYPE-011"; };
