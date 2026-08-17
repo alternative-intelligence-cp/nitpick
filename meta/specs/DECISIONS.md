@@ -7828,3 +7828,40 @@ types the writer does not own. §2.6 gives the form with a trait and only with o
   `T` resolves to "there is no type named `T`" at a call site nowhere near the
   declaration. Only the first parameter is bound, because only the first is the
   target.
+
+---
+
+# Cycle 0.4.7 closed
+
+Generics, in five decisions (D-107 … D-111). **Five of the eight plan items turned
+out to be repairs rather than construction**, and every one of them dates to the
+cycle that *parsed* the construct:
+
+| Found | Had been true since |
+|---|---|
+| `Container<int32>` and `Container<string>` were one type | cycle 0.2 |
+| a generic struct's field types could not resolve at all | cycle 0.2 |
+| `Mutex<Config, 2>` did not parse | cycle 0.2 |
+| a generic call ignored its type arguments entirely | cycle 0.2 |
+| a generic trait dropped its arguments | cycle 0.2 |
+
+The pattern is exact and worth naming, because it will recur: **cycle 0.2 recorded
+the whole grammar faithfully, and wherever nothing downstream read what it
+recorded, the construct silently meant something else.** D-085's rule — the
+frontend accepts the whole grammar from day one — is what makes the parser
+trustworthy, and by itself it makes the *checker's* silence invisible. A construct
+that parses is not a construct that works, and the only thing that tells them apart
+is a test written from the specification's own example.
+
+Two further repairs came from outside the plan. `p_looks_like_decl` scanned at most
+64 tokens to tell a declaration from an expression while D-064 caps instantiation
+at 64 *levels*, so a declaration inside the type system's limit could silently
+reparse as a chain of comparisons — D-104's failure one layer up. And an argument
+mismatch reported at the *call's* span, which identical-diagnostic deduplication
+then correctly folded away, hiding the second of two bad arguments.
+
+**Three findings had no code behind them** — "no such method", "ambiguous", "wrong
+kind of generic argument" — so those distinctions lived only in the wording and
+nothing could assert on them. `BUILD_REFERENCE.md` §7.1's convention is what
+surfaced that: tests assert on codes and spans, never on message text, and a
+distinction with no code is a distinction nothing can check.

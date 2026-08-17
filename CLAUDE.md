@@ -11,7 +11,7 @@ cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
 **Cycles 0.0–0.3 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 and the module/symbol/visibility passes. **Cycle 0.4 — the type system — is in
-progress**, through subcycle 0.4.6. `src/frontend/` is ~40 `.npk` modules of real
+progress**, through subcycle 0.4.7. `src/frontend/` is ~40 `.npk` modules of real
 compiler, written in Nitpick.
 
 ### Building and testing
