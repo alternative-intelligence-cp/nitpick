@@ -165,7 +165,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = relay ast_decl(e.ast, did);
     int32:name = n.payload => int32;
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
 
     if (d.kind == DeclKind.DeclEnumDecl) {
         int32:et = raw tt_enum(e.types, did.index, s.name, 0i64, 1i32);
@@ -208,7 +208,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
 
 // What `.name` reaches on a base that is already a value type.
 func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
     int32:k = raw type_kind(e.types, base);
 
     // A `Result`'s three members (0.4.4). `.is_error` is DERIVED (D-069) — there
@@ -380,7 +380,8 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     // module-level free function. UFCS worked, and worked only for the one form
     // the spec does not put methods in.
     int32:did_index = 0i32;
-    MethodFind:found = relay find_method(e.impls, e.ast, e.interns, recv, name);
+    MethodFind:found = relay find_method(e.impls, e.bounds, e.types, e.ast,
+                                         e.interns, recv, name);
     if (found.ambiguous) {
         string:a1 = relay string_concat("`", relay intern_get(e.interns, name));
         string:a2 = relay string_concat(a1, "` comes from both `");
@@ -398,17 +399,32 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     // A FREE FUNCTION IS STILL A METHOD. UFCS is what makes `p.magnitude()` and
     // `magnitude(p)` the same call (D-006), so the scope lookup stays — it is the
     // second place to look rather than the only one.
+    //
+    // A GENERIC PARAMETER DOES NOT GET IT. `T` satisfies its bounds and nothing
+    // else, and a free function taking a `T` is not a capability `T` declares —
+    // it is a capability the surrounding module happens to have written, which is
+    // exactly the duck typing D-064 §1 removes. The receiver's bounds are the
+    // whole answer, so a miss there is a miss.
+    bool:opaque_recv = ((raw type_kind(e.types, recv)) == (raw TY_PARAM()));
     if (did_index == 0i32) {
-        int32:sym = raw scope_lookup(e.tab, e.scope, name);
+        int32:sym = 0i32;
+        if (!opaque_recv) { sym = raw scope_lookup(e.tab, e.scope, name); }
         if (sym == 0i32) {
             // THE MESSAGE NAMES THE TYPE IT WAS SOUGHT ON. "unknown function
             // `magnitude`" would send the reader looking for a free function when
             // what they wrote was a method call.
+            //
+            // AND FOR A PARAMETER IT NAMES THE BOUNDS, because the fix is one of
+            // two things and the reader has to be told which: either the call is
+            // wrong, or the bound list is missing the trait that declares it.
             string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, recv));
             string:m2 = relay string_concat(m1, "` has no method `");
             string:m3 = relay string_concat(m2, relay intern_get(e.interns, name));
-            pass (relay te_error(e, raw TYPE_MISMATCH(),
-                                 relay string_concat(m3, "`"), n.span));
+            string:m4 = relay string_concat(m3, "`");
+            if (opaque_recv) {
+                m4 = relay string_concat(m4, relay bounds_note(e, recv));
+            }
+            pass (relay te_error(e, raw TYPE_MISMATCH(), m4, n.span));
         }
         Symbol:s = raw symtab_get(e.tab, sym);
         did_index = s.origin;
@@ -421,7 +437,21 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
         string:m2 = relay string_concat(m1, "` is not a function");
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
+
+    // `Self` IN A METHOD'S SIGNATURE IS THE RECEIVER'S TYPE, and this is where the
+    // resolver is told so. A trait declares its methods in terms of `Self` and
+    // nothing else — `func:cmp = int32(Self:self, Self:other)` — so a signature
+    // resolved without it reports "`Self` is valid only inside a `trait` or
+    // `impl` body" at a call site that is inside neither and is perfectly correct.
+    //
+    // It was reachable before 0.4.7 through an impl method written with `Self`,
+    // and nothing exercised it; the bound path cannot avoid it, since a bound's
+    // method declaration is ALWAYS the trait's.
+    //
+    // ONLY WHEN THE METHOD CAME THROUGH A TYPE. A free function found by scope
+    // lookup is not a member of anything, so `Self` in one is the error it was.
+    if (found.found) { r.self_type = recv; }
     int32:ft = relay fn_type(@r, d, name, e.scope);
 
     // THE RECEIVER IS THE FIRST PARAMETER, so it is checked as one — and a method
@@ -579,6 +609,29 @@ func:type_args_only = NIL(ExprTyper->:e, int32:start, int32:count) {
 // One parameter type out of a function type's window.
 pub func:type_param_at_of = int32(Ast->:ast, TypeTable->:t, int32:ft, int32:i) {
     pass (raw ast_id_at(ast, raw type_param_start_of(t, ft), i));
+};
+
+// WHAT A PARAMETER IS ACTUALLY ALLOWED TO DO, appended to the diagnostic that
+// says it cannot do this. A generic body may use exactly what its bounds declare
+// (D-064 §1), so "`T` has no method `render`" leaves the reader one question: what
+// DOES it have. Answering it in the same sentence is the difference between a
+// diagnostic that ends the search and one that starts it.
+func:bounds_note = string(ExprTyper->:e, int32:param) {
+    BoundEntry:b = relay bound_entry_of(e.bounds, raw type_decl_of(e.types, param));
+    if (b.count == 0i32) {
+        pass "; it declares no bounds, and a generic body may use only what its bounds declare — there is no duck typing (D-064)";
+    }
+    string:m = "; its bounds are `";
+    int32:i = 0i32;
+    while (i < b.count) {
+        if (i > 0i32) { m = relay string_concat(m, " & "); }
+        m = relay string_concat(m,
+                relay type_display(e.types, e.interns,
+                                   relay ast_id_at(e.ast, b.start, i)));
+        i = i + 1i32;
+    }
+    pass (relay string_concat(m,
+        "`, and a generic body may use only what its bounds declare (D-064)"));
 };
 
 pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {

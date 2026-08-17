@@ -43,9 +43,35 @@ pub struct:FnSig = {
     bool:terminal;    // main or failsafe: no `Result`, and no `relay`
 };
 
+// A SIGNATURE IS RESOLVED IN TERMS OF ITS OWN GENERIC PARAMETERS, so this is
+// where the resolver is told which those are. Saved and restored around the
+// resolution, for the same reason `self_type` is: a caller resolving `extract`'s
+// signature from inside `process` must get `extract`'s `T`, not `process`'s, and
+// leaking either way substitutes one function's parameter into another's type.
+//
+// The window is taken from the DECLARATION, which is the only thing that knows
+// it. `fn_type` calls this, so setting it in both would be one save/restore
+// nested inside another saying the same thing.
+func:bind_own_generics = GenericScope(TypeResolver->:r, DeclNode:d) {
+    GenericScope:saved = r.generics;
+    IdSpan:w = raw decl_generic_window(r.ast, d);
+    GenericScope:g = GenericScope{ params_start: w.start, params_count: w.count,
+                                   args_start: 0i32, args_count: 0i32 };
+    r.generics = g;
+    pass saved;
+};
+
 // THE DECLARED TYPE IS THE SUCCESS TYPE; the actual type is wrapped.
 pub func:fn_signature = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
                               int32:scope) {
+    GenericScope:saved = raw bind_own_generics(r, d);
+    FnSig:s = relay fn_signature_bound(r, d, name, scope);
+    r.generics = saved;
+    pass s;
+};
+
+func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
+                                int32:scope) {
     TypeId:ret_id = raw fn_return(r.ast, d);
     drop check_not_result_return(r, ret_id, scope);
 
@@ -69,7 +95,14 @@ pub func:fn_signature = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
 // The RESULT is the return type here, not the success type. A caller receives
 // what the function returns, and D-013 says that is always a `Result`.
 pub func:fn_type = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) {
-    FnSig:s = relay fn_signature(r, d, name, scope);
+    GenericScope:saved = raw bind_own_generics(r, d);
+    int32:ft = relay fn_type_bound(r, d, name, scope);
+    r.generics = saved;
+    pass ft;
+};
+
+func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) {
+    FnSig:s = relay fn_signature_bound(r, d, name, scope);
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
     while (i < (raw fn_param_count(r.ast, d))) {

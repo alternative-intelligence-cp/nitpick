@@ -7456,3 +7456,76 @@ grammar corpus lacking the blanket impl form, and `tests/grammar/` never resolvi
 anything at all. The standing lesson for 0.4.7 and 0.4.8: **write each test from
 the specification's own example**, not from whatever is convenient, and treat a
 construct missing from `whole_grammar.npk` as a construct nothing checks.
+
+---
+
+## D-107 — A generic parameter's capabilities are its bounds', and UFCS does not reach past them
+
+**Settled in cycle 0.4.7.** D-064 §1 says a generic body may use exactly what its
+bounds declare and nothing else. Three questions that rule leaves open all have to
+be answered before "no duck typing" is a property rather than a slogan.
+
+### 1. A bound set is transitively closed
+
+`T: Ordered` where `trait:Ordered = Equatable & { … }` guarantees `Equatable` too:
+§2.2 makes a supertrait a requirement on the *implementing type*, so any type
+that satisfies the bound satisfies the supertrait as well. A body may therefore
+use `Equatable`'s methods, and the closure is computed **once**, when bounds are
+collected, rather than by a graph walk at every lookup.
+
+The closure **must not repeat a trait**. `T: Equatable & Ordered` reaches
+`Equatable` by two routes, and two copies of one bound make every one of its
+methods report as "supplied by both `Equatable` and `Equatable`" — a correct
+program refused, with a message naming one trait twice. The walk is fuel-bounded
+at 64 for the reason `SUPER_FUEL` already is: a supertrait cycle is something a
+program can express.
+
+### 2. UFCS does not reach a free function through a parameter
+
+D-006 makes `p.magnitude()` and `magnitude(p)` the same call, so a method lookup
+that misses the type falls back to module scope. **That fallback does not apply
+to a generic parameter.**
+
+A free function taking a `T` is not a capability `T` declares — it is one the
+surrounding module happens to contain. Reaching it would be duck typing arrived at
+by omission, and it would fail in the worst possible way: the body would compile,
+and break at an instantiation with a type that has no such method, reported
+against a caller who supplied a perfectly reasonable type. That is precisely the
+C++ template diagnostic experience D-064 rejected.
+
+The diagnostic therefore **names the bounds**. "`T` has no method `render`" leaves
+two candidate fixes — change the call, or widen the bound — and the compiler
+already knows which are possible, so it says which traits `T` does declare.
+
+### 3. A `comptime` value parameter is not a type
+
+`<comptime int32:LEVEL>` introduces a compile-time **constant**, and `LEVEL:x` is
+as wrong as `MAX:x` would be. It is refused by name where a type belongs rather
+than becoming an opaque type that fails further along with a worse message. The
+`comptime` marker is exactly what makes the two kinds of parameter readable apart
+(D-064 §2), so a checker that ignored it would give the marker nothing to do.
+
+### 4. A parameter shadows a module-level type of the same name
+
+It is the inner binding, so `struct:T` at module scope and `<T>` on a function are
+two different types and the body's `T` is the parameter. Consequently the
+parameter is looked up **first**, before the scope.
+
+### Where a parameter is resolved from, and why it is not a scope
+
+Every other name in the language resolves through the symbol table. A generic
+parameter resolves from the **declaration that introduced it**, carried as a
+window of parameter declarations plus an optional window of arguments.
+
+The reason is that a parameter is not reliably in a scope. `resolve.npk` declares
+a *function's* parameters into the scope it opens, but the type checker walks a
+body holding the **module** scope; a *struct's* are declared into no scope at all,
+and a struct's field types are resolved on demand from wherever the access
+happened to be written. Carrying the window means the answer travels with the
+declaration instead of depending on which scope a caller passed.
+
+The same structure carries both halves of D-064, which is why it is one mechanism
+and not two: **unbound** is the definition, where `T` is opaque and the body is
+checked once; **bound** is an instantiation, where `T` is the argument and the
+body is not re-examined. `T` means the same thing in both, and only the binding
+differs.

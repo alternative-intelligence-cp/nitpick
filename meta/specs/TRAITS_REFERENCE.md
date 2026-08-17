@@ -256,6 +256,25 @@ checkable once rather than once per instantiation — which matters directly,
 because Astrée analyses monomorphized output and a body correct for the
 instantiations that happen to exist may still be wrong in general.
 
+Three rules follow, all D-107:
+
+- **A bound set is transitively closed.** `T: Ordered` where `Ordered = Equatable
+  & { … }` guarantees `Equatable`, because §2.2 makes a supertrait a requirement
+  on the implementing type — so the body may use `Equatable`'s methods.
+- **UFCS does not reach a free function through a parameter.** `p.magnitude()`
+  and `magnitude(p)` are the same call for a concrete receiver (D-006), but a
+  free function taking a `T` is not a capability `T` declares. Reaching it would
+  be duck typing arrived at by omission, and it would break at an instantiation
+  rather than at the definition — reported against a caller who supplied a
+  perfectly reasonable type.
+- **A `comptime` value parameter is not a type.** `LEVEL:x` is as wrong as
+  `MAX:x`; the marker is what makes the two kinds of parameter readable apart.
+
+A parameter **shadows** a module-level type of the same name, being the inner
+binding. The diagnostic for an undeclared capability **names the bounds the
+parameter does declare**, because the fix is either the call or the bound list and
+the compiler already knows which are possible.
+
 ### 3.3 Instantiation
 
 Type arguments are **inferred** at the overwhelming majority of call sites, and

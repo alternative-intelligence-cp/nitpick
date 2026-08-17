@@ -214,6 +214,320 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
     pass NIL;
 };
 
+// --- bounds (TRAITS_REFERENCE 3.1, D-064) ------------------------------------------------
+//
+// WHAT A GENERIC PARAMETER IS ALLOWED TO DO. `<T: Renderable & Serializable>`
+// says `T` implements those two traits, and D-064 §1 says the body may use
+// exactly that and nothing else -- so this table is the entire content of "no
+// duck typing", and without it a bound is a comment.
+//
+// The reason to enforce it is not tidiness. Astrée analyses MONOMORPHIZED output,
+// so a body checked only against the instantiations a program happens to contain
+// can be correct for every one of them and still be wrong in general. The single
+// verification run (`astree-verification-one-shot-constraint`) is the worst place
+// to find that out. Checking the body against its bounds is what makes the
+// property hold for instantiations nobody has written yet.
+//
+// THE STORED WINDOW IS THE TRANSITIVE CLOSURE, not the bounds as written. §2.2
+// makes a supertrait a requirement on the implementing type, so `T: Ordered`
+// where `Ordered = Equatable & { … }` genuinely guarantees `Equatable` too, and a
+// body may use it. Computing the closure ONCE, here, is what lets every later
+// question -- method lookup, bound satisfaction -- be a window scan with no
+// resolver and no scope in hand.
+
+pub struct:BoundEntry = {
+    int32:param;       // the `GenericParam` decl index — the key
+    int32:start;       // window of trait type ids, transitively closed
+    int32:count;
+    int32:value_type;  // `<comptime int32:LEVEL>` — its type; 0 for a type parameter
+};
+
+pub struct:BoundTable = {
+    wild BoundEntry->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:boundtable_init = BoundTable() {
+    int64:n = 16i64;
+    wild int8->:mem = alloc(n * #size_of<BoundEntry>());
+    BoundTable:t = BoundTable{ items: mem => wild BoundEntry->,
+                               count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+func:bound_grow = NIL(BoundTable->:t) {
+    int32:nc = t.cap * 2i32;
+    wild int8->:bigger = ralloc(t.items => wild int8->,
+                                (nc => int64) * #size_of<BoundEntry>());
+    t.items = bigger => wild BoundEntry->;
+    t.cap = nc;
+    pass NIL;
+};
+
+pub func:bound_count = int32(BoundTable->:t) { pass t.count; };
+
+pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) {
+    if (i < 0i32) { fail 22i32; }
+    if (i >= t.count) { fail 22i32; }
+    pass (t.items[i => int64]);
+};
+
+func:bound_push = NIL(BoundTable->:t, int32:param, int32:start, int32:count,
+                      int32:value_type) {
+    if (t.count >= t.cap) { drop bound_grow(t); }
+    BoundEntry:e = BoundEntry{ param: param, start: start, count: count,
+                               value_type: value_type };
+    t.items[t.count => int64] = e;
+    t.count = t.count + 1i32;
+    pass NIL;
+};
+
+// THE ENTRY FOR ONE PARAMETER, or an empty one. A parameter with no entry is not
+// an error state: a bare `<T>` declares no bounds, and "no bounds" and "not
+// collected" have the same consequence — `T` can do nothing — so they do not need
+// telling apart.
+pub func:bound_entry_of = BoundEntry(BoundTable->:t, int32:param) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        BoundEntry:e = relay bound_at(t, i);
+        if (e.param == param) { pass e; }
+        i = i + 1i32;
+    }
+    BoundEntry:none = BoundEntry{ param: 0i32, start: 0i32, count: 0i32,
+                                  value_type: 0i32 };
+    pass none;
+};
+
+// DOES THIS PARAMETER DECLARE THIS TRAIT? The closure is already stored, so a
+// supertrait answers `true` here without a second walk.
+pub func:param_declares = bool(BoundTable->:t, int32:param, int32:trait_id,
+                               Ast->:ast) {
+    BoundEntry:e = relay bound_entry_of(t, param);
+    int32:i = 0i32;
+    while (i < e.count) {
+        if ((relay ast_id_at(ast, e.start, i)) == trait_id) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// A method supplied by one of a parameter's bounds. Same three-state answer as
+// the impl-table lookup, and for the same reason: two bounds declaring one name
+// is a real ambiguity that only the programmer can settle.
+func:find_in_bounds = MethodFind(BoundTable->:bt, Ast->:ast, TypeTable->:types,
+                                 int32:param, int32:name) {
+    MethodFind:best = raw method_none();
+    BoundEntry:e = relay bound_entry_of(bt, param);
+    int32:i = 0i32;
+    while (i < e.count) {
+        int32:trait_id = relay ast_id_at(ast, e.start, i);
+        int32:decl = raw type_decl_of(types, trait_id);
+        if (decl != 0i32) {
+            DeclId:did = DeclId{ index: decl };
+            DeclNode:td = relay ast_decl(ast, did);
+            int32:m = relay trait_member_named(ast, td, name,
+                                               DeclKind.DeclFunctionDecl);
+            if (m != 0i32) {
+                if (best.found) {
+                    best.ambiguous = true;
+                    best.other = trait_id;
+                } else {
+                    best.found = true;
+                    best.decl = m;
+                    best.owner = trait_id;
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass best;
+};
+
+// FUEL, for the same reason `SUPER_FUEL` exists: a supertrait graph is written by
+// a program, so `trait:A = B & {…}; trait:B = A & {…};` is a cycle somebody can
+// type. The closure walk must terminate before reporting rather than after.
+func:BOUND_FUEL = int32() { pass 64i32; };
+
+// Add one trait and everything it requires, skipping what is already present.
+//
+// THE DUPLICATE CHECK IS NOT AN OPTIMISATION. Two routes to one trait -- `T: A &
+// B` where `B` requires `A` -- would push `A` twice, and `find_in_bounds` reads a
+// second copy as a second bound declaring the same name. Every method of `A`
+// would then be reported as ambiguous, on a program that is perfectly correct.
+func:closure_push = NIL(TypeResolver->:r, int32:mark, int32:trait_id,
+                        int32:scope, int32:fuel) {
+    if (fuel <= 0i32) { pass NIL; }
+
+    int32:have = (raw ast_scratch_mark(r.ast)) - mark;
+    int32:i = 0i32;
+    while (i < have) {
+        if ((relay ast_scratch_at(r.ast, mark, i)) == trait_id) { pass NIL; }
+        i = i + 1i32;
+    }
+    drop ast_scratch_push(r.ast, trait_id);
+
+    int32:decl = raw type_decl_of(r.types, trait_id);
+    if (decl == 0i32) { pass NIL; }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:td = relay ast_decl(r.ast, did);
+
+    int32:n = raw item_extra_count(r.ast, td);
+    int32:j = 0i32;
+    while (j < n) {
+        int32:sup = relay resolve_type(r, relay item_extra(r.ast, td, j), scope);
+        if (sup != 0i32) {
+            if (!(raw type_is_invalid(r.types, sup))) {
+                // A supertrait that is not a trait is reported by
+                // `check_supertraits`, against the trait that named it. Reporting
+                // it a second time here would say the same thing about a
+                // declaration the reader did not write.
+                if ((raw type_kind(r.types, sup)) == (raw TY_TRAIT())) {
+                    drop closure_push(r, mark, sup, scope, fuel - 1i32);
+                }
+            }
+        }
+        j = j + 1i32;
+    }
+    pass NIL;
+};
+
+// One parameter's bounds, resolved and closed.
+func:collect_param_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:gp,
+                                int32:scope) {
+    DeclNode:g = relay ast_decl(r.ast, gp);
+
+    // A VALUE PARAMETER HAS A TYPE AND NO BOUNDS, and the two are told apart by
+    // the type slot rather than by a flag -- `parse_decl.npk` says why that is an
+    // exact discriminator rather than a coincidence.
+    if (raw generic_is_value(g)) {
+        int32:vt = relay resolve_type(r, raw generic_value_type(g), scope);
+        drop bound_push(t, gp.index, 0i32, 0i32, vt);
+        pass NIL;
+    }
+
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:n = raw generic_bound_count(g);
+    int32:i = 0i32;
+    while (i < n) {
+        // NOT `tid` — that is one of the five kernel identifier types (D-042),
+        // and a type name is not an identifier.
+        TypeId:bid = TypeId{ index: relay ast_id_at(r.ast,
+                                                    raw generic_bound_start(g), i) };
+        int32:bound_id = relay resolve_type(r, bid, scope);
+        if (bound_id != 0i32) {
+            if (!(raw type_is_invalid(r.types, bound_id))) {
+                if ((raw type_kind(r.types, bound_id)) != (raw TY_TRAIT())) {
+                    drop bound_not_trait(r, g, bound_id);
+                } else {
+                    drop closure_push(r, mark, bound_id, scope, raw BOUND_FUEL());
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    drop bound_push(t, gp.index, w.start, w.count, 0i32);
+    pass NIL;
+};
+
+func:bound_not_trait = NIL(TypeResolver->:r, DeclNode:g, int32:bound_id) {
+    string:m1 = relay string_concat("`", relay type_display(r.types, r.interns, bound_id));
+    string:m2 = relay string_concat(m1, "` is not a trait, so it cannot bound `");
+    string:m3 = relay string_concat(m2, relay intern_get(r.interns, raw decl_name(g)));
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_NOT_A_TRAIT(),
+        relay string_concat(m3,
+            "`; a bound names the traits the parameter must implement, and a parameter binds to exactly one type rather than to types resembling one"),
+        g.span));
+    pass NIL;
+};
+
+// EVERY GENERIC PARAMETER IN THE MODULE, wherever it was declared. The three
+// declaration shapes keep their generics in three different slots -- a function's
+// behind its own header, an item's behind the item header, an impl's behind that
+// -- so this walks each by its own accessor rather than by a shared one that
+// would read the wrong slot for two of the three.
+pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
+                              int32:scope) {
+    DeclNode:m = relay ast_decl(r.ast, mod_id);
+    int32:n = raw item_member_count(r.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:id = raw item_member(r.ast, m, i);
+        drop collect_decl_bounds(t, r, id, scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:collect_decl_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:id,
+                               int32:scope) {
+    DeclNode:d = relay ast_decl(r.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        int32:n = relay fn_generic_count(r.ast, d);
+        int32:i = 0i32;
+        while (i < n) {
+            drop collect_param_bounds(t, r, relay fn_generic(r.ast, d, i), scope);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:n = relay impl_generic_count(r.ast, d);
+        int32:i = 0i32;
+        while (i < n) {
+            drop collect_param_bounds(t, r, relay impl_generic(r.ast, d, i), scope);
+            i = i + 1i32;
+        }
+        // A METHOD MAY BE GENERIC ON ITS OWN ACCOUNT. `impl:Point = { func:map<U:
+        // Printable> = … };` declares `U` inside a block whose own generic list is
+        // empty, so a walk that stopped at the block would leave `U` unbounded and
+        // silently duck-typed.
+        int32:mn = relay impl_member_count(r.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop collect_decl_bounds(t, r, relay impl_member(r.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+
+    // A struct, an enum or a trait: generics in the ITEM header, and a trait's
+    // methods may declare their own.
+    if (d.kind == DeclKind.DeclStructDecl) {
+        drop collect_item_bounds(t, r, d, scope);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclEnumDecl) {
+        drop collect_item_bounds(t, r, d, scope);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        drop collect_item_bounds(t, r, d, scope);
+        int32:mn = raw item_member_count(r.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop collect_decl_bounds(t, r, raw item_member(r.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:collect_item_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclNode:d,
+                               int32:scope) {
+    int32:n = raw item_generic_count(r.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        drop collect_param_bounds(t, r, relay item_generic(r.ast, d, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // --- method lookup (UFCS, D-006) ---------------------------------------------------------
 
 // WHETHER ONE WAS FOUND IS A SEPARATE ANSWER FROM WHICH ONE, and from whether the
@@ -245,8 +559,22 @@ func:method_none = MethodFind() {
 // TWO TRAITS SUPPLYING ONE NAME IS AMBIGUOUS AND IS AN ERROR. Picking either
 // would be a silent choice, and the spec gives no rule to pick by -- so the
 // caller is told both, and disambiguates by calling the free-function form.
-pub func:find_method = MethodFind(ImplTable->:t, Ast->:ast, InternTable->:interns,
-                                  int32:target, int32:name) {
+//
+// A GENERIC PARAMETER IS ANSWERED FROM ITS BOUNDS AND NOT FROM THIS TABLE
+// (D-064). `T` is an opaque type satisfying exactly what it declares, so the
+// impls a program happens to contain say nothing about it -- and asking them
+// would BE duck typing, arrived at by omission. It is the same question with the
+// same shape of answer, so it is this function rather than one the caller has to
+// know to reach for; what changes is where the methods come from.
+pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
+                                  TypeTable->:types, Ast->:ast,
+                                  InternTable->:interns, int32:target,
+                                  int32:name) {
+    if ((raw type_kind(types, target)) == (raw TY_PARAM())) {
+        pass (relay find_in_bounds(bt, ast, types,
+                                   raw type_decl_of(types, target), name));
+    }
+
     MethodFind:best = raw method_none();
     int32:i = 0i32;
     while (i < t.count) {

@@ -46,10 +46,12 @@ func:ex = Ex(string:src, InternTable->:it) {
     TypeTable:types = raw typetable_init();
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
-    // No module here, so no `impl` blocks -- an EMPTY table rather than a
-    // skipped argument, so that a context without impls says so.
+    // No module here, so no `impl` blocks and no generic parameters -- EMPTY
+    // tables rather than skipped arguments, so that a context without them says
+    // so.
     ImplTable:im = raw impltable_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im);
+    BoundTable:bd = raw boundtable_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd);
     int32:t = relay type_of_expr(@e, node);
 
     Ex:out = Ex{ types: types, diags: diags, result: t,

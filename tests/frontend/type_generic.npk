@@ -1,0 +1,292 @@
+// Generics — a body checked ONCE, at its definition (cycle 0.4.7, D-064).
+//
+// THE PROPERTY THIS FILE EXISTS FOR: a generic body may use exactly what its
+// bounds declare, and a use of anything else is refused AT THE DEFINITION, with
+// no instantiation anywhere in the program. Every negative case below has zero
+// call sites on purpose — a test that instantiates proves the weaker thing, and
+// the weaker thing is what every duck-typed template language already does.
+//
+// The reason is not elegance. Astrée analyses MONOMORPHIZED output, so a body
+// that happens to be correct for the instantiations a program contains may still
+// be wrong in general — and the single verification run is the worst possible
+// place to discover it.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+use "../../src/frontend/type_stmt.npk".*;
+
+struct:Gx = { TypeTable:types; DiagList:diags; int64:parse_errs; };
+
+// A whole module, checked the way a module is: declarations collected, names
+// resolved, impls and BOUNDS collected, then every function's body walked with
+// its own signature and its own generic parameters in hand.
+func:gx = Gx(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags);
+    ImplTable:im = raw impltable_init();
+    drop collect_impls(@im, @tr, mod_id, scope);
+    // THE BOUNDS ARE COLLECTED BEFORE ANY BODY IS WALKED. A body's every use of
+    // a parameter is checked against them, and an unbuilt table does not weaken
+    // the check — it duck-types, because `T` would then find whatever the impl
+    // table happened to hold.
+    BoundTable:bd = raw boundtable_init();
+    drop collect_bounds(@bd, @tr, mod_id, scope);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd);
+
+    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(@ast, mn))) {
+        DeclId:item = raw item_member(@ast, mn, i);
+        DeclNode:d = relay ast_decl(@ast, item);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            int32:name = d.payload => int32;
+            FnSig:sg = relay fn_signature(@tr, d, name, scope);
+            e.fn_success = sg.success;
+            e.fn_terminal = sg.terminal;
+            IdSpan:gw = raw decl_generic_window(@ast, d);
+            GenericScope:gs = GenericScope{ params_start: gw.start,
+                                            params_count: gw.count,
+                                            args_start: 0i32, args_count: 0i32 };
+            e.generics = gs;
+            drop check_stmt(@e, raw fn_body(@ast, d));
+        }
+        i = i + 1i32;
+    }
+    Gx:out = Gx{ types: types, diags: diags,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+// A NEGATIVE PARSE COUNT rather than a folded-in one: a fixture that reported a
+// parse error as a type error would make every count below mean two things.
+func:errs = int64(Gx->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+func:code0 = string(Gx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).code); };
+func:msg0 = string(Gx->:x) { pass ((raw diaglist_at(@x.diags, 0i64)).message); };
+
+// Does the first diagnostic mention this text? The message is most of the value
+// of these diagnostics — "`T` has no method `render`" is a different finding from
+// one that also says what `T` CAN do — so the assertions read it rather than
+// settling for the code.
+func:says = bool(Gx->:x, string:needle) {
+    pass (raw string_contains(relay msg0(x), needle));
+};
+
+// Substring search, written here because `intern.npk` has only equality: the
+// compiler compares interned names and never scans one. A diagnostic is a
+// sentence, so a test about a diagnostic needs the other question.
+func:string_contains = bool(string:hay, string:needle) {
+    if (needle.len > hay.len) { pass false; }
+    // NOT `limit` — that is the verification keyword (`limit<Rules>`), and a
+    // keyword is not an identifier.
+    int64:last = hay.len - needle.len;
+    int64:i = 0i64;
+    while (i <= last) {
+        int64:j = 0i64;
+        bool:same = true;
+        while (j < needle.len) {
+            if (hay.ptr[i + j] != needle.ptr[j]) {
+                same = false;
+                break;
+            }
+            j = j + 1i64;
+        }
+        if (same) { pass true; }
+        i = i + 1i64;
+    }
+    pass false;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- A BOUND'S METHOD IS CALLABLE, AND NOTHING ELSE IS -------------------
+    //
+    // The positive half first, because the negative half means nothing without
+    // it: a checker that refused every method call on a parameter would pass
+    // every test below and be useless.
+    Gx:v1 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { drop x.show(); pass NIL; };",
+        @it);
+    if (raw errs(@v1) != 0i64)                                  { exit 10i32; }
+
+    // THE TEST THAT MATTERS. `render` is a perfectly good method name and some
+    // type somewhere may well have it — the point is that `T` does not, and that
+    // is decided WITHOUT AN INSTANTIATION. There is no call to `f` in this
+    // program and there never needs to be.
+    Gx:v2 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { drop x.render(); pass NIL; };",
+        @it);
+    if (raw errs(@v2) != 1i64)                                  { exit 11i32; }
+    if (!(raw string_eq(raw code0(@v2), raw TYPE_MISMATCH())))   { exit 12i32; }
+    // AND THE DIAGNOSTIC SAYS WHAT `T` CAN DO. A reader told only that the call
+    // is wrong has two candidate fixes — change the call, or widen the bound —
+    // and the compiler already knows which one is possible.
+    if (!(raw says(@v2, "Printable")))                          { exit 13i32; }
+
+    // AN UNBOUNDED PARAMETER CAN DO NOTHING AT ALL. `<T>` with no bounds is a
+    // type that satisfies nothing, so every method call on it is refused; the
+    // message says so rather than listing an empty bound set.
+    Gx:v3 = raw gx("func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };", @it);
+    if (raw errs(@v3) != 1i64)                                  { exit 14i32; }
+    if (!(raw says(@v3, "no bounds")))                          { exit 15i32; }
+
+    // --- NO DUCK TYPING BY MODULE ACCIDENT -----------------------------------
+    //
+    // `show` is a free function taking a `Point`, and UFCS makes `p.show()` a
+    // legal call on a `Point` (D-006). It is NOT a capability `T` declares — it
+    // is one the surrounding module happens to contain — so the scope lookup
+    // that finds it for a concrete receiver must not run for a parameter.
+    //
+    // Getting this wrong would be invisible: the body would compile, and would
+    // break at an instantiation with a type that has no `show`, reported against
+    // a caller who supplied a perfectly reasonable type.
+    Gx:v4 = raw gx(
+        "struct:Point = { flt64:x; }; func:show = string(Point:p) { pass \"p\"; }; func:f<T> = NIL(T:x) { drop x.show(); pass NIL; };",
+        @it);
+    if (raw errs(@v4) != 1i64)                                  { exit 16i32; }
+    // AND IT IS THE RIGHT ERROR. Without the guard the free function IS found,
+    // and the diagnostic becomes "expected `Point`, found `T`" — one error
+    // either way, so a count alone would not tell the two apart. The message is
+    // the difference between "`T` cannot do this" and "you passed the wrong
+    // thing to something `T` was never entitled to reach".
+    if (!(raw says(@v4, "has no method")))                      { exit 31i32; }
+
+    // ...while the same call on the concrete type still resolves, which is what
+    // makes the case above a rule about parameters rather than a regression in
+    // UFCS.
+    Gx:v5 = raw gx(
+        "struct:Point = { flt64:x; }; func:show = string(Point:p) { pass \"p\"; }; func:g = NIL(Point:p) { drop p.show(); pass NIL; };",
+        @it);
+    if (raw errs(@v5) != 0i64)                                  { exit 17i32; }
+
+    // --- A SUPERTRAIT IS PART OF THE BOUND (2.2) -----------------------------
+    //
+    // `T: Ord` where `Ord = Eq & { … }` genuinely guarantees `Eq`: implementing
+    // `Ord` requires implementing `Eq`, so a body may use `Eq`'s methods. The
+    // stored bound window is the TRANSITIVE CLOSURE, which is what makes this a
+    // window scan rather than a second graph walk at every call.
+    Gx:v6 = raw gx(
+        "trait:Eq = { func:same = bool(Self:self, Self:other); }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other); }; func:f<T: Ord> = NIL(T:a, T:b) { drop a.same(b); drop a.cmp(b); pass NIL; };",
+        @it);
+    if (raw errs(@v6) != 0i64)                                  { exit 18i32; }
+
+    // ONE TRAIT REACHED BY TWO ROUTES IS STILL ONE BOUND. `T: Eq & Ord` names
+    // `Eq` directly and again through `Ord`'s supertrait clause. Pushed twice,
+    // the closure would hold two copies and `same` would be reported as coming
+    // "from both `Eq` and `Eq`" — a perfectly correct program, refused, with a
+    // message naming one trait twice.
+    Gx:v7 = raw gx(
+        "trait:Eq = { func:same = bool(Self:self, Self:other); }; trait:Ord = Eq & { func:cmp = int32(Self:self, Self:other); }; func:f<T: Eq & Ord> = NIL(T:a, T:b) { drop a.same(b); pass NIL; };",
+        @it);
+    if (raw errs(@v7) != 0i64)                                  { exit 19i32; }
+
+    // TWO BOUNDS SUPPLYING ONE NAME IS A REAL AMBIGUITY, and there is no rule to
+    // pick by — so both are named and the programmer disambiguates. The same
+    // answer D-102 gives for two traits on a concrete type, reached through a
+    // different table.
+    Gx:v8 = raw gx(
+        "trait:Ta = { func:tag = int32(Self:self); }; trait:Tb = { func:tag = int32(Self:self); }; func:f<T: Ta & Tb> = NIL(T:x) { drop x.tag(); pass NIL; };",
+        @it);
+    if (raw errs(@v8) != 1i64)                                  { exit 20i32; }
+    if (!(raw says(@v8, "Ta")))                                 { exit 21i32; }
+    if (!(raw says(@v8, "Tb")))                                 { exit 22i32; }
+
+    // --- A BOUND NAMES TRAITS ------------------------------------------------
+    //
+    // `<T: Point>` reads as a constraint and is not one: a parameter binds to
+    // exactly one type (D-064 §7), so "T is a Point" would either mean `T` IS
+    // `Point`, which is what writing `Point` does, or subtyping, which the
+    // language does not have.
+    Gx:v9 = raw gx(
+        "struct:Point = { flt64:x; }; func:f<T: Point> = NIL(T:x) { pass NIL; };",
+        @it);
+    if (raw errs(@v9) != 1i64)                                  { exit 23i32; }
+    if (!(raw string_eq(raw code0(@v9), raw TYPE_NOT_A_TRAIT()))) { exit 24i32; }
+
+    // --- A PARAMETER IS A TYPE WHEREVER A TYPE GOES --------------------------
+    //
+    // `T:y = x;` is an ordinary declaration whose annotation happens to be a
+    // parameter. It resolves from the DECLARATION rather than from a scope,
+    // which is what lets it work here at all: the walk holds the module scope,
+    // and `T` was never declared into it.
+    Gx:v10 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable> = NIL(T:x) { T:y = x; drop y.show(); pass NIL; };",
+        @it);
+    if (raw errs(@v10) != 0i64)                                 { exit 25i32; }
+
+    // A PARAMETER IS ONE TYPE AND NOT A FAMILY OF THEM. Two parameters are two
+    // distinct opaque types even when both are bounded identically, so assigning
+    // one to the other is the mismatch it looks like.
+    Gx:v11 = raw gx(
+        "trait:Printable = { func:show = string(Self:self); }; func:f<T: Printable, U: Printable> = NIL(T:x, U:y) { T:z = y; pass NIL; };",
+        @it);
+    if (raw errs(@v11) != 1i64)                                 { exit 26i32; }
+    if (!(raw string_eq(raw code0(@v11), raw TYPE_MISMATCH())))  { exit 27i32; }
+
+    // --- A `comptime` VALUE PARAMETER IS NOT A TYPE --------------------------
+    //
+    // `<comptime int32:LEVEL>` introduces a compile-time CONSTANT, and the
+    // marker is exactly what makes the two readable apart (D-064 §2). Written
+    // where a type belongs it is refused by name — becoming an opaque type would
+    // push the mistake somewhere further along with a worse message.
+    Gx:v12 = raw gx(
+        "func:f<comptime int32:LEVEL> = LEVEL() { pass 1i32; };", @it);
+    if (raw errs(@v12) != 1i64)                                 { exit 28i32; }
+    if (!(raw string_eq(raw code0(@v12), raw TYPE_NOT_A_TYPE()))) { exit 29i32; }
+
+    // A PARAMETER SHADOWS A MODULE-LEVEL TYPE OF THE SAME NAME, because it is
+    // the inner binding. The struct `T` here is a different thing from the
+    // parameter `T`, and the body's `T` is the parameter — which is why the
+    // parameter is asked FIRST rather than after a scope lookup that would find
+    // the struct and silently type the body against it.
+    Gx:v13 = raw gx(
+        "struct:T = { int32:v; }; func:f<T> = NIL(T:x) { int32:q = x.v; pass NIL; };",
+        @it);
+    if (raw errs(@v13) != 1i64)                                 { exit 30i32; }
+
+    pass 0i32;
+};

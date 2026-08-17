@@ -228,7 +228,7 @@ func:check_cond = NIL(ExprTyper->:e, StmtNode:s) {
 // type from. `int8:n = 10;` works for that reason and for no other: nothing is
 // inferred, the type was written down and the literal reads it.
 func:check_var_decl = NIL(ExprTyper->:e, StmtNode:s) {
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
     TypeId:ann = raw stmt_decl_type(s);
     int32:want = relay resolve_type(@r, ann, e.scope);
 

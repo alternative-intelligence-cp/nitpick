@@ -27,6 +27,42 @@ use "parse_decl.npk".*;
 use "symbols.npk".*;
 use "type_names.npk".*;
 
+// WHICH GENERIC PARAMETERS ARE IN SCOPE, AND WHAT THEY STAND FOR.
+//
+// ONE STRUCTURE FOR BOTH HALVES OF D-064, because they are the same question
+// asked with and without an answer:
+//
+//   * UNBOUND (`args_count == 0`) is the DEFINITION. `T` is an opaque type
+//     satisfying exactly its declared bounds — the body is checked once, here.
+//   * BOUND is an INSTANTIATION. `T` is `int32`, and nothing about the body is
+//     re-examined; only the arguments are checked against the bounds.
+//
+// Writing it as two mechanisms would make `T` mean one thing in a definition and
+// another in an instantiation, which is precisely the context-dependence the
+// blueprint philosophy exists to prevent. It means the same thing in both; only
+// the binding differs, and that difference is one field.
+pub struct:GenericScope = {
+    int32:params_start;   // window of `GenericParam` decl ids
+    int32:params_count;
+    int32:args_start;     // window of concrete type ids; count 0 = UNBOUND
+    int32:args_count;
+};
+
+pub func:generic_scope_none = GenericScope() {
+    GenericScope:g = GenericScope{ params_start: 0i32, params_count: 0i32,
+                                   args_start: 0i32, args_count: 0i32 };
+    pass g;
+};
+
+// WHETHER A NAME IS A PARAMETER IS A SEPARATE ANSWER FROM WHICH TYPE IT IS. A
+// bound parameter can legitimately resolve to type id 0 when its argument failed
+// to resolve, and 0 is also "not a parameter" — so the two are different fields,
+// the same split `MethodFind` and `FieldInfo` are built around.
+pub struct:ParamBind = {
+    bool:found;
+    int32:type_id;
+};
+
 pub struct:TypeResolver = {
     Ast->:ast;
     TypeTable->:types;
@@ -38,6 +74,14 @@ pub struct:TypeResolver = {
     // type it stands for, or 0 when there is none — so "Self outside an impl" is
     // a state the resolver can see rather than a rule it has to remember.
     int32:self_type;
+
+    // TWO LAYERS, because the language has exactly two. A method inside
+    // `impl:<T: Printable>:Loggable` sees the impl's `T` and its own `<U>`, and
+    // nothing nests deeper — a function cannot declare a function. The
+    // declaration's own layer is searched first, so a method that reuses a name
+    // shadows rather than collides.
+    GenericScope:generics;
+    GenericScope:enclosing;
 };
 
 pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
@@ -45,8 +89,60 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    DiagList->:diags) {
     TypeResolver:r = TypeResolver{ ast: ast, types: types, tab: tab,
                                    interns: interns, diags: diags,
-                                   self_type: 0i32 };
+                                   self_type: 0i32,
+                                   generics: raw generic_scope_none(),
+                                   enclosing: raw generic_scope_none() };
     pass r;
+};
+
+// A NAME THAT IS A GENERIC PARAMETER OF SOMETHING CURRENTLY IN SCOPE.
+pub func:generic_lookup = ParamBind(TypeResolver->:r, int32:name) {
+    ParamBind:own = relay generic_bind_in(r, r.generics, name);
+    if (own.found) { pass own; }
+    pass (relay generic_bind_in(r, r.enclosing, name));
+};
+
+func:generic_bind_in = ParamBind(TypeResolver->:r, GenericScope:g, int32:name) {
+    int32:i = 0i32;
+    while (i < g.params_count) {
+        // NOT `pid` — one of the five kernel identifier types (D-042), and a type
+        // name is not an identifier.
+        DeclId:gpid = DeclId{ index: relay ast_id_at(r.ast, g.params_start, i) };
+        DeclNode:pn = relay ast_decl(r.ast, gpid);
+        if ((raw decl_name(pn)) == name) {
+            // A VALUE PARAMETER IS NOT A TYPE. `<comptime int32:LEVEL>` names a
+            // compile-time constant, and `LEVEL:x` is as wrong as `MAX:x` would
+            // be — refused by name rather than becoming an opaque type that then
+            // fails somewhere further along with a worse message.
+            if (raw generic_is_value(pn)) {
+                ParamBind:v = ParamBind{ found: true,
+                    type_id: relay value_param_in_type_position(r, pn) };
+                pass v;
+            }
+            // BOUND OR OPAQUE. Fewer arguments than parameters is an arity error
+            // reported where the arguments were written; the parameters past the
+            // end stay opaque here rather than reading off the end of a window.
+            if (i < g.args_count) {
+                ParamBind:b = ParamBind{ found: true,
+                    type_id: relay ast_id_at(r.ast, g.args_start, i) };
+                pass b;
+            }
+            ParamBind:b = ParamBind{ found: true,
+                type_id: raw tt_param(r.types, gpid.index, name) };
+            pass b;
+        }
+        i = i + 1i32;
+    }
+    ParamBind:none = ParamBind{ found: false, type_id: 0i32 };
+    pass none;
+};
+
+func:value_param_in_type_position = int32(TypeResolver->:r, DeclNode:pn) {
+    string:m1 = relay string_concat("`", relay intern_get(r.interns, raw decl_name(pn)));
+    pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(),
+        relay string_concat(m1,
+            "` is a `comptime` value parameter, not a type; it supplies a constant, and `comptime` is the marker that says which of the two a parameter is (D-064)"),
+        pn.span));
 };
 
 func:ty_error = int32(TypeResolver->:r, string:code, string:message, Span:at) {
@@ -188,6 +284,21 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
 
 func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
                                 int32:scope) {
+    // A GENERIC PARAMETER OF THE DECLARATION BEING RESOLVED IS ASKED FIRST, and
+    // being first is the point: it is the innermost binding, so `T` inside
+    // `struct:Container<T>` means the parameter even where a module-level type is
+    // also called `T`.
+    //
+    // It is asked HERE rather than through the scope because a parameter is not
+    // reliably in one. `resolve.npk` declares a function's into the scope it
+    // opens, but the type checker walks a body holding the MODULE scope; a
+    // struct's are declared into no scope at all, and a struct's field types are
+    // resolved on demand from wherever the access happened to be written. The
+    // window travels with the declaration, so the answer does not depend on which
+    // scope a caller passed.
+    ParamBind:gb = relay generic_lookup(r, name);
+    if (gb.found) { pass (gb.type_id); }
+
     int32:sym = raw scope_lookup(r.tab, scope, name);
     if (sym == 0i32) {
         string:text = relay intern_get(r.interns, name);

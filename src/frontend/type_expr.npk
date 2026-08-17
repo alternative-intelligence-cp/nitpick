@@ -75,16 +75,46 @@ pub struct:ExprTyper = {
     // cannot forget it and get the old behaviour back silently. A context with no
     // impls passes an empty table and says so.
     ImplTable->:impls;
+
+    // THE MODULE'S GENERIC BOUNDS (0.4.7). A parameter's methods are its bounds'
+    // methods and nothing else (D-064), so this is what makes a generic body
+    // checkable at its definition — and a checker without it does not fall back
+    // to something weaker, it duck-types: `T` would find whatever the impl table
+    // happened to hold. A parameter here for the same reason `impls` is one.
+    BoundTable->:bounds;
+
+    // THE GENERIC PARAMETERS THE BODY BEING WALKED CAN SEE. Set alongside
+    // `fn_success` by whoever drives the walk: both come from the same
+    // declaration and both are constant across one body.
+    GenericScope:generics;
+    GenericScope:enclosing;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
                                  InternTable->:interns, DiagList->:diags,
-                                 int32:scope, ImplTable->:impls) {
+                                 int32:scope, ImplTable->:impls,
+                                 BoundTable->:bounds) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false,
-                             impls: impls };
+                             impls: impls, bounds: bounds,
+                             generics: raw generic_scope_none(),
+                             enclosing: raw generic_scope_none() };
     pass e;
+};
+
+// THE RESOLVER THIS CHECKER USES, BUILT IN ONE PLACE.
+//
+// Six call sites made one by hand, and each one that forgot a field got a
+// resolver that was subtly not this checker's: a `T` in a body would resolve to
+// "there is no type named `T`" inside the one declaration where `T` is guaranteed
+// to exist. Context that every resolution needs belongs to the constructor, not
+// to whoever remembers.
+pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
+    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    r.generics = e.generics;
+    r.enclosing = e.enclosing;
+    pass r;
 };
 
 func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
@@ -517,7 +547,7 @@ func:type_defaults = int32(ExprTyper->:e, ExprNode:n) {
 // no-op. Without that, the one place a programmer states a type outright would
 // be the one place a bare literal could not be written.
 func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) {
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
     TypeId:target_node = TypeId{ index: n.b };
     int32:to = relay resolve_type(@r, target_node, e.scope);
 
@@ -763,7 +793,7 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
         pass 0i32;
     }
     Symbol:s = raw symtab_get(e.tab, sym);
-    TypeResolver:r = raw tyres_init(e.ast, e.types, e.tab, e.interns, e.diags);
+    TypeResolver:r = raw etyper_resolver(e);
 
     // A LOCAL — its annotation is the type. Nitpick has no inferred bindings:
     // every declaration states its type, which is why this needs no unification.

@@ -335,6 +335,44 @@ pub func:generic_value_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a
 pub func:generic_bound_start = int32(DeclNode:d) { pass d.b; };
 pub func:generic_bound_count = int32(DeclNode:d) { pass d.c; };
 
+// EVERY DECLARATION'S GENERIC LIST, AS ONE WINDOW.
+//
+// Three shapes keep their generics behind three different headers, and each is
+// CONTIGUOUS immediately after its own -- `fn_generic`, `item_generic` and
+// `impl_generic` all index `HDR + i` and differ only in which `HDR`. So the list
+// is already a window; this is the one place that says where it starts, which is
+// the same rule the individual accessors follow.
+//
+// 0.4.7 needs the window rather than the elements because a generic parameter has
+// to be resolvable from the DECLARATION ALONE. The type checker walks a body with
+// the module scope in hand, not the function scope the resolver opened, so `T` in
+// `func:f<T> = NIL(T:x)` is a name no lookup from here can reach -- and the same
+// is true of a struct's `T`, which is declared into no scope at all. Carrying the
+// window means the answer travels with the declaration instead of depending on
+// which scope a caller happened to pass.
+pub func:decl_generic_window = IdSpan(Ast->:ast, DeclNode:d) {
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        IdSpan:w = IdSpan{ start: d.b + (raw FN_HDR()),
+                           count: raw fn_generic_count(ast, d) };
+        pass w;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        IdSpan:w = IdSpan{ start: d.b + (raw IMPL_HDR()),
+                           count: raw impl_generic_count(ast, d) };
+        pass w;
+    }
+    if (d.kind == DeclKind.DeclStructDecl) { pass (raw item_generic_span(ast, d)); }
+    if (d.kind == DeclKind.DeclEnumDecl)   { pass (raw item_generic_span(ast, d)); }
+    if (d.kind == DeclKind.DeclTraitDecl)  { pass (raw item_generic_span(ast, d)); }
+    pass (raw idspan_empty());
+};
+
+func:item_generic_span = IdSpan(Ast->:ast, DeclNode:d) {
+    IdSpan:w = IdSpan{ start: d.b + (raw ITEM_HDR()),
+                       count: raw item_generic_count(ast, d) };
+    pass w;
+};
+
 // --- generics ---------------------------------------------------------------------------------
 //
 // AFTER the name, never before (D-030): `func:process<T: Renderable>`, matching

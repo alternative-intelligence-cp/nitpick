@@ -533,6 +533,22 @@ pub func:idspan_empty = IdSpan() {
     pass s;
 };
 
+// READ AN ENTRY PUSHED SINCE `mark`, WITHOUT COMMITTING. Its counterpart below
+// writes one; this reads one, and both are bounds-checked for the same reason.
+//
+// A list that must not repeat itself has to be searched while it is still being
+// built — 0.4.7's bound closure walks a supertrait graph and pushes each trait it
+// reaches, and a trait reachable by two routes would otherwise be pushed twice.
+// Two copies of one bound is not a harmless duplicate: `find_method` reports a
+// name supplied by two bounds as ambiguous, so the same trait counted twice makes
+// every one of its methods uncallable.
+pub func:ast_scratch_at = int32(Ast->:ast, int32:mark, int32:i) {
+    if (i < 0i32) { fail 9i32; }
+    int32:at = mark + i;
+    if (at >= ast.scratch_count) { fail 9i32; }
+    pass (ast.scratch[at => int64]);
+};
+
 // Overwrite an entry pushed since `mark`. A header slot whose value is a count of
 // things not yet parsed has to be reserved first and filled in afterwards; this
 // is that fill-in, and it is bounds-checked so a wrong index is an error rather
