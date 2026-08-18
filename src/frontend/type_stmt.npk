@@ -28,6 +28,7 @@ use "symbols.npk".*;
 use "resolve_type.npk".*;
 use "type_decl.npk".*;
 use "type_layout.npk".*;
+use "expr_types.npk".*;
 use "type_expr.npk".*;
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
@@ -311,21 +312,22 @@ func:is_bitwise_assign = bool(TokenKind:op) {
     pass (op == TokenKind.OpShrAssign);
 };
 
-// WHAT CAN BE ASSIGNED TO. A name, a field, an element, or a dereference — the
-// four forms that denote storage. Everything else denotes a value, and a value
-// has nowhere to put anything.
+// WHAT CAN BE ASSIGNED TO — the same question `@`, `$$i`, `$$m` and `move` ask,
+// so it is answered by the same function.
+//
+// WHAT STOOD HERE LOOKED AT THE TOP NODE ONLY: an identifier, a member access, an
+// index or a dereference passed, whatever they were built on. `f().x = 5i32;` is a
+// member access and was accepted — a store into a field of a value that has no
+// home. `expr_is_place` walks to the ROOT, so the answer is about where the
+// storage is rather than about what the outermost operator happens to be.
 //
 // The message names the form rather than saying "not assignable", because the
-// mistake is usually a comparison written with one `=` and the reader needs to
-// be pointed at that rather than at a definition.
+// mistake is usually a comparison written with one `=` and the reader needs to be
+// pointed at that rather than at a definition.
 func:require_place = NIL(ExprTyper->:e, ExprId:id, Span:at) {
     if (raw expr_is_none(id)) { pass NIL; }
-    ExprNode:n = relay ast_expr(e.ast, id);
-    if (n.kind == ExprKind.ExprIdentifierExpr)   { pass NIL; }
-    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass NIL; }
-    if (n.kind == ExprKind.ExprIndexExpr)        { pass NIL; }
-    if (n.kind == ExprKind.ExprDerefExpr)        { pass NIL; }
-    drop te_error(e, raw TYPE_MISMATCH(),
+    if (relay expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+    drop te_error(e, raw TYPE_NOT_A_PLACE(),
         "this is a value, not somewhere to store one; only a name, a field, an element or a `<-` dereference can be assigned to — and `==` is the comparison",
         at);
     pass NIL;

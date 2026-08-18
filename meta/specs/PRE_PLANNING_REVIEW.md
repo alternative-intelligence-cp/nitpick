@@ -19,6 +19,13 @@ often not a well-formed statement — that is itself the main finding.
 > `CLAUDE.md` names this document as required reading before planning, and §1.5
 > below recommends **option D — keeping `gc` as an opt-in modifier**.
 >
+> ⚠️ **That recommendation was NOT taken. D-003 settled this the other way**:
+> the tracing collector is dropped entirely, `gc` with it, and arenas with
+> `Handle<T>` cover the graph-shaped and cyclic data option D was reaching for.
+> `gc` is not a keyword in this implementation. D-003 names this section as the
+> suggestion it supersedes — read it as the argument that was considered and
+> rejected, not as a plan.
+>
 > **D-003 chose no collector at all.** There is no `gc` keyword, no `gc` memory
 > qualifier, and no collector anywhere in the language. `MemoryQualifier` is
 > `wild | wildx | stack | defer` (D-065 also removed `move` from that list). The

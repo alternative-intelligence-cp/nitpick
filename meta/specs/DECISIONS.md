@@ -8418,3 +8418,124 @@ expression is cycle 0.6's job, so a literal is what "constant" means today.
   decided here, and `when` is rare enough that buying the precision is paying for
   something nobody has asked for.
 
+
+---
+
+## D-119 — A free is a move, and an operand that needs an address is one question
+
+**Settled in cycle 0.5.3**, implementing D-065 and closing a gap the seed had been
+covering for.
+
+### A deallocator takes ownership, which is what `move` does
+
+D-065 says `move` is "the mechanism that prevents double-free on `wild`
+allocations", and the implementation follows that literally: **`dalloc(p)`
+invalidates `p` exactly as `move(p)` does.** Ownership of the allocation has left
+the binding either way, and what remains is a name with nothing valid behind it.
+
+Consequences, none of which needed new machinery:
+
+- **Use-after-free is use-after-move**, reached through a different operator.
+- **Double-free is use-after-move**, where the second use happens to be another
+  free.
+- **Reinitialisation revives both.** D-065 says a moved-from binding "may be
+  reinitialized by assignment, after which it is live again"; a freed one is the
+  same, because the same assignment establishes the same thing.
+- **`ralloc` frees too.** A reallocation invalidates the pointer it was given and
+  hands back a different one, so holding the old one is the same dangling pointer.
+
+Two codes rather than one, because D-065 requires both sentences — the prototype's
+negative test asks for *"use after move"* **and** *"cannot free moved variable"* —
+and a reader who sees the second has a dangling pointer rather than a transferred
+value.
+
+### The four sets merge in three directions
+
+`must` intersects; `may`, `moved` and `freed` union. Written side by side in one
+function, because the asymmetry is the thing to get wrong:
+
+**`must` is the odd one out, and it is the only one where the conservative answer
+is the smaller set.** For the other three, being wrong towards `false` lets a
+use-after-move through; for `must` it refuses correct code. A shared merge helper
+taking one direction would be right about one of the four and silently wrong about
+three.
+
+The same split governs what survives a loop. **What a body assigns does not survive
+it — what a body moves does**, because a body that moves something moves it again
+on the second iteration.
+
+### One analysis, not two
+
+Assignment, immutability, moves and frees are all per-binding state threaded
+through the same statements and merged at the same branches. They live in one walk
+(`analysis/bindings.npk`) because two walks would be two sets of merge points that
+have to agree about what an `if` does, and this compiler has paid for that shape
+often enough to stop choosing it.
+
+### An operand that needs an address
+
+`@`, `$$i`, `$$m`, `move(place)` and an assignment target all require a **place** —
+a name, a field or element of one, or what a pointer points at. There is no way to
+spell the address of a temporary.
+
+**Four of the five were unchecked entirely, and the fifth had a hole.** The seed
+refuses these out of necessity — it has to emit an address and there is none — so
+the two compilers disagreed about what a valid program is, exactly as they did over
+`fixed` before 0.5.2. The assignment target's check looked at the **outermost
+operator only**, so `f().x = 5i32;` passed as "a member access" — a store into a
+field of a value with no home.
+
+**One predicate answers it for all five**, and it walks to the **root** of the place
+rather than testing the top node. `<-p` is a place, which is the one people get
+backwards: dereferencing yields what the pointer points at, which is somewhere real.
+
+Its own diagnostic code, not `TYPE_MISMATCH`: nothing is wrong with the operand's
+*type*, and telling somebody their `int32` is not an `int32` sends them looking in
+the wrong direction.
+
+### `nodrop` requires `wild` or `wildx`
+
+The qualifier suppresses the drop of a manual allocation, which is the one case
+where *not* dropping is correct rather than a leak. On a managed binding there is
+nothing to suppress, and the qualifier then says something untrue about the binding
+it is written on.
+
+This is the last of the four qualifiers cycle 0.5 inherited as "parses and nothing
+reads it": `stack` and `wild` got their meaning from the escape rules in 0.5.1,
+`fixed` from assignment in 0.5.2, and `nodrop` had nowhere to attach until there
+was an ownership analysis to attach it to.
+
+### `malloc` and `free` are not builtins, and ownership is not decided by spelling
+
+**They are C functions**, reachable only by declaring them in an `extern` block
+like any other C function. Verified against the prototype rather than inferred:
+`type_checker_call.cpp` handles exactly `alloc`, `calloc`, `ralloc` and `dalloc`,
+`dalloc`'s own comment calls it "preferred alias for `free()` per the NitpickAlloc
+API", and every `malloc` in `FULL_specs.txt` and in the prototype's parser tests
+appears inside `extern "libc" { … }`.
+
+`BUILTIN_REFERENCE.md` claimed `free` and `realloc` were "preserved as legacy
+aliases". **That line was wrong** — carried over from the era when the prototype
+was C/C++-backed and `malloc`/`free` were what there was. The native allocator that
+replaced them uses the four names above, and the aliases were never part of it. The
+line is removed.
+
+**An `extern` deallocator is opaque, and that is not a gap.** Past the FFI barrier
+the runtime cannot intercept a fault, and the compiler cannot know what a callee did
+with a pointer either. A program that frees through `extern` has suspended this
+guarantee explicitly, which is how every other Nitpick guarantee is suspended.
+
+**The prototype decided this by matching the spelling, and that part is not carried
+over.** Its `KNOWN_DEALLOCATORS` set held `close`, `release`, `destroy`, `cleanup`,
+`dispose` and `drop`, and it additionally matched any function name *ending* in
+`_free`, `_close`, `_destroy` or `_release`. So `window_close` acquired ownership
+semantics it never declared and `deallocate_thing` did not. That is behaviour that
+varies by what something happens to be called — the context-dependence the blueprint
+philosophy exists to refuse, and a list a reader would have to memorise. **This
+analysis knows two builtin names and nothing else about names.**
+
+### Also found and deliberately not fixed
+
+**D-065's own example does not compile.** It is written with a variable named
+`buffer`, and `buffer` is a keyword. The test uses a valid spelling and says why.
+

@@ -151,6 +151,28 @@ func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
     pass 0i32;
 };
 
+// THE OPERAND OF `@`, `$$i`, `$$m` AND `move` MUST HAVE AN ADDRESS.
+//
+// A place is a name, a field or element of one, or what a pointer points at. The
+// language has no way to spell the address of a temporary, so `@(raw f())` names
+// nothing — and until 0.5.3 the real frontend accepted all four of these on any
+// expression at all. The SEED refused them, out of necessity: it has to emit an
+// address and there is none. So the two disagreed about what a valid program is,
+// which is the situation `fixed` was in before 0.5.2.
+//
+// ONE HELPER FOR ALL FOUR, because it is one rule. Written at each site it would be
+// four chances for one to drift, and the drift had already happened in the form of
+// nobody writing it anywhere.
+func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (relay expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
+    ExprNode:n = relay ast_expr(e.ast, id);
+    string:m1 = relay string_concat("`", what);
+    string:m2 = relay string_concat(m1, "` needs a place — a name, a field or element of one, or what a pointer points at — and this expression is a value with no address");
+    drop te_error(e, raw TYPE_NOT_A_PLACE(), m2, n.span);
+    pass NIL;
+};
+
 // --- the common type of two operands (D-092, corrected) ----------------------------------
 //
 // THERE IS NO IMPLICIT WIDENING. Two operands share a type or they do not, and
@@ -1061,6 +1083,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
 
     // --- the pointer family (OP_REFERENCE §0 level 5) -----------------------------
     if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop require_place_operand(e, raw expr_operand(n), "@");
         int32:t = relay type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
@@ -1072,6 +1095,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     // level and the borrow checker (0.5) is what makes it second-class; the
     // distinction is about where the value may travel, not about what it is.
     if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop require_place_operand(e, raw expr_operand(n), "a borrow");
         int32:t = relay type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         pass (raw tt_pointer(e.types, t));
@@ -1090,8 +1114,10 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     // `move(place)` (D-065) transfers ownership and yields the same type; what it
     // does to the SOURCE is the borrow checker's business in 0.5.
     if (n.kind == ExprKind.ExprMoveExpr) {
+        drop require_place_operand(e, raw expr_operand(n), "move");
         pass (relay type_of_expr(e, raw expr_operand(n)));
     }
+
     // `..^coll` (D-026) expands a collection AT A CALL SITE and nowhere else.
     // Its type here is the collection's; 0.4.5 is where the position is checked,
     // because that is where an argument list exists to check it against.

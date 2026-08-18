@@ -75,7 +75,7 @@ use "../src/frontend/type_expr.npk".*;
 use "../src/frontend/type_stmt.npk".*;
 use "../src/frontend/analysis/analysis_codes.npk".*;
 use "../src/frontend/analysis/escape.npk".*;
-use "../src/frontend/analysis/assign.npk".*;
+use "../src/frontend/analysis/bindings.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
@@ -239,7 +239,7 @@ func:main = int32(cstring[]:argv) {
     // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
     // with an intersection merge, and a loop body that may run zero times is both
     // the sound answer and a fixed point on the first pass.
-    Assign:asg = raw assign_init(@g.ast, @g.tab, @diags);
+    Assign:asg = raw assign_init(@g.ast, @g.tab, @it, @diags);
     int32:y2 = 0i32;
     while (y2 < (raw graph_count(@g))) {
         ModuleEntry:e6 = raw graph_at(@g, y2);

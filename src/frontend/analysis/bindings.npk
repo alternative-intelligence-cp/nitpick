@@ -1,6 +1,18 @@
-// Definite assignment: no binding is read before it is written (D-010).
+// Binding validity: assigned before read, written once if `fixed`, and not used
+// after it has been moved or freed (D-010, D-065).
 //
-// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.2.
+// Subset 1 (meta/SUBSET_1.md). Cycles 0.5.2 and 0.5.3.
+//
+// FOUR QUESTIONS, ONE WALK. Whether a binding has been assigned, whether it has
+// been assigned twice, whether it has been moved out of, and whether it has been
+// freed are all the same shape: per-binding state, threaded through the same
+// statements, merged at the same branches. Two walks would be two sets of merge
+// points that have to agree about what an `if` does, and this compiler has paid
+// for that shape enough times.
+//
+// THE FOUR SETS DO NOT MERGE THE SAME WAY, and that asymmetry is the single
+// easiest thing here to get backwards — so all four are written side by side in
+// `state_merge` where they can be read against each other.
 //
 // NITPICK HAS NO IMPLICIT DEFAULT VALUE, and D-010 chose that deliberately over
 // the alternative of poisoning every scalar with `ERR`. The argument is worth
@@ -64,12 +76,31 @@ pub func:ASSIGN_DEPTH = int32() { pass 256i32; };
 pub struct:AssignState = {
     wild bool->:must;
     wild bool->:may;
+
+    // MOVED AND FREED — the two ways a binding stops being valid without being
+    // unassigned (D-065). A moved-from binding is INVALID, not "valid but
+    // unspecified": there is no such thing in this language as a value you may
+    // hold and not inspect.
+    //
+    // A FREE IS A MOVE INTO THE ALLOCATOR, which is why it is the same machinery
+    // and not a second analysis. `dalloc(p)` transfers ownership of the allocation
+    // out of `p` exactly as `move(p)` transfers it to another binding, and D-065
+    // says outright that `move` is "the mechanism that prevents double-free on
+    // `wild` allocations". Use-after-free and double-free then fall out of
+    // use-after-move with no new state at all.
+    //
+    // TWO SETS RATHER THAN ONE WITH A REASON CODE, so the message can say which
+    // happened without the merge having to decide which of two reasons wins when
+    // two paths disagree.
+    wild bool->:moved;
+    wild bool->:freed;
     int32:count;
 };
 
 pub struct:Assign = {
     Ast->:ast;
     SymbolTable->:tab;
+    InternTable->:interns;
     DiagList->:diags;
 
     // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
@@ -77,8 +108,10 @@ pub struct:Assign = {
     bool:quiet;
 };
 
-pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab, DiagList->:diags) {
-    Assign:x = Assign{ ast: ast, tab: tab, diags: diags, quiet: false };
+pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
+                              InternTable->:interns, DiagList->:diags) {
+    Assign:x = Assign{ ast: ast, tab: tab, interns: interns, diags: diags,
+                       quiet: false };
     pass x;
 };
 
@@ -87,13 +120,19 @@ pub func:state_new = AssignState(int32:n) {
     if (size < 1i64) { size = 1i64; }
     wild int8->:m1 = alloc(size * #size_of<bool>());
     wild int8->:m2 = alloc(size * #size_of<bool>());
+    wild int8->:m3 = alloc(size * #size_of<bool>());
+    wild int8->:m4 = alloc(size * #size_of<bool>());
     AssignState:s = AssignState{ must: m1 => wild bool->,
                                  may: m2 => wild bool->,
+                                 moved: m3 => wild bool->,
+                                 freed: m4 => wild bool->,
                                  count: size => int32 };
     int64:i = 0i64;
     while (i < size) {
         s.must[i] = false;
         s.may[i] = false;
+        s.moved[i] = false;
+        s.freed[i] = false;
         i = i + 1i64;
     }
     pass s;
@@ -105,6 +144,8 @@ func:state_copy = AssignState(AssignState:src) {
     while (i < (src.count => int64)) {
         d.must[i] = src.must[i];
         d.may[i] = src.may[i];
+        d.moved[i] = src.moved[i];
+        d.freed[i] = src.freed[i];
         i = i + 1i64;
     }
     pass d;
@@ -115,6 +156,8 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
     while (i < (dst.count => int64)) {
         dst.must[i] = src.must[i];
         dst.may[i] = src.may[i];
+        dst.moved[i] = src.moved[i];
+        dst.freed[i] = src.freed[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -142,10 +185,25 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         drop state_overwrite(dst, a);
         pass NIL;
     }
+    // THE FOUR DIRECTIONS, SIDE BY SIDE, because they are not all the same and the
+    // asymmetry is the thing to get wrong.
+    //
+    //   must   INTERSECTS — assigned on one arm and not the other is NOT assigned.
+    //   may    UNIONS     — assigned on either is possibly assigned.
+    //   moved  UNIONS     — moved on one arm and not the other IS moved.
+    //   freed  UNIONS     — likewise.
+    //
+    // `must` is the odd one out, and it is the only one where the CONSERVATIVE
+    // answer is the smaller set. For the other three, being wrong towards `false`
+    // means letting a use-after-move through; for `must` it means refusing correct
+    // code. A shared helper that took one direction would be right about one of
+    // these and silently wrong about the other three.
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = a.must[i] && b.must[i];
         dst.may[i] = a.may[i] || b.may[i];
+        dst.moved[i] = a.moved[i] || b.moved[i];
+        dst.freed[i] = a.freed[i] || b.freed[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -158,17 +216,54 @@ func:state_absorb_may = NIL(AssignState:dst, AssignState:body) {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.may[i] = dst.may[i] || body.may[i];
+        // A LOOP BODY THAT MOVES SOMETHING MOVES IT ON THE SECOND ITERATION TOO,
+        // so what the body moved or freed survives the loop even though what it
+        // ASSIGNED does not. The three that union survive; the one that intersects
+        // does not.
+        dst.moved[i] = dst.moved[i] || body.moved[i];
+        dst.freed[i] = dst.freed[i] || body.freed[i];
         i = i + 1i64;
     }
     pass NIL;
 };
 
+// AN ASSIGNMENT MAKES A BINDING VALID AGAIN. D-065: a moved-from binding "may be
+// reinitialized by assignment, after which it is live again" — so writing to one
+// clears both invalidations rather than only recording a new write.
 func:state_mark = NIL(AssignState:s, int32:slot) {
     if (slot < 0i32)        { pass NIL; }
     if (slot >= s.count)    { pass NIL; }
     s.must[slot => int64] = true;
     s.may[slot => int64] = true;
+    s.moved[slot => int64] = false;
+    s.freed[slot => int64] = false;
     pass NIL;
+};
+
+func:state_mark_moved = NIL(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass NIL; }
+    if (slot >= s.count) { pass NIL; }
+    s.moved[slot => int64] = true;
+    pass NIL;
+};
+
+func:state_mark_freed = NIL(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass NIL; }
+    if (slot >= s.count) { pass NIL; }
+    s.freed[slot => int64] = true;
+    pass NIL;
+};
+
+func:state_moved = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.moved[slot => int64]);
+};
+
+func:state_freed = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.freed[slot => int64]);
 };
 
 func:state_must = bool(AssignState:s, int32:slot) {
@@ -373,6 +468,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
     // currently load-bearing; a marking done first would be a statement about
     // program order that happens to be wrong.
     if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop check_qualifiers(x, s);
         ExprId:init = relay stmt_decl_init(x.ast, s);
         if (raw expr_is_none(init)) { pass NIL; }
         drop assign_expr(x, st, init, d);
@@ -561,6 +657,8 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = dst.must[i] && other.must[i];
+        dst.moved[i] = dst.moved[i] || other.moved[i];
+        dst.freed[i] = dst.freed[i] || other.freed[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -745,6 +843,21 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
         pass NIL;
     }
 
+    // `move(place)` (D-065) TRANSFERS OWNERSHIP OUT OF THE SOURCE. Nothing moves
+    // because it was assigned or passed — ownership moves only where `move` is
+    // written, which is what makes this a question about one operator rather than
+    // about every expression.
+    //
+    // The operand is READ before it is invalidated, in that order: moving out of a
+    // binding that was never assigned, or that was already moved, is refused for
+    // what it is rather than silently accepted because the move overwrote the
+    // question.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        drop assign_expr(x, st, raw expr_operand(n), d);
+        drop invalidate_place(x, st, raw expr_operand(n), false);
+        pass NIL;
+    }
+
     if (n.kind == ExprKind.ExprBorrowExpr) {
         if (raw borrow_is_mut(n)) {
             drop assign_mark_place(x, st, raw expr_operand(n), d);
@@ -771,8 +884,22 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
     if (n.kind == ExprKind.ExprCallExpr) {
         int32:gc = raw expr_generic_count(n);
         drop assign_expr(x, st, raw expr_callee(n), d);
-        drop assign_expr_window(x, st, (raw expr_list_start(n)) + gc,
-                                (raw expr_list_count(n)) - gc, d);
+        int32:start = (raw expr_list_start(n)) + gc;
+        int32:count = (raw expr_list_count(n)) - gc;
+        drop assign_expr_window(x, st, start, count, d);
+
+        // A DEALLOCATOR TAKES OWNERSHIP OF WHAT IT IS GIVEN, which is a move by
+        // another name — so the binding that held the allocation stops being
+        // valid, and using it again is a use-after-free while freeing it again is
+        // a double-free. Both fall out of the moved-from machinery because a free
+        // IS a move, and D-065 says as much: `move` is "the mechanism that
+        // prevents double-free on `wild` allocations".
+        if (raw callee_frees(x, n)) {
+            if (count > 0i32) {
+                ExprId:owned = ExprId{ index: raw ast_id_at(x.ast, start, 0i32) };
+                drop invalidate_place(x, st, owned, true);
+            }
+        }
         pass NIL;
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
@@ -846,6 +973,25 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
     // global by its initialiser, and a `pick` or `for` binding by the construct
     // that introduced it — none of them has a path on which nothing wrote.
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+
+    // MOVED OR FREED IS REPORTED FIRST, because it is the more specific answer to
+    // the same question. A binding that was moved out of is not assigned either —
+    // `state_mark` clears both and nothing sets `must` back — so reporting
+    // "not assigned" here would be true, useless, and would send the reader
+    // looking for a missing initialiser instead of at the `move` above it.
+    if (raw state_freed(st, s.origin)) {
+        drop assign_err(x, raw MOVE_USE_AFTER_FREE(),
+            "this binding was freed and is invalid; a freed pointer is not a value that may be held and not inspected (D-065)",
+            n.span);
+        pass NIL;
+    }
+    if (raw state_moved(st, s.origin)) {
+        drop assign_err(x, raw MOVE_USE_AFTER(),
+            "this binding was moved out of and is invalid until it is assigned again (D-065)",
+            n.span);
+        pass NIL;
+    }
+
     if (raw state_must(st, s.origin))      { pass NIL; }
 
     drop assign_err(x, raw ASSIGN_UNASSIGNED(),
@@ -879,5 +1025,102 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
     Symbol:s = raw symtab_get(x.tab, rn.a);
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
     drop state_mark(st, s.origin);
+    pass NIL;
+};
+
+// --- what invalidates a binding ------------------------------------------------
+//
+// `move(place)` and a deallocator both transfer ownership OUT of a binding, and
+// both leave it invalid until something assigns it again.
+
+// The bare-name builtins that take ownership of what they are given.
+//
+// TWO NAMES, AND NOT A HEURISTIC ABOUT NAMES. `dalloc` and `ralloc` are the native
+// deallocator and reallocator; `ralloc` is here because a reallocation invalidates
+// the pointer it was given and hands back a different one, so holding the old one
+// afterwards is the same dangling pointer as holding a freed one.
+//
+// `malloc` AND `free` ARE NOT BUILTINS AND NOT ALIASES (D-119). They are C
+// functions, reachable only through an `extern` block — and an `extern` callee is
+// opaque by design. Past the FFI barrier the runtime cannot intercept a fault, and
+// it cannot know what the callee did with a pointer either; a program that frees
+// through `extern` has suspended the guarantee explicitly, which is how every other
+// Nitpick guarantee is suspended.
+//
+// THE PROTOTYPE DECIDED THIS BY MATCHING THE SPELLING, and that is the part not to
+// carry over. Its `KNOWN_DEALLOCATORS` held `close`, `release`, `destroy`,
+// `cleanup`, `dispose` and `drop`, and it also matched any name ENDING in `_free`,
+// `_close`, `_destroy` or `_release`. So `window_close` acquired ownership
+// semantics it never declared and `deallocate_thing` did not — behaviour that
+// varies by what something happens to be called, which is the context-dependence
+// the blueprint philosophy exists to refuse and a list a reader would have to
+// memorise.
+func:callee_frees = bool(Assign->:x, ExprNode:n) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cn = relay ast_expr(x.ast, c);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+
+    // A BARE-NAME BUILTIN RESOLVES TO NO SYMBOL, which is what tells it apart from
+    // a user function that happens to be called `dalloc` — that one would have one,
+    // and it is not this one.
+    if (cn.a != 0i32) { pass false; }
+
+    string:name = relay intern_get(x.interns, raw expr_name(cn) => int32);
+    if (raw string_eq(name, "dalloc")) { pass true; }
+    pass (raw string_eq(name, "ralloc"));
+};
+
+// THE BINDING UNDER A PLACE, INVALIDATED.
+//
+// `move(rec.field)` and `dalloc(rec.field)` invalidate the WHOLE binding, not the
+// field. Tracking per-field ownership means tracking partial validity, which is
+// the same complexity D-004 chose second-class borrows to avoid — and the
+// conservative answer refuses code that is fine rather than accepting code that is
+// not.
+func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed) {
+    if (raw expr_is_none(place)) { pass NIL; }
+    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted)            { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+
+    if (freed) {
+        drop state_mark_freed(st, s.origin);
+        pass NIL;
+    }
+    drop state_mark_moved(st, s.origin);
+    pass NIL;
+};
+
+// --- what the qualifiers on a declaration have to agree about --------------------
+
+// `nodrop` SUPPRESSES A DROP, so there has to be one to suppress.
+//
+// It exists for the one case where NOT dropping is correct rather than a leak: a
+// `wild` allocation whose ownership has gone somewhere the compiler cannot see, so
+// running the drop would free something twice. On a managed binding there is no
+// manual allocation and nothing is suppressed — the qualifier then says something
+// untrue about the binding it is written on, and a reader who believes it is
+// reasoning about a lifetime that is not there.
+//
+// This is the last of the four qualifiers cycle 0.5 inherited as "parses and
+// nothing reads it". `stack` and `wild` got their meaning from the escape rules in
+// 0.5.1, `fixed` from assignment in 0.5.2, and this one had nowhere to attach until
+// there was an ownership analysis to attach it to.
+func:check_qualifiers = NIL(Assign->:x, StmtNode:s) {
+    int32:q = relay stmt_quals(x.ast, s);
+    if ((q & (raw QUAL_NODROP())) == 0i32) { pass NIL; }
+
+    int32:manual = (raw QUAL_WILD()) | (raw QUAL_WILDX());
+    if ((q & manual) != 0i32) { pass NIL; }
+
+    drop assign_err(x, raw MOVE_NODROP_MANAGED(),
+        "`nodrop` suppresses the drop of a manual allocation, and a binding that is not `wild` or `wildx` has none to suppress",
+        s.span);
     pass NIL;
 };

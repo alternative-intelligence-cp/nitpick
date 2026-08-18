@@ -21,7 +21,13 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 | `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. |
 | `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. |
 
-*(Note: `free` and `realloc` are preserved as legacy aliases for `dalloc` and `ralloc` respectively, but `dalloc`/`ralloc` are the preferred Nitpick vernacular).*
+*(Note: **`malloc` and `free` are not builtins and are not aliases.** They are C
+functions, reachable only by declaring them in an `extern` block like any other C
+function. The four above are the native allocator; an earlier draft of this line
+called `free` and `realloc` "legacy aliases", which was carried over from the
+prototype's C/C++ era and was never true of the native API — the prototype's own
+type checker knows exactly `alloc`, `calloc`, `ralloc` and `dalloc`, and every
+`malloc` in the specification appears inside `extern "libc" { … }`. See D-119.)*
 
 ---
 

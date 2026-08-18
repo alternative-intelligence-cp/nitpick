@@ -1,0 +1,126 @@
+// `move` and manual memory used correctly, which the frontend must ACCEPT (D-065).
+//
+// The counterweight to `rejection/moves.npk`. An ownership analysis that marked
+// every binding invalid passes every case there, so what establishes it is right is
+// what it lets through — and this analysis has more ways to be too strict than most,
+// because a free is a move and both invalidate whole bindings.
+
+struct:Box = { int32:v; };
+
+func:takes = NIL(int8->:p) { pass NIL; };
+
+// --- ownership moves ONLY where `move` is written -----------------------------------
+//
+// Nothing moves because it was assigned or passed. D-065 is explicit: an implicit
+// move would change ownership with nothing visible at the point it happens, which
+// is unreadable at review and ungreppable at audit — the same reasoning that
+// governs `raw`, `wild` and `=>!`.
+
+func:passing_does_not_move = NIL() {
+    wild int8->:p = alloc(8i64);
+    drop takes(p);
+    drop takes(p);
+    dalloc(p);
+    pass NIL;
+};
+
+func:assigning_does_not_move = NIL() {
+    wild int8->:p = alloc(8i64);
+    wild int8->:alias = p;
+    discard(alias);
+    dalloc(p);
+    pass NIL;
+};
+
+// --- a moved-from binding comes back when it is assigned ------------------------------
+//
+// D-065: it "may be reinitialized by assignment, after which it is live again."
+
+func:reinitialised_after_a_move = NIL() {
+    wild int8->:p = alloc(8i64);
+    wild int8->:taken = move(p);
+    p = alloc(8i64);
+    dalloc(p);
+    dalloc(taken);
+    pass NIL;
+};
+
+func:reinitialised_after_a_free = NIL() {
+    wild int8->:p = alloc(8i64);
+    dalloc(p);
+    p = alloc(16i64);
+    dalloc(p);
+    pass NIL;
+};
+
+// MOVED ON BOTH BRANCHES AND REASSIGNED ON BOTH is live after the merge — the union
+// direction is about what may be INVALID, and an assignment clears it on each path
+// before the paths rejoin.
+func:moved_and_restored_on_both = NIL(bool:c) {
+    wild int8->:p = alloc(8i64);
+    wild int8->:q = NULL;
+    if (c) {
+        q = move(p);
+        p = alloc(8i64);
+    } else {
+        q = move(p);
+        p = alloc(16i64);
+    }
+    dalloc(p);
+    dalloc(q);
+    pass NIL;
+};
+
+// --- `move` means the same thing on every type -----------------------------------------
+//
+// D-065 rejected making the operator's legality vary by type: under D-064 a generic
+// body is checked against its bounds alone, so `move(x)` inside a generic function
+// would be un-checkable without inventing an ownership bound. Applying it to a
+// primitive is legal and merely pointless.
+
+func:move_a_primitive = int32() {
+    int32:a = 5i32;
+    int32:b = move(a);
+    pass b;
+};
+
+func:move_a_struct = int32() {
+    Box:one = Box{ v: 3i32 };
+    Box:two = move(one);
+    pass two.v;
+};
+
+// A DERIVED PLACE IS A PLACE. `move(rec.field)` invalidates the whole binding,
+// which is conservative, and reading a DIFFERENT binding afterwards is untouched.
+func:move_a_field = int32() {
+    Box:one = Box{ v: 3i32 };
+    Box:other = Box{ v: 4i32 };
+    int32:taken = move(one.v);
+    discard(taken);
+    pass other.v;
+};
+
+// --- `nodrop` where there is a drop to suppress -------------------------------------------
+
+func:nodrop_on_wild = NIL() {
+    nodrop wild int8->:p = alloc(8i64);
+    discard(p);
+    pass NIL;
+};
+
+// --- the place forms, all of which are places ----------------------------------------------
+
+func:every_place_form = NIL() {
+    Box:b = Box{ v: 1i32 };
+    int32[2]:cells = [1i32, 2i32];
+    int32->:p1 = @b.v;
+    int32->:p2 = @cells[0i64];
+    int32:read = <-p1;
+    <-p2 = 7i32;
+    discard(read);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

@@ -293,12 +293,21 @@ func:main = int32(cstring[]:_~argv) {
     // --- `@`, `<-`, `$$i`, `$$m` (OP_REFERENCE §0 level 5) ------------------------------------
     // `@x` is a pointer to x; `<-` brings the value back. The arrows point the
     // way the data moves, which is the whole reason they are spelled that way.
+    //
+    // `@` TAKES THE ADDRESS OF AN L-VALUE, which `OP_REFERENCE` §5 says outright,
+    // so a literal has no address to take and neither does a borrow of one.
+    //
+    // THESE THREE CASES USED TO READ `<-@1i32`, `@1i32` AND `$$i 1i32` AND ASSERT
+    // THEY TYPED CLEANLY. They passed because nothing checked places until 0.5.3 —
+    // the SEED refused all three and the real frontend did not, so the operand was
+    // convenient rather than valid, and the test was written from what was to hand
+    // instead of from the reference's own `int32->:ptr = @val;`.
     Ex:p1 = raw ex("<-@1i32", @it);
-    if (raw errs(@p1) != 0i64)                                 { exit 110i32; }
-    if ((raw type_int_bits(@p1.types, p1.result)) != 32i32)    { exit 111i32; }
+    if (raw errs(@p1) != 1i64)                                 { exit 110i32; }
+    if (!(raw string_eq(raw code0(@p1), raw TYPE_NOT_A_PLACE()))) { exit 111i32; }
 
     Ex:p2 = raw ex("@1i32", @it);
-    if ((raw type_kind(@p2.types, p2.result)) != (raw TY_POINTER())) { exit 112i32; }
+    if (raw errs(@p2) != 1i64)                                 { exit 112i32; }
 
     // DEREFERENCING A NON-POINTER is caught here, not by the backend.
     Ex:p3 = raw ex("<-1i32", @it);
@@ -306,9 +315,16 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(raw code0(@p3), raw TYPE_MISMATCH())))  { exit 114i32; }
 
     // A second-class borrow is a pointer at the type level (D-004); what makes it
-    // second-class is where it may travel, which is the borrow checker's job.
+    // second-class is where it may travel, which is the borrow checker's job. It
+    // still needs a place to borrow FROM.
     Ex:p4 = raw ex("$$i 1i32", @it);
-    if ((raw type_kind(@p4.types, p4.result)) != (raw TY_POINTER())) { exit 115i32; }
+    if (raw errs(@p4) != 1i64)                                 { exit 115i32; }
+
+    // WHAT `@`, `<-` AND `$$m` DO TO A REAL PLACE is asserted in
+    // `tests/types/accept/moves.npk`, where a binding exists to point at. This
+    // harness types a BARE EXPRESSION against an empty symbol table, so every
+    // place it can spell has an unknown type — which is exactly why the operand
+    // here was a literal in the first place.
 
     // --- RANGES ARE VALUES WITH A TYPE (D-093) ------------------------------------------------
     Ex:r1 = raw ex("1i32..10i32", @it);

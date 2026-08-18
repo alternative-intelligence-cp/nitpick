@@ -102,3 +102,26 @@ pub func:ASSIGN_TOO_DEEP = string()   { pass "NITPICK-ASSIGN-003"; };
 // A DEFECT IN THE COMPILER: a statement or expression kind the walk has no entry
 // for, so it cannot promise it looked everywhere.
 pub func:ASSIGN_INTERNAL = string()   { pass "NITPICK-ASSIGN-004"; };
+
+// --- D-065: `move`, and what a moved-from binding is (0.5.3) --------------------
+//
+// A moved-from binding is INVALID, not "valid but unspecified". D-065 is explicit
+// that there is no such thing in this language as a value you may hold and not
+// inspect, which is the `UNDEFINED_STATE_PREVENTION` discipline applied to
+// ownership.
+
+// A read of a binding that was moved out of.
+pub func:MOVE_USE_AFTER = string()      { pass "NITPICK-MOVE-001"; };
+
+// A read of a binding whose allocation was handed to a deallocator. ITS OWN CODE
+// rather than sharing with the above, because D-065 requires both sentences — the
+// prototype's negative test asks for "use after move" AND "cannot free moved
+// variable" — and a reader who sees this one has a dangling pointer rather than a
+// transferred value.
+pub func:MOVE_USE_AFTER_FREE = string() { pass "NITPICK-MOVE-002"; };
+
+// `nodrop` on a binding that is not `wild` or `wildx`. The qualifier suppresses
+// the drop of a manual allocation, which is the one case where not dropping is
+// correct rather than a leak; on anything else it suppresses nothing and says
+// something untrue about the binding it is written on.
+pub func:MOVE_NODROP_MANAGED = string() { pass "NITPICK-MOVE-003"; };

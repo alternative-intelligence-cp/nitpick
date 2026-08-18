@@ -5,14 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: Phase A, cycle 0.5 — the static analyses
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 118 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 119 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
 **Cycles 0.0–0.4 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 the module/symbol/visibility passes, and the type system. **Cycle 0.5 — the static
-analyses — is in progress**, through subcycle 0.5.2: second-class borrows and
-escape (D-004), and definite assignment with `fixed` / `const` (D-010).
+analyses — is in progress**, through subcycle 0.5.3: second-class borrows and
+escape (D-004), definite assignment with `fixed` / `const` (D-010), and `move`
+with use-after-free (D-065).
 `src/frontend/` is ~49 `.npk` modules of real compiler, written in Nitpick, with
 the analyses under `src/frontend/analysis/`.
 
@@ -34,6 +35,17 @@ result, and compares the exit code. It also feeds every source through the **rea
 parser (`tools/parse_check.npk`) and re-checks that every AST node kind is
 reachable.
 
+For the middle of a subcycle, where the question is "does this one rule fire on
+this one file", there is a faster loop that builds the checker once:
+
+```
+python3 bootstrap/harness/quickcheck.py tests/types/rejection/borrows.npk
+```
+
+It is **not** a substitute for the harness and skips every whole-suite check.
+Rebuild it after every edit to `src/` — it watches nothing, and a stale binary
+answering an old question is the failure mode to expect.
+
 Three things to know before you use it:
 
 - **`--only` is for iterating, never for concluding.** It skips every whole-suite
@@ -45,6 +57,28 @@ Three things to know before you use it:
   which case broke.
 - **Every test builds the whole frontend through the seed**, which is why even one
   test costs about a minute. That is the floor, not something to optimise around.
+
+### Reserved words that read like ordinary names
+
+Each of these has cost an edit-build-fail cycle, because the error arrives as a
+parse failure some lines away from the mistake:
+
+| Looks like a name | Actually |
+|---|---|
+| `pid`, `tid`, `fd`, `uid`, `gid` | the five kernel identifier **types** (D-042) |
+| `dn` | a **numeric literal** — base by suffix, `n` = balanced nonary, `a`–`d` = digits −1…−4, so `dn` is −4 |
+| `limit` | the verification keyword (`limit<Rules>`) |
+| `any` | the type |
+| `as` | a keyword |
+
+Three more shapes that are not what a C or Rust habit expects:
+
+- **Adjacent string literals do not concatenate.** `"a" "b"` is two literals, not
+  one; use `string_concat`.
+- **`discard(expr);` and `defer { … }`** take parentheses and no trailing
+  semicolon respectively — `discard x;` and `defer { … };` are both parse errors.
+- **A file's `mod:` name must match its basename**, or the loader reports
+  `NITPICK-RESOLVE-005` at line 1 rather than anything about the name.
 
 There is **no `npkc` build of this compiler yet** — Phase A's artifact is a
 checker, and the emitter arrives in cycle 0.7. The `npkc` on PATH is the *old*
@@ -162,16 +196,26 @@ wrong shape, and should be raised rather than implemented.
 
 ## Memory model
 
-The language has four coexisting allocation regimes, spelled as modifiers in
-source (authoritative spec: `../nitpick-docs/specs/memory_specs.txt`):
+The language has four allocation regimes, spelled as modifiers in
+source. **`DECISIONS.md` is the authority here**, not
+`../nitpick-docs/specs/memory_specs.txt`, which still describes a collector this
+language does not have:
 
 | Modifier   | Regime                                                      |
 |------------|-------------------------------------------------------------|
-| *(default)* | Managed — implicit GC / RAII                                |
+| *(default)* | Managed — static ownership, RAII at scope exit               |
 | `stack`    | Stack-scoped                                                 |
-| `gc`       | Explicitly garbage-collected                                 |
 | `wild`     | Unmanaged / manual (paired with `defer` blocks and `nodrop`) |
 | `wildx`    | Executable memory — W^X, backs the JIT                       |
+
+**There is no `gc` and no tracing collector.** D-003 dropped both: static
+ownership covers unique and scoped data, and **arenas with `Handle<T>`** cover the
+graph-shaped and cyclic data a collector would otherwise be needed for. `gc` is
+not a keyword in the lexer.
+
+This table listed `gc` as a fifth regime until cycle 0.5.3, and the default row
+read "implicit GC / RAII" — both carried over from the prototype, both
+contradicting a decision settled long before.
 
 Anything touching allocation, lifetimes, drop semantics, or codegen for
 references must be reasoned about against **all** of these, not just the one

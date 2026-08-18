@@ -35,7 +35,7 @@ added later and are current.
 
 | Change | Where | Notes |
 |---|---|---|
-| **Pin operator `#`** | `MEMORY_REFERENCE.md` §2, `OP_REFERENCE.md` §6 | New. Prevents the GC from moving or reclaiming an object so a pointer can be handed to FFI safely. The bridge that makes `gc` and `wild` interoperate. |
+| **Pin operator `#`** | `MEMORY_REFERENCE.md` §2, `OP_REFERENCE.md` §6 | ❌ **Never adopted — superseded before it landed.** It was to prevent the GC moving or reclaiming an object across an FFI handoff, which is meaningless once D-003 drops the collector. `#` is the **compiler-directive sigil** instead (D-020), as in `#size_of<T>()`. `AST_REFERENCE.md` §554 and `OP_REFERENCE.md` §51 both already say so; this row is kept because the carried-over docs proposed it and a reader finding the proposal needs to know it went nowhere. |
 | **`extern` now returns `Result<T>`** | `MODULE_REFERENCE.md` §5.2 | Flagged in-doc as a "critical deviation". Prototype: `extern` returned bare values and `raw` was not used. Now *all* functions including FFI return `Result<T>`; unwrap with `raw` / `_!`; the optimizer is specified to strip the wrapper for zero runtime overhead. |
 | **Hybrid generational GC formalized** | `SPEC_GAPS` §1 | Nursery / old generation, safepoints, shadow-stack root scanning, card-table write barriers. The prototype specs never pinned the collector design down. |
 | **`=>` becomes compile-time** | `SPEC_GAPS` §2 | Safe cast no longer traps to failsafe on data loss — it is now a **compile error**, with `=>!` as the explicit opt-out. Prototype `OP_REFERENCE` still described it as triggering failsafe. |
@@ -167,6 +167,16 @@ would reach the wrong conclusion.
 | §15.1.3 | "`string` guarantees internal null-termination" | **No.** `string` is `{ptr, len, cap}` and is not NUL-terminated. `to_cstring` exists because it is not — D-049. Also logged as conflict 53 in `GRAMMAR_ADOPTION_CONFLICTS.md`, now settled |
 | §15.1.3 | "`int8->` is a Fat Pointer containing bounds metadata" | **No.** Pointers are thin — D-038 |
 | §15.1.2 | raw strings `r"…"` and multi-line `"""…"""` are "currently unsupported and will throw syntax errors in v0.61.82" | A statement about a prototype build, not a language decision. The grammar carries `RawStringLiteral` |
+| §14.2.1, plus `function_specs.txt` and `mod_system_specs.txt` | "functions declared inside `extern` blocks DO NOT return `Result<T>`… you do not use `raw`" | **Reversed.** An `extern` function's type is `Result<T>` like every other function's, and the `fails on` / `never fails` contract decides what goes in the error field — D-002, implemented as D-114. A caller writes `raw` on a foreign call exactly as on a domestic one, which is the point: never having to ask whether *this* function needs error handling |
+| `compiler_specs.txt` (the `--gc-*` flags), `memory_specs.txt` §1.1 | `--gc-stats`, `--gc-nursery-size`, `--gc-threshold`; "garbage-collected/RAII allocations"; `gc` as a residency keyword | **Reversed.** D-003 dropped the tracing collector entirely, including the `gc` modifier. `gc` is not a keyword in this implementation |
+
+**The last two are in current section files, not only in the consolidated one**,
+which is worth knowing about how that file is read: `COMPILE_FULL.sh` concatenates
+*every* `.txt` under `specs/`, `CHANGELOG.txt` and `FORMAL_DRAFT/` included, so
+roughly 80% of `FULL_specs.txt`'s ~14k lines is historical narration or the
+superseded prototype draft. A hit there is usually evidence about the past, and
+should be traced to its `=== SECTION:` banner before being treated as current.
+The rows above were.
 
 The first two sit in the same paragraph, which is about FFI and C-string decay —
 an area the prototype handled by making `string` C-shaped and pointers

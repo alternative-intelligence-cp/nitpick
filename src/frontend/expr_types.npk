@@ -213,3 +213,36 @@ pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) {
     if (n.kind == ExprKind.ExprAddressOfExpr) { pass true; }
     pass (n.kind == ExprKind.ExprBorrowExpr);
 };
+
+// --- is this expression a PLACE? ---------------------------------------------------------
+//
+// A place is something with an address: a name, a field or element of one, or what
+// a pointer points at. `@place`, `$$i place`, `$$m place` and `move(place)` all
+// require one, and the language has no way to spell the address of a temporary.
+//
+// NOTHING IN THE REAL FRONTEND ASKED THIS UNTIL NOW. The SEED refuses `@(raw f())`
+// — "not a place expression" comes out of `bootstrap/generator/emit.py`, which
+// needs an address to emit and has nowhere to get one — and the real frontend
+// accepted it, so the two disagreed about a program's validity. That is the seed
+// enforcing a rule the compiler being built does not have, which is the same
+// situation `fixed` was in before 0.5.2.
+//
+// THE ROOT DECIDES, over the same walk everything else in this file uses. `a.b[i].c`
+// is a place because `a` is one; `f().x` is not, because a call's result is a
+// value with no home to take the address of.
+//
+// `<-p` IS A PLACE, and that is the one people get backwards. Dereferencing yields
+// what the pointer points at, which is somewhere real — `<-p = 5i32;` writes
+// through it and `@(<-p)` is `p` again.
+//
+// EXHAUSTION ANSWERS `false`, which refuses rather than accepts. That is the safe
+// direction here and the opposite of `expr_is_borrow`'s: there, "might be a borrow"
+// is the cautious answer, and here it is "might not be addressable".
+pub func:expr_is_place = bool(Ast->:ast, ExprId:id, int32:fuel) {
+    PlaceRoot:r = relay place_root(ast, id, fuel);
+    if (r.exhausted)             { pass false; }
+    if (raw expr_is_none(r.id))  { pass false; }
+    ExprNode:n = relay ast_expr(ast, r.id);
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass true; }
+    pass (n.kind == ExprKind.ExprDerefExpr);
+};

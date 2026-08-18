@@ -1,0 +1,51 @@
+// `@`, `$$i`, `$$m`, `move` and an assignment target all need a PLACE.
+//
+// A place is a name, a field or element of one, or what a pointer points at. The
+// language has no way to spell the address of a temporary, so an expression that
+// produces a value and keeps it nowhere has no address to take.
+//
+// NOTHING IN THE REAL FRONTEND ASKED THIS UNTIL CYCLE 0.5.3. The SEED refuses it —
+// it has to emit an address and there is none — so the two disagreed about what a
+// valid program is, which is the same situation `fixed` was in before 0.5.2. Four
+// of the five sites below were unchecked entirely; the fifth looked only at the
+// outermost operator and accepted `f().x = 5i32;`.
+//
+// These are TYPE errors and not analysis errors, and that is why they are in a file
+// of their own: the static analyses run only over a program the type checker
+// accepted, so a `NITPICK-TYPE-024` here would stop `moves.npk` before its own
+// rules ever ran.
+
+struct:Box = { int32:v; };
+
+func:make = Box() { pass Box{ v: 1i32 }; };
+
+// expect-error: NITPICK-TYPE-024
+func:address_of_a_temporary = NIL() {
+    int32->:p = @(raw make()).v;
+    discard(p);
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-024
+func:borrow_of_a_temporary = NIL() {
+    int32->:q = $$m (raw make()).v;
+    discard(q);
+    pass NIL;
+};
+
+// A CALL'S RESULT HAS NO ADDRESS, so there is nothing to move out of.
+// expect-error: NITPICK-TYPE-024
+func:move_a_temporary = NIL() {
+    Box:b = move(raw make());
+    discard(b.v);
+    pass NIL;
+};
+
+// THE HOLE THE SHALLOW CHECK HAD. A member access was accepted whatever it was
+// built on, so this stored into a field of a value with no home — the outermost
+// operator was the right shape and the root was not.
+// expect-error: NITPICK-TYPE-024
+func:store_into_a_temporary = NIL() {
+    (raw make()).v = 5i32;
+    pass NIL;
+};

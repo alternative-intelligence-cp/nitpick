@@ -1,0 +1,98 @@
+// A moved-from binding is invalid until reinitialised (D-065, cycle 0.5.3).
+//
+// `move(place)` is a KEYWORD OPERATOR ON A PLACE, not a qualifier and not a
+// function — it returns no `Result` and could not be one. Ownership moves only
+// where `move` is written; nothing moves because it was assigned or passed, which
+// is what makes this a question about one operator rather than about every
+// expression.
+//
+// A FREE IS A MOVE INTO THE ALLOCATOR, which is why use-after-free and double-free
+// are in this file rather than in one of their own. D-065 says outright that `move`
+// is "the mechanism that prevents double-free on `wild` allocations", and the two
+// share every piece of machinery.
+
+// --- D-065's own example, which is what the decision asks to be tested ------------
+//
+// SPELLED WITH `raw_mem` RATHER THAN `buffer`. The decision writes it as `buffer`,
+// and `buffer` is a keyword — so the example as printed does not compile. Worth
+// knowing before someone tries to paste it.
+// expect-error: NITPICK-MOVE-001
+func:d065_example = NIL() {
+    wild int8->:raw_mem = alloc(100i64);
+    wild int8->:taken = move(raw_mem);
+    dalloc(raw_mem);
+    dalloc(taken);
+    pass NIL;
+};
+
+// --- moved on one branch is moved after the merge ---------------------------------
+//
+// THIS MERGE RUNS THE OPPOSITE WAY FROM DEFINITE ASSIGNMENT. Assigned-on-some-path
+// is NOT assigned; moved-on-some-path IS moved. Both are the conservative answer
+// and they point in different directions.
+// expect-error: NITPICK-MOVE-001
+func:moved_on_one_branch = NIL(bool:c) {
+    wild int8->:p = alloc(8i64);
+    wild int8->:q = NULL;
+    if (c) { q = move(p); }
+    dalloc(p);
+    dalloc(q);
+    pass NIL;
+};
+
+// A LOOP BODY THAT MOVES SOMETHING MOVES IT AGAIN ON THE SECOND ITERATION. What a
+// body ASSIGNS does not survive the loop; what it MOVES does.
+// expect-error: NITPICK-MOVE-001
+func:moved_in_a_loop = NIL(bool:c) {
+    wild int8->:p = alloc(8i64);
+    wild int8->:q = NULL;
+    while (c) { q = move(p); }
+    dalloc(q);
+    pass NIL;
+};
+
+// --- freeing is moving into the allocator -------------------------------------------
+
+// expect-error: NITPICK-MOVE-002
+func:double_free = NIL() {
+    wild int8->:p = alloc(8i64);
+    dalloc(p);
+    dalloc(p);
+    pass NIL;
+};
+
+// expect-error: NITPICK-MOVE-002
+func:use_after_free = NIL() {
+    wild int8->:p = alloc(8i64);
+    dalloc(p);
+    p[0i64] = 1i8;
+    pass NIL;
+};
+
+// `ralloc` TAKES OWNERSHIP TOO. A reallocation invalidates the pointer it was
+// given and hands back a different one, so holding on to the old one is the same
+// dangling pointer by another route.
+// expect-error: NITPICK-MOVE-002
+func:use_after_ralloc = NIL() {
+    wild int8->:p = alloc(8i64);
+    wild int8->:bigger = ralloc(p, 16i64);
+    dalloc(p);
+    dalloc(bigger);
+    pass NIL;
+};
+
+// `free` AND `malloc` ARE NOT WRITTEN HERE BECAUSE THEY ARE NOT NITPICK (D-119).
+// They are C functions, reachable only by declaring them in an `extern` block —
+// and an `extern` callee is opaque, so freeing through one suspends this guarantee
+// explicitly, the way every other Nitpick guarantee is suspended. The four native
+// allocator builtins are `alloc`, `calloc`, `ralloc` and `dalloc`, and this
+// analysis knows the two that take ownership and nothing else about names.
+
+// --- `nodrop` has to have a drop to suppress -----------------------------------------
+
+// expect-error: NITPICK-MOVE-003
+func:nodrop_on_managed = NIL() {
+    nodrop int32:n = 1i32;
+    discard(n);
+    pass NIL;
+};

@@ -124,6 +124,18 @@ work began and does not belong at the end of a queue.
 
 ---
 
+## After Phase C — the switch
+
+Replacing the prototype is **one coordinated operation** across two repositories
+and the website, and it is planned in **`meta/SWITCH.md`**: what moves where, why
+`nitpick-docs` stays frozen until then, what `meta/specs/` owes before it can
+replace it, the version restarting at `0.0`, and the one step that cannot be
+undone cleanly.
+
+Nothing there happens until 1.4 is finished. It is written down because the plan
+was worked out in conversation, and a plan that lives only in a conversation
+evaporates.
+
 ## Ordering notes
 
 - **Diagnostics come first, in 0.0**, not last. They are how every later cycle is

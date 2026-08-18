@@ -81,3 +81,12 @@ pub func:TYPE_CANNOT_INFER = string()   { pass "NITPICK-TYPE-022"; };
 // all — so this replaces a misleading refusal with an accurate one, and makes the
 // open question visible instead of silently wrong.
 pub func:TYPE_EXTERN_VARIADIC = string(){ pass "NITPICK-TYPE-023"; };
+
+// AN OPERAND THAT NEEDED AN ADDRESS AND HAS NONE. `@`, `$$i`, `$$m` and
+// `move(place)` all take a place, and the language has no way to spell the address
+// of a temporary.
+//
+// Its own code and not `TYPE_MISMATCH`, because nothing is wrong with the operand's
+// TYPE — `@(raw f())` fails on `f()` having no home, and telling somebody their
+// `int32` is not an `int32` would send them looking in the wrong direction.
+pub func:TYPE_NOT_A_PLACE = string()    { pass "NITPICK-TYPE-024"; };
