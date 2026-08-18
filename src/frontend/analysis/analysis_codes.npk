@@ -154,3 +154,10 @@ pub func:PICK_UNREACHABLE_ARM = string() { pass "NITPICK-PICK-004"; };
 // A DEFECT IN THE COMPILER: a node kind the walk has no entry for, so it cannot
 // promise it found every `pick`.
 pub func:PICK_INTERNAL = string()        { pass "NITPICK-PICK-005"; };
+
+// --- D-007: the `unknown` taint on `Result.value` (0.5.5) -----------------------
+
+// A read of `.value` on a `Result` nothing has checked for an error. `unknown` is
+// compiler-assigned and not user-writable (`TYPE_REFERENCE` §27), so this is the
+// only place the taint arises and the only place it is reported.
+pub func:TAINT_UNCHECKED_VALUE = string() { pass "NITPICK-TAINT-001"; };

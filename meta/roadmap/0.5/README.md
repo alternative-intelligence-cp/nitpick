@@ -50,7 +50,7 @@ discovered one subcycle at a time:
 | `move(place)` | ~~typed as its operand~~ **done in 0.5.3** | 0.5.3 |
 | `pick` patterns | ~~typed, never checked for coverage~~ **done in 0.5.4** | 0.5.4 |
 | `defer` bodies | ~~walked, never ordered against exits~~ **done in 0.5.2** — checked where registered | 0.5.2 |
-| `Result.value` after `fail` | untainted | 0.5.5 |
+| `Result.value` after `fail` | ~~untainted~~ **done in 0.5.5** | 0.5.5 |
 
 Every row is a construct the frontend accepts and means nothing by. That is not a
 backlog — it is the definition of this cycle.
@@ -95,7 +95,7 @@ naming the wrong thing is how the gap arose in the first place.
 | ~~**0.5.2**~~ | ~~Definite assignment, `fixed`, and `defer` ordering~~ — **DONE**. Two sets, merging in opposite directions; `$$m` fills where `$$i` reads. D-118 settled. |
 | ~~**0.5.3**~~ | ~~`move`, moved-from bindings, and the manual-memory qualifiers (D-065)~~ — **DONE**. A free is a move; four sets merging in three directions. D-119 settled. |
 | ~~**0.5.4**~~ | ~~Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1)~~ — **DONE**. Coverage answered once and consumed twice; 0.5.2's debt paid. D-120 settled. |
-| **0.5.5** | `unknown` taint on `Result.value` (D-007) |
+| ~~**0.5.5**~~ | ~~`unknown` taint on `Result.value` (D-007)~~ — **DONE**. The branch decides, not the mention; `ok()` was already gone. D-121 settled. |
 | **0.5.6** | Lock levels — the call-graph acquisition analysis (D-056) |
 | **0.5.7** | Diagnostics, the suites, and closing the cycle |
 

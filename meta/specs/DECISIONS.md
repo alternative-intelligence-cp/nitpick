@@ -8617,3 +8617,92 @@ wildcard does run; it is refused for *acting on ERR*, which is a different
 objection with its own code. Conflating them would make a missing `ERR:` arm look
 like a definite-assignment problem.
 
+
+---
+
+## D-121 — The taint is one thing, cleared by one question, and the branch decides
+
+**Settled in cycle 0.5.5**, implementing what survives of `unknown` after D-007 and
+D-097.
+
+### What is left of `unknown`, and why so little
+
+`unknown` is **compiler-assigned and not user-writable** (`TYPE_REFERENCE` §27).
+The prototype allowed `int32:val = unknown;` and used it as a general degradation
+mechanism; **D-007 struck that**, on the grounds that `tbb`'s sticky ERR already
+covers degraded computation and two mechanisms for one job is one too many.
+
+What survives is a single thing: **the `value` field of a `Result` carrying an
+error.** So this analysis has exactly one place to look, and looking anywhere else
+would be inventing a fourth Layer 2 mechanism — which D-007 is explicit that
+nothing may do, because which mechanism applies is decided by **type, never by
+context**.
+
+### Why it earns a rule rather than a convention
+
+D-007's argument for trapping rather than tainting, in its own words: *"a tainted
+value that reaches an actuator command produces a wrong action, which is worse than
+no action. `ok()` is supposed to prevent this, but that is a discipline, and
+disciplines fail under pressure."*
+
+The taint exists so that reaching an actuator with one is a **compile error**
+rather than a discipline.
+
+### `ok()` does not clear it, because `ok` does not exist
+
+0.5.5's plan says the taint is "cleared by `ok()` or by checking `is_error`". That
+was true when it was written and stopped being true at **D-097**: `ok(x)` asked
+whether an ordinary value was `unknown`, D-007 had already removed user-writable
+`unknown`, and an operator whose subject no longer exists went with it.
+
+**Checking `is_error` is the only route**, and it was always the one that composed
+with the `Result` discipline.
+
+### The branch decides, not the mention
+
+A syntactic "was `is_error` tested" check would accept this:
+
+```nitpick
+if (r.is_error) { pass (r.value); }      // the test is right there
+```
+
+`r.is_error` being **true** is the tainted branch. So the condition **refines the
+two arms**: whichever arm the test proves safe is the one where the read is
+allowed, and the negated form swaps them. The early-exit shape — `if (r.is_error)
+{ pass 0i32; }` and then read below — needs nothing of its own: an arm that leaves
+contributes nothing to the merge, so what survives is the other arm's state.
+
+**A `pick` on `r.is_error` gets the same refinement.** `.is_error` is a `bool`, so
+that is a two-armed `pick` that 0.5.4 made exhaustive-checkable, and recognising
+only the `if` would push people toward the less readable form — the opposite of
+what an analysis should do.
+
+### `checked` intersects, which makes two of five and three of five
+
+Adding it to the binding state settles the shape of that table:
+
+| Set | Merge | What it does |
+|---|---|---|
+| `must` | intersect | **permits** a read |
+| `checked` | intersect | **permits** a read of a tainted value |
+| `may`, `moved`, `freed` | union | **forbid** something |
+
+**A permission has to hold on every path; a prohibition has to fire on any of
+them.** That is why two intersect and three union, and it is a better rule to carry
+forward than five directions memorised individually.
+
+**An assignment clears it**, because the binding then holds a different `Result`
+that nothing has checked. Without that, one check at the top of a function would
+license every read below it.
+
+### Only a binding-rooted read is checked
+
+`f().value` reads the field of a temporary, and there is no way to have checked
+*that* temporary — the check would call `f` again and get a different `Result`. So
+the idiom is to bind it, and the binding is what this tracks. That is the shape of
+the language rather than a hole in the analysis.
+
+`raw` and `?!` need nothing here: they do not read `.value`, they unwrap. Explicit
+and greppable is the only property this language asks of an escape hatch, and both
+already are.
+

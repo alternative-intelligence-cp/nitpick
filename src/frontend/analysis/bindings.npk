@@ -55,6 +55,7 @@ use "../ast.npk".*;
 use "../intern.npk".*;
 use "../diagnostics.npk".*;
 use "../symbols.npk".*;
+use "../token_kind.npk".*;
 use "../parse_expr.npk".*;
 use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
@@ -95,6 +96,20 @@ pub struct:AssignState = {
     // two paths disagree.
     wild bool->:moved;
     wild bool->:freed;
+
+    // HAS THIS `Result` BEEN CHECKED FOR AN ERROR? (D-007, `TYPE_REFERENCE` §27.)
+    //
+    // `Result.value` carries a compiler-assigned TAINT when the `Result` holds an
+    // error — `unknown`, which is not a type anyone can write. Reading it without
+    // checking `is_error` first is reading a value the compiler knows may be
+    // meaningless, and D-007's own argument for trapping over tainting is that
+    // "a tainted value that reaches an actuator command produces a WRONG ACTION,
+    // which is worse than no action".
+    //
+    // IT INTERSECTS AT A MERGE, like `must` and unlike the other three. Checked on
+    // one arm and not the other is NOT checked, because the read after the merge
+    // happens on both paths.
+    wild bool->:checked;
     int32:count;
 };
 
@@ -131,10 +146,12 @@ pub func:state_new = AssignState(int32:n) {
     wild int8->:m2 = alloc(size * #size_of<bool>());
     wild int8->:m3 = alloc(size * #size_of<bool>());
     wild int8->:m4 = alloc(size * #size_of<bool>());
+    wild int8->:m5 = alloc(size * #size_of<bool>());
     AssignState:s = AssignState{ must: m1 => wild bool->,
                                  may: m2 => wild bool->,
                                  moved: m3 => wild bool->,
                                  freed: m4 => wild bool->,
+                                 checked: m5 => wild bool->,
                                  count: size => int32 };
     int64:i = 0i64;
     while (i < size) {
@@ -142,6 +159,7 @@ pub func:state_new = AssignState(int32:n) {
         s.may[i] = false;
         s.moved[i] = false;
         s.freed[i] = false;
+        s.checked[i] = false;
         i = i + 1i64;
     }
     pass s;
@@ -155,6 +173,7 @@ func:state_copy = AssignState(AssignState:src) {
         d.may[i] = src.may[i];
         d.moved[i] = src.moved[i];
         d.freed[i] = src.freed[i];
+        d.checked[i] = src.checked[i];
         i = i + 1i64;
     }
     pass d;
@@ -167,6 +186,7 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
         dst.may[i] = src.may[i];
         dst.moved[i] = src.moved[i];
         dst.freed[i] = src.freed[i];
+        dst.checked[i] = src.checked[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -197,22 +217,26 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
     // THE FOUR DIRECTIONS, SIDE BY SIDE, because they are not all the same and the
     // asymmetry is the thing to get wrong.
     //
-    //   must   INTERSECTS — assigned on one arm and not the other is NOT assigned.
-    //   may    UNIONS     — assigned on either is possibly assigned.
-    //   moved  UNIONS     — moved on one arm and not the other IS moved.
-    //   freed  UNIONS     — likewise.
+    //   must     INTERSECTS — assigned on one arm and not the other is NOT assigned.
+    //   may      UNIONS     — assigned on either is possibly assigned.
+    //   moved    UNIONS     — moved on one arm and not the other IS moved.
+    //   freed    UNIONS     — likewise.
+    //   checked  INTERSECTS — checked on one arm only is NOT checked.
     //
-    // `must` is the odd one out, and it is the only one where the CONSERVATIVE
-    // answer is the smaller set. For the other three, being wrong towards `false`
-    // means letting a use-after-move through; for `must` it means refusing correct
-    // code. A shared helper that took one direction would be right about one of
-    // these and silently wrong about the other three.
+    // TWO INTERSECT AND THREE UNION, and the split is not arbitrary: `must` and
+    // `checked` are the two that PERMIT something — a read, or a read of a tainted
+    // value — and the other three FORBID something. A permission has to hold on
+    // every path; a prohibition has to fire on any of them. Being wrong towards
+    // `false` refuses correct code for the first pair and lets a defect through for
+    // the second, so a shared helper taking one direction would be right about two
+    // of the five and silently wrong about three.
     int64:i = 0i64;
     while (i < (dst.count => int64)) {
         dst.must[i] = a.must[i] && b.must[i];
         dst.may[i] = a.may[i] || b.may[i];
         dst.moved[i] = a.moved[i] || b.moved[i];
         dst.freed[i] = a.freed[i] || b.freed[i];
+        dst.checked[i] = a.checked[i] && b.checked[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -246,7 +270,23 @@ func:state_mark = NIL(AssignState:s, int32:slot) {
     s.may[slot => int64] = true;
     s.moved[slot => int64] = false;
     s.freed[slot => int64] = false;
+    // A NEW VALUE IS A NEW `Result`, and nothing has checked it. Clearing this on
+    // assignment is what stops one check licensing every later read of the name.
+    s.checked[slot => int64] = false;
     pass NIL;
+};
+
+func:state_mark_checked = NIL(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass NIL; }
+    if (slot >= s.count) { pass NIL; }
+    s.checked[slot => int64] = true;
+    pass NIL;
+};
+
+func:state_checked = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.checked[slot => int64]);
 };
 
 func:state_mark_moved = NIL(AssignState:s, int32:slot) {
@@ -503,9 +543,23 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
         StmtId:then_id = raw stmt_then(s);
         StmtId:else_id = raw stmt_else(s);
 
+        // THE CONDITION REFINES THE ARMS. `if (r.is_error) { … } else { HERE }`
+        // proves, on the else path only, that `r.value` is safe to read — which is
+        // the whole of how the taint is cleared. The early-exit form falls out of
+        // this for free: a `then` arm that leaves contributes nothing to the merge,
+        // so what survives is the else arm's state, checked and all.
+        ErrTest:et = relay err_test_of(x, raw stmt_cond(s));
+
         AssignState:a = raw state_copy(st);
+        if (et.found) {
+            if (et.then_checked) { drop state_mark_checked(a, et.slot); }
+        }
         drop assign_stmt(x, a, then_id, d);
+
         AssignState:b = raw state_copy(st);
+        if (et.found) {
+            if (!et.then_checked) { drop state_mark_checked(b, et.slot); }
+        }
         drop assign_stmt(x, b, else_id, d);
 
         // NO `else` IS AN ARM THAT ASSIGNS NOTHING, not an arm that is absent. `b`
@@ -668,6 +722,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
         dst.must[i] = dst.must[i] && other.must[i];
         dst.moved[i] = dst.moved[i] || other.moved[i];
         dst.freed[i] = dst.freed[i] || other.freed[i];
+        dst.checked[i] = dst.checked[i] && other.checked[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -704,6 +759,7 @@ func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count)
 
 func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     drop assign_expr(x, st, raw pick_selector(s), depth);
+    ErrTest:et = relay err_test_of(x, raw pick_selector(s));
 
     int32:start = raw pick_arm_start(s);
     int32:count = raw pick_arm_count(s);
@@ -718,6 +774,17 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
         StmtNode:arm = relay ast_stmt(x.ast, aid);
 
         AssignState:one = raw state_copy(st);
+        if (et.found) {
+            // `pick (r.is_error) { (true) { … }, (false) { HERE } }` — the same
+            // refinement an `if` gets, on the arm that matched the safe value.
+            // Recognising only the `if` would push people toward the less
+            // idiomatic form, which is the opposite of what an analysis should do.
+            int32:want = 2i32;
+            if (et.then_checked) { want = 1i32; }
+            if ((relay arm_bool(x.ast, arm)) == want) {
+                drop state_mark_checked(one, et.slot);
+            }
+        }
         drop assign_expr(x, one, raw arm_guard(arm), depth);
         drop assign_stmt(x, one, raw arm_body(arm), depth);
         drop state_absorb_may(st, one);
@@ -840,6 +907,12 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         drop assign_read(x, st, n);
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        drop check_value_read(x, st, n);
+        drop assign_expr(x, st, raw expr_operand(n), d);
         pass NIL;
     }
 
@@ -1122,5 +1195,122 @@ func:check_qualifiers = NIL(Assign->:x, StmtNode:s) {
     drop assign_err(x, raw MOVE_NODROP_MANAGED(),
         "`nodrop` suppresses the drop of a manual allocation, and a binding that is not `wild` or `wildx` has none to suppress",
         s.span);
+    pass NIL;
+};
+
+// --- the `unknown` taint on `Result.value` (D-007) ------------------------------
+//
+// `Result.value` CARRIES A COMPILER-ASSIGNED TAINT when the `Result` holds an
+// error. `unknown` is not a type anybody can write — `TYPE_REFERENCE` §27 says so,
+// and D-007 removed the user-writable form because two mechanisms for degraded
+// computation is one too many. What survives is this one thing, and reading it
+// unchecked is reading a value the compiler already knows may be meaningless.
+//
+// D-007's own argument for trapping rather than tainting is why this matters: "a
+// tainted value that reaches an actuator command produces a WRONG ACTION, which is
+// worse than no action." The taint exists so that reaching an actuator with one is
+// a compile error rather than a discipline.
+//
+// `ok()` DOES NOT CLEAR IT, BECAUSE `ok` NO LONGER EXISTS. 0.5.5's plan says the
+// taint is "cleared by `ok()` or by checking `is_error`", which was true when it
+// was written and stopped being true at D-097: `ok(x)` asked whether an ordinary
+// value was `unknown`, D-007 had already removed user-writable `unknown`, and an
+// operator whose subject does not exist went with it. Checking `is_error` is the
+// remaining route and was always the one that composed with the `Result`
+// discipline.
+//
+// `raw` AND `?!` STILL GO THROUGH, and need nothing here: they do not read
+// `.value`, they unwrap. That is the whole point of an escape hatch — explicit,
+// greppable, and already both.
+
+// WHAT AN `is_error` TEST SAYS, AND ABOUT WHICH BINDING.
+//
+// Three fields for the reason `FieldInfo` and `ParamBind` have three: whether a
+// test was recognised at all is a different question from which binding it names,
+// and `slot` 0 is a real statement index rather than an absence.
+pub struct:ErrTest = {
+    bool:found;
+    int32:slot;
+    bool:then_checked;   // does the TRUE branch prove the value is safe to read?
+};
+
+func:no_err_test = ErrTest() {
+    ErrTest:t = ErrTest{ found: false, slot: 0i32, then_checked: false };
+    pass t;
+};
+
+// `r.is_error` AND `!r.is_error`, WHICH ARE THE TWO FORMS PEOPLE WRITE.
+//
+// The plan asks for "the forms a programmer writes it in rather than one blessed
+// spelling", and these are they: the test itself, and its negation. `.is_error` is
+// DERIVED and not stored (D-069) — `r.is_error` is `error != 0` with no field
+// behind it — so there is nothing else to recognise, and a spelling this does not
+// know simply fails to clear the taint rather than being mistaken for one that
+// does.
+func:err_test_of = ErrTest(Assign->:x, ExprId:cond) {
+    if (raw expr_is_none(cond)) { pass (raw no_err_test()); }
+    ExprNode:n = relay ast_expr(x.ast, cond);
+
+    // `!c` — the same test with the arms swapped.
+    if (n.kind == ExprKind.ExprUnaryExpr) {
+        if ((raw expr_op(n)) == TokenKind.OpBang) {
+            ErrTest:inner = relay err_test_of(x, raw expr_operand(n));
+            if (!inner.found) { pass (raw no_err_test()); }
+            ErrTest:flipped = ErrTest{ found: true, slot: inner.slot,
+                                       then_checked: !inner.then_checked };
+            pass flipped;
+        }
+        pass (raw no_err_test());
+    }
+
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass (raw no_err_test()); }
+    string:f = relay intern_get(x.interns, (raw expr_name(n)) => int32);
+    if (!(raw string_eq(f, "is_error"))) { pass (raw no_err_test()); }
+
+    int32:slot = relay binding_slot(x, raw expr_operand(n));
+    if (slot < 0i32) { pass (raw no_err_test()); }
+
+    // `r.is_error` being TRUE means the value is NOT safe, so the THEN branch is
+    // the tainted one and the ELSE branch is where the read is allowed.
+    ErrTest:t = ErrTest{ found: true, slot: slot, then_checked: false };
+    pass t;
+};
+
+// The declaring statement of the binding a place expression is rooted at, or -1.
+func:binding_slot = int32(Assign->:x, ExprId:place) {
+    if (raw expr_is_none(place)) { pass (0i32 - 1i32); }
+    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted)            { pass (0i32 - 1i32); }
+    if (raw expr_is_none(r.id)) { pass (0i32 - 1i32); }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass (0i32 - 1i32); }
+    if (rn.a == 0i32) { pass (0i32 - 1i32); }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass (0i32 - 1i32); }
+    pass s.origin;
+};
+
+// READING `.value` OFF A `Result` THAT NOTHING HAS CHECKED.
+//
+// ONLY A BINDING-ROOTED READ IS CHECKED, and that is not a hole so much as the
+// shape of the language: `f().value` calls `f` and reads the field of a temporary,
+// and there is no way to have checked THAT temporary — the check would call `f` a
+// second time and get a different `Result`. So the idiom is to bind it, and the
+// binding is what this tracks.
+func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
+    string:f = relay intern_get(x.interns, (raw expr_name(n)) => int32);
+    if (!(raw string_eq(f, "value"))) { pass NIL; }
+
+    ExprId:base = raw expr_operand(n);
+    int32:ty = raw exprtypes_get(x.etypes, base);
+    if ((raw type_kind(x.types, ty)) != (raw TY_RESULT())) { pass NIL; }
+
+    int32:slot = relay binding_slot(x, base);
+    if (slot < 0i32) { pass NIL; }
+    if (raw state_checked(st, slot)) { pass NIL; }
+
+    drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+        "this `Result` has not been checked for an error, so its `value` carries the `unknown` taint; test `is_error` first, or use `raw` to say the check is not wanted (D-007)",
+        n.span);
     pass NIL;
 };
