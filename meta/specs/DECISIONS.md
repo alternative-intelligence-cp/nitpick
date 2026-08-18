@@ -8812,3 +8812,88 @@ An honest narrow guarantee plus a stated containment mechanism is worth more tha
 broad claim nothing backs — which is the point of D-056 and the reason this
 analysis exists at all.
 
+
+---
+
+## D-123 — What `#[derive]` may derive, and what each one generates
+
+**Settled in cycle 0.6.0**, because derive emits declarations and the frontend
+accepts declarations exactly once.
+
+`TRAITS_REFERENCE.md` §2.5 listed nine — `Default`, `PartialOrd`, `ToString`,
+`Eq`, `Hash`, `Clone`, `Debug`, `Ord`, `Display` — and **what any of them
+generates was written nowhere.** Two leave the list.
+
+### `Default` is not derivable
+
+**Deriving it means the compiler choosing values that carry meaning**, and in this
+language several of the obvious choices are false:
+
+- **`fd` zero is stdin**, not "no file descriptor". That is D-042's entire
+  argument: an `fd`'s number is an allocation artifact and reading meaning into it
+  is the mistake the type exists to prevent.
+- **`tbb32` zero is "no error"** — a claim rather than an absence, and the one
+  claim a `tbb` is least entitled to make by default.
+- **A pointer zero is `NULL`**, which the pointer rules constrain rather than treat
+  as a neutral starting value.
+
+D-010 removed implicit defaults on the argument that **"a default makes an
+uninitialized read *defined*, whereas the analysis makes it *impossible*."** A
+derived `Default` reintroduces exactly that through an explicit door: the value
+still appears without anybody choosing it, and the fact that `derive` was written
+does not make the *contents* chosen.
+
+**If a type wants a default, someone writes one.** Then it is a value somebody
+picked, and the reason it is that value is somewhere a reviewer can read.
+
+### `Display` is not derivable, because `ToString` already is
+
+Two names for one job. `Display` and `ToString` would both generate a function
+returning `string` — D-053 moved formatting to `&{ }` interpolation, so there is no
+second mechanism for one of them to use.
+
+"Fewer parallel mechanisms is better than more" is the blueprint philosophy applied
+directly: two spellings mean remembering which applies where, which is the cost the
+philosophy exists to avoid. **`ToString` stays; `Display` is removed from the
+list.**
+
+### The seven, and what each generates
+
+| Derive | Generates | Refused when |
+|---|---|---|
+| `Eq` | field-wise equality | a field's type is not `Eq` |
+| `Ord`, `PartialOrd` | lexicographic comparison in **declaration order** | a field's type is not ordered |
+| `Clone` | field-wise clone | a field's type is not `Clone` |
+| `Hash` | field-wise combination, **FNV-1a** | a field's type is not `Hash` |
+| `ToString` | a function returning `string`, built with `&{ }` | a field's type is not `ToString` |
+| `Debug` | the same, in a diagnostic form naming the type and its fields | as above |
+
+**A refusal names the field that blocks it, not the type.** "`Point` is not
+`Hash`" makes the reader check every field themselves; the compiler already knows
+which one.
+
+### Two choices inside those, and why
+
+**`Ord` compares in declaration order.** It is the standard answer and it has a
+real cost worth stating: **reordering a struct's fields becomes a semantic
+change.** The alternative — refusing to derive `Ord` and requiring it by hand — is
+worse for a comparison that is mechanical in the overwhelming majority of cases,
+and the cost is visible at the declaration rather than hidden.
+
+**`Hash` combines with FNV-1a.** The combiner has to be *specified* or the derived
+implementation is not deterministic across builds, which a verified compiler cannot
+have. FNV-1a is simple enough to verify by inspection and is non-cryptographic by
+intent — **the real crypto is `ncrypto`, a separately audited artifact**, and a
+hash for a map is not that job.
+
+### Derive is a macro that does not look like one
+
+It emits declarations, so it runs in the expansion phase and inherits its
+constraints — output complete before resolution begins, and its diagnostics point
+at generated code.
+
+A derived `impl` beside a hand-written one for the same trait is **two impls of one
+trait**, which `check_coherence` already refuses (0.4.6). It should keep refusing,
+and the message should say which one was derived — otherwise the reader is looking
+for a second `impl` they never wrote.
+

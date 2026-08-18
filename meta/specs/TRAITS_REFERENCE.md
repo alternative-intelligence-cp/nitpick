@@ -128,15 +128,36 @@ language (D-006).
 ### 2.5 Derive Attributes
 
 ```nitpick
-#[derive(Default, PartialOrd, ToString, Eq, Hash, Clone, Debug, Ord)]
+#[derive(PartialOrd, ToString, Eq, Hash, Clone, Debug, Ord)]
 struct:Config = {
     int32:priority;
     string:name;
 };
 ```
 
-Supported: `Default`, `PartialOrd`, `ToString`, `Eq`, `Hash`, `Clone`, `Debug`,
-`Ord`, `Display`.
+Supported, and there are **seven** (D-123): `PartialOrd`, `ToString`, `Eq`,
+`Hash`, `Clone`, `Debug`, `Ord`.
+
+`Ord` compares **in declaration order**, so reordering a struct's fields is a
+semantic change. `Hash` combines with **FNV-1a** — specified rather than left to
+the implementation, because a derived hash that varies between builds is not
+something a verified compiler can have. Real cryptography is `ncrypto`, a
+separately audited artifact; this is a hash for a map.
+
+A refusal **names the field that blocks it**, not the type.
+
+> **`Default` and `Display` were listed here and are removed (D-123).**
+>
+> **`Default`** would have the compiler choose values that carry meaning, and
+> several obvious choices are false in this language: `fd` zero is *stdin*, not "no
+> descriptor" (D-042); `tbb32` zero claims "no error"; a pointer zero is `NULL`. It
+> reintroduces through an explicit door exactly what D-010 removed — a value
+> appearing that nobody chose. If a type wants a default, someone writes one.
+>
+> **`Display`** was a second name for `ToString`'s job. Both would generate a
+> function returning `string`, since D-053 moved formatting to `&{ }`
+> interpolation, and two spellings for one thing is the cost the blueprint
+> philosophy exists to avoid.
 
 > Chapter 13 writes this `@derive(…)`. **Wrong** — `@` is address-of and nothing
 > else, so `@derive` reads as "the address of derive". `derive` annotates a
