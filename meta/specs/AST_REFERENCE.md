@@ -37,7 +37,8 @@ Top-level items. A source file parses to `ModuleDecl`.
 | `TraitDecl` | `name`, `visibility`, `generics`, `supertraits: TypeNode[]`, `items: TraitItem[]` | supertraits combine with **`&`** (D-029) |
 | `ImplDecl` | `target: TypeNode \| GenericParam`, `trait: TypeNode?`, `items` | **`impl:Type`** or **`impl:Type:Trait`** — type always first, no connector (D-031) |
 | `RuleDecl` | `name`, `subject_type`, `body: Expr`, `refines: Ident[]` | `Rules<int32>:r = { $ > 0i32 }`; `refines` holds `limit<Other>` composition |
-| `MacroDecl` | `name`, `params`, `body` | invoked as **`#name(args)`** (D-046) |
+| `MacroDecl` | `name`, `params`, `body_kind`, `body` | invoked as **`#name(args)`** (D-046). The body is declarations, statements, or one expression, and `body_kind` says which — that is what decides where the macro may be invoked (`MACRO_REFERENCE.md` §1) |
+| `MacroSplice` | `invocation: BuiltinExpr` | an invocation standing **where a declaration is expected** — module level, a `struct` body, an `impl` body. Expression position needs no node of its own: there the invocation already *is* a `BuiltinExpr`. Expansion replaces it with whatever the body emits |
 | `ExternBlock` | `library`, `items: ExternFn[]` | **`extern:"libc" = { … };`** (D-088) — the name slot holds a string because a library name is not an identifier |
 | `OpaqueDecl` | `name` | `opaque struct:OpHandle;` — **`extern`-block item only**, carries no fields, no value semantics (D-066) |
 | `GlobalDecl` | `name`, `visibility`, `qualifiers`, `type`, `init` | `pub const int32:MAX = 100i32;` |

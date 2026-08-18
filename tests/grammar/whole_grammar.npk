@@ -125,7 +125,49 @@ noinline func:cold = int32() { pass 1i32; };
 comptime func:at_build = int32() { pass 1i32; };
 async func:fetch = int32() { int32:v = raw await inner(); pass v; };
 
+// --- macros: three body shapes, four invocation positions ---------------------
+//
+// THIS CORPUS HAD A MACRO DECLARATION AND NO INVOCATION, which is why cycle 0.6.1
+// found that three of the four positions did not parse at all. The real-parser
+// sweep checks what is written here; a construct absent from this file is one it
+// cannot check.
+
 macro:assert_positive = (x) { prove(x > 0i32); };
+
+// A body of DECLARATIONS — invoked at module level, emitting them.
+macro:emit_helpers = () {
+    func:helper_a = int32() { pass 11i32; };
+    func:helper_b = int32() { pass 31i32; };
+};
+
+#emit_helpers();
+
+// A body of STATEMENTS — spliced into a struct body as fields.
+macro:xy_fields = () { int32:mx; int32:my; };
+
+struct:Spliced = {
+    #xy_fields();
+    int32:literal_field;
+};
+
+// Spliced into an `impl` body as methods.
+macro:emit_method = () {
+    func:spliced_method = int32(Spliced:self) { pass self.literal_field; };
+};
+
+impl:Spliced = {
+    #emit_method();
+};
+
+// A body of ONE EXPRESSION — invoked where an expression goes.
+macro:four = () { 2i32 + 2i32; };
+
+// Nested: a macro body containing another invocation, which the fixed-point loop
+// resolves on a later round.
+macro:outer_emit = () {
+    #emit_helpers();
+    func:helper_c = int32() { pass 7i32; };
+};
 
 extern:"libc" = {
     opaque struct:OpHandle;

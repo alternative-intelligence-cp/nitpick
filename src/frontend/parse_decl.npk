@@ -214,14 +214,63 @@ pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) {
 //
 //   [0] body StmtId   [1] param count   [2] attribute count
 //   then parameter names (intern indices), then attributes.
-func:MACRO_HDR = int32() { pass 3i32; };
+// FOUR HEADER SLOTS: body kind, body count, parameter count, attribute count.
+// It was three until the body gained a kind — and the count moved with it, because
+// a header slot added in the middle shifts everything after, which is exactly what
+// a named header constant exists to make survivable.
+func:MACRO_HDR = int32() { pass 4i32; };
 
-pub func:macro_body = StmtId(Ast->:ast, DeclNode:d) {
-    StmtId:s = StmtId{ index: raw d_at(ast, d, 0i32) }; pass s;
+// The tokens that begin a DECLARATION rather than a statement.
+//
+// A macro body is one or the other and the first token decides (`MACRO_REFERENCE`
+// §1). This is deliberately NOT `is_sync_point`, which answers a different
+// question — where it is safe to resume after an error — and includes `if`,
+// `while` and every statement keyword. Reading one through the other would make
+// every macro body a declaration body.
+pub func:p_at_decl_start = bool(Parser->:p) {
+    TokenKind:k = relay p_kind(p);
+    if (k == TokenKind.KwPub)    { pass true; }
+    if (k == TokenKind.KwFunc)   { pass true; }
+    if (k == TokenKind.KwStruct) { pass true; }
+    if (k == TokenKind.KwEnum)   { pass true; }
+    if (k == TokenKind.KwTrait)  { pass true; }
+    if (k == TokenKind.KwImpl)   { pass true; }
+    if (k == TokenKind.KwMacro)  { pass true; }
+    if (k == TokenKind.KwRules)  { pass true; }
+    if (k == TokenKind.KwAssoc)  { pass true; }
+    if (k == TokenKind.KwExtern) { pass true; }
+    if (k == TokenKind.KwOpaque) { pass true; }
+    pass (k == TokenKind.KwUse);
 };
-pub func:macro_param_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
-pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) {
+
+// WHAT A MACRO'S BODY IS MADE OF, and therefore where it may be invoked.
+//
+// Three values rather than a pair of flags, because they are exclusive: a body is
+// declarations, or statements, or one expression. Two booleans would make
+// "declarations AND an expression" representable, and it is not.
+pub func:MACRO_BODY_DECLS = int32() { pass 1i32; };
+pub func:MACRO_BODY_STMTS = int32() { pass 2i32; };
+pub func:MACRO_BODY_EXPR = int32()  { pass 3i32; };
+
+pub func:macro_body_kind = int32(Ast->:ast, DeclNode:d)  { pass (raw d_at(ast, d, 0i32)); };
+pub func:macro_body_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
+pub func:macro_param_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
+
+// ONE ACCESSOR PER SECTION, and each starts where the previous ended. The body,
+// the parameters and the attributes share one window, so reading a parameter as a
+// body item is a slot meaning two things — which is the defect shape this compiler
+// has paid for repeatedly, and the reason these are named rather than indexed at
+// the call site.
+pub func:macro_body_at = int32(Ast->:ast, DeclNode:d, int32:i) {
     pass (raw d_at(ast, d, (raw MACRO_HDR()) + i));
+};
+pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) {
+    pass (raw d_at(ast, d, (raw MACRO_HDR()) + (raw macro_body_count(ast, d)) + i));
+};
+
+// The invocation a splice stands for.
+pub func:splice_invocation = ExprId(DeclNode:d) {
+    ExprId:e = ExprId{ index: d.a }; pass e;
 };
 
 // --- ImportDecl -----------------------------------------------------------------------
@@ -521,6 +570,17 @@ pub func:p_parse_decl = DeclId(Parser->:p) {
     if (k == TokenKind.KwImpl)   { pass (relay p_parse_impl(p, sp, flags, attrs)); }
     if (k == TokenKind.KwRules)  { pass (relay p_parse_rules(p, sp, flags)); }
     if (k == TokenKind.KwMacro)  { pass (relay p_parse_macro(p, sp, flags, attrs)); }
+
+    // `#name(args);` WHERE A DECLARATION IS EXPECTED — module level, and an `impl`
+    // body, which reaches here through `p_parse_item_block`.
+    //
+    // The invocation itself is an ordinary `BuiltinExpr` (D-046): the parser sees
+    // `#`, a name and arguments, and NOTHING IN THE SYNTAX SAYS whether the name is
+    // compiler-provided or user-defined — a macro may be imported, so the file
+    // being parsed need not contain its declaration. What this node adds is only
+    // the POSITION: an invocation standing where a declaration goes, which
+    // expansion replaces with whatever the body emits.
+    if (k == TokenKind.Hash) { pass (relay p_parse_macro_splice(p, sp)); }
     if (k == TokenKind.KwAssoc)  { pass (relay p_parse_assoc(p, sp, flags)); }
     // `opaque struct:Name;` is an `extern`-block item (D-066). Parsing it here
     // too means a misplaced one gets "an opaque struct is only legal inside an
@@ -702,13 +762,20 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
         if (relay p_at(p, TokenKind.PRBrace)) { break; }
         if (relay p_at_end(p)) { break; }
         int64:before = raw p_position(p);
+        if (relay p_at(p, TokenKind.Hash)) {
+            // A splice into a struct or enum body. Whether what it emits FITS is
+            // expansion's question, not the parser's (D-085).
+            Span:msp = relay p_span(p);
+            DeclId:ms = relay p_parse_macro_splice(p, msp);
+            drop ast_scratch_push(p.ast, ms.index);
+        } else {
         if (is_struct) {
             DeclId:f = relay p_parse_field(p);
             drop ast_scratch_push(p.ast, f.index);
         } else {
             DeclId:v = relay p_parse_variant(p);
             drop ast_scratch_push(p.ast, v.index);
-        }
+        }}
         drop p_recover(p);
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
@@ -931,18 +998,71 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     }
     IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
     drop p_expect(p, TokenKind.PRParen);
-    int32:body = (relay p_parse_block(p)).index;
+    // THE BODY HAS THREE SHAPES, AND WHAT IS WRITTEN DECIDES WHICH.
+    //
+    // A macro is not declared to be a declaration-macro or an expression-macro;
+    // its body says. Declarations may be emitted at module level or spliced into
+    // an `impl`; statements splice into a `struct` as fields; a single expression
+    // stands where an expression does (`MACRO_REFERENCE.md` §1).
+    //
+    // WHAT STOOD HERE PARSED A BLOCK, which is a STATEMENT parser — so
+    // `macro:m = () { func:g = …; };` did not parse at all, and emitting
+    // declarations is the thing D-057 says macros exist for. It was not a
+    // restriction anybody chose; it was the one body shape a statement parser
+    // happens to accept.
+    int32:bmark = raw ast_scratch_mark(p.ast);
+    int32:bkind = raw MACRO_BODY_STMTS();
+    int32:bcount = 0i32;
+    drop p_expect(p, TokenKind.PLBrace);
+    while (true) {
+        if (relay p_at(p, TokenKind.PRBrace)) { break; }
+        if (relay p_at_end(p)) { break; }
+        int64:before = raw p_position(p);
+        if (raw p_at_decl_start(p)) {
+            bkind = raw MACRO_BODY_DECLS();
+            DeclId:d = relay p_parse_decl(p);
+            drop ast_scratch_push(p.ast, d.index);
+        } else {
+            StmtId:st = relay p_parse_stmt(p);
+            drop ast_scratch_push(p.ast, st.index);
+        }
+        bcount = bcount + 1i32;
+        if ((raw p_position(p)) == before) { drop p_sync(p); }
+    }
+    IdSpan:body = raw ast_scratch_commit(p.ast, bmark);
+    drop p_expect(p, TokenKind.PRBrace);
     drop p_expect(p, TokenKind.PSemi);
 
+    // ONE STATEMENT THAT IS AN EXPRESSION is the expression form. Recognised here
+    // rather than at the invocation, because the invocation cannot see the body —
+    // and a macro whose body is one expression is what stands in expression
+    // position.
+    if (bkind == (raw MACRO_BODY_STMTS())) {
+        if (bcount == 1i32) {
+            StmtNode:only = relay ast_stmt(p.ast, StmtId{ index: raw ast_id_at(p.ast, body.start, 0i32) });
+            if (only.kind == StmtKind.StmtExprStmt) { bkind = raw MACRO_BODY_EXPR(); }
+        }
+    }
+
     int32:mark = raw ast_scratch_mark(p.ast);
-    drop ast_scratch_push(p.ast, body);
+    drop ast_scratch_push(p.ast, bkind);
+    drop ast_scratch_push(p.ast, bcount);
     drop ast_scratch_push(p.ast, params.count);
     drop ast_scratch_push(p.ast, attrs.count);
+    drop ast_copy_window(p.ast, body);
     drop ast_copy_window(p.ast, params);
     drop ast_copy_window(p.ast, attrs);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_decl(p.ast, DeclKind.DeclMacroDecl, sp,
                              flags, w.start, w.count, name.payload));
+};
+
+// `#name(args);` standing where a declaration is expected.
+func:p_parse_macro_splice = DeclId(Parser->:p, Span:sp) {
+    ExprId:inv = relay p_parse_expr(p);
+    drop p_expect(p, TokenKind.PSemi);
+    pass (relay ast_add_decl(p.ast, DeclKind.DeclMacroSplice, sp,
+                             inv.index, 0i32, 0i32, 0i64));
 };
 
 // `extern:"libc" = { … };` (D-088). Its items are `ExternFn`, not ordinary
