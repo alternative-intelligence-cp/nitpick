@@ -628,6 +628,8 @@ def main(argv):
                                         recursive=True))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "analysis", "**", "*.npk"),
                                         recursive=True))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "expansion", "**", "*.npk"),
+                                        recursive=True))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
                                         recursive=True))
             n = 0
@@ -688,6 +690,21 @@ def main(argv):
                 failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
                 n += 1
             print("  %-11s %2d analysis-rejection test(s)" % ("analysis", n))
+
+            # Whole programs refused during MACRO EXPANSION, before a name is
+            # bound. A fifth stage and a fifth suite, for the reason the other four
+            # are separate: expansion runs before resolution, so a case here that
+            # failed to parse would never reach the rule it was written for.
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "expansion",
+                                                   "rejection", "**", "*.npk"),
+                                      recursive=True)):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d expansion-rejection test(s)" % ("expansion", n))
 
             # And whole programs that must be ACCEPTED, in full silence.
             #

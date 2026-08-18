@@ -21,6 +21,7 @@ func:load = Loaded(string:root, InternTable->:it, DiagList->:diags) {
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(it, diags, @roots, "");
     drop graph_load_all(@g, root);
+    drop graph_collect_all(@g);
     drop graph_apply_imports(@g);
     ModuleEntry:e = relay graph_at(@g, 0i32);
     Loaded:l = Loaded{ g: g, scope: e.scope };

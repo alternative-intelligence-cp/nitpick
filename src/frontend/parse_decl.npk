@@ -240,6 +240,17 @@ pub func:p_at_decl_start = bool(Parser->:p) {
     if (k == TokenKind.KwAssoc)  { pass true; }
     if (k == TokenKind.KwExtern) { pass true; }
     if (k == TokenKind.KwOpaque) { pass true; }
+
+    // `#name();` COUNTS AS A DECLARATION START, and that is the whole reason a
+    // nested invocation works. A macro body containing `#inner(); func:f3 = …;`
+    // has TWO declaration-position items — a splice and a function — and without
+    // this the splice parsed as an expression STATEMENT while the body was
+    // classified as declarations, leaving the window holding a `StmtId` where the
+    // clone expected a `DeclId`. It read one as the other and reported an
+    // unclassified node kind, which is the symptom a heterogeneous window always
+    // produces and never explains.
+    if (k == TokenKind.Hash)     { pass true; }
+
     pass (k == TokenKind.KwUse);
 };
 
@@ -266,6 +277,19 @@ pub func:macro_body_at = int32(Ast->:ast, DeclNode:d, int32:i) {
 };
 pub func:macro_param = int32(Ast->:ast, DeclNode:d, int32:i) {
     pass (raw d_at(ast, d, (raw MACRO_HDR()) + (raw macro_body_count(ast, d)) + i));
+};
+
+// WHERE THE PARAMETER NAMES LIVE, as an absolute window into the shared pool.
+//
+// Expansion needs the SPAN rather than an accessor per index, because binding is
+// positional and it looks a name up by scanning — and a helper that returned one
+// parameter at a time would make the expander recompute the section start on every
+// comparison.
+pub func:macro_param_span = IdSpan(Ast->:ast, DeclNode:d) {
+    IdSpan:w = IdSpan{ start: (raw decl_win_start(d)) + (raw MACRO_HDR())
+                              + (raw macro_body_count(ast, d)),
+                       count: raw macro_param_count(ast, d) };
+    pass w;
 };
 
 // The invocation a splice stands for.

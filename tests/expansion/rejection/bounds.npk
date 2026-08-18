@@ -1,0 +1,20 @@
+// Expansion is bounded, and the two bounds are different mistakes (D-057, 0.6.1).
+//
+// A FIXED-POINT LOOP MUST TERMINATE. Nothing in the prototype's corpus bounds it,
+// so `macro:m = () { #m(); };` iterates forever there — unacceptable in a compiler
+// under formal verification, where termination is itself a property to establish.
+//
+// TWO BOUNDS RATHER THAN ONE, because a deeply nested single expansion is a
+// program that is too complicated and mutual recursion is a program that does not
+// terminate. One budget would report them alike, and the fix for each is
+// unrelated.
+
+// A macro that invokes itself never settles.
+// expect-error: NITPICK-MACRO-004
+macro:self_recursive = () {
+    #self_recursive();
+};
+
+#self_recursive();
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

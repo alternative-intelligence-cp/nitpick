@@ -83,6 +83,11 @@ func:main = int32(cstring[]:argv) {
     // resolved. Each stage needs the previous one complete for every module, and
     // that is what makes a `use` cycle resolvable (D-086) rather than a problem
     // to be broken.
+    // COLLECTION IS ITS OWN PASS since 0.6.1, because macro expansion emits
+    // declarations and collection is what records them — so it cannot run while a
+    // file is still being parsed. This tool expands nothing, and still has to say
+    // so by asking.
+    drop graph_collect_all(@g);
     drop graph_apply_imports(@g);
 
     Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);

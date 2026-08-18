@@ -1,0 +1,35 @@
+// Macro-expansion diagnostic codes.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.6.1.
+//
+// Centralised for the reason 0.1.6, 0.2.1, 0.3.1, 0.4.1 and 0.5.1 give: a mistyped
+// code literal at a call site silently invents a NEW code, and the test asserting
+// the old one then fails for a reason unrelated to the bug it guards.
+
+// An invocation naming no macro. Its own code rather than the resolver's
+// "unknown name", because `#name(…)` is also how every compiler builtin is spelled
+// (D-046) — a reader who sees this wrote `#` and meant a macro.
+pub func:MACRO_UNKNOWN = string()      { pass "NITPICK-MACRO-001"; };
+
+// An invocation passing the wrong number of arguments.
+pub func:MACRO_ARITY = string()        { pass "NITPICK-MACRO-002"; };
+
+// ONE INVOCATION NESTED TOO DEEPLY. A program that is too complicated.
+pub func:MACRO_TOO_DEEP = string()     { pass "NITPICK-MACRO-003"; };
+
+// THE FIXED-POINT LOOP DID NOT SETTLE. A program that does not terminate — two
+// macros expanding into each other, or one into itself.
+//
+// ITS OWN CODE, not shared with the depth bound. They are different mistakes with
+// unrelated fixes, and a single "expansion limit exceeded" would make the second
+// look like the first.
+pub func:MACRO_NO_FIXPOINT = string()  { pass "NITPICK-MACRO-004"; };
+
+// A body spliced where what it emits does not fit — fields into something that is
+// not a struct, declarations into an expression.
+pub func:MACRO_WRONG_SHAPE = string()  { pass "NITPICK-MACRO-005"; };
+
+// A DEFECT IN THE COMPILER: a node kind the clone has no case for. `RESOLVE_INTERNAL`
+// and `TYPE_INTERNAL` exist for the same situation — a reader who sees it has found
+// a hole in the expander and there is nothing they can change in their source.
+pub func:MACRO_INTERNAL = string()     { pass "NITPICK-MACRO-006"; };

@@ -73,7 +73,31 @@ pub func:expr_name = int64(ExprNode:e)      { pass e.payload; };
 // and `BuiltinExpr`, which are the two kinds whose payload is a count. A
 // `MethodCallExpr`'s payload is the method NAME, so asking it for a generic count
 // yields an intern index and slices the argument window by it.
+// THE TURBOFISH COUNT ON A `CallExpr`, WHERE IT LIVES IN THE PAYLOAD.
+//
+// NOT VALID ON A `BuiltinExpr`, and that is the whole reason this comment exists.
+// The two kinds have OPPOSITE layouts:
+//
+//   CallExpr      a = callee,        payload = generic count
+//   BuiltinExpr   a = generic count, payload = the NAME
+//
+// so reading a builtin's generic count through this returns its name's intern
+// index — a large number — and every `count - gcount` computed from it goes
+// negative. Cycle 0.6.1 found seven sites doing exactly that, with the result that
+// **the arguments of `#builtin(…)` were never walked by anything**: not resolved,
+// not typed, not seen by a single 0.5 analysis. `#wild_ptr<int32>(undefined_name)`
+// compiled clean.
+//
+// One accessor per layout, named for the kind it belongs to. That is the fix for a
+// slot meaning two things, and it is the same fix `stmt_cond` versus
+// `stmt_counted_body` needed for the same reason.
 pub func:expr_generic_count = int32(ExprNode:e) { pass (e.payload => int32); };
+
+// The turbofish count on a `BuiltinExpr`, where it lives in slot `a`.
+pub func:builtin_generic_count = int32(ExprNode:e) { pass e.a; };
+
+// A builtin's NAME, as an intern index.
+pub func:builtin_name = int32(ExprNode:e) { pass (e.payload => int32); };
 
 // `$$m` RATHER THAN `$$i`. Both spell a borrow and build the same node, and the
 // difference is exclusive-versus-shared — which is what decides whether the callee

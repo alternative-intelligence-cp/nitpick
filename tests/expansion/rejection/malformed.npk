@@ -1,0 +1,16 @@
+// Invocations that name nothing, or the wrong number of arguments (0.6.1).
+
+macro:takes_one = (N) {
+    func:emitted = int32() { pass N; };
+};
+
+// A NAME THAT IS NO MACRO. Its own code rather than the resolver's "unknown name",
+// because `#name(…)` is also how every compiler builtin is spelled (D-046) — a
+// reader who sees this wrote `#` and meant a macro.
+// expect-error: NITPICK-MACRO-001
+#no_such_macro();
+
+// expect-error: NITPICK-MACRO-002
+#takes_one();
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

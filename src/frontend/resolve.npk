@@ -157,7 +157,7 @@ pub func:resolve_expr = NIL(Resolver->:r, ExprId:id, int32:scope) {
         pass NIL;
     }
     if (e.kind == ExprKind.ExprBuiltinExpr) {
-        int32:gcount = raw expr_generic_count(e);
+        int32:gcount = raw builtin_generic_count(e);
         drop resolve_expr_window(r, (raw expr_list_start(e)) + gcount,
                                  (raw expr_list_count(e)) - gcount, scope);
         pass NIL;
@@ -707,7 +707,7 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) {
         }
         int32:gcount = 0i32;
         if (e.kind == ExprKind.ExprCallExpr)    { gcount = raw expr_generic_count(e); }
-        if (e.kind == ExprKind.ExprBuiltinExpr) { gcount = raw expr_generic_count(e); }
+        if (e.kind == ExprKind.ExprBuiltinExpr) { gcount = raw builtin_generic_count(e); }
         if (e.kind == ExprKind.ExprCallExpr) {
             ExprId:callee = raw expr_callee(e);
             if (relay init_reaches(r, callee, target, fuel - 1i32)) { pass true; }

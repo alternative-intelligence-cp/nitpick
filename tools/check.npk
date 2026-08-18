@@ -59,6 +59,8 @@ use "../src/frontend/paths.npk".*;
 use "../src/frontend/resolve_path.npk".*;
 use "../src/frontend/symbols.npk".*;
 use "../src/frontend/module_graph.npk".*;
+use "../src/frontend/macro/macro_codes.npk".*;
+use "../src/frontend/macro/expand.npk".*;
 use "../src/frontend/resolve.npk".*;
 use "../src/frontend/types.npk".*;
 use "../src/frontend/builtin_types.npk".*;
@@ -106,6 +108,62 @@ func:main = int32(cstring[]:argv) {
     if (first < 0i32) {
         exit 2i32;
     }
+
+    // --- stage 0: expansion --------------------------------------------------
+    //
+    // EXPANSION PRECEDES EVERYTHING (`MACRO_REFERENCE.md` §6). What every stage
+    // below sees is the expanded program — which is what makes a defect here
+    // different in kind from a defect anywhere else: the passes that follow do not
+    // fail on a bad expansion, they analyse it faithfully and report on code
+    // nobody wrote.
+    //
+    // COLLECTION PRECEDES EXPANSION, because an invocation may name a macro
+    // declared after it — the same reason cycle 0.3 collects every declaration
+    // before binding any name.
+    Expander:xp = raw expander_init(@g.ast, @it, @diags);
+    int32:cm = 0i32;
+    while (cm < (raw graph_count(@g))) {
+        drop collect_macros(@xp, DeclId{ index: (raw graph_at(@g, cm)).root });
+        cm = cm + 1i32;
+    }
+
+    // A FIXED POINT, BOUNDED. A macro body may contain invocations, so one round
+    // is not enough; and `macro:m = () { #m(); };` never settles, so the loop is
+    // bounded and exceeding the bound REFUSES rather than proceeding with a
+    // half-expanded program.
+    int32:xr = 0i32;
+    bool:more = true;
+    while (more) {
+        if (xr >= (raw EXPAND_ROUNDS())) { break; }
+        more = false;
+        int32:xm = 0i32;
+        while (xm < (raw graph_count(@g))) {
+            if (relay expand_module(@xp, DeclId{ index: (raw graph_at(@g, xm)).root })) {
+                more = true;
+            }
+            xm = xm + 1i32;
+        }
+        if (raw expander_blown(@xp)) { break; }
+        xr = xr + 1i32;
+    }
+    if (more) {
+        if (!(raw expander_blown(@xp))) {
+            drop expand_no_fixpoint(@xp, (relay ast_decl(@g.ast,
+                DeclId{ index: (raw graph_at(@g, 0i32)).root })).span);
+        }
+    }
+
+    // A PROGRAM THAT DID NOT EXPAND IS NOT A PROGRAM TO RESOLVE. Every name below
+    // would be looked up in a tree that is missing what a macro was supposed to
+    // emit, and the diagnostics would be about the absence rather than the cause.
+    if ((raw diaglist_count(@diags)) != 0i64) {
+        drop report(@diags);
+        exit 1i32;
+    }
+
+    // EVERY DECLARATION RECORDED, now that expansion has settled and there is a
+    // final answer about what the declarations ARE.
+    drop graph_collect_all(@g);
 
     // --- stage 1: names ------------------------------------------------------
     //

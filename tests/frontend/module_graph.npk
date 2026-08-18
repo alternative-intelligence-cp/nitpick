@@ -34,6 +34,7 @@ func:load = ModuleGraph(string:root, InternTable->:it, DiagList->:diags) {
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(it, diags, @roots, "");
     drop graph_load_all(@g, root);
+    drop graph_collect_all(@g);
     pass g;
 };
 
@@ -98,6 +99,7 @@ func:main = int32(cstring[]:_~argv) {
     RootList:noroots = raw rootlist_init();
     ModuleGraph:g4 = raw graph_init(@it, @d4, @noroots, "");
     drop graph_load_all(@g4, "tests/modules/graph/alpha.npk");
+    drop graph_collect_all(@g4);
     int32:before = raw graph_count(@g4);
     drop graph_load(@g4, "tests/modules/graph/nested/../alpha.npk", raw span_none());
     if ((raw graph_count(@g4)) != before)                { exit 30i32; }

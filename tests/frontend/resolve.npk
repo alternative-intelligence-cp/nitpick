@@ -215,6 +215,7 @@ func:main = int32(cstring[]:_~argv) {
     RootList:noroots = raw rootlist_init();
     ModuleGraph:ag = raw graph_init(@it, @ad, @noroots, "");
     drop graph_load_all(@ag, "tests/modules/resolvable.npk");
+    drop graph_collect_all(@ag);
     drop graph_apply_imports(@ag);
     ModuleEntry:ae = raw graph_at(@ag, 0i32);
     Resolver:ar = raw resolver_init(@ag.ast, @ag.tab, @it, @ad);

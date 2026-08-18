@@ -141,20 +141,47 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
     DeclId:root = relay p_parse_module(@p);
 
-    // PHASE 1 RUNS HERE, per module, as it is loaded. It needs no other module:
-    // collecting a declaration records its name and where it was declared, and
-    // nothing else. That is what lets the graph contain a cycle without the
-    // loader having to break it.
-    int32:scope = relay collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
-
+    // COLLECTION USED TO RUN HERE, per module as it was loaded. It moved out to
+    // `graph_collect_all`, and the reason is macro expansion:
+    //
+    //   **A macro emits declarations, and collection is what records
+    //   declarations.** Collecting as a file loads means collecting before any
+    //   macro in it has expanded, so everything a macro emits is invisible to
+    //   every name lookup — which is exactly what cycle 0.6.1 found: the emitted
+    //   functions existed in the tree and resolved to nothing.
+    //
+    // What made collection safe to run per-module still holds and is why the split
+    // costs nothing: collecting a declaration records its name and where it was
+    // declared and needs NO other module, so it does not matter when it runs as
+    // long as it runs before anything looks a name up. That is also what lets the
+    // graph contain a cycle without the loader having to break it.
     if (g.count >= g.cap) {
         drop graph_grow(g);
     }
-    ModuleEntry:e = ModuleEntry{ file: file, root: root.index, scope: scope };
+    // The scope is filled in by `graph_collect_all`; 0 until then.
+    ModuleEntry:e = ModuleEntry{ file: file, root: root.index, scope: 0i32 };
     g.mods[g.count => int64] = e;
     int32:index = g.count;
     g.count = g.count + 1i32;
     pass index;
+};
+
+// PHASE 1, over every module the graph holds, after macro expansion has finished.
+//
+// One pass rather than one per file, so that "every declaration in the program has
+// been recorded" is a state the caller can be in rather than a thing it has to
+// track — and so that expansion, which rewrites what the declarations ARE, has a
+// place to run before any of them is written down.
+pub func:graph_collect_all = NIL(ModuleGraph->:g) {
+    int32:i = 0i32;
+    while (i < g.count) {
+        ModuleEntry:e = g.mods[i => int64];
+        DeclId:root = DeclId{ index: e.root };
+        e.scope = relay collect_module(@g.tab, @g.ast, g.diags, root, 0i32);
+        g.mods[i => int64] = e;
+        i = i + 1i32;
+    }
+    pass NIL;
 };
 
 // Load a root file and everything it reaches, transitively.

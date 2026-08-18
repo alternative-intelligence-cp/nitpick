@@ -273,6 +273,12 @@ Recorded as open rather than invented:
   *reads* names. Two invocations of a declaration-emitting macro in one module emit
   the same names, and nothing in the corpus says whether that collides or is
   renamed. It currently collides, because nothing renames.
+- **May a parameter name an emitted declaration?** `macro:m = (N) { func:N = …; };`
+  does not work: substitution reaches EXPRESSIONS, and a declaration's name is a
+  payload rather than an expression, so the emitted function is literally called
+  `N`. The corpus never writes it — `bug593` substitutes into a body and every
+  emitted name is fixed — so this is unimplemented rather than refused, and the two
+  questions are really one: both are about a macro controlling the names it emits.
 - **May a macro emit a macro?** Nothing exercises it. The fixed-point loop would
   expand the result, so it likely works by construction — which is not the same as
   being specified.

@@ -1,0 +1,75 @@
+// Macros that expand correctly, which the frontend must ACCEPT (D-057, 0.6.1).
+//
+// The counterweight the expansion suite needs most, and for a reason the other
+// analyses do not have: **a rejection suite cannot tell a correct expansion from
+// one that emits nothing.** An expander that quietly dropped every body would
+// refuse the recursive cases exactly as it should and pass every negative test —
+// while every program using a macro failed later, somewhere else, as an unknown
+// name.
+//
+// So each case here CALLS what its macro emitted. If the declaration did not
+// arrive, the call does not resolve.
+//
+// Every case is a rewrite of one from the prototype's corpus, in this language's
+// dialect (`MACRO_REFERENCE.md` §9) — which is what the corpus is for and what
+// reading it as prose was supposed to make possible.
+
+// bug591 — one invocation, two declarations, both callable.
+macro:make_pair = () {
+    func:greet1 = int32() { pass 7i32; };
+    func:greet2 = int32() { pass 3i32; };
+};
+
+#make_pair();
+
+// bug593 — a parameter substituted into the body of an emitted function.
+// Substitution is not textual: the argument is an AST node and lands as one.
+macro:make_const = (N) {
+    func:my_const = int32() { pass N; };
+};
+
+#make_const(42i32);
+
+// bug592 — emitted declarations that reference EACH OTHER, which is why expansion
+// completes before name resolution begins rather than resolving as it emits.
+macro:emit_helpers = () {
+    func:helper_a = int32() { pass 11i32; };
+    func:helper_b = int32() { pass 31i32; };
+    func:helper_sum = int32() { pass ((raw helper_a()) + (raw helper_b())); };
+};
+
+#emit_helpers();
+
+// bug594 — NESTED. `#outer()` emits an invocation, which expands on the round
+// after. One pass would leave it behind, which is what makes this a fixed point
+// rather than a loop that runs once.
+macro:inner = () {
+    func:f1 = int32() { pass 10i32; };
+    func:f2 = int32() { pass 20i32; };
+};
+
+macro:outer = () {
+    #inner();
+    func:f3 = int32() { pass 30i32; };
+};
+
+#outer();
+
+// TWO INVOCATIONS OF ONE MACRO ARE TWO SUBTREES. They substitute different
+// arguments, so sharing the body's nodes would make the second rewrite the first —
+// which is why every instantiation is a clone.
+//
+// The two invocations here are EXPRESSION-position, because two declaration
+// emissions of one macro would emit the same names twice and collide. Whether
+// emitted names should be renamed is open (`MACRO_REFERENCE.md` §10) and nothing
+// here assumes an answer.
+macro:doubled = (V) { V + V; };
+
+func:main = int32(cstring[]:_~argv) {
+    if (((raw greet1()) + (raw greet2())) != 10i32)              { exit 2i32; }
+    if ((raw my_const()) != 42i32)                                { exit 3i32; }
+    if ((raw helper_sum()) != 42i32)                              { exit 4i32; }
+    if (((raw f1()) + (raw f2()) + (raw f3())) != 60i32)          { exit 5i32; }
+    if ((#doubled(3i32) + #doubled(10i32)) != 26i32)              { exit 6i32; }
+    exit 0i32;
+};
