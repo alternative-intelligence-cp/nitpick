@@ -1,0 +1,12 @@
+// expect-error: NITPICK-MACRO-005
+//
+// A DECLARATION BODY WHERE A VALUE IS EXPECTED. What a macro emits has to fit
+// where it landed (`MACRO_REFERENCE.md` section 2), and a `func:` is not a value.
+mod:wrong_position;
+
+macro:decls = () { func:g = int32() { pass 1i32; }; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = #decls();
+    exit 0i32;
+};

@@ -33,3 +33,15 @@ pub func:MACRO_WRONG_SHAPE = string()  { pass "NITPICK-MACRO-005"; };
 // and `TYPE_INTERNAL` exist for the same situation — a reader who sees it has found
 // a hole in the expander and there is nothing they can change in their source.
 pub func:MACRO_INTERNAL = string()     { pass "NITPICK-MACRO-006"; };
+
+// A MACRO NAMED FROM OUTSIDE THE MODULE THAT DECLARES IT (D-124). Its own code
+// rather than `MACRO_UNKNOWN`, because the two are unrelated mistakes: one is a
+// name nobody wrote, the other is a name written somewhere it cannot be reached,
+// and only the second has an obvious fix.
+pub func:MACRO_NOT_LOCAL = string()    { pass "NITPICK-MACRO-007"; };
+
+// `#caller(NAME)` WRITTEN IN A FORM THAT IS NOT ONE. It takes exactly one
+// argument, that argument is a bare identifier, and it is legal only inside a
+// macro body — an escape hatch with no rule is the one path that is worse than no
+// escape hatch (D-057).
+pub func:MACRO_CALLER_FORM = string()  { pass "NITPICK-MACRO-008"; };

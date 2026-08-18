@@ -1,0 +1,17 @@
+// expect-error: NITPICK-MACRO-004
+//
+// THE SAME NON-TERMINATION, REACHED FROM EXPRESSION POSITION. `#endless()` expands
+// to `#endless() + 1i32`, which contains an invocation, which expands again.
+//
+// This one exists because until 0.6.2 there was no expression-position expansion at
+// all: an invocation in a body was left standing and typed as INVALID, so the loop
+// this file drives could not be entered from here. A bound is only established for
+// the paths that can actually reach it.
+mod:bounds_expr;
+
+macro:endless = () { #endless() + 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = #endless();
+    exit 0i32;
+};

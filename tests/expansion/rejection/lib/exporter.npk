@@ -1,0 +1,8 @@
+// The other side of `cross_module.npk`. Nothing here is wrong; the macro is
+// declared, and `pub` on it is deliberate — D-124 says a macro's reach is its
+// module whatever its visibility, so marking it `pub` must not change the answer.
+mod:exporter;
+
+pub macro:shared_macro = () { func:emitted = int32() { pass 1i32; }; };
+
+pub func:anchor = int32() { pass 0i32; };

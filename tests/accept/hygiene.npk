@@ -1,0 +1,108 @@
+// Hygiene (D-057), in all four of its parts, on programs that must be ACCEPTED.
+//
+// WHICH BINDING WON IS OBSERVABLE ONLY THROUGH THE TYPE. A checker does not run
+// the program, so "the macro read the top-level `shared` rather than the local
+// one" cannot be asserted by comparing values. It CAN be asserted by giving the
+// two bindings different types and doing something only one of them permits —
+// integer arithmetic on the one the macro must have chosen. If hygiene picked the
+// other, this file stops compiling, which is exactly the signal wanted.
+mod:hygiene;
+
+// --- 1. an identifier resolves where the macro was WRITTEN ----------------------
+//
+// The prototype resolved it there, noticed the call site disagreed, emitted
+// NITPICK-061 and then KEPT THE CALLER'S BINDING anyway (`bug603`). Here the
+// defining scope simply wins and there is nothing to warn about.
+int32:shared = 100i32;
+
+macro:report = () { shared + 1i32; };
+
+// --- 2. `#caller(NAME)` reaches the invocation site ------------------------------
+//
+// The mirror image: the module-level `flag` is a bool, so this body type-checks
+// only if `#caller` found the caller's `int32`.
+bool:flag = true;
+
+macro:report_opt = () { #caller(flag) + 1i32; };
+
+// AND A BODY THAT IS EXACTLY THE ESCAPE. Here the expansion's root node IS the
+// `#caller` identifier, so it carries both marks at once — the root that switches
+// the scope, and the escape that reads back where the invocation was. Nothing
+// wrapped around it means nothing else can carry the second one, which is how the
+// marks came to be dropped on the way into the slot they replaced: they live beside
+// the node array, and replacing a node copies only its slots.
+macro:bare_caller = () { #caller(flag); };
+
+// --- 3. a statement body becomes a BLOCK ----------------------------------------
+//
+// `held` here is the macro's own, and `base` is free and resolves in this module.
+// At the invocation the caller has a `held` of its own and a different type; the
+// block is what keeps them apart without either shadowing being an error.
+int32:base = 7i32;
+
+macro:setup = () {
+    int32:held = base + 1i32;
+    discard(held);
+};
+
+// --- 4. a statement macro invoking another one -----------------------------------
+//
+// The body has no declaration in it, so `#setup();` inside it is a STATEMENT — and
+// that is decided by scanning the body before its first item is parsed. Reading
+// the `#` alone made every body that began with one a declaration body, which made
+// this program unwritable.
+macro:setup_twice = () {
+    #setup();
+    int32:again = base + 2i32;
+    discard(again);
+};
+
+// --- 5. declaration position is hygienic for free -------------------------------
+//
+// A macro is invocable only in the module that declares it (D-124), so what a
+// declaration body emits lands in the same scope the macro was written in. There
+// is nothing to switch, which is why nothing here marks it.
+macro:make_pair = () {
+    func:paired_a = int32() { pass 11i32; };
+    func:paired_b = int32() { pass 31i32; };
+};
+
+#make_pair();
+
+// --- 6. a nested module is a scope of its own ------------------------------------
+//
+// A macro written inside `mod:inner` resolves in INNER's scope, not the file's, and
+// a macro written in the file cannot be reached from inner at all (D-124). Both
+// halves need `module_scope` to follow the nesting — `resolve_module` set it once
+// per file and the nested case never updated it. Nothing read the field before
+// hygiene did, which is why that was invisible.
+mod:nested_scope = {
+    int32:only_inside = 50i32;
+
+    macro:read_inside = () { only_inside + 1i32; };
+
+    pub func:reads_it = int32() {
+        bool:only_inside = false;    // must NOT be what the macro sees
+        int32:got = #read_inside();
+        pass got;
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    bool:shared = true;              // the macro must NOT see this one
+    int32:flag = 41i32;              // `#caller` must see THIS one
+    bool:held = false;               // the macro's `held` must not collide
+
+    int32:a = #report();             // 101 — reads the module-level int32
+    int32:b = #report_opt();         // 42 — reads the local int32
+    int32:c = #bare_caller();        // 41 — the escape IS the root
+
+    #setup();
+    #setup_twice();
+
+    if (held)                        { exit 2i32; }
+    if (shared)                      { exit 3i32; }
+    if ((a + b + c + flag) != 225i32) { exit 4i32; }
+    if ((raw paired_a()) + (raw paired_b()) != 42i32) { exit 5i32; }
+    exit 0i32;
+};

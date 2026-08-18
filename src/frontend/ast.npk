@@ -138,6 +138,20 @@ pub struct:Ast = {
     wild PatNode->:pats;    int32:pat_count;   int32:pat_cap;
     wild VerifyNode->:verifies; int32:verify_count; int32:verify_cap;
 
+    // ONE FLAG BYTE PER EXPRESSION AND PER STATEMENT, grown with the array it
+    // annotates so an index into one is always an index into the other. What they
+    // record is hygiene (0.6.2): whether a node is the root of a macro expansion,
+    // and whether an identifier is a `#caller` escape.
+    //
+    // NOT A SLOT ON THE NODE, because `a`/`b`/`c` hold node references and never
+    // scalars — the rule stated above this struct, which a literal's width suffix
+    // broke once already. And not a side table sized after the fact, because
+    // expansion APPENDS: a table built to the tree's size at any one moment is
+    // short by whatever the next round adds, and a short table reads past its
+    // allocation rather than answering `false`.
+    wild int32->:expr_flags;
+    wild int32->:stmt_flags;
+
     // A flat pool of child handles. A node that owns a SEQUENCE -- generic
     // arguments, function parameters, `dyn A & B` traits -- stores a (start,
     // count) window into this pool rather than owning an array of its own.
@@ -176,6 +190,8 @@ pub func:ast_init = Ast() {
     wild int8->:v = alloc(n * #size_of<VerifyNode>());
     wild int8->:q = alloc(n * #size_of<int32>());
     wild int8->:r = alloc(n * #size_of<int32>());
+    wild int8->:ef = alloc(n * #size_of<int32>());
+    wild int8->:sf = alloc(n * #size_of<int32>());
 
     Ast:ast = Ast{
         exprs: e => wild ExprNode->,  expr_count: 0i32,  expr_cap: 256i32,
@@ -185,7 +201,8 @@ pub func:ast_init = Ast() {
         pats:  p => wild PatNode->,   pat_count:  0i32,  pat_cap:  256i32,
         verifies: v => wild VerifyNode->, verify_count: 0i32, verify_cap: 256i32,
         ids:   q => wild int32->,     id_count:   0i32,  id_cap:   256i32,
-        scratch: r => wild int32->,   scratch_count: 0i32, scratch_cap: 256i32
+        scratch: r => wild int32->,   scratch_count: 0i32, scratch_cap: 256i32,
+        expr_flags: ef => wild int32->, stmt_flags: sf => wild int32->
     };
 
     // Reserve index 0 in every array as the NONE node.
@@ -193,11 +210,13 @@ pub func:ast_init = Ast() {
                             a: 0i32, b: 0i32, c: 0i32, payload: 0i64,
                             width: NumWidth.WNone };
     ast.exprs[0i64] = en;
+    ast.expr_flags[0i64] = 0i32;
     ast.expr_count = 1i32;
 
     StmtNode:sn = StmtNode{ kind: StmtKind.StmtNone, span: z,
                             a: 0i32, b: 0i32, c: 0i32, payload: 0i64 };
     ast.stmts[0i64] = sn;
+    ast.stmt_flags[0i64] = 0i32;
     ast.stmt_count = 1i32;
 
     DeclNode:declNone = DeclNode{ kind: DeclKind.DeclNone, span: z,
@@ -230,6 +249,11 @@ func:ast_grow_exprs = NIL(Ast->:ast) {
     wild int8->:bigger = ralloc(ast.exprs => wild int8->,
                                 (nc => int64) * #size_of<ExprNode>());
     ast.exprs = bigger => wild ExprNode->;
+    // THE FLAG ARRAY GROWS IN THE SAME CALL, never in one of its own. Two arrays
+    // that must stay the same length are two arrays that will not, if growing
+    // them is two decisions.
+    ast.expr_flags = ralloc(ast.expr_flags => wild int8->,
+                            (nc => int64) * #size_of<int32>()) => wild int32->;
     ast.expr_cap = nc;
     pass NIL;
 };
@@ -251,6 +275,7 @@ pub func:ast_add_expr_w = ExprId(Ast->:ast, ExprKind:kind, Span:span,
     ExprNode:n = ExprNode{ kind: kind, span: span,
                            a: a, b: b, c: c, payload: payload, width: width };
     ast.exprs[ast.expr_count => int64] = n;
+    ast.expr_flags[ast.expr_count => int64] = 0i32;
     ExprId:id = ExprId{ index: ast.expr_count };
     ast.expr_count = ast.expr_count + 1i32;
     pass id;
@@ -301,6 +326,128 @@ pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) {
     pass NIL;
 };
 
+// --- what a node was made by ---------------------------------------------------
+//
+// THE AST IS WRITE-ONCE AFTER EXPANSION, and expansion is the one pass that
+// rewrites. That is not a loophole in the rule stated above `ast_set_expr_a` — it
+// is why expansion runs FIRST. Nothing has read the tree when the expander is
+// working except the parser that built it, so a node replaced here is a node no
+// pass has an opinion about yet. Every later pass sees a tree that is written once
+// and read forever, which is the property the index graph depends on.
+//
+// TWO BITS PER EXPRESSION, and they answer different questions:
+//
+//   HYG_ROOT    this node is where an expansion was substituted in. Its free
+//               names resolve where the MACRO was written, not where it was
+//               invoked (D-057).
+//   HYG_CALLER  this identifier came out of `#caller(NAME)` and is the one thing
+//               inside an expansion that resolves at the INVOCATION site.
+//
+// They can both be set on one node — `macro:m = () { #caller(x); };` expands to an
+// identifier that is simultaneously the root and the escape — and the resolver
+// applies them in that order, which gives the right answer for that case rather
+// than needing a third rule for it.
+pub func:HYG_ROOT = int32()   { pass 1i32; };
+pub func:HYG_CALLER = int32() { pass 2i32; };
+
+// WRITTEN INSIDE A MACRO BODY. A third question about an expression, and the one
+// that makes the expansion audit possible: a macro body is a TEMPLATE, so an
+// invocation standing in one is consumed when the macro is cloned rather than
+// where it appears. Everywhere else a surviving invocation is an error.
+pub func:HYG_IN_MACRO = int32() { pass 4i32; };
+
+// THE EXPANSION WALK CAME HERE. Set on every expression the walk enters, so that
+// the audit can tell its two failures apart: an invocation still standing that the
+// walk VISITED is a name it could not expand — another module's, or nobody's — and
+// one it never visited is a hole in the walk itself. Without the bit both read as
+// the first, which points the reader at their program for a defect in the compiler.
+pub func:HYG_SEEN = int32() { pass 8i32; };
+
+pub func:ast_expr_flag = bool(Ast->:ast, ExprId:id, int32:bit) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.expr_count) { fail 7i32; }
+    pass ((ast.expr_flags[id.index => int64] & bit) != 0i32);
+};
+
+pub func:ast_set_expr_flag = NIL(Ast->:ast, ExprId:id, int32:bit) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.expr_count) { fail 7i32; }
+    ast.expr_flags[id.index => int64] = ast.expr_flags[id.index => int64] | bit;
+    pass NIL;
+};
+
+pub func:ast_stmt_flag = bool(Ast->:ast, StmtId:id, int32:bit) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.stmt_count) { fail 7i32; }
+    pass ((ast.stmt_flags[id.index => int64] & bit) != 0i32);
+};
+
+pub func:ast_set_stmt_flag = NIL(Ast->:ast, StmtId:id, int32:bit) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.stmt_count) { fail 7i32; }
+    ast.stmt_flags[id.index => int64] = ast.stmt_flags[id.index => int64] | bit;
+    pass NIL;
+};
+
+// A NODE BECOMES WHAT THE MACRO SAID. An invocation is REPLACED IN PLACE rather
+// than the tree above it being rebuilt, and the difference is not an optimisation:
+// an expression can sit anywhere in an arbitrarily deep expression, so rebuilding
+// would mean reconstructing every ancestor up to the enclosing statement, and
+// every ancestor reconstructed is another window to get wrong.
+//
+// The only writer is the expander.
+// AND WHAT THE NODE WAS MARKED WITH COMES WITH IT. A replacement copies the node's
+// SLOTS, and the marks live beside the array rather than in them — so a clone whose
+// root is a `#caller` escape lost the escape on the way into the slot it replaced,
+// and the identifier bound in the macro's scope, which is the one scope it exists
+// to leave. Visible only for a body that is EXACTLY `#caller(name)`, because
+// anything wrapped around it makes the escape a child rather than the root.
+pub func:ast_adopt_expr_flags = NIL(Ast->:ast, ExprId:dst, ExprId:src) {
+    if (dst.index < 1i32) { fail 7i32; }
+    if (dst.index >= ast.expr_count) { fail 7i32; }
+    if (src.index < 1i32) { fail 7i32; }
+    if (src.index >= ast.expr_count) { fail 7i32; }
+    ast.expr_flags[dst.index => int64] = ast.expr_flags[dst.index => int64]
+                                       | ast.expr_flags[src.index => int64];
+    pass NIL;
+};
+
+pub func:ast_replace_expr = NIL(Ast->:ast, ExprId:id, ExprNode:n) {
+    if (id.index < 1i32) { fail 7i32; }
+    if (id.index >= ast.expr_count) { fail 7i32; }
+    ast.exprs[id.index => int64] = n;
+    pass NIL;
+};
+
+pub func:ast_replace_stmt = NIL(Ast->:ast, StmtId:id, StmtNode:n) {
+    if (id.index < 1i32) { fail 7i32; }
+    if (id.index >= ast.stmt_count) { fail 7i32; }
+    ast.stmts[id.index => int64] = n;
+    pass NIL;
+};
+
+// DETACHED, AND SAID SO. When an invocation is instantiated its own subtree stops
+// being part of the program — the arguments were CLONED into the body, so the
+// originals are referenced by nothing.
+//
+// They cannot simply be left. Two audits scan the whole array rather than walking
+// the tree, precisely so that a walk with a hole cannot hide from them
+// (`resolve_audit`, and the recorded-type sweep in `tests/frontend/expr_types.npk`),
+// and to those a detached identifier is an unbound one and a detached expression
+// is an untyped one. Blanking is how the expander tells them the truth: this node
+// is not in the program.
+pub func:ast_blank_expr = NIL(Ast->:ast, ExprId:id) {
+    if (id.index < 1i32) { fail 7i32; }
+    if (id.index >= ast.expr_count) { fail 7i32; }
+    ExprNode:n = ast.exprs[id.index => int64];
+    ExprNode:blank = ExprNode{ kind: ExprKind.ExprNone, span: n.span,
+                               a: 0i32, b: 0i32, c: 0i32, payload: 0i64,
+                               width: NumWidth.WNone };
+    ast.exprs[id.index => int64] = blank;
+    ast.expr_flags[id.index => int64] = 0i32;
+    pass NIL;
+};
+
 // --- statements ---------------------------------------------------------------
 
 func:ast_grow_stmts = NIL(Ast->:ast) {
@@ -308,6 +455,8 @@ func:ast_grow_stmts = NIL(Ast->:ast) {
     wild int8->:bigger = ralloc(ast.stmts => wild int8->,
                                 (nc => int64) * #size_of<StmtNode>());
     ast.stmts = bigger => wild StmtNode->;
+    ast.stmt_flags = ralloc(ast.stmt_flags => wild int8->,
+                            (nc => int64) * #size_of<int32>()) => wild int32->;
     ast.stmt_cap = nc;
     pass NIL;
 };
@@ -320,6 +469,7 @@ pub func:ast_add_stmt = StmtId(Ast->:ast, StmtKind:kind, Span:span,
     StmtNode:n = StmtNode{ kind: kind, span: span,
                            a: a, b: b, c: c, payload: payload };
     ast.stmts[ast.stmt_count => int64] = n;
+    ast.stmt_flags[ast.stmt_count => int64] = 0i32;
     StmtId:id = StmtId{ index: ast.stmt_count };
     ast.stmt_count = ast.stmt_count + 1i32;
     pass id;

@@ -8897,3 +8897,215 @@ trait**, which `check_coherence` already refuses (0.4.6). It should keep refusin
 and the message should say which one was derived — otherwise the reader is looking
 for a second `impl` they never wrote.
 
+
+---
+
+## D-124 — A macro's reach is exactly its module, and hygiene is what decides it — **SETTLED**
+
+D-057 flipped hygiene: an identifier in a macro body resolves in the scope the
+macro was **written** in, always, and `#caller(NAME)` is the sole way to reach the
+invocation site. It did not say **how far an invocation may be from that scope**,
+and the answer turns out to decide how much of the compiler hygiene touches.
+
+**A macro is invocable only in the module that declares it.** It is not exported,
+`use` does not bind it, `pub` on it changes nothing, and a module nested inside the
+declaring one cannot reach it either.
+
+### Why this is the rule and not a restriction bolted on
+
+The defining scope and the landing scope become **the same scope**, and that
+collapses hygiene from a mechanism into a consequence:
+
+| Position | What hygiene needs | With the rule |
+|---|---|---|
+| declaration | the emitted body resolves in the defining module | it landed there — nothing to do |
+| statement | free names skip the caller's locals | the expansion is a block whose parent is the module scope |
+| expression | free names skip the caller's locals | one flag on the substituted node, one switch in `resolve_expr` |
+| type names | resolve in the defining module | no type is declared inside a function, so every type name already resolves at module scope or above |
+
+Without it, every one of those needs a **per-expansion scope carried alongside the
+one being walked** — through `resolve.npk`, `resolve_type.npk`, and the four
+`type_*.npk` walks that thread a scope down into declarations. Six walks, each
+with a call site that can be forgotten, and forgetting is silent: the name binds
+to the wrong thing and nothing reports it.
+
+### The evidence that nothing is lost
+
+**Not one of the prototype's twenty-five macro declarations is `pub`.** Every
+macro test in the corpus is a single file. Cross-module macro invocation is
+exercised nowhere and specified nowhere — it is not a feature being removed, it is
+a feature that was never written.
+
+And there is a positive argument, not only an absence. A macro that crossed a
+module boundary would mean **its body reads names the invoking module cannot see**
+— a private helper of the defining module, reached through a name the caller has
+no way to inspect. Its expansion would depend on text in a file the reader is not
+reading. That is the blueprint philosophy's failure mode stated exactly: the
+construct means something different depending on where it is invoked.
+
+### What plays the exportable-code-generation role instead
+
+`#[derive]` (D-123). That is the mechanism designed to be shipped by one module
+and applied in another, and it carries no free names at all — a derived impl is
+generated from the type it is applied to, so there is no defining scope to escape.
+The two are not competing: `macro:` is a local shorthand, `#[derive]` is the
+distributable one.
+
+### The refusal is its own code
+
+`NITPICK-MACRO-007`, not `MACRO-001`. "Names no macro" and "names a macro you
+cannot reach from here" are unrelated mistakes and only the second has an obvious
+fix, which is the same argument that gave the exhaustiveness rules three codes
+rather than one (D-120).
+
+---
+
+## D-125 — What `#name(...)` means is decided by the body, and a body decides once — **SETTLED**
+
+`#name(...)` is spelled the same in all four positions (D-046), which leaves the
+parser with one item form that could be three different nodes:
+
+```nitpick
+macro:outer = () { #inner(); func:f3 = …; };   // a declaration-position SPLICE
+macro:opt   = () { #caller(x) + 1i32; };       // an EXPRESSION that begins with one
+macro:twice = () { #setup(); #setup(); };      // two STATEMENTS
+```
+
+A splice must be a `DeclId` and a statement must be a `StmtId`, the body window is
+read as one or the other, and **the sigil does not say which**.
+
+**Reading the sigil alone was the first answer and it was wrong.** It made every
+body that began with `#` a declaration body, so `macro:opt` above was refused at
+its invocation as "not a single expression" — a true sentence about a body nobody
+wrote — and a statement macro could not invoke another statement macro at all.
+
+**The rule: a macro body is a declaration body if it contains a declaration**,
+which is what `MACRO_REFERENCE.md` §1 already said. It is decided by scanning
+tokens from the body's `{` to its match, at brace depth 1, **before the first item
+is parsed** — so every item is then read the one way the body has settled on.
+
+### The one shape this cannot classify, and what happens to it
+
+A body that is **nothing but a single invocation** — `macro:alias = () { #b(); };`
+— is whatever `b` is, and the parse cannot know. It is classified as an
+**expression body**, which is right when `b` is expression-bodied and is otherwise
+resolved at expansion: instantiated at statement position it becomes a block
+containing `#b();`, and the next round expands that in place. Both work.
+
+`comptime` folding (0.6.4) inherits the same question for `comptime(#m())` and the
+same answer: expansion precedes evaluation and runs to a fixed point first (D-057).
+
+---
+
+## D-126 — Every `#name(...)` still standing at the end of expansion is refused — **SETTLED**
+
+`#` is the compiler-directive sigil for **both** kinds of thing — the three
+builtins (`#size_of`, `#wild_ptr`, `#wild_slice`) and every macro invocation
+(D-046). Nothing checked which one a given `#name` was.
+
+The consequence was not a bad diagnostic; it was **no diagnostic**:
+
+```nitpick
+int32:b = #totally_not_a_macro_or_builtin(3i32);   // compiled clean
+```
+
+`type_of_expr_inner` has no case for `ExprBuiltinExpr`, so it fell through to type
+`0` — the **invalid** type, which exists precisely so that one bad annotation
+produces one diagnostic instead of a cascade, and which is therefore silent. A
+mistyped macro name expanded to nothing, typed as nothing, and said nothing.
+
+**After expansion reaches its fixed point, the whole expression array is scanned,
+and a surviving `#name(...)` is refused** — as `MACRO-001` if the name is unknown,
+`MACRO-007` if the macro exists elsewhere, `MACRO-008` if it is `#caller`.
+
+### It is also the proof that the expansion walk has no hole
+
+Expansion finds invocations by **walking** each module's declarations, because a
+whole-array scan cannot say which module a node is in and D-124 makes that the
+deciding question. A walk can miss a statement kind — the failure this compiler
+has paid for repeatedly — and a missed body would silently never expand.
+
+The scan is the counterpart: an invocation the walk never reached is still in the
+array, so a hole arrives as **a refusal naming the invocation** rather than as a
+program that quietly did nothing. The walk is the mechanism and the scan is the
+proof, and neither is trusted alone.
+
+**Two exemptions, both principled.** A macro body is a **template**, so the
+invocations written in one are consumed when the macro is cloned and are marked at
+parse time by id range rather than by a second walk. And the scan does not run when
+expansion has already reported — an invocation refused for wrong shape is still
+standing, and reporting it again as "names no macro" is a sentence about the
+wreckage of the first.
+
+### What this leaves open, named rather than parked
+
+The three `#` builtins are **recognised but still not typed**: `#size_of<T>()`
+returns the invalid type, so `alloc(n * #size_of<Symbol>())` — which this compiler
+writes everywhere — is not type-checked, and `#wild_ptr`'s "legal only in `wild`
+context" rule (D-019) is enforced nowhere. That is 0.4-era work the type checker
+missed, it is unblocked by nothing, and **0.6.4 is where it lands**: folding
+`#size_of<T>` is exactly what a `comptime` evaluator has to do, and it cannot fold
+what it cannot type.
+
+---
+
+## D-127 — Something writes past its own allocation, and the seed's rounding hides it — **OPEN, scheduled**
+
+Two defects, found together in cycle 0.6.2, and the second is the one that matters.
+
+### The read
+
+`npk_ralloc` copies the **new** size out of the **old** block:
+
+```llvm
+define ptr @npk_ralloc(ptr %old, i64 %n) {
+  %p = call ptr @npk_alloc(i64 %n)
+  call void @llvm.memcpy.p0.p0.i64(ptr %p, ptr %old, i64 %n, i1 false)
+```
+
+Every array growth in the compiler therefore reads past the end of the block being
+grown — twice the block's length, since growth doubles. It has never faulted
+because a bump allocator over 1 MiB chunks usually has something mapped after the
+block; it faults the first time the block sits near a chunk's end.
+
+### The write, which the fix for the read uncovered
+
+Giving every allocation a size header so `ralloc` can copy the smaller of the two
+sizes **breaks the seed**. The bisect is exact:
+
+| variant | result |
+|---|---|
+| pad every allocation by 16 bytes, return the same pointer | passes |
+| move the returned pointer 16 bytes forward, write nothing | passes |
+| write the header only when a new chunk is mmap'd | passes |
+| write 8 bytes at the start of each bump-allocated block | **segfaults** |
+
+Moving every address is harmless. **Writing into the 16-byte rounding gap is not.**
+The only reading of that is that something writes past the end of its own
+allocation and lands in the gap the allocator's round-up-to-16 leaves behind, and
+has been getting away with it for as long as the gap has been dead space.
+
+It kills exactly three tests — `tests/frontend/type_cast.npk`, `type_expr.npk` and
+`type_result.npk` — and the visible symptom is an `ExprTypes` whose `items` pointer
+reads back as null, which is a symptom of the corruption rather than its location.
+
+### Why this is not "a throwaway-seed problem"
+
+The seed is throwaway (D-085) and the runtime goes with it. The **writer** may not
+be: the seed compiles this compiler, so the out-of-bounds write is either in the
+code the seed emits or in `src/` itself, and only one of those disappears with the
+seed. Until it is found, which it is cannot be stated.
+
+An out-of-bounds write is also precisely what the Astrée run exists to find, and
+finding it there rather than here would spend the one attempt on it.
+
+### What unblocks it
+
+A **poisoning allocator**: fill the rounding gap with a known byte pattern at
+allocation and verify it at every later allocation. That names the writer at the
+moment it happens instead of leaving a bisect to infer it from a crash three
+allocations later. It is a change to `npk_alloc` alone, it needs no source changes,
+and it can be run under the existing harness.
+
+Scheduled before Phase A closes. **Neither defect is fixed yet** — the read's fix
+is blocked on the write, because the header is what exposes it.

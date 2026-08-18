@@ -39,6 +39,7 @@ use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
+use "../builtins.npk".*;
 use "macro_codes.npk".*;
 
 // How deep one invocation may nest, and how many rounds the fixed-point loop may
@@ -50,10 +51,21 @@ pub func:EXPAND_ROUNDS = int32() { pass 32i32; };
 // bounded like every other structural walk in this compiler.
 pub func:CLONE_FUEL = int32() { pass 512i32; };
 
-// A macro, found by name. One entry per `macro:` declaration in the program.
+// A macro, found by name AND by the module that declared it. One entry per
+// `macro:` declaration in the program.
+//
+// A MACRO'S REACH IS EXACTLY ITS MODULE (D-124). It is not exported, not reached
+// by `use`, and not visible to a module nested inside the one that declares it.
+// The reason is hygiene: an identifier in a macro body resolves where the macro
+// was WRITTEN (D-057), and confining the invocation to that same module makes the
+// defining scope and the landing scope the same scope. A macro that could cross a
+// module boundary would need every later pass to carry a second scope alongside
+// the one it is walking — for a form nothing in the corpus writes, since not one
+// of the prototype's twenty-five macro declarations is `pub`.
 pub struct:MacroEntry = {
     int32:name;     // intern index
     int32:decl;     // the `MacroDecl` node
+    int32:owner;    // the module declaration it is a member of
 };
 
 pub struct:MacroTable = {
@@ -75,6 +87,10 @@ pub struct:Expander = {
     int32:params_count;
     int32:args_start;
     int32:args_count;
+
+    // THE MODULE BEING EXPANDED. A macro is invocable only in the module that
+    // declares it (D-124), so every lookup is a lookup in this one.
+    int32:cur_module;
 
     // Set when a bound was exceeded, so the caller stops rather than looping.
     bool:blown;
@@ -101,9 +117,10 @@ func:macrotable_grow = NIL(MacroTable->:t) {
     pass NIL;
 };
 
-pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl) {
+pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl,
+                              int32:owner) {
     if (t.count >= t.cap) { drop macrotable_grow(t); }
-    MacroEntry:e = MacroEntry{ name: name, decl: decl };
+    MacroEntry:e = MacroEntry{ name: name, decl: decl, owner: owner };
     t.items[t.count => int64] = e;
     t.count = t.count + 1i32;
     pass NIL;
@@ -114,13 +131,29 @@ pub func:macrotable_add = NIL(MacroTable->:t, int32:name, int32:decl) {
 // LAST DECLARATION WINS IS NOT THE RULE — the first is returned, and a duplicate
 // is a name declared twice, which the resolver already refuses for every other
 // declaration kind. Nothing here needs to arbitrate.
-pub func:macrotable_find = int32(MacroTable->:t, int32:name) {
+pub func:macrotable_find = int32(MacroTable->:t, int32:name, int32:owner) {
     int32:i = 0i32;
     while (i < t.count) {
-        if ((t.items[i => int64]).name == name) { pass ((t.items[i => int64]).decl); }
+        MacroEntry:e = t.items[i => int64];
+        if (e.name == name) {
+            if (e.owner == owner) { pass e.decl; }
+        }
         i = i + 1i32;
     }
     pass (0i32 - 1i32);
+};
+
+// THE SAME NAME, DECLARED SOMEWHERE ELSE. Asked only after the lookup above has
+// failed, and only so the refusal can say WHICH of the two things went wrong: a
+// name nobody declared and a name declared in another module read identically
+// otherwise, and they are unrelated mistakes.
+pub func:macrotable_find_elsewhere = bool(MacroTable->:t, int32:name) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        if ((t.items[i => int64]).name == name) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 func:expand_err = NIL(Expander->:x, string:code, string:msg, Span:sp) {
@@ -191,8 +224,16 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) {
 
     int32:shape = raw expr_shape(n.kind);
 
+    // A LEAF CARRIES ITS WIDTH, and `ast_add_expr` does not take one — it sets
+    // `WNone`, which is the encoding for "this literal was written without a
+    // suffix". So a cloned `3i32` came out as a cloned `3`, and the only place that
+    // showed was where nothing supplied a context type: `#doubled(3i32) +
+    // #doubled(10i32)` reported "this literal has no width suffix" about a literal
+    // that plainly had one. Declaration position hid it completely, because a
+    // `pass` takes its type from the function's return type.
     if (shape == (raw EXPR_SHAPE_LEAF())) {
-        pass (relay ast_add_expr(x.ast, n.kind, n.span, n.a, n.b, n.c, n.payload));
+        pass (relay ast_add_expr_w(x.ast, n.kind, n.span, n.a, n.b, n.c,
+                                   n.payload, n.width));
     }
     if (shape == (raw EXPR_SHAPE_ONE())) {
         ExprId:a = relay clone_expr(x, raw expr_lhs(n), f);
@@ -231,6 +272,14 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) {
     // A BUILTIN'S LAYOUT IS THE OPPOSITE OF A CALL'S — slot `a` is the generic
     // count and the payload is the name, where a call has it the other way round.
     if (n.kind == ExprKind.ExprBuiltinExpr) {
+        // `#caller(NAME)` IS CONSUMED HERE, and nowhere else. It is the sole way
+        // for a macro body to reach the invocation site (D-057), and the clone is
+        // the only moment at which "inside a macro body" is a fact rather than a
+        // guess — so one that survives to the audit was written somewhere it means
+        // nothing, and is refused there.
+        if (relay is_caller_form(x, n)) {
+            pass (relay clone_caller(x, n));
+        }
         pass (relay clone_call(x, n, raw builtin_generic_count(n), f));
     }
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
@@ -249,6 +298,53 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) {
         n.span);
     x.blown = true;
     pass (raw expr_none());
+};
+
+// IS THIS `#caller(...)`? By name only — whether the FORM is well built is
+// `clone_caller`'s question, and answering both here would make a malformed
+// `#caller` silently clone as an ordinary builtin instead of being reported.
+pub func:is_caller_form = bool(Expander->:x, ExprNode:n) {
+    if (n.kind != ExprKind.ExprBuiltinExpr) { pass false; }
+    string:t = relay intern_get(x.interns, raw builtin_name(n));
+    pass (raw string_eq(t, "caller"));
+};
+
+// `#caller(NAME)` BECOMES A BARE IDENTIFIER, MARKED. The mark is the whole
+// mechanism: the node sits lexically at the invocation site, and `HYG_CALLER` is
+// what tells the resolver to bind it there rather than in the scope the enclosing
+// expansion switched to.
+//
+// The argument is copied by NAME rather than cloned, and that is deliberate:
+// `#caller(x)` names something in the caller's scope, so substituting a macro
+// parameter into it would be resolving the caller's name against the macro's
+// arguments — the one direction hygiene exists to prevent.
+func:clone_caller = ExprId(Expander->:x, ExprNode:n) {
+    int32:gc = raw builtin_generic_count(n);
+    int32:total = raw expr_list_count(n);
+    if (gc != 0i32) {
+        drop expand_err(x, raw MACRO_CALLER_FORM(),
+            "`#caller` takes no generic arguments; it names something at the invocation site, and a name has no type parameters",
+            n.span);
+        pass (raw expr_none());
+    }
+    if (total != 1i32) {
+        drop expand_err(x, raw MACRO_CALLER_FORM(),
+            "`#caller` takes exactly one argument, the name to resolve at the invocation site",
+            n.span);
+        pass (raw expr_none());
+    }
+    ExprId:a = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), 0i32) };
+    ExprNode:an = relay ast_expr(x.ast, a);
+    if (an.kind != ExprKind.ExprIdentifierExpr) {
+        drop expand_err(x, raw MACRO_CALLER_FORM(),
+            "`#caller` takes a bare name; an expression written here would be evaluated in the macro's scope, which is the scope it exists to escape",
+            n.span);
+        pass (raw expr_none());
+    }
+    ExprId:out = relay ast_add_expr(x.ast, ExprKind.ExprIdentifierExpr, an.span,
+                                    0i32, 0i32, 0i32, an.payload);
+    drop ast_set_expr_flag(x.ast, out, raw HYG_CALLER());
+    pass out;
 };
 
 // AN ARGUMENT IS CLONED IN THE CALLER'S SUBSTITUTION CONTEXT, WHICH IS NONE.
@@ -586,8 +682,13 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) {
     if (d.kind == DeclKind.DeclStructDecl) { pass (relay clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclEnumDecl)   { pass (relay clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclTraitDecl)  { pass (relay clone_item(x, d, f)); }
-    if (d.kind == DeclKind.DeclImplDecl)   { pass (relay clone_item(x, d, f)); }
     if (d.kind == DeclKind.DeclModuleDecl) { pass (relay clone_item(x, d, f)); }
+
+    // AN `impl` IS NOT AN ITEM. Five header slots against four, and in a different
+    // order — so cloning one through `clone_item` read the trait's type id as the
+    // member count. Shipped in 0.6.1 and never fired, because it takes a macro body
+    // containing an `impl` to reach, and none of the tests had one.
+    if (d.kind == DeclKind.DeclImplDecl) { pass (relay clone_impl(x, d, f)); }
 
     // A NESTED INVOCATION IS COPIED THROUGH AND EXPANDS ON THE NEXT ROUND. That is
     // what makes the fixed point a fixed point rather than a single pass: `#outer()`
@@ -603,6 +704,40 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) {
         d.span);
     x.blown = true;
     pass (raw decl_none());
+};
+
+func:clone_impl = DeclId(Expander->:x, DeclNode:d, int32:fuel) {
+    int32:gc = raw impl_generic_count(x.ast, d);
+    int32:mc = raw impl_member_count(x.ast, d);
+    int32:ac = raw impl_attr_count(x.ast, d);
+
+    int32:mark = raw ast_scratch_mark(x.ast);
+    // Target and trait are TYPE ids and are copied through, as every other type in
+    // a cloned body is.
+    drop ast_scratch_push(x.ast, (raw impl_target(x.ast, d)).index);
+    drop ast_scratch_push(x.ast, (raw impl_trait(x.ast, d)).index);
+    drop ast_scratch_push(x.ast, mc);
+    drop ast_scratch_push(x.ast, ac);
+    drop ast_scratch_push(x.ast, gc);
+
+    int32:g = 0i32;
+    while (g < gc) {
+        drop ast_scratch_push(x.ast, (raw impl_generic(x.ast, d, g)).index);
+        g = g + 1i32;
+    }
+    int32:m = 0i32;
+    while (m < mc) {
+        DeclId:c = relay clone_decl(x, raw impl_member(x.ast, d, m), fuel);
+        drop ast_scratch_push(x.ast, c.index);
+        m = m + 1i32;
+    }
+    int32:a2 = 0i32;
+    while (a2 < ac) {
+        drop ast_scratch_push(x.ast, (raw impl_attr(x.ast, d, a2)).index);
+        a2 = a2 + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+    pass (relay ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
 };
 
 func:clone_flat_decl = DeclId(Expander->:x, DeclNode:d) {
@@ -646,6 +781,577 @@ func:clone_item = DeclId(Expander->:x, DeclNode:d, int32:fuel) {
     pass (relay ast_add_decl(x.ast, d.kind, d.span, d.a, w.start, w.count, d.payload));
 };
 
+// --- invocations inside a body ----------------------------------------------------
+//
+// EXPANSION AT MODULE LEVEL WAS ONLY ONE OF THE FOUR POSITIONS. `#name()` also
+// stands as a STATEMENT and as an EXPRESSION, and until this existed neither
+// expanded — a `#doubled(3i32)` in a function body stayed a `BuiltinExpr` that
+// nothing validated, nothing typed and nothing walked. It reached the end of the
+// frontend as the INVALID type, which is silent by design, so a program full of
+// invocations that did nothing at all checked clean.
+//
+// SUBSTITUTION IS IN PLACE. An expression can sit anywhere in an arbitrarily deep
+// expression, so rebuilding the tree above it would mean reconstructing every
+// ancestor up to the enclosing statement. `ast_replace_expr` writes the expansion
+// over the invocation instead, which leaves every window in the program untouched.
+
+// The macro this expression invokes, or -1. Silent: `#size_of<T>()` is a builtin
+// and not a macro, and telling those apart is the AUDIT's job at the end, once
+// every round has had its chance to expand.
+func:macro_here = int32(Expander->:x, ExprNode:n) {
+    if (n.kind != ExprKind.ExprBuiltinExpr) { pass (0i32 - 1i32); }
+    pass (raw macrotable_find(@x.macros, raw builtin_name(n), x.cur_module));
+};
+
+// ARITY, AND THE BINDING IT ESTABLISHES. Returns whether the invocation may be
+// instantiated; on `true` the expander's substitution context is the invocation's.
+func:bind_invocation = bool(Expander->:x, DeclNode:md, ExprNode:inv, Span:at) {
+    int32:pcount = raw macro_param_count(x.ast, md);
+    int32:gcount = raw builtin_generic_count(inv);
+    int32:acount = (raw expr_list_count(inv)) - gcount;
+    if (acount != pcount) {
+        string:n1 = relay string_concat("`#", relay intern_get(x.interns,
+                                                              raw builtin_name(inv)));
+        string:n2 = relay string_concat(n1, "` takes ");
+        string:n3 = relay string_concat(n2, raw int_to_string(pcount => int64));
+        string:n4 = relay string_concat(n3, " argument(s) and this passes ");
+        string:n5 = relay string_concat(n4, raw int_to_string(acount => int64));
+        drop expand_err(x, raw MACRO_ARITY(), n5, at);
+        pass false;
+    }
+    x.params_start = (raw macro_param_span(x.ast, md)).start;
+    x.params_count = pcount;
+    x.args_start = (raw expr_list_start(inv)) + gcount;
+    x.args_count = acount;
+    pass true;
+};
+
+// DETACHED, AND BLANKED. Once an invocation is instantiated its own subtree is
+// referenced by nothing — the arguments were CLONED into the body, so the
+// originals are dead. Two whole-array audits would read a dead identifier as an
+// unbound one, so the expander says so rather than leaving them to be guessed at.
+//
+// Driven by `expr_shape` and the four custom kinds, exactly like the clone. A kind
+// this misses leaves a live-looking dead node rather than corrupting anything, so
+// it reports and carries on instead of blowing the expansion.
+func:blank_tree = NIL(Expander->:x, ExprId:id, int32:fuel) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (fuel <= 0i32) { pass NIL; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprNone) { pass NIL; }
+    int32:f = fuel - 1i32;
+    int32:shape = raw expr_shape(n.kind);
+
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop blank_tree(x, raw expr_callee(n), f);
+        drop blank_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                          (raw expr_list_count(n)) - (raw expr_generic_count(n)), f);
+    } else {
+        if (n.kind == ExprKind.ExprBuiltinExpr) {
+            drop blank_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                              (raw expr_list_count(n)) - (raw builtin_generic_count(n)), f);
+        } else {
+            if (n.kind == ExprKind.ExprStructLiteralExpr) {
+                int32:cnt = raw expr_list_count(n);
+                int32:i = 1i32;
+                while (i < cnt) {
+                    drop blank_tree(x, ExprId{ index: raw ast_id_at(x.ast,
+                                     raw expr_list_start(n), i) }, f);
+                    i = i + 2i32;
+                }
+            } else {
+                if (n.kind == ExprKind.ExprPickExpr) {
+                    // AN ARM IS A STATEMENT and statements are not blanked: an
+                    // expression-`pick` inside an invocation's arguments is a form
+                    // nothing writes, and blanking half of one would be worse than
+                    // leaving it whole.
+                    drop blank_tree(x, raw pickx_selector(n), f);
+                } else {
+                    if (shape == (raw EXPR_SHAPE_LIST())) {
+                        drop blank_window(x, raw expr_list_start(n),
+                                          raw expr_list_count(n), f);
+                    }
+                    if (shape == (raw EXPR_SHAPE_ONE())) {
+                        drop blank_tree(x, raw expr_lhs(n), f);
+                    }
+                    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+                        drop blank_tree(x, raw expr_lhs(n), f);
+                        drop blank_window(x, raw expr_list_start(n),
+                                          raw expr_list_count(n), f);
+                    }
+                    if (shape == (raw EXPR_SHAPE_TWO())) {
+                        drop blank_tree(x, raw expr_lhs(n), f);
+                        drop blank_tree(x, raw expr_rhs(n), f);
+                    }
+                    if (shape == (raw EXPR_SHAPE_THREE())) {
+                        drop blank_tree(x, raw expr_lhs(n), f);
+                        drop blank_tree(x, raw expr_rhs(n), f);
+                        drop blank_tree(x, raw expr_third(n), f);
+                    }
+                }
+            }
+        }
+    }
+    drop ast_blank_expr(x.ast, id);
+    pass NIL;
+};
+
+func:blank_window = NIL(Expander->:x, int32:start, int32:count, int32:fuel) {
+    int32:i = 0i32;
+    while (i < count) {
+        drop blank_tree(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, fuel);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// AN EXPRESSION-BODIED MACRO, SUBSTITUTED WHERE IT WAS INVOKED.
+//
+// Clone, copy the clone's ROOT over the invocation, then blank the clone's root.
+// The children are shared rather than copied, so the only node written twice is
+// the one being replaced and the only node left over is the clone's own root —
+// which is blanked, so nothing is orphaned. Writing the clone directly into the
+// invocation's slot would be one step shorter and would need the clone to know
+// where its result was going, which is the coupling this avoids.
+func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) {
+    DeclNode:md = relay ast_decl(x.ast, DeclId{ index: decl });
+    if ((raw macro_body_kind(x.ast, md)) != (raw MACRO_BODY_EXPR())) {
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            "this macro's body is not a single expression, so it cannot stand where a value is expected",
+            inv.span);
+        pass false;
+    }
+    if (!(relay bind_invocation(x, md, inv, inv.span))) { pass false; }
+
+    // THE BODY WINDOW HOLDS A `StmtId`, NOT AN `ExprId`. An expression body is one
+    // EXPRESSION STATEMENT — that is how the parser recognises the shape — so the
+    // expression is a step further in, and reading the window entry as an `ExprId`
+    // clones whichever expression happens to sit at that index. It is the same
+    // slot-means-two-things trap the builtin's generic count sprang, and it is
+    // silent in exactly the same way: the wrong node is a real node, so the clone
+    // succeeds and the program means something nobody wrote.
+    StmtNode:bs = relay ast_stmt(x.ast, StmtId{ index: raw macro_body_at(x.ast, md, 0i32) });
+    if (bs.kind != StmtKind.StmtExprStmt) {
+        drop expand_err(x, raw MACRO_INTERNAL(),
+            "this macro's body was classified as an expression but does not hold one",
+            inv.span);
+        pass false;
+    }
+
+    int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
+    int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+    ExprId:c = relay clone_expr(x, ExprId{ index: bs.a }, raw CLONE_FUEL());
+    x.params_start = saved_ps;  x.params_count = saved_pc;
+    x.args_start = saved_as;    x.args_count = saved_ac;
+
+    if (raw expr_is_none(c)) { pass false; }
+
+    drop blank_window(x, (raw expr_list_start(inv)) + (raw builtin_generic_count(inv)),
+                      (raw expr_list_count(inv)) - (raw builtin_generic_count(inv)),
+                      raw CLONE_FUEL());
+
+    ExprNode:cn = relay ast_expr(x.ast, c);
+    drop ast_replace_expr(x.ast, id, cn);
+    drop ast_adopt_expr_flags(x.ast, id, c);
+    drop ast_blank_expr(x.ast, c);
+
+    // BOTH MARKS CAN LAND ON ONE NODE, and the order the resolver applies them in
+    // is what makes that right rather than a contradiction: the root switches the
+    // scope and records where the invocation was, and the escape then reads that
+    // record. A body of exactly `#caller(name)` is the case.
+    drop ast_set_expr_flag(x.ast, id, raw HYG_ROOT());
+    pass true;
+};
+
+// A STATEMENT-BODIED MACRO BECOMES A BLOCK.
+//
+// NOT A RUN OF STATEMENTS SPLICED INTO THE CALLER'S BLOCK, and the block is what
+// makes hygiene structural rather than a check. A `int32:tmp = …` in the body
+// lives in the block's own scope: it cannot collide with a caller's `tmp`, it
+// cannot leak out to be read after the invocation, and the block's PARENT is the
+// module scope, so a free name in the body walks up to where the macro was written
+// instead of into the caller's locals. One node buys the whole rule.
+func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
+                             ExprNode:inv, int32:decl, Span:at) {
+    DeclNode:md = relay ast_decl(x.ast, DeclId{ index: decl });
+    if (!(relay bind_invocation(x, md, inv, at))) { pass false; }
+
+    int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
+    int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+
+    int32:bcount = raw macro_body_count(x.ast, md);
+    int32:mark = raw ast_scratch_mark(x.ast);
+    int32:i = 0i32;
+    while (i < bcount) {
+        StmtId:cs = relay clone_stmt(x, StmtId{ index: raw macro_body_at(x.ast, md, i) },
+                                     raw CLONE_FUEL());
+        drop ast_scratch_push(x.ast, cs.index);
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+
+    x.params_start = saved_ps;  x.params_count = saved_pc;
+    x.args_start = saved_as;    x.args_count = saved_ac;
+
+    // THE WHOLE INVOCATION, not just its arguments. Where an expression-position
+    // expansion is written OVER the invocation's own node, this one replaces the
+    // STATEMENT — so the invocation expression is left behind, pointed at by
+    // nothing, and the audit would find it standing there and refuse a program
+    // that had expanded correctly.
+    drop blank_tree(x, inv_id, raw CLONE_FUEL());
+
+    StmtNode:blk = StmtNode{ kind: StmtKind.StmtBlockStmt, span: at,
+                             a: 0i32, b: w.start, c: w.count, payload: 0i64 };
+    drop ast_replace_stmt(x.ast, id, blk);
+    drop ast_set_stmt_flag(x.ast, id, raw HYG_ROOT());
+    pass true;
+};
+
+// THE WALK THAT FINDS THEM. Per MODULE rather than over the whole array, because
+// a macro is invocable only where it was declared (D-124) and an array scan cannot
+// say which module a node is in.
+//
+// A WALK CAN HAVE A HOLE — a statement kind nobody added a case for, whose
+// contents are then never visited. That is the failure this compiler has paid for
+// four times, so the walk is not trusted on its own: `expand_audit` scans the
+// whole expression array afterwards and refuses any invocation that is still
+// standing. The walk is the mechanism and the scan is the proof, and a hole in the
+// first shows up as a refusal rather than as a program that quietly did nothing.
+
+func:expand_in_expr = bool(Expander->:x, ExprId:id) {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    if (n.kind == ExprKind.ExprNone) { pass false; }
+    drop ast_set_expr_flag(x.ast, id, raw HYG_SEEN());
+
+    int32:decl = raw macro_here(x, n);
+    if (decl >= 0i32) {
+        pass (relay instantiate_expr(x, id, n, decl));
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    bool:hit = false;
+
+    if (n.kind == ExprKind.ExprCallExpr) {
+        if (relay expand_in_expr(x, raw expr_callee(n))) { hit = true; }
+        if (relay expand_in_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                                   (raw expr_list_count(n)) - (raw expr_generic_count(n)))) { hit = true; }
+        pass hit;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        pass (relay expand_in_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                                     (raw expr_list_count(n)) - (raw builtin_generic_count(n))));
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            if (relay expand_in_expr(x, ExprId{ index: raw ast_id_at(x.ast,
+                                       raw expr_list_start(n), i) })) { hit = true; }
+            i = i + 2i32;
+        }
+        pass hit;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        if (relay expand_in_expr(x, raw pickx_selector(n))) { hit = true; }
+        if (relay expand_in_stmt_window(x, raw pickx_arm_start(n),
+                                        raw pickx_arm_count(n))) { hit = true; }
+        pass hit;
+    }
+
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass false; }
+    if (shape == (raw EXPR_SHAPE_NONE())) { pass false; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (relay expand_in_window(x, raw expr_list_start(n), raw expr_list_count(n)));
+    }
+    if (relay expand_in_expr(x, raw expr_lhs(n))) { hit = true; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass hit; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        if (relay expand_in_window(x, raw expr_list_start(n),
+                                   raw expr_list_count(n))) { hit = true; }
+        pass hit;
+    }
+    if (relay expand_in_expr(x, raw expr_rhs(n))) { hit = true; }
+    if (shape == (raw EXPR_SHAPE_THREE())) {
+        if (relay expand_in_expr(x, raw expr_third(n))) { hit = true; }
+    }
+    pass hit;
+};
+
+func:expand_in_window = bool(Expander->:x, int32:start, int32:count) {
+    bool:hit = false;
+    int32:i = 0i32;
+    while (i < count) {
+        if (relay expand_in_expr(x, ExprId{ index: raw ast_id_at(x.ast, start, i) })) {
+            hit = true;
+        }
+        i = i + 1i32;
+    }
+    pass hit;
+};
+
+func:expand_in_stmt_window = bool(Expander->:x, int32:start, int32:count) {
+    bool:hit = false;
+    int32:i = 0i32;
+    while (i < count) {
+        if (relay expand_in_stmt(x, StmtId{ index: raw ast_id_at(x.ast, start, i) })) {
+            hit = true;
+        }
+        i = i + 1i32;
+    }
+    pass hit;
+};
+
+func:expand_in_stmt = bool(Expander->:x, StmtId:id) {
+    if (raw stmt_is_none(id)) { pass false; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+    if (s.kind == StmtKind.StmtNone) { pass false; }
+
+    // A BARE INVOCATION AS A STATEMENT. Only `StmtExprStmt` — `discard(#m())` and
+    // `prove(#m())` carry an expression too, but what stands there is a VALUE, so
+    // an expression-bodied macro belongs to the expression walk below and a
+    // statement-bodied one does not fit at all.
+    if (s.kind == StmtKind.StmtExprStmt) {
+        ExprId:ex = ExprId{ index: s.a };
+        if (!(raw expr_is_none(ex))) {
+            ExprNode:n = relay ast_expr(x.ast, ex);
+            int32:decl = raw macro_here(x, n);
+            if (decl >= 0i32) {
+                DeclNode:md = relay ast_decl(x.ast, DeclId{ index: decl });
+                int32:bk = raw macro_body_kind(x.ast, md);
+                if (bk == (raw MACRO_BODY_STMTS())) {
+                    pass (relay instantiate_stmt(x, id, ex, n, decl, s.span));
+                }
+                if (bk == (raw MACRO_BODY_DECLS())) {
+                    drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+                        "this macro's body is declarations, and a declaration cannot stand inside a function body",
+                        s.span);
+                    pass false;
+                }
+                // An expression body: fall through, and the expression walk
+                // substitutes it in place as it would anywhere else.
+            }
+        }
+    }
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        pass (relay expand_in_stmt_window(x, raw stmt_list_start(s),
+                                          raw stmt_list_count(s)));
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        pass (relay expand_in_expr(x, relay stmt_decl_init(x.ast, s)));
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw stmt_target(s))) { hit = true; }
+        if (relay expand_in_expr(x, raw stmt_assigned(s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw stmt_cond(s))) { hit = true; }
+        if (relay expand_in_stmt(x, raw stmt_then(s))) { hit = true; }
+        if (relay expand_in_stmt(x, raw stmt_else(s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw stmt_cond(s))) { hit = true; }
+        if (relay expand_in_stmt(x, relay stmt_body(x.ast, s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, relay stmt_for_iter(x.ast, s))) { hit = true; }
+        if (relay expand_in_stmt(x, relay stmt_for_body(x.ast, s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw stmt_cond(s))) { hit = true; }
+        if (relay expand_in_stmt(x, relay stmt_when_body(x.ast, s))) { hit = true; }
+        if (relay expand_in_stmt(x, relay stmt_when_then(x.ast, s))) { hit = true; }
+        if (relay expand_in_stmt(x, relay stmt_when_end(x.ast, s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) { pass (relay expand_in_counted(x, s)); }
+    if (s.kind == StmtKind.StmtTillStmt) { pass (relay expand_in_counted(x, s)); }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw pick_selector(s))) { hit = true; }
+        if (relay expand_in_stmt_window(x, raw pick_arm_start(s),
+                                        raw pick_arm_count(s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        bool:hit = false;
+        if (relay expand_in_expr(x, raw arm_guard(s))) { hit = true; }
+        if (relay expand_in_stmt(x, raw arm_body(s))) { hit = true; }
+        pass hit;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        pass (relay expand_in_stmt(x, StmtId{ index: s.a }));
+    }
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass false; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass false; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass false; }
+    if (s.kind == StmtKind.StmtPassStmt)   { pass (relay expand_in_expr(x, ExprId{ index: s.a })); }
+    if (s.kind == StmtKind.StmtFailStmt)   { pass (relay expand_in_expr(x, ExprId{ index: s.a })); }
+    if (s.kind == StmtKind.StmtReturnStmt) { pass (relay expand_in_expr(x, ExprId{ index: s.a })); }
+    if (s.kind == StmtKind.StmtExitStmt)   { pass (relay expand_in_expr(x, ExprId{ index: s.a })); }
+    if (raw stmt_carries_expr(s.kind))     { pass (relay expand_in_expr(x, ExprId{ index: s.a })); }
+
+    drop expand_err(x, raw MACRO_INTERNAL(),
+        "this statement kind has no entry in the expansion walk, so an invocation written inside one would never be found",
+        s.span);
+    x.blown = true;
+    pass false;
+};
+
+func:expand_in_counted = bool(Expander->:x, StmtNode:s) {
+    bool:hit = false;
+    int32:argc = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < argc) {
+        if (relay expand_in_expr(x, relay stmt_counted_arg(x.ast, s, i))) { hit = true; }
+        i = i + 1i32;
+    }
+    if (relay expand_in_stmt(x, raw stmt_counted_body(s))) { hit = true; }
+    pass hit;
+};
+
+// THE BODIES A DECLARATION OWNS. Not the macro declarations themselves: a body
+// expands when it is INSTANTIATED, and expanding it in place would substitute the
+// inner macro's parameters against nothing and leave the outer's unbound.
+func:expand_in_decl = bool(Expander->:x, DeclId:id) {
+    if (raw decl_is_none(id)) { pass false; }
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclMacroDecl)   { pass false; }
+    if (d.kind == DeclKind.DeclModuleDecl)  { pass false; }
+    if (d.kind == DeclKind.DeclMacroSplice) { pass false; }
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        pass (relay expand_in_stmt(x, raw fn_body(x.ast, d)));
+    }
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        pass (relay expand_in_expr(x, raw global_init(d)));
+    }
+    if (d.kind == DeclKind.DeclStructDecl) { pass (relay expand_in_members(x, d)); }
+    if (d.kind == DeclKind.DeclEnumDecl)   { pass (relay expand_in_members(x, d)); }
+    if (d.kind == DeclKind.DeclTraitDecl)  { pass (relay expand_in_members(x, d)); }
+
+    // AN `impl` HAS A LAYOUT OF ITS OWN and is not an "item". Its header is five
+    // slots — target, trait, member count, attribute count, generic count — where
+    // an item's is four, so `item_member_count` on one reads the TRAIT'S TYPE ID as
+    // a member count and walks that many slots of whatever follows.
+    //
+    // The symptom was not a wrong answer. It was a segmentation fault in files with
+    // no macro in them at all, dependent on how big the rest of the program
+    // happened to be, because the count read was a type index that could be
+    // anything. `impl_member_count` and `impl_member` are the accessors, and they
+    // exist for exactly this reason.
+    if (d.kind == DeclKind.DeclImplDecl) {
+        bool:hit = false;
+        int32:im = raw impl_member_count(x.ast, d);
+        int32:ii = 0i32;
+        while (ii < im) {
+            if (relay expand_in_decl(x, raw impl_member(x.ast, d, ii))) { hit = true; }
+            ii = ii + 1i32;
+        }
+        pass hit;
+    }
+    if (d.kind == DeclKind.DeclExternBlock) {
+        bool:hit = false;
+        int32:n = raw decl_win_count(d);
+        int32:i = 0i32;
+        while (i < n) {
+            if (relay expand_in_decl(x, DeclId{ index: raw ast_id_at(x.ast,
+                                     raw decl_win_start(d), i) })) { hit = true; }
+            i = i + 1i32;
+        }
+        pass hit;
+    }
+    pass false;
+};
+
+func:expand_in_members = bool(Expander->:x, DeclNode:d) {
+    bool:hit = false;
+    int32:n = raw item_member_count(x.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        if (relay expand_in_decl(x, raw item_member(x.ast, d, i))) { hit = true; }
+        i = i + 1i32;
+    }
+    pass hit;
+};
+
+// --- the audit ------------------------------------------------------------------
+//
+// EVERY `#name(...)` LEFT STANDING IS ONE OF TWO THINGS, and neither may pass. It
+// is a compiler builtin — `#size_of`, `#wild_ptr`, `#wild_slice` — or it is a
+// macro that does not exist here, and until this ran the second was accepted in
+// silence: `#totally_not_a_macro(3i32)` typed as INVALID, and the invalid type is
+// how the checker suppresses cascades, so it produced no diagnostic at all.
+//
+// A WHOLE-ARRAY SCAN, deliberately. It is the counterpart to the walk above and it
+// is checking the walk as much as the program: an invocation the walk never
+// reached is still in the array, so a hole in the walk arrives here as a refusal
+// naming the invocation rather than as a program that silently did nothing.
+pub func:expand_audit = NIL(Expander->:x) {
+    int32:i = 1i32;
+    while (i < (raw ast_expr_count(x.ast))) {
+        ExprId:id = ExprId{ index: i };
+        ExprNode:n = relay ast_expr(x.ast, id);
+        // A MACRO BODY IS A TEMPLATE, not program text. `#caller(x)` there is
+        // consumed by the CLONE, and a nested `#inner()` expands into the caller
+        // rather than where it is written, so neither is standing anywhere it
+        // should be refused.
+        if (raw ast_expr_flag(x.ast, id, raw HYG_IN_MACRO())) {
+            i = i + 1i32;
+            continue;
+        }
+        if (n.kind == ExprKind.ExprBuiltinExpr) {
+            int32:name = raw builtin_name(n);
+            string:t = relay intern_get(x.interns, name);
+            if (raw string_eq(t, "caller")) {
+                drop expand_err(x, raw MACRO_CALLER_FORM(),
+                    "`#caller` is legal only inside a macro body, where it names something at the invocation site; outside one there is no invocation to reach",
+                    n.span);
+            } else {
+                if (!(raw is_hash_builtin(t))) {
+                    // NEVER VISITED IS A DEFECT IN THE COMPILER, not in the
+                    // program. The walk goes everywhere an invocation can stand;
+                    // an invocation it never entered means a construct it has no
+                    // case for, and the reader has nothing to change.
+                    if (!(raw ast_expr_flag(x.ast, id, raw HYG_SEEN()))) {
+                        string:w1 = relay string_concat("`#", t);
+                        string:w2 = relay string_concat(w1,
+                            "` stands somewhere macro expansion never walks, so it was never expanded; this is a hole in the expander, not a mistake in this program");
+                        drop expand_err(x, raw MACRO_INTERNAL(), w2, n.span);
+                    } else {
+                    if (raw macrotable_find_elsewhere(@x.macros, name)) {
+                        // Declared, but not here. The macro is real and the
+                        // invocation is not reaching it.
+                        string:l1 = relay string_concat("`#", t);
+                        string:l2 = relay string_concat(l1,
+                            "` is declared in another module, and a macro is invocable only in the module that declares it");
+                        drop expand_err(x, raw MACRO_NOT_LOCAL(), l2, n.span);
+                    } else {
+                        string:m1 = relay string_concat("`#", t);
+                        string:m2 = relay string_concat(m1,
+                            "` names no macro and no compiler builtin; `#` is how both are spelled, so check the name against the macro's declaration");
+                        drop expand_err(x, raw MACRO_UNKNOWN(), m2, n.span);
+                    }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // --- the fixed-point loop ---------------------------------------------------------
 
 pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
@@ -654,7 +1360,7 @@ pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
                            macros: raw macrotable_init(),
                            params_start: 0i32, params_count: 0i32,
                            args_start: 0i32, args_count: 0i32,
-                           blown: false };
+                           cur_module: 0i32, blown: false };
     pass x;
 };
 
@@ -669,7 +1375,7 @@ pub func:collect_macros = NIL(Expander->:x, DeclId:mod_id) {
         DeclId:id = raw item_member(x.ast, m, i);
         DeclNode:d = relay ast_decl(x.ast, id);
         if (d.kind == DeclKind.DeclMacroDecl) {
-            drop macrotable_add(@x.macros, raw decl_name(d), id.index);
+            drop macrotable_add(@x.macros, raw decl_name(d), id.index, mod_id.index);
         }
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop collect_macros(x, id);
@@ -682,6 +1388,14 @@ pub func:collect_macros = NIL(Expander->:x, DeclId:mod_id) {
 // ONE ROUND over a module's members. Returns whether anything expanded, which is
 // what tells the loop whether to come back.
 pub func:expand_module = bool(Expander->:x, DeclId:mod_id) {
+    int32:saved_module = x.cur_module;
+    x.cur_module = mod_id.index;
+    bool:r = relay expand_module_here(x, mod_id);
+    x.cur_module = saved_module;
+    pass r;
+};
+
+func:expand_module_here = bool(Expander->:x, DeclId:mod_id) {
     DeclNode:m = relay ast_decl(x.ast, mod_id);
     int32:gc = raw item_generic_count(x.ast, m);
     int32:mc = raw item_member_count(x.ast, m);
@@ -698,7 +1412,10 @@ pub func:expand_module = bool(Expander->:x, DeclId:mod_id) {
         scan = scan + 1i32;
     }
     if (!found_splice) {
-        // Still descend: a nested module may have one.
+        // NO SPLICE AMONG THE MEMBERS IS NOT NOTHING TO DO. An invocation also
+        // stands as a statement and as an expression, so every member's body is
+        // walked whether or not the member list itself changed — and a nested
+        // module may have a splice of its own.
         bool:nested = false;
         int32:k = 0i32;
         while (k < mc) {
@@ -706,6 +1423,8 @@ pub func:expand_module = bool(Expander->:x, DeclId:mod_id) {
             DeclNode:d = relay ast_decl(x.ast, id);
             if (d.kind == DeclKind.DeclModuleDecl) {
                 if (relay expand_module(x, id)) { nested = true; }
+            } else {
+                if (relay expand_in_decl(x, id)) { nested = true; }
             }
             k = k + 1i32;
         }
@@ -752,6 +1471,22 @@ pub func:expand_module = bool(Expander->:x, DeclId:mod_id) {
     drop ast_scratch_set(x.ast, mark, 1i32, emitted);
     IdSpan:w = raw ast_scratch_commit(x.ast, mark);
     drop ast_set_decl_window(x.ast, mod_id, w.start, w.count);
+
+    // The members are settled for this round; now their BODIES. Read back from the
+    // node rather than from `m`, whose window is the one just replaced.
+    DeclNode:m2 = relay ast_decl(x.ast, mod_id);
+    int32:n2 = raw item_member_count(x.ast, m2);
+    int32:j = 0i32;
+    while (j < n2) {
+        DeclId:id2 = raw item_member(x.ast, m2, j);
+        DeclNode:d2 = relay ast_decl(x.ast, id2);
+        if (d2.kind == DeclKind.DeclModuleDecl) {
+            drop expand_module(x, id2);
+        } else {
+            drop expand_in_decl(x, id2);
+        }
+        j = j + 1i32;
+    }
     pass true;
 };
 
@@ -761,8 +1496,16 @@ func:expand_splice = int32(Expander->:x, DeclNode:d) {
     ExprNode:inv = relay ast_expr(x.ast, raw splice_invocation(d));
     int32:name = raw builtin_name(inv);
 
-    int32:decl = raw macrotable_find(@x.macros, name);
+    int32:decl = raw macrotable_find(@x.macros, name, x.cur_module);
     if (decl < 0i32) {
+        // NOT FOUND HERE IS TWO DIFFERENT MISTAKES and they get two codes: a name
+        // nobody declared, and a name declared in a module this one cannot reach.
+        if (raw macrotable_find_elsewhere(@x.macros, name)) {
+            string:l1 = relay string_concat("`#", relay intern_get(x.interns, name));
+            string:l2 = relay string_concat(l1, "` is declared in another module, and a macro is invocable only in the module that declares it");
+            drop expand_err(x, raw MACRO_NOT_LOCAL(), l2, d.span);
+            pass 0i32;
+        }
         string:m1 = relay string_concat("`#", relay intern_get(x.interns, name));
         string:m2 = relay string_concat(m1, "` names no macro; `#` is also how a compiler builtin is spelled, so check the name against the macro's declaration");
         drop expand_err(x, raw MACRO_UNKNOWN(), m2, d.span);
@@ -819,6 +1562,10 @@ func:expand_splice = int32(Expander->:x, DeclNode:d) {
     x.params_count = saved_pc;
     x.args_start = saved_as;
     x.args_count = saved_ac;
+
+    // The splice's own invocation is detached now — its arguments were cloned into
+    // the body — so it is blanked rather than left for the audit to find and refuse.
+    drop blank_tree(x, raw splice_invocation(d), raw CLONE_FUEL());
     pass bcount;
 };
 

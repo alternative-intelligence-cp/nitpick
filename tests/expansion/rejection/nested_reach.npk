@@ -1,0 +1,20 @@
+// expect-error: NITPICK-MACRO-007
+//
+// A NESTED MODULE IS A DIFFERENT MODULE. `file_macro` is written in the file's own
+// scope and `mod:inner` is a namespace of its own, so the invocation cannot reach
+// it — and the reason is the same one D-124 gives for the file-to-file case: the
+// defining scope would be an ancestor of the landing scope rather than the same
+// scope, so the macro's body would resolve against strictly more names than were in
+// view where it was written.
+mod:nested_reach;
+
+macro:file_macro = () { 1i32; };
+
+mod:inner = {
+    pub func:use_it = int32() {
+        int32:v = #file_macro();
+        pass v;
+    };
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

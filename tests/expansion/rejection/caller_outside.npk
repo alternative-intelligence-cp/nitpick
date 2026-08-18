@@ -1,0 +1,11 @@
+// expect-error: NITPICK-MACRO-008
+//
+// `#caller` OUTSIDE A MACRO BODY. There is no invocation to reach, so the form
+// means nothing — and a form that means nothing must not be silently ignored.
+mod:caller_outside;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = 1i32;
+    int32:w = #caller(v);
+    exit 0i32;
+};

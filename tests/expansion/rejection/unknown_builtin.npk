@@ -1,0 +1,16 @@
+// expect-error: NITPICK-MACRO-001
+//
+// `#` IS SPELLED THE SAME FOR BOTH KINDS (D-046), so a name that is neither a
+// macro nor a compiler builtin has to be refused explicitly.
+//
+// Until the audit existed this compiled clean. An unrecognised `#name(...)` was
+// never resolved, never typed, and reached the end of the frontend as the INVALID
+// type — which is the encoding the checker uses to suppress cascades, so it
+// produced no diagnostic anywhere. A mistyped macro name expanded to nothing at
+// all and said nothing about it.
+mod:unknown_builtin;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = #no_such_thing_anywhere(3i32);
+    exit 0i32;
+};

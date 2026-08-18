@@ -1,0 +1,25 @@
+// expect-error: NITPICK-MACRO-007
+//
+// A MACRO'S REACH IS EXACTLY ITS MODULE (D-124). `shared_macro` is declared in
+// `lib/exporter.npk` and marked `pub`, and this still cannot invoke it: `pub`
+// governs what a module EXPORTS, and a macro is not exported at all.
+//
+// The reason is hygiene. An identifier in a macro body resolves where the macro
+// was WRITTEN (D-057), so an invocation that crossed a module boundary would leave
+// the defining scope and the landing scope in different modules — and every later
+// pass that walks a declaration would have to carry a second scope alongside the
+// one it is in, for a form nothing writes. Not one of the prototype's twenty-five
+// macro declarations is `pub`.
+//
+// ITS OWN CODE, NOT "NAMES NO MACRO". The name is real and the mistake is about
+// reach, and only that version of the sentence tells the reader what to change.
+mod:cross_module;
+
+use "./lib/exporter.npk".*;
+
+#shared_macro();
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = raw anchor();
+    exit 0i32;
+};

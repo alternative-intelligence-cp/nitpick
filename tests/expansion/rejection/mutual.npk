@@ -2,15 +2,18 @@
 //
 // The same non-termination as direct self-recursion, reached by a route no single
 // macro's body reveals — which is why the diagnostic is reported at the module
-// rather than at an invocation: a cycle needs at least two participants and
-// blaming either one would be arbitrary.
+// rather than at an invocation: a cycle needs at least two participants and blaming
+// either one would be arbitrary.
+mod:mutual;
 
 // expect-error: NITPICK-MACRO-004
 macro:ping = () {
+    func:from_ping = int32() { pass 1i32; };
     #pong();
 };
 
 macro:pong = () {
+    func:from_pong = int32() { pass 2i32; };
     #ping();
 };
 

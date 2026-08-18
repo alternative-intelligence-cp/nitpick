@@ -205,6 +205,17 @@ pub func:impl_member = DeclId(Ast->:ast, DeclNode:d, int32:i) {
     int32:base = (raw IMPL_HDR()) + (raw impl_generic_count(ast, d));
     DeclId:m = DeclId{ index: raw d_at(ast, d, base + i) }; pass m;
 };
+// The attributes follow the members, which follow the generics. Added when the
+// macro clone needed to rebuild an `impl` and had to read the tail: a raw slot read
+// at the call site is how a window whose sections shift silently becomes a defect,
+// which is the rule stated above `ITEM_HDR` and the one an `impl` cloned as an item
+// had already broken.
+pub func:impl_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    int32:base = (raw IMPL_HDR()) + (raw impl_generic_count(ast, d))
+               + (raw impl_member_count(ast, d));
+    DeclId:a = DeclId{ index: raw d_at(ast, d, base + i) }; pass a;
+};
+
 // A blanket impl is the one whose target is a parameter it declared itself.
 pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) {
     pass ((raw impl_generic_count(ast, d)) > 0i32);
@@ -227,8 +238,11 @@ func:MACRO_HDR = int32() { pass 4i32; };
 // question — where it is safe to resume after an error — and includes `if`,
 // `while` and every statement keyword. Reading one through the other would make
 // every macro body a declaration body.
-pub func:p_at_decl_start = bool(Parser->:p) {
-    TokenKind:k = relay p_kind(p);
+// THE KEYWORDS THAT OPEN A DECLARATION, as a question about a token rather than
+// about the parser's position. Split out because the macro-body parser has to ask
+// it of a token it has not reached yet: what a body is MADE of decides how each of
+// its items is read, so the answer is needed before the first item is parsed.
+pub func:tok_starts_decl = bool(TokenKind:k) {
     if (k == TokenKind.KwPub)    { pass true; }
     if (k == TokenKind.KwFunc)   { pass true; }
     if (k == TokenKind.KwStruct) { pass true; }
@@ -240,6 +254,12 @@ pub func:p_at_decl_start = bool(Parser->:p) {
     if (k == TokenKind.KwAssoc)  { pass true; }
     if (k == TokenKind.KwExtern) { pass true; }
     if (k == TokenKind.KwOpaque) { pass true; }
+    pass (k == TokenKind.KwUse);
+};
+
+pub func:p_at_decl_start = bool(Parser->:p) {
+    TokenKind:k = relay p_kind(p);
+    if (raw tok_starts_decl(k)) { pass true; }
 
     // `#name();` COUNTS AS A DECLARATION START, and that is the whole reason a
     // nested invocation works. A macro body containing `#inner(); func:f3 = …;`
@@ -249,9 +269,50 @@ pub func:p_at_decl_start = bool(Parser->:p) {
     // clone expected a `DeclId`. It read one as the other and reported an
     // unclassified node kind, which is the symptom a heterogeneous window always
     // produces and never explains.
-    if (k == TokenKind.Hash)     { pass true; }
+    pass (k == TokenKind.Hash);
+};
 
-    pass (k == TokenKind.KwUse);
+// DOES THIS MACRO BODY CONTAIN A DECLARATION? Asked by scanning tokens from the
+// `{` to its match, before a single item is parsed.
+//
+// IT HAS TO BE ASKED FIRST, because `#name(...);` is the one item that does not
+// say what it is. Standing among declarations it is a splice and has to be a
+// `DeclId`; standing among statements it is an expression statement and has to be
+// a `StmtId`; and the window holding the body is read as one or the other, never
+// both. Deciding per item — which is what reading the sigil alone amounted to —
+// made every body that began with `#` a declaration body, so a statement macro
+// could not invoke another statement macro at all.
+//
+// The rule this implements is the one `MACRO_REFERENCE.md` section 1 already
+// states: a body CONTAINS declarations, or it does not.
+func:MACRO_BODY_SCAN = int64() { pass 65536i64; };
+
+func:p_macro_body_has_decl = bool(Parser->:p) {
+    int64:i = 0i64;
+    int32:depth = 0i32;
+    while (i < (raw MACRO_BODY_SCAN())) {
+        Token:t = relay p_peek_at(p, i);
+        if (t.kind == TokenKind.Eof) { pass false; }
+        if (t.kind == TokenKind.PLBrace) { depth = depth + 1i32; }
+        if (t.kind == TokenKind.PRBrace) {
+            depth = depth - 1i32;
+            if (depth <= 0i32) { pass false; }
+        }
+        // AT THE BODY'S OWN LEVEL ONLY. A `func:` nested inside a block is not a
+        // thing the language has, and counting one would misread a statement body
+        // whose contents merely mention a keyword.
+        if (depth == 1i32) {
+            if (raw tok_starts_decl(t.kind)) { pass true; }
+        }
+        i = i + 1i64;
+    }
+
+    // THE SCAN RAN OUT BEFORE THE BODY CLOSED. Answering either way would guess at
+    // how every item in this body is read, so it refuses instead — the same
+    // fail-closed rule the analyses use when they run out of fuel.
+    drop p_error(p, raw PARSE_UNEXPECTED(),
+        "this macro's body is too long to classify; a body is declarations, statements or one expression, and deciding which requires reading it to its closing brace");
+    pass false;
 };
 
 // WHAT A MACRO'S BODY IS MADE OF, and therefore where it may be invoked.
@@ -1037,23 +1098,52 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     int32:bmark = raw ast_scratch_mark(p.ast);
     int32:bkind = raw MACRO_BODY_STMTS();
     int32:bcount = 0i32;
+    int32:elo = raw ast_expr_count(p.ast);
+    bool:has_decl = relay p_macro_body_has_decl(p);
     drop p_expect(p, TokenKind.PLBrace);
     while (true) {
         if (relay p_at(p, TokenKind.PRBrace)) { break; }
         if (relay p_at_end(p)) { break; }
         int64:before = raw p_position(p);
-        if (raw p_at_decl_start(p)) {
-            bkind = raw MACRO_BODY_DECLS();
-            DeclId:d = relay p_parse_decl(p);
-            drop ast_scratch_push(p.ast, d.index);
+
+        // `#` IS THE ONE ITEM START THAT DOES NOT SAY WHAT IT IS, and `has_decl`
+        // above is what decides: in a declaration body it is a splice, in a
+        // statement body it is an expression statement, and the window is read as
+        // one kind or the other and never both.
+        if (has_decl) {
+            if (raw p_at_decl_start(p)) {
+                bkind = raw MACRO_BODY_DECLS();
+                DeclId:d = relay p_parse_decl(p);
+                drop ast_scratch_push(p.ast, d.index);
+            } else {
+                StmtId:st = relay p_parse_stmt(p);
+                drop ast_scratch_push(p.ast, st.index);
+            }
         } else {
-            StmtId:st = relay p_parse_stmt(p);
-            drop ast_scratch_push(p.ast, st.index);
+            StmtId:st2 = relay p_parse_stmt(p);
+            drop ast_scratch_push(p.ast, st2.index);
         }
         bcount = bcount + 1i32;
         if ((raw p_position(p)) == before) { drop p_sync(p); }
     }
     IdSpan:body = raw ast_scratch_commit(p.ast, bmark);
+
+    // EVERY EXPRESSION WRITTEN INSIDE THE BODY, MARKED. A macro body is the one
+    // place an unexpanded `#name(...)` legitimately survives to the end of
+    // expansion — it is a template, and it is consumed when the macro is CLONED,
+    // not where it stands. The audit that refuses every other surviving invocation
+    // has to be able to tell them apart.
+    //
+    // A CONTIGUOUS ID RANGE RATHER THAN A WALK, because parsing appends: every node
+    // the body produced sits between the count before it and the count after, and a
+    // range cannot have the hole a walk can. Clones do not inherit the mark, which
+    // is right — a cloned body is program text now.
+    int32:ehi = raw ast_expr_count(p.ast);
+    int32:em = elo;
+    while (em < ehi) {
+        drop ast_set_expr_flag(p.ast, ExprId{ index: em }, raw HYG_IN_MACRO());
+        em = em + 1i32;
+    }
     drop p_expect(p, TokenKind.PRBrace);
     drop p_expect(p, TokenKind.PSemi);
 

@@ -1,0 +1,19 @@
+// expect-error: NITPICK-RESOLVE-002
+//
+// A NAME THAT EXISTS ONLY AT THE CALL SITE. The macro body reads `only_local`,
+// which is a local of `main` and nothing in the scope the macro was written in.
+//
+// The prototype accepted this: it noticed the disagreement, emitted NITPICK-061 as
+// a warning, and bound to the caller's `only_local` anyway. D-057 calls that what
+// it is — "a warning is not a mechanism; it is a request that someone be paying
+// attention" — and the flipped rule makes it an error with `#caller(only_local)`
+// as the one way to say you meant it.
+mod:hygiene;
+
+macro:grab = () { only_local + 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:only_local = 3i32;
+    int32:s = #grab();
+    exit 0i32;
+};

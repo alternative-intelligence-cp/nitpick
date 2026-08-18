@@ -36,6 +36,18 @@ kind.
 
 A macro taking no parameters still declares an empty list: `macro:m = () { … };`.
 
+**A body is a declaration body if it CONTAINS a declaration** (D-125), and that is
+decided before its first item is read. It has to be: `#name(...);` standing alone
+is a splice among declarations and an expression statement among statements, and
+the sigil does not say which. Deciding per item made every body beginning with `#`
+a declaration body, so `macro:opt = () { #caller(x) + 1i32; };` was refused as "not
+a single expression" and a statement macro could not invoke another one.
+
+A body that is **nothing but a single invocation** — `macro:alias = () { #b(); };`
+— is whatever `b` is, which the parse cannot know. It is read as an expression
+body, and at statement position it becomes a block holding `#b();` that the next
+round expands. Both work.
+
 ## 2. Invoking one
 
 ```nitpick
@@ -115,6 +127,16 @@ impl:Box:Pair = { #emit_methods(); };
 **An identifier in a macro body resolves in the scope where the macro was
 written. Always.**
 
+**A macro is invocable only in the module that declares it** (D-124). It is not
+exported, `use` does not bind it, `pub` on it changes nothing, and a module nested
+inside the declaring one cannot reach it. That is what makes the sentence above
+implementable: the scope the macro was written in and the scope its expansion lands
+in are the same scope, so nothing downstream has to carry a second one. Invoking a
+macro from another module is `NITPICK-MACRO-007`.
+
+`#[derive]` (D-123) is the mechanism for code generation that crosses a module
+boundary; `macro:` is a local shorthand.
+
 ```nitpick
 int32:shared = 100i32;
 
@@ -141,6 +163,31 @@ reach the caller's scope, and naming something absent there is an error like any
 other unresolved name.
 
 `#` is the compiler-directive sigil (D-020), so this needs no new syntax shape.
+
+**It resolves the way any name at that point resolves** — reaching the caller's
+locals and, past them, the module's own names. `#caller(NAME)` means "whatever
+`NAME` means here", not "the caller's locals only". It differs from writing the
+bare name exactly when the invocation site has a local binding of it, which is the
+case it exists for.
+
+**It is checked like any other name.** Naming something absent from the invocation
+site is `NITPICK-RESOLVE-002`, and writing `#caller` outside a macro body — where
+there is no invocation to reach — is `NITPICK-MACRO-008`. An escape hatch with no
+rule would be the one path in the language worse than having no escape hatch.
+
+### How each position gets it
+
+| Invoked as | The expansion becomes | Free names resolve by |
+|---|---|---|
+| a declaration | the declarations, in this module | landing where the macro was written |
+| a statement | **a block** holding the statements | the block's parent being the module scope |
+| an expression | the expression, substituted in place | one mark on the substituted node |
+
+The **block** is worth stating rather than treating as an implementation detail. A
+`int32:tmp = …` in a statement body lives in the block's own scope: it cannot
+collide with a caller's `tmp`, it cannot be read after the invocation, and a free
+name in the body walks up past the caller's locals to the module. One node carries
+the whole rule, which is why statement-position hygiene needs no check anywhere.
 
 > **This flips the prototype (D-057).** There, an identifier resolving differently
 > in the two scopes emitted `NITPICK-061 MACRO_HYGIENE_VIOLATION` and then **kept
@@ -192,6 +239,30 @@ terminate, and one budget would report them alike.
 > **New in D-057.** Nothing in the corpus bounds the loop, so the prototype **fails
 > to terminate** on the macro above. That is unacceptable in a compiler under
 > formal verification, where termination is itself a property to be established.
+
+### Nothing is left standing
+
+**Every `#name(...)` still in the program when expansion finishes is refused**
+(D-126) — as `MACRO-001` if the name is unknown, `MACRO-007` if the macro is
+declared in another module, `MACRO-008` if it is `#caller`. Only the three
+compiler builtins survive.
+
+This closes a hole that produced no diagnostic at all rather than a bad one:
+`#totally_not_a_macro(3i32)` used to compile clean, because an unrecognised `#name`
+was never resolved, never typed, and reached the end of the frontend as the
+**invalid** type — the encoding the checker uses to suppress cascades, and
+therefore silent. A mistyped macro name expanded to nothing and said nothing.
+
+It is also how a hole in the expansion **walk** is caught. Invocations are found by
+walking each module's declarations, because an invocation's meaning depends on
+which module it is in (D-124) and a whole-array scan cannot say. A walk can miss a
+statement kind; the scan afterwards cannot, so a miss arrives as a refusal naming
+the invocation rather than as a body that quietly never expanded.
+
+A macro body is exempt, because a body is a **template** — the invocations written
+in one are consumed when the macro is cloned, not where they appear.
+
+---
 
 ## 8. `comptime`
 
@@ -281,7 +352,13 @@ Recorded as open rather than invented:
   questions are really one: both are about a macro controlling the names it emits.
 - **May a macro emit a macro?** Nothing exercises it. The fixed-point loop would
   expand the result, so it likely works by construction — which is not the same as
-  being specified.
+  being specified. Note what D-124 adds: an emitted macro would belong to the
+  module it landed in, which is where its own invocations would have to be.
+- **What does a diagnostic inside an expansion point at?** A node written in the
+  macro and instantiated at the call site has two places it came from, and it
+  currently carries the macro's. So "cannot find `only_local`" reports the line of
+  the macro BODY, not of the invocation that made it wrong. Both are true and the
+  reader needs both; 0.6.6 is where a diagnostic learns to say the second.
 - **What may a `comptime func:` call?** The corpus shows comptime functions calling
   comptime functions. Whether an ordinary function is callable, and what happens if
   it touches the outside world, is unstated.

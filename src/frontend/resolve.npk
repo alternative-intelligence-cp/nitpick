@@ -47,12 +47,23 @@ pub struct:Resolver = {
     // being walked, so `result` is an ordinary name everywhere else and a
     // variable may still be called that.
     bool:in_ensures;
+
+    // WHERE THE INVOCATION WAS, while a macro expansion is being resolved.
+    //
+    // Hygiene (D-057) makes an expansion resolve in the scope the macro was
+    // WRITTEN in, and `module_scope` is that scope — a macro is invocable only in
+    // the module that declares it (D-124), so the two are the same. This is the
+    // OTHER one: `#caller(NAME)` is the sole way back out to the invocation site,
+    // and this is the scope it reaches. Zero outside an expansion, which is
+    // exactly when `#caller` is not a legal thing to have written.
+    int32:caller_scope;
 };
 
 pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
                                   InternTable->:interns, DiagList->:diags) {
     Resolver:r = Resolver{ ast: ast, tab: tab, interns: interns, diags: diags,
-                           module_scope: 0i32, in_ensures: false };
+                           module_scope: 0i32, in_ensures: false,
+                           caller_scope: 0i32 };
     pass r;
 };
 
@@ -62,7 +73,22 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
     ExprNode:e = relay ast_expr(r.ast, id);
     int32:name = (raw expr_name(e)) => int32;
 
-    int32:sym = raw scope_lookup(r.tab, scope, name);
+    // `#caller(NAME)` LEFT THIS BEHIND. It is the one identifier inside an
+    // expansion that binds where the macro was INVOKED rather than where it was
+    // written, and the mark is how it is told apart from the ones around it —
+    // which are lexically in the same place and mean something else entirely.
+    int32:look = scope;
+    if (raw ast_expr_flag(r.ast, id, raw HYG_CALLER())) {
+        if (r.caller_scope == 0i32) {
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+                "this `#caller` name is outside any macro expansion, which the expander should have refused",
+                e.span));
+            pass NIL;
+        }
+        look = r.caller_scope;
+    }
+
+    int32:sym = raw scope_lookup(r.tab, look, name);
     if (sym != 0i32) {
         // RECORD THE BINDING ON THE NODE. Cycle 0.4 asks what this name means
         // constantly, and repeating the walk each time would make resolution
@@ -95,6 +121,20 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
 
     string:m1 = relay string_concat("cannot find `", text);
     string:m2 = relay string_concat(m1, "` in this scope");
+
+    // WHICH SCOPE, when it is not the one the reader is looking at. Inside an
+    // expansion the name was looked for where the MACRO was written, and a bare
+    // "cannot find it in this scope" pointing at an invocation is an answer about
+    // a scope the reader is not reading (D-057).
+    if (raw ast_expr_flag(r.ast, id, raw HYG_CALLER())) {
+        m2 = relay string_concat(m1, "` at the invocation site; `#caller` names something there, and nothing of that name is in scope where this macro was invoked");
+    } else {
+        if (look == r.module_scope) {
+            if (look != scope) {
+                m2 = relay string_concat(m1, "` in the scope this macro was written in; an identifier in a macro body resolves there and never at the invocation site, and `#caller(name)` is the only way to reach the caller's scope");
+            }
+        }
+    }
     drop diaglist_push(r.diags,
         raw diag_error(raw RESOLVE_UNKNOWN(), m2, e.span));
     pass NIL;
@@ -102,7 +142,33 @@ func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
 
 // --- expressions ------------------------------------------------------------------------
 
+// THE HYGIENE SWITCH, AND THE ONLY PLACE IT HAPPENS FOR AN EXPRESSION.
+//
+// A node marked `HYG_ROOT` is where a macro expansion was substituted in, and
+// everything under it resolves where the MACRO was written rather than where it
+// was invoked (D-057). A macro is invocable only in the module that declares it
+// (D-124), so "where it was written" is `module_scope` and no per-expansion scope
+// has to be carried — which is why this is four lines rather than a table.
+//
+// A WRAPPER RATHER THAN A CHECK INSIDE, because the walk below returns from
+// nineteen places and a switch that has to be undone at each of them is a switch
+// that will not be, at one of them.
 pub func:resolve_expr = NIL(Resolver->:r, ExprId:id, int32:scope) {
+    if (raw expr_is_none(id)) {
+        pass NIL;
+    }
+    if (!(raw ast_expr_flag(r.ast, id, raw HYG_ROOT()))) {
+        drop resolve_expr_inner(r, id, scope);
+        pass NIL;
+    }
+    int32:saved = r.caller_scope;
+    r.caller_scope = scope;
+    drop resolve_expr_inner(r, id, r.module_scope);
+    r.caller_scope = saved;
+    pass NIL;
+};
+
+func:resolve_expr_inner = NIL(Resolver->:r, ExprId:id, int32:scope) {
     if (raw expr_is_none(id)) {
         pass NIL;
     }
@@ -239,9 +305,23 @@ pub func:resolve_stmt = NIL(Resolver->:r, StmtId:id, int32:scope) {
         // A BLOCK IS A SCOPE. Two blocks may each declare `x` without colliding,
         // and an inner one may shadow an outer -- which the language permits and
         // this must not report.
-        int32:inner = raw scope_open(r.tab, scope, raw SCOPE_BLOCK());
+        //
+        // AND A MACRO EXPANSION IS A BLOCK WHOSE PARENT IS THE MODULE. That one
+        // difference is the whole of statement-position hygiene: the body's own
+        // locals live here and cannot collide with the caller's or outlive the
+        // invocation, and a free name in the body walks up past the caller's
+        // locals to where the macro was written. `#caller(name)` is what reaches
+        // back, and `caller_scope` is where it reaches to.
+        int32:parent = scope;
+        int32:saved_caller = r.caller_scope;
+        if (raw ast_stmt_flag(r.ast, id, raw HYG_ROOT())) {
+            parent = r.module_scope;
+            r.caller_scope = scope;
+        }
+        int32:inner = raw scope_open(r.tab, parent, raw SCOPE_BLOCK());
         drop resolve_stmt_window(r, raw stmt_list_start(s),
                                  raw stmt_list_count(s), inner);
+        r.caller_scope = saved_caller;
         pass NIL;
     }
 
@@ -546,7 +626,16 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) {
                 d.span));
             pass NIL;
         }
+        // `module_scope` FOLLOWS THE NESTING. It is what an expansion resolves
+        // against, and a macro declared in a nested module is written in the
+        // nested module's scope — so leaving this pointing at the file's own
+        // scope would resolve that macro's body one level too far out. Nothing
+        // read this field before hygiene did, which is why the omission was
+        // invisible.
+        int32:saved_mod = r.module_scope;
+        r.module_scope = inner;
         drop resolve_members(r, d, inner);
+        r.module_scope = saved_mod;
         pass NIL;
     }
 

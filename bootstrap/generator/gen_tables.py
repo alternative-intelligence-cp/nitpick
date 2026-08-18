@@ -662,8 +662,36 @@ pub func:is_keyword = bool(string:text) {
         bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
     bl.append("    pass false;")
     bl.append("};")
+    # THE `#`-SIGIL BUILTINS, which are a different list and a different question.
+    # A bare-name builtin is looked up because it is declared in no module; a
+    # `#`-name is looked up because `#foo(...)` is ALSO how a macro is invoked
+    # (D-046), so after expansion a surviving `#name` is either one of these or a
+    # macro nobody declared. Without the list there is no way to tell those apart,
+    # and a mistyped macro name compiles to nothing at all.
+    # Scraped from the "Macro | Return | Description" table ALONE. The section
+    # opens with a table of syntactic FORMS -- `#name<T>(...)` versus `#[name]` --
+    # and reading that one too made `name` a builtin.
+    hsec = br.split("| Macro | Return | Description |", 1)
+    hnames = []
+    if len(hsec) == 2:
+        for m in re.finditer(r'^\|\s*`#(\w+)[<(`]', hsec[1].split("\n---", 1)[0], re.M):
+            if m.group(1) not in hnames:
+                hnames.append(m.group(1))
+    hnames.sort()
+    bl.append("")
+    bl.append("// The `#`-sigil builtins -- the OTHER kind, the ones the compiler treats")
+    bl.append("// specially. `#foo(...)` is also how a macro is invoked (D-046), so this is")
+    bl.append("// what tells a builtin that survived expansion from a macro that was never")
+    bl.append("// declared. `caller` is deliberately ABSENT: it is legal only inside a macro")
+    bl.append("// body, expansion consumes it, and one that reaches here is one written")
+    bl.append("// somewhere it means nothing.")
+    bl.append("pub func:is_hash_builtin = bool(string:name) {")
+    for n in hnames:
+        bl.append('    if (raw string_eq(name, "%s")) { pass true; }' % n)
+    bl.append("    pass false;")
+    bl.append("};")
     write("builtins.npk", "\n".join(bl) + "\n")
-    print("builtins: %d" % len(names))
+    print("builtins: %d bare, %d hash" % (len(names), len(hnames)))
 
     print("token kinds: %d  keywords: %d  operators: %d  punctuation: %d  widths: %d"
           % (idx, len(kw_all), len(ops), len(punct), len(sfx)))

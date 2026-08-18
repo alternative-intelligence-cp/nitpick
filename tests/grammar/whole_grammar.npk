@@ -162,6 +162,18 @@ impl:Spliced = {
 // A body of ONE EXPRESSION — invoked where an expression goes.
 macro:four = () { 2i32 + 2i32; };
 
+// `#caller(NAME)` — the sole opt-out from hygiene (D-057), and the one thing in a
+// macro body that resolves at the INVOCATION site rather than where it is written.
+macro:reaches_out = () { #caller(reachable) + 1i32; };
+
+// A body of STATEMENTS invoked as a STATEMENT. The fourth position, and the one
+// that decides how `#` is read inside a body: this body contains no declaration,
+// so `#four_stmt();` in another body is a statement rather than a splice.
+macro:stmt_body = () {
+    int32:inside_macro = 1i32;
+    discard(inside_macro);
+};
+
 // Nested: a macro body containing another invocation, which the fixed-point loop
 // resolves on a later round.
 macro:outer_emit = () {

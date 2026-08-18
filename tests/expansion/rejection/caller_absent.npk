@@ -1,0 +1,25 @@
+// expect-error: NITPICK-RESOLVE-002
+//
+// `#caller` IS AN ESCAPE HATCH, SO IT IS CHECKED. Naming something that is not at
+// the invocation site is the same mistake as failing to resolve in the defining
+// scope, and it gets the same refusal — otherwise the opt-out would be the one
+// path in the language with no rule.
+//
+// NOTE WHAT "AT THE INVOCATION SITE" MEANS: ordinary lexical resolution from where
+// the invocation stands, which reaches the module's own names as well as the
+// caller's locals. It is not "the caller's locals only" — `#caller(name)` means
+// whatever `name` means there, and that is the whole of the rule. So the name used
+// here is one declared inside a DIFFERENT function, which is in scope nowhere else.
+mod:caller_absent;
+
+func:elsewhere = int32() {
+    int32:only_in_elsewhere = 1i32;
+    pass only_in_elsewhere;
+};
+
+macro:reach = () { #caller(only_in_elsewhere) + 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:s = #reach();
+    exit 0i32;
+};
