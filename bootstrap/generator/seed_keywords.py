@@ -17,6 +17,7 @@ KEYWORDS = {
     "Self",
     "acq_rel",
     "acquire",
+    "acquires",
     "any",
     "arena",
     "array",

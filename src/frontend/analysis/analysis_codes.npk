@@ -161,3 +161,29 @@ pub func:PICK_INTERNAL = string()        { pass "NITPICK-PICK-005"; };
 // compiler-assigned and not user-writable (`TYPE_REFERENCE` §27), so this is the
 // only place the taint arises and the only place it is reported.
 pub func:TAINT_UNCHECKED_VALUE = string() { pass "NITPICK-TAINT-001"; };
+
+// --- D-056: lock levels (0.5.6) -------------------------------------------------
+//
+// `--verify-concurrency` claims data-race freedom and LOCK-ORDER freedom, and not
+// deadlock freedom outright — the deadline backstop is containment, not proof. The
+// flag saying what it proves is the point of the whole decision.
+
+// A downward acquisition: holding level N and able to reach a level <= N. The
+// message names BOTH levels, because "acquisition must increase" without them makes
+// the reader work out which two locks are involved.
+pub func:LOCK_ORDER = string()          { pass "NITPICK-LOCK-001"; };
+
+// An implementation that can reach above the bound its trait method declared. Its
+// own code: the fix is to lower what the implementation acquires or raise the
+// declared bound, and neither is what a reader of an ordering error would try.
+pub func:LOCK_EXCEEDS_BOUND = string()  { pass "NITPICK-LOCK-002"; };
+
+// An `acquires` level that is not a constant. Shares nothing with `TYPE_NOT_CONSTANT`
+// because the two are found at different stages and a reader filtering a log is
+// asking a different question — but the rule and the sentence are deliberately the
+// same: folding a general constant expression is cycle 0.6's job.
+pub func:LOCK_NOT_CONSTANT = string()   { pass "NITPICK-LOCK-003"; };
+
+// A DEFECT IN THE COMPILER, or a program the walk could not follow: a node kind
+// with no entry, or rounds that did not settle.
+pub func:LOCK_INTERNAL = string()       { pass "NITPICK-LOCK-004"; };

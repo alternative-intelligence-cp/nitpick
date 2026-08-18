@@ -1,0 +1,112 @@
+// Acquisition strictly increases, so circular wait is impossible (D-056, 0.5.6).
+//
+// WHY THIS ANALYSIS EXISTS. `--verify-concurrency` was documented as verifying
+// "data race AND deadlock freedom", and deadlock freedom had no mechanism
+// anywhere. A flag promising a safety property nothing delivers is worse than
+// promising nothing, because it invites reliance — and the person relying on it is
+// deciding whether a robot near a child can wedge.
+//
+// THE ROOT CAUSE WAS TYPE ERASURE. The prototype's `func:lock = int32(int64:handle)`
+// says nothing about WHICH lock is taken, so no analysis could order acquisitions
+// and no reviewer could either. The fix is the one taken for `printf` and `ioctl`:
+// put the information in the type, and `acquires N` is what carries it into the
+// signature.
+//
+// WHAT MARKS AN ACQUISITION IS A CONTRACT, NOT A NAME. These fixtures declare
+// their own levelled functions, because the concurrency stdlib does not exist yet
+// — which is the right order: the analysis is what tells us the shape is
+// checkable. Recognising an acquisition by its SPELLING is what the prototype did
+// for deallocators and what D-119 refused.
+
+struct:Guard = { int32:v; };
+
+func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
+func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
+func:take_3 = Guard() acquires 3i32 { pass Guard{ v: 3i32 }; };
+func:take_9 = Guard() acquires 9i32 { pass Guard{ v: 9i32 }; };
+
+// --- acquiring downward -----------------------------------------------------------
+
+// expect-error: NITPICK-LOCK-001
+func:downward = NIL() {
+    Guard:a = raw take_2();
+    Guard:b = raw take_1();
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+// STRICTLY increasing, so the same level twice is refused too. Two threads taking
+// the same lock in the other order is the classic cycle, and "greater than or
+// equal" would permit exactly that.
+// expect-error: NITPICK-LOCK-001
+func:same_level_twice = NIL() {
+    Guard:a = raw take_2();
+    Guard:b = raw take_2();
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+// --- through the call graph ----------------------------------------------------------
+//
+// The violation is not visible in either function on its own, which is why the
+// analysis is whole-program. `reaches_1` looks fine; holding 3 and calling it is
+// not.
+
+func:reaches_1 = NIL() {
+    Guard:g = raw take_1();
+    discard(g.v);
+    pass NIL;
+};
+
+// expect-error: NITPICK-LOCK-001
+func:transitively_downward = NIL() {
+    Guard:a = raw take_3();
+    discard(a.v);
+    drop reaches_1();
+    pass NIL;
+};
+
+// A FUNCTION'S OWN DECLARED LEVEL IS HELD INSIDE ITS BODY. Saying `acquires 2i32`
+// means everything below happens with 2 held, so a helper reaching 1 is downward.
+// expect-error: NITPICK-LOCK-001
+func:declares_two_calls_one = NIL() acquires 2i32 {
+    drop reaches_1();
+    pass NIL;
+};
+
+// --- a trait method's bound, and the implementation that breaks it ----------------------
+//
+// A call through a trait object can reach anything, so its acquisition set would be
+// unbounded. D-056's answer is that the method DECLARES a maximum and
+// implementations are checked against it — which is what makes the whole-program
+// walk terminate at a trait object instead of giving up or under-approximating.
+
+trait:Storage = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+};
+
+struct:Loose = { int32:v; };
+
+// THE IMPLEMENTATION DOES NOT REPEAT THE CLAUSE, and is bound by it anyway.
+// Requiring the repetition would make the promise opt-in at the one place it has to
+// be kept.
+// expect-error: NITPICK-LOCK-002
+impl:Loose:Storage = {
+    pub func:commit = NIL(Self:self) {
+        Guard:g = raw take_9();
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+// --- a level that is not a constant ------------------------------------------------------
+
+// The same rule an array size and a `comptime` argument follow, for the same
+// reason: folding a general constant expression is cycle 0.6's job, and a
+// non-literal is refused BY NAME rather than silently taking a wrong value.
+// expect-error: NITPICK-LOCK-003
+func:level_is_not_constant = NIL() acquires (1i32 + 1i32) {
+    pass NIL;
+};

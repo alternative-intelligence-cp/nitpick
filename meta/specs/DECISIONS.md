@@ -8706,3 +8706,109 @@ the language rather than a hole in the analysis.
 and greppable is the only property this language asks of an escape hatch, and both
 already are.
 
+
+---
+
+## D-122 — What marks an acquisition is a contract, not a name
+
+**Settled in cycle 0.5.6**, completing D-056 and extending D-113 by one form.
+
+### The gap D-113 left
+
+D-113 settled `acquires <= N` for a trait method — the **bound** that makes a call
+through a trait object have a finite acquisition set. It says implementations "may
+acquire no level above `N`, transitively", and that the whole-program analysis
+computes acquisition sets.
+
+**Nothing said how the analysis knows an acquisition happened.** D-056 gives the
+shape — `cfg_lock.acquire(deadline)` on a `Mutex<T, LEVEL>` — and the concurrency
+stdlib does not exist, so there was nothing to recognise even in principle.
+
+### The decision: a second form of the same clause
+
+```nitpick
+func:acquire = Guard<T>(Self:self, Deadline:d) acquires LEVEL;   // a FACT
+func:commit  = NIL(Self:self)                  acquires <= 3i32; // a BOUND
+```
+
+**One keyword, two forms, and the `<=` is where a reader sees the difference.**
+`acquires N` states that this function takes lock level N; `acquires <= N` states
+that whatever this method reaches takes nothing above N. A declaration and an
+obligation on the same axis, which is why they share a keyword rather than getting
+two.
+
+The analysis therefore **knows nothing about what a `Mutex` is**. It needs no
+stdlib to exist, and `rwlock`, `condvar`, `channel`, `barrier` and anything later
+participate by writing the clause — which is what D-056's "every blocking
+primitive is levelled, not just mutex" requires, rather than a list of blessed
+types the compiler carries.
+
+### What was rejected: recognising the acquisition by its spelling
+
+A method named `acquire`, or a type named `Mutex`, or a return type named `Guard`.
+**That is what the prototype's borrow checker did for deallocators** — a set
+containing `close`, `release`, `destroy`, plus any name ending in `_free` — and
+what D-119 refused three subcycles ago. A rule keyed on what something happens to
+be called is a rule you have to memorise a list for, and it gives ownership
+semantics to code that never asked for them.
+
+A marker trait was the other candidate. It leaves *which* comptime argument is the
+level unanswered — `Channel<T, CAP, LEVEL>` is ambiguous — and still needs
+something to say which methods acquire.
+
+### The keyword went in through the spec
+
+`acquires` was added to `LEXICAL_REFERENCE.md`'s `VerificationKeyword` production,
+and `gen_tables.py` regenerated `token_kind.npk`, `keywords.npk`, `token_name.npk`
+and the seed's keyword table from it. **Nothing was hand-edited**, including the
+renumbering a new keyword forces on every token after it — which is the whole
+reason that generator exists.
+
+### When a lock is released, with no release to look at
+
+D-056's model is that **the guard's lifetime is the critical section**: release is
+automatic at scope exit, so there is no unlock to forget and no early-return path
+that leaks the lock. What that means for the analysis:
+
+- **A level is held for the rest of the block that BOUND it.** `Guard<T>:g = …
+  acquire(…)` holds it; the block ending releases it.
+- **A bare call leaves nothing held.** A helper that acquires and releases
+  internally had its guard scoped inside itself, and the caller holds nothing
+  afterwards. Treating a call and a binding alike refuses every second call to an
+  ordinary helper — verified by breaking it.
+- **A function's own declared level is held throughout its body.** `acquires 2i32`
+  means everything below happens with 2 held, which is what makes a helper reaching
+  1 a downward acquisition.
+
+### An implementation inherits its trait's bound
+
+Whether or not it repeats the clause. Requiring the repetition would make the
+promise **opt-in at the one place it has to be kept**, and "an undeclared method
+may not acquire at all" would quietly become "unless the implementation forgot to
+say so".
+
+An absent clause is a bound of nothing — not a special case to remember, but the
+same shape that makes a trait method with no body a real absence rather than a flag
+(D-103).
+
+### Two directions, and they are not the same question
+
+- **The ordering rule reads `acq_min`** — the lowest level reachable, because that
+  is what could be ≤ what is held.
+- **The bound check reads `acq_max`** — the highest, because a ceiling is about the
+  worst case.
+
+Confusing them accepts an implementation that acquires 9 because it also acquires
+1.
+
+### What this does not claim
+
+Static ordering proves the common case. It cannot cover priority inversion, a peer
+process that stops responding, or a lock held across a boundary the analysis cannot
+see. That is why every blocking operation takes a deadline and returns `Result`,
+and why the flag says **lock-order freedom** rather than deadlock freedom.
+
+An honest narrow guarantee plus a stated containment mechanism is worth more than a
+broad claim nothing backs — which is the point of D-056 and the reason this
+analysis exists at all.
+

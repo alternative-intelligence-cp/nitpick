@@ -5,16 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Status: Phase A, cycle 0.5 — the static analyses
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 121 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 122 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
 **Cycles 0.0–0.4 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 the module/symbol/visibility passes, and the type system. **Cycle 0.5 — the static
-analyses — is in progress**, through subcycle 0.5.5: second-class borrows and
+analyses — is in progress**, through subcycle 0.5.6: second-class borrows and
 escape (D-004), definite assignment with `fixed` / `const` (D-010), `move` with
 use-after-free (D-065), `pick` exhaustiveness with the `tbb` ERR arm (D-008), and
-the `unknown` taint on `Result.value` (D-007).
+the `unknown` taint on `Result.value` (D-007), and lock levels (D-056).
 `src/frontend/` is ~49 `.npk` modules of real compiler, written in Nitpick, with
 the analyses under `src/frontend/analysis/`.
 

@@ -1,0 +1,814 @@
+// Lock levels: acquisition strictly increases, so circular wait cannot happen.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.6.
+//
+// WHY THIS EXISTS AT ALL. `--verify-concurrency` was documented as verifying
+// "data race AND deadlock freedom", and deadlock freedom had no mechanism
+// anywhere. A flag promising a safety property nothing delivers is worse than
+// promising nothing, because it invites reliance — and the person relying on it is
+// deciding whether a robot near a child can wedge (D-056).
+//
+// THE ROOT CAUSE WAS TYPE ERASURE, and it is still visible in the prototype:
+//
+//     func:lock = int32(int64:handle);        // stdlib/mutex.npk
+//
+// A lock is an `int64` handle, so at `lock(h)` nothing in the program text says
+// WHICH lock is being acquired. No static analysis can order acquisitions, and no
+// reviewer can either. The fix is the one taken for `printf` and `ioctl`: put the
+// information in the type — `Mutex<T, LEVEL>`, where `LEVEL` is a compile-time
+// constant.
+//
+// A THREAD HOLDING LEVEL N MAY ACQUIRE ONLY LEVELS > N. Circular wait is the
+// Coffman condition every deadlock needs, and a cycle requires some thread to
+// acquire downward — so forbidding that makes deadlock impossible by construction
+// rather than unlikely by convention.
+//
+// WHAT MARKS AN ACQUISITION IS A CONTRACT, NOT A NAME. `acquires N` on the
+// function that takes the lock, `acquires <= N` on a trait method that bounds what
+// its implementations may reach (D-113). The analysis therefore knows nothing about
+// what a `Mutex` is, needs no stdlib to exist, and extends to `rwlock`, `condvar`,
+// `channel`, `barrier` and anything later by those types writing the clause —
+// which is what D-056's "every blocking primitive is levelled, not just mutex"
+// requires.
+//
+// The alternative was to recognise the acquisition by its SPELLING, which is what
+// the prototype's borrow checker did for deallocators and what D-119 refused: a
+// rule keyed on what something happens to be called is a rule you have to memorise
+// a list for.
+//
+// WHAT THIS DOES NOT CLAIM. Static ordering proves the common case and cannot
+// cover priority inversion, a peer process that stops responding, or a lock held
+// across a boundary the analysis cannot see. That is why every blocking operation
+// takes a deadline and returns `Result`, and why the flag says LOCK-ORDER FREEDOM
+// rather than deadlock freedom. An honest narrow guarantee plus a stated
+// containment mechanism is worth more than a broad claim nothing backs.
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../parse_decorate.npk".*;
+use "../types.npk".*;
+use "../type_trait.npk".*;
+use "../expr_types.npk".*;
+use "analysis_codes.npk".*;
+
+// NO LEVEL AT ALL, spelled as a value rather than a flag beside one. A function
+// that acquires nothing has no minimum and no maximum, and the two sentinels are
+// the identities of the operations that combine them — so `min` and `max` fold
+// over a call graph without a special case at every step.
+pub func:LOCK_NONE_MIN = int32() { pass 2147483647i32; };
+pub func:LOCK_NONE_MAX = int32() { pass (0i32 - 2147483647i32); };
+
+pub func:LOCK_ROUNDS = int32() { pass 64i32; };
+pub func:LOCK_DEPTH = int32()  { pass 256i32; };
+
+// WHAT EACH FUNCTION MAY ACQUIRE, transitively. Indexed by `DeclId`, dense, for
+// the same reason every other side table in this compiler is: declarations are
+// already indices into one flat array.
+pub struct:LockTable = {
+    wild int32->:acq_min;
+    wild int32->:acq_max;
+
+    // The bound a trait method declared with `acquires <= N`, or none. Kept apart
+    // from what the method ACQUIRES, because a bound is a promise about
+    // implementations and an acquisition is a fact about a body — the same
+    // `whether` versus `which` split the rest of this compiler is built on.
+    wild int32->:bound;
+    wild bool->:has_bound;
+
+    int32:count;
+    bool:changed;
+};
+
+pub struct:Locks = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    TypeTable->:types;
+    ExprTypes->:etypes;
+    InternTable->:interns;
+    ImplTable->:impls;
+    BoundTable->:bounds;
+    DiagList->:diags;
+    LockTable:table;
+
+    // The widening rounds are SILENT; only the last walk reports. See the walk.
+    bool:reporting;
+};
+
+pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
+                            ExprTypes->:etypes, InternTable->:interns,
+                            ImplTable->:impls, BoundTable->:bounds,
+                            DiagList->:diags) {
+    int64:size = (raw ast_decl_count(ast)) => int64;
+    if (size < 1i64) { size = 1i64; }
+    wild int8->:m1 = alloc(size * #size_of<int32>());
+    wild int8->:m2 = alloc(size * #size_of<int32>());
+    wild int8->:m3 = alloc(size * #size_of<int32>());
+    wild int8->:m4 = alloc(size * #size_of<bool>());
+
+    LockTable:t = LockTable{ acq_min: m1 => wild int32->,
+                             acq_max: m2 => wild int32->,
+                             bound: m3 => wild int32->,
+                             has_bound: m4 => wild bool->,
+                             count: size => int32, changed: false };
+    int64:i = 0i64;
+    while (i < size) {
+        t.acq_min[i] = raw LOCK_NONE_MIN();
+        t.acq_max[i] = raw LOCK_NONE_MAX();
+        t.bound[i] = 0i32;
+        t.has_bound[i] = false;
+        i = i + 1i64;
+    }
+
+    Locks:x = Locks{ ast: ast, tab: tab, types: types, etypes: etypes,
+                     interns: interns, impls: impls, bounds: bounds,
+                     diags: diags, table: t, reporting: false };
+    pass x;
+};
+
+func:locks_err = NIL(Locks->:x, string:code, string:msg, Span:sp) {
+    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    pass NIL;
+};
+
+func:table_min = int32(Locks->:x, int32:decl) {
+    if (decl < 0i32)              { pass (raw LOCK_NONE_MIN()); }
+    if (decl >= x.table.count)    { pass (raw LOCK_NONE_MIN()); }
+    pass (x.table.acq_min[decl => int64]);
+};
+
+func:table_max = int32(Locks->:x, int32:decl) {
+    if (decl < 0i32)           { pass (raw LOCK_NONE_MAX()); }
+    if (decl >= x.table.count) { pass (raw LOCK_NONE_MAX()); }
+    pass (x.table.acq_max[decl => int64]);
+};
+
+// `changed` IS SET ONLY ON A FLIP, so the fixpoint below can converge. Setting it
+// on every write would make every round report a change and the loop would run to
+// its bound on any program that acquires anything.
+func:table_widen = NIL(Locks->:x, int32:decl, int32:lo, int32:hi) {
+    if (decl < 0i32)           { pass NIL; }
+    if (decl >= x.table.count) { pass NIL; }
+    int64:i = decl => int64;
+    if (lo < x.table.acq_min[i]) {
+        x.table.acq_min[i] = lo;
+        x.table.changed = true;
+    }
+    if (hi > x.table.acq_max[i]) {
+        x.table.acq_max[i] = hi;
+        x.table.changed = true;
+    }
+    pass NIL;
+};
+
+// --- reading the contract ------------------------------------------------------
+
+// THE LEVEL A CLAUSE NAMES, or none. `N` is a compile-time constant of the same
+// kind `Mutex<T, LEVEL>` carries (D-113), and at this rung "constant" means an
+// integer literal — the same answer `resolve_fixed_array` and `resolve_value_arg`
+// give, for the same reason: folding a general constant expression is cycle 0.6's
+// job, and a non-literal is refused BY NAME rather than silently taking a wrong
+// value.
+pub struct:LevelRead = {
+    bool:found;
+    int32:level;
+    bool:bounded;    // `acquires <= N` rather than `acquires N`
+};
+
+func:no_level = LevelRead() {
+    LevelRead:r = LevelRead{ found: false, level: 0i32, bounded: false };
+    pass r;
+};
+
+func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
+    int32:n = raw fn_contract_count(x.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        VerifyNode:v = relay ast_verify(x.ast, relay fn_contract(x.ast, d, i));
+        if ((raw contract_kind(v)) == (raw CONTRACT_ACQUIRES())) {
+            ExprId:c = raw contract_cond(v);
+            if (raw expr_is_none(c)) { pass (raw no_level()); }
+            ExprNode:cn = relay ast_expr(x.ast, c);
+            if (cn.kind != ExprKind.ExprIntLiteral) {
+                drop locks_err(x, raw LOCK_NOT_CONSTANT(),
+                    "an `acquires` level must be a constant, and only an integer literal is constant-folded at this rung",
+                    cn.span);
+                pass (raw no_level());
+            }
+            LevelRead:r = LevelRead{ found: true, level: cn.payload => int32,
+                                     bounded: raw contract_is_bounded(v) };
+            pass r;
+        }
+        i = i + 1i32;
+    }
+    pass (raw no_level());
+};
+
+// --- the call graph, walked without reporting ----------------------------------
+//
+// TWO PASSES OVER THE SAME BODIES, and the first one is silent. The seeding and
+// widening rounds walk every call to propagate levels; only the last walk reports.
+// A round that reported would report each finding once per round, and the
+// diagnostic list's duplicate suppression would hide that rather than fix it —
+// which is exactly the mistake 0.4.7 made when two argument errors shared a span.
+
+// WHICH FUNCTION A CALL REACHES, as a `DeclId`, or 0.
+//
+// THREE FORMS, AND ALL THREE HAVE TO BE HERE. A direct call resolves through the
+// symbol; a method call resolves through the impl table exactly as the checker
+// resolves it; and a call through a trait object resolves to the trait's method,
+// whose `acquires <= N` bound is what makes the analysis terminate there instead
+// of giving up. An analysis that handled only direct calls would under-approximate
+// SILENTLY, which is the failure D-056 exists to prevent.
+func:call_target = int32(Locks->:x, ExprNode:n) {
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:c = raw expr_callee(n);
+        if (raw expr_is_none(c)) { pass 0i32; }
+        ExprNode:cn = relay ast_expr(x.ast, c);
+        if (cn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (cn.a == 0i32) { pass 0i32; }
+        Symbol:s = raw symtab_get(x.tab, cn.a);
+        if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+        DeclNode:d = relay ast_decl(x.ast, DeclId{ index: s.origin });
+        if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }
+        pass s.origin;
+    }
+
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        ExprId:recv = raw expr_operand(n);
+        int32:rty = raw exprtypes_get(x.etypes, recv);
+        if (rty == 0i32) { pass 0i32; }
+        MethodFind:m = relay find_method(x.impls, x.bounds, x.types, x.ast,
+                                         x.interns, rty,
+                                         (raw expr_name(n)) => int32);
+        if (!m.found) { pass 0i32; }
+        pass m.decl;
+    }
+
+    pass 0i32;
+};
+
+// --- the whole-program walk ----------------------------------------------------
+//
+// THE ONLY WHOLE-PROGRAM ANALYSIS IN THIS CYCLE, and it is affordable because
+// verification is whole-program anyway. Two phases:
+//
+//   SEED    every function's own `acquires` clause, and every trait method's bound
+//   WIDEN   repeated until nothing changes: a caller reaches whatever its callees
+//           reach
+//
+// The rounds are bounded for the reason every walk in this compiler is bounded —
+// the graph is a program's, so it can contain a cycle, and mutual recursion between
+// two acquiring functions is a perfectly ordinary program. Exceeding the bound
+// REFUSES rather than reporting what it had, because an analysis that quietly
+// reports partial results is the under-reporting D-056 exists to prevent, reached
+// by a different road.
+
+pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop locks_seed_decl(x, raw item_member(x.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        LevelRead:r = relay read_acquires(x, d);
+        if (!r.found) { pass NIL; }
+        if (r.bounded) {
+            // A BOUND IS NOT AN ACQUISITION. `acquires <= N` promises that nothing
+            // this method reaches goes above N; it does not say the method takes a
+            // lock at all. Recording it as one would make every trait method that
+            // merely BOUNDS its implementations look like an acquirer to its
+            // callers.
+            x.table.bound[id.index => int64] = r.level;
+            x.table.has_bound[id.index => int64] = true;
+            pass NIL;
+        }
+        drop table_widen(x, id.index, r.level, r.level);
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        drop locks_seed(x, id, inner);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = relay impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop locks_seed_decl(x, relay impl_member(x.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop locks_seed_decl(x, raw item_member(x.ast, d, k), scope);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+// One widening round: every function absorbs what its callees reach.
+pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop locks_widen_decl(x, raw item_member(x.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:locks_widen_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        // A FUNCTION'S OWN DECLARED LEVEL IS ALREADY HELD INSIDE ITS BODY. If it
+        // says `acquires 2i32`, everything it goes on to do happens with 2 held —
+        // so a helper it calls that acquires 1 is a downward acquisition, which is
+        // the transitive case the whole analysis is for.
+        LevelRead:own = relay read_acquires(x, d);
+        int32:held = raw LOCK_NONE_MAX();
+        if (own.found) {
+            if (!own.bounded) { held = own.level; }
+        }
+        drop locks_stmt(x, id.index, raw fn_body(x.ast, d), held, raw LOCK_DEPTH());
+        drop check_against_bound(x, d, id.index);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        drop locks_widen(x, id, inner);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        // AN IMPLEMENTATION INHERITS ITS TRAIT METHOD'S BOUND, whether or not it
+        // repeats the clause. Requiring the repetition would make the promise
+        // opt-in at the one place it has to be kept, and D-056's "an undeclared
+        // method may not acquire at all" would become "unless the implementation
+        // forgot to say so".
+        int32:mn = relay impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            DeclId:mid = relay impl_member(x.ast, d, j);
+            drop inherit_trait_bound(x, id.index, mid);
+            drop locks_widen_decl(x, mid, scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop locks_widen_decl(x, raw item_member(x.ast, d, k), scope);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
+pub func:locks_changed = bool(Locks->:x) { pass x.table.changed; };
+pub func:locks_new_round = NIL(Locks->:x) { x.table.changed = false; pass NIL; };
+
+// --- one walk, two jobs --------------------------------------------------------
+//
+// The widening rounds and the reporting round visit exactly the same nodes and ask
+// the same question of each call, so they are ONE walk with a mode rather than two
+// that have to agree about which constructs contain calls. Two walks is the shape
+// that has cost this compiler defects repeatedly, and here it would cost the worst
+// kind: a call the widening pass saw and the reporting pass did not is an
+// acquisition nobody checks.
+//
+// `held` IS THE HIGHEST LEVEL HELD AT THIS POINT, threaded down the walk and
+// scoped by the block that raised it — which is exactly a guard's lifetime under
+// D-056, where release is automatic at scope exit and there is no unlock to forget.
+
+func:locks_stmt = NIL(Locks->:x, int32:caller, StmtId:id, int32:held, int32:depth) {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+    if (depth <= 0i32) {
+        if (x.reporting) {
+            drop locks_err(x, raw LOCK_INTERNAL(),
+                "this statement nests deeper than the lock-level walk will follow, so an acquisition inside it cannot be ordered",
+                s.span);
+        }
+        pass NIL;
+    }
+    int32:d = depth - 1i32;
+
+    // A BLOCK IS WHERE A GUARD LIVES. An acquisition bound inside it raises the
+    // held level for the REST of the block and no further, which is release at
+    // scope exit without a release to write.
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:h = held;
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(s))) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            drop locks_stmt(x, caller, sub, h, d);
+            h = relay raise_held(x, caller, sub, h);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop locks_expr(x, caller, relay stmt_decl_init(x.ast, s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop locks_expr(x, caller, raw stmt_target(s), held, d);
+        drop locks_expr(x, caller, raw stmt_assigned(s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop locks_expr(x, caller, raw stmt_cond(s), held, d);
+        drop locks_stmt(x, caller, raw stmt_then(s), held, d);
+        drop locks_stmt(x, caller, raw stmt_else(s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop locks_expr(x, caller, raw stmt_cond(s), held, d);
+        drop locks_stmt(x, caller, relay stmt_body(x.ast, s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop locks_expr(x, caller, raw stmt_cond(s), held, d);
+        drop locks_stmt(x, caller, relay stmt_when_body(x.ast, s), held, d);
+        drop locks_stmt(x, caller, relay stmt_when_then(x.ast, s), held, d);
+        drop locks_stmt(x, caller, relay stmt_when_end(x.ast, s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) { drop locks_counted(x, caller, s, held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt) { drop locks_counted(x, caller, s, held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop locks_expr(x, caller, relay stmt_for_iter(x.ast, s), held, d);
+        drop locks_stmt(x, caller, relay stmt_for_body(x.ast, s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop locks_expr(x, caller, raw pick_selector(s), held, d);
+        int32:i2 = 0i32;
+        while (i2 < (raw pick_arm_count(s))) {
+            drop locks_stmt(x, caller, relay pick_arm_at(x.ast, raw pick_arm_start(s), i2), held, d);
+            i2 = i2 + 1i32;
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop locks_expr(x, caller, raw arm_guard(s), held, d);
+        drop locks_stmt(x, caller, raw arm_body(s), held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        drop locks_stmt(x, caller, body, held, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPassStmt)   { drop locks_expr(x, caller, raw stmt_operand(s), held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt)   { drop locks_expr(x, caller, raw stmt_operand(s), held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt) { drop locks_expr(x, caller, raw stmt_operand(s), held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt)   { drop locks_expr(x, caller, raw stmt_expr(s), held, d); pass NIL; }
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+    if (raw stmt_carries_expr(s.kind)) {
+        drop locks_expr(x, caller, raw stmt_expr(s), held, d);
+        pass NIL;
+    }
+
+    if (x.reporting) {
+        drop locks_err(x, raw LOCK_INTERNAL(),
+            "this statement kind has no entry in the lock-level walk, so an acquisition inside it cannot be ordered",
+            s.span);
+    }
+    pass NIL;
+};
+
+// DOES THIS STATEMENT LEAVE A LOCK HELD AFTERWARDS?
+//
+// ONLY A BINDING DOES. `Guard<Config>:g = relay await cfg_lock.acquire(deadline);`
+// holds the lock for the rest of the block, because the guard is bound HERE and
+// drops at the end of THIS scope. A bare call to a function that acquires and
+// releases internally leaves nothing held — its guard was scoped inside it — and
+// treating the two alike would refuse every second call to an ordinary helper.
+func:raise_held = int32(Locks->:x, int32:caller, StmtId:id, int32:held) {
+    if (raw stmt_is_none(id)) { pass held; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+    if (s.kind != StmtKind.StmtVarDeclStmt) { pass held; }
+
+    ExprId:init = relay stmt_decl_init(x.ast, s);
+    if (raw expr_is_none(init)) { pass held; }
+    int32:lo = relay init_acquires(x, init, raw LOCK_DEPTH());
+    if (lo == (raw LOCK_NONE_MIN())) { pass held; }
+    if (lo <= held) { pass held; }
+    pass lo;
+};
+
+// The lowest level an initialiser's calls reach, unwrapping the operators that sit
+// between a binding and its acquisition — `relay await cfg_lock.acquire(…)` is
+// three of them before the call is reached.
+func:init_acquires = int32(Locks->:x, ExprId:id, int32:depth) {
+    if (raw expr_is_none(id))  { pass (raw LOCK_NONE_MIN()); }
+    if (depth <= 0i32)         { pass (raw LOCK_NONE_MIN()); }
+    ExprNode:n = relay ast_expr(x.ast, id);
+
+    int32:target = relay call_target(x, n);
+    if (target != 0i32) {
+        if (x.table.has_bound[target => int64]) {
+            pass (x.table.bound[target => int64]);
+        }
+        pass (relay table_min(x, target));
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_ONE())) {
+        pass (relay init_acquires(x, raw expr_operand(n), depth - 1i32));
+    }
+    pass (raw LOCK_NONE_MIN());
+};
+
+func:locks_counted = NIL(Locks->:x, int32:caller, StmtNode:s, int32:held, int32:depth) {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop locks_expr(x, caller, relay stmt_counted_arg(x.ast, s, i), held, depth);
+        i = i + 1i32;
+    }
+    drop locks_stmt(x, caller, raw stmt_counted_body(s), held, depth);
+    pass NIL;
+};
+
+// --- expressions, where the calls are ------------------------------------------
+
+func:locks_expr = NIL(Locks->:x, int32:caller, ExprId:id, int32:held, int32:depth) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    if (depth <= 0i32) {
+        if (x.reporting) {
+            drop locks_err(x, raw LOCK_INTERNAL(),
+                "this expression nests deeper than the lock-level walk will follow, so an acquisition inside it cannot be ordered",
+                n.span);
+        }
+        pass NIL;
+    }
+    int32:d = depth - 1i32;
+
+    int32:target = relay call_target(x, n);
+    if (target != 0i32) {
+        drop locks_call(x, caller, target, held, n.span);
+    }
+
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop locks_expr(x, caller, raw expr_callee(n), held, d);
+        int32:gc = raw expr_generic_count(n);
+        drop locks_window(x, caller, (raw expr_list_start(n)) + gc,
+                          (raw expr_list_count(n)) - gc, held, d);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        drop locks_expr(x, caller, raw expr_operand(n), held, d);
+        drop locks_window(x, caller, raw expr_list_start(n),
+                          raw expr_list_count(n), held, d);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bg = raw expr_generic_count(n);
+        drop locks_window(x, caller, (raw expr_list_start(n)) + bg,
+                          (raw expr_list_count(n)) - bg, held, d);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            drop locks_expr(x, caller, v, held, d);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop locks_expr(x, caller, raw pickx_selector(n), held, d);
+        int32:j = 0i32;
+        while (j < (raw pickx_arm_count(n))) {
+            drop locks_stmt(x, caller, relay pick_arm_at(x.ast, raw pickx_arm_start(n), j), held, d);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop locks_window(x, caller, raw expr_list_start(n), raw expr_list_count(n), held, d);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        if (x.reporting) {
+            drop locks_err(x, raw LOCK_INTERNAL(),
+                "this expression kind has no entry in `expr_shape`, so its slots cannot be walked",
+                n.span);
+        }
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        if (x.reporting) {
+            drop locks_err(x, raw LOCK_INTERNAL(),
+                "this expression kind has a custom shape the lock-level walk has no case for, so an acquisition inside it cannot be ordered",
+                n.span);
+        }
+        pass NIL;
+    }
+
+    drop locks_expr(x, caller, raw expr_lhs(n), held, d);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop locks_window(x, caller, raw expr_list_start(n), raw expr_list_count(n), held, d);
+        pass NIL;
+    }
+    drop locks_expr(x, caller, raw expr_rhs(n), held, d);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop locks_expr(x, caller, raw expr_third(n), held, d);
+    pass NIL;
+};
+
+func:locks_window = NIL(Locks->:x, int32:caller, int32:start, int32:count,
+                        int32:held, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        drop locks_expr(x, caller, e, held, depth);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// ONE CALL: absorbed always, judged only when reporting.
+//
+// THE RULE IS ONE COMPARISON. A thread holding N may acquire only levels above N,
+// so a call that can reach level `L <= held` is a downward acquisition and the
+// path it sits on could close a cycle.
+func:locks_call = NIL(Locks->:x, int32:caller, int32:target, int32:held, Span:at) {
+    int32:lo = relay table_min(x, target);
+    int32:hi = relay table_max(x, target);
+
+    if (x.table.has_bound[target => int64]) {
+        // A BOUND STANDS IN FOR THE BODY (D-113). `acquires <= N` says nothing
+        // above N is reached, so N is what the caller must assume — and it is
+        // finite, which is what makes the walk terminate at a trait object instead
+        // of following a call that could reach anything.
+        lo = x.table.bound[target => int64];
+        hi = lo;
+    }
+
+    if (!x.reporting) {
+        drop table_widen(x, caller, lo, hi);
+        pass NIL;
+    }
+
+    if (lo == (raw LOCK_NONE_MIN())) { pass NIL; }
+    if (held == (raw LOCK_NONE_MAX())) { pass NIL; }
+    if (lo > held) { pass NIL; }
+
+    string:m1 = relay string_concat("this holds lock level ",
+                                    raw int_to_string(held => int64));
+    string:m2 = relay string_concat(m1, " and can acquire level ");
+    string:m3 = relay string_concat(m2, raw int_to_string(lo => int64));
+    string:m4 = relay string_concat(m3,
+        "; acquisition must strictly increase, or a cycle of threads each waiting on the next becomes possible (D-056)");
+    drop locks_err(x, raw LOCK_ORDER(), m4, at);
+    pass NIL;
+};
+
+// --- an implementation against its trait's bound --------------------------------
+//
+// "Implementations are checked against it" (D-056). A trait method saying
+// `acquires <= 3i32` promises that a call through `dyn Storage` reaches nothing
+// above 3, and the promise is only worth the check.
+//
+// THE CHECK IS ON `acq_max`, NOT `acq_min`. The bound is a ceiling, so what
+// matters is the HIGHEST level the implementation can reach — the lowest is what
+// the ordering rule cares about, and confusing the two would accept an
+// implementation that acquires 9 because it also acquires 1.
+func:check_against_bound = NIL(Locks->:x, DeclNode:d, int32:decl) {
+    if (!(x.table.has_bound[decl => int64])) { pass NIL; }
+    if (!x.reporting) { pass NIL; }
+
+    int32:bound = x.table.bound[decl => int64];
+    int32:hi = relay table_max(x, decl);
+    if (hi == (raw LOCK_NONE_MAX())) { pass NIL; }
+    if (hi <= bound) { pass NIL; }
+
+    string:m1 = relay string_concat("this declares `acquires <= ",
+                                    raw int_to_string(bound => int64));
+    string:m2 = relay string_concat(m1, "` and can reach level ");
+    string:m3 = relay string_concat(m2, raw int_to_string(hi => int64));
+    string:m4 = relay string_concat(m3,
+        "; a call through a trait object must have a finite acquisition set, and the bound is what makes it one (D-056)");
+    drop locks_err(x, raw LOCK_EXCEEDS_BOUND(), m4, d.span);
+    pass NIL;
+};
+
+pub func:locks_report_mode = NIL(Locks->:x) { x.reporting = true; pass NIL; };
+
+// THE ROUNDS DID NOT SETTLE, so the analysis does not know what any function can
+// reach and says so rather than reporting what it had. An analysis that quietly
+// reports partial results is the under-reporting D-056 exists to prevent, arrived
+// at by a different road.
+pub func:locks_unsettled = NIL(Locks->:x, Span:sp) {
+    drop diaglist_push(x.diags, raw diag_error(raw LOCK_INTERNAL(),
+        "the lock-level analysis did not settle within its round bound, so acquisition order cannot be shown to increase",
+        sp));
+    pass NIL;
+};
+
+// THE BOUND A TRAIT METHOD DECLARED, copied onto the implementation that supplies
+// it — so the implementation is checked against a promise it did not have to
+// repeat.
+//
+// AN ABSENT CLAUSE IS A BOUND OF NOTHING, which is the whole of D-056's "an
+// undeclared method may not acquire at all". It is not a special case to remember:
+// no clause means no permission, the same shape that makes a trait method with no
+// body a real absence rather than a flag (D-103).
+func:inherit_trait_bound = NIL(Locks->:x, int32:impl_decl, DeclId:method) {
+    DeclNode:m = relay ast_decl(x.ast, method);
+    if (m.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+
+    // WHICH TRAIT, FROM THE IMPL TABLE RATHER THAN FROM THE TYPE NODE. The table
+    // holds the RESOLVED trait for every impl, collected before any check ran
+    // (0.4.6) — so this reads what the checker decided instead of resolving a
+    // second time and risking a different answer.
+    //
+    // An INHERENT impl implements no trait, so there is no bound to inherit and
+    // nothing is promised about calls through a trait object: there are none.
+    int32:trait_ty = relay impl_trait_of(x, impl_decl);
+    if (trait_ty == 0i32) { pass NIL; }
+    int32:tdecl = raw type_decl_of(x.types, trait_ty);
+    if (tdecl == 0i32) { pass NIL; }
+
+    DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+    if (td.kind != DeclKind.DeclTraitDecl) { pass NIL; }
+
+    int32:name = raw decl_name(m);
+    int32:n = raw item_member_count(x.ast, td);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclNode:tm = relay ast_decl(x.ast, raw item_member(x.ast, td, i));
+        if (tm.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(tm)) == name) {
+                LevelRead:b = relay read_acquires(x, tm);
+                if (b.found) {
+                    if (b.bounded) {
+                        x.table.bound[method.index => int64] = b.level;
+                        x.table.has_bound[method.index => int64] = true;
+                    }
+                }
+                pass NIL;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// The resolved trait a given `impl` block implements, or 0 for an inherent one.
+//
+// MATCHED ON THE DECLARATION INDEX, which is the identity the table records. An
+// earlier version compared SPANS, which is a second way of asking "are these the
+// same declaration" and would answer wrongly the moment two impls shared a line —
+// the identity is already in hand and does not need reconstructing.
+func:impl_trait_of = int32(Locks->:x, int32:impl_decl) {
+    int32:n = raw impl_count(x.impls);
+    int32:i = 0i32;
+    while (i < n) {
+        ImplEntry:e = relay impl_at(x.impls, i);
+        if (e.decl == impl_decl) { pass e.trait_id; }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};

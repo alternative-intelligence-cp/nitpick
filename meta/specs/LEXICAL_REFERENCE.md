@@ -60,6 +60,7 @@ ControlFlow         ::= "if" | "else" | "while" | "for" | "loop" | "till"
                       | "defaults" | "discard" | "move" | "relay"
 
 VerificationKeyword ::= "prove" | "assert_static" | "requires" | "ensures"
+                      | "acquires"
                       | "invariant" | "fails" | "on" | "with" | "never"
 
 AsyncKeyword        ::= "async" | "await"

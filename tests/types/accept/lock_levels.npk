@@ -1,0 +1,121 @@
+// Lock levels used correctly, which the frontend must ACCEPT (D-056, 0.5.6).
+//
+// The counterweight to `rejection/lock_levels.npk`. An ordering analysis that
+// refused every second acquisition passes every case there — and this one has a
+// specific way to be too strict, because it has to decide when a lock is RELEASED
+// without a release to look at. Get that wrong and ordinary code stops compiling.
+//
+// D-056's model is that the guard's lifetime is the critical section: release is
+// automatic at scope exit, so there is no unlock to forget and no early-return path
+// that leaks the lock. What that means for the analysis is that a level is held for
+// the rest of the block that bound it, and nowhere else.
+
+struct:Guard = { int32:v; };
+
+func:take_1 = Guard() acquires 1i32 { pass Guard{ v: 1i32 }; };
+func:take_2 = Guard() acquires 2i32 { pass Guard{ v: 2i32 }; };
+func:take_3 = Guard() acquires 3i32 { pass Guard{ v: 3i32 }; };
+
+// --- upward is the whole point ------------------------------------------------------
+
+func:strictly_increasing = NIL() {
+    Guard:a = raw take_1();
+    Guard:b = raw take_2();
+    Guard:c = raw take_3();
+    discard(a.v);
+    discard(b.v);
+    discard(c.v);
+    pass NIL;
+};
+
+// --- release at scope exit -------------------------------------------------------------
+//
+// The guard is bound in an inner block, so the level is held for that block and not
+// after it. Taking a LOWER level afterwards is correct code, and an analysis that
+// held the level to the end of the function would refuse it.
+
+func:released_at_scope_exit = NIL() {
+    {
+        Guard:a = raw take_3();
+        discard(a.v);
+    }
+    Guard:b = raw take_1();
+    discard(b.v);
+    pass NIL;
+};
+
+// A BARE CALL LEAVES NOTHING HELD. `reaches_3` acquires and releases inside itself
+// — its guard is scoped there — so the caller holds nothing afterwards. Treating a
+// call and a binding alike would refuse every second call to an ordinary helper.
+
+func:reaches_3 = NIL() {
+    Guard:g = raw take_3();
+    discard(g.v);
+    pass NIL;
+};
+
+func:bare_call_holds_nothing = NIL() {
+    drop reaches_3();
+    Guard:b = raw take_1();
+    discard(b.v);
+    drop reaches_3();
+    pass NIL;
+};
+
+// --- a function that acquires nothing is not in the analysis's way ------------------------
+
+func:ordinary_helper = int32(int32:n) {
+    pass (n + 1i32);
+};
+
+func:calls_an_ordinary_helper = int32() {
+    Guard:a = raw take_2();
+    int32:v = raw ordinary_helper(a.v);
+    pass v;
+};
+
+// --- a trait bound its implementations keep ------------------------------------------------
+
+trait:Storage = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+};
+
+struct:Tight = { int32:v; };
+
+// REACHES 2, DECLARED <= 3. The bound is a ceiling, so anything at or below it is
+// fine — and the implementation does not repeat the clause, because the promise is
+// the trait's.
+impl:Tight:Storage = {
+    pub func:commit = NIL(Self:self) {
+        Guard:g = raw take_2();
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+struct:Quiet = { int32:v; };
+
+// AN IMPLEMENTATION THAT ACQUIRES NOTHING keeps any bound trivially. "An undeclared
+// method may not acquire at all" is about the DECLARATION being absent, not about
+// an implementation being empty.
+impl:Quiet:Storage = {
+    pub func:commit = NIL(Self:self) {
+        pass NIL;
+    };
+};
+
+// --- an inherent impl promises nothing and is bound by nothing --------------------------------
+
+struct:Alone = { int32:v; };
+
+impl:Alone = {
+    pub func:whatever = NIL(Self:self) {
+        Guard:g = raw take_3();
+        discard(g.v);
+        pass NIL;
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

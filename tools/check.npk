@@ -77,6 +77,7 @@ use "../src/frontend/analysis/analysis_codes.npk".*;
 use "../src/frontend/analysis/escape.npk".*;
 use "../src/frontend/analysis/bindings.npk".*;
 use "../src/frontend/analysis/exhaust.npk".*;
+use "../src/frontend/analysis/locks.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
@@ -258,6 +259,45 @@ func:main = int32(cstring[]:argv) {
         DeclId:mid7 = DeclId{ index: e7.root };
         drop exhaust_module(@exh, mid7, e7.scope);
         z2 = z2 + 1i32;
+    }
+
+    // LOCK LEVELS (D-056, D-113, 0.5.6) — the cycle's only whole-program analysis,
+    // affordable because verification is whole-program anyway. Seed every declared
+    // level, widen until nothing changes, then report once. Reporting during the
+    // widening rounds would report each finding once per round.
+    Locks:lk = raw locks_init(@g.ast, @g.tab, @types, @ets, @it, @im, @bd, @diags);
+    int32:s1 = 0i32;
+    while (s1 < (raw graph_count(@g))) {
+        ModuleEntry:e8 = raw graph_at(@g, s1);
+        drop locks_seed(@lk, DeclId{ index: e8.root }, e8.scope);
+        s1 = s1 + 1i32;
+    }
+
+    int32:round = 0i32;
+    bool:settling = true;
+    while (settling) {
+        if (round >= (raw LOCK_ROUNDS())) { break; }
+        drop locks_new_round(@lk);
+        int32:w1 = 0i32;
+        while (w1 < (raw graph_count(@g))) {
+            ModuleEntry:e9 = raw graph_at(@g, w1);
+            drop locks_widen(@lk, DeclId{ index: e9.root }, e9.scope);
+            w1 = w1 + 1i32;
+        }
+        settling = raw locks_changed(@lk);
+        round = round + 1i32;
+    }
+    if (settling) {
+        drop locks_unsettled(@lk, (relay ast_decl(@g.ast,
+            DeclId{ index: (raw graph_at(@g, 0i32)).root })).span);
+    }
+
+    drop locks_report_mode(@lk);
+    int32:r1 = 0i32;
+    while (r1 < (raw graph_count(@g))) {
+        ModuleEntry:ea = raw graph_at(@g, r1);
+        drop locks_widen(@lk, DeclId{ index: ea.root }, ea.scope);
+        r1 = r1 + 1i32;
     }
 
     // EVERY TYPE LAID OUT, once the whole program is known. The checker asks for

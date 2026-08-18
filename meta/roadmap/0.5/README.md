@@ -96,7 +96,7 @@ naming the wrong thing is how the gap arose in the first place.
 | ~~**0.5.3**~~ | ~~`move`, moved-from bindings, and the manual-memory qualifiers (D-065)~~ — **DONE**. A free is a move; four sets merging in three directions. D-119 settled. |
 | ~~**0.5.4**~~ | ~~Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1)~~ — **DONE**. Coverage answered once and consumed twice; 0.5.2's debt paid. D-120 settled. |
 | ~~**0.5.5**~~ | ~~`unknown` taint on `Result.value` (D-007)~~ — **DONE**. The branch decides, not the mention; `ok()` was already gone. D-121 settled. |
-| **0.5.6** | Lock levels — the call-graph acquisition analysis (D-056) |
+| ~~**0.5.6**~~ | ~~Lock levels — the call-graph acquisition analysis (D-056)~~ — **DONE**. A contract marks the acquisition, not a name. D-122 settled. |
 | **0.5.7** | Diagnostics, the suites, and closing the cycle |
 
 ## What "done" looks like
