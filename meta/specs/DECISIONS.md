@@ -8230,3 +8230,103 @@ This applies to every later analysis in cycle 0.5 that carries binding state —
 definite assignment (0.5.2), moved-from bindings (0.5.3), `unknown` taint (0.5.5).
 Each has the same shape and each will have the same bug if written as one pass.
 
+
+---
+
+## D-117 — A borrow does not need a second-class parameter; the caller tracks what comes back
+
+**Settled in cycle 0.5.1**, and it settles it the opposite way to the
+recommendation that was made first. What decided it was checking the
+recommendation against this compiler's own source.
+
+### The hole that had to be closed
+
+D-004's five rules are all about the frame a borrow was taken in, and this program
+walks straight through them:
+
+```nitpick
+func:launder = int32->(int32->:q) { pass q; };
+func:caller  = int32->() { int32:x = 5i32; pass (raw launder(@x)); };
+```
+
+`caller` returns a pointer into its own dead frame. Rule 2 never sees a borrow,
+because a call's result was not one. **The escape rules were defeated by one
+function call.**
+
+### The rejected fix: make a parameter second-class
+
+`AST_REFERENCE.md` names `borrow_imm` / `borrow_mut` and D-004 cites them as
+existing machinery, so the obvious move is to put them on parameters and let rule
+2 refuse `pass q;` inside `launder`.
+
+**It does not survive contact with this compiler.** Every context struct is built
+from pointer parameters and handed back:
+
+```nitpick
+func:ctx_init = Ctx(int32->:a, int32->:b) { pass Ctx{ a: a, b: b }; };
+```
+
+`resolver_init`, `etyper_init`, `tyres_init`, `graph_init` and `escape_init` are
+all exactly this. Once a parameter is a borrow binding, that `pass` is a rule 2
+violation and **the compiler stops compiling itself** — while being perfectly
+safe, because those pointers are the *caller's* and the struct goes straight back
+to that caller.
+
+### Why D-004 was right and the diagnosis was wrong
+
+The reason "passing down needs no annotation" holds is sharper than it first
+looks:
+
+> **A pointer parameter never points into the callee's own frame.**
+
+It points into the caller's, or somewhere older. So a callee cannot create an
+escape out of a pointer it received, and `pass q;` inside `launder` is returning
+the caller's pointer to the caller — which is correct code. The escape is one
+level up, and that is where the fix belongs.
+
+### The decision: two caller-side rules, and no new syntax
+
+**Rule A — a call's result is a borrow if an argument was one and the result type
+can carry a pointer.** That closes `launder`. The type test is what keeps it
+usable: `sum_through(@x, @y)` returns an `int32`, carries nothing, and stays
+ordinary code.
+
+**Rule B — two or more borrow arguments may have been connected to each other.**
+
+```nitpick
+func:store_through = NIL(Cell->:h, int32->:q) { h.slot = q; pass NIL; };
+drop store_through(@c, @x);       // `c` now points at `x`, and nothing was returned
+```
+
+Rule A cannot see this: the result is `NIL`. Neither can the callee's own rules,
+correctly — both arguments are the caller's, and writing one into the other is the
+caller's business. So the caller assumes the connection was made and marks each
+borrow argument whose *pointee* can hold a pointer.
+
+**One borrow argument is exempt, and that exemption is load-bearing.** With
+nothing else passed in there is no second borrow to store, and `tt_intern(@t, …)`
+— take the address of a local, call a helper, keep the local — is this compiler's
+other universal idiom. Removing the exemption refuses `typetable_init`.
+
+### What decides "can carry a pointer"
+
+Pointers, slices, strings, `cstring`, `dyn` and `any` carry one outright. The
+wrappers carry what they wrap, which is why an `int32[4]` carries nothing and an
+`int32[]` does. The scalars carry nothing. A **function value carries nothing** —
+it is a code address, and with closures removed (D-018) there is no environment
+beside it.
+
+A **struct and an enum answer `true` without being looked into.** Their field
+types live in the AST as unresolved `TypeId`s, so answering properly needs a
+resolver and the declaring scope, neither of which an analysis pass carries. The
+cost is a false refusal on a struct of scalars; the alternative is threading a
+resolver through every analysis in this cycle to answer a question whose wrong
+answer is safe.
+
+### What `borrow_imm` / `borrow_mut` are still for
+
+**Not escape.** They may still be wanted for the other half of D-004 — the
+aliasing rules that make `$$i` many-readers and `$$m` exclusive, and that Z3
+discharges for disjointness. That is a different question with a different
+answer, and it is not settled here.
+

@@ -145,6 +145,47 @@ func:iterates_a_plain_range = int32() {
     pass acc;
 };
 
+// --- the context-struct idiom, which decided the design ------------------------
+//
+// Build an aggregate out of pointer parameters and hand it back. `resolver_init`,
+// `etyper_init`, `tyres_init`, `graph_init` and `escape_init` are all exactly
+// this, and it is safe: the pointers are the CALLER's, and the struct goes
+// straight back to that caller.
+//
+// THIS IS THE CASE THAT RULED OUT MAKING A PARAMETER SECOND-CLASS. With the
+// `borrow_imm` / `borrow_mut` route, `a` and `b` below are borrow bindings and
+// `pass Ctx{ a: a, b: b };` is a rule 2 violation — and the compiler stops
+// compiling itself.
+
+struct:Ctx = { int32->:a; int32->:b; };
+
+func:ctx_init = Ctx(int32->:a, int32->:b) {
+    pass Ctx{ a: a, b: b };
+};
+
+func:builds_a_context = int32() {
+    int32:x = 1i32;
+    int32:y = 2i32;
+    Ctx:c = raw ctx_init(@x, @y);
+    pass ((<-c.a) + (<-c.b));
+};
+
+// ONE BORROW ARGUMENT CANNOT BE CONNECTED TO ANYTHING, because there is no second
+// borrow to store into it. `typetable_init` is this shape — take the address of a
+// local, hand it to a helper, return the local — and the exemption is what keeps
+// it compiling.
+
+func:touches = NIL(Ctx->:h) {
+    h.a = NULL;
+    pass NIL;
+};
+
+func:seeds_itself = Ctx() {
+    Ctx:c = Ctx{ a: NULL, b: NULL };
+    drop touches(@c);
+    pass c;
+};
+
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };

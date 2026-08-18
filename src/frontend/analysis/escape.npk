@@ -522,22 +522,28 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
         pass ((raw type_kind(x.types, ty)) == (raw TY_POINTER()));
     }
 
-    // A CALL. Rule 4 lives here, and the RESULT is not a borrow — see
-    // `escape_call` for the one open question that sits behind that.
+    // A CALL. Rule 4 lives here, and so do the two CALLER-SIDE rules that make
+    // "passing down needs no annotation" actually hold — see `escape_call_like`.
     if (n.kind == ExprKind.ExprCallExpr) {
-        drop escape_call(x, n, d);
-        pass false;
+        int32:gc = raw expr_generic_count(n);
+        pass (relay escape_call_like(x, id, raw expr_none(),
+                                     (raw expr_list_start(n)) + gc,
+                                     (raw expr_list_count(n)) - gc,
+                                     raw callee_is_extern(x, n),
+                                     raw expr_callee(n), d));
     }
     if (n.kind == ExprKind.ExprMethodCallExpr) {
-        drop escape_expr(x, raw expr_operand(n), d);
-        drop escape_window(x, raw expr_list_start(n), raw expr_list_count(n), d);
-        pass false;
+        pass (relay escape_call_like(x, id, raw expr_operand(n),
+                                     raw expr_list_start(n),
+                                     raw expr_list_count(n),
+                                     false, raw expr_none(), d));
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
-        int32:gc = raw expr_generic_count(n);
-        drop escape_window(x, (raw expr_list_start(n)) + gc,
-                           (raw expr_list_count(n)) - gc, d);
-        pass false;
+        int32:bgc = raw expr_generic_count(n);
+        pass (relay escape_call_like(x, id, raw expr_none(),
+                                     (raw expr_list_start(n)) + bgc,
+                                     (raw expr_list_count(n)) - bgc,
+                                     false, raw expr_none(), d));
     }
 
     // RULE 4, THIRD CROSSING — a borrow held across a suspension.
@@ -624,57 +630,242 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) {
     pass (raw escape_holds(x, s.origin));
 };
 
-// RULE 4, FIRST CROSSING — AN `extern` CALL, and the one that matters most.
+// A CALL — RULE 4, AND THE TWO CALLER-SIDE RULES THAT MAKE D-004 HOLD.
 //
-// The callee is not Nitpick. It may retain the pointer for as long as it likes and
-// nothing downstream can be checked, which is the same argument the zero-dependency
-// rule rests on: past the FFI barrier there is no control over what happens.
+// WHY THE CALLER AND NOT THE CALLEE. D-004 says passing a borrow downward is
+// always safe "because the callee's frame is strictly inner", and the reason that
+// is true is sharper than it first looks: A POINTER PARAMETER NEVER POINTS INTO
+// THE CALLEE'S OWN FRAME. It points into the caller's, or somewhere older still —
+// so the callee cannot create an escape out of it, and `pass q;` inside a callee
+// is returning the CALLER's pointer to the caller, which is correct code.
 //
-// A CALL'S RESULT IS NOT A BORROW, and that is a decision with a hole behind it.
-// D-004 says passing a borrow downward is always safe "because the callee's frame
-// is strictly inner", which is true of the callee's own locals and NOT of what the
-// callee returns: a function that takes `int32->:q` and does `pass q;` hands the
-// borrow back to its caller as an ordinary pointer, and the caller may then return
-// it out of the frame the borrow actually points into.
+// The escape happens one level up, and so does the fix:
 //
-// Closing that needs a way to DECLARE a parameter second-class. `AST_REFERENCE.md`
-// lists `borrow_imm` / `borrow_mut` as `VarDeclStmt` qualifiers and D-004 cites
-// them as existing machinery, but neither is a keyword, `p_parse_param` accepts no
-// qualifier at all, and the spec does not put them on parameters even in prose. So
-// the spelling that closes the hole does not exist in the language today.
+//     func:launder = int32->(int32->:q) { pass q; };
+//     func:caller  = int32->() { int32:x = 5i32; pass (raw launder(@x)); };
 //
-// Recorded rather than guessed at, because guessing goes wrong in both directions:
-// treating every pointer parameter as second-class would forbid returning one at
-// all, and treating none as second-class is the hole. It is raised in 0.5.1's
-// notes as a language-surface decision, which is where it belongs.
-func:escape_call = NIL(Escape->:x, ExprNode:n, int32:depth) {
-    drop escape_expr(x, raw expr_callee(n), depth);
+// `caller` returns a pointer into its OWN frame. Nothing `launder` did was wrong.
+//
+// THE ALTERNATIVE WAS TO MAKE A PARAMETER SECOND-CLASS with the `borrow_imm` /
+// `borrow_mut` qualifiers `AST_REFERENCE.md` names, and it does not survive
+// contact with this compiler. Every context struct here is built from pointer
+// parameters and handed back —
+//
+//     func:ctx_init = Ctx(int32->:a, int32->:b) { pass Ctx{ a: a, b: b }; };
+//
+// — which is safe, because those pointers are the CALLER's and the struct goes
+// straight back to that caller. Once a parameter is a borrow binding, rule 2
+// refuses it, and `resolver_init`, `etyper_init`, `tyres_init`, `graph_init` and
+// `escape_init` all stop compiling. So: no qualifier, no annotation, and two rules
+// here.
+//
+// RULE A — A CALL'S RESULT IS A BORROW IF AN ARGUMENT WAS ONE AND THE RESULT CAN
+// CARRY A POINTER. That is `launder` closed. The type test is what keeps it usable:
+// `sum_through(@x, @y)` returns an `int32` and carries nothing, so passing borrows
+// into a computation stays ordinary code.
+//
+// RULE B — TWO OR MORE BORROW ARGUMENTS MAY HAVE BEEN CONNECTED TO EACH OTHER.
+//
+//     func:store_it = NIL(Ctx->:h, int32->:q) { h.a = q; pass NIL; };
+//     drop store_it(@c, @x);      // `c` now points at `x`, and nothing was returned
+//
+// Rule A cannot see this one: the result is `NIL`. Neither can the callee's own
+// rules, and correctly so — `h` and `q` are both the caller's, and writing one
+// into the other is the caller's business. So the caller assumes the connection
+// was made and marks each borrow argument whose POINTEE can hold a pointer.
+//
+// ONE BORROW ARGUMENT IS EXEMPT, and that exemption is load-bearing rather than an
+// optimisation: with nothing else passed in, there is no second borrow to store,
+// and `tt_intern(@t, …)` — take the address of a local, call a helper, return the
+// local — is the compiler's other universal idiom.
+func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
+                             int32:count, bool:ext, ExprId:callee, int32:depth) {
+    drop escape_expr(x, callee, depth);
 
-    int32:gc = raw expr_generic_count(n);
-    int32:start = (raw expr_list_start(n)) + gc;
-    int32:count = (raw expr_list_count(n)) - gc;
+    int32:borrowed = 0i32;
+    if (relay escape_arg(x, recv, ext, depth)) { borrowed = borrowed + 1i32; }
 
-    bool:ext = raw callee_is_extern(x, n);
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        bool:borrowed = relay escape_expr(x, a, depth);
-        if (borrowed) {
-            if (ext) {
-                ExprNode:an = relay ast_expr(x.ast, a);
-                // THE ARGUMENT'S SPAN, NOT THE CALL'S. Two arguments that each
-                // break the rule are two findings, and reporting both at the
-                // call's span makes them identical — which the diagnostic list
-                // then deduplicates into one, hiding the second. That is exactly
-                // how 0.4.7's argument-mismatch spans were wrong.
-                drop escape_err(x, raw BORROW_EXTERN(),
-                    "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
-                    an.span);
-            }
-        }
+        if (relay escape_arg(x, a, ext, depth)) { borrowed = borrowed + 1i32; }
         i = i + 1i32;
     }
+
+    // RULE B.
+    if (borrowed >= 2i32) {
+        drop escape_connect(x, recv);
+        int32:j = 0i32;
+        while (j < count) {
+            ExprId:b = ExprId{ index: raw ast_id_at(x.ast, start, j) };
+            drop escape_connect(x, b);
+            j = j + 1i32;
+        }
+    }
+
+    // RULE A.
+    if (borrowed == 0i32) { pass false; }
+    pass (relay carries_pointer(x, raw exprtypes_get(x.etypes, id),
+                                raw CARRY_FUEL()));
+};
+
+// One argument, walked and reported on. RULE 4's `extern` crossing is here because
+// this is where an argument's own span is in hand.
+func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) {
+    if (raw expr_is_none(a)) { pass false; }
+    if (!(relay escape_expr(x, a, depth))) { pass false; }
+    if (ext) {
+        // THE ARGUMENT'S SPAN, NOT THE CALL'S. Two arguments that each break the
+        // rule are two findings, and reporting both at the call's span makes them
+        // identical — which the diagnostic list then deduplicates into one, hiding
+        // the second. That is exactly how 0.4.7's argument-mismatch spans were
+        // wrong.
+        //
+        // The callee is not Nitpick. It may retain the pointer for as long as it
+        // likes and nothing downstream can be checked, which is the argument the
+        // zero-dependency rule rests on: past the FFI barrier there is no control
+        // over what happens.
+        ExprNode:an = relay ast_expr(x.ast, a);
+        drop escape_err(x, raw BORROW_EXTERN(),
+            "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
+            an.span);
+    }
+    pass true;
+};
+
+// RULE B, for one argument: what may this call have written a borrow INTO?
+func:escape_connect = NIL(Escape->:x, ExprId:a) {
+    if (raw expr_is_none(a)) { pass NIL; }
+    if (!(relay escape_yields(x, a))) { pass NIL; }
+
+    // WHAT IT POINTS AT DECIDES. A callee can only store a pointer through this
+    // argument if the pointee has somewhere to put one — `int32->` has not, which
+    // is what keeps `sum_through(@x, @y)` ordinary code.
+    int32:aty = raw exprtypes_get(x.etypes, a);
+    if ((raw type_kind(x.types, aty)) != (raw TY_POINTER())) { pass NIL; }
+    if (!(relay carries_pointer(x, raw type_elem(x.types, aty),
+                                raw CARRY_FUEL()))) { pass NIL; }
+
+    // `@place` — the binding under the place is what may now hold a borrow, and it
+    // can be named.
+    PlaceRoot:r = relay place_root(x.ast, a, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind == ExprKind.ExprAddressOfExpr) {
+        drop escape_mark_place(x, raw expr_operand(rn));
+        pass NIL;
+    }
+    if (rn.kind == ExprKind.ExprBorrowExpr) {
+        drop escape_mark_place(x, raw expr_operand(rn));
+        pass NIL;
+    }
+
+    // A BINDING THAT HOLDS A BORROW, whose POINTEE CANNOT BE NAMED. `f(p, @x)`
+    // where `p` is a `Ctx->` may leave `p`'s pointee holding a borrow, and there
+    // is no binding here to mark — the name `p` is the pointer, not the thing
+    // pointed at. Refused rather than passed over, for the reason a `pick`
+    // binding is: an analysis that answers "nothing happened" where it cannot
+    // look is an escape hatch, and this one would be reached by introducing a
+    // variable.
+    drop escape_err(x, raw BORROW_UNTRACKED(),
+        "a borrow reaches this call through a binding whose target the escape analysis cannot name, so what the call may store into it cannot be followed",
+        rn.span);
     pass NIL;
+};
+
+// The binding under a place expression, marked as holding a borrow.
+func:escape_mark_place = NIL(Escape->:x, ExprId:place) {
+    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    drop escape_mark(x, s.origin);
+    pass NIL;
+};
+
+// DOES THIS EXPRESSION YIELD A BORROW — asked WITHOUT walking into it and without
+// reporting anything, because rule B asks it a second time about arguments
+// `escape_expr` has already walked and reported on.
+//
+// The same two questions `expr_is_borrow` and `escape_binding` answer, over the
+// same `place_root` walk. What it does NOT ask is whether the expression CONTAINS
+// a borrow somewhere inside it: rule B needs a place it can name, and
+// `Holder{ inner: @x }` carries a borrow without being one.
+func:escape_yields = bool(Escape->:x, ExprId:id) {
+    PlaceRoot:r = relay place_root(x.ast, id, raw BORROW_FUEL());
+    if (r.exhausted) { pass true; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind == ExprKind.ExprAddressOfExpr)  { pass true; }
+    if (rn.kind == ExprKind.ExprBorrowExpr)     { pass true; }
+    if (rn.kind == ExprKind.ExprIdentifierExpr) { pass (raw escape_binding(x, rn)); }
+    pass false;
+};
+
+// CAN A VALUE OF THIS TYPE CARRY A POINTER, and therefore a borrow?
+//
+// Rules A and B both turn on this, and both would be unusable without it: every
+// call that took a borrow would produce a borrow, and `sum_through(@x, @y)` — a
+// computation over two borrowed integers — would be refused for returning one.
+//
+// A STRUCT AND AN ENUM ANSWER `true` WITHOUT BEING LOOKED INTO. A struct's field
+// types live in the AST as unresolved `TypeId`s, so answering properly needs a
+// resolver and the scope the struct was declared in, neither of which an analysis
+// pass has. The cost is a false refusal on a struct of scalars; the alternative is
+// carrying a resolver into every analysis in this cycle to answer a question whose
+// wrong answer is safe.
+pub func:CARRY_FUEL = int32() { pass 32i32; };
+
+func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
+    if (fuel <= 0i32) { pass true; }
+    int32:k = raw type_kind(x.types, ty);
+
+    // A pointer, and the three fat ones. A slice is `{ptr, len}` and a string and
+    // a `cstring` are pointers at whatever they name, whatever the element is.
+    if (k == (raw TY_POINTER()))  { pass true; }
+    if (k == (raw TY_SLICE()))    { pass true; }
+    if (k == (raw TY_STRING()))   { pass true; }
+    if (k == (raw TY_CSTRING()))  { pass true; }
+    if (k == (raw TY_DYN()))      { pass true; }
+    if (k == (raw TY_ANY()))      { pass true; }
+
+    // The wrappers carry exactly what they wrap. An `int32[4]` is four integers
+    // stored inline and carries nothing, which is why an array is not a slice here.
+    if (k == (raw TY_ARRAY()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+
+    // A `Result<T>` carries what its success type carries. The error field is a
+    // `tbb32` (D-005) and can hold nothing.
+    if (k == (raw TY_RESULT()))   { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
+
+    // THE SCALARS, which are the whole point of asking. Each is a value with no
+    // room for an address in it, and `bool`, `char` and the kernel handles are not
+    // integers but are just as incapable of holding one (D-042).
+    if (k == (raw TY_NIL()))      { pass false; }
+    if (k == (raw TY_BOOL()))     { pass false; }
+    if (k == (raw TY_INT()))      { pass false; }
+    if (k == (raw TY_CHAR()))     { pass false; }
+    if (k == (raw TY_FLOAT()))    { pass false; }
+    if (k == (raw TY_TBB()))      { pass false; }
+    if (k == (raw TY_KERNEL()))   { pass false; }
+
+    // A FUNCTION VALUE IS A CODE ADDRESS AND NOT A DATA ONE. Closures are removed
+    // (D-018), so there is no environment pointer beside it and nothing that could
+    // point into a frame. Said out loud because `TY_FUNC` looks like a pointer.
+    if (k == (raw TY_FUNC()))          { pass false; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
+
+    // EVERYTHING ELSE ANSWERS `true`: a struct, an enum, `Self`, a generic
+    // parameter, a `comptime` value, and the invalid type. Fail closed — the cost
+    // of a wrong `true` is a program refused, and the cost of a wrong `false` is a
+    // pointer into a dead frame.
+    pass true;
 };
 
 func:callee_is_extern = bool(Escape->:x, ExprNode:n) {

@@ -91,7 +91,7 @@ naming the wrong thing is how the gap arose in the first place.
 | | Topic |
 |---|---|
 | ~~**0.5.0**~~ | ~~The substrate~~ — **DONE**. An expression's type recorded once, plus the borrow classifier. D-113 settled. |
-| ~~**0.5.1**~~ | ~~Second-class borrows and escape (D-004)~~ — **DONE**. All five rules, marked to a fixpoint. D-114, D-115 and D-116 settled; two language-surface questions raised. |
+| ~~**0.5.1**~~ | ~~Second-class borrows and escape (D-004)~~ — **DONE**. All five rules, marked to a fixpoint, with the two caller-side rules that make "passing down needs no annotation" hold. D-114 through D-117 settled. |
 | **0.5.2** | Definite assignment, `fixed`, and `defer` ordering |
 | **0.5.3** | `move`, moved-from bindings, and the manual-memory qualifiers (D-065) |
 | **0.5.4** | Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1) |
@@ -112,12 +112,13 @@ Both block a subcycle if left, and neither is settled in the spec set. **Both ar
 now settled** — D-113 and the expression-type table — and 0.5.1 raised two more of
 exactly this kind, recorded in `0.5.1.md`:
 
-- **A parameter cannot be declared second-class.** `borrow_imm` / `borrow_mut` are
-  named by `AST_REFERENCE.md` and cited by D-004, and neither is a keyword;
-  `p_parse_param` accepts no qualifier at all. Without one, a callee can return a
-  borrow it was passed and **the escape rules are defeated by one function call**.
-  Demonstrated, not theorised: the two-function program that does it is accepted
-  today.
+- ~~**A parameter cannot be declared second-class.**~~ **SETTLED as D-117 — it does
+  not need to be.** A callee could return a borrow it was passed, and the escape
+  rules were defeated by one function call. The fix is caller-side and needs no
+  syntax: a pointer parameter never points into the callee's own frame, so the
+  escape is always one level up. Making the parameter second-class was the first
+  recommendation and would have **stopped the compiler compiling itself** — every
+  context struct here is built from pointer parameters and handed back.
 - **A C variadic tail has no type.** `..*` in an `extern` names nothing, and the
   obvious filler `any[]` is the bare `any` the type system refuses on purpose.
   Refused explicitly (`NITPICK-TYPE-023`) rather than guessed at, and it must be

@@ -111,6 +111,46 @@ func:store_local_aggregate = NIL() {
     pass NIL;
 };
 
+// --- a call's result carries what its arguments did ----------------------------
+//
+// D-004 says passing a borrow down needs no annotation "because the callee's frame
+// is strictly inner", and the reason that holds is sharper than it looks: A POINTER
+// PARAMETER NEVER POINTS INTO THE CALLEE'S OWN FRAME. So `pass q;` below is
+// `launder` returning the CALLER's pointer to the caller, which is correct code and
+// is NOT refused. The escape is one level up, and that is where it is caught.
+
+func:launder = int32->(int32->:q) {
+    pass q;
+};
+
+// expect-error: NITPICK-BORROW-001
+func:returns_laundered = int32->() {
+    int32:x = 5i32;
+    pass (raw launder(@x));
+};
+
+// --- two borrows into one call may have been connected -------------------------
+//
+// Nothing is returned here, so the rule above cannot see it, and the callee is not
+// doing anything wrong either — `h` and `q` are both the caller's, and writing one
+// into the other is the caller's business. So the CALLER assumes the connection was
+// made.
+
+struct:Cell = { int32->:slot; };
+
+func:store_through = NIL(Cell->:h, int32->:q) {
+    h.slot = q;
+    pass NIL;
+};
+
+// expect-error: NITPICK-BORROW-001
+func:leaks_through_a_callee = Cell() {
+    int32:x = 5i32;
+    Cell:c = Cell{ slot: NULL };
+    drop store_through(@c, @x);
+    pass c;
+};
+
 // --- rule 4: a borrow may not cross an `extern` call ---------------------------
 
 // THE CALLEE IS NOT NITPICK. It may keep the pointer for as long as it likes and
