@@ -146,6 +146,61 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
     pass (raw tt_func_variadic(r.types, s.result, wv.start, wv.count));
 };
 
+// AN `extern` FUNCTION'S TYPE — and it is a `Result<T>` like every other (D-002).
+//
+// NOTHING BUILT THIS UNTIL NOW, which made every call to an `extern` function a
+// type error: `type_ident` had no case for the kind, so the name fell through to
+// "`open` is a type, not a value". The declaration parsed, the name bound, and the
+// only way to find out was to call one. That is the D-085 shape a third time in
+// this cycle — 0.2 parsed the construct, 0.3 bound it, and nothing downstream ever
+// read what they recorded.
+//
+// THE RETURN IS WRAPPED, which is the whole of D-002. A C function reports failure
+// however its author chose, the `fails on` / `never fails` contract is where that
+// convention is written down, and the caller receives a `Result` either way — so a
+// caller never has to ask whether THIS foreign function needs error handling. The
+// contract decides what goes in the error field; it does not decide whether there
+// IS one. `never fails` is an audited claim, not a second calling convention.
+//
+// The failure contract itself is not consumed here. It is a declaration the
+// EMITTER reads to synthesise the wrapping at the call boundary (cycle 0.7); what
+// this owes the checker is the type a caller sees.
+pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
+    TypeId:ret_id = raw extern_fn_return(r.ast, d);
+    if (relay check_not_result_return(r, ret_id, scope)) { pass 0i32; }
+
+    // A C VARIADIC TAIL HAS NO TYPE TO CHECK AGAINST. `check_args` reads the last
+    // window entry as the collector and checks every trailing argument against its
+    // element; `..*` in an `extern` names nothing, so there is no entry to read.
+    // Emitting a plain `TY_FUNC` instead would silently treat `printf`'s fixed
+    // parameters as the whole signature and report every real call as passing too
+    // many arguments — refusing loudly is the honest answer until the language
+    // settles what a C vararg's type is.
+    if (raw decl_has(d, raw DECL_VARIADIC())) {
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_EXTERN_VARIADIC(),
+            "a C variadic `extern` function has no type for its `..*` tail, so calls to it cannot be checked",
+            d.span));
+        pass 0i32;
+    }
+
+    int32:success = relay resolve_type(r, ret_id, scope);
+    int32:wrapped = raw tt_result(r.types, success,
+                                  raw type_size(r.types, success),
+                                  raw type_align(r.types, success));
+
+    int32:mark = raw ast_scratch_mark(r.ast);
+    int32:i = 0i32;
+    while (i < (raw extern_fn_param_count(r.ast, d))) {
+        DeclId:param_id = raw extern_fn_param(r.ast, d, i);
+        DeclNode:pn = relay ast_decl(r.ast, param_id);
+        int32:pt = relay resolve_type(r, raw param_type(pn), scope);
+        drop ast_scratch_push(r.ast, pt);
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(r.ast, mark);
+    pass (raw tt_func(r.types, wrapped, w.start, w.count));
+};
+
 // `..*T[]` AND NOT `..*T`. The brackets are the type — `rest` is bound to a slice
 // inside the body (D-070), and the element every trailing argument is checked
 // against is that slice's element. Written without them there is no element to

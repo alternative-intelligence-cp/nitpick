@@ -323,6 +323,31 @@ pub func:variant_payload_count = int32(DeclNode:d) { pass d.c; };
 pub func:variadic_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:extern_lib = int32(DeclNode:d) { pass (d.payload => int32); };
 
+// An `extern` FUNCTION'S WINDOW: return type, failure contract, parameter count,
+// then the parameters. A THREE-SLOT HEADER, where a `DeclFunctionDecl` has seven —
+// an extern declaration has no body, no generics, no contracts and no attributes,
+// so it carries none of those slots.
+//
+// THE TWO LAYOUTS ARE NOT INTERCHANGEABLE, which is why these accessors exist
+// rather than the `fn_*` ones being pointed at an extern node. `fn_param_count`
+// reads slot 4; on an extern function slot 4 is the second PARAMETER. Reading one
+// layout through the other is the defect shape that has cost this compiler a
+// `till` body typed as an expression and a numeric width resolved as a name.
+pub func:EXTERN_FN_HDR = int32() { pass 3i32; };
+
+pub func:extern_fn_return = TypeId(Ast->:ast, DeclNode:d) {
+    TypeId:t = TypeId{ index: raw d_at(ast, d, 0i32) }; pass t;
+};
+pub func:extern_fn_failure = DeclId(Ast->:ast, DeclNode:d) {
+    DeclId:f = DeclId{ index: raw d_at(ast, d, 1i32) }; pass f;
+};
+pub func:extern_fn_param_count = int32(Ast->:ast, DeclNode:d) {
+    pass (raw d_at(ast, d, 2i32));
+};
+pub func:extern_fn_param = DeclId(Ast->:ast, DeclNode:d, int32:i) {
+    DeclId:p = DeclId{ index: raw d_at(ast, d, (raw EXTERN_FN_HDR()) + i) }; pass p;
+};
+
 // GenericParam: a = value type, b,c = bounds window, payload = name.
 //
 // The two kinds need no flag, and this is not a shortcut. A compile-time value

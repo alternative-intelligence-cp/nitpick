@@ -67,3 +67,17 @@ pub func:TYPE_GENERIC_KIND = string()   { pass "NITPICK-TYPE-021"; };
 // other: nothing in the call is wrong, and what is missing is a type argument
 // the turbofish would have supplied.
 pub func:TYPE_CANNOT_INFER = string()   { pass "NITPICK-TYPE-022"; };
+
+// A C VARIADIC `extern` FUNCTION, whose tail has no type the checker can name.
+//
+// Its own code because it is neither a mismatch nor a rung the backend cannot
+// lower (D-085) — it is a signature shape the LANGUAGE has not settled. A Nitpick
+// variadic writes `..*T[]:rest` and every trailing argument is checked against
+// `T`; a C `..*` names nothing, and the obvious filler is `any[]`, which the same
+// type system refuses as a bare `any` (TYPE-003) on purpose.
+//
+// Refused rather than guessed at. What stood here refused these calls too — as
+// "`printf` is a type, not a value", because an extern function had no type at
+// all — so this replaces a misleading refusal with an accurate one, and makes the
+// open question visible instead of silently wrong.
+pub func:TYPE_EXTERN_VARIADIC = string(){ pass "NITPICK-TYPE-023"; };

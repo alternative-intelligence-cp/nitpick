@@ -499,6 +499,35 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
         pass NIL;
     }
 
+    // A NESTED `mod:name = { … };` IS CHECKED, in the scope its name opened.
+    //
+    // NOTHING CHECKED IT AT ALL until now. The resolver descends into a nested
+    // module and binds every name inside it, and this walk had no entry for the
+    // kind — so a function one nesting level down was resolved and then never
+    // type-checked. `pass "not an int32";` from an `int32` function was reported
+    // at the top level and accepted, silently, inside a `mod` block.
+    //
+    // That is D-085's shape exactly: 0.2 parsed the construct, 0.3 resolved it,
+    // and the checker's silence about it was invisible because there was nothing
+    // to see. A missing case in a walk reports nothing by construction.
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(e.tab, d, scope);
+        if (inner == 0i32) {
+            // The resolver reports this as an internal defect and refuses the
+            // program, so reaching here means it already has. Checking a module's
+            // members in the WRONG scope would report a second, misleading thing
+            // about a program that is already being refused.
+            pass NIL;
+        }
+        int32:mn2 = raw item_member_count(e.ast, d);
+        int32:q = 0i32;
+        while (q < mn2) {
+            drop check_decl(e, raw item_member(e.ast, d, q), inner);
+            q = q + 1i32;
+        }
+        pass NIL;
+    }
+
     // AN `impl` BLOCK'S MEMBERS ARE WALKED WITH THE BLOCK'S CONTEXT — its generic
     // parameters as the enclosing scope, and its target as `Self`. A blanket
     // impl's methods are written in terms of its parameter and a concrete impl's

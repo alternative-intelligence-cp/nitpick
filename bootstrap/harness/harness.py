@@ -300,8 +300,14 @@ def check_kinds_reachable():
     with open(kinds_path, encoding="utf-8") as fh:
         declared = set(KIND_DECL_RE.findall(fh.read()))
 
+    # RECURSIVE, because the frontend has subdirectories now. `analysis/` (cycle
+    # 0.5) and `macro/` (0.6) hold real compiler modules, and a non-recursive glob
+    # would quietly stop counting the kinds they construct -- turning this check
+    # from "nothing is unreachable" into "nothing in the top directory is", which
+    # is the same sentence with a hole in it.
     used = set()
-    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "*.npk")):
+    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "**", "*.npk"),
+                       recursive=True):
         with open(p, encoding="utf-8") as fh:
             used.update(KIND_USE_RE.findall(fh.read()))
 
@@ -398,6 +404,32 @@ def check_type_rejection(binary, path, name, exp):
     suite accepts as a pass.
     """
     return check_module_rejection(binary, path, name, exp)
+
+
+def check_type_accept(binary, path, name):
+    """A whole program the frontend must accept, with NO diagnostics at all.
+
+    The counterweight to the three rejection suites. Those establish that a rule
+    fires; this establishes that it fires only when it should, which no number of
+    negative cases can show -- a checker that refused every program would pass
+    every one of them.
+
+    Any diagnostic is a failure, whatever its code: a program here is correct, so
+    there is nothing for the frontend to say about it.
+    """
+    try:
+        r = subprocess.run([binary, path], capture_output=True, timeout=20)
+    except subprocess.TimeoutExpired:
+        return ["%s: the frontend did not terminate" % name]
+    if r.returncode == 3:
+        return ["%s: the frontend TRAPPED -- a defect in the compiler, not in "
+                "this file" % name]
+    if r.returncode == 0:
+        return []
+    got = sorted(set(line.split()[0]
+                     for line in r.stdout.decode("utf-8", "replace").splitlines()
+                     if line.split()))
+    return ["%s: expected no diagnostics, got %s" % (name, got or r.returncode)]
 
 
 # --- the real parser, on real files ------------------------------------------
@@ -634,6 +666,22 @@ def main(argv):
                 failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
                 n += 1
             print("  %-11s %2d type-rejection test(s)" % ("types", n))
+
+            # And whole programs that must be ACCEPTED, in full silence.
+            #
+            # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
+            # REFUSES EVERYTHING. Every negative test above passes trivially for an
+            # analysis that answers "violation" to every question, and cycle 0.5's
+            # analyses are deliberately conservative -- they fail closed on fuel
+            # exhaustion, on an unclassified node, on anything undecidable -- so
+            # over-refusal is the failure mode they are most likely to have.
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "types",
+                                                   "accept", "**", "*.npk"),
+                                      recursive=True)):
+                failures += check_type_accept(tc, p, os.path.relpath(p, ROOT))
+                n += 1
+            print("  %-11s %2d type-acceptance test(s)" % ("accept", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 

@@ -73,6 +73,8 @@ use "../src/frontend/type_access.npk".*;
 use "../src/frontend/expr_types.npk".*;
 use "../src/frontend/type_expr.npk".*;
 use "../src/frontend/type_stmt.npk".*;
+use "../src/frontend/analysis/analysis_codes.npk".*;
+use "../src/frontend/analysis/escape.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
@@ -196,6 +198,43 @@ func:main = int32(cstring[]:argv) {
     // (D-108).
     drop check_instantiations(@inst, @im, @bd, @tr);
 
+    // --- stage 3: analyses ---------------------------------------------------
+    //
+    // AFTER TYPING, AND ONLY IF IT SUCCEEDED. Every analysis in cycle 0.5 reads
+    // the expression-type table, and a table filled in from a program that failed
+    // to type check holds the INVALID type wherever the checker gave up — so an
+    // analysis run over it would be asking questions about types nobody
+    // established. The same reason the type stage does not run over a program
+    // that failed to resolve.
+    if ((raw diaglist_count(@diags)) != 0i64) {
+        drop report(@diags);
+        exit 1i32;
+    }
+
+    // SECOND-CLASS BORROWS (D-004, 0.5.1).
+    //
+    // MARKED TO A FIXPOINT, THEN REPORTED ONCE. Which bindings hold a borrow is
+    // dataflow, and a single pass in source order answers it wrongly wherever a
+    // binding is assigned after it is used — inside a loop, most obviously. Marks
+    // only ever go unset-to-set, so the rounds converge; the bound is there
+    // because an unbounded loop in a checker is not a checker.
+    Escape:esc = raw escape_init(@g.ast, @g.tab, @types, @ets, @diags);
+    int32:round = 0i32;
+    bool:settling = true;
+    while (settling) {
+        if (round >= (raw ESCAPE_ROUNDS())) { break; }
+        drop escape_new_round(@esc);
+        drop escape_walk(@esc, @g);
+        settling = raw escape_changed(@esc);
+        round = round + 1i32;
+    }
+    if (settling) {
+        drop escape_unsettled(@esc, (relay ast_decl(@g.ast,
+            DeclId{ index: (raw graph_at(@g, 0i32)).root })).span);
+    }
+    drop escape_report_mode(@esc);
+    drop escape_walk(@esc, @g);
+
     // EVERY TYPE LAID OUT, once the whole program is known. The checker asks for
     // very few sizes, so demand-driven layout leaves most of the table at zero —
     // fine for checking, and not fine for what Phase B does with these types. A
@@ -208,6 +247,19 @@ func:main = int32(cstring[]:argv) {
         exit 1i32;
     }
     exit 0i32;
+};
+
+// One walk over every module, so the marking rounds and the reporting round
+// cannot drift apart by being written twice.
+func:escape_walk = NIL(Escape->:esc, ModuleGraph->:g) {
+    int32:i = 0i32;
+    while (i < (raw graph_count(g))) {
+        ModuleEntry:m = raw graph_at(g, i);
+        DeclId:mid = DeclId{ index: m.root };
+        drop escape_module(esc, mid, m.scope);
+        i = i + 1i32;
+    }
+    pass NIL;
 };
 
 func:report = NIL(DiagList->:diags) {

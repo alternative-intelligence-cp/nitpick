@@ -12,12 +12,23 @@ written about a later stage.
 | Suite | Refused by | Reaches a type checker? |
 |---|---|---|
 | `tests/modules/rejection/` | the **loader** — a missing module, an unresolvable name | no |
-| `tests/types/rejection/` | the **type checker** — this suite | yes, and a rule says no |
+| `tests/types/rejection/` | the **type checker** and the static analyses — this suite | yes, and a rule says no |
 | `tests/rejection/` | the **backend** — a correct program at a rung that cannot lower it yet (D-085) | yes, and it passes |
+
+**And this suite has a counterweight.** `tests/types/accept/` holds programs the
+frontend must accept in full silence, because no number of rejections can show
+that a rule fires *only* when it should — a checker that refused every program
+would pass every case here. That distinction became load-bearing with cycle 0.5's
+analyses, which fail closed by design and are therefore likeliest to over-refuse.
 
 A file here that fails to *resolve* is a broken test, not a passing one: the
 harness asserts on the codes emitted, and a resolve error carries a different code
 from the type error the test was written about.
+
+The same applies one stage further in. **The analyses run only over a program the
+type checker accepted**, so a case written for a `NITPICK-BORROW` code must
+type-check cleanly — a type error in it stops the program before any analysis
+sees it, and the test then fails for a reason unrelated to what it guards.
 
 ## Writing one
 

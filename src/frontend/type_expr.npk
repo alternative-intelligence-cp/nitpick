@@ -850,6 +850,13 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
         if (dn.kind == DeclKind.DeclFunctionDecl) {
             pass (relay fn_type(@r, dn, s.name, e.scope));
         }
+        // AN `extern` FUNCTION IS A FUNCTION. Missing here, its name fell through
+        // to the "is a type, not a value" ending below — so every call to a
+        // foreign function was refused, and refused with a sentence about the
+        // wrong thing.
+        if (dn.kind == DeclKind.DeclExternFn) {
+            pass (relay extern_fn_type(@r, dn, e.scope));
+        }
         if (dn.kind == DeclKind.DeclGlobalDecl) {
             TypeId:ty = TypeId{ index: dn.a };
             pass (relay resolve_type(@r, ty, e.scope));

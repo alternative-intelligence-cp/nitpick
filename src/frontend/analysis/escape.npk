@@ -1,0 +1,793 @@
+// Second-class borrows: a borrow goes DOWN the call stack and never UP (D-004).
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.1.
+//
+// D-004's five rules, in the decision's own order:
+//
+//   1. `@local` yields a BORROW, not a first-class pointer.
+//   2. A borrow may not appear in the value of `pass`, `fail`, or `return`.
+//   3. A borrow may not be stored into any aggregate that is not provably
+//      shorter-lived than the borrow.
+//   4. A borrow may not cross an `extern` call, a thread spawn, or an `await`.
+//   5. A closure may not capture a borrow.
+//
+// Passing a borrow DOWNWARD as an argument is always safe and needs no
+// annotation, because the callee's frame is strictly inner. THAT IS THE ENTIRE
+// LIFETIME SYSTEM — no lifetime variables, no variance, no subtyping.
+//
+// The reason for that shape is the reason to implement it exactly and not
+// generalise it: full lifetime inference is the largest source of complexity in a
+// borrow checker and the hardest part to verify, and every generalisation that
+// creeps in here is paid for at Astrée (D-003's rationale).
+//
+// WHY THIS IS A SEPARATE PASS AND NOT PART OF TYPE CHECKING. A borrow is a
+// property of an EXPRESSION, not a type (D-004) — `$$i x` and `@x` are pointers at
+// the type level and it is this analysis that makes them second-class. Making
+// borrow-ness a type kind would force every pointer operation to accept two kinds
+// of pointer and decide which rules apply, which is the context-dependence the
+// blueprint philosophy forbids. So the type system is left alone and the question
+// is answered here.
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../types.npk".*;
+use "../expr_types.npk".*;
+use "analysis_codes.npk".*;
+
+// How deep an expression tree this walk will follow. Every walk in this compiler
+// that follows program structure is bounded, and this one fails CLOSED when the
+// bound is reached — see `escape_expr`.
+pub func:ESCAPE_DEPTH = int32() { pass 256i32; };
+
+pub struct:Escape = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    TypeTable->:types;
+    ExprTypes->:etypes;
+    DiagList->:diags;
+
+    // DOES THIS BINDING HOLD A BORROW? Indexed by the index of the statement that
+    // DECLARED it, which is what `Symbol.origin` holds for a local (`SYM_STMT`).
+    //
+    // The binding is the second half of the question `expr_is_borrow` answers.
+    // `Point->:p = $$i q;` puts a borrow in a binding, and every later mention of
+    // `p` names it — but nothing in the expression `p` says so, and a checker that
+    // only recognised the operator would let one assignment launder second-class
+    // into first-class.
+    //
+    // ONE TABLE FOR THE WHOLE PROGRAM, NOT ONE PER FUNCTION. Statements are
+    // already indices into one flat array (0.2.0), so two functions cannot collide
+    // and there is nothing to reset between them.
+    wild bool->:holds;
+    int32:holds_count;
+
+    // MARKING RUNS TO A FIXPOINT BEFORE ANYTHING IS REPORTED, and these two are
+    // what makes that possible.
+    //
+    // A SINGLE PASS IN SOURCE ORDER IS WRONG, and wrong in the direction that
+    // lets an escape through:
+    //
+    //     while (c) {
+    //         pass p;        // checked here, on a binding not yet marked
+    //         p = @x;        // marked here
+    //     }
+    //
+    // The second iteration returns a borrow and the walk has already gone past.
+    // The cycle README says an analysis that is right on straight-line code and
+    // wrong after a merge is the shape to keep catching; this is that shape in
+    // the analysis itself.
+    //
+    // A MARK IS NEVER CLEARED, which is what makes the fixpoint terminate: every
+    // round either sets a mark that was unset or changes nothing, and there are
+    // finitely many statements. `p = @x; p = NULL;` leaves `p` marked, which is
+    // conservative — it refuses a program that is in fact fine — and conservative
+    // is the direction a borrow checker is allowed to be wrong in.
+    bool:reporting;
+    bool:changed;
+};
+
+pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
+                              ExprTypes->:etypes, DiagList->:diags) {
+    int64:size = (raw ast_stmt_count(ast)) => int64;
+    if (size < 1i64) { size = 1i64; }
+    wild int8->:mem = alloc(size * #size_of<bool>());
+
+    Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
+                       diags: diags, holds: mem => wild bool->,
+                       holds_count: size => int32,
+                       reporting: false, changed: false };
+    int64:i = 0i64;
+    while (i < size) {
+        x.holds[i] = false;
+        i = i + 1i64;
+    }
+    pass x;
+};
+
+// NOTHING IS REPORTED WHILE MARKING. The marking rounds walk the same code and
+// would otherwise report the same finding once per round — and the diagnostic
+// list's duplicate suppression would hide that rather than fix it, which is
+// exactly the mistake 0.4.7 made when two argument errors shared a span.
+func:escape_err = NIL(Escape->:x, string:code, string:msg, Span:sp) {
+    if (!x.reporting) { pass NIL; }
+    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    pass NIL;
+};
+
+// `changed` IS SET ONLY ON A FLIP, not on every write. Setting it unconditionally
+// would make every round report a change and the fixpoint would never converge —
+// it would run to its bound and refuse every program that borrows anything.
+func:escape_mark = NIL(Escape->:x, int32:stmt_index) {
+    if (stmt_index < 0i32)             { pass NIL; }
+    if (stmt_index >= x.holds_count)   { pass NIL; }
+    if (x.holds[stmt_index => int64])  { pass NIL; }
+    x.holds[stmt_index => int64] = true;
+    x.changed = true;
+    pass NIL;
+};
+
+// How many marking rounds before the analysis gives up and refuses.
+//
+// One round settles a program whose borrows are written before they are used; each
+// further round follows one more link of a chain written in reverse
+// (`p = q; q = r; r = @x;`). Sixty-four links is far past anything a person writes
+// and still finite, which is what matters — an unbounded loop in a checker is not
+// a checker.
+pub func:ESCAPE_ROUNDS = int32() { pass 64i32; };
+
+pub func:escape_changed = bool(Escape->:x) { pass x.changed; };
+
+pub func:escape_new_round = NIL(Escape->:x) { x.changed = false; pass NIL; };
+
+// The switch from marking to reporting. One way only: nothing turns it back off.
+pub func:escape_report_mode = NIL(Escape->:x) { x.reporting = true; pass NIL; };
+
+// THE MARKS NEVER SETTLED, so the analysis does not know what it is looking at and
+// says so. Pushed straight to the list because it is reported from the driver,
+// outside either mode.
+pub func:escape_unsettled = NIL(Escape->:x, Span:sp) {
+    drop diaglist_push(x.diags, raw diag_error(raw BORROW_UNSETTLED(),
+        "the borrow analysis did not settle within its round bound, so this program cannot be shown free of escapes",
+        sp));
+    pass NIL;
+};
+
+func:escape_holds = bool(Escape->:x, int32:stmt_index) {
+    if (stmt_index < 0i32)           { pass false; }
+    if (stmt_index >= x.holds_count) { pass false; }
+    pass (x.holds[stmt_index => int64]);
+};
+
+// --- declarations ------------------------------------------------------------
+//
+// The same walk `check_module` makes, for the same reason: a function inside an
+// `impl`, a trait's default method body, and a function inside a nested `mod` are
+// all function bodies, and an analysis that reached only the top level would be
+// silent about three quarters of a real program. Silence is the failure mode this
+// whole cycle is written against.
+
+pub func:escape_module = NIL(Escape->:x, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop escape_decl(x, raw item_member(x.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        StmtId:body = raw fn_body(x.ast, d);
+        if (!(raw stmt_is_none(body))) {
+            drop escape_stmt(x, body);
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        drop escape_module(x, id, inner);
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = relay impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop escape_decl(x, relay impl_member(x.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop escape_decl(x, raw item_member(x.ast, d, k), scope);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+
+    // A GLOBAL'S INITIALISER RUNS OUTSIDE ANY FRAME, so a borrow in one has no
+    // frame to be bounded by at all. There is no local for `@` to name at module
+    // level, which is why this cannot currently fire — but the walk reaches it
+    // rather than skipping it, because "nothing to check here" and "nobody
+    // looked" are the two answers this cycle exists to keep apart.
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        ExprId:init = raw global_init(d);
+        if (!(raw expr_is_none(init))) {
+            if (relay escape_expr(x, init, raw ESCAPE_DEPTH())) {
+                drop escape_err(x, raw BORROW_STORED(),
+                    "a borrow cannot initialise a global: a global outlives every frame, so there is no frame that bounds it (D-004 rule 3)",
+                    d.span);
+            }
+        }
+        pass NIL;
+    }
+
+    pass NIL;
+};
+
+// --- statements --------------------------------------------------------------
+
+func:escape_stmt = NIL(Escape->:x, StmtId:id) {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+
+    // RULE 2 — A BORROW MAY NOT APPEAR IN THE VALUE OF `pass`, `fail`, `return`.
+    //
+    // "Appear in", not "be": `pass Holder{ inner: @x };` returns a struct whose
+    // field points into the frame that is about to end, and the borrow is no less
+    // escaped for being wrapped in something. That is why the question this asks
+    // is CONTAINS and not YIELDS.
+    if (s.kind == StmtKind.StmtPassStmt) {
+        drop escape_return_value(x, s);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtFailStmt) {
+        drop escape_return_value(x, s);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        drop escape_return_value(x, s);
+        pass NIL;
+    }
+
+    // A LOCAL INITIALISED FROM A BORROW HOLDS ONE. This is the whole of the
+    // dataflow half: the binding is recorded here and read wherever the name is
+    // mentioned, so `int32->:p = @x; pass p;` is refused by rule 2 above even
+    // though the expression `p` is just a name.
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = relay stmt_decl_init(x.ast, s);
+        if (!(raw expr_is_none(init))) {
+            if (relay escape_expr(x, init, raw ESCAPE_DEPTH())) {
+                drop escape_mark(x, id.index);
+            }
+        }
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop escape_assign(x, s);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtExitStmt) {
+        // `exit` takes a code, not a value, and leaves the program rather than
+        // the frame. Nothing can escape through it.
+        drop escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH());
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        drop escape_stmt_window(x, raw stmt_list_start(s), raw stmt_list_count(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        drop escape_stmt(x, raw stmt_then(s));
+        drop escape_stmt(x, raw stmt_else(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        drop escape_stmt(x, relay stmt_body(x.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop escape_expr(x, raw stmt_cond(s), raw ESCAPE_DEPTH());
+        drop escape_stmt(x, relay stmt_when_body(x.ast, s));
+        drop escape_stmt(x, relay stmt_when_then(x.ast, s));
+        drop escape_stmt(x, relay stmt_when_end(x.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        drop escape_counted(x, s);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        drop escape_counted(x, s);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop escape_untracked(x, relay stmt_for_iter(x.ast, s),
+            "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        drop escape_stmt(x, relay stmt_for_body(x.ast, s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop escape_untracked(x, raw pick_selector(s),
+            "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        drop escape_stmt_window(x, raw pick_arm_start(s), raw pick_arm_count(s));
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop escape_expr(x, raw arm_guard(s), raw ESCAPE_DEPTH());
+        drop escape_stmt(x, raw arm_body(s));
+        pass NIL;
+    }
+
+    // A `defer` BODY RUNS AT SCOPE EXIT, while the frame is still alive. A borrow
+    // is still valid there, so the body is walked exactly like any other — the
+    // ORDERING question `defer` raises belongs to 0.5.2, not here.
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        drop escape_stmt(x, body);
+        pass NIL;
+    }
+
+    // `break`, `continue` and `fall` carry a LABEL and no expression. Said out
+    // loud, for the reason `check_stmt` says it out loud.
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+
+    // One expression in slot `a`: an expression statement, `trap`, `discard`,
+    // `give`, `prove`, `assert_static`. Walked for the violations INSIDE it — an
+    // `extern` call with a borrow argument is a rule-4 break wherever it appears,
+    // including where its result goes nowhere.
+    if (raw stmt_carries_expr(s.kind)) {
+        drop escape_expr(x, raw stmt_expr(s), raw ESCAPE_DEPTH());
+        pass NIL;
+    }
+
+    drop escape_err(x, raw BORROW_INTERNAL(),
+        "this statement kind has no entry in the escape walk, so its contents cannot be checked",
+        s.span);
+    pass NIL;
+};
+
+func:escape_stmt_window = NIL(Escape->:x, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
+        drop escape_stmt(x, sid);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:escape_counted = NIL(Escape->:x, StmtNode:s) {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop escape_expr(x, relay stmt_counted_arg(x.ast, s, i), raw ESCAPE_DEPTH());
+        i = i + 1i32;
+    }
+    drop escape_stmt(x, raw stmt_counted_body(s));
+    pass NIL;
+};
+
+// RULE 2, at the one place all three spellings meet. `pass`, `fail` and `return`
+// differ in what they mean and not in where the value goes, so one check and one
+// code rather than three that could drift apart.
+func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
+    ExprId:v = raw stmt_operand(s);
+    if (raw expr_is_none(v)) { pass NIL; }
+    if (relay escape_expr(x, v, raw ESCAPE_DEPTH())) {
+        ExprNode:vn = relay ast_expr(x.ast, v);
+        drop escape_err(x, raw BORROW_RETURNED(),
+            "a borrow cannot travel up: it is valid only for the frame it was taken in, and this returns it out of that frame (D-004 rule 2)",
+            vn.span);
+    }
+    pass NIL;
+};
+
+// RULE 3 — WHERE A BORROW MAY BE PUT.
+//
+// A PLAIN LOCAL IS THE ONLY DESTINATION, and that is deliberately strict.
+// D-004 says a borrow may not be stored into "any aggregate that is not provably
+// shorter-lived than the borrow", and a struct local in the same frame is not
+// shorter-lived than a borrow of another local in that frame — it is exactly as
+// long-lived. Equal is not shorter, so it is refused.
+//
+// The decision anticipated wanting this relaxed and said when: "if real compiler
+// code needs borrow-into-inner-aggregate, relax it THEN, WITH EVIDENCE."
+// Relaxing it now because a test is awkward to write is the failure mode that
+// sentence exists to name.
+func:escape_assign = NIL(Escape->:x, StmtNode:s) {
+    ExprId:tgt = raw stmt_target(s);
+    ExprId:val = raw stmt_assigned(s);
+
+    // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
+    // an index expression that no rule about the assignment itself would catch.
+    drop escape_expr(x, tgt, raw ESCAPE_DEPTH());
+
+    if (raw expr_is_none(val)) { pass NIL; }
+    if (!(relay escape_expr(x, val, raw ESCAPE_DEPTH()))) { pass NIL; }
+
+    // A BARE LOCAL NAME, and nothing else. `p = @x` records that `p` now holds a
+    // borrow; `p.f = @x`, `arr[i] = @x` and `g = @x` are all stores into
+    // something this frame does not own outright.
+    ExprNode:tn = relay ast_expr(x.ast, tgt);
+    if (tn.kind == ExprKind.ExprIdentifierExpr) {
+        if (tn.a != 0i32) {
+            Symbol:sym = raw symtab_get(x.tab, tn.a);
+            if (sym.origin_kind == (raw SYM_STMT())) {
+                drop escape_mark(x, sym.origin);
+                pass NIL;
+            }
+        }
+    }
+
+    drop escape_err(x, raw BORROW_STORED(),
+        "a borrow cannot be stored here: only a local binding in the borrowing frame is provably no longer-lived than the borrow (D-004 rule 3)",
+        tn.span);
+    pass NIL;
+};
+
+// --- expressions -------------------------------------------------------------
+//
+// DOES THIS EXPRESSION CONTAIN A BORROW, and does anything inside it break a rule?
+// ONE WALK ANSWERS BOTH, because they visit exactly the same nodes and two walks
+// would be two chances to miss one.
+
+func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+
+    // FAIL CLOSED. An expression nested deeper than the bound is REFUSED rather
+    // than assumed harmless: an analysis that answers "no borrow here" when it
+    // stopped looking would let an escape through, and a borrow checker that
+    // fails open is worse than none at all, because the property was claimed.
+    if (depth <= 0i32) {
+        drop escape_err(x, raw BORROW_TOO_DEEP(),
+            "this expression nests deeper than the escape analysis will follow, so it cannot be shown free of borrows",
+            n.span);
+        pass true;
+    }
+    int32:d = depth - 1i32;
+
+    // The two that PRODUCE a borrow (D-004 rule 1). The operand is still walked:
+    // `@(arr[raw ext(@i)])` breaks rule 4 inside something that is already known
+    // to be a borrow.
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop escape_expr(x, raw expr_operand(n), d);
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop escape_expr(x, raw expr_operand(n), d);
+        pass true;
+    }
+
+    // A NAME CARRIES WHAT ITS BINDING HOLDS.
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        pass (raw escape_binding(x, n));
+    }
+
+    // REACHING INTO A BORROW YIELDS A BORROW OF THE SAME FRAME. `rec.field` and
+    // `arr[i]` did not make anything live longer, so a `.` cannot launder
+    // second-class into first-class.
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (relay escape_expr(x, raw expr_operand(n), d));
+    }
+    if (n.kind == ExprKind.ExprSafeNavExpr) {
+        pass (relay escape_expr(x, raw expr_operand(n), d));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        bool:base = relay escape_expr(x, raw expr_lhs(n), d);
+        // THE INDEX IS NOT PART OF THE VALUE. `arr[i]` is an element, and `i`
+        // being a borrow says nothing about the element — but a rule broken
+        // inside `i` is still broken, so it is walked and its answer discarded.
+        drop escape_expr(x, raw expr_rhs(n), d);
+        pass base;
+    }
+
+    // `<-` YIELDS THE POINTEE, WHICH IS A BORROW ONLY WHEN THE POINTEE IS ONE.
+    //
+    // `int32->:p = @x; <-p` is the int32 `5`, copied like any other value, and
+    // refusing to return it would be wrong. `int32->->:pp = @p; <-pp` is `p`'s
+    // value, which IS the borrow — so the deciding question is whether this
+    // expression's own type is a pointer, and that is what 0.5.0's table is for.
+    // Recomputing the type here instead would be a second answer to a question
+    // the checker already answered.
+    if (n.kind == ExprKind.ExprDerefExpr) {
+        if (!(relay escape_expr(x, raw expr_operand(n), d))) { pass false; }
+        int32:ty = raw exprtypes_get(x.etypes, id);
+        pass ((raw type_kind(x.types, ty)) == (raw TY_POINTER()));
+    }
+
+    // A CALL. Rule 4 lives here, and the RESULT is not a borrow — see
+    // `escape_call` for the one open question that sits behind that.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop escape_call(x, n, d);
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        drop escape_expr(x, raw expr_operand(n), d);
+        drop escape_window(x, raw expr_list_start(n), raw expr_list_count(n), d);
+        pass false;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:gc = raw expr_generic_count(n);
+        drop escape_window(x, (raw expr_list_start(n)) + gc,
+                           (raw expr_list_count(n)) - gc, d);
+        pass false;
+    }
+
+    // RULE 4, THIRD CROSSING — a borrow held across a suspension.
+    //
+    // UNREACHABLE AT THIS RUNG AND WRITTEN ANYWAY. `async` lowers to coroutine
+    // state machines in cycle 1.1; until then nothing constructs an `await` in a
+    // compilable program. The rule is here now because a rule added AFTER the
+    // analysis is verified is a re-verification, and this project gets one
+    // Astrée run.
+    if (n.kind == ExprKind.ExprAwaitExpr) {
+        if (relay escape_expr(x, raw expr_operand(n), d)) {
+            drop escape_err(x, raw BORROW_SUSPENDED(),
+                "a borrow cannot be held across an `await`: the frame it borrows from does not survive the suspension (D-004 rule 4)",
+                n.span);
+        }
+        pass false;
+    }
+
+    // A STRUCT LITERAL'S WINDOW ALTERNATES NAME, VALUE — the names are field
+    // intern indices and only the odd entries are expressions. A literal CONTAINS
+    // a borrow if any field value does, which is what makes
+    // `pass Holder{ inner: @x };` a rule-2 break.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        bool:found = false;
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            if (relay escape_expr(x, v, d)) { found = true; }
+            i = i + 2i32;
+        }
+        pass found;
+    }
+
+    // AN EXPRESSION `pick` CARRIES STATEMENTS (D-059), so it hands back to the
+    // statement walk. Its arms `give` a value; whether that value is a borrow is
+    // 0.5.4's question, once arm coverage exists to hang it on.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop escape_untracked(x, raw pickx_selector(n),
+            "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        drop escape_stmt_window(x, raw pickx_arm_start(n), raw pickx_arm_count(n));
+        pass false;
+    }
+
+    // EVERYTHING ELSE IS DRIVEN BY `expr_shape`, for the reason `resolve_expr`
+    // gives: walking slot `a` on the strength of a comment is how a literal's
+    // width suffix came to be resolved as an expression.
+    pass (relay escape_children(x, n, d));
+};
+
+// A BORROW REACHING A BINDING THE ANALYSIS DOES NOT TRACK.
+//
+// THREE KINDS OF BINDING EXIST AND ONE OF THEM IS TRACKED. A local records whether
+// it holds a borrow, because a local is declared by a statement and the mark hangs
+// on the statement's index. A `pick` pattern binding and a `for` loop binding are
+// neither — each takes its value from a destructuring, and following a borrow into
+// one means modelling which part of the scrutinee each name receives.
+//
+// SO THE SELECTOR IS REFUSED RATHER THAN THE BINDING BEING ASSUMED CLEAN. The
+// alternative is `escape_binding` quietly answering `false` for two of the three
+// binding kinds, which is an escape hatch reached by writing `pick`.
+//
+// This costs almost nothing today, because rule 3 already refuses storing a borrow
+// into any aggregate — so a struct being destructured cannot contain one unless it
+// was BUILT with one in this frame, which is the narrow case this catches. Modelling
+// the pattern properly belongs with 0.5.4, where the pattern-to-type machinery is
+// built; refusing until then is a decision, not a gap left open.
+func:escape_untracked = NIL(Escape->:x, ExprId:id, string:msg) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    if (relay escape_expr(x, id, raw ESCAPE_DEPTH())) {
+        ExprNode:n = relay ast_expr(x.ast, id);
+        drop escape_err(x, raw BORROW_UNTRACKED(), msg, n.span);
+    }
+    pass NIL;
+};
+
+// A NAME'S BORROW STATE. Only a LOCAL can hold one: a global outlives every frame
+// and a parameter belongs to the caller — see `escape_call` for why a parameter is
+// not treated as a borrow here.
+func:escape_binding = bool(Escape->:x, ExprNode:n) {
+    if (n.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass false; }
+    pass (raw escape_holds(x, s.origin));
+};
+
+// RULE 4, FIRST CROSSING — AN `extern` CALL, and the one that matters most.
+//
+// The callee is not Nitpick. It may retain the pointer for as long as it likes and
+// nothing downstream can be checked, which is the same argument the zero-dependency
+// rule rests on: past the FFI barrier there is no control over what happens.
+//
+// A CALL'S RESULT IS NOT A BORROW, and that is a decision with a hole behind it.
+// D-004 says passing a borrow downward is always safe "because the callee's frame
+// is strictly inner", which is true of the callee's own locals and NOT of what the
+// callee returns: a function that takes `int32->:q` and does `pass q;` hands the
+// borrow back to its caller as an ordinary pointer, and the caller may then return
+// it out of the frame the borrow actually points into.
+//
+// Closing that needs a way to DECLARE a parameter second-class. `AST_REFERENCE.md`
+// lists `borrow_imm` / `borrow_mut` as `VarDeclStmt` qualifiers and D-004 cites
+// them as existing machinery, but neither is a keyword, `p_parse_param` accepts no
+// qualifier at all, and the spec does not put them on parameters even in prose. So
+// the spelling that closes the hole does not exist in the language today.
+//
+// Recorded rather than guessed at, because guessing goes wrong in both directions:
+// treating every pointer parameter as second-class would forbid returning one at
+// all, and treating none as second-class is the hole. It is raised in 0.5.1's
+// notes as a language-surface decision, which is where it belongs.
+func:escape_call = NIL(Escape->:x, ExprNode:n, int32:depth) {
+    drop escape_expr(x, raw expr_callee(n), depth);
+
+    int32:gc = raw expr_generic_count(n);
+    int32:start = (raw expr_list_start(n)) + gc;
+    int32:count = (raw expr_list_count(n)) - gc;
+
+    bool:ext = raw callee_is_extern(x, n);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        bool:borrowed = relay escape_expr(x, a, depth);
+        if (borrowed) {
+            if (ext) {
+                ExprNode:an = relay ast_expr(x.ast, a);
+                // THE ARGUMENT'S SPAN, NOT THE CALL'S. Two arguments that each
+                // break the rule are two findings, and reporting both at the
+                // call's span makes them identical — which the diagnostic list
+                // then deduplicates into one, hiding the second. That is exactly
+                // how 0.4.7's argument-mismatch spans were wrong.
+                drop escape_err(x, raw BORROW_EXTERN(),
+                    "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
+                    an.span);
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:callee_is_extern = bool(Escape->:x, ExprNode:n) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cn = relay ast_expr(x.ast, c);
+    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, cn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclId:did = DeclId{ index: s.origin };
+    DeclNode:d = relay ast_decl(x.ast, did);
+    pass (d.kind == DeclKind.DeclExternFn);
+};
+
+func:escape_window = bool(Escape->:x, int32:start, int32:count, int32:depth) {
+    bool:found = false;
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        if (relay escape_expr(x, e, depth)) { found = true; }
+        i = i + 1i32;
+    }
+    pass found;
+};
+
+func:escape_children = bool(Escape->:x, ExprNode:n, int32:depth) {
+    int32:shape = raw expr_shape(n.kind);
+
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass false; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        pass (relay escape_window(x, raw expr_list_start(n),
+                                  raw expr_list_count(n), depth));
+    }
+
+    // A KIND NOBODY HAS CLASSIFIED, or a CUSTOM one this walk has no case for.
+    // FAIL CLOSED: reading slots whose meaning is unknown is how a literal's width
+    // suffix got walked as an expression, and answering `false` would be this
+    // analysis promising it looked somewhere it did not.
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop escape_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so its slots cannot be walked",
+            n.span);
+        pass true;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop escape_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has a custom shape the escape walk has no case for, so its contents cannot be checked",
+            n.span);
+        pass true;
+    }
+
+    bool:found = relay escape_expr(x, raw expr_lhs(n), depth);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass found; }
+
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        if (relay escape_window(x, raw expr_list_start(n),
+                                raw expr_list_count(n), depth)) { found = true; }
+        pass found;
+    }
+
+    if (relay escape_expr(x, raw expr_rhs(n), depth)) { found = true; }
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass found; }
+
+    if (relay escape_expr(x, raw expr_third(n), depth)) { found = true; }
+    pass found;
+};
+
+// --- rule 5, which cannot fire -----------------------------------------------
+//
+// A CLOSURE MAY NOT CAPTURE A BORROW. Closures lower to `{ method_ptr, env_ptr }`
+// fat pointers whose environment can outlive the frame, so a captured borrow
+// outlives what it points at.
+//
+// CLOSURES ARE REMOVED FROM THE LANGUAGE (D-018). There is no closure expression
+// to walk, no capture list to inspect, and `BORROW_CAPTURED` is unreachable — this
+// function is what any future closure node would call, and it is written now for
+// the same reason the `await` clause is: a rule added after the analysis is
+// verified costs a verification run this project does not have.
+//
+// It is NOT dead code dressed up. If closures ever return, the compiler will not
+// build until this is called from somewhere, because a capture window has to be
+// walked by something — and finding this here is a great deal better than
+// rediscovering rule 5 from the decision text.
+pub func:escape_capture = NIL(Escape->:x, ExprId:id, int32:depth) {
+    if (relay escape_expr(x, id, depth)) {
+        ExprNode:n = relay ast_expr(x.ast, id);
+        drop escape_err(x, raw BORROW_CAPTURED(),
+            "a closure cannot capture a borrow: its environment can outlive the frame the borrow points into (D-004 rule 5)",
+            n.span);
+    }
+    pass NIL;
+};
+
+// --- rule 4, second crossing, which also cannot fire -------------------------
+//
+// A BORROW MAY NOT CROSS A THREAD SPAWN. The spawned frame is not inner to the
+// spawning one — it is not ordered against it at all — so "bounded by the callee
+// frame" says nothing about it.
+//
+// THERE IS NO SPAWN IN THE LANGUAGE YET. Concurrency lowers in cycle 1.1, and when
+// a spawn arrives it is this function that its argument list goes through.
+pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        if (relay escape_expr(x, a, depth)) {
+            ExprNode:an = relay ast_expr(x.ast, a);
+            drop escape_err(x, raw BORROW_SPAWNED(),
+                "a borrow cannot cross a thread spawn: the spawned frame is not inner to this one, so nothing bounds the borrow's validity (D-004 rule 4)",
+                an.span);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};

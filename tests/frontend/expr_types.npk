@@ -260,5 +260,19 @@ func:main = int32(cstring[]:_~argv) {
     Px:n6 = raw px("<-p", @it);
     if (raw is_borrow(@n6))                                     { exit 42i32; }
 
+    // --- AND IT FAILS CLOSED ---------------------------------------------------
+    //
+    // OUT OF FUEL ANSWERS `true`, WHICH IS THE SAFE DIRECTION. `a.b.c` is plainly
+    // not a borrow, and with only enough fuel to take one step down the chain the
+    // classifier has not reached the root and does not know that — so it says so
+    // by refusing rather than by answering "no".
+    //
+    // A borrow checker that fails OPEN is worse than no borrow checker, because
+    // the property was claimed and relied on. This is the one case where the
+    // conservative answer is the wrong-looking one, which is exactly why it is
+    // asserted: it reads like a bug until you know why.
+    Px:d1 = raw px("a.b.c", @it);
+    if (!(relay expr_is_borrow(@d1.ast, d1.id, 1i32)))          { exit 43i32; }
+
     pass 0i32;
 };

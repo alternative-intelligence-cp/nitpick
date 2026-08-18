@@ -2,17 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: Phase A, cycle 0.4 done — the frontend checks whole programs
+## Status: Phase A, cycle 0.5 — the static analyses
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 112 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 116 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
 **Cycles 0.0–0.4 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
 the module/symbol/visibility passes, and the type system. **Cycle 0.5 — the static
-analyses — is next.** `src/frontend/` is ~45 `.npk` modules of real compiler,
-written in Nitpick.
+analyses — is in progress**, through subcycle 0.5.1: second-class borrows and
+escape (D-004) are enforced. `src/frontend/` is ~47 `.npk` modules of real
+compiler, written in Nitpick, with the analyses under `src/frontend/analysis/`.
 
 `tools/check.npk` runs the whole frontend over a real program — load, resolve,
 type-check, report — and exits 0 on a clean one. That is what Phase A's artifact

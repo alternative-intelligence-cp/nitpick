@@ -1,0 +1,81 @@
+// Static-analysis diagnostic codes.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.1.
+//
+// Centralised for the reason 0.1.6, 0.2.1, 0.3.1 and 0.4.1 give: a mistyped code
+// literal at a call site silently invents a NEW code, and the test asserting the
+// old one then fails for a reason unrelated to the bug it guards.
+//
+// ONE PREFIX PER ANALYSIS, not one for the cycle. `NITPICK-BORROW` is D-004's
+// escape rules; definite assignment, `move`, exhaustiveness, taint and lock levels
+// each get their own as they land. A reader filtering a build log is asking "which
+// analysis refused this", and a single `NITPICK-ANALYSIS` prefix would answer
+// "one of six".
+
+// --- D-004: second-class borrows (0.5.1) -------------------------------------
+//
+// FIVE RULES, FIVE CODES, plus the two situations that are not a rule violation.
+// The plan asks for a diagnostic "naming which one broke", and a shared code
+// would leave that to the message text — which the harness deliberately does not
+// read (BUILD_REFERENCE 7.1), so a shared code is a distinction the tests could
+// not assert on.
+
+// Rule 2 — a borrow in the value of `pass`, `fail`, or `return`.
+pub func:BORROW_RETURNED = string()  { pass "NITPICK-BORROW-001"; };
+
+// Rule 3 — a borrow stored into something not provably shorter-lived.
+pub func:BORROW_STORED = string()    { pass "NITPICK-BORROW-002"; };
+
+// Rule 4, first crossing — a borrow passed to an `extern` function. Its own code
+// and not a shared "rule 4", because this is the one that can fire today and the
+// one whose reason is different in kind: the callee is not Nitpick, so nothing
+// downstream can be checked at all.
+pub func:BORROW_EXTERN = string()    { pass "NITPICK-BORROW-003"; };
+
+// Rule 4, second crossing — a borrow carried into a spawned thread.
+pub func:BORROW_SPAWNED = string()   { pass "NITPICK-BORROW-004"; };
+
+// Rule 4, third crossing — a borrow held across an `await`. Cycle 1.1 lowers
+// `async`; the rule exists now because adding it after the analysis is verified
+// is a re-verification nobody can afford.
+pub func:BORROW_SUSPENDED = string() { pass "NITPICK-BORROW-005"; };
+
+// Rule 5 — a closure capturing a borrow. Closures are removed (D-018), so this
+// cannot fire; see `escape.npk` for why it is written anyway.
+pub func:BORROW_CAPTURED = string()  { pass "NITPICK-BORROW-006"; };
+
+// NOT A RULE VIOLATION — the analysis could not decide. A derivation chain deeper
+// than `BORROW_FUEL` is refused rather than guessed at, and it says so in its own
+// words instead of being reported as one of the five rules. A reader who sees this
+// has written something the checker cannot classify, which is a different problem
+// from having written an escape.
+pub func:BORROW_TOO_DEEP = string()  { pass "NITPICK-BORROW-007"; };
+
+// A DEFECT IN THE COMPILER, not in the program: an expression kind with no entry
+// in `expr_shape`, so the walk cannot reach its children and cannot promise it
+// looked everywhere. `RESOLVE_INTERNAL` and `TYPE_INTERNAL` exist for the same
+// situation and for the same reason — a reader who sees it has found a hole in an
+// analysis and there is nothing they can change in their source to fix it.
+pub func:BORROW_INTERNAL = string()  { pass "NITPICK-BORROW-008"; };
+
+// ALSO NOT A RULE VIOLATION — a borrow reaches a binding this analysis does not
+// track, so it is refused rather than followed.
+//
+// Three kinds of binding exist and only one of them is tracked. A local
+// (`SYM_STMT`) records whether it holds a borrow; a `pick` pattern binding
+// (`SYM_PAT`) and a `for` loop binding do not, because both take their value from
+// a destructuring the analysis would have to model to say anything about. Silently
+// answering "not a borrow" for those two would be an escape hatch, so a borrow
+// reaching either is refused with a sentence that says which.
+pub func:BORROW_UNTRACKED = string()  { pass "NITPICK-BORROW-009"; };
+
+// THE MARKING FIXPOINT DID NOT SETTLE within its round bound, so the analysis does
+// not know which bindings hold a borrow and refuses to guess (D-116).
+//
+// ITS OWN CODE RATHER THAN `BORROW_INTERNAL`, though it is nearly always a defect
+// in this compiler when it fires. The two are bounded by different things — one is
+// a walk with no entry for a node kind, the other is a chain of borrow assignments
+// longer than the rounds allow — and a shared code would make them one finding to
+// anything reading a build log, which is the "distinction that lives only in the
+// wording" cycle 0.4 kept paying for.
+pub func:BORROW_UNSETTLED = string()  { pass "NITPICK-BORROW-010"; };

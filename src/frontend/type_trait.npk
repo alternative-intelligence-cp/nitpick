@@ -109,6 +109,19 @@ pub func:collect_impls = NIL(ImplTable->:t, TypeResolver->:r, DeclId:mod_id,
         if (d.kind == DeclKind.DeclImplDecl) {
             drop collect_one_impl(t, r, id, d, scope);
         }
+        // A NESTED `mod` HOLDS IMPLS TOO, and nothing collected them. An `impl`
+        // one level down was absent from this table, which is not a diagnostic —
+        // it is coherence never seeing a second implementation, completeness
+        // never checking the methods, and a call finding no method at all.
+        //
+        // Recursion rather than a second walk: this function IS "collect from a
+        // module's members", and a nested module is one.
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            int32:inner = raw nested_module_scope(r.tab, d, scope);
+            if (inner != 0i32) {
+                drop collect_impls(t, r, id, inner);
+            }
+        }
         i = i + 1i32;
     }
     pass NIL;
@@ -520,6 +533,18 @@ pub func:collect_bounds = NIL(BoundTable->:t, TypeResolver->:r, DeclId:mod_id,
     while (i < n) {
         DeclId:id = raw item_member(r.ast, m, i);
         drop collect_decl_bounds(t, r, id, scope);
+
+        // A NESTED `mod`'s generic parameters have bounds too, and a bound that
+        // was never collected is a type parameter with NO constraints as far as
+        // every later question is concerned — which accepts calls that should be
+        // refused rather than refusing ones that should be accepted.
+        DeclNode:d = relay ast_decl(r.ast, id);
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            int32:inner = raw nested_module_scope(r.tab, d, scope);
+            if (inner != 0i32) {
+                drop collect_bounds(t, r, id, inner);
+            }
+        }
         i = i + 1i32;
     }
     pass NIL;

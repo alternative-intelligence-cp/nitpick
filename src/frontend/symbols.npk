@@ -175,6 +175,26 @@ pub func:symtab_set_inner = NIL(SymbolTable->:t, int32:sym, int32:scope) {
     pass NIL;
 };
 
+// THE SCOPE A NESTED `mod:name = { … };` OPENED, or 0 if there is not one.
+//
+// EVERY WALK OVER A MODULE'S MEMBERS NEEDS THIS, and each one that did without it
+// skipped the nested module entirely: the type checker never descended into one,
+// and neither did the impl or bound collection — so a function inside a `mod`
+// block was resolved and never checked, and an `impl` inside one was invisible to
+// coherence, to completeness, and to method lookup. None of the three announced
+// itself, because a walk with no entry for a kind reports nothing by
+// construction.
+//
+// One function rather than the same six lines in each caller, for the reason the
+// scope search it replaced demonstrates: three copies of a lookup are three
+// chances for one of them to answer differently.
+pub func:nested_module_scope = int32(SymbolTable->:t, DeclNode:d, int32:scope) {
+    int32:sym = raw scope_lookup_local(t, scope, raw decl_name(d));
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(t, sym);
+    pass s.inner;
+};
+
 pub func:symtab_get = Symbol(SymbolTable->:t, int32:id) {
     if (id < 0i32) { fail 11i32; }
     if (id >= t.sym_count) { fail 11i32; }

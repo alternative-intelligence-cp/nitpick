@@ -520,14 +520,33 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) {
         pass NIL;
     }
 
-    // A nested `mod` has a scope of its own, opened during collection. Finding it
-    // again by name is what keeps the two passes agreeing about which scope is
-    // which.
+    // A nested `mod` has a scope of its own, opened during collection, and the
+    // symbol that names it RECORDS which one. Collection ties the two together
+    // with `symtab_set_inner` for exactly this reason: a `Scope` stores its
+    // parent and not its owner, so a name is the only way back to the scope it
+    // opened.
+    //
+    // WHAT STOOD HERE SEARCHED FOR THE SCOPE INSTEAD, taking the first module
+    // scope whose parent matched. With one nested module that is the right
+    // answer by luck. With two it is the same answer twice: the second module's
+    // members were resolved in the FIRST one's scope, so a call between siblings
+    // in the second module failed as an unknown name, and swapping the two
+    // declarations fixed it. An analysis whose result depends on declaration
+    // order is the failure `symtab_set_inner` was added to prevent.
     if (d.kind == DeclKind.DeclModuleDecl) {
-        int32:sym = raw scope_lookup_local(r.tab, scope, raw decl_name(d));
-        if (sym != 0i32) {
-            drop resolve_members(r, d, raw module_scope_of(r, id, scope));
+        int32:inner = raw nested_module_scope(r.tab, d, scope);
+        if (inner == 0i32) {
+            // COLLECTION OPENS THE SCOPE, so a module symbol without one is a
+            // defect in this compiler and not in the program. Reported rather
+            // than papered over with the enclosing scope, which is what the
+            // search used to fall back to — and falling back is how the members
+            // of a module quietly end up somewhere else.
+            drop diaglist_push(r.diags, raw diag_error(raw RESOLVE_INTERNAL(),
+                "this module's name opened no scope during collection",
+                d.span));
+            pass NIL;
         }
+        drop resolve_members(r, d, inner);
         pass NIL;
     }
 
@@ -568,22 +587,12 @@ pub func:resolve_decl = NIL(Resolver->:r, DeclId:id, int32:scope) {
     pass NIL;
 };
 
-// A nested module's scope. Collection opened it immediately after declaring the
-// module's own name, so it is the scope whose parent is this one and which was
-// created in that order — recorded rather than recomputed would be better, and
-// 0.4 should move it onto the ModuleDecl.
-func:module_scope_of = int32(Resolver->:r, DeclId:id, int32:parent) {
-    int32:i = 1i32;
-    while (i < (raw symtab_scope_count(r.tab))) {
-        if ((raw scope_parent(r.tab, i)) == parent) {
-            if ((raw scope_kind(r.tab, i)) == (raw SCOPE_MODULE())) {
-                pass i;
-            }
-        }
-        i = i + 1i32;
-    }
-    pass parent;
-};
+// `module_scope_of` STOOD HERE and searched the scope table for the first module
+// scope whose parent matched. Its own comment said "recorded rather than
+// recomputed would be better" — and it already WAS recorded, on the symbol, by
+// `symtab_set_inner`. The search was the second computation of a fact the table
+// already held, and it disagreed with the first as soon as a file declared two
+// nested modules.
 
 func:resolve_members = NIL(Resolver->:r, DeclNode:d, int32:scope) {
     int32:n = raw item_member_count(r.ast, d);

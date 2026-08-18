@@ -1,0 +1,133 @@
+// A borrow goes DOWN the call stack and never UP (D-004, cycle 0.5.1).
+//
+// Second-class borrows are the whole lifetime system: no lifetime variables, no
+// variance, no subtyping. A borrow is valid for the frame it was taken in, and the
+// five rules below are what keeps it there.
+//
+// EVERY CASE HERE TYPE-CHECKS. The analyses run only over a program the checker
+// accepted, so a file that failed to type would test the wrong stage and pass for
+// the wrong reason — the same rule that puts loader rejections in
+// `tests/modules/rejection/` instead of here.
+
+struct:Holder = { int32->:inner; };
+struct:Pair = { int32:first; int32:second; };
+
+extern:"libc" = {
+    func:keepit = int32(int32->:p) never fails;
+};
+
+// --- rule 2: a borrow may not appear in the value of `pass` / `fail` / `return` --
+
+// The operator, directly.
+// expect-error: NITPICK-BORROW-001
+func:return_borrow = int32->() {
+    int32:x = 5i32;
+    pass @x;
+};
+
+// THROUGH A BINDING, which is the half that shape alone cannot answer. Nothing in
+// the expression `p` says it holds a borrow; the analysis records that at the
+// declaration and reads it here.
+// expect-error: NITPICK-BORROW-001
+func:return_binding = int32->() {
+    int32:x = 5i32;
+    int32->:p = @x;
+    pass p;
+};
+
+// WRAPPED IN AN AGGREGATE. The rule is "may not APPEAR IN the value", not "may not
+// BE the value" — a struct whose field points into the frame is no less escaped
+// for having a field name in front of it.
+// expect-error: NITPICK-BORROW-001
+func:return_wrapped = Holder() {
+    int32:x = 5i32;
+    pass Holder{ inner: @x };
+};
+
+// `fail` IS CHECKED AND CANNOT FIRE, and that is a property of the language rather
+// than a gap here. D-004 names `fail` alongside `pass` and `return`, but a `fail`
+// carries an error CODE — `Result`'s error field is a `tbb32` (D-005) — so a
+// pointer cannot reach that position at all: `fail @x;` is refused by the type
+// checker before any analysis sees it. The rule is still written and still walked,
+// because "cannot happen" and "nobody checked" are the two answers this cycle
+// exists to keep apart.
+
+// DERIVED FROM A BORROW IS STILL A BORROW. One `.` between `@` and `pass` does not
+// make the frame live longer, and a classifier that recognised only the operator
+// would let this through.
+// expect-error: NITPICK-BORROW-001
+func:return_derived = int32->() {
+    Pair:p = Pair{ first: 1i32, second: 2i32 };
+    pass @p.second;
+};
+
+// AN INDEX IS THE OTHER DERIVING FORM, and it behaves the same way.
+// expect-error: NITPICK-BORROW-001
+func:return_indexed = int32->() {
+    int32[4]:cells = [0i32, 1i32, 2i32, 3i32];
+    pass @cells[2i64];
+};
+
+// MARKED AFTER IT IS USED, which one pass in source order misses.
+//
+// On the second iteration `p` holds `@x` and is returned, and the walk reached
+// `pass p` before it ever saw `p = @x`. This is the case the marking fixpoint
+// exists for: an analysis that is right on straight-line code and wrong after a
+// loop is the shape cycle 0.5 has to keep catching, and here it was the shape of
+// the analysis itself.
+// expect-error: NITPICK-BORROW-001
+func:return_from_loop = int32->(int32:n) {
+    int32:x = 5i32;
+    int32->:p = NULL;
+    int32:i = 0i32;
+    while (i < n) {
+        if (i > 0i32) { pass p; }
+        p = @x;
+        i = i + 1i32;
+    }
+    pass NULL;
+};
+
+// --- rule 3: a borrow may not be stored into anything longer-lived -------------
+
+// Into a field of an aggregate the caller owns.
+// expect-error: NITPICK-BORROW-002
+func:store_field = NIL(Holder->:h) {
+    int32:x = 5i32;
+    h.inner = @x;
+    pass NIL;
+};
+
+// INTO A LOCAL AGGREGATE, WHICH IS ALSO REFUSED. D-004 asks for "provably
+// shorter-lived", and a struct in this frame is exactly as long-lived as a borrow
+// of another local in this frame — equal is not shorter. Deliberately strict: the
+// decision says to relax it later WITH EVIDENCE, and a test being awkward to write
+// is not evidence.
+// expect-error: NITPICK-BORROW-002
+func:store_local_aggregate = NIL() {
+    int32:x = 5i32;
+    Holder:h = Holder{ inner: NULL };
+    h.inner = @x;
+    pass NIL;
+};
+
+// --- rule 4: a borrow may not cross an `extern` call ---------------------------
+
+// THE CALLEE IS NOT NITPICK. It may keep the pointer for as long as it likes and
+// nothing downstream can be checked — the same argument the zero-dependency rule
+// rests on.
+// expect-error: NITPICK-BORROW-003
+func:cross_extern = NIL() {
+    int32:x = 5i32;
+    drop keepit(@x);
+    pass NIL;
+};
+
+// A BORROW HELD IN A BINDING CROSSES JUST THE SAME.
+// expect-error: NITPICK-BORROW-003
+func:cross_extern_binding = NIL() {
+    int32:x = 5i32;
+    int32->:p = @x;
+    drop keepit(p);
+    pass NIL;
+};

@@ -8036,3 +8036,197 @@ practice: a test that has never failed is a test whose failure mode is unknown.
 
 Nothing. The three driver-completeness gaps 0.4.7 recorded — a declaration nothing
 reaches, an `impl` method body, a struct's layout — were all closed in 0.4.8.
+
+---
+
+## D-114 — An `extern` function has a type, and it is a `Result<T>` like every other
+
+**Settled in cycle 0.5.1**, after every call to an `extern` function turned out to
+be a type error.
+
+### The gap
+
+`extern:"libc" = { … };` parsed from cycle 0.2 and bound its names from cycle 0.3.
+**Nothing in cycle 0.4 gave those names a type.** `type_ident` had a case for
+`DeclFunctionDecl`, for a parameter, for a global and for a generic parameter, and
+none for `DeclExternFn` — so the name fell through to the ending that reports "`X`
+is a type, not a value", and every foreign call was refused with a sentence about
+the wrong thing.
+
+This is the same shape cycle 0.4 kept finding and the roadmap predicted would
+recur: a construct that parses is not a construct that works, and D-085 makes the
+checker's silence invisible because there is nothing to see.
+
+### The decision
+
+An `extern` function's type is `func Result<T>(P…)` — **the declared return type
+wrapped exactly as a Nitpick function's is** (D-013).
+
+D-002 already settles the semantics: `extern` declarations "auto-wrap into the
+correct `Result<T>` and populate the error field when the call fails". What was
+missing was only the construction. Three consequences follow and all three are
+wanted:
+
+- **A caller writes `raw`, `relay`, `drop` or `?` on a foreign call, exactly as on
+  a domestic one.** The blueprint philosophy's first facet in its purest form: a
+  caller never has to ask whether *this particular* function needs error handling,
+  and "is it foreign?" would be precisely such a question.
+- **`never fails` does not change the shape of the type.** It is an audited claim
+  about the contract, not a second calling convention. A `never fails` function
+  still hands back a `Result` that is always `Ok`, because the alternative is two
+  shapes of foreign call to remember.
+- **The failure contract is not consumed by the checker.** `fails on … with errno`
+  is a declaration the *emitter* reads to synthesise the wrap at the call boundary
+  (cycle 0.7). What the frontend owes is the type a caller sees.
+
+### An `extern` function's node is not a function's node
+
+`DeclExternFn` has a **three-slot header** — return type, failure contract,
+parameter count — where `DeclFunctionDecl` has seven, because an extern
+declaration has no body, no generics, no contracts and no attributes.
+
+The two layouts are not interchangeable and the accessors are therefore separate:
+`fn_param_count` reads slot 4, which on an extern function is the *second
+parameter*. Pointing the `fn_*` accessors at an extern node would be the same
+defect that typed a `till` body as an expression and resolved a numeric width
+suffix as a name — one slot read as two different things.
+
+### What is deliberately refused: the C variadic tail
+
+`func:printf = int32(int8->:fmt, ..*) fails on result < 0i32;` is **refused**, with
+its own code (`NITPICK-TYPE-023`), because the language has not settled what a C
+vararg's type is.
+
+A Nitpick variadic writes `..*T[]:rest`, and `check_args` checks every trailing
+argument against `T`. A C `..*` names nothing. The obvious filler is `any[]`, and
+the same type system refuses a bare `any` on purpose (`NITPICK-TYPE-003`), so
+smuggling one in through a variadic collector would be the type system
+contradicting itself.
+
+**Refusing loudly is not the same as leaving it alone.** These calls were already
+refused before this decision — as "`printf` is a type, not a value" — so this
+replaces a misleading refusal with an accurate one and makes the open question
+visible. It is recorded as open rather than parked: the tail's element type is a
+language-surface decision, and it has to be settled before Phase B, because
+`nlibc` and every syscall wrapper are `extern` declarations.
+
+---
+
+## D-115 — Every walk over a module's members descends into a nested `mod`
+
+**Settled in cycle 0.5.1**, after a nested module turned out to be invisible to
+three separate passes.
+
+### What was found
+
+`mod:name = { … };` nests. The collector opens a scope for it and `symtab_set_inner`
+records which scope the name opened. From there, three walks disagreed with the
+collector about whether the module existed at all:
+
+| Walk | Behaviour | Consequence |
+|---|---|---|
+| `check_decl` (type checker) | no case for the kind | a function one level down was **never type-checked** |
+| `collect_impls` | no case for the kind | an `impl` one level down was **absent from the impl table** |
+| `collect_bounds` | no case for the kind | a bound one level down was **never collected** |
+
+The type-checker hole was demonstrated directly: `pass "not an int32";` from an
+`int32` function is reported at the top level and **accepted, silently, inside a
+`mod` block**. The impl hole is worse than a missing diagnostic — an absent entry
+is coherence never seeing a second implementation, completeness never checking the
+methods, and a method call finding nothing to dispatch to.
+
+None of the three announced itself, because **a walk with no entry for a kind
+reports nothing by construction**.
+
+### The second defect, in the resolver
+
+The resolver *did* descend, using a helper that **searched the scope table for the
+first module scope whose parent matched**. With one nested module that is right by
+luck. With two it is the same answer twice: the second module's members resolved
+in the **first one's scope**, so a call between siblings in the second module
+failed as an unknown name and *swapping the two declarations fixed it*.
+
+Its own comment said "recorded rather than recomputed would be better" — and it
+already **was** recorded, on the symbol, by `symtab_set_inner`. The search was a
+second computation of a fact the table already held, and it disagreed with the
+first as soon as a file had two nested modules.
+
+### The decision
+
+**One function answers where a nested module's members live**
+(`nested_module_scope`), reading the symbol, and every walk over a module's
+members calls it.
+
+Not three copies of six lines: the helper it replaced is the argument against
+that. Three copies of a lookup are three chances for one of them to answer
+differently, and an analysis whose result depends on declaration order is exactly
+what the recorded scope was added to prevent.
+
+
+---
+
+## D-116 — A binding-state analysis marks to a fixpoint before it reports
+
+**Settled in cycle 0.5.1**, after the escape analysis was written with this bug
+and the cycle's own plan document described it in advance.
+
+### The rule
+
+An analysis that carries **per-binding state** runs in two phases:
+
+1. **Marking**, repeated until nothing changes. Nothing is reported.
+2. **Reporting**, once.
+
+### Why a single pass in source order is wrong
+
+```nitpick
+while (i < n) {
+    if (i > 0i32) { pass p; }   // checked here, on a binding not yet marked
+    p = @x;                     // marked here
+}
+```
+
+`pass p` is visited before `p = @x`, so the binding is unmarked when the escape is
+checked and the escape is missed. On the second iteration `p` holds a pointer into
+the frame and it is returned. **The failure is silent, and silence is what makes
+it dangerous** — a rule that under-reports looks exactly like a program with no
+violations.
+
+Verified by reverting to one pass: nine findings where there are ten.
+
+This is the shape `meta/roadmap/0.5/README.md` names as the cycle's third failure
+mode — "an analysis that is right on straight-line code and wrong after a merge" —
+and it arrived first in the analysis itself rather than in a program it checks.
+
+### What makes the fixpoint terminate
+
+**A mark is never cleared.** Every round either sets a mark that was unset or
+changes nothing, and there are finitely many statements, so the sequence is
+monotone and bounded.
+
+That is also a deliberate loss of precision: `p = @x; p = NULL;` leaves `p`
+marked, and a program that is in fact fine is refused. **Conservative is the
+direction a safety analysis is allowed to be wrong in**, and the alternative — a
+lattice with joins at every merge point — is the complexity D-004 chose
+second-class borrows to avoid in the first place.
+
+### The round bound, and what exceeding it means
+
+The loop is bounded, because **an unbounded loop in a checker is not a checker**.
+Exceeding the bound **refuses the program** with an explicit "the analysis did not
+settle" diagnostic — it does not fall through to reporting whatever it had. An
+analysis that quietly reports partial results is the under-reporting failure
+above, reached by a different road.
+
+That diagnostic gets **its own code**, not the one for a compiler defect, even
+though a defect is the likeliest cause when it fires. The two are bounded by
+different things — a walk with no entry for a node kind, versus a chain of
+assignments longer than the rounds allow — and a shared code makes them one
+finding to anything reading a build log.
+
+### Generalisation
+
+This applies to every later analysis in cycle 0.5 that carries binding state —
+definite assignment (0.5.2), moved-from bindings (0.5.3), `unknown` taint (0.5.5).
+Each has the same shape and each will have the same bug if written as one pass.
+

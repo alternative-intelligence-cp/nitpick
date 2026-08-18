@@ -151,31 +151,65 @@ pub func:exprtypes_count = int32(ExprTypes->:t) { pass t.count; };
 // here.
 pub func:BORROW_FUEL = int32() { pass 64i32; };
 
-pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) {
-    if (fuel <= 0i32) { pass false; }
-    if (raw expr_is_none(id)) { pass false; }
-    ExprNode:n = relay ast_expr(ast, id);
+// WHERE A PLACE EXPRESSION COMES FROM, and whether the walk got there.
+//
+// ONE WALK, TWO QUESTIONS ASKED OF ITS ANSWER. `@a.b[i].c` is a borrow because
+// its root is `@a`; `p.x` is a borrow when the binding `p` holds one. Those are
+// the syntactic and the dataflow halves of D-004, and they differ only in what
+// they ask about the ROOT — the walk down to it is the same walk.
+//
+// Written as two recursions it would be two walks, and the shape rules would live
+// in two places that have to agree about which forms preserve a borrow. That is
+// the "two computations of one fact" shape this file's header is about, so the
+// walk is factored out and the questions are asked separately.
+pub struct:PlaceRoot = {
+    ExprId:id;
+    bool:exhausted;
+};
 
-    // The three that PRODUCE a borrow. `@` yields one (D-004 rule 1), and `$$i` /
+pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) {
+    ExprId:cur = id;
+    int32:left = fuel;
+    while (left > 0i32) {
+        if (raw expr_is_none(cur)) { pass PlaceRoot{ id: cur, exhausted: false }; }
+        ExprNode:n = relay ast_expr(ast, cur);
+
+        // The two forms that PRESERVE a borrow. Reaching into one yields a place
+        // in the same frame; the indirection did not make it live longer.
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            cur = raw expr_operand(n);
+        } else {
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            cur = raw expr_lhs(n);
+        } else {
+            // Everything else IS the root — including `<-`, which is worth saying
+            // out loud rather than reaching by falling off the end. Dereferencing
+            // a borrow yields the VALUE, copied or moved like any other; it is the
+            // pointer that was second-class, not what it pointed at.
+            pass PlaceRoot{ id: cur, exhausted: false };
+        }}
+        left = left - 1i32;
+    }
+    pass PlaceRoot{ id: cur, exhausted: true };
+};
+
+// Does this expression EVALUATE TO a borrow, from its shape alone?
+//
+// EXHAUSTION ANSWERS `true`, WHICH IS THE SAFE DIRECTION AND IS NOT WHAT THIS USED
+// TO DO. A classifier that answers "not a borrow" when it has run out of fuel lets
+// an escape through, and a borrow checker that fails OPEN is worse than no borrow
+// checker, because the property was claimed. The escape pass reports exhaustion as
+// its own diagnostic rather than as a borrow error, so a reader is told what
+// actually happened; any other caller gets the conservative answer.
+pub func:expr_is_borrow = bool(Ast->:ast, ExprId:id, int32:fuel) {
+    PlaceRoot:r = relay place_root(ast, id, fuel);
+    if (r.exhausted) { pass true; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:n = relay ast_expr(ast, r.id);
+
+    // The two that PRODUCE a borrow. `@` yields one (D-004 rule 1), and `$$i` /
     // `$$m` are the declaration-site spellings of the same thing — immutable
     // (many) and mutable (exclusive).
     if (n.kind == ExprKind.ExprAddressOfExpr) { pass true; }
-    if (n.kind == ExprKind.ExprBorrowExpr)    { pass true; }
-
-    // The two that PRESERVE one. Reaching into a borrow yields a borrow of the
-    // same frame; the indirection did not make it live longer.
-    if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (relay expr_is_borrow(ast, raw expr_operand(n), fuel - 1i32));
-    }
-    if (n.kind == ExprKind.ExprIndexExpr) {
-        pass (relay expr_is_borrow(ast, raw expr_lhs(n), fuel - 1i32));
-    }
-
-    // `<-` DOES NOT PRESERVE IT, and that is worth saying out loud rather than
-    // reaching by falling off the end. Dereferencing a borrow yields the VALUE,
-    // which is copied or moved like any other; it is the pointer that was
-    // second-class, not what it pointed at.
-    if (n.kind == ExprKind.ExprDerefExpr) { pass false; }
-
-    pass false;
+    pass (n.kind == ExprKind.ExprBorrowExpr);
 };

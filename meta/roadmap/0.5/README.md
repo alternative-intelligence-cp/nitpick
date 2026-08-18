@@ -43,10 +43,10 @@ discovered one subcycle at a time:
 
 | Parses today | Read by | Lands in |
 |---|---|---|
-| `stack` / `wild` / `wildx` qualifiers | nothing | 0.5.1, 0.5.3 |
+| `stack` / `wild` / `wildx` qualifiers | nothing | 0.5.3 |
 | `fixed` / `const` qualifiers | nothing *(the seed enforces `fixed`; the real frontend does not)* | 0.5.2 |
 | `nodrop` qualifier | nothing | 0.5.3 |
-| `$$i` / `$$m` borrow operators | typed as plain pointers | 0.5.1 |
+| `$$i` / `$$m` borrow operators | ~~typed as plain pointers~~ **done in 0.5.1** | 0.5.1 |
 | `move(place)` | typed as its operand | 0.5.3 |
 | `pick` patterns | typed, never checked for coverage | 0.5.4 |
 | `defer` bodies | walked, never ordered against exits | 0.5.2 |
@@ -90,8 +90,8 @@ naming the wrong thing is how the gap arose in the first place.
 
 | | Topic |
 |---|---|
-| **0.5.0** | The substrate — an expression's type recorded once, and the walk every analysis shares |
-| **0.5.1** | Second-class borrows and escape (D-004) |
+| ~~**0.5.0**~~ | ~~The substrate~~ — **DONE**. An expression's type recorded once, plus the borrow classifier. D-113 settled. |
+| ~~**0.5.1**~~ | ~~Second-class borrows and escape (D-004)~~ — **DONE**. All five rules, marked to a fixpoint. D-114, D-115 and D-116 settled; two language-surface questions raised. |
 | **0.5.2** | Definite assignment, `fixed`, and `defer` ordering |
 | **0.5.3** | `move`, moved-from bindings, and the manual-memory qualifiers (D-065) |
 | **0.5.4** | Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1) |
@@ -108,9 +108,28 @@ and a test that shows it refusing.
 
 ## Two things to decide early rather than discover
 
-Both block a subcycle if left, and neither is settled in the spec set.
+Both block a subcycle if left, and neither is settled in the spec set. **Both are
+now settled** — D-113 and the expression-type table — and 0.5.1 raised two more of
+exactly this kind, recorded in `0.5.1.md`:
+
+- **A parameter cannot be declared second-class.** `borrow_imm` / `borrow_mut` are
+  named by `AST_REFERENCE.md` and cited by D-004, and neither is a keyword;
+  `p_parse_param` accepts no qualifier at all. Without one, a callee can return a
+  borrow it was passed and **the escape rules are defeated by one function call**.
+  Demonstrated, not theorised: the two-function program that does it is accepted
+  today.
+- **A C variadic tail has no type.** `..*` in an `extern` names nothing, and the
+  obvious filler `any[]` is the bare `any` the type system refuses on purpose.
+  Refused explicitly (`NITPICK-TYPE-023`) rather than guessed at, and it must be
+  settled before Phase B — `nlibc` is `extern` declarations all the way down.
+
+Both are **language-surface** decisions and both are frontend-blocking under the
+capability ladder, which is what puts them here rather than in a subcycle.
 
 ### How a dynamically dispatched method declares its acquisition level
+
+**SETTLED as D-113** — `acquires <= N`, a third contract kind beside `requires`
+and `ensures`. The reasoning below is what settled it.
 
 **D-056 requires a spelling that does not exist.** The lock-level analysis is
 whole-program, and its one hole is dynamic dispatch — a call through a trait object
@@ -135,6 +154,11 @@ undeclared method's "may not acquire at all" the natural reading of an absent
 clause rather than a special case.
 
 ### Whether an expression's type is recorded or recomputed
+
+**SETTLED in 0.5.0** — recorded, in `src/frontend/expr_types.npk`. It earned its
+keep immediately: 0.5.1's `<-` rule needs an expression's type to tell a borrow of
+a pointer from the plain value behind a borrow, and removing it refuses
+`pass (<-p);` in four places.
 
 Several analyses need types: exhaustiveness needs the selector's, taint needs to
 know a `Result`, lock levels need `Mutex<T, LEVEL>`'s argument. Cycle 0.4 computes
