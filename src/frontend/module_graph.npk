@@ -410,6 +410,90 @@ pub func:graph_check_struct_cycles = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
+// --- one name per member ------------------------------------------------------------------
+//
+// TWO FIELDS OF ONE NAME WERE ACCEPTED, and the second was unreachable: field
+// lookup returns the FIRST match, while layout gives both storage. So the struct
+// was the size of two fields and only one of them could ever be read or written —
+// silently, with no diagnostic anywhere.
+//
+// FOUND VIA MACRO SPLICING (0.6.3), WHICH IS NOT WHERE IT LIVES. `struct:P = {
+// #xy(); #xy(); };` produces the collision by accident, which is what made it worth
+// looking for — but `struct:P = { int32:x; int32:x; };` was accepted just the same,
+// so the rule is about STRUCTS and not about macros. A check that fired only on
+// spliced fields would be the construct-means-something-different-by-context defect
+// that the whole language is arranged to avoid.
+//
+// IT IS ALSO THE ANSWER TO WHETHER EMITTED NAMES ARE HYGIENIC (D-128). They are
+// not renamed — a renamed field could not be named by the caller, and a renamed
+// emitted function could not be called — so a collision is an error like any other
+// name declared twice, and this is what makes it one.
+pub func:graph_check_dup_members = NIL(ModuleGraph->:g) {
+    int32:mi = 0i32;
+    while (mi < g.count) {
+        ModuleEntry:e = raw graph_at(g, mi);
+        drop check_dup_in_module(g, DeclId{ index: e.root });
+        mi = mi + 1i32;
+    }
+    pass NIL;
+};
+
+func:check_dup_in_module = NIL(ModuleGraph->:g, DeclId:mod_id) {
+    DeclNode:m = relay ast_decl(@g.ast, mod_id);
+    int32:n = raw item_member_count(@g.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:item = raw item_member(@g.ast, m, i);
+        DeclNode:d = relay ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclStructDecl) {
+            drop check_dup_members(g, d, "field");
+        }
+        if (d.kind == DeclKind.DeclEnumDecl) {
+            drop check_dup_members(g, d, "variant");
+        }
+        // A NESTED MODULE IS WALKED, unlike the struct-cycle check beside this one.
+        // Its members are declarations like any other and nothing about them is
+        // different for being one level in.
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            drop check_dup_in_module(g, item);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// QUADRATIC IN THE MEMBER COUNT, deliberately. A struct has tens of fields, not
+// thousands, and the alternative is a set keyed by intern index — a second
+// structure to allocate and keep in step for a loop that is already the cheapest
+// thing in the pass.
+func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) {
+    int32:n = raw item_member_count(@g.ast, d);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclNode:a = relay ast_decl(@g.ast, raw item_member(@g.ast, d, i));
+        int32:an = raw decl_name(a);
+        if (!(raw intern_is_none(an))) {
+            int32:j = i + 1i32;
+            while (j < n) {
+                DeclNode:b = relay ast_decl(@g.ast, raw item_member(@g.ast, d, j));
+                if ((raw decl_name(b)) == an) {
+                    string:nm = relay intern_get(g.interns, an);
+                    string:m1 = relay string_concat("`", nm);
+                    string:m2 = relay string_concat(m1, "` is declared twice as a ");
+                    string:m3 = relay string_concat(m2, what);
+                    string:m4 = relay string_concat(m3,
+                        " of this type; the second is unreachable, because a lookup by name finds the first and gets no say in which was meant");
+                    drop diaglist_push(g.diags,
+                        raw diag_error(raw RESOLVE_DUPLICATE(), m4, b.span));
+                }
+                j = j + 1i32;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // --- binding imports ---------------------------------------------------------------------
 //
 // A THIRD PASS, after every module is loaded and collected.

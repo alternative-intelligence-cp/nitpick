@@ -1,0 +1,12 @@
+// expect-error: NITPICK-MACRO-005
+//
+// A DECLARATION BODY INTO A STRUCT. What a macro emits has to fit where it landed
+// (`MACRO_REFERENCE.md` section 2), and a struct body holds fields — so the body
+// has to be variable declarations, which are what a field is converted from.
+mod:site_struct;
+
+macro:decls = () { func:g = int32() { pass 1i32; }; };
+
+struct:S = { #decls(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

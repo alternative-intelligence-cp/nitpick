@@ -9109,3 +9109,104 @@ and it can be run under the existing harness.
 
 Scheduled before Phase A closes. **Neither defect is fixed yet** — the read's fix
 is blocked on the write, because the header is what exposes it.
+
+---
+
+## D-128 — A macro never renames what it emits, and a collision is an error — **SETTLED**
+
+`MACRO_REFERENCE.md` §10 carried this as open: two invocations of a
+declaration-emitting macro in one module emit the same names, and nothing said
+whether that collides or is renamed.
+
+**Nothing is renamed.** Hygiene (D-057) governs how a macro body *reads* names;
+the names it *writes* are the names it wrote.
+
+The argument is that renaming makes the feature useless in both directions:
+
+| position | if the emitted name were renamed |
+|---|---|
+| module level | `#make_pair()` emits `greet1`, and `main` could not call it |
+| struct body | `#make_xy_fields()` emits `x`, and `P{ x: 1i32 }` could not name it |
+| impl body | the spliced method could not satisfy the trait it implements |
+
+Every one of the corpus's splicing tests works by naming what was emitted. A macro
+that emits inaccessible declarations is a macro that emits nothing.
+
+**So a collision is an error, like any other name declared twice.** That is not a
+rule about macros: `struct:P = { int32:x; int32:x; };` was accepted too, with the
+second field unreachable — field lookup returns the first match while layout gives
+both storage, so the struct was the size of two fields and only one could ever be
+read. Splicing is what made it easy to hit; the check is on structs and enums,
+where it belongs.
+
+A rule that fired only on *spliced* names would be the construct-means-something-
+different-by-context defect the blueprint philosophy exists to prevent.
+
+### What this does not settle
+
+Whether a macro should be *able* to control the names it emits — `macro:m = (N) {
+func:N = …; };` — which is the other half of §10's entry and remains open.
+Substitution reaches expressions, and a declaration's name is a payload, so today
+the emitted function is literally called `N`. That is unimplemented rather than
+refused, and it is a question about **parameters**, not about hygiene.
+
+---
+
+## D-129 — Eight expression kinds are never typed, and the checker says nothing — **OPEN, scheduled 0.6.7**
+
+`type_of_expr_inner` reaches every expression kind by name and falls through to
+type `0` — the **invalid** type. That encoding exists so one bad annotation
+produces one diagnostic instead of a cascade (0.4.0), which means it is *silent by
+design*. A kind with no case is therefore not a crash and not a diagnostic: it is a
+construct the checker accepts **without looking at it at all**.
+
+Eight of the forty-seven are in that state:
+
+| kind | what is accepted unchecked |
+|---|---|
+| `ExprStructLiteralExpr` | a field the struct does not have, a value of the wrong type, a literal that omits fields entirely |
+| `ExprArrayLiteralExpr` | element types, and the count against the declared length |
+| `ExprVectorCtorExpr` | the same, for vectors |
+| `ExprPipeExpr` | whether the left side is what the right side takes |
+| `ExprBuiltinExpr` | `#size_of<T>()`, `#wild_ptr`, `#wild_slice` — D-126 |
+| `ExprComptimeExpr` | the folded value's type |
+| `ExprDynCastExpr` | whether the target trait is implemented |
+| `ExprPickExpr` | the arms' common type |
+
+### How they were found, which is the part that matters
+
+Two by accident, both while doing something else. `#name(...)` in 0.6.2, when
+`#totally_not_a_macro_or_builtin(3i32)` compiled clean. `Point{ x: 1i32 }` in
+0.6.3, while checking that a *spliced* field participates in layout — the omission
+was accepted, and so was the same omission on a hand-written struct.
+
+**Neither announced itself, and reading the type checker alone never would.** The
+kind list and the checker have to be diffed, which is exactly what
+`check_kinds_reachable` has done for the parser since cycle 0.2 and what nothing
+did for the checker.
+
+`stmt_is_classified` exists for statements, added in 0.4 after a walk was found
+with a hole in it, and its comment says the mechanical half — *whether each kind is
+visited* — is the half a test can prove. **There was no expression equivalent.**
+
+### The instrument, which ships now
+
+`check_kinds_typed` in the harness diffs `ast_kind.npk` against every
+`src/frontend/type_*.npk` and fails on any expression kind neither typed nor listed
+in `UNTYPED_EXPR_KINDS`. The list shrinks and never grows: each entry records where
+that kind is scheduled, and adding one is an admission rather than an oversight.
+
+That turns eight holes found by stumbling into a maintained, enforced fact — and it
+is what makes the schedule below checkable rather than a promise.
+
+### Why this cannot wait for the emitter
+
+Phase A's artifact is **a checker that validates completely and emits nothing**. A
+checker that accepts `Point{ zzz: 1i32 }` does not validate completely, and a
+struct literal that omits a field leaves it with no value — which is the undefined
+state D-010's definite assignment refuses everywhere else. That is a safety
+property, not an ergonomic one.
+
+**0.6.7 — the expressions nothing typed**, before 0.6.6 closes Phase A. The two
+`comptime`-shaped entries land in 0.6.4 instead, since folding a `#size_of<T>` is
+something the evaluator has to do anyway and it cannot fold what it cannot type.

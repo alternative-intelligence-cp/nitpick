@@ -1,0 +1,13 @@
+// expect-error: NITPICK-MACRO-005
+//
+// AN ENUM BODY HOLDS VARIANTS, AND NO MACRO BODY SPELLS ONE. A variant is a name
+// with an optional payload, and there is no standalone form of it that a macro body
+// could contain — so this is the absence of a spelling rather than a restriction,
+// and mapping some other body shape onto variants would be inventing a rule.
+mod:site_enum;
+
+macro:fields = () { int32:a; };
+
+enum:E = { #fields(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

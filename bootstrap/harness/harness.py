@@ -321,6 +321,62 @@ def check_kinds_reachable():
     return []
 
 
+# EVERY EXPRESSION KIND THE TYPE CHECKER NEVER NAMES.
+#
+# `type_of_expr_inner` reaches every kind by name and falls through to type `0` --
+# the INVALID type, which exists so that one bad annotation produces one diagnostic
+# instead of a cascade, and which is therefore SILENT. A kind with no case is not a
+# crash and not a diagnostic: it is a construct the checker accepts without looking
+# at it.
+#
+# Two were found the expensive way. `#name(...)` in cycle 0.6.2 --
+# `#totally_not_a_macro(3i32)` compiled clean -- and `Point{ x: 1i32 }` in 0.6.3,
+# which accepts a field the struct does not have, a value of the wrong type, and a
+# literal that names no field at all. Neither announced itself, and reading the type
+# checker alone never reveals it: the kind list and the checker have to be diffed,
+# exactly as `check_kinds_reachable` diffs the kind list against the parser.
+#
+# THE ALLOW-LIST SHRINKS AND NEVER GROWS. Each entry is a construct the frontend
+# currently accepts unchecked, with where it is scheduled. Adding to it means
+# admitting a new hole, and this exists so that admission is deliberate.
+UNTYPED_EXPR_KINDS = {
+    "ExprBuiltinExpr":       "D-126 -- #size_of/#wild_ptr/#wild_slice, scheduled 0.6.4",
+    "ExprComptimeExpr":      "the comptime evaluator itself, 0.6.4",
+    "ExprStructLiteralExpr": "D-129, scheduled 0.6.7",
+    "ExprArrayLiteralExpr":  "D-129, scheduled 0.6.7",
+    "ExprVectorCtorExpr":    "D-129, scheduled 0.6.7",
+    "ExprPipeExpr":          "D-129, scheduled 0.6.7",
+    "ExprDynCastExpr":       "D-129, scheduled 0.6.7",
+    "ExprPickExpr":          "D-129, scheduled 0.6.7",
+}
+
+
+def check_kinds_typed():
+    """Every expression kind is typed, or is on the list of ones known not to be."""
+    kinds_path = os.path.join(ROOT, "src", "frontend", "ast_kind.npk")
+    with open(kinds_path, encoding="utf-8") as fh:
+        declared = set(k for k in KIND_DECL_RE.findall(fh.read())
+                       if k.startswith("Expr"))
+    named = set()
+    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "type_*.npk")):
+        with open(p, encoding="utf-8") as fh:
+            named.update(KIND_USE_RE.findall(fh.read()))
+
+    untyped = sorted(declared - named - {"ExprNone"})
+    fails = []
+    for k in untyped:
+        if k not in UNTYPED_EXPR_KINDS:
+            fails.append("expression kind %s is never named by the type checker, so "
+                         "it types as INVALID and is accepted unchecked -- write the "
+                         "rule, or add it to UNTYPED_EXPR_KINDS with where it is "
+                         "scheduled" % k)
+    for k in sorted(UNTYPED_EXPR_KINDS):
+        if k not in untyped:
+            fails.append("%s is typed now, so it comes off UNTYPED_EXPR_KINDS -- an "
+                         "allow-list that outlives its entries stops being read" % k)
+    return fails
+
+
 # --- the real FRONTEND, on real programs --------------------------------------
 
 def build_tool(tmp, tools, source, name):
@@ -608,6 +664,7 @@ def main(argv):
         # parsed, which is what lets it use the whole language rather than
         # subset 1.
         failures += check_kinds_reachable()
+        failures += check_kinds_typed()
 
         pc = build_parse_check(tmp, tools)
         if isinstance(pc, str) and not os.path.exists(pc):

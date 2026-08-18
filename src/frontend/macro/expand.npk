@@ -1237,9 +1237,19 @@ func:expand_in_decl = bool(Expander->:x, DeclId:id) {
     if (d.kind == DeclKind.DeclGlobalDecl) {
         pass (relay expand_in_expr(x, raw global_init(d)));
     }
-    if (d.kind == DeclKind.DeclStructDecl) { pass (relay expand_in_members(x, d)); }
-    if (d.kind == DeclKind.DeclEnumDecl)   { pass (relay expand_in_members(x, d)); }
-    if (d.kind == DeclKind.DeclTraitDecl)  { pass (relay expand_in_members(x, d)); }
+    // THE THREE ITEM SITES. A splice among their members is instantiated INTO the
+    // member list, which is the thing D-057 kept `macro:` alive for — generics,
+    // `comptime` and `#[derive]` can none of them add a field to a struct or a
+    // method to an impl.
+    if (d.kind == DeclKind.DeclStructDecl) {
+        pass (relay expand_item_window(x, id, raw SITE_STRUCT()));
+    }
+    if (d.kind == DeclKind.DeclEnumDecl) {
+        pass (relay expand_item_window(x, id, raw SITE_ENUM()));
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        pass (relay expand_item_window(x, id, raw SITE_IMPL()));
+    }
 
     // AN `impl` HAS A LAYOUT OF ITS OWN and is not an "item". Its header is five
     // slots — target, trait, member count, attribute count, generic count — where
@@ -1252,14 +1262,7 @@ func:expand_in_decl = bool(Expander->:x, DeclId:id) {
     // anything. `impl_member_count` and `impl_member` are the accessors, and they
     // exist for exactly this reason.
     if (d.kind == DeclKind.DeclImplDecl) {
-        bool:hit = false;
-        int32:im = raw impl_member_count(x.ast, d);
-        int32:ii = 0i32;
-        while (ii < im) {
-            if (relay expand_in_decl(x, raw impl_member(x.ast, d, ii))) { hit = true; }
-            ii = ii + 1i32;
-        }
-        pass hit;
+        pass (relay expand_impl_window(x, id));
     }
     if (d.kind == DeclKind.DeclExternBlock) {
         bool:hit = false;
@@ -1275,15 +1278,157 @@ func:expand_in_decl = bool(Expander->:x, DeclId:id) {
     pass false;
 };
 
-func:expand_in_members = bool(Expander->:x, DeclNode:d) {
-    bool:hit = false;
-    int32:n = raw item_member_count(x.ast, d);
+// A MEMBER LIST WITH SPLICES IN IT, REBUILT. The same shape as the module's, and
+// the same reason for the scan first: a window rebuilt every round when nothing
+// changed would churn the pool for every struct in the program.
+//
+// AN `impl` IS NOT AN ITEM — five header slots against four, in a different order —
+// so it gets its own, below. That distinction cost a day in 0.6.2 and is stated at
+// every place it matters rather than once.
+func:expand_item_window = bool(Expander->:x, DeclId:id, int32:site) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+    int32:gc = raw item_generic_count(x.ast, d);
+    int32:mc = raw item_member_count(x.ast, d);
+    int32:ac = raw item_attr_count(x.ast, d);
+    int32:ec = raw item_extra_count(x.ast, d);
+
+    bool:found = false;
+    int32:scan = 0i32;
+    while (scan < mc) {
+        DeclNode:sm = relay ast_decl(x.ast, raw item_member(x.ast, d, scan));
+        if (sm.kind == DeclKind.DeclMacroSplice) { found = true; }
+        scan = scan + 1i32;
+    }
+    if (!found) {
+        // Still descend: a method body may hold an invocation of its own.
+        bool:hit = false;
+        int32:k = 0i32;
+        while (k < mc) {
+            if (relay expand_in_decl(x, raw item_member(x.ast, d, k))) { hit = true; }
+            k = k + 1i32;
+        }
+        pass hit;
+    }
+
+    int32:mark = raw ast_scratch_mark(x.ast);
+    drop ast_scratch_push(x.ast, gc);
+    drop ast_scratch_push(x.ast, 0i32);      // member count -- patched below
+    drop ast_scratch_push(x.ast, ac);
+    drop ast_scratch_push(x.ast, ec);
+
+    int32:g = 0i32;
+    while (g < gc) {
+        drop ast_scratch_push(x.ast, (raw item_generic(x.ast, d, g)).index);
+        g = g + 1i32;
+    }
+
+    int32:emitted = 0i32;
     int32:i = 0i32;
-    while (i < n) {
-        if (relay expand_in_decl(x, raw item_member(x.ast, d, i))) { hit = true; }
+    while (i < mc) {
+        DeclId:mid = raw item_member(x.ast, d, i);
+        DeclNode:mn = relay ast_decl(x.ast, mid);
+        if (mn.kind == DeclKind.DeclMacroSplice) {
+            emitted = emitted + (relay expand_splice(x, mn, site));
+        } else {
+            drop ast_scratch_push(x.ast, mid.index);
+            emitted = emitted + 1i32;
+        }
         i = i + 1i32;
     }
-    pass hit;
+
+    int32:a2 = 0i32;
+    while (a2 < ac) {
+        drop ast_scratch_push(x.ast, (raw item_attr(x.ast, d, a2)).index);
+        a2 = a2 + 1i32;
+    }
+    int32:e2 = 0i32;
+    while (e2 < ec) {
+        drop ast_scratch_push(x.ast, (raw item_extra(x.ast, d, e2)).index);
+        e2 = e2 + 1i32;
+    }
+
+    drop ast_scratch_set(x.ast, mark, 1i32, emitted);
+    IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+    drop ast_set_decl_window(x.ast, id, w.start, w.count);
+
+    DeclNode:d2 = relay ast_decl(x.ast, id);
+    int32:n2 = raw item_member_count(x.ast, d2);
+    int32:j = 0i32;
+    while (j < n2) {
+        drop expand_in_decl(x, raw item_member(x.ast, d2, j));
+        j = j + 1i32;
+    }
+    pass true;
+};
+
+func:expand_impl_window = bool(Expander->:x, DeclId:id) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+    int32:gc = raw impl_generic_count(x.ast, d);
+    int32:mc = raw impl_member_count(x.ast, d);
+    int32:ac = raw impl_attr_count(x.ast, d);
+
+    bool:found = false;
+    int32:scan = 0i32;
+    while (scan < mc) {
+        DeclNode:sm = relay ast_decl(x.ast, raw impl_member(x.ast, d, scan));
+        if (sm.kind == DeclKind.DeclMacroSplice) { found = true; }
+        scan = scan + 1i32;
+    }
+    if (!found) {
+        bool:hit = false;
+        int32:k = 0i32;
+        while (k < mc) {
+            if (relay expand_in_decl(x, raw impl_member(x.ast, d, k))) { hit = true; }
+            k = k + 1i32;
+        }
+        pass hit;
+    }
+
+    int32:mark = raw ast_scratch_mark(x.ast);
+    drop ast_scratch_push(x.ast, (raw impl_target(x.ast, d)).index);
+    drop ast_scratch_push(x.ast, (raw impl_trait(x.ast, d)).index);
+    drop ast_scratch_push(x.ast, 0i32);      // member count -- patched below
+    drop ast_scratch_push(x.ast, ac);
+    drop ast_scratch_push(x.ast, gc);
+
+    int32:g = 0i32;
+    while (g < gc) {
+        drop ast_scratch_push(x.ast, (raw impl_generic(x.ast, d, g)).index);
+        g = g + 1i32;
+    }
+
+    int32:emitted = 0i32;
+    int32:i = 0i32;
+    while (i < mc) {
+        DeclId:mid = raw impl_member(x.ast, d, i);
+        DeclNode:mn = relay ast_decl(x.ast, mid);
+        if (mn.kind == DeclKind.DeclMacroSplice) {
+            emitted = emitted + (relay expand_splice(x, mn, raw SITE_IMPL()));
+        } else {
+            drop ast_scratch_push(x.ast, mid.index);
+            emitted = emitted + 1i32;
+        }
+        i = i + 1i32;
+    }
+
+    int32:a2 = 0i32;
+    while (a2 < ac) {
+        drop ast_scratch_push(x.ast, (raw impl_attr(x.ast, d, a2)).index);
+        a2 = a2 + 1i32;
+    }
+
+    drop ast_scratch_set(x.ast, mark, 2i32, emitted);
+    IdSpan:w = raw ast_scratch_commit(x.ast, mark);
+    drop ast_set_decl_window(x.ast, id, w.start, w.count);
+
+    DeclNode:d2 = relay ast_decl(x.ast, id);
+    int32:n2 = raw impl_member_count(x.ast, d2);
+    int32:j = 0i32;
+    while (j < n2) {
+        drop expand_in_decl(x, raw impl_member(x.ast, d2, j));
+        j = j + 1i32;
+    }
+    pass true;
 };
 
 // --- the audit ------------------------------------------------------------------
@@ -1449,7 +1594,7 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) {
         DeclId:id = raw item_member(x.ast, m, i);
         DeclNode:d = relay ast_decl(x.ast, id);
         if (d.kind == DeclKind.DeclMacroSplice) {
-            emitted = emitted + (relay expand_splice(x, d));
+            emitted = emitted + (relay expand_splice(x, d, raw SITE_MODULE()));
         } else {
             drop ast_scratch_push(x.ast, id.index);
             emitted = emitted + 1i32;
@@ -1490,9 +1635,90 @@ func:expand_module_here = bool(Expander->:x, DeclId:mod_id) {
     pass true;
 };
 
+// --- where a splice landed --------------------------------------------------------
+//
+// WHAT A MACRO EMITS HAS TO FIT WHERE IT LANDED (`MACRO_REFERENCE.md` §2), and
+// what "fit" means is different at each of the three sites. The site is passed IN
+// rather than worked out from the body, because the body is the same in every case
+// and only the surrounding declaration knows what it can hold.
+//
+//   MODULE   declarations, as written
+//   STRUCT   variable declarations, CONVERTED to fields
+//   IMPL     declarations, as written — the same for a `trait` body
+//
+// The struct case is the one that is not a copy. `int32:x;` parses as a STATEMENT
+// inside a macro body and as a FIELD inside a struct, because those are different
+// grammars reading the same text — so splicing one into the other is a conversion,
+// which is exactly what §1's table says it is.
+pub func:SITE_MODULE = int32() { pass 1i32; };
+pub func:SITE_STRUCT = int32() { pass 2i32; };
+pub func:SITE_IMPL = int32()   { pass 3i32; };
+pub func:SITE_ENUM = int32()   { pass 4i32; };
+
+func:site_name = string(int32:site) {
+    if (site == (raw SITE_MODULE())) { pass "at module level"; }
+    if (site == (raw SITE_STRUCT())) { pass "in a struct body"; }
+    if (site == (raw SITE_IMPL()))   { pass "in an impl or trait body"; }
+    pass "in an enum body";
+};
+
+func:site_holds = string(int32:site) {
+    if (site == (raw SITE_STRUCT())) {
+        pass "fields, so the body has to be variable declarations";
+    }
+    pass "declarations, so the body has to be declarations";
+};
+
+// A FIELD OUT OF A VARIABLE DECLARATION. The two carry the same two facts — a type
+// and a name — and nothing else a field can hold, so anything more on the statement
+// is refused rather than dropped: a `fixed int32:x = 5i32;` spliced as a field
+// would silently lose both the qualifier and the value.
+func:splice_field = DeclId(Expander->:x, StmtId:src) {
+    StmtNode:v = relay ast_stmt(x.ast, src);
+
+    // A NESTED INVOCATION PASSES THROUGH AS A SPLICE and expands on the next round,
+    // which is what makes a struct-body macro able to invoke another one (`bug598`).
+    if (v.kind == StmtKind.StmtExprStmt) {
+        ExprId:ex = ExprId{ index: v.a };
+        if (!(raw expr_is_none(ex))) {
+            ExprNode:n = relay ast_expr(x.ast, ex);
+            if (n.kind == ExprKind.ExprBuiltinExpr) {
+                ExprId:c = relay clone_expr(x, ex, raw CLONE_FUEL());
+                pass (relay ast_add_decl(x.ast, DeclKind.DeclMacroSplice, v.span,
+                                         c.index, 0i32, 0i32, 0i64));
+            }
+        }
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            "a struct body holds fields, and this line of the macro's body is an expression rather than a declaration",
+            v.span);
+        pass (raw decl_none());
+    }
+
+    if (v.kind != StmtKind.StmtVarDeclStmt) {
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            "a struct body holds fields, and this line of the macro's body does not declare one",
+            v.span);
+        pass (raw decl_none());
+    }
+    if (!(raw expr_is_none(relay stmt_decl_init(x.ast, v)))) {
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            "a field has no initialiser, so this declaration cannot be spliced into a struct body with one written on it",
+            v.span);
+        pass (raw decl_none());
+    }
+    if ((relay stmt_quals(x.ast, v)) != 0i32) {
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(),
+            "a field carries no qualifiers, so this declaration cannot be spliced into a struct body with one written on it",
+            v.span);
+        pass (raw decl_none());
+    }
+    pass (relay ast_add_decl(x.ast, DeclKind.DeclFieldDecl, v.span,
+                             (raw stmt_decl_type(v)).index, 0i32, 0i32, v.payload));
+};
+
 // ONE SPLICE, INSTANTIATED. Returns how many declarations it pushed, because the
 // caller is building a window and has to know.
-func:expand_splice = int32(Expander->:x, DeclNode:d) {
+func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) {
     ExprNode:inv = relay ast_expr(x.ast, raw splice_invocation(d));
     int32:name = raw builtin_name(inv);
 
@@ -1527,13 +1753,29 @@ func:expand_splice = int32(Expander->:x, DeclNode:d) {
         pass 0i32;
     }
 
-    // A MACRO WHOSE BODY IS NOT DECLARATIONS CANNOT STAND HERE. What it emits has
-    // to fit where it landed, and a body of statements spliced at module level
-    // would be statements outside any function.
-    if ((raw macro_body_kind(x.ast, md)) != (raw MACRO_BODY_DECLS())) {
+    // AN ENUM BODY HOLDS VARIANTS, AND NO MACRO BODY SPELLS ONE. A variant is a
+    // name with an optional payload and there is no standalone form of it a macro
+    // body could contain — so this is the absence of a spelling rather than a
+    // restriction, and inventing a mapping from some other body shape would be
+    // inventing a rule.
+    if (site == (raw SITE_ENUM())) {
         drop expand_err(x, raw MACRO_WRONG_SHAPE(),
-            "this macro's body is not declarations, so it cannot stand where a declaration is expected",
+            "an enum body holds variants, and no macro body can contain one; a macro cannot emit enum variants",
             d.span);
+        pass 0i32;
+    }
+
+    // WHAT THE SITE ACCEPTS. A struct body takes variable declarations and turns
+    // them into fields; everywhere else takes declarations as written.
+    int32:want = raw MACRO_BODY_DECLS();
+    if (site == (raw SITE_STRUCT())) { want = raw MACRO_BODY_STMTS(); }
+
+    if ((raw macro_body_kind(x.ast, md)) != want) {
+        string:w1 = relay string_concat("this macro's body does not fit ",
+                                        raw site_name(site));
+        string:w2 = relay string_concat(w1, ", which holds ");
+        string:w3 = relay string_concat(w2, raw site_holds(site));
+        drop expand_err(x, raw MACRO_WRONG_SHAPE(), w3, d.span);
         pass 0i32;
     }
 
@@ -1552,9 +1794,14 @@ func:expand_splice = int32(Expander->:x, DeclNode:d) {
     int32:bcount = raw macro_body_count(x.ast, md);
     int32:i = 0i32;
     while (i < bcount) {
-        DeclId:src = DeclId{ index: raw macro_body_at(x.ast, md, i) };
-        DeclId:c = relay clone_decl(x, src, raw CLONE_FUEL());
-        drop ast_scratch_push(x.ast, c.index);
+        if (site == (raw SITE_STRUCT())) {
+            DeclId:f = relay splice_field(x, StmtId{ index: raw macro_body_at(x.ast, md, i) });
+            drop ast_scratch_push(x.ast, f.index);
+        } else {
+            DeclId:src = DeclId{ index: raw macro_body_at(x.ast, md, i) };
+            DeclId:c = relay clone_decl(x, src, raw CLONE_FUEL());
+            drop ast_scratch_push(x.ast, c.index);
+        }
         i = i + 1i32;
     }
 

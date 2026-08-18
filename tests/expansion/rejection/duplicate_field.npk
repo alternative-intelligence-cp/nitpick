@@ -1,0 +1,22 @@
+// expect-error: NITPICK-RESOLVE-001
+//
+// TWO INVOCATIONS, ONE NAME. A macro never renames what it emits (D-128) — a
+// renamed field could not be named by the caller and a renamed method could not
+// satisfy the trait it implements — so a collision is an error like any other name
+// declared twice.
+//
+// THE RULE IS ABOUT STRUCTS, NOT ABOUT MACROS. `struct:P = { int32:x; int32:x; };`
+// was accepted just the same until this check existed, with the second field
+// unreachable: lookup returns the first match while layout gives both storage, so
+// the struct was the size of two fields and only one could ever be read. Splicing
+// is what made it easy to hit.
+mod:duplicate_field;
+
+macro:one_x = () { int32:x; };
+
+struct:P = {
+    #one_x();
+    #one_x();
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

@@ -1,0 +1,109 @@
+// Splicing — the thing D-057 kept `macro:` alive for (0.6.3).
+//
+// Generics, `comptime` and `#[derive]` can none of them add a field to a struct or
+// a method to an impl. Everything else a macro does, something else in the language
+// does better; this is the part that has no alternative, and it is why the feature
+// survived the review that removed `MacroPattern`.
+//
+// EACH CASE IS OBSERVED THROUGH SOMETHING THAT WOULD FAIL IF THE SPLICE HAD EMITTED
+// NOTHING. A field is read, a method is declared on a trait that requires it, and a
+// literal names every spliced field — so a splice that silently produced an empty
+// member list does not pass this file, it fails to resolve.
+mod:splicing;
+
+// --- fields, which are a CONVERSION and not a copy --------------------------------
+//
+// `int32:x;` parses as a STATEMENT inside a macro body and as a FIELD inside a
+// struct, because those are different grammars reading the same text. So a
+// statements body spliced into a struct is converted, which is what
+// `MACRO_REFERENCE.md` section 1's table says it is.
+macro:make_xy_fields = () {
+    int32:x;
+    int32:y;
+};
+
+struct:Point = {
+    #make_xy_fields();
+};
+
+// A manual field, a splice, and another manual field — in that order (`bug597`).
+macro:two_mid = () {
+    int32:b;
+    int32:c;
+};
+
+struct:Quad = {
+    int32:a;
+    #two_mid();
+    int32:d;
+};
+
+// A struct-body macro that invokes another one (`bug598`). The inner invocation
+// arrives as a splice among the fields and expands on the next round, which is what
+// makes the fixed point a fixed point here as well as at module level.
+macro:inner_two = () {
+    int32:p;
+    int32:q;
+};
+
+macro:outer_three = () {
+    #inner_two();
+    int32:r;
+};
+
+struct:Trio = {
+    #outer_three();
+};
+
+// --- methods, which ARE a copy ----------------------------------------------------
+
+struct:Box = { int32:n; };
+
+trait:Pair = {
+    func:add_one = int32(Self:self);
+    func:add_two = int32(Self:self);
+};
+
+macro:emit_methods = () {
+    pub func:add_one = int32(Box:self) { pass (self.n + 1i32); };
+    pub func:add_two = int32(Box:self) { pass (self.n + 2i32); };
+};
+
+// THE STRONG CASE. This is a TRAIT impl, so `check_impls_complete` asks whether
+// every required method is supplied — and the only way it can be satisfied is if
+// the spliced members were in the list by the time it looked. A splice that emitted
+// nothing reports a missing method rather than passing quietly.
+impl:Box:Pair = {
+    #emit_methods();
+};
+
+// A parameter substituted into a spliced method's body (`bug599`).
+struct:Cell = { int32:n; };
+
+macro:make_value_method = (const_expr) {
+    pub func:value = int32(Cell:self) { pass const_expr; };
+};
+
+impl:Cell = {
+    #make_value_method(42i32);
+};
+
+// A trait body takes the same shape: the spliced declarations are signatures.
+macro:sigs = () {
+    func:commit = NIL(Self:self);
+};
+
+trait:Storage = {
+    #sigs();
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Point:pt = Point{ x: 3i32, y: 4i32 };
+    Quad:q = Quad{ a: 1i32, b: 2i32, c: 3i32, d: 4i32 };
+    Trio:t = Trio{ p: 5i32, q: 6i32, r: 9i32 };
+
+    if ((pt.x + pt.y) != 7i32)                    { exit 2i32; }
+    if ((q.a + q.b + q.c + q.d) != 10i32)         { exit 3i32; }
+    if ((t.p + t.q + t.r) != 20i32)               { exit 4i32; }
+    exit 0i32;
+};

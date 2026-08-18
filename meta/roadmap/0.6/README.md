@@ -169,3 +169,18 @@ with the seed, so **which it is has to be established rather than assumed.**
 fill the gap with a known pattern, check it at every later allocation, and let it
 name the writer instead of inferring it from a crash three allocations later. The
 `ralloc` read stays unfixed until then, because its fix is what exposes this.
+
+## Inserted during the cycle: 0.6.7
+
+**Eight expression kinds are never typed** (D-129) — struct literals, array and
+vector literals, pipe, dyn cast, expression-`pick`, and the two `comptime`-shaped
+ones 0.6.4 owns. All eight fall through `type_of_expr_inner` to the INVALID type,
+which is silent by design, so each is a construct the checker accepts without
+looking at it.
+
+Two were found by accident while doing something else, in consecutive subcycles.
+That is what makes it a cycle-level item rather than a cleanup: `check_kinds_typed`
+now diffs the kind list against the checker the way `check_kinds_reachable` has
+diffed it against the parser since 0.2, and **0.6.7 empties the allow-list** before
+0.6.6 closes Phase A. A checker that accepts `Point{ zzz: 1i32 }` does not validate
+completely, which is the whole of what Phase A's artifact claims to be.

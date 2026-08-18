@@ -1,0 +1,27 @@
+// expect-error: NITPICK-RESOLVE-001
+// expect-error: NITPICK-RESOLVE-001
+//
+// A NAME DECLARED TWICE INSIDE A TYPE. Nothing here involves a macro: the rule is
+// about structs and enums, and it is in this suite rather than the expansion one
+// for that reason. Splicing (0.6.3) is what made the collision easy to produce by
+// accident — `struct:P = { #xy(); #xy(); };` — and a check that fired only on
+// spliced members would make a construct mean something different depending on
+// where it came from.
+//
+// THE SECOND ONE IS UNREACHABLE, WHICH IS WHY IT IS AN ERROR AND NOT A WARNING.
+// Field lookup returns the FIRST match and gets no say in which was meant, while
+// layout gives both storage — so the struct is the size of two fields, one of them
+// permanently unwritable and unreadable, and nothing anywhere says so.
+mod:duplicate_members;
+
+struct:P = {
+    int32:x;
+    int32:x;
+};
+
+enum:E = {
+    Alpha;
+    Alpha;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

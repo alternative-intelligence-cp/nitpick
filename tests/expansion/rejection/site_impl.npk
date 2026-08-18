@@ -1,0 +1,15 @@
+// expect-error: NITPICK-MACRO-005
+//
+// The mirror image: a STATEMENTS body into an impl body, which holds declarations.
+// Two codes would be wrong here — it is one rule, "what it emits has to fit" — but
+// the MESSAGE names both the site and what the site holds, because "wrong shape"
+// alone leaves the reader to work out which of the two ends to change.
+mod:site_impl;
+
+macro:stmts = () { int32:a; };
+
+struct:T = { int32:v; };
+
+impl:T = { #stmts(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

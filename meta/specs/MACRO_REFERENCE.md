@@ -68,7 +68,26 @@ string:s = #emit_msg();                 // expression position
 ```
 
 An invocation whose expansion does not fit where it landed is an error — fields
-into something that is not a struct, declarations into an expression.
+into something that is not a struct, declarations into an expression. What each site
+holds, and how a body reaches it:
+
+| site | body | how it arrives |
+|---|---|---|
+| module level | declarations | cloned |
+| `struct` body | variable declarations | **converted to fields** |
+| `impl` or `trait` body | declarations | cloned |
+| expression position | one expression | substituted in place |
+| `enum` body | — | refused |
+
+The struct case is the one that is not a copy. `int32:x;` parses as a STATEMENT
+inside a macro body and as a FIELD inside a struct — different grammars reading the
+same text — so splicing one into the other is a conversion. A variable declaration
+carrying an initialiser or a qualifier is refused rather than stripped: a field has
+neither, and losing a `fixed` quietly is worse than not accepting the program.
+
+**An enum body is refused**, and that is the absence of a spelling rather than a
+restriction: a variant is a name with an optional payload, no macro body can contain
+one, and mapping some other body shape onto variants would be inventing a rule.
 
 ## 3. Parameter substitution
 
@@ -340,16 +359,19 @@ reader of the corpus is not misled:
 
 Recorded as open rather than invented:
 
-- **Are emitted names hygienic?** Hygiene as specified governs how a macro body
-  *reads* names. Two invocations of a declaration-emitting macro in one module emit
-  the same names, and nothing in the corpus says whether that collides or is
-  renamed. It currently collides, because nothing renames.
 - **May a parameter name an emitted declaration?** `macro:m = (N) { func:N = …; };`
   does not work: substitution reaches EXPRESSIONS, and a declaration's name is a
   payload rather than an expression, so the emitted function is literally called
   `N`. The corpus never writes it — `bug593` substitutes into a body and every
-  emitted name is fixed — so this is unimplemented rather than refused, and the two
-  questions are really one: both are about a macro controlling the names it emits.
+  emitted name is fixed — so this is unimplemented rather than refused. It is a
+  question about **parameters**, not about hygiene.
+
+> **Settled since: are emitted names hygienic?** No — **a macro never renames what
+> it emits** (D-128), and a collision is an error like any other name declared
+> twice. Renaming makes the feature useless in every position: a renamed field
+> cannot be named by the caller, a renamed method cannot satisfy the trait it
+> implements, and `#make_pair()`'s `greet1` could not be called. §4's splicing works
+> entirely by naming what was emitted.
 - **May a macro emit a macro?** Nothing exercises it. The fixed-point loop would
   expand the result, so it likely works by construction — which is not the same as
   being specified. Note what D-124 adds: an emitted macro would belong to the

@@ -1,0 +1,15 @@
+// expect-error: NITPICK-MACRO-005
+//
+// A FIELD HAS NO INITIALISER, so a variable declaration carrying one cannot become
+// a field. Refused rather than dropped: splicing this quietly would lose the value
+// the author wrote, and losing it silently is worse than not accepting it.
+//
+// The same holds for a qualifier — `fixed int32:a;` spliced as a field would lose
+// the `fixed`, which is a safety property rather than a convenience.
+mod:field_initialiser;
+
+macro:with_init = () { int32:a = 5i32; };
+
+struct:S = { #with_init(); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
