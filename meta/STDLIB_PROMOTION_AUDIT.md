@@ -163,12 +163,23 @@ not a promotion that already happened.
 
 ---
 
-## What was not checked
+## What was not checked, and what is known about it anyway
 
 - **Whether the archived sources still compile** against the current language.
-  They almost certainly do not — the language has moved a great deal, and the
-  ledgers in `nlibc/meta/` exist because the port is a rewrite in places.
-- **Edge-case audit status per library.** The recollection is that libraries were
-  promoted with audit cycles still outstanding on implementation edge cases, not
-  on C-freedom. Nothing here contradicts that, and nothing here confirms it
-  either — this audit measured dependency, not correctness.
+  **They almost certainly do not.** The language has changed substantially in
+  important areas — things dropped, added and tweaked — so even where the syntax
+  still looks close the resulting behaviour may not be. That is why the ledgers in
+  `nlibc/meta/` exist: the port is a rewrite in places, not a copy.
+- **Edge-case audit status per library.** These were **left mid-audit
+  deliberately.** They were generally close, and the outstanding findings were
+  implementation edge cases surfaced by external audits rather than C dependencies
+  — but perfecting them stopped being worth it once the port to this compiler was
+  in view, because everything would have to change for that anyway.
+
+  So an unfinished audit here is a decision, not neglect, and a bug found in an
+  archived library is expected rather than a discovery.
+
+**The planning consequence: assume per-library work, never a bulk port.** Each one
+gets assessed individually when its turn comes — what state it is in, and what has
+to change — and this document exists so that assessment starts from measured facts
+rather than from memory.
