@@ -69,6 +69,13 @@ avoid.
 
 ## 3. Carried, not blocking
 
+- **The C variadic tail (`NITPICK-TYPE-023`) is open but NOT Phase-B-blocking.**
+  It was recorded as blocking on the assumption `nlibc` would be FFI-shaped. It is
+  not: `nlibc/meta/VARIADIC_COLLAPSE.md` deletes the `printf`/`scanf` families
+  outright in favour of `&{ }` interpolation (D-053), and the `sysN` families in
+  favour of the `sys` builtin (D-047/D-048) — 153 variadic functions to zero. See
+  `meta/STDLIB_PROMOTION_AUDIT.md`.
+
 - **Build the concurrency stdlib in dependency order — build, not port.**
   `mutex`, `rwlock`, and `condvar` are genuinely C-free and go first, though
   D-056 changes the `mutex` API to `Mutex<T, LEVEL>` and removes the untimed
