@@ -39,20 +39,20 @@ A macro taking no parameters still declares an empty list: `macro:m = () { … }
 ## 2. Invoking one
 
 ```nitpick
-name!()          // no arguments
-name!(a, b)      // with arguments
+#name()          // no arguments
+#name(a, b)      // with arguments
 ```
 
 **Four positions**, and the same spelling in all of them:
 
 ```nitpick
-make_pair!();                          // module level — emits declarations
+#make_pair();                          // module level — emits declarations
 
-struct:Point = { make_xy_fields!(); };  // struct body — splices fields
+struct:Point = { #make_xy_fields(); };  // struct body — splices fields
 
-impl:Box:Pair = { emit_methods!(); };   // impl body — splices methods
+impl:Box:Pair = { #emit_methods(); };   // impl body — splices methods
 
-string:s = emit_msg!();                 // expression position
+string:s = #emit_msg();                 // expression position
 ```
 
 An invocation whose expansion does not fit where it landed is an error — fields
@@ -68,7 +68,7 @@ macro:make_const = (N) {
     func:my_const = int32() { pass N; };
 };
 
-make_const!(42i32);      // emits  func:my_const = int32() { pass 42i32; };
+#make_const(42i32);      // emits  func:my_const = int32() { pass 42i32; };
 ```
 
 Substitution traverses the whole emitted subtree. It is not textual: the argument
@@ -95,7 +95,7 @@ expansion completes before name resolution begins (§6).
 ```nitpick
 macro:make_xy_fields = () { int32:x; int32:y; };
 
-struct:Point = { make_xy_fields!(); };
+struct:Point = { #make_xy_fields(); };
 ```
 
 `Point` has fields `x` and `y`, and may mix spliced and literal fields freely.
@@ -107,7 +107,7 @@ macro:emit_methods = () {
     func:add_one = int32($$i Box:self) { pass (self.n + 1i32); };
 };
 
-impl:Box:Pair = { emit_methods!(); };
+impl:Box:Pair = { #emit_methods(); };
 ```
 
 ## 5. Hygiene
@@ -122,7 +122,7 @@ macro:report = () { `shared = &{shared}`; };
 
 func:main = int32(cstring[]:_~argv) {
     int32:shared = 5i32;
-    string:s = report!();     // `shared` is the TOP-LEVEL 100, not the local 5
+    string:s = #report();     // `shared` is the TOP-LEVEL 100, not the local 5
     exit 0i32;
 };
 ```
@@ -164,9 +164,9 @@ program.
 
 ```nitpick
 macro:inner = () { func:f1 = int32() { pass 10i32; }; };
-macro:outer = () { inner!(); func:f3 = int32() { pass 30i32; }; };
+macro:outer = () { #inner(); func:f3 = int32() { pass 30i32; }; };
 
-outer!();     // expands to { inner!(); f3 }, then inner expands on the next round
+#outer();     // expands to { #inner(); f3 }, then inner expands on the next round
 ```
 
 The loop repeats until no invocation remains. This holds for splices too — a
@@ -178,7 +178,7 @@ expanded AST (§8).
 ## 7. Expansion is bounded
 
 ```nitpick
-macro:m = () { m!(); };      // refused
+macro:m = () { #m(); };      // refused
 ```
 
 **A depth bound** limits one invocation's nesting; **an iteration bound** limits
@@ -230,8 +230,8 @@ reason expansion carries a bound.
 
 ```nitpick
 macro:four = () { comptime(2i32 * 2i32); };      // a macro body containing comptime
-int64:a = comptime(double_it!(3i32));            // comptime over a macro invocation
-int64:b = comptime(add_one!(double_it!(10i32))); // nested arbitrarily
+int64:a = comptime(#double_it(3i32));            // comptime over a macro invocation
+int64:b = comptime(#add_one(#double_it(10i32))); // nested arbitrarily
 ```
 
 One rule covers all of it: **expansion runs to a fixed point first, then evaluation
@@ -256,7 +256,14 @@ reader of the corpus is not misled:
 | `expr ? default` | the defaults operator | respelled; see `OP_REFERENCE.md` |
 | `0`, `10`, `exit 1` | `0i32`, `10i32`, `exit 1i32` | literals carry their width (D-092) |
 | `func:main = int32()` | `func:main = int32(cstring[]:argv)` | |
+| `name!(args)` — the invocation | **`#name(args)`** | D-046: `#` is the compiler-directive sigil, and "a caller does not need to know whether `#foo(x)` is compiler-provided or user-defined" |
 | `MacroPattern` in a `pick` arm | **removed** | D-057 — no invocation survives to be matched |
+
+> **The invocation spelling is the one this document got wrong first.** Its
+> examples were transcribed from the corpus with `name!(…)` intact — which is
+> precisely the mistake this section exists to prevent, made while writing the
+> section. `#name(…)` is the form; there is no postfix `!` in the grammar, and `!`
+> is prefix logical-not and nothing else.
 
 ## 10. What the corpus does not settle
 
