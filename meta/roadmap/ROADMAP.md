@@ -60,12 +60,42 @@ is why the whole frontend precedes any backend work.
 | ~~**0.1**~~ | ~~**Lexer**~~ — **DONE** (`done/0.1/`). `LEXICAL_REFERENCE.md` in full: 238 token kinds, 154 keywords, every base and literal form, templates with `&{ }` interpolation, and the three interaction rules. |
 | ~~**0.2**~~ | ~~**AST and parser**~~ — **DONE** (`done/0.2/`). `AST_REFERENCE.md` in full: 116 node kinds across six arrays, the 19-level precedence table, generics after the name, contracts, `pick` patterns, and a real parser that runs on real files. **Every node kind is reachable, and the harness re-checks that on every invocation** — the diff that proves it found sixteen defects across the cycle, none of which announced itself. |
 | ~~**0.3**~~ | ~~**Modules, symbols, visibility**~~ — **DONE** (`done/0.3/`). The frontend opens files, loads a module graph, and binds every name. Three passes whose ORDER is the architecture: collect every declaration, bind imports **to a fixed point**, then resolve bodies — each needing the previous finished for every module, which is what makes D-086's legal `use` cycles resolvable rather than something to break. `resolve_audit` proves the walk has no holes, and was verified by making it fail. |
-| **0.4** | **Type system and checking** — `TYPE_REFERENCE.md`, `Result<T>`, traits and coherence, generics checked **at their definition** (D-064) |
+| ~~**0.4**~~ | ~~**Type system and checking**~~ — **DONE** (`done/0.4/`). `TYPE_REFERENCE.md` and `TRAITS_REFERENCE.md` in full: canonical interned types, `Result<T>` universal (D-013), casts, member access and UFCS, traits with coherence and object safety, and generics checked **at their definition** (D-064). `tools/check.npk` validates a whole program and emits nothing. **The largest cycle in Phase A, and the one where most of the work turned out to be repair** — see below. |
 | **0.5** | **Static analyses** — second-class borrows and escape, definite assignment, exhaustiveness, `move`, lock levels, `unknown` taint |
 | **0.6** | **Macros and comptime** — bounded expansion (D-057), `comptime` evaluation, derive |
 
 At the end of Phase A the artifact is a **checker**: it validates `.npk` sources
-completely and emits nothing.
+completely and emits nothing. **`tools/check.npk` is that artifact's shape today**
+— load, resolve, type-check, report codes and spans — with cycles 0.5 and 0.6
+adding the analyses and macros on top of it.
+
+### What cycle 0.4 taught, and what the later cycles should expect
+
+**Most of the work was repair, not construction.** Four of 0.4.6's seven items and
+five of 0.4.7's eight turned out to be fixes to things that already appeared to
+work. That is not a comment on the earlier cycles' quality — it is a structural
+consequence of D-085, and it will recur:
+
+> The frontend accepts the whole grammar from day one. That is what makes the
+> parser trustworthy, and **by itself it makes the checker's silence invisible.**
+> A construct that parses is not a construct that works.
+
+Every one of 0.4.7's five repairs dated to cycle **0.2** — the cycle that parsed
+the construct. `Container<int32>` and `Container<string>` were one type;
+`Mutex<Config, 2>` did not parse; a generic call ignored its type arguments; a
+generic trait dropped its. In each case 0.2 recorded the source faithfully and
+nothing downstream ever read what it recorded.
+
+**The defence is the corpus and the sweep.** A construct missing from
+`tests/grammar/whole_grammar.npk` is a construct nothing checks the parser
+against, and the real-parser sweep over every source is what catches the seed and
+the real frontend disagreeing. Both earned their keep repeatedly in 0.4 — the
+sweep's most recent catch being that `dn` is a numeric literal and cannot be a
+variable name.
+
+**Write each test from the specification's own example.** Three of 0.4.6's four
+defects survived because the thing meant to catch them tested a form the
+specification does not use.
 
 ## Phase B — the backend, grown rung by rung
 

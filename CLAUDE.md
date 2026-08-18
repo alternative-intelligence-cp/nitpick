@@ -2,17 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: Phase A, cycle 0.4 — the frontend is real and runs
+## Status: Phase A, cycle 0.4 done — the frontend checks whole programs
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
-`DECISIONS.md` records 111 settled decisions. The **plan is in `meta/roadmap/`**,
+`DECISIONS.md` records 112 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-**Cycles 0.0–0.3 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
-and the module/symbol/visibility passes. **Cycle 0.4 — the type system — is in
-progress**, through subcycle 0.4.7. `src/frontend/` is ~40 `.npk` modules of real
-compiler, written in Nitpick.
+**Cycles 0.0–0.4 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+the module/symbol/visibility passes, and the type system. **Cycle 0.5 — the static
+analyses — is next.** `src/frontend/` is ~45 `.npk` modules of real compiler,
+written in Nitpick.
+
+`tools/check.npk` runs the whole frontend over a real program — load, resolve,
+type-check, report — and exits 0 on a clean one. That is what Phase A's artifact
+is: a checker that validates completely and emits nothing.
 
 ### Building and testing
 
@@ -50,8 +54,9 @@ src/          # THE COMPILER — Nitpick source only; nothing else belongs here
   backend/    #   grown rung by rung (ir/, layout/)
   driver/     #   manifest, module graph, subprocess invocation
 bootstrap/    # THROWAWAY seed + generator (D-085) — never in an artifact
-tools/        # harness/ — test runner; not part of the compiler
-tests/        # conformance/ (subset 1 compiles), rejection/ (backend rejects)
+tools/        # check/resolve_check/parse_check — the real frontend, for the harness
+tests/        # conformance/ (subset 1 compiles), rejection/ (backend rejects),
+              #   modules/rejection/ (loader), types/rejection/ (type checker)
 meta/specs/   # language specs — see below
 meta/roadmap/ # the plan; meta/roadmap/done/ archives completed cycles
 meta/LAYOUT.md# the tree, and why it departs from ../npkc-native

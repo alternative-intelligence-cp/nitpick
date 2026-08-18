@@ -7928,3 +7928,54 @@ kind of generic argument" — so those distinctions lived only in the wording an
 nothing could assert on them. `BUILD_REFERENCE.md` §7.1's convention is what
 surfaced that: tests assert on codes and spans, never on message text, and a
 distinction with no code is a distinction nothing can check.
+
+---
+
+# Cycle 0.4 closed — the type system
+
+Nine subcycles, and the largest cycle in Phase A. `TYPE_REFERENCE.md` and
+`TRAITS_REFERENCE.md` are implemented in full, and `tools/check.npk` validates a
+whole program and emits nothing — which is what "at the end of Phase A the
+artifact is a checker" means in practice.
+
+## What the cycle actually spent its time on
+
+**Most of the work was repair.** Four of 0.4.6's seven plan items and five of
+0.4.7's eight turned out to be fixes rather than construction, and 0.4.8 closed
+three more gaps that predated it. That is not a comment on the earlier cycles'
+quality; it is a structural consequence of D-085 and it is worth naming so the
+later cycles expect it:
+
+> The frontend accepts the whole grammar from day one. That is what makes the
+> parser trustworthy, and **by itself it makes the checker's silence invisible.**
+
+Every one of 0.4.7's five repairs dated to cycle **0.2** — the cycle that *parsed*
+the construct. 0.2 recorded the source faithfully; nothing downstream read what it
+recorded, so the construct silently meant something else. A construct that parses
+is not a construct that works, and the only thing that tells them apart is a test
+written from the specification's own example.
+
+## The three failure shapes this cycle kept finding
+
+- **A slot that means two things.** `expr_shape`, `stmt_cond`, the type name that
+  could be a token kind (D-104), the argument window that holds two kinds of
+  index. Each cost a defect, and each was fixed by naming the reading rather than
+  commenting it.
+- **A check that could not fire.** `struct_layout` computed a size and re-interned
+  it, which returns the existing entry (D-112). A blanket impl was recorded with a
+  target of zero, so every check that reads a target skipped it (D-111). Both
+  existed, were correct on their own terms, and had no effect.
+- **A distinction that lived only in the wording.** Three findings shared a code
+  with something else, so no test could tell them apart — which is what
+  `BUILD_REFERENCE.md` §7.1's codes-and-spans convention surfaced.
+
+## What was verified by making it fail
+
+Fourteen halves across 0.4.6–0.4.8, each broken deliberately and the exit code
+recorded in the commit that fixed it. That habit is the cycle's most transferable
+practice: a test that has never failed is a test whose failure mode is unknown.
+
+## Carried into 0.5
+
+Nothing. The three driver-completeness gaps 0.4.7 recorded — a declaration nothing
+reaches, an `impl` method body, a struct's layout — were all closed in 0.4.8.
