@@ -101,6 +101,10 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
         DeclNode:m = relay ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            // THE OFFSET IS A RUNNING SUM OF FIELD SIZES, so a field whose layout
+            // is not yet computed puts every LATER field at the wrong offset —
+            // silently, since zero is a perfectly good number to add.
+            drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
             int32:fa = raw type_align(r.types, ft);
             offset = raw align_up(offset, fa);
             if ((raw decl_name(m)) == name) {
@@ -136,6 +140,13 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
 
+    // THE SIZE IS WRITTEN BEFORE THE FIELDS ARE WALKED, so a struct reached again
+    // while its own layout is in progress does not recurse forever. One byte is a
+    // safe placeholder rather than a guess: a by-value containment cycle is
+    // already refused by `module_graph.npk`, so nothing correct can observe it,
+    // and a `Node->` field never asks for the pointee's layout at all.
+    drop tt_set_layout(r.types, struct_type, 1i64, 1i32);
+
     int64:size = 0i64;
     int32:align = 1i32;
     int32:i = 0i32;
@@ -144,6 +155,11 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
         DeclNode:m = relay ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            // A FIELD'S OWN LAYOUT FIRST. A struct containing a struct needs the
+            // inner one's real size, and a demand-driven walk gets that without an
+            // ordering pass — the containment graph is acyclic because the loader
+            // already refused the cycles (D-086).
+            drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
             int32:fa = raw type_align(r.types, ft);
             if (fa > align) { align = fa; }
             size = raw align_up(size, fa);
@@ -153,8 +169,70 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     }
     size = raw align_up(size, align);
     if (size == 0i64) { size = 1i64; }
-    pass (raw tt_struct(r.types, did.index,
-                        raw type_name(r.types, struct_type), size, align));
+    drop tt_set_layout(r.types, struct_type, size, align);
+    pass struct_type;
+};
+
+// FUEL, as a belt to the loader's braces. A by-value containment cycle is refused
+// before this runs, so the walk is acyclic — but "acyclic because something else
+// checked" is exactly the assumption worth bounding, since the cost of being
+// wrong is a compiler that does not terminate.
+func:LAYOUT_FUEL = int32() { pass 64i32; };
+
+// THE LAYOUT OF WHATEVER THIS TYPE NEEDS BEFORE ITS SIZE MEANS ANYTHING.
+//
+// Four kinds are built FROM another type's size and were therefore built from
+// zero: a struct, an array of one, and the two wrappers. Each was interned with a
+// total computed at the moment it was constructed, which was before any struct had
+// a size — so `Point[4]` was 0 bytes and `Result<Point>` was 4.
+//
+// A POINTER AND A SLICE ARE NOT HERE, and that is the whole reason this walk
+// terminates: a pointer is one word whatever it points at (D-038) and a slice is
+// `{ptr, len}` whatever it holds (D-070), so neither needs the pointee's layout —
+// which is exactly why `Node->` breaks a containment cycle and `Node` does not.
+pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel) {
+    if (fuel <= 0i32) { pass NIL; }
+    if (t == 0i32) { pass NIL; }
+    int32:k = raw type_kind(r.types, t);
+
+    if (k == (raw TY_STRUCT())) {
+        // Already laid out: a real struct is at least one byte, so zero is the
+        // "not computed" state and nothing else.
+        if ((raw type_size(r.types, t)) != 0i64) { pass NIL; }
+        drop struct_layout(r, t, scope);
+        pass NIL;
+    }
+
+    if (k == (raw TY_ARRAY())) {
+        int32:el = raw type_elem(r.types, t);
+        drop ensure_layout(r, el, scope, fuel - 1i32);
+        drop tt_set_layout(r.types, t,
+                           (raw type_size(r.types, el)) * ((raw type_array_count(r.types, t)) => int64),
+                           raw type_align(r.types, el));
+        pass NIL;
+    }
+
+    if (k == (raw TY_OPTIONAL())) {
+        int32:inner = raw type_elem(r.types, t);
+        drop ensure_layout(r, inner, scope, fuel - 1i32);
+        int32:ia = raw type_align(r.types, inner);
+        drop tt_set_layout(r.types, t,
+                           (raw type_size(r.types, inner)) + (ia => int64), ia);
+        pass NIL;
+    }
+
+    // `{T, tbb32}` (D-069). The error field is four bytes, so the alignment is at
+    // least four however small `T` is.
+    if (k == (raw TY_RESULT())) {
+        int32:inner = raw type_elem(r.types, t);
+        drop ensure_layout(r, inner, scope, fuel - 1i32);
+        int32:ra = raw type_align(r.types, inner);
+        if (ra < 4i32) { ra = 4i32; }
+        drop tt_set_layout(r.types, t,
+                           (raw type_size(r.types, inner)) + 4i64, ra);
+        pass NIL;
+    }
+    pass NIL;
 };
 
 // AN ENUM VARIANT'S TYPE IS THE ENUM, whatever the variant carries.
@@ -183,4 +261,32 @@ pub func:enum_variant = FieldInfo(TypeResolver->:r, int32:enum_type, int32:name)
         i = i + 1i32;
     }
     pass (raw fi_none());
+};
+
+// --- finishing the table ------------------------------------------------------------------
+//
+// EVERY TYPE IN THE PROGRAM, LAID OUT, ONCE THE PROGRAM IS KNOWN.
+//
+// Demand-driven layout answers whatever is asked for, and the checker asks for
+// very little — it compares types and almost never needs a size. That is fine for
+// checking and not fine for what comes after: Phase B lowers these types, and a
+// `Result<Point>` interned before `Point` had a size is four bytes with nothing
+// saying so. A wrong size does not fail; it corrupts memory later, which is the
+// failure mode `types.npk` opens by warning about.
+//
+// So the table is completed rather than left to whatever happened to be asked.
+// Order-independent by construction: `ensure_layout` recurses into what a type is
+// built from before computing the type itself, so one sweep suffices however the
+// entries happen to be arranged.
+//
+// THE COUNT IS RE-READ EVERY ITERATION, because laying a struct out resolves its
+// field types and resolving a type can intern new ones. A count read once would
+// stop short of exactly the entries this pass created.
+pub func:finish_layouts = NIL(TypeResolver->:r, int32:scope) {
+    int32:i = 0i32;
+    while (i < (raw tt_count(r.types))) {
+        drop ensure_layout(r, i, scope, raw LAYOUT_FUEL());
+        i = i + 1i32;
+    }
+    pass NIL;
 };

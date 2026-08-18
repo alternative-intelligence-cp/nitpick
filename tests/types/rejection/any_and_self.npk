@@ -1,0 +1,19 @@
+// `any` is legal only under `->`, and `Self` only inside a trait or impl body.
+
+// TYPE_REFERENCE section 27 — a bare `any` is refused rather than silently
+// promoted. A checker that helpfully fixed it would make `any` mean two different
+// things depending on where it was written.
+// expect-error: NITPICK-TYPE-003
+func:bare_any = NIL(any:erased) {
+    pass NIL;
+};
+
+// `Self` names the implementing type (D-030). Outside a trait or an impl there is
+// no implementing type for it to name.
+// expect-error: NITPICK-TYPE-005
+func:self_outside = NIL(Self:whatever) {
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

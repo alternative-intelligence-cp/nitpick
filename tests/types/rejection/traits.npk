@@ -1,0 +1,38 @@
+// What a trait requires of an impl, and what `dyn` requires of a trait.
+
+trait:Shape = {
+    func:area = int32(Self:self);
+    func:name = string(Self:self);
+};
+
+struct:Square = { int32:side; };
+
+// A REQUIRED MEMBER MISSING — the impl is incomplete. `name` has no default, so
+// nothing supplies it.
+// expect-error: NITPICK-TYPE-014
+impl:Square:Shape = {
+    func:area = int32(Square:self) { pass 1i32; };
+};
+
+struct:Circle = { int32:r; };
+
+// A SIGNATURE THAT DISAGREES is the one that would otherwise pass: every method
+// the trait asked for is present, and a caller holding a `dyn Shape` would dispatch
+// through a vtable slot typed one way into a body typed another.
+// expect-error: NITPICK-TYPE-014
+impl:Circle:Shape = {
+    func:area = string(Circle:self) { pass "big"; };
+    func:name = string(Circle:self) { pass "circle"; };
+};
+
+// `impl:Type:Trait` — THE SECOND SEGMENT IS A TRAIT AND NOTHING ELSE (D-031). A
+// struct name resolves there perfectly well and means nothing, and the two forms
+// are one character apart.
+struct:Triangle = { int32:b; };
+// expect-error: NITPICK-TYPE-012
+impl:Triangle:Square = {
+    func:area = int32(Triangle:self) { pass 1i32; };
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

@@ -1,0 +1,26 @@
+// Coherence: at most one implementation of a trait for a type (4.1), and at most
+// one blanket impl per trait (D-111).
+
+trait:Tagged = { func:tag = int32(Self:self); };
+struct:Item = { int32:v; };
+
+// TWO IS NOT AN AMBIGUITY THE COMPILER COULD RESOLVE BY A RULE — there is no rule
+// that would not be a silent choice between two things a programmer wrote on
+// purpose.
+impl:Item:Tagged = { func:tag = int32(Item:self) { pass 1i32; }; };
+// expect-error: NITPICK-TYPE-013
+impl:Item:Tagged = { func:tag = int32(Item:self) { pass 2i32; }; };
+
+trait:Alpha = { func:a = int32(Self:self); };
+trait:Beta  = { func:b = int32(Self:self); };
+trait:Logged = { func:log = int32(Self:self); };
+
+// TWO BLANKET IMPLS OF ONE TRAIT OVERLAP. The language has no negative bounds, so
+// nothing stops a type satisfying both `Alpha` and `Beta` — and with no
+// specialization there is no rule to choose by.
+impl:<T: Alpha>:Logged = { func:log = int32(T:self) { pass 1i32; }; };
+// expect-error: NITPICK-TYPE-013
+impl:<U: Beta>:Logged = { func:log = int32(U:self) { pass 2i32; }; };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

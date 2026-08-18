@@ -1,0 +1,206 @@
+// Struct layout — sizes, alignments and field offsets (cycle 0.4.8).
+//
+// EVERY SIZE HERE IS ASSERTED AGAINST `#size_of`, NEVER AGAINST A NUMBER I
+// BELIEVE. `types.npk` opens by saying why: a hand-written size that disagrees
+// with what LLVM lays out survives testing and corrupts memory later. The seed
+// and this table have to agree until the bootstrap fixpoint closes, because their
+// output interoperates — so the machine is the authority and this file only asks
+// it questions.
+//
+// WHAT WAS ACTUALLY WRONG, until this subcycle: every struct in every program was
+// SIZE ZERO. `tt_intern` keys on kind, operands and name and deliberately does not
+// compare size, so `struct_layout` computed a size, called `tt_struct` with it,
+// and got back the original zero-sized entry. It could not work, so nothing called
+// it — and `Result<Point>` was four bytes where it should be sixteen, with nothing
+// downstream in a position to notice.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_layout.npk".*;
+
+// The two structs the cases below are about, declared HERE as well as in the
+// source string — so `#size_of` can be asked about the same shapes the checker is
+// asked about, and the two answers compared.
+struct:Pair = { int32:x; int32:y; };
+struct:Wrap = { Pair:inner; int64:tag; };
+struct:Padded = { int8:small; int64:wide; };
+
+struct:Lx = { TypeTable:types; DiagList:diags; Ast:ast; SymbolTable:tab; int32:scope; };
+
+func:lx = Lx(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    Lx:out = Lx{ types: types, diags: diags, ast: ast, tab: tab, scope: scope };
+    pass out;
+};
+
+// The interned type of a named struct in the fixture's source.
+func:named = int32(Lx->:x, InternTable->:it, string:name) {
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
+    int32:sym = raw scope_lookup(@x.tab, x.scope, relay intern_add(it, name));
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(@x.tab, sym);
+    DeclId:d = DeclId{ index: s.origin };
+    // NOT `dn` — that is a NUMBER. The base is given by a suffix (LEXICAL_REFERENCE
+    // 6.2), `n` is balanced nonary, and `a`..`d` are its digits for -1..-4 — so
+    // `dn` is the literal -4 and cannot be a name. The seed's lexer accepted it
+    // and the real one did not, which is exactly what the real-parser sweep over
+    // every source exists to catch.
+    DeclNode:sdecl = relay ast_decl(@x.ast, d);
+    int32:t = raw tt_struct(@x.types, d.index, raw decl_name(sdecl), 0i64, 1i32);
+    drop struct_layout(@r, t, x.scope);
+    pass t;
+};
+
+func:field_of = FieldInfo(Lx->:x, InternTable->:it, int32:t, string:name) {
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, it, @x.diags, @inst);
+    pass (relay struct_field(@r, t, relay intern_add(it, name), x.scope));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- ALIGNMENT ARITHMETIC, first, because everything rests on it ----------
+    if ((raw align_up(0i64, 4i32)) != 0i64)                { exit 10i32; }
+    if ((raw align_up(1i64, 4i32)) != 4i64)                { exit 11i32; }
+    if ((raw align_up(4i64, 4i32)) != 4i64)                { exit 12i32; }
+    if ((raw align_up(5i64, 8i32)) != 8i64)                { exit 13i32; }
+    // An alignment of one never moves anything, which is what makes a byte array
+    // pack rather than pad.
+    if ((raw align_up(7i64, 1i32)) != 7i64)                { exit 14i32; }
+
+    // --- A STRUCT HAS THE SIZE THE MACHINE GIVES IT ---------------------------
+    //
+    // Two `int32`s: eight bytes, aligned to four. Asserted against `#size_of` of
+    // the same shape rather than against the number 8, so the day the ABI changes
+    // this test changes with it instead of becoming quietly wrong.
+    Lx:v1 = raw lx("struct:Pair = { int32:x; int32:y; };", @it);
+    int32:pair = relay named(@v1, @it, "Pair");
+    if (pair == 0i32)                                      { exit 20i32; }
+    if ((raw type_size(@v1.types, pair)) != #size_of<Pair>())  { exit 21i32; }
+    if ((raw type_align(@v1.types, pair)) != 4i32)         { exit 22i32; }
+
+    // A STRUCT CONTAINING A STRUCT needs the inner one's REAL size, and that is
+    // the case a demand-driven layout has to get right without an ordering pass.
+    // With the inner struct at size zero this came out eight instead of sixteen.
+    Lx:v2 = raw lx("struct:Pair = { int32:x; int32:y; }; struct:Wrap = { Pair:inner; int64:tag; };", @it);
+    int32:wrap = relay named(@v2, @it, "Wrap");
+    if (wrap == 0i32)                                      { exit 23i32; }
+    if ((raw type_size(@v2.types, wrap)) != #size_of<Wrap>())  { exit 24i32; }
+    if ((raw type_align(@v2.types, wrap)) != 8i32)         { exit 25i32; }
+
+    // …AND IN THE OTHER DECLARATION ORDER. The containing struct is declared
+    // FIRST here, so its layout is demanded before the inner one has ever been
+    // looked at — which is exactly the ordering an ordering pass would have had
+    // to get right and a recursive walk gets right by construction.
+    Lx:v3 = raw lx("struct:Wrap = { Pair:inner; int64:tag; }; struct:Pair = { int32:x; int32:y; };", @it);
+    int32:wrap2 = relay named(@v3, @it, "Wrap");
+    if ((raw type_size(@v3.types, wrap2)) != #size_of<Wrap>()) { exit 26i32; }
+
+    // PADDING IS THE MACHINE'S, not a rule this file restates. An `int8` followed
+    // by an `int64` is sixteen bytes, and asserting that against `#size_of` is the
+    // difference between checking the layout and checking my arithmetic.
+    Lx:v4 = raw lx("struct:Padded = { int8:small; int64:wide; };", @it);
+    int32:padded = relay named(@v4, @it, "Padded");
+    if ((raw type_size(@v4.types, padded)) != #size_of<Padded>()) { exit 27i32; }
+    if ((raw type_align(@v4.types, padded)) != 8i32)       { exit 28i32; }
+
+    // A ZERO-FIELD STRUCT IS ONE BYTE, not zero. Two distinct empty structs must
+    // have distinct addresses, and a zero-sized one would put them on top of each
+    // other. `NIL` being genuinely zero-sized (D-084) is a property of `NIL`.
+    Lx:v5 = raw lx("struct:Empty = { };", @it);
+    int32:empty = relay named(@v5, @it, "Empty");
+    if ((raw type_size(@v5.types, empty)) != 1i64)         { exit 29i32; }
+
+    // --- FIELD OFFSETS -------------------------------------------------------
+    //
+    // The offset walk and the size walk are the same walk, so an offset that
+    // disagrees with the size is two traversals that stopped agreeing about
+    // padding — which is the reason they were written as one.
+    Lx:v6 = raw lx("struct:Padded = { int8:small; int64:wide; };", @it);
+    int32:pd = relay named(@v6, @it, "Padded");
+    FieldInfo:f0 = relay field_of(@v6, @it, pd, "small");
+    FieldInfo:f1 = relay field_of(@v6, @it, pd, "wide");
+    if (!f0.found)                                         { exit 30i32; }
+    if (!f1.found)                                         { exit 31i32; }
+    if (f0.offset != 0i64)                                 { exit 32i32; }
+    // Seven bytes of padding, because an `int64` is eight-aligned.
+    if (f1.offset != 8i64)                                 { exit 33i32; }
+
+    // A FIELD THAT IS A STRUCT PUTS EVERY LATER FIELD AT THE RIGHT OFFSET, which
+    // is the half that fails silently: zero is a perfectly good number to add to
+    // a running sum, so an unlaid-out field moves everything after it.
+    Lx:v7 = raw lx("struct:Pair = { int32:x; int32:y; }; struct:Wrap = { Pair:inner; int64:tag; };", @it);
+    int32:w2 = relay named(@v7, @it, "Wrap");
+    FieldInfo:g1 = relay field_of(@v7, @it, w2, "tag");
+    if (!g1.found)                                         { exit 34i32; }
+    if (g1.offset != 8i64)                                 { exit 35i32; }
+
+    // --- WHAT IS BUILT FROM A SIZE IS BUILT FROM THE RIGHT ONE ----------------
+    //
+    // `Result<T>` is `{T, tbb32}` (D-069) and an array is its element's size times
+    // the count. Both were interned at the moment they were constructed, which was
+    // before any struct had a size — so `Result<Point>` was four bytes and
+    // `Point[4]` was nothing at all. `ensure_layout` recomputes them from the
+    // element once the element is known.
+    Lx:v8 = raw lx("struct:Pair = { int32:x; int32:y; };", @it);
+    int32:pr = relay named(@v8, @it, "Pair");
+    int32:arr = raw tt_array(@v8.types, pr, 4i32, 0i64, 1i32);
+    int32:res = raw tt_result(@v8.types, pr, 0i64, 1i32);
+    InstanceTable:inst8 = raw insttable_init();
+    TypeResolver:r8 = raw tyres_init(@v8.ast, @v8.types, @v8.tab, @it, @v8.diags, @inst8);
+    drop finish_layouts(@r8, v8.scope);
+    if ((raw type_size(@v8.types, arr)) != (4i64 * #size_of<Pair>())) { exit 40i32; }
+    if ((raw type_align(@v8.types, arr)) != 4i32)          { exit 41i32; }
+    // `{Pair, tbb32}`: eight bytes plus four, aligned to four.
+    if ((raw type_size(@v8.types, res)) != (#size_of<Pair>() + 4i64)) { exit 42i32; }
+    if ((raw type_align(@v8.types, res)) != 4i32)          { exit 43i32; }
+
+    // A POINTER IS ONE WORD WHATEVER IT POINTS AT (D-038), which is exactly why it
+    // breaks a containment cycle and why `ensure_layout` does not follow one. A
+    // slice is `{ptr, len}` on the same reasoning (D-070).
+    int32:ptr = raw tt_pointer(@v8.types, pr);
+    int32:sl = raw tt_slice(@v8.types, pr);
+    if ((raw type_size(@v8.types, ptr)) != 8i64)           { exit 44i32; }
+    if ((raw type_size(@v8.types, sl)) != 16i64)           { exit 45i32; }
+
+    pass 0i32;
+};

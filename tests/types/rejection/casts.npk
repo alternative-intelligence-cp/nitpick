@@ -1,0 +1,24 @@
+// Casts: `=>` refuses possible loss, `=>!` is the sole opt-out (D-021).
+//
+// The opt-out is EXPLICIT AND GREPPABLE, which is the whole design: a safety
+// property is absolute by default and suspended only through a construct an
+// auditor can search for.
+
+// A narrowing cast can lose the value, so `=>` refuses it and names the operator
+// that says "I know".
+// expect-error: NITPICK-TYPE-009
+func:narrowing = int32(int64:wide) {
+    int32:small = wide => int32;
+    pass small;
+};
+
+// A cast between types that are not numbers at all is not a width question. A
+// character is not its code point (D-005).
+// expect-error: NITPICK-TYPE-009
+func:char_to_bool = bool(char8:c) {
+    bool:b = c => bool;
+    pass b;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

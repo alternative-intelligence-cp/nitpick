@@ -156,6 +156,34 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     pass id;
 };
 
+// A LAYOUT IS WRITTEN IN PLACE, NEVER RE-INTERNED.
+//
+// `tt_intern` keys on kind and the three operand slots and the name, and DOES NOT
+// COMPARE SIZE — deliberately, because a type's identity is what it IS and not how
+// wide it happens to be. The consequence was that `struct_layout` could not work:
+// it computed a size, called `tt_struct` with it, and got back the original
+// zero-sized entry. Every struct in the program was size 0, so `Result<Point>` was
+// four bytes where it should be sixteen, and nothing said so — which is why
+// nothing called `struct_layout` at all.
+//
+// SIZE ZERO MEANS "NOT YET COMPUTED", and that reading is safe rather than
+// convenient: a laid-out struct is at least one byte (two distinct empty structs
+// must have distinct addresses), so zero cannot be a real answer. `NIL` is
+// genuinely zero-sized (D-084) and is not a struct.
+//
+// This is the ONE mutation of an interned type, and it is a completion rather than
+// a change: the entry is written once, from absent to known, and every id already
+// handed out keeps meaning the same type.
+pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) {
+    if (id < 0i32) { fail 14i32; }
+    if (id >= t.count) { fail 14i32; }
+    Type:e = t.items[id => int64];
+    e.size = size;
+    e.align = align;
+    t.items[id => int64] = e;
+    pass NIL;
+};
+
 pub func:tt_get = Type(TypeTable->:t, int32:id) {
     if (id < 0i32) { fail 14i32; }
     if (id >= t.count) { fail 14i32; }

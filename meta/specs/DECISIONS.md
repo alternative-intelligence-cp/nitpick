@@ -7831,6 +7831,69 @@ types the writer does not own. §2.6 gives the form with a trait and only with o
 
 ---
 
+## D-112 — A layout is written in place, and the table is completed for the whole program
+
+**Settled in cycle 0.4.8.** Every struct in every program was **size zero**, and
+had been since types were interned.
+
+### Why it could not have worked
+
+`tt_intern` keys on kind, the three operand slots and the name, and **does not
+compare size** — deliberately, because a type's identity is what it *is* and not
+how wide it happens to be. So `struct_layout` computed a size, called `tt_struct`
+with it, and got back the original zero-sized entry. It could not work, which is
+why nothing called it: the function existed, was correct on its own terms, and had
+no effect.
+
+The consequence was invisible by construction. `Result<Point>` was four bytes
+where it should be sixteen; `Point[4]` was nothing at all. **A wrong size does not
+fail** — it corrupts memory later, which is the failure `TYPE_REFERENCE.md` and
+`types.npk` both open by warning about.
+
+### The layout is written in place
+
+`tt_set_layout` is the **one mutation of an interned type**, and it is a
+*completion* rather than a change: the entry goes from absent to known, once, and
+every id already handed out keeps meaning the same type.
+
+**Size zero means "not yet computed"**, and that reading is safe rather than
+convenient — a laid-out struct is at least one byte, because two distinct empty
+structs must have distinct addresses. `NIL` is genuinely zero-sized (D-084) and is
+not a struct.
+
+### Demand-driven, recursive, and no ordering pass
+
+A struct containing a struct needs the inner one's real size. That wants either an
+ordering pass or a recursive walk, and the walk is correct **because the loader
+already refused the cycles**: a by-value containment cycle is a D-086 error, so the
+containment graph is acyclic before layout ever runs. Fuel bounds it anyway —
+"acyclic because something else checked" is exactly the assumption worth bounding,
+since being wrong costs a compiler that does not terminate.
+
+**A pointer and a slice are not followed**, and that is why the walk terminates at
+all: a pointer is one word whatever it points at (D-038) and a slice is
+`{ptr, len}` whatever it holds (D-070). It is the same fact that makes `Node->`
+break a containment cycle where `Node` does not.
+
+### The table is completed, not left to what was asked
+
+The checker asks for very few sizes — it compares types and almost never needs a
+width — so demand-driven layout alone leaves most of the table at zero. That is
+fine for checking and not fine for what follows, so `finish_layouts` sweeps every
+entry once the program is known. It is order-independent by construction, since
+`ensure_layout` recurses into what a type is built from before computing the type
+itself, and it re-reads the table's count each iteration because laying a struct
+out resolves field types and resolving a type can intern new ones.
+
+### Sizes are asserted against the machine, never against a number
+
+`tests/frontend/type_layout.npk` compares every size to `#size_of` of the same
+shape. A hand-written size that disagrees with what LLVM lays out survives testing
+and corrupts memory later, and the seed's layouts and this table's have to agree
+until the bootstrap fixpoint closes because their output interoperates.
+
+---
+
 # Cycle 0.4.7 closed
 
 Generics, in five decisions (D-107 … D-111). **Five of the eight plan items turned

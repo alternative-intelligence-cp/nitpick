@@ -1,0 +1,31 @@
+// Object safety (4.2). Three rules, and the diagnostic says WHICH ONE — "trait is
+// not object safe" sends the reader to re-derive the list.
+//
+// A NON-OBJECT-SAFE TRAIT IS STILL A GOOD TRAIT. Only `dyn` is refused, which is
+// why each case below has to write one.
+
+// Rule 1 — every method takes `self`. A vtable dispatches on a receiver, and a
+// method with none has nothing to dispatch on.
+trait:Makeable = { func:make = int32(); };
+// expect-error: NITPICK-TYPE-015
+func:no_receiver = NIL(dyn Makeable:d) { pass NIL; };
+
+// Rule 2 — no method returns `Self`. Behind `dyn` the concrete type is erased, so
+// its size is unknown and there is nowhere to put the result.
+trait:Cloneable = { func:copy = Self(Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:returns_self = NIL(dyn Cloneable:d) { pass NIL; };
+
+// Rule 3 — nothing that monomorphizes. Those become one body per argument, and a
+// vtable slot is one address.
+trait:Mapper = { func:map<T> = int32(Self:self, T:x); };
+// expect-error: NITPICK-TYPE-015
+func:generic_method = NIL(dyn Mapper:d) { pass NIL; };
+
+// EVERY OPERAND OF `dyn` MUST BE A TRAIT. `dyn int32` is not a dynamic anything.
+struct:Plain = { int32:v; };
+// expect-error: NITPICK-TYPE-006
+func:not_a_trait = NIL(dyn Plain:d) { pass NIL; };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

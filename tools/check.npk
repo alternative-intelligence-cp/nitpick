@@ -191,6 +191,12 @@ func:main = int32(cstring[]:argv) {
     // (D-108).
     drop check_instantiations(@inst, @im, @bd, @tr);
 
+    // EVERY TYPE LAID OUT, once the whole program is known. The checker asks for
+    // very few sizes, so demand-driven layout leaves most of the table at zero —
+    // fine for checking, and not fine for what Phase B does with these types. A
+    // wrong size does not fail; it corrupts memory later.
+    drop finish_layouts(@tr, (raw graph_at(@g, 0i32)).scope);
+
     int64:n = raw diaglist_count(@diags);
     if (n != 0i64) {
         drop report(@diags);
