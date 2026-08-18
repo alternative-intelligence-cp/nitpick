@@ -1,0 +1,883 @@
+// Definite assignment: no binding is read before it is written (D-010).
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.2.
+//
+// NITPICK HAS NO IMPLICIT DEFAULT VALUE, and D-010 chose that deliberately over
+// the alternative of poisoning every scalar with `ERR`. The argument is worth
+// keeping in front of whoever reads this: a default makes an uninitialised read
+// DEFINED, whereas this analysis makes it IMPOSSIBLE. One costs an O(n) pass over
+// memory for every array Nikola allocates; the other costs nothing at runtime and
+// is strictly stronger.
+//
+// So this file is what that decision rests on. If it is wrong, `int32:x;` followed
+// by a read of `x` compiles into a load of whatever the stack happened to hold.
+//
+// THE MERGE IS THE WHOLE CONTENT. Straight-line definite assignment is a loop over
+// statements and is not where analyses go wrong; a branch is. Assigned on one arm
+// of an `if` and not the other is NOT assigned, a `while` body may run zero times,
+// and a binding assigned only after an early `pass` is not assigned on the path
+// that took it.
+//
+// TWO SETS, NOT ONE, and they merge in opposite directions:
+//
+//   MUST — assigned on EVERY path that reaches here. Intersected at a merge.
+//          A read needs this.
+//   MAY  — assigned on AT LEAST ONE path. Unioned at a merge.
+//          A second assignment to a `fixed` binding is refused on this.
+//
+// One set cannot answer both. `if (c) { x = 1i32; }` leaves `x` readable-nowhere
+// and assignable-never-again, and a single set has to pick which of those two
+// questions it gets right.
+//
+// WHY THIS NEEDS NO FIXPOINT, where the borrow marking did (D-116). That analysis
+// is a MAY analysis with a union merge, and it was written with no merge at all —
+// so a binding marked late in a loop body was missed by a use earlier in it. This
+// one treats a loop body as running ZERO times for the purposes of what follows,
+// which is both the correct answer and a fixed point on the first pass: a read
+// inside the body is checked against the state at the top of the body, which is
+// exactly the state the first iteration sees.
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../types.npk".*;
+use "../expr_types.npk".*;
+use "../type_codes.npk".*;
+use "analysis_codes.npk".*;
+
+pub func:ASSIGN_DEPTH = int32() { pass 256i32; };
+
+// THE STATE AT A POINT IN THE PROGRAM. Indexed by the index of the statement that
+// DECLARED the binding, which is what `Symbol.origin` holds for a local.
+//
+// TWO ARRAYS BEHIND ONE HANDLE, and the handle is copied freely while the arrays
+// are not. Every fork takes an explicit `state_copy`; anything that forgets one is
+// two branches writing to the same arrays, which reads as a merge that never
+// happened.
+pub struct:AssignState = {
+    wild bool->:must;
+    wild bool->:may;
+    int32:count;
+};
+
+pub struct:Assign = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    DiagList->:diags;
+
+    // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
+    // first walk is silent, and this is what silences it.
+    bool:quiet;
+};
+
+pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab, DiagList->:diags) {
+    Assign:x = Assign{ ast: ast, tab: tab, diags: diags, quiet: false };
+    pass x;
+};
+
+pub func:state_new = AssignState(int32:n) {
+    int64:size = n => int64;
+    if (size < 1i64) { size = 1i64; }
+    wild int8->:m1 = alloc(size * #size_of<bool>());
+    wild int8->:m2 = alloc(size * #size_of<bool>());
+    AssignState:s = AssignState{ must: m1 => wild bool->,
+                                 may: m2 => wild bool->,
+                                 count: size => int32 };
+    int64:i = 0i64;
+    while (i < size) {
+        s.must[i] = false;
+        s.may[i] = false;
+        i = i + 1i64;
+    }
+    pass s;
+};
+
+func:state_copy = AssignState(AssignState:src) {
+    AssignState:d = raw state_new(src.count);
+    int64:i = 0i64;
+    while (i < (src.count => int64)) {
+        d.must[i] = src.must[i];
+        d.may[i] = src.may[i];
+        i = i + 1i64;
+    }
+    pass d;
+};
+
+func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
+    int64:i = 0i64;
+    while (i < (dst.count => int64)) {
+        dst.must[i] = src.must[i];
+        dst.may[i] = src.may[i];
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// TWO BRANCHES REJOINING. `must` intersects and `may` unions, which is the whole
+// of what "assigned on one arm and not the other is not assigned" means.
+//
+// AN ARM THAT EXITS CONTRIBUTES NOTHING. `if (c) { pass 0i32; } else { x = 1i32; }`
+// reaches the merge only through the second arm, so intersecting with the first
+// would forget that `x` was assigned. That is not a refinement — it is the
+// difference between accepting correct code and refusing it.
+func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
+                       AssignState:b, bool:b_exits) {
+    if (a_exits) {
+        if (b_exits) {
+            // Nothing reaches here at all. `dst` keeps the state from before the
+            // branch, which is sound for the unreachable code that follows.
+            pass NIL;
+        }
+        drop state_overwrite(dst, b);
+        pass NIL;
+    }
+    if (b_exits) {
+        drop state_overwrite(dst, a);
+        pass NIL;
+    }
+    int64:i = 0i64;
+    while (i < (dst.count => int64)) {
+        dst.must[i] = a.must[i] && b.must[i];
+        dst.may[i] = a.may[i] || b.may[i];
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// A LOOP BODY MAY RUN ZERO TIMES, so nothing it assigns is assigned after it — but
+// everything it assigns is still POSSIBLY assigned, which is what stops a `fixed`
+// binding being written once per iteration.
+func:state_absorb_may = NIL(AssignState:dst, AssignState:body) {
+    int64:i = 0i64;
+    while (i < (dst.count => int64)) {
+        dst.may[i] = dst.may[i] || body.may[i];
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+func:state_mark = NIL(AssignState:s, int32:slot) {
+    if (slot < 0i32)        { pass NIL; }
+    if (slot >= s.count)    { pass NIL; }
+    s.must[slot => int64] = true;
+    s.may[slot => int64] = true;
+    pass NIL;
+};
+
+func:state_must = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.must[slot => int64]);
+};
+
+func:state_may = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.may[slot => int64]);
+};
+
+// The eight expression kinds that ARE a value, with nothing to evaluate. Listed
+// rather than derived from `expr_shape`, because "has no child expressions" and
+// "is a constant" are different questions that agree today — an identifier is a
+// leaf and is not a constant.
+func:expr_is_literal = bool(ExprKind:k) {
+    if (k == ExprKind.ExprIntLiteral)         { pass true; }
+    if (k == ExprKind.ExprFloatLiteral)       { pass true; }
+    if (k == ExprKind.ExprCharLiteral)        { pass true; }
+    if (k == ExprKind.ExprStringLiteral)      { pass true; }
+    if (k == ExprKind.ExprRawStringLiteral)   { pass true; }
+    if (k == ExprKind.ExprBlockStringLiteral) { pass true; }
+    if (k == ExprKind.ExprBoolLiteral)        { pass true; }
+    pass (k == ExprKind.ExprSentinelLiteral);
+};
+
+func:assign_err = NIL(Assign->:x, string:code, string:msg, Span:sp) {
+    if (x.quiet) { pass NIL; }
+    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    pass NIL;
+};
+
+// --- declarations ------------------------------------------------------------
+//
+// The same walk `check_module` and `escape_module` make, and for the same reason:
+// a function inside an `impl`, a trait's default body and a function inside a
+// nested `mod` are all function bodies.
+
+pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop assign_decl(x, raw item_member(x.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        StmtId:body = raw fn_body(x.ast, d);
+        if (raw stmt_is_none(body)) { pass NIL; }
+
+        // A FRESH STATE PER FUNCTION, and nothing is assigned in it. Parameters
+        // are assigned by the caller and are never `SYM_STMT`, so they are not in
+        // this table at all — which is the right answer rather than a convenient
+        // one: a parameter is assigned before the body starts, always.
+        AssignState:st = raw state_new(raw ast_stmt_count(x.ast));
+        drop assign_stmt(x, st, body, raw ASSIGN_DEPTH());
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        drop assign_module(x, id, inner);
+        pass NIL;
+    }
+
+    // `const` AT MODULE SCOPE IS `fixed` WITH NOWHERE ELSE TO BE WRITTEN. A global
+    // has no enclosing body, so its declaration is the only place an assignment
+    // could appear — which makes the rule two halves rather than one: the
+    // initialiser has to be there, and it has to be constant.
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) { pass NIL; }
+
+        ExprId:init = raw global_init(d);
+        if (raw expr_is_none(init)) {
+            // NOTHING CAN EVER WRITE IT. Reported at the declaration rather than
+            // at every read, because there is one mistake here and it is not at
+            // the reads.
+            drop assign_err(x, raw ASSIGN_UNASSIGNED(),
+                "a `const` global is assigned only by its initialiser, so one without an initialiser can never hold a value",
+                d.span);
+            pass NIL;
+        }
+
+        ExprNode:ie = relay ast_expr(x.ast, init);
+        if (!(raw expr_is_literal(ie.kind))) {
+            // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it
+            // is the same question — is this expression constant at this rung —
+            // and the same answer: folding a general constant expression is cycle
+            // 0.6's job. A reader filtering on this code is asking one thing.
+            drop assign_err(x, raw TYPE_NOT_CONSTANT(),
+                "a `const` initialiser must be constant, and only a literal is constant-folded at this rung",
+                ie.span);
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = relay impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop assign_decl(x, relay impl_member(x.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop assign_decl(x, raw item_member(x.ast, d, k), scope);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+
+    pass NIL;
+};
+
+// --- does this statement leave, rather than fall through? --------------------
+//
+// WRONG TOWARDS `false` COSTS PRECISION; WRONG TOWARDS `true` COSTS SOUNDNESS. A
+// statement wrongly called an exit removes its arm from the merge, and whatever it
+// failed to assign is then treated as assigned by the other arm alone. So the
+// answer is `false` for everything not listed, and each `true` is one this walk
+// has actually looked at.
+func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) {
+    if (depth <= 0i32)         { pass false; }
+    if (raw stmt_is_none(id))  { pass false; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+
+    if (s.kind == StmtKind.StmtPassStmt)     { pass true; }
+    if (s.kind == StmtKind.StmtFailStmt)     { pass true; }
+    if (s.kind == StmtKind.StmtReturnStmt)   { pass true; }
+    if (s.kind == StmtKind.StmtExitStmt)     { pass true; }
+    if (s.kind == StmtKind.StmtTrapStmt)     { pass true; }
+
+    // `break` and `continue` do not leave the FUNCTION, and they do leave the
+    // straight-line flow this is asked about — control does not reach the
+    // statement after them, which is the only thing a merge cares about. What they
+    // assigned still reaches the code after the LOOP, and that is carried by the
+    // loop's `may` absorption rather than here.
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass true; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass true; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass true; }
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        int32:i = 0i32;
+        while (i < n) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            if (relay stmt_exits(x, sub, depth - 1i32)) { pass true; }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+
+    // AN `if` LEAVES ONLY IF BOTH ARMS DO, and a missing `else` is an arm that
+    // falls through — which is the case a reader is likeliest to get wrong.
+    if (s.kind == StmtKind.StmtIfStmt) {
+        StmtId:e = raw stmt_else(s);
+        if (raw stmt_is_none(e)) { pass false; }
+        if (!(relay stmt_exits(x, raw stmt_then(s), depth - 1i32))) { pass false; }
+        pass (relay stmt_exits(x, e, depth - 1i32));
+    }
+
+    pass false;
+};
+
+// --- statements --------------------------------------------------------------
+
+func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    if (depth <= 0i32) {
+        StmtNode:deep = relay ast_stmt(x.ast, id);
+        drop assign_err(x, raw ASSIGN_TOO_DEEP(),
+            "this statement nests deeper than the definite-assignment analysis will follow, so its bindings cannot be shown assigned before use",
+            deep.span);
+        pass NIL;
+    }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+    int32:d = depth - 1i32;
+
+    // A DECLARATION. The initialiser is walked BEFORE the binding is marked, which
+    // is the order the program has.
+    //
+    // Nothing here depends on that today: `int32:x = x + 1i32;` is refused one
+    // stage earlier, by the RESOLVER, because the name is not in scope until the
+    // declaration completes — and where an outer `x` exists the inner initialiser
+    // binds to that one, so there is no self-reference to catch either way. The
+    // order is kept because it is the order that is true, not because it is
+    // currently load-bearing; a marking done first would be a statement about
+    // program order that happens to be wrong.
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        ExprId:init = relay stmt_decl_init(x.ast, s);
+        if (raw expr_is_none(init)) { pass NIL; }
+        drop assign_expr(x, st, init, d);
+        drop state_mark(st, id.index);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop assign_assign(x, st, s, d);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        drop assign_stmt_window(x, st, raw stmt_list_start(s),
+                                raw stmt_list_count(s), d);
+        pass NIL;
+    }
+
+    // THE MERGE. Each arm gets its own copy of the state, and what rejoins is the
+    // intersection of what they agree on.
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop assign_expr(x, st, raw stmt_cond(s), d);
+        StmtId:then_id = raw stmt_then(s);
+        StmtId:else_id = raw stmt_else(s);
+
+        AssignState:a = raw state_copy(st);
+        drop assign_stmt(x, a, then_id, d);
+        AssignState:b = raw state_copy(st);
+        drop assign_stmt(x, b, else_id, d);
+
+        // NO `else` IS AN ARM THAT ASSIGNS NOTHING, not an arm that is absent. `b`
+        // is the untouched copy, so the intersection below is exactly "assigned
+        // before the `if` as well" — which is why a one-armed `if` cannot make
+        // anything definitely assigned.
+        drop state_merge(st, a, relay stmt_exits(x, then_id, raw ASSIGN_DEPTH()),
+                         b, relay stmt_exits(x, else_id, raw ASSIGN_DEPTH()));
+        pass NIL;
+    }
+
+    // A LOOP BODY MAY RUN ZERO TIMES. The body is analysed from the state at the
+    // top of the loop — which is what the first iteration actually sees — and what
+    // it assigns does not survive the loop.
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop assign_expr(x, st, raw stmt_cond(s), d);
+        drop assign_loop_body(x, st, relay stmt_body(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop assign_expr(x, st, relay stmt_for_iter(x.ast, s), d);
+        drop assign_loop_body(x, st, relay stmt_for_body(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        drop assign_counted(x, st, s, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        drop assign_counted(x, st, s, d);
+        pass NIL;
+    }
+
+    // `when` IS A `while` THAT TRACKS HOW IT TERMINATED (D-027), so its body is a
+    // loop body and its `then` / `end` blocks are two ways out. Which one runs is
+    // not decided here, so NEITHER contributes to `must` — conservative, and
+    // `when` is rare enough that buying precision here would be paying for
+    // something nobody has asked for.
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop assign_expr(x, st, raw stmt_cond(s), d);
+        drop assign_loop_body(x, st, relay stmt_when_body(x.ast, s), d);
+        drop assign_loop_body(x, st, relay stmt_when_then(x.ast, s), d);
+        drop assign_loop_body(x, st, relay stmt_when_end(x.ast, s), d);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop assign_pick(x, st, s, d);
+        pass NIL;
+    }
+
+    // An arm reached on its own rather than through `assign_pick` — nothing else
+    // constructs one, and walking it in isolation is the safe reading.
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop assign_expr(x, st, raw arm_guard(s), d);
+        drop assign_stmt(x, st, raw arm_body(s), d);
+        pass NIL;
+    }
+
+    // A `defer` BODY RUNS AT SCOPE EXIT, and it is checked against the state HERE —
+    // at the point it was registered. That is the rule 0.5.2 owes: a `defer` that
+    // names a binding assigned later in the block would run before that assignment
+    // on any path that leaves early, which is the same use-before-write the rest of
+    // this file exists to refuse.
+    //
+    // Its assignments do not survive it, because the code after a `defer` runs
+    // BEFORE the deferred body does.
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        AssignState:dv = raw state_copy(st);
+        drop assign_stmt(x, dv, body, d);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+
+    // `pass`, `fail`, `return`, `exit` and the six that carry one expression. Each
+    // READS its operand, which is the whole of what this analysis owes them.
+    if (s.kind == StmtKind.StmtPassStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt) { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt)   { drop assign_expr(x, st, raw stmt_expr(s), d); pass NIL; }
+
+    if (raw stmt_carries_expr(s.kind)) {
+        drop assign_expr(x, st, raw stmt_expr(s), d);
+        pass NIL;
+    }
+
+    drop assign_err(x, raw ASSIGN_INTERNAL(),
+        "this statement kind has no entry in the definite-assignment walk, so its contents cannot be checked",
+        s.span);
+    pass NIL;
+};
+
+func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
+                              int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:sid = StmtId{ index: raw ast_id_at(x.ast, start, i) };
+        drop assign_stmt(x, st, sid, depth);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// A BODY THAT MAY NOT RUN, AND MAY RUN AGAIN. Analysed from the current state, and
+// only its `may` survives — not enough to call anything definitely assigned
+// afterwards, and enough to refuse a second write to a `fixed` binding.
+//
+// WALKED TWICE, REPORTED ONCE, and the first walk is what makes the second one
+// see a second iteration:
+//
+//     fixed int32:k;
+//     while (c) { k = 1i32; }        // written once per iteration, which is once
+//                                    // too many
+//
+// On a single walk from the entry state, `k` is unassigned when `k = 1i32;` is
+// reached and nothing fires. The silent pre-pass grows `may` to everything the
+// body can assign; the real pass then sees `k` as possibly-already-assigned and
+// refuses it. That is D-116 generalising exactly as the decision said it would —
+// this is the third analysis in this cycle to need a body walked more than once,
+// and the second to have shipped the bug first.
+//
+// ONE PRE-PASS IS ENOUGH, unlike the borrow marking's open-ended fixpoint. `may`
+// is set by an assignment statement and by `$$m`, and neither chains: one walk
+// visits every assignment in the body whatever its order or nesting, so the second
+// walk starts from the answer.
+func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) {
+    if (raw stmt_is_none(body)) { pass NIL; }
+
+    bool:saved = x.quiet;
+    x.quiet = true;
+    AssignState:pre = raw state_copy(st);
+    drop assign_stmt(x, pre, body, depth);
+    drop state_absorb_may(st, pre);
+    x.quiet = saved;
+
+    AssignState:inner = raw state_copy(st);
+    drop assign_stmt(x, inner, body, depth);
+    drop state_absorb_may(st, inner);
+    pass NIL;
+};
+
+func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop assign_expr(x, st, relay stmt_counted_arg(x.ast, s, i), depth);
+        i = i + 1i32;
+    }
+    drop assign_loop_body(x, st, raw stmt_counted_body(s), depth);
+    pass NIL;
+};
+
+func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
+    int64:i = 0i64;
+    while (i < (dst.count => int64)) {
+        dst.must[i] = dst.must[i] && other.must[i];
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+func:state_take_must = NIL(AssignState:dst, AssignState:src) {
+    int64:i = 0i64;
+    while (i < (dst.count => int64)) {
+        dst.must[i] = src.must[i];
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
+// A `pick`, WHICH IS AN N-WAY MERGE AND NOT A LOOP.
+//
+// "A binding assigned on every arm of an EXHAUSTIVE pick is assigned after it" is
+// the rule, and the qualifier does all the work: a `pick` that might match nothing
+// is a path on which no arm ran, and that path assigns nothing.
+//
+// EXHAUSTIVENESS IS ANSWERED CONSERVATIVELY HERE — a wildcard arm, and nothing
+// else. A `pick` over every variant of an enum is exhaustive too, and proving that
+// is 0.5.4's whole subject; until it exists this analysis under-approximates,
+// which costs a refusal on correct code and never the other way round. When 0.5.4
+// lands, this is the caller that should start asking it instead.
+func:pick_is_total = bool(Assign->:x, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
+        PatId:p = raw arm_pattern(arm);
+        if (!(raw pat_is_none(p))) {
+            PatNode:pn = relay ast_pat(x.ast, p);
+            if (pn.kind == PatKind.PatWildcard) {
+                // A GUARD MAKES AN ARM CONDITIONAL AGAIN. `(*) if cond` matches
+                // only sometimes, so a wildcard carrying one proves nothing.
+                if (raw expr_is_none(raw arm_guard(arm))) { pass true; }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+    drop assign_expr(x, st, raw pick_selector(s), depth);
+
+    int32:start = raw pick_arm_start(s);
+    int32:count = raw pick_arm_count(s);
+    bool:total = relay pick_is_total(x, start, count);
+
+    AssignState:acc = raw state_new(st.count);
+    bool:seen = false;
+
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:aid = relay pick_arm_at(x.ast, start, i);
+        StmtNode:arm = relay ast_stmt(x.ast, aid);
+
+        AssignState:one = raw state_copy(st);
+        drop assign_expr(x, one, raw arm_guard(arm), depth);
+        drop assign_stmt(x, one, raw arm_body(arm), depth);
+        drop state_absorb_may(st, one);
+
+        if (!(relay stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()))) {
+            if (seen) {
+                drop state_intersect_must(acc, one);
+            } else {
+                drop state_overwrite(acc, one);
+                seen = true;
+            }
+        }
+        i = i + 1i32;
+    }
+
+    // Only an exhaustive `pick` with at least one arm that falls through can make
+    // anything definitely assigned. `may` was absorbed arm by arm above and is
+    // kept whatever the answer here.
+    if (total) {
+        if (seen) {
+            drop state_take_must(st, acc);
+        }
+    }
+    pass NIL;
+};
+
+// --- assignment --------------------------------------------------------------
+
+func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
+    ExprId:tgt = raw stmt_target(s);
+    ExprId:val = raw stmt_assigned(s);
+
+    // THE VALUE IS READ BEFORE THE TARGET IS WRITTEN, so `x = x + 1i32;` on an
+    // unassigned `x` is refused for the read rather than accepted for the write.
+    drop assign_expr(x, st, val, depth);
+
+    if (raw expr_is_none(tgt)) { pass NIL; }
+    ExprNode:tn = relay ast_expr(x.ast, tgt);
+
+    // A BARE NAME IS THE ONLY THING THAT ASSIGNS THE WHOLE BINDING. `h.field = v`
+    // and `arr[i] = v` write a PART, and reaching the part means the aggregate has
+    // to be there already — so those are READS of the root, checked below like any
+    // other, and they do not mark anything assigned.
+    //
+    // The stricter reading is deliberate. Nitpick has no implicit default (D-010),
+    // so `Holder:h;` followed by `h.inner = NULL;` is writing through a slot whose
+    // other fields nothing has established, and treating field-by-field filling as
+    // initialisation is how partially-initialised aggregates get read as whole
+    // ones.
+    if (tn.kind != ExprKind.ExprIdentifierExpr) {
+        drop assign_expr(x, st, tgt, depth);
+        pass NIL;
+    }
+
+    if (tn.a == 0i32) { pass NIL; }
+    Symbol:sym = raw symtab_get(x.tab, tn.a);
+
+    // A GLOBAL. `const` at module scope is the same rule as `fixed` in a body, and
+    // it is checked here because this is where an assignment to one arrives.
+    if (sym.origin_kind == (raw SYM_DECL())) {
+        DeclId:did = DeclId{ index: sym.origin };
+        DeclNode:gd = relay ast_decl(x.ast, did);
+        if (gd.kind == DeclKind.DeclGlobalDecl) {
+            if (((raw global_quals(gd)) & (raw QUAL_CONST())) != 0i32) {
+                drop assign_err(x, raw ASSIGN_IMMUTABLE(),
+                    "a `const` global is assigned once, where it is declared, and cannot be assigned again",
+                    tn.span);
+            }
+        }
+        pass NIL;
+    }
+
+    if (sym.origin_kind != (raw SYM_STMT())) { pass NIL; }
+
+    // `fixed` — ASSIGNED ONCE, ON ANY PATH. `may` and not `must` is the whole
+    // point: `if (c) { k = 1i32; } k = 2i32;` writes twice on the path that took
+    // the branch, and `must` says nothing about it.
+    StmtId:decl = StmtId{ index: sym.origin };
+    StmtNode:dn = relay ast_stmt(x.ast, decl);
+    if (dn.kind == StmtKind.StmtVarDeclStmt) {
+        if (((relay stmt_quals(x.ast, dn)) & (raw QUAL_FIXED())) != 0i32) {
+            if (raw state_may(st, sym.origin)) {
+                drop assign_err(x, raw ASSIGN_IMMUTABLE(),
+                    "a `fixed` binding is assigned once and this may be the second time; drop `fixed` if it is meant to change",
+                    tn.span);
+            }
+        }
+    }
+
+    drop state_mark(st, sym.origin);
+    pass NIL;
+};
+
+// --- expressions -------------------------------------------------------------
+//
+// EVERY MENTION OF A BINDING IS A READ, with two exceptions that are not
+// exceptions to the rule so much as to what "mention" means.
+//
+// `$$m x` HANDS THE CALLEE SOMETHING TO WRITE, and D-004 names that as the way a
+// callee fills a caller-owned destination — one of the four mechanisms that
+// replaced `gc` for returning references. Refusing it on an unassigned binding
+// would refuse the pattern the decision endorses, so `$$m` on a place ASSIGNS the
+// binding under it.
+//
+// `@x` AND `$$i x` DO NOT. `$$i` is a shared borrow and shared means readable, and
+// `@` is plain address-of with nothing in it that says which way the data will
+// travel. So both are reads, and `$$m` is the explicit, greppable way to say
+// otherwise — which is the shape every other opt-out in this language has.
+func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+
+    if (depth <= 0i32) {
+        drop assign_err(x, raw ASSIGN_TOO_DEEP(),
+            "this expression nests deeper than the definite-assignment analysis will follow, so its bindings cannot be shown assigned before use",
+            n.span);
+        pass NIL;
+    }
+    int32:d = depth - 1i32;
+
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        drop assign_read(x, st, n);
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        if (raw borrow_is_mut(n)) {
+            drop assign_mark_place(x, st, raw expr_operand(n), d);
+            pass NIL;
+        }
+        drop assign_expr(x, st, raw expr_operand(n), d);
+        pass NIL;
+    }
+
+    // A struct literal's window alternates NAME, VALUE; only the odd entries are
+    // expressions.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            drop assign_expr(x, st, v, d);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+
+    // A call's window holds generic arguments first and value arguments after.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:gc = raw expr_generic_count(n);
+        drop assign_expr(x, st, raw expr_callee(n), d);
+        drop assign_expr_window(x, st, (raw expr_list_start(n)) + gc,
+                                (raw expr_list_count(n)) - gc, d);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bg = raw expr_generic_count(n);
+        drop assign_expr_window(x, st, (raw expr_list_start(n)) + bg,
+                                (raw expr_list_count(n)) - bg, d);
+        pass NIL;
+    }
+
+    // AN EXPRESSION `pick` CARRIES STATEMENTS (D-059) and merges like the statement
+    // form, so it hands back to the statement walk rather than being flattened
+    // here. Its arms `give` a value on every path an exhaustive one can take, which
+    // is exactly the merge `assign_pick` performs.
+    if (n.kind == ExprKind.ExprPickExpr) {
+        StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
+                                     a: n.a, b: n.b, c: n.c, payload: 0i64 };
+        drop assign_pick(x, st, as_stmt, d);
+        pass NIL;
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop assign_expr_window(x, st, raw expr_list_start(n),
+                                raw expr_list_count(n), d);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop assign_err(x, raw ASSIGN_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so its slots cannot be walked",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop assign_err(x, raw ASSIGN_INTERNAL(),
+            "this expression kind has a custom shape the definite-assignment walk has no case for, so its contents cannot be checked",
+            n.span);
+        pass NIL;
+    }
+
+    drop assign_expr(x, st, raw expr_lhs(n), d);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop assign_expr_window(x, st, raw expr_list_start(n),
+                                raw expr_list_count(n), d);
+        pass NIL;
+    }
+    drop assign_expr(x, st, raw expr_rhs(n), d);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop assign_expr(x, st, raw expr_third(n), d);
+    pass NIL;
+};
+
+func:assign_expr_window = NIL(Assign->:x, AssignState:st, int32:start,
+                              int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        drop assign_expr(x, st, e, depth);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// ONE MENTION OF A BINDING, READ.
+func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
+    if (n.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+
+    // ONLY A LOCAL CAN BE UNASSIGNED. A parameter is written by the caller, a
+    // global by its initialiser, and a `pick` or `for` binding by the construct
+    // that introduced it — none of them has a path on which nothing wrote.
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    if (raw state_must(st, s.origin))      { pass NIL; }
+
+    drop assign_err(x, raw ASSIGN_UNASSIGNED(),
+        "this binding is not assigned on every path that reaches here, and Nitpick has no default value to read (D-010)",
+        n.span);
+    pass NIL;
+};
+
+// `$$m place` — the binding under the place becomes assigned, because the callee
+// this is handed to may write it. The place itself is NOT walked as a read, which
+// is the point.
+func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:depth) {
+    if (raw expr_is_none(place)) { pass NIL; }
+    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted) { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+
+    // A DERIVED PLACE STILL NEEDS ITS BASE. `$$m rec.field` writes one field and
+    // reads `rec` to find it, so the base is a read and only a bare name is a
+    // whole-binding assignment.
+    if (rn.kind != ExprKind.ExprIdentifierExpr) {
+        drop assign_expr(x, st, place, depth);
+        pass NIL;
+    }
+    if (r.id.index != place.index) {
+        drop assign_read(x, st, rn);
+        pass NIL;
+    }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, rn.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    drop state_mark(st, s.origin);
+    pass NIL;
+};

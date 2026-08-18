@@ -79,3 +79,26 @@ pub func:BORROW_UNTRACKED = string()  { pass "NITPICK-BORROW-009"; };
 // anything reading a build log, which is the "distinction that lives only in the
 // wording" cycle 0.4 kept paying for.
 pub func:BORROW_UNSETTLED = string()  { pass "NITPICK-BORROW-010"; };
+
+// --- D-010: definite assignment (0.5.2) ---------------------------------------
+//
+// D-010 chose "no implicit default" over poisoning every scalar with `ERR`, on the
+// argument that a default makes an uninitialised read DEFINED whereas the analysis
+// makes it IMPOSSIBLE. These codes are that analysis reporting.
+
+// A read of a binding that is not assigned on every path reaching it.
+pub func:ASSIGN_UNASSIGNED = string() { pass "NITPICK-ASSIGN-001"; };
+
+// A second assignment to a `fixed` binding, or to a `const` global. One code for
+// both, because it is one rule — assigned once, where it is declared — and a
+// reader filtering a log is asking the same question either way.
+pub func:ASSIGN_IMMUTABLE = string()  { pass "NITPICK-ASSIGN-002"; };
+
+// NOT A RULE VIOLATION — the walk hit its depth bound. Refused rather than
+// assumed assigned, because "we stopped looking" and "it is assigned" are the two
+// answers this analysis exists to keep apart.
+pub func:ASSIGN_TOO_DEEP = string()   { pass "NITPICK-ASSIGN-003"; };
+
+// A DEFECT IN THE COMPILER: a statement or expression kind the walk has no entry
+// for, so it cannot promise it looked everywhere.
+pub func:ASSIGN_INTERNAL = string()   { pass "NITPICK-ASSIGN-004"; };

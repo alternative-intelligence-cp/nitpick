@@ -8330,3 +8330,91 @@ aliasing rules that make `$$i` many-readers and `$$m` exclusive, and that Z3
 discharges for disjointness. That is a different question with a different
 answer, and it is not settled here.
 
+
+---
+
+## D-118 — Definite assignment carries two sets, and `$$m` is what fills a binding
+
+**Settled in cycle 0.5.2**, implementing the analysis D-010 rests on.
+
+### Why this analysis is load-bearing rather than a nicety
+
+D-010 chose **no implicit default value** over poisoning every scalar with `ERR`,
+and the argument was that a default makes an uninitialised read *defined* whereas
+definite assignment makes it *impossible*. The second half of that sentence is a
+promise about this analysis. If it is wrong, `int32:x;` followed by a read of `x`
+compiles into a load of whatever the stack happened to hold — which is the class of
+bug the language exists to make unrepresentable.
+
+### Two sets, merging in opposite directions
+
+| Set | Meaning | Merge | Answers |
+|---|---|---|---|
+| `must` | assigned on **every** path reaching here | intersection | may this be read? |
+| `may` | assigned on **at least one** path | union | is this the second write to a `fixed`? |
+
+**One set cannot answer both.** `if (c) { x = 1i32; }` leaves `x`
+readable-nowhere *and* assignable-never-again, and a single set has to pick which
+of the two questions it gets right.
+
+### An arm that exits contributes nothing to the merge
+
+`if (c) { pass 0i32; } else { x = 2i32; }` reaches the merge only through the
+second arm, so intersecting with the first would forget that `x` was assigned.
+That is not a refinement — it is the difference between accepting correct code and
+refusing it, and removing the exemption refuses two cases in the acceptance suite.
+
+The predicate is therefore **wrong towards `false` by design**: a statement wrongly
+called an exit drops its arm from the merge and lets the other arm's assignments
+stand alone, which is unsound. Everything not explicitly listed falls through.
+
+### `$$m` assigns; `$$i` and `@` read
+
+D-004 lists **"pass `$$m` of the destination downward"** as one of the four
+mechanisms that replaced `gc` for returning references. So an unassigned binding
+handed to a callee as `$$m` is *being filled*, and refusing it would refuse the
+pattern the decision endorses.
+
+`$$i` is a **shared** borrow, and shared means readable — the callee may read what
+nothing wrote. `@` is plain address-of, with nothing in it that says which way the
+data will travel, so it reads too.
+
+That leaves `$$m` as the explicit, greppable way to say "the callee will write
+this", which is the shape every other opt-out in the language has.
+
+### A `defer` is checked where it was registered
+
+Not where it runs. A deferred body naming a binding assigned later in the block
+would, on any path that leaves early, read something nothing wrote. Its own
+assignments do not survive it, because the code after a `defer` runs *before* the
+deferred body does.
+
+### `fixed` and `const` are one rule with two spellings
+
+**Assigned once, where it is declared.** `fixed` is the body-scoped spelling and
+`const` the module-scoped one, and they share a diagnostic code because a reader
+filtering a log is asking the same question either way.
+
+A global has no enclosing body, so its declaration is the only place an assignment
+could appear — which makes the `const` rule two halves: the initialiser has to be
+there, and it has to be **constant**. That second half reuses `NITPICK-TYPE-004`,
+the code an array size and a `comptime` argument already use, because it is the
+same question at the same rung with the same answer: folding a general constant
+expression is cycle 0.6's job, so a literal is what "constant" means today.
+
+### Where it is deliberately imprecise
+
+- **A loop body may run zero times**, so nothing it assigns survives it. That is
+  the correct answer, not an approximation.
+- **A `pick` is exhaustive only if it has an unguarded wildcard arm.** A `pick`
+  over every variant of an enum is exhaustive too, and proving that is 0.5.4's
+  subject; until then this under-approximates, which costs a refusal on correct
+  code and never the other way round.
+- **A field assignment does not initialise its aggregate.** `Holder:h;` followed by
+  `h.inner = NULL;` is refused, because with no implicit default the other fields
+  are still unestablished, and treating field-by-field filling as initialisation is
+  how a partially-initialised aggregate gets read as a whole one.
+- **`when`'s `then` and `end` contribute nothing to `must`.** Which one runs is not
+  decided here, and `when` is rare enough that buying the precision is paying for
+  something nobody has asked for.
+

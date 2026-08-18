@@ -75,6 +75,16 @@ pub func:expr_name = int64(ExprNode:e)      { pass e.payload; };
 // yields an intern index and slices the argument window by it.
 pub func:expr_generic_count = int32(ExprNode:e) { pass (e.payload => int32); };
 
+// `$$m` RATHER THAN `$$i`. Both spell a borrow and build the same node, and the
+// difference is exclusive-versus-shared — which is what decides whether the callee
+// may WRITE through it, and therefore whether handing it an unassigned binding is
+// a use-before-write or the endorsed way to fill one (D-004).
+//
+// Named rather than read as `payload != 0` at each site, for the reason every
+// other slot in this file is named: a raw slot read is a comment that cannot be
+// checked.
+pub func:borrow_is_mut = bool(ExprNode:e) { pass (e.payload != 0i64); };
+
 // A numeric literal's width suffix, in slot `a`. `WNone` when none was written,
 // which is what makes the literal contextually typed (D-092).
 pub func:expr_num_width = NumWidth(ExprNode:e) { pass e.width; };

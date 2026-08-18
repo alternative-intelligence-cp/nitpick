@@ -44,12 +44,12 @@ discovered one subcycle at a time:
 | Parses today | Read by | Lands in |
 |---|---|---|
 | `stack` / `wild` / `wildx` qualifiers | nothing | 0.5.3 |
-| `fixed` / `const` qualifiers | nothing *(the seed enforces `fixed`; the real frontend does not)* | 0.5.2 |
+| `fixed` / `const` qualifiers | ~~nothing~~ **done in 0.5.2** — the real frontend enforces both now, where only the seed did | 0.5.2 |
 | `nodrop` qualifier | nothing | 0.5.3 |
 | `$$i` / `$$m` borrow operators | ~~typed as plain pointers~~ **done in 0.5.1** | 0.5.1 |
 | `move(place)` | typed as its operand | 0.5.3 |
 | `pick` patterns | typed, never checked for coverage | 0.5.4 |
-| `defer` bodies | walked, never ordered against exits | 0.5.2 |
+| `defer` bodies | ~~walked, never ordered against exits~~ **done in 0.5.2** — checked where registered | 0.5.2 |
 | `Result.value` after `fail` | untainted | 0.5.5 |
 
 Every row is a construct the frontend accepts and means nothing by. That is not a
@@ -92,7 +92,7 @@ naming the wrong thing is how the gap arose in the first place.
 |---|---|
 | ~~**0.5.0**~~ | ~~The substrate~~ — **DONE**. An expression's type recorded once, plus the borrow classifier. D-113 settled. |
 | ~~**0.5.1**~~ | ~~Second-class borrows and escape (D-004)~~ — **DONE**. All five rules, marked to a fixpoint, with the two caller-side rules that make "passing down needs no annotation" hold. D-114 through D-117 settled. |
-| **0.5.2** | Definite assignment, `fixed`, and `defer` ordering |
+| ~~**0.5.2**~~ | ~~Definite assignment, `fixed`, and `defer` ordering~~ — **DONE**. Two sets, merging in opposite directions; `$$m` fills where `$$i` reads. D-118 settled. |
 | **0.5.3** | `move`, moved-from bindings, and the manual-memory qualifiers (D-065) |
 | **0.5.4** | Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1) |
 | **0.5.5** | `unknown` taint on `Result.value` (D-007) |

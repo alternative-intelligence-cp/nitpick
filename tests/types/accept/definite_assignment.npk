@@ -1,0 +1,137 @@
+// Definite assignment on correct code, which the frontend must ACCEPT (D-010).
+//
+// The counterweight to `rejection/definite_assignment.npk`. A must-analysis that
+// answered "not assigned" everywhere passes every case in that file, so what
+// establishes it is right is what it lets through.
+//
+// EVERY CASE HERE IS A STEP AWAY FROM ONE THAT IS REFUSED. A two-armed `if` beside
+// a one-armed one; an arm that exits beside an arm that assigns nothing; `$$m`
+// beside `$$i`; an exhaustive `pick` beside a partial one.
+
+func:sink = NIL(int32->:slot) { pass NIL; };
+
+// --- both paths assign -----------------------------------------------------------
+
+func:both_arms = int32(bool:c) {
+    int32:x;
+    if (c) { x = 1i32; } else { x = 2i32; }
+    pass x;
+};
+
+// AN ARM THAT EXITS CONTRIBUTES NOTHING TO THE MERGE, because control does not
+// reach the merge through it. Intersecting with it would forget that the other arm
+// assigned — which is the difference between accepting this and refusing it.
+func:one_arm_exits = int32(bool:c) {
+    int32:x;
+    if (c) { pass 0i32; } else { x = 2i32; }
+    pass x;
+};
+
+// THE SAME SHAPE WITHOUT AN `else`: an early exit leaves only one path running on.
+func:early_return = int32(bool:c) {
+    int32:x;
+    if (c) { pass 0i32; }
+    x = 1i32;
+    pass x;
+};
+
+// --- `$$m` fills a caller-owned destination ---------------------------------------
+//
+// D-004 lists this as one of the four mechanisms that replaced `gc` for returning
+// references: "pass `$$m` of the destination downward". Refusing it on an
+// unassigned binding would refuse the pattern the decision endorses.
+
+func:out_parameter = int32() {
+    int32:x;
+    drop sink($$m x);
+    pass x;
+};
+
+// --- an exhaustive `pick` where every arm assigns -----------------------------------
+
+func:pick_total = int32(int32:n) {
+    int32:x;
+    pick (n) {
+        (0i32) { x = 1i32; },
+        (*) { x = 2i32; }
+    }
+    pass x;
+};
+
+// AN ARM THAT EXITS IS EXCUSED HERE TOO.
+func:pick_with_an_exit = int32(int32:n) {
+    int32:x;
+    pick (n) {
+        (0i32) { pass 0i32; },
+        (*) { x = 2i32; }
+    }
+    pass x;
+};
+
+// --- `fixed`, assigned exactly once -------------------------------------------------
+
+func:fixed_from_its_initialiser = int32() {
+    fixed int32:k = 1i32;
+    pass k;
+};
+
+// ONCE ON EVERY PATH IS STILL ONCE. Each arm writes `k` on its own path and neither
+// writes it twice, which is what a `may` set carried per-branch is for — a single
+// set shared across the arms would report the second arm as a second write.
+func:fixed_once_per_path = int32(bool:c) {
+    fixed int32:k;
+    if (c) { k = 1i32; } else { k = 2i32; }
+    pass k;
+};
+
+// --- loops that do not lie ----------------------------------------------------------
+
+// ASSIGNED BEFORE THE LOOP, so what the body does to it changes nothing about
+// whether it is readable after.
+func:assigned_before_a_loop = int32(bool:c) {
+    int32:x = 0i32;
+    while (c) { x = x + 1i32; }
+    pass x;
+};
+
+// A BINDING DECLARED AND ASSIGNED INSIDE THE BODY is assigned wherever it is read,
+// and the body being possibly-zero-iterations says nothing about that.
+func:declared_inside_a_loop = int32(bool:c) {
+    int32:total = 0i32;
+    while (c) {
+        int32:step = 2i32;
+        total = total + step;
+    }
+    pass total;
+};
+
+// --- `defer` after the assignment -----------------------------------------------------
+
+func:defer_after_assignment = int32() {
+    int32:x;
+    x = 1i32;
+    defer { drop sink($$i x); }
+    pass x;
+};
+
+// --- `const` globals with constant initialisers ---------------------------------------
+//
+// Every literal kind is constant at this rung, not only an integer one — a `const`
+// string is what diagnostic codes are written as, and refusing it would refuse the
+// construct's main use.
+
+pub const int32:LIMIT = 100i32;
+pub const string:CODE = "NPK-001";
+pub const bool:ENABLED = true;
+
+// A GLOBAL WITHOUT `const` IS NOT THIS RULE'S BUSINESS.
+pub int32:counter = 0i32;
+
+func:reads_the_consts = int32() {
+    int32:n = LIMIT;
+    pass n;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};

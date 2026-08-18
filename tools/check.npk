@@ -75,6 +75,7 @@ use "../src/frontend/type_expr.npk".*;
 use "../src/frontend/type_stmt.npk".*;
 use "../src/frontend/analysis/analysis_codes.npk".*;
 use "../src/frontend/analysis/escape.npk".*;
+use "../src/frontend/analysis/assign.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
@@ -234,6 +235,18 @@ func:main = int32(cstring[]:argv) {
     }
     drop escape_report_mode(@esc);
     drop escape_walk(@esc, @g);
+
+    // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
+    // with an intersection merge, and a loop body that may run zero times is both
+    // the sound answer and a fixed point on the first pass.
+    Assign:asg = raw assign_init(@g.ast, @g.tab, @diags);
+    int32:y2 = 0i32;
+    while (y2 < (raw graph_count(@g))) {
+        ModuleEntry:e6 = raw graph_at(@g, y2);
+        DeclId:mid6 = DeclId{ index: e6.root };
+        drop assign_module(@asg, mid6, e6.scope);
+        y2 = y2 + 1i32;
+    }
 
     // EVERY TYPE LAID OUT, once the whole program is known. The checker asks for
     // very few sizes, so demand-driven layout leaves most of the table at zero —

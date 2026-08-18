@@ -1,0 +1,165 @@
+// No binding is read before it is written (D-010, cycle 0.5.2).
+//
+// NITPICK HAS NO IMPLICIT DEFAULT VALUE. D-010 chose that over poisoning every
+// scalar with `ERR`, on the argument that a default makes an uninitialised read
+// DEFINED whereas this analysis makes it IMPOSSIBLE — so what this file guards is
+// the thing that decision rests on. If it is wrong, `int32:x;` followed by a read
+// of `x` compiles into a load of whatever the stack happened to hold.
+//
+// THE MERGE IS WHERE THE CASES ARE. Straight-line definite assignment is a loop
+// over statements and is not where analyses go wrong.
+
+func:sink = NIL(int32->:slot) { pass NIL; };
+
+// --- nothing assigned it at all ------------------------------------------------
+
+// expect-error: NITPICK-ASSIGN-001
+func:reads_unassigned = int32() {
+    int32:x;
+    pass x;
+};
+
+// --- the merges ----------------------------------------------------------------
+
+// A ONE-ARMED `if` HAS TWO PATHS, and the missing `else` is the one that assigns
+// nothing. This is the case a reader is likeliest to think is covered.
+// expect-error: NITPICK-ASSIGN-001
+func:one_armed_if = int32(bool:c) {
+    int32:x;
+    if (c) { x = 1i32; }
+    pass x;
+};
+
+// ONE ARM THAT ASSIGNS AND ONE THAT DOES NOT is the same shape with the `else`
+// written out.
+// expect-error: NITPICK-ASSIGN-001
+func:one_arm_assigns = int32(bool:c) {
+    int32:x;
+    int32:witness = 0i32;
+    if (c) { x = 1i32; } else { drop sink($$i witness); }
+    pass x;
+};
+
+// A `while` BODY MAY RUN ZERO TIMES, so nothing it assigns survives it.
+// expect-error: NITPICK-ASSIGN-001
+func:loop_may_not_run = int32(bool:c) {
+    int32:x;
+    while (c) { x = 1i32; }
+    pass x;
+};
+
+// A `for` OVER A RANGE MAY ALSO ITERATE ZERO TIMES — the bounds are values, not
+// a promise.
+// expect-error: NITPICK-ASSIGN-001
+func:for_may_not_run = int32(int64:n) {
+    int32:x;
+    for (int64:i in 0i64..n) { x = 1i32; }
+    pass x;
+};
+
+// --- `pick`, where exhaustiveness decides ---------------------------------------
+
+// NO WILDCARD ARM, so nothing proves any arm ran. An exhaustive `pick` over an
+// enum's variants is exhaustive too, and recognising that is 0.5.4's subject —
+// until then this analysis under-approximates, which costs a refusal and never
+// the other way round.
+// expect-error: NITPICK-ASSIGN-001
+func:pick_not_total = int32(int32:n) {
+    int32:x;
+    pick (n) {
+        (0i32) { x = 1i32; },
+        (1i32) { x = 2i32; }
+    }
+    pass x;
+};
+
+// EXHAUSTIVE, AND ONE ARM ASSIGNS NOTHING.
+// expect-error: NITPICK-ASSIGN-001
+func:pick_arm_gap = int32(int32:n) {
+    int32:x;
+    pick (n) {
+        (0i32) { x = 1i32; },
+        (*) { }
+    }
+    pass x;
+};
+
+// --- a shared borrow is a read ---------------------------------------------------
+
+// `$$i` HANDS OUT A READABLE VIEW, and shared means readable. Only `$$m` says the
+// callee will write, which is why that one is the endorsed way to fill a
+// caller-owned destination (D-004) and this one is not.
+// expect-error: NITPICK-ASSIGN-001
+func:shared_borrow_is_a_read = int32() {
+    int32:x;
+    drop sink($$i x);
+    pass x;
+};
+
+// --- `defer` sees where it was registered ----------------------------------------
+
+// A `defer` RUNS AT SCOPE EXIT AND IS CHECKED AT ITS REGISTRATION. On any path
+// that leaves before the assignment below, the deferred body would read a binding
+// nothing wrote — which is the same use-before-write as everything above, reached
+// by a construct that reorders execution.
+// expect-error: NITPICK-ASSIGN-001
+func:defer_registered_too_early = int32() {
+    int32:x;
+    defer { drop sink($$i x); }
+    x = 1i32;
+    pass x;
+};
+
+// --- `const` at module scope is `fixed` with nowhere else to be written -------------
+//
+// A global has no enclosing body, so its declaration is the only place an
+// assignment could appear. That makes the rule two halves: the initialiser has to
+// be there, and it has to be constant.
+
+pub const int32:MAX = 100i32;
+
+// expect-error: NITPICK-ASSIGN-002
+func:writes_a_const_global = NIL() {
+    MAX = 5i32;
+    pass NIL;
+};
+
+// NOTHING CAN EVER WRITE IT, so it can never hold a value.
+// expect-error: NITPICK-ASSIGN-001
+pub const int32:NEVER_WRITTEN;
+
+// THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is the same
+// question — is this expression constant at this rung — and the same answer:
+// folding a general constant expression is cycle 0.6's job.
+// expect-error: NITPICK-TYPE-004
+pub const int32:COMPUTED = MAX;
+
+// --- `fixed` is assigned once -----------------------------------------------------
+
+// expect-error: NITPICK-ASSIGN-002
+func:fixed_assigned_again = int32() {
+    fixed int32:k = 1i32;
+    k = 2i32;
+    pass k;
+};
+
+// ASSIGNED ONCE ON ANY PATH, NOT ONCE ON EVERY PATH. The branch below writes `k`
+// twice on the path that took it, and a `must` set says nothing about that — which
+// is why the analysis carries a `may` set as well.
+// expect-error: NITPICK-ASSIGN-002
+func:fixed_assigned_on_a_branch = int32(bool:c) {
+    fixed int32:k;
+    if (c) { k = 1i32; }
+    k = 2i32;
+    pass k;
+};
+
+// A LOOP BODY CAN WRITE THE SAME BINDING ONCE PER ITERATION, which is once too
+// many. Nothing the body assigns is definitely assigned afterwards, and everything
+// it assigns is possibly assigned — this is the half that catches it.
+// expect-error: NITPICK-ASSIGN-002
+func:fixed_assigned_in_a_loop = int32(bool:c) {
+    fixed int32:k;
+    while (c) { k = 1i32; }
+    pass k;
+};
