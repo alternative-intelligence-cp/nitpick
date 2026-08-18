@@ -41,6 +41,7 @@ use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
 use "../../src/frontend/type_trait.npk".*;
 use "../../src/frontend/type_generic.npk".*;
+use "../../src/frontend/expr_types.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 use "../../src/frontend/type_stmt.npk".*;
 
@@ -64,6 +65,10 @@ func:gx = Gx(string:src, InternTable->:it) {
     drop resolve_module(@rs, mod_id, scope);
 
     TypeTable:types = raw typetable_init();
+    // AN EXPRESSION-TYPE TABLE, sized from the AST (0.5.0). The checker records
+    // each expression's type as it computes it, so a later analysis reads what
+    // the checker decided rather than deciding again.
+    ExprTypes:ets = raw exprtypes_for(@ast);
     InstanceTable:inst = raw insttable_init();
     TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
     ImplTable:im = raw impltable_init();
@@ -79,7 +84,7 @@ func:gx = Gx(string:src, InternTable->:it) {
     drop check_impls_complete(@im, @tr);
     drop check_supertraits(@im, @bd, @tr);
     drop check_duplicate_methods(@im, @tr);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @ets);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;

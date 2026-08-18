@@ -70,6 +70,7 @@ use "../src/frontend/type_decl.npk".*;
 use "../src/frontend/type_trait.npk".*;
 use "../src/frontend/type_generic.npk".*;
 use "../src/frontend/type_access.npk".*;
+use "../src/frontend/expr_types.npk".*;
 use "../src/frontend/type_expr.npk".*;
 use "../src/frontend/type_stmt.npk".*;
 
@@ -174,8 +175,12 @@ func:main = int32(cstring[]:argv) {
     drop check_supertraits(@im, @bd, @tr);
     drop check_duplicate_methods(@im, @tr);
 
+    // AN EXPRESSION-TYPE TABLE for the whole program (0.5.0), sized from the AST
+    // after every module is loaded — so it covers every expression in the graph
+    // rather than the root module's.
+    ExprTypes:ets = raw exprtypes_for(@g.ast);
     ExprTyper:et = raw etyper_init(@g.ast, @types, @g.tab, @it, @diags, 0i32,
-                                   @im, @bd, @inst);
+                                   @im, @bd, @inst, @ets);
     int32:b = 0i32;
     while (b < (raw graph_count(@g))) {
         ModuleEntry:e4 = raw graph_at(@g, b);

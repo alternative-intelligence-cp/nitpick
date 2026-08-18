@@ -7929,6 +7929,63 @@ nothing could assert on them. `BUILD_REFERENCE.md` §7.1's convention is what
 surfaced that: tests assert on codes and spans, never on message text, and a
 distinction with no code is a distinction nothing can check.
 
+## D-113 — A dynamically dispatched method declares its acquisition level as a contract clause
+
+**Settled in cycle 0.5.** D-056 left a spelling unwritten, and the frontend is
+built once, so it could not be left to whoever implemented the analysis.
+
+### The gap
+
+Lock-level analysis is whole-program: the acquisition set of a function follows
+transitively from the call graph. **Dynamic dispatch is the hole** — a call through
+a trait object can reach anything, so its acquisition set is unbounded. D-056's
+answer:
+
+> a dynamically dispatched call **declares its maximum acquisition level** as part
+> of the trait method's contract, and implementations are checked against it. An
+> undeclared method may not acquire at all.
+
+`VERIFICATION_REFERENCE.md` §248 restates the requirement. **Neither gives the
+syntax**, and an analysis cannot consume a declaration nobody can write.
+
+### The spelling: a third contract kind
+
+```nitpick
+trait:Storage = {
+    func:commit = NIL(Self:self) acquires <= 3i32;
+};
+```
+
+`acquires <= N` sits beside `requires` and `ensures` in the contract window a
+function already carries, adding a `VerifyKind` and **no new syntax shape**.
+
+Four reasons it belongs there rather than anywhere else:
+
+- **It is an obligation on the signature**, which is exactly what the contract
+  window holds. A maximum acquisition level constrains what a caller may already
+  be holding, in the same sense a `requires` clause does.
+- **An absent clause reads correctly.** "An undeclared method may not acquire at
+  all" is the natural meaning of no clause, rather than a special case someone has
+  to remember — the same shape that makes a trait method with no body a real
+  absence rather than a flag (D-103).
+- **It composes with verification already.** `requires` and `ensures` are
+  discharged by Z3 through the Design-by-Contract machinery, and the positive-return
+  rule on `failsafe` is already implemented as a compiler-injected `ensures`. A
+  third clause needs no new pipeline.
+- **A `#` builtin or an attribute would both be new shapes** for a thing the
+  language already has a place for, and D-020's sigil rule exists to mark
+  *compiler intrinsics*, which this is not.
+
+### What it is checked against
+
+An implementation of the method may acquire no level above `N`, transitively. A
+call through `dyn Storage` therefore contributes exactly `N` to the caller's
+possibly-held set, which is what makes the whole-program analysis terminate at a
+trait object instead of giving up or silently under-approximating.
+
+**`N` is a compile-time constant**, the same kind `Mutex<T, LEVEL>` carries, so the
+comparison is available wherever the call is (D-064 §2, D-109).
+
 ---
 
 # Cycle 0.4 closed — the type system

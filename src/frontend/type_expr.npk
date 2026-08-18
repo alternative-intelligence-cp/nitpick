@@ -36,6 +36,7 @@ use "type_cast.npk".*;
 use "type_decl.npk".*;
 use "type_access.npk".*;
 use "type_trait.npk".*;
+use "expr_types.npk".*;
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -90,6 +91,12 @@ pub struct:ExprTyper = {
     GenericScope:generics;
     GenericScope:enclosing;
 
+    // WHAT TYPE EACH EXPRESSION GOT (0.5.0). Recorded here rather than
+    // recomputed by every later analysis: two computations of one fact is the
+    // shape that has cost this compiler defects repeatedly, and an analysis that
+    // reads what the checker recorded agrees with it by construction.
+    ExprTypes->:expr_types;
+
     // WHERE INSTANTIATIONS ARE RECORDED. A body's annotations instantiate as
     // readily as a signature's — `Container<int32>:c;` is a statement — so the
     // checker's resolver has to record into the same table the collection passes
@@ -111,14 +118,16 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  InternTable->:interns, DiagList->:diags,
                                  int32:scope, ImplTable->:impls,
                                  BoundTable->:bounds,
-                                 InstanceTable->:instances) {
+                                 InstanceTable->:instances,
+                                 ExprTypes->:expr_types) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
                              fn_success: 0i32, fn_terminal: false,
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
-                             instances: instances, self_type: 0i32 };
+                             instances: instances, self_type: 0i32,
+                             expr_types: expr_types };
     pass e;
 };
 
@@ -934,10 +943,27 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
 
 // --- the walk ----------------------------------------------------------------------------
 
+// EVERY EXPRESSION'S TYPE IS RECORDED AS IT IS COMPUTED (0.5.0).
+//
+// A WRAPPER RATHER THAN A RECORDING AT EVERY `pass`. `type_of_expr` returns from
+// forty-odd places, several of them error paths, and a recording written at each
+// would be forty chances to forget one — and a missing entry is indistinguishable
+// from an expression no walk reached, which is the ambiguity the `known` flag
+// exists to keep visible.
+//
+// THE NONE EXPRESSION IS NOT RECORDED. Index 0 is the reserved absence (0.2.0),
+// not an expression, so recording it would claim the checker typed something that
+// is not there.
 pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     if (raw expr_is_none(id)) {
         pass 0i32;
     }
+    int32:t = relay type_of_expr_inner(e, id);
+    drop exprtypes_set(e.expr_types, id, t);
+    pass t;
+};
+
+func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     ExprNode:n = relay ast_expr(e.ast, id);
 
     if (n.kind == ExprKind.ExprIntLiteral)   { pass (relay type_numeric_literal(e, n, "42i32")); }

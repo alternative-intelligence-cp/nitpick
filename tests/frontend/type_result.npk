@@ -29,6 +29,7 @@ use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_decl.npk".*;
 use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/expr_types.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 
 struct:Rx = {
@@ -54,9 +55,13 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
     // No module here, so no `impl` blocks and no generic parameters -- EMPTY
     // tables rather than skipped arguments, so that a context without them says
     // so.
+    // AN EXPRESSION-TYPE TABLE, sized from the AST (0.5.0). The checker records
+    // each expression's type as it computes it, so a later analysis reads what
+    // the checker decided rather than deciding again.
+    ExprTypes:ets = raw exprtypes_for(@ast);
     ImplTable:im = raw impltable_init();
     BoundTable:bd = raw boundtable_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd, @ets);
     e.fn_terminal = terminal;
     // The enclosing function returns `int32`, which is where a `Result{...}`
     // literal gets its `<T>` — nothing writes it.

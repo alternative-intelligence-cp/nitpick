@@ -28,6 +28,7 @@ use "../../src/frontend/resolve_type.npk".*;
 use "../../src/frontend/type_names.npk".*;
 use "../../src/frontend/type_cast.npk".*;
 use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/expr_types.npk".*;
 use "../../src/frontend/type_expr.npk".*;
 
 struct:Cx = {
@@ -51,9 +52,13 @@ func:cx = Cx(string:src, InternTable->:it) {
     // No module here, so no `impl` blocks and no generic parameters -- EMPTY
     // tables rather than skipped arguments, so that a context without them says
     // so.
+    // AN EXPRESSION-TYPE TABLE, sized from the AST (0.5.0). The checker records
+    // each expression's type as it computes it, so a later analysis reads what
+    // the checker decided rather than deciding again.
+    ExprTypes:ets = raw exprtypes_for(@ast);
     ImplTable:im = raw impltable_init();
     BoundTable:bd = raw boundtable_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd, @ets);
     int32:t = relay type_of_expr(@e, node);
 
     Cx:out = Cx{ types: types, diags: diags, result: t,

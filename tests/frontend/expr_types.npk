@@ -1,0 +1,264 @@
+// The expression-type table and the borrow classifier (cycle 0.5.0).
+//
+// THE PROPERTY THIS FILE EXISTS FOR: every expression the checker types has a
+// recorded type, and it is the one the checker computed. An analysis that reads
+// the table therefore agrees with the checker by construction rather than by both
+// being maintained together — which is what makes the table worth having over
+// recomputation.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_layout.npk".*;
+use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/type_generic.npk".*;
+use "../../src/frontend/expr_types.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+use "../../src/frontend/type_stmt.npk".*;
+
+struct:Ex = { Ast:ast; TypeTable:types; ExprTypes:ets; DiagList:diags; int64:parse_errs; };
+
+// A whole module, checked the way `tools/check.npk` checks one, with the
+// expression-type table carried through.
+func:ex = Ex(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
+    ImplTable:im = raw impltable_init();
+    drop collect_impls(@im, @tr, mod_id, scope);
+    BoundTable:bd = raw boundtable_init();
+    drop collect_bounds(@bd, @tr, mod_id, scope);
+
+    // SIZED AFTER PARSING, so it covers every expression the parser built. Sizing
+    // it before would make it short by exactly the expressions the test is about.
+    ExprTypes:ets = raw exprtypes_for(@ast);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
+                                  @inst, @ets);
+    drop check_module(@e, mod_id, scope);
+
+    Ex:out = Ex{ ast: ast, types: types, ets: ets, diags: diags,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+func:errs = int64(Ex->:x) {
+    if (x.parse_errs != 0i64) { pass 0i64 - x.parse_errs; }
+    pass (raw diaglist_count(@x.diags));
+};
+
+// HOW MANY EXPRESSIONS THE CHECKER LEFT UNRECORDED, skipping index 0 — which is
+// the reserved NONE node and is an absence rather than an expression.
+func:unrecorded = int32(Ex->:x) {
+    int32:missing = 0i32;
+    int32:i = 1i32;
+    while (i < (raw ast_expr_count(@x.ast))) {
+        ExprId:id = ExprId{ index: i };
+        if (!(raw exprtypes_known(@x.ets, id))) { missing = missing + 1i32; }
+        i = i + 1i32;
+    }
+    pass missing;
+};
+
+// Parse one expression on its own, for the classifier cases. No checking: whether
+// something is a borrow is a question about its SHAPE, which is the whole reason
+// the classifier takes an `Ast` and not a checker.
+struct:Px = { Ast:ast; ExprId:id; };
+
+func:px = Px(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    ExprId:id = relay p_parse_expr(@p);
+    Px:out = Px{ ast: ast, id: id };
+    pass out;
+};
+
+func:is_borrow = bool(Px->:x) {
+    pass (relay expr_is_borrow(@x.ast, x.id, raw BORROW_FUEL()));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- WHETHER IS A SEPARATE ANSWER FROM WHICH ------------------------------
+    //
+    // Type id 0 is the INVALID type and is a real entry (0.4.0), so a
+    // single-field table cannot tell "the checker typed this and refused it" from
+    // "nothing has looked at this". They call for opposite behaviour, which is
+    // why there are two fields.
+    ExprTypes:t = raw exprtypes_init(8i32);
+    ExprId:e3 = ExprId{ index: 3i32 };
+    if (raw exprtypes_known(@t, e3))                            { exit 10i32; }
+    if ((raw exprtypes_get(@t, e3)) != 0i32)                    { exit 11i32; }
+
+    // Recording the INVALID type is still recording.
+    drop exprtypes_set(@t, e3, 0i32);
+    if (!(raw exprtypes_known(@t, e3)))                         { exit 12i32; }
+    if ((raw exprtypes_get(@t, e3)) != 0i32)                    { exit 13i32; }
+
+    ExprId:e4 = ExprId{ index: 4i32 };
+    drop exprtypes_set(@t, e4, 7i32);
+    if ((raw exprtypes_get(@t, e4)) != 7i32)                    { exit 14i32; }
+    // …and its neighbour is untouched, which is the property a dense table has to
+    // have and an off-by-one would break.
+    ExprId:e5 = ExprId{ index: 5i32 };
+    if (raw exprtypes_known(@t, e5))                            { exit 15i32; }
+
+    // An index past the end answers rather than reading past the allocation.
+    ExprId:far = ExprId{ index: 99i32 };
+    if (raw exprtypes_known(@t, far))                           { exit 16i32; }
+    if ((raw exprtypes_get(@t, far)) != 0i32)                   { exit 17i32; }
+
+    // --- EVERY EXPRESSION THE CHECKER TYPED IS RECORDED -----------------------
+    //
+    // Every expression in this module lives inside a function body, so the
+    // checker reaches all of them and the count of unrecorded ones is zero. That
+    // is the mechanical completeness check this subcycle gets, and it is only
+    // possible because the table exists — a recomputing analysis has nothing to
+    // compare against.
+    Ex:v1 = raw ex("func:f = NIL(int32:n) { int32:a = n + 1i32; pass NIL; };", @it);
+    if (raw errs(@v1) != 0i64)                                  { exit 20i32; }
+    if ((raw unrecorded(@v1)) != 0i32)                          { exit 21i32; }
+
+    // The same across the shapes that CONTAIN expressions — a condition, a call's
+    // arguments, an index, a member access, a cast. 0.4.4 found sixteen statement
+    // kinds unvisited precisely because the tests put every case at the top level
+    // of one body.
+    Ex:v2 = raw ex("struct:P = { int32:x; }; func:g = int32(int32:k) { pass k; }; func:f = NIL(P:p, int32:n, int32[]:a) { if (n > 0i32) { int32:b = raw g(p.x); } while (n < 3i32) { int32:c = a[1i64]; } int64:w = n => int64; pass NIL; };",
+                   @it);
+    if (raw errs(@v2) != 0i64)                                  { exit 22i32; }
+    if ((raw unrecorded(@v2)) != 0i32)                          { exit 23i32; }
+
+    // AN EXPRESSION INSIDE A TYPE IS NOT TYPED BY THE CHECKER, and this asserts it
+    // rather than letting the count above quietly depend on it.
+    //
+    // `int32[4]` holds an `ExprId` for the size (0.2.8 made it a real expression,
+    // because consuming one token and calling it a literal produced arrays sized
+    // by an intern-table slot). `resolve_fixed_array` reads it directly and
+    // refuses anything but an integer literal, so nothing types it — which is
+    // correct today and stops being correct in cycle 0.6, where `comptime` folds
+    // general constant expressions and those will need types.
+    //
+    // Written down as a test so that change is noticed rather than discovered:
+    // this count goes to zero the day array sizes are typed, and the assertion
+    // fails until somebody decides that was intended.
+    Ex:v2b = raw ex("func:f = NIL() { int32[4]:a; pass NIL; };", @it);
+    if (raw errs(@v2b) != 0i64)                                 { exit 28i32; }
+    if ((raw unrecorded(@v2b)) != 1i32)                         { exit 29i32; }
+
+    // A PROGRAM WITH AN ERROR IN IT IS STILL FULLY RECORDED. The error paths
+    // return the invalid type and must record it, or "refused" and "never
+    // reached" become the same state.
+    Ex:v3 = raw ex("func:f = NIL(bool:b) { int32:x = b + 1i32; pass NIL; };", @it);
+    if (raw errs(@v3) == 0i64)                                  { exit 24i32; }
+    if ((raw unrecorded(@v3)) != 0i32)                          { exit 25i32; }
+
+    // AND THE RECORDED TYPE IS THE CHECKER'S. A table that was complete but wrong
+    // would pass every count above, so the value is checked against a type the
+    // checker independently interned.
+    Ex:v4 = raw ex("func:f = NIL() { int64:big = 2i64 + 3i64; pass NIL; };", @it);
+    if (raw errs(@v4) != 0i64)                                  { exit 26i32; }
+    int32:want = raw tt_int(@v4.types, 64i32, true);
+    bool:found = false;
+    int32:i = 1i32;
+    while (i < (raw ast_expr_count(@v4.ast))) {
+        ExprId:id = ExprId{ index: i };
+        ExprNode:n = relay ast_expr(@v4.ast, id);
+        if (n.kind == ExprKind.ExprBinaryExpr) {
+            if ((raw exprtypes_get(@v4.ets, id)) == want) { found = true; }
+        }
+        i = i + 1i32;
+    }
+    if (!found)                                                 { exit 27i32; }
+
+    // --- THE BORROW CLASSIFIER -----------------------------------------------
+    //
+    // A borrow is a property of an EXPRESSION, not a type (D-004). `$$i x` and
+    // `@x` are pointers at the type level, and this is what makes them
+    // second-class.
+    //
+    // EACH CASE GOES THROUGH A LOCAL, because `@` needs a PLACE and a call's
+    // result is not one — which the real backend said plainly when this file
+    // tried it, and is the same rule the classifier is about.
+    Px:b1 = raw px("@x", @it);
+    if (!(raw is_borrow(@b1)))                                  { exit 30i32; }
+    Px:b2 = raw px("$$i x", @it);
+    if (!(raw is_borrow(@b2)))                                  { exit 31i32; }
+    Px:b3 = raw px("$$m x", @it);
+    if (!(raw is_borrow(@b3)))                                  { exit 32i32; }
+
+    // A BORROW DERIVED FROM A BORROW IS STILL ONE. Reaching into it reaches the
+    // same frame, and a classifier recognising only the operator would let one
+    // field access launder second-class into first-class — the exact escape D-004
+    // exists to prevent, reached by writing a `.`.
+    Px:b4 = raw px("$$m rec.field", @it);
+    if (!(raw is_borrow(@b4)))                                  { exit 33i32; }
+    Px:b5 = raw px("$$m arr[1i64]", @it);
+    if (!(raw is_borrow(@b5)))                                  { exit 34i32; }
+    Px:b6 = raw px("$$m a.b.c", @it);
+    if (!(raw is_borrow(@b6)))                                  { exit 35i32; }
+    Px:b7 = raw px("$$m a.b[2i64].c", @it);
+    if (!(raw is_borrow(@b7)))                                  { exit 36i32; }
+
+    // AND ORDINARY EXPRESSIONS ARE NOT BORROWS, which is the half that makes the
+    // cases above mean something: a classifier answering `true` everywhere would
+    // pass all of them.
+    Px:n1 = raw px("x", @it);
+    if (raw is_borrow(@n1))                                     { exit 37i32; }
+    Px:n2 = raw px("rec.field", @it);
+    if (raw is_borrow(@n2))                                     { exit 38i32; }
+    Px:n3 = raw px("arr[1i64]", @it);
+    if (raw is_borrow(@n3))                                     { exit 39i32; }
+    Px:n4 = raw px("f(x)", @it);
+    if (raw is_borrow(@n4))                                     { exit 40i32; }
+    Px:n5 = raw px("1i32 + 2i32", @it);
+    if (raw is_borrow(@n5))                                     { exit 41i32; }
+
+    // `<-` DOES NOT PRESERVE IT. Dereferencing yields the VALUE, which copies or
+    // moves like any other; it was the pointer that was second-class, not what it
+    // pointed at.
+    Px:n6 = raw px("<-p", @it);
+    if (raw is_borrow(@n6))                                     { exit 42i32; }
+
+    pass 0i32;
+};
