@@ -173,10 +173,20 @@ would reach the wrong conclusion.
 **The last two are in current section files, not only in the consolidated one**,
 which is worth knowing about how that file is read: `COMPILE_FULL.sh` concatenates
 *every* `.txt` under `specs/`, `CHANGELOG.txt` and `FORMAL_DRAFT/` included, so
-roughly 80% of `FULL_specs.txt`'s ~14k lines is historical narration or the
-superseded prototype draft. A hit there is usually evidence about the past, and
-should be traced to its `=== SECTION:` banner before being treated as current.
-The rows above were.
+roughly 80% of `FULL_specs.txt`'s ~14k lines is changelog or formal draft. A hit
+there should be traced to its `=== SECTION:` banner before being treated as
+current. The rows above were.
+
+**The four spec sets are four audiences, not four generations.** The root `.txt`
+files are written for language users; `FORMAL_DRAFT/` is the standards-style tier
+for someone building a compiler or tooling, carrying the low-level detail — memory
+layouts and the like — that the root set deliberately omits; `AI-SPECS/` is the
+same material structured for machine consumption; `ARCHIVE/` is the original
+specification from before the `specs/` folder existed.
+
+So **depth and currency are independent**: `FORMAL_DRAFT` is the deepest tier *and*
+the prototype's version of it, which is why decisions can outrank it on a specific
+rule while it remains the right place to look for representation and layout.
 
 The first two sit in the same paragraph, which is about FFI and C-string decay —
 an area the prototype handled by making `string` C-shaped and pointers

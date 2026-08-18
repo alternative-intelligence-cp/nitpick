@@ -1,0 +1,114 @@
+// A `pick` covers every case, and `(*)` never absorbs ERR (D-008, cycle 0.5.4).
+//
+// TWO RULES, AND THE SECOND IS WHY THE FIRST MATTERS. Exhaustiveness on its own is
+// an ordinary completeness check; the `tbb` exception is the safety property. ERR
+// is exactly the case a wildcard swallows, and acting on a swallowed ERR is a
+// tainted value steering a branch — the thing sticky ERR exists to prevent.
+
+enum:Net = { Connected; Disconnect; Retrying; Failed; };
+
+// --- an enum with variants left over --------------------------------------------
+//
+// THE MESSAGE NAMES THEM. "This `pick` is not exhaustive" makes the reader
+// enumerate the type themselves, which is the one thing the compiler already did.
+// expect-error: NITPICK-PICK-001
+func:missing_variants = int32(Net:s) {
+    int32:r = 0i32;
+    pick (s) {
+        (Net.Connected) { r = 1i32; },
+        (Net.Disconnect) { r = 2i32; }
+    }
+    pass r;
+};
+
+// A GUARDED ARM COVERS NOTHING. `where (…)` makes it conditional, so it runs only
+// sometimes and proves nothing about the variant it names — and without this rule
+// the guard becomes a second way to elide an arm, which is the door D-061 closed
+// by removing `(!)`.
+// expect-error: NITPICK-PICK-001
+func:guarded_arm_covers_nothing = int32(Net:s, bool:c) {
+    int32:r = 0i32;
+    pick (s) {
+        (Net.Connected) where (c) { r = 1i32; },
+        (Net.Disconnect) { r = 2i32; },
+        (Net.Retrying) { r = 3i32; },
+        (Net.Failed) { r = 4i32; }
+    }
+    pass r;
+};
+
+// --- `bool` has two values --------------------------------------------------------
+
+// expect-error: NITPICK-PICK-001
+func:bool_missing_false = int32(bool:b) {
+    int32:r = 0i32;
+    pick (b) {
+        (true) { r = 1i32; }
+    }
+    pass r;
+};
+
+// --- a type whose values cannot be listed ------------------------------------------
+//
+// ITS OWN CODE, because the fix differs. An enum with a variant missing needs an
+// arm; this needs a wildcard. A reader told "not exhaustive" about an `int32` goes
+// looking for the variant they forgot.
+// expect-error: NITPICK-PICK-003
+func:integer_needs_a_wildcard = int32(int32:n) {
+    int32:r = 0i32;
+    pick (n) {
+        (0i32) { r = 1i32; },
+        (1i32) { r = 2i32; }
+    }
+    pass r;
+};
+
+// --- the `tbb` ERR arm --------------------------------------------------------------
+
+// `(*)` MAY NOT STAND IN FOR IT. This `pick` is exhaustive in the ordinary sense —
+// the wildcard covers everything — and is still refused, which is the whole of
+// D-008 §5.1.
+// expect-error: NITPICK-PICK-002
+func:tbb_wildcard_does_not_absorb_err = int32(tbb32:t) {
+    int32:r = 0i32;
+    pick (t) {
+        (*) { r = 1i32; }
+    }
+    pass r;
+};
+
+// AND THE ARMS BELOW IT STILL NEED A WILDCARD, because a `tbb` has more values
+// than a `pick` can list. Two findings on one `pick`, and they are separate codes:
+// having `(*)` does not supply `ERR:`, and having `ERR:` does not cover the rest.
+// expect-error: NITPICK-PICK-002
+// expect-error: NITPICK-PICK-001
+func:tbb_bare = int32(tbb32:t) {
+    int32:r = 0i32;
+    pick (t) {
+        (0tbb32) { r = 1i32; }
+    }
+    pass r;
+};
+
+// --- arms nothing can reach ----------------------------------------------------------
+
+// expect-error: NITPICK-PICK-004
+func:arm_after_the_wildcard = int32(Net:s) {
+    int32:r = 0i32;
+    pick (s) {
+        (*) { r = 1i32; },
+        (Net.Failed) { r = 2i32; }
+    }
+    pass r;
+};
+
+// expect-error: NITPICK-PICK-004
+func:variant_matched_twice = int32(Net:s) {
+    int32:r = 0i32;
+    pick (s) {
+        (Net.Connected) { r = 1i32; },
+        (Net.Connected) { r = 2i32; },
+        (*) { r = 3i32; }
+    }
+    pass r;
+};

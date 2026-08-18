@@ -1,0 +1,654 @@
+// Exhaustiveness: a `pick` covers every case, and ERR is never swallowed.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.5.4.
+//
+// TWO RULES, AND THE SECOND IS WHY THE FIRST MATTERS.
+//
+//   * A `pick` must be exhaustive — every value covered, or `(*)` supplied.
+//   * A `tbb` selector ADDITIONALLY requires an explicit `ERR:` arm, and `(*)`
+//     may NOT absorb it (D-008 §5.1).
+//
+// The exception is the whole point of the rule rather than a wrinkle in it. ERR is
+// exactly the case a wildcard would swallow, and swallowing it is a tainted value
+// steering a branch — the one thing `tbb`'s sticky ERR exists to prevent. A `pick`
+// that handles "anything else" has, by writing four characters, decided that a
+// value the type says may be meaningless is fine to act on.
+//
+// `(!)` IS REMOVED (D-061) and the parser reports it by name. It let an arm be
+// ELIDED FROM EXHAUSTIVENESS, and the arm most likely to be elided was the ERR one
+// — asserting that a `tbb` cannot be tainted, which is the least safe assumption
+// the type admits. An arm the author believes cannot occur is an ordinary arm whose
+// body is `#unreachable()`: explicit, greppable, and it traps.
+//
+// A GUARDED ARM COVERS NOTHING. `where (…)` makes an arm conditional, so it runs
+// only sometimes and proves nothing about the case it names. Without that rule the
+// guard becomes a second way to elide an arm, which is the door D-061 just closed.
+
+use "../source_location.npk".*;
+use "../ast_kind.npk".*;
+use "../ast.npk".*;
+use "../intern.npk".*;
+use "../diagnostics.npk".*;
+use "../symbols.npk".*;
+use "../parse_expr.npk".*;
+use "../parse_stmt.npk".*;
+use "../parse_pick.npk".*;
+use "../parse_decl.npk".*;
+use "../types.npk".*;
+use "../expr_types.npk".*;
+use "analysis_codes.npk".*;
+
+pub func:EXHAUST_DEPTH = int32() { pass 256i32; };
+
+// How many variants a single message will name before it stops listing them. The
+// point of naming them is to save the reader from enumerating the type themselves;
+// past a handful the list stops being readable and the count is the useful part.
+pub func:EXHAUST_NAME_LIMIT = int32() { pass 6i32; };
+
+pub struct:Exhaust = {
+    Ast->:ast;
+    SymbolTable->:tab;
+    TypeTable->:types;
+    ExprTypes->:etypes;
+    InternTable->:interns;
+    DiagList->:diags;
+};
+
+pub func:exhaust_init = Exhaust(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
+                                ExprTypes->:etypes, InternTable->:interns,
+                                DiagList->:diags) {
+    Exhaust:x = Exhaust{ ast: ast, tab: tab, types: types, etypes: etypes,
+                         interns: interns, diags: diags };
+    pass x;
+};
+
+func:exhaust_err = NIL(Exhaust->:x, string:code, string:msg, Span:sp) {
+    drop diaglist_push(x.diags, raw diag_error(code, msg, sp));
+    pass NIL;
+};
+
+// --- what one arm covers -----------------------------------------------------
+//
+// AN ARM WITH A GUARD IS ASKED NOTHING ELSE. It covers nothing whatever its
+// pattern says, so the question stops here rather than being answered and then
+// discarded — which is the shape that lets a guard slip back into a coverage count
+// when somebody adds a case later.
+
+// THESE FOUR TAKE THE AST AND NOT THE CONTEXT, and that is load-bearing rather
+// than tidy. `pick_covers_all` below answers the same coverage question WITHOUT
+// reporting, for definite assignment to consume — and a helper that carried a
+// `DiagList` could report from inside it. Taking only what the question needs makes
+// the reporting-free path reporting-free BY CONSTRUCTION.
+func:arm_is_guarded = bool(StmtNode:arm) {
+    pass (!(raw expr_is_none(raw arm_guard(arm))));
+};
+
+func:arm_is_wildcard = bool(Ast->:ast, StmtNode:arm) {
+    if (raw arm_is_guarded(arm)) { pass false; }
+    PatId:p = raw arm_pattern(arm);
+    if (raw pat_is_none(p)) { pass false; }
+    PatNode:pn = relay ast_pat(ast, p);
+    pass (pn.kind == PatKind.PatWildcard);
+};
+
+// AN `ERR:` ARM, AND ONLY AN UNGUARDED ONE.
+//
+// The grammar gives `ERR:` no guard slot at all — `p_parse_arm` takes the pattern
+// and the block and nothing between them — so a guarded ERR arm cannot currently be
+// written. The check is here anyway, for the reason D-061 exists: the arm most
+// likely to be elided is this one, and a rule that depends on the grammar
+// continuing to forbid something is a rule that stops holding when the grammar
+// changes.
+func:arm_is_err = bool(Ast->:ast, StmtNode:arm) {
+    if (raw arm_is_guarded(arm)) { pass false; }
+    PatId:p = raw arm_pattern(arm);
+    if (raw pat_is_none(p)) { pass false; }
+    PatNode:pn = relay ast_pat(ast, p);
+    pass (pn.kind == PatKind.PatErrPattern);
+};
+
+// THE VARIANT AN ARM NAMES, as an intern index, or 0.
+//
+// `Net.Disconnect(reason)` is a path, and the LAST segment is the variant — the
+// ones before it name the enum. Reading the first segment instead would work for
+// `Net.Disconnect` and quietly break for a qualified `net.Net.Disconnect`.
+func:arm_variant = int32(Ast->:ast, StmtNode:arm) {
+    if (raw arm_is_guarded(arm)) { pass 0i32; }
+    PatId:p = raw arm_pattern(arm);
+    if (raw pat_is_none(p)) { pass 0i32; }
+    PatNode:pn = relay ast_pat(ast, p);
+    if (pn.kind != PatKind.PatEnumDestructure) { pass 0i32; }
+    int32:n = raw pat_enum_segment_count(ast, pn);
+    if (n <= 0i32) { pass 0i32; }
+    pass (raw pat_enum_segment(ast, pn, n - 1i32));
+};
+
+// The `bool` an arm matches: 1 for `true`, 2 for `false`, 0 for neither. Two
+// values and a wildcard are all a `bool` has, so this needs no table.
+func:arm_bool = int32(Ast->:ast, StmtNode:arm) {
+    if (raw arm_is_guarded(arm)) { pass 0i32; }
+    PatId:p = raw arm_pattern(arm);
+    if (raw pat_is_none(p)) { pass 0i32; }
+    PatNode:pn = relay ast_pat(ast, p);
+    if (pn.kind != PatKind.PatValue) { pass 0i32; }
+    ExprId:v = raw pat_value(pn);
+    if (raw expr_is_none(v)) { pass 0i32; }
+    ExprNode:vn = relay ast_expr(ast, v);
+    if (vn.kind != ExprKind.ExprBoolLiteral) { pass 0i32; }
+    if (vn.payload != 0i64) { pass 1i32; }
+    pass 2i32;
+};
+
+// --- one `pick` ---------------------------------------------------------------
+
+pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
+                          int32:count, Span:at) {
+    // AN ARM AFTER AN UNGUARDED `(*)` CANNOT RUN, whatever the selector's type is,
+    // so it is reported before the type is even asked about.
+    drop check_unreachable(x, start, count);
+
+    int32:ty = raw exprtypes_get(x.etypes, selector);
+    int32:kind = raw type_kind(x.types, ty);
+
+    bool:has_wild = false;
+    bool:has_err = false;
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
+        if (relay arm_is_wildcard(x.ast, arm)) { has_wild = true; }
+        if (relay arm_is_err(x.ast, arm))      { has_err = true; }
+        i = i + 1i32;
+    }
+
+    // A `tbb` SELECTOR, WHERE THE WILDCARD DOES NOT ABSORB EVERYTHING.
+    //
+    // The two halves are separate findings on purpose: a `pick` may have `(*)` and
+    // still be missing its `ERR:` arm, and reporting only "not exhaustive" would
+    // send the author to add the wildcard they already wrote.
+    if (kind == (raw TY_TBB())) {
+        if (!has_err) {
+            drop exhaust_err(x, raw PICK_NO_ERR_ARM(),
+                "a `tbb` selector needs an explicit `ERR:` arm, and `(*)` may not stand in for it: ERR is the case a wildcard would swallow, and acting on a tainted value is what the sticky ERR exists to prevent (D-008)",
+                at);
+        }
+        if (!has_wild) {
+            drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(),
+                "a `tbb` has more values than a `pick` can list, so the arms below `ERR:` need a `(*)` to cover the rest",
+                at);
+        }
+        pass NIL;
+    }
+
+    // EVERYTHING ELSE: a wildcard covers whatever the arms did not.
+    if (has_wild) { pass NIL; }
+
+    if (kind == (raw TY_ENUM())) {
+        drop check_enum_coverage(x, ty, start, count, at);
+        pass NIL;
+    }
+    if (kind == (raw TY_BOOL())) {
+        drop check_bool_coverage(x, start, count, at);
+        pass NIL;
+    }
+
+    // A TYPE WHOSE VALUES CANNOT BE LISTED. Saying that plainly beats reporting the
+    // same "not exhaustive" as an enum with one variant missing, because the fix
+    // differs: one needs an arm, the other needs a wildcard, and a reader told
+    // "not exhaustive" about an `int32` goes looking for the variant they forgot.
+    if (raw type_is_invalid(x.types, ty)) { pass NIL; }
+    drop exhaust_err(x, raw PICK_NEEDS_WILDCARD(),
+        "this selector's type has more values than a `pick` can list, so it needs a `(*)` arm to be exhaustive",
+        at);
+    pass NIL;
+};
+
+// --- enum coverage ------------------------------------------------------------
+
+func:check_enum_coverage = NIL(Exhaust->:x, int32:ty, int32:start,
+                               int32:count, Span:at) {
+    int32:decl = raw type_decl_of(x.types, ty);
+    if (decl == 0i32) { pass NIL; }
+    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: decl });
+    int32:members = raw item_member_count(x.ast, d);
+
+    // WHICH VARIANTS ARE MISSING, NAMED. "This `pick` is not exhaustive" makes the
+    // reader enumerate the type themselves, which is the one thing the compiler
+    // already did.
+    string:names = "";
+    int32:missing = 0i32;
+    int32:named = 0i32;
+
+    int32:m = 0i32;
+    while (m < members) {
+        DeclNode:v = relay ast_decl(x.ast, raw item_member(x.ast, d, m));
+        if (v.kind == DeclKind.DeclEnumVariant) {
+            int32:vname = raw decl_name(v);
+            if (!(relay variant_is_covered(x.ast, vname, start, count))) {
+                missing = missing + 1i32;
+                if (named < (raw EXHAUST_NAME_LIMIT())) {
+                    if (named > 0i32) { names = relay string_concat(names, ", "); }
+                    names = relay string_concat(names, relay intern_get(x.interns, vname));
+                    named = named + 1i32;
+                }
+            }
+        }
+        m = m + 1i32;
+    }
+
+    if (missing == 0i32) { pass NIL; }
+
+    string:m1 = relay string_concat("this `pick` does not cover ", names);
+    if (missing > named) {
+        m1 = relay string_concat(m1, " and ");
+        m1 = relay string_concat(m1, raw int_to_string((missing - named) => int64));
+        m1 = relay string_concat(m1, " more");
+    }
+    string:m2 = relay string_concat(m1, "; add an arm for each, or `(*)` for the rest");
+    drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(), m2, at);
+    pass NIL;
+};
+
+func:variant_is_covered = bool(Ast->:ast, int32:vname, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(ast, relay pick_arm_at(ast, start, i));
+        if ((relay arm_variant(ast, arm)) == vname) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// --- bool coverage ------------------------------------------------------------
+
+func:check_bool_coverage = NIL(Exhaust->:x, int32:start, int32:count, Span:at) {
+    bool:t = false;
+    bool:f = false;
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
+        int32:which = relay arm_bool(x.ast, arm);
+        if (which == 1i32) { t = true; }
+        if (which == 2i32) { f = true; }
+        i = i + 1i32;
+    }
+    if (t) {
+        if (f) { pass NIL; }
+        drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(),
+            "this `pick` does not cover `false`; add an arm for it, or `(*)`", at);
+        pass NIL;
+    }
+    if (f) {
+        drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(),
+            "this `pick` does not cover `true`; add an arm for it, or `(*)`", at);
+        pass NIL;
+    }
+    drop exhaust_err(x, raw PICK_NOT_EXHAUSTIVE(),
+        "this `pick` covers neither `true` nor `false`; a `bool` has two values and both need an arm, or `(*)`",
+        at);
+    pass NIL;
+};
+
+// --- arms that cannot run -----------------------------------------------------
+//
+// TWO WAYS AN ARM IS DEAD, and they are one code because they are one mistake:
+// something earlier already matched everything this arm could.
+
+func:check_unreachable = NIL(Exhaust->:x, int32:start, int32:count) {
+    bool:sealed = false;
+    int32:i = 0i32;
+    while (i < count) {
+        StmtId:aid = relay pick_arm_at(x.ast, start, i);
+        StmtNode:arm = relay ast_stmt(x.ast, aid);
+
+        if (sealed) {
+            drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
+                "an earlier `(*)` already matches everything, so this arm can never run",
+                arm.span);
+        } else {
+            int32:v = relay arm_variant(x.ast, arm);
+            if (v != 0i32) {
+                if (relay variant_matched_before(x, v, start, i)) {
+                    drop exhaust_err(x, raw PICK_UNREACHABLE_ARM(),
+                        "an earlier arm already matches this variant, so this one can never run",
+                        arm.span);
+                }
+            }
+        }
+
+        if (relay arm_is_wildcard(x.ast, arm)) { sealed = true; }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:variant_matched_before = bool(Exhaust->:x, int32:vname, int32:start,
+                                   int32:upto) {
+    int32:i = 0i32;
+    while (i < upto) {
+        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
+        if ((relay arm_variant(x.ast, arm)) == vname) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// --- the walk -----------------------------------------------------------------
+//
+// BOTH `pick` FORMS, and they are the same question. A statement-`pick` and an
+// expression-`pick` differ in whether their arms `give` a value (D-059), not in
+// what they have to cover — so one checker, reached from two node kinds, rather
+// than two that have to be kept agreeing about ERR.
+
+pub func:exhaust_module = NIL(Exhaust->:x, DeclId:mod_id, int32:scope) {
+    DeclNode:m = relay ast_decl(x.ast, mod_id);
+    int32:n = raw item_member_count(x.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        drop exhaust_decl(x, raw item_member(x.ast, m, i), scope);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:exhaust_decl = NIL(Exhaust->:x, DeclId:id, int32:scope) {
+    DeclNode:d = relay ast_decl(x.ast, id);
+
+    if (d.kind == DeclKind.DeclFunctionDecl) {
+        drop exhaust_stmt(x, raw fn_body(x.ast, d), raw EXHAUST_DEPTH());
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclModuleDecl) {
+        int32:inner = raw nested_module_scope(x.tab, d, scope);
+        if (inner == 0i32) { pass NIL; }
+        drop exhaust_module(x, id, inner);
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclImplDecl) {
+        int32:mn = relay impl_member_count(x.ast, d);
+        int32:j = 0i32;
+        while (j < mn) {
+            drop exhaust_decl(x, relay impl_member(x.ast, d, j), scope);
+            j = j + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclTraitDecl) {
+        int32:tn = raw item_member_count(x.ast, d);
+        int32:k = 0i32;
+        while (k < tn) {
+            drop exhaust_decl(x, raw item_member(x.ast, d, k), scope);
+            k = k + 1i32;
+        }
+        pass NIL;
+    }
+    if (d.kind == DeclKind.DeclGlobalDecl) {
+        drop exhaust_expr(x, raw global_init(d), raw EXHAUST_DEPTH());
+        pass NIL;
+    }
+    pass NIL;
+};
+
+func:exhaust_stmt = NIL(Exhaust->:x, StmtId:id, int32:depth) {
+    if (raw stmt_is_none(id)) { pass NIL; }
+    StmtNode:s = relay ast_stmt(x.ast, id);
+    if (depth <= 0i32) {
+        drop exhaust_err(x, raw PICK_INTERNAL(),
+            "this statement nests deeper than the exhaustiveness walk will follow, so a `pick` inside it cannot be checked",
+            s.span);
+        pass NIL;
+    }
+    int32:d = depth - 1i32;
+
+    if (s.kind == StmtKind.StmtPickStmt) {
+        drop check_pick(x, raw pick_selector(s), raw pick_arm_start(s),
+                        raw pick_arm_count(s), s.span);
+        drop exhaust_expr(x, raw pick_selector(s), d);
+        drop exhaust_arms(x, raw pick_arm_start(s), raw pick_arm_count(s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop exhaust_expr(x, raw arm_guard(s), d);
+        drop exhaust_stmt(x, raw arm_body(s), d);
+        pass NIL;
+    }
+
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:i = 0i32;
+        while (i < (raw stmt_list_count(s))) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
+            drop exhaust_stmt(x, sub, d);
+            i = i + 1i32;
+        }
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        drop exhaust_expr(x, raw stmt_cond(s), d);
+        drop exhaust_stmt(x, raw stmt_then(s), d);
+        drop exhaust_stmt(x, raw stmt_else(s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop exhaust_expr(x, raw stmt_cond(s), d);
+        drop exhaust_stmt(x, relay stmt_body(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop exhaust_expr(x, raw stmt_cond(s), d);
+        drop exhaust_stmt(x, relay stmt_when_body(x.ast, s), d);
+        drop exhaust_stmt(x, relay stmt_when_then(x.ast, s), d);
+        drop exhaust_stmt(x, relay stmt_when_end(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) { drop exhaust_counted(x, s, d); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt) { drop exhaust_counted(x, s, d); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop exhaust_expr(x, relay stmt_for_iter(x.ast, s), d);
+        drop exhaust_stmt(x, relay stmt_for_body(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        StmtId:body = StmtId{ index: s.a };
+        drop exhaust_stmt(x, body, d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtVarDeclStmt) {
+        drop exhaust_expr(x, relay stmt_decl_init(x.ast, s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtAssignStmt) {
+        drop exhaust_expr(x, raw stmt_target(s), d);
+        drop exhaust_expr(x, raw stmt_assigned(s), d);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtPassStmt)   { drop exhaust_expr(x, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt)   { drop exhaust_expr(x, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt) { drop exhaust_expr(x, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt)   { drop exhaust_expr(x, raw stmt_expr(s), d); pass NIL; }
+
+    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+
+    if (raw stmt_carries_expr(s.kind)) {
+        drop exhaust_expr(x, raw stmt_expr(s), d);
+        pass NIL;
+    }
+
+    drop exhaust_err(x, raw PICK_INTERNAL(),
+        "this statement kind has no entry in the exhaustiveness walk, so a `pick` inside it cannot be checked",
+        s.span);
+    pass NIL;
+};
+
+func:exhaust_arms = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        drop exhaust_stmt(x, relay pick_arm_at(x.ast, start, i), depth);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:exhaust_counted = NIL(Exhaust->:x, StmtNode:s, int32:depth) {
+    int32:n = raw stmt_counted_argc(x.ast, s);
+    int32:i = 0i32;
+    while (i < n) {
+        drop exhaust_expr(x, relay stmt_counted_arg(x.ast, s, i), depth);
+        i = i + 1i32;
+    }
+    drop exhaust_stmt(x, raw stmt_counted_body(s), depth);
+    pass NIL;
+};
+
+func:exhaust_expr = NIL(Exhaust->:x, ExprId:id, int32:depth) {
+    if (raw expr_is_none(id)) { pass NIL; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    if (depth <= 0i32) {
+        drop exhaust_err(x, raw PICK_INTERNAL(),
+            "this expression nests deeper than the exhaustiveness walk will follow, so a `pick` inside it cannot be checked",
+            n.span);
+        pass NIL;
+    }
+    int32:d = depth - 1i32;
+
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop check_pick(x, raw pickx_selector(n), raw pickx_arm_start(n),
+                        raw pickx_arm_count(n), n.span);
+        drop exhaust_expr(x, raw pickx_selector(n), d);
+        drop exhaust_arms(x, raw pickx_arm_start(n), raw pickx_arm_count(n), d);
+        pass NIL;
+    }
+
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) {
+            ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
+            drop exhaust_expr(x, v, d);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop exhaust_expr(x, raw expr_callee(n), d);
+        int32:gc = raw expr_generic_count(n);
+        drop exhaust_window(x, (raw expr_list_start(n)) + gc,
+                            (raw expr_list_count(n)) - gc, d);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        int32:bg = raw expr_generic_count(n);
+        drop exhaust_window(x, (raw expr_list_start(n)) + bg,
+                            (raw expr_list_count(n)) - bg, d);
+        pass NIL;
+    }
+
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop exhaust_window(x, raw expr_list_start(n), raw expr_list_count(n), d);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop exhaust_err(x, raw PICK_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so its slots cannot be walked",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop exhaust_err(x, raw PICK_INTERNAL(),
+            "this expression kind has a custom shape the exhaustiveness walk has no case for, so a `pick` inside it cannot be checked",
+            n.span);
+        pass NIL;
+    }
+
+    drop exhaust_expr(x, raw expr_lhs(n), d);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop exhaust_window(x, raw expr_list_start(n), raw expr_list_count(n), d);
+        pass NIL;
+    }
+    drop exhaust_expr(x, raw expr_rhs(n), d);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop exhaust_expr(x, raw expr_third(n), d);
+    pass NIL;
+};
+
+func:exhaust_window = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        drop exhaust_expr(x, e, depth);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- the same question, asked without reporting -------------------------------
+//
+// DEFINITE ASSIGNMENT NEEDS TO KNOW WHETHER SOME ARM ALWAYS RUNS. "A binding
+// assigned on every arm of an exhaustive `pick` is assigned after it" is 0.5.2's
+// rule, and until this subcycle existed it could only recognise a wildcard — so a
+// `pick` covering every variant of an enum under-approximated and refused correct
+// code. 0.5.2 recorded that as a debt; this is it being paid.
+//
+// IT TAKES NO `DiagList`, so it cannot report. That is the point of the parameter
+// list rather than an accident of it: an analysis asking a question of another
+// analysis must not be able to make it speak, or the same `pick` gets reported
+// twice for reasons a reader cannot tell apart.
+//
+// A WILDCARD SATISFIES THIS EVEN FOR A `tbb`, which is not a contradiction with
+// D-008. The question here is whether an arm runs, and for a tainted selector the
+// wildcard does run — it is refused by `check_pick` for acting on ERR, which is a
+// different objection with its own code. Conflating them would make a missing
+// `ERR:` arm silently look like a definite-assignment problem.
+pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes,
+                                ExprId:selector, int32:start, int32:count) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(ast, relay pick_arm_at(ast, start, i));
+        if (relay arm_is_wildcard(ast, arm)) { pass true; }
+        i = i + 1i32;
+    }
+
+    int32:ty = raw exprtypes_get(etypes, selector);
+    int32:kind = raw type_kind(types, ty);
+
+    if (kind == (raw TY_ENUM())) {
+        int32:decl = raw type_decl_of(types, ty);
+        if (decl == 0i32) { pass false; }
+        DeclNode:d = relay ast_decl(ast, DeclId{ index: decl });
+        int32:members = raw item_member_count(ast, d);
+        int32:m = 0i32;
+        while (m < members) {
+            DeclNode:v = relay ast_decl(ast, raw item_member(ast, d, m));
+            if (v.kind == DeclKind.DeclEnumVariant) {
+                if (!(relay variant_is_covered(ast, raw decl_name(v), start, count))) {
+                    pass false;
+                }
+            }
+            m = m + 1i32;
+        }
+        pass true;
+    }
+
+    if (kind == (raw TY_BOOL())) {
+        bool:t = false;
+        bool:f = false;
+        int32:j = 0i32;
+        while (j < count) {
+            StmtNode:arm2 = relay ast_stmt(ast, relay pick_arm_at(ast, start, j));
+            int32:which = relay arm_bool(ast, arm2);
+            if (which == 1i32) { t = true; }
+            if (which == 2i32) { f = true; }
+            j = j + 1i32;
+        }
+        if (t) { pass f; }
+        pass false;
+    }
+
+    // ANYTHING ELSE CANNOT BE COVERED BY LISTING, so without a wildcard it is not
+    // exhaustive — which is the same answer `check_pick` gives, reached the same
+    // way.
+    pass false;
+};

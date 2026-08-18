@@ -48,7 +48,7 @@ discovered one subcycle at a time:
 | `nodrop` qualifier | ~~nothing~~ **done in 0.5.3** — it requires `wild` or `wildx` | 0.5.3 |
 | `$$i` / `$$m` borrow operators | ~~typed as plain pointers~~ **done in 0.5.1** | 0.5.1 |
 | `move(place)` | ~~typed as its operand~~ **done in 0.5.3** | 0.5.3 |
-| `pick` patterns | typed, never checked for coverage | 0.5.4 |
+| `pick` patterns | ~~typed, never checked for coverage~~ **done in 0.5.4** | 0.5.4 |
 | `defer` bodies | ~~walked, never ordered against exits~~ **done in 0.5.2** — checked where registered | 0.5.2 |
 | `Result.value` after `fail` | untainted | 0.5.5 |
 
@@ -94,7 +94,7 @@ naming the wrong thing is how the gap arose in the first place.
 | ~~**0.5.1**~~ | ~~Second-class borrows and escape (D-004)~~ — **DONE**. All five rules, marked to a fixpoint, with the two caller-side rules that make "passing down needs no annotation" hold. D-114 through D-117 settled. |
 | ~~**0.5.2**~~ | ~~Definite assignment, `fixed`, and `defer` ordering~~ — **DONE**. Two sets, merging in opposite directions; `$$m` fills where `$$i` reads. D-118 settled. |
 | ~~**0.5.3**~~ | ~~`move`, moved-from bindings, and the manual-memory qualifiers (D-065)~~ — **DONE**. A free is a move; four sets merging in three directions. D-119 settled. |
-| **0.5.4** | Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1) |
+| ~~**0.5.4**~~ | ~~Exhaustiveness — `pick` coverage, and the `tbb` ERR arm (D-008 §5.1)~~ — **DONE**. Coverage answered once and consumed twice; 0.5.2's debt paid. D-120 settled. |
 | **0.5.5** | `unknown` taint on `Result.value` (D-007) |
 | **0.5.6** | Lock levels — the call-graph acquisition analysis (D-056) |
 | **0.5.7** | Diagnostics, the suites, and closing the cycle |

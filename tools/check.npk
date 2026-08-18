@@ -76,6 +76,7 @@ use "../src/frontend/type_stmt.npk".*;
 use "../src/frontend/analysis/analysis_codes.npk".*;
 use "../src/frontend/analysis/escape.npk".*;
 use "../src/frontend/analysis/bindings.npk".*;
+use "../src/frontend/analysis/exhaust.npk".*;
 
 func:emit_line = NIL(Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
@@ -239,13 +240,24 @@ func:main = int32(cstring[]:argv) {
     // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
     // with an intersection merge, and a loop body that may run zero times is both
     // the sound answer and a fixed point on the first pass.
-    Assign:asg = raw assign_init(@g.ast, @g.tab, @it, @diags);
+    Assign:asg = raw assign_init(@g.ast, @g.tab, @it, @types, @ets, @diags);
     int32:y2 = 0i32;
     while (y2 < (raw graph_count(@g))) {
         ModuleEntry:e6 = raw graph_at(@g, y2);
         DeclId:mid6 = DeclId{ index: e6.root };
         drop assign_module(@asg, mid6, e6.scope);
         y2 = y2 + 1i32;
+    }
+
+    // EXHAUSTIVENESS (D-008, D-059, D-061, 0.5.4). Reads the selector's recorded
+    // type, so it runs after typing like every other analysis in this cycle.
+    Exhaust:exh = raw exhaust_init(@g.ast, @g.tab, @types, @ets, @it, @diags);
+    int32:z2 = 0i32;
+    while (z2 < (raw graph_count(@g))) {
+        ModuleEntry:e7 = raw graph_at(@g, z2);
+        DeclId:mid7 = DeclId{ index: e7.root };
+        drop exhaust_module(@exh, mid7, e7.scope);
+        z2 = z2 + 1i32;
     }
 
     // EVERY TYPE LAID OUT, once the whole program is known. The checker asks for

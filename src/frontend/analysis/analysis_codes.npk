@@ -125,3 +125,32 @@ pub func:MOVE_USE_AFTER_FREE = string() { pass "NITPICK-MOVE-002"; };
 // correct rather than a leak; on anything else it suppresses nothing and says
 // something untrue about the binding it is written on.
 pub func:MOVE_NODROP_MANAGED = string() { pass "NITPICK-MOVE-003"; };
+
+// --- exhaustiveness (0.5.4) ----------------------------------------------------
+//
+// A `pick` covers every case, and `(*)` may not absorb ERR (D-008 §5.1).
+
+// A case the arms do not cover. The message NAMES the missing variants, because
+// "this `pick` is not exhaustive" makes the reader enumerate the type themselves —
+// the one thing the compiler already did.
+pub func:PICK_NOT_EXHAUSTIVE = string()  { pass "NITPICK-PICK-001"; };
+
+// A `tbb` selector with no explicit `ERR:` arm. ITS OWN CODE rather than sharing
+// with the above: a `pick` can have `(*)` and still be missing this, and reporting
+// "not exhaustive" would send the author to add the wildcard they already wrote.
+pub func:PICK_NO_ERR_ARM = string()      { pass "NITPICK-PICK-002"; };
+
+// A selector whose values cannot be listed — an integer, a float, a `char`. ITS
+// OWN CODE because the fix differs: an enum with a variant missing needs an arm,
+// and this needs a wildcard. A reader told "not exhaustive" about an `int32` goes
+// looking for the variant they forgot.
+pub func:PICK_NEEDS_WILDCARD = string()  { pass "NITPICK-PICK-003"; };
+
+// An arm nothing can reach: after an unguarded `(*)`, or naming a variant an
+// earlier arm already matched. One code for both, because it is one mistake —
+// something earlier already matches everything this arm could.
+pub func:PICK_UNREACHABLE_ARM = string() { pass "NITPICK-PICK-004"; };
+
+// A DEFECT IN THE COMPILER: a node kind the walk has no entry for, so it cannot
+// promise it found every `pick`.
+pub func:PICK_INTERNAL = string()        { pass "NITPICK-PICK-005"; };

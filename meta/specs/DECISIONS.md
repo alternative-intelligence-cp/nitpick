@@ -8539,3 +8539,81 @@ analysis knows two builtin names and nothing else about names.**
 **D-065's own example does not compile.** It is written with a variable named
 `buffer`, and `buffer` is a keyword. The test uses a valid spelling and says why.
 
+
+---
+
+## D-120 — Coverage is one fact, answered once, and a wildcard never absorbs ERR
+
+**Settled in cycle 0.5.4**, implementing D-008 §5.1, D-059 and D-061.
+
+### The exception is the rule's reason for existing
+
+`pick` must be exhaustive — ordinary enough. **A `tbb` selector additionally
+requires an explicit `ERR:` arm, and `(*)` may not stand in for it**, and that is
+the part carrying the safety property.
+
+ERR is precisely the case a wildcard swallows. A `pick` that handles "anything
+else" has, by writing four characters, decided that a value the type says may be
+meaningless is fine to act on — a tainted value steering a branch, which is what
+`tbb`'s sticky ERR exists to prevent.
+
+So the two are **separate diagnostic codes**, not one. A `pick` may have `(*)` and
+still be missing its `ERR:` arm; reporting that as "not exhaustive" would send the
+author to add the wildcard they already wrote. And a `tbb` `pick` with only `ERR:`
+gets both findings, because neither substitutes for the other.
+
+### A guarded arm covers nothing
+
+`where (…)` makes an arm conditional, so it runs only sometimes and proves nothing
+about the case it names. Without this, **the guard becomes a second way to elide an
+arm** — the door D-061 closed by removing `(!)`, reopened with different syntax.
+
+The converse matters too and is tested: a guarded arm sitting beside an unguarded
+one for the same variant is fine. **The rule is that a guard proves nothing, not
+that it poisons the case.**
+
+A guarded `ERR:` arm **cannot currently be written** — `p_parse_arm` gives `ERR:`
+no guard slot. The check exists anyway, for the reason D-061 exists: the arm most
+likely to be elided is that one, and a rule that depends on the grammar continuing
+to forbid something stops holding when the grammar changes.
+
+### Three codes where one would do, and why
+
+| Situation | Fix the reader needs |
+|---|---|
+| an enum variant or a `bool` value uncovered | **add an arm** — and the message names which |
+| a selector whose values cannot be listed | **add `(*)`** |
+| a `tbb` with no `ERR:` arm | **add `ERR:`**, and `(*)` will not do |
+
+A reader told "not exhaustive" about an `int32` goes looking for the variant they
+forgot. The fixes differ, so the codes differ.
+
+**The message names the missing cases.** "This `pick` is not exhaustive" makes the
+reader enumerate the type themselves, which is the one thing the compiler already
+did. Past a handful of names the list stops being readable, so it names six and
+then counts the rest.
+
+### Coverage is answered once and consumed twice
+
+0.5.2's definite assignment needs to know whether some arm always runs — "a binding
+assigned on every arm of an exhaustive `pick` is assigned after it". Until this
+subcycle it could only recognise a wildcard, so a `pick` covering every variant of
+an enum **under-approximated and refused correct code**. That was recorded as a
+debt owed to 0.5.4, and it is paid by asking rather than re-deriving.
+
+**The predicate takes no `DiagList` and therefore cannot report.** That is the
+point of its parameter list rather than an accident of it: two analyses looking at
+one `pick` must not both be able to speak about it, or one construct produces two
+findings a reader cannot tell apart. The arm classifiers take an `Ast` and nothing
+else for the same reason — the reporting-free path is reporting-free **by
+construction**.
+
+Where both *should* speak, they do. A partial `pick` draws `ASSIGN-001` at the read
+and `PICK-001` at the `pick`, each naming its own objection.
+
+**A wildcard satisfies the assignment question even for a `tbb`**, and that is not
+a contradiction with D-008. The question there is whether an arm runs, and the
+wildcard does run; it is refused for *acting on ERR*, which is a different
+objection with its own code. Conflating them would make a missing `ERR:` arm look
+like a definite-assignment problem.
+

@@ -63,6 +63,7 @@ use "../types.npk".*;
 use "../expr_types.npk".*;
 use "../type_codes.npk".*;
 use "analysis_codes.npk".*;
+use "exhaust.npk".*;
 
 pub func:ASSIGN_DEPTH = int32() { pass 256i32; };
 
@@ -101,6 +102,13 @@ pub struct:Assign = {
     Ast->:ast;
     SymbolTable->:tab;
     InternTable->:interns;
+
+    // WHAT A `pick` COVERS is 0.5.4's question, and these are what it takes to
+    // ask it. Carried here rather than re-derived, so that "is this `pick`
+    // exhaustive" has one answer in this compiler and not two.
+    TypeTable->:types;
+    ExprTypes->:etypes;
+
     DiagList->:diags;
 
     // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
@@ -109,9 +117,10 @@ pub struct:Assign = {
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
-                              InternTable->:interns, DiagList->:diags) {
-    Assign:x = Assign{ ast: ast, tab: tab, interns: interns, diags: diags,
-                       quiet: false };
+                              InternTable->:interns, TypeTable->:types,
+                              ExprTypes->:etypes, DiagList->:diags) {
+    Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
+                       etypes: etypes, diags: diags, quiet: false };
     pass x;
 };
 
@@ -679,27 +688,18 @@ func:state_take_must = NIL(AssignState:dst, AssignState:src) {
 // the rule, and the qualifier does all the work: a `pick` that might match nothing
 // is a path on which no arm ran, and that path assigns nothing.
 //
-// EXHAUSTIVENESS IS ANSWERED CONSERVATIVELY HERE — a wildcard arm, and nothing
-// else. A `pick` over every variant of an enum is exhaustive too, and proving that
-// is 0.5.4's whole subject; until it exists this analysis under-approximates,
-// which costs a refusal on correct code and never the other way round. When 0.5.4
-// lands, this is the caller that should start asking it instead.
-func:pick_is_total = bool(Assign->:x, int32:start, int32:count) {
-    int32:i = 0i32;
-    while (i < count) {
-        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
-        PatId:p = raw arm_pattern(arm);
-        if (!(raw pat_is_none(p))) {
-            PatNode:pn = relay ast_pat(x.ast, p);
-            if (pn.kind == PatKind.PatWildcard) {
-                // A GUARD MAKES AN ARM CONDITIONAL AGAIN. `(*) if cond` matches
-                // only sometimes, so a wildcard carrying one proves nothing.
-                if (raw expr_is_none(raw arm_guard(arm))) { pass true; }
-            }
-        }
-        i = i + 1i32;
-    }
-    pass false;
+// EXHAUSTIVENESS IS 0.5.4's QUESTION, AND IT IS ASKED RATHER THAN RE-DERIVED.
+//
+// This used to recognise a wildcard arm and nothing else, because nothing could
+// answer better yet — so a `pick` covering every variant of an enum
+// under-approximated and refused correct code. 0.5.2 wrote that down as a debt
+// owed to 0.5.4, and this is it being paid.
+//
+// `pick_covers_all` takes no `DiagList` and therefore cannot report. Two analyses
+// looking at one `pick` must not both be able to speak about it, or the same
+// construct produces two findings a reader cannot tell apart.
+func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count) {
+    pass (relay pick_covers_all(x.ast, x.types, x.etypes, selector, start, count));
 };
 
 func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
@@ -707,7 +707,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
 
     int32:start = raw pick_arm_start(s);
     int32:count = raw pick_arm_count(s);
-    bool:total = relay pick_is_total(x, start, count);
+    bool:total = relay pick_is_total(x, raw pick_selector(s), start, count);
 
     AssignState:acc = raw state_new(st.count);
     bool:seen = false;
