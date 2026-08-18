@@ -1,0 +1,166 @@
+// A borrow chain longer than the marking fixpoint will follow (cycle 0.5.7).
+//
+// WHICH BINDINGS HOLD A BORROW IS DATAFLOW, and D-116 settled that it is computed
+// by marking to a fixpoint rather than in one pass. The rounds are bounded, because
+// an unbounded loop in a checker is not a checker — and what happens at the bound
+// is the part that matters.
+//
+// IT REFUSES RATHER THAN REPORTING WHAT IT HAD. An analysis that quietly hands back
+// partial results is the under-reporting the fixpoint exists to prevent, arrived at
+// by a different road: the answer would look like "no escapes found" and mean "we
+// stopped counting".
+//
+// The chain below is written in REVERSE — each link is assigned from the one after
+// it, and only the last takes an actual borrow — so a round propagates exactly one
+// link and settling needs as many rounds as there are links.
+
+// expect-error: NITPICK-BORROW-010
+func:longer_than_the_rounds_allow = NIL() {
+    int32:x = 1i32;
+    int32->:p1 = NULL;
+    int32->:p2 = NULL;
+    int32->:p3 = NULL;
+    int32->:p4 = NULL;
+    int32->:p5 = NULL;
+    int32->:p6 = NULL;
+    int32->:p7 = NULL;
+    int32->:p8 = NULL;
+    int32->:p9 = NULL;
+    int32->:p10 = NULL;
+    int32->:p11 = NULL;
+    int32->:p12 = NULL;
+    int32->:p13 = NULL;
+    int32->:p14 = NULL;
+    int32->:p15 = NULL;
+    int32->:p16 = NULL;
+    int32->:p17 = NULL;
+    int32->:p18 = NULL;
+    int32->:p19 = NULL;
+    int32->:p20 = NULL;
+    int32->:p21 = NULL;
+    int32->:p22 = NULL;
+    int32->:p23 = NULL;
+    int32->:p24 = NULL;
+    int32->:p25 = NULL;
+    int32->:p26 = NULL;
+    int32->:p27 = NULL;
+    int32->:p28 = NULL;
+    int32->:p29 = NULL;
+    int32->:p30 = NULL;
+    int32->:p31 = NULL;
+    int32->:p32 = NULL;
+    int32->:p33 = NULL;
+    int32->:p34 = NULL;
+    int32->:p35 = NULL;
+    int32->:p36 = NULL;
+    int32->:p37 = NULL;
+    int32->:p38 = NULL;
+    int32->:p39 = NULL;
+    int32->:p40 = NULL;
+    int32->:p41 = NULL;
+    int32->:p42 = NULL;
+    int32->:p43 = NULL;
+    int32->:p44 = NULL;
+    int32->:p45 = NULL;
+    int32->:p46 = NULL;
+    int32->:p47 = NULL;
+    int32->:p48 = NULL;
+    int32->:p49 = NULL;
+    int32->:p50 = NULL;
+    int32->:p51 = NULL;
+    int32->:p52 = NULL;
+    int32->:p53 = NULL;
+    int32->:p54 = NULL;
+    int32->:p55 = NULL;
+    int32->:p56 = NULL;
+    int32->:p57 = NULL;
+    int32->:p58 = NULL;
+    int32->:p59 = NULL;
+    int32->:p60 = NULL;
+    int32->:p61 = NULL;
+    int32->:p62 = NULL;
+    int32->:p63 = NULL;
+    int32->:p64 = NULL;
+    int32->:p65 = NULL;
+    int32->:p66 = NULL;
+    int32->:p67 = NULL;
+    int32->:p68 = NULL;
+    int32->:p69 = NULL;
+    int32->:p70 = NULL;
+    int32->:p71 = NULL;
+    int32->:p72 = NULL;
+
+    p1 = p2;
+    p2 = p3;
+    p3 = p4;
+    p4 = p5;
+    p5 = p6;
+    p6 = p7;
+    p7 = p8;
+    p8 = p9;
+    p9 = p10;
+    p10 = p11;
+    p11 = p12;
+    p12 = p13;
+    p13 = p14;
+    p14 = p15;
+    p15 = p16;
+    p16 = p17;
+    p17 = p18;
+    p18 = p19;
+    p19 = p20;
+    p20 = p21;
+    p21 = p22;
+    p22 = p23;
+    p23 = p24;
+    p24 = p25;
+    p25 = p26;
+    p26 = p27;
+    p27 = p28;
+    p28 = p29;
+    p29 = p30;
+    p30 = p31;
+    p31 = p32;
+    p32 = p33;
+    p33 = p34;
+    p34 = p35;
+    p35 = p36;
+    p36 = p37;
+    p37 = p38;
+    p38 = p39;
+    p39 = p40;
+    p40 = p41;
+    p41 = p42;
+    p42 = p43;
+    p43 = p44;
+    p44 = p45;
+    p45 = p46;
+    p46 = p47;
+    p47 = p48;
+    p48 = p49;
+    p49 = p50;
+    p50 = p51;
+    p51 = p52;
+    p52 = p53;
+    p53 = p54;
+    p54 = p55;
+    p55 = p56;
+    p56 = p57;
+    p57 = p58;
+    p58 = p59;
+    p59 = p60;
+    p60 = p61;
+    p61 = p62;
+    p62 = p63;
+    p63 = p64;
+    p64 = p65;
+    p65 = p66;
+    p66 = p67;
+    p67 = p68;
+    p68 = p69;
+    p69 = p70;
+    p70 = p71;
+    p71 = p72;
+    p72 = @x;
+    pass NIL;
+};

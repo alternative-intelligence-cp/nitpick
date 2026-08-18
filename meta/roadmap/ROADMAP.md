@@ -61,8 +61,8 @@ is why the whole frontend precedes any backend work.
 | ~~**0.2**~~ | ~~**AST and parser**~~ — **DONE** (`done/0.2/`). `AST_REFERENCE.md` in full: 116 node kinds across six arrays, the 19-level precedence table, generics after the name, contracts, `pick` patterns, and a real parser that runs on real files. **Every node kind is reachable, and the harness re-checks that on every invocation** — the diff that proves it found sixteen defects across the cycle, none of which announced itself. |
 | ~~**0.3**~~ | ~~**Modules, symbols, visibility**~~ — **DONE** (`done/0.3/`). The frontend opens files, loads a module graph, and binds every name. Three passes whose ORDER is the architecture: collect every declaration, bind imports **to a fixed point**, then resolve bodies — each needing the previous finished for every module, which is what makes D-086's legal `use` cycles resolvable rather than something to break. `resolve_audit` proves the walk has no holes, and was verified by making it fail. |
 | ~~**0.4**~~ | ~~**Type system and checking**~~ — **DONE** (`done/0.4/`). `TYPE_REFERENCE.md` and `TRAITS_REFERENCE.md` in full: canonical interned types, `Result<T>` universal (D-013), casts, member access and UFCS, traits with coherence and object safety, and generics checked **at their definition** (D-064). `tools/check.npk` validates a whole program and emits nothing. **The largest cycle in Phase A, and the one where most of the work turned out to be repair** — see below. |
-| **0.5** | **Static analyses** — second-class borrows and escape, definite assignment, exhaustiveness, `move`, lock levels, `unknown` taint. **Planned in detail** (`0.5/`), eight subcycles. |
-| **0.6** | **Macros and comptime** — bounded expansion (D-057), `comptime` evaluation, derive |
+| ~~**0.5**~~ | ~~**Static analyses**~~ — **DONE** (`done/0.5/`). Second-class borrows and escape (D-004), definite assignment with `fixed`/`const` (D-010), `move` and use-after-free (D-065), `pick` exhaustiveness with the `tbb` ERR arm (D-008), the `unknown` taint (D-007), and lock levels (D-056). Eight subcycles, ten decisions, and **the cycle where an analysis's own bug was the recurring finding** — see below. |
+| **0.6** | **Macros and comptime** — bounded expansion (D-057), `comptime` evaluation, derive. **The last cycle of Phase A.** |
 
 At the end of Phase A the artifact is a **checker**: it validates `.npk` sources
 completely and emits nothing. **`tools/check.npk` is that artifact's shape today**
@@ -96,6 +96,47 @@ variable name.
 **Write each test from the specification's own example.** Three of 0.4.6's four
 defects survived because the thing meant to catch them tested a form the
 specification does not use.
+
+### What cycle 0.5 taught
+
+**The analyses' own bugs outnumbered the ones they found.** 0.4's lesson was that
+a construct which parses is not a construct that works; 0.5's is narrower and
+sharper:
+
+> **An analysis that is right on straight-line code and wrong after a merge passes
+> every test written the easy way.**
+
+That shape arrived four times. The borrow marking missed a binding assigned later
+in a loop body (D-116). Definite assignment shipped the same bug in the same
+week — *after* D-116 was written, and by the person who wrote it. The move
+analysis inherited the fix for free because it shared the walk. And the escape
+rules turned out to be defeated by one function call, which no amount of
+single-function testing would have shown (D-117).
+
+**Reading a decision does not inoculate you against it.** That is the most
+transferable thing this cycle produced, and it is why 0.5.7 ends in a hand-worked
+path-shape cross-product rather than a script: no checker can tell whether a merge
+was handled correctly, only whether it was reached.
+
+**Two rules were settled by checking them against this compiler.** The parameter
+qualifier that would have closed the escape hole would also have stopped the
+compiler compiling itself, because every context struct is built from pointer
+parameters and handed back (D-117). And ownership is marked by **contract, never by
+spelling** — the prototype decided it by matching `_free` suffixes, which gives
+ownership semantics to any function someone names `window_close` (D-119, D-122).
+
+**The acceptance suite is the half that was missing.** A rejection suite cannot
+tell a correct analysis from one that refuses everything, and these analyses fail
+closed by design — on fuel exhaustion, on an unclassified node, on anything
+undecidable — so over-refusal is the failure they are most likely to have. Four of
+the cycle's verifications are cases where breaking a rule refused *correct* code
+rather than losing a finding.
+
+**Five repairs to earlier cycles**, each dating to the cycle that had "finished"
+the construct: a nested `mod` invisible to the type checker and to impl collection,
+the resolver placing every nested module's members in the first one's scope,
+`extern` functions with no type at all, and nothing anywhere checking that `@`,
+`$$i`, `$$m` or `move` had an address to take.
 
 ## Phase B — the backend, grown rung by rung
 

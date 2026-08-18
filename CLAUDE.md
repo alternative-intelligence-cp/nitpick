@@ -2,25 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: Phase A, cycle 0.5 — the static analyses
+## Status: Phase A, cycle 0.5 done — the analyses are in
 
 The **specification set is complete** — `meta/specs/` holds twenty documents and
 `DECISIONS.md` records 122 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-**Cycles 0.0–0.4 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
-the module/symbol/visibility passes, and the type system. **Cycle 0.5 — the static
-analyses — is in progress**, through subcycle 0.5.6: second-class borrows and
-escape (D-004), definite assignment with `fixed` / `const` (D-010), `move` with
-use-after-free (D-065), `pick` exhaustiveness with the `tbb` ERR arm (D-008), and
-the `unknown` taint on `Result.value` (D-007), and lock levels (D-056).
-`src/frontend/` is ~49 `.npk` modules of real compiler, written in Nitpick, with
+**Cycles 0.0–0.5 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+the module/symbol/visibility passes, the type system, and the static analyses —
+second-class borrows and escape (D-004), definite assignment with `fixed`/`const`
+(D-010), `move` and use-after-free (D-065), `pick` exhaustiveness with the `tbb`
+ERR arm (D-008), the `unknown` taint on `Result.value` (D-007), and lock levels
+(D-056). **Cycle 0.6 — macros and comptime — is next, and closes Phase A.**
+`src/frontend/` is ~52 `.npk` modules of real compiler, written in Nitpick, with
 the analyses under `src/frontend/analysis/`.
 
 `tools/check.npk` runs the whole frontend over a real program — load, resolve,
-type-check, report — and exits 0 on a clean one. That is what Phase A's artifact
-is: a checker that validates completely and emits nothing.
+type-check, **analyse**, report — and exits 0 on a clean one. That is what Phase A's
+artifact is: a checker that validates completely and emits nothing.
+
+It refuses a program that returns a borrow, launders one through a call, reads an
+unassigned binding, writes a `fixed` binding twice, uses a moved-from binding,
+double-frees, takes the address of a temporary, leaves a `pick` arm uncovered, lets
+`(*)` swallow ERR, reads a tainted `Result.value`, or acquires a lock downward —
+each with its own code, its own span, and a case in `tests/analysis/rejection/`
+showing it refuse.
 
 ### Building and testing
 
@@ -92,8 +99,11 @@ src/          # THE COMPILER — Nitpick source only; nothing else belongs here
   driver/     #   manifest, module graph, subprocess invocation
 bootstrap/    # THROWAWAY seed + generator (D-085) — never in an artifact
 tools/        # check/resolve_check/parse_check — the real frontend, for the harness
-tests/        # conformance/ (subset 1 compiles), rejection/ (backend rejects),
-              #   modules/rejection/ (loader), types/rejection/ (type checker)
+tests/        # FOUR rejection suites, named by the stage that refuses:
+              #   modules/rejection/ (loader), types/rejection/ (type checker),
+              #   analysis/rejection/ (a static analysis), rejection/ (backend rung)
+              #   accept/ is ONE suite for all four — silence has no stage
+              #   conformance/ (subset 1 compiles and runs), frontend/, grammar/
 meta/specs/   # language specs — see below
 meta/roadmap/ # the plan; meta/roadmap/done/ archives completed cycles
 meta/LAYOUT.md# the tree, and why it departs from ../npkc-native

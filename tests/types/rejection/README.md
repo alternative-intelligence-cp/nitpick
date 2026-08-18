@@ -15,7 +15,7 @@ written about a later stage.
 | `tests/types/rejection/` | the **type checker** and the static analyses — this suite | yes, and a rule says no |
 | `tests/rejection/` | the **backend** — a correct program at a rung that cannot lower it yet (D-085) | yes, and it passes |
 
-**And this suite has a counterweight.** `tests/types/accept/` holds programs the
+**And this suite has a counterweight.** `tests/accept/` holds programs the
 frontend must accept in full silence, because no number of rejections can show
 that a rule fires *only* when it should — a checker that refused every program
 would pass every case here. That distinction became load-bearing with cycle 0.5's

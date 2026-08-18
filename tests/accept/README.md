@@ -1,4 +1,4 @@
-# `tests/types/accept/` — programs the frontend must accept
+# `tests/accept/` — programs the frontend must accept
 
 A file here loads, resolves, type-checks and passes every static analysis, and
 `tools/check.npk` says **nothing at all** about it. Any diagnostic is a failure,
@@ -10,9 +10,17 @@ The other three suites are all rejections:
 
 | Suite | Refused by |
 |---|---|
-| `tests/modules/rejection/` | the loader — it never reaches a checker |
-| `tests/types/rejection/` | the type checker and the static analyses |
-| `tests/rejection/` | the backend, at a rung it cannot lower yet (D-085) |
+| `tests/modules/rejection/` | the **loader** — it never reaches a checker |
+| `tests/types/rejection/` | the **type checker** |
+| `tests/analysis/rejection/` | a **static analysis**, on a program that type-checks |
+| `tests/rejection/` | the **backend**, at a rung it cannot lower yet (D-085) |
+
+**There is one acceptance suite and four rejection suites, and that asymmetry is
+deliberate.** A rejection names the stage that refused, and the stages have to stay
+distinguishable or a file that stopped early would satisfy a test written about a
+later one. Silence has no stage: a program the whole frontend accepts is accepted
+by every part of it, so splitting this directory four ways would be four
+directories asserting the same thing.
 
 **None of them can tell a correct frontend from one that refuses everything.** An
 escape analysis that answered "yes, that is a borrow" to every expression passes

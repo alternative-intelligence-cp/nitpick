@@ -626,6 +626,10 @@ def main(argv):
             # stage and passing for the wrong reason.
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "types", "**", "*.npk"),
                                         recursive=True))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "analysis", "**", "*.npk"),
+                                        recursive=True))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
+                                        recursive=True))
             n = 0
             for p in sorted(set(all_sources)) + grammar:
                 name = os.path.relpath(p, ROOT)
@@ -667,6 +671,24 @@ def main(argv):
                 n += 1
             print("  %-11s %2d type-rejection test(s)" % ("types", n))
 
+            # Whole programs that TYPE-CHECK and are refused by a STATIC ANALYSIS.
+            #
+            # A FOURTH SUITE FOR A FOURTH STAGE, and the split is the same argument
+            # the other three rest on: a file that stops earlier would satisfy a
+            # test written about a later stage. The analyses run only over a program
+            # the type checker accepted, so a case here that failed to type would
+            # never reach the rule it was written for.
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "analysis",
+                                                   "rejection", "**", "*.npk"),
+                                      recursive=True)):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d analysis-rejection test(s)" % ("analysis", n))
+
             # And whole programs that must be ACCEPTED, in full silence.
             #
             # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT
@@ -675,13 +697,18 @@ def main(argv):
             # analyses are deliberately conservative -- they fail closed on fuel
             # exhaustion, on an unclassified node, on anything undecidable -- so
             # over-refusal is the failure mode they are most likely to have.
+            #
+            # ONE SUITE, NOT ONE PER STAGE. Silence has no stage: a program the
+            # whole frontend accepts is accepted by every part of it, so splitting
+            # this the way the rejections are split would be four directories
+            # asserting the same thing.
             n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "types",
-                                                   "accept", "**", "*.npk"),
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "accept",
+                                                   "**", "*.npk"),
                                       recursive=True)):
                 failures += check_type_accept(tc, p, os.path.relpath(p, ROOT))
                 n += 1
-            print("  %-11s %2d type-acceptance test(s)" % ("accept", n))
+            print("  %-11s %2d acceptance test(s)" % ("accept", n))
 
     shutil.rmtree(tmp, ignore_errors=True)
 

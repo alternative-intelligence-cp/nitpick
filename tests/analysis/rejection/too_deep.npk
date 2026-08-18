@@ -1,0 +1,37 @@
+// A program too deeply nested for any analysis to follow (cycle 0.5.7).
+//
+// EVERY WALK IN THIS COMPILER THAT FOLLOWS PROGRAM STRUCTURE IS BOUNDED, because
+// the structure is a program's and a program can nest as deeply as somebody
+// writes. What matters is what happens AT the bound, and the answer has to be the
+// same for all of them: refuse.
+//
+// AN ANALYSIS THAT ANSWERS "NOTHING WRONG HERE" WHEN IT STOPPED LOOKING IS WORSE
+// THAN NO ANALYSIS, because the property was claimed and relied on. So the escape
+// checker answers "this may be a borrow", definite assignment answers "this may be
+// unassigned", and both say so in their own words rather than reporting one of the
+// rules — a reader who sees this has written something the checker cannot
+// classify, which is a different problem from having written a defect.
+//
+// THIS IS THE ONLY TEST IN THE SUITE THAT IS ABOUT THE COMPILER'S LIMITS RATHER
+// THAN THE LANGUAGE'S RULES. It is here because those limits are load-bearing: the
+// fail-closed direction is the whole reason a bound is safe to have.
+
+// FOUR ANALYSES REPORT, AND A FIFTH FINDING FOLLOWS FROM THE FIRST. The escape
+// checker's conservative answer at the bound is "this MAY be a borrow", so the
+// binding is marked as holding one and `pass x;` below is then reported as
+// returning it.
+//
+// That second finding is the fail-closed direction working rather than a cascade
+// to suppress. Silencing it would mean a program with one over-deep expression
+// quietly got fewer checks than one without — and the alternative reading, "we
+// could not classify this so we will assume it is fine", is the one thing a
+// borrow checker may never do. The `TOO_DEEP` finding above it says why.
+// expect-error: NITPICK-BORROW-007
+// expect-error: NITPICK-ASSIGN-003
+// expect-error: NITPICK-PICK-005
+// expect-error: NITPICK-LOCK-004
+// expect-error: NITPICK-BORROW-001
+func:deeper_than_the_walk_will_follow = int32() {
+    int32:x = 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32 + 1i32;
+    pass x;
+};
