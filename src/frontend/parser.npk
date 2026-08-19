@@ -238,6 +238,55 @@ pub func:p_can_start_item = bool(Parser->:p) {
     pass false;
 };
 
+// --- memory qualifiers --------------------------------------------------------
+//
+// The bits, and the one loop that reads them. They live HERE rather than beside
+// the statement parser that first needed them, because 0.7.3 gave a struct field,
+// a parameter and a cast target the same qualifier -- and `parse_expr.npk` cannot
+// import `parse_stmt.npk`, which imports IT. The shared rule has to sit below
+// both, which is what this module is.
+//
+// A QUALIFIER IS NOT PART OF THE TYPE (AST_REFERENCE section 4), which is why the
+// type parser refuses to consume one: a type that swallowed `wild` would drop it
+// on the floor. It belongs to whatever is being declared, or cast to.
+
+pub func:QUAL_STACK = int32()  { pass 1i32; };
+pub func:QUAL_WILD = int32()   { pass 2i32; };
+pub func:QUAL_WILDX = int32()  { pass 4i32; };
+pub func:QUAL_CONST = int32()  { pass 8i32; };
+pub func:QUAL_FIXED = int32()  { pass 16i32; };
+pub func:QUAL_NODROP = int32() { pass 32i32; };
+
+pub func:p_qualifier_bit = int32(TokenKind:k) {
+    if (k == TokenKind.KwStack)  { pass (raw QUAL_STACK()); }
+    if (k == TokenKind.KwWild)   { pass (raw QUAL_WILD()); }
+    if (k == TokenKind.KwWildx)  { pass (raw QUAL_WILDX()); }
+    if (k == TokenKind.KwConst)  { pass (raw QUAL_CONST()); }
+    if (k == TokenKind.KwFixed)  { pass (raw QUAL_FIXED()); }
+    if (k == TokenKind.KwNodrop) { pass (raw QUAL_NODROP()); }
+    pass 0i32;
+};
+
+// EVERY LEADING MEMORY QUALIFIER, WHEREVER ONE CAN BE WRITTEN.
+//
+// The loop was written out twice before 0.7.3 and would have been written out
+// three more times after it. Five copies is five places for a qualifier added
+// later to be read in four of them.
+//
+// IT DOES NOT RESTRICT. `nodrop` on a struct field may well be meaningless;
+// saying so is the type checker's, because the parser never restricts (D-085) and
+// a qualifier refused here would be a parse error where the rule is semantic.
+pub func:p_qualifiers = int32(Parser->:p) {
+    int32:q = 0i32;
+    while (true) {
+        int32:bit = raw p_qualifier_bit(relay p_kind(p));
+        if (bit == 0i32) { break; }
+        drop p_advance(p);
+        q = q | bit;
+    }
+    pass q;
+};
+
 // Called by every loop that reads a SEQUENCE of items -- block statements,
 // module items, struct fields, `pick` arms.
 //

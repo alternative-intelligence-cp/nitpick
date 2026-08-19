@@ -376,6 +376,23 @@ err:
 ; of subtle code that must not live in the least-audited artifact in the chain.
 ; dalloc is therefore a no-op, and our sources still write `defer { dalloc(p); }`
 ; so they stay correct when real allocation lands.
+;
+; EVERY BLOCK CARRIES ITS SIZE IN SIXTEEN BYTES IN FRONT OF IT (0.7.3), which is
+; the whole reason ralloc can be correct. Without it, ralloc had no way to know how
+; much of the old block was real and copied the NEW size out of it -- an
+; out-of-bounds read that leaves the mapping entirely when the old block sits near
+; the end of a chunk, and takes the process down with SIGBUS.
+;
+; IT WAS NOT A LATENT BUG. About 511 declarations in one file is enough to reach a
+; doubling that crosses a chunk boundary, and FIVE OF THE COMPILER'S OWN SOURCES
+; exceed it -- so the compiler could not parse itself, and nothing said so because
+; the harness had never asked it to.
+;
+; The alternative was to pass the old size in at every call site, which every
+; caller does know. It was rejected: that moves a memory-safety obligation onto
+; twenty call sites, and the one that forgets is silent corruption rather than a
+; compile error. A header costs sixteen bytes per allocation in a process that runs
+; once and exits.
 ; ---------------------------------------------------------------------------
 
 @npk_cur = internal global i64 0
@@ -383,9 +400,13 @@ err:
 
 define ptr @npk_alloc(i64 %n) {
 entry:
-  ; round the request up to 16 bytes so every allocation is aligned
+  ; Round the request up to 16 bytes so every allocation is aligned, then take one
+  ; more 16-byte slot in front for the size. Sixteen and not eight: the header has
+  ; to keep the returned pointer 16-aligned, which is what every caller's struct
+  ; array depends on.
   %a = add i64 %n, 15
-  %sz = and i64 %a, -16
+  %szb = and i64 %a, -16
+  %sz = add i64 %szb, 16
   %cur = load i64, ptr @npk_cur
   %new = add i64 %cur, %sz
   %end = load i64, ptr @npk_end
@@ -396,7 +417,10 @@ entry:
 
 bump:
   store i64 %new, ptr @npk_cur
-  %p1 = inttoptr i64 %cur to ptr
+  %hdr1 = inttoptr i64 %cur to ptr
+  store i64 %szb, ptr %hdr1
+  %u1 = add i64 %cur, 16
+  %p1 = inttoptr i64 %u1 to ptr
   ret ptr %p1
 
 grow:
@@ -416,7 +440,10 @@ fresh:
   store i64 %nend, ptr @npk_end
   %ncur = add i64 %m, %sz
   store i64 %ncur, ptr @npk_cur
-  %p2 = inttoptr i64 %m to ptr
+  %hdr2 = inttoptr i64 %m to ptr
+  store i64 %szb, ptr %hdr2
+  %u2 = add i64 %m, 16
+  %p2 = inttoptr i64 %u2 to ptr
   ret ptr %p2
 
 oom:
@@ -434,10 +461,32 @@ define ptr @npk_calloc(i64 %count, i64 %size) {
 }
 
 define ptr @npk_ralloc(ptr %old, i64 %n) {
+entry:
   ; Never freeing means realloc is always a fresh block plus a copy. Correct,
   ; and wasteful in a way that does not matter for a process that exits.
+  ;
+  ; THE COPY IS BOUNDED BY THE OLD BLOCK, not by the new size. Copying `n` bytes
+  ; out of a block that is `old` bytes long reads past its end, and when the block
+  ; sits near the end of a chunk that read leaves the mapping -- SIGBUS, in the
+  ; least-audited artifact in the chain, on every program large enough to grow an
+  ; array twice.
+  %isnull = icmp eq ptr %old, null
+  br i1 %isnull, label %plain, label %copy
+
+plain:
+  ; A null old block is a first allocation, and has no header to read.
+  %f = call ptr @npk_alloc(i64 %n)
+  ret ptr %f
+
+copy:
   %p = call ptr @npk_alloc(i64 %n)
-  call void @llvm.memcpy.p0.p0.i64(ptr %p, ptr %old, i64 %n, i1 false)
+  %oi = ptrtoint ptr %old to i64
+  %hi = sub i64 %oi, 16
+  %hp = inttoptr i64 %hi to ptr
+  %osz = load i64, ptr %hp
+  %smaller = icmp ult i64 %osz, %n
+  %cnt = select i1 %smaller, i64 %osz, i64 %n
+  call void @llvm.memcpy.p0.p0.i64(ptr %p, ptr %old, i64 %cnt, i1 false)
   ret ptr %p
 }
 

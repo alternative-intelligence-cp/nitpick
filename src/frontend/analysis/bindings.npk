@@ -873,9 +873,9 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     // point: `if (c) { k = 1i32; } k = 2i32;` writes twice on the path that took
     // the branch, and `must` says nothing about it.
     StmtId:decl = StmtId{ index: sym.origin };
-    StmtNode:dn = relay ast_stmt(x.ast, decl);
-    if (dn.kind == StmtKind.StmtVarDeclStmt) {
-        if (((relay stmt_quals(x.ast, dn)) & (raw QUAL_FIXED())) != 0i32) {
+    StmtNode:dnode = relay ast_stmt(x.ast, decl);
+    if (dnode.kind == StmtKind.StmtVarDeclStmt) {
+        if (((relay stmt_quals(x.ast, dnode)) & (raw QUAL_FIXED())) != 0i32) {
             if (raw state_may(st, sym.origin)) {
                 drop assign_err(x, raw ASSIGN_IMMUTABLE(),
                     "a `fixed` binding is assigned once and this may be the second time; drop `fixed` if it is meant to change",
@@ -1141,15 +1141,15 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
 func:callee_frees = bool(Assign->:x, ExprNode:n) {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cn = relay ast_expr(x.ast, c);
-    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    ExprNode:cnode = relay ast_expr(x.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
 
     // A BARE-NAME BUILTIN RESOLVES TO NO SYMBOL, which is what tells it apart from
     // a user function that happens to be called `dalloc` — that one would have one,
     // and it is not this one.
-    if (cn.a != 0i32) { pass false; }
+    if (cnode.a != 0i32) { pass false; }
 
-    string:name = relay intern_get(x.interns, raw expr_name(cn) => int32);
+    string:name = relay intern_get(x.interns, raw expr_name(cnode) => int32);
     if (raw string_eq(name, "dalloc")) { pass true; }
     pass (raw string_eq(name, "ralloc"));
 };

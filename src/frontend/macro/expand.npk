@@ -401,15 +401,15 @@ func:clone_caller = ExprId(Expander->:x, ExprNode:n) {
         pass (raw expr_none());
     }
     ExprId:a = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), 0i32) };
-    ExprNode:an = relay ast_expr(x.ast, a);
-    if (an.kind != ExprKind.ExprIdentifierExpr) {
+    ExprNode:anode = relay ast_expr(x.ast, a);
+    if (anode.kind != ExprKind.ExprIdentifierExpr) {
         drop expand_err(x, raw MACRO_CALLER_FORM(),
             "`#caller` takes a bare name; an expression written here would be evaluated in the macro's scope, which is the scope it exists to escape",
             n.span);
         pass (raw expr_none());
     }
-    ExprId:out = relay ast_add_expr(x.ast, ExprKind.ExprIdentifierExpr, an.span,
-                                    0i32, 0i32, 0i32, an.payload);
+    ExprId:out = relay ast_add_expr(x.ast, ExprKind.ExprIdentifierExpr, anode.span,
+                                    0i32, 0i32, 0i32, anode.payload);
     drop ast_set_expr_flag(x.ast, out, raw HYG_CALLER());
     pass out;
 };
@@ -1028,8 +1028,8 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
                       (raw expr_list_count(inv)) - (raw builtin_generic_count(inv)),
                       raw CLONE_FUEL());
 
-    ExprNode:cn = relay ast_expr(x.ast, c);
-    drop ast_replace_expr(x.ast, id, cn);
+    ExprNode:cnode = relay ast_expr(x.ast, c);
+    drop ast_replace_expr(x.ast, id, cnode);
     drop ast_adopt_expr_flags(x.ast, id, c);
     drop ast_blank_expr(x.ast, c);
 

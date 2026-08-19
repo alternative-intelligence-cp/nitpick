@@ -29,16 +29,6 @@ use "parse_expr.npk".*;
 use "parse_decorate.npk".*;
 use "parse_pick.npk".*;
 
-// Declaration qualifiers, as bits. They live on the VarDeclStmt and NOT on the
-// type node (AST_REFERENCE section 4), which is why the type parser refuses to
-// consume them: a type that swallowed `wild` would drop it on the floor.
-pub func:QUAL_STACK = int32()  { pass 1i32; };
-pub func:QUAL_WILD = int32()   { pass 2i32; };
-pub func:QUAL_WILDX = int32()  { pass 4i32; };
-pub func:QUAL_CONST = int32()  { pass 8i32; };
-pub func:QUAL_FIXED = int32()  { pass 16i32; };
-pub func:QUAL_NODROP = int32() { pass 32i32; };
-
 // --- named accessors ---------------------------------------------------------
 //
 // Slots are interpreted HERE and nowhere else, as ast.npk requires.
@@ -184,18 +174,6 @@ pub func:stmt_when_end = StmtId(Ast->:ast, StmtNode:s) {
 };
 pub func:stmt_when_invariant = VerifyId(Ast->:ast, StmtNode:s) {
     VerifyId:v = VerifyId{ index: raw s_at(ast, s, 3i32) }; pass v;
-};
-
-// --- qualifiers ---------------------------------------------------------------
-
-pub func:p_qualifier_bit = int32(TokenKind:k) {
-    if (k == TokenKind.KwStack)  { pass (raw QUAL_STACK()); }
-    if (k == TokenKind.KwWild)   { pass (raw QUAL_WILD()); }
-    if (k == TokenKind.KwWildx)  { pass (raw QUAL_WILDX()); }
-    if (k == TokenKind.KwConst)  { pass (raw QUAL_CONST()); }
-    if (k == TokenKind.KwFixed)  { pass (raw QUAL_FIXED()); }
-    if (k == TokenKind.KwNodrop) { pass (raw QUAL_NODROP()); }
-    pass 0i32;
 };
 
 pub func:p_is_assign_op = bool(TokenKind:k) {
@@ -536,13 +514,7 @@ func:p_label_stmt = StmtId(Parser->:p, Span:sp, StmtKind:kind, bool:optional) {
 };
 
 func:p_parse_vardecl = StmtId(Parser->:p, Span:sp, IdSpan:attrs) {
-    int32:quals = 0i32;
-    while (true) {
-        int32:bit = raw p_qualifier_bit(relay p_kind(p));
-        if (bit == 0i32) { break; }
-        drop p_advance(p);
-        quals = quals | bit;
-    }
+    int32:quals = relay p_qualifiers(p);
     // `limit<r_pos> int32:x = 5i32;` -- the rule binds to the DECLARATION, so it
     // sits with the qualifiers rather than inside the type (AST_REFERENCE
     // section 4: qualifiers are not part of the type).

@@ -351,24 +351,24 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
 
     Symbol:s = raw symtab_get(r.tab, sym);
     DeclId:d = DeclId{ index: s.origin };
-    DeclNode:dn = relay ast_decl(r.ast, d);
+    DeclNode:dnode = relay ast_decl(r.ast, d);
 
-    if (dn.kind == DeclKind.DeclStructDecl) {
+    if (dnode.kind == DeclKind.DeclStructDecl) {
         // The layout is computed in 0.4.2 once every field's type is known; the
         // identity is the declaration and is available now (D-090).
-        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_STRUCT()));
+        pass (relay resolve_aggregate(r, n, name, d, dnode, scope, raw TY_STRUCT()));
     }
-    if (dn.kind == DeclKind.DeclEnumDecl) {
-        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_ENUM()));
+    if (dnode.kind == DeclKind.DeclEnumDecl) {
+        pass (relay resolve_aggregate(r, n, name, d, dnode, scope, raw TY_ENUM()));
     }
     // A TRAIT MAY BE GENERIC TOO, and it was the same hole one declaration kind
     // over: `p_parse_trait` calls `p_parse_generics`, so `trait:Printable<T>`
     // parses, and this built a `tt_trait` from the declaration and dropped the
     // arguments — making `Printable<int32>` and `Printable<string>` one trait.
-    if (dn.kind == DeclKind.DeclTraitDecl) {
-        pass (relay resolve_aggregate(r, n, name, d, dn, scope, raw TY_TRAIT()));
+    if (dnode.kind == DeclKind.DeclTraitDecl) {
+        pass (relay resolve_aggregate(r, n, name, d, dnode, scope, raw TY_TRAIT()));
     }
-    if (dn.kind == DeclKind.DeclGenericParam) {
+    if (dnode.kind == DeclKind.DeclGenericParam) {
         pass (raw tt_param(r.types, d.index, name));
     }
 
@@ -378,7 +378,7 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
     string:text = relay intern_get(r.interns, name);
     string:k1 = relay string_concat("`", text);
     string:k2 = relay string_concat(k1, "` is ");
-    string:k3 = relay string_concat(k2, raw decl_kind_article(dn));
+    string:k3 = relay string_concat(k2, raw decl_kind_article(dnode));
     string:k4 = relay string_concat(k3, ", not a type");
     pass (relay ty_error(r, raw TYPE_NOT_A_TYPE(), k4, n.span));
 };
@@ -396,8 +396,8 @@ func:resolve_user_named = int32(TypeResolver->:r, TypeNode:n, int32:name,
 // implement `Printable`" needs an impl table that is still being filled when this
 // runs. So this counts, records, and moves on; `type_generic.npk` decides.
 func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
-                               DeclId:d, DeclNode:dn, int32:scope, int32:kind) {
-    IdSpan:gp = raw decl_generic_window(r.ast, dn);
+                               DeclId:d, DeclNode:dnode, int32:scope, int32:kind) {
+    IdSpan:gp = raw decl_generic_window(r.ast, dnode);
     int32:given = raw type_args_count(n);
 
     if (given != gp.count) {
@@ -1241,18 +1241,18 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
 
 pub func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:scope) {
     DeclNode:gpn = relay ast_decl(r.ast, gpid);
-    TypeNode:an = relay ast_type(r.ast, a);
+    TypeNode:anode = relay ast_type(r.ast, a);
     bool:wants_value = raw generic_is_value(gpn);
-    bool:is_value = (an.kind == TypeKind.TypeComptimeArg);
+    bool:is_value = (anode.kind == TypeKind.TypeComptimeArg);
 
     if (wants_value) {
         if (!is_value) {
-            pass (relay arg_kind_error(r, gpn, an.span, true));
+            pass (relay arg_kind_error(r, gpn, anode.span, true));
         }
-        pass (relay resolve_value_arg(r, an, gpn, scope));
+        pass (relay resolve_value_arg(r, anode, gpn, scope));
     }
     if (is_value) {
-        pass (relay arg_kind_error(r, gpn, an.span, false));
+        pass (relay arg_kind_error(r, gpn, anode.span, false));
     }
     pass (relay resolve_type(r, a, scope));
 };
@@ -1278,12 +1278,12 @@ func:arg_kind_error = int32(TypeResolver->:r, DeclNode:gpn, Span:at,
 // arguments like any other. What did NOT change is the check underneath: the debt
 // paid was "must be a literal", never "must be valid", and a folded value still has
 // to be an integer of the declared type.
-func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
+func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:anode, DeclNode:gpn,
                                int32:scope) {
     int32:want = relay resolve_type(r, raw generic_value_type(gpn), scope);
-    ExprNode:v = relay ast_expr(r.ast, raw type_comptime_value(an));
+    ExprNode:v = relay ast_expr(r.ast, raw type_comptime_value(anode));
 
-    ConstVal:cv = relay fold_const(r, raw type_comptime_value(an), scope);
+    ConstVal:cv = relay fold_const(r, raw type_comptime_value(anode), scope);
     if (!(raw cv_is_int(cv))) {
         if (raw fold_gave_up(r)) { pass 0i32; }
         pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),

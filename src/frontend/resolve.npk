@@ -767,9 +767,9 @@ func:init_reaches = bool(Resolver->:r, ExprId:id, int32:target, int32:fuel) {
         Symbol:s = raw symtab_get(r.tab, e.a);
         if (s.origin_kind != (raw SYM_DECL())) { pass false; }
         DeclId:d = DeclId{ index: s.origin };
-        DeclNode:dn = relay ast_decl(r.ast, d);
-        if (dn.kind != DeclKind.DeclGlobalDecl) { pass false; }
-        pass (relay init_reaches(r, raw global_init(dn), target, fuel - 1i32));
+        DeclNode:dnode = relay ast_decl(r.ast, d);
+        if (dnode.kind != DeclKind.DeclGlobalDecl) { pass false; }
+        pass (relay init_reaches(r, raw global_init(dnode), target, fuel - 1i32));
     }
 
     // THE SAME SHAPE TABLE, for the same reason. This walk had its own copy of

@@ -57,6 +57,8 @@ pub func:expr_lhs = ExprId(ExprNode:e)      { ExprId:i = ExprId{ index: e.a }; p
 pub func:expr_rhs = ExprId(ExprNode:e)      { ExprId:i = ExprId{ index: e.b }; pass i; };
 pub func:expr_operand = ExprId(ExprNode:e)  { ExprId:i = ExprId{ index: e.a }; pass i; };
 pub func:expr_cast_type = TypeId(ExprNode:e){ TypeId:i = TypeId{ index: e.b }; pass i; };
+// The memory qualifier written on a cast's target, on every cast kind.
+pub func:expr_cast_quals = int32(ExprNode:e) { pass (e.payload => int32); };
 pub func:expr_callee = ExprId(ExprNode:e)   { ExprId:i = ExprId{ index: e.a }; pass i; };
 // The ternary's third operand. Named rather than reached through `e.c`, because
 // slot `c` is a WINDOW COUNT on most kinds and a call site that reads it raw has
@@ -322,18 +324,34 @@ func:p_cast = ExprId(Parser->:p) {
         if (k == TokenKind.OpFatArrowUnchecked) { node = ExprKind.ExprUncheckedCastExpr; }
         if (node == ExprKind.ExprNone) { break; }
         drop p_advance(p);
+
+        // `p => wild int8->` — A MEMORY QUALIFIER ON THE TARGET, read here since
+        // 0.7.3. It is load-bearing rather than decoration: to LLVM a `wild`
+        // pointer and a managed one are the same word, and the distinction is
+        // enforced ENTIRELY by the type checker (D-038) — so the cast target is
+        // where a program says the result is unmanaged. Sixteen of the compiler's
+        // own files write one, and none of them parsed.
+        int32:quals = relay p_qualifiers(p);
+
         TypeId:t = relay p_parse_type(p);
         // A cast TO a `dyn` type is its own node (AST_REFERENCE 3.6). Building a
         // fat pointer is not a checked scalar conversion, and one node for both
         // would hide that at every use. The DynType already holds the trait
         // window, so the node carries it directly rather than through the type.
         TypeNode:tn = relay ast_type(p.ast, t);
+        // THE QUALIFIER GOES IN THE PAYLOAD ON ALL THREE CAST KINDS, not in a
+        // spare slot on two of them. A dyn cast has used `b` and `c` for its trait
+        // window since 0.4, so a qualifier put in `c` would be recorded for a
+        // `=>` and silently dropped for a `=> dyn A` — and "wild dyn A" would then
+        // be a thing nothing could refuse, because nothing would know it was
+        // written.
         if (tn.kind == TypeKind.TypeDynType) {
             e = relay ast_add_expr(p.ast, ExprKind.ExprDynCastExpr, sp,
                                    e.index, raw type_args_start(tn),
-                                   raw type_args_count(tn), 0i64);
+                                   raw type_args_count(tn), quals => int64);
         } else {
-            e = relay ast_add_expr(p.ast, node, sp, e.index, t.index, 0i32, 0i64);
+            e = relay ast_add_expr(p.ast, node, sp, e.index, t.index, 0i32,
+                                   quals => int64);
         }
     }
     pass e;

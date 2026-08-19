@@ -75,6 +75,14 @@ GenericParam
   `comptime` function, legal nowhere else, and produces no specialization
   (D-064 §5).
 
+- **`ParamDecl` and `FieldDecl` carry memory qualifiers**, in the same flags slot
+  and with the same bits a local declaration uses — `wild int8->:buf` is a
+  declaration qualified `wild`, whether it is a local, a global, a field or a
+  parameter. Qualifiers are not part of the type (§4), so the type parser refuses
+  to consume one: a type that swallowed `wild` would drop it on the floor. Until
+  0.7.3 they were read in statement and return position only, so **the compiler's
+  own sources did not parse** — sixteen of its files begin a struct or a signature
+  this way.
 - **`ParamDecl` carries `discarded: bool`** — the `Type:_~name` annotation
   (D-089), marking a parameter the body deliberately does not read. The name is
   kept: `cstring[]:_~argv` still says what the slot is, which a `_` placeholder
@@ -419,10 +427,17 @@ the parse path — so it is recorded here rather than left to the semantic phase
 
 | Node | Fields |
 |---|---|
-| `CastExpr` | `expr`, `target: TypeNode` — `=>`, **compile error if loss is possible** |
-| `UncheckedCastExpr` | `expr`, `target` — `=>!`, the sole opt-out |
+| `CastExpr` | `expr`, `target: TypeNode`, `quals` — `=>`, **compile error if loss is possible** |
+| `UncheckedCastExpr` | `expr`, `target`, `quals` — `=>!`, the sole opt-out |
 
 Only these two. `cast<T>` / `#cast<T>` / `@cast<T>` do not exist (D-021).
+
+**A cast target carries a memory qualifier** — `p => wild int8->` — and it is
+load-bearing rather than decoration: to LLVM a `wild` pointer and a managed one are
+the same word, and the distinction is enforced entirely by the type checker (D-038),
+so the cast target is where a program says the result is unmanaged. `quals` is on
+`DynCastExpr` too, in the same slot, because a qualifier a node cannot record is one
+nothing can refuse.
 
 ## 3.6 Construction and async
 
@@ -433,7 +448,7 @@ Only these two. `cast<T>` / `#cast<T>` / `@cast<T>` do not exist (D-021).
 | `VectorCtorExpr` | `type`, `components` — `vec3(1.0, 2.0, 3.0)` |
 | `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-040`) |
 | `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
-| `DynCastExpr` | `expr`, `traits: TypeNode[]` — `dyn A & B` (D-029). **A `=>` whose target is a `dyn` type is this node, not a `CastExpr`** — building a fat pointer is not the same operation as a checked scalar conversion, and giving them one node would hide that at every use |
+| `DynCastExpr` | `expr`, `traits: TypeNode[]`, `quals` — `dyn A & B` (D-029). **A `=>` whose target is a `dyn` type is this node, not a `CastExpr`** — building a fat pointer is not the same operation as a checked scalar conversion, and giving them one node would hide that at every use |
 | `PickExpr` | `selector: Expr`, `arms: PickArm[]` — a `pick` whose arms `give` (D-059) |
 
 > **`PickExpr` was missing.** D-059 settled that `pick` is **both** a statement

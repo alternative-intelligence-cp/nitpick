@@ -225,8 +225,8 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
     int32:decl = raw type_decl_of(r.types, e.type_id);
     if (decl == 0i32) { pass NIL; }
     DeclId:did = DeclId{ index: decl };
-    DeclNode:dn = relay ast_decl(r.ast, did);
-    IdSpan:gp = raw decl_generic_window(r.ast, dn);
+    DeclNode:dnode = relay ast_decl(r.ast, did);
+    IdSpan:gp = raw decl_generic_window(r.ast, dnode);
 
     int32:astart = raw type_args_start_of(r.types, e.type_id);
     int32:acount = raw type_args_count_of(r.types, e.type_id);
@@ -240,7 +240,7 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
             DeclId:gpid = DeclId{ index: relay ast_id_at(r.ast, gp.start, i) };
             drop check_arg_bounds(impls, bounds, r,
                                   relay ast_id_at(r.ast, astart, i),
-                                  gpid, dn, e.at);
+                                  gpid, dnode, e.at);
         }
         i = i + 1i32;
     }

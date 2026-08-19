@@ -205,13 +205,13 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
         if ((raw contract_kind(v)) == (raw CONTRACT_ACQUIRES())) {
             ExprId:c = raw contract_cond(v);
             if (raw expr_is_none(c)) { pass (raw no_level()); }
-            ExprNode:cn = relay ast_expr(x.ast, c);
+            ExprNode:cnode = relay ast_expr(x.ast, c);
             ConstVal:cv = relay fold_const(x.tyres, c, x.cur_scope);
             if (!(raw cv_is_int(cv))) {
                 if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
                     "an `acquires` level must be a constant expression; a name folds only if it is a `const` global",
-                    cn.span);
+                    cnode.span);
                 pass (raw no_level());
             }
             LevelRead:r = LevelRead{ found: true, level: cv.num => int32,
@@ -243,10 +243,10 @@ func:call_target = int32(Locks->:x, ExprNode:n) {
     if (n.kind == ExprKind.ExprCallExpr) {
         ExprId:c = raw expr_callee(n);
         if (raw expr_is_none(c)) { pass 0i32; }
-        ExprNode:cn = relay ast_expr(x.ast, c);
-        if (cn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
-        if (cn.a == 0i32) { pass 0i32; }
-        Symbol:s = raw symtab_get(x.tab, cn.a);
+        ExprNode:cnode = relay ast_expr(x.ast, c);
+        if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+        if (cnode.a == 0i32) { pass 0i32; }
+        Symbol:s = raw symtab_get(x.tab, cnode.a);
         if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
         DeclNode:d = relay ast_decl(x.ast, DeclId{ index: s.origin });
         if (d.kind != DeclKind.DeclFunctionDecl) { pass 0i32; }

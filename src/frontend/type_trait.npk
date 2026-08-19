@@ -175,13 +175,13 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
     if (target == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, target)) { pass NIL; }
 
-    TypeId:tt = relay impl_trait(r.ast, d);
-    if (raw type_is_none(tt)) {
+    TypeId:tyt = relay impl_trait(r.ast, d);
+    if (raw type_is_none(tyt)) {
         drop impl_push(t, target, 0i32, id.index, false, scope);
         pass NIL;
     }
 
-    int32:trait_id = relay resolve_type(r, tt, scope);
+    int32:trait_id = relay resolve_type(r, tyt, scope);
     if (trait_id == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, trait_id)) { pass NIL; }
 

@@ -868,30 +868,30 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
 
     if (s.origin_kind == (raw SYM_DECL())) {
         DeclId:did = DeclId{ index: s.origin };
-        DeclNode:dn = relay ast_decl(e.ast, did);
-        if (dn.kind == DeclKind.DeclParamDecl) {
+        DeclNode:dnode = relay ast_decl(e.ast, did);
+        if (dnode.kind == DeclKind.DeclParamDecl) {
             // READING A DISCARDED PARAMETER IS AN ERROR (D-089). `Type:_~name`
             // says the parameter is deliberately unused, so a later use is either
             // a mistake or a stale annotation — and both are worth hearing about.
-            if (raw param_is_discarded(dn)) {
+            if (raw param_is_discarded(dnode)) {
                 pass (relay te_error(e, raw TYPE_MISMATCH(),
                     "this parameter is declared discarded with `_~`, so it cannot be read; drop the `_~` if it is wanted",
                     n.span));
             }
-            pass (relay resolve_type(@r, raw param_type(dn), e.scope));
+            pass (relay resolve_type(@r, raw param_type(dnode), e.scope));
         }
-        if (dn.kind == DeclKind.DeclFunctionDecl) {
-            pass (relay fn_type(@r, dn, s.name, e.scope));
+        if (dnode.kind == DeclKind.DeclFunctionDecl) {
+            pass (relay fn_type(@r, dnode, s.name, e.scope));
         }
         // AN `extern` FUNCTION IS A FUNCTION. Missing here, its name fell through
         // to the "is a type, not a value" ending below — so every call to a
         // foreign function was refused, and refused with a sentence about the
         // wrong thing.
-        if (dn.kind == DeclKind.DeclExternFn) {
-            pass (relay extern_fn_type(@r, dn, e.scope));
+        if (dnode.kind == DeclKind.DeclExternFn) {
+            pass (relay extern_fn_type(@r, dnode, e.scope));
         }
-        if (dn.kind == DeclKind.DeclGlobalDecl) {
-            TypeId:ty = TypeId{ index: dn.a };
+        if (dnode.kind == DeclKind.DeclGlobalDecl) {
+            TypeId:ty = TypeId{ index: dnode.a };
             pass (relay resolve_type(@r, ty, e.scope));
         }
         // `<comptime int32:LEVEL>` IS A VALUE, and `pass LEVEL;` reads it as one.
@@ -901,9 +901,9 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
         //
         // A TYPE PARAMETER FALLS THROUGH to "is a type, not a value", which is
         // exactly right: `T` names a type and `pass T;` names nothing.
-        if (dn.kind == DeclKind.DeclGenericParam) {
-            if (raw generic_is_value(dn)) {
-                pass (relay resolve_type(@r, raw generic_value_type(dn), e.scope));
+        if (dnode.kind == DeclKind.DeclGenericParam) {
+            if (raw generic_is_value(dnode)) {
+                pass (relay resolve_type(@r, raw generic_value_type(dnode), e.scope));
             }
         }
         // A TYPE NAME IN VALUE POSITION says what it is rather than "unknown".
@@ -1438,12 +1438,12 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
                              relay string_concat(m1, "`"), n.span));
     }
     Symbol:sy = relay symtab_get(e.tab, sym);
-    DeclNode:dn = relay ast_decl(e.ast, DeclId{ index: sy.origin });
-    if (dn.kind != DeclKind.DeclStructDecl) {
+    DeclNode:dnode = relay ast_decl(e.ast, DeclId{ index: sy.origin });
+    if (dnode.kind != DeclKind.DeclStructDecl) {
         string:t2 = relay intern_get(e.interns, name);
         string:k1 = relay string_concat("`", t2);
         string:k2 = relay string_concat(k1, "` is ");
-        string:k3 = relay string_concat(k2, raw decl_kind_article(dn));
+        string:k3 = relay string_concat(k2, raw decl_kind_article(dnode));
         pass (relay te_error(e, raw TYPE_NOT_A_TYPE(),
                              relay string_concat(k3, ", and a `{ … }` literal builds a struct"),
                              n.span));
@@ -1452,7 +1452,7 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
     // A GENERIC STRUCT WITH NO CONTEXT HAS NOTHING TO SUBSTITUTE. Refused rather
     // than resolved to the bare declaration, which is what made `Container<int32>`
     // and `Container<string>` one type before 0.4.5.
-    IdSpan:gp = raw decl_generic_window(e.ast, dn);
+    IdSpan:gp = raw decl_generic_window(e.ast, dnode);
     if (gp.count != 0i32) {
         string:g1 = relay string_concat("`", relay intern_get(e.interns, name));
         pass (relay te_error(e, raw TYPE_CANNOT_INFER(),

@@ -450,6 +450,8 @@ pub func:param_is_discarded = bool(DeclNode:d) {
     pass ((d.c & (raw DECL_DISCARDED())) != 0i32);
 };
 pub func:field_type = TypeId(DeclNode:d)  { TypeId:t = TypeId{ index: d.a }; pass t; };
+pub func:field_quals = int32(DeclNode:d) { pass d.c; };
+pub func:param_quals = int32(DeclNode:d) { pass d.c; };
 pub func:global_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
 pub func:global_init = ExprId(DeclNode:d) { ExprId:e = ExprId{ index: d.b }; pass e; };
 pub func:global_quals = int32(DeclNode:d) { pass d.c; };
@@ -597,6 +599,15 @@ func:p_parse_generics = IdSpan(Parser->:p) {
 
 pub func:p_parse_param = DeclId(Parser->:p) {
     Span:sp = relay p_span(p);
+
+    // `wild int8->:buf` — A QUALIFIER ON A PARAMETER, read here since 0.7.3.
+    // `parse_type.npk` has said since 0.4 that qualifiers are not part of the
+    // type and belong to the declaration; the reading of them existed in
+    // statement and return position and nowhere else, so the compiler's OWN
+    // sources did not parse. Sixteen of its files begin a struct or a signature
+    // this way.
+    int32:quals = relay p_qualifiers(p);
+
     int32:lim = 0i32;
     if (relay p_at(p, TokenKind.KwLimit)) {
         lim = (relay p_parse_limit(p)).index;
@@ -613,7 +624,7 @@ pub func:p_parse_param = DeclId(Parser->:p) {
     // the compiler warned about them going unread, and the only escape was a
     // compiler flag -- so `discard` was added beside `raw` and `drop`, which
     // already existed for unwanted Results and return values.
-    int32:flags = 0i32;
+    int32:flags = quals;
     if (relay p_accept(p, TokenKind.OpUnderTilde)) {
         flags = flags | (raw DECL_DISCARDED());
     }
@@ -884,12 +895,15 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
 
 func:p_parse_field = DeclId(Parser->:p) {
     Span:sp = relay p_span(p);
+    // Slot `c` IS THE FLAGS SLOT on a field, on a parameter and on a global, so
+    // one accessor shape reads all three rather than three conventions to recall.
+    int32:quals = relay p_qualifiers(p);
     TypeId:ty = relay p_parse_type(p);
     drop p_expect(p, TokenKind.PColon);
     Token:name = relay p_advance(p);
     drop p_expect(p, TokenKind.PSemi);
     pass (relay ast_add_decl(p.ast, DeclKind.DeclFieldDecl, sp,
-                             ty.index, 0i32, 0i32, name.payload));
+                             ty.index, 0i32, quals, name.payload));
 };
 
 func:p_parse_variant = DeclId(Parser->:p) {
@@ -1297,13 +1311,7 @@ func:p_parse_failure = DeclId(Parser->:p) {
 };
 
 func:p_parse_global = DeclId(Parser->:p, Span:sp, int32:flags) {
-    int32:quals = 0i32;
-    while (true) {
-        int32:bit = raw p_qualifier_bit(relay p_kind(p));
-        if (bit == 0i32) { break; }
-        drop p_advance(p);
-        quals = quals | bit;
-    }
+    int32:quals = relay p_qualifiers(p);
     TypeId:ty = relay p_parse_type(p);
     drop p_expect(p, TokenKind.PColon);
     Token:name = relay p_advance(p);

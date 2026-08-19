@@ -157,11 +157,11 @@ func:ns_yes = NsAccess(int32:t) { NsAccess:r = NsAccess{ handled: true, type_id:
 func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
     ExprId:b = raw expr_operand(n);
     if (raw expr_is_none(b)) { pass (raw ns_no()); }
-    ExprNode:bn = relay ast_expr(e.ast, b);
-    if (bn.kind != ExprKind.ExprIdentifierExpr) { pass (raw ns_no()); }
-    if (bn.a == 0i32) { pass (raw ns_no()); }
+    ExprNode:bnode = relay ast_expr(e.ast, b);
+    if (bnode.kind != ExprKind.ExprIdentifierExpr) { pass (raw ns_no()); }
+    if (bnode.a == 0i32) { pass (raw ns_no()); }
 
-    Symbol:s = raw symtab_get(e.tab, bn.a);
+    Symbol:s = raw symtab_get(e.tab, bnode.a);
     if (s.origin_kind != (raw SYM_DECL())) { pass (raw ns_no()); }
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = relay ast_decl(e.ast, did);
@@ -379,12 +379,12 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
 func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass (relay ast_decl(e.ast, raw decl_none())); }
-    ExprNode:cn = relay ast_expr(e.ast, c);
-    if (cn.kind != ExprKind.ExprIdentifierExpr) {
+    ExprNode:cnode = relay ast_expr(e.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) {
         pass (relay ast_decl(e.ast, raw decl_none()));
     }
-    if (cn.a == 0i32) { pass (relay ast_decl(e.ast, raw decl_none())); }
-    Symbol:s = raw symtab_get(e.tab, cn.a);
+    if (cnode.a == 0i32) { pass (relay ast_decl(e.ast, raw decl_none())); }
+    Symbol:s = raw symtab_get(e.tab, cnode.a);
     if (s.origin_kind != (raw SYM_DECL())) {
         pass (relay ast_decl(e.ast, raw decl_none()));
     }

@@ -587,13 +587,13 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) {
     int32:i = 0i32;
     while (i < n) {
         DeclNode:a = relay ast_decl(@g.ast, raw item_member(@g.ast, d, i));
-        int32:an = raw decl_name(a);
-        if (!(raw intern_is_none(an))) {
+        int32:anode = raw decl_name(a);
+        if (!(raw intern_is_none(anode))) {
             int32:j = i + 1i32;
             while (j < n) {
                 DeclNode:b = relay ast_decl(@g.ast, raw item_member(@g.ast, d, j));
-                if ((raw decl_name(b)) == an) {
-                    string:nm = relay intern_get(g.interns, an);
+                if ((raw decl_name(b)) == anode) {
+                    string:nm = relay intern_get(g.interns, anode);
                     string:m1 = relay string_concat("`", nm);
                     string:m2 = relay string_concat(m1, "` is declared twice as a ");
                     string:m3 = relay string_concat(m2, what);

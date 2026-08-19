@@ -914,8 +914,29 @@ def main(argv):
             grammar += sorted(glob.glob(os.path.join(ROOT, "src", "prelude", "*.npk")))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
                                         recursive=True))
+
+            # THE COMPILER'S OWN SOURCE, which is the file set that matters most
+            # and the one this sweep did not cover until 0.7.3.
+            #
+            # `src/prelude/` was here from the start and the other fifty-eight
+            # modules were not, so the parser was asked about every test in the
+            # tree and never about the thing it is part of. WHEN IT WAS FINALLY
+            # ASKED, 22 OF 62 FILES WERE REJECTED AND FIVE CRASHED IT -- a
+            # qualifier the parser never learned to read on a field or a
+            # parameter, `dn`/`bn`/`cn`/`tt` used as names when the grammar makes
+            # them NUMERIC LITERALS, and an out-of-bounds read in `ralloc` that
+            # took the process down on any file past about 511 declarations.
+            #
+            # This is not a nicety. STAGE 1 IS BUILT BY THE SEED AND MUST THEN
+            # PARSE THESE FILES to build stage 2, so a source the real parser
+            # cannot read is a source that never self-hosts -- and every one of
+            # the three causes was invisible for as long as nobody asked.
+            compiler = sorted(glob.glob(os.path.join(ROOT, "src", "**", "*.npk"),
+                                        recursive=True))
+            compiler += sorted(glob.glob(os.path.join(ROOT, "tools", "*.npk")))
+
             n = 0
-            for p in sorted(set(all_sources)) + grammar:
+            for p in sorted(set(all_sources)) + grammar + sorted(set(compiler)):
                 name = os.path.relpath(p, ROOT)
                 failures += check_parses(pc, p, name)
                 n += 1

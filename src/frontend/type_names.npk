@@ -12,8 +12,8 @@ use "types.npk".*;
 
 // A type's name, for a message. The whole value of a type error is which type
 // was wrong, so this is never elided.
-pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
-    int32:k = raw type_kind(tt, t);
+pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) {
+    int32:k = raw type_kind(tyt, t);
     if (k == (raw TY_INVALID())) { pass "<unresolved>"; }
     if (k == (raw TY_BOOL()))    { pass "bool"; }
     if (k == (raw TY_STRING()))  { pass "string"; }
@@ -22,14 +22,14 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
     if (k == (raw TY_ANY()))     { pass "any"; }
     if (k == (raw TY_CHAR())) {
         pass (relay string_concat("char",
-                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_TBB())) {
         pass (relay string_concat("tbb",
-                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_KERNEL())) {
-        int32:w = raw type_elem(tt, t);
+        int32:w = raw type_elem(tyt, t);
         if (w == (raw KERNEL_FD()))  { pass "fd"; }
         if (w == (raw KERNEL_PID())) { pass "pid"; }
         if (w == (raw KERNEL_TID())) { pass "tid"; }
@@ -38,26 +38,26 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
     }
     if (k == (raw TY_INT())) {
         string:base = "int";
-        if (!(raw type_is_signed(tt, t))) { base = "uint"; }
+        if (!(raw type_is_signed(tyt, t))) { base = "uint"; }
         pass (relay string_concat(base,
-                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_FLOAT())) {
         pass (relay string_concat("flt",
-                  raw int_to_string((raw type_int_bits(tt, t)) => int64)));
+                  raw int_to_string((raw type_int_bits(tyt, t)) => int64)));
     }
     if (k == (raw TY_POINTER())) {
-        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "->"));
+        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "->"));
     }
     if (k == (raw TY_SLICE())) {
-        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "[]"));
+        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "[]"));
     }
     if (k == (raw TY_OPTIONAL())) {
-        pass (relay string_concat(relay type_display(tt, interns, raw type_elem(tt, t)), "?"));
+        pass (relay string_concat(relay type_display(tyt, interns, raw type_elem(tyt, t)), "?"));
     }
     if (k == (raw TY_RESULT())) {
         string:r1 = relay string_concat("Result<",
-                        relay type_display(tt, interns, raw type_elem(tt, t)));
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (relay string_concat(r1, ">"));
     }
     // A FUNCTION PRINTS ITS RETURN AND ITS SHAPE, not `<type>`. `type_elem` on a
@@ -66,12 +66,12 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
     // a function" would have been the only clue that the variadic kind existed.
     if (k == (raw TY_FUNC())) {
         string:f1 = relay string_concat("func ",
-                        relay type_display(tt, interns, raw type_elem(tt, t)));
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (relay string_concat(f1, "(…)"));
     }
     if (k == (raw TY_FUNC_VARIADIC())) {
         string:f1 = relay string_concat("func ",
-                        relay type_display(tt, interns, raw type_elem(tt, t)));
+                        relay type_display(tyt, interns, raw type_elem(tyt, t)));
         pass (relay string_concat(f1, "(…, ..*T[])"));
     }
     // `Self` HAS NO NAME TO CARRY, so without this it printed `<type>` — and it
@@ -86,7 +86,7 @@ pub func:type_display = string(TypeTable->:tt, InternTable->:interns, int32:t) {
     // rename every instance that carries one.
 
     // Named types carry their own name.
-    int32:nm = raw type_name(tt, t);
+    int32:nm = raw type_name(tyt, t);
     if (!(raw intern_is_none(nm))) {
         pass (relay intern_get(interns, nm));
     }

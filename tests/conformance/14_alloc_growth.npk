@@ -1,0 +1,82 @@
+// Subset 1 — a growable array, which is what `ralloc` is for.
+//
+// THIS IS THE REGRESSION TEST FOR AN OUT-OF-BOUNDS READ IN THE RUNTIME (0.7.3).
+//
+// The bump allocator had no size header, so `ralloc(old, n)` copied `n` bytes —
+// the NEW size — out of a block only the old size long. That read runs past the
+// end of the old block every time an array grows, and when the block sits near
+// the end of an mmap'd chunk the read leaves the mapping entirely and takes the
+// process down with SIGBUS.
+//
+// It was not latent. About 511 declarations in one file was enough to reach such
+// a growth, and FIVE OF THE COMPILER'S OWN SOURCES exceed it — so the real parser
+// crashed on them, and the compiler could not read itself.
+//
+// WHY THE ASSERTIONS ARE ABOUT CONTENTS AND THE LOOP IS ABOUT SIZE. The over-read
+// does not corrupt what it copies: the first `old` bytes arrive intact either way,
+// so no single comparison can see the defect. What sees it is CROSSING A CHUNK
+// BOUNDARY, which is why this doubles past a megabyte rather than growing once.
+// The contents are checked as well because the fix — copy `min(old, new)` — is a
+// bound, and a bound written the wrong way round would copy nothing.
+
+// Grow to `want` elements, preserving what is already there. The shape every
+// growable array in the compiler is written in.
+func:grow = wild int32->(wild int32->:items, int64:have, int64:want) {
+    wild int8->:bigger = ralloc(items => wild int8->, want * 4i64);
+    pass (bigger => wild int32->);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int64:cap = 8i64;
+    wild int8->:mem = alloc(cap * 4i64);
+    wild int32->:items = mem => wild int32->;
+
+    // A pattern that depends on the index, so a copy that lands short or shifted
+    // is a different value rather than the same zero.
+    int64:i = 0i64;
+    while (i < cap) {
+        items[i] = (i => int32) * 7i32;
+        i = i + 1i64;
+    }
+
+    // DOUBLE PAST A MEGABYTE. One growth stays inside the first chunk and proves
+    // nothing; the crash needs a block that ends where the mapping does.
+    while (cap < 400000i64) {
+        int64:next = cap * 2i64;
+        items = raw grow(items, cap, next);
+        // Everything written before the growth is still there.
+        int64:j = 0i64;
+        while (j < cap) {
+            if (items[j] != ((j => int32) * 7i32)) { exit 10i32; }
+            j = j + 1i64;
+        }
+        // …and the new space is writable to its last element.
+        while (j < next) {
+            items[j] = (j => int32) * 7i32;
+            j = j + 1i64;
+        }
+        cap = next;
+    }
+
+    // One last full pass, so the final block is checked end to end rather than
+    // only up to where the last growth started.
+    int64:k = 0i64;
+    while (k < cap) {
+        if (items[k] != ((k => int32) * 7i32)) { exit 11i32; }
+        k = k + 1i64;
+    }
+
+    // SHRINKING IS THE OTHER HALF OF THE BOUND. `min(old, new)` written the wrong
+    // way round copies the OLD size into a smaller block, which overruns the new
+    // one — the same defect pointing the other way.
+    items = raw grow(items, cap, 16i64);
+    int64:m = 0i64;
+    while (m < 16i64) {
+        if (items[m] != ((m => int32) * 7i32)) { exit 12i32; }
+        m = m + 1i64;
+    }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

@@ -725,10 +725,10 @@ func:escape_arg = bool(Escape->:x, ExprId:a, bool:ext, int32:depth) {
         // likes and nothing downstream can be checked, which is the argument the
         // zero-dependency rule rests on: past the FFI barrier there is no control
         // over what happens.
-        ExprNode:an = relay ast_expr(x.ast, a);
+        ExprNode:anode = relay ast_expr(x.ast, a);
         drop escape_err(x, raw BORROW_EXTERN(),
             "a borrow cannot cross an `extern` call: the callee is not Nitpick, so nothing can check that it does not keep the pointer (D-004 rule 4)",
-            an.span);
+            anode.span);
     }
     pass true;
 };
@@ -871,10 +871,10 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
 func:callee_is_extern = bool(Escape->:x, ExprNode:n) {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
-    ExprNode:cn = relay ast_expr(x.ast, c);
-    if (cn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
-    if (cn.a == 0i32) { pass false; }
-    Symbol:s = raw symtab_get(x.tab, cn.a);
+    ExprNode:cnode = relay ast_expr(x.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cnode.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, cnode.a);
     if (s.origin_kind != (raw SYM_DECL())) { pass false; }
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = relay ast_decl(x.ast, did);
@@ -973,10 +973,10 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         if (relay escape_expr(x, a, depth)) {
-            ExprNode:an = relay ast_expr(x.ast, a);
+            ExprNode:anode = relay ast_expr(x.ast, a);
             drop escape_err(x, raw BORROW_SPAWNED(),
                 "a borrow cannot cross a thread spawn: the spawned frame is not inner to this one, so nothing bounds the borrow's validity (D-004 rule 4)",
-                an.span);
+                anode.span);
         }
         i = i + 1i32;
     }
