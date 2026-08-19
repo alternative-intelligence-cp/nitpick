@@ -2,21 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: Phase A, cycle 0.5 done — the analyses are in
+## Status: PHASE A COMPLETE — the checker is done
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 123 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-**Cycles 0.0–0.5 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
-the module/symbol/visibility passes, the type system, and the static analyses —
-second-class borrows and escape (D-004), definite assignment with `fixed`/`const`
-(D-010), `move` and use-after-free (D-065), `pick` exhaustiveness with the `tbb`
-ERR arm (D-008), the `unknown` taint on `Result.value` (D-007), and lock levels
-(D-056). **Cycle 0.6 — macros and comptime — is next, and closes Phase A.**
-`src/frontend/` is ~52 `.npk` modules of real compiler, written in Nitpick, with
-the analyses under `src/frontend/analysis/`.
+**Cycles 0.0–0.6 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+the module/symbol/visibility passes, the type system, the static analyses, and
+macros with `comptime` and `#[derive]`. **Phase A is complete** — the artifact is a
+checker that validates completely and emits nothing. **Cycle 0.7 — the first backend
+rung — is next.** `src/frontend/` is ~58 `.npk` modules of real compiler, written in
+Nitpick, with the analyses under `src/frontend/analysis/` and expansion under
+`src/frontend/macro/`.
 
 `tools/check.npk` runs the whole frontend over a real program — load, resolve,
 type-check, **analyse**, report — and exits 0 on a clean one. That is what Phase A's
@@ -25,9 +24,19 @@ artifact is: a checker that validates completely and emits nothing.
 It refuses a program that returns a borrow, launders one through a call, reads an
 unassigned binding, writes a `fixed` binding twice, uses a moved-from binding,
 double-frees, takes the address of a temporary, leaves a `pick` arm uncovered, lets
-`(*)` swallow ERR, reads a tainted `Result.value`, or acquires a lock downward —
-each with its own code, its own span, and a case in `tests/analysis/rejection/`
-showing it refuse.
+`(*)` swallow ERR, reads a tainted `Result.value`, acquires a lock downward, expands
+a macro without bound, names something in a macro body its defining scope does not
+have, splices a body where it does not fit, evaluates a `comptime` that never
+finishes, derives a trait that cannot be derived, or writes a struct literal that
+omits a field — each with its own code, its own span, and a case in one of the six
+rejection suites showing it refuse.
+
+**Three whole-tree checks run on every harness invocation** and each found something
+on its first run: `check_kinds_typed` (every expression kind is typed),
+`check_codes_tested` (every code has a case, or a stated reason), and
+`check_codes_centralised` (no code literal outside a `*_codes.npk`). They diff the
+compiler against the thing that describes it, which is how cycle 0.6 found every one
+of its holes — none was found by a test.
 
 ### Building and testing
 
