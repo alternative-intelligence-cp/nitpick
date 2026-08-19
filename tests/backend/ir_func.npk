@@ -1,0 +1,178 @@
+// Function emission (cycle 0.7.4) — the define line, parameter slots, locals,
+// and the `Result<T>` return.
+//
+// EVERY ASSERTION HERE IS A BYTE COMPARISON AGAINST THE WHOLE EMITTED FUNCTION,
+// not a probe for a substring. The seed's shapes are the reference; a shape that
+// drifts — one space, one missing error-field write — is a different compiler,
+// and the fixpoint check will say so far less legibly than this file does.
+//
+// THE ASSERTION THAT MATTERS MOST IS THE SHADOWING ONE. The seed keeps locals in
+// a flat map, so an inner block's `x` overwrites the outer binding and STAYS
+// after the block ends — and the language permits shadowing, so that is an
+// accepted program lowered wrongly. This file pins the behavior the real emitter
+// has instead: innermost wins while the block lives, and the outer binding
+// REAPPEARS when it ends.
+
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/backend/ir/ir_writer.npk".*;
+use "../../src/backend/ir/ir_types.npk".*;
+use "../../src/backend/ir/ir_func.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+    Ast:ast = raw ast_init();
+    TypeTable:types = raw typetable_init();
+    LlCtx:c = raw llctx_init(@ast, @types, @it);
+
+    int32:i32t = raw tt_int(@types, 32i32, true);
+    int32:i64t = raw tt_int(@types, 64i32, true);
+    int32:f32t = raw tt_float(@types, 32i32);
+    int32:nx = relay intern_add(@it, "x");
+    int32:ny = relay intern_add(@it, "y");
+
+    // --- `main` IS BARE (D-089): no Result, and a fall-off still returns -------
+    IrWriter:w1 = raw irw_to_buffer();
+    FnEmitter:f1 = raw fnem_init(@w1, @c);
+    LlType:r1 = relay fnem_begin(@f1, "main", i32t);
+    if (!(raw ll_is_ok(r1)))                               { exit 10i32; }
+    drop fnem_open(@f1);
+    drop fnem_close(@f1, false);
+    if (!(raw string_eq(relay irw_text(@w1),
+        "define i32 @main() {\nentry:\n  ret i32 0\n}\n\n"))) { exit 11i32; }
+
+    // --- AN ORDINARY FUNCTION IS WRAPPED: declares int32, returns {i32, i32} --
+    //
+    // Two parameters arrive as `%a0`/`%a1` and are STORED TO SLOTS, because an
+    // argument register cannot be assigned to and `a = a + 1i32;` must work.
+    // The `pass` builds the Result with the error field EXPLICITLY zero — a
+    // Result whose error slot is undef is one whose `.is_error` the optimiser
+    // gets to decide.
+    IrWriter:w2 = raw irw_to_buffer();
+    FnEmitter:f2 = raw fnem_init(@w2, @c);
+    LlType:r2 = relay fnem_begin(@f2, "add", i32t);
+    if (!(raw ll_is_ok(r2)))                               { exit 20i32; }
+    if (!(raw string_eq(r2.text, "{ i32, i32 }")))         { exit 21i32; }
+    drop fnem_param(@f2, nx, i32t);
+    drop fnem_param(@f2, ny, i32t);
+    drop fnem_open(@f2);
+    drop fnem_ret_pass(@f2, "7");
+    drop fnem_close(@f2, true);
+    if (!(raw string_eq(relay irw_text(@w2),
+        "define { i32, i32 } @npk_add(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 %a1, ptr %t1\n  %t2 = insertvalue { i32, i32 } undef, i32 7, 0\n  %t3 = insertvalue { i32, i32 } %t2, i32 0, 1\n  ret { i32, i32 } %t3\n}\n\n"))) { exit 22i32; }
+
+    // …and the parameter slots are real bindings: both resolve, to the right
+    // slots and the right types.
+    LocalSlot:px = raw fnem_lookup(@f2, nx);
+    LocalSlot:py = raw fnem_lookup(@f2, ny);
+    if (!px.found)                                         { exit 23i32; }
+    if (!(raw string_eq(px.slot, "%t0")))                  { exit 24i32; }
+    if (px.type_id != i32t)                                { exit 25i32; }
+    if (!(raw string_eq(py.slot, "%t1")))                  { exit 26i32; }
+
+    // --- `Result<NIL>` IS `{i32}`, AND ITS `pass` IS A CONSTANT (D-084) -------
+    IrWriter:w3 = raw irw_to_buffer();
+    FnEmitter:f3 = raw fnem_init(@w3, @c);
+    drop fnem_begin(@f3, "tick", types.t_nil);
+    drop fnem_open(@f3);
+    drop fnem_ret_pass(@f3, "");
+    drop fnem_close(@f3, true);
+    if (!(raw string_eq(relay irw_text(@w3),
+        "define { i32 } @npk_tick() {\nentry:\n  ret { i32 } { i32 0 }\n}\n\n"))) { exit 30i32; }
+
+    // `fail 9` into a Result<NIL>: one insertvalue, code in slot 0.
+    IrWriter:w4 = raw irw_to_buffer();
+    FnEmitter:f4 = raw fnem_init(@w4, @c);
+    drop fnem_begin(@f4, "halt", types.t_nil);
+    drop fnem_open(@f4);
+    drop fnem_ret_fail(@f4, "9");
+    drop fnem_close(@f4, true);
+    if (!(raw string_eq(relay irw_text(@w4),
+        "define { i32 } @npk_halt() {\nentry:\n  %t0 = insertvalue { i32 } undef, i32 9, 0\n  ret { i32 } %t0\n}\n\n"))) { exit 31i32; }
+
+    // --- A FAILED Result CARRIES A ZEROED VALUE, not leftover memory ----------
+    //
+    // `fail 3` from a function declaring `string`: the value slot is written as
+    // zeroinitializer BEFORE the code goes in, so a caller that unwraps without
+    // checking reads an empty string rather than whatever the stack held.
+    IrWriter:w5 = raw irw_to_buffer();
+    FnEmitter:f5 = raw fnem_init(@w5, @c);
+    drop fnem_begin(@f5, "read", types.t_string);
+    drop fnem_open(@f5);
+    drop fnem_ret_fail(@f5, "3");
+    drop fnem_close(@f5, true);
+    if (!(raw string_eq(relay irw_text(@w5),
+        "define { { ptr, i64, i64 }, i32 } @npk_read() {\nentry:\n  %t0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } zeroinitializer, 0\n  %t1 = insertvalue { { ptr, i64, i64 }, i32 } %t0, i32 3, 1\n  ret { { ptr, i64, i64 }, i32 } %t1\n}\n\n"))) { exit 32i32; }
+
+    // --- FALLING OFF THE END STILL TERMINATES, wrapped form -------------------
+    IrWriter:w6 = raw irw_to_buffer();
+    FnEmitter:f6 = raw fnem_init(@w6, @c);
+    drop fnem_begin(@f6, "noop", i32t);
+    drop fnem_open(@f6);
+    drop fnem_close(@f6, false);
+    if (!(raw string_eq(relay irw_text(@w6),
+        "define { i32, i32 } @npk_noop() {\nentry:\n  ret { i32, i32 } zeroinitializer\n}\n\n"))) { exit 33i32; }
+
+    // --- SHADOWING: innermost wins, and the outer binding COMES BACK ----------
+    IrWriter:w7 = raw irw_to_buffer();
+    FnEmitter:f7 = raw fnem_init(@w7, @c);
+    drop fnem_begin(@f7, "shade", i32t);
+    drop fnem_open(@f7);
+    string:outer = relay fnem_local(@f7, nx, i32t, "i32");
+    int32:mark = raw fnem_mark(@f7);
+    string:inner = relay fnem_local(@f7, nx, i64t, "i64");
+    LocalSlot:sh = raw fnem_lookup(@f7, nx);
+    if (!(raw string_eq(sh.slot, inner)))                  { exit 40i32; }
+    if (sh.type_id != i64t)                                { exit 41i32; }
+    drop fnem_release(@f7, mark);
+    LocalSlot:back = raw fnem_lookup(@f7, nx);
+    if (!(raw string_eq(back.slot, outer)))                { exit 42i32; }
+    if (back.type_id != i32t)                              { exit 43i32; }
+    // A name never bound answers `found: false`, not somebody else's slot.
+    LocalSlot:no = raw fnem_lookup(@f7, ny);
+    if (no.found)                                          { exit 44i32; }
+
+    // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
+    IrWriter:w8 = raw irw_to_buffer();
+    FnEmitter:f8 = raw fnem_init(@w8, @c);
+    LlType:bad = relay fnem_begin(@f8, "f", f32t);
+    if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
+    if (!(raw string_eq(bad.rung, "0.9")))                 { exit 51i32; }
+    if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
+    LlType:badp = relay fnem_param(@f8, nx, f32t);
+    if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }
+
+    // --- THE COUNTERS RESET PER FUNCTION: two functions, one writer -----------
+    //
+    // The second function's slots start at %t0 again, which is what makes a
+    // one-function change a one-function diff in the fixpoint's output.
+    IrWriter:w9 = raw irw_to_buffer();
+    FnEmitter:f9 = raw fnem_init(@w9, @c);
+    drop fnem_begin(@f9, "main", i32t);
+    drop fnem_open(@f9);
+    drop fnem_close(@f9, false);
+    drop fnem_begin(@f9, "add", i32t);
+    drop fnem_param(@f9, nx, i32t);
+    drop fnem_param(@f9, ny, i32t);
+    drop fnem_open(@f9);
+    drop fnem_ret_pass(@f9, "7");
+    drop fnem_close(@f9, true);
+    string:both = relay string_concat(relay irw_text(@w1), relay irw_text(@w2));
+    if (!(raw string_eq(relay irw_text(@w9), both)))       { exit 60i32; }
+
+    // --- BYTE-IDENTICAL ON REPEAT (D-078) -------------------------------------
+    IrWriter:wa = raw irw_to_buffer();
+    FnEmitter:fa = raw fnem_init(@wa, @c);
+    drop fnem_begin(@fa, "add", i32t);
+    drop fnem_param(@fa, nx, i32t);
+    drop fnem_param(@fa, ny, i32t);
+    drop fnem_open(@fa);
+    drop fnem_ret_pass(@fa, "7");
+    drop fnem_close(@fa, true);
+    if (!(raw string_eq(relay irw_text(@wa), relay irw_text(@w2)))) { exit 61i32; }
+
+    exit 0i32;
+};

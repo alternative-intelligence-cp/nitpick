@@ -33,7 +33,7 @@ pub struct:IrWriter = {
     // than what was written, with nothing reporting it.
     Sink:out;
 
-    // `%0`, `%1`, … WITHIN ONE FUNCTION. Reset at each function's start, so a
+    // `%t0`, `%t1`, … WITHIN ONE FUNCTION. Reset at each function's start, so a
     // function's IR depends on that function alone — which is what makes a
     // one-function change produce a one-function diff.
     int32:next_temp;
@@ -90,8 +90,17 @@ pub func:irw_label = NIL(IrWriter->:w, string:name) {
 // A NEW TEMPORARY. Sequential, per function, and the only source of value names —
 // nothing else may invent one, because two schemes numbering into the same space is
 // how a `%3` comes to mean two things.
+//
+// `%t0` AND NOT `%0`, and the letter is load-bearing (0.7.4). LLVM treats a bare
+// NUMERIC name as its own implicit counter: numbered values must be defined in
+// exactly ascending order with no gaps, so a temp that is handed out and then not
+// written — or written after a branch reordered things — is not sloppy IR, it is IR
+// `llc` REJECTS. A lettered name carries no such obligation, which turns "every
+// temp must be emitted, in order, exactly once" from a global invariant every
+// future lowering must maintain into a rule nobody has to remember. The seed uses
+// `%tN` for the same reason.
 pub func:irw_temp = string(IrWriter->:w) {
-    string:t = relay string_concat("%", raw int_to_string(w.next_temp => int64));
+    string:t = relay string_concat("%t", raw int_to_string(w.next_temp => int64));
     w.next_temp = w.next_temp + 1i32;
     pass t;
 };

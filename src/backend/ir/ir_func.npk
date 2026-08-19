@@ -1,0 +1,347 @@
+// Function emission — the define line, the entry block, parameter slots, locals,
+// and the `Result<T>` return.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.4.
+//
+// THE SEED'S SHAPES, QUOTED. `bootstrap/generator/emit.py` already lowers a
+// function as: a `define` line, an `entry:` block, one alloca-and-store per
+// parameter, every local an alloca, and a `pass` built as two `insertvalue`s.
+// Naive by design — no SSA construction, because `mem2reg` already does that
+// correctly and a hand-rolled phi placement is wrong exactly on merges, which is
+// cycle 0.5's whole lesson. Each shape below names the seed function it mirrors.
+//
+// ONE DELIBERATE DEPARTURE: LOCALS ARE A SCOPE STACK, NOT A FLAT MAP. The seed
+// keeps `self.locals` as a dict keyed by name, so an inner block's `int32:x`
+// OVERWRITES the outer `x` and stays bound after the block ends — and the language
+// permits shadowing (`resolve.npk`: "an inner one may shadow an outer"), so that
+// is a program the frontend accepts and the seed lowers WRONGLY. The seed gets
+// away with it because it compiles exactly one program, the compiler, which never
+// leans on the pattern. The real emitter compiles whatever the frontend accepts.
+// So: bindings append, lookup walks BACKWARD (innermost shadow wins), and leaving
+// a block truncates back to a mark — outer bindings reappear because they were
+// never gone. Worse than a rung that lowers wrongly is inheriting a reference's
+// defect on purpose.
+//
+// THE ERROR FIELD OF A SUCCESSFUL Result IS WRITTEN, NEVER LEFT undef. A Result
+// whose error slot is undef is one whose `.is_error` answers differently on
+// different runs — a slot that means two things, decided by the optimiser.
+
+mod:ir_func;
+
+use "../../frontend/intern.npk".*;
+use "../../frontend/diagnostics.npk".*;
+use "../../frontend/types.npk".*;
+use "ir_writer.npk".*;
+use "ir_types.npk".*;
+
+// `main` AND `failsafe` RETURN A BARE `int32` — the two exceptions D-089 names,
+// and the only two: they are where `exit` lives, so they have no caller to hand a
+// `Result` to. Everything else declares `T` and returns `Result<T>` (D-069), and
+// the wrap is implicit — which is why this module is where it becomes explicit.
+pub func:fn_is_bare = bool(string:name) {
+    if (raw string_eq(name, "main"))     { pass true; }
+    if (raw string_eq(name, "failsafe")) { pass true; }
+    pass false;
+};
+
+pub struct:LocalSlot = {
+    bool:found;
+    string:slot;      // "%t3" — the alloca holding the value
+    int32:type_id;
+};
+
+pub struct:FnEmitter = {
+    IrWriter->:w;
+    LlCtx->:ctx;
+
+    // The signature being collected. The define line cannot be written until
+    // every parameter is known, so parameters are DECLARED first and `fnem_open`
+    // writes the header, the entry label and the prologue in one place.
+    string:sym;        // "@main" | "@npk_<name>"
+    bool:bare;
+    bool:ret_nil;
+    int32:ret_type;    // the DECLARED return — `T`, never `Result<T>`
+    string:ret_ll;     // what the define line says: `T` bare, `{T, i32}` wrapped
+    string:val_ll;     // `T`'s own text, for insertvalue; "" when T is NIL
+    string:val_zero;   // the value slot of a failed Result
+
+    wild int32->:pnames;
+    wild int32->:ptypes;
+    wild string->:plls;
+    int32:pcount;
+    int32:pcap;
+
+    // The scope stack. Append-only between marks; `fnem_release` truncates.
+    wild int32->:lnames;
+    wild string->:lslots;
+    wild int32->:ltypes;
+    int32:lcount;
+    int32:lcap;
+};
+
+pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
+    wild int8->:pn = alloc(8i64 * 4i64);
+    wild int8->:pt = alloc(8i64 * 4i64);
+    wild int8->:pl = alloc(8i64 * #size_of<string>());
+    wild int8->:ln = alloc(32i64 * 4i64);
+    wild int8->:ls = alloc(32i64 * #size_of<string>());
+    wild int8->:lt = alloc(32i64 * 4i64);
+    FnEmitter:fe = FnEmitter{
+        w: w, ctx: ctx,
+        sym: "", bare: false, ret_nil: false, ret_type: 0i32,
+        ret_ll: "", val_ll: "", val_zero: "",
+        pnames: pn => wild int32->, ptypes: pt => wild int32->,
+        plls: pl => wild string->, pcount: 0i32, pcap: 8i32,
+        lnames: ln => wild int32->, lslots: ls => wild string->,
+        ltypes: lt => wild int32->, lcount: 0i32, lcap: 32i32
+    };
+    pass fe;
+};
+
+func:fnem_grow_params = NIL(FnEmitter->:fe) {
+    int32:nc = fe.pcap * 2i32;
+    wild int8->:a = ralloc(fe.pnames => wild int8->, (nc => int64) * 4i64);
+    wild int8->:b = ralloc(fe.ptypes => wild int8->, (nc => int64) * 4i64);
+    wild int8->:c = ralloc(fe.plls => wild int8->, (nc => int64) * #size_of<string>());
+    fe.pnames = a => wild int32->;
+    fe.ptypes = b => wild int32->;
+    fe.plls = c => wild string->;
+    fe.pcap = nc;
+    pass NIL;
+};
+
+func:fnem_grow_locals = NIL(FnEmitter->:fe) {
+    int32:nc = fe.lcap * 2i32;
+    wild int8->:a = ralloc(fe.lnames => wild int8->, (nc => int64) * 4i64);
+    wild int8->:b = ralloc(fe.lslots => wild int8->, (nc => int64) * #size_of<string>());
+    wild int8->:c = ralloc(fe.ltypes => wild int8->, (nc => int64) * 4i64);
+    fe.lnames = a => wild int32->;
+    fe.lslots = b => wild string->;
+    fe.ltypes = c => wild int32->;
+    fe.lcap = nc;
+    pass NIL;
+};
+
+// Concatenation helpers, because a define line is seven pieces and a chain of
+// seven `string_concat` calls buries which seven.
+func:cat3 = string(string:a, string:b, string:c) {
+    pass (relay string_concat(relay string_concat(a, b), c));
+};
+
+func:cat4 = string(string:a, string:b, string:c, string:d) {
+    pass (relay string_concat(relay cat3(a, b, c), d));
+};
+
+func:cat5 = string(string:a, string:b, string:c, string:d, string:e) {
+    pass (relay string_concat(relay cat4(a, b, c, d), e));
+};
+
+// --- the signature ----------------------------------------------------------------
+
+// Start a function. Returns the RETURN's lowering — `LL_RUNG` and `LL_BROKEN`
+// propagate to the caller, which is where the rung diagnostic lives (0.7.7); a
+// module with no codes of its own cannot misreport one.
+//
+// Mirrors the seed's `fn_sig`: bare for `main`/`failsafe`, `Result<T>` otherwise.
+pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:ret_type) {
+    fe.sym = relay ir_symbol(name);
+    fe.bare = raw fn_is_bare(name);
+    fe.ret_type = ret_type;
+    fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));
+    fe.pcount = 0i32;
+    fe.lcount = 0i32;
+    // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
+    // one-function diff, which is what makes the fixpoint check readable.
+    drop irw_begin_function(fe.w);
+
+    if (fe.bare) {
+        LlType:vt = relay ll_type(fe.ctx, ret_type);
+        if (vt.state != (raw LL_OK())) { pass vt; }
+        fe.ret_ll = vt.text;
+        fe.val_ll = vt.text;
+        fe.val_zero = raw ll_zero(vt);
+        pass vt;
+    }
+
+    LlType:rt = relay ll_wrap_result(fe.ctx, ret_type);
+    if (rt.state != (raw LL_OK())) { pass rt; }
+    fe.ret_ll = rt.text;
+    fe.val_ll = "";
+    fe.val_zero = "";
+    if (!fe.ret_nil) {
+        LlType:vt = relay ll_type(fe.ctx, ret_type);
+        fe.val_ll = vt.text;
+        fe.val_zero = raw ll_zero(vt);
+    }
+    pass rt;
+};
+
+// Declare one parameter, in order. A refused type propagates and the function is
+// not emitted — a signature with a hole in it is not a signature minus a hole.
+pub func:fnem_param = LlType(FnEmitter->:fe, int32:name, int32:type_id) {
+    LlType:t = relay ll_type(fe.ctx, type_id);
+    if (t.state != (raw LL_OK())) { pass t; }
+    if (fe.pcount >= fe.pcap) { drop fnem_grow_params(fe); }
+    fe.pnames[fe.pcount => int64] = name;
+    fe.ptypes[fe.pcount => int64] = type_id;
+    fe.plls[fe.pcount => int64] = t.text;
+    fe.pcount = fe.pcount + 1i32;
+    pass t;
+};
+
+// Write the header, the entry block, and the prologue.
+//
+// PARAMETERS ARRIVE AS `%a0`, `%a1`, … — a namespace apart from `%tN`, for the
+// same reason `irw_temp` is the only source of temp names: two schemes numbering
+// into ONE space is how a name comes to mean two things, so the schemes get
+// disjoint prefixes. The seed uses `%aN` too.
+//
+// EACH PARAMETER IS STORED TO A SLOT AND THE SLOT IS THE BINDING. An LLVM
+// argument register cannot be assigned to, so `a = a + 1i32;` needs the parameter
+// to live in memory like any other local — naive lowering, `mem2reg` undoes it.
+pub func:fnem_open = NIL(FnEmitter->:fe) {
+    string:params = "";
+    int32:i = 0i32;
+    while (i < fe.pcount) {
+        if (i > 0i32) { params = relay string_concat(params, ", "); }
+        params = relay cat3(params, fe.plls[i => int64], " %a");
+        params = relay string_concat(params, raw int_to_string(i => int64));
+        i = i + 1i32;
+    }
+    drop irw_raw(fe.w, relay cat5("define ", fe.ret_ll, " ", fe.sym,
+                                  relay cat3("(", params, ") {")));
+    drop irw_label(fe.w, "entry");
+
+    i = 0i32;
+    while (i < fe.pcount) {
+        string:ll = fe.plls[i => int64];
+        string:arg = relay string_concat("%a", raw int_to_string(i => int64));
+        string:slot = relay irw_temp(fe.w);
+        drop irw_line(fe.w, relay cat3(slot, " = alloca ", ll));
+        drop irw_line(fe.w, relay cat5("store ", ll, " ", arg,
+                                       relay string_concat(", ptr ", slot)));
+        drop fnem_bind(fe, fe.pnames[i => int64], slot, fe.ptypes[i => int64]);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- locals -----------------------------------------------------------------------
+
+func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) {
+    if (fe.lcount >= fe.lcap) { drop fnem_grow_locals(fe); }
+    fe.lnames[fe.lcount => int64] = name;
+    fe.lslots[fe.lcount => int64] = slot;
+    fe.ltypes[fe.lcount => int64] = type_id;
+    fe.lcount = fe.lcount + 1i32;
+    pass NIL;
+};
+
+// A local: an alloca in whatever block is current, bound from here to the end of
+// its enclosing scope. The caller supplies the lowered text it already has —
+// lowering again here would be a second chance for the two to differ.
+pub func:fnem_local = string(FnEmitter->:fe, int32:name, int32:type_id, string:ll) {
+    string:slot = relay irw_temp(fe.w);
+    drop irw_line(fe.w, relay cat3(slot, " = alloca ", ll));
+    drop fnem_bind(fe, name, slot, type_id);
+    pass slot;
+};
+
+// BACKWARD, so the innermost binding of a name wins — which is what shadowing
+// means. Forward search would resolve every shadowed name to its OUTERMOST
+// declaration, silently, in exactly the programs the frontend went out of its way
+// to permit.
+pub func:fnem_lookup = LocalSlot(FnEmitter->:fe, int32:name) {
+    int32:i = fe.lcount;
+    while (i > 0i32) {
+        i = i - 1i32;
+        if (fe.lnames[i => int64] == name) {
+            LocalSlot:s = LocalSlot{ found: true, slot: fe.lslots[i => int64],
+                                     type_id: fe.ltypes[i => int64] };
+            pass s;
+        }
+    }
+    LocalSlot:none = LocalSlot{ found: false, slot: "", type_id: 0i32 };
+    pass none;
+};
+
+// Block entry and exit. The mark is the local count; release truncates back to
+// it, so everything a block declared stops resolving the moment it ends.
+pub func:fnem_mark = int32(FnEmitter->:fe) { pass fe.lcount; };
+
+pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) {
+    fe.lcount = mark;
+    pass NIL;
+};
+
+// --- returns ----------------------------------------------------------------------
+//
+// The seed's `emit_return` / `emit_return_err`, shape for shape.
+
+// `pass v` — the Result is BUILT, not assembled over time: value in slot 0, and
+// error EXPLICITLY ZERO in slot 1. `Result<NIL>` is the constant `{ i32 0 }`.
+pub func:fnem_ret_pass = NIL(FnEmitter->:fe, string:value) {
+    if (fe.bare) {
+        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", value));
+        pass NIL;
+    }
+    if (fe.ret_nil) {
+        drop irw_line(fe.w, "ret { i32 } { i32 0 }");
+        pass NIL;
+    }
+    string:a = relay irw_temp(fe.w);
+    drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+                                   " undef, ",
+                                   relay cat4(fe.val_ll, " ", value, ", 0")));
+    string:b = relay irw_temp(fe.w);
+    drop irw_line(fe.w, relay cat5(b, " = insertvalue ", fe.ret_ll,
+                                   " ", relay string_concat(a, ", i32 0, 1")));
+    drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", b));
+    pass NIL;
+};
+
+// `fail c` — a zeroed value slot and the code in the error slot, so a caller that
+// unwraps without checking reads an empty value rather than memory that means
+// something else.
+pub func:fnem_ret_fail = NIL(FnEmitter->:fe, string:code) {
+    if (fe.bare) {
+        // The frontend refuses `fail` in `main` and `failsafe` (there is no
+        // Result to fail into); emitting the bare form anyway means a frontend
+        // regression produces IR that is wrong, not IR that is malformed.
+        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", code));
+        pass NIL;
+    }
+    if (fe.ret_nil) {
+        string:a = relay irw_temp(fe.w);
+        drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+                                       " undef, i32 ",
+                                       relay string_concat(code, ", 0")));
+        drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", a));
+        pass NIL;
+    }
+    string:a = relay irw_temp(fe.w);
+    drop irw_line(fe.w, relay cat5(a, " = insertvalue ", fe.ret_ll,
+                                   " undef, ",
+                                   relay cat4(fe.val_ll, " ", fe.val_zero, ", 0")));
+    string:b = relay irw_temp(fe.w);
+    drop irw_line(fe.w, relay cat5(b, " = insertvalue ", fe.ret_ll,
+                                   " ", relay cat4(a, ", i32 ", code, ", 1")));
+    drop irw_line(fe.w, relay cat4("ret ", fe.ret_ll, " ", b));
+    pass NIL;
+};
+
+// Close the body. A function that falls off its end still terminates — subset-1
+// sources always return explicitly, and this keeps the IR well-formed regardless,
+// which is the seed's rule too.
+pub func:fnem_close = NIL(FnEmitter->:fe, bool:terminated) {
+    if (!terminated) {
+        if (fe.bare) {
+            drop irw_line(fe.w, relay cat3("ret ", fe.ret_ll, " 0"));
+        } else {
+            drop irw_line(fe.w, relay cat3("ret ", fe.ret_ll, " zeroinitializer"));
+        }
+    }
+    drop irw_raw(fe.w, "}");
+    drop irw_blank(fe.w);
+    pass NIL;
+};

@@ -210,7 +210,14 @@ func:ll_array = LlType(LlCtx->:c, int32:id) {
 // `Result<NIL>` IS `{i32}` and not `{void, i32}`: `NIL` is zero-sized (D-084), and
 // `void` is not a type LLVM will put in a struct.
 func:ll_result = LlType(LlCtx->:c, int32:id) {
-    int32:inner = raw type_elem(c.types, id);
+    pass (relay ll_wrap_result(c, raw type_elem(c.types, id)));
+};
+
+// THE SAME RULE, KEYED ON THE INNER TYPE — because the wrap is usually IMPLICIT.
+// Every function returns `Result<T>` while declaring `T` (D-069), so the emitter
+// mostly holds a `T` with no interned `Result<T>` beside it. One body serving both
+// spellings is what keeps "what does a Result look like" a single place.
+pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) {
     if ((raw type_kind(c.types, inner)) == (raw TY_NIL())) {
         pass (raw ll_ok("{ i32 }"));
     }
