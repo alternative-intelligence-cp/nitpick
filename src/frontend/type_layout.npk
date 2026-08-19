@@ -38,16 +38,10 @@ func:fi_none = FieldInfo() {
     pass f;
 };
 
-// Round `n` up to the next multiple of `align`. The one arithmetic rule the whole
-// layout rests on, so it is a function rather than three copies of the same
-// expression.
-pub func:align_up = int64(int64:n, int32:align) {
-    if (align <= 1i32) { pass n; }
-    int64:a = align => int64;
-    int64:rem = n % a;
-    if (rem == 0i64) { pass n; }
-    pass (n + (a - rem));
-};
+// `align_up` AND THE `Lay` ACCUMULATOR LIVE IN `types.npk` since 0.7.2, beside the
+// interning that computes a `Result<T>`'s total at the moment it is constructed.
+// This module still does most of the laying out; it no longer owns the arithmetic,
+// because a module that cannot import it is a module that restates it.
 
 // LOOK UP A FIELD BY NAME, and compute its offset on the way.
 //
@@ -94,25 +88,24 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
 
-    int64:offset = 0i64;
+    Lay:l = raw lay_start();
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
         DeclNode:m = relay ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:ft = relay resolve_type(r, raw field_type(m), scope);
-            // THE OFFSET IS A RUNNING SUM OF FIELD SIZES, so a field whose layout
-            // is not yet computed puts every LATER field at the wrong offset —
-            // silently, since zero is a perfectly good number to add.
+            // A FIELD WHOSE LAYOUT IS NOT YET COMPUTED PUTS EVERY LATER FIELD AT
+            // THE WRONG OFFSET — silently, since zero is a perfectly good number
+            // to add to a running sum.
             drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
-            int32:fa = raw type_align(r.types, ft);
-            offset = raw align_up(offset, fa);
+            int64:at = raw lay_field(@l, raw type_size(r.types, ft),
+                                     raw type_align(r.types, ft));
             if ((raw decl_name(m)) == name) {
                 FieldInfo:f = FieldInfo{ found: true, type_id: ft,
-                                         offset: offset, index: i };
+                                         offset: at, index: i };
                 pass f;
             }
-            offset = offset + (raw type_size(r.types, ft));
         }
         i = i + 1i32;
     }
@@ -147,8 +140,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     // and a `Node->` field never asks for the pointee's layout at all.
     drop tt_set_layout(r.types, struct_type, 1i64, 1i32);
 
-    int64:size = 0i64;
-    int32:align = 1i32;
+    Lay:l = raw lay_start();
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
@@ -160,16 +152,17 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             // ordering pass — the containment graph is acyclic because the loader
             // already refused the cycles (D-086).
             drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
-            int32:fa = raw type_align(r.types, ft);
-            if (fa > align) { align = fa; }
-            size = raw align_up(size, fa);
-            size = size + (raw type_size(r.types, ft));
+            drop lay_field(@l, raw type_size(r.types, ft),
+                           raw type_align(r.types, ft));
         }
         i = i + 1i32;
     }
-    size = raw align_up(size, align);
-    if (size == 0i64) { size = 1i64; }
-    drop tt_set_layout(r.types, struct_type, size, align);
+    drop lay_end(@l);
+    // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
+    // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
+    // accumulator that refused to return zero would have no way to say so.
+    if (l.size == 0i64) { l.size = 1i64; }
+    drop tt_set_layout(r.types, struct_type, l.size, l.align);
     pass struct_type;
 };
 
@@ -212,27 +205,88 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         pass NIL;
     }
 
+    // `{i8 has_value, T value}` (TYPE_REFERENCE §11.1) and `{T, tbb32}` (D-069) —
+    // recomputed THROUGH THE SAME ACCUMULATOR `tt_optional` and `tt_result` use, so
+    // that a wrapper interned before its inner type had a size ends up with the
+    // number the constructor would have given it. Two spellings of one layout is
+    // how `Result<int64>` came to be twelve bytes in one place and sixteen in the
+    // machine.
     if (k == (raw TY_OPTIONAL())) {
         int32:inner = raw type_elem(r.types, t);
         drop ensure_layout(r, inner, scope, fuel - 1i32);
-        int32:ia = raw type_align(r.types, inner);
-        drop tt_set_layout(r.types, t,
-                           (raw type_size(r.types, inner)) + (ia => int64), ia);
+        Lay:l = raw lay_start();
+        drop lay_field(@l, 1i64, 1i32);
+        drop lay_field(@l, raw type_size(r.types, inner),
+                       raw type_align(r.types, inner));
+        drop lay_end(@l);
+        drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;
     }
 
-    // `{T, tbb32}` (D-069). The error field is four bytes, so the alignment is at
-    // least four however small `T` is.
     if (k == (raw TY_RESULT())) {
         int32:inner = raw type_elem(r.types, t);
         drop ensure_layout(r, inner, scope, fuel - 1i32);
-        int32:ra = raw type_align(r.types, inner);
-        if (ra < 4i32) { ra = 4i32; }
-        drop tt_set_layout(r.types, t,
-                           (raw type_size(r.types, inner)) + 4i64, ra);
+        Lay:l = raw lay_start();
+        drop lay_field(@l, raw type_size(r.types, inner),
+                       raw type_align(r.types, inner));
+        drop lay_field(@l, 4i64, 4i32);
+        drop lay_end(@l);
+        drop tt_set_layout(r.types, t, l.size, l.align);
+        pass NIL;
+    }
+
+    // AN ENUM HAD NO ARM HERE AT ALL UNTIL 0.7.2, and both of the places that
+    // intern one pass size zero and alignment one. So every enum in every program
+    // was zero bytes, and a struct with an enum field was laid out as though the
+    // field were not there — the same defect 0.4.8 found for structs, in the one
+    // kind that pass did not cover.
+    //
+    // Nothing caught it because nothing asked: the checker compares types and
+    // almost never needs a size, and `Net` appears in no `#size_of`.
+    if (k == (raw TY_ENUM())) {
+        if ((raw type_size(r.types, t)) != 0i64) { pass NIL; }
+        Lay:l = raw lay_start();
+        drop lay_field(@l, 4i64, 4i32);
+        // `{i32 tag, i64 payload}` WHEN ANY VARIANT CARRIES ONE, and a plain `i32`
+        // when none does (TYPE_REFERENCE §9.3, SUBSET_1 §1.2).
+        //
+        // THE UNIFORM WORD IS THE RUNG'S SHAPE, NOT THE LANGUAGE'S. Sizing the
+        // payload to the widest variant — which §9.3 shows with explicit padding
+        // arrays — is cycle 0.9's, and doing it here would be WORSE than this:
+        // the seed emits `{i32, i64}` for every tagged enum, so an enum whose only
+        // payload is an `int32` would be eight bytes here and sixteen in the IR
+        // the seed produced for it, and the two compilers' output has to
+        // interoperate until the fixpoint closes.
+        if (relay enum_has_payload(r.ast, r.types, t)) {
+            drop lay_field(@l, 8i64, 8i32);
+        }
+        drop lay_end(@l);
+        drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;
     }
     pass NIL;
+};
+
+// DOES ANY VARIANT CARRY A PAYLOAD — which is the whole difference between an enum
+// that is an `i32` and one that is a struct.
+//
+// It takes the AST and the table rather than a `TypeResolver`, because the BACKEND
+// asks this question too and a backend that had to construct a resolver to ask it
+// would be a backend that depends on name resolution.
+pub func:enum_has_payload = bool(Ast->:ast, TypeTable->:types, int32:enum_type) {
+    if ((raw type_kind(types, enum_type)) != (raw TY_ENUM())) { pass false; }
+    DeclId:did = DeclId{ index: raw type_decl(types, enum_type) };
+    DeclNode:d = relay ast_decl(ast, did);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(ast, d))) {
+        DeclId:mid = raw item_member(ast, d, i);
+        DeclNode:m = relay ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw variant_payload_count(m)) > 0i32) { pass true; }
+        }
+        i = i + 1i32;
+    }
+    pass false;
 };
 
 // AN ENUM VARIANT'S TYPE IS THE ENUM, whatever the variant carries.

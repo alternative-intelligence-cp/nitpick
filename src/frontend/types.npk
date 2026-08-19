@@ -192,6 +192,76 @@ pub func:tt_get = Type(TypeTable->:t, int32:id) {
 
 pub func:tt_count = int32(TypeTable->:t) { pass t.count; };
 
+// --- how an aggregate is laid out ------------------------------------------------------
+//
+// ONE ARITHMETIC, AND EVERY AGGREGATE GOES THROUGH IT. A struct, a `Result<T>`, an
+// `Optional<T>` and a range are all the same shape of question — fields in order,
+// each moved up to its own alignment, the total rounded up to the widest — and
+// until 0.7.2 each answered it with a formula of its own.
+//
+// TWO OF THE FOUR WERE WRONG, and both in the direction that does not fail:
+//
+//   - `Result<T>` was `size(T) + 4`, which forgets the padding LLVM inserts on
+//     BOTH sides of the error field. `Result<int64>` is `{i64, i32}` — sixteen
+//     bytes, because the whole must round up to the eight the `i64` demands — and
+//     this said twelve. `Result<int8>` is eight and this said five.
+//   - AN ENUM HAD NO LAYOUT AT ALL: `tt_enum` was called with size zero from both
+//     of its call sites and nothing ever fixed it, so every struct with an enum
+//     field was laid out as though the field were not there.
+//
+// Neither could be caught by the tests that existed, because `tests/frontend/
+// type_layout.npk` asserted `Result<Pair>` — where `Pair` is `{i32,i32}`, needs no
+// padding, and gives the right answer by accident.
+//
+// The fix is not four corrected formulas. It is ONE, used four times: a formula
+// per aggregate is four chances to disagree about padding, which is the same
+// argument `struct_field` makes for walking and laying out in a single pass.
+
+pub struct:Lay = { int64:size; int32:align; };
+
+// Round `n` up to the next multiple of `align`. The one arithmetic rule the whole
+// layout rests on, so it is a function rather than N copies of the same expression.
+//
+// It lives HERE, beside the interning that needs it, rather than in
+// `type_layout.npk` where it was written: `tt_result` and `tt_optional` compute a
+// total at the moment they intern, and a module they cannot import is a module
+// whose rule they end up restating.
+pub func:align_up = int64(int64:n, int32:align) {
+    if (align <= 1i32) { pass n; }
+    int64:a = align => int64;
+    int64:rem = n % a;
+    if (rem == 0i64) { pass n; }
+    pass (n + (a - rem));
+};
+
+pub func:lay_start = Lay() {
+    Lay:l = Lay{ size: 0i64, align: 1i32 };
+    pass l;
+};
+
+// ONE FIELD, IN DECLARATION ORDER — AND IT RETURNS THE OFFSET IT LANDED AT.
+//
+// That return is what lets the offset walk and the size walk be ONE walk rather
+// than two that have to agree about padding. `struct_field` used to keep a
+// running sum of its own beside this one; now it reads the answer out of the
+// same call that produced it, so there is no second sum to drift.
+pub func:lay_field = int64(Lay->:l, int64:fsize, int32:falign) {
+    if (falign > l.align) { l.align = falign; }
+    l.size = raw align_up(l.size, falign);
+    int64:at = l.size;
+    l.size = l.size + fsize;
+    pass at;
+};
+
+// THE TAIL PADDING, which is the half that was missing. An aggregate's size is a
+// multiple of its alignment, so that `T[2]` puts the second element where the
+// first one's alignment says it goes — and that rounding is the difference
+// between `Result<int64>` being sixteen bytes and being twelve.
+pub func:lay_end = NIL(Lay->:l) {
+    l.size = raw align_up(l.size, l.align);
+    pass NIL;
+};
+
 // --- the scalars ---------------------------------------------------------------------
 //
 // Sizes and alignments are `TYPE_REFERENCE.md` §§1–2, 9–11. They are asserted
@@ -266,15 +336,27 @@ pub func:tt_array = int32(TypeTable->:t, int32:elem, int32:count,
 // reported where it happens and names what it found.
 pub func:tt_range = int32(TypeTable->:t, int32:elem, int64:elem_size,
                           int32:elem_align) {
-    pass (raw tt_intern(t, raw TY_RANGE(), elem, 0i32, 0i32,
-                        elem_size * 2i64, elem_align, 0i32));
+    // `{T lo, T hi}` — two fields, through the same accumulator as every other
+    // aggregate. The answer is `2 * size` for any `T`, which is exactly why it
+    // was written that way and exactly why it is not written that way now: a
+    // formula that happens to agree is still a second place the rule lives.
+    Lay:l = raw lay_start();
+    drop lay_field(@l, elem_size, elem_align);
+    drop lay_field(@l, elem_size, elem_align);
+    drop lay_end(@l);
+    pass (raw tt_intern(t, raw TY_RANGE(), elem, 0i32, 0i32, l.size, l.align, 0i32));
 };
 
+// `{i8 has_value, T value}` — the TAG FIRST (TYPE_REFERENCE §11.1). An `i8`
+// rather than an `i1` because a bit is not addressable, and the three bytes of
+// padding after it are the machine's, not a rule this restates.
 pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
                              int32:inner_align) {
-    // A tag beside the value, rounded to the value's alignment.
-    int64:total = inner_size + (inner_align => int64);
-    pass (raw tt_intern(t, raw TY_OPTIONAL(), inner, 0i32, 0i32, total, inner_align, 0i32));
+    Lay:l = raw lay_start();
+    drop lay_field(@l, 1i64, 1i32);
+    drop lay_field(@l, inner_size, inner_align);
+    drop lay_end(@l);
+    pass (raw tt_intern(t, raw TY_OPTIONAL(), inner, 0i32, 0i32, l.size, l.align, 0i32));
 };
 
 // `{T, tbb32}` (D-069) — NO is_error field, because `.is_error` is derived as
@@ -284,10 +366,15 @@ pub func:tt_optional = int32(TypeTable->:t, int32:inner, int64:inner_size,
 // `Result<NIL>` is `{i32}`: NIL is zero-sized (D-084).
 pub func:tt_result = int32(TypeTable->:t, int32:inner, int64:inner_size,
                            int32:inner_align) {
-    int64:total = inner_size + 4i64;
-    int32:al = inner_align;
-    if (al < 4i32) { al = 4i32; }
-    pass (raw tt_intern(t, raw TY_RESULT(), inner, 0i32, 0i32, total, al, 0i32));
+    // THE ERROR FIELD IS SECOND, so the padding falls on both sides of it: before,
+    // when `T` is not already a multiple of four, and after, when `T` is wider
+    // than four. `size(T) + 4` had neither, and was right only for a `T` that
+    // needed neither.
+    Lay:l = raw lay_start();
+    drop lay_field(@l, inner_size, inner_align);
+    drop lay_field(@l, 4i64, 4i32);
+    drop lay_end(@l);
+    pass (raw tt_intern(t, raw TY_RESULT(), inner, 0i32, 0i32, l.size, l.align, 0i32));
 };
 
 // A named aggregate. Its identity is its DECLARATION (D-090): two structs with

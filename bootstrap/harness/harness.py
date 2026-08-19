@@ -447,11 +447,92 @@ def check_codes_centralised():
     return fails
 
 
+def check_ll_types_agree():
+    """The two emitters must lower a type to the SAME LLVM text.
+
+    `bootstrap/generator/ntypes.py` answers this for the compiler that builds
+    stage 1, and `src/backend/ir/ir_types.npk` answers it for stage 1 itself. Their
+    IR meets at every runtime symbol and every aggregate that crosses between them,
+    and `llc` rejects a caller whose struct disagrees with the callee's by one
+    field -- which is how the runtime's header records the mismatch being caught
+    the first time.
+
+    So the two are DIFFED rather than trusted. `tests/backend/ir_types.npk` pins
+    the real compiler's answer as a string on each `ll_is` line, with a `// ll:`
+    marker naming the shape; this reads the pair off that ONE line and asks the
+    seed the same question. Both halves on one line is deliberate: a marker on the
+    line above could stop describing the assertion beneath it and nothing would
+    say so.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "bootstrap", "generator"))
+    import ntypes as T
+
+    # The seed decides per compilation which enums carry a payload, because
+    # `llvm()` has no other way to know. The fixture's two are stated here.
+    T.reset_enums()
+    T.ENUM_HAS_PAYLOAD["Flat"] = False
+    T.ENUM_HAS_PAYLOAD["Tagged"] = True
+
+    shapes = {
+        "int8": T.Prim("int8"), "int16": T.Prim("int16"),
+        "int32": T.Prim("int32"), "int64": T.Prim("int64"),
+        "uint8": T.Prim("uint8"), "uint32": T.Prim("uint32"),
+        "bool": T.BOOL, "char8": T.CHAR8, "tbb32": T.TBB32,
+        "string": T.STRING, "cstring": T.CSTRING, "NIL": T.NIL,
+        "int32->": T.Ptr(T.I32), "int32[]": T.Slice(T.I32),
+        "int32[4]": T.Array(T.I32, 4),
+        "Result<int32>": T.ResultT(T.I32),
+        "Result<NIL>": T.ResultT(T.NIL),
+        "Result<string>": T.ResultT(T.STRING),
+        "Pair": T.Named("Pair"), "Flat": T.Named("Flat"),
+        "Tagged": T.Named("Tagged"),
+    }
+
+    path = os.path.join(ROOT, "tests", "backend", "ir_types.npk")
+    fails, seen = [], set()
+    with open(path, encoding="utf-8") as fh:
+        for i, line in enumerate(fh, 1):
+            m = re.search(r"//\s*ll:\s*(\S+)\s*$", line)
+            if not m:
+                continue
+            shape = m.group(1)
+            texts = re.findall(r'"((?:[^"\\]|\\.)*)"', line)
+            if len(texts) != 1:
+                fails.append("tests/backend/ir_types.npk:%d carries a `// ll:` "
+                             "marker and %d string literals -- the marker names "
+                             "the shape whose text is pinned ON THAT LINE, so "
+                             "exactly one is what makes the pair readable"
+                             % (i, len(texts)))
+                continue
+            if shape not in shapes:
+                fails.append("tests/backend/ir_types.npk:%d pins the shape `%s`, "
+                             "which `check_ll_types_agree` cannot build for the "
+                             "seed -- add it to `shapes` so the two answers are "
+                             "actually compared" % (i, shape))
+                continue
+            seen.add(shape)
+            want = T.llvm(shapes[shape])
+            if texts[0] != want:
+                fails.append("`%s` lowers to `%s` in src/backend/ir/ir_types.npk "
+                             "and to `%s` in bootstrap/generator/ntypes.py -- the "
+                             "seed builds stage 1 and stage 1 builds stage 2, so "
+                             "their IR has to agree or the link does not"
+                             % (shape, texts[0], want))
+    for shape in sorted(set(shapes) - seen):
+        fails.append("`%s` is in `check_ll_types_agree`'s table and no `// ll:` "
+                     "line pins it -- an entry nothing compares is an entry that "
+                     "stopped being a check" % shape)
+    return fails
+
+
 def check_codes_tested():
     """Every code a rule can emit is asserted by some test, or is on the list."""
     codes = {}
-    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "**", "*.npk"),
-                       recursive=True):
+    # THE WHOLE COMPILER, not just the frontend. The glob said `src/frontend` when
+    # the frontend was all there was; a backend code added under `src/backend`
+    # would have been invisible to this check on the day it was written, which is
+    # the day it needs to be visible.
+    for p in glob.glob(os.path.join(ROOT, "src", "**", "*.npk"), recursive=True):
         with open(p, encoding="utf-8") as fh:
             for m in CODE_DECL_RE.finditer(fh.read()):
                 codes[m.group(2)] = m.group(1)
@@ -801,6 +882,7 @@ def main(argv):
         failures += check_kinds_typed()
         failures += check_codes_tested()
         failures += check_codes_centralised()
+        failures += check_ll_types_agree()
 
         pc = build_parse_check(tmp, tools)
         if isinstance(pc, str) and not os.path.exists(pc):

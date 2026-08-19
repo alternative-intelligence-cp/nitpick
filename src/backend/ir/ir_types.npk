@@ -1,0 +1,330 @@
+// A Nitpick type, as LLVM type text.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.2.
+//
+// THE SEED IS THE REFERENCE, NOT AN INFLUENCE. `bootstrap/generator/ntypes.py`
+// answers this same question for the compiler that builds stage 1, and stage 1
+// builds stage 2 — so the two compilers' IR meets at every runtime symbol and
+// every aggregate that crosses between them. `llc` rejects a caller whose struct
+// disagrees with the callee's by one field, which is how the runtime's own header
+// records the mismatch being caught the first time.
+//
+// Every text below is therefore quoted from `ntypes.llvm()` rather than derived
+// again, and `check_ll_types_agree` in the harness diffs the two lists on every
+// run — the same technique `tests/frontend/type_layout.npk` uses for SIZES,
+// applied to the text.
+//
+// WHETHER A TYPE LOWERS AND WHAT IT LOWERS TO ARE TWO QUESTIONS. A function
+// returning just a string would have to spell "no answer" as some string, and
+// `NIL` already lowers to `void` — a real answer that reads like an absence. So
+// the result carries a STATE, and there are three of them rather than two:
+//
+//   LL_OK      it lowers; `text` is the answer
+//   LL_RUNG    valid Nitpick that no rung lowers yet; `rung` names the cycle
+//   LL_BROKEN  not a type the emitter can be asked about at all
+//
+// The third is not fussiness. `TY_INVALID` means resolution already failed and
+// said so; `TY_COMPTIME` is a VALUE standing in a type-argument window and was
+// never a type. Reporting either as "enabled by cycle 1.0" would be a sentence
+// that is not true, offered to somebody trying to fix their program.
+
+mod:ir_types;
+
+use "../../frontend/intern.npk".*;
+use "../../frontend/ast_kind.npk".*;
+use "../../frontend/ast.npk".*;
+use "../../frontend/parse_decl.npk".*;
+use "../../frontend/types.npk".*;
+use "../../frontend/resolve_type.npk".*;
+use "../../frontend/type_layout.npk".*;
+
+pub func:LL_OK = int32()     { pass 0i32; };
+pub func:LL_RUNG = int32()   { pass 1i32; };
+pub func:LL_BROKEN = int32() { pass 2i32; };
+
+pub struct:LlType = {
+    int32:state;
+    string:text;     // meaningful when LL_OK
+    string:rung;     // meaningful when LL_RUNG
+};
+
+func:ll_ok = LlType(string:text) {
+    LlType:t = LlType{ state: raw LL_OK(), text: text, rung: "" };
+    pass t;
+};
+
+func:ll_rung = LlType(string:rung) {
+    LlType:t = LlType{ state: raw LL_RUNG(), text: "", rung: rung };
+    pass t;
+};
+
+func:ll_broken = LlType() {
+    LlType:t = LlType{ state: raw LL_BROKEN(), text: "", rung: "" };
+    pass t;
+};
+
+pub func:ll_is_ok = bool(LlType:t) { pass (t.state == (raw LL_OK())); };
+
+// WHAT THE EMITTER NEEDS TO ASK A TYPE. Three tables rather than three parameters
+// threaded through every recursive call: the type table for the kind, the AST for
+// an enum's variants, and the interns for a named type's spelling.
+pub struct:LlCtx = {
+    Ast->:ast;
+    TypeTable->:types;
+    InternTable->:interns;
+};
+
+pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) {
+    LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns };
+    pass c;
+};
+
+// --- the lowering -----------------------------------------------------------------
+
+pub func:ll_type = LlType(LlCtx->:c, int32:id) {
+    int32:k = raw type_kind(c.types, id);
+
+    // Resolution already failed and already said so. Anything said here would be
+    // a second diagnostic about one mistake.
+    if (k == (raw TY_INVALID()))  { pass (raw ll_broken()); }
+
+    // A `comptime` ARGUMENT IS NOT A TYPE (`Mutex<Config, 2>`'s `2`). It sits in a
+    // type-argument window so the window stays positional, and asking it for a
+    // representation is asking the wrong question rather than an early one.
+    if (k == (raw TY_COMPTIME())) { pass (raw ll_broken()); }
+
+    // `void` IS ONLY EVER A RETURN TYPE. A `NIL` never occupies storage — D-084
+    // makes it genuinely zero-sized — and `Result<NIL>` is handled below as
+    // `{i32}` rather than by wrapping this.
+    if (k == (raw TY_NIL()))      { pass (raw ll_ok("void")); }
+
+    // STORED AS A BYTE, and `i1` appears only inside a condition. A `bool` in a
+    // struct that was `i1` would be one bit of a byte LLVM still allocates, and
+    // two compilers could disagree about which bit.
+    if (k == (raw TY_BOOL()))     { pass (raw ll_ok("i8")); }
+
+    if (k == (raw TY_STRING()))   { pass (raw ll_ok("{ ptr, i64, i64 }")); }
+
+    // NUL-terminated, `{ptr, i64}`, and NO capacity (D-049): a `cstring` is never
+    // grown and is not ours to free — `argv` comes from the kernel.
+    if (k == (raw TY_CSTRING()))  { pass (raw ll_ok("{ ptr, i64 }")); }
+
+    // THIN, ONE WORD, NO BOUNDS METADATA (D-038) — whatever it points at, which is
+    // why this does not recurse and why `any->` lowers while bare `any` does not.
+    if (k == (raw TY_POINTER()))  { pass (raw ll_ok("ptr")); }
+
+    // The bounds live on the ARRAY type (D-070), which is what keeps a pointer one
+    // word and makes a slice a separate type rather than a fatter pointer.
+    if (k == (raw TY_SLICE()))    { pass (raw ll_ok("{ ptr, i64 }")); }
+
+    // FIVE DISTINCT TYPES THAT ALL LOWER TO `i32` (D-042). They compare and they
+    // do not add, and the type checker is what holds that line — to LLVM an `fd`
+    // and a `pid` are the same thirty-two bits.
+    if (k == (raw TY_KERNEL()))   { pass (raw ll_ok("i32")); }
+
+    if (k == (raw TY_INT()))      { pass (relay ll_int_bits(raw type_int_bits(c.types, id))); }
+
+    // `char8` IS A BYTE AND IS NOT AN INTEGER. The representation is shared and
+    // the arithmetic is not (D-005); `char16` and `char32` wait for 0.9.
+    if (k == (raw TY_CHAR())) {
+        if ((raw type_int_bits(c.types, id)) == 8i32) { pass (raw ll_ok("i8")); }
+        pass (raw ll_rung("0.9"));
+    }
+
+    // `tbb32` IS ADMITTED AS AN ERROR-CODE TYPE ONLY — assignment, comparison and
+    // passing, never arithmetic. That one restriction is what keeps ERR,
+    // stickiness and saturation (D-008) out of this rung entirely.
+    if (k == (raw TY_TBB())) {
+        if ((raw type_int_bits(c.types, id)) == 32i32) { pass (raw ll_ok("i32")); }
+        pass (raw ll_rung("0.9"));
+    }
+
+    if (k == (raw TY_FLOAT()))    { pass (raw ll_rung("0.9")); }
+
+    // BARE `any` HAS NO REPRESENTATION and the frontend already refuses it as a
+    // type. `any->` never reaches here: a pointer is `ptr` without asking what it
+    // points at.
+    if (k == (raw TY_ANY()))      { pass (raw ll_rung("1.0")); }
+
+    if (k == (raw TY_OPTIONAL())) { pass (raw ll_rung("1.0")); }
+    if (k == (raw TY_TRAIT()))    { pass (raw ll_rung("1.0")); }
+    if (k == (raw TY_DYN()))      { pass (raw ll_rung("1.0")); }
+
+    // `Self` AND A GENERIC PARAMETER ARE REAL TYPES THAT HAVE NOT BEEN SUBSTITUTED
+    // YET, so they are a rung rather than broken: both live inside `trait` and
+    // `impl` bodies and generic declarations, which cycle 1.0 is what enables.
+    if (k == (raw TY_SELF()))     { pass (raw ll_rung("1.0")); }
+    if (k == (raw TY_PARAM()))    { pass (raw ll_rung("1.0")); }
+
+    // `lo..hi` IS A TYPED VALUE (D-093) consumed by `for` and by `pick`, and the
+    // counted loop is 0.9's.
+    if (k == (raw TY_RANGE()))    { pass (raw ll_rung("0.9")); }
+
+    // A FUNCTION VALUE. Closures are gone (D-018) and a function pointer is an
+    // ordinary value with a `FuncType` spelling (D-087) — so it will lower to
+    // `ptr` like every other pointer, once there is a rung that can CALL through
+    // one. NO RUNG TABLE NAMED IT; 0.7.2 assigns it to 0.9 with the rest of full
+    // type lowering, rather than leaving a type whose refusal has no cycle.
+    if (k == (raw TY_FUNC()))          { pass (raw ll_rung("0.9")); }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("0.9")); }
+
+    if (k == (raw TY_ARRAY()))    { pass (relay ll_array(c, id)); }
+    if (k == (raw TY_RESULT()))   { pass (relay ll_result(c, id)); }
+    if (k == (raw TY_STRUCT()))   { pass (relay ll_named(c, id)); }
+    if (k == (raw TY_ENUM()))     { pass (relay ll_enum(c, id)); }
+
+    // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. A kind added without a case here
+    // must refuse rather than fall through to something plausible — the whole
+    // value of Phase A is that an accepted program is valid, and an emitter that
+    // guesses turns that into a lie.
+    pass (raw ll_broken());
+};
+
+// `iN` FOR THE WIDTHS A MACHINE REGISTER HOLDS. Everything wider is 0.9's, and
+// arrives with LBIM rather than as `i128` — a wide integer in Nitpick is not one
+// LLVM knows how to add.
+func:ll_int_bits = LlType(int32:bits) {
+    if (bits == 8i32)  { pass (raw ll_ok("i8")); }
+    if (bits == 16i32) { pass (raw ll_ok("i16")); }
+    if (bits == 32i32) { pass (raw ll_ok("i32")); }
+    if (bits == 64i32) { pass (raw ll_ok("i64")); }
+    pass (raw ll_rung("0.9"));
+};
+
+// `[N x T]` — A VALUE TYPE THAT DOES NOT DECAY. Its element's refusal is its own:
+// an array of something unlowerable is unlowerable, and reporting it as the array
+// would name the wrong construct.
+func:ll_array = LlType(LlCtx->:c, int32:id) {
+    LlType:el = relay ll_type(c, raw type_elem(c.types, id));
+    if (el.state != (raw LL_OK())) { pass el; }
+    string:a = relay string_concat("[",
+                   raw int_to_string((raw type_array_count(c.types, id)) => int64));
+    string:b = relay string_concat(a, " x ");
+    string:d = relay string_concat(b, el.text);
+    pass (raw ll_ok(relay string_concat(d, "]")));
+};
+
+// `{T, i32}` (D-069) — NO `is_error` FIELD, because `.is_error` is derived as
+// `error != 0` and a stored flag would be a second place for one fact to live.
+//
+// `Result<NIL>` IS `{i32}` and not `{void, i32}`: `NIL` is zero-sized (D-084), and
+// `void` is not a type LLVM will put in a struct.
+func:ll_result = LlType(LlCtx->:c, int32:id) {
+    int32:inner = raw type_elem(c.types, id);
+    if ((raw type_kind(c.types, inner)) == (raw TY_NIL())) {
+        pass (raw ll_ok("{ i32 }"));
+    }
+    LlType:it = relay ll_type(c, inner);
+    if (it.state != (raw LL_OK())) { pass it; }
+    string:a = relay string_concat("{ ", it.text);
+    pass (raw ll_ok(relay string_concat(a, ", i32 }")));
+};
+
+// A NAMED AGGREGATE PRINTS AS `%Name`, and its body is emitted once at module
+// level — which is what makes a struct one definition rather than a shape repeated
+// at every mention.
+//
+// AN INSTANTIATION IS REFUSED. Its name is MANGLED and contains `<`, which is what
+// makes `Container<int32>` reversible by inspection for an auditor — and is not an
+// LLVM identifier. Generics are 1.0's, so this refuses rather than inventing a
+// mangling that a later cycle would have to keep.
+func:ll_named = LlType(LlCtx->:c, int32:id) {
+    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
+    int32:nm = raw type_name(c.types, id);
+    if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
+    pass (raw ll_ok(relay string_concat("%", relay intern_get(c.interns, nm))));
+};
+
+// A PAYLOAD-LESS ENUM IS A PLAIN `i32` AND HAS NO DEFINITION AT ALL
+// (TYPE_REFERENCE §9.3: "Enum values are plain i32 constants"). Only a tagged one
+// is an aggregate, and SUBSET_1 §1.2's one-machine-word payload fixes its shape at
+// `{i32, i64}` — uniform, with no max-payload sizing and no alignment puzzles.
+func:ll_enum = LlType(LlCtx->:c, int32:id) {
+    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
+    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_ok("i32")); }
+    int32:nm = raw type_name(c.types, id);
+    if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
+    pass (raw ll_ok(relay string_concat("%", relay intern_get(c.interns, nm))));
+};
+
+// --- what the module preamble writes ------------------------------------------------
+//
+// The BODY behind a `%Name`, emitted once. A struct's is its fields in declaration
+// order; a tagged enum's is the uniform word.
+
+// A ZERO-FIELD STRUCT GETS AN `i8` BODY rather than `{}`. Two distinct empty
+// structs must have distinct addresses, and `type {}` would place them on top of
+// each other — the same reason the layout gives an empty struct one byte.
+pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
+                                 int32:scope) {
+    if ((raw type_kind(c.types, id)) != (raw TY_STRUCT())) { pass (raw ll_broken()); }
+    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
+
+    DeclId:did = DeclId{ index: raw type_decl(c.types, id) };
+    DeclNode:d = relay ast_decl(c.ast, did);
+
+    string:body = "";
+    int32:n = 0i32;
+    int32:i = 0i32;
+    while (i < (raw item_member_count(c.ast, d))) {
+        DeclId:mid = raw item_member(c.ast, d, i);
+        DeclNode:m = relay ast_decl(c.ast, mid);
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            LlType:ll = relay ll_type(c, ft);
+            if (ll.state != (raw LL_OK())) { pass ll; }
+            if (n > 0i32) { body = relay string_concat(body, ", "); }
+            body = relay string_concat(body, ll.text);
+            n = n + 1i32;
+        }
+        i = i + 1i32;
+    }
+    if (n == 0i32) { body = "i8"; }
+
+    string:a = relay string_concat("{ ", body);
+    pass (raw ll_ok(relay string_concat(a, " }")));
+};
+
+pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
+    if ((raw type_kind(c.types, id)) != (raw TY_ENUM())) { pass (raw ll_broken()); }
+    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_rung("0.9")); }
+    pass (raw ll_ok("{ i32, i64 }"));
+};
+
+// --- questions the emitter asks about a lowered type --------------------------------
+//
+// ASKED OF THE TEXT, NOT OF THE KIND. The seed's own note says why: "asking the
+// question this way rather than listing type names means the answer cannot drift
+// from what the emitter can actually lower". A payload-free enum is `i32` and
+// passes; a tagged one is a struct and does not — and neither had to be listed.
+
+// True when this lowered to a plain `iN`, which is exactly the set of types one
+// LLVM instruction — `add`, `icmp`, `zext` — is valid over.
+pub func:ll_is_scalar_int = bool(LlType:t) {
+    if (t.state != (raw LL_OK())) { pass false; }
+    if (t.text.len < 2i64) { pass false; }
+    if (t.text.ptr[0i64] != 105u8) { pass false; }   // 'i'
+    int64:i = 1i64;
+    while (i < t.text.len) {
+        if (t.text.ptr[i] < 48u8) { pass false; }    // '0'
+        if (t.text.ptr[i] > 57u8) { pass false; }    // '9'
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+pub func:ll_is_pointer = bool(LlType:t) {
+    if (t.state != (raw LL_OK())) { pass false; }
+    pass (raw string_eq(t.text, "ptr"));
+};
+
+// THE ZERO VALUE, for the value slot of a failed `Result` — every failure writes
+// one, so this is on the path of every error in every program.
+//
+// Derived from the TEXT for the same reason as the two above: a table keyed by
+// Nitpick kind would be a second list to keep in step with the first.
+pub func:ll_zero = string(LlType:t) {
+    if (raw ll_is_scalar_int(t)) { pass "0"; }
+    if (raw ll_is_pointer(t))    { pass "null"; }
+    pass "zeroinitializer";
+};

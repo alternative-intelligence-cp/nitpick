@@ -152,3 +152,54 @@ uncertain, refuse with `NITPICK-RUNG-001` and name the rung.
 **`tests/conformance/` is where a lifted construct lands.** Subset 1 shrinking is
 measured by `tests/rejection/` shrinking, and each rung moves files between the two.
 That movement is the cycle's real deliverable, more than any line count.
+
+---
+
+## What 0.7.2 found, and why the plan changed after it
+
+0.7.2 built the instrument this document asked for — a diff of the two emitters'
+**type text** — and it found two layout defects (`0.7.2.md` has both). Measuring
+around it turned up something larger, and it changes the order of the remaining
+subcycles.
+
+**THE COMPILER CANNOT PARSE ITS OWN SOURCE.** Fed through `tools/parse_check.npk`
+— the real parser — **22 of the 62 files under `src/` and `tools/` are rejected,
+and five of them CRASH the parser.** Nothing said so, because the harness's
+real-parser sweep covers `tests/**` and `src/prelude/` and has never covered the
+compiler itself. Three distinct causes:
+
+- **`ralloc` reads off the end of its old block, and the read leaves the mapping.**
+  The bump allocator has no size header, so `npk_ralloc(old, n)` copies `n` bytes —
+  the NEW size — out of a block that is only the old size long. A file with about
+  511 declarations is enough; the compiler's five largest sources all exceed it.
+  It is an out-of-bounds read in the least-audited artifact in the chain, and it
+  fires on every real program. Confirmed by patching a copy of the runtime out of
+  tree: with a 16-byte size header and a `min(old, new)` copy, all five parse and a
+  5,000-declaration file parses.
+- **`wild T->` is not parsed as a struct field or a parameter.** The qualifier is
+  read in statement position (`parse_stmt.npk`) and in return position
+  (`parse_decl.npk`) and nowhere else — while `parse_type.npk`'s own header says
+  "`wild int8->:buf` is a declaration qualified `wild`". 16 files.
+- **`dn`, `bn` and `cn` are numeric literals, not names** — balanced nonary, where
+  `a`–`d` are the digits −1…−4. `CLAUDE.md` lists exactly this trap and
+  `tests/frontend/type_layout.npk` has a comment about avoiding it; the compiler's
+  own source uses them at 78 sites in 10 files. The seed's lexer accepts them and
+  the real one does not.
+
+**This is a Phase B blocker, not a tidy-up.** Stage 1 is built by the seed and must
+then parse these files to build stage 2. The subcycles renumber:
+
+| # | Topic |
+|---|---|
+| 0.7.3 | **The compiler parses itself** — the `ralloc` header, `wild` on fields and parameters, the nonary-literal names, and a whole-tree sweep that would have caught all three |
+| 0.7.4 | Functions, entry blocks, parameter slots, the `Result<T>` return |
+| 0.7.5 | Expressions — integer arithmetic, comparison, casts, calls |
+| 0.7.6 | Statements and control flow — `if`, `while`, `pass`, `exit` |
+| 0.7.7 | The rung diagnostic, and `tests/rejection/` asserting against this backend |
+| 0.7.8 | The driver, and the first program this compiler builds and runs |
+
+The lesson is the one this cycle's plan already stated for layout and then found
+again somewhere else: **an instrument that diffs the compiler against the thing
+that describes it finds what tests do not.** Three whole-tree checks existed and
+each found something on its first run. This is the fourth, and it found more than
+the other three combined.

@@ -1,0 +1,285 @@
+// Types to LLVM type text (cycle 0.7.2).
+//
+// TWO AUTHORITIES, DIFFED. `tests/frontend/type_layout.npk` established the
+// technique in 0.4.8: declare the same shape twice — once in Nitpick, where
+// `#size_of` is lowered by the SEED and answered by LLVM, and once inside the
+// source string the checker is handed — then compare. This file does the same for
+// the shapes 0.7.2 added and, on every `ll_is` line, pins the TEXT as well.
+//
+// The pinned text is diffed against `bootstrap/generator/ntypes.py` by
+// `check_ll_types_agree` in the harness, using the `// ll:` marker on each line.
+// Both halves are on one line for a reason: a marker on the line above could stop
+// describing the assertion beneath it and nothing would say so.
+//
+// IT FOUND TWO DEFECTS ON ITS FIRST RUN, both of the kind that does not fail:
+//
+//   - `Result<int64>` was TWELVE BYTES. `{i64, i32}` is sixteen — the whole rounds
+//     up to the eight the `i64` demands — and `size(T) + 4` had no tail padding.
+//     `Result<int8>` was five where `{i8, i32}` is eight.
+//   - AN ENUM HAD NO SIZE AT ALL. Both places that intern one pass zero and
+//     `ensure_layout` had no arm for it, so `struct:HasEnum = { Flat:f; int64:x; }`
+//     was eight bytes rather than sixteen, with the enum field contributing
+//     nothing.
+//
+// Neither was reachable from the old tests: `Result<Pair>` needs no padding and
+// gives the right answer by accident, and no `#size_of` in the compiler names an
+// enum.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_layout.npk".*;
+use "../../src/backend/ir/ir_types.npk".*;
+
+// The shapes the cases are about, declared HERE as well as in the source string —
+// so `#size_of` can be asked about the same thing the checker is asked about.
+struct:Pair = { int32:x; int32:y; };
+struct:Big = { int64:a; int32:b; };
+struct:Empty = { };
+enum:Flat = { A; B; };
+enum:Tagged = { None; Some(int32); };
+struct:HasEnum = { Flat:f; int64:x; };
+
+struct:Lx = { TypeTable:types; DiagList:diags; Ast:ast; SymbolTable:tab; int32:scope; };
+
+func:lx = Lx(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    Lx:out = Lx{ types: types, diags: diags, ast: ast, tab: tab, scope: scope };
+    pass out;
+};
+
+// A NAMED TYPE, INTERNED THE WAY ITS DECLARATION SAYS. The kind is read off the
+// declaration rather than passed in: a caller-supplied flag would let a struct be
+// interned as an enum, which would be a wrong LAYOUT rather than a wrong lookup.
+func:named = int32(Lx->:x, InternTable->:it, string:name) {
+    int32:sym = raw scope_lookup(@x.tab, x.scope, relay intern_add(it, name));
+    if (sym == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(@x.tab, sym);
+    DeclId:d = DeclId{ index: s.origin };
+    DeclNode:sdecl = relay ast_decl(@x.ast, d);
+    if (sdecl.kind == DeclKind.DeclEnumDecl) {
+        pass (raw tt_enum(@x.types, d.index, raw decl_name(sdecl), 0i64, 1i32));
+    }
+    pass (raw tt_struct(@x.types, d.index, raw decl_name(sdecl), 0i64, 1i32));
+};
+
+// Does this type lower to exactly this text. The `// ll:` marker beside each call
+// names the shape for the harness's diff against the seed.
+func:ll_is = bool(LlCtx->:c, int32:id, string:want) {
+    LlType:t = relay ll_type(c, id);
+    if (!(raw ll_is_ok(t))) { pass false; }
+    pass (raw string_eq(t.text, want));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    Lx:x = raw lx("struct:Pair = { int32:x; int32:y; }; struct:Big = { int64:a; int32:b; }; struct:Empty = { }; enum:Flat = { A; B; }; enum:Tagged = { None; Some(int32); }; struct:HasEnum = { Flat:f; int64:x; };", @it);
+
+    int32:pair    = relay named(@x, @it, "Pair");
+    int32:big     = relay named(@x, @it, "Big");
+    int32:empty   = relay named(@x, @it, "Empty");
+    int32:flat    = relay named(@x, @it, "Flat");
+    int32:tagged  = relay named(@x, @it, "Tagged");
+    int32:hasenum = relay named(@x, @it, "HasEnum");
+    if (pair == 0i32)    { exit 10i32; }
+    if (big == 0i32)     { exit 11i32; }
+    if (empty == 0i32)   { exit 12i32; }
+    if (flat == 0i32)    { exit 13i32; }
+    if (tagged == 0i32)  { exit 14i32; }
+    if (hasenum == 0i32) { exit 15i32; }
+
+    int32:i8t  = raw tt_int(@x.types, 8i32, true);
+    int32:i16t = raw tt_int(@x.types, 16i32, true);
+    int32:i32t = raw tt_int(@x.types, 32i32, true);
+    int32:i64t = raw tt_int(@x.types, 64i32, true);
+    int32:u8t  = raw tt_int(@x.types, 8i32, false);
+    int32:u32t = raw tt_int(@x.types, 32i32, false);
+    int32:i128t = raw tt_int(@x.types, 128i32, true);
+    int32:c8t  = raw tt_char(@x.types, 8i32);
+    int32:f32t = raw tt_float(@x.types, 32i32);
+    int32:ptrt = raw tt_pointer(@x.types, i32t);
+    int32:slt  = raw tt_slice(@x.types, i32t);
+    int32:art  = raw tt_array(@x.types, i32t, 4i32, 0i64, 1i32);
+    int32:rint = raw tt_result(@x.types, i32t, 0i64, 1i32);
+    int32:rnil = raw tt_result(@x.types, x.types.t_nil, 0i64, 1i32);
+    int32:rstr = raw tt_result(@x.types, x.types.t_string, 0i64, 1i32);
+    int32:ri64 = raw tt_result(@x.types, i64t, 0i64, 1i32);
+    int32:ri8  = raw tt_result(@x.types, i8t, 0i64, 1i32);
+    int32:rpair = raw tt_result(@x.types, pair, 0i64, 1i32);
+    int32:opti = raw tt_optional(@x.types, i32t, 0i64, 1i32);
+
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:r = raw tyres_init(@x.ast, @x.types, @x.tab, @it, @x.diags, @inst);
+    drop finish_layouts(@r, x.scope);
+
+    LlCtx:c = raw llctx_init(@x.ast, @x.types, @it);
+
+    // --- SIZES: THE MACHINE'S ANSWER AGAINST THE COMPILER'S ------------------
+    //
+    // Every right-hand side is `#size_of`, which the seed lowers to
+    // `getelementptr T, ptr null, i32 1` — LLVM's own layout, never a number
+    // written here. A hand-written size that disagrees survives testing and
+    // corrupts memory later, which is the whole reason this file exists.
+    if ((raw type_size(@x.types, pair)) != #size_of<Pair>())       { exit 20i32; }
+    if ((raw type_size(@x.types, big)) != #size_of<Big>())         { exit 21i32; }
+    if ((raw type_size(@x.types, empty)) != #size_of<Empty>())     { exit 22i32; }
+
+    // AN ENUM HAS A SIZE NOW. It had none: both call sites intern one with zero
+    // and nothing ever recomputed it.
+    if ((raw type_size(@x.types, flat)) != #size_of<Flat>())       { exit 23i32; }
+    if ((raw type_size(@x.types, tagged)) != #size_of<Tagged>())   { exit 24i32; }
+
+    // …WHICH IS THE HALF THAT MATTERED: a struct containing one was laid out as
+    // though the field were not there, and every LATER field moved with it.
+    if ((raw type_size(@x.types, hasenum)) != #size_of<HasEnum>()) { exit 25i32; }
+
+    // `Result<T>` PADS ON BOTH SIDES OF THE ERROR FIELD. `Result<int64>` is
+    // sixteen and was twelve; `Result<int8>` is eight and was five. `Result<Pair>`
+    // is the one that was right — which is why the old test passed.
+    if ((raw type_size(@x.types, ri64)) != #size_of<Result<int64> >())  { exit 26i32; }
+    if ((raw type_size(@x.types, ri8)) != #size_of<Result<int8> >())    { exit 27i32; }
+    if ((raw type_size(@x.types, rstr)) != #size_of<Result<string> >()) { exit 28i32; }
+    if ((raw type_size(@x.types, rpair)) != #size_of<Result<Pair> >())  { exit 29i32; }
+    if ((raw type_size(@x.types, rnil)) != #size_of<Result<NIL> >())    { exit 30i32; }
+    if ((raw type_size(@x.types, rint)) != #size_of<Result<int32> >())  { exit 31i32; }
+
+    // AN AGGREGATE'S SIZE IS A MULTIPLE OF ITS ALIGNMENT, which is what makes
+    // `T[2]` put its second element where the first one's alignment says.
+    if ((raw type_align(@x.types, ri64)) != 8i32)                  { exit 32i32; }
+    if ((raw type_size(@x.types, art)) != (4i64 * #size_of<int32>())) { exit 33i32; }
+
+    // --- THE TEXT ------------------------------------------------------------
+    //
+    // Each line pins what `ntypes.llvm()` produces for the same shape, and the
+    // `// ll:` marker is what the harness diffs the two against.
+    if (!(raw ll_is(@c, i8t, "i8")))                    { exit 40i32; }   // ll: int8
+    if (!(raw ll_is(@c, i16t, "i16")))                  { exit 41i32; }   // ll: int16
+    if (!(raw ll_is(@c, i32t, "i32")))                  { exit 42i32; }   // ll: int32
+    if (!(raw ll_is(@c, i64t, "i64")))                  { exit 43i32; }   // ll: int64
+    if (!(raw ll_is(@c, u8t, "i8")))                    { exit 44i32; }   // ll: uint8
+    if (!(raw ll_is(@c, u32t, "i32")))                  { exit 45i32; }   // ll: uint32
+    if (!(raw ll_is(@c, x.types.t_bool, "i8")))         { exit 46i32; }   // ll: bool
+    if (!(raw ll_is(@c, c8t, "i8")))                    { exit 47i32; }   // ll: char8
+    if (!(raw ll_is(@c, x.types.t_tbb32, "i32")))       { exit 48i32; }   // ll: tbb32
+    if (!(raw ll_is(@c, x.types.t_string, "{ ptr, i64, i64 }"))) { exit 49i32; }   // ll: string
+    if (!(raw ll_is(@c, x.types.t_cstring, "{ ptr, i64 }")))     { exit 50i32; }   // ll: cstring
+    if (!(raw ll_is(@c, x.types.t_nil, "void")))        { exit 51i32; }   // ll: NIL
+    if (!(raw ll_is(@c, ptrt, "ptr")))                  { exit 52i32; }   // ll: int32->
+    if (!(raw ll_is(@c, slt, "{ ptr, i64 }")))          { exit 53i32; }   // ll: int32[]
+    if (!(raw ll_is(@c, art, "[4 x i32]")))             { exit 54i32; }   // ll: int32[4]
+    if (!(raw ll_is(@c, rint, "{ i32, i32 }")))         { exit 55i32; }   // ll: Result<int32>
+    if (!(raw ll_is(@c, rnil, "{ i32 }")))              { exit 56i32; }   // ll: Result<NIL>
+    if (!(raw ll_is(@c, rstr, "{ { ptr, i64, i64 }, i32 }"))) { exit 57i32; }   // ll: Result<string>
+    if (!(raw ll_is(@c, pair, "%Pair")))                { exit 58i32; }   // ll: Pair
+    if (!(raw ll_is(@c, flat, "i32")))                  { exit 59i32; }   // ll: Flat
+    if (!(raw ll_is(@c, tagged, "%Tagged")))            { exit 60i32; }   // ll: Tagged
+
+    // --- THE BODIES BEHIND A `%Name` -----------------------------------------
+    LlType:bpair = relay ll_struct_body(@r, @c, pair, x.scope);
+    if (!(raw ll_is_ok(bpair)))                            { exit 70i32; }
+    if (!(raw string_eq(bpair.text, "{ i32, i32 }")))      { exit 71i32; }
+
+    // A ZERO-FIELD STRUCT IS `{ i8 }`, not `{}`: two empty structs must have
+    // distinct addresses.
+    LlType:bempty = relay ll_struct_body(@r, @c, empty, x.scope);
+    if (!(raw string_eq(bempty.text, "{ i8 }")))           { exit 72i32; }
+
+    // The enum field is an `i32` inside its container, because it carries no
+    // payload — the same answer its own lowering gives.
+    LlType:bhas = relay ll_struct_body(@r, @c, hasenum, x.scope);
+    if (!(raw string_eq(bhas.text, "{ i32, i64 }")))       { exit 73i32; }
+
+    LlType:btag = relay ll_enum_body(@c, tagged);
+    if (!(raw string_eq(btag.text, "{ i32, i64 }")))       { exit 74i32; }
+
+    // A PAYLOAD-LESS ENUM HAS NO BODY TO EMIT, and asking for one is a question
+    // with no answer rather than an empty answer.
+    LlType:bflat = relay ll_enum_body(@c, flat);
+    if (raw ll_is_ok(bflat))                               { exit 75i32; }
+
+    // --- WHAT IT REFUSES, AND WHETHER IT SAYS WHY ----------------------------
+    //
+    // Three states, not two. A rung refusal names a cycle a programmer can wait
+    // for; a broken type names none, because "enabled by cycle 1.0" would not be
+    // true of a type that failed to resolve.
+    LlType:fl = relay ll_type(@c, f32t);
+    if (fl.state != (raw LL_RUNG()))                       { exit 80i32; }
+    if (!(raw string_eq(fl.rung, "0.9")))                  { exit 81i32; }
+
+    LlType:wide = relay ll_type(@c, i128t);
+    if (wide.state != (raw LL_RUNG()))                     { exit 82i32; }
+    if (!(raw string_eq(wide.rung, "0.9")))                { exit 83i32; }
+
+    LlType:op = relay ll_type(@c, opti);
+    if (op.state != (raw LL_RUNG()))                       { exit 84i32; }
+    if (!(raw string_eq(op.rung, "1.0")))                  { exit 85i32; }
+
+    // TYPE 0 IS THE INVALID TYPE, which means resolution already failed and
+    // already said so.
+    LlType:bad = relay ll_type(@c, 0i32);
+    if (bad.state != (raw LL_BROKEN()))                    { exit 86i32; }
+    if (!(raw string_eq(bad.rung, "")))                    { exit 87i32; }
+
+    // --- QUESTIONS ASKED OF THE TEXT -----------------------------------------
+    //
+    // Not of the kind, so the answer cannot drift from what the emitter can
+    // actually lower. A payload-free enum is a scalar `i32`; a tagged one is not.
+    if (!(raw ll_is_scalar_int(relay ll_type(@c, i32t))))     { exit 90i32; }
+    if (!(raw ll_is_scalar_int(relay ll_type(@c, flat))))     { exit 91i32; }
+    if (raw ll_is_scalar_int(relay ll_type(@c, tagged)))      { exit 92i32; }
+    if (raw ll_is_scalar_int(relay ll_type(@c, x.types.t_string))) { exit 93i32; }
+    if (raw ll_is_scalar_int(relay ll_type(@c, ptrt)))        { exit 94i32; }
+    if (!(raw ll_is_pointer(relay ll_type(@c, ptrt))))        { exit 95i32; }
+    if (raw ll_is_pointer(relay ll_type(@c, slt)))            { exit 96i32; }
+
+    // A REFUSED TYPE ANSWERS `false` TO BOTH, rather than answering about the
+    // empty string it carries.
+    if (raw ll_is_scalar_int(relay ll_type(@c, f32t)))        { exit 97i32; }
+    if (raw ll_is_pointer(relay ll_type(@c, f32t)))           { exit 98i32; }
+
+    // THE ZERO FOR A FAILED `Result`'s VALUE SLOT, on the path of every error in
+    // every program.
+    if (!(raw string_eq(raw ll_zero(relay ll_type(@c, i32t)), "0")))   { exit 100i32; }
+    if (!(raw string_eq(raw ll_zero(relay ll_type(@c, ptrt)), "null"))) { exit 101i32; }
+    if (!(raw string_eq(raw ll_zero(relay ll_type(@c, x.types.t_string)), "zeroinitializer"))) { exit 102i32; }
+    if (!(raw string_eq(raw ll_zero(relay ll_type(@c, pair)), "zeroinitializer"))) { exit 103i32; }
+
+    exit 0i32;
+};
