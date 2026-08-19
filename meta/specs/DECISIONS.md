@@ -9102,13 +9102,48 @@ finding it there rather than here would spend the one attempt on it.
 ### What unblocks it
 
 A **poisoning allocator**: fill the rounding gap with a known byte pattern at
-allocation and verify it at every later allocation. That names the writer at the
-moment it happens instead of leaving a bisect to infer it from a crash three
-allocations later. It is a change to `npk_alloc` alone, it needs no source changes,
-and it can be run under the existing harness.
+allocation and verify it at every later allocation, so the corruption is named at
+the moment it happens rather than inferred from a crash three allocations later.
 
-Scheduled before Phase A closes. **Neither defect is fixed yet** — the read's fix
-is blocked on the write, because the header is what exposes it.
+**Attempted in 0.6.7, and it sharpened the diagnosis without closing it.** What the
+attempt established:
+
+- **The bug is layout-sensitive to a degree that defeats naive instrumentation.**
+  Adding the poison table's `.bss` — with poisoning *disabled*, so semantically a
+  no-op — was enough to make `tests/frontend/type_cast.npk` segfault. The
+  instrumentation perturbs the thing it is measuring, which is the signature of an
+  out-of-bounds access into adjacent data rather than of a wild pointer.
+- **The crash site is stable**: `exprtypes_set`, reading `t->count`, where `t` is
+  **320** — a plausible *count*, not a pointer and not a poison pattern. So an
+  `ExprTypes->` argument or field is holding a number.
+- **That points away from the allocator.** A value that looks like a count sitting
+  where a pointer belongs is a struct-field or argument mix-up, and the allocator
+  perturbation may only be moving which garbage is visible when it happens.
+
+### Why the next attempt should not be more of the same
+
+Two of the three instrumented runtimes built during the attempt contained bugs of
+their own — a string replacement that shrank an unrelated 64 KB read buffer to 1 KB,
+and a return-type mismatch across three call sites. **Hand-editing LLVM IR by
+substitution is the wrong instrument for a layout-sensitive bug**, because every
+edit is another perturbation and the failures look identical.
+
+What to do instead, in order:
+
+1. **Check the `ExprTyper` field offsets**, since `t == 320` is evidence about
+   struct layout rather than about allocation. `etyper_resolver` builds a
+   `TypeResolver` by value and `TypeResolver` gained five fields in 0.6.4.
+2. If that is clean, build the poisoning allocator **as a separate runtime file**
+   rather than by editing the live one, so the diagnostic build and the working
+   build cannot be confused, and so a mistake in one cannot reach the harness.
+3. Use `valgrind` or ASan on a `clang`-built harness driver before hand-rolling
+   anything — the toolchain is present and this is exactly what it is for. The
+   zero-dependency rule governs the ARTIFACT, not the tools used to debug the
+   throwaway seed.
+
+**Neither defect is fixed.** The tree is green and the bug is latent, which is
+precisely why it is scheduled rather than urgent — and precisely why it must not be
+left for Astrée to find.
 
 ---
 
