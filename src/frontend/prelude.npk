@@ -1,0 +1,38 @@
+// The prelude, and the names it reserves.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.6.5.
+//
+// `#[derive(Eq)]` GENERATES `impl:Point:Eq`, WHICH NEEDS A TRAIT `Eq` TO EXIST.
+// Nothing declared one: not this compiler, not a library — `nlibc` has no sources
+// yet — and neither `TRAITS_REFERENCE.md` §2.5 nor D-123 gave a method name or a
+// signature for any of the seven. They were named everywhere and defined nowhere.
+//
+// The declarations are in `src/prelude/prelude.npk`, as ordinary Nitpick, and reach
+// the compiler through `prelude_source.npk`, which the generator emits from it.
+// This module holds the part that is a RULE rather than a declaration.
+
+use "intern.npk".*;
+
+pub func:PRELUDE_PATH = string() { pass "prelude.npk"; };
+
+// IS THIS A NAME THE PRELUDE DECLARES?
+//
+// DECLARING ONE IS REFUSED rather than allowed to shadow. A module's own scope is
+// searched before the root, so a program's `trait:Eq` would silently take over —
+// and then `#[derive(Eq)]` would generate an impl of a trait the compiler knows
+// nothing about, against methods it guessed. One name, one meaning, which is the
+// same reason a variable cannot be called `if`.
+//
+// EIGHT NAMES, LISTED ONCE. The prelude source is the authority on what exists; a
+// test asserts that this list and that file agree, because two lists of the same
+// thing are two lists that can disagree.
+pub func:is_prelude_name = bool(string:n) {
+    if (raw string_eq(n, "Ordering"))   { pass true; }
+    if (raw string_eq(n, "Eq"))         { pass true; }
+    if (raw string_eq(n, "Ord"))        { pass true; }
+    if (raw string_eq(n, "PartialOrd")) { pass true; }
+    if (raw string_eq(n, "Clone"))      { pass true; }
+    if (raw string_eq(n, "Hash"))       { pass true; }
+    if (raw string_eq(n, "ToString"))   { pass true; }
+    pass (raw string_eq(n, "Debug"));
+};

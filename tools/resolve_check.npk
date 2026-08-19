@@ -73,6 +73,10 @@ func:main = int32(cstring[]:argv) {
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(@it, @diags, @roots, "");
 
+    // The prelude, as `check` loads it — a tool that resolved without it would
+    // report every prelude name as unknown and be measuring a different language.
+    drop graph_load_prelude(@g);
+
     int32:first = raw graph_load_all(@g, root);
     if (first < 0i32) {
         exit 2i32;
@@ -88,6 +92,7 @@ func:main = int32(cstring[]:argv) {
     // file is still being parsed. This tool expands nothing, and still has to say
     // so by asking.
     drop graph_collect_all(@g);
+    drop graph_apply_prelude(@g);
     drop graph_apply_imports(@g);
 
     Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);

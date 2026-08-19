@@ -1,0 +1,96 @@
+// `#[derive(…)]` — the last "parses and means nothing" shape in the frontend
+// (D-123, 0.6.5).
+//
+// EVERY DERIVED METHOD IS CALLED, and that is the whole point of this file. A
+// derive that generated an empty impl, or no impl at all, passes every rejection
+// test there is — so each one is exercised through UFCS, and if the implementation
+// did not arrive the call does not resolve.
+// (The module is `deriving`, because `derive` is a KEYWORD and a module name is an
+// identifier — the same trap `comptime` sprang in 0.6.4. The loader's report is
+// NITPICK-RESOLVE-005 at the `mod:` line, which reads as a missing file.)
+mod:deriving;
+
+// --- a struct: the six that generate ---------------------------------------------
+//
+// `Eq` compares field by field with `!=` rather than through each field's own `Eq`,
+// because the language has the operator and a derived implementation that went
+// through a trait would need `int32` to implement one.
+//
+// `Ord` compares LEXICOGRAPHICALLY IN DECLARATION ORDER (D-123). The cost is stated
+// rather than hidden: reordering these two fields is a semantic change.
+#[derive(Eq, Ord, PartialOrd, Clone, ToString, Debug)]
+struct:Point = {
+    int32:x;
+    int32:y;
+};
+
+func:a_point_has_all_six = NIL(Point:a, Point:b) {
+    bool:same = raw a.eq(b);
+    Ordering:o = raw a.cmp(b);
+    Ordering?:p = raw a.partial_cmp(b);
+    Point:c = raw a.clone();
+    string:s = raw a.to_string();
+    string:d = raw a.debug();
+    discard(same);
+    discard(o);
+    discard(p);
+    discard(c.x);
+    discard(s);
+    discard(d);
+    pass NIL;
+};
+
+// --- an enum: the four that generate ---------------------------------------------
+//
+// `ToString` and `Debug` go through a `pick` over the variants rather than through
+// `&{self}` — interpolation is what CALLS `to_string`, so a body built out of it
+// would call itself. The `pick` is exhaustive by construction, and 0.5.4 checks it.
+#[derive(Eq, Clone, ToString, Debug)]
+enum:Season = {
+    SPRING;
+    SUMMER;
+    AUTUMN;
+    WINTER;
+};
+
+func:a_season_has_four = NIL(Season:a, Season:b) {
+    bool:same = raw a.eq(b);
+    Season:c = raw a.clone();
+    string:s = raw a.to_string();
+    string:d = raw a.debug();
+    discard(same);
+    discard(c);
+    discard(s);
+    discard(d);
+    pass NIL;
+};
+
+// --- the prelude is in scope with no import --------------------------------------
+//
+// `Ordering`, and the seven traits, are declared in `src/prelude/prelude.npk` and
+// bound into every module the way `use "prelude.npk".*` would bind them. Nothing
+// here imports anything.
+func:orders_by_hand = Ordering(int32:a, int32:b) {
+    if (a < b) { pass Ordering.Less; }
+    if (a > b) { pass Ordering.Greater; }
+    pass Ordering.Equal;
+};
+
+// A HAND-WRITTEN IMPL OF A PRELUDE TRAIT IS ORDINARY. The traits are declarations
+// like any other; what is unusual about them is only where they come from.
+struct:Manual = { int32:v; };
+
+impl:Manual:Eq = {
+    pub func:eq = bool(Manual:self, Manual:other) { pass (self.v == other.v); };
+};
+
+// `Self` IN RETURN POSITION, which did not work until 0.6.5. Every function returns
+// `Result<T>`, so `func:clone = Self(Self:self);` has the type `Result<Self>` and
+// the impl's has `Result<Manual>` — putting `Self` one level below where the
+// one-level substitution could see it, and making every trait method returning
+// `Self` unmatchable.
+impl:Manual:Clone = {
+    pub func:clone = Manual(Manual:self) { pass self; };
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

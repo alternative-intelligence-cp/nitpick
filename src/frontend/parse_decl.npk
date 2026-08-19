@@ -57,6 +57,13 @@ pub func:DECL_VARIADIC = int32()  { pass 32i32; };
 // decoration. Same shape as D-002's `never fails`.
 pub func:DECL_DISCARDED = int32() { pass 2048i32; };
 
+// WRITTEN BY `#[derive]` RATHER THAN BY A PERSON (0.6.5). Set on the impls derive
+// generates, and read where a diagnostic would otherwise send the reader looking
+// for an `impl` they never wrote — a derived one beside a hand-written one is two
+// impls of one trait, and "already implemented at line 2" is unhelpful when line 2
+// is a `#[derive]`.
+pub func:DECL_DERIVED = int32()   { pass 4096i32; };
+
 // Memory qualifiers on a RETURN type, folded into the declaration's flags.
 // They shift up so they never collide with the visibility and modifier bits.
 pub func:DECL_RET_WILD = int32()  { pass 64i32; };

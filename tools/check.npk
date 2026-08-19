@@ -61,6 +61,7 @@ use "../src/frontend/symbols.npk".*;
 use "../src/frontend/module_graph.npk".*;
 use "../src/frontend/macro/macro_codes.npk".*;
 use "../src/frontend/macro/expand.npk".*;
+use "../src/frontend/macro/derive.npk".*;
 use "../src/frontend/resolve.npk".*;
 use "../src/frontend/types.npk".*;
 use "../src/frontend/builtin_types.npk".*;
@@ -103,6 +104,10 @@ func:main = int32(cstring[]:argv) {
     DiagList:diags = raw diaglist_init();
     RootList:roots = raw rootlist_init();
     ModuleGraph:g = raw graph_init(@it, @diags, @roots, "");
+
+    // THE PRELUDE FIRST. Everything after it may name what it declares, and it is
+    // loaded rather than synthesised: the same lexer, parser and collector.
+    drop graph_load_prelude(@g);
 
     int32:first = raw graph_load_all(@g, root);
     if (first < 0i32) {
@@ -182,6 +187,15 @@ func:main = int32(cstring[]:argv) {
         exit 1i32;
     }
 
+    // `#[derive]` IS READ IN THE EXPANSION PHASE, because derive emits declarations
+    // (D-123, "a macro that does not look like one") and what it emits has to be
+    // complete before any name is bound.
+    drop derive_apply(@g);
+    if ((raw diaglist_count(@diags)) != 0i64) {
+        drop report(@diags);
+        exit 1i32;
+    }
+
     // EVERY DECLARATION RECORDED, now that expansion has settled and there is a
     // final answer about what the declarations ARE.
     drop graph_collect_all(@g);
@@ -193,6 +207,10 @@ func:main = int32(cstring[]:argv) {
     // resolved. Each stage needs the previous one complete for every module, and
     // that is what makes a `use` cycle resolvable (D-086) rather than a problem
     // to be broken.
+    // THE PRELUDE IS BOUND INTO EVERY MODULE FIRST, so a program's own `use` can
+    // collide with it and be told, rather than the order deciding which wins.
+    drop graph_apply_prelude(@g);
+
     drop graph_apply_imports(@g);
 
     Resolver:r = raw resolver_init(@g.ast, @g.tab, @it, @diags);

@@ -1,0 +1,13 @@
+// expect-error: NITPICK-RESOLVE-001
+//
+// A PROGRAM CANNOT DECLARE A NAME THE PRELUDE DECLARES. A module's own scope is
+// searched before anything bound into it, so a local `trait:Eq` would silently take
+// over — and `#[derive(Eq)]` would then generate an implementation of a trait the
+// compiler knows nothing about, against methods it guessed.
+//
+// One name, one meaning, which is the same reason a variable cannot be called `if`.
+mod:prelude_name;
+
+pub trait:Eq = { func:eq = bool(Self:self); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

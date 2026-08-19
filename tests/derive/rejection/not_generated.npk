@@ -1,0 +1,25 @@
+// expect-error: NITPICK-DERIVE-001
+// expect-error: NITPICK-DERIVE-001
+//
+// THE TWO OF THE SEVEN THAT ARE REFUSED RATHER THAN GUESSED AT.
+//
+// `Hash` FOLDS BYTES, and nothing in `builtins.npk` exposes a `string`'s bytes to
+// Nitpick source. An integer, `bool` or `char` field can supply its bits through
+// `=>!`, and a nested type that derived `Hash` can supply its own — but a derived
+// hash that quietly skipped string fields would vary with data it ignored, which is
+// worse than not having one. What unblocks it is one primitive.
+//
+// `Ord` ON AN ENUM means comparing a variant's tag, and no operator yields one:
+// `<` on an enum is refused by the type checker. Measured, not assumed.
+//
+// Both refuse HERE rather than generating code that fails to type-check, because a
+// diagnostic inside generated code points at a line nobody wrote.
+mod:not_generated;
+
+#[derive(Hash)]
+struct:A = { int32:x; };
+
+#[derive(Ord)]
+enum:E = { ONE; TWO; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

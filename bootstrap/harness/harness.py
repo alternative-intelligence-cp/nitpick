@@ -685,6 +685,13 @@ def main(argv):
                                         recursive=True))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "expansion", "**", "*.npk"),
                                         recursive=True))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "derive", "**", "*.npk"),
+                                        recursive=True))
+            # THE PRELUDE IS REAL SOURCE AND IS CHECKED AS SUCH. It is put through
+            # the real parser at the start of every `check` run anyway; sweeping it
+            # here says so, and catches a syntax error in it as a parse failure of
+            # its own file rather than as a diagnostic in every test at once.
+            grammar += sorted(glob.glob(os.path.join(ROOT, "src", "prelude", "*.npk")))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
                                         recursive=True))
             n = 0
@@ -760,6 +767,21 @@ def main(argv):
                 failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
                 n += 1
             print("  %-11s %2d expansion-rejection test(s)" % ("expansion", n))
+
+            # Whole programs refused while reading `#[derive]`, which runs in the
+            # expansion phase but is a different stage for the reason its codes have
+            # a different prefix: a reader filtering for derive failures is asking a
+            # different question from one filtering for expansion failures.
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "derive",
+                                                   "rejection", "**", "*.npk"),
+                                      recursive=True)):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d derive-rejection test(s)" % ("derive", n))
 
             # And whole programs that must be ACCEPTED, in full silence.
             #

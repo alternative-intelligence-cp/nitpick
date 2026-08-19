@@ -1,0 +1,15 @@
+// expect-error: NITPICK-DERIVE-004
+// expect-error: NITPICK-DERIVE-004
+//
+// `#[derive]` GENERATES FROM A TYPE'S SHAPE — its fields, or its variants — so on a
+// function or a trait there is nothing to generate from. Checked at the attribute
+// and before the names are, because on the wrong target the names do not matter.
+mod:target;
+
+#[derive(Eq)]
+func:nope = int32() { pass 1i32; };
+
+#[derive(Clone)]
+trait:AlsoNope = { func:m = bool(Self:self); };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

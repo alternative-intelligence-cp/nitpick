@@ -146,6 +146,44 @@ separately audited artifact; this is a hash for a map.
 
 A refusal **names the field that blocks it**, not the type.
 
+### What each one is
+
+The seven are declared in the **prelude** (D-132) — `src/prelude/prelude.npk`,
+ordinary Nitpick that every module has bound into it the way `use "prelude.npk".*`
+would bind it. They are not magic; they are an import nobody has to write, and a
+program may not declare a name the prelude declares.
+
+| Trait | Method |
+|---|---|
+| `Eq` | `func:eq = bool(Self:self, Self:other);` |
+| `Ord` | `func:cmp = Ordering(Self:self, Self:other);` |
+| `PartialOrd` | `func:partial_cmp = Ordering?(Self:self, Self:other);` |
+| `Clone` | `func:clone = Self(Self:self);` |
+| `Hash` | `func:hash = uint64(Self:self);` |
+| `ToString` | `func:to_string = string(Self:self);` |
+| `Debug` | `func:debug = string(Self:self);` |
+
+`Ordering` is a prelude enum — `Less`, `Equal`, `Greater`. An ordering is **not an
+integer**: the prototype returned `int32` meaning less, equal or greater by sign,
+which is three meanings in one number and the shape D-036 rejects for `bool` and
+`char`.
+
+**`PartialOrd` is not a second spelling of `Ord`.** It answers a different question,
+and floats make it a real one: they are IEEE 754 with `nan` and no trap
+(`OP_REFERENCE` §4), so two `flt64`s genuinely may not compare and a total `cmp`
+over one would have to lie.
+
+### What is generated today, and what is refused
+
+`Eq`, `Ord`, `PartialOrd`, `Clone`, `ToString` and `Debug` generate for a struct;
+`Eq`, `Clone`, `ToString` and `Debug` generate for an enum. Two are refused with the
+reason rather than guessed at (D-133):
+
+- **`Ord`/`PartialOrd` on an enum** — ordering a variant means comparing its tag,
+  and `<` on an enum is refused by the type checker.
+- **`Hash`** — FNV-1a folds bytes, and nothing exposes a `string`'s bytes to Nitpick
+  source. A derived hash that skipped string fields would vary with data it ignored.
+
 > **`Default` and `Display` were listed here and are removed (D-123).**
 >
 > **`Default`** would have the compiler choose values that carry meaning, and

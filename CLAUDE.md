@@ -78,6 +78,8 @@ parse failure some lines away from the mistake:
 | `limit` | the verification keyword (`limit<Rules>`) |
 | `any` | the type |
 | `as` | a keyword |
+| `comptime`, `derive` | keywords — so `mod:comptime;` and `mod:derive;` are not modules, and the loader reports `NITPICK-RESOLVE-005` at the `mod:` line as though the file were missing |
+| `move`, `buffer`, `raw` | keywords that read like ordinary local names |
 
 Three more shapes that are not what a C or Rust habit expects:
 

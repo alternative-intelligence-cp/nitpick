@@ -77,6 +77,23 @@ pub func:p_at_attribute = bool(Parser->:p) {
     pass ((relay p_peek_at(p, 1i64)).kind == TokenKind.PLBracket);
 };
 
+// AN ATTRIBUTE'S NAME IS ALWAYS AN INTERN INDEX, whatever kind of token spelled it.
+//
+// `derive` IS A KEYWORD, and the lexer gives a keyword token a payload of ZERO —
+// only an identifier gets an intern index. So `#[derive(Eq)]` and `#[align(16i32)]`
+// stored their names in two different ways, and the first stored no name at all:
+// reading `attr_name` on a derive returned 0, and every consumer that asked "is
+// this the derive attribute" got the empty string and said no.
+//
+// It was invisible for as long as nothing read an attribute's name, which was until
+// 0.6.5. Interning the keyword's spelling here means one representation with one
+// reading, rather than a slot that means an intern index on some attributes and
+// nothing on others.
+func:p_attr_name = int32(Parser->:p, Token:name) {
+    if (name.payload != 0i64) { pass ((name.payload) => int32); }
+    pass (relay intern_add(p.interns, raw token_kind_name(name.kind)));
+};
+
 pub func:p_parse_attribute = DeclId(Parser->:p) {
     Span:sp = relay p_span(p);
     drop p_expect(p, TokenKind.Hash);
@@ -97,7 +114,8 @@ pub func:p_parse_attribute = DeclId(Parser->:p) {
     drop p_expect(p, TokenKind.PRBracket);
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
     pass (relay ast_add_decl(p.ast, DeclKind.DeclAttribute, sp,
-                             0i32, w.start, w.count, name.payload));
+                             0i32, w.start, w.count,
+                             (relay p_attr_name(p, name)) => int64));
 };
 
 // Gather however many attributes precede something.

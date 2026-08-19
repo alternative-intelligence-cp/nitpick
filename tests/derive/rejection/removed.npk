@@ -1,0 +1,22 @@
+// expect-error: NITPICK-DERIVE-002
+// expect-error: NITPICK-DERIVE-002
+//
+// `Default` AND `Display` WERE ON THE LIST OF NINE AND D-123 REMOVED BOTH. Their
+// own code, not "unknown name": a reader who writes one is not making a typo, and
+// a message that treats them as one sends somebody to check their spelling.
+//
+// `Default` would have the compiler choose values that carry meaning, and several
+// obvious choices are false here — `fd` zero is stdin (D-042), `tbb32` zero claims
+// "no error", a pointer zero is NULL. It reintroduces through an explicit door what
+// D-010 removed: a value appearing that nobody chose.
+//
+// `Display` was a second name for `ToString`'s job.
+mod:removed;
+
+#[derive(Default)]
+struct:A = { int32:x; };
+
+#[derive(Display)]
+struct:B = { int32:x; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

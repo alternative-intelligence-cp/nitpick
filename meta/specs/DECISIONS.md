@@ -9305,3 +9305,173 @@ The general form is worth keeping: **a tripwire that does not fire is not
 automatically wrong.** It fires when an assumption changes, and "the assumption
 held for a different reason than expected" is an outcome that has to be written
 down, or the next reader re-derives it.
+
+---
+
+## D-132 — The seven derivable traits are a prelude, in source — **SETTLED**
+
+D-123 named the seven and said what each generates. **It did not say what any of
+them IS.** `#[derive(Eq)]` generates `impl:Point:Eq`, which needs a trait `Eq` to
+exist, and nothing declared one: not this compiler, not a library — `nlibc` has no
+sources — and neither `TRAITS_REFERENCE.md` §2.5 nor D-123 gave a method name or a
+signature. They were named everywhere and defined nowhere.
+
+### The prototype answers it, and is followed where it speaks
+
+`expandDeriveAttributes` in the prototype generates a trait impl per derive, and
+the trait is compiler-known — nothing in its tests declares one:
+
+| Derive | Method | Prototype signature | Here |
+|---|---|---|---|
+| `Eq` | `eq` | `bool(S:self, S:other)` | same |
+| `Clone` | `clone` | `S(S:self)` | same |
+| `Hash` | `hash` | `uint64(S:self)` | same |
+| `ToString` | `to_string` | `string(S:self)` | same |
+| `Debug` | `debug` | `string(S:self)` | same |
+| `Ord` | `less_than` | `bool(S:self, S:other)` | **`cmp` → `Ordering`** |
+| `PartialOrd` | `partial_cmp` | `int32(S:self, S:other)` | **`partial_cmp` → `Ordering?`** |
+
+### Two corrections, and why they are corrections rather than preferences
+
+**`Ord` returning `less_than` makes `Ord` weaker than `PartialOrd`.** A boolean
+"is less" carries strictly less information than a three-way comparison, and `Ord`
+is the *stronger* promise — a total order. It gets the three-way answer.
+
+**An ordering is not an integer.** `partial_cmp` returning an `int32` meaning less,
+equal or greater *by sign* is three meanings in one number, which is precisely the
+shape D-036 rejects when it says `bool` and `char` are not integers. So there is an
+`Ordering` enum — `Less`, `Equal`, `Greater` — and the partial form returns
+`Ordering?`, `NIL` being the case that has no answer.
+
+**`PartialOrd` survives where `Display` did not**, and the difference is not taste.
+`Display` was a second name for `ToString`'s job. `PartialOrd` answers a different
+question, and `OP_REFERENCE` §4 makes it a real one: floats are IEEE 754 with `nan`
+and **no trap**, so two `flt64`s genuinely may not compare and a total `cmp` over
+one would have to lie.
+
+**The traits declare their methods.** The prototype registers them as *empty* trait
+declarations and lets the derived impl supply whatever it likes. That is an
+implementation shortcut, and copying it would undercut everything cycle 0.4.6 built:
+`check_impls_complete` would have nothing to check, and a `<T: Hash>` bound would
+promise no methods, so a generic body could not call `t.hash()`.
+
+### Source, not synthesis, and generated rather than hand-escaped
+
+The prelude is **`src/prelude/prelude.npk`**, ordinary Nitpick, and the generator
+emits it into `prelude_source.npk` as a string the compiler carries. From the lexer
+onward it goes through exactly what a program's own source does, so there is no
+second way for a declaration to come into existence — and a person can read it.
+
+**Embedded rather than loaded from a path**, because a file is a thing that can be
+missing: a compiler whose prelude is found by path has a deployment story, and one
+whose prelude is a constant does not.
+
+**One line with `\n` escapes**, because the real lexer refuses a newline inside a
+plain string literal while the seed's accepts one, and the block form `"""` is the
+other way round — the real lexer has it and the seed does not. That is the one
+spelling both accept, and getting it wrong would have compiled through the seed and
+been rejected by the compiler the seed builds.
+
+### It is an implicit import, not a scope above modules
+
+The first attempt collected the prelude into the **root scope**, reasoning that
+every module's scope has scope 0 as its parent. **It does not work: `scope_lookup`
+stops at the first module scope.** A module is a closed namespace, reachable only
+through `use`, and that is the whole of what a module means here — so there is
+nothing above one to put a prelude in.
+
+The prelude is bound the way `use "prelude.npk".*` would bind it, into every module
+scope in the program including nested ones. That is the honest model rather than a
+workaround: **the prelude is not magic, it is an import nobody has to write.**
+
+**Declaring a prelude name is refused**, not allowed to shadow. A module's own scope
+is searched first, so a program's `trait:Eq` would silently take over — and then
+`#[derive(Eq)]` would generate an implementation of a trait the compiler knows
+nothing about, against methods it guessed. One name, one meaning, which is the same
+reason a variable cannot be called `if`.
+
+---
+
+## D-133 — Derive generates source, and refuses what the language cannot yet say — **SETTLED**
+
+### Source, parsed — not AST built by hand
+
+The prototype builds `DeclImplDecl` and `DeclFunctionDecl` nodes in C++. Doing that
+here would be several hundred lines of slot-filling for seven derives, and **every
+slot is a chance to write a member count into the field a trait id lives in** —
+which is the defect this compiler has paid for seven times, most recently in 0.6.3
+where an `impl` read as an "item" segfaulted files containing no macros at all.
+
+Generated **text** goes through the same parser as everything else. The worst it can
+do is fail to parse, loudly — and it did, once: `pick self { … }` written from
+memory, where the real syntax is `pick (self) { (pattern) { … }, … }`. That surfaced
+immediately instead of producing a tree nobody could have read.
+
+### What each derived body uses
+
+**Operators where the language has them.** `Eq` compares with `!=`, `Ord` with `<`
+and `>`, `Clone` is `pass self`, `ToString` and `Debug` are `&{ }` interpolation
+(D-053). Going through each field's own trait would require `int32` to implement
+`Eq`, and then the prelude would need an impl per scalar type per trait.
+
+**`ToString` on an enum goes through a `pick`, not `&{self}`** — interpolation is
+what *calls* `to_string`, so a body built out of it would call itself. The `pick`
+is exhaustive by construction and 0.5.4 checks that it is.
+
+### Two are refused rather than guessed at
+
+**`Ord` and `PartialOrd` on an enum.** Ordering a variant means comparing its tag,
+and no operator yields one — `<` on an enum is refused by the type checker, which
+was measured rather than assumed.
+
+**`Hash`, on anything.** FNV-1a folds bytes. An integer, `bool` or `char` field can
+supply its bits through `=>!`, and a nested type that derived `Hash` can supply its
+own — but **nothing in `builtins.npk` exposes a `string`'s bytes to Nitpick source**,
+and a derived hash that quietly skipped string fields would vary with data it
+ignored. That is worse than not having one. One primitive unblocks it.
+
+Both refuse at the `#[derive]` rather than generating code that fails to type-check,
+because a diagnostic inside generated code points at a line nobody wrote.
+
+### What is still owed, and where it lands
+
+D-123 asks that a refusal **name the field that blocks it** — "`Point` is not
+`Hash`" makes the reader check every field themselves. That cannot be answered where
+derive runs: it generates in the **expansion** phase, before types exist, so "is
+this field `Ord`?" has no answer yet; and letting the generated code fail to
+type-check puts the diagnostic inside code the reader never wrote.
+
+**It is the same mechanism 0.6.6 builds** — a diagnostic about generated code that
+has to be told where the reader's code is — and it lands there. A derived impl is
+marked `DECL_DERIVED` already, which is what lets the coherence message say one of
+the two was generated rather than sending the reader to look for an `impl` they
+never wrote.
+
+---
+
+## D-134 — `Self` in return position was unmatchable, and the reason is `Result` — **SETTLED**
+
+Found by the prelude's `Clone`, which is the first trait method in this compiler's
+history to return `Self`.
+
+`check_impls_complete` compared a trait method's type against an impl's and
+substituted `Self` **one level deep**, deliberately: `Self->` and `Self[]` are
+refused rather than silently mismatched, because a trait method taking `Self->` is a
+shape somebody meant.
+
+But **every function returns `Result<T>`** — the one rule with no exceptions
+(D-002). So `func:clone = Self(Self:self);` has the type `Result<Self>` and the
+impl's has `Result<Point>`, and `Self` is a level down, where the one-level
+substitution cannot see it.
+
+The result: **every trait method returning `Self` was reported as not having the
+signature its trait declares**, about two signatures that were identical.
+
+The return type is now compared **through** its `Result` wrapper, because that
+wrapper is the language's and not the author's. `Self->` and `Self[]` stay refused,
+and that remains right — those wrappers are ones somebody wrote.
+
+The general shape is worth keeping: **a rule about what the author wrote has to
+account for what the language adds.** `Result` is invisible in the source and
+present in every type, so any comparison of function types has to decide about it
+explicitly rather than by not noticing.

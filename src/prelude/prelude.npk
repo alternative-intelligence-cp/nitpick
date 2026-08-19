@@ -1,0 +1,75 @@
+// The prelude — what the compiler itself declares.
+//
+// NOT COMPILED AS PART OF THE FRONTEND. Nothing `use`s this file. It is read by
+// `bootstrap/generator/gen_tables.py`, which emits it into
+// `src/frontend/prelude_source.npk` as a string constant, and the compiler then
+// puts that text through the same lexer, the same parser and the same collector as
+// any other module.
+//
+// SOURCE RATHER THAN SYNTHESIS, and generated rather than hand-escaped, for the two
+// reasons the token tables give: a declaration built in code is one a person cannot
+// read, and a constant written twice is one that can differ in one of the places.
+//
+// COLLECTED INTO THE ROOT SCOPE, so these names are in scope everywhere with no
+// import. Every module's scope has scope 0 as its parent, so the place already
+// existed.
+
+mod:prelude;
+
+// HOW TWO VALUES COMPARE, AS A TYPE RATHER THAN A NUMBER. The prototype's
+// `partial_cmp` returned an `int32` meaning less, equal or greater by sign — three
+// meanings in one number, which is the shape D-036 rejects for `bool` and `char`.
+// An ordering is not an integer either.
+pub enum:Ordering = {
+    Less;
+    Equal;
+    Greater;
+};
+
+// EQUALITY. Derived field by field, in declaration order.
+pub trait:Eq = {
+    func:eq = bool(Self:self, Self:other);
+};
+
+// A TOTAL ORDER. Every two values compare, which is what makes the result an
+// `Ordering` and not an `Ordering?`.
+//
+// The prototype generated `less_than` returning `bool`, which carries strictly less
+// information than a three-way comparison and made `Ord` WEAKER than `PartialOrd` —
+// backwards, since `Ord` is the stronger promise.
+pub trait:Ord = {
+    func:cmp = Ordering(Self:self, Self:other);
+};
+
+// AN ORDER THAT MAY HAVE NO ANSWER. Not a second spelling of `Ord` but a different
+// promise, which is why it survives where `Display` did not: a `flt64` is IEEE 754
+// with `nan` and no trap (OP_REFERENCE), so two of them genuinely may not compare,
+// and a total `cmp` over one would have to lie.
+pub trait:PartialOrd = {
+    func:partial_cmp = Ordering?(Self:self, Self:other);
+};
+
+// A VALUE OF THE SAME TYPE, MADE FROM THIS ONE.
+pub trait:Clone = {
+    func:clone = Self(Self:self);
+};
+
+// A HASH FOR A MAP, AND NOT CRYPTOGRAPHY. The derived combiner is FNV-1a and is
+// specified rather than left open (D-123), because a derived hash that varies
+// between builds is not something a verified compiler can have. Real cryptography
+// is `ncrypto`, a separately audited artifact.
+pub trait:Hash = {
+    func:hash = uint64(Self:self);
+};
+
+// THE VALUE AS A STRING, which is what `&{ }` interpolation asks for.
+pub trait:ToString = {
+    func:to_string = string(Self:self);
+};
+
+// THE SAME, IN A DIAGNOSTIC FORM naming the type and its fields. A separate trait
+// from `ToString` because the two are read by different audiences: one is what a
+// program shows a person, the other is what a person reads while debugging.
+pub trait:Debug = {
+    func:debug = string(Self:self);
+};

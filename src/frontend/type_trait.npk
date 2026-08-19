@@ -284,9 +284,21 @@ func:coherence_error = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) 
                     relay type_display(r.types, r.interns, second.target));
     string:m4 = relay string_concat(m3, "` at line ");
     string:m5 = relay string_concat(m4, raw int_to_string(first_d.span.line => int64));
+
+    // ONE OF THE TWO MAY HAVE BEEN GENERATED, and saying so is the difference
+    // between a useful sentence and one that sends the reader looking for an `impl`
+    // they never wrote. `#[derive(Eq)]` above a hand-written `impl:Point:Eq` is two
+    // implementations of one trait, and the derive is the half that is invisible.
+    string:tail = "; a trait has at most one implementation per type";
+    if (raw decl_has(first_d, raw DECL_DERIVED())) {
+        tail = "; `#[derive]` generated one of them, and a trait has at most one implementation per type — remove the derive, or the impl";
+    }
+    if (raw decl_has(second_d, raw DECL_DERIVED())) {
+        tail = "; `#[derive]` generated one of them, and a trait has at most one implementation per type — remove the derive, or the impl";
+    }
     drop diaglist_push(r.diags,
-        raw diag_error(raw TYPE_COHERENCE(), relay string_concat(m5,
-            "; a trait has at most one implementation per type"), second_d.span));
+        raw diag_error(raw TYPE_COHERENCE(), relay string_concat(m5, tail),
+                       second_d.span));
     pass NIL;
 };
 
@@ -1012,8 +1024,20 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target
     if ((raw type_kind(r.types, want)) != (raw type_kind(r.types, got))) { pass false; }
     if (!(raw type_is_func(r.types, want))) { pass false; }
 
-    if (!(relay same_after_self(r, raw type_elem(r.types, want),
-                                raw type_elem(r.types, got), target))) {
+    // THE RETURN TYPE IS COMPARED THROUGH ITS `Result` WRAPPER, because the
+    // wrapper is the LANGUAGE'S and not the author's. Every function returns
+    // `Result<T>` (the one rule with no exceptions), so a trait's
+    // `func:clone = Self(Self:self);` has the type `Result<Self>` and the impl's
+    // has `Result<Point>` — and `Self` is then a level down, where the one-level
+    // substitution below cannot see it.
+    //
+    // Found by the prelude's `Clone` (0.6.5), and it made EVERY trait method
+    // returning `Self` unmatchable: the impl was reported as not having the
+    // signature the trait declares, about two signatures that were identical.
+    // `Self->` and `Self[]` are still refused, and that is a different case — those
+    // wrappers are ones somebody wrote.
+    if (!(relay same_return(r, raw type_elem(r.types, want),
+                            raw type_elem(r.types, got), target))) {
         pass false;
     }
     int32:n = raw type_param_count_of(r.types, want);
@@ -1034,6 +1058,17 @@ func:same_signature = bool(TypeResolver->:r, int32:want, int32:got, int32:target
 // silently mismatched, because a trait method taking `Self->` is a shape somebody
 // meant and a diagnostic saying the signature disagrees would send them looking at
 // the wrong thing.
+func:same_return = bool(TypeResolver->:r, int32:want, int32:got, int32:target) {
+    if (want == got) { pass true; }
+    if ((raw type_kind(r.types, want)) == (raw TY_RESULT())) {
+        if ((raw type_kind(r.types, got)) == (raw TY_RESULT())) {
+            pass (relay same_after_self(r, raw type_elem(r.types, want),
+                                        raw type_elem(r.types, got), target));
+        }
+    }
+    pass (relay same_after_self(r, want, got, target));
+};
+
 func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got, int32:target) {
     if (want == got) { pass true; }
     if ((raw type_kind(r.types, want)) == (raw TY_SELF())) {

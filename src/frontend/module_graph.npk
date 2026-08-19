@@ -36,6 +36,8 @@ use "parse_stmt.npk".*;
 use "parse_pick.npk".*;
 use "parse_decl.npk".*;
 use "symbols.npk".*;
+use "prelude.npk".*;
+use "prelude_source.npk".*;
 
 pub struct:ModuleEntry = {
     int32:file;      // index into the SourceManager
@@ -55,6 +57,12 @@ pub struct:ModuleGraph = {
     wild ModuleEntry->:mods;
     int32:count;
     int32:cap;
+
+    // WHICH ENTRY IS THE PRELUDE, or -1. Its members are collected INTO the root
+    // scope rather than into a scope of their own, and that is the one thing about
+    // it that differs from every other module — so it is one index rather than a
+    // flag on every entry.
+    int32:prelude;
 };
 
 pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
@@ -69,6 +77,7 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         diags: diags,
         roots: roots,
         stdlib: stdlib,
+        prelude: 0i32 - 1i32,
         mods: mem => wild ModuleEntry->,
         count: 0i32,
         cap: 16i32
@@ -166,6 +175,35 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) {
     pass index;
 };
 
+// THE PRELUDE, LOADED LIKE ANY OTHER MODULE AND COLLECTED UNLIKE ONE.
+//
+// Its text is a constant rather than a file (`prelude_source.npk`), so there is no
+// path to find and nothing to be missing — but from the lexer onward it goes
+// through exactly what a program's own source does. There is no second way for a
+// declaration to come into existence.
+//
+// IT IS LOADED FIRST, before the root module, because everything that follows may
+// name what it declares.
+pub func:graph_load_prelude = int32(ModuleGraph->:g) {
+    int32:file = relay srcmgr_add(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
+    string:text = relay srcmgr_text(@g.sm, file);
+    TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
+    Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
+    DeclId:root = relay p_parse_module(@p);
+
+    if (g.count >= g.cap) { drop graph_grow(g); }
+    // SCOPE 0 IS RECORDED, NOT OPENED. Every other module gets a scope of its own
+    // whose parent is 0; the prelude's members go INTO 0, which is what makes them
+    // visible everywhere without an import. `graph_collect_all` reads this to know
+    // which of the two a module is.
+    ModuleEntry:e = ModuleEntry{ file: file, root: root.index, scope: 0i32 };
+    g.mods[g.count => int64] = e;
+    g.prelude = g.count;
+    int32:index = g.count;
+    g.count = g.count + 1i32;
+    pass index;
+};
+
 // PHASE 1, over every module the graph holds, after macro expansion has finished.
 //
 // One pass rather than one per file, so that "every declaration in the program has
@@ -184,6 +222,76 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) {
     pass NIL;
 };
 
+// THE PRELUDE IS A MODULE EVERY MODULE IMPLICITLY IMPORTS.
+//
+// The first attempt collected it into the ROOT scope, on the reasoning that every
+// module's scope has scope 0 as its parent so a name in 0 is in scope everywhere.
+// It is not: `scope_lookup` STOPS AT THE FIRST MODULE SCOPE. **A module is a closed
+// namespace**, reachable only through `use`, and that is the whole of what a module
+// means here — so there is nothing above one to put a prelude in.
+//
+// So it is bound the way `use "prelude.npk".*` would bind it, into every module
+// scope in the program. That is the honest model rather than a workaround: the
+// prelude is not magic, it is an import nobody has to write.
+//
+// EVERY MODULE SCOPE, INCLUDING NESTED ONES, and by walking the scope table rather
+// than the module list — a `mod:inner = { … }` opens a scope of its own that the
+// module list has no entry for, and it cannot see its parent's names either.
+pub func:graph_apply_prelude = NIL(ModuleGraph->:g) {
+    if (g.prelude < 0i32) { pass NIL; }
+    ModuleEntry:pe = raw graph_at(g, g.prelude);
+    if (pe.scope == 0i32) { pass NIL; }
+
+    int32:n = raw symtab_scope_count(@g.tab);
+    int32:s = 1i32;
+    while (s < n) {
+        if (s != pe.scope) {
+            if ((raw scope_kind(@g.tab, s)) == (raw SCOPE_MODULE())) {
+                drop bind_prelude_into(g, s, pe.scope);
+            }
+        }
+        s = s + 1i32;
+    }
+    pass NIL;
+};
+
+// A PRELUDE NAME DECLARED BY THE PROGRAM IS AN ERROR, not the warning a wildcard
+// collision gets.
+//
+// A module's own scope is searched first, so a program's `trait:Eq` would silently
+// take over — and then `#[derive(Eq)]` would generate an implementation of a trait
+// the compiler knows nothing about, against methods it guessed. One name, one
+// meaning, which is the same reason a variable cannot be called `if`.
+func:bind_prelude_into = NIL(ModuleGraph->:g, int32:scope, int32:src_scope) {
+    int32:n = raw scope_symbol_count(@g.tab, src_scope);
+    int32:i = 0i32;
+    while (i < n) {
+        int32:sym = raw scope_symbol_at(@g.tab, src_scope, i);
+        if (sym != 0i32) {
+            Symbol:s = raw symtab_get(@g.tab, sym);
+            if (raw symbol_is_exported(s)) {
+                int32:bound = raw symtab_bind_import(@g.tab, scope, s.name,
+                                                     s.origin_kind, s.origin, 0i32);
+                if (bound == 0i32) {
+                    int32:clash = raw scope_lookup_local(@g.tab, scope, s.name);
+                    Span:at = raw span_none();
+                    if (clash != 0i32) {
+                        at = relay symbol_span(@g.ast, @g.tab, clash);
+                    }
+                    string:nm = relay intern_get(g.interns, s.name);
+                    string:m1 = relay string_concat("`", nm);
+                    string:m2 = relay string_concat(m1,
+                        "` is declared by the prelude, so a program cannot declare it: a local one would silently take over, and `#[derive]` would then generate an implementation of a trait the compiler knows nothing about");
+                    drop diaglist_push(g.diags,
+                        raw diag_error(raw RESOLVE_DUPLICATE(), m2, at));
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // Load a root file and everything it reaches, transitively.
 //
 // Breadth-first over discovery order, which is deterministic given the root: the
@@ -197,9 +305,17 @@ pub func:graph_load_all = int32(ModuleGraph->:g, string:root_path) {
     }
 
     // The list grows as imports are discovered, so this walks past its own tail.
+    //
+    // THE PRELUDE IS SKIPPED, and the reason is the shape of a file's own header.
+    // `mod:name;` with no members is an EXTERNAL FILE MODULE (MODULE_REFERENCE
+    // 1.1) — the body lives in `name.npk` — and a file's own first line is exactly
+    // that shape. For an ordinary file it is harmless: the load finds the file
+    // itself, already in the graph, and returns. The prelude's text is a constant
+    // with no file behind it, so the same walk goes looking for `prelude.npk` on
+    // disk and reports that it is missing.
     int32:i = 0i32;
     while (i < g.count) {
-        drop graph_load_imports(g, i);
+        if (i != g.prelude) { drop graph_load_imports(g, i); }
         i = i + 1i32;
     }
     pass first;

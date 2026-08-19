@@ -1,0 +1,18 @@
+// expect-error: NITPICK-TYPE-013
+//
+// A DERIVED IMPL BESIDE A HAND-WRITTEN ONE IS TWO IMPLS OF ONE TRAIT, which
+// `check_coherence` already refuses (0.4.6) and should keep refusing.
+//
+// What 0.6.5 adds is the sentence: the message says one of them was GENERATED.
+// "already implemented at line 2" is unhelpful when line 2 is a `#[derive]` and the
+// reader is looking for a second `impl` they never wrote.
+mod:coherence;
+
+#[derive(Eq)]
+struct:Point = { int32:x; };
+
+impl:Point:Eq = {
+    pub func:eq = bool(Point:self, Point:other) { pass (self.x == other.x); };
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

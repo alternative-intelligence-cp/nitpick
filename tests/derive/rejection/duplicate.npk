@@ -1,0 +1,20 @@
+// expect-error: NITPICK-DERIVE-003
+// expect-error: NITPICK-DERIVE-003
+//
+// THE SAME TRAIT DERIVED TWICE, in one list and across two attributes. Two
+// attributes are one list as far as the type is concerned; finding the collision in
+// one form and not the other would make the rule depend on how the author happened
+// to lay it out.
+//
+// Caught here rather than left to coherence, which is where it would surface as two
+// impls of one trait — at code the reader never wrote.
+mod:duplicate;
+
+#[derive(Eq, Eq)]
+struct:A = { int32:x; };
+
+#[derive(Clone)]
+#[derive(Clone)]
+struct:B = { int32:x; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
