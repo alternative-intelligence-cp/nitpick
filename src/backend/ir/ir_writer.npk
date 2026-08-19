@@ -1,0 +1,137 @@
+// The LLVM IR text writer.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.1 — the first module of the backend.
+//
+// TEXT, NOT A STRUCTURE. The output is LLVM IR as characters, which is what `llc`
+// takes and what a person can read. There is no intermediate object graph to keep
+// in step with the text, because there is only one consumer and the text IS the
+// artifact.
+//
+// DETERMINISM IS A REQUIREMENT, NOT A NICETY (D-078). Identical input must produce
+// BYTE-IDENTICAL output — not equivalent IR, identical bytes — because D-085's
+// stage-1/stage-2 fixpoint check compares two compilers' output for equality, and a
+// single reordered iteration makes that check meaningless.
+//
+// What that rules out is worth stating, because each is a thing a writer normally
+// does: no iteration over anything unordered, no temp numbered by visit order rather
+// than by source order, no "whichever came first" tie-break. Every counter here is
+// sequential and every walk that uses it goes in source order.
+//
+// THE SEED'S OUTPUT IS THE REFERENCE. Stage 1 is built by the seed and stage 2 by
+// stage 1, so the two compilers' IR meets at every runtime symbol and every layout
+// until the fixpoint closes. Symbol naming in particular is not a free choice: it is
+// whatever `bootstrap/generator/emit.py` already does.
+
+mod:ir_writer;
+
+use "../../frontend/intern.npk".*;
+use "../../frontend/diagnostics.npk".*;
+
+pub struct:IrWriter = {
+    // WRITTEN THROUGH A SINK, which grows since 0.7.1. A fixed buffer that dropped
+    // what did not fit would produce a program that compiles to something other
+    // than what was written, with nothing reporting it.
+    Sink:out;
+
+    // `%0`, `%1`, … WITHIN ONE FUNCTION. Reset at each function's start, so a
+    // function's IR depends on that function alone — which is what makes a
+    // one-function change produce a one-function diff.
+    int32:next_temp;
+
+    // Basic-block labels, numbered in the same way and for the same reason.
+    int32:next_label;
+};
+
+pub func:irw_to_buffer = IrWriter() {
+    IrWriter:w = IrWriter{ out: raw sink_to_buffer(4096i64),
+                           next_temp: 0i32, next_label: 0i32 };
+    pass w;
+};
+
+pub func:irw_to_fd = IrWriter(int32:descriptor) {
+    IrWriter:w = IrWriter{ out: raw sink_to_fd(descriptor),
+                           next_temp: 0i32, next_label: 0i32 };
+    pass w;
+};
+
+// --- writing --------------------------------------------------------------------
+
+// A line at module level: a type definition, a declaration, a function header.
+pub func:irw_raw = NIL(IrWriter->:w, string:text) {
+    drop sink_write(@w.out, text);
+    drop sink_write(@w.out, "\n");
+    pass NIL;
+};
+
+// A line INSIDE a function, indented two spaces. The indentation is cosmetic and is
+// here anyway: the IR is read by people during bootstrap far more often than it is
+// read by `llc`.
+pub func:irw_line = NIL(IrWriter->:w, string:text) {
+    drop sink_write(@w.out, "  ");
+    drop sink_write(@w.out, text);
+    drop sink_write(@w.out, "\n");
+    pass NIL;
+};
+
+pub func:irw_blank = NIL(IrWriter->:w) {
+    drop sink_write(@w.out, "\n");
+    pass NIL;
+};
+
+// A label, which is a line at column zero inside a function body.
+pub func:irw_label = NIL(IrWriter->:w, string:name) {
+    drop sink_write(@w.out, name);
+    drop sink_write(@w.out, ":\n");
+    pass NIL;
+};
+
+// --- names ----------------------------------------------------------------------
+
+// A NEW TEMPORARY. Sequential, per function, and the only source of value names —
+// nothing else may invent one, because two schemes numbering into the same space is
+// how a `%3` comes to mean two things.
+pub func:irw_temp = string(IrWriter->:w) {
+    string:t = relay string_concat("%", raw int_to_string(w.next_temp => int64));
+    w.next_temp = w.next_temp + 1i32;
+    pass t;
+};
+
+pub func:irw_new_label = string(IrWriter->:w, string:stem) {
+    string:l = relay string_concat(stem, raw int_to_string(w.next_label => int64));
+    w.next_label = w.next_label + 1i32;
+    pass l;
+};
+
+// EVERY FUNCTION STARTS FROM ZERO. Called at the head of each one, so that the
+// numbering of a function's temporaries is a property of that function.
+pub func:irw_begin_function = NIL(IrWriter->:w) {
+    w.next_temp = 0i32;
+    w.next_label = 0i32;
+    pass NIL;
+};
+
+// `main` KEEPS ITS NAME FOR THE LINKER; everything else is prefixed, so a Nitpick
+// name cannot collide with a runtime symbol.
+//
+// THIS MATCHES THE SEED EXACTLY and is not a choice this module gets to make: stage
+// 1 is built by the seed and calls into the same runtime, so a different prefix
+// would be two compilers emitting calls to two different symbols.
+pub func:ir_symbol = string(string:name) {
+    if (raw string_eq(name, "main")) { pass "@main"; }
+    pass (relay string_concat("@npk_", name));
+};
+
+// --- reading it back --------------------------------------------------------------
+//
+// For a test, and for a driver that writes the whole module at once.
+pub func:irw_length = int64(IrWriter->:w) {
+    pass (raw sink_length(@w.out));
+};
+
+pub func:irw_byte_at = uint8(IrWriter->:w, int64:i) {
+    pass (raw sink_byte_at(@w.out, i));
+};
+
+pub func:irw_text = string(IrWriter->:w) {
+    pass (raw string_from_bytes(w.out.buf, w.out.len));
+};

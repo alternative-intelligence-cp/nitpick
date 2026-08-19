@@ -204,10 +204,33 @@ pub func:sink_to_fd = Sink(int32:descriptor) {
     pass s;
 };
 
+// A BUFFER SINK GROWS. It did not, and dropped whatever did not fit — which is a
+// defensible answer for a diagnostic renderer, whose total is already bounded by
+// `diaglist`'s own cap, and the wrong answer for anything else.
+//
+// CYCLE 0.7 IS WHAT CHANGED IT. The IR emitter writes through a sink, and IR that is
+// silently truncated is a program that compiles to something other than what was
+// written, with nothing anywhere reporting it. That is the failure mode this whole
+// project is arranged to prevent, and "the buffer was too small" is a poor reason to
+// have it.
+//
+// The bound stays where it belongs: on the DIAGNOSTIC LIST, which is what the fixed
+// cap was protecting. One buffer mechanism, and the thing that needs a limit keeps
+// its own.
 pub func:sink_to_buffer = Sink(int64:cap) {
-    wild int8->:b = alloc(cap);
-    Sink:s = Sink{ kind: 1i32, handle: 0i32, buf: b, len: 0i64, cap: cap };
+    int64:n = cap;
+    if (n < 64i64) { n = 64i64; }
+    wild int8->:b = alloc(n);
+    Sink:s = Sink{ kind: 1i32, handle: 0i32, buf: b, len: 0i64, cap: n };
     pass s;
+};
+
+func:sink_grow = NIL(Sink->:out, int64:need) {
+    int64:n = out.cap;
+    while (n < need) { n = n * 2i64; }
+    out.buf = ralloc(out.buf, n);
+    out.cap = n;
+    pass NIL;
 };
 
 pub func:sink_write = NIL(Sink->:out, string:text) {
@@ -215,11 +238,11 @@ pub func:sink_write = NIL(Sink->:out, string:text) {
         drop write_raw(out.handle, text.ptr, text.len);
         pass NIL;
     }
+    if ((out.len + text.len) > out.cap) {
+        drop sink_grow(out, out.len + text.len);
+    }
     int64:i = 0i64;
     while (i < text.len) {
-        if (out.len >= out.cap) {
-            pass NIL;                     // full; drop the rest
-        }
         out.buf[out.len] = text.ptr[i];
         out.len = out.len + 1i64;
         i = i + 1i64;
