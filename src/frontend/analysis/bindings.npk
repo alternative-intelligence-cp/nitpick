@@ -62,6 +62,7 @@ use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../types.npk".*;
 use "../expr_types.npk".*;
+use "../resolve_type.npk".*;   // `fold_const` — one evaluator, one idea of constant
 use "../type_codes.npk".*;
 use "analysis_codes.npk".*;
 use "exhaust.npk".*;
@@ -126,6 +127,12 @@ pub struct:Assign = {
 
     DiagList->:diags;
 
+    // WHAT FOLDS IS ONE QUESTION WITH ONE ANSWER (0.6.4). "Is this `const`
+    // initialiser constant" is the same question an array size asks, and it is
+    // answered by the same evaluator rather than by a second idea of what a
+    // constant is — which is how `is_error` and `error` came to disagree (D-069).
+    TypeResolver->:tyres;
+
     // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
     // first walk is silent, and this is what silences it.
     bool:quiet;
@@ -133,9 +140,11 @@ pub struct:Assign = {
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
                               InternTable->:interns, TypeTable->:types,
-                              ExprTypes->:etypes, DiagList->:diags) {
+                              ExprTypes->:etypes, DiagList->:diags,
+                              TypeResolver->:tyres) {
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
-                       etypes: etypes, diags: diags, quiet: false };
+                       etypes: etypes, diags: diags, tyres: tyres,
+                       quiet: false };
     pass x;
 };
 
@@ -407,13 +416,14 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) {
         }
 
         ExprNode:ie = relay ast_expr(x.ast, init);
-        if (!(raw expr_is_literal(ie.kind))) {
-            // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it
-            // is the same question — is this expression constant at this rung —
-            // and the same answer: folding a general constant expression is cycle
-            // 0.6's job. A reader filtering on this code is asking one thing.
+        // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is
+        // the same question — is this expression constant — and now the same
+        // evaluator answers it. A reader filtering on this code is asking one thing.
+        ConstVal:cv = relay fold_const(x.tyres, init, scope);
+        if (!(raw cv_folded(cv))) {
+            if (raw fold_gave_up(x.tyres)) { pass NIL; }
             drop assign_err(x, raw TYPE_NOT_CONSTANT(),
-                "a `const` initialiser must be constant, and only a literal is constant-folded at this rung",
+                "a `const` initialiser must be a constant expression; a name folds only if it is itself a `const` global",
                 ie.span);
         }
         pass NIL;

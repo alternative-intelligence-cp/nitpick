@@ -321,7 +321,7 @@ func:main = int32(cstring[]:argv) {
     // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
     // with an intersection merge, and a loop body that may run zero times is both
     // the sound answer and a fixed point on the first pass.
-    Assign:asg = raw assign_init(@g.ast, @g.tab, @it, @types, @ets, @diags);
+    Assign:asg = raw assign_init(@g.ast, @g.tab, @it, @types, @ets, @diags, @tr);
     int32:y2 = 0i32;
     while (y2 < (raw graph_count(@g))) {
         ModuleEntry:e6 = raw graph_at(@g, y2);
@@ -345,7 +345,7 @@ func:main = int32(cstring[]:argv) {
     // affordable because verification is whole-program anyway. Seed every declared
     // level, widen until nothing changes, then report once. Reporting during the
     // widening rounds would report each finding once per round.
-    Locks:lk = raw locks_init(@g.ast, @g.tab, @types, @ets, @it, @im, @bd, @diags);
+    Locks:lk = raw locks_init(@g.ast, @g.tab, @types, @ets, @it, @im, @bd, @diags, @tr);
     int32:s1 = 0i32;
     while (s1 < (raw graph_count(@g))) {
         ModuleEntry:e8 = raw graph_at(@g, s1);

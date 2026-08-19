@@ -103,10 +103,15 @@ impl:Loose:Storage = {
 
 // --- a level that is not a constant ------------------------------------------------------
 
-// The same rule an array size and a `comptime` argument follow, for the same
-// reason: folding a general constant expression is cycle 0.6's job, and a
-// non-literal is refused BY NAME rather than silently taking a wrong value.
+// `acquires (1i32 + 1i32)` FOLDS since 0.6.4, and so does `acquires LEVEL` for a
+// `const` global — the same evaluator an array size uses.
+//
+// WHAT IS STILL REFUSED IS THE RULE RATHER THAN THE RUNG: `fixed` is assigned once
+// at RUN time, so it is not a value the compiler can know, and a lock level has to
+// be one — the ordering is decided while compiling or it is not decided at all.
+fixed int32:RUNTIME_LEVEL = 2i32;
+
 // expect-error: NITPICK-LOCK-003
-func:level_is_not_constant = NIL() acquires (1i32 + 1i32) {
+func:level_is_not_constant = NIL() acquires RUNTIME_LEVEL {
     pass NIL;
 };

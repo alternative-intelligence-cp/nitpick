@@ -1,0 +1,25 @@
+// expect-error: NITPICK-TYPE-004
+// expect-error: NITPICK-TYPE-004
+// expect-error: NITPICK-TYPE-004
+//
+// WHAT IS STILL REFUSED, now that a general constant expression folds. The debt
+// 0.6.4 paid was "must be a LITERAL"; it was never "must be VALID", and each site
+// still owes its own check on what it got.
+//
+// A NAME FOLDS ONLY IF IT IS A `const` GLOBAL. `const` is the marker that says a
+// binding has one value for the whole program (D-010), so it is the marker that
+// says a name may stand in a constant expression — nothing is inferred, and a
+// `fixed` binding, which is assigned once at RUN time, is correctly not one.
+mod:not_constant;
+
+fixed int32:RUNTIME_ONE = 1i32;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:local = 3i32;
+
+    int32[local]:from_a_local;        // a local is not a constant
+    int32[RUNTIME_ONE]:from_fixed;    // `fixed` is assigned at run time
+
+    int32:v = comptime(local + 1i32); // `comptime` requires one that folds
+    exit 0i32;
+};

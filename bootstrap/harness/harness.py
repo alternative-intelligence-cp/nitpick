@@ -340,8 +340,6 @@ def check_kinds_reachable():
 # currently accepts unchecked, with where it is scheduled. Adding to it means
 # admitting a new hole, and this exists so that admission is deliberate.
 UNTYPED_EXPR_KINDS = {
-    "ExprBuiltinExpr":       "D-126 -- #size_of/#wild_ptr/#wild_slice, scheduled 0.6.4",
-    "ExprComptimeExpr":      "the comptime evaluator itself, 0.6.4",
     "ExprStructLiteralExpr": "D-129, scheduled 0.6.7",
     "ExprArrayLiteralExpr":  "D-129, scheduled 0.6.7",
     "ExprVectorCtorExpr":    "D-129, scheduled 0.6.7",

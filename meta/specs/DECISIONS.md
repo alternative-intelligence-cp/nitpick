@@ -9210,3 +9210,98 @@ property, not an ergonomic one.
 **0.6.7 — the expressions nothing typed**, before 0.6.6 closes Phase A. The two
 `comptime`-shaped entries land in 0.6.4 instead, since folding a `#size_of<T>` is
 something the evaluator has to do anyway and it cannot fold what it cannot type.
+
+---
+
+## D-130 — What folds, and the two bounds evaluation needs — **SETTLED**
+
+D-057 settled that expansion is bounded and named `--comptime-budget <N>` as the
+precedent. It did not say what a constant expression *is*, and four sites in this
+compiler had been answering "an integer literal" and pointing at cycle 0.6.
+
+### What folds
+
+**A `const` global, and nothing else that is a name.** `const` is the marker that
+says a binding has one value for the whole program (D-010), so it is the marker
+that says a name may stand in a constant expression. Nothing is inferred:
+
+| written | folds | because |
+|---|---|---|
+| `const int32:N = 4i32;` | ✓ | one value, for the whole program |
+| `fixed int32:N = 4i32;` | ✗ | assigned once at RUN time |
+| a local, a parameter | ✗ | the same |
+| a `comptime func:` call | ✓ | the declaration says it may run at compile time |
+| an ordinary `func:` call | ✗ | whether the compiler runs your code is not discovered by accident |
+
+**And the evaluator is an interpreter, not a constant folder.**
+`MACRO_REFERENCE.md` §8 recovered the list from `COMPTIME-001…013`: mutable locals,
+assignment, `while`, calls that nest. Anything it can express is something the
+compiler runs at build time.
+
+### Where it lives, and why that is forced
+
+**In `resolve_type.npk`.** Folding needs to resolve types — `#size_of<T>` is a
+constant whose value is a type's size — and resolving types needs to fold —
+`int32[N]` is a type whose shape is a constant. The two are mutually recursive, so
+they are one module; split in two, each would have to `use` the other and the
+frontend has no forward declaration to break that with.
+
+The layering below it is one-way and stays that way: `type_layout.npk` uses this
+module, so this module does not call `ensure_layout`. Resolving a type is what
+computes its layout, so by the time there is a type id there is a size.
+
+### Two bounds, and the second was found by segfault
+
+The fuel bounds **total work**. It does not bound **recursion depth**, and those
+fail differently — which is the same argument D-057 makes for expansion having two.
+
+```nitpick
+comptime func:forever = int32(int32:n) { pass (raw forever(n)); };
+```
+
+With only the fuel, this **segfaulted the checker**: each level spends about three
+units of a 4096-unit budget and costs several native frames, so the compiler's own
+stack went first. `FOLD_DEPTH` is 64, the same number `GENERIC_DEPTH` uses and for
+the same reason — a nesting a person wrote on purpose is nowhere near it.
+
+### The budget gets its own code
+
+`NITPICK-TYPE-025`, not `TYPE_NOT_CONSTANT`. "This is not a constant expression"
+and "it is, and it never ends" send the reader to opposite places. And the site
+that asked for the fold does not add its own sentence on top: one failure, one
+diagnostic, which is the rule the expansion audit already follows (D-126).
+
+### `--comptime-budget <N>` is a driver feature and the driver does not exist
+
+The bound is a constant today. The flag needs argument parsing, a manifest, and a
+place to put a build option — `BUILD_REFERENCE.md` §7's `npkg`, which is cycle 0.8.
+Nothing about the mechanism changes when it arrives: the number becomes
+configurable, and the two bounds stay two.
+
+---
+
+## D-131 — Folding is not typing, and the 0.5.0 tripwire stands — **SETTLED**
+
+`tests/frontend/expr_types.npk` asserts that **exactly one** expression in its
+program is unrecorded by the checker: the `int32[4]` size. Its note said the count
+would go to zero in cycle 0.6, "where `comptime` folds general constant expressions
+and those will need types", and that the assertion failing would be the tripwire
+working.
+
+**Folding arrived and the count did not move.** That is the right answer, and the
+tripwire is re-armed rather than retired.
+
+`fold_const` computes a value **and the type it carries** — `Mutex<Config, 2i64>`
+is checked against `comptime int32:LEVEL` precisely because the folded value knows
+it is an `int64`. But it does not go through `type_of_expr`, and it does not record
+anything in `ExprTypes`, because **nothing downstream asks**: `ExprTypes` is what
+the checker gave each expression, and its readers are the cycle-0.5 analyses, which
+walk bodies and never enter a type node.
+
+So an expression inside a type is still not in the checker's record. The assertion
+says something true; what changed is why, and the note now says which.
+
+The general form is worth keeping: **a tripwire that does not fire is not
+automatically wrong.** It fires when an assumption changes, and "the assumption
+held for a different reason than expected" is an outcome that has to be written
+down, or the next reader re-derives it.

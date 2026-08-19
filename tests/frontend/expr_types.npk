@@ -174,14 +174,19 @@ func:main = int32(cstring[]:_~argv) {
     //
     // `int32[4]` holds an `ExprId` for the size (0.2.8 made it a real expression,
     // because consuming one token and calling it a literal produced arrays sized
-    // by an intern-table slot). `resolve_fixed_array` reads it directly and
-    // refuses anything but an integer literal, so nothing types it — which is
-    // correct today and stops being correct in cycle 0.6, where `comptime` folds
-    // general constant expressions and those will need types.
+    // by an intern-table slot). `resolve_fixed_array` reads it directly, so nothing
+    // in the checker types it.
     //
-    // Written down as a test so that change is noticed rather than discovered:
-    // this count goes to zero the day array sizes are typed, and the assertion
-    // fails until somebody decides that was intended.
+    // RE-ARMED IN 0.6.4, DELIBERATELY, WITH A DIFFERENT REASON. The tripwire was
+    // written expecting this count to go to zero when `comptime` started folding
+    // general constant expressions — "those will need types". Folding arrived and
+    // the count did not move, and that is the right answer: FOLDING IS NOT TYPING.
+    // `fold_const` computes a value and the type it carries, but it does not go
+    // through `type_of_expr` and nothing downstream asks `ExprTypes` about a node
+    // inside a TYPE node — the 0.5 analyses walk bodies, not types.
+    //
+    // So the assertion stands and says something still true: an expression inside a
+    // type is not in the checker's record. What changed is why.
     Ex:v2b = raw ex("func:f = NIL() { int32[4]:a; pass NIL; };", @it);
     if (raw errs(@v2b) != 0i64)                                 { exit 28i32; }
     if ((raw unrecorded(@v2b)) != 1i32)                         { exit 29i32; }

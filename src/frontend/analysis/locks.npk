@@ -57,6 +57,7 @@ use "../parse_decorate.npk".*;
 use "../types.npk".*;
 use "../type_trait.npk".*;
 use "../expr_types.npk".*;
+use "../resolve_type.npk".*;   // `fold_const` — one evaluator, one idea of constant
 use "analysis_codes.npk".*;
 
 // NO LEVEL AT ALL, spelled as a value rather than a flag beside one. A function
@@ -98,6 +99,14 @@ pub struct:Locks = {
     DiagList->:diags;
     LockTable:table;
 
+    // WHAT FOLDS IS ONE QUESTION WITH ONE ANSWER (0.6.4). An `acquires` level is a
+    // constant in exactly the sense an array size is, so the same evaluator answers
+    // it — and `cur_scope` is what it needs, set when a module is entered because
+    // `read_acquires` is reached from three places and threading a scope through all
+    // of them would be three chances to pass the wrong one.
+    TypeResolver->:tyres;
+    int32:cur_scope;
+
     // The widening rounds are SILENT; only the last walk reports. See the walk.
     bool:reporting;
 };
@@ -105,7 +114,7 @@ pub struct:Locks = {
 pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                             ExprTypes->:etypes, InternTable->:interns,
                             ImplTable->:impls, BoundTable->:bounds,
-                            DiagList->:diags) {
+                            DiagList->:diags, TypeResolver->:tyres) {
     int64:size = (raw ast_decl_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:m1 = alloc(size * #size_of<int32>());
@@ -129,7 +138,8 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
 
     Locks:x = Locks{ ast: ast, tab: tab, types: types, etypes: etypes,
                      interns: interns, impls: impls, bounds: bounds,
-                     diags: diags, table: t, reporting: false };
+                     diags: diags, table: t, tyres: tyres, cur_scope: 0i32,
+                     reporting: false };
     pass x;
 };
 
@@ -196,13 +206,15 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
             ExprId:c = raw contract_cond(v);
             if (raw expr_is_none(c)) { pass (raw no_level()); }
             ExprNode:cn = relay ast_expr(x.ast, c);
-            if (cn.kind != ExprKind.ExprIntLiteral) {
+            ConstVal:cv = relay fold_const(x.tyres, c, x.cur_scope);
+            if (!(raw cv_is_int(cv))) {
+                if (raw fold_gave_up(x.tyres)) { pass (raw no_level()); }
                 drop locks_err(x, raw LOCK_NOT_CONSTANT(),
-                    "an `acquires` level must be a constant, and only an integer literal is constant-folded at this rung",
+                    "an `acquires` level must be a constant expression; a name folds only if it is a `const` global",
                     cn.span);
                 pass (raw no_level());
             }
-            LevelRead:r = LevelRead{ found: true, level: cn.payload => int32,
+            LevelRead:r = LevelRead{ found: true, level: cv.num => int32,
                                      bounded: raw contract_is_bounded(v) };
             pass r;
         }
@@ -272,6 +284,7 @@ func:call_target = int32(Locks->:x, ExprNode:n) {
 // by a different road.
 
 pub func:locks_seed = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+    x.cur_scope = scope;
     DeclNode:m = relay ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;
@@ -331,6 +344,7 @@ func:locks_seed_decl = NIL(Locks->:x, DeclId:id, int32:scope) {
 
 // One widening round: every function absorbs what its callees reach.
 pub func:locks_widen = NIL(Locks->:x, DeclId:mod_id, int32:scope) {
+    x.cur_scope = scope;
     DeclNode:m = relay ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     int32:i = 0i32;

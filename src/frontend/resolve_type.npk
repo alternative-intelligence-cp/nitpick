@@ -27,6 +27,8 @@ use "parse_expr.npk".*;
 use "parse_decl.npk".*;
 use "symbols.npk".*;
 use "type_names.npk".*;
+use "parse_stmt.npk".*;   // QUAL_CONST, for what may stand in a constant expression
+use "builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
 
 // WHICH GENERIC PARAMETERS ARE IN SCOPE, AND WHAT THEY STAND FOR.
 //
@@ -93,6 +95,31 @@ pub struct:TypeResolver = {
     // HOW DEEP INTO NESTED TYPE ARGUMENTS THIS IS. Capped at 64 (D-064 §6), and
     // exceeding it is an error naming the cap rather than a silent truncation.
     int32:depth;
+
+    // THE LOCALS OF THE `comptime func:` BEING EVALUATED, if one is (0.6.4). Empty
+    // outside a call, saved and restored around one, for the same reason `generics`
+    // is: it is constant across one evaluation and a nested call needs a frame of
+    // its own.
+    FoldEnv:env;
+
+    // THE BUDGET WAS EXHAUSTED, and it has been said once. Without this a
+    // non-terminating `comptime` reports at every frame it unwinds through, which
+    // buries the one sentence that matters under a hundred copies of itself.
+    bool:fold_blown;
+
+    // HOW MANY `comptime func:` CALLS DEEP THIS IS. A SECOND BOUND, and the reason
+    // is the same one D-057 gives for expansion having two: they fail differently.
+    // Total work is bounded by the fuel; RECURSION DEPTH is not, and a comptime
+    // function that calls itself blows the COMPILER'S OWN STACK long before a
+    // budget measured in total steps runs out. Measured: `comptime func:forever =
+    // int32(int32:n) { pass (raw forever(n)); };` segfaulted the checker.
+    int32:fold_depth;
+
+    // `$` — THE COUNTER OF THE `loop` BEING EVALUATED. It is not a name, so it
+    // cannot live in the frame with the locals: `ExprIterationVarExpr` is its own
+    // node kind precisely because a counter is not a binding anybody declared.
+    int64:fold_counter;
+    bool:fold_counting;
 };
 
 pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
@@ -103,7 +130,10 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    self_type: 0i32,
                                    generics: raw generic_scope_none(),
                                    enclosing: raw generic_scope_none(),
-                                   instances: instances, depth: 0i32 };
+                                   instances: instances, depth: 0i32,
+                                   env: raw foldenv_none(),
+                                   fold_blown: false, fold_depth: 0i32,
+                                   fold_counter: 0i64, fold_counting: false };
     pass r;
 };
 
@@ -431,6 +461,784 @@ func:GENERIC_DEPTH = int32() { pass 64i32; };
 //
 // SUPPLYING THE WRONG KIND SAYS WHICH KIND WAS WANTED. "there is no type named
 // `2`" would be true and useless; the mistake is that the position takes a value.
+// --- constant folding -------------------------------------------------------------
+//
+// THE FIVE DEBTS, PAID. Four sites in this compiler refused anything but a literal
+// and said so by name, each pointing here: an array size `int32[N]`, a `comptime`
+// generic argument `Mutex<Config, 2>`, an `acquires N` level, and a `const` global's
+// initialiser. Every one of them was written to refuse rather than silently take a
+// wrong value, because 0.2.8 found that exact path reading an intern-table slot as
+// an array length.
+//
+// IT LIVES HERE, IN `resolve_type`, AND THAT IS NOT ARBITRARY. Folding needs to
+// resolve types — `#size_of<T>` is a constant whose value is a type's size — and
+// resolving a type needs to fold — `int32[N]` is a type whose shape is a constant.
+// The two are mutually recursive, so they are one module. Split into two, each
+// would have to `use` the other, and the frontend has no forward declaration to
+// break that with.
+//
+// FOLDING IS WHERE A COMPILER RUNS THE PROGRAM IT IS COMPILING, so it is bounded
+// for the same reason expansion is (D-057): a `comptime` expression that does not
+// terminate hangs the build, which is the same failure arriving through the other
+// door.
+
+pub func:CV_NONE = int32()   { pass 0i32; };   // did not fold
+pub func:CV_INT = int32()    { pass 1i32; };
+pub func:CV_BOOL = int32()   { pass 2i32; };
+pub func:CV_CHAR = int32()   { pass 3i32; };
+pub func:CV_STRING = int32() { pass 4i32; };
+
+// WHETHER IT FOLDED AND WHAT IT IS ARE TWO QUESTIONS, and `kind` answers both
+// without merging them: `CV_NONE` is "no value", and every other kind carries one.
+// A single `int64` with a validity flag beside it would be the `{error, is_error}`
+// encoding D-069 removed — two fields that can disagree.
+//
+// THE TYPE COMES WITH THE VALUE. `Mutex<Config, 2>` needs `2` to be an `int32`
+// because the parameter says so and D-092 forbids implicit widening, so a site that
+// gets a folded value still has to check what type it got. `type_id` is 0 for an
+// UNSUFFIXED integer literal, which is not a type error: it means "no width was
+// written", and the site decides what that becomes.
+pub struct:ConstVal = {
+    int32:kind;
+    int32:type_id;
+    int64:num;       // int, bool and char
+    string:text;     // string
+};
+
+pub func:cv_none = ConstVal() {
+    ConstVal:v = ConstVal{ kind: raw CV_NONE(), type_id: 0i32, num: 0i64, text: "" };
+    pass v;
+};
+pub func:cv_int = ConstVal(int32:ty, int64:n) {
+    ConstVal:v = ConstVal{ kind: raw CV_INT(), type_id: ty, num: n, text: "" };
+    pass v;
+};
+pub func:cv_bool = ConstVal(int32:ty, bool:b) {
+    int64:n = 0i64;
+    if (b) { n = 1i64; }
+    ConstVal:v = ConstVal{ kind: raw CV_BOOL(), type_id: ty, num: n, text: "" };
+    pass v;
+};
+pub func:cv_char = ConstVal(int32:ty, int64:n) {
+    ConstVal:v = ConstVal{ kind: raw CV_CHAR(), type_id: ty, num: n, text: "" };
+    pass v;
+};
+pub func:cv_str = ConstVal(int32:ty, string:t) {
+    ConstVal:v = ConstVal{ kind: raw CV_STRING(), type_id: ty, num: 0i64, text: t };
+    pass v;
+};
+
+pub func:cv_folded = bool(ConstVal:v) { pass (v.kind != (raw CV_NONE())); };
+pub func:cv_is_int = bool(ConstVal:v) { pass (v.kind == (raw CV_INT())); };
+
+// How far evaluation will follow. One number, because there is one thing being
+// bounded: the total work of folding one expression, including every constant it
+// reads through and every `comptime func:` it calls.
+pub func:FOLD_FUEL = int32() { pass 4096i32; };
+
+// The same 64 `GENERIC_DEPTH` uses, for the same reason: a nesting a person wrote
+// on purpose is nowhere near it, and one that is not stops before the machine does.
+pub func:FOLD_DEPTH = int32() { pass 64i32; };
+
+// THE LOCALS OF A `comptime func:` BEING EVALUATED. A comptime function is an
+// interpreter's stack frame and nothing more: parameters bound on entry, locals
+// added as they are declared, assignment rebinding in place.
+//
+// IT LIVES ON THE RESOLVER, saved and restored around a call, for the same reason
+// `generics` does — it is constant across one evaluation and a nested call needs a
+// frame of its own, so threading it through every folding function would be one
+// more parameter that eight functions have to pass correctly.
+pub struct:FoldEnv = {
+    wild int32->:names;
+    wild ConstVal->:vals;
+    int32:count;
+    int32:cap;
+};
+
+pub func:foldenv_none = FoldEnv() {
+    FoldEnv:e = FoldEnv{ names: NULL, vals: NULL, count: 0i32, cap: 0i32 };
+    pass e;
+};
+
+func:foldenv_new = FoldEnv() {
+    int64:n = 16i64;
+    wild int8->:a = alloc(n * #size_of<int32>());
+    wild int8->:b = alloc(n * #size_of<ConstVal>());
+    FoldEnv:e = FoldEnv{ names: a => wild int32->, vals: b => wild ConstVal->,
+                         count: 0i32, cap: 16i32 };
+    pass e;
+};
+
+// LAST BINDING WINS, and it is a REBIND rather than a shadow: a comptime function
+// has one frame, `x = x + 1i32` writes the `x` that is there, and there is no
+// nested scope in a body this evaluator accepts. Searching backwards would be the
+// same answer more slowly.
+func:foldenv_set = NIL(FoldEnv->:e, int32:name, ConstVal:v) {
+    int32:i = 0i32;
+    while (i < e.count) {
+        if (e.names[i => int64] == name) {
+            e.vals[i => int64] = v;
+            pass NIL;
+        }
+        i = i + 1i32;
+    }
+    if (e.count >= e.cap) {
+        int32:nc = e.cap * 2i32;
+        if (nc < 16i32) { nc = 16i32; }
+        wild int8->:a = ralloc(e.names => wild int8->,
+                               (nc => int64) * #size_of<int32>());
+        wild int8->:b = ralloc(e.vals => wild int8->,
+                               (nc => int64) * #size_of<ConstVal>());
+        e.names = a => wild int32->;
+        e.vals = b => wild ConstVal->;
+        e.cap = nc;
+    }
+    e.names[e.count => int64] = name;
+    e.vals[e.count => int64] = v;
+    e.count = e.count + 1i32;
+    pass NIL;
+};
+
+func:foldenv_get = ConstVal(FoldEnv->:e, int32:name) {
+    int32:i = 0i32;
+    while (i < e.count) {
+        if (e.names[i => int64] == name) { pass (e.vals[i => int64]); }
+        i = i + 1i32;
+    }
+    pass (raw cv_none());
+};
+
+// WHETHER A STATEMENT RETURNED, AND WITH WHAT, AND WHETHER IT GAVE UP. Three
+// questions and three fields: `pass 1i32;` returned a value, a `while` that ran out
+// of fuel gave up, and an `if` whose branch did neither did neither. Merging
+// "returned nothing" with "could not evaluate" would make a comptime function that
+// falls off its end look like one the evaluator does not understand.
+pub struct:FoldFlow = {
+    bool:returned;
+    bool:failed;
+    ConstVal:value;
+};
+
+func:flow_none = FoldFlow() {
+    FoldFlow:f = FoldFlow{ returned: false, failed: false, value: raw cv_none() };
+    pass f;
+};
+func:flow_fail = FoldFlow() {
+    FoldFlow:f = FoldFlow{ returned: false, failed: true, value: raw cv_none() };
+    pass f;
+};
+func:flow_ret = FoldFlow(ConstVal:v) {
+    FoldFlow:f = FoldFlow{ returned: true, failed: false, value: v };
+    pass f;
+};
+
+pub func:fold_const = ConstVal(TypeResolver->:r, ExprId:id, int32:scope) {
+    r.fold_blown = false;
+    r.fold_depth = 0i32;
+    pass (relay fold_expr(r, id, scope, raw FOLD_FUEL()));
+};
+
+// THE BUDGET IS ITS OWN DIAGNOSTIC, not "this is not a constant". A `comptime func:`
+// that does not terminate IS a constant expression as far as the reader is
+// concerned — it just never finishes — and telling them it is not constant sends
+// them to change the wrong thing.
+//
+// FOLDING IS WHERE A COMPILER RUNS THE PROGRAM IT IS COMPILING, so the bound is not
+// optional: without it the build hangs, which is the failure D-057 bounds expansion
+// for, arriving through the other door.
+// DID THE FOLD ALREADY SAY WHAT WENT WRONG? Asked by every site that folds, so that
+// one failure produces ONE sentence — the same reason the expansion audit does not
+// run over an expansion that already reported (D-126).
+//
+// It covers every specific thing the evaluator can report: the budget, the depth
+// bound, a division by zero, a loop that never advances. Each of those is a
+// narrower and more useful sentence than "this is not a constant expression", and
+// printing the general one after the specific one sends the reader nowhere.
+pub func:fold_gave_up = bool(TypeResolver->:r) { pass r.fold_blown; };
+
+// THE FOLD REPORTED SOMETHING, AND IT SAYS SO ONCE. Without the guard a failure
+// deep in a nested evaluation reports at every frame it unwinds through, which
+// buries the one sentence that matters under copies of itself.
+func:fold_reported = NIL(TypeResolver->:r, string:code, string:msg, Span:sp) {
+    if (r.fold_blown) { pass NIL; }
+    r.fold_blown = true;
+    drop diaglist_push(r.diags, raw diag_error(code, msg, sp));
+    pass NIL;
+};
+
+func:fold_exhausted = NIL(TypeResolver->:r, Span:sp) {
+    drop fold_reported(r, raw TYPE_COMPTIME_BUDGET(),
+        "this compile-time evaluation did not finish within its budget; a `comptime func:` that recurses or loops without bound never terminates, and the compiler is the thing running it",
+        sp);
+    pass NIL;
+};
+
+func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) {
+    if (raw expr_is_none(id)) { pass (raw cv_none()); }
+    ExprNode:e = relay ast_expr(r.ast, id);
+    if (fuel <= 0i32) {
+        drop fold_exhausted(r, e.span);
+        pass (raw cv_none());
+    }
+    int32:f = fuel - 1i32;
+
+    if (e.kind == ExprKind.ExprIntLiteral) {
+        // AN UNSUFFIXED LITERAL CARRIES NO TYPE, and says so with 0 rather than
+        // guessing `int32`. The site that receives it supplies the context type,
+        // which is D-092's rule applied where it belongs.
+        NumWidth:w = raw expr_num_width(e);
+        int32:ty = 0i32;
+        if (raw num_width_is_integer(w)) {
+            ty = raw tt_int(r.types, raw num_width_bits(w), raw num_width_signed(w));
+        }
+        pass (raw cv_int(ty, e.payload));
+    }
+    if (e.kind == ExprKind.ExprBoolLiteral) {
+        pass (raw cv_bool(r.types.t_bool, e.payload != 0i64));
+    }
+    if (e.kind == ExprKind.ExprCharLiteral) {
+        pass (raw cv_char(raw tt_char(r.types, 8i32), e.payload));
+    }
+    if (e.kind == ExprKind.ExprStringLiteral) {
+        pass (raw cv_str(r.types.t_string, relay intern_get(r.interns,
+                                                            e.payload => int32)));
+    }
+
+    // `comptime(expr)` IS A FORCING FORM, not a different evaluator. It says "this
+    // has to fold", and what folds inside it is what folds anywhere.
+    if (e.kind == ExprKind.ExprComptimeExpr) {
+        pass (relay fold_expr(r, raw expr_operand(e), scope, f));
+    }
+
+    if (e.kind == ExprKind.ExprUnaryExpr)  { pass (relay fold_unary(r, e, scope, f)); }
+    if (e.kind == ExprKind.ExprBinaryExpr) { pass (relay fold_binary(r, e, scope, f)); }
+
+    // A CAST IS A CONVERSION AND KEEPS THE VALUE. `=>` between integer types is the
+    // only folding form: a checked cast that would not hold is a question for the
+    // cast rules (0.4.4), and this does not answer it.
+    if (e.kind == ExprKind.ExprCastExpr) {
+        ConstVal:v = relay fold_expr(r, raw expr_operand(e), scope, f);
+        if (!(raw cv_is_int(v))) { pass (raw cv_none()); }
+        int32:target = relay resolve_type(r, raw expr_cast_type(e), scope);
+        if (!(raw type_is_integer(r.types, target))) { pass (raw cv_none()); }
+        pass (raw cv_int(target, v.num));
+    }
+
+    if (e.kind == ExprKind.ExprBuiltinExpr) {
+        pass (relay fold_builtin(r, e, scope, f));
+    }
+
+    if (e.kind == ExprKind.ExprIdentifierExpr) {
+        pass (relay fold_ident(r, e, scope, f));
+    }
+
+    if (e.kind == ExprKind.ExprCallExpr) {
+        pass (relay fold_call(r, e, scope, f));
+    }
+
+    if (e.kind == ExprKind.ExprIterationVarExpr) {
+        if (!(r.fold_counting)) { pass (raw cv_none()); }
+        pass (raw cv_int(raw tt_int(r.types, 64i32, true), r.fold_counter));
+    }
+
+    // `raw f(x)` AND `relay f(x)` ARE THE CALL WITH ITS ERROR HANDLING SPELLED.
+    // A comptime function cannot fail — there is no runtime for it to fail into —
+    // so folding through the wrapper is folding the call.
+    if (e.kind == ExprKind.ExprRawUnwrapExpr) {
+        pass (relay fold_expr(r, raw expr_operand(e), scope, f));
+    }
+
+    // EVERYTHING ELSE DOES NOT FOLD, and that is not an error here. `fold_const`
+    // answers "is this a constant"; the caller decides whether a non-constant is
+    // one, because an array size and a `const` initialiser want different sentences
+    // about the same non-answer.
+    pass (raw cv_none());
+};
+
+func:fold_unary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) {
+    ConstVal:v = relay fold_expr(r, raw expr_operand(e), scope, fuel);
+    if (!(raw cv_folded(v))) { pass (raw cv_none()); }
+    TokenKind:op = raw expr_op(e);
+
+    if (op == TokenKind.OpMinus) {
+        if (v.kind != (raw CV_INT())) { pass (raw cv_none()); }
+        pass (raw cv_int(v.type_id, 0i64 - v.num));
+    }
+    if (op == TokenKind.OpTilde) {
+        if (v.kind != (raw CV_INT())) { pass (raw cv_none()); }
+        pass (raw cv_int(v.type_id, ~v.num));
+    }
+    if (op == TokenKind.OpBang) {
+        if (v.kind != (raw CV_BOOL())) { pass (raw cv_none()); }
+        pass (raw cv_bool(v.type_id, v.num == 0i64));
+    }
+    pass (raw cv_none());
+};
+
+// THE TYPE OF A BINARY RESULT IS WHICHEVER SIDE HAD ONE. An unsuffixed literal
+// carries no type (0), so `SIZE * 2` takes `SIZE`'s and `2 * 2` takes neither —
+// which is what lets the SITE apply its own context rule afterwards rather than
+// this inventing one.
+func:fold_join_type = int32(int32:a, int32:b) {
+    if (a != 0i32) { pass a; }
+    pass b;
+};
+
+func:fold_binary = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) {
+    ConstVal:l = relay fold_expr(r, raw expr_lhs(e), scope, fuel);
+    if (!(raw cv_folded(l))) { pass (raw cv_none()); }
+    ConstVal:rr = relay fold_expr(r, raw expr_rhs(e), scope, fuel);
+    if (!(raw cv_folded(rr))) { pass (raw cv_none()); }
+    TokenKind:op = raw expr_op(e);
+
+    // BOOLEAN CONNECTIVES FIRST, because they are the only ones whose operands are
+    // not integers.
+    if (l.kind == (raw CV_BOOL())) {
+        if (rr.kind != (raw CV_BOOL())) { pass (raw cv_none()); }
+        bool:a = (l.num != 0i64);
+        bool:b = (rr.num != 0i64);
+        if (op == TokenKind.OpAndAnd) { pass (raw cv_bool(l.type_id, a && b)); }
+        if (op == TokenKind.OpOrOr)   { pass (raw cv_bool(l.type_id, a || b)); }
+        if (op == TokenKind.OpEqEq)   { pass (raw cv_bool(l.type_id, a == b)); }
+        if (op == TokenKind.OpNotEq)  { pass (raw cv_bool(l.type_id, a != b)); }
+        pass (raw cv_none());
+    }
+
+    // EQUALITY ON STRINGS AND CHARS FOLDS; ARITHMETIC ON THEM DOES NOT. A `char` is
+    // not an integer and permits no arithmetic (D-036), and that rule does not
+    // relax because the compiler is the one evaluating it.
+    if (l.kind == (raw CV_STRING())) {
+        if (rr.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        if (op == TokenKind.OpEqEq) {
+            pass (raw cv_bool(r.types.t_bool, raw string_eq(l.text, rr.text)));
+        }
+        if (op == TokenKind.OpNotEq) {
+            pass (raw cv_bool(r.types.t_bool, !(raw string_eq(l.text, rr.text))));
+        }
+        pass (raw cv_none());
+    }
+    if (l.kind == (raw CV_CHAR())) {
+        if (rr.kind != (raw CV_CHAR())) { pass (raw cv_none()); }
+        if (op == TokenKind.OpEqEq)  { pass (raw cv_bool(r.types.t_bool, l.num == rr.num)); }
+        if (op == TokenKind.OpNotEq) { pass (raw cv_bool(r.types.t_bool, l.num != rr.num)); }
+        pass (raw cv_none());
+    }
+
+    if (l.kind != (raw CV_INT()))  { pass (raw cv_none()); }
+    if (rr.kind != (raw CV_INT())) { pass (raw cv_none()); }
+    int32:ty = raw fold_join_type(l.type_id, rr.type_id);
+
+    if (op == TokenKind.OpPlus)  { pass (raw cv_int(ty, l.num + rr.num)); }
+    if (op == TokenKind.OpMinus) { pass (raw cv_int(ty, l.num - rr.num)); }
+    if (op == TokenKind.OpStar)  { pass (raw cv_int(ty, l.num * rr.num)); }
+
+    // DIVISION BY ZERO DOES NOT FOLD TO ANYTHING. Returning zero would be the
+    // silent wrong value this whole mechanism exists to avoid, and the site's own
+    // "must be constant" refusal is a worse sentence than the one it deserves — so
+    // it is reported here, where what happened is known.
+    if (op == TokenKind.OpSlash) {
+        if (rr.num == 0i64) {
+            drop fold_reported(r, raw TYPE_NOT_CONSTANT(),
+                "this constant expression divides by zero", e.span);
+            pass (raw cv_none());
+        }
+        pass (raw cv_int(ty, l.num / rr.num));
+    }
+    if (op == TokenKind.OpPercent) {
+        if (rr.num == 0i64) {
+            drop fold_reported(r, raw TYPE_NOT_CONSTANT(),
+                "this constant expression takes a remainder by zero", e.span);
+            pass (raw cv_none());
+        }
+        pass (raw cv_int(ty, l.num % rr.num));
+    }
+
+    if (op == TokenKind.OpAmp)   { pass (raw cv_int(ty, l.num & rr.num)); }
+    if (op == TokenKind.OpPipe)  { pass (raw cv_int(ty, l.num | rr.num)); }
+    if (op == TokenKind.OpCaret) { pass (raw cv_int(ty, l.num ^ rr.num)); }
+
+    // A SHIFT BY A SILLY DISTANCE IS UNDEFINED IN THE MACHINE AND SO IT IS HERE.
+    // Folding it to whatever this host happens to produce would make the compiler's
+    // answer depend on the compiler's own build, which is the one thing a
+    // constant must never do.
+    if (op == TokenKind.OpShl) {
+        if (rr.num < 0i64) { pass (raw cv_none()); }
+        if (rr.num >= 64i64) { pass (raw cv_none()); }
+        pass (raw cv_int(ty, l.num << rr.num));
+    }
+    if (op == TokenKind.OpShr) {
+        if (rr.num < 0i64) { pass (raw cv_none()); }
+        if (rr.num >= 64i64) { pass (raw cv_none()); }
+        pass (raw cv_int(ty, l.num >> rr.num));
+    }
+
+    if (op == TokenKind.OpEqEq)   { pass (raw cv_bool(r.types.t_bool, l.num == rr.num)); }
+    if (op == TokenKind.OpNotEq)  { pass (raw cv_bool(r.types.t_bool, l.num != rr.num)); }
+    if (op == TokenKind.OpLt)     { pass (raw cv_bool(r.types.t_bool, l.num < rr.num)); }
+    if (op == TokenKind.OpLtEq)   { pass (raw cv_bool(r.types.t_bool, l.num <= rr.num)); }
+    if (op == TokenKind.OpGt)     { pass (raw cv_bool(r.types.t_bool, l.num > rr.num)); }
+    if (op == TokenKind.OpGtEq)   { pass (raw cv_bool(r.types.t_bool, l.num >= rr.num)); }
+    pass (raw cv_none());
+};
+
+// `#size_of<T>` IS A CONSTANT WHOSE VALUE IS A TYPE'S SIZE, which is the whole
+// reason folding and type resolution are one module: this line resolves a type in
+// the middle of folding, and `int32[N]` folds in the middle of resolving one.
+func:fold_builtin = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope,
+                             int32:_~fuel) {
+    string:name = relay intern_get(r.interns, raw builtin_name(e));
+    if (!(raw string_eq(name, "size_of"))) { pass (raw cv_none()); }
+    if ((raw builtin_generic_count(e)) != 1i32) { pass (raw cv_none()); }
+
+    TypeId:arg = TypeId{ index: raw ast_id_at(r.ast, raw expr_list_start(e), 0i32) };
+    int32:t = relay resolve_type(r, arg, scope);
+    if (t == 0i32) { pass (raw cv_none()); }
+
+    // NO `ensure_layout` CALL HERE, and that is a layering fact rather than an
+    // oversight: `type_layout.npk` uses this module, so this module cannot use it.
+    // Resolving the type is what computes its layout — `resolve_aggregate` does it
+    // on the way — so by the time there is a type id there is a size.
+    pass (raw cv_int(raw tt_int(r.types, 64i32, true), raw type_size(r.types, t)));
+};
+
+// A CALL TO A `comptime func:`, EVALUATED.
+//
+// `comptime` on a declaration is the marker that says a function may run at compile
+// time (D-064's shape: the marker says which of two things a thing is). Nothing is
+// inferred — a function that happens to be foldable is not one, because whether the
+// compiler runs your code is not a thing to discover by accident.
+//
+// THIS IS WHERE A COMPILER RUNS THE PROGRAM IT IS COMPILING, which is why the fuel
+// is not decoration. A `comptime func:` that recurses without bound would hang the
+// build, and a hung build is the same failure D-057 bounds expansion for, arriving
+// through the other door.
+func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) {
+    if (fuel <= 0i32) { pass (raw cv_none()); }
+    ExprNode:callee = relay ast_expr(r.ast, raw expr_callee(e));
+    if (callee.kind != ExprKind.ExprIdentifierExpr) { pass (raw cv_none()); }
+
+    // A BARE-NAME BUILTIN RESOLVES TO NO SYMBOL, so it is answered before the
+    // lookup rather than after it fails.
+    string:cname = relay intern_get(r.interns, (raw expr_name(callee)) => int32);
+    if (raw is_builtin_name(cname)) {
+        pass (relay fold_string_builtin(r, e, cname, scope, fuel - 1i32));
+    }
+
+    int32:symid = callee.a;
+    if (symid == 0i32) {
+        symid = raw scope_lookup(r.tab, scope, (raw expr_name(callee)) => int32);
+    }
+    if (symid == 0i32) { pass (raw cv_none()); }
+    Symbol:sym = relay symtab_get(r.tab, symid);
+    if (sym.origin_kind != (raw SYM_DECL())) { pass (raw cv_none()); }
+
+    DeclNode:fndecl = relay ast_decl(r.ast, DeclId{ index: sym.origin });
+    if (fndecl.kind != DeclKind.DeclFunctionDecl) { pass (raw cv_none()); }
+    if (!(raw decl_has(fndecl, raw DECL_COMPTIME()))) { pass (raw cv_none()); }
+
+    int32:pc = raw fn_param_count(r.ast, fndecl);
+    int32:gc = raw expr_generic_count(e);
+    int32:ac = (raw expr_list_count(e)) - gc;
+    if (ac != pc) { pass (raw cv_none()); }
+
+    // THE ARGUMENTS ARE FOLDED IN THE CALLER'S FRAME, and the new frame is built
+    // only once they all have values. Building it first and folding into it would
+    // let an argument see a parameter it is being passed to.
+    FoldEnv:frame = raw foldenv_new();
+    int32:i = 0i32;
+    while (i < pc) {
+        ExprId:arg = ExprId{ index: raw ast_id_at(r.ast, (raw expr_list_start(e)) + gc, i) };
+        ConstVal:av = relay fold_expr(r, arg, scope, fuel - 1i32);
+        if (!(raw cv_folded(av))) { pass (raw cv_none()); }
+        DeclNode:pn = relay ast_decl(r.ast, raw fn_param(r.ast, fndecl, i));
+        drop foldenv_set(@frame, raw decl_name(pn), av);
+        i = i + 1i32;
+    }
+
+    if (r.fold_depth >= (raw FOLD_DEPTH())) {
+        drop fold_exhausted(r, e.span);
+        pass (raw cv_none());
+    }
+
+    FoldEnv:saved = r.env;
+    int32:saved_depth = r.fold_depth;
+    r.env = frame;
+    r.fold_depth = saved_depth + 1i32;
+    FoldFlow:flow = relay fold_stmt(r, raw fn_body(r.ast, fndecl), sym.scope, fuel - 1i32);
+    r.env = saved;
+    r.fold_depth = saved_depth;
+
+    if (flow.failed) { pass (raw cv_none()); }
+    if (!(flow.returned)) { pass (raw cv_none()); }
+    pass (flow.value);
+};
+
+// THE STATEMENTS A `comptime func:` BODY MAY CONTAIN, and no others.
+//
+// `MACRO_REFERENCE.md` section 8 recovered the list from the corpus: locals,
+// assignment, loops, calls, and `pass`. A kind not named here FAILS the fold rather
+// than being skipped — a body with a statement the evaluator cannot run has not
+// been evaluated, and quietly returning what the earlier statements happened to
+// leave behind is the silent wrong value this whole mechanism exists to avoid.
+func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) {
+    if (raw stmt_is_none(id)) { pass (raw flow_none()); }
+    StmtNode:st = relay ast_stmt(r.ast, id);
+    if (fuel <= 0i32) {
+        drop fold_exhausted(r, st.span);
+        pass (raw flow_fail());
+    }
+    int32:f = fuel - 1i32;
+
+    if (st.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(st);
+        int32:i = 0i32;
+        while (i < n) {
+            StmtId:s2 = StmtId{ index: raw ast_id_at(r.ast, raw stmt_list_start(st), i) };
+            FoldFlow:fl = relay fold_stmt(r, s2, scope, f);
+            if (fl.failed) { pass fl; }
+            if (fl.returned) { pass fl; }
+            i = i + 1i32;
+        }
+        pass (raw flow_none());
+    }
+
+    if (st.kind == StmtKind.StmtVarDeclStmt) {
+        ConstVal:v = relay fold_expr(r, relay stmt_decl_init(r.ast, st), scope, f);
+        if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
+        drop foldenv_set(@r.env, raw stmt_name(st), v);
+        pass (raw flow_none());
+    }
+
+    if (st.kind == StmtKind.StmtAssignStmt) {
+        // ONLY A BARE NAME IS ASSIGNABLE HERE. A comptime frame holds values, not
+        // storage, so `p.x = 1i32` and `a[i] = 1i32` have nowhere to land — and
+        // pretending otherwise would evaluate the right-hand side and drop it.
+        ExprNode:target = relay ast_expr(r.ast, raw stmt_target(st));
+        if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw flow_fail()); }
+        ConstVal:v = relay fold_expr(r, raw stmt_assigned(st), scope, f);
+        if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
+        drop foldenv_set(@r.env, (raw expr_name(target)) => int32, v);
+        pass (raw flow_none());
+    }
+
+    if (st.kind == StmtKind.StmtIfStmt) {
+        ConstVal:c = relay fold_expr(r, raw stmt_cond(st), scope, f);
+        if (c.kind != (raw CV_BOOL())) { pass (raw flow_fail()); }
+        if (c.num != 0i64) { pass (relay fold_stmt(r, raw stmt_then(st), scope, f)); }
+        pass (relay fold_stmt(r, raw stmt_else(st), scope, f));
+    }
+
+    if (st.kind == StmtKind.StmtPassStmt) {
+        ConstVal:v = relay fold_expr(r, ExprId{ index: st.a }, scope, f);
+        if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
+        pass (raw flow_ret(v));
+    }
+
+    if (st.kind == StmtKind.StmtWhileStmt) {
+        pass (relay fold_while(r, st, scope, f));
+    }
+
+    // `loop(lo, hi, step)` AND `till(...)` — the language's counted forms, and the
+    // ones the corpus actually uses inside a `comptime func:` (`COMPTIME-001`).
+    // `while` was implemented first and is the easier shape; a comptime function
+    // that could not use the language's primary loop would be a hole in the feature
+    // rather than a smaller version of it.
+    if (st.kind == StmtKind.StmtLoopStmt) { pass (relay fold_counted(r, st, scope, f)); }
+    if (st.kind == StmtKind.StmtTillStmt) { pass (relay fold_counted(r, st, scope, f)); }
+
+    if (st.kind == StmtKind.StmtDiscardStmt) {
+        // Evaluated for nothing, which is what `discard` means. It still has to
+        // FOLD: a discard of something the evaluator cannot run is a body it has
+        // not run.
+        ConstVal:v = relay fold_expr(r, ExprId{ index: st.a }, scope, f);
+        if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
+        pass (raw flow_none());
+    }
+
+    pass (raw flow_fail());
+};
+
+// A LOOP, WITH THE FUEL AS ITS BOUND. The fuel is shared with everything else the
+// fold is doing, so a loop cannot spend a budget that the expression around it has
+// already used — which is the property that makes one number enough.
+func:fold_while = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fuel) {
+    int32:left = fuel;
+    while (left > 0i32) {
+        ConstVal:c = relay fold_expr(r, raw stmt_cond(st), scope, left);
+        if (c.kind != (raw CV_BOOL())) { pass (raw flow_fail()); }
+        if (c.num == 0i64) { pass (raw flow_none()); }
+        FoldFlow:fl = relay fold_stmt(r, relay stmt_body(r.ast, st), scope, left);
+        if (fl.failed) { pass fl; }
+        if (fl.returned) { pass fl; }
+        left = left - 1i32;
+    }
+    drop fold_exhausted(r, st.span);
+    pass (raw flow_fail());
+};
+
+// A COUNTED LOOP. `loop(hi)`, `loop(lo, hi)` and `loop(lo, hi, step)` are the three
+// arities, and `$` is the counter — which is why it has a node kind of its own
+// rather than a name: nobody declared it.
+//
+// THE BOUNDS ARE FOLDED ONCE, BEFORE THE FIRST ITERATION, because they are the
+// loop's arguments and not part of its body. A bound that mentions a local the body
+// then assigns would otherwise mean something different on every pass, which is not
+// what the form says.
+func:fold_counted = FoldFlow(TypeResolver->:r, StmtNode:st, int32:scope, int32:fuel) {
+    int32:argc = raw stmt_counted_argc(r.ast, st);
+    if (argc < 1i32) { pass (raw flow_fail()); }
+    if (argc > 3i32) { pass (raw flow_fail()); }
+
+    int64:lo = 0i64;
+    int64:hi = 0i64;
+    int64:step = 1i64;
+
+    ConstVal:a0 = relay fold_expr(r, relay stmt_counted_arg(r.ast, st, 0i32), scope, fuel);
+    if (!(raw cv_is_int(a0))) { pass (raw flow_fail()); }
+    if (argc == 1i32) { hi = a0.num; }
+    else {
+        lo = a0.num;
+        ConstVal:a1 = relay fold_expr(r, relay stmt_counted_arg(r.ast, st, 1i32), scope, fuel);
+        if (!(raw cv_is_int(a1))) { pass (raw flow_fail()); }
+        hi = a1.num;
+        if (argc == 3i32) {
+            ConstVal:a2 = relay fold_expr(r, relay stmt_counted_arg(r.ast, st, 2i32), scope, fuel);
+            if (!(raw cv_is_int(a2))) { pass (raw flow_fail()); }
+            step = a2.num;
+        }
+    }
+
+    // A ZERO STEP NEVER ARRIVES. Refused rather than run to the fuel bound, because
+    // the fuel's sentence is "this did not finish" and the sentence this deserves is
+    // narrower than that.
+    if (step == 0i64) {
+        drop fold_reported(r, raw TYPE_NOT_CONSTANT(),
+            "this compile-time loop has a step of zero, so its counter never reaches its bound",
+            st.span);
+        pass (raw flow_fail());
+    }
+
+    bool:saved_counting = r.fold_counting;
+    int64:saved_counter = r.fold_counter;
+    r.fold_counting = true;
+
+    int32:left = fuel;
+    int64:i = lo;
+    while (left > 0i32) {
+        bool:more = (i < hi);
+        if (step < 0i64) { more = (i > hi); }
+        if (!more) {
+            r.fold_counting = saved_counting;
+            r.fold_counter = saved_counter;
+            pass (raw flow_none());
+        }
+        r.fold_counter = i;
+        FoldFlow:fl = relay fold_stmt(r, raw stmt_counted_body(st), scope, left);
+        if (fl.failed) {
+            r.fold_counting = saved_counting;
+            r.fold_counter = saved_counter;
+            pass fl;
+        }
+        if (fl.returned) {
+            r.fold_counting = saved_counting;
+            r.fold_counter = saved_counter;
+            pass fl;
+        }
+        i = i + step;
+        left = left - 1i32;
+    }
+    r.fold_counting = saved_counting;
+    r.fold_counter = saved_counter;
+    drop fold_exhausted(r, st.span);
+    pass (raw flow_fail());
+};
+
+// THE STRING BUILTINS A CONSTANT EXPRESSION MAY CONTAIN (`COMPTIME-005`).
+//
+// A bare-name builtin is declared in no module (AST_REFERENCE 3.3), so it resolves
+// to no symbol — which is why it cannot go through `fold_call`, whose whole first
+// half is finding the declaration. These four have compile-time answers; every
+// other builtin allocates, opens a file or talks to the kernel, and none of those
+// is a thing the compiler does on the program's behalf while compiling it.
+func:fold_string_builtin = ConstVal(TypeResolver->:r, ExprNode:e, string:name,
+                                    int32:scope, int32:fuel) {
+    int32:gc = raw expr_generic_count(e);
+    int32:start = (raw expr_list_start(e)) + gc;
+    int32:argc = (raw expr_list_count(e)) - gc;
+
+    if (raw string_eq(name, "string_concat")) {
+        if (argc != 2i32) { pass (raw cv_none()); }
+        ConstVal:a = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 0i32) }, scope, fuel);
+        ConstVal:b = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 1i32) }, scope, fuel);
+        if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        if (b.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        pass (raw cv_str(r.types.t_string, relay string_concat(a.text, b.text)));
+    }
+    if (raw string_eq(name, "string_equals")) {
+        if (argc != 2i32) { pass (raw cv_none()); }
+        ConstVal:a = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 0i32) }, scope, fuel);
+        ConstVal:b = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 1i32) }, scope, fuel);
+        if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        if (b.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        pass (raw cv_bool(r.types.t_bool, raw string_eq(a.text, b.text)));
+    }
+    if (raw string_eq(name, "string_byte_length")) {
+        if (argc != 1i32) { pass (raw cv_none()); }
+        ConstVal:a = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 0i32) }, scope, fuel);
+        if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        pass (raw cv_int(raw tt_int(r.types, 64i32, true), a.text.len));
+    }
+    if (raw string_eq(name, "string_is_empty")) {
+        if (argc != 1i32) { pass (raw cv_none()); }
+        ConstVal:a = relay fold_expr(r, ExprId{ index: raw ast_id_at(r.ast, start, 0i32) }, scope, fuel);
+        if (a.kind != (raw CV_STRING())) { pass (raw cv_none()); }
+        pass (raw cv_bool(r.types.t_bool, a.text.len == 0i64));
+    }
+    pass (raw cv_none());
+};
+
+// A NAME FOLDS WHEN IT IS A `const` GLOBAL, and only then. `const` is the marker
+// that says a binding has one value for the whole program (D-010), so it is the
+// marker that says a name may stand in a constant expression — nothing has to be
+// inferred, and a `fixed` binding, which is assigned once at RUN time, is correctly
+// not one.
+func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel) {
+    // A LOCAL OF THE `comptime func:` BEING EVALUATED SHADOWS EVERYTHING, because
+    // it is the innermost thing in scope and because a parameter named after a
+    // `const` global is a program somebody may well write.
+    if (r.env.count > 0i32) {
+        ConstVal:local = raw foldenv_get(@r.env, (raw expr_name(e)) => int32);
+        if (raw cv_folded(local)) { pass local; }
+    }
+
+    // A NAME IN A TYPE POSITION WAS NEVER BOUND BY THE RESOLVER, and that is by
+    // design: `resolve.npk` does not enter type nodes, because a type is more than
+    // a name and answering that is this module's job (0.3.5's header says so). So
+    // `int32[SIZE]` reaches here with no binding recorded, and looking it up is not
+    // a second computation of a fact somebody else already has — it is the first.
+    //
+    // A `const` initialiser arrives the other way round, already bound, because an
+    // initialiser is an ordinary expression in a declaration. Both are handled, and
+    // the recorded binding wins where there is one.
+    int32:symid = e.a;
+    if (symid == 0i32) {
+        symid = raw scope_lookup(r.tab, scope, (raw expr_name(e)) => int32);
+    }
+    if (symid == 0i32) { pass (raw cv_none()); }
+    Symbol:sym = relay symtab_get(r.tab, symid);
+    if (sym.origin_kind != (raw SYM_DECL())) { pass (raw cv_none()); }
+
+    DeclNode:d = relay ast_decl(r.ast, DeclId{ index: sym.origin });
+    if (d.kind != DeclKind.DeclGlobalDecl) { pass (raw cv_none()); }
+    if (((raw global_quals(d)) & (raw QUAL_CONST())) == 0i32) { pass (raw cv_none()); }
+
+    // THE INITIALISER IS FOLDED IN THE SCOPE IT WAS WRITTEN IN, not the one the
+    // reference stands in. A `const` in another module means what it meant there.
+    // The fuel is what stops `const A = B; const B = A;` — a cycle the resolver
+    // already refuses (D-086), so this only has to terminate rather than diagnose.
+    pass (relay fold_expr(r, raw global_init(d), sym.scope, fuel));
+};
+
 pub func:resolve_one_arg = int32(TypeResolver->:r, TypeId:a, DeclId:gpid, int32:scope) {
     DeclNode:gpn = relay ast_decl(r.ast, gpid);
     TypeNode:an = relay ast_type(r.ast, a);
@@ -466,19 +1274,20 @@ func:arg_kind_error = int32(TypeResolver->:r, DeclNode:gpn, Span:at,
 
 // `Mutex<Config, 2>` — THE VALUE, CHECKED AGAINST THE TYPE THE PARAMETER DECLARES.
 //
-// ONLY AN INTEGER LITERAL IS CONSTANT AT THIS RUNG, which is the same rule and the
-// same sentence `resolve_fixed_array` uses for `int32[N]`. Folding a general
-// constant expression is cycle 0.6's job (`comptime`), and until then a non-literal
-// is refused BY NAME rather than silently taking a wrong value -- 0.2.8 found this
-// exact path taking an intern-table slot as an array length.
+// FOLDED SINCE 0.6.4, so `Mutex<Config, LEVEL>` and `Mutex<Config, BASE * 2>` are
+// arguments like any other. What did NOT change is the check underneath: the debt
+// paid was "must be a literal", never "must be valid", and a folded value still has
+// to be an integer of the declared type.
 func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
                                int32:scope) {
     int32:want = relay resolve_type(r, raw generic_value_type(gpn), scope);
     ExprNode:v = relay ast_expr(r.ast, raw type_comptime_value(an));
 
-    if (v.kind != ExprKind.ExprIntLiteral) {
+    ConstVal:cv = relay fold_const(r, raw type_comptime_value(an), scope);
+    if (!(raw cv_is_int(cv))) {
+        if (raw fold_gave_up(r)) { pass 0i32; }
         pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
-            "a `comptime` argument must be a constant, and only an integer literal is constant-folded at this rung",
+            "a `comptime` argument must be a constant expression; a name folds only if it is a `const` global",
             v.span));
     }
 
@@ -486,10 +1295,13 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
     // rule applied to the one context a generic argument has. A SUFFIXED one must
     // already be that type: `Mutex<Config, 2i64>` against `comptime int32:LEVEL`
     // is a mismatch somebody wrote, not a width to be adjusted.
-    NumWidth:w = raw expr_num_width(v);
-    if (raw num_width_is_integer(w)) {
-        int32:got = raw tt_int(r.types, raw num_width_bits(w),
-                               raw num_width_signed(w));
+    //
+    // A FOLDED VALUE CARRIES ITS TYPE, and `0` means the expression never wrote one
+    // — so `Mutex<Config, 2>` and `Mutex<Config, SIZE * 2>` take the parameter's
+    // type while `Mutex<Config, 2i64>` is checked against it. The debt paid here was
+    // "must be a literal", never "must be valid": this check stays.
+    if (cv.type_id != 0i32) {
+        int32:got = cv.type_id;
         if (got != want) {
             string:m1 = relay string_concat("this `comptime` argument is `",
                             relay type_display(r.types, r.interns, got));
@@ -504,8 +1316,13 @@ func:resolve_value_arg = int32(TypeResolver->:r, TypeNode:an, DeclNode:gpn,
         }
     }
 
+    // THE FOLDED VALUE, NOT THE LITERAL'S PAYLOAD. `Mutex<Config, SIZE>` and
+    // `Mutex<Config, 2>` must intern to the same instance when `SIZE` is 2, which
+    // is what makes them the same type — reading the node's payload here would make
+    // them different types that behave identically, which is the shape D-090's
+    // interning exists to prevent.
     pass (raw tt_comptime(r.types, want,
-                          relay intern_add(r.interns, raw int_to_string(v.payload))));
+                          relay intern_add(r.interns, raw int_to_string(cv.num))));
 };
 
 // `Container<int32>` — THE SOURCE SPELLING, which is the most reversible mangling
@@ -659,20 +1476,21 @@ func:builtin_to_type = int32(TypeResolver->:r, BuiltinTypeSpec:spec, TypeNode:n)
 // where a size that cannot be computed is refused rather than becoming whatever
 // number happened to be lying around.
 func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
-                                 int32:_~scope) {
+                                 int32:scope) {
     ExprId:size = raw type_array_size(n);
     ExprNode:se = relay ast_expr(r.ast, size);
 
-    if (se.kind != ExprKind.ExprIntLiteral) {
-        // Folding a general constant expression is cycle 0.6's job (`comptime`).
-        // Until then a non-literal size is refused by NAME rather than silently
-        // taking a wrong value, which is what 0.2.8 found this path doing.
+    // FOLDED, NOT MATCHED. `int32[SIZE]`, `int32[N * 2]` and `int32[#size_of<T>()]`
+    // are all constants, and until 0.6.4 only a bare literal was one.
+    ConstVal:cv = relay fold_const(r, size, scope);
+    if (!(raw cv_is_int(cv))) {
+        if (raw fold_gave_up(r)) { pass 0i32; }
         pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
-            "an array size must be a constant, and only an integer literal is constant-folded at this rung",
+            "an array size must be a constant expression; a name folds only if it is a `const` global",
             se.span));
     }
 
-    int64:count = se.payload;
+    int64:count = cv.num;
     if (count < 0i64) {
         pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
             "an array size may not be negative", se.span));

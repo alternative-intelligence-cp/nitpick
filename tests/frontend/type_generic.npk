@@ -456,18 +456,27 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@c7) != 1i64)                                  { exit 69i32; }
     if (!(raw string_eq(raw code0(@c7), raw TYPE_GENERIC_KIND()))) { exit 70i32; }
 
-    // A NON-LITERAL VALUE IS REFUSED BY NAME, the same rule and the same sentence
-    // `int32[N]` already uses. Folding a general constant expression is cycle
-    // 0.6's job, and until then taking a wrong value silently is the one outcome
-    // worse than refusing.
+    // A `const` GLOBAL IS A CONSTANT, AND FOLDS (0.6.4). This case asserted the
+    // opposite until the debt was paid: a `comptime` argument took an integer
+    // literal and nothing else, and `(COUNT)` was refused BY NAME rather than
+    // silently taking a wrong value.
     Gx:c8 = raw gx(
         "pub const int32:COUNT = 4i32; struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { Lock<Point, (COUNT)>:m; pass NIL; };",
         @it);
-    if (raw errs(@c8) != 1i64)                                  { exit 71i32; }
-    // THE SAME CODE AN ARRAY SIZE GETS, because it is the same rule: only an
-    // integer literal is constant-folded at this rung. Two codes would make one
-    // rule look like a coincidence.
-    if (!(raw string_eq(raw code0(@c8), raw TYPE_NOT_CONSTANT()))) { exit 72i32; }
+    if (raw errs(@c8) != 0i64)                                  { exit 71i32; }
+
+    // WHAT IS STILL REFUSED, AND IT IS THE RULE RATHER THAN THE RUNG. A LOCAL is
+    // not a constant however the expression around it is written — `const` is the
+    // marker that says a binding has one value for the whole program (D-010), and
+    // it is the marker that says a name may stand here.
+    //
+    // THE SAME CODE AN ARRAY SIZE GETS, because it is the same rule and the same
+    // evaluator answers it. Two codes would make one rule look like a coincidence.
+    Gx:c8b = raw gx(
+        "struct:Point = { int32:x; }; struct:Lock<T, comptime int32:LEVEL> = { T:held; }; func:f = NIL() { int32:n = 4i32; Lock<Point, (n)>:m; pass NIL; };",
+        @it);
+    if (raw errs(@c8b) != 1i64)                                 { exit 72i32; }
+    if (!(raw string_eq(raw code0(@c8b), raw TYPE_NOT_CONSTANT()))) { exit 75i32; }
 
     // A VALUE PARAMETER IS READABLE AS A VALUE IN THE BODY, with the type it was
     // declared with. That is the entire content of `comptime int32:LEVEL`, and it

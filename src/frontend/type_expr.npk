@@ -983,6 +983,125 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
 // THE NONE EXPRESSION IS NOT RECORDED. Index 0 is the reserved absence (0.2.0),
 // not an expression, so recording it would claim the checker typed something that
 // is not there.
+// `#name<T>(...)` — the THREE compiler builtins, and nothing else.
+//
+// `#` is spelled the same for a builtin and a macro invocation (D-046), so anything
+// that is not one of these three has already been refused by the expansion audit
+// (D-126) — reaching here with an unknown name means the audit was skipped, which
+// is a defect in this compiler rather than in the program.
+//
+// THE GENERIC ARGUMENT NAMES WHAT THE THING IS *OF*, in both pointer forms.
+// `#wild_ptr<int8>(a)` is an `int8->` and `#wild_slice<int8>(p, n)` is an `int8[]`,
+// which is the reading that makes the two consistent rather than one naming the
+// pointee and the other the pointer.
+func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+    string:name = relay intern_get(e.interns, raw builtin_name(n));
+    int32:gc = raw builtin_generic_count(n);
+    int32:start = raw expr_list_start(n);
+    int32:argc = (raw expr_list_count(n)) - gc;
+    TypeResolver:r = raw etyper_resolver(e);
+
+    if (raw string_eq(name, "size_of")) {
+        if (gc != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#size_of` takes exactly one type argument", n.span));
+        }
+        if (argc != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#size_of` takes no value arguments; it is a question about a type",
+                n.span));
+        }
+        drop resolve_type(@r, TypeId{ index: raw ast_id_at(e.ast, start, 0i32) },
+                          e.scope);
+        pass (raw tt_int(e.types, 64i32, true));
+    }
+
+    if (raw string_eq(name, "wild_ptr")) {
+        if (gc != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#wild_ptr` takes exactly one type argument, the type it points at",
+                n.span));
+        }
+        if (argc != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#wild_ptr` takes exactly one value argument, the address", n.span));
+        }
+        int32:pointee = relay resolve_type(@r,
+                            TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
+        int32:addr = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        if (!(raw type_is_invalid(e.types, addr))) {
+            if (!(raw type_is_integer(e.types, addr))) {
+                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                    "`#wild_ptr` takes an integer address; it is the one place an integer becomes a pointer (D-019), and that only reads as deliberate if an address is what was written",
+                    n.span));
+            }
+        }
+        pass (raw tt_pointer(e.types, pointee));
+    }
+
+    if (raw string_eq(name, "wild_slice")) {
+        if (gc != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#wild_slice` takes exactly one type argument, the element type",
+                n.span));
+        }
+        if (argc != 2i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`#wild_slice` takes two value arguments, a pointer and an element count",
+                n.span));
+        }
+        int32:elem = relay resolve_type(@r,
+                          TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
+        int32:ptr = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        int32:len = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
+        if (!(raw type_is_invalid(e.types, ptr))) {
+            if ((raw type_kind(e.types, ptr)) != (raw TY_POINTER())) {
+                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                    "`#wild_slice` takes a pointer and an element count; an extent the compiler cannot verify is exactly as privileged as an address it cannot verify (D-070)",
+                    n.span));
+            }
+        }
+        if (!(raw type_is_invalid(e.types, len))) {
+            if (!(raw type_is_integer(e.types, len))) {
+                pass (relay te_error(e, raw TYPE_MISMATCH(),
+                    "`#wild_slice`'s second argument is an element count", n.span));
+            }
+        }
+        pass (raw tt_slice(e.types, elem));
+    }
+
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_INTERNAL(),
+        "this `#name(...)` reached the type checker without being expanded or recognised, which the expansion audit should have refused",
+        n.span));
+    pass 0i32;
+};
+
+// `comptime(expr)` — A FORCING FORM. It says the expression HAS to fold, so failing
+// to fold is the error rather than a quiet fall-through to something else.
+//
+// AN UNTYPED RESULT TAKES THE CONTEXT TYPE, exactly as an unsuffixed literal does
+// (D-092): `int64:n = comptime(2i32 * 2i32)` gets its width from the same place
+// `int64:n = 4` would.
+func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
+    TypeResolver:r = raw etyper_resolver(e);
+    ConstVal:cv = relay fold_const(@r, ExprId{ index: n.a }, e.scope);
+    if (!(raw cv_folded(cv))) {
+        if (raw fold_gave_up(@r)) { pass 0i32; }
+        pass (relay te_error(e, raw TYPE_NOT_CONSTANT(),
+            "`comptime` requires an expression that folds at compile time, and this one does not",
+            n.span));
+    }
+    if (cv.type_id != 0i32) { pass cv.type_id; }
+
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if (raw type_is_integer(e.types, want)) { pass want; }
+    }
+    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+        "this `comptime` value has no width and nothing here says what it should be; write a suffix inside it or give the surrounding expression a type",
+        n.span));
+};
+
 pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     if (raw expr_is_none(id)) {
         pass 0i32;
@@ -1012,6 +1131,14 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     if (n.kind == ExprKind.ExprIterationVarExpr) {
         pass (raw tt_int(e.types, 64i32, true));
     }
+
+    // --- the two kinds 0.6.4 owes a rule ------------------------------------------
+    //
+    // BOTH USED TO TYPE AS INVALID, which is the encoding that suppresses cascades
+    // and is therefore silent (D-126, D-129). `#totally_not_a_macro(3i32)` compiled
+    // clean, and so did `comptime(anything)`.
+    if (n.kind == ExprKind.ExprBuiltinExpr)  { pass (relay type_builtin(e, id, n)); }
+    if (n.kind == ExprKind.ExprComptimeExpr) { pass (relay type_comptime(e, id, n)); }
 
     if (n.kind == ExprKind.ExprBinaryExpr) {
         pass (relay type_binary(e, id, n));

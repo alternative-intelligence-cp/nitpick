@@ -1,0 +1,135 @@
+// `comptime`, and the four debts it pays (0.6.4).
+//
+// Four sites in this compiler refused anything but a literal and said so by name,
+// each pointing at this subcycle: an array size, a `comptime` generic argument, an
+// `acquires` level, and a `const` global's initialiser. Every one of them was
+// written to refuse rather than silently take a wrong value, because 0.2.8 found
+// that exact path reading an intern-table slot as an array length.
+//
+// THE VALUE IS OBSERVED THROUGH THE TYPE, and it has to be. A checker does not run
+// the program, so `if (x != 55i32) { exit 2i32; }` never executes and proves
+// nothing. An array's LENGTH is part of its type, so passing `@h.summed` where an
+// `int32[55]->` is expected is an assertion the checker enforces: a fold that
+// produced any other number stops this file compiling.
+// (The module is `folding` and not `comptime`, because `comptime` is a KEYWORD and
+// a module name is an identifier. The loader's report for that is
+// NITPICK-RESOLVE-005 at the `mod:` line, which reads as a missing file.)
+mod:folding;
+
+const int32:BASE = 5i32;
+const int32:DERIVED = BASE * 2i32 + 1i32;      // a const reading another const
+
+struct:Big = { int64:a; int64:b; };
+
+// --- the evaluator is an interpreter, not a constant folder -----------------------
+//
+// `MACRO_REFERENCE.md` section 8 recovered the list from `COMPTIME-001…013`: mutable
+// locals, assignment, loops, and calls that nest. Anything it can express is
+// something the compiler RUNS at build time, which is why evaluation is bounded.
+comptime func:double = int32(int32:n) { pass (n * 2i32); };
+comptime func:add_one = int32(int32:n) { pass (n + 1i32); };
+
+comptime func:sum_to = int32(int32:n) {
+    int32:total = 0i32;
+    int32:i = 1i32;
+    while (i <= n) {
+        total = total + i;
+        i = i + 1i32;
+    }
+    pass total;
+};
+
+comptime func:pick_bigger = int32(int32:a, int32:b) {
+    if (a >= b) { pass a; }
+    pass b;
+};
+
+// THE LANGUAGE'S COUNTED LOOP, AND `$`. `while` is the easier shape and was written
+// first; `loop(lo, hi)` is the one `COMPTIME-001` actually uses, and `$` is its
+// counter — which is why it has a node kind of its own rather than a name, since
+// nobody declared it.
+comptime func:sum_loop = int64(int64:n) {
+    int64:total = 0i64;
+    loop(1i64, n + 1i64) {
+        total = total + $;
+    }
+    pass total;
+};
+
+// STRINGS, PER `COMPTIME-005`. A bare-name builtin is declared in no module
+// (AST_REFERENCE 3.3) so it resolves to no symbol, which is why these are answered
+// before the declaration lookup rather than after it fails. Four have compile-time
+// answers; every other builtin allocates, opens a file, or talks to the kernel.
+const string:GREET = string_concat("hel", "lo");
+
+comptime func:greet_len = int64() { pass string_byte_length(GREET); };
+
+struct:Holder = {
+    int32[comptime(sum_to(10i32))]:summed;             // 55
+    int32[DERIVED]:derived;                            // 11
+    int32[comptime(add_one(double(10i32)))]:nested;    // 21
+    int32[comptime(pick_bigger(3i32, 7i32))]:chosen;   // 7
+    int32[#size_of<Big>()]:sized;                      // 16
+    int32[BASE * 2i32]:arith;                          // 10
+    int32[comptime(sum_loop(10i64))]:looped;           // 55, the counted form
+    int32[comptime(greet_len())]:concatenated;         // 5, "hello"
+};
+
+func:want55 = NIL(int32[55]->:p) { pass NIL; };
+func:want11 = NIL(int32[11]->:p) { pass NIL; };
+func:want21 = NIL(int32[21]->:p) { pass NIL; };
+func:want7  = NIL(int32[7]->:p)  { pass NIL; };
+func:want16 = NIL(int32[16]->:p) { pass NIL; };
+func:want10 = NIL(int32[10]->:p) { pass NIL; };
+func:want5  = NIL(int32[5]->:p)  { pass NIL; };
+
+func:each_length_is_what_it_folded_to = NIL(Holder->:h) {
+    drop want55(@h.summed);
+    drop want11(@h.derived);
+    drop want21(@h.nested);
+    drop want7(@h.chosen);
+    drop want16(@h.sized);
+    drop want10(@h.arith);
+    drop want55(@h.looped);
+    drop want5(@h.concatenated);
+    pass NIL;
+};
+
+// --- an `acquires` level is a constant in exactly the same sense -------------------
+//
+// The lock analysis (D-056, 0.5.6) took an integer literal and nothing else. It
+// takes what folds now, and the ORDERING it enforces is unchanged: this acquires
+// upward, which is the whole point.
+const int32:LOW = 1i32;
+const int32:HIGH = LOW + 2i32;
+
+struct:Guard = { int32:v; };
+
+func:take_low = Guard() acquires LOW { pass Guard{ v: 1i32 }; };
+func:take_high = Guard() acquires HIGH { pass Guard{ v: 3i32 }; };
+
+func:upward_still_passes = NIL() {
+    Guard:a = raw take_low();
+    Guard:b = raw take_high();
+    discard(a.v);
+    discard(b.v);
+    pass NIL;
+};
+
+// --- and the two kinds that used to type as INVALID --------------------------------
+//
+// `#size_of<T>` and `comptime(...)` had no case in `type_of_expr_inner`, so both
+// fell through to type `0` — the encoding that suppresses cascades, and therefore
+// silent (D-126, D-129). An unsuffixed folded value takes the context type, exactly
+// as an unsuffixed literal does (D-092).
+func:the_two_kinds_have_types = NIL() {
+    int64:sz = #size_of<Big>();
+    int32:a = comptime(double(21i32));
+    int64:b = comptime(3 + 4);
+    discard(sz);
+    discard(a);
+    discard(b);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

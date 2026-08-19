@@ -1,0 +1,17 @@
+// expect-error: NITPICK-TYPE-004
+//
+// DIVISION BY ZERO IN A CONSTANT EXPRESSION. Its own sentence, for the reason the
+// zero-step loop gets one: folding to zero would be the silent wrong value this
+// whole mechanism exists to avoid, and the site's own "must be constant" refusal is
+// a worse sentence than the one this deserves.
+//
+// ONE DIAGNOSTIC, NOT TWO. The site that asked for the fold does not add its
+// general sentence on top of the specific one.
+mod:comptime_div_zero;
+
+const int32:ZERO = 0i32;
+
+func:main = int32(cstring[]:_~argv) {
+    int32[10i32 / ZERO]:arr;
+    exit 0i32;
+};

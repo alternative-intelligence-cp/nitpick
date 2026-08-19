@@ -327,11 +327,35 @@ int64:b = comptime(#add_one(#double_it(10i32))); // nested arbitrarily
 One rule covers all of it: **expansion runs to a fixed point first, then evaluation
 runs over the result.**
 
+### What a name means inside one
+
+**A `const` global folds; nothing else that is a name does** (D-130). `const` is
+the marker that says a binding has one value for the whole program (D-010), so it
+is the marker that says a name may stand in a constant expression. A `fixed`
+binding is assigned once at **run** time and is correctly not one, and neither is a
+local or a parameter of an ordinary function.
+
+Likewise a call folds when the function is declared `comptime`, and not because it
+happens to be foldable — whether the compiler runs your code is not something to
+discover by accident.
+
 ### When evaluation fails
 
 The diagnostic names **the offending expression** and, where the failure is inside
 nested `comptime func:` calls, **the call chain** that reached it
 (`COMPTIME-009`). A comptime failure is a compile error.
+
+### And when it does not finish
+
+**Two bounds, not one** (D-130), for the reason §7 gives for expansion having two:
+they fail differently. A budget bounds the total work; a **depth** bound bounds
+recursion, because a `comptime func:` that calls itself exhausts the compiler's own
+stack long before a budget measured in steps runs out — measured, and it segfaulted
+the checker before the second bound existed.
+
+Exceeding either is `NITPICK-TYPE-025`, which is its own code and not "this is not
+a constant": one means the expression cannot be evaluated, the other means it can
+and never stops.
 
 ## 9. The corpus is in the prototype's dialect
 

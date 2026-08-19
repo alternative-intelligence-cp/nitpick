@@ -132,11 +132,19 @@ func:writes_a_const_global = NIL() {
 // expect-error: NITPICK-ASSIGN-001
 pub const int32:NEVER_WRITTEN;
 
+// A `const` READING ANOTHER `const` FOLDS (0.6.4), so `MAX * 2i32` is an
+// initialiser like any other. `fixed` is the one that does not: it is assigned once
+// at RUN time, which is exactly what a compile-time value cannot be.
+//
 // THE SAME CODE AS AN ARRAY SIZE AND A `comptime` ARGUMENT, because it is the same
-// question — is this expression constant at this rung — and the same answer:
-// folding a general constant expression is cycle 0.6's job.
+// question — is this expression constant — and since 0.6.4 the same evaluator
+// answers it. A reader filtering on this code is asking one thing.
+pub const int32:COMPUTED = MAX * 2i32;
+
+fixed int32:DECIDED_AT_RUNTIME = 7i32;
+
 // expect-error: NITPICK-TYPE-004
-pub const int32:COMPUTED = MAX;
+pub const int32:FROM_FIXED = DECIDED_AT_RUNTIME;
 
 // --- `fixed` is assigned once -----------------------------------------------------
 

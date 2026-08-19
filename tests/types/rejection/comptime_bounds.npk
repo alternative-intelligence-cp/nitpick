@@ -1,0 +1,22 @@
+// expect-error: NITPICK-TYPE-025
+//
+// FOLDING IS WHERE A COMPILER RUNS THE PROGRAM IT IS COMPILING, so it is bounded —
+// the same failure D-057 bounds macro expansion for, arriving through the other
+// door. Unbounded, this hangs the build.
+//
+// TWO BOUNDS, NOT ONE, and this file is why the second exists. The fuel bounds
+// TOTAL WORK; it does not bound RECURSION DEPTH, and a comptime function that calls
+// itself blows the COMPILER'S OWN STACK long before a budget measured in steps runs
+// out. Measured, before the depth bound was added: this file segfaulted the checker.
+//
+// ONE DIAGNOSTIC, NOT TWO. The site that asked for the fold does not then add "this
+// is not a constant" — a budget failure and a non-constant send the reader to
+// opposite places, and printing both sends them to neither.
+mod:comptime_bounds;
+
+comptime func:forever = int32(int32:n) { pass (raw forever(n)); };
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = comptime(forever(1i32));
+    exit 0i32;
+};

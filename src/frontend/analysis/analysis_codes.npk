@@ -180,8 +180,9 @@ pub func:LOCK_EXCEEDS_BOUND = string()  { pass "NITPICK-LOCK-002"; };
 
 // An `acquires` level that is not a constant. Shares nothing with `TYPE_NOT_CONSTANT`
 // because the two are found at different stages and a reader filtering a log is
-// asking a different question — but the rule and the sentence are deliberately the
-// same: folding a general constant expression is cycle 0.6's job.
+// asking a different question — but the rule is deliberately the same, and since
+// 0.6.4 the same EVALUATOR answers it: `acquires LOW` and `acquires BASE + 1i32`
+// fold exactly as an array size does.
 pub func:LOCK_NOT_CONSTANT = string()   { pass "NITPICK-LOCK-003"; };
 
 // A DEFECT IN THE COMPILER, or a program the walk could not follow: a node kind
