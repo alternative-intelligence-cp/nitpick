@@ -671,22 +671,3 @@ func:impl_self_type = int32(ExprTyper->:e, DeclNode:d, int32:scope) {
     pass (relay resolve_type(@r, relay impl_target(e.ast, d), scope));
 };
 
-// One message for every "this value does not fit there", naming both types in
-// the order the reader wrote them.
-pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
-    string:m1 = relay string_concat("expected `",
-                                    relay type_display(e.types, e.interns, want));
-    string:m2 = relay string_concat(m1, "`, found `");
-    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
-    string:m4 = relay string_concat(m3, "`");
-    // The widths case is worth naming, since it is the one that looks like it
-    // ought to work and no longer does (D-092, corrected).
-    if (raw type_is_integer(e.types, want)) {
-        if (raw type_is_integer(e.types, got)) {
-            m4 = relay string_concat(m4,
-                "; there is no implicit widening, so write the cast");
-        }
-    }
-    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MISMATCH(), m4, at));
-    pass NIL;
-};

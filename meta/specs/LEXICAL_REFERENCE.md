@@ -89,11 +89,21 @@ BuiltinType         ::= "int1" | "int2" | "int4" | "int8" | "int16" | "int32"
                       | "Handle" | "arena" | "shared_arena" | "atomic" | "Future"
                       | "simd" | "complex" | "array" | "func"
                       | "trit" | "tryte" | "nit" | "nyte"
-                      | "vec2" | "vec3" | "vec9" | "matrix" | "tmatrix"
-                      | "tensor" | "ttensor" | "buffer" | "NIL"
+                      | "buffer" | "NIL"
 
 BuiltinHelper       ::= "is" | "in" | "is_err"
 ```
+
+> **`vec2`, `vec3`, `vec9`, `matrix`, `tmatrix`, `tensor` and `ttensor` were
+> keywords and are not** (D-135). They are **library types** now, built on
+> `simd<T, N>`, and a library cannot declare a type whose name is a keyword — so
+> keeping them reserved would have made the library that defines them unwritable.
+>
+> `simd` stays, because it is the primitive the rest are built from. So do `trit`,
+> `tryte`, `nit` and `nyte`: no hardware implements balanced ternary, every
+> operation on one is emulation, and the compiler is the only place that can be done
+> well. The argument for keeping those primitive does not transfer to the vectors,
+> which is why the two groups were decided separately.
 
 ### Corrections applied
 

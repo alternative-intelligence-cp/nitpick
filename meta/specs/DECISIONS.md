@@ -9475,3 +9475,86 @@ The general shape is worth keeping: **a rule about what the author wrote has to
 account for what the language adds.** `Result` is invisible in the source and
 present in every type, so any comparison of function types has to decide about it
 explicitly rather than by not noticing.
+
+---
+
+## D-135 — `simd<T, N>` is the vector mechanism; the rest are library types — **SETTLED**
+
+Nitpick had two overlapping ways to say "a small fixed-size bundle of numbers", in
+adjacent sections of one document:
+
+| | spelling | backing | tier |
+|---|---|---|---|
+| `TYPE_REFERENCE` §14 | `simd<flt64, 2>` | `<2 x double>` — **an LLVM vector** | 0 |
+| `TYPE_REFERENCE` §15 | `vec2` | `{flt64, flt64}` — **a struct** | 1 |
+
+### Why the keyword form is the slower one
+
+The reason these were primitives was a performance hypothesis — that making the
+types Nikola needs into primitives rather than library types "might squeeze out a
+little extra performance". **For an LLVM target it is the wrong lever.**
+
+What makes SIMD fast is the value landing in an **LLVM vector type, in a register**,
+with arithmetic lowering to vector instructions. A `{flt64, flt64}` struct is passed
+in memory or split into scalars, and recovers nothing unless SROA and the vectoriser
+happen to fire. So §15's `vec2` — the *keyword* — is specified as the slow shape and
+§14's `simd<flt64, 2>` — the *generic* — as the fast one.
+
+**A generic the compiler knows how to lower is exactly as fast as a keyword**,
+because the spelling is not what reaches the backend.
+
+### And every primitive is trusted computing base
+
+The stronger argument for this project. Astrée gets **one attempt**
+(`astree-verification-one-shot-constraint`), and each primitive is more surface to
+carry through it. Six vector/matrix/tensor primitives is six more things to verify
+than one parameterised one.
+
+It is also the blueprint philosophy applied directly: `vec2` and `simd<flt64, 2>`
+are two spellings for one idea, which is the cost D-123 removed `Display` for.
+
+### So
+
+- **`simd<T, N>` is the mechanism**, and stays a keyword — it is the primitive.
+- **`vec2`, `vec3`, `vec4`, `vec9`, `matrix<T>`, `tmatrix`, `tensor<T>`, `ttensor`
+  become library types** built on it, and **stop being keywords**.
+
+The keyword removal is **necessary rather than cosmetic**: a library cannot declare
+a type whose name is a keyword, so leaving them reserved would make the library that
+defines them unwritable.
+
+It also resolves an inconsistency by deleting the question. **`vec4` was in
+`TYPE_REFERENCE` §15 and absent from `LEXICAL_REFERENCE`'s keyword list**, so it was
+a type the specs disagreed about and the lexer had never heard of.
+
+### The balanced-ternary family stays primitive, and the argument does not transfer
+
+`trit`, `tryte`, `nit` and `nyte` lower to `i8`/`i16` carrying base-3 and base-9
+semantics. **No hardware implements balanced ternary**, so every operation on one is
+emulation — and the compiler is the only place emulation can be done well. A library
+version would be strictly worse, where a library `vec2` is strictly better.
+
+That is why the two groups were decided separately rather than as one question about
+"the exotic types".
+
+### Provenance, because it decided who chose
+
+The ternary family is the user's own design. The vector and SIMD types came from an
+**earlier agent's recommendation**, made during a sweep through Nikola looking for
+what the language would have to support — the user had "overlooked basic SIMD
+operations and vectors entirely" and deferred to it.
+
+Worth recording because it is the difference between a design to be asked about and
+an analysis to be redone. A requirement found by sweeping Nikola is evidence about
+what Nikola needs; it is not a decision about how to express it.
+
+### What is NOT decided here
+
+**Nothing is implemented.** `simd<flt64, 2>:s`, `vec2:v` and `trit:t` all report
+"there is no type named …" — the keywords are lexed and nothing more. The type
+system has no vector kind and no ternary kind. This decision says which shape the
+work should take when it is done; it does not do it.
+
+`simd`'s constructor spelling is also unsettled. The parser reads `simd(a, b, c)` as
+an `ExprVectorCtorExpr`, which the type checker refuses as Tier 1 — correct under
+any outcome, and the narrowest thing that keeps the node kind reachable.

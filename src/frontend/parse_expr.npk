@@ -707,10 +707,19 @@ func:p_primary = ExprId(Parser->:p) {
                                  0i32, 0i32, 0i32, 2i64));
     }
 
-    // `vec3(x, y, z)` -- a VECTOR CONSTRUCTOR. The name is a builtin TYPE
-    // keyword, so it never reached the identifier path and `vec3(…)` read as
-    // "expected an expression" (AST_REFERENCE 3.6).
-    if (raw token_kind_is_builtin_type(k)) {
+    // `simd(x, y, z)` -- a VECTOR CONSTRUCTOR. The name is a builtin TYPE keyword,
+    // so it never reaches the identifier path and would read as "expected an
+    // expression" (AST_REFERENCE 3.6).
+    //
+    // `simd` AND NOTHING ELSE, since D-135. This fired for EVERY builtin type
+    // keyword followed by `(`, which was right while `vec2`, `vec3` and `vec9` were
+    // keywords — and wrong for the rest of them: `int32(5i32)` read as a vector
+    // constructor, and a cast is `x => int32` rather than a call, so what it should
+    // read as is a parse error.
+    //
+    // The vector names are LIBRARY types now, so `vec3(1.0f64, 2.0f64, 3.0f64)` is
+    // an ordinary call over an ordinary identifier and needs nothing here.
+    if (k == TokenKind.KwSimd) {
         if ((relay p_peek_at(p, 1i64)).kind == TokenKind.PLParen) {
             Token:vt = relay p_advance(p);
             drop p_advance(p);

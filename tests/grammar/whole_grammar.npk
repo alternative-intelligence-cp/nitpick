@@ -373,7 +373,11 @@ func:every_expression = int32(int32:a, int32:b, Point:p, int8->:ptr) {
     tbb32:err = ERR;
 
     v = dyn_target => dyn Drawable & Printable => int32;
-    v = vec3(1.0f64, 2.0f64, 3.0f64) => int32;
+    // `simd<T, N>` IS THE VECTOR MECHANISM (D-135), and `simd(…)` is the one
+    // builtin-type-keyword-followed-by-a-paren the parser still reads as a vector
+    // constructor. `vec3` is a LIBRARY type now, so `vec3(1.0f64, …)` is an ordinary
+    // call over an ordinary identifier and needs no entry of its own.
+    v = simd(1.0f64, 2.0f64, 3.0f64) => int32;
 
     pass v;
 };

@@ -35,6 +35,17 @@ use "type_names.npk".*;
 use "type_cast.npk".*;
 use "type_decl.npk".*;
 use "type_access.npk".*;
+// A `use` CYCLE, DECLARED ON PURPOSE. `type_stmt.npk` uses this module because a
+// statement contains expressions; this module uses it because an EXPRESSION contains
+// statements — an expression-`pick`s arms are statement bodies (D-059). The language
+// nests the two inside each other, so the checker does too.
+//
+// The three other layering problems this cycle turned up — `ensure_layout`,
+// `stmt_carries_expr`, `te_assign_mismatch` — were each a function in the wrong
+// module, and each was moved. THIS ONE IS NOT THAT: neither direction is wrong, and
+// declaring the cycle is more honest than a duplicated statement walk on the
+// expression side would be.
+use "type_stmt.npk".*;
 use "type_trait.npk".*;
 use "expr_types.npk".*;
 
@@ -1102,6 +1113,454 @@ func:type_comptime = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         n.span));
 };
 
+// MOVED HERE FROM `type_stmt.npk` IN 0.6.7. It is a sentence about two EXPRESSION
+// types and needs nothing from a statement, but living in the statement checker made
+// every module that reported a mismatch depend on it — and the struct literal rule
+// below reports one. `tests/frontend/type_expr.npk` compiles a group with the
+// expression checker and without the statement checker, and it did not build.
+//
+// The third of these this cycle, after `stmt_carries_expr` and `ensure_layout`: a
+// dependency that only holds because some other group happens to pull both in is not
+// one anybody declared.
+// One message for every "this value does not fit there", naming both types in
+// the order the reader wrote them.
+pub func:te_assign_mismatch = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
+    string:m1 = relay string_concat("expected `",
+                                    relay type_display(e.types, e.interns, want));
+    string:m2 = relay string_concat(m1, "`, found `");
+    string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
+    string:m4 = relay string_concat(m3, "`");
+    // The widths case is worth naming, since it is the one that looks like it
+    // ought to work and no longer does (D-092, corrected).
+    if (raw type_is_integer(e.types, want)) {
+        if (raw type_is_integer(e.types, got)) {
+            m4 = relay string_concat(m4,
+                "; there is no implicit widening, so write the cast");
+        }
+    }
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MISMATCH(), m4, at));
+    pass NIL;
+};
+
+// `vec2(1.0f64, 2.0f64)` — A CONSTRUCTOR FOR A TYPE THAT DOES NOT EXIST YET.
+//
+// `TYPE_REFERENCE` §15 puts `vec2`, `vec3`, `vec4`, `matrix<T>` and `tensor<T>` in
+// **Tier 1**, and nothing implements that tier: the type system has no vector kind,
+// and `vec2:v` reports "there is no type named `vec2`" today.
+//
+// SO IT IS REFUSED, NAMING THE TIER, rather than typed as INVALID. That is D-085's
+// rule one layer up — the parser accepts the whole grammar and a construct no rung
+// supports produces a diagnostic that says which — and it is the reason this kind
+// comes off the untyped list honestly: it is not accepted unchecked, it is refused
+// with a reason.
+//
+// Inventing a type here would be worse than either: the program would mean
+// something the language has not decided, and `simd<T, N>` in §14 is Tier 0 with a
+// different spelling that has no lexer support at all, so there is a real question
+// about which of the two `vec2` should be.
+func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) {
+    // The components are still typed, so a mistake inside one is reported rather
+    // than hidden behind the tier.
+    int32:start = raw expr_list_start(n);
+    int32:cnt = raw expr_list_count(n);
+    int32:i = 0i32;
+    while (i < cnt) {
+        drop type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, i) });
+        i = i + 1i32;
+    }
+    pass (relay te_error(e, raw TYPE_TIER(),
+        "vector, matrix and tensor types are Tier 1 (`TYPE_REFERENCE` section 15) and no rung supplies one yet, so there is no type for this constructor to build",
+        n.span));
+};
+
+// `pick (n) { (0i32) { give 1i32; }, (*) { give 2i32; } }` — THE ARMS SHARE A TYPE.
+//
+// The expression form of `pick` (D-059) produces a value, and every arm has to
+// produce the same kind of one. The statement form was checked in 0.4; this had no
+// case at all, so an expression-`pick` whose arms gave an `int32` and a `string`
+// typed as INVALID and said nothing.
+//
+// COVERAGE IS NOT ASKED HERE. Whether the arms cover the selector is 0.5.4's
+// question and `exhaust.npk` answers it for both forms. This asks only about the
+// values, which is the half nothing else answers.
+//
+// THE TYPE COMES FROM THE FIRST `give`, and the rest are measured against it — the
+// same rule the array literal uses, and for the same reason: choosing a "common"
+// type would need a widening rule, and D-092 says there is not one.
+func:type_pick_expr = int32(ExprTyper->:e, ExprNode:n) {
+    drop type_of_expr(e, raw pickx_selector(n));
+
+    int32:start = raw pickx_arm_start(n);
+    int32:cnt = raw pickx_arm_count(n);
+    int32:want = raw expected_value(e);
+    int32:result = want;
+
+    int32:i = 0i32;
+    while (i < cnt) {
+        StmtId:arm = StmtId{ index: raw ast_id_at(e.ast, start, i) };
+        StmtNode:a = relay ast_stmt(e.ast, arm);
+        drop type_of_expr(e, raw arm_guard(a));
+
+        // EVERY ARM IS WALKED AS A STATEMENT, so a mistake anywhere in its body is
+        // reported; the `give` is then looked for on top of that rather than
+        // instead of it.
+        drop check_stmt(e, raw arm_body(a));
+        result = relay arm_give_type(e, raw arm_body(a), result, n.span);
+        i = i + 1i32;
+    }
+
+    if (result == 0i32) {
+        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
+            "this `pick` is used as a value and no arm gives one; an arm that falls off its end has nothing to produce",
+            n.span));
+    }
+    pass result;
+};
+
+// THE `give` IN AN ARM'S BODY, CHECKED AGAINST WHAT THE OTHERS GAVE.
+//
+// One level, because `give` belongs to the arm it is written in: a `give` nested
+// inside an `if` inside an arm is a shape the corpus does not write, and walking for
+// one would mean deciding what an arm with two of them means.
+func:arm_give_type = int32(ExprTyper->:e, StmtId:body, int32:sofar, Span:at) {
+    if (raw stmt_is_none(body)) { pass sofar; }
+    StmtNode:b = relay ast_stmt(e.ast, body);
+    if (b.kind != StmtKind.StmtBlockStmt) { pass sofar; }
+
+    int32:n = raw stmt_list_count(b);
+    int32:start = raw stmt_list_start(b);
+    int32:cur = sofar;
+    int32:i = 0i32;
+    while (i < n) {
+        StmtNode:st = relay ast_stmt(e.ast,
+                          StmtId{ index: raw ast_id_at(e.ast, start, i) });
+        if (st.kind == StmtKind.StmtGiveStmt) {
+            int32:saved = e.expected;
+            e.expected = cur;
+            int32:got = relay type_of_expr(e, ExprId{ index: st.a });
+            e.expected = saved;
+            if (!(raw type_is_invalid(e.types, got))) {
+                if (got != 0i32) {
+                    if (cur == 0i32) { cur = got; }
+                    else {
+                        if (!(raw fits(e, cur, got))) {
+                            drop te_assign_mismatch(e, cur, got, st.span);
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass cur;
+};
+
+// `[1i32, 2i32, 3i32]` — ONE ELEMENT TYPE, AND A COUNT (D-129, 0.6.7).
+//
+// THE EXPECTED TYPE IS THE AUTHORITY WHEN THERE IS ONE, because the declaration is
+// where the length was written: `int32[3]:a = [1i32, 2i32];` is wrong about the
+// COUNT, and only the annotation knows what the count was supposed to be. Without
+// one the literal describes itself — its element type from its first element, its
+// length from how many there are — which is the only answer available and is never
+// wrong, just less useful.
+func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
+    int32:start = raw expr_list_start(n);
+    int32:cnt = raw expr_list_count(n);
+
+    int32:want = raw expected_value(e);
+    int32:want_elem = 0i32;
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_ARRAY())) {
+            want_elem = raw type_elem(e.types, want);
+            if ((raw type_array_count(e.types, want)) != cnt) {
+                string:c1 = relay string_concat("this array literal has ",
+                                raw int_to_string(cnt => int64));
+                string:c2 = relay string_concat(c1, " element(s) and `");
+                string:c3 = relay string_concat(c2,
+                                relay type_display(e.types, e.interns, want));
+                drop te_error(e, raw TYPE_MISMATCH(),
+                    relay string_concat(c3, "` has a fixed length; an array's length is part of its type"),
+                    n.span);
+            }
+        }
+    }
+
+    // EVERY ELEMENT IS TYPED, whichever way the element type was decided, so that a
+    // mistake inside one is reported rather than waiting for the first to settle
+    // the question.
+    int32:elem = want_elem;
+    int32:i = 0i32;
+    while (i < cnt) {
+        ExprId:v = ExprId{ index: raw ast_id_at(e.ast, start, i) };
+        int32:saved = e.expected;
+        e.expected = elem;
+        int32:got = relay type_of_expr(e, v);
+        e.expected = saved;
+
+        if (!(raw type_is_invalid(e.types, got))) {
+            if (got != 0i32) {
+                if (elem == 0i32) {
+                    // THE FIRST ELEMENT SETS IT, and the rest are measured against
+                    // that. Picking a "common" type instead would need a widening
+                    // rule, and D-092 says there is not one.
+                    elem = got;
+                } else {
+                    if (!(raw fits(e, elem, got))) {
+                        drop te_assign_mismatch(e, elem, got, n.span);
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+
+    if (elem == 0i32) {
+        // An EMPTY literal with no annotation describes nothing. `int32[0]:a = [];`
+        // is fine; a bare `[]` is a value whose type nobody wrote.
+        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
+            "an empty array literal has no element type, and nothing here says what it should be",
+            n.span));
+    }
+    pass (raw tt_array(e.types, elem, cnt,
+                       raw type_size(e.types, elem), raw type_align(e.types, elem)));
+};
+
+// `a |> f` — THE LEFT SIDE IS WHAT THE RIGHT SIDE TAKES (D-129, 0.6.7).
+//
+// A pipe is a call written the other way round, so it is checked as one: the right
+// side has to BE a function of one parameter, and the left has to fit that
+// parameter. Reusing `type_call` is not possible — it reads its arguments out of
+// the call node's own window, and a pipe's argument is a sibling node.
+func:type_pipe = int32(ExprTyper->:e, ExprNode:n) {
+    int32:lt = relay type_of_expr(e, raw expr_lhs(n));
+    int32:rt = relay type_of_expr(e, raw expr_rhs(n));
+    if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
+
+    if (!(raw type_is_func(e.types, rt))) {
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+            "the right side of a pipe is the function the value is passed to, and this is not a function",
+            n.span));
+    }
+    int32:np = raw type_param_count_of(e.types, rt);
+    if (np != 1i32) {
+        string:p1 = relay string_concat("a pipe passes exactly one value, and this function takes ",
+                        raw int_to_string(np => int64));
+        pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+            relay string_concat(p1, " parameter(s)"), n.span));
+    }
+    int32:want = raw type_param_at_of(e.ast, e.types, rt, 0i32);
+    if (!(raw type_is_invalid(e.types, lt))) {
+        if (lt != 0i32) {
+            if (!(raw fits(e, want, lt))) {
+                drop te_assign_mismatch(e, want, lt, n.span);
+            }
+        }
+    }
+    pass (raw type_elem(e.types, rt));
+};
+
+// `x => dyn Trait` — THE TARGET HAS TO IMPLEMENT IT, AND IT HAS TO BE OBJECT-SAFE.
+//
+// Both questions were answered in 0.4.6 and neither was asked here: the node had no
+// case, so a `dyn` cast of a type implementing nothing produced the invalid type and
+// no diagnostic. The node carries the trait window directly (AST_REFERENCE 3.6),
+// which is why this does not go back through the type.
+func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
+    int32:src = relay type_of_expr(e, raw expr_operand(n));
+    TypeResolver:r = raw etyper_resolver(e);
+
+    int32:start = raw expr_list_start(n);
+    int32:cnt = raw expr_list_count(n);
+    int32:mark = raw ast_scratch_mark(e.ast);
+    int32:i = 0i32;
+    while (i < cnt) {
+        TypeId:trait_ty = TypeId{ index: raw ast_id_at(e.ast, start, i) };
+        int32:tr = relay resolve_type(@r, trait_ty, e.scope);
+        drop ast_scratch_push(e.ast, tr);
+
+        if (!(raw type_is_invalid(e.types, tr))) {
+            drop check_object_safe(@r, tr, n.span);
+            if (!(raw type_is_invalid(e.types, src))) {
+                if (src != 0i32) {
+                    if (!(raw type_implements(e.impls, e.bounds, e.ast, e.types,
+                                              src, tr, raw IMPL_FUEL()))) {
+                        string:d1 = relay string_concat("`",
+                                        relay type_display(e.types, e.interns, src));
+                        string:d2 = relay string_concat(d1, "` does not implement `");
+                        string:d3 = relay string_concat(d2,
+                                        relay type_display(e.types, e.interns, tr));
+                        drop te_error(e, raw TYPE_BOUND_UNMET(),
+                            relay string_concat(d3, "`, so it cannot become a `dyn` of it"),
+                            n.span);
+                    }
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    IdSpan:w = raw ast_scratch_commit(e.ast, mark);
+    pass (raw tt_dyn(e.types, w.start, w.count));
+};
+
+// `Point{ x: 1i32, y: 2i32 }` — THE LITERAL NOTHING CHECKED (D-129, 0.6.7).
+//
+// `ExprStructLiteralExpr` had no case here, so it fell through to type `0` — the
+// INVALID type, which exists to suppress cascades and is therefore silent. Every
+// one of these compiled clean:
+//
+//     P:p = P{ x: 1i32, zzz: 3i32 };   // `zzz` is not a field of P
+//     P:q = P{ x: 1i32 };              // `y` never gets a value
+//     P:r = P{ x: 1i32, y: true };     // y is an int32
+//
+// THE SECOND IS THE ONE THAT MATTERS. There is no field-default syntax, so an
+// omitted field has no value — and an unassigned binding is exactly what D-010's
+// definite assignment refuses everywhere else. It is a safety property, not a
+// convenience.
+func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
+    int32:name = (n.payload) => int32;
+
+    // THE EXPECTED TYPE WINS WHEN IT NAMES THE SAME DECLARATION, because it is the
+    // only thing that carries generic arguments: the literal stores a NAME and
+    // nothing else, so `Container<int32>{ … }` has no way to say which `Container`
+    // it is except through the context that asked for it.
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_STRUCT())) {
+            if ((raw type_name(e.types, want)) == name) { pass want; }
+        }
+    }
+
+    int32:sym = raw scope_lookup(e.tab, e.scope, name);
+    if (sym == 0i32) {
+        string:t = relay intern_get(e.interns, name);
+        string:m1 = relay string_concat("there is no type named `", t);
+        pass (relay te_error(e, raw TYPE_UNKNOWN(),
+                             relay string_concat(m1, "`"), n.span));
+    }
+    Symbol:sy = relay symtab_get(e.tab, sym);
+    DeclNode:dn = relay ast_decl(e.ast, DeclId{ index: sy.origin });
+    if (dn.kind != DeclKind.DeclStructDecl) {
+        string:t2 = relay intern_get(e.interns, name);
+        string:k1 = relay string_concat("`", t2);
+        string:k2 = relay string_concat(k1, "` is ");
+        string:k3 = relay string_concat(k2, raw decl_kind_article(dn));
+        pass (relay te_error(e, raw TYPE_NOT_A_TYPE(),
+                             relay string_concat(k3, ", and a `{ … }` literal builds a struct"),
+                             n.span));
+    }
+
+    // A GENERIC STRUCT WITH NO CONTEXT HAS NOTHING TO SUBSTITUTE. Refused rather
+    // than resolved to the bare declaration, which is what made `Container<int32>`
+    // and `Container<string>` one type before 0.4.5.
+    IdSpan:gp = raw decl_generic_window(e.ast, dn);
+    if (gp.count != 0i32) {
+        string:g1 = relay string_concat("`", relay intern_get(e.interns, name));
+        pass (relay te_error(e, raw TYPE_CANNOT_INFER(),
+            relay string_concat(g1, "` is generic, and a struct literal carries no type arguments; the type has to come from what the literal is assigned to or passed as"),
+            n.span));
+    }
+    pass (raw tt_struct(e.types, sy.origin, name, 0i64, 1i32));
+};
+
+func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) {
+    int32:st = relay struct_literal_type(e, n);
+    if (raw type_is_invalid(e.types, st)) { pass 0i32; }
+
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:start = raw expr_list_start(n);
+    int32:cnt = raw expr_list_count(n);
+
+    // THE WINDOW ALTERNATES NAME, VALUE — one window, so the two cannot get out of
+    // step the way a second parallel one could.
+    int32:i = 0i32;
+    while ((i + 1i32) < cnt) {
+        int32:fname = raw ast_id_at(e.ast, start, i);
+        ExprId:val = ExprId{ index: raw ast_id_at(e.ast, start, i + 1i32) };
+
+        // THE SAME FIELD TWICE IS NOT AN OVERWRITE. Taking the last one silently
+        // discards the first, which is the lost-value defect `Result{…}` already
+        // has a code for.
+        int32:j = 0i32;
+        bool:again = false;
+        while (j < i) {
+            if ((raw ast_id_at(e.ast, start, j)) == fname) { again = true; }
+            j = j + 2i32;
+        }
+        if (again) {
+            string:d1 = relay string_concat("`", relay intern_get(e.interns, fname));
+            drop te_error(e, raw TYPE_FIELD_TWICE(),
+                relay string_concat(d1, "` is given twice in this literal, and taking the last would discard the first"),
+                n.span);
+        }
+
+        FieldInfo:f = relay struct_field(@r, st, fname, e.scope);
+        if (!(f.found)) {
+            string:u1 = relay string_concat("`", relay intern_get(e.interns, fname));
+            string:u2 = relay string_concat(u1, "` is not a field of `");
+            string:u3 = relay string_concat(u2,
+                            relay type_display(e.types, e.interns, st));
+            drop te_error(e, raw TYPE_NO_SUCH_FIELD(),
+                          relay string_concat(u3, "`"), n.span);
+            // The value is still typed, so a mistake inside it is reported too
+            // rather than waiting for the name to be fixed first.
+            drop type_of_expr(e, val);
+        } else {
+            int32:saved = e.expected;
+            e.expected = f.type_id;
+            int32:got = relay type_of_expr(e, val);
+            e.expected = saved;
+            if (!(raw type_is_invalid(e.types, got))) {
+                if (got != 0i32) {
+                    if (!(raw fits(e, f.type_id, got))) {
+                        drop te_assign_mismatch(e, f.type_id, got, n.span);
+                    }
+                }
+            }
+        }
+        i = i + 2i32;
+    }
+
+    drop check_literal_complete(e, n, st, start, cnt);
+    pass st;
+};
+
+// EVERY FIELD IS NAMED. The half that is a safety property: there is no default, so
+// a field the literal omits holds nothing, and D-010 refuses an unassigned binding
+// everywhere else in the language.
+func:check_literal_complete = NIL(ExprTyper->:e, ExprNode:n, int32:st,
+                                  int32:start, int32:cnt) {
+    int32:decl = raw type_decl(e.types, st);
+    if (decl == 0i32) { pass NIL; }
+    DeclNode:d = relay ast_decl(e.ast, DeclId{ index: decl });
+
+    int32:nm = raw item_member_count(e.ast, d);
+    int32:k = 0i32;
+    while (k < nm) {
+        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, k));
+        if (m.kind == DeclKind.DeclFieldDecl) {
+            int32:fname = raw decl_name(m);
+            bool:given = false;
+            int32:i = 0i32;
+            while ((i + 1i32) < cnt) {
+                if ((raw ast_id_at(e.ast, start, i)) == fname) { given = true; }
+                i = i + 2i32;
+            }
+            if (!given) {
+                string:m1 = relay string_concat("`",
+                                relay type_display(e.types, e.interns, st));
+                string:m2 = relay string_concat(m1, "` has a field `");
+                string:m3 = relay string_concat(m2,
+                                relay intern_get(e.interns, fname));
+                drop te_error(e, raw TYPE_MISSING_FIELD(),
+                    relay string_concat(m3, "` and this literal does not give it a value; there is no default, so it would hold nothing"),
+                    n.span);
+            }
+        }
+        k = k + 1i32;
+    }
+    pass NIL;
+};
+
 pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) {
     if (raw expr_is_none(id)) {
         pass 0i32;
@@ -1137,6 +1596,12 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) {
     // BOTH USED TO TYPE AS INVALID, which is the encoding that suppresses cascades
     // and is therefore silent (D-126, D-129). `#totally_not_a_macro(3i32)` compiled
     // clean, and so did `comptime(anything)`.
+    if (n.kind == ExprKind.ExprStructLiteralExpr) { pass (relay type_struct_literal(e, n)); }
+    if (n.kind == ExprKind.ExprArrayLiteralExpr)  { pass (relay type_array_literal(e, n)); }
+    if (n.kind == ExprKind.ExprPipeExpr)          { pass (relay type_pipe(e, n)); }
+    if (n.kind == ExprKind.ExprDynCastExpr)       { pass (relay type_dyn_cast(e, n)); }
+    if (n.kind == ExprKind.ExprPickExpr)          { pass (relay type_pick_expr(e, n)); }
+    if (n.kind == ExprKind.ExprVectorCtorExpr)    { pass (relay type_vector_ctor(e, n)); }
     if (n.kind == ExprKind.ExprBuiltinExpr)  { pass (relay type_builtin(e, id, n)); }
     if (n.kind == ExprKind.ExprComptimeExpr) { pass (relay type_comptime(e, id, n)); }
 

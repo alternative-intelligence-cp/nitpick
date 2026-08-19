@@ -563,12 +563,44 @@ asymmetry bugs is eliminated structurally.
 
 ## 7. Exotic Types — Ternary/Nonary (Tier 0 layout, Tier 1 operations)
 
-| Nitpick Type | LLVM IR Type | Size | Alignment | Base |
-|---|---|---|---|---|
-| `trit` | `i8` | 1 byte | 1 | Base-3 (-1, 0, 1) |
-| `tryte` | `i16` | 2 bytes | 2 | 6 trits packed |
-| `nit` | `i8` | 1 byte | 1 | Base-9 (-4..4) |
-| `nyte` | `i16` | 2 bytes | 2 | Packed nits |
+**What they are**, which is the part that does not depend on the machine:
+
+| Nitpick Type | Base | States |
+|---|---|---|
+| `trit` | base-3 | −1, 0, 1 |
+| `tryte` | base-3 | 6 trits |
+| `nit` | base-9 | −4 … 4 |
+| `nyte` | base-9 | 2 nits |
+
+**How the BINARY rung lowers them**, which is a fact about a target and not about
+the type:
+
+| Nitpick Type | LLVM IR Type | Size | Alignment |
+|---|---|---|---|
+| `trit` | `i8` | 1 byte | 1 |
+| `tryte` | `i16` | 2 bytes | 2 |
+| `nit` | `i8` | 1 byte | 1 |
+| `nyte` | `i16` | 2 bytes | 2 |
+
+> **The two tables are separate on purpose, and the separation is load-bearing.**
+>
+> A `trit` is a three-state value. That it currently arrives as an `i8` is how the
+> binary rung emulates one — **not what a `trit` is** — and a compiler that treated
+> the two as the same thing would have baked the emulation into the type.
+>
+> That matters because **ternary/nonary hardware is a direction this project has**,
+> not a hypothetical: a native backend would lower `trit` to a ternary machine word
+> and never see an `i8`. If the representation were the identity, that backend would
+> be a retrofit rather than a second lowering — which is the "bolt everything on
+> afterwards" this separation exists to prevent.
+>
+> Practically: ternary arithmetic is checked as **ternary** in the frontend, and the
+> binary emulation lives in the rung that lowers it. Nothing above the backend may
+> assume `i8`.
+>
+> It is the same argument the escape analysis makes for writing rules ahead of the
+> constructs they govern — groundwork laid before the single Astrée run is far
+> cheaper than groundwork added after it.
 
 ---
 
@@ -929,15 +961,27 @@ extern {
 
 ---
 
-## 15. Vector / Matrix / Tensor Types (Tier 1 — Nitpick structs)
+## 15. Vector / Matrix / Tensor Types (Tier 1 — **library**, not keywords)
 
 | Nitpick Type | Backing | Layout |
 |---|---|---|
-| `vec2` | `{flt64, flt64}` | 16 bytes |
-| `vec3` | `{flt64, flt64, flt64}` | 24 bytes |
-| `vec4` | `{flt64, flt64, flt64, flt64}` | 32 bytes |
+| `vec2` | `simd<flt64, 2>` | 16 bytes |
+| `vec3` | `simd<flt64, 3>` | 24 bytes |
+| `vec4` | `simd<flt64, 4>` | 32 bytes |
 | `matrix<T>` | `{ptr, i32, i32}` (data, rows, cols) | 24 bytes |
 | `tensor<T>` | `{ptr, ptr, i32}` (data, dims_array, ndims) | 24 bytes |
+
+> **These are LIBRARY types and are not keywords** (D-135). They were keywords, and
+> `vec2` was backed by a **struct** `{flt64, flt64}` — which is the shape that does
+> *not* reach an LLVM vector register, so the keyword form was the slower one. §14's
+> `simd<T, N>` is the primitive and these are built on it.
+>
+> A library cannot declare a type whose name is a keyword, so the removal is what
+> makes them writable at all rather than a tidying-up.
+>
+> `matrix<T>` and `tensor<T>` are heap-backed containers — a pointer, a shape — with
+> nothing SIMD about them, so they were library types by construction whatever the
+> spelling said.
 
 ---
 

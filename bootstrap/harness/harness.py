@@ -356,12 +356,6 @@ def check_kinds_reachable():
 # currently accepts unchecked, with where it is scheduled. Adding to it means
 # admitting a new hole, and this exists so that admission is deliberate.
 UNTYPED_EXPR_KINDS = {
-    "ExprStructLiteralExpr": "D-129, scheduled 0.6.7",
-    "ExprArrayLiteralExpr":  "D-129, scheduled 0.6.7",
-    "ExprVectorCtorExpr":    "D-129, scheduled 0.6.7",
-    "ExprPipeExpr":          "D-129, scheduled 0.6.7",
-    "ExprDynCastExpr":       "D-129, scheduled 0.6.7",
-    "ExprPickExpr":          "D-129, scheduled 0.6.7",
 }
 
 

@@ -95,3 +95,27 @@ pub func:TYPE_NOT_A_PLACE = string()    { pass "NITPICK-TYPE-024"; };
 // `TYPE_NOT_CONSTANT`, because they send the reader to opposite places: one means
 // "this is not a constant expression", the other means "it is, and it never ends".
 pub func:TYPE_COMPTIME_BUDGET = string() { pass "NITPICK-TYPE-025"; };
+
+// A STRUCT LITERAL NAMING A FIELD THE TYPE DOES NOT HAVE (0.6.7). Its own code
+// rather than `TYPE_MISMATCH`, because the two are answered differently: a
+// mismatched value is fixed by changing the value, and a field that does not exist
+// is fixed by changing the name or the struct.
+pub func:TYPE_NO_SUCH_FIELD = string()  { pass "NITPICK-TYPE-026"; };
+
+// A STRUCT LITERAL THAT DOES NOT NAME EVERY FIELD. There is no field-default
+// syntax, so an omitted field has no value — and an unassigned binding is what
+// D-010 refuses everywhere else. A safety property rather than an ergonomic one.
+pub func:TYPE_MISSING_FIELD = string() { pass "NITPICK-TYPE-027"; };
+
+// THE SAME FIELD GIVEN TWICE. Taking the last silently discards the first, which is
+// the lost-value defect `Result{value: a, value: b}` gets its own code for.
+pub func:TYPE_FIELD_TWICE = string()   { pass "NITPICK-TYPE-028"; };
+
+// A CONSTRUCT THE FRONTEND ACCEPTS AND NO TIER SUPPLIES A TYPE FOR (0.6.7).
+//
+// D-085's shape, one layer up: the parser never restricts, so `vec2(1.0f64,
+// 2.0f64)` parses — and `TYPE_REFERENCE` §15 puts vectors, matrices and tensors in
+// **Tier 1**, which nothing implements. Saying so is the point: typing it as INVALID
+// accepts it silently, and inventing a type would make a program mean something the
+// language has not decided yet.
+pub func:TYPE_TIER = string()          { pass "NITPICK-TYPE-029"; };
