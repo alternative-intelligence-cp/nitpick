@@ -154,21 +154,22 @@ This is frontend-blocking in the same way D-113 was: derive generates
 declarations, so the frontend must accept whatever shape they take. It should be
 settled in 0.6.0 alongside the macro semantics, not discovered in 0.6.5.
 
-## Scheduled into this cycle from outside it: D-127
+## Scheduled into this cycle from outside it: D-127 — **settled in 0.6.7**
 
-**Something writes past the end of its own allocation.** Found in 0.6.2 while
-fixing an out-of-bounds read in the seed's `ralloc`: adding a size header to each
-allocation breaks three tests, and the bisect narrows it to *writing* into the
-16-byte rounding gap — moving every address by 16 with no write is harmless.
+Recorded in 0.6.2 as *"something writes past the end of its own allocation"*, on the
+evidence that adding a size header to the allocator broke three tests while shifting
+every address by 16 with no write was harmless.
 
-That means the gap has been absorbing an out-of-bounds write, and the writer is
-either in the code the seed emits or in `src/` itself. Only one of those goes away
-with the seed, so **which it is has to be established rather than assumed.**
+**It was not a memory bug at all.** `etyper_init` takes ten parameters and three
+test helpers passed nine; the seed never checked call arity, so the call emitted one
+operand too few and the callee read an unwritten register. What junk sits in that
+register depends on the binary's layout — which is why every size change moved the
+symptom and why the allocator looked guilty for two days.
 
-**It lands before 0.6.6 closes Phase A**, and the way in is a poisoning allocator —
-fill the gap with a known pattern, check it at every later allocation, and let it
-name the writer instead of inferring it from a crash three allocations later. The
-`ralloc` read stays unfixed until then, because its fix is what exposes this.
+`valgrind` named it in a single run, on the binary that was **passing**. The entry in
+`DECISIONS.md` keeps the whole wrong theory, because the instructive part is not the
+bug — it is that a semantic no-op crashing the program should have ended the
+allocator hypothesis on the spot, and did not.
 
 ## Inserted during the cycle: 0.6.7
 

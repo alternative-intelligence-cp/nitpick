@@ -416,6 +416,31 @@ class Checker:
                 b = BUILTINS.get(e.target)
                 if b is not None and b[1]:
                     self.result_of(b[0])
+
+                # A CALL PASSES AS MANY ARGUMENTS AS THE FUNCTION DECLARES.
+                #
+                # NOTHING CHECKED THIS, and the consequence was not a missing
+                # diagnostic -- it was GARBAGE. A call with one argument too few
+                # emits a call with one operand too few, and the callee reads
+                # whatever was in that register or stack slot. The value it gets
+                # depends on the binary's layout, so the symptom moves when
+                # anything unrelated changes size.
+                #
+                # That is D-127: a `type_cast.npk` helper called `etyper_init` with
+                # nine arguments where it takes ten, and the missing `ExprTypes->`
+                # read as a small integer. Two days were spent on it as an
+                # out-of-bounds WRITE -- adding a size header to the allocator made
+                # it crash, so the allocator looked guilty -- and no memory was ever
+                # corrupted. `valgrind` named it in seconds once it was pointed at
+                # the right binary.
+                #
+                # The seed is throwaway (D-085) and this check is not: a tool that
+                # silently miscompiles the compiler is worse than no tool.
+                fn = self.p.funcs.get(e.target)
+                if fn is not None and len(e.args) != len(fn.params):
+                    raise CheckError(
+                        "`%s` takes %d argument(s) and this passes %d"
+                        % (e.target, len(fn.params), len(e.args)), e)
             return
 
         if isinstance(e, S.IntLit):

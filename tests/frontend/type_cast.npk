@@ -58,7 +58,14 @@ func:cx = Cx(string:src, InternTable->:it) {
     ExprTypes:ets = raw exprtypes_for(@ast);
     ImplTable:im = raw impltable_init();
     BoundTable:bd = raw boundtable_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd, @ets);
+    // EVERY INSTANTIATION BUILT, which `etyper_resolver` needs to hand a resolver a
+    // place to record one. Missing here until 0.6.7, and D-127 is what the omission
+    // cost: nine arguments to a ten-parameter function compiled silently, `@ets`
+    // landed in the `instances` slot, and `expr_types` read whatever was in the
+    // register — a number that moved whenever anything unrelated changed size.
+    InstanceTable:inst = raw insttable_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd,
+                                  @inst, @ets);
     int32:t = relay type_of_expr(@e, node);
 
     Cx:out = Cx{ types: types, diags: diags, result: t,

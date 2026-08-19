@@ -9049,101 +9049,80 @@ what it cannot type.
 
 ---
 
-## D-127 — Something writes past its own allocation, and the seed's rounding hides it — **OPEN, scheduled**
+## D-127 — The seed did not check call arity, and two days went to the wrong theory — **SETTLED**
 
-Two defects, found together in cycle 0.6.2, and the second is the one that matters.
+A call passing fewer arguments than the function declares compiled **silently**, and
+emitted a call with fewer operands than the callee reads. The callee then read
+whatever was in that register or stack slot.
 
-### The read
+```nitpick
+pub func:etyper_init = ExprTyper(Ast->, TypeTable->, SymbolTable->, InternTable->,
+                                 DiagList->, int32, ImplTable->, BoundTable->,
+                                 InstanceTable->, ExprTypes->)      // ten
 
-`npk_ralloc` copies the **new** size out of the **old** block:
-
-```llvm
-define ptr @npk_ralloc(ptr %old, i64 %n) {
-  %p = call ptr @npk_alloc(i64 %n)
-  call void @llvm.memcpy.p0.p0.i64(ptr %p, ptr %old, i64 %n, i1 false)
+raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd, @ets)   // nine
 ```
 
-Every array growth in the compiler therefore reads past the end of the block being
-grown — twice the block's length, since growth doubles. It has never faulted
-because a bump allocator over 1 MiB chunks usually has something mapped after the
-block; it faults the first time the block sits near a chunk's end.
+`@ets` landed in the `instances` slot; `expr_types` read a register, which came back
+as `320` — a plausible *count*, which is why it never looked like corruption. Three
+call sites, all in `tests/frontend/`, all three of them the tests that had been
+segfaulting.
 
-### The write, which the fix for the read uncovered
+**The fix is the check, not the call sites.** The seed refuses a call whose argument
+count disagrees with the declaration now. It is throwaway (D-085) and that does not
+excuse it: **a tool that silently miscompiles the compiler is worse than no tool.**
+Its first run found the three sites and nothing else, so the compiler's own source
+was clean.
 
-Giving every allocation a size header so `ralloc` can copy the smaller of the two
-sizes **breaks the seed**. The bisect is exact:
+### Why it read as a memory bug for two days, and what that cost
 
-| variant | result |
-|---|---|
-| pad every allocation by 16 bytes, return the same pointer | passes |
-| move the returned pointer 16 bytes forward, write nothing | passes |
-| write the header only when a new chunk is mmap'd | passes |
-| write 8 bytes at the start of each bump-allocated block | **segfaults** |
+The symptom moved whenever anything unrelated changed size — because *what junk sits
+in an unwritten register slot* depends on the binary's layout. Every experiment
+confirmed the wrong theory:
 
-Moving every address is harmless. **Writing into the 16-byte rounding gap is not.**
-The only reading of that is that something writes past the end of its own
-allocation and lands in the gap the allocator's round-up-to-16 leaves behind, and
-has been getting away with it for as long as the gap has been dead space.
+| experiment | result | what it "showed" |
+|---|---|---|
+| add a size header to each allocation | three tests segfault | the allocator |
+| pad allocations without moving the pointer | passes | it is the *write*, not the shift |
+| write the header only on the `grow` path | passes | narrower still |
+| add 1.5 MB of `.bss`, poisoning **disabled** | segfaults | not the allocator at all |
 
-It kills exactly three tests — `tests/frontend/type_cast.npk`, `type_expr.npk` and
-`type_result.npk` — and the visible symptom is an `ExprTypes` whose `items` pointer
-reads back as null, which is a symptom of the corruption rather than its location.
+That last row is the one that should have ended it: a semantic no-op cannot cause a
+crash, so the thing being measured was never the allocator. It was read as "the
+instrumentation perturbs the bug" and the hunt continued.
 
-### Why this is not "a throwaway-seed problem"
+**And the evidence was there from the first hour.** `t == 320` is a *plausible
+value*. Corruption produces addresses, poison patterns, or zeros; a small round
+number where a pointer belongs is a value that was never written. It was noted, and
+the allocator theory was not dropped.
 
-The seed is throwaway (D-085) and the runtime goes with it. The **writer** may not
-be: the seed compiles this compiler, so the out-of-bounds write is either in the
-code the seed emits or in `src/` itself, and only one of those disappears with the
-seed. Until it is found, which it is cannot be stated.
+**Two of three instrumented runtimes contained bugs of their own** — a string
+replacement that shrank an unrelated 64 KB buffer to 1 KB, and a return-type
+mismatch across three call sites. Hand-editing LLVM IR by substitution to chase a
+layout-sensitive bug adds perturbations that look exactly like the thing being
+hunted.
 
-An out-of-bounds write is also precisely what the Astrée run exists to find, and
-finding it there rather than here would spend the one attempt on it.
+### What actually found it
 
-### What unblocks it
+**`valgrind`, in one run, on the binary that was passing.** "Use of uninitialised
+value of size 8" in `exprtypes_set`, `--track-origins=yes` naming the stack
+allocation it came from.
 
-A **poisoning allocator**: fill the rounding gap with a known byte pattern at
-allocation and verify it at every later allocation, so the corruption is named at
-the moment it happens rather than inferred from a crash three allocations later.
+The tool was available the whole time. It was not reached for because the
+zero-dependency rule felt like it applied — **it does not: it governs the artifact,
+not the workbench**, and the seed is throwaway besides. Reach for the debugger before
+building one.
 
-**Attempted in 0.6.7, and it sharpened the diagnosis without closing it.** What the
-attempt established:
+Worth knowing which tools work on a freestanding binary, since it is not obvious:
+`valgrind`, `gdb` and `objdump` operate on machine code and do not care that there is
+no libc. **ASan and UBSan do not** — they link a runtime that needs one.
 
-- **The bug is layout-sensitive to a degree that defeats naive instrumentation.**
-  Adding the poison table's `.bss` — with poisoning *disabled*, so semantically a
-  no-op — was enough to make `tests/frontend/type_cast.npk` segfault. The
-  instrumentation perturbs the thing it is measuring, which is the signature of an
-  out-of-bounds access into adjacent data rather than of a wild pointer.
-- **The crash site is stable**: `exprtypes_set`, reading `t->count`, where `t` is
-  **320** — a plausible *count*, not a pointer and not a poison pattern. So an
-  `ExprTypes->` argument or field is holding a number.
-- **That points away from the allocator.** A value that looks like a count sitting
-  where a pointer belongs is a struct-field or argument mix-up, and the allocator
-  perturbation may only be moving which garbage is visible when it happens.
+### The rule this leaves behind
 
-### Why the next attempt should not be more of the same
-
-Two of the three instrumented runtimes built during the attempt contained bugs of
-their own — a string replacement that shrank an unrelated 64 KB read buffer to 1 KB,
-and a return-type mismatch across three call sites. **Hand-editing LLVM IR by
-substitution is the wrong instrument for a layout-sensitive bug**, because every
-edit is another perturbation and the failures look identical.
-
-What to do instead, in order:
-
-1. **Check the `ExprTyper` field offsets**, since `t == 320` is evidence about
-   struct layout rather than about allocation. `etyper_resolver` builds a
-   `TypeResolver` by value and `TypeResolver` gained five fields in 0.6.4.
-2. If that is clean, build the poisoning allocator **as a separate runtime file**
-   rather than by editing the live one, so the diagnostic build and the working
-   build cannot be confused, and so a mistake in one cannot reach the harness.
-3. Use `valgrind` or ASan on a `clang`-built harness driver before hand-rolling
-   anything — the toolchain is present and this is exactly what it is for. The
-   zero-dependency rule governs the ARTIFACT, not the tools used to debug the
-   throwaway seed.
-
-**Neither defect is fixed.** The tree is green and the bug is latent, which is
-precisely why it is scheduled rather than urgent — and precisely why it must not be
-left for Astrée to find.
+**A symptom that moves when unrelated things change size is evidence of a value that
+was never written, not only of memory that was overwritten.** Both produce
+layout-dependent behaviour. The second is the more dramatic explanation and was the
+wrong one.
 
 ---
 
