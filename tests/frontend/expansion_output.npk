@@ -1,0 +1,160 @@
+// WHAT EXPANSION PRODUCED, asserted directly (cycle 0.6.6).
+//
+// EVERY OTHER SUITE ASSERTS ON DIAGNOSTICS — a code and a span, or silence. That is
+// enough when a pass READS the AST and reports. **Expansion rewrites it**, and a
+// rewrite that is wrong in a way that still type-checks produces no diagnostic at
+// all: the program compiles and means something other than what was written, which
+// is the failure mode this whole cycle opens with.
+//
+// THE CYCLE PLAN PROPOSED `tests/conformance/`, WHICH CANNOT WORK. Those tests are
+// compiled and RUN by the seed, and the seed has no macro support at all — no
+// `macro:` in its parser, its checker or its emitter. A conformance test containing
+// one does not build.
+//
+// So the assertion is made in-process instead, which is better anyway: this links
+// the real expander, runs it, and then WALKS THE RESULTING AST and says what should
+// be in it. Not a general AST-comparison rig — the plan is right that one is larger
+// than this subcycle should absorb — but targeted assertions about member counts
+// and names, which is what the failure mode actually needs.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/macro/expand.npk".*;
+
+struct:Ex = {
+    Ast:ast;
+    DiagList:diags;
+    DeclId:root;
+};
+
+// Parse a module and expand it to a fixed point, exactly as the driver does.
+func:expanded = Ex(string:src, InternTable->:it) {
+    Ast:ast = raw ast_init();
+    DiagList:diags = raw diaglist_init();
+    TokenList:toks = raw lex_all(0i32, src, it, @diags);
+    Parser:p = raw parser_init(@toks, @ast, @diags, it);
+    DeclId:root = raw p_parse_module(@p);
+
+    Expander:x = raw expander_init(@ast, it, @diags);
+    drop collect_macros(@x, root);
+
+    int32:round = 0i32;
+    bool:more = true;
+    while (more) {
+        if (round >= (raw EXPAND_ROUNDS())) { break; }
+        more = raw expand_module(@x, root);
+        if (raw expander_blown(@x)) { break; }
+        round = round + 1i32;
+    }
+
+    Ex:e = Ex{ ast: ast, diags: diags, root: root };
+    pass e;
+};
+
+// A FILE'S OWN `mod:` LINE IS A MEMBER, and every count below includes it. That is
+// not an accident of this test: `p_parse_module` parses every declaration in the
+// file as a member, and the header is one — which is how the loader finds a
+// `mod:name;` with no body and goes looking for `name.npk`.
+//
+// Worth stating because the first version of this file counted without it and one
+// of the four cases passed anyway, on a number that was right for the wrong reason.
+func:member_count = int32(Ex->:e) {
+    DeclNode:m = raw ast_decl(@e.ast, e.root);
+    pass (raw item_member_count(@e.ast, m));
+};
+
+// Is there a member of this kind with this name? The question a wrong expansion
+// answers differently from a right one.
+func:has_member = bool(Ex->:e, InternTable->:it, DeclKind:kind, string:name) {
+    DeclNode:m = raw ast_decl(@e.ast, e.root);
+    int32:n = raw item_member_count(@e.ast, m);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclNode:d = raw ast_decl(@e.ast, raw item_member(@e.ast, m, i));
+        if (d.kind == kind) {
+            if (raw string_eq(relay intern_get(it, raw decl_name(d)), name)) {
+                pass true;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    // --- ONE INVOCATION, TWO DECLARATIONS, BOTH PRESENT ----------------------
+    //
+    // `bug591`'s shape. A splice that emitted nothing, or one declaration instead
+    // of two, type-checks perfectly in a program that does not call them.
+    Ex:v1 = raw expanded(
+        "mod:m; macro:pair = () { func:a = int32() { pass 1i32; }; func:b = int32() { pass 2i32; }; }; #pair();",
+        @it);
+    if ((raw diaglist_count(@v1.diags)) != 0i64)                    { exit 10i32; }
+    // The macro declaration stays; the splice is replaced by its two functions.
+    // `mod:m;` + the macro declaration + the two emitted functions.
+    if ((raw member_count(@v1)) != 4i32)                            { exit 11i32; }
+    if (!(raw has_member(@v1, @it, DeclKind.DeclFunctionDecl, "a"))) { exit 12i32; }
+    if (!(raw has_member(@v1, @it, DeclKind.DeclFunctionDecl, "b"))) { exit 13i32; }
+    // AND THE SPLICE IS GONE. A splice left standing would expand again on every
+    // round, which the fixed-point loop would not settle out of.
+    if (raw has_member(@v1, @it, DeclKind.DeclMacroSplice, ""))      { exit 14i32; }
+
+    // --- TWO INVOCATIONS ARE TWO SUBTREES ------------------------------------
+    //
+    // Every instantiation is a clone, because two invocations may substitute
+    // different arguments — sharing the body's nodes would make the second
+    // invocation rewrite the first. Counting members is what shows the second one
+    // happened at all.
+    Ex:v2 = raw expanded(
+        "mod:m; macro:one = () { func:x = int32() { pass 1i32; }; }; #one(); #one();",
+        @it);
+    // Two functions named `x`: a collision the resolver refuses, and the point here
+    // is only that the expander produced BOTH rather than one.
+    // `mod:m;` + the macro + BOTH emitted functions.
+    if ((raw member_count(@v2)) != 4i32)                            { exit 20i32; }
+
+    // --- NESTED: THE FIXED POINT IS A FIXED POINT ----------------------------
+    //
+    // `bug594`. `#outer()` emits `#inner()` and a function; the inner splice
+    // expands on the round after. One pass produces three members and the wrong
+    // answer, and nothing about the resulting program is ill-typed.
+    Ex:v3 = raw expanded(
+        "mod:m; macro:inner = () { func:i1 = int32() { pass 1i32; }; func:i2 = int32() { pass 2i32; }; }; macro:outer = () { #inner(); func:o1 = int32() { pass 3i32; }; }; #outer();",
+        @it);
+    if ((raw diaglist_count(@v3.diags)) != 0i64)                    { exit 30i32; }
+    // `mod:m;` + two macro declarations + i1 + i2 + o1.
+    if ((raw member_count(@v3)) != 6i32)                            { exit 31i32; }
+    if (!(raw has_member(@v3, @it, DeclKind.DeclFunctionDecl, "i1"))) { exit 32i32; }
+    if (!(raw has_member(@v3, @it, DeclKind.DeclFunctionDecl, "i2"))) { exit 33i32; }
+    if (!(raw has_member(@v3, @it, DeclKind.DeclFunctionDecl, "o1"))) { exit 34i32; }
+
+    // --- A PARAMETER REACHES THE BODY ----------------------------------------
+    //
+    // `bug593`. Substitution that silently did nothing leaves the emitted function
+    // returning a name that resolves to nothing — which IS caught downstream, but
+    // only because the body happens to reference the parameter. The assertion here
+    // is that the expansion happened at all.
+    Ex:v4 = raw expanded(
+        "mod:m; macro:mk = (V) { func:got = int32() { pass V; }; }; #mk(42i32);",
+        @it);
+    if ((raw diaglist_count(@v4.diags)) != 0i64)                    { exit 40i32; }
+    // `mod:m;` + the macro + the emitted function.
+    if ((raw member_count(@v4)) != 3i32)                            { exit 41i32; }
+    if (!(raw has_member(@v4, @it, DeclKind.DeclFunctionDecl, "got"))) { exit 42i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};

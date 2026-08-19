@@ -145,18 +145,6 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
     pass NIL;
 };
 
-// The kinds whose whole content is one expression in slot `a`. A LIST RATHER THAN
-// A FALL-THROUGH: `resolve_stmt` ends with an unguarded `resolve_expr(stmt_expr)`
-// for "everything left", which silently absorbs any kind added later and reads
-// slot `a` as an expression whether or not it holds one.
-pub func:stmt_carries_expr = bool(StmtKind:k) {
-    if (k == StmtKind.StmtExprStmt)         { pass true; }
-    if (k == StmtKind.StmtTrapStmt)         { pass true; }
-    if (k == StmtKind.StmtDiscardStmt)      { pass true; }
-    if (k == StmtKind.StmtGiveStmt)         { pass true; }
-    if (k == StmtKind.StmtProveStmt)        { pass true; }
-    pass (k == StmtKind.StmtAssertStaticStmt);
-};
 
 // EVERY STATEMENT KIND IS ACCOUNTED FOR — the mechanical half of the check, and
 // the half a test can prove. Whether each rule is RIGHT is not answerable this

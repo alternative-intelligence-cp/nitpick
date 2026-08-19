@@ -228,6 +228,36 @@ func:main = int32(cstring[]:_~argv) {
             != ExprKind.ExprCastExpr)                    { exit 106i32; }
     if (raw diaglist_count(@gj) != 0i64)                 { exit 107i32; }
 
+    // --- a `Result{…}` FIELD IS NAMED, AND NAMED ONCE (0.6.6) -----------------
+    //
+    // Two ways to get `NITPICK-PARSE-008`, and both are about a value going
+    // missing rather than about tidiness.
+    //
+    // A NON-NAME FIELD is checked BEFORE its payload is read as an intern index:
+    // `field.payload` is one only for an `Ident`, so on any other token it is that
+    // token's own payload — `Result{5: v}` either named whatever string sits at
+    // index five or ran `intern_get` off the end of the table.
+    TokenList:kw1 = raw lex_all(0i32, "Result{5i32: 1i32}", @it, @ld);
+    Ast:aw1 = raw ast_init();
+    DiagList:gw1 = raw diaglist_init();
+    Parser:pw1 = raw parser_init(@kw1, @aw1, @gw1, @it);
+    drop p_parse_expr(@pw1);
+    if ((raw diaglist_count(@gw1)) == 0i64)                  { exit 200i32; }
+    Diagnostic:dw1 = raw diaglist_at(@gw1, 0i64);
+    if (!(raw string_eq(dw1.code, raw PARSE_WRAPPER_FIELD()))) { exit 201i32; }
+
+    // A REPEATED FIELD IS NOT AN OVERWRITE. Taking the last one silently discards
+    // the first, which is the same lost-value defect wearing different clothes.
+    TokenList:kw2 = raw lex_all(0i32, "Result{value: 1i32, value: 2i32}", @it, @ld);
+    Ast:aw2 = raw ast_init();
+    DiagList:gw2 = raw diaglist_init();
+    Parser:pw2 = raw parser_init(@kw2, @aw2, @gw2, @it);
+    drop p_parse_expr(@pw2);
+    if ((raw diaglist_count(@gw2)) == 0i64)                  { exit 202i32; }
+    Diagnostic:dw2 = raw diaglist_at(@gw2, 0i64);
+    if (!(raw string_eq(dw2.code, raw PARSE_WRAPPER_FIELD()))) { exit 203i32; }
+
+
     exit 0i32;
 };
 

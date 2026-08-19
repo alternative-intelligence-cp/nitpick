@@ -1,4 +1,17 @@
 // expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 26:19
+// expect-note: NITPICK-MACRO-009
+// expect-note-at: 30:15
+//
+// AND THE NOTE IS PART OF THE ASSERTION. A node in an expanded body was WRITTEN in
+// the macro and INSTANTIATED at the call site, and its span carries only the first
+// — so the error points at line 26, inside a macro nobody may have written, and the
+// line that made it wrong is the invocation on line 30.
+//
+// `MACRO_REFERENCE.md` section 10 recorded this as open after 0.6.1 and 0.6.6 closes
+// it: the finding keeps the body's location, because that is where the offending
+// construct is, and a note carries the invocation. Both are true and the reader
+// needs both.
 //
 // A NAME THAT EXISTS ONLY AT THE CALL SITE. The macro body reads `only_local`,
 // which is a local of `main` and nothing in the scope the macro was written in.

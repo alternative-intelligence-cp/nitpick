@@ -73,12 +73,20 @@ RUNTIME_LL = os.path.join(ROOT, "bootstrap", "runtime", "npkrt.ll")
 # `use "x.npk".*` names the dependency, so this is derived, not configured.
 USE_RE = re.compile(r'use\s+"([^"]+)"')
 
+# `pub func:TYPE_MISMATCH = string() { pass "NITPICK-TYPE-007"; };`
+CODE_DECL_RE = re.compile(r'pub func:(\w+) = string\(\)\s*\{\s*pass "([A-Z0-9\-]+)"')
+
 
 # --- expectations ------------------------------------------------------------
 
 class Expect:
     def __init__(self):
         self.errors = []        # [(code, line|None, col|None)]
+        # NOTES ARE ASSERTED SEPARATELY FROM FINDINGS. A note says WHERE to look,
+        # not what is wrong -- `NITPICK-MACRO-009` points at the invocation that
+        # expanded the body a diagnostic landed in -- so a test that listed one
+        # among its `expect-error`s would be asserting the wrong kind of thing.
+        self.notes = []         # [(code, line|None, col|None)]
         self.exit = 0
         self.no_parse_error = False
 
@@ -107,6 +115,14 @@ def read_expectations(path):
                     e.errors[-1] = (code, pending_at[0], pending_at[1])
             elif body.startswith("expect-error:"):
                 e.errors.append((body.split(":", 1)[1].strip(), None, None))
+            elif body.startswith("expect-note-at:"):
+                loc = body.split(":", 1)[1].strip()
+                ln, _, cl = loc.partition(":")
+                if e.notes:
+                    code, _, _ = e.notes[-1]
+                    e.notes[-1] = (code, int(ln), int(cl) if cl else None)
+            elif body.startswith("expect-note:"):
+                e.notes.append((body.split(":", 1)[1].strip(), None, None))
             elif body.startswith("expect-exit:"):
                 e.exit = int(body.split(":", 1)[1].strip())
             elif body.startswith("expect-no-parse-error"):
@@ -375,6 +391,106 @@ def check_kinds_typed():
     return fails
 
 
+# EVERY DIAGNOSTIC CODE HAS A TEST THAT SHOWS IT FIRE.
+#
+# A code with no case is a rule nobody has watched refuse anything. It may be
+# unreachable, it may report the wrong thing, it may point at the wrong span -- and
+# none of that shows up in a suite that never triggers it. Cycles 0.1.6, 0.2.1,
+# 0.3.6, 0.4.8, 0.5.7 and 0.6.6 each centralised codes because a mistyped literal
+# invents a new one; this is the other half, and it is what makes "every rule has a
+# test" a fact rather than an intention.
+#
+# THE ALLOW-LIST SHRINKS AND NEVER GROWS, like `UNTYPED_EXPR_KINDS`. Two kinds of
+# entry, and they are different admissions:
+#
+#   INTERNAL   a defect in the compiler, not in any program. There is no source
+#              that triggers one, and a test asserting it would be asserting that
+#              the compiler is broken.
+#   SCHEDULED  reachable, and no case yet, with where it lands.
+UNTESTED_CODES = {
+    # INTERNAL -- a defect in this compiler. No source triggers one.
+    "NITPICK-ASSIGN-004":  "internal -- an unclassified node kind in the binding walk",
+    "NITPICK-BORROW-008":  "internal -- an unclassified node kind in the escape walk",
+    "NITPICK-MACRO-006":   "internal -- a node kind the macro clone has no case for",
+    "NITPICK-RESOLVE-009": "internal -- a node kind the resolver has no case for",
+    "NITPICK-TYPE-011":    "internal -- a node kind the type checker has no case for",
+
+    # AHEAD OF THE LANGUAGE -- the rule is written, correct, and unreachable
+    # because the construct it governs does not exist yet. Deliberate, and the
+    # reason is the one-shot Astree run: a rule added AFTER the analysis is
+    # verified is a re-verification, and this project gets one attempt. Cycle 1.1
+    # lowers concurrency and closures, and these become testable then.
+    "NITPICK-BORROW-004":  "ahead of the language -- there is no spawn yet (cycle 1.1)",
+    "NITPICK-BORROW-005":  "ahead of the language -- there is no reachable `await` yet (cycle 1.1)",
+    "NITPICK-BORROW-006":  "ahead of the language -- there are no closures yet (cycle 1.1)",
+
+    # OPEN -- a question, not an omission.
+    "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
+}
+
+
+def check_codes_centralised():
+    """No diagnostic code is written as a literal at the site that emits it.
+
+    Cycles 0.1.6, 0.2.1, 0.3.6, 0.4.8, 0.5.7 and 0.6.6 each centralised codes for
+    the same reason: A MISTYPED LITERAL AT A CALL SITE SILENTLY INVENTS A NEW CODE,
+    and the test asserting the old one then fails for a reason unrelated to the bug
+    it guards. Six cycles said so and nothing checked it.
+    """
+    fails = []
+    for p in (glob.glob(os.path.join(ROOT, "src", "**", "*.npk"), recursive=True)
+              + glob.glob(os.path.join(ROOT, "tools", "*.npk"))):
+        if p.endswith("_codes.npk"):
+            continue
+        with open(p, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                if '"NITPICK-' in line:
+                    fails.append("%s:%d writes a diagnostic code as a literal -- "
+                                 "codes live in a `*_codes.npk` module, because a "
+                                 "mistyped one at a call site invents a new code "
+                                 "and says nothing"
+                                 % (os.path.relpath(p, ROOT), i))
+    return fails
+
+
+def check_codes_tested():
+    """Every code a rule can emit is asserted by some test, or is on the list."""
+    codes = {}
+    for p in glob.glob(os.path.join(ROOT, "src", "frontend", "**", "*.npk"),
+                       recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            for m in CODE_DECL_RE.finditer(fh.read()):
+                codes[m.group(2)] = m.group(1)
+
+    # A test asserts a code either as `expect-error: CODE`, or -- in the frontend
+    # unit tests, which check in-process -- by naming the constant.
+    names = set(codes.values())
+    asserted = set()
+    for p in glob.glob(os.path.join(ROOT, "tests", "**", "*.npk"), recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        asserted.update(re.findall(r"expect-error:\s*([A-Z0-9\-]+)", text))
+        asserted.update(re.findall(r"expect-note:\s*([A-Z0-9\-]+)", text))
+        for name in re.findall(r"raw ([A-Z][A-Z0-9_]+)\(\)", text):
+            if name in names:
+                asserted.update(c for c, n in codes.items() if n == name)
+
+    fails = []
+    for code in sorted(codes):
+        if code not in asserted and code not in UNTESTED_CODES:
+            fails.append("%s (%s) is emitted by the compiler and asserted by no test"
+                         " -- a code with no case is a rule nobody has watched refuse"
+                         " anything" % (code, codes[code]))
+    for code in sorted(UNTESTED_CODES):
+        if code in asserted:
+            fails.append("%s has a test now, so it comes off UNTESTED_CODES -- an "
+                         "allow-list that outlives its entries stops being read"
+                         % code)
+        elif code not in codes:
+            fails.append("%s is on UNTESTED_CODES and no longer exists" % code)
+    return fails
+
+
 # --- the real FRONTEND, on real programs --------------------------------------
 
 def build_tool(tmp, tools, source, name):
@@ -419,12 +535,23 @@ def check_module_rejection(binary, path, name, exp):
         return ["%s: expected %s, but it resolved cleanly"
                 % (name, [c for c, _, _ in exp.errors])]
 
+    # `CODE line:col`, and `note CODE line:col` for a note.
+    #
+    # NOTES ARE NOT FINDINGS AND ARE NOT ASSERTED. `NITPICK-MACRO-009` says where a
+    # macro body was expanded; making every expansion-related rejection test list a
+    # code about a LOCATION would be asserting the wrong thing, and a suite that
+    # could not tell the two apart would have to.
     got = []
+    notes = []
     for line in r.stdout.decode("utf-8", "replace").splitlines():
         parts = line.split()
+        into = got
+        if parts and parts[0] == "note":
+            parts = parts[1:]
+            into = notes
         if len(parts) == 2 and ":" in parts[1]:
             ln, _, cl = parts[1].partition(":")
-            got.append((parts[0], int(ln), int(cl)))
+            into.append((parts[0], int(ln), int(cl)))
 
     fails = []
     for code, line, col in exp.errors:
@@ -436,6 +563,21 @@ def check_module_rejection(binary, path, name, exp):
         if line is not None:
             if not any(g[1] == line and (col is None or g[2] == col) for g in hit):
                 fails.append("%s: %s at %s, expected %d:%s"
+                             % (name, code, [(g[1], g[2]) for g in hit], line,
+                                col if col is not None else "*"))
+
+    # A SPAN RULE THAT IS ONLY DESCRIBED IS A SPAN RULE NOTHING CHECKS. The note
+    # that says where a macro body was expanded is asserted the same way a finding
+    # is, and with a location -- because the location IS the content of the note.
+    for code, line, col in exp.notes:
+        hit = [g for g in notes if g[0] == code]
+        if not hit:
+            fails.append("%s: expected note %s, got %s"
+                         % (name, code, sorted(set(g[0] for g in notes))))
+            continue
+        if line is not None:
+            if not any(g[1] == line and (col is None or g[2] == col) for g in hit):
+                fails.append("%s: note %s at %s, expected %d:%s"
                              % (name, code, [(g[1], g[2]) for g in hit], line,
                                 col if col is not None else "*"))
     return fails
@@ -663,6 +805,8 @@ def main(argv):
         # subset 1.
         failures += check_kinds_reachable()
         failures += check_kinds_typed()
+        failures += check_codes_tested()
+        failures += check_codes_centralised()
 
         pc = build_parse_check(tmp, tools)
         if isinstance(pc, str) and not os.path.exists(pc):

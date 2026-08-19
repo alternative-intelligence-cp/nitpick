@@ -85,6 +85,30 @@ pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload => int32) => T
 pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload => int32); };
 pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload => int32); };
 
+// WHICH STATEMENT KINDS CARRY AN EXPRESSION IN SLOT `a`.
+//
+// MOVED HERE FROM `type_stmt.npk` IN 0.6.6. It is a question about a statement
+// KIND — about the grammar — and nothing about it needs a type. Living in the type
+// checker made every module that asked it depend on the type checker, and the
+// expander does ask: `tests/frontend/expansion_output.npk` compiles a group with
+// the expander and without the checker, and it did not build.
+//
+// A dependency that only holds because some other group happens to pull both in is
+// not a dependency anybody declared.
+// The kinds whose whole content is one expression in slot `a`. A LIST RATHER THAN
+// A FALL-THROUGH: `resolve_stmt` ends with an unguarded `resolve_expr(stmt_expr)`
+// for "everything left", which silently absorbs any kind added later and reads
+// slot `a` as an expression whether or not it holds one.
+pub func:stmt_carries_expr = bool(StmtKind:k) {
+    if (k == StmtKind.StmtExprStmt)         { pass true; }
+    if (k == StmtKind.StmtTrapStmt)         { pass true; }
+    if (k == StmtKind.StmtDiscardStmt)      { pass true; }
+    if (k == StmtKind.StmtGiveStmt)         { pass true; }
+    if (k == StmtKind.StmtProveStmt)        { pass true; }
+    pass (k == StmtKind.StmtAssertStaticStmt);
+};
+
+
 func:s_at = int32(Ast->:ast, StmtNode:s, int32:i) {
     pass (raw ast_id_at(ast, s.b, i));
 };

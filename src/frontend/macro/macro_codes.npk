@@ -45,3 +45,11 @@ pub func:MACRO_NOT_LOCAL = string()    { pass "NITPICK-MACRO-007"; };
 // macro body — an escape hatch with no rule is the one path that is worse than no
 // escape hatch (D-057).
 pub func:MACRO_CALLER_FORM = string()  { pass "NITPICK-MACRO-008"; };
+
+// NOT A FAILURE — a note attached to one. A diagnostic whose span falls inside a
+// macro body is about code the reader may not have written, and the line that made
+// it wrong is the invocation, which appears nowhere in the diagnostic itself.
+//
+// Its own code because a note is filtered like anything else, and because a reader
+// who sees it is being told WHERE to look rather than WHAT is wrong.
+pub func:MACRO_EXPANDED_HERE = string() { pass "NITPICK-MACRO-009"; };

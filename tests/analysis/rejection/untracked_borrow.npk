@@ -1,0 +1,47 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error: NITPICK-BORROW-009
+// expect-error: NITPICK-PICK-003
+//
+// (The `pick` also draws `NITPICK-PICK-003`: its selector is a `Tag->` rather than
+// a `Tag`, and coverage is decided from the selector's type. Two rules, two codes,
+// about the same line — which is right, because removing the borrow fixes both and
+// removing only one of them fixes neither.)
+//
+// A BORROW REACHING A BINDING THE ESCAPE ANALYSIS DOES NOT FOLLOW (D-004, 0.5.1).
+//
+// `for` and `pick` both introduce bindings whose relationship to what they came
+// from the analysis has no model of: a `for` binding over a borrowed collection and
+// a pattern binding destructured out of a borrowed value. Neither is tracked, so a
+// borrow reaching one could not be followed if it escaped.
+//
+// REFUSED RATHER THAN FOLLOWED WRONGLY. The alternative is an analysis that says
+// nothing about the case and lets a borrow through — which is the failure the whole
+// of D-004 exists to prevent, arriving in the one place the analysis cannot see.
+//
+// It is also NARROW: only a borrow reaching one of those two positions is refused.
+// Iterating an owned array and picking on an owned enum are the ordinary forms and
+// are untouched, which `tests/accept/borrows.npk` shows.
+mod:untracked_borrow;
+
+struct:Bag = { int32[4]:items; };
+
+enum:Tag = { ONE; TWO; };
+
+struct:Holder = { Tag:t; };
+
+func:iterate_a_borrow = NIL(Bag->:b) {
+    for (int32:v in @b.items) {
+        discard(v);
+    }
+    pass NIL;
+};
+
+func:pick_on_a_borrow = NIL(Holder->:h) {
+    pick (@h.t) {
+        (Tag.ONE) { pass NIL; },
+        (Tag.TWO) { pass NIL; }
+    }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };

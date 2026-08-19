@@ -42,14 +42,23 @@ use "../parse_decorate.npk".*;
 use "../builtins.npk".*;
 use "macro_codes.npk".*;
 
-// How deep one invocation may nest, and how many rounds the fixed-point loop may
-// take. Separate, because they bound different things — see the header.
-pub func:EXPAND_DEPTH = int32()  { pass 32i32; };
-pub func:EXPAND_ROUNDS = int32() { pass 32i32; };
-
-// How far a clone will follow a subtree. A macro body is a program's, so it is
-// bounded like every other structural walk in this compiler.
+// THE TWO BOUNDS, and they bound different things — see the header.
+//
+// `EXPAND_DEPTH` STOOD HERE AND NOTHING USED IT (found by 0.6.6's code audit, which
+// asks a related question: every code has a test). It was declared at 32 while
+// `CLONE_FUEL` at 512 did the work, so the compiler had a constant naming a bound
+// it did not enforce and a bound whose name did not say what it was. A number
+// nothing reads is worse than no number: it reads as a decision somebody made.
+//
+// One depth bound, named for what it does. 512 rather than 32 because it counts
+// NODES rather than macro invocations, and an ordinary expression is several nodes
+// deep before anybody has nested anything.
 pub func:CLONE_FUEL = int32() { pass 512i32; };
+
+// How many rounds the fixed-point loop may take. A macro body may contain an
+// invocation, so one pass is not enough; `macro:m = () { #m(); };` never settles,
+// which is what this refuses.
+pub func:EXPAND_ROUNDS = int32() { pass 32i32; };
 
 // A macro, found by name AND by the module that declared it. One entry per
 // `macro:` declaration in the program.
@@ -74,11 +83,64 @@ pub struct:MacroTable = {
     int32:cap;
 };
 
+// WHERE A MACRO BODY WAS INSTANTIATED, so that a diagnostic landing inside one can
+// say so.
+//
+// THE PROBLEM THIS SOLVES, stated in `MACRO_REFERENCE.md` §10 and left open by
+// 0.6.1: a node in an expanded body was WRITTEN in the macro and INSTANTIATED at
+// the call site, and its span carries only the first. So "cannot find `only_local`
+// in the scope this macro was written in" reports the line of the macro BODY —
+// true, and about a declaration the reader may not have written — while the line
+// that made it wrong is the invocation, which appears nowhere.
+//
+// A SPAN RANGE RATHER THAN A MARK ON EVERY NODE. A diagnostic is a source location,
+// not a node handle, so mapping one back to its expansion has to be done in source
+// terms: a macro body occupies a contiguous run of lines, and a diagnostic inside
+// that run came out of that body. Marking nodes would need a third per-node array
+// and would still not answer the question a REPORT asks.
+//
+// ONE ENTRY PER INSTANTIATION, not per macro. A body expanded twice has two
+// invocation sites and only one of them may be at fault, so the reader gets both
+// and can tell — which is more useful than a note that names the macro and leaves
+// them to find its uses.
+pub struct:MacroSite = {
+    int32:file;      // the file the BODY lives in
+    int32:lo;        // first line of the body, inclusive
+    int32:hi;        // last line, inclusive
+    Span:site;       // where it was invoked
+};
+
+pub struct:SiteTable = {
+    wild MacroSite->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:sitetable_init = SiteTable() {
+    wild int8->:mem = alloc(16i64 * #size_of<MacroSite>());
+    SiteTable:t = SiteTable{ items: mem => wild MacroSite->, count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+func:sitetable_add = NIL(SiteTable->:t, MacroSite:e) {
+    if (t.count >= t.cap) {
+        int32:nc = t.cap * 2i32;
+        wild int8->:mem = ralloc(t.items => wild int8->,
+                                 (nc => int64) * #size_of<MacroSite>());
+        t.items = mem => wild MacroSite->;
+        t.cap = nc;
+    }
+    t.items[t.count => int64] = e;
+    t.count = t.count + 1i32;
+    pass NIL;
+};
+
 pub struct:Expander = {
     Ast->:ast;
     InternTable->:interns;
     DiagList->:diags;
     MacroTable:macros;
+    SiteTable:sites;
 
     // THE ARGUMENTS OF THE INVOCATION BEING INSTANTIATED, and the parameters they
     // bind to. A clone consults these at every identifier: a name that is a
@@ -201,6 +263,11 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) {
     if (raw expr_is_none(id)) { pass (raw expr_none()); }
     ExprNode:n = relay ast_expr(x.ast, id);
     if (fuel <= 0i32) {
+        // ONE FAILURE, ONE DIAGNOSTIC. A body deep enough to exhaust the fuel
+        // exhausts it on several branches, and each would report the same sentence
+        // about the same body — the rule 0.6.4 settled for the fold budget, which
+        // is the same failure through the other door.
+        if (x.blown) { pass (raw expr_none()); }
         drop expand_err(x, raw MACRO_TOO_DEEP(),
             "this macro body nests deeper than expansion will follow", n.span);
         x.blown = true;
@@ -442,6 +509,11 @@ func:clone_stmt = StmtId(Expander->:x, StmtId:id, int32:fuel) {
     if (raw stmt_is_none(id)) { pass (raw stmt_none()); }
     StmtNode:s = relay ast_stmt(x.ast, id);
     if (fuel <= 0i32) {
+        // ONE FAILURE, ONE DIAGNOSTIC. A body deep enough to exhaust the fuel
+        // exhausts it on several branches, and each would report the same sentence
+        // about the same body — the rule 0.6.4 settled for the fold budget, which
+        // is the same failure through the other door.
+        if (x.blown) { pass (raw stmt_none()); }
         drop expand_err(x, raw MACRO_TOO_DEEP(),
             "this macro body nests deeper than expansion will follow", s.span);
         x.blown = true;
@@ -618,6 +690,11 @@ func:clone_decl = DeclId(Expander->:x, DeclId:id, int32:fuel) {
     if (raw decl_is_none(id)) { pass (raw decl_none()); }
     DeclNode:d = relay ast_decl(x.ast, id);
     if (fuel <= 0i32) {
+        // ONE FAILURE, ONE DIAGNOSTIC. A body deep enough to exhaust the fuel
+        // exhausts it on several branches, and each would report the same sentence
+        // about the same body — the rule 0.6.4 settled for the fold budget, which
+        // is the same failure through the other door.
+        if (x.blown) { pass (raw decl_none()); }
         drop expand_err(x, raw MACRO_TOO_DEEP(),
             "this macro body nests deeper than expansion will follow", d.span);
         x.blown = true;
@@ -940,6 +1017,7 @@ func:instantiate_expr = bool(Expander->:x, ExprId:id, ExprNode:inv, int32:decl) 
 
     int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
     int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+    drop record_site(x, md, inv.span);
     ExprId:c = relay clone_expr(x, ExprId{ index: bs.a }, raw CLONE_FUEL());
     x.params_start = saved_ps;  x.params_count = saved_pc;
     x.args_start = saved_as;    x.args_count = saved_ac;
@@ -978,6 +1056,8 @@ func:instantiate_stmt = bool(Expander->:x, StmtId:id, ExprId:inv_id,
 
     int32:saved_ps = x.params_start;   int32:saved_pc = x.params_count;
     int32:saved_as = x.args_start;     int32:saved_ac = x.args_count;
+
+    drop record_site(x, md, at);
 
     int32:bcount = raw macro_body_count(x.ast, md);
     int32:mark = raw ast_scratch_mark(x.ast);
@@ -1497,12 +1577,85 @@ pub func:expand_audit = NIL(Expander->:x) {
     pass NIL;
 };
 
+// THE LINE RANGE A MACRO'S BODY OCCUPIES, computed from its items' spans.
+//
+// The declaration's own span covers its head, not its body — so the range is the
+// minimum and maximum line over the body's members, whichever node kind they are.
+// A body of one expression is one line; a body of declarations is as many as it
+// takes.
+func:record_site = NIL(Expander->:x, DeclNode:md, Span:site) {
+    int32:n = raw macro_body_count(x.ast, md);
+    if (n <= 0i32) { pass NIL; }
+
+    int32:kind = raw macro_body_kind(x.ast, md);
+    int32:file = md.span.file;
+    int32:lo = 0i32;
+    int32:hi = 0i32;
+    bool:first = true;
+
+    int32:i = 0i32;
+    while (i < n) {
+        int32:idx = raw macro_body_at(x.ast, md, i);
+        Span:sp = md.span;
+        if (kind == (raw MACRO_BODY_DECLS())) {
+            sp = (relay ast_decl(x.ast, DeclId{ index: idx })).span;
+        } else {
+            sp = (relay ast_stmt(x.ast, StmtId{ index: idx })).span;
+        }
+        if (first) { lo = sp.line; hi = sp.line; file = sp.file; first = false; }
+        if (sp.line < lo) { lo = sp.line; }
+        if (sp.line > hi) { hi = sp.line; }
+        i = i + 1i32;
+    }
+
+    // THE CLOSING BRACE IS NOT A MEMBER, so a diagnostic on the body's last line
+    // could sit one past the last item's start line. One line of slack rather than
+    // a parse of the body's extent, which the AST does not record.
+    MacroSite:e = MacroSite{ file: file, lo: lo, hi: hi + 1i32, site: site };
+    drop sitetable_add(@x.sites, e);
+    pass NIL;
+};
+
+// A DIAGNOSTIC INSIDE AN EXPANDED BODY GETS TOLD WHERE IT WAS EXPANDED.
+//
+// Run once, just before reporting, because a diagnostic about expanded code can
+// come from ANY later stage — the resolver, the type checker, an analysis — and
+// each of them knows nothing about macros. Adding the note where the diagnostic is
+// created would mean teaching every one of them; adding it here means teaching
+// none.
+//
+// THE ORIGINAL COUNT IS TAKEN FIRST, because the notes are pushed onto the same
+// list being scanned.
+pub func:expansion_notes = NIL(Expander->:x, DiagList->:d) {
+    int64:n = raw diaglist_count(d);
+    int64:i = 0i64;
+    while (i < n) {
+        Diagnostic:g = raw diaglist_at(d, i);
+        int32:s = 0i32;
+        while (s < x.sites.count) {
+            MacroSite:e = x.sites.items[s => int64];
+            bool:inside = (g.span.file == e.file);
+            if (inside) { inside = (g.span.line >= e.lo); }
+            if (inside) { inside = (g.span.line <= e.hi); }
+            if (inside) {
+                drop diaglist_push(d, raw diag_note(raw MACRO_EXPANDED_HERE(),
+                    "this is inside a macro body, expanded here",
+                    e.site));
+            }
+            s = s + 1i32;
+        }
+        i = i + 1i64;
+    }
+    pass NIL;
+};
+
 // --- the fixed-point loop ---------------------------------------------------------
 
 pub func:expander_init = Expander(Ast->:ast, InternTable->:interns,
                                   DiagList->:diags) {
     Expander:x = Expander{ ast: ast, interns: interns, diags: diags,
                            macros: raw macrotable_init(),
+                           sites: raw sitetable_init(),
                            params_start: 0i32, params_count: 0i32,
                            args_start: 0i32, args_count: 0i32,
                            cur_module: 0i32, blown: false };
@@ -1790,6 +1943,8 @@ func:expand_splice = int32(Expander->:x, DeclNode:d, int32:site) {
     x.params_count = pcount;
     x.args_start = (raw expr_list_start(inv)) + gcount;
     x.args_count = acount;
+
+    drop record_site(x, md, d.span);
 
     int32:bcount = raw macro_body_count(x.ast, md);
     int32:i = 0i32;

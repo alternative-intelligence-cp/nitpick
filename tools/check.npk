@@ -82,8 +82,16 @@ use "../src/frontend/analysis/bindings.npk".*;
 use "../src/frontend/analysis/exhaust.npk".*;
 use "../src/frontend/analysis/locks.npk".*;
 
+// `CODE line:col`, and `note CODE line:col` for a note.
+//
+// THE SEVERITY IS PRINTED BECAUSE A NOTE IS NOT A FINDING. `NITPICK-MACRO-009` says
+// where a macro body was expanded; a test asserting what a program is refused for
+// should not have to list it, and a harness that could not tell the two apart would
+// make every expansion-related rejection test assert a code about a location.
 func:emit_line = NIL(Diagnostic:d) {
-    string:m1 = relay string_concat(d.code, " ");
+    string:pre = "";
+    if (d.severity == 0i32) { pre = "note "; }
+    string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
     string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
     string:m3 = relay string_concat(m2, ":");
     string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
@@ -183,6 +191,7 @@ func:main = int32(cstring[]:argv) {
     // would be looked up in a tree that is missing what a macro was supposed to
     // emit, and the diagnostics would be about the absence rather than the cause.
     if ((raw diaglist_count(@diags)) != 0i64) {
+        drop expansion_notes(@xp, @diags);
         drop report(@diags);
         exit 1i32;
     }
@@ -192,6 +201,7 @@ func:main = int32(cstring[]:argv) {
     // complete before any name is bound.
     drop derive_apply(@g);
     if ((raw diaglist_count(@diags)) != 0i64) {
+        drop expansion_notes(@xp, @diags);
         drop report(@diags);
         exit 1i32;
     }
@@ -238,6 +248,7 @@ func:main = int32(cstring[]:argv) {
     // "there is no type named `Foo`" beneath "unknown name `Foo`" is the same
     // mistake twice, and the second sentence is the less useful one.
     if ((raw diaglist_count(@diags)) != 0i64) {
+        drop expansion_notes(@xp, @diags);
         drop report(@diags);
         exit 1i32;
     }
@@ -308,6 +319,7 @@ func:main = int32(cstring[]:argv) {
     // established. The same reason the type stage does not run over a program
     // that failed to resolve.
     if ((raw diaglist_count(@diags)) != 0i64) {
+        drop expansion_notes(@xp, @diags);
         drop report(@diags);
         exit 1i32;
     }
@@ -406,6 +418,7 @@ func:main = int32(cstring[]:argv) {
 
     int64:n = raw diaglist_count(@diags);
     if (n != 0i64) {
+        drop expansion_notes(@xp, @diags);
         drop report(@diags);
         exit 1i32;
     }
@@ -425,6 +438,10 @@ func:escape_walk = NIL(Escape->:esc, ModuleGraph->:g) {
     pass NIL;
 };
 
+// A DIAGNOSTIC INSIDE AN EXPANDED MACRO BODY GETS A NOTE SAYING WHERE IT WAS
+// EXPANDED, and it is attached here rather than where the diagnostic was made — the
+// resolver, the type checker and the analyses know nothing about macros, and
+// teaching each of them would be five places to forget it.
 func:report = NIL(DiagList->:diags) {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
