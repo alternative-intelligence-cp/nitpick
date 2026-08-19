@@ -1,0 +1,588 @@
+// Expression lowering — literals, names, arithmetic, comparison, casts, calls.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.5.
+//
+// THE FRONTEND'S ANSWER IS THE TYPE; THIS MODULE NEVER TYPES ANYTHING. The
+// checker recorded every expression's type in `ExprTypes` (0.4.2), and
+// `check_kinds_typed` holds the line that every kind is covered. The seed could
+// not do this — it rebuilds a checker scope per node and asks again — and asking
+// again is two typings of one expression, which is two chances to disagree. The
+// one place `ExprTypes` is silent is a bare-name builtin call, typed UNKNOWN on
+// purpose ("its signature arrives with call checking"), and `ir_runtime.npk`
+// exists precisely to answer there.
+//
+// NO `nsw`, NO `nuw`, EVER, ON ORDINARY ARITHMETIC (D-037). Overflow is DEFINED
+// WRAPPING in Nitpick. Every C-family frontend emits `add nsw` because C says
+// signed overflow is undefined — and that flag licenses LLVM to assume it never
+// happens, which licenses deleting exactly the kind of guard a safety language
+// adds. The prototype was bitten and worked around it by DISABLING OPTIMISATION
+// for the affected types — a guarantee that lives in a build flag is not in the
+// artifact, and verification analyses the optimised output, so a property that
+// survives only at -O0 is one the analyzer never sees. Treat "works unoptimised"
+// as a defect report about THIS module.
+//
+// EXTENSION FOLLOWS THE SOURCE'S SIGNEDNESS, NOT THE TARGET'S — a deliberate
+// departure from the seed, which extends by the TARGET's. `uint32 => int64` of a
+// value with the high bit set is value-preserving under zext and NEGATIVE under
+// the seed's sext; D-021's checked cast promises no loss, and the seed's shape
+// breaks the promise in the one corner its own sources never exercise. The seed
+// compiles one program; this compiles whatever the frontend accepted.
+
+mod:ir_expr;
+
+use "../../frontend/source_location.npk".*;
+use "../../frontend/intern.npk".*;
+use "../../frontend/num_width.npk".*;
+use "../../frontend/token_kind.npk".*;
+use "../../frontend/ast_kind.npk".*;
+use "../../frontend/ast.npk".*;
+use "../../frontend/parse_expr.npk".*;
+use "../../frontend/diagnostics.npk".*;
+use "../../frontend/types.npk".*;
+use "../../frontend/expr_types.npk".*;
+use "../../frontend/symbols.npk".*;
+use "../../frontend/parse_decl.npk".*;
+use "ir_writer.npk".*;
+use "ir_types.npk".*;
+use "ir_func.npk".*;
+use "ir_runtime.npk".*;
+
+// An emitted value. `ll` and `ref` are what an instruction writes; `type_id` is
+// the frontend's answer, 0 where the frontend deliberately has none (a builtin
+// call). `wrapped`/`inner` carry what `raw` needs to know about a call's Result —
+// STORED, not sniffed out of the text, because `cstring`'s `{ ptr, i64 }` is one
+// brace away from reading like a wrapper.
+pub struct:IrVal = {
+    int32:state;      // LL_OK / LL_RUNG / LL_BROKEN, reusing ir_types' states
+    string:rung;
+    string:ll;
+    string:ref;
+    int32:type_id;
+    bool:wrapped;
+    string:inner;
+};
+
+func:iv = IrVal(string:ll, string:ref, int32:type_id) {
+    IrVal:v = IrVal{ state: raw LL_OK(), rung: "", ll: ll, ref: ref,
+                     type_id: type_id, wrapped: false, inner: "" };
+    pass v;
+};
+
+func:iv_rung = IrVal(string:rung) {
+    IrVal:v = IrVal{ state: raw LL_RUNG(), rung: rung, ll: "", ref: "",
+                     type_id: 0i32, wrapped: false, inner: "" };
+    pass v;
+};
+
+func:iv_broken = IrVal() {
+    IrVal:v = IrVal{ state: raw LL_BROKEN(), rung: "", ll: "", ref: "",
+                     type_id: 0i32, wrapped: false, inner: "" };
+    pass v;
+};
+
+pub func:iv_is_ok = bool(IrVal:v) { pass (v.state == (raw LL_OK())); };
+
+// --- string literals live at module level -------------------------------------------
+//
+// A literal becomes a private constant and three insertvalues. The TABLE is
+// module-wide — global names must be unique across the module — so the numbering
+// is global too, exactly the seed's `@.str.N`.
+
+pub struct:StrTable = {
+    wild string->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:strtab_init = StrTable() {
+    wild int8->:m = alloc(16i64 * #size_of<string>());
+    StrTable:t = StrTable{ items: m => wild string->, count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+pub func:strtab_add = string(StrTable->:t, string:data) {
+    if (t.count >= t.cap) {
+        int32:nc = t.cap * 2i32;
+        wild int8->:m = ralloc(t.items => wild int8->,
+                               (nc => int64) * #size_of<string>());
+        t.items = m => wild string->;
+        t.cap = nc;
+    }
+    t.items[t.count => int64] = data;
+    string:name = relay string_concat("@.str.",
+                      raw int_to_string(t.count => int64));
+    t.count = t.count + 1i32;
+    pass name;
+};
+
+// One byte of a `c"…"` constant. Printable ASCII stays itself; `"` and `\` and
+// everything else become `\XX` — two hex digits, uppercase, the seed's encoding.
+func:esc_byte = string(uint8:b) {
+    if (b >= 32u8) {
+        if (b < 127u8) {
+            if (b != 34u8) {
+                if (b != 92u8) {
+                    wild int8->:one = alloc(1i64);
+                    one[0i64] = b => int8;
+                    pass (raw string_from_bytes(one, 1i64));
+                }
+            }
+        }
+    }
+    string:hex = "0123456789ABCDEF";
+    wild int8->:buf = alloc(3i64);
+    buf[0i64] = 92i8;                                   // backslash
+    buf[1i64] = hex.ptr[((b => int64) / 16i64)] => int8;
+    buf[2i64] = hex.ptr[((b => int64) % 16i64)] => int8;
+    pass (raw string_from_bytes(buf, 3i64));
+};
+
+// The whole table, as module-level constants. Called by the driver once the
+// bodies are emitted, which is why the table and the writer are separate things.
+pub func:strtab_write_all = NIL(StrTable->:t, IrWriter->:w) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        string:data = t.items[i => int64];
+        string:enc = "";
+        int64:j = 0i64;
+        while (j < data.len) {
+            enc = relay string_concat(enc, relay esc_byte(data.ptr[j] => uint8));
+            j = j + 1i64;
+        }
+        string:h1 = relay string_concat("@.str.", raw int_to_string(i => int64));
+        string:h2 = relay string_concat(h1, " = private unnamed_addr constant [");
+        string:h3 = relay string_concat(h2, raw int_to_string(data.len));
+        string:h4 = relay string_concat(h3, " x i8] c\"");
+        string:h5 = relay string_concat(h4, enc);
+        drop irw_raw(w, relay string_concat(h5, "\""));
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// --- the emitter --------------------------------------------------------------------
+
+pub struct:ExprEmitter = {
+    FnEmitter->:fe;
+    Ast->:ast;
+    ExprTypes->:et;
+    SymbolTable->:tab;
+    InternTable->:interns;
+    StrTable->:strs;
+};
+
+pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
+                                   SymbolTable->:tab, InternTable->:interns,
+                                   StrTable->:strs) {
+    ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
+                                 interns: interns, strs: strs };
+    pass x;
+};
+
+// The lowered text of this expression's frontend-recorded type.
+func:node_ll = LlType(ExprEmitter->:x, ExprId:id) {
+    pass (relay ll_type(x.fe.ctx, raw exprtypes_get(x.et, id)));
+};
+
+// --- dispatch -----------------------------------------------------------------------
+
+pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
+    ExprNode:n = relay ast_expr(x.ast, id);
+
+    if (n.kind == ExprKind.ExprIntLiteral)    { pass (relay emit_int(x, id, n)); }
+    if (n.kind == ExprKind.ExprBoolLiteral) {
+        if (n.payload == 1i64) { pass (raw iv("i8", "1", 0i32)); }
+        pass (raw iv("i8", "0", 0i32));
+    }
+    if (n.kind == ExprKind.ExprCharLiteral) {
+        pass (raw iv("i8", raw int_to_string(n.payload), 0i32));
+    }
+    if (n.kind == ExprKind.ExprSentinelLiteral) {
+        // NIL is the zero-width value; its `i32 0` exists only to have something
+        // to hand `Result<NIL>` machinery. NULL is the pointer. ERR is the `tbb`
+        // taint (D-008), whose arithmetic is 0.9's.
+        if (n.payload == 0i64) { pass (raw iv("i32", "0", 0i32)); }
+        if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
+        pass (raw iv_rung("0.9"));
+    }
+    if (n.kind == ExprKind.ExprStringLiteral) { pass (relay emit_string(x, n)); }
+    if (n.kind == ExprKind.ExprIdentifierExpr){ pass (relay emit_ident(x, id, n)); }
+    if (n.kind == ExprKind.ExprUnaryExpr)     { pass (relay emit_unary(x, id, n)); }
+    if (n.kind == ExprKind.ExprBinaryExpr)    { pass (relay emit_binary(x, id, n)); }
+    if (n.kind == ExprKind.ExprCastExpr)      { pass (relay emit_cast(x, id, n)); }
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { pass (relay emit_cast(x, id, n)); }
+    if (n.kind == ExprKind.ExprCallExpr)      { pass (relay emit_call(x, id, n)); }
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) { pass (relay emit_raw(x, id, n)); }
+    if (n.kind == ExprKind.ExprDropExpr) {
+        IrVal:v = relay emit_expr(x, raw expr_operand(n));
+        if (v.state != (raw LL_OK())) { pass v; }
+        pass (raw iv("i32", "0", 0i32));
+    }
+
+    // `relay` BRANCHES — it is a normal exit path that runs `defer` — so it
+    // lands with the rest of control flow in 0.7.6, and until then it refuses
+    // with the cycle that lowers it rather than pretending.
+    if (n.kind == ExprKind.ExprRelayExpr)     { pass (raw iv_rung("0.7.6")); }
+
+    // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
+    // promise that accepted programs are valid; an emitter that guesses at a
+    // node it does not know turns that into a lie.
+    pass (raw iv_broken());
+};
+
+// --- leaves -------------------------------------------------------------------------
+
+func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    LlType:t = relay node_ll(x, id);
+    if (t.state != (raw LL_OK())) { pass (relay iv_from_ll(t)); }
+    pass (raw iv(t.text, raw int_to_string(n.payload),
+                 raw exprtypes_get(x.et, id)));
+};
+
+func:iv_from_ll = IrVal(LlType:t) {
+    if (t.state == (raw LL_RUNG())) { pass (raw iv_rung(t.rung)); }
+    pass (raw iv_broken());
+};
+
+func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) {
+    string:data = relay intern_get(x.interns, n.payload => int32);
+    string:g = relay strtab_add(x.strs, data);
+    string:len = raw int_to_string(data.len);
+    string:a = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat4(a,
+        " = insertvalue { ptr, i64, i64 } undef, ptr ", g, ", 0"));
+    string:b = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(b, " = insertvalue { ptr, i64, i64 } ", a,
+                                     ", i64 ", relay string_concat(len, ", 1")));
+    string:c = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c, " = insertvalue { ptr, i64, i64 } ", b,
+                                     ", i64 ", relay string_concat(len, ", 2")));
+    pass (raw iv("{ ptr, i64, i64 }", c, 0i32));
+};
+
+func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    LocalSlot:s = raw fnem_lookup(x.fe, n.payload => int32);
+    if (!s.found) {
+        // Not a local: a module-level `const`, a function used as a value, or a
+        // name this rung cannot reach. Each is real Nitpick; none is lowered
+        // yet. Refusing beats loading from a slot that is not there.
+        pass (raw iv_broken());
+    }
+    LlType:t = relay node_ll(x, id);
+    if (t.state != (raw LL_OK())) { pass (relay iv_from_ll(t)); }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = load ", t.text, ", ptr ", s.slot));
+    pass (raw iv(t.text, r, raw exprtypes_get(x.et, id)));
+};
+
+// --- operators ----------------------------------------------------------------------
+
+func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    TokenKind:op = raw expr_op(n);
+    IrVal:v = relay emit_expr(x, raw expr_operand(n));
+    if (v.state != (raw LL_OK())) { pass v; }
+
+    if (op == TokenKind.OpMinus) {
+        string:r = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(r, " = sub ", v.ll, " 0, ", v.ref));
+        pass (raw iv(v.ll, r, v.type_id));
+    }
+    if (op == TokenKind.OpTilde) {
+        string:r = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(r, " = xor ", v.ll, " ",
+                                         relay string_concat(v.ref, ", -1")));
+        pass (raw iv(v.ll, r, v.type_id));
+    }
+    if (op == TokenKind.OpBang) {
+        // FROM THE VALUE ALREADY EMITTED — re-emitting the operand to get a
+        // truth value runs it twice, and the seed's note records what that did:
+        // `!(raw split(x))` split twice, the second refused, and the negation
+        // answered about the wrong run.
+        string:c = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(c, " = icmp ne ", v.ll, " ",
+                                         relay string_concat(v.ref, ", 0")));
+        string:xr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(xr, " = xor i1 ", relay string_concat(c, ", true")));
+        string:r = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(r, " = zext i1 ", relay string_concat(xr, " to i8")));
+        pass (raw iv("i8", r, v.type_id));
+    }
+    pass (raw iv_broken());
+};
+
+// A truth value for a branch or a short-circuit: `i1`, derived by comparing
+// against zero. `bool` is STORED as `i8`; `i1` exists only here.
+pub func:emit_cond = IrVal(ExprEmitter->:x, ExprId:id) {
+    IrVal:v = relay emit_expr(x, id);
+    if (v.state != (raw LL_OK())) { pass v; }
+    string:c = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c, " = icmp ne ", v.ll, " ",
+                                     relay string_concat(v.ref, ", 0")));
+    pass (raw iv("i1", c, 0i32));
+};
+
+func:arith_name = string(TokenKind:op, bool:signed) {
+    if (op == TokenKind.OpPlus)    { pass "add"; }
+    if (op == TokenKind.OpMinus)   { pass "sub"; }
+    if (op == TokenKind.OpStar)    { pass "mul"; }
+    if (op == TokenKind.OpSlash)   { if (signed) { pass "sdiv"; } pass "udiv"; }
+    if (op == TokenKind.OpPercent) { if (signed) { pass "srem"; } pass "urem"; }
+    if (op == TokenKind.OpAmp)     { pass "and"; }
+    if (op == TokenKind.OpPipe)    { pass "or"; }
+    if (op == TokenKind.OpCaret)   { pass "xor"; }
+    if (op == TokenKind.OpShl)     { pass "shl"; }
+    if (op == TokenKind.OpShr)     { if (signed) { pass "ashr"; } pass "lshr"; }
+    pass "";
+};
+
+func:icmp_name = string(TokenKind:op, bool:signed) {
+    if (op == TokenKind.OpEqEq)  { pass "eq"; }
+    if (op == TokenKind.OpNotEq) { pass "ne"; }
+    if (op == TokenKind.OpLt)    { if (signed) { pass "slt"; } pass "ult"; }
+    if (op == TokenKind.OpLtEq)  { if (signed) { pass "sle"; } pass "ule"; }
+    if (op == TokenKind.OpGt)    { if (signed) { pass "sgt"; } pass "ugt"; }
+    if (op == TokenKind.OpGtEq)  { if (signed) { pass "sge"; } pass "uge"; }
+    pass "";
+};
+
+func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    TokenKind:op = raw expr_op(n);
+
+    if (op == TokenKind.OpAndAnd) { pass (relay emit_shortcircuit(x, n, true)); }
+    if (op == TokenKind.OpOrOr)   { pass (relay emit_shortcircuit(x, n, false)); }
+
+    IrVal:lhs = relay emit_expr(x, raw expr_lhs(n));
+    if (lhs.state != (raw LL_OK())) { pass lhs; }
+    IrVal:rhs = relay emit_expr(x, raw expr_rhs(n));
+    if (rhs.state != (raw LL_OK())) { pass rhs; }
+
+    // SIGNEDNESS COMES FROM THE OPERANDS' TYPE, and the two sides agree because
+    // the checker made them (D-092: no implicit widening — a mixed comparison
+    // was refused before this runs).
+    //
+    // THE DEFAULT IS UNSIGNED, and `char8` is why: a character orders by CODE
+    // POINT, so `'a' <= c` on bytes past 127 must be `ult` — `slt` would sort
+    // the upper half of every encoding below NUL. Only a signed integer opts
+    // into the signed comparisons; `eq`/`ne` never cared.
+    int32:lt = raw exprtypes_get(x.et, raw expr_lhs(n));
+    bool:signed = false;
+    if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, lt);
+    }
+
+    string:cmp = raw icmp_name(op, signed);
+    if (cmp.len > 0i64) {
+        string:c = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(c, " = icmp ", cmp, " ",
+                          relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+        string:z = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(z, " = zext i1 ",
+                          relay string_concat(c, " to i8")));
+        pass (raw iv("i8", z, 0i32));
+    }
+
+    string:ins = raw arith_name(op, signed);
+    if (ins.len == 0i64) { pass (raw iv_broken()); }
+    // NO nsw, NO nuw — D-037 makes overflow defined wrapping, and the flag is
+    // the license to delete guards. The header says why at length.
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = ", ins, " ",
+                      relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+    pass (raw iv(lhs.ll, r, lhs.type_id));
+};
+
+// `&&` and `||` short-circuit THROUGH A SLOT, not a phi — naive lowering says
+// every merged value lives in memory and `mem2reg` builds the phi. The rhs block
+// exists so the right side is not evaluated when the left decides.
+func:emit_shortcircuit = IrVal(ExprEmitter->:x, ExprNode:n, bool:is_and) {
+    string:slot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay string_concat(slot, " = alloca i8"));
+    string:rhs_l = relay irw_new_label(x.fe.w, "sc.rhs");
+    string:done_l = relay irw_new_label(x.fe.w, "sc.done");
+
+    IrVal:l = relay emit_cond(x, raw expr_lhs(n));
+    if (l.state != (raw LL_OK())) { pass l; }
+    // The answer when the right side never runs: `&&` is already false, `||` is
+    // already true.
+    if (is_and) {
+        drop irw_line(x.fe.w, relay string_concat("store i8 0, ptr ", slot));
+        drop irw_line(x.fe.w, relay cat5("br i1 ", l.ref, ", label %", rhs_l,
+                          relay string_concat(", label %", done_l)));
+    } else {
+        drop irw_line(x.fe.w, relay string_concat("store i8 1, ptr ", slot));
+        drop irw_line(x.fe.w, relay cat5("br i1 ", l.ref, ", label %", done_l,
+                          relay string_concat(", label %", rhs_l)));
+    }
+    drop irw_label(x.fe.w, rhs_l);
+    IrVal:r = relay emit_cond(x, raw expr_rhs(n));
+    if (r.state != (raw LL_OK())) { pass r; }
+    string:z = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(z, " = zext i1 ",
+                      relay string_concat(r.ref, " to i8")));
+    drop irw_line(x.fe.w, relay cat4("store i8 ", z, ", ptr ", slot));
+    drop irw_line(x.fe.w, relay cat3("br label %", done_l, ""));
+    drop irw_label(x.fe.w, done_l);
+    string:out = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(out, " = load i8, ptr ",  slot));
+    pass (raw iv("i8", out, 0i32));
+};
+
+// --- casts --------------------------------------------------------------------------
+
+// Between the scalar `iN`s. Truncation truncates; EXTENSION FOLLOWS THE SOURCE:
+// a signed source sign-extends, an unsigned one zero-extends, because that is
+// what preserves the value — the promise `=>` makes (D-021). `bool` and `char8`
+// widen unsigned: neither has negative values.
+func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    IrVal:v = relay emit_expr(x, raw expr_operand(n));
+    if (v.state != (raw LL_OK())) { pass v; }
+    LlType:want = relay node_ll(x, id);
+    if (want.state != (raw LL_OK())) { pass (relay iv_from_ll(want)); }
+    int32:wid = raw exprtypes_get(x.et, id);
+
+    if (raw string_eq(v.ll, want.text)) {
+        pass (raw iv(want.text, v.ref, wid));
+    }
+    LlType:src_l = LlType{ state: raw LL_OK(), text: v.ll, rung: "" };
+    LlType:dst_l = want;
+    if (!(raw ll_is_scalar_int(src_l))) { pass (raw iv_broken()); }
+    if (!(raw ll_is_scalar_int(dst_l))) { pass (raw iv_broken()); }
+
+    int64:sbits = relay ll_int_width(v.ll);
+    int64:dbits = relay ll_int_width(want.text);
+    string:r = relay irw_temp(x.fe.w);
+    if (sbits > dbits) {
+        drop irw_line(x.fe.w, relay cat5(r, " = trunc ", v.ll, " ",
+                          relay cat3(v.ref, " to ", want.text)));
+        pass (raw iv(want.text, r, wid));
+    }
+    bool:src_signed = false;
+    int32:st = v.type_id;
+    if ((raw type_kind(x.fe.ctx.types, st)) == (raw TY_INT())) {
+        src_signed = raw type_is_signed(x.fe.ctx.types, st);
+    }
+    if (src_signed) {
+        drop irw_line(x.fe.w, relay cat5(r, " = sext ", v.ll, " ",
+                          relay cat3(v.ref, " to ", want.text)));
+    } else {
+        drop irw_line(x.fe.w, relay cat5(r, " = zext ", v.ll, " ",
+                          relay cat3(v.ref, " to ", want.text)));
+    }
+    pass (raw iv(want.text, r, wid));
+};
+
+// "i32" -> 32. Only ever called on text `ll_is_scalar_int` accepted.
+func:ll_int_width = int64(string:ll) {
+    int64:n = 0i64;
+    int64:i = 1i64;
+    while (i < ll.len) {
+        n = (n * 10i64) + ((ll.ptr[i] => int64) - 48i64);
+        i = i + 1i64;
+    }
+    pass n;
+};
+
+// --- calls --------------------------------------------------------------------------
+
+func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    ExprId:callee = raw expr_callee(n);
+    if (raw expr_is_none(callee)) { pass (raw iv_broken()); }
+    ExprNode:cnode = relay ast_expr(x.ast, callee);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) {
+        // An indirect call — through a function value. D-087 gives it a type;
+        // calling through one is 0.9's.
+        pass (raw iv_rung("0.9"));
+    }
+
+    int32:gcount = raw expr_generic_count(n);
+    int32:start = (raw expr_list_start(n)) + gcount;
+    int32:count = (raw expr_list_count(n)) - gcount;
+    if (gcount > 0i32) { pass (raw iv_rung("1.0")); }
+
+    // Arguments first, in source order, each with its own frontend-recorded
+    // type. No `want` coercion anywhere: D-092 has no implicit widening, so the
+    // checker already made every argument EXACTLY its parameter's type.
+    string:args = "";
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+        IrVal:av = relay emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        if (i > 0i32) { args = relay string_concat(args, ", "); }
+        args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
+        i = i + 1i32;
+    }
+
+    if (cnode.a == 0i32) {
+        pass (relay call_builtin(x, cnode, args));
+    }
+
+    // A user function: the symbol names the declaration, the declaration names
+    // the function, and the call's own recorded type is the full `Result<T>`.
+    Symbol:s = raw symtab_get(x.tab, cnode.a);
+    string:fname = relay intern_get(x.interns, s.name);
+    string:sym = relay ir_symbol(fname);
+    LlType:ret = relay node_ll(x, id);
+    if (ret.state != (raw LL_OK())) { pass (relay iv_from_ll(ret)); }
+
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret.text, " ",
+                      relay cat4(sym, "(", args, ")")));
+    int32:rt_id = raw exprtypes_get(x.et, id);
+    IrVal:out = raw iv(ret.text, r, rt_id);
+    out.wrapped = true;
+    // `Result<NIL>` has no value half; everything else's is the type it declares.
+    out.inner = "";
+    int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
+    if ((raw type_kind(x.fe.ctx.types, inner_id)) != (raw TY_NIL())) {
+        LlType:it = relay ll_type(x.fe.ctx, inner_id);
+        if (it.state != (raw LL_OK())) { pass (relay iv_from_ll(it)); }
+        out.inner = it.text;
+    }
+    pass out;
+};
+
+func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:cnode, string:args) {
+    string:name = relay intern_get(x.interns, cnode.payload => int32);
+    RtSig:sig = raw rt_sig(name);
+    if (!sig.found) {
+        // A builtin the checker admits and the floor does not carry — real
+        // Nitpick, no rung yet. 0.8's library work is where the rest arrive.
+        pass (raw iv_rung("0.8"));
+    }
+    if (raw string_eq(sig.ret, "void")) {
+        drop irw_line(x.fe.w, relay cat5("call void ", sig.sym, "(", args, ")"));
+        pass (raw iv("i32", "0", 0i32));
+    }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", sig.ret, " ",
+                      relay cat4(sig.sym, "(", args, ")")));
+    IrVal:out = raw iv(sig.ret, r, 0i32);
+    out.wrapped = sig.wrapped;
+    out.inner = sig.inner;
+    pass out;
+};
+
+// --- `raw` --------------------------------------------------------------------------
+
+// Unwrap without looking: the value half, whatever the error said. The analyses
+// already decided where that is allowed; here it is just an extract.
+func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    IrVal:v = relay emit_expr(x, raw expr_operand(n));
+    if (v.state != (raw LL_OK())) { pass v; }
+    int32:my_t = raw exprtypes_get(x.et, id);
+
+    if (!v.wrapped) {
+        // Already a plain value — a builtin returning bare `ptr`, or an
+        // expression the checker let through unwrapped. The seed does the same.
+        pass (raw iv(v.ll, v.ref, my_t));
+    }
+    if (v.inner.len == 0i64) {
+        // `Result<NIL>`: the value half is nothing, spelled `i32 0`.
+        pass (raw iv("i32", "0", my_t));
+    }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = extractvalue ", v.ll, " ",
+                                     relay string_concat(v.ref, ", 0")));
+    pass (raw iv(v.inner, r, my_t));
+};

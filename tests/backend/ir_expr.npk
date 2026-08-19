@@ -1,0 +1,321 @@
+// Expression lowering (cycle 0.7.5) — literals, names, arithmetic, comparison,
+// casts, calls, and `raw`.
+//
+// THE FIXTURE IS A HAND-BUILT AST WITH A HAND-FILLED ExprTypes, because that is
+// the module's actual contract: it reads nodes through the same accessors the
+// checker uses and types from the same table the checker filled, and it must
+// never type anything itself. The frontend pipeline is exercised end-to-end
+// elsewhere; here the question is what BYTES a known tree becomes.
+//
+// THE TWO ASSERTIONS THAT ARE THE POINT:
+//
+//   `%t4 = add i32 %t2, %t3` — NO `nsw`. D-037 makes overflow defined wrapping,
+//   and `nsw` is the license to delete exactly the guard a safety language adds.
+//   The prototype's workaround — disabling optimisation for affected types — is
+//   the failure this line exists to never need.
+//
+//   `zext` FOR `uint32 => int64` — extension follows the SOURCE's signedness.
+//   The seed extends by the TARGET's and turns a big uint32 NEGATIVE, breaking
+//   D-021's no-loss promise in a corner its one program never exercises.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/expr_types.npk".*;
+use "../../src/backend/ir/ir_writer.npk".*;
+use "../../src/backend/ir/ir_types.npk".*;
+use "../../src/backend/ir/ir_func.npk".*;
+use "../../src/backend/ir/ir_expr.npk".*;
+
+func:lit = ExprId(Ast->:ast, int64:value) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprIntLiteral, raw span_none(),
+                             0i32, 0i32, 0i32, value));
+};
+
+func:bin = ExprId(Ast->:ast, TokenKind:op, ExprId:l, ExprId:r) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprBinaryExpr, raw span_none(),
+                             l.index, r.index, 0i32, ((op => int32) => int64)));
+};
+
+func:un = ExprId(Ast->:ast, TokenKind:op, ExprId:o) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprUnaryExpr, raw span_none(),
+                             o.index, 0i32, 0i32, ((op => int32) => int64)));
+};
+
+func:ident = ExprId(Ast->:ast, int32:sym, int32:name) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprIdentifierExpr, raw span_none(),
+                             sym, 0i32, 0i32, name => int64));
+};
+
+func:cast_to = ExprId(Ast->:ast, ExprId:o) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprCastExpr, raw span_none(),
+                             o.index, 0i32, 0i32, 0i64));
+};
+
+func:unwrap_raw = ExprId(Ast->:ast, ExprId:o) {
+    pass (relay ast_add_expr(ast, ExprKind.ExprRawUnwrapExpr, raw span_none(),
+                             o.index, 0i32, 0i32, 0i64));
+};
+
+func:call1 = ExprId(Ast->:ast, ExprId:callee, ExprId:a0) {
+    int32:mark = raw ast_scratch_mark(ast);
+    drop ast_scratch_push(ast, a0.index);
+    IdSpan:w = raw ast_scratch_commit(ast, mark);
+    pass (relay ast_add_expr(ast, ExprKind.ExprCallExpr, raw span_none(),
+                             callee.index, w.start, w.count, 0i64));
+};
+
+func:call2 = ExprId(Ast->:ast, ExprId:callee, ExprId:a0, ExprId:a1) {
+    int32:mark = raw ast_scratch_mark(ast);
+    drop ast_scratch_push(ast, a0.index);
+    drop ast_scratch_push(ast, a1.index);
+    IdSpan:w = raw ast_scratch_commit(ast, mark);
+    pass (relay ast_add_expr(ast, ExprKind.ExprCallExpr, raw span_none(),
+                             callee.index, w.start, w.count, 0i64));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+    Ast:ast = raw ast_init();
+    TypeTable:types = raw typetable_init();
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    LlCtx:c = raw llctx_init(@ast, @types, @it);
+
+    int32:i32t = raw tt_int(@types, 32i32, true);
+    int32:i64t = raw tt_int(@types, 64i32, true);
+    int32:u32t = raw tt_int(@types, 32i32, false);
+    int32:c8t  = raw tt_char(@types, 8i32);
+    int32:ri32 = raw tt_result(@types, i32t, 4i64, 4i32);
+
+    int32:nx = relay intern_add(@it, "x");
+    int32:ny = relay intern_add(@it, "y");
+    int32:nu = relay intern_add(@it, "u");
+    int32:nc1 = relay intern_add(@it, "c1");
+    int32:nc2 = relay intern_add(@it, "c2");
+    int32:nb = relay intern_add(@it, "b1");
+    int32:nb2 = relay intern_add(@it, "b2");
+    int32:n_alloc = relay intern_add(@it, "alloc");
+    int32:n_f = relay intern_add(@it, "f");
+
+    // A user function `f` the call case resolves through: a symbol whose origin
+    // is a declaration, the way resolution leaves a callee.
+    DeclId:fdecl = relay ast_add_decl(@ast, DeclKind.DeclFunctionDecl,
+                                      raw span_none(), 0i32, 0i32, 0i32,
+                                      n_f => int64);
+    int32:mscope = raw scope_open(@tab, 0i32, raw SCOPE_MODULE());
+    int32:fsym = relay symtab_declare(@tab, @ast, @diags, mscope, n_f,
+                                      raw SYM_DECL(), fdecl.index, 0i32);
+    if (fsym == 0i32)                                        { exit 9i32; }
+
+    // --- PHASE 1: the trees, all of them, before the type table is sized ------
+    ExprId:ax = relay ident(@ast, 0i32, nx);
+    ExprId:ay = relay ident(@ast, 0i32, ny);
+    ExprId:sum = relay bin(@ast, TokenKind.OpPlus, ax, ay);
+    ExprId:three = relay lit(@ast, 3i64);
+    ExprId:prod = relay bin(@ast, TokenKind.OpStar, sum, three);
+
+    ExprId:ac1 = relay ident(@ast, 0i32, nc1);
+    ExprId:ac2 = relay ident(@ast, 0i32, nc2);
+    ExprId:cmp_c = relay bin(@ast, TokenKind.OpLt, ac1, ac2);
+
+    ExprId:ax2 = relay ident(@ast, 0i32, nx);
+    ExprId:ay2 = relay ident(@ast, 0i32, ny);
+    ExprId:cmp_i = relay bin(@ast, TokenKind.OpLt, ax2, ay2);
+
+    ExprId:au = relay ident(@ast, 0i32, nu);
+    ExprId:widen_u = relay cast_to(@ast, au);
+    ExprId:ax3 = relay ident(@ast, 0i32, nx);
+    ExprId:widen_i = relay cast_to(@ast, ax3);
+    ExprId:ayy = relay ident(@ast, 0i32, ny);
+    ExprId:shrink = relay cast_to(@ast, ayy);
+
+    ExprId:ab1 = relay ident(@ast, 0i32, nb);
+    ExprId:ab2 = relay ident(@ast, 0i32, nb2);
+    ExprId:conj = relay bin(@ast, TokenKind.OpAndAnd, ab1, ab2);
+
+    ExprId:ax4 = relay ident(@ast, 0i32, nx);
+    ExprId:neg = relay un(@ast, TokenKind.OpMinus, ax4);
+    ExprId:ab3 = relay ident(@ast, 0i32, nb);
+    ExprId:not_b = relay un(@ast, TokenKind.OpBang, ab3);
+
+    ExprId:sixty4 = relay lit(@ast, 64i64);
+    ExprId:alloc_name = relay ident(@ast, 0i32, n_alloc);
+    ExprId:alloc_call = relay call1(@ast, alloc_name, sixty4);
+    ExprId:raw_alloc = relay unwrap_raw(@ast, alloc_call);
+
+    ExprId:seven = relay lit(@ast, 7i64);
+    ExprId:f_name = relay ident(@ast, fsym, n_f);
+    ExprId:f_call = relay call1(@ast, f_name, seven);
+    ExprId:raw_f = relay unwrap_raw(@ast, f_call);
+
+    ExprId:s_lit = relay ast_add_expr(@ast, ExprKind.ExprStringLiteral,
+                                      raw span_none(), 0i32, 0i32, 0i32,
+                                      (relay intern_add(@it, "A\nB")) => int64);
+
+    ExprId:nil_lit = relay ast_add_expr(@ast, ExprKind.ExprSentinelLiteral,
+                                        raw span_none(), 0i32, 0i32, 0i32, 0i64);
+    ExprId:null_lit = relay ast_add_expr(@ast, ExprKind.ExprSentinelLiteral,
+                                         raw span_none(), 0i32, 0i32, 0i32, 1i64);
+    ExprId:relay_n = relay ast_add_expr(@ast, ExprKind.ExprRelayExpr,
+                                        raw span_none(), 0i32, 0i32, 0i32, 0i64);
+    ExprId:tern = relay ast_add_expr(@ast, ExprKind.ExprTernaryExpr,
+                                     raw span_none(), 0i32, 0i32, 0i32, 0i64);
+
+    // --- PHASE 2: the types the checker would have recorded -------------------
+    ExprTypes:ets = raw exprtypes_for(@ast);
+    drop exprtypes_set(@ets, ax, i32t);   drop exprtypes_set(@ets, ay, i32t);
+    drop exprtypes_set(@ets, sum, i32t);  drop exprtypes_set(@ets, three, i32t);
+    drop exprtypes_set(@ets, prod, i32t);
+    drop exprtypes_set(@ets, ac1, c8t);   drop exprtypes_set(@ets, ac2, c8t);
+    drop exprtypes_set(@ets, ax2, i32t);  drop exprtypes_set(@ets, ay2, i32t);
+    drop exprtypes_set(@ets, au, u32t);   drop exprtypes_set(@ets, widen_u, i64t);
+    drop exprtypes_set(@ets, ax3, i32t);  drop exprtypes_set(@ets, widen_i, i64t);
+    drop exprtypes_set(@ets, ayy, i64t);  drop exprtypes_set(@ets, shrink, i32t);
+    drop exprtypes_set(@ets, ab1, types.t_bool);
+    drop exprtypes_set(@ets, ab2, types.t_bool);
+    drop exprtypes_set(@ets, ab3, types.t_bool);
+    drop exprtypes_set(@ets, ax4, i32t);
+    drop exprtypes_set(@ets, sixty4, i64t);
+    drop exprtypes_set(@ets, seven, i32t);
+    drop exprtypes_set(@ets, f_call, ri32);
+    drop exprtypes_set(@ets, raw_f, i32t);
+
+    StrTable:st = raw strtab_init();
+
+    // --- (x + y) * 3, AND NO nsw ANYWHERE NEAR IT ------------------------------
+    IrWriter:w1 = raw irw_to_buffer();
+    FnEmitter:f1 = raw fnem_init(@w1, @c);
+    ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f1, "calc", i32t);
+    drop fnem_param(@f1, nx, i32t);
+    drop fnem_param(@f1, ny, i32t);
+    drop fnem_open(@f1);
+    IrVal:v1 = relay emit_expr(@x1, prod);
+    if (!(raw iv_is_ok(v1)))                                 { exit 10i32; }
+    drop fnem_ret_pass(@f1, v1.ref);
+    drop fnem_close(@f1, true);
+    if (!(raw string_eq(relay irw_text(@w1),
+        "define { i32, i32 } @npk_calc(i32 %a0, i32 %a1) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = load i32, ptr %t1\n  %t4 = add i32 %t2, %t3\n  %t5 = mul i32 %t4, 3\n  %t6 = insertvalue { i32, i32 } undef, i32 %t5, 0\n  %t7 = insertvalue { i32, i32 } %t6, i32 0, 1\n  ret { i32, i32 } %t7\n}\n\n"))) { exit 11i32; }
+
+    // --- COMPARISON SIGNEDNESS IS THE OPERAND'S: char8 ult, int32 slt ---------
+    IrWriter:w2 = raw irw_to_buffer();
+    FnEmitter:f2 = raw fnem_init(@w2, @c);
+    ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f2, "cmp", types.t_bool);
+    drop fnem_param(@f2, nc1, c8t);
+    drop fnem_param(@f2, nc2, c8t);
+    drop fnem_param(@f2, nx, i32t);
+    drop fnem_param(@f2, ny, i32t);
+    drop fnem_open(@f2);
+    IrVal:vc = relay emit_expr(@x2, cmp_c);
+    if (!(raw iv_is_ok(vc)))                                 { exit 20i32; }
+    IrVal:vi = relay emit_expr(@x2, cmp_i);
+    if (!(raw iv_is_ok(vi)))                                 { exit 21i32; }
+    if (!(raw string_eq(relay irw_text(@w2),
+        "define { i8, i32 } @npk_cmp(i8 %a0, i8 %a1, i32 %a2, i32 %a3) {\nentry:\n  %t0 = alloca i8\n  store i8 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = alloca i32\n  store i32 %a2, ptr %t2\n  %t3 = alloca i32\n  store i32 %a3, ptr %t3\n  %t4 = load i8, ptr %t0\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ult i8 %t4, %t5\n  %t7 = zext i1 %t6 to i8\n  %t8 = load i32, ptr %t2\n  %t9 = load i32, ptr %t3\n  %t10 = icmp slt i32 %t8, %t9\n  %t11 = zext i1 %t10 to i8\n"))) { exit 22i32; }
+
+    // --- CASTS: trunc DOWN, extension BY THE SOURCE'S SIGN --------------------
+    IrWriter:w3 = raw irw_to_buffer();
+    FnEmitter:f3 = raw fnem_init(@w3, @c);
+    ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f3, "casts", i32t);
+    drop fnem_param(@f3, nu, u32t);
+    drop fnem_param(@f3, nx, i32t);
+    drop fnem_param(@f3, ny, i64t);
+    drop fnem_open(@f3);
+    IrVal:cu = relay emit_expr(@x3, widen_u);
+    if (!(raw iv_is_ok(cu)))                                 { exit 30i32; }
+    IrVal:ci = relay emit_expr(@x3, widen_i);
+    IrVal:cs = relay emit_expr(@x3, shrink);
+    if (!(raw string_eq(relay irw_text(@w3),
+        "define { i32, i32 } @npk_casts(i32 %a0, i32 %a1, i64 %a2) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 %a1, ptr %t1\n  %t2 = alloca i64\n  store i64 %a2, ptr %t2\n  %t3 = load i32, ptr %t0\n  %t4 = zext i32 %t3 to i64\n  %t5 = load i32, ptr %t1\n  %t6 = sext i32 %t5 to i64\n  %t7 = load i64, ptr %t2\n  %t8 = trunc i64 %t7 to i32\n"))) { exit 31i32; }
+
+    // --- `&&` SHORT-CIRCUITS THROUGH A SLOT, and the rhs never runs early -----
+    IrWriter:w4 = raw irw_to_buffer();
+    FnEmitter:f4 = raw fnem_init(@w4, @c);
+    ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f4, "andand", types.t_bool);
+    drop fnem_param(@f4, nb, types.t_bool);
+    drop fnem_param(@f4, nb2, types.t_bool);
+    drop fnem_open(@f4);
+    IrVal:va = relay emit_expr(@x4, conj);
+    if (!(raw iv_is_ok(va)))                                 { exit 40i32; }
+    if (!(raw string_eq(relay irw_text(@w4),
+        "define { i8, i32 } @npk_andand(i8 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i8\n  store i8 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = alloca i8\n  %t3 = load i8, ptr %t0\n  %t4 = icmp ne i8 %t3, 0\n  store i8 0, ptr %t2\n  br i1 %t4, label %sc.rhs0, label %sc.done1\nsc.rhs0:\n  %t5 = load i8, ptr %t1\n  %t6 = icmp ne i8 %t5, 0\n  %t7 = zext i1 %t6 to i8\n  store i8 %t7, ptr %t2\n  br label %sc.done1\nsc.done1:\n  %t8 = load i8, ptr %t2\n"))) { exit 41i32; }
+
+    // --- UNARY: negate is `sub 0`, `!` derives from the value ALREADY emitted -
+    IrWriter:w5 = raw irw_to_buffer();
+    FnEmitter:f5 = raw fnem_init(@w5, @c);
+    ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f5, "unary", i32t);
+    drop fnem_param(@f5, nx, i32t);
+    drop fnem_param(@f5, nb, types.t_bool);
+    drop fnem_open(@f5);
+    drop emit_expr(@x5, neg);
+    drop emit_expr(@x5, not_b);
+    if (!(raw string_eq(relay irw_text(@w5),
+        "define { i32, i32 } @npk_unary(i32 %a0, i8 %a1) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i8\n  store i8 %a1, ptr %t1\n  %t2 = load i32, ptr %t0\n  %t3 = sub i32 0, %t2\n  %t4 = load i8, ptr %t1\n  %t5 = icmp ne i8 %t4, 0\n  %t6 = xor i1 %t5, true\n  %t7 = zext i1 %t6 to i8\n"))) { exit 50i32; }
+
+    // --- CALLS: the floor by its table, a user function by its symbol ---------
+    //
+    // `alloc` returns a BARE `ptr` — `raw` over it passes through, no extract.
+    // `f` returns `{ i32, i32 }` — `raw` extracts the value half.
+    IrWriter:w6 = raw irw_to_buffer();
+    FnEmitter:f6 = raw fnem_init(@w6, @c);
+    ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f6, "calls", i32t);
+    drop fnem_open(@f6);
+    IrVal:va2 = relay emit_expr(@x6, raw_alloc);
+    if (!(raw iv_is_ok(va2)))                                { exit 60i32; }
+    if (!(raw string_eq(va2.ll, "ptr")))                     { exit 61i32; }
+    IrVal:vf = relay emit_expr(@x6, raw_f);
+    if (!(raw iv_is_ok(vf)))                                 { exit 62i32; }
+    if (!(raw string_eq(vf.ll, "i32")))                      { exit 63i32; }
+    if (vf.type_id != i32t)                                  { exit 64i32; }
+    if (!(raw string_eq(relay irw_text(@w6),
+        "define { i32, i32 } @npk_calls() {\nentry:\n  %t0 = call ptr @npk_alloc(i64 64)\n  %t1 = call { i32, i32 } @npk_f(i32 7)\n  %t2 = extractvalue { i32, i32 } %t1, 0\n"))) { exit 65i32; }
+
+    // --- A STRING LITERAL: a module-level constant plus three insertvalues ----
+    IrWriter:w7 = raw irw_to_buffer();
+    FnEmitter:f7 = raw fnem_init(@w7, @c);
+    ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st);
+    drop fnem_begin(@f7, "hello", i32t);
+    drop fnem_open(@f7);
+    IrVal:vs = relay emit_expr(@x7, s_lit);
+    if (!(raw iv_is_ok(vs)))                                 { exit 70i32; }
+    if (!(raw string_eq(relay irw_text(@w7),
+        "define { i32, i32 } @npk_hello() {\nentry:\n  %t0 = insertvalue { ptr, i64, i64 } undef, ptr @.str.0, 0\n  %t1 = insertvalue { ptr, i64, i64 } %t0, i64 3, 1\n  %t2 = insertvalue { ptr, i64, i64 } %t1, i64 3, 2\n"))) { exit 71i32; }
+
+    // The constant itself: a linefeed becomes `\0A`, uppercase hex, no
+    // NUL terminator — the length is carried, not implied.
+    IrWriter:w8 = raw irw_to_buffer();
+    drop strtab_write_all(@st, @w8);
+    if (!(raw string_eq(relay irw_text(@w8),
+        "@.str.0 = private unnamed_addr constant [3 x i8] c\"A\\0AB\"\n"))) { exit 72i32; }
+
+    // --- SENTINELS, AND WHAT DOES NOT LOWER YET -------------------------------
+    IrVal:vn = relay emit_expr(@x7, nil_lit);
+    if (!(raw string_eq(vn.ref, "0")))                       { exit 80i32; }
+    IrVal:vnull = relay emit_expr(@x7, null_lit);
+    if (!(raw string_eq(vnull.ll, "ptr")))                   { exit 81i32; }
+    if (!(raw string_eq(vnull.ref, "null")))                 { exit 82i32; }
+    // `relay` branches and runs `defer`; it is 0.7.6's and says so.
+    IrVal:vr = relay emit_expr(@x7, relay_n);
+    if (vr.state != (raw LL_RUNG()))                         { exit 83i32; }
+    if (!(raw string_eq(vr.rung, "0.7.6")))                  { exit 84i32; }
+    // A kind nobody classified FAILS CLOSED, never guesses.
+    IrVal:vt = relay emit_expr(@x7, tern);
+    if (vt.state != (raw LL_BROKEN()))                       { exit 85i32; }
+
+    exit 0i32;
+};

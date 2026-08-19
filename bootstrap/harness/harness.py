@@ -525,6 +525,123 @@ def check_ll_types_agree():
     return fails
 
 
+def _npkrt_defines():
+    """The functions npkrt.ll DEFINES, parsed from the IR text itself.
+
+    Multi-line parameter lists are real (string_concat's spans two), so the
+    define is matched through balanced parentheses rather than to end-of-line --
+    the first version of this scan was line-anchored and reported two runtime
+    functions as missing.
+    """
+    src = open(RUNTIME_LL, encoding="utf-8").read()
+    out = {}
+    for m in re.finditer(r"define\s+(?:internal\s+)?(.+?)\s+@(\w+)\(", src):
+        ret, name = m.group(1).strip(), m.group(2)
+        depth, i, start = 1, m.end(), m.end()
+        while depth:
+            c = src[i]
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            i += 1
+        args, cur, d2 = [], "", 0
+        for c in src[start:i - 1]:
+            if c == "," and d2 == 0:
+                args.append(cur.strip())
+                cur = ""
+                continue
+            if c in "{[(":
+                d2 += 1
+            if c in "}])":
+                d2 -= 1
+            cur += c
+        if cur.strip():
+            args.append(cur.strip())
+        # strip the parameter NAME, keeping the type text
+        tys = []
+        for a in args:
+            a = " ".join(a.split())
+            tys.append(a.rsplit(" %", 1)[0] if " %" in a else a)
+        out[name] = (ret.replace("noreturn", "").strip(), tys)
+    return out
+
+
+def check_runtime_sigs_agree():
+    """npkrt.ll, the seed's RUNTIME table, and src/backend/ir/ir_runtime.npk must
+    state the SAME signature for every runtime symbol.
+
+    Three copies of one fact, and none removable: the runtime DEFINES, the seed
+    declares for stage 1, the compiler declares for stage 2. npkrt.ll's own
+    header records what a disagreement does -- IR llc rejects -- and a size
+    disagreement is worse, because a call through a wrong aggregate type
+    corrupts the callee's view of memory instead of failing.
+    """
+    fails = []
+    defs = _npkrt_defines()
+
+    # --- the seed against the runtime ------------------------------------
+    for name, (sym, ret, args) in sorted(emit.RUNTIME.items()):
+        d = defs.get("npk_" + name)
+        if d is None:
+            fails.append("seed RUNTIME declares `%s` and npkrt.ll does not define "
+                         "@npk_%s" % (name, name))
+            continue
+        if d[0] != ret:
+            fails.append("`%s` returns `%s` in npkrt.ll and `%s` in the seed's "
+                         "RUNTIME table" % (name, d[0], ret))
+        if d[1] != args:
+            fails.append("`%s` takes %s in npkrt.ll and %s in the seed's RUNTIME "
+                         "table" % (name, d[1], args))
+
+    # --- the compiler against the runtime --------------------------------
+    rtsrc = open(os.path.join(ROOT, "src", "backend", "ir", "ir_runtime.npk"),
+                 encoding="utf-8").read()
+    entries = {}
+    for m in re.finditer(
+            r'string_eq\(name, "(\w+)"\)\)\s*\{\s*pass \(raw rt\((.*?)\)\);',
+            rtsrc, re.S):
+        name, body = m.group(1), m.group(2)
+        strs = re.findall(r'"((?:[^"\\]|\\.)*)"', body)
+        argc = re.search(r"(\d+)i32", body)
+        entries[name] = (strs, int(argc.group(1)))
+    if not entries:
+        return ["check_runtime_sigs_agree parsed no entries out of "
+                "src/backend/ir/ir_runtime.npk -- the check has stopped checking"]
+    for name, (strs, argc) in sorted(entries.items()):
+        sym, ret, inner = strs[0], strs[1], strs[2]
+        args = [a for a in strs[3:3 + argc]]
+        d = defs.get(sym.lstrip("@"))
+        if d is None:
+            fails.append("ir_runtime.npk declares `%s` as %s and npkrt.ll does "
+                         "not define it" % (name, sym))
+            continue
+        if d[0] != ret:
+            fails.append("`%s` returns `%s` in npkrt.ll and `%s` in "
+                         "ir_runtime.npk" % (name, d[0], ret))
+        if d[1] != args:
+            fails.append("`%s` takes %s in npkrt.ll and %s in ir_runtime.npk"
+                         % (name, d[1], args))
+        if ret.startswith("{ {") or (ret.startswith("{") and ret.endswith("i32 }")):
+            want_inner = ret[1:].rsplit(",", 1)[0].strip() if ret != "{ i32 }" else ""
+            if inner != want_inner:
+                fails.append("`%s`'s wrapped inner is `%s` in ir_runtime.npk and "
+                             "`%s` derived from its return" % (name, inner, want_inner))
+
+    # --- every seed entry has a compiler entry, and back -------------------
+    seed_names = set(emit.RUNTIME) | {"exit"}
+    comp_names = set(entries)
+    for name in sorted(seed_names - comp_names):
+        fails.append("`%s` is in the seed's RUNTIME floor and not in "
+                     "ir_runtime.npk -- stage 2 could not compile a program the "
+                     "seed compiles" % name)
+    for name in sorted(comp_names - seed_names):
+        fails.append("`%s` is in ir_runtime.npk and not in the seed's floor -- "
+                     "the two compilers disagree about what a program may call"
+                     % name)
+    return fails
+
+
 def check_codes_tested():
     """Every code a rule can emit is asserted by some test, or is on the list."""
     codes = {}
@@ -883,6 +1000,7 @@ def main(argv):
         failures += check_codes_tested()
         failures += check_codes_centralised()
         failures += check_ll_types_agree()
+        failures += check_runtime_sigs_agree()
 
         pc = build_parse_check(tmp, tools)
         if isinstance(pc, str) and not os.path.exists(pc):

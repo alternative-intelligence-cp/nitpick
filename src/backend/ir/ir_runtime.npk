@@ -1,0 +1,114 @@
+// The runtime floor's signatures, as the emitter must declare and call them.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.5.
+//
+// THIS IS THE THIRD COPY OF ONE FACT, AND IT CANNOT BE HELPED — so it is diffed.
+// `bootstrap/runtime/npkrt.ll` DEFINES these functions; the seed's `RUNTIME`
+// table declares them for stage 1; this table declares them for stage 2. The
+// runtime's own header records what a disagreement does: "declaring a runtime
+// symbol as returning a bare string while the checker types it as Result<string>
+// is exactly the kind of silent disagreement that produces IR llc rejects -- and
+// it did." `check_runtime_sigs_agree` in the harness parses the defines out of
+// `npkrt.ll` and compares all three on every full run.
+//
+// WHY THE EMITTER NEEDS ITS OWN TABLE AT ALL: the checker deliberately types a
+// bare-name builtin call as UNKNOWN — "a bare-name builtin resolves to no symbol
+// and that is correct; its signature arrives with call checking"
+// (`type_expr.npk`) — so `ExprTypes` has no answer at an `alloc(…)` call and the
+// emitter must know the floor the way the seed does.
+//
+// `wrapped` AND `inner` ARE STORED, NOT DERIVED. Whether a return is a
+// `Result` decides whether `raw` extracts or passes through, and sniffing it out
+// of the type text ("does it end in `, i32 }`") would make `cstring`'s
+// `{ ptr, i64 }` one brace away from a wrong answer.
+
+mod:ir_runtime;
+
+use "../../frontend/intern.npk".*;
+
+pub struct:RtSig = {
+    bool:found;
+    string:sym;       // "@npk_alloc"
+    string:ret;       // the FULL return as npkrt.ll defines it; "void" for none
+    bool:wrapped;     // the return is a Result and `raw`/`relay` must extract
+    string:inner;     // the value half when wrapped; "" when Result<NIL>
+    int32:argc;
+    string:a0;
+    string:a1;
+    string:a2;
+};
+
+func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
+                int32:argc, string:a0, string:a1, string:a2) {
+    RtSig:s = RtSig{ found: true, sym: sym, ret: ret, wrapped: wrapped,
+                     inner: inner, argc: argc, a0: a0, a1: a1, a2: a2 };
+    pass s;
+};
+
+// The floor, one entry per symbol `npkrt.ll` defines for programs. `npk_start`
+// is the entry shim and not callable; `npk_exit` is here because `exit` lowers
+// to it (0.7.6), argc 1, void.
+pub func:rt_sig = RtSig(string:name) {
+    if (raw string_eq(name, "alloc")) {
+        pass (raw rt("@npk_alloc", "ptr", false, "", 1i32, "i64", "", ""));
+    }
+    if (raw string_eq(name, "calloc")) {
+        pass (raw rt("@npk_calloc", "ptr", false, "", 2i32, "i64", "i64", ""));
+    }
+    if (raw string_eq(name, "ralloc")) {
+        pass (raw rt("@npk_ralloc", "ptr", false, "", 2i32, "ptr", "i64", ""));
+    }
+    if (raw string_eq(name, "dalloc")) {
+        pass (raw rt("@npk_dalloc", "void", false, "", 1i32, "ptr", "", ""));
+    }
+    if (raw string_eq(name, "string_concat")) {
+        pass (raw rt("@npk_string_concat", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 2i32,
+                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", ""));
+    }
+    if (raw string_eq(name, "int_to_string")) {
+        pass (raw rt("@npk_int_to_string", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 1i32, "i64", "", ""));
+    }
+    if (raw string_eq(name, "write_raw")) {
+        pass (raw rt("@npk_write_raw", "i64", false, "", 3i32,
+                     "i32", "ptr", "i64"));
+    }
+    if (raw string_eq(name, "string_slice")) {
+        pass (raw rt("@npk_string_slice", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 3i32,
+                     "{ ptr, i64, i64 }", "i64", "i64"));
+    }
+    if (raw string_eq(name, "string_from_bytes")) {
+        pass (raw rt("@npk_string_from_bytes", "{ ptr, i64, i64 }", false, "",
+                     2i32, "ptr", "i64", ""));
+    }
+    if (raw string_eq(name, "read_stdin")) {
+        pass (raw rt("@npk_read_stdin", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 0i32, "", "", ""));
+    }
+    if (raw string_eq(name, "to_cstring")) {
+        pass (raw rt("@npk_to_cstring", "{ { ptr, i64 }, i32 }", true,
+                     "{ ptr, i64 }", 1i32, "{ ptr, i64, i64 }", "", ""));
+    }
+    if (raw string_eq(name, "read_file")) {
+        pass (raw rt("@npk_read_file", "{ { ptr, i64, i64 }, i32 }", true,
+                     "{ ptr, i64, i64 }", 1i32, "{ ptr, i64 }", "", ""));
+    }
+    if (raw string_eq(name, "path_exists")) {
+        pass (raw rt("@npk_path_exists", "i8", false, "", 1i32,
+                     "{ ptr, i64 }", "", ""));
+    }
+    if (raw string_eq(name, "exit")) {
+        pass (raw rt("@npk_exit", "void", false, "", 1i32, "i32", "", ""));
+    }
+    RtSig:none = RtSig{ found: false, sym: "", ret: "", wrapped: false,
+                        inner: "", argc: 0i32, a0: "", a1: "", a2: "" };
+    pass none;
+};
+
+pub func:rt_arg = string(RtSig:s, int32:i) {
+    if (i == 0i32) { pass s.a0; }
+    if (i == 1i32) { pass s.a1; }
+    pass s.a2;
+};

@@ -130,6 +130,25 @@ pub func:ir_symbol = string(string:name) {
     pass (relay string_concat("@npk_", name));
 };
 
+// --- building a line --------------------------------------------------------------
+//
+// An instruction is five to seven pieces, and a chain of six `string_concat`
+// calls buries which six. One definition, here, because the seed compiles the
+// whole backend as one namespace — a private copy per module is a duplicate
+// definition to it, and two copies of a helper is one more than the truth needs.
+
+pub func:cat3 = string(string:a, string:b, string:c) {
+    pass (relay string_concat(relay string_concat(a, b), c));
+};
+
+pub func:cat4 = string(string:a, string:b, string:c, string:d) {
+    pass (relay string_concat(relay cat3(a, b, c), d));
+};
+
+pub func:cat5 = string(string:a, string:b, string:c, string:d, string:e) {
+    pass (relay string_concat(relay cat4(a, b, c, d), e));
+};
+
 // --- reading it back --------------------------------------------------------------
 //
 // For a test, and for a driver that writes the whole module at once.
