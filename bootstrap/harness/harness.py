@@ -864,7 +864,10 @@ def check_parses(binary, path, name):
     return []
 
 
-EMIT_CHECK = os.path.join(ROOT, "tools", "emit_check.npk")
+# The COMPILER ITSELF: src/main.npk is npkc's entry (nitpick.toml [build]), and
+# the harness builds and runs it the way a build system will -- IR on stdout,
+# llc and ld.lld after.
+EMIT_CHECK = os.path.join(ROOT, "src", "main.npk")
 
 
 def check_backend_rejection(binary, path, name, exp):
@@ -1208,9 +1211,9 @@ def main(argv):
         # what D-085 promised the day the suite was written: its files must pass
         # the whole frontend and be refused by EMISSION with NITPICK-RUNG-001.
         # Until this tool existed the suite could only test the seed's rungs.
-        ec = build_tool(tmp, tools, EMIT_CHECK, "emit_check")
+        ec = build_tool(tmp, tools, EMIT_CHECK, "npkc")
         if isinstance(ec, str) and not os.path.exists(ec):
-            failures.append("tools/emit_check.npk did not build: %s" % ec)
+            failures.append("src/main.npk (npkc) did not build: %s" % ec)
         elif ec:
             n = 0
             for p in sorted(glob.glob(os.path.join(ROOT, "tests", "rejection",
@@ -1225,9 +1228,18 @@ def main(argv):
             # Whole programs COMPILED BY THE REAL BACKEND, linked against the
             # runtime, and RUN. A byte-pin proves the text is stable; only
             # execution proves the text means what the source said.
+            #
+            # THE CONFORMANCE SUITE IS IN THIS SWEEP, which is the cycle's goal
+            # sentence made a test: subset 1 compiles and runs under THIS
+            # compiler, with the same expectations the seed meets. A file another
+            # one imports is a fixture here exactly as it is for the seed.
+            progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                  "programs", "*.npk")))
+            conf = sorted(glob.glob(os.path.join(ROOT, "tests", "conformance",
+                                                 "*.npk")))
+            conf = [p for p in conf if p not in imported_by_others(conf)]
             n = 0
-            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
-                                                   "programs", "*.npk"))):
+            for p in progs + conf:
                 exp = read_expectations(p)
                 failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
                                                   exp, tmp)

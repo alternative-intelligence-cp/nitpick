@@ -716,6 +716,20 @@ func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     IrVal:v = relay emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
     int32:my_t = raw exprtypes_get(x.et, id);
+    // Type-driven, flag as fallback — the same repair `emit_raw` records.
+    int32:ot = raw exprtypes_get(x.et, raw expr_operand(n));
+    if ((raw type_kind(x.fe.ctx.types, ot)) == (raw TY_RESULT())) {
+        int32:in_t = raw type_elem(x.fe.ctx.types, ot);
+        v.wrapped = true;
+        v.inner = "";
+        if ((raw type_kind(x.fe.ctx.types, in_t)) != (raw TY_NIL())) {
+            LlType:il = relay ll_type(x.fe.ctx, in_t);
+            if (!(raw ll_is_ok(il))) {
+                pass (relay iv_from_ll_at(x, il, in_t, n.span));
+            }
+            v.inner = il.text;
+        }
+    }
     if (!v.wrapped) { pass (raw iv(v.ll, v.ref, my_t)); }
 
     // The value half first — only the ok path needs it, but extracting before
@@ -760,19 +774,41 @@ func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if (v.state != (raw LL_OK())) { pass v; }
     int32:my_t = raw exprtypes_get(x.et, id);
 
-    if (!v.wrapped) {
-        // Already a plain value — a builtin returning bare `ptr`, or an
-        // expression the checker let through unwrapped. The seed does the same.
-        pass (raw iv(v.ll, v.ref, my_t));
+    // THE OPERAND'S RECORDED TYPE DECIDES, and the call-side flag is only the
+    // fallback for the one place the type is deliberately unknown (a builtin
+    // call). The first version asked only the flag, and the flag is set by
+    // CALLS — so `raw r` over a Result-typed LOCAL passed the whole `{T, i32}`
+    // through as the value, and `llc` refused the insertvalue two lines later.
+    int32:ot = raw exprtypes_get(x.et, raw expr_operand(n));
+    bool:is_result = ((raw type_kind(x.fe.ctx.types, ot)) == (raw TY_RESULT()));
+    if (!is_result) {
+        if (!v.wrapped) {
+            // Genuinely plain — a bare-`ptr` builtin, or already unwrapped.
+            pass (raw iv(v.ll, v.ref, my_t));
+        }
     }
-    if (v.inner.len == 0i64) {
+
+    string:inner_ll = v.inner;
+    if (is_result) {
+        int32:in_t = raw type_elem(x.fe.ctx.types, ot);
+        if ((raw type_kind(x.fe.ctx.types, in_t)) == (raw TY_NIL())) {
+            inner_ll = "";
+        } else {
+            LlType:il = relay ll_type(x.fe.ctx, in_t);
+            if (!(raw ll_is_ok(il))) {
+                pass (relay iv_from_ll_at(x, il, in_t, n.span));
+            }
+            inner_ll = il.text;
+        }
+    }
+    if (inner_ll.len == 0i64) {
         // `Result<NIL>`: the value half is nothing, spelled `i32 0`.
         pass (raw iv("i32", "0", my_t));
     }
     string:r = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(r, " = extractvalue ", v.ll, " ",
                                      relay string_concat(v.ref, ", 0")));
-    pass (raw iv(v.inner, r, my_t));
+    pass (raw iv(inner_ll, r, my_t));
 };
 
 // --- places (0.7.7) ---------------------------------------------------------------
@@ -1198,8 +1234,15 @@ func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 };
 
 // An INDEX read is its place plus a load — an element's address exists by
-// construction, and a dynamic index into an aggregate VALUE does not.
+// construction, and a dynamic index into an aggregate VALUE does not. A RANGE
+// index is different in kind: `arr[lo...hi]` yields a VALUE, the `{ptr, len}`
+// view D-070 describes, and takes the seed's shape exactly — element pointer
+// moved to `lo`, length `hi - lo`.
 func:emit_index = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    ExprNode:ix = relay ast_expr(x.ast, raw expr_rhs(n));
+    if (ix.kind == ExprKind.ExprRangeExpr) {
+        pass (relay emit_range_slice(x, id, n, ix));
+    }
     PlaceVal:p = relay addr_of(x, id);
     if (p.state != (raw LL_OK())) { pass (relay iv_from_place(p)); }
     LlType:ell = relay ll_type(x.fe.ctx, p.type_id);
@@ -1207,6 +1250,53 @@ func:emit_index = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     string:r = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(r, " = load ", ell.text, ", ptr ", p.addr));
     pass (raw iv(ell.text, r, p.type_id));
+};
+
+func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                              ExprNode:ix) {
+    int32:obj_tid = raw exprtypes_get(x.et, raw expr_lhs(n));
+    int32:okind = raw type_kind(x.fe.ctx.types, obj_tid);
+    int32:elem_tid = raw type_elem(x.fe.ctx.types, obj_tid);
+    LlType:ell = relay ll_type(x.fe.ctx, elem_tid);
+    if (!(raw ll_is_ok(ell))) {
+        pass (relay iv_from_ll_at(x, ell, elem_tid, n.span));
+    }
+
+    // The data pointer: an array's is its own address, a slice's is its first
+    // field. Anything else cannot be ranged and the checker said so already.
+    string:base = "";
+    if (okind == (raw TY_ARRAY())) {
+        PlaceVal:p = relay addr_of(x, raw expr_lhs(n));
+        if (p.state != (raw LL_OK())) { pass (relay iv_from_place(p)); }
+        base = p.addr;
+    }
+    if (okind == (raw TY_SLICE())) {
+        IrVal:ov = relay emit_expr(x, raw expr_lhs(n));
+        if (!(raw iv_is_ok(ov))) { pass ov; }
+        string:d = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(d, " = extractvalue ", ov.ll, " ",
+                          relay string_concat(ov.ref, ", 0")));
+        base = d;
+    }
+    if (base.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    IrVal:lo = relay emit_expr(x, raw expr_lhs(ix));
+    if (!(raw iv_is_ok(lo))) { pass lo; }
+    IrVal:hi = relay emit_expr(x, raw expr_rhs(ix));
+    if (!(raw iv_is_ok(hi))) { pass hi; }
+
+    string:g = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(g, " = getelementptr ", ell.text,
+                      ", ptr ", relay cat4(base, ", i64 ", lo.ref, "")));
+    string:cnt = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cnt, " = sub i64 ", hi.ref, ", ", lo.ref));
+    string:a = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(a, " = insertvalue { ptr, i64 } undef, ptr ",
+                      relay string_concat(g, ", 0")));
+    string:b = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(b, " = insertvalue { ptr, i64 } ", a,
+                      ", i64 ", relay string_concat(cnt, ", 1")));
+    pass (raw iv("{ ptr, i64 }", b, raw exprtypes_get(x.et, id)));
 };
 
 func:emit_addr_op = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {

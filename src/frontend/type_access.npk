@@ -240,10 +240,14 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
     }
 
     // A SLICE CARRIES ITS LENGTH; a pointer does not (D-038/D-070), which is the
-    // whole reason the two are different types.
+    // whole reason the two are different types. `.ptr` is the data pointer,
+    // typed as a pointer to the ELEMENT.
     if (k == (raw TY_SLICE())) {
         string:f = relay intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        if (raw string_eq(f, "ptr")) {
+            pass (raw tt_pointer(e.types, raw type_elem(e.types, base)));
+        }
         pass (relay te_no_member(e, base, name, at));
     }
     if (k == (raw TY_ARRAY())) {
@@ -251,9 +255,26 @@ func:member_type = int32(ExprTyper->:e, int32:base, int32:name, Span:at) {
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
         pass (relay te_no_member(e, base, name, at));
     }
+    // A STRING'S THREE FIELDS (`{ptr, len, cap}`), and a `cstring`'s two — the
+    // members the compiler's own sources read on every line that walks bytes
+    // (`s.ptr[i]`), and which only `.len` of had a rule until 0.7.8. The bytes
+    // are `uint8`: a code unit is 0..255, and a signed byte would make half of
+    // every encoding negative.
     if (k == (raw TY_STRING())) {
         string:f = relay intern_get(e.interns, name);
         if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        if (raw string_eq(f, "cap")) { pass (raw tt_int(e.types, 64i32, true)); }
+        if (raw string_eq(f, "ptr")) {
+            pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, false)));
+        }
+        pass (relay te_no_member(e, base, name, at));
+    }
+    if (k == (raw TY_CSTRING())) {
+        string:f = relay intern_get(e.interns, name);
+        if (raw string_eq(f, "len")) { pass (raw tt_int(e.types, 64i32, true)); }
+        if (raw string_eq(f, "ptr")) {
+            pass (raw tt_pointer(e.types, raw tt_int(e.types, 8i32, false)));
+        }
         pass (relay te_no_member(e, base, name, at));
     }
 
@@ -301,6 +322,25 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) {
     e.expected = raw tt_int(e.types, 64i32, true);
     int32:idx = relay type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
+
+    // `arr[lo...hi]` — RANGING an array or a slice yields a SLICE over the same
+    // element (D-070), not an element. Until 0.7.8 this fell through the integer
+    // check and typed as the ELEMENT, so `int32[]:view = fixed_arr[0i64...4i64];`
+    // — a conformance file the seed compiles — was a type error here.
+    if (idx != 0i32) {
+        if ((raw type_kind(e.types, idx)) == (raw TY_RANGE())) {
+            if (base == 0i32) { pass 0i32; }
+            int32:bk = raw type_kind(e.types, base);
+            if (bk == (raw TY_ARRAY())) {
+                pass (raw tt_slice(e.types, raw type_elem(e.types, base)));
+            }
+            if (bk == (raw TY_SLICE())) { pass base; }
+            string:r1 = relay string_concat("`",
+                            relay type_display(e.types, e.interns, base));
+            pass (relay te_error(e, raw TYPE_MISMATCH(),
+                      relay string_concat(r1, "` cannot be ranged"), n.span));
+        }
+    }
 
     if (idx != 0i32) {
         if (!(raw type_is_invalid(e.types, idx))) {

@@ -71,6 +71,27 @@ These are fast compiler intrinsics for interacting with the `string` type.
 
 ---
 
+## 2b. The Runtime Floor (bootstrap tier)
+
+The functions `bootstrap/runtime/npkrt.ll` defines and every backend rung can
+call — the set the compiler itself is written against until `nlibc` (cycle 0.8)
+grows the library tier above it. They are ordinary bare-name builtins: declared in
+no module, resolved by the compiler, callable everywhere. Three copies of this
+signature set exist by necessity — the runtime defines, the seed declares for
+stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
+`check_runtime_sigs_agree` diffs all three on every harness run.
+
+| Built-in | Signature | Notes |
+|---|---|---|
+| `int_to_string` | `int64 → Result<string>` | Decimal rendering. |
+| `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. |
+| `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. |
+| `to_cstring` | `string → Result<cstring>` | NUL-terminated copy (D-049). |
+| `read_file` | `cstring → Result<string>` | Whole file. |
+| `read_stdin` | `() → Result<string>` | Whole stream. |
+| `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. |
+| `write_raw` | `(int32:fd, ptr, int64:len) → int64` | Bytes written; the one raw write until D-050's line discipline. |
+
 ## 3. Syscalls
 
 Direct access to operating system syscalls. 

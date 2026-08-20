@@ -1,0 +1,93 @@
+// npkc — the Nitpick compiler.
+//
+// Cycle 0.7.8, the first `main` this project has had: `nitpick.toml`'s
+// `entry = "src/main.npk"` stops being aspiration. It reads one root, runs the
+// whole front half (`src/driver/pipeline.npk`), and either reports diagnostics —
+// codes and spans, one per line — or writes the program's LLVM IR to stdout.
+//
+// IT WRITES TEXT TO FD 1 AND NOTHING ELSE. Subset 1 has no process spawning and
+// the runtime floor has no file creation, so `llc` and `ld.lld` are the build
+// system's to invoke (BUILD_REFERENCE §4) — which is also the honest shape: the
+// compiler's output IS the IR, and what a build does with it is the build's.
+//
+// Exit codes, the same contract every tool holds:
+//
+//   0   clean — the IR is on stdout
+//   1   diagnostics (codes and spans on stdout; no IR)
+//   2   could not read the input
+//   3   the COMPILER trapped — a defect in it, never in the input
+
+use "driver/pipeline.npk".*;
+use "frontend/source_location.npk".*;
+use "frontend/intern.npk".*;
+use "frontend/diagnostics.npk".*;
+use "backend/ir/ir_writer.npk".*;
+use "backend/emit_program.npk".*;
+use "frontend/resolve_type.npk".*;
+use "frontend/types.npk".*;
+
+func:emit_line = NIL(Diagnostic:d) {
+    string:pre = "";
+    if (d.severity == 0i32) { pre = "note "; }
+    string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
+    string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
+    string:m3 = relay string_concat(m2, ":");
+    string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
+    string:m5 = relay string_concat(m4, "\n");
+    drop write_raw(1i32, m5.ptr, m5.len);
+    pass NIL;
+};
+
+func:report = NIL(DiagList->:diags) {
+    int64:n = raw diaglist_count(diags);
+    int64:d = 0i64;
+    while (d < n) {
+        drop emit_line(raw diaglist_at(diags, d));
+        d = d + 1i64;
+    }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) {
+        string:usage = "usage: npkc <root.npk>\n";
+        drop write_raw(2i32, usage.ptr, usage.len);
+        exit 2i32;
+    }
+    cstring:arg = argv[1i64];
+    string:root = raw string_from_bytes(arg.ptr, arg.len);
+
+    // Declared UNINITIALISED and filled by the pipeline through the pointer —
+    // the graph inside holds a pointer to the intern table beside it, so the
+    // whole Front must sit in one frame before any wiring happens.
+    Front:f;
+    int32:fr = raw front_run(@f, root);
+    if (fr == 2i32) { exit 2i32; }
+    if (fr != 0i32) {
+        drop report(@f.diags);
+        exit 1i32;
+    }
+
+    // The backend, INTO A BUFFER: a rung refusal can arrive after half the
+    // module is written, and half a module beside an error report is an output
+    // nobody can consume. The IR leaves the process only once it is known whole.
+    IrWriter:w = raw irw_to_buffer();
+    InstanceTable:einst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@f.g.ast, @f.types, @f.g.tab, @f.it,
+                                     @f.diags, @einst);
+    bool:emitted = raw emit_program(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
+                                    @f.diags);
+    if (!emitted) {
+        drop report(@f.diags);
+        exit 1i32;
+    }
+    string:ir = raw irw_text(@w);
+    drop write_raw(1i32, ir.ptr, ir.len);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    // Reaching here is a defect in the COMPILER, not in the file being read. A
+    // distinct code so no harness ever reports it as the input's error.
+    exit 3i32;
+};

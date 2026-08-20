@@ -22,20 +22,20 @@
 // Grow to `want` elements, preserving what is already there. The shape every
 // growable array in the compiler is written in.
 func:grow = wild int32->(wild int32->:items, int64:have, int64:want) {
-    wild int8->:bigger = ralloc(items => wild int8->, want * 4i64);
-    pass (bigger => wild int32->);
+    wild int8->:bigger = ralloc(items =>! wild int8->, want * 4i64);
+    pass (bigger =>! wild int32->);
 };
 
 func:main = int32(cstring[]:_~argv) {
     int64:cap = 8i64;
     wild int8->:mem = alloc(cap * 4i64);
-    wild int32->:items = mem => wild int32->;
+    wild int32->:items = mem =>! wild int32->;
 
     // A pattern that depends on the index, so a copy that lands short or shifted
     // is a different value rather than the same zero.
     int64:i = 0i64;
     while (i < cap) {
-        items[i] = (i => int32) * 7i32;
+        items[i] = (i =>! int32) * 7i32;
         i = i + 1i64;
     }
 
@@ -47,12 +47,12 @@ func:main = int32(cstring[]:_~argv) {
         // Everything written before the growth is still there.
         int64:j = 0i64;
         while (j < cap) {
-            if (items[j] != ((j => int32) * 7i32)) { exit 10i32; }
+            if (items[j] != ((j =>! int32) * 7i32)) { exit 10i32; }
             j = j + 1i64;
         }
         // …and the new space is writable to its last element.
         while (j < next) {
-            items[j] = (j => int32) * 7i32;
+            items[j] = (j =>! int32) * 7i32;
             j = j + 1i64;
         }
         cap = next;
@@ -62,7 +62,7 @@ func:main = int32(cstring[]:_~argv) {
     // only up to where the last growth started.
     int64:k = 0i64;
     while (k < cap) {
-        if (items[k] != ((k => int32) * 7i32)) { exit 11i32; }
+        if (items[k] != ((k =>! int32) * 7i32)) { exit 11i32; }
         k = k + 1i64;
     }
 
@@ -72,7 +72,7 @@ func:main = int32(cstring[]:_~argv) {
     items = raw grow(items, cap, 16i64);
     int64:m = 0i64;
     while (m < 16i64) {
-        if (items[m] != ((m => int32) * 7i32)) { exit 12i32; }
+        if (items[m] != ((m =>! int32) * 7i32)) { exit 12i32; }
         m = m + 1i64;
     }
 
