@@ -408,6 +408,7 @@ UNTESTED_CODES = {
     "NITPICK-MACRO-006":   "internal -- a node kind the macro clone has no case for",
     "NITPICK-RESOLVE-009": "internal -- a node kind the resolver has no case for",
     "NITPICK-TYPE-011":    "internal -- a node kind the type checker has no case for",
+    "NITPICK-EMIT-002":    "internal -- a node kind the emitter has no case for",
 
     # AHEAD OF THE LANGUAGE -- the rule is written, correct, and unreachable
     # because the construct it governs does not exist yet. Deliberate, and the
@@ -863,6 +864,63 @@ def check_parses(binary, path, name):
     return []
 
 
+EMIT_CHECK = os.path.join(ROOT, "tools", "emit_check.npk")
+
+
+def check_backend_rejection(binary, path, name, exp):
+    """A correct program the BACKEND must refuse with NITPICK-RUNG-001 (D-085).
+
+    Until 0.7.7 this suite could only be run against the SEED's rungs, because
+    the seed was the only backend. `tools/emit_check.npk` is the real one: the
+    file must pass the whole frontend -- parse, resolve, type-check, analyse --
+    and be refused by EMISSION, naming the construct and the rung. A file that
+    fails earlier is a test of the wrong stage and reports as one.
+    """
+    return check_module_rejection(binary, path, name, exp)
+
+
+def check_emitted_program(binary, path, name, exp, tmp):
+    """A program COMPILED BY THIS COMPILER'S BACKEND, run, and its exit compared.
+
+    The seed is nowhere in this path: `emit_check` loads, checks and EMITS with
+    the real compiler, and what runs is what `emit_program` wrote. This is the
+    strongest instrument the backend has -- a byte-pin proves the text is stable,
+    but only execution proves the text means what the source said.
+    """
+    try:
+        r = subprocess.run([binary, path], capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        return ["%s: emit_check did not terminate" % name]
+    if r.returncode == 3:
+        return ["%s: the compiler TRAPPED -- a defect in it, not in this file"
+                % name]
+    if r.returncode != 0:
+        got = r.stdout.decode("utf-8", "replace").strip().replace("\n", ", ")
+        return ["%s: expected IR, got a refusal (%s)" % (name, got)]
+    base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
+    with open(base + ".ll", "wb") as fh:
+        fh.write(r.stdout)
+    r = subprocess.run(["llc", "-O0", "-filetype=obj", "-relocation-model=static",
+                        base + ".ll", "-o", base + ".o"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
+        return ["%s: llc rejected the REAL BACKEND's IR: %s"
+                % (name, first.strip()[:160])]
+    r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
+                        os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["%s: link failed: %s" % (name, r.stderr.strip()[:140])]
+    try:
+        got = subprocess.run([base], capture_output=True, timeout=10).returncode
+    except subprocess.TimeoutExpired:
+        return ["%s: timed out" % name]
+    if got != exp.exit:
+        return ["%s: exited %d, expected %d (compiled by the REAL backend)"
+                % (name, got, exp.exit)]
+    return []
+
+
 # --- driver ------------------------------------------------------------------
 
 def load_targets():
@@ -1032,6 +1090,8 @@ def main(argv):
             grammar += sorted(glob.glob(os.path.join(ROOT, "src", "prelude", "*.npk")))
             grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "accept", "**", "*.npk"),
                                         recursive=True))
+            grammar += sorted(glob.glob(os.path.join(ROOT, "tests", "backend", "**", "*.npk"),
+                                        recursive=True))
 
             # THE COMPILER'S OWN SOURCE, which is the file set that matters most
             # and the one this sweep did not cover until 0.7.3.
@@ -1141,6 +1201,38 @@ def main(argv):
                 failures += check_type_rejection(tc, p, os.path.relpath(p, ROOT), exp)
                 n += 1
             print("  %-11s %2d derive-rejection test(s)" % ("derive", n))
+
+        # --- the REAL BACKEND (0.7.7) ------------------------------------------
+        #
+        # `tests/rejection/` asserts against THIS COMPILER's rungs now, which is
+        # what D-085 promised the day the suite was written: its files must pass
+        # the whole frontend and be refused by EMISSION with NITPICK-RUNG-001.
+        # Until this tool existed the suite could only test the seed's rungs.
+        ec = build_tool(tmp, tools, EMIT_CHECK, "emit_check")
+        if isinstance(ec, str) and not os.path.exists(ec):
+            failures.append("tools/emit_check.npk did not build: %s" % ec)
+        elif ec:
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "rejection",
+                                                   "*.npk"))):
+                exp = read_expectations(p)
+                if not exp.errors:
+                    continue
+                failures += check_backend_rejection(ec, p, os.path.relpath(p, ROOT), exp)
+                n += 1
+            print("  %-11s %2d backend-rejection test(s)" % ("rungs", n))
+
+            # Whole programs COMPILED BY THE REAL BACKEND, linked against the
+            # runtime, and RUN. A byte-pin proves the text is stable; only
+            # execution proves the text means what the source said.
+            n = 0
+            for p in sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
+                                                   "programs", "*.npk"))):
+                exp = read_expectations(p)
+                failures += check_emitted_program(ec, p, os.path.relpath(p, ROOT),
+                                                  exp, tmp)
+                n += 1
+            print("  %-11s %2d real-backend program(s)" % ("programs", n))
 
             # And whole programs that must be ACCEPTED, in full silence.
             #

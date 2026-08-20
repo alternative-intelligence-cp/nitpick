@@ -47,7 +47,13 @@ OPERATORS = [
 OPERATORS.sort(key=len, reverse=True)
 
 INT_SUFFIXES = ["i8", "i16", "i32", "i64", "i128", "i256",
-                "u8", "u16", "u32", "u64", "u128", "u256"]
+                "u8", "u16", "u32", "u64", "u128", "u256",
+                # `1tbb32` -- a tbb-typed literal. The seed lexes it like any
+                # width; whether tbb ARITHMETIC is in the rung is the checker's
+                # question, not a lexing accident. Without this the rejection
+                # file about tbb arithmetic died in the lexer, which is exactly
+                # the wrong-stage failure D-085 exists to rule out.
+                "tbb32"]
 FLOAT_SUFFIXES = ["f32", "f64", "f128", "f256", "f512"]
 INT_SUFFIXES.sort(key=len, reverse=True)
 FLOAT_SUFFIXES.sort(key=len, reverse=True)

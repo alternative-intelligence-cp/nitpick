@@ -1,0 +1,60 @@
+// expect-exit: 0
+//
+// D-136 OBSERVED IN EXECUTION, not merely pinned in bytes: `pass v` returns the
+// `v` read AT the pass, and the defers run after that read. The seed returns 9
+// from `settled`; this compiler returns 0, and the suite this file lives in runs
+// THIS compiler's output.
+//
+// Also the gap the seed recorded and 0.7.6 closed: `break` runs the defers of
+// the scopes it exits.
+
+func:settled = int32() {
+    int32:x = 0i32;
+    defer { x = x + 9i32; }
+    pass x;
+};
+
+// One defer per iteration scope, plus the break path: every entry into the loop
+// body registers a defer that must run HOWEVER the body is left — falling off
+// its end, or breaking out of it.
+func:loop_defers = int32(int32:n) {
+    int32:count = 0i32;
+    int32:i = 0i32;
+    while (i < n) {
+        defer { count = count + 1i32; }
+        if (i == 2i32) { break; }
+        i = i + 1i32;
+    }
+    pass count;
+};
+
+func:relayed = int32(int32:k) {
+    if (k > 5i32) { fail 7tbb32; }
+    pass (k * 2i32);
+};
+
+// `relay`'s error path returns the SAME code (D-080) — observed through
+// `.error` on the caller's Result.
+func:pipe = int32(int32:k) {
+    int32:v = relay relayed(k);
+    pass (v + 100i32);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw settled()) != 0i32)            { exit 10i32; }
+
+    // Three entries into the body (i = 0, 1, 2), three defers run: two at the
+    // scope's normal end, one at the `break`.
+    if ((raw loop_defers(10i32)) != 3i32)   { exit 11i32; }
+    if ((raw loop_defers(0i32)) != 0i32)    { exit 12i32; }
+
+    // The ok path relays the value through; the error path relays the CODE.
+    if ((raw pipe(3i32)) != 106i32)         { exit 13i32; }
+    Result<int32>:r = pipe(9i32);
+    if (!r.is_error)                        { exit 14i32; }
+    if (r.error != 7tbb32)                    { exit 15i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

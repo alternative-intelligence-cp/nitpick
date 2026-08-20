@@ -328,6 +328,16 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
     if (raw type_is_invalid(e.types, lt)) { pass 0i32; }
     if (raw type_is_invalid(e.types, rt)) { pass 0i32; }
 
+    // `tbb` ARITHMETIC IS REAL (D-008): saturating, ERR-propagating, sticky —
+    // operations that belong to the TYPE, which is exactly why the backend lowers
+    // them at 0.9 rather than as one `add`. The CHECKER's job is only the type,
+    // and the type of `tbb32 + tbb32` is `tbb32`; refusing here made
+    // `tests/rejection/tbb_arithmetic.npk` fail in the wrong stage, with a type
+    // error where D-085 promises a rung refusal.
+    if ((raw type_kind(e.types, lt)) == (raw TY_TBB())) {
+        if (lt == rt) { pass lt; }
+    }
+
     if (!(raw type_is_numeric(e.types, lt))) {
         pass (relay te_operand_error(e, at, lt));
     }
@@ -859,6 +869,14 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
 
     // A LOCAL — its annotation is the type. Nitpick has no inferred bindings:
     // every declaration states its type, which is why this needs no unification.
+    // A PICK BINDING: the checker recorded the payload's type on the pattern
+    // when it checked the `pick` (0.7.7); before that this answered UNKNOWN and
+    // unknown propagates silently.
+    if (s.origin_kind == (raw SYM_PAT())) {
+        PatNode:pn = relay ast_pat(e.ast, PatId{ index: s.origin });
+        pass pn.a;
+    }
+
     if (s.origin_kind == (raw SYM_STMT())) {
         StmtId:sid = StmtId{ index: s.origin };
         StmtNode:sn = relay ast_stmt(e.ast, sid);
@@ -1764,7 +1782,19 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
         e.expected = saved;
     }
 
-    if (op == TokenKind.OpPlus)    { pass (relay type_arithmetic(e, n.span, lt, rt)); }
+    // `+` ON TWO STRINGS IS CONCATENATION (TYPE_REFERENCE §4) — real Nitpick
+    // that until 0.7.7 nothing typed: `tests/rejection/nonscalar_operators.npk`
+    // promised the BACKEND refuses it at this rung, and the checker refused it
+    // first, so the file could never reach the stage its expectation names. The
+    // hole was invisible while that suite could only run against the seed.
+    if (op == TokenKind.OpPlus) {
+        if ((raw type_kind(e.types, lt)) == (raw TY_STRING())) {
+            if ((raw type_kind(e.types, rt)) == (raw TY_STRING())) {
+                pass (e.types.t_string);
+            }
+        }
+        pass (relay type_arithmetic(e, n.span, lt, rt));
+    }
     if (op == TokenKind.OpMinus)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }
     if (op == TokenKind.OpStar)    { pass (relay type_arithmetic(e, n.span, lt, rt)); }
     if (op == TokenKind.OpSlash)   { pass (relay type_arithmetic(e, n.span, lt, rt)); }

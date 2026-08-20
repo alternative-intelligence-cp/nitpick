@@ -1,0 +1,19 @@
+// Diagnostic codes the BACKEND can emit. The one `*_codes.npk` of Phase B so far.
+//
+// Cycle 0.7.7. `check_codes_centralised` holds the rule: no code appears as a
+// literal at the site that emits it, because a mistyped literal silently invents
+// a new code.
+
+mod:emit_codes;
+
+// Construct not supported at this backend rung (SUBSET_1 §3). It must name the
+// CONSTRUCT and the RUNG that enables it, so the message is actionable rather
+// than a refusal — and it is NEVER a parse error, because the parser never
+// restricts (D-085).
+pub func:RUNG_UNSUPPORTED = string() { pass "NITPICK-RUNG-001"; };
+
+// The emitter met a node it has no classification for. This is a defect in the
+// COMPILER, not in the program: Phase A promised the program is valid, and a
+// kind nobody classified is a hole in Phase B's coverage of that promise. A
+// distinct code so it can never be mistaken for the program's fault.
+pub func:EMIT_INTERNAL = string() { pass "NITPICK-EMIT-002"; };

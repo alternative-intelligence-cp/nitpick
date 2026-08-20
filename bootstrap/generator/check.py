@@ -555,7 +555,8 @@ class Checker:
         if isinstance(e, S.IntLit):
             return T.Prim({"i8": "int8", "i16": "int16", "i32": "int32",
                            "i64": "int64", "u8": "uint8", "u16": "uint16",
-                           "u32": "uint32", "u64": "uint64"}.get(e.width, "int32"))
+                           "u32": "uint32", "u64": "uint64",
+                           "tbb32": "tbb32"}.get(e.width, "int32"))
         if isinstance(e, S.BoolLit):
             return T.BOOL
         if isinstance(e, S.CharLit):

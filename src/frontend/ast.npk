@@ -339,6 +339,19 @@ pub func:ast_set_expr_a = NIL(Ast->:ast, ExprId:id, int32:value) {
     pass NIL;
 };
 
+// The same write-back for a PATTERN: slot `a` on an enum-destructure pattern is
+// where the CHECKER records the binding's resolved payload type (0.7.7), the way
+// resolution records a symbol on an identifier. Unused by every other pattern
+// kind, and zero until the pick that owns the arm is checked.
+pub func:ast_set_pat_a = NIL(Ast->:ast, PatId:id, int32:value) {
+    if (id.index < 0i32) { fail 7i32; }
+    if (id.index >= ast.pat_count) { fail 7i32; }
+    PatNode:n = ast.pats[id.index => int64];
+    n.a = value;
+    ast.pats[id.index => int64] = n;
+    pass NIL;
+};
+
 // --- what a node was made by ---------------------------------------------------
 //
 // THE AST IS WRITE-ONCE AFTER EXPANSION, and expansion is the one pass that

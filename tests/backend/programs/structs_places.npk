@@ -1,0 +1,64 @@
+// expect-exit: 0
+//
+// Places (0.7.7), compiled by the real backend and RUN: struct literals, field
+// reads and writes through layout, nested structs, arrays, `@` and `<-`.
+
+struct:Point = { int32:x; int32:y; };
+struct:Rect = { Point:lo; Point:hi; int64:tag; };
+
+func:mk = Point(int32:x, int32:y) {
+    Point:p = Point{ x: x, y: y };
+    pass p;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // A literal, read back field by field.
+    Point:p = Point{ x: 3i32, y: 4i32 };
+    if (p.x != 3i32)                       { exit 10i32; }
+    if (p.y != 4i32)                       { exit 11i32; }
+
+    // A field is a PLACE: written through, and the write lands where the read
+    // looks.
+    p.y = p.x + p.y;
+    if (p.y != 7i32)                       { exit 12i32; }
+
+    // Nested: the inner struct's offset compounds with the field's.
+    Rect:r = Rect{ lo: Point{ x: 1i32, y: 2i32 },
+                   hi: Point{ x: 30i32, y: 40i32 }, tag: 9i64 };
+    if (r.hi.y != 40i32)                   { exit 13i32; }
+    r.lo.x = r.hi.x + 5i32;
+    if (r.lo.x != 35i32)                   { exit 14i32; }
+    if (r.tag != 9i64)                     { exit 15i32; }
+
+    // Through a function boundary: built there, read here.
+    Point:q = raw mk(20i32, 22i32);
+    if ((q.x + q.y) != 42i32)              { exit 16i32; }
+
+    // An array is a value with places inside it.
+    int32[3]:arr = [q.x, 2i32, 3i32];
+    arr[1i64] = arr[1i64] + arr[2i64];
+    if (arr[0i64] != 20i32)                { exit 17i32; }
+    if (arr[1i64] != 5i32)                 { exit 18i32; }
+
+    // `@` takes the address, `<-` brings the value back, and a write through
+    // the pointer is a write to the original.
+    int32:v = 10i32;
+    int32->:ptr = @v;
+    if (<-ptr != 10i32)                    { exit 19i32; }
+    <-ptr = <-ptr + 32i32;
+    if (v != 42i32)                        { exit 20i32; }
+
+    // Auto-deref (D-006): `.` through a pointer reads the pointee's field.
+    Point->:pp = @p;
+    if (pp.y != 7i32)                      { exit 21i32; }
+    pp.y = 50i32;
+    if (p.y != 50i32)                      { exit 22i32; }
+
+    // `#size_of` asks LLVM, at run time the answer is a constant.
+    if (#size_of<Point>() != 8i64)         { exit 23i32; }
+    if (#size_of<Rect>() != 24i64)         { exit 24i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

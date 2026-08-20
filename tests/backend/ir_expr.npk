@@ -170,8 +170,10 @@ func:main = int32(cstring[]:_~argv) {
     ExprId:relay_n = relay ast_add_expr(@ast, ExprKind.ExprRelayExpr,
                                         raw span_none(), f_call.index, 0i32,
                                         0i32, 0i64);
-    ExprId:tern = relay ast_add_expr(@ast, ExprKind.ExprTernaryExpr,
-                                     raw span_none(), 0i32, 0i32, 0i32, 0i64);
+    // The reserved NONE node — the one kind that must never gain a
+    // classification, so the fail-closed probe cannot rot the way it did when it
+    // used the ternary and 0.7.7 classified the ternary.
+    ExprId:none_e = raw expr_none();
 
     // --- PHASE 2: the types the checker would have recorded -------------------
     ExprTypes:ets = raw exprtypes_for(@ast);
@@ -323,7 +325,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw iv_is_ok(vr)))                                 { exit 83i32; }
     if (!(raw string_eq(vr.ll, "i32")))                      { exit 84i32; }
     // A kind nobody classified FAILS CLOSED, never guesses.
-    IrVal:vt = relay emit_expr(@x7, tern);
+    IrVal:vt = relay emit_expr(@x7, none_e);
     if (vt.state != (raw LL_BROKEN()))                       { exit 85i32; }
 
     exit 0i32;

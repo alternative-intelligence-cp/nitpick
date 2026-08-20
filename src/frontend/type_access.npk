@@ -361,6 +361,17 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         pass 0i32;
     }
     if (raw type_is_invalid(e.types, callee)) { pass 0i32; }
+
+    // `Net.Disconnect(reason)` — A VARIANT CONSTRUCTOR, not a function call.
+    // The member access types as the ENUM (a variant's type IS its enum), so
+    // this arrived at "`Net` is not a function" — and TYPE_REFERENCE §9.3's own
+    // construction syntax had no rule anywhere: `pick` could take a payload
+    // apart, and nothing could put one together. Found by the BACKEND's first
+    // real programs (0.7.7), not by a frontend test — every enum fixture in the
+    // suite either had no payloads or only ever destructured them.
+    if ((raw type_kind(e.types, callee)) == (raw TY_ENUM())) {
+        pass (relay type_variant_ctor(e, n, callee, start, count));
+    }
     if (!(raw type_is_func(e.types, callee))) {
         drop type_args_only(e, start, count);
         string:m1 = relay string_concat("`", relay type_display(e.types, e.interns, callee));
@@ -368,6 +379,81 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         pass (relay te_error(e, raw TYPE_MISMATCH(), m2, n.span));
     }
     pass (relay check_args(e, callee, start, count, 0i32, n.span));
+};
+
+// A variant constructor: the callee is `Enum.Variant`, the variant carries a
+// payload, and the call's arguments are the payload's values. The whole
+// expression is the ENUM — a variant is never a type of its own (D-090's
+// companion rule in `type_layout.npk`).
+func:type_variant_ctor = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
+                               int32:start, int32:count) {
+    ExprNode:cnode = relay ast_expr(e.ast, raw expr_callee(n));
+    if (cnode.kind != ExprKind.ExprMemberAccessExpr) {
+        drop type_args_only(e, start, count);
+        string:m1 = relay string_concat("`",
+                        relay type_display(e.types, e.interns, enum_ty));
+        pass (relay te_error(e, raw TYPE_MISMATCH(),
+                  relay string_concat(m1, "` is not a function"), n.span));
+    }
+    pass (relay type_ctor_named(e, n, enum_ty, cnode.payload => int32,
+                                start, count));
+};
+
+func:type_ctor_named = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
+                             int32:vname, int32:start, int32:count) {
+    DeclId:did = DeclId{ index: raw type_decl(e.types, enum_ty) };
+    DeclNode:d = relay ast_decl(e.ast, did);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(e.ast, d))) {
+        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw decl_name(m)) == vname) {
+                pass (relay check_ctor_args(e, n, enum_ty, m, start, count));
+            }
+        }
+        i = i + 1i32;
+    }
+    drop type_args_only(e, start, count);
+    string:m1 = relay string_concat("`",
+                    relay type_display(e.types, e.interns, enum_ty));
+    pass (relay te_error(e, raw TYPE_UNKNOWN(),
+              relay string_concat(m1, "` has no variant by this name"), n.span));
+};
+
+func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
+                             DeclNode:v, int32:start, int32:count) {
+    int32:want = raw variant_payload_count(v);
+    if (count != want) {
+        string:m1 = relay string_concat("this variant carries ",
+                        raw int_to_string(want => int64));
+        string:m2 = relay string_concat(m1, " payload value(s) and this passes ");
+        drop te_error(e, raw TYPE_MISMATCH(),
+            relay string_concat(m2, raw int_to_string(count => int64)), n.span);
+        drop type_args_only(e, start, count);
+        pass enum_ty;
+    }
+    TypeResolver:r = raw etyper_resolver(e);
+    int32:i = 0i32;
+    while (i < count) {
+        int32:pt = relay resolve_type(@r,
+                       TypeId{ index: relay ast_id_at(e.ast,
+                                   raw variant_payload_start(v), i) },
+                       e.scope);
+        int32:saved = e.expected;
+        e.expected = pt;
+        int32:at = relay type_of_expr(e, ExprId{ index: relay ast_id_at(e.ast,
+                                          start, i) });
+        e.expected = saved;
+        if (at != 0i32) {
+            if (!(raw type_is_invalid(e.types, at))) {
+                if (!(raw fits(e, pt, at))) {
+                    drop te_mismatch(e, n.span, pt, at);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass enum_ty;
 };
 
 // WHICH DECLARATION IS BEING CALLED, when one can be named at all.
@@ -628,6 +714,25 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
 // the method name is resolved as an ordinary function and the receiver becomes
 // its first argument.
 pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
+    // `Ev.Move(5i32)` PARSES AS A METHOD CALL — the parser folds `.name(` into
+    // one node deliberately — so a VARIANT CONSTRUCTOR arrives here, not at
+    // `type_call`. The receiver is an identifier naming an enum DECLARATION,
+    // which no value receiver can be, so the two cannot be confused.
+    ExprNode:rn = relay ast_expr(e.ast, raw expr_operand(n));
+    if (rn.kind == ExprKind.ExprIdentifierExpr) {
+        if (rn.a != 0i32) {
+            Symbol:rs = raw symtab_get(e.tab, rn.a);
+            if (rs.origin_kind == (raw SYM_DECL())) {
+                DeclNode:rd = relay ast_decl(e.ast, DeclId{ index: rs.origin });
+                if (rd.kind == DeclKind.DeclEnumDecl) {
+                    int32:ety = raw tt_enum(e.types, rs.origin, rs.name, 0i64, 1i32);
+                    pass (relay type_ctor_named(e, n, ety, n.payload => int32,
+                              raw expr_list_start(n), raw expr_list_count(n)));
+                }
+            }
+        }
+    }
+
     int32:recv = relay type_of_expr(e, raw expr_operand(n));
     // NO `expr_generic_count` HERE. That accessor reads the payload, and on a
     // method call the payload is the METHOD NAME — so asking for a generic count

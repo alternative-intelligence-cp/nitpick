@@ -107,6 +107,27 @@ pub func:rt_sig = RtSig(string:name) {
     pass none;
 };
 
+// The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
+// emitted module walks this, so the order is part of D-078's byte-determinism.
+pub func:rt_count = int32() { pass 14i32; };
+
+pub func:rt_name_at = string(int32:i) {
+    if (i == 0i32)  { pass "alloc"; }
+    if (i == 1i32)  { pass "calloc"; }
+    if (i == 2i32)  { pass "dalloc"; }
+    if (i == 3i32)  { pass "exit"; }
+    if (i == 4i32)  { pass "int_to_string"; }
+    if (i == 5i32)  { pass "path_exists"; }
+    if (i == 6i32)  { pass "ralloc"; }
+    if (i == 7i32)  { pass "read_file"; }
+    if (i == 8i32)  { pass "read_stdin"; }
+    if (i == 9i32)  { pass "string_concat"; }
+    if (i == 10i32) { pass "string_from_bytes"; }
+    if (i == 11i32) { pass "string_slice"; }
+    if (i == 12i32) { pass "to_cstring"; }
+    pass "write_raw";
+};
+
 pub func:rt_arg = string(RtSig:s, int32:i) {
     if (i == 0i32) { pass s.a0; }
     if (i == 1i32) { pass s.a1; }

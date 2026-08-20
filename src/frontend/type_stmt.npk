@@ -103,11 +103,16 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
         pass NIL;
     }
 
-    // A `pick`'s selector and its arms' bodies. The PATTERNS are checked against
-    // the selector's type in 0.4.6 with the enum variants — an arm binding takes
-    // its type from there, which is why `type_ident` has nothing for it yet.
+    // A `pick`'s selector, its arms' BINDING TYPES, and then the bodies. A
+    // destructuring arm's binding takes its type from the variant's payload, and
+    // until 0.7.7 nothing recorded it: `type_ident` answered UNKNOWN for every
+    // pattern binding, and unknown propagates silently — `d + "x"` inside an arm
+    // type-checked. Found by the backend's first `pick` program, not by a test.
+    // The type is written onto the PATTERN's spare slot, the way resolution
+    // writes a symbol onto an identifier, and `type_ident` reads it back.
     if (s.kind == StmtKind.StmtPickStmt) {
-        drop type_of_expr(e, raw pick_selector(s));
+        int32:selt = relay type_of_expr(e, raw pick_selector(s));
+        drop type_pick_bindings(e, s, selt);
         drop check_arms(e, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
     }
@@ -179,6 +184,57 @@ pub func:check_stmt_window = NIL(ExprTyper->:e, int32:start, int32:count) {
     while (i < count) {
         StmtId:x = StmtId{ index: raw ast_id_at(e.ast, start, i) };
         drop check_stmt(e, x);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// One binding, one payload, one recorded type. A variant carrying MORE than one
+// payload is 0.9's — the backend rungs it, and its multi-binding typing lands
+// with that lift; until then those bindings stay unknown exactly as before.
+func:type_pick_bindings = NIL(ExprTyper->:e, StmtNode:s, int32:selt) {
+    if (selt == 0i32) { pass NIL; }
+    if ((raw type_kind(e.types, selt)) != (raw TY_ENUM())) { pass NIL; }
+    int32:i = 0i32;
+    while (i < (raw pick_arm_count(s))) {
+        StmtNode:arm = relay ast_stmt(e.ast, raw pick_arm_at(e.ast,
+                                          raw pick_arm_start(s), i));
+        PatId:pid2 = raw arm_pattern(arm);
+        if (!(raw pat_is_none(pid2))) {
+            PatNode:pn = relay ast_pat(e.ast, pid2);
+            if (pn.kind == PatKind.PatEnumDestructure) {
+                if ((relay pat_enum_bind_count(e.ast, pn)) == 1i32) {
+                    drop type_one_binding(e, pid2, pn, selt);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:type_one_binding = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn, int32:selt) {
+    int32:segs = relay pat_enum_segment_count(e.ast, pn);
+    if (segs <= 0i32) { pass NIL; }
+    int32:vname = relay pat_enum_segment(e.ast, pn, segs - 1i32);
+    DeclId:did = DeclId{ index: raw type_decl(e.types, selt) };
+    DeclNode:d = relay ast_decl(e.ast, did);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(e.ast, d))) {
+        DeclNode:m = relay ast_decl(e.ast, raw item_member(e.ast, d, i));
+        if (m.kind == DeclKind.DeclEnumVariant) {
+            if ((raw decl_name(m)) == vname) {
+                if ((raw variant_payload_count(m)) == 1i32) {
+                    TypeResolver:r = raw etyper_resolver(e);
+                    int32:pt = relay resolve_type(@r,
+                        TypeId{ index: relay ast_id_at(e.ast,
+                                    raw variant_payload_start(m), 0i32) },
+                        e.scope);
+                    drop ast_set_pat_a(e.ast, pid2, pt);
+                }
+                pass NIL;
+            }
+        }
         i = i + 1i32;
     }
     pass NIL;

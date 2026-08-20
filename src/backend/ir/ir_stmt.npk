@@ -33,6 +33,7 @@ use "../../frontend/ast.npk".*;
 use "../../frontend/parse_expr.npk".*;
 use "../../frontend/parse_stmt.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/parse_pick.npk".*;
 use "../../frontend/diagnostics.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
@@ -152,24 +153,40 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
         pass (raw iv_nil());
     }
 
-    // `return Result{…}` needs the Result-literal lowering; it arrives with the
-    // literal family in 0.7.7. No compiler source writes it (grep: comments
-    // only), so nothing upstream is blocked.
-    if (s.kind == StmtKind.StmtReturnStmt)  { pass (raw iv_rung("0.7.7")); }
-    if (s.kind == StmtKind.StmtPickStmt)    { pass (raw iv_rung("0.7.7")); }
-    if (s.kind == StmtKind.StmtGiveStmt)    { pass (raw iv_rung("0.7.7")); }
-    if (s.kind == StmtKind.StmtFallStmt)    { pass (raw iv_rung("0.7.7")); }
+    if (s.kind == StmtKind.StmtReturnStmt)  { pass (relay emit_return(x, s)); }
+    if (s.kind == StmtKind.StmtPickStmt)    { pass (relay emit_pick(x, s)); }
 
-    if (s.kind == StmtKind.StmtForStmt)     { pass (raw iv_rung("0.9")); }
-    if (s.kind == StmtKind.StmtLoopStmt)    { pass (raw iv_rung("0.9")); }
-    if (s.kind == StmtKind.StmtTillStmt)    { pass (raw iv_rung("0.9")); }
-    if (s.kind == StmtKind.StmtWhenStmt)    { pass (raw iv_rung("0.9")); }
+    // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
+    // fallthrough — both live or die with `PickExpr`, which is 0.9's.
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        pass (raw iv_rung("`give`", "0.9", s.span));
+    }
+    if (s.kind == StmtKind.StmtFallStmt) {
+        pass (raw iv_rung("`fall`", "0.9", s.span));
+    }
 
-    if (s.kind == StmtKind.StmtProveStmt)        { pass (raw iv_rung("1.3")); }
-    if (s.kind == StmtKind.StmtAssertStaticStmt) { pass (raw iv_rung("1.3")); }
+    if (s.kind == StmtKind.StmtForStmt) {
+        pass (raw iv_rung("the `for` loop", "0.9", s.span));
+    }
+    if (s.kind == StmtKind.StmtLoopStmt) {
+        pass (raw iv_rung("the `loop` construct", "0.9", s.span));
+    }
+    if (s.kind == StmtKind.StmtTillStmt) {
+        pass (raw iv_rung("the `till` construct", "0.9", s.span));
+    }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        pass (raw iv_rung("the `when` construct", "0.9", s.span));
+    }
+
+    if (s.kind == StmtKind.StmtProveStmt) {
+        pass (raw iv_rung("`prove`", "1.3", s.span));
+    }
+    if (s.kind == StmtKind.StmtAssertStaticStmt) {
+        pass (raw iv_rung("`assert_static`", "1.3", s.span));
+    }
 
     // FAIL CLOSED — StmtNone, a bare PickArm, or a kind nobody classified.
-    pass (raw iv_broken());
+    pass (raw iv_broken(s.span));
 };
 
 // --- declarations and assignment ----------------------------------------------------
@@ -177,7 +194,7 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
 func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
     int32:dty = relay resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
     LlType:ll = relay ll_type(x.fe.ctx, dty);
-    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll(ll)); }
+    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll_at(x, ll, dty, s.span)); }
 
     // SLOT FIRST, THEN THE INITIALISER — the seed's order, and the right one:
     // the name is not bound until after the initialiser runs (`fnem_local` binds
@@ -211,22 +228,21 @@ func:compound_op = TokenKind(TokenKind:k) {
 };
 
 func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
-    ExprNode:target = relay ast_expr(x.ast, raw stmt_target(s));
-    // A NAME ONLY, this cycle. A field or an index is a PLACE — an address
-    // computed through layout — and the place family lands together in 0.7.7,
-    // because half an address is not an address.
-    if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw iv_rung("0.7.7")); }
-    LocalSlot:slot = raw fnem_lookup(x.fe, target.payload => int32);
-    if (!slot.found) { pass (raw iv_broken()); }
-    LlType:ll = relay ll_type(x.fe.ctx, slot.type_id);
-    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll(ll)); }
+    // A PLACE, whatever shape it takes: a name's slot, a field through layout,
+    // an element through a bound, a pointee through `<-` (0.7.7).
+    PlaceVal:place = relay addr_of(x, raw stmt_target(s));
+    if (place.state != (raw LL_OK())) { pass (relay iv_from_place(place)); }
+    LlType:ll = relay ll_type(x.fe.ctx, place.type_id);
+    if (!(raw ll_is_ok(ll))) {
+        pass (relay iv_from_ll_at(x, ll, place.type_id, s.span));
+    }
 
     TokenKind:op = raw stmt_op(s);
     if (op == TokenKind.OpAssign) {
         IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
         if (!(raw iv_is_ok(v))) { pass v; }
         drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
-                          relay string_concat(", ptr ", slot.slot)));
+                          relay string_concat(", ptr ", place.addr)));
         pass (raw iv_nil());
     }
 
@@ -234,21 +250,21 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
     // for `/`, `%`, `>>` comes from the TARGET's type, which the checker made
     // the value's type too.
     bool:signed = false;
-    if ((raw type_kind(x.fe.ctx.types, slot.type_id)) == (raw TY_INT())) {
-        signed = raw type_is_signed(x.fe.ctx.types, slot.type_id);
+    if ((raw type_kind(x.fe.ctx.types, place.type_id)) == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, place.type_id);
     }
     string:cur = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(cur, " = load ", ll.text, ", ptr ",
-                                     slot.slot));
+                                     place.addr));
     IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
     if (!(raw iv_is_ok(v))) { pass v; }
     string:ins = raw arith_name(raw compound_op(op), signed);
-    if (ins.len == 0i64) { pass (raw iv_broken()); }
+    if (ins.len == 0i64) { pass (raw iv_broken(s.span)); }
     string:r = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(r, " = ", ins, " ",
                       relay cat5(ll.text, " ", cur, ", ", v.ref)));
     drop irw_line(x.fe.w, relay cat5("store ", ll.text, " ", r,
-                      relay string_concat(", ptr ", slot.slot)));
+                      relay string_concat(", ptr ", place.addr)));
     pass (raw iv_nil());
 };
 
@@ -309,8 +325,10 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
 // label. Both run the defers of every scope between here and the loop first,
 // which is the gap the seed recorded and this closes.
 func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) {
-    if ((raw stmt_label(s)) != 0i32) { pass (raw iv_rung("0.9")); }
-    if ((x.fe.loop_count) == 0i32) { pass (raw iv_broken()); }
+    if ((raw stmt_label(s)) != 0i32) {
+        pass (raw iv_rung("a labelled `break`/`continue`", "0.9", s.span));
+    }
+    if ((x.fe.loop_count) == 0i32) { pass (raw iv_broken(s.span)); }
     IrVal:d = relay run_defers_down_to(x, raw fnem_loop_depth(x.fe));
     if (!(raw iv_is_ok(d))) { pass d; }
     if (is_break) { drop s_br(x, raw fnem_loop_done(x.fe)); }
@@ -376,25 +394,216 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) {
     pass (raw iv_nil());
 };
 
+// `return Result{…}` — the one spelling of `return` (type_stmt refused every
+// other), so the operand IS the whole Result and the `ret` takes it verbatim.
+// Value first, then defers, then the return: D-136's rule, the third time.
+func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) {
+    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    IrVal:d = relay run_all_defers(x);
+    if (!(raw iv_is_ok(d))) { pass d; }
+    drop irw_line(x.fe.w, relay cat4("ret ", x.fe.ret_ll, " ", v.ref));
+    x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+// --- pick ---------------------------------------------------------------------------
+//
+// A `switch` OVER A DISCRIMINANT, which is the seed's shape: every subset-1
+// pattern is a compile-time integer — a literal, or a variant's tag — so the
+// dispatch is one instruction and the exhaustiveness the analyses proved (0.5)
+// needs no runtime default of its own.
+
+// The integer constant an arm matches, as text — or a refusal.
+func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) {
+    if (pn.kind == PatKind.PatValue) {
+        ExprNode:vn = relay ast_expr(x.ast, raw pat_value(pn));
+        if (vn.kind == ExprKind.ExprIntLiteral) {
+            pass (raw iv("", raw int_to_string(vn.payload), 0i32));
+        }
+        if (vn.kind == ExprKind.ExprBoolLiteral) {
+            if (vn.payload == 1i64) { pass (raw iv("", "1", 0i32)); }
+            pass (raw iv("", "0", 0i32));
+        }
+        if (vn.kind == ExprKind.ExprCharLiteral) {
+            pass (raw iv("", raw int_to_string(vn.payload), 0i32));
+        }
+        // `(Enum.Variant)` in pattern position — a tag, not a value to build.
+        if (vn.kind == ExprKind.ExprMemberAccessExpr) {
+            VariantInfo:vi = raw variant_info(x, sel_tid, vn.payload => int32);
+            if (vi.found) {
+                pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
+            }
+        }
+        pass (raw iv_rung("this pattern", "0.9", at));
+    }
+    if (pn.kind == PatKind.PatEnumDestructure) {
+        int32:segs = raw pat_enum_segment_count(x.ast, pn);
+        if (segs <= 0i32) { pass (raw iv_broken(at)); }
+        VariantInfo:vi = raw variant_info(x, sel_tid,
+                             raw pat_enum_segment(x.ast, pn, segs - 1i32));
+        if (!vi.found) { pass (raw iv_broken(at)); }
+        pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
+    }
+    if (pn.kind == PatKind.PatRange) {
+        pass (raw iv_rung("a range pattern", "0.9", at));
+    }
+    if (pn.kind == PatKind.PatStructDestructure) {
+        pass (raw iv_rung("struct destructuring in `pick`", "0.9", at));
+    }
+    if (pn.kind == PatKind.PatErrPattern) {
+        pass (raw iv_rung("the `ERR` pattern", "0.9", at));
+    }
+    pass (raw iv_broken(at));
+};
+
+// The payload, narrowed back out of the uniform `i64` word and bound for the
+// arm's body. The widths match by construction: the constructor widened the
+// same declared type in.
+func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
+                          IrVal:sel, Span:at) {
+    if (pn.kind != PatKind.PatEnumDestructure) { pass (raw iv_nil()); }
+    if ((raw pat_enum_bind_count(x.ast, pn)) == 0i32) { pass (raw iv_nil()); }
+
+    int32:segs = raw pat_enum_segment_count(x.ast, pn);
+    VariantInfo:vi = raw variant_info(x, sel_tid,
+                         raw pat_enum_segment(x.ast, pn, segs - 1i32));
+    if (!vi.found) { pass (raw iv_broken(at)); }
+    if (vi.payload_count == 0i32) { pass (raw iv_nil()); }
+
+    int32:pty = relay resolve_type(x.tr, vi.payload_ty, x.scope);
+    LlType:pll = relay ll_type(x.fe.ctx, pty);
+    if (!(raw ll_is_ok(pll))) { pass (relay iv_from_ll_at(x, pll, pty, at)); }
+
+    string:wide = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(wide, " = extractvalue ", sel.ll, " ",
+                      relay string_concat(sel.ref, ", 1")));
+    string:val = wide;
+    if (!(raw string_eq(pll.text, "i64"))) {
+        string:nv = relay irw_temp(x.fe.w);
+        if (raw string_eq(pll.text, "ptr")) {
+            drop irw_line(x.fe.w, relay cat3(nv, " = inttoptr i64 ",
+                              relay string_concat(wide, " to ptr")));
+        } else {
+            LlType:chk = LlType{ state: raw LL_OK(), text: pll.text, rung: "" };
+            if (!(raw ll_is_scalar_int(chk))) {
+                pass (raw iv_rung("a payload of this type", "0.9", at));
+            }
+            drop irw_line(x.fe.w, relay cat3(nv, " = trunc i64 ",
+                              relay cat3(wide, " to ", pll.text)));
+        }
+        val = nv;
+    }
+    string:slot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
+                                   pty, pll.text);
+    drop irw_line(x.fe.w, relay cat5("store ", pll.text, " ", val,
+                      relay string_concat(", ptr ", slot)));
+    pass (raw iv_nil());
+};
+
+func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
+    ExprId:sel_id = raw pick_selector(s);
+    int32:sel_tid = raw exprtypes_get(x.et, sel_id);
+    IrVal:sel = relay emit_expr(x, sel_id);
+    if (!(raw iv_is_ok(sel))) { pass sel; }
+
+    // The discriminant: a payload-carrying enum's tag lives in slot 0; a plain
+    // enum, a bool, a char or an integer IS its own discriminant.
+    string:disc = sel.ref;
+    string:disc_ll = sel.ll;
+    if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_ENUM())) {
+        if (relay enum_has_payload(x.ast, x.fe.ctx.types, sel_tid)) {
+            string:tag = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(tag, " = extractvalue ", sel.ll,
+                              " ", relay string_concat(sel.ref, ", 0")));
+            disc = tag;
+            disc_ll = "i32";
+        }
+    }
+    if (raw string_eq(disc_ll, "{ ptr, i64, i64 }")) {
+        pass (raw iv_rung("`pick` over a string", "0.9", s.span));
+    }
+
+    string:done_l = relay irw_new_label(x.fe.w, "pick.done");
+
+    // FIRST PASS: a label per arm and the switch line — in arm order, so the
+    // emitted cases read as the source does. A guard is a runtime condition
+    // bolted onto a static dispatch; it is 0.9's.
+    int32:count = raw pick_arm_count(s);
+    // The arm labels, held locally so pass two starts each arm at the label
+    // pass one promised the switch. Local because a pick nests inside a pick.
+    wild int8->:lm = alloc((count => int64) * #size_of<string>());
+    wild string->:labels = lm => wild string->;
+    string:cases = "";
+    string:default_l = done_l;
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+                                          raw pick_arm_start(s), i));
+        if (!(raw expr_is_none(raw arm_guard(arm)))) {
+            pass (raw iv_rung("a guarded `pick` arm", "0.9", arm.span));
+        }
+        string:arm_l = relay irw_new_label(x.fe.w, "pick.arm");
+        labels[i => int64] = arm_l;
+        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
+        if (pn.kind == PatKind.PatWildcard) {
+            default_l = arm_l;
+        } else {
+            IrVal:c = relay pattern_const(x, pn, sel_tid, arm.span);
+            if (!(raw iv_is_ok(c))) { pass c; }
+            if (cases.len > 0i64) { cases = relay string_concat(cases, " "); }
+            cases = relay cat5(cases, disc_ll, " ", c.ref,
+                               relay string_concat(", label %", arm_l));
+        }
+        i = i + 1i32;
+    }
+    drop irw_line(x.fe.w, relay cat5("switch ", disc_ll, " ", disc,
+                      relay cat5(", label %", default_l, " [ ", cases, " ]")));
+    x.fe.terminated = true;
+
+    // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
+    i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+                                          raw pick_arm_start(s), i));
+        drop s_start(x, labels[i => int64]);
+        int32:mark = raw fnem_mark(x.fe);
+        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
+        IrVal:bp = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+        if (!(raw iv_is_ok(bp))) { pass bp; }
+        IrVal:b = relay emit_stmt(x, raw arm_body(arm));
+        if (!(raw iv_is_ok(b))) { pass b; }
+        drop fnem_release(x.fe, mark);
+        drop s_br(x, done_l);
+        i = i + 1i32;
+    }
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
 // --- a whole function ---------------------------------------------------------------
 
 // Everything between `func:` and its closing brace: signature, prologue, body,
 // epilogue. The driver's per-function loop is a call to this.
 pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
     DeclNode:d = relay ast_decl(x.ast, did);
-    if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken()); }
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
     if ((raw decl_generic_window(x.ast, d)).count > 0i32) {
-        pass (raw iv_rung("1.0"));
+        pass (raw iv_rung("a generic function", "1.0", d.span));
     }
-    if (raw decl_has(d, raw DECL_VARIADIC())) { pass (raw iv_rung("0.9")); }
-    if (raw decl_has(d, raw DECL_ASYNC()))    { pass (raw iv_rung("1.1")); }
+    if (raw decl_has(d, raw DECL_VARIADIC())) {
+        pass (raw iv_rung("a variadic function", "0.9", d.span));
+    }
+    if (raw decl_has(d, raw DECL_ASYNC())) {
+        pass (raw iv_rung("an async function", "1.1", d.span));
+    }
 
     int32:name = raw decl_name(d);
     string:fname = relay intern_get(x.interns, name);
     FnSig:sg = relay fn_signature(x.tr, d, name, x.scope);
 
     LlType:rt = relay fnem_begin(x.fe, fname, sg.success);
-    if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll(rt)); }
+    if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll_at(x, rt, sg.success, d.span)); }
 
     int32:i = 0i32;
     int32:n = raw fn_param_count(x.ast, d);
@@ -402,7 +611,7 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
         DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, d, i));
         int32:pt = relay resolve_type(x.tr, raw param_type(pd), x.scope);
         LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
-        if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll(pl)); }
+        if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;
     }
 

@@ -1,0 +1,242 @@
+// A whole program, as one LLVM module.
+//
+// Cycle 0.7.7. The walker the driver calls: preamble, every function of every
+// module, string constants — into ONE buffer, in ONE order, because D-078's
+// fixpoint compares bytes and iteration order is part of the output.
+//
+// A REFUSAL IS A DIAGNOSTIC, NOT A STOP. Every function is attempted, so one
+// out-of-rung construct reports once and the rest of the program still gets
+// checked against the rung — the same shape as the frontend, where one bad
+// expression does not hide the next. The IR text is DISCARDED whenever any
+// refusal was recorded; a module with a hole in it is not a module.
+
+mod:emit_program;
+
+use "../frontend/source_location.npk".*;
+use "../frontend/intern.npk".*;
+use "../frontend/ast_kind.npk".*;
+use "../frontend/ast.npk".*;
+use "../frontend/parse_decl.npk".*;
+use "../frontend/diagnostics.npk".*;
+use "../frontend/symbols.npk".*;
+use "../frontend/module_graph.npk".*;
+use "../frontend/types.npk".*;
+use "../frontend/expr_types.npk".*;
+use "../frontend/resolve_type.npk".*;
+use "../frontend/type_layout.npk".*;
+use "ir/emit_codes.npk".*;
+use "ir/ir_writer.npk".*;
+use "ir/ir_types.npk".*;
+use "ir/ir_runtime.npk".*;
+use "ir/ir_func.npk".*;
+use "ir/ir_expr.npk".*;
+use "ir/ir_stmt.npk".*;
+
+// One refusal, as the diagnostic SUBSET_1 §3 specifies: the construct, and the
+// rung that enables it.
+func:refuse = NIL(DiagList->:diags, IrVal:v) {
+    if (v.state == (raw LL_RUNG())) {
+        string:m1 = relay string_concat(v.what,
+            " is not supported at this backend rung; enabled by cycle ");
+        drop diaglist_push(diags,
+            raw diag_error(raw RUNG_UNSUPPORTED(),
+                           relay string_concat(m1, v.rung), v.at));
+        pass NIL;
+    }
+    drop diaglist_push(diags,
+        raw diag_error(raw EMIT_INTERNAL(),
+            "the emitter met a node it has no classification for; this is a defect in the compiler, not in this program",
+            v.at));
+    pass NIL;
+};
+
+// The named aggregate headers: `%Name = type { … }` for every struct, and for
+// every enum a variant of which carries a payload — walked off the MODULES, in
+// load order, so each struct's field types resolve in ITS OWN module's scope.
+// The first draft walked the type table with `graph_at(0)`'s scope, and module
+// zero is the PRELUDE: every struct whose field named another struct reported
+// that type as unknown, in a program the checker had already accepted.
+//
+// TWO TYPES RENDERING ONE NAME IS REFUSED, loudly. `%Point` from two modules is
+// one IR name for two layouts, and which one `llc` believes depends on which
+// definition it reads first. Module-qualified type names are 0.8's mangling
+// decision; until then the collision is an error rather than a coin toss.
+func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
+                             DiagList->:diags, ModuleGraph->:g) {
+    int32:m = 0i32;
+    while (m < (raw graph_count(g))) {
+        ModuleEntry:me = raw graph_at(g, m);
+        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        int32:i = 0i32;
+        while (i < (raw item_member_count(@g.ast, mn))) {
+            DeclId:item = raw item_member(@g.ast, mn, i);
+            DeclNode:d = relay ast_decl(@g.ast, item);
+            if (d.kind == DeclKind.DeclStructDecl) {
+                drop emit_one_header(w, tr, c, diags, me.scope, item, true);
+            }
+            if (d.kind == DeclKind.DeclEnumDecl) {
+                drop emit_one_header(w, tr, c, diags, me.scope, item, false);
+            }
+            i = i + 1i32;
+        }
+        m = m + 1i32;
+    }
+    drop irw_blank(w);
+    pass NIL;
+};
+
+// The interned type this declaration produced, found by ITS DECL — the same
+// identity `tt_struct` interns under (D-090), so two same-named structs cannot
+// answer for each other here.
+func:type_of_decl = int32(LlCtx->:c, int32:decl_index, int32:kind) {
+    int32:i = 0i32;
+    while (i < (raw tt_count(c.types))) {
+        if ((raw type_kind(c.types, i)) == kind) {
+            if ((raw type_decl(c.types, i)) == decl_index) {
+                if ((raw type_args_count_of(c.types, i)) == 0i32) { pass i; }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
+                           DiagList->:diags, int32:scope, DeclId:item,
+                           bool:is_struct) {
+    int32:want_kind = raw TY_ENUM();
+    if (is_struct) { want_kind = raw TY_STRUCT(); }
+    int32:t = raw type_of_decl(c, item.index, want_kind);
+    if (t == 0i32) { pass NIL; }    // declared and never used: nothing interned it
+    LlType:name = relay ll_type(c, t);
+    if (!(raw ll_is_ok(name))) { pass NIL; }
+    if (raw string_eq(name.text, "i32")) { pass NIL; }   // a payload-less enum
+    LlType:body = raw ll_enum_body(c, t);
+    if (is_struct) {
+        body = relay ll_struct_body(tr, c, t, scope);
+    }
+    if (!(raw ll_is_ok(body))) { pass NIL; }
+    drop irw_raw(w, relay cat4(name.text, " = type ", body.text, ""));
+    pass NIL;
+};
+
+// Duplicate `%Name`s, detected over the same walk the headers use. Quadratic
+// over the handful of named types a program has; a table would be a second
+// structure to keep deterministic for no gain.
+func:check_duplicate_type_names = NIL(LlCtx->:c, DiagList->:diags) {
+    int32:i = 0i32;
+    while (i < (raw tt_count(c.types))) {
+        if (raw header_kind(c, i)) {
+            int32:j = i + 1i32;
+            while (j < (raw tt_count(c.types))) {
+                if (raw header_kind(c, j)) {
+                    int32:ni = raw type_name(c.types, i);
+                    if (ni != (raw intern_none())) {
+                        if (ni == (raw type_name(c.types, j))) {
+                            string:m1 = relay string_concat("two types render the IR name `%",
+                                relay intern_get(c.interns, ni));
+                            drop diaglist_push(diags, raw diag_error(
+                                raw RUNG_UNSUPPORTED(),
+                                relay string_concat(m1,
+                                    "`; module-qualified type names are the 0.8 mangling decision, and until then one name for two layouts is refused"),
+                                raw span_none()));
+                        }
+                    }
+                }
+                j = j + 1i32;
+            }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:header_kind = bool(LlCtx->:c, int32:t) {
+    if ((raw type_args_count_of(c.types, t)) != 0i32) { pass false; }
+    int32:k = raw type_kind(c.types, t);
+    if (k == (raw TY_STRUCT())) { pass true; }
+    if (k == (raw TY_ENUM())) {
+        pass (relay enum_has_payload(c.ast, c.types, t));
+    }
+    pass false;
+};
+
+// The runtime floor's declarations, in `rt_name_at` order — which makes the
+// declare block a fixed constant of every module this compiler ever emits.
+func:emit_runtime_declares = NIL(IrWriter->:w) {
+    int32:i = 0i32;
+    while (i < (raw rt_count())) {
+        RtSig:sig = raw rt_sig(raw rt_name_at(i));
+        string:args = "";
+        int32:a = 0i32;
+        while (a < sig.argc) {
+            if (a > 0i32) { args = relay string_concat(args, ", "); }
+            args = relay string_concat(args, raw rt_arg(sig, a));
+            a = a + 1i32;
+        }
+        drop irw_raw(w, relay cat5("declare ", sig.ret, " ", sig.sym,
+                          relay cat3("(", args, ")")));
+        i = i + 1i32;
+    }
+    drop irw_blank(w);
+    pass NIL;
+};
+
+// Everything. True when the program emitted whole; false when any refusal was
+// recorded, in which case the writer's text is not a module and must not be used.
+pub func:emit_program = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
+                             InternTable->:interns, ExprTypes->:ets,
+                             TypeResolver->:tr, DiagList->:diags) {
+    int64:before = raw diaglist_count(diags);
+    LlCtx:c = raw llctx_init(@g.ast, types, interns);
+    StrTable:st = raw strtab_init();
+    drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
+    drop irw_blank(w);
+    drop check_duplicate_type_names(@c, diags);
+    drop emit_type_headers(w, tr, @c, diags, g);
+    drop emit_runtime_declares(w);
+
+    FnEmitter:fe = raw fnem_init(w, @c);
+    int32:m = 0i32;
+    while (m < (raw graph_count(g))) {
+        ModuleEntry:me = raw graph_at(g, m);
+        ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
+                                        tr, me.scope);
+        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        int32:i = 0i32;
+        while (i < (raw item_member_count(@g.ast, mn))) {
+            DeclId:item = raw item_member(@g.ast, mn, i);
+            DeclNode:d = relay ast_decl(@g.ast, item);
+            if (d.kind == DeclKind.DeclFunctionDecl) {
+                // A `comptime func:` was CONSUMED at fold time (0.6.4); nothing
+                // remains to lower, and emitting it would be emitting a phase.
+                if (!(raw decl_has(d, raw DECL_COMPTIME()))) {
+                    IrVal:r = relay emit_function(@x, item);
+                    if (!(raw iv_is_ok(r))) {
+                        drop refuse(diags, r);
+                    }
+                }
+            }
+            // AN `impl` CARRIES CODE, AND CODE THIS RUNG CANNOT LOWER IS
+            // REFUSED, NOT DROPPED. Skipping it would compile a program minus
+            // its methods — every call to them already refuses, but a rung that
+            // silently sheds declared code is a rung whose output stops meaning
+            // the source. A `trait` is different: erased by design, generating
+            // nothing at ANY rung, so there is genuinely nothing to refuse.
+            if (d.kind == DeclKind.DeclImplDecl) {
+                drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
+            }
+            if (d.kind == DeclKind.DeclExternBlock) {
+                drop refuse(diags, raw iv_rung("an `extern` block", "0.8", d.span));
+            }
+            if (d.kind == DeclKind.DeclGlobalDecl) {
+                drop refuse(diags, raw iv_rung("a module-level binding", "0.8", d.span));
+            }
+            i = i + 1i32;
+        }
+        m = m + 1i32;
+    }
+
+    drop strtab_write_all(@st, w);
+    pass ((raw diaglist_count(diags)) == before);
+};

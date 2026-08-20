@@ -137,10 +137,14 @@ func:main = int32(cstring[]:_~argv) {
     if (raw errs(@nf) != 1i64)                                 { exit 205i32; }
     if ((raw type_kind(@nf.types, nf.result)) == (raw TY_FLOAT())) { exit 206i32; }
 
-    // A `tbb` is still not a number: the suffix gives it a type, not arithmetic.
+    // `tbb` ARITHMETIC TYPES AS THE `tbb` (D-008, 0.7.7): saturation, ERR and
+    // stickiness are the 0.9 LOWERING's, but the type was always the language's.
+    // This asserted a refusal until the backend's rejection suite showed the
+    // refusal fired in the wrong stage — a type error where D-085 promises a
+    // rung refusal.
     Ex:na = raw ex("1tbb32 + 2tbb32", @it);
-    if (raw errs(@na) != 1i64)                                 { exit 207i32; }
-    if (!(raw string_eq(raw code0(@na), raw TYPE_NOT_NUMERIC()))) { exit 208i32; }
+    if (raw errs(@na) != 0i64)                                 { exit 207i32; }
+    if ((raw type_kind(@na.types, na.result)) != (raw TY_TBB())) { exit 208i32; }
 
     // An unsuffixed literal takes a context type of its OWN family only: `42`
     // becomes an `int64` and never a `flt64`, because `42` and `42.0` are

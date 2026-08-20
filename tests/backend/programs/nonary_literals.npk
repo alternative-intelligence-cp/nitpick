@@ -1,0 +1,32 @@
+// expect-exit: 0
+//
+// `an` IS A NUMBER — and since 0.7.7 the real compiler COMPILES it, so this file
+// asserts the VALUES rather than a refusal. It lived in `tests/rejection/` from
+// the day that suite was written, expecting `NITPICK-RUNG-001`, because the SEED
+// never decodes suffix bases; the real lexer has decoded them since 0.1, so under
+// the compiler this suite now tests, the program simply runs.
+//
+// Balanced nonary uses the suffix `n`, and `a`..`d` denote the digits -1..-4
+// (`LEXICAL_REFERENCE.md` §7):
+//
+//     NonaryLiteral ::= [0-4a-dA-D] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
+//
+// So `2An` is 2*9 + (-1) = 17, `an` is -1, `bn` is -2 — and none of them can ever
+// be an identifier, which is why the compiler's own sources renamed every `an`,
+// `bn`, `cn`, `dn` and `tt` they had used as variables (0.7.3).
+
+func:main = int32(cstring[]:_~argv) {
+    int32:a = 2Ani32;                 // 2*9 - 1
+    if (a != 17i32)  { exit 10i32; }
+    int32:b = ani32;                  // the digit -1, alone
+    if (b != (0i32 - 1i32)) { exit 11i32; }
+    int32:c = bni32;                  // the digit -2
+    if (c != (0i32 - 2i32)) { exit 12i32; }
+    int32:d = 0_4ni32;                // 0*9 + 4
+    if (d != 4i32)   { exit 13i32; }
+    int32:e = 1T0ti32;                // balanced ternary: 9 - 3 + 0
+    if (e != 6i32)   { exit 14i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

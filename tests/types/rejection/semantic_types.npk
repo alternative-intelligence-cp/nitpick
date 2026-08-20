@@ -29,11 +29,14 @@ func:fd_arithmetic = fd(fd:handle) {
     pass next;
 };
 
-// `tbb32` is an error-code type whose arithmetic drags in ERR, stickiness and
-// saturation (D-008) — operations that belong to the type, not to `+`.
+// `tbb32` arithmetic is REAL (D-008) and types as the `tbb` — the refusal it
+// used to get here was the wrong stage's: the BACKEND rungs it at 0.9
+// (`tests/rejection/tbb_arithmetic.npk`), the type checker types it. What stays
+// refused HERE is mixing a `tbb` with a plain integer: the widths of the two
+// operands carry different meanings, and no `unify` exists between them.
 // expect-error: NITPICK-TYPE-008
-func:tbb_arithmetic = tbb32(tbb32:err) {
-    tbb32:worse = err + 1tbb32;
+func:tbb_mixed = tbb32(tbb32:err) {
+    tbb32:worse = err + 1i32;
     pass worse;
 };
 

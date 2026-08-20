@@ -1,0 +1,69 @@
+// expect-exit: 0
+//
+// Enums and `pick` (0.7.7): tags implicit and declared, payload construction
+// and destructuring, bool and integer selectors, the wildcard arm.
+
+enum:Flat = { A; B; Late = 9i32; };
+enum:Ev = { Ping; Move(int32); Stop; };
+
+func:classify = int32(Ev:e) {
+    int32:out = 0i32;
+    pick (e) {
+        (Ev.Ping) { out = 1i32; },
+        (Ev.Move(d)) { out = d + 10i32; },
+        (Ev.Stop) { out = 3i32; }
+    }
+    pass out;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // A payload-less enum is its tag: position, or the DECLARED value — and a
+    // tag is IDENTITY, not quantity, so there is no cast to read it as a number
+    // (`type_range` has no answer for an enum). The `pick` observes it instead:
+    // matching `Flat.Late` means the discriminant equalled the declared 9.
+    Flat:f = Flat.Late;
+    int32:t = 0i32;
+    pick (f) {
+        (Flat.A) { t = 1i32; },
+        (Flat.B) { t = 2i32; },
+        (Flat.Late) { t = 9i32; }
+    }
+    if (t != 9i32)                          { exit 10i32; }
+
+    // Constructed with a payload, taken apart by the arm that names it.
+    if ((raw classify(Ev.Ping)) != 1i32)    { exit 11i32; }
+    if ((raw classify(Ev.Move(32i32))) != 42i32) { exit 12i32; }
+    if ((raw classify(Ev.Stop)) != 3i32)    { exit 13i32; }
+
+    // The payload survives a variable in between.
+    Ev:held = Ev.Move(5i32);
+    if ((raw classify(held)) != 15i32)      { exit 14i32; }
+
+    // `pick` over a bool: two values, no wildcard needed.
+    bool:flag = true;
+    int32:b = 0i32;
+    pick (flag) {
+        (true) { b = 21i32; },
+        (false) { b = 22i32; }
+    }
+    if (b != 21i32)                         { exit 15i32; }
+
+    // …and over an integer, where the wildcard carries the rest.
+    int32:k = 7i32;
+    int32:w = 0i32;
+    pick (k) {
+        (0i32) { w = 1i32; },
+        (7i32) { w = 2i32; },
+        (*) { w = 3i32; }
+    }
+    if (w != 2i32)                          { exit 16i32; }
+    pick (k) {
+        (0i32) { w = 1i32; },
+        (*) { w = 9i32; }
+    }
+    if (w != 9i32)                          { exit 17i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
