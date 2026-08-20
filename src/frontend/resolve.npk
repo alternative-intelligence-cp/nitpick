@@ -71,7 +71,7 @@ pub func:resolver_init = Resolver(Ast->:ast, SymbolTable->:tab,
 
 func:resolve_ident = NIL(Resolver->:r, ExprId:id, int32:scope) {
     ExprNode:e = relay ast_expr(r.ast, id);
-    int32:name = (raw expr_name(e)) => int32;
+    int32:name = (raw expr_name(e)) =>! int32;
 
     // `#caller(NAME)` LEFT THIS BEHIND. It is the one identifier inside an
     // expansion that binds where the macro was INVOKED rather than where it was
@@ -724,7 +724,7 @@ pub func:resolve_audit = int32(Ast->:ast, SymbolTable->:_~tab,
         if (e.kind == ExprKind.ExprIdentifierExpr) {
             if (e.a == 0i32) {
                 string:text = relay intern_get(interns,
-                                               (raw expr_name(e)) => int32);
+                                               (raw expr_name(e)) =>! int32);
                 bool:excused = raw is_builtin_name(text);
                 if (raw string_eq(text, "result")) { excused = true; }
                 if (!excused) {

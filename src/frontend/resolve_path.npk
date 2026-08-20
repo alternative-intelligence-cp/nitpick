@@ -42,15 +42,15 @@ pub struct:RootList = {
 pub func:rootlist_init = RootList() {
     int64:n = 8i64;
     wild int8->:mem = alloc(n * #size_of<Root>());
-    RootList:r = RootList{ items: mem => wild Root->, count: 0i32, cap: 8i32 };
+    RootList:r = RootList{ items: mem =>! wild Root->, count: 0i32, cap: 8i32 };
     pass r;
 };
 
 func:rootlist_grow = NIL(RootList->:l) {
     int32:nc = l.cap * 2i32;
-    wild int8->:bigger = ralloc(l.items => wild int8->,
+    wild int8->:bigger = ralloc(l.items =>! wild int8->,
                                 (nc => int64) * #size_of<Root>());
-    l.items = bigger => wild Root->;
+    l.items = bigger =>! wild Root->;
     l.cap = nc;
     pass NIL;
 };
@@ -69,8 +69,8 @@ pub func:rootlist_add = NIL(RootList->:l, string:name, string:dir) {
 
 pub func:rootlist_count = int32(RootList->:l) { pass l.count; };
 pub func:rootlist_at = Root(RootList->:l, int32:i) {
-    if (i < 0i32) { fail 12i32; }
-    if (i >= l.count) { fail 12i32; }
+    if (i < 0i32) { fail 12tbb32; }
+    if (i >= l.count) { fail 12tbb32; }
     pass l.items[i => int64];
 };
 

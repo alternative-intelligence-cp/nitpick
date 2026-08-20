@@ -27,7 +27,8 @@ use "./parse_expr.npk".*;
 use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./type_names.npk".*;
-use "./parse_stmt.npk".*;   // QUAL_CONST, for what may stand in a constant expression
+use "./parse_stmt.npk".*;
+use "./parser.npk".*;   // QUAL_CONST, for what may stand in a constant expression
 use "./builtins.npk".*;     // is_builtin_name, for the four with compile-time answers
 
 // WHICH GENERIC PARAMETERS ARE IN SCOPE, AND WHAT THEY STAND FOR.
@@ -296,10 +297,10 @@ func:resolve_named = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
     // different type from the one written. Found while a two-trait `dyn` in a
     // long test file reported both of its perfectly good traits as "not a trait".
     if (!(raw type_name_is_builtin(n))) {
-        pass (relay resolve_user_named(r, n, payload => int32, scope));
+        pass (relay resolve_user_named(r, n, payload =>! int32, scope));
     }
 
-    TokenKind:as_kind = ((payload => int32) => TokenKind);
+    TokenKind:as_kind = ((payload =>! int32) =>! TokenKind);
     BuiltinTypeSpec:spec = raw builtin_type_spec(as_kind);
     if (spec.known) {
         pass (relay builtin_to_type(r, spec, n));
@@ -564,7 +565,7 @@ func:foldenv_new = FoldEnv() {
     int64:n = 16i64;
     wild int8->:a = alloc(n * #size_of<int32>());
     wild int8->:b = alloc(n * #size_of<ConstVal>());
-    FoldEnv:e = FoldEnv{ names: a => wild int32->, vals: b => wild ConstVal->,
+    FoldEnv:e = FoldEnv{ names: a =>! wild int32->, vals: b =>! wild ConstVal->,
                          count: 0i32, cap: 16i32 };
     pass e;
 };
@@ -585,12 +586,12 @@ func:foldenv_set = NIL(FoldEnv->:e, int32:name, ConstVal:v) {
     if (e.count >= e.cap) {
         int32:nc = e.cap * 2i32;
         if (nc < 16i32) { nc = 16i32; }
-        wild int8->:a = ralloc(e.names => wild int8->,
+        wild int8->:a = ralloc(e.names =>! wild int8->,
                                (nc => int64) * #size_of<int32>());
-        wild int8->:b = ralloc(e.vals => wild int8->,
+        wild int8->:b = ralloc(e.vals =>! wild int8->,
                                (nc => int64) * #size_of<ConstVal>());
-        e.names = a => wild int32->;
-        e.vals = b => wild ConstVal->;
+        e.names = a =>! wild int32->;
+        e.vals = b =>! wild ConstVal->;
         e.cap = nc;
     }
     e.names[e.count => int64] = name;
@@ -701,7 +702,7 @@ func:fold_expr = ConstVal(TypeResolver->:r, ExprId:id, int32:scope, int32:fuel) 
     }
     if (e.kind == ExprKind.ExprStringLiteral) {
         pass (raw cv_str(r.types.t_string, relay intern_get(r.interns,
-                                                            e.payload => int32)));
+                                                            e.payload =>! int32)));
     }
 
     // `comptime(expr)` IS A FORCING FORM, not a different evaluator. It says "this
@@ -919,14 +920,14 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
 
     // A BARE-NAME BUILTIN RESOLVES TO NO SYMBOL, so it is answered before the
     // lookup rather than after it fails.
-    string:cname = relay intern_get(r.interns, (raw expr_name(callee)) => int32);
+    string:cname = relay intern_get(r.interns, (raw expr_name(callee)) =>! int32);
     if (raw is_builtin_name(cname)) {
         pass (relay fold_string_builtin(r, e, cname, scope, fuel - 1i32));
     }
 
     int32:symid = callee.a;
     if (symid == 0i32) {
-        symid = raw scope_lookup(r.tab, scope, (raw expr_name(callee)) => int32);
+        symid = raw scope_lookup(r.tab, scope, (raw expr_name(callee)) =>! int32);
     }
     if (symid == 0i32) { pass (raw cv_none()); }
     Symbol:sym = relay symtab_get(r.tab, symid);
@@ -1017,7 +1018,7 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
         if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw flow_fail()); }
         ConstVal:v = relay fold_expr(r, raw stmt_assigned(st), scope, f);
         if (!(raw cv_folded(v))) { pass (raw flow_fail()); }
-        drop foldenv_set(@r.env, (raw expr_name(target)) => int32, v);
+        drop foldenv_set(@r.env, (raw expr_name(target)) =>! int32, v);
         pass (raw flow_none());
     }
 
@@ -1207,7 +1208,7 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
     // it is the innermost thing in scope and because a parameter named after a
     // `const` global is a program somebody may well write.
     if (r.env.count > 0i32) {
-        ConstVal:local = raw foldenv_get(@r.env, (raw expr_name(e)) => int32);
+        ConstVal:local = raw foldenv_get(@r.env, (raw expr_name(e)) =>! int32);
         if (raw cv_folded(local)) { pass local; }
     }
 
@@ -1222,7 +1223,7 @@ func:fold_ident = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel
     // the recorded binding wins where there is one.
     int32:symid = e.a;
     if (symid == 0i32) {
-        symid = raw scope_lookup(r.tab, scope, (raw expr_name(e)) => int32);
+        symid = raw scope_lookup(r.tab, scope, (raw expr_name(e)) =>! int32);
     }
     if (symid == 0i32) { pass (raw cv_none()); }
     Symbol:sym = relay symtab_get(r.tab, symid);
@@ -1495,7 +1496,7 @@ func:resolve_fixed_array = int32(TypeResolver->:r, TypeNode:n, int32:elem,
         pass (relay ty_error(r, raw TYPE_NOT_CONSTANT(),
             "an array size may not be negative", se.span));
     }
-    pass (raw tt_array(r.types, elem, count => int32,
+    pass (raw tt_array(r.types, elem, count =>! int32,
                        raw type_size(r.types, elem),
                        raw type_align(r.types, elem)));
 };

@@ -122,11 +122,11 @@ pub func:locks_init = Locks(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:m3 = alloc(size * #size_of<int32>());
     wild int8->:m4 = alloc(size * #size_of<bool>());
 
-    LockTable:t = LockTable{ acq_min: m1 => wild int32->,
-                             acq_max: m2 => wild int32->,
-                             bound: m3 => wild int32->,
-                             has_bound: m4 => wild bool->,
-                             count: size => int32, changed: false };
+    LockTable:t = LockTable{ acq_min: m1 =>! wild int32->,
+                             acq_max: m2 =>! wild int32->,
+                             bound: m3 =>! wild int32->,
+                             has_bound: m4 =>! wild bool->,
+                             count: size =>! int32, changed: false };
     int64:i = 0i64;
     while (i < size) {
         t.acq_min[i] = raw LOCK_NONE_MIN();
@@ -214,7 +214,7 @@ func:read_acquires = LevelRead(Locks->:x, DeclNode:d) {
                     cnode.span);
                 pass (raw no_level());
             }
-            LevelRead:r = LevelRead{ found: true, level: cv.num => int32,
+            LevelRead:r = LevelRead{ found: true, level: cv.num =>! int32,
                                      bounded: raw contract_is_bounded(v) };
             pass r;
         }
@@ -259,7 +259,7 @@ func:call_target = int32(Locks->:x, ExprNode:n) {
         if (rty == 0i32) { pass 0i32; }
         MethodFind:m = relay find_method(x.impls, x.bounds, x.types, x.ast,
                                          x.interns, rty,
-                                         (raw expr_name(n)) => int32);
+                                         (raw expr_name(n)) =>! int32);
         if (!m.found) { pass 0i32; }
         pass m.decl;
     }

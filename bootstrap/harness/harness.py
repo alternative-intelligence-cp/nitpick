@@ -1254,6 +1254,62 @@ def main(argv):
                 n += 1
             print("  %-11s %2d real-backend program(s)" % ("programs", n))
 
+            # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
+            #
+            # npkc compiles ITSELF: the whole 60-module compiler through its own
+            # frontend, its own analyses, and its own emitter. The emitted IR is
+            # assembled and linked into STAGE 1 -- a compiler with no seed in it
+            # -- and stage 1 emits the compiler again. The two emissions must be
+            # BYTE-IDENTICAL (D-078/D-085): this is the 1.2 fixpoint, run as a
+            # standing instrument from the day it first closed. A drift here is
+            # either nondeterminism or a semantic divergence between what the
+            # seed built and what the compiler builds -- both are stop-the-line.
+            r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk")],
+                               capture_output=True, timeout=600)
+            if r.returncode != 0:
+                got = r.stdout.decode("utf-8", "replace").strip()[:400]
+                failures.append("npkc cannot compile ITSELF: %s" % got)
+                print("  %-11s self-check FAILED" % ("selfhost",))
+            else:
+                s1 = os.path.join(tmp, "stage1")
+                with open(s1 + ".ll", "wb") as fh:
+                    fh.write(r.stdout)
+                ok = True
+                rr = subprocess.run(["llc", "-O0", "-filetype=obj",
+                                     "-relocation-model=static",
+                                     s1 + ".ll", "-o", s1 + ".o"],
+                                    capture_output=True, text=True)
+                if rr.returncode != 0:
+                    first = next((l for l in rr.stderr.splitlines()
+                                  if "error" in l), rr.stderr)
+                    failures.append("llc rejected the SELF-EMITTED compiler: %s"
+                                    % first.strip()[:160])
+                    ok = False
+                if ok:
+                    rr = subprocess.run(["ld.lld", "-static", "-o", s1,
+                                         s1 + ".o", os.path.join(tmp, "npkrt.o")],
+                                        capture_output=True, text=True)
+                    if rr.returncode != 0:
+                        failures.append("stage 1 failed to link: %s"
+                                        % rr.stderr.strip()[:160])
+                        ok = False
+                if ok:
+                    rr = subprocess.run([s1, os.path.join(ROOT, "src", "main.npk")],
+                                        capture_output=True, timeout=600)
+                    if rr.returncode != 0:
+                        failures.append("STAGE 1 cannot compile the compiler: %s"
+                                        % rr.stdout.decode("utf-8", "replace")[:300])
+                        ok = False
+                    elif rr.stdout != r.stdout:
+                        failures.append("THE FIXPOINT DRIFTED: stage 1's emission "
+                                        "of the compiler differs from the "
+                                        "seed-built compiler's -- nondeterminism "
+                                        "or a semantic divergence (D-078)")
+                        ok = False
+                if ok:
+                    print("  %-11s stage 1 rebuilt itself byte-identically"
+                          % ("selfhost",))
+
             # And whole programs that must be ACCEPTED, in full silence.
             #
             # A REJECTION SUITE CANNOT TELL A CORRECT CHECKER FROM ONE THAT

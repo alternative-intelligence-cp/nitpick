@@ -27,6 +27,10 @@ use "./ast.npk".*;
 use "./diagnostics.npk".*;
 use "./type_codes.npk".*;
 use "./types.npk".*;
+// A DECLARED CYCLE with type_access (0.8.1): an impl check reads a
+// function type's parameter window through `type_param_at_of`, and access
+// checking consults the impl table. Same shape as type_expr <-> type_stmt.
+use "./type_access.npk".*;
 use "./type_names.npk".*;
 use "./parse_decl.npk".*;
 use "./parse_type.npk".*;
@@ -60,16 +64,16 @@ pub struct:ImplTable = {
 pub func:impltable_init = ImplTable() {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<ImplEntry>());
-    ImplTable:t = ImplTable{ items: mem => wild ImplEntry->,
+    ImplTable:t = ImplTable{ items: mem =>! wild ImplEntry->,
                              count: 0i32, cap: 16i32 };
     pass t;
 };
 
 func:impl_grow = NIL(ImplTable->:t) {
     int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items => wild int8->,
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<ImplEntry>());
-    t.items = bigger => wild ImplEntry->;
+    t.items = bigger =>! wild ImplEntry->;
     t.cap = nc;
     pass NIL;
 };
@@ -77,8 +81,8 @@ func:impl_grow = NIL(ImplTable->:t) {
 pub func:impl_count = int32(ImplTable->:t) { pass t.count; };
 
 pub func:impl_at = ImplEntry(ImplTable->:t, int32:i) {
-    if (i < 0i32) { fail 21i32; }
-    if (i >= t.count) { fail 21i32; }
+    if (i < 0i32) { fail 21tbb32; }
+    if (i >= t.count) { fail 21tbb32; }
     pass (t.items[i => int64]);
 };
 
@@ -339,16 +343,16 @@ pub struct:BoundTable = {
 pub func:boundtable_init = BoundTable() {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<BoundEntry>());
-    BoundTable:t = BoundTable{ items: mem => wild BoundEntry->,
+    BoundTable:t = BoundTable{ items: mem =>! wild BoundEntry->,
                                count: 0i32, cap: 16i32 };
     pass t;
 };
 
 func:bound_grow = NIL(BoundTable->:t) {
     int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items => wild int8->,
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<BoundEntry>());
-    t.items = bigger => wild BoundEntry->;
+    t.items = bigger =>! wild BoundEntry->;
     t.cap = nc;
     pass NIL;
 };
@@ -356,8 +360,8 @@ func:bound_grow = NIL(BoundTable->:t) {
 pub func:bound_count = int32(BoundTable->:t) { pass t.count; };
 
 pub func:bound_at = BoundEntry(BoundTable->:t, int32:i) {
-    if (i < 0i32) { fail 22i32; }
-    if (i >= t.count) { fail 22i32; }
+    if (i < 0i32) { fail 22tbb32; }
+    if (i >= t.count) { fail 22tbb32; }
     pass (t.items[i => int64]);
 };
 
@@ -958,7 +962,7 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     DeclId:tfid = DeclId{ index: trait_fn };
     DeclNode:tf = relay ast_decl(r.ast, tfid);
     r.self_type = raw tt_self(r.types);
-    int32:want = relay fn_type(r, tf, raw decl_name(tf), scope);
+    int32:want = relay fn_type(r, tfid, raw decl_name(tf), scope);
 
     // THE IMPL'S SIGNATURE IS RESOLVED WITH THE IMPL'S OWN PARAMETERS, which for
     // a blanket impl is where its `T` comes from — `func:log_str = string(T:self)`
@@ -973,7 +977,7 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     DeclId:ifid = DeclId{ index: impl_fn };
     DeclNode:f = relay ast_decl(r.ast, ifid);
     r.self_type = e.target;
-    int32:got = relay fn_type(r, f, raw decl_name(f), scope);
+    int32:got = relay fn_type(r, ifid, raw decl_name(f), scope);
 
     r.self_type = saved;
     r.enclosing = saved_enc;

@@ -355,10 +355,14 @@ pub func:front_run = int32(Front->:f, string:root) {
         s1 = s1 + 1i32;
     }
 
-    int32:round = 0i32;
-    bool:settling = true;
-    while (settling) {
-        if (round >= (raw LOCK_ROUNDS())) { break; }
+    // ITS OWN NAMES. The escape analysis above already declared `round` and
+    // `settling` in this scope, and the real resolver refuses a redeclaration
+    // (RESOLVE-001) — the seed's single namespace hid the collision for as long
+    // as only the seed compiled this file.
+    int32:lock_round = 0i32;
+    bool:lock_settling = true;
+    while (lock_settling) {
+        if (lock_round >= (raw LOCK_ROUNDS())) { break; }
         drop locks_new_round(@lk);
         int32:w1 = 0i32;
         while (w1 < (raw graph_count(@f.g))) {
@@ -366,10 +370,10 @@ pub func:front_run = int32(Front->:f, string:root) {
             drop locks_widen(@lk, DeclId{ index: e9.root }, e9.scope);
             w1 = w1 + 1i32;
         }
-        settling = raw locks_changed(@lk);
-        round = round + 1i32;
+        lock_settling = raw locks_changed(@lk);
+        lock_round = lock_round + 1i32;
     }
-    if (settling) {
+    if (lock_settling) {
         drop locks_unsettled(@lk, (relay ast_decl(@f.g.ast,
             DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
     }

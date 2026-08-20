@@ -87,6 +87,10 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
                                     int32:name, int32:scope) {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
+    // FIELD TYPES RESOLVE AT HOME (0.8.1): a struct's annotations mean what they
+    // meant where the struct was written, not whatever the module doing the
+    // accessing happens to import.
+    scope = raw symtab_home_scope(r.tab, did.index, scope);
 
     Lay:l = raw lay_start();
     int32:i = 0i32;
@@ -132,6 +136,7 @@ pub func:struct_layout = int32(TypeResolver->:r, int32:struct_type, int32:scope)
 func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scope) {
     DeclId:did = DeclId{ index: raw type_decl(r.types, struct_type) };
     DeclNode:d = relay ast_decl(r.ast, did);
+    scope = raw symtab_home_scope(r.tab, did.index, scope);
 
     // THE SIZE IS WRITTEN BEFORE THE FIELDS ARE WALKED, so a struct reached again
     // while its own layout is in progress does not recurse forever. One byte is a
@@ -141,6 +146,7 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     drop tt_set_layout(r.types, struct_type, 1i64, 1i32);
 
     Lay:l = raw lay_start();
+    bool:haspt = false;
     int32:i = 0i32;
     while (i < (raw item_member_count(r.ast, d))) {
         DeclId:mid = raw item_member(r.ast, d, i);
@@ -154,9 +160,14 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             drop ensure_layout(r, ft, scope, raw LAYOUT_FUEL());
             drop lay_field(@l, raw type_size(r.types, ft),
                            raw type_align(r.types, ft));
+            // The pointer-bearing bit rides the same walk (0.8.1): this is the
+            // one place every field's RESOLVED type passes through, which is
+            // exactly what the escape analysis cannot reconstruct for itself.
+            if (relay field_holds_ptr(r, ft)) { haspt = true; }
         }
         i = i + 1i32;
     }
+    drop tt_set_haspt(r.types, struct_type, haspt);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -164,6 +175,30 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     if (l.size == 0i64) { l.size = 1i64; }
     drop tt_set_layout(r.types, struct_type, l.size, l.align);
     pass struct_type;
+};
+
+// Can a field of this resolved type hold an address? Mirrors the escape
+// analysis's scalar table; a nested struct answers by ITS recorded bit, which
+// exists because containment is acyclic and inner structs lay out first.
+func:field_holds_ptr = bool(TypeResolver->:r, int32:t) {
+    int32:k = raw type_kind(r.types, t);
+    if (k == (raw TY_INT()))     { pass false; }
+    if (k == (raw TY_BOOL()))    { pass false; }
+    if (k == (raw TY_CHAR()))    { pass false; }
+    if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_ENUM()))    { pass false; }
+    if (k == (raw TY_NIL()))     { pass false; }
+    if (k == (raw TY_ARRAY()))   { pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_OPTIONAL())){ pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_RESULT()))  { pass (relay field_holds_ptr(r, raw type_elem(r.types, t))); }
+    if (k == (raw TY_STRUCT())) {
+        int32:bit = raw tt_haspt(r.types, t);
+        if (bit == 1i32) { pass false; }
+        pass true;
+    }
+    // Pointers, slices, strings, `any`, and anything unresolved: yes.
+    pass true;
 };
 
 // FUEL, as a belt to the loader's braces. A by-value containment cycle is refused

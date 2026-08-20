@@ -58,9 +58,9 @@ pub func:exprtypes_init = ExprTypes(int32:n) {
     wild int8->:mem = alloc(size * #size_of<int32>());
     wild int8->:flags = alloc(size * #size_of<bool>());
 
-    ExprTypes:t = ExprTypes{ items: mem => wild int32->,
-                             known: flags => wild bool->,
-                             count: size => int32 };
+    ExprTypes:t = ExprTypes{ items: mem =>! wild int32->,
+                             known: flags =>! wild bool->,
+                             count: size =>! int32 };
     int64:i = 0i64;
     while (i < size) {
         t.items[i] = 0i32;
@@ -82,8 +82,8 @@ pub func:exprtypes_for = ExprTypes(Ast->:ast) {
 // different thing from one it never reached, and only recording the successes
 // would collapse them.
 pub func:exprtypes_set = NIL(ExprTypes->:t, ExprId:id, int32:type_id) {
-    if (id.index < 0i32) { fail 24i32; }
-    if (id.index >= t.count) { fail 24i32; }
+    if (id.index < 0i32) { fail 24tbb32; }
+    if (id.index >= t.count) { fail 24tbb32; }
     t.items[id.index => int64] = type_id;
     t.known[id.index => int64] = true;
     pass NIL;

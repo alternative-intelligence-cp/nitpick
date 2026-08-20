@@ -17,6 +17,7 @@
 
 use "./source_location.npk".*;
 use "./intern.npk".*;
+use "./token_kind.npk".*;
 use "./ast_kind.npk".*;
 use "./ast.npk".*;
 use "./diagnostics.npk".*;
@@ -62,10 +63,19 @@ func:bind_own_generics = GenericScope(TypeResolver->:r, DeclNode:d) {
 };
 
 // THE DECLARED TYPE IS THE SUCCESS TYPE; the actual type is wrapped.
-pub func:fn_signature = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
+//
+// RESOLVED IN THE DECLARATION'S HOME SCOPE, not the asker's (0.8.1). A signature
+// means what it meant where it was written — resolving it against the CALLING
+// module's imports made `tyres_init(Ast->:ast, …)` type or fail depending on who
+// asked, and under a name collision it would have silently bound the caller's
+// type. The caller's scope survives only as the fallback for a declaration
+// nothing collected.
+pub func:fn_signature = FnSig(TypeResolver->:r, DeclId:did, int32:name,
                               int32:scope) {
+    DeclNode:d = relay ast_decl(r.ast, did);
+    int32:home = raw symtab_home_scope(r.tab, did.index, scope);
     GenericScope:saved = raw bind_own_generics(r, d);
-    FnSig:s = relay fn_signature_bound(r, d, name, scope);
+    FnSig:s = relay fn_signature_bound(r, d, name, home);
     r.generics = saved;
     pass s;
 };
@@ -105,9 +115,11 @@ func:fn_signature_bound = FnSig(TypeResolver->:r, DeclNode:d, int32:name,
 //
 // The RESULT is the return type here, not the success type. A caller receives
 // what the function returns, and D-013 says that is always a `Result`.
-pub func:fn_type = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope) {
+pub func:fn_type = int32(TypeResolver->:r, DeclId:did, int32:name, int32:scope) {
+    DeclNode:d = relay ast_decl(r.ast, did);
+    int32:home = raw symtab_home_scope(r.tab, did.index, scope);
     GenericScope:saved = raw bind_own_generics(r, d);
-    int32:ft = relay fn_type_bound(r, d, name, scope);
+    int32:ft = relay fn_type_bound(r, d, name, home);
     r.generics = saved;
     pass ft;
 };
@@ -166,6 +178,9 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
 // EMITTER reads to synthesise the wrapping at the call boundary (cycle 0.7); what
 // this owes the checker is the type a caller sees.
 pub func:extern_fn_type = int32(TypeResolver->:r, DeclNode:d, int32:scope) {
+    // NOTE: extern signatures still resolve in the ASKER's scope — externs are
+    // refused by the backend until the FFI rung, and threading the DeclId here
+    // lands with that work rather than as a dead parameter now.
     TypeId:ret_id = raw extern_fn_return(r.ast, d);
     if (relay check_not_result_return(r, ret_id, scope)) { pass 0i32; }
 
@@ -242,7 +257,7 @@ func:check_not_result_return = bool(TypeResolver->:r, TypeId:id, int32:_~scope) 
     // user type named at that index as a `Result` return — the same
     // reinterpretation, in a second place, reaching the opposite wrong answer.
     if (!(raw type_name_is_builtin(n))) { pass false; }
-    TokenKind:as_kind = ((raw type_name_index(n)) => int32) => TokenKind;
+    TokenKind:as_kind = ((raw type_name_index(n)) =>! int32) =>! TokenKind;
     if (as_kind != TokenKind.KwResult) { pass false; }
 
     drop diaglist_push(r.diags, raw diag_error(raw TYPE_RESULT_RETURN(),

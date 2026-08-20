@@ -118,7 +118,7 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprNode:n, bool:safe_nav) {
     base = relay access_base(e, base, n.span);
     if (base == 0i32) { pass 0i32; }
 
-    int32:name = n.payload => int32;
+    int32:name = n.payload =>! int32;
     int32:found = relay member_type(e, base, name, n.span);
     if (found == 0i32) { pass 0i32; }
     if (optional) {
@@ -165,7 +165,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
     if (s.origin_kind != (raw SYM_DECL())) { pass (raw ns_no()); }
     DeclId:did = DeclId{ index: s.origin };
     DeclNode:d = relay ast_decl(e.ast, did);
-    int32:name = n.payload => int32;
+    int32:name = n.payload =>! int32;
     TypeResolver:r = raw etyper_resolver(e);
 
     if (d.kind == DeclKind.DeclEnumDecl) {
@@ -196,7 +196,7 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprNode:n) {
         DeclId:mdid = DeclId{ index: ms.origin };
         DeclNode:md = relay ast_decl(e.ast, mdid);
         if (md.kind == DeclKind.DeclFunctionDecl) {
-            pass (raw ns_yes(relay fn_type(@r, md, ms.name, e.scope)));
+            pass (raw ns_yes(relay fn_type(@r, mdid, ms.name, e.scope)));
         }
         if (md.kind == DeclKind.DeclGlobalDecl) {
             TypeId:ty = TypeId{ index: md.a };
@@ -435,7 +435,7 @@ func:type_variant_ctor = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         pass (relay te_error(e, raw TYPE_MISMATCH(),
                   relay string_concat(m1, "` is not a function"), n.span));
     }
-    pass (relay type_ctor_named(e, n, enum_ty, cnode.payload => int32,
+    pass (relay type_ctor_named(e, n, enum_ty, cnode.payload =>! int32,
                                 start, count));
 };
 
@@ -473,12 +473,16 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         pass enum_ty;
     }
     TypeResolver:r = raw etyper_resolver(e);
+    // The payload's type resolves in the ENUM's home scope — the declaration
+    // means what it meant where it was written (0.8.1).
+    int32:home = raw symtab_home_scope(e.tab, raw type_decl(e.types, enum_ty),
+                                       e.scope);
     int32:i = 0i32;
     while (i < count) {
         int32:pt = relay resolve_type(@r,
                        TypeId{ index: relay ast_id_at(e.ast,
                                    raw variant_payload_start(v), i) },
-                       e.scope);
+                       home);
         int32:saved = e.expected;
         e.expected = pt;
         int32:at = relay type_of_expr(e, ExprId{ index: relay ast_id_at(e.ast,
@@ -766,7 +770,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
                 DeclNode:rd = relay ast_decl(e.ast, DeclId{ index: rs.origin });
                 if (rd.kind == DeclKind.DeclEnumDecl) {
                     int32:ety = raw tt_enum(e.types, rs.origin, rs.name, 0i64, 1i32);
-                    pass (relay type_ctor_named(e, n, ety, n.payload => int32,
+                    pass (relay type_ctor_named(e, n, ety, n.payload =>! int32,
                               raw expr_list_start(n), raw expr_list_count(n)));
                 }
             }
@@ -791,7 +795,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     recv = relay access_base(e, recv, n.span);
     if (recv == 0i32) { pass 0i32; }
 
-    int32:name = n.payload => int32;
+    int32:name = n.payload =>! int32;
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
     // asked first, and until 0.4.6 it was not asked at all: an `impl` declares
@@ -885,7 +889,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     if (found.blanket_impl != 0i32) {
         r.enclosing = relay bind_blanket(e, found.blanket_impl, recv);
     }
-    int32:ft = relay fn_type(@r, d, name, e.scope);
+    int32:ft = relay fn_type(@r, did, name, e.scope);
 
     // THE RECEIVER IS THE FIRST PARAMETER, so it is checked as one — and a method
     // whose first parameter is a different type is a method of that type instead,

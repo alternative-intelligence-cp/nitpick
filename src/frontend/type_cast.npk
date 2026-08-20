@@ -207,7 +207,19 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
         if (tk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
         pass (raw CAST_IMPOSSIBLE());
     }
-    if (tk == (raw TY_ENUM())) { pass (raw CAST_IMPOSSIBLE()); }
+    // `intN =>! enum` MANUFACTURES A TAG, and the first draft refused it outright
+    // on the exhaustiveness argument. The compiler's own source overruled the
+    // draft within one subcycle: a stored tag has to ROUND-TRIP (`payload =>!
+    // TokenKind`, 88 sites), which is precisely the `int32 =>! fd` contract — an
+    // assertion the compiler cannot check, spelled with the bang, greppable. A
+    // forged tag makes every arm of a proven `pick` miss and the statement fall
+    // through; that is the programmer's explicit lie, not the checker's gap.
+    // A PAYLOAD-CARRYING target still refuses AT THE BACKEND: a tag is not a
+    // whole `{tag, payload}` value, and inventing the other half is not a cast.
+    if (tk == (raw TY_ENUM())) {
+        if (fk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
+        pass (raw CAST_IMPOSSIBLE());
+    }
 
     // --- everything numeric, by range --------------------------------------------
     ValueRange:fr = raw type_range(tyt, from);

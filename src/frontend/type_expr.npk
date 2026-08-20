@@ -28,6 +28,9 @@ use "./type_codes.npk".*;
 use "./types.npk".*;
 use "./num_width.npk".*;
 use "./parse_expr.npk".*;
+use "./parse_pick.npk".*;
+use "./parse_stmt.npk".*;
+use "./type_layout.npk".*;
 use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./resolve_type.npk".*;
@@ -157,7 +160,7 @@ pub func:etyper_resolver = TypeResolver(ExprTyper->:e) {
     pass r;
 };
 
-func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
+pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
     drop diaglist_push(e.diags, raw diag_error(code, message, at));
     pass 0i32;
 };
@@ -899,7 +902,7 @@ func:type_ident = int32(ExprTyper->:e, ExprNode:n) {
             pass (relay resolve_type(@r, raw param_type(dnode), e.scope));
         }
         if (dnode.kind == DeclKind.DeclFunctionDecl) {
-            pass (relay fn_type(@r, dnode, s.name, e.scope));
+            pass (relay fn_type(@r, did, s.name, e.scope));
         }
         // AN `extern` FUNCTION IS A FUNCTION. Missing here, its name fell through
         // to the "is a type, not a value" ending below — so every call to a
@@ -1290,6 +1293,15 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) {
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw TY_ARRAY())) {
             want_elem = raw type_elem(e.types, want);
+            // `[]` IS THE ZERO ARRAY of the expected fixed-array type (0.8.1) —
+            // the same rule Result{…} has for its omitted fields: absent means
+            // zero. Without it there is NO spelling for a zeroed `T[64]` field,
+            // and a struct literal cannot omit fields — so the one construct
+            // that needs it (`DiagList{ items: [], … }`) had no legal form. A
+            // NON-empty literal still has to match the length exactly: partial
+            // initialisation stays unspellable, deliberately, because "the
+            // first three, then zeros" is a meaning the reader must guess.
+            if (cnt == 0i32) { pass want; }
             if ((raw type_array_count(e.types, want)) != cnt) {
                 string:c1 = relay string_concat("this array literal has ",
                                 raw int_to_string(cnt => int64));
@@ -1435,7 +1447,7 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
 // definite assignment refuses everywhere else. It is a safety property, not a
 // convenience.
 func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
-    int32:name = (n.payload) => int32;
+    int32:name = (n.payload) =>! int32;
 
     // THE EXPECTED TYPE WINS WHEN IT NAMES THE SAME DECLARATION, because it is the
     // only thing that carries generic arguments: the literal stores a NAME and

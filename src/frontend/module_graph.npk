@@ -78,7 +78,7 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
         roots: roots,
         stdlib: stdlib,
         prelude: 0i32 - 1i32,
-        mods: mem => wild ModuleEntry->,
+        mods: mem =>! wild ModuleEntry->,
         count: 0i32,
         cap: 16i32
     };
@@ -87,17 +87,17 @@ pub func:graph_init = ModuleGraph(InternTable->:interns, DiagList->:diags,
 
 func:graph_grow = NIL(ModuleGraph->:g) {
     int32:nc = g.cap * 2i32;
-    wild int8->:bigger = ralloc(g.mods => wild int8->,
+    wild int8->:bigger = ralloc(g.mods =>! wild int8->,
                                 (nc => int64) * #size_of<ModuleEntry>());
-    g.mods = bigger => wild ModuleEntry->;
+    g.mods = bigger =>! wild ModuleEntry->;
     g.cap = nc;
     pass NIL;
 };
 
 pub func:graph_count = int32(ModuleGraph->:g) { pass g.count; };
 pub func:graph_at = ModuleEntry(ModuleGraph->:g, int32:i) {
-    if (i < 0i32) { fail 13i32; }
-    if (i >= g.count) { fail 13i32; }
+    if (i < 0i32) { fail 13tbb32; }
+    if (i >= g.count) { fail 13tbb32; }
     pass g.mods[i => int64];
 };
 
@@ -436,7 +436,7 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
     }
     TypeNode:n = relay ast_type(ast, t);
     if (n.kind == TypeKind.TypeNamedType) {
-        pass (n.payload => int32);
+        pass (n.payload =>! int32);
     }
     // A fixed array of T contains its elements, so its size DOES depend on T.
     // A slice does not: it is {ptr, i64} whatever it points at (D-070).

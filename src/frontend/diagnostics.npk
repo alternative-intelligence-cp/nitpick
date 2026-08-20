@@ -122,10 +122,10 @@ pub func:diaglist_count = int64(DiagList->:list) {
 
 pub func:diaglist_at = Diagnostic(DiagList->:list, int64:i) {
     if (i < 0i64) {
-        fail 6i32;
+        fail 6tbb32;
     }
     if (i >= list.count) {
-        fail 6i32;
+        fail 6tbb32;
     }
     pass list.items[i];
 };
@@ -243,7 +243,7 @@ pub func:sink_write = NIL(Sink->:out, string:text) {
     }
     int64:i = 0i64;
     while (i < text.len) {
-        out.buf[out.len] = text.ptr[i];
+        out.buf[out.len] = text.ptr[i] =>! int8;
         out.len = out.len + 1i64;
         i = i + 1i64;
     }
@@ -255,7 +255,7 @@ pub func:sink_length = int64(Sink->:out) {
 };
 
 pub func:sink_byte_at = uint8(Sink->:out, int64:i) {
-    pass out.buf[i];
+    pass (out.buf[i] =>! uint8);
 };
 
 // ---------------------------------------------------------------------------

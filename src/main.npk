@@ -66,9 +66,14 @@ func:main = int32(cstring[]:argv) {
 
     // Declared UNINITIALISED and filled by the pipeline through the pointer —
     // the graph inside holds a pointer to the intern table beside it, so the
-    // whole Front must sit in one frame before any wiring happens.
+    // whole Front must sit in one frame before any wiring happens. `$$m`, not
+    // `@`: the MUTABLE borrow is the out-parameter spelling — it says in source
+    // that the callee writes this, and the definite-assignment analysis credits
+    // exactly that spelling as the assignment (D-010). `@f` here would be
+    // refused, correctly: an immutable borrow of memory nothing has written is
+    // a read of it.
     Front:f;
-    int32:fr = raw front_run(@f, root);
+    int32:fr = raw front_run($$m f, root);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
         drop report(@f.g.sm, @f.diags);
@@ -82,7 +87,7 @@ func:main = int32(cstring[]:argv) {
     InstanceTable:einst = raw insttable_init();
     TypeResolver:tr = raw tyres_init(@f.g.ast, @f.types, @f.g.tab, @f.it,
                                      @f.diags, @einst);
-    bool:emitted = raw emit_program(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
+    bool:emitted = raw emit_all(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
                                     @f.diags);
     if (!emitted) {
         drop report(@f.g.sm, @f.diags);

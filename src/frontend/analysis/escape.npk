@@ -101,8 +101,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:mem = alloc(size * #size_of<bool>());
 
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
-                       diags: diags, holds: mem => wild bool->,
-                       holds_count: size => int32,
+                       diags: diags, holds: mem =>! wild bool->,
+                       holds_count: size =>! int32,
                        reporting: false, changed: false };
     int64:i = 0i64;
     while (i < size) {
@@ -231,7 +231,8 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
     if (d.kind == DeclKind.DeclGlobalDecl) {
         ExprId:init = raw global_init(d);
         if (!(raw expr_is_none(init))) {
-            if (relay escape_expr(x, init, raw ESCAPE_DEPTH())) {
+            if (raw verdict_borrowy(x, init,
+                    relay escape_expr(x, init, raw ESCAPE_DEPTH()))) {
                 drop escape_err(x, raw BORROW_STORED(),
                     "a borrow cannot initialise a global: a global outlives every frame, so there is no frame that bounds it (D-004 rule 3)",
                     d.span);
@@ -275,8 +276,15 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) {
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = relay stmt_decl_init(x.ast, s);
         if (!(raw expr_is_none(init))) {
-            if (relay escape_expr(x, init, raw ESCAPE_DEPTH())) {
-                drop escape_mark(x, id.index);
+            if (raw verdict_borrowy(x, init,
+                    relay escape_expr(x, init, raw ESCAPE_DEPTH()))) {
+                // Param-rooted borrows do not taint (0.8.1): the same rule the
+                // assignment and return checks apply. `ConstVal:local =
+                // foldenv_get(@r.env, …)` holds nothing that outlives `r`.
+                if (!(relay borrows_only_param_rooted(x, init,
+                                                      raw ESCAPE_DEPTH()))) {
+                    drop escape_mark(x, id.index);
+                }
             }
         }
         pass NIL;
@@ -399,7 +407,17 @@ func:escape_counted = NIL(Escape->:x, StmtNode:s) {
 func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
     ExprId:v = raw stmt_operand(s);
     if (raw expr_is_none(v)) { pass NIL; }
-    if (relay escape_expr(x, v, raw ESCAPE_DEPTH())) {
+    if (raw verdict_borrowy(x, v, relay escape_expr(x, v, raw ESCAPE_DEPTH()))) {
+        // A SECOND LOOK BEFORE REFUSING (0.8.1): a value whose borrows are all
+        // rooted at PARAMETERS may travel up one frame — a parameter's target
+        // lives in the caller or older, so a pointer into it cannot dangle by
+        // this return. Each frame proves its own hop: if the caller returns it
+        // again, the caller's own return-check runs this same rule on values it
+        // can see. Compositional, and exactly the constructor pattern the
+        // compiler is built out of (`foldenv_get(@r.env, …)` returned upward).
+        if (relay borrows_only_param_rooted(x, v, raw ESCAPE_DEPTH())) {
+            pass NIL;
+        }
         ExprNode:vn = relay ast_expr(x.ast, v);
         drop escape_err(x, raw BORROW_RETURNED(),
             "a borrow cannot travel up: it is valid only for the frame it was taken in, and this returns it out of that frame (D-004 rule 2)",
@@ -420,6 +438,154 @@ func:escape_return_value = NIL(Escape->:x, StmtNode:s) {
 // code needs borrow-into-inner-aggregate, relax it THEN, WITH EVIDENCE."
 // Relaxing it now because a test is awkward to write is the failure mode that
 // sentence exists to name.
+// Is every borrow inside `id` rooted at `sym`? Walks call arguments and borrow
+// operators; anything else that could carry a borrow answers no, which keeps
+// this on the conservative side of the fence it relaxes.
+func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
+                                  int32:depth) {
+    if (depth <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass true; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    int32:d = depth - 1i32;
+
+    // The unwrap operators carry whatever their call carries, no more.
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) {
+        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+    }
+    if (n.kind == ExprKind.ExprRelayExpr) {
+        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+    }
+    if (n.kind == ExprKind.ExprDropExpr) {
+        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+    }
+    // A cast carries its operand's borrows and nothing else.
+    if (n.kind == ExprKind.ExprCastExpr) {
+        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+    }
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
+        pass (relay borrows_all_rooted_at(x, raw expr_operand(n), sym, d));
+    }
+
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        pass (raw root_is(x, raw expr_operand(n), sym));
+    }
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        pass (raw root_is(x, raw expr_operand(n), sym));
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:gcount = raw expr_generic_count(n);
+        int32:start = (raw expr_list_start(n)) + gcount;
+        int32:count = (raw expr_list_count(n)) - gcount;
+        int32:i = 0i32;
+        while (i < count) {
+            ExprId:a = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+            if (!(relay borrows_all_rooted_at(x, a, sym, d))) { pass false; }
+            i = i + 1i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        // A plain name: safe unless the binding itself holds a borrow from
+        // somewhere else, which the holds-table already knows.
+        pass (!(raw ident_holds(x, n.a)));
+    }
+    if (n.kind == ExprKind.ExprIntLiteral)    { pass true; }
+    if (n.kind == ExprKind.ExprStringLiteral) { pass true; }
+    if (n.kind == ExprKind.ExprBoolLiteral)   { pass true; }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (raw root_is(x, id, sym));
+    }
+    pass false;
+};
+
+// Is every borrow inside `id` rooted at a PARAMETER of the current function?
+func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) {
+    if (depth <= 0i32) { pass false; }
+    if (raw expr_is_none(id)) { pass true; }
+    ExprNode:n = relay ast_expr(x.ast, id);
+    int32:d = depth - 1i32;
+
+    if (n.kind == ExprKind.ExprRawUnwrapExpr) {
+        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+    }
+    if (n.kind == ExprKind.ExprRelayExpr) {
+        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+    }
+    if (n.kind == ExprKind.ExprDropExpr) {
+        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+    }
+    // A cast carries its operand's borrows and nothing else.
+    if (n.kind == ExprKind.ExprCastExpr) {
+        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+    }
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) {
+        pass (relay borrows_only_param_rooted(x, raw expr_operand(n), d));
+    }
+
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        pass (raw root_is_param(x, raw expr_operand(n)));
+    }
+    if (n.kind == ExprKind.ExprBorrowExpr) {
+        pass (raw root_is_param(x, raw expr_operand(n)));
+    }
+    if (n.kind == ExprKind.ExprCallExpr) {
+        int32:gcount = raw expr_generic_count(n);
+        int32:start = (raw expr_list_start(n)) + gcount;
+        int32:count = (raw expr_list_count(n)) - gcount;
+        int32:i = 0i32;
+        while (i < count) {
+            ExprId:a = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+            if (!(relay borrows_only_param_rooted(x, a, d))) { pass false; }
+            i = i + 1i32;
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        pass (!(raw ident_holds(x, n.a)));
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        pass (raw root_is_param(x, id));
+    }
+    if (n.kind == ExprKind.ExprIntLiteral)    { pass true; }
+    if (n.kind == ExprKind.ExprStringLiteral) { pass true; }
+    if (n.kind == ExprKind.ExprBoolLiteral)   { pass true; }
+    pass false;
+};
+
+// Does this place root at a parameter — a name whose symbol's origin is a
+// ParamDecl? A parameter's target outlives the frame by construction.
+func:root_is_param = bool(Escape->:x, ExprId:id) {
+    int32:sym = raw root_symbol(x, id);
+    if (sym == 0i32) { pass false; }
+    Symbol:sy = raw symtab_get(x.tab, sym);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: sy.origin });
+    pass (d.kind == DeclKind.DeclParamDecl);
+};
+
+// The SYMBOL at a place's root, or 0 — `f.g.ast` roots at `f`.
+func:root_symbol = int32(Escape->:x, ExprId:id) {
+    PlaceRoot:r = raw place_root(x.ast, id, raw BORROW_FUEL());
+    if (r.exhausted) { pass 0i32; }
+    if (raw expr_is_none(r.id)) { pass 0i32; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    pass rn.a;
+};
+
+func:root_is = bool(Escape->:x, ExprId:id, int32:sym) {
+    int32:got = raw root_symbol(x, id);
+    if (got == 0i32) { pass false; }
+    pass (got == sym);
+};
+
+func:ident_holds = bool(Escape->:x, int32:sym_index) {
+    if (sym_index == 0i32) { pass true; }   // unresolved: cannot vouch
+    Symbol:sy = raw symtab_get(x.tab, sym_index);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
+    pass (x.holds[sy.origin => int64]);
+};
+
 func:escape_assign = NIL(Escape->:x, StmtNode:s) {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
@@ -429,7 +595,27 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
     drop escape_expr(x, tgt, raw ESCAPE_DEPTH());
 
     if (raw expr_is_none(val)) { pass NIL; }
-    if (!(relay escape_expr(x, val, raw ESCAPE_DEPTH()))) { pass NIL; }
+    if (!(raw verdict_borrowy(x, val,
+              relay escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
+
+    // SELF-WIRING IS PERMITTED (0.8.1): storing into a field of `X` a value
+    // built from borrows that are themselves rooted at `X` — the pipeline's
+    // `f.g = graph_init($$m f.it, …)` shape. The lifetimes are identical by
+    // construction: a pointer into X, held inside X, dies with X. This is the
+    // relaxation D-004's decision text pre-authorised — "if real compiler code
+    // needs borrow-into-inner-aggregate, relax it then, WITH EVIDENCE" — and
+    // the evidence is the compiler's own driver, refused by this rule until the
+    // rule learned the shape. Anything rooted elsewhere still refuses.
+    ExprNode:tgt_n = relay ast_expr(x.ast, tgt);
+    if (tgt_n.kind == ExprKind.ExprMemberAccessExpr) {
+        int32:tsym = raw root_symbol(x, tgt);
+        if (tsym != 0i32) {
+            if (relay borrows_all_rooted_at(x, val, tsym,
+                                            raw ESCAPE_DEPTH())) {
+                pass NIL;
+            }
+        }
+    }
 
     // A BARE LOCAL NAME, and nothing else. `p = @x` records that `p` now holds a
     // borrow; `p.f = @x`, `arr[i] = @x` and `g = @x` are all stores into
@@ -439,7 +625,13 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
         if (tn.a != 0i32) {
             Symbol:sym = raw symtab_get(x.tab, tn.a);
             if (sym.origin_kind == (raw SYM_STMT())) {
-                drop escape_mark(x, sym.origin);
+                // Borrows rooted at PARAMETERS do not taint the binding: their
+                // targets outlive this whole frame (0.8.1 — the return rule's
+                // logic, applied at the write instead of the read).
+                if (!(relay borrows_only_param_rooted(x, val,
+                                                      raw ESCAPE_DEPTH()))) {
+                    drop escape_mark(x, sym.origin);
+                }
                 pass NIL;
             }
         }
@@ -456,6 +648,61 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) {
 // DOES THIS EXPRESSION CONTAIN A BORROW, and does anything inside it break a rule?
 // ONE WALK ANSWERS BOTH, because they visit exactly the same nodes and two walks
 // would be two chances to miss one.
+
+// Can a value of this type contain an address? Pointers and slices can; a
+// struct can if any field can; scalars cannot. Fuel-bounded like every
+// recursive type walk, failing CLOSED — "cannot tell" answers "yes".
+// THE VERDICT FILTER, applied AFTER a walk, never instead of one (0.8.1). The
+// walk fires rules as side effects — the extern-argument check, the depth
+// refusal — so short-circuiting it on the value's type silenced them: the first
+// draft cut the walk at the top and three rejection tests stopped rejecting.
+// The walk always runs; only the VERDICT about this value is filtered, on the
+// sound ground that a type which cannot hold an address cannot carry a borrow
+// (the one door from pointer to integer is `=>!` through the wild family,
+// D-019, the explicit surrender of tracking).
+func:verdict_borrowy = bool(Escape->:x, ExprId:id, bool:walked) {
+    if (!walked) { pass false; }
+    int32:nt = raw exprtypes_get(x.etypes, id);
+    if (nt == 0i32) { pass true; }
+    pass (relay type_holds_pointer(x.types, nt, 8i32));
+};
+
+func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
+    if (fuel <= 0i32) { pass true; }
+    int32:k = raw type_kind(table, t);
+    if (k == (raw TY_POINTER())) { pass true; }
+    if (k == (raw TY_SLICE()))   { pass true; }
+    if (k == (raw TY_STRING()))  { pass true; }
+    if (k == (raw TY_CSTRING())) { pass true; }
+    if (k == (raw TY_ANY()))     { pass true; }
+    if (k == (raw TY_INT()))     { pass false; }
+    if (k == (raw TY_BOOL()))    { pass false; }
+    if (k == (raw TY_CHAR()))    { pass false; }
+    if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_ENUM()))    { pass false; }   // a tag and a WORD, not an address
+    if (k == (raw TY_NIL()))     { pass false; }
+    if (k == (raw TY_ARRAY())) {
+        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+    }
+    if (k == (raw TY_OPTIONAL())) {
+        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT())) {
+        pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT())) {
+        // Layout recorded the answer while it walked the fields (0.8.1):
+        // 1 = no pointers anywhere inside, 2 = holds or may hold one, 0 = the
+        // layout never ran — and "never ran" answers YES, the closed side.
+        int32:bit = raw tt_haspt(table, t);
+        if (bit == 1i32) { pass false; }
+        pass true;
+    }
+    // Generics, everything unresolved: cannot tell — treat as pointer-holding,
+    // which is the conservative side of this fence.
+    pass true;
+};
 
 func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     if (raw expr_is_none(id)) { pass false; }

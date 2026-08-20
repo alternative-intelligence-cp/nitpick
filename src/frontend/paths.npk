@@ -14,7 +14,7 @@ func:DOT = uint8()   { pass 46u8; };   // '.'
 
 pub func:path_is_absolute = bool(string:p) {
     if (p.len == 0i64) { pass false; }
-    pass (p.ptr[0i64] == ((raw SLASH()) => int8));
+    pass (p.ptr[0i64] == ((raw SLASH()) =>! uint8));
 };
 
 // `./x` and `../x` — the forms that resolve against the IMPORTING FILE's
@@ -23,11 +23,11 @@ pub func:path_is_absolute = bool(string:p) {
 // classes: a `./` path that does not exist is an error, never a retry.
 pub func:path_is_relative = bool(string:p) {
     if (p.len < 2i64) { pass false; }
-    if (p.ptr[0i64] != ((raw DOT()) => int8)) { pass false; }
-    if (p.ptr[1i64] == ((raw SLASH()) => int8)) { pass true; }
+    if (p.ptr[0i64] != ((raw DOT()) =>! uint8)) { pass false; }
+    if (p.ptr[1i64] == ((raw SLASH()) =>! uint8)) { pass true; }
     if (p.len < 3i64) { pass false; }
-    if (p.ptr[1i64] != ((raw DOT()) => int8)) { pass false; }
-    pass (p.ptr[2i64] == ((raw SLASH()) => int8));
+    if (p.ptr[1i64] != ((raw DOT()) =>! uint8)) { pass false; }
+    pass (p.ptr[2i64] == ((raw SLASH()) =>! uint8));
 };
 
 // Everything before the last `/`. A path with no `/` has directory ".".
@@ -35,7 +35,7 @@ pub func:path_dirname = string(string:p) {
     int64:i = p.len;
     while (i > 0i64) {
         i = i - 1i64;
-        if (p.ptr[i] == ((raw SLASH()) => int8)) {
+        if (p.ptr[i] == ((raw SLASH()) =>! uint8)) {
             if (i == 0i64) {
                 pass "/";
             }
@@ -69,7 +69,7 @@ pub func:path_normalise = string(string:p) {
     wild int8->:buf = alloc(p.len + 2i64);
     // Segment starts, so a `..` can truncate back to the previous one.
     wild int8->:raw_starts = alloc((p.len + 2i64) * 8i64);
-    wild int64->:starts = raw_starts => wild int64->;
+    wild int64->:starts = raw_starts =>! wild int64->;
 
     int64:out = 0i64;
     int64:nseg = 0i64;
@@ -79,7 +79,7 @@ pub func:path_normalise = string(string:p) {
         // Scan one segment, ending at a `/` or at the end of the path.
         int64:seg_start = i;
         while (i < p.len) {
-            if (p.ptr[i] == ((raw SLASH()) => int8)) { break; }
+            if (p.ptr[i] == ((raw SLASH()) =>! uint8)) { break; }
             i = i + 1i64;
         }
         int64:seg_len = i - seg_start;
@@ -87,11 +87,11 @@ pub func:path_normalise = string(string:p) {
         bool:is_dot = false;
         bool:is_dotdot = false;
         if (seg_len == 1i64) {
-            if (p.ptr[seg_start] == ((raw DOT()) => int8)) { is_dot = true; }
+            if (p.ptr[seg_start] == ((raw DOT()) =>! uint8)) { is_dot = true; }
         }
         if (seg_len == 2i64) {
-            if (p.ptr[seg_start] == ((raw DOT()) => int8)) {
-                if (p.ptr[seg_start + 1i64] == ((raw DOT()) => int8)) {
+            if (p.ptr[seg_start] == ((raw DOT()) =>! uint8)) {
+                if (p.ptr[seg_start + 1i64] == ((raw DOT()) =>! uint8)) {
                     is_dotdot = true;
                 }
             }
@@ -111,8 +111,8 @@ pub func:path_normalise = string(string:p) {
                 // into `../x`, which names a different file.
                 bool:last_is_dotdot = false;
                 if ((out - last) == 3i64) {
-                    if (buf[last] == ((raw DOT()) => int8)) {
-                        if (buf[last + 1i64] == ((raw DOT()) => int8)) {
+                    if (buf[last] == ((raw DOT()) =>! int8)) {
+                        if (buf[last + 1i64] == ((raw DOT()) =>! int8)) {
                             last_is_dotdot = true;
                         }
                     }
@@ -129,9 +129,9 @@ pub func:path_normalise = string(string:p) {
                 } else {
                     starts[nseg] = out;
                     nseg = nseg + 1i64;
-                    buf[out] = (raw DOT()) => int8;
-                    buf[out + 1i64] = (raw DOT()) => int8;
-                    buf[out + 2i64] = (raw SLASH()) => int8;
+                    buf[out] = (raw DOT()) =>! int8;
+                    buf[out + 1i64] = (raw DOT()) =>! int8;
+                    buf[out + 2i64] = (raw SLASH()) =>! int8;
                     out = out + 3i64;
                 }
             }
@@ -140,11 +140,11 @@ pub func:path_normalise = string(string:p) {
             nseg = nseg + 1i64;
             int64:k = 0i64;
             while (k < seg_len) {
-                buf[out + k] = p.ptr[seg_start + k];
+                buf[out + k] = p.ptr[seg_start + k] =>! int8;
                 k = k + 1i64;
             }
             out = out + seg_len;
-            buf[out] = (raw SLASH()) => int8;
+            buf[out] = (raw SLASH()) =>! int8;
             out = out + 1i64;
         } } }
 

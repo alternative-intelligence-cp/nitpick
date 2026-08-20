@@ -114,8 +114,8 @@ pub func:is_ident_part = bool(uint8:c) {
 // --- trivia -----------------------------------------------------------------
 
 func:lexer_span_from = Span(Lexer->:lx, int64:start, int32:line, int32:col) {
-    pass (raw span_make(lx.file, start => int32, line, col,
-                        (lx.pos - start) => int32));
+    pass (raw span_make(lx.file, start =>! int32, line, col,
+                        (lx.pos - start) =>! int32));
 };
 
 // Whitespace and both comment forms. Returns NIL; trivia produces no tokens.

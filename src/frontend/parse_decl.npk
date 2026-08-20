@@ -90,7 +90,7 @@ func:p_return_quals = int32(Parser->:p) {
 };
 
 pub func:decl_flags = int32(DeclNode:d) { pass d.a; };
-pub func:decl_name = int32(DeclNode:d)  { pass (d.payload => int32); };
+pub func:decl_name = int32(DeclNode:d)  { pass (d.payload =>! int32); };
 pub func:decl_has = bool(DeclNode:d, int32:bit) { pass ((d.a & bit) != 0i32); };
 pub func:decl_win_start = int32(DeclNode:d) { pass d.b; };
 pub func:decl_win_count = int32(DeclNode:d) { pass d.c; };
@@ -385,7 +385,7 @@ pub func:IMPORT_SELECTIVE = int32(){ pass 3i32; };
 pub func:IMPORT_NAMESPACE = int32(){ pass 4i32; };
 
 pub func:import_kind = int32(DeclNode:d) { pass d.a; };
-pub func:import_path = int32(DeclNode:d) { pass (d.payload => int32); };
+pub func:import_path = int32(DeclNode:d) { pass (d.payload =>! int32); };
 pub func:import_alias = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 0i32)); };
 pub func:import_segment_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 1i32)); };
 pub func:import_name_count = int32(Ast->:ast, DeclNode:d) { pass (raw d_at(ast, d, 2i32)); };
@@ -464,7 +464,7 @@ pub func:variant_payload_count = int32(DeclNode:d) { pass d.c; };
 // named `variadic_elem`, which reads as the `T` and is what a caller would use it
 // as; the element comes from `type_elem` of this.
 pub func:variadic_type = TypeId(DeclNode:d) { TypeId:t = TypeId{ index: d.a }; pass t; };
-pub func:extern_lib = int32(DeclNode:d) { pass (d.payload => int32); };
+pub func:extern_lib = int32(DeclNode:d) { pass (d.payload =>! int32); };
 
 // An `extern` FUNCTION'S WINDOW: return type, failure contract, parameter count,
 // then the parameters. A THREE-SLOT HEADER, where a `DeclFunctionDecl` has seven —
@@ -706,20 +706,20 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
     int32:segments = 0i32;
     if (relay p_at(p, TokenKind.StringLit)) {
         // A file path: `use "./path/module.npk".*;`
-        path = ((relay p_advance(p)).payload) => int32;
+        path = ((relay p_advance(p)).payload) =>! int32;
     } else {
         // A logical path: `use std.math.*;` -- kept as segments rather than one
         // joined string, because joining would mean building and interning a
         // name that appears nowhere in the source.
         Token:s1 = relay p_advance(p);
-        drop ast_scratch_push(p.ast, s1.payload => int32);
+        drop ast_scratch_push(p.ast, s1.payload =>! int32);
         segments = 1i32;
         while (true) {
             if (!(relay p_at(p, TokenKind.PDot))) { break; }
             if ((relay p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
             drop p_advance(p);
             Token:sn = relay p_advance(p);
-            drop ast_scratch_push(p.ast, sn.payload => int32);
+            drop ast_scratch_push(p.ast, sn.payload =>! int32);
             segments = segments + 1i32;
         }
     }
@@ -729,7 +729,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
     int32:names = 0i32;
     if (relay p_accept(p, TokenKind.KwAs)) {
         kind = raw IMPORT_NAMESPACE();
-        alias = ((relay p_advance(p)).payload) => int32;
+        alias = ((relay p_advance(p)).payload) =>! int32;
     } else {
         if (relay p_accept(p, TokenKind.PDot)) {
             if (relay p_accept(p, TokenKind.OpStar)) {
@@ -740,7 +740,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
                     while (!(relay p_at(p, TokenKind.PRBrace))) {
                         if (relay p_at_end(p)) { break; }
                         Token:n = relay p_advance(p);
-                        drop ast_scratch_push(p.ast, n.payload => int32);
+                        drop ast_scratch_push(p.ast, n.payload =>! int32);
                         names = names + 1i32;
                         if (!(relay p_accept(p, TokenKind.PComma))) { break; }
                     }
@@ -748,7 +748,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
                 } else {
                     kind = raw IMPORT_SINGLE();
                     Token:n = relay p_advance(p);
-                    drop ast_scratch_push(p.ast, n.payload => int32);
+                    drop ast_scratch_push(p.ast, n.payload =>! int32);
                     names = 1i32;
                 }
             }
@@ -1099,7 +1099,7 @@ func:p_parse_macro = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
         if (relay p_at(p, TokenKind.PRParen)) { break; }
         if (relay p_at_end(p)) { break; }
         Token:pn = relay p_advance(p);
-        drop ast_scratch_push(p.ast, pn.payload => int32);
+        drop ast_scratch_push(p.ast, pn.payload =>! int32);
         if (!(relay p_accept(p, TokenKind.PComma))) { break; }
     }
     IdSpan:params = raw ast_scratch_commit(p.ast, pmark);
@@ -1211,7 +1211,7 @@ func:p_parse_extern = DeclId(Parser->:p, Span:sp, int32:flags) {
     drop p_expect(p, TokenKind.PColon);
     int32:lib = 0i32;
     if (relay p_at(p, TokenKind.StringLit)) {
-        lib = ((relay p_advance(p)).payload) => int32;
+        lib = ((relay p_advance(p)).payload) =>! int32;
     }
     drop p_expect(p, TokenKind.OpAssign);
     drop p_expect(p, TokenKind.PLBrace);

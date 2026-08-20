@@ -638,7 +638,7 @@ class Emitter:
             return self.coerce(v, target)
 
         if isinstance(e, S.Unary):
-            if e.op == "@":
+            if e.op in ("@", "$$i", "$$m"):
                 # `@x` yields a SECOND-CLASS borrow (D-004): it passes down the
                 # call stack and never up. The seed lowers it as a plain address;
                 # the escape analysis that enforces the rule is the compiler's

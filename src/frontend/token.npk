@@ -62,15 +62,15 @@ pub struct:TokenList = {
 pub func:tokenlist_init = TokenList() {
     int64:n = 256i64;
     wild int8->:raw_mem = alloc(n * #size_of<Token>());
-    TokenList:l = TokenList{ items: raw_mem => wild Token->, count: 0i64, cap: n };
+    TokenList:l = TokenList{ items: raw_mem =>! wild Token->, count: 0i64, cap: n };
     pass l;
 };
 
 pub func:tokenlist_grow = NIL(TokenList->:l) {
     int64:newcap = l.cap * 2i64;
-    wild int8->:bigger = ralloc(l.items => wild int8->,
+    wild int8->:bigger = ralloc(l.items =>! wild int8->,
                                 newcap * #size_of<Token>());
-    l.items = bigger => wild Token->;
+    l.items = bigger =>! wild Token->;
     l.cap = newcap;
     pass NIL;
 };
@@ -90,17 +90,17 @@ pub func:tokenlist_count = int64(TokenList->:l) {
 
 pub func:tokenlist_at = Token(TokenList->:l, int64:i) {
     if (i < 0i64) {
-        fail 4i32;
+        fail 4tbb32;
     }
     if (i >= l.count) {
-        fail 4i32;
+        fail 4tbb32;
     }
     pass l.items[i];
 };
 
 pub func:tokenlist_last = Token(TokenList->:l) {
     if (l.count == 0i64) {
-        fail 4i32;
+        fail 4tbb32;
     }
     pass l.items[l.count - 1i64];
 };

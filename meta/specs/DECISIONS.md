@@ -9604,3 +9604,75 @@ then cleanup runs. One rule for all three exits, no per-exit special case.
 
 **A trap still runs nothing** (D-014, unchanged): `?!` and `!!!` transfer to
 `failsafe` without unwinding, value semantics moot.
+
+## D-137 — A declaration's annotations resolve in its HOME scope — **SETTLED**
+
+**Decision.** Every type annotation belonging to a declaration — a signature's
+parameter and return types, a struct's field types, a variant's payload types —
+resolves in the scope of the **module that declared it**, never in the scope of
+whatever module happens to be asking. The symbol table records each declaration's
+home as a side effect of collection (`symtab_home_scope`), and every walker that
+resolves a foreign declaration's annotations consults it, with the asker's scope
+only as the fallback for a declaration nothing collected.
+
+**The defect this ends.** Until 0.8.1, `fn_signature`, `struct_field` and the
+payload walkers resolved annotations in the CALLER's scope. `tyres_init(Ast->:…)`
+typed fine from a caller importing `ast.npk` and reported "no type named `Ast`"
+from one that did not — and under a name collision it would not have erred at
+all: it would have silently bound the caller's same-named type. Every test passed
+because every test's caller happened to import what the callee's types needed;
+the first whole-graph self-check (`npkc src/main.npk`) surfaced fifteen instances
+in one run. This is the blueprint rule — meaning does not change with context —
+applied to name lookup.
+
+## D-138 — The escape analysis: one narrowing, three relaxations — **SETTLED**
+
+D-004's decision text pre-authorised relaxation: *"if real compiler code needs
+borrow-into-inner-aggregate, relax it then, WITH EVIDENCE."* The evidence arrived
+when the analyses first ran over the compiler itself (0.8.1). Four changes, each
+independently sound:
+
+1. **Type narrowing.** A value whose type cannot hold an address (integers,
+   bools, chars, `tbb`, kernel ids, enums, aggregates of only these) never
+   carries a borrow. The conservative walk was flagging returned `int32` fields
+   as escaping borrows. The one door from pointer to integer is `=>!` through
+   the wild family (D-019), which is the explicit surrender of tracking.
+2. **Param-rooted borrows may travel up one frame.** A borrow rooted at a
+   parameter points into the caller's frame or older, so returning it — or a
+   value carrying only such borrows — cannot dangle this frame's return. The
+   rule is compositional: if the caller returns it again, the caller's own
+   return check proves the next hop. This is the constructor pattern
+   (`tyres_init` storing its pointer parameters into the struct it returns).
+3. **Param-rooted borrows do not taint bindings.** The same rule applied at the
+   write instead of the read, for both declarations and assignments.
+4. **Self-wiring.** A value built from borrows rooted at `X` may be stored into
+   a field of `X` — the lifetimes are identical by construction. This is the
+   pipeline's `f.g = graph_init($$m f.it, …)` shape.
+
+Everything else still refuses: borrows of locals still cannot travel up, stores
+rooted elsewhere still cannot travel in, and the analysis rejection suite holds
+those lines.
+
+## D-139 — `[]` is the zero array — **SETTLED**
+
+An empty array literal, where a fixed-length array type is expected, is that
+array **zeroed** — the same rule `Result{…}` has for omitted fields: absent means
+zero. Without it there was no spelling at all for a zeroed `T[64]` field, since a
+struct literal cannot omit fields. A **non-empty** literal must still match the
+length exactly; partial initialisation stays unspellable, deliberately, because
+"the first three, then zeros" is a meaning the reader must guess. Lowered as
+`zeroinitializer`.
+
+## D-140 — Enum tag casts, final form — **SETTLED**
+
+`enum =>! intN` reads the tag (identity treated as quantity is an assertion, and
+assertions cost the bang); `enum => intN` refuses. `intN =>! enum` **manufactures
+a tag** and is permitted with the bang — the first draft refused it outright on
+the exhaustiveness argument and was overruled within one subcycle by the
+compiler's own source, which must round-trip stored tags (`payload =>!
+TokenKind`, 88 sites). This is the same contract as `int32 =>! fd`: an assertion
+the compiler cannot check, spelled per-site, greppable. A forged tag makes every
+arm of a proven `pick` miss and the statement fall through — the programmer's
+explicit lie, not the checker's gap. A payload-carrying enum still refuses the
+manufacturing direction at the backend: a tag is not a whole `{tag, payload}`
+value, and inventing the other half is not a cast.

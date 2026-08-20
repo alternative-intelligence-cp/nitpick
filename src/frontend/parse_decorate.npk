@@ -61,11 +61,11 @@ pub func:contract_is_bounded = bool(VerifyNode:v) {
 };
 pub func:invariant_start = int32(VerifyNode:v) { pass v.b; };
 pub func:invariant_count = int32(VerifyNode:v) { pass v.c; };
-pub func:limit_rule = int32(VerifyNode:v) { pass (v.payload => int32); };
+pub func:limit_rule = int32(VerifyNode:v) { pass (v.payload =>! int32); };
 
 pub func:attr_arg_start = int32(DeclNode:d) { pass d.b; };
 pub func:attr_arg_count = int32(DeclNode:d) { pass d.c; };
-pub func:attr_name = int32(DeclNode:d) { pass (d.payload => int32); };
+pub func:attr_name = int32(DeclNode:d) { pass (d.payload =>! int32); };
 
 // --- attributes ------------------------------------------------------------------
 //
@@ -90,7 +90,7 @@ pub func:p_at_attribute = bool(Parser->:p) {
 // reading, rather than a slot that means an intern index on some attributes and
 // nothing on others.
 func:p_attr_name = int32(Parser->:p, Token:name) {
-    if (name.payload != 0i64) { pass ((name.payload) => int32); }
+    if (name.payload != 0i64) { pass ((name.payload) =>! int32); }
     pass (relay intern_add(p.interns, raw token_kind_name(name.kind)));
 };
 

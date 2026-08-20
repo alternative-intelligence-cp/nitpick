@@ -57,7 +57,7 @@ pub func:pick_arm_at = StmtId(Ast->:ast, int32:start, int32:i) {
 pub func:arm_pattern = PatId(StmtNode:s) { PatId:p = PatId{ index: s.a }; pass p; };
 pub func:arm_guard = ExprId(StmtNode:s)  { ExprId:e = ExprId{ index: s.b }; pass e; };
 pub func:arm_body = StmtId(StmtNode:s)   { StmtId:b = StmtId{ index: s.c }; pass b; };
-pub func:arm_label = int32(StmtNode:s)   { pass (s.payload => int32); };
+pub func:arm_label = int32(StmtNode:s)   { pass (s.payload =>! int32); };
 
 pub func:pat_value = ExprId(PatNode:p)   { ExprId:e = ExprId{ index: p.a }; pass e; };
 pub func:pat_range_lo = ExprId(PatNode:p){ ExprId:e = ExprId{ index: p.a }; pass e; };
@@ -175,13 +175,13 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) {
     drop ast_scratch_push(p.ast, 0i32);   // [1] binding count
 
     Token:first = relay p_advance(p);
-    drop ast_scratch_push(p.ast, first.payload => int32);
+    drop ast_scratch_push(p.ast, first.payload =>! int32);
     int32:segments = 1i32;
     while (relay p_at(p, TokenKind.PDot)) {
         if ((relay p_peek_at(p, 1i64)).kind != TokenKind.Ident) { break; }
         drop p_advance(p);
         Token:sn = relay p_advance(p);
-        drop ast_scratch_push(p.ast, sn.payload => int32);
+        drop ast_scratch_push(p.ast, sn.payload =>! int32);
         segments = segments + 1i32;
     }
 
@@ -199,7 +199,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) {
             if (relay p_at(p, TokenKind.PRBrace)) { break; }
             if (relay p_at_end(p)) { break; }
             Token:b = relay p_advance(p);
-            drop ast_scratch_push(p.ast, b.payload => int32);
+            drop ast_scratch_push(p.ast, b.payload =>! int32);
             if (!(relay p_accept(p, TokenKind.PComma))) { break; }
         }
         drop p_expect(p, TokenKind.PRBrace);
@@ -214,7 +214,7 @@ func:p_parse_destructure = PatId(Parser->:p, Span:sp) {
             if (relay p_at(p, TokenKind.PRParen)) { break; }
             if (relay p_at_end(p)) { break; }
             Token:b = relay p_advance(p);
-            drop ast_scratch_push(p.ast, b.payload => int32);
+            drop ast_scratch_push(p.ast, b.payload =>! int32);
             binds = binds + 1i32;
             if (!(relay p_accept(p, TokenKind.PComma))) { break; }
         }

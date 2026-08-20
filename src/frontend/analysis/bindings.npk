@@ -58,6 +58,9 @@ use "../symbols.npk".*;
 use "../token_kind.npk".*;
 use "../parse_expr.npk".*;
 use "../parse_stmt.npk".*;
+use "../parser.npk".*;
+use "../parse_pick.npk".*;
+use "./exhaust.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../types.npk".*;
@@ -156,12 +159,12 @@ pub func:state_new = AssignState(int32:n) {
     wild int8->:m3 = alloc(size * #size_of<bool>());
     wild int8->:m4 = alloc(size * #size_of<bool>());
     wild int8->:m5 = alloc(size * #size_of<bool>());
-    AssignState:s = AssignState{ must: m1 => wild bool->,
-                                 may: m2 => wild bool->,
-                                 moved: m3 => wild bool->,
-                                 freed: m4 => wild bool->,
-                                 checked: m5 => wild bool->,
-                                 count: size => int32 };
+    AssignState:s = AssignState{ must: m1 =>! wild bool->,
+                                 may: m2 =>! wild bool->,
+                                 moved: m3 =>! wild bool->,
+                                 freed: m4 =>! wild bool->,
+                                 checked: m5 =>! wild bool->,
+                                 count: size =>! int32 };
     int64:i = 0i64;
     while (i < size) {
         s.must[i] = false;
@@ -1149,7 +1152,7 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) {
     // and it is not this one.
     if (cnode.a != 0i32) { pass false; }
 
-    string:name = relay intern_get(x.interns, raw expr_name(cnode) => int32);
+    string:name = relay intern_get(x.interns, raw expr_name(cnode) =>! int32);
     if (raw string_eq(name, "dalloc")) { pass true; }
     pass (raw string_eq(name, "ralloc"));
 };
@@ -1274,7 +1277,7 @@ func:err_test_of = ErrTest(Assign->:x, ExprId:cond) {
     }
 
     if (n.kind != ExprKind.ExprMemberAccessExpr) { pass (raw no_err_test()); }
-    string:f = relay intern_get(x.interns, (raw expr_name(n)) => int32);
+    string:f = relay intern_get(x.interns, (raw expr_name(n)) =>! int32);
     if (!(raw string_eq(f, "is_error"))) { pass (raw no_err_test()); }
 
     int32:slot = relay binding_slot(x, raw expr_operand(n));
@@ -1308,7 +1311,7 @@ func:binding_slot = int32(Assign->:x, ExprId:place) {
 // second time and get a different `Result`. So the idiom is to bind it, and the
 // binding is what this tracks.
 func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
-    string:f = relay intern_get(x.interns, (raw expr_name(n)) => int32);
+    string:f = relay intern_get(x.interns, (raw expr_name(n)) =>! int32);
     if (!(raw string_eq(f, "value"))) { pass NIL; }
 
     ExprId:base = raw expr_operand(n);

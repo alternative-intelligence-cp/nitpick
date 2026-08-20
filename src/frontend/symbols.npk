@@ -97,6 +97,20 @@ pub struct:Scope = {
 pub struct:SymbolTable = {
     wild Symbol->:syms;    int32:sym_count;   int32:sym_cap;
     wild Scope->:scopes;   int32:scope_count; int32:scope_cap;
+
+    // WHICH MODULE SCOPE A DECLARATION WAS DECLARED IN, indexed by DeclId (0.8.1).
+    //
+    // A declaration's type annotations mean what they mean WHERE IT WAS WRITTEN —
+    // the blueprint rule, applied to name lookup. Until this table existed, a
+    // signature or a field type was resolved in whatever scope the USE happened
+    // to sit in: `tyres_init(Ast->:ast, …)` typed fine from a caller that
+    // imported `ast.npk` and reported "no type named `Ast`" from one that did
+    // not — and with a name collision it would not have erred at all, it would
+    // have silently bound the CALLER's type. Found by the first whole-graph
+    // self-check; invisible before it because every test's caller happened to
+    // import what the callee's types needed.
+    wild int32->:decl_home;
+    int32:home_cap;
 };
 
 pub func:symtab_init = SymbolTable() {
@@ -104,9 +118,11 @@ pub func:symtab_init = SymbolTable() {
     wild int8->:s = alloc(n * #size_of<Symbol>());
     wild int8->:c = alloc(n * #size_of<Scope>());
 
+    wild int8->:h = calloc(256i64, 4i64);
     SymbolTable:t = SymbolTable{
-        syms: s => wild Symbol->,   sym_count: 0i32,   sym_cap: 128i32,
-        scopes: c => wild Scope->,  scope_count: 0i32, scope_cap: 128i32
+        syms: s =>! wild Symbol->,   sym_count: 0i32,   sym_cap: 128i32,
+        scopes: c =>! wild Scope->,  scope_count: 0i32, scope_cap: 128i32,
+        decl_home: h =>! wild int32->, home_cap: 256i32
     };
 
     // Index 0 is reserved in BOTH arrays, matching the AST's convention: a zeroed
@@ -128,9 +144,9 @@ pub func:symtab_init = SymbolTable() {
 
 func:symtab_grow_scopes = NIL(SymbolTable->:t) {
     int32:nc = t.scope_cap * 2i32;
-    wild int8->:bigger = ralloc(t.scopes => wild int8->,
+    wild int8->:bigger = ralloc(t.scopes =>! wild int8->,
                                 (nc => int64) * #size_of<Scope>());
-    t.scopes = bigger => wild Scope->;
+    t.scopes = bigger =>! wild Scope->;
     t.scope_cap = nc;
     pass NIL;
 };
@@ -158,9 +174,9 @@ pub func:scope_kind = int32(SymbolTable->:t, int32:scope) {
 
 func:symtab_grow_syms = NIL(SymbolTable->:t) {
     int32:nc = t.sym_cap * 2i32;
-    wild int8->:bigger = ralloc(t.syms => wild int8->,
+    wild int8->:bigger = ralloc(t.syms =>! wild int8->,
                                 (nc => int64) * #size_of<Symbol>());
-    t.syms = bigger => wild Symbol->;
+    t.syms = bigger =>! wild Symbol->;
     t.sym_cap = nc;
     pass NIL;
 };
@@ -195,9 +211,41 @@ pub func:nested_module_scope = int32(SymbolTable->:t, DeclNode:d, int32:scope) {
     pass s.inner;
 };
 
+func:symtab_set_home = NIL(SymbolTable->:t, int32:decl, int32:scope) {
+    if (decl < 0i32) { pass NIL; }
+    while (decl >= t.home_cap) {
+        int32:nc = t.home_cap * 2i32;
+        wild int8->:m = ralloc(t.decl_home =>! wild int8->, (nc => int64) * 4i64);
+        // The grown tail must read as "no home", and ralloc copies only the old
+        // block — so the new half is zeroed by hand.
+        wild int32->:wide = m =>! wild int32->;
+        int32:z = t.home_cap;
+        while (z < nc) { wide[z => int64] = 0i32; z = z + 1i32; }
+        t.decl_home = wide;
+        t.home_cap = nc;
+    }
+    // FIRST WRITER WINS. The declaration's own module collects it first; a
+    // re-collection round after expansion must not move it.
+    if (t.decl_home[decl => int64] == 0i32) {
+        t.decl_home[decl => int64] = scope;
+    }
+    pass NIL;
+};
+
+// The scope a declaration's OWN annotations resolve in — its module's, however
+// far away the code asking about it sits. Zero when the declaration was never
+// collected, in which case the caller's scope is the only one there is.
+pub func:symtab_home_scope = int32(SymbolTable->:t, int32:decl, int32:fallback) {
+    if (decl < 0i32) { pass fallback; }
+    if (decl >= t.home_cap) { pass fallback; }
+    int32:h = t.decl_home[decl => int64];
+    if (h == 0i32) { pass fallback; }
+    pass h;
+};
+
 pub func:symtab_get = Symbol(SymbolTable->:t, int32:id) {
-    if (id < 0i32) { fail 11i32; }
-    if (id >= t.sym_count) { fail 11i32; }
+    if (id < 0i32) { fail 11tbb32; }
+    if (id >= t.sym_count) { fail 11tbb32; }
     pass t.syms[id => int64];
 };
 
@@ -290,6 +338,14 @@ pub func:symtab_declare = int32(SymbolTable->:t, Ast->:ast, DiagList->:diags,
 
     if (t.sym_count >= t.sym_cap) {
         drop symtab_grow_syms(t);
+    }
+    // A DECLARATION REMEMBERS ITS HOME as a side effect of being declared —
+    // collection is the one walk that holds both the DeclId and the scope, so
+    // recording here needs no second traversal. Imported bindings do NOT pass
+    // this way (`symtab_bind_import` is a different function), which is exactly
+    // right: an import must never relabel a declaration's home.
+    if (origin_kind == (raw SYM_DECL())) {
+        drop symtab_set_home(t, origin, scope);
     }
     Symbol:s = Symbol{ name: name, scope: scope,
                        origin_kind: origin_kind, origin: origin,

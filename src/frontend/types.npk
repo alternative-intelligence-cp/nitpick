@@ -112,15 +112,25 @@ pub struct:TypeTable = {
     int32:t_cstring;
     int32:t_any;
     int32:t_tbb32;
+
+    // The layout-recorded pointer-bearing bits, parallel to `items` — see
+    // `tt_set_haspt` for why this is not a `Type` slot.
+    wild int32->:haspt;
 };
 
 // --- construction ----------------------------------------------------------------------
 
 func:tt_grow = NIL(TypeTable->:t) {
     int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items => wild int8->,
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<Type>());
-    t.items = bigger => wild Type->;
+    t.items = bigger =>! wild Type->;
+    wild int8->:hp = ralloc(t.haspt =>! wild int8->, (nc => int64) * 4i64);
+    wild int32->:hw = hp =>! wild int32->;
+    // The grown tail must read "not computed" — ralloc copies only the old block.
+    int32:z = t.cap;
+    while (z < nc) { hw[z => int64] = 0i32; z = z + 1i32; }
+    t.haspt = hw;
     t.cap = nc;
     pass NIL;
 };
@@ -174,9 +184,30 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
 // This is the ONE mutation of an interned type, and it is a completion rather than
 // a change: the entry is written once, from absent to known, and every id already
 // handed out keeps meaning the same type.
+// WHETHER A STRUCT CAN HOLD AN ADDRESS, recorded by layout (0.8.1) in a SIDE
+// ARRAY, deliberately not in a `Type` slot: `tt_intern` compares every slot to
+// decide identity, so a bit written after interning would make the same struct
+// intern twice — the first draft used the spare `c` and broke type equality
+// program-wide. 0 = not computed, 1 = no pointers anywhere, 2 = holds or may.
+// The escape analysis reads it: a struct of plain scalars (`ModuleEntry`,
+// `Token`, `Span`) can no more carry a borrow than an `int32` can.
+pub func:tt_set_haspt = NIL(TypeTable->:t, int32:id, bool:has) {
+    if (id < 0i32) { fail 14tbb32; }
+    if (id >= t.count) { fail 14tbb32; }
+    t.haspt[id => int64] = 1i32;
+    if (has) { t.haspt[id => int64] = 2i32; }
+    pass NIL;
+};
+
+pub func:tt_haspt = int32(TypeTable->:t, int32:id) {
+    if (id < 0i32) { pass 0i32; }
+    if (id >= t.count) { pass 0i32; }
+    pass (t.haspt[id => int64]);
+};
+
 pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) {
-    if (id < 0i32) { fail 14i32; }
-    if (id >= t.count) { fail 14i32; }
+    if (id < 0i32) { fail 14tbb32; }
+    if (id >= t.count) { fail 14tbb32; }
     Type:e = t.items[id => int64];
     e.size = size;
     e.align = align;
@@ -185,8 +216,8 @@ pub func:tt_set_layout = NIL(TypeTable->:t, int32:id, int64:size, int32:align) {
 };
 
 pub func:tt_get = Type(TypeTable->:t, int32:id) {
-    if (id < 0i32) { fail 14i32; }
-    if (id >= t.count) { fail 14i32; }
+    if (id < 0i32) { fail 14tbb32; }
+    if (id >= t.count) { fail 14tbb32; }
     pass t.items[id => int64];
 };
 
@@ -493,10 +524,12 @@ pub func:tt_param = int32(TypeTable->:t, int32:decl, int32:name) {
 pub func:typetable_init = TypeTable() {
     int64:n = 64i64;
     wild int8->:mem = alloc(n * #size_of<Type>());
+    wild int8->:hmem = calloc(n, 4i64);
     TypeTable:t = TypeTable{
-        items: mem => wild Type->, count: 0i32, cap: 64i32,
+        items: mem =>! wild Type->, count: 0i32, cap: 64i32,
         t_nil: 0i32, t_bool: 0i32, t_string: 0i32,
-        t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32
+        t_cstring: 0i32, t_any: 0i32, t_tbb32: 0i32,
+        haspt: hmem =>! wild int32->
     };
 
     // Index 0 is the INVALID type, reserved like every other index-0 in this
@@ -560,16 +593,16 @@ pub struct:InstanceTable = {
 pub func:insttable_init = InstanceTable() {
     int64:n = 16i64;
     wild int8->:mem = alloc(n * #size_of<Instance>());
-    InstanceTable:t = InstanceTable{ items: mem => wild Instance->,
+    InstanceTable:t = InstanceTable{ items: mem =>! wild Instance->,
                                      count: 0i32, cap: 16i32 };
     pass t;
 };
 
 func:inst_grow = NIL(InstanceTable->:t) {
     int32:nc = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items => wild int8->,
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (nc => int64) * #size_of<Instance>());
-    t.items = bigger => wild Instance->;
+    t.items = bigger =>! wild Instance->;
     t.cap = nc;
     pass NIL;
 };
@@ -577,8 +610,8 @@ func:inst_grow = NIL(InstanceTable->:t) {
 pub func:inst_count = int32(InstanceTable->:t) { pass t.count; };
 
 pub func:inst_at = Instance(InstanceTable->:t, int32:i) {
-    if (i < 0i32) { fail 23i32; }
-    if (i >= t.count) { fail 23i32; }
+    if (i < 0i32) { fail 23tbb32; }
+    if (i >= t.count) { fail 23tbb32; }
     pass (t.items[i => int64]);
 };
 

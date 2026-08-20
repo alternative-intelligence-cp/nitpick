@@ -71,9 +71,9 @@ pub func:stmt_assigned = ExprId(StmtNode:s)    { ExprId:i = ExprId{ index: s.b }
 // `pass v;` `fail c;` `return r;` `exit n;` `discard e;` -- the single operand a
 // value-statement carries, in slot `a`.
 pub func:stmt_operand = ExprId(StmtNode:s)     { ExprId:i = ExprId{ index: s.a }; pass i; };
-pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload => int32) => TokenKind); };
-pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload => int32); };
-pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload => int32); };
+pub func:stmt_op = TokenKind(StmtNode:s)       { pass ((s.payload =>! int32) =>! TokenKind); };
+pub func:stmt_label = int32(StmtNode:s)        { pass (s.payload =>! int32); };
+pub func:stmt_name = int32(StmtNode:s)         { pass (s.payload =>! int32); };
 
 // WHICH STATEMENT KINDS CARRY AN EXPRESSION IN SLOT `a`.
 //
@@ -459,12 +459,12 @@ pub func:p_parse_stmt = StmtId(Parser->:p) {
             drop p_sync(p);
             pass (relay ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
                                      lhs.index, rhs.index, 0i32,
-                                     (op => int32) => int64));
+                                     (op =>! int32) =>! int64));
         }
         drop p_expect(p, TokenKind.PSemi);
         pass (relay ast_add_stmt(p.ast, StmtKind.StmtAssignStmt, sp,
                                  lhs.index, rhs.index, 0i32,
-                                 (op => int32) => int64));
+                                 (op =>! int32) =>! int64));
     }
     drop p_expect(p, TokenKind.PSemi);
     pass (relay ast_add_stmt(p.ast, StmtKind.StmtExprStmt, sp,

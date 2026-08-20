@@ -34,7 +34,7 @@ pub func:intern_init = InternTable() {
     int64:n = 64i64;
     wild int8->:raw_mem = alloc(n * #size_of<string>());
     InternTable:t = InternTable{
-        items: raw_mem => wild string->,
+        items: raw_mem =>! wild string->,
         count: 0i32,
         cap: 64i32
     };
@@ -55,9 +55,9 @@ pub func:intern_is_none = bool(int32:i) { pass (i == 0i32); };
 
 func:intern_grow = NIL(InternTable->:t) {
     int32:newcap = t.cap * 2i32;
-    wild int8->:bigger = ralloc(t.items => wild int8->,
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
                                 (newcap => int64) * #size_of<string>());
-    t.items = bigger => wild string->;
+    t.items = bigger =>! wild string->;
     t.cap = newcap;
     pass NIL;
 };
@@ -84,10 +84,10 @@ pub func:intern_add = int32(InternTable->:t, string:text) {
 
 pub func:intern_get = string(InternTable->:t, int32:index) {
     if (index < 0i32) {
-        fail 3i32;
+        fail 3tbb32;
     }
     if (index >= t.count) {
-        fail 3i32;
+        fail 3tbb32;
     }
     pass t.items[index => int64];
 };

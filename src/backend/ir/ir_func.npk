@@ -128,39 +128,39 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
         w: w, ctx: ctx,
         sym: "", bare: false, ret_nil: false, ret_type: 0i32,
         ret_ll: "", val_ll: "", val_zero: "",
-        pnames: pn => wild int32->, ptypes: pt => wild int32->,
-        plls: pl => wild string->, pcount: 0i32, pcap: 8i32,
-        lnames: ln => wild int32->, lslots: ls => wild string->,
-        ltypes: lt => wild int32->, lcount: 0i32, lcap: 32i32,
+        pnames: pn =>! wild int32->, ptypes: pt =>! wild int32->,
+        plls: pl =>! wild string->, pcount: 0i32, pcap: 8i32,
+        lnames: ln =>! wild int32->, lslots: ls =>! wild string->,
+        ltypes: lt =>! wild int32->, lcount: 0i32, lcap: 32i32,
         terminated: false,
-        dstmts: ds => wild int32->, dcount: 0i32, dcap: 16i32,
-        dframes: df => wild int32->, dfcount: 0i32, dfcap: 16i32,
-        loop_heads: lh => wild string->, loop_dones: ld => wild string->,
-        loop_depths: lp => wild int32->, loop_count: 0i32, loop_cap: 8i32
+        dstmts: ds =>! wild int32->, dcount: 0i32, dcap: 16i32,
+        dframes: df =>! wild int32->, dfcount: 0i32, dfcap: 16i32,
+        loop_heads: lh =>! wild string->, loop_dones: ld =>! wild string->,
+        loop_depths: lp =>! wild int32->, loop_count: 0i32, loop_cap: 8i32
     };
     pass fe;
 };
 
 func:fnem_grow_params = NIL(FnEmitter->:fe) {
     int32:nc = fe.pcap * 2i32;
-    wild int8->:a = ralloc(fe.pnames => wild int8->, (nc => int64) * 4i64);
-    wild int8->:b = ralloc(fe.ptypes => wild int8->, (nc => int64) * 4i64);
-    wild int8->:c = ralloc(fe.plls => wild int8->, (nc => int64) * #size_of<string>());
-    fe.pnames = a => wild int32->;
-    fe.ptypes = b => wild int32->;
-    fe.plls = c => wild string->;
+    wild int8->:a = ralloc(fe.pnames =>! wild int8->, (nc =>! int64) * 4i64);
+    wild int8->:b = ralloc(fe.ptypes =>! wild int8->, (nc =>! int64) * 4i64);
+    wild int8->:c = ralloc(fe.plls =>! wild int8->, (nc =>! int64) * #size_of<string>());
+    fe.pnames = a =>! wild int32->;
+    fe.ptypes = b =>! wild int32->;
+    fe.plls = c =>! wild string->;
     fe.pcap = nc;
     pass NIL;
 };
 
 func:fnem_grow_locals = NIL(FnEmitter->:fe) {
     int32:nc = fe.lcap * 2i32;
-    wild int8->:a = ralloc(fe.lnames => wild int8->, (nc => int64) * 4i64);
-    wild int8->:b = ralloc(fe.lslots => wild int8->, (nc => int64) * #size_of<string>());
-    wild int8->:c = ralloc(fe.ltypes => wild int8->, (nc => int64) * 4i64);
-    fe.lnames = a => wild int32->;
-    fe.lslots = b => wild string->;
-    fe.ltypes = c => wild int32->;
+    wild int8->:a = ralloc(fe.lnames =>! wild int8->, (nc =>! int64) * 4i64);
+    wild int8->:b = ralloc(fe.lslots =>! wild int8->, (nc =>! int64) * #size_of<string>());
+    wild int8->:c = ralloc(fe.ltypes =>! wild int8->, (nc =>! int64) * 4i64);
+    fe.lnames = a =>! wild int32->;
+    fe.lslots = b =>! wild string->;
+    fe.ltypes = c =>! wild int32->;
     fe.lcap = nc;
     pass NIL;
 };
@@ -312,8 +312,8 @@ pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) {
 pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) {
     if (fe.dfcount >= fe.dfcap) {
         int32:nc = fe.dfcap * 2i32;
-        wild int8->:m = ralloc(fe.dframes => wild int8->, (nc => int64) * 4i64);
-        fe.dframes = m => wild int32->;
+        wild int8->:m = ralloc(fe.dframes =>! wild int8->, (nc =>! int64) * 4i64);
+        fe.dframes = m =>! wild int32->;
         fe.dfcap = nc;
     }
     fe.dframes[fe.dfcount => int64] = fe.dcount;
@@ -332,8 +332,8 @@ pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) {
 pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) {
     if (fe.dcount >= fe.dcap) {
         int32:nc = fe.dcap * 2i32;
-        wild int8->:m = ralloc(fe.dstmts => wild int8->, (nc => int64) * 4i64);
-        fe.dstmts = m => wild int32->;
+        wild int8->:m = ralloc(fe.dstmts =>! wild int8->, (nc =>! int64) * 4i64);
+        fe.dstmts = m =>! wild int32->;
         fe.dcap = nc;
     }
     fe.dstmts[fe.dcount => int64] = stmt_index;
@@ -356,14 +356,14 @@ pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) {
 pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done) {
     if (fe.loop_count >= fe.loop_cap) {
         int32:nc = fe.loop_cap * 2i32;
-        wild int8->:a = ralloc(fe.loop_heads => wild int8->,
+        wild int8->:a = ralloc(fe.loop_heads =>! wild int8->,
                                (nc => int64) * #size_of<string>());
-        wild int8->:b = ralloc(fe.loop_dones => wild int8->,
+        wild int8->:b = ralloc(fe.loop_dones =>! wild int8->,
                                (nc => int64) * #size_of<string>());
-        wild int8->:c = ralloc(fe.loop_depths => wild int8->, (nc => int64) * 4i64);
-        fe.loop_heads = a => wild string->;
-        fe.loop_dones = b => wild string->;
-        fe.loop_depths = c => wild int32->;
+        wild int8->:c = ralloc(fe.loop_depths =>! wild int8->, (nc =>! int64) * 4i64);
+        fe.loop_heads = a =>! wild string->;
+        fe.loop_dones = b =>! wild string->;
+        fe.loop_depths = c =>! wild int32->;
         fe.loop_cap = nc;
     }
     fe.loop_heads[fe.loop_count => int64] = head;

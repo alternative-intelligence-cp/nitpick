@@ -23,6 +23,7 @@ use "./types.npk".*;
 use "./type_names.npk".*;
 use "./parse_stmt.npk".*;
 use "./parse_expr.npk".*;
+use "./parse_pick.npk".*;
 use "./parse_decl.npk".*;
 use "./symbols.npk".*;
 use "./resolve_type.npk".*;
@@ -226,10 +227,11 @@ func:type_one_binding = NIL(ExprTyper->:e, PatId:pid2, PatNode:pn, int32:selt) {
             if ((raw decl_name(m)) == vname) {
                 if ((raw variant_payload_count(m)) == 1i32) {
                     TypeResolver:r = raw etyper_resolver(e);
+                    int32:home = raw symtab_home_scope(e.tab, did.index, e.scope);
                     int32:pt = relay resolve_type(@r,
                         TypeId{ index: relay ast_id_at(e.ast,
                                     raw variant_payload_start(m), 0i32) },
-                        e.scope);
+                        home);
                     drop ast_set_pat_a(e.ast, pid2, pt);
                 }
                 pass NIL;
@@ -541,7 +543,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
     DeclNode:d = relay ast_decl(e.ast, id);
 
     if (d.kind == DeclKind.DeclFunctionDecl) {
-        drop check_function(e, d, scope);
+        drop check_function(e, id, scope);
         pass NIL;
     }
 
@@ -594,7 +596,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
             DeclId:mid = relay impl_member(e.ast, d, j);
             DeclNode:mm = relay ast_decl(e.ast, mid);
             if (mm.kind == DeclKind.DeclFunctionDecl) {
-                drop check_function(e, mm, scope);
+                drop check_function(e, mid, scope);
             }
             j = j + 1i32;
         }
@@ -620,9 +622,10 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
         int32:tn = raw item_member_count(e.ast, d);
         int32:k = 0i32;
         while (k < tn) {
-            DeclNode:tm = relay ast_decl(e.ast, raw item_member(e.ast, d, k));
+            DeclId:tmid = raw item_member(e.ast, d, k);
+            DeclNode:tm = relay ast_decl(e.ast, tmid);
             if (tm.kind == DeclKind.DeclFunctionDecl) {
-                drop check_function(e, tm, scope);
+                drop check_function(e, tmid, scope);
             }
             k = k + 1i32;
         }
@@ -687,11 +690,12 @@ func:resolve_struct_fields = NIL(ExprTyper->:e, DeclId:id, DeclNode:d,
 // the RETURN type — and a bad parameter type is a mistake in a declaration
 // exactly as much as a bad return is. That asymmetry is what let `..*int64`
 // without the brackets sit unreported in an uncalled function.
-func:check_function = NIL(ExprTyper->:e, DeclNode:d, int32:scope) {
+func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) {
+    DeclNode:d = relay ast_decl(e.ast, fid);
     int32:name = raw decl_name(d);
     TypeResolver:r = raw etyper_resolver(e);
-    FnSig:sg = relay fn_signature(@r, d, name, scope);
-    drop fn_type(@r, d, name, scope);
+    FnSig:sg = relay fn_signature(@r, fid, name, scope);
+    drop fn_type(@r, fid, name, scope);
 
     GenericScope:saved = e.generics;
     IdSpan:gw = raw decl_generic_window(e.ast, d);

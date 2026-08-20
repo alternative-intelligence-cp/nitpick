@@ -40,6 +40,8 @@ use "../../frontend/parse_expr.npk".*;
 use "../../frontend/diagnostics.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
+use "../../frontend/type_layout.npk".*;
+use "../../frontend/type_names.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/parse_decl.npk".*;
 use "./ir_writer.npk".*;
@@ -128,16 +130,16 @@ pub struct:StrTable = {
 
 pub func:strtab_init = StrTable() {
     wild int8->:m = alloc(16i64 * #size_of<string>());
-    StrTable:t = StrTable{ items: m => wild string->, count: 0i32, cap: 16i32 };
+    StrTable:t = StrTable{ items: m =>! wild string->, count: 0i32, cap: 16i32 };
     pass t;
 };
 
 pub func:strtab_add = string(StrTable->:t, string:data) {
     if (t.count >= t.cap) {
         int32:nc = t.cap * 2i32;
-        wild int8->:m = ralloc(t.items => wild int8->,
+        wild int8->:m = ralloc(t.items =>! wild int8->,
                                (nc => int64) * #size_of<string>());
-        t.items = m => wild string->;
+        t.items = m =>! wild string->;
         t.cap = nc;
     }
     t.items[t.count => int64] = data;
@@ -155,17 +157,24 @@ func:esc_byte = string(uint8:b) {
             if (b != 34u8) {
                 if (b != 92u8) {
                     wild int8->:one = alloc(1i64);
-                    one[0i64] = b => int8;
+                    one[0i64] = b =>! int8;
                     pass (raw string_from_bytes(one, 1i64));
                 }
             }
         }
     }
     string:hex = "0123456789ABCDEF";
+    // MASK AFTER THE WIDENING. This function is seed-compiled until 1.2, and the
+    // seed extends by the TARGET's signedness (the 0.7.5 divergence, met in the
+    // wild): byte 226 — the lead of every em-dash — sign-extended to -30 and
+    // indexed the hex table at -1. The mask makes the value 0..255 under EITHER
+    // extension rule, which is what "correct" has to mean for code that runs
+    // under two compilers until the fixpoint closes.
+    int64:wide = (b =>! int64) & 255i64;
     wild int8->:buf = alloc(3i64);
     buf[0i64] = 92i8;                                   // backslash
-    buf[1i64] = hex.ptr[((b => int64) / 16i64)] => int8;
-    buf[2i64] = hex.ptr[((b => int64) % 16i64)] => int8;
+    buf[1i64] = hex.ptr[(wide / 16i64)] =>! int8;
+    buf[2i64] = hex.ptr[(wide % 16i64)] =>! int8;
     pass (raw string_from_bytes(buf, 3i64));
 };
 
@@ -288,7 +297,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         int32:edecl = raw member_enum_decl(x, n);
         if (edecl != 0i32) {
             pass (relay emit_ctor(x, id, n.span, raw exprtypes_get(x.et, id),
-                      n.payload => int32, raw expr_list_start(n),
+                      n.payload =>! int32, raw expr_list_start(n),
                       raw expr_list_count(n)));
         }
         pass (raw iv_rung("a method call", "1.0", n.span));
@@ -357,7 +366,7 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 };
 
 func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) {
-    string:data = relay intern_get(x.interns, n.payload => int32);
+    string:data = relay intern_get(x.interns, n.payload =>! int32);
     string:g = relay strtab_add(x.strs, data);
     string:len = raw int_to_string(data.len);
     string:a = relay irw_temp(x.fe.w);
@@ -373,7 +382,7 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) {
 };
 
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
-    LocalSlot:s = raw fnem_lookup(x.fe, n.payload => int32);
+    LocalSlot:s = raw fnem_lookup(x.fe, n.payload =>! int32);
     if (!s.found) {
         // Not a local: a module-level `const`, a function used as a value, or a
         // name this rung cannot reach. Each is real Nitpick; none is lowered
@@ -700,7 +709,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 };
 
 func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:cnode, string:args) {
-    string:name = relay intern_get(x.interns, cnode.payload => int32);
+    string:name = relay intern_get(x.interns, cnode.payload =>! int32);
     RtSig:sig = raw rt_sig(name);
     if (!sig.found) {
         // A builtin the checker admits and the floor does not carry — real
@@ -889,7 +898,7 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
     ExprNode:n = relay ast_expr(x.ast, id);
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        LocalSlot:s = raw fnem_lookup(x.fe, n.payload => int32);
+        LocalSlot:s = raw fnem_lookup(x.fe, n.payload =>! int32);
         if (!s.found) {
             pass (raw pv_rung("assignment to a name that is not a local",
                               "0.8", n.span));
@@ -922,11 +931,11 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
 
         int32:idx = 0i32 - 1i32;
         int32:fty = raw exprtypes_get(x.et, id);
-        if (bkind == (raw TY_STRING()))  { idx = raw builtin_field_index(x, bkind, n.payload => int32); }
-        if (bkind == (raw TY_CSTRING())) { idx = raw builtin_field_index(x, bkind, n.payload => int32); }
-        if (bkind == (raw TY_SLICE()))   { idx = raw builtin_field_index(x, bkind, n.payload => int32); }
+        if (bkind == (raw TY_STRING()))  { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
+        if (bkind == (raw TY_CSTRING())) { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
+        if (bkind == (raw TY_SLICE()))   { idx = raw builtin_field_index(x, bkind, n.payload =>! int32); }
         if (bkind == (raw TY_STRUCT())) {
-            FieldInfo:fi = relay struct_field(x.tr, btid, n.payload => int32,
+            FieldInfo:fi = relay struct_field(x.tr, btid, n.payload =>! int32,
                                               x.scope);
             if (!fi.found) { pass (raw pv_broken(n.span)); }
             idx = fi.index;
@@ -1033,7 +1042,7 @@ pub func:variant_info = VariantInfo(ExprEmitter->:x, int32:enum_tid, int32:name)
                 if (!(raw expr_is_none(ve))) {
                     ExprNode:vn = relay ast_expr(x.ast, ve);
                     if (vn.kind == ExprKind.ExprIntLiteral) {
-                        tag = vn.payload => int32;
+                        tag = vn.payload =>! int32;
                     }
                 }
                 TypeId:pt = raw type_none();
@@ -1073,7 +1082,7 @@ func:member_enum_decl = int32(ExprEmitter->:x, ExprNode:n) {
 // when one does, because the TYPE has one layout however this variant travels.
 func:emit_variant_ref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:etid = raw exprtypes_get(x.et, id);
-    VariantInfo:vi = raw variant_info(x, etid, n.payload => int32);
+    VariantInfo:vi = raw variant_info(x, etid, n.payload =>! int32);
     if (!vi.found) { pass (raw iv_broken(n.span)); }
     string:tag = raw int_to_string(vi.tag => int64);
     if (!(relay enum_has_payload(x.ast, x.fe.ctx.types, etid))) {
@@ -1102,7 +1111,7 @@ func:emit_enum_ctor = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         pass (raw iv_rung("a call through a member", "1.0", n.span));
     }
     int32:gcount = raw expr_generic_count(n);
-    pass (relay emit_ctor(x, id, n.span, etid, cnode.payload => int32,
+    pass (relay emit_ctor(x, id, n.span, etid, cnode.payload =>! int32,
               (raw expr_list_start(n)) + gcount,
               (raw expr_list_count(n)) - gcount));
 };
@@ -1183,17 +1192,17 @@ func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:fty = raw exprtypes_get(x.et, id);
     string:fll = "";
     if (bkind == (raw TY_STRING())) {
-        idx = raw builtin_field_index(x, bkind, n.payload => int32);
+        idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
         fll = "i64";
         if (idx == 0i32) { fll = "ptr"; }
     }
     if (bkind == (raw TY_CSTRING())) {
-        idx = raw builtin_field_index(x, bkind, n.payload => int32);
+        idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
         fll = "i64";
         if (idx == 0i32) { fll = "ptr"; }
     }
     if (bkind == (raw TY_SLICE())) {
-        idx = raw builtin_field_index(x, bkind, n.payload => int32);
+        idx = raw builtin_field_index(x, bkind, n.payload =>! int32);
         fll = "i64";
         if (idx == 0i32) { fll = "ptr"; }
     }
@@ -1201,7 +1210,7 @@ func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // `.is_error` is DERIVED as `error != 0` — no stored flag, so there is no
     // second place for the fact to live, and no way for the two to disagree.
     if (bkind == (raw TY_RESULT())) {
-        string:f = relay intern_get(x.interns, n.payload => int32);
+        string:f = relay intern_get(x.interns, n.payload =>! int32);
         int32:inner = raw type_elem(x.fe.ctx.types, btid);
         bool:inner_nil = ((raw type_kind(x.fe.ctx.types, inner)) == (raw TY_NIL()));
         if (raw string_eq(f, "value")) {
@@ -1231,7 +1240,7 @@ func:emit_member = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         pass (raw iv_broken(n.span));
     }
     if (bkind == (raw TY_STRUCT())) {
-        FieldInfo:fi = relay struct_field(x.tr, btid, n.payload => int32, x.scope);
+        FieldInfo:fi = relay struct_field(x.tr, btid, n.payload =>! int32, x.scope);
         if (!fi.found) { pass (raw iv_broken(n.span)); }
         idx = fi.index;
         fty = fi.type_id;
@@ -1368,6 +1377,10 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:atid = raw exprtypes_get(x.et, id);
     LlType:all = relay ll_type(x.fe.ctx, atid);
     if (!(raw ll_is_ok(all))) { pass (relay iv_from_ll_at(x, all, atid, n.span)); }
+    // `[]` is the zero array (0.8.1): absent means zero, as in `Result{…}`.
+    if ((raw expr_list_count(n)) == 0i32) {
+        pass (raw iv(all.text, "zeroinitializer", atid));
+    }
     string:acc = "undef";
     int32:i = 0i32;
     while (i < (raw expr_list_count(n))) {

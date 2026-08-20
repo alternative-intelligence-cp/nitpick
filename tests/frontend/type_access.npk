@@ -114,7 +114,7 @@ func:run_module = Ax(string:src, string:want, InternTable->:it) {
         if (d.kind == DeclKind.DeclFunctionDecl) {
             int32:name = d.payload => int32;
             if (raw string_eq(relay intern_get(it, name), want)) {
-                FnSig:sg = relay fn_signature(@tr, d, name, scope);
+                FnSig:sg = relay fn_signature(@tr, item, name, scope);
                 e.fn_success = sg.success;
                 e.fn_terminal = sg.terminal;
                 // ITS GENERIC PARAMETERS TRAVEL WITH IT (0.4.7). The walk holds

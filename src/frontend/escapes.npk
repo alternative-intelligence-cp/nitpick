@@ -102,24 +102,24 @@ pub func:escape_decode = EscapeResult(string:text, int64:at) {
 
 pub func:utf8_encode = int64(wild int8->:buf, int64:at, int64:cp) {
     if (cp < 128i64) {
-        buf[at] = cp => int8;
+        buf[at] = cp =>! int8;
         pass 1i64;
     }
     if (cp < 2048i64) {
-        buf[at] = (192i64 + (cp / 64i64)) => int8;
-        buf[at + 1i64] = (128i64 + (cp % 64i64)) => int8;
+        buf[at] = (192i64 + (cp / 64i64)) =>! int8;
+        buf[at + 1i64] = (128i64 + (cp % 64i64)) =>! int8;
         pass 2i64;
     }
     if (cp < 65536i64) {
-        buf[at] = (224i64 + (cp / 4096i64)) => int8;
-        buf[at + 1i64] = (128i64 + ((cp / 64i64) % 64i64)) => int8;
-        buf[at + 2i64] = (128i64 + (cp % 64i64)) => int8;
+        buf[at] = (224i64 + (cp / 4096i64)) =>! int8;
+        buf[at + 1i64] = (128i64 + ((cp / 64i64) % 64i64)) =>! int8;
+        buf[at + 2i64] = (128i64 + (cp % 64i64)) =>! int8;
         pass 3i64;
     }
-    buf[at] = (240i64 + (cp / 262144i64)) => int8;
-    buf[at + 1i64] = (128i64 + ((cp / 4096i64) % 64i64)) => int8;
-    buf[at + 2i64] = (128i64 + ((cp / 64i64) % 64i64)) => int8;
-    buf[at + 3i64] = (128i64 + (cp % 64i64)) => int8;
+    buf[at] = (240i64 + (cp / 262144i64)) =>! int8;
+    buf[at + 1i64] = (128i64 + ((cp / 4096i64) % 64i64)) =>! int8;
+    buf[at + 2i64] = (128i64 + ((cp / 64i64) % 64i64)) =>! int8;
+    buf[at + 3i64] = (128i64 + (cp % 64i64)) =>! int8;
     pass 4i64;
 };
 
@@ -149,7 +149,7 @@ pub func:decode_string = DecodedString(string:content) {
                 i = i + e.consumed;
             }
         } else {
-            buf[out] = content.ptr[i];
+            buf[out] = content.ptr[i] =>! int8;
             out = out + 1i64;
             i = i + 1i64;
         }

@@ -34,6 +34,7 @@ use "../../frontend/parse_expr.npk".*;
 use "../../frontend/parse_stmt.npk".*;
 use "../../frontend/parse_decl.npk".*;
 use "../../frontend/parse_pick.npk".*;
+use "../../frontend/type_layout.npk".*;
 use "../../frontend/diagnostics.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
@@ -430,7 +431,7 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         }
         // `(Enum.Variant)` in pattern position — a tag, not a value to build.
         if (vn.kind == ExprKind.ExprMemberAccessExpr) {
-            VariantInfo:vi = raw variant_info(x, sel_tid, vn.payload => int32);
+            VariantInfo:vi = raw variant_info(x, sel_tid, vn.payload =>! int32);
             if (vi.found) {
                 pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
             }
@@ -471,7 +472,9 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     if (!vi.found) { pass (raw iv_broken(at)); }
     if (vi.payload_count == 0i32) { pass (raw iv_nil()); }
 
-    int32:pty = relay resolve_type(x.tr, vi.payload_ty, x.scope);
+    int32:pty = relay resolve_type(x.tr, vi.payload_ty,
+                     raw symtab_home_scope(x.tab, raw type_decl(x.fe.ctx.types,
+                                               sel_tid), x.scope));
     LlType:pll = relay ll_type(x.fe.ctx, pty);
     if (!(raw ll_is_ok(pll))) { pass (relay iv_from_ll_at(x, pll, pty, at)); }
 
@@ -533,7 +536,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     // The arm labels, held locally so pass two starts each arm at the label
     // pass one promised the switch. Local because a pick nests inside a pick.
     wild int8->:lm = alloc((count => int64) * #size_of<string>());
-    wild string->:labels = lm => wild string->;
+    wild string->:labels = lm =>! wild string->;
     string:cases = "";
     string:default_l = done_l;
     int32:i = 0i32;
@@ -600,7 +603,7 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
 
     int32:name = raw decl_name(d);
     string:fname = relay intern_get(x.interns, name);
-    FnSig:sg = relay fn_signature(x.tr, d, name, x.scope);
+    FnSig:sg = relay fn_signature(x.tr, did, name, x.scope);
 
     LlType:rt = relay fnem_begin(x.fe, fname, sg.success);
     if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll_at(x, rt, sg.success, d.span)); }
@@ -609,7 +612,8 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
     int32:n = raw fn_param_count(x.ast, d);
     while (i < n) {
         DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, d, i));
-        int32:pt = relay resolve_type(x.tr, raw param_type(pd), x.scope);
+        int32:pt = relay resolve_type(x.tr, raw param_type(pd),
+                       raw symtab_home_scope(x.tab, did.index, x.scope));
         LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
         if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;

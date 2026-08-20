@@ -118,16 +118,16 @@ pub struct:SiteTable = {
 
 pub func:sitetable_init = SiteTable() {
     wild int8->:mem = alloc(16i64 * #size_of<MacroSite>());
-    SiteTable:t = SiteTable{ items: mem => wild MacroSite->, count: 0i32, cap: 16i32 };
+    SiteTable:t = SiteTable{ items: mem =>! wild MacroSite->, count: 0i32, cap: 16i32 };
     pass t;
 };
 
 func:sitetable_add = NIL(SiteTable->:t, MacroSite:e) {
     if (t.count >= t.cap) {
         int32:nc = t.cap * 2i32;
-        wild int8->:mem = ralloc(t.items => wild int8->,
+        wild int8->:mem = ralloc(t.items =>! wild int8->,
                                  (nc => int64) * #size_of<MacroSite>());
-        t.items = mem => wild MacroSite->;
+        t.items = mem =>! wild MacroSite->;
         t.cap = nc;
     }
     t.items[t.count => int64] = e;
@@ -160,7 +160,7 @@ pub struct:Expander = {
 
 pub func:macrotable_init = MacroTable() {
     wild int8->:mem = alloc(16i64 * #size_of<MacroEntry>());
-    MacroTable:t = MacroTable{ items: mem => wild MacroEntry->,
+    MacroTable:t = MacroTable{ items: mem =>! wild MacroEntry->,
                                count: 0i32, cap: 16i32 };
     pass t;
 };
@@ -168,7 +168,7 @@ pub func:macrotable_init = MacroTable() {
 func:macrotable_grow = NIL(MacroTable->:t) {
     int32:ncap = t.cap * 2i32;
     wild int8->:mem = alloc((ncap => int64) * #size_of<MacroEntry>());
-    wild MacroEntry->:dst = mem => wild MacroEntry->;
+    wild MacroEntry->:dst = mem =>! wild MacroEntry->;
     int64:i = 0i64;
     while (i < (t.count => int64)) {
         dst[i] = t.items[i];
@@ -282,7 +282,7 @@ func:clone_expr = ExprId(Expander->:x, ExprId:id, int32:fuel) {
     // THE ARGUMENT IS CLONED TOO. One argument used twice in a body must become two
     // subtrees, for the same reason the body must.
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        int32:pi = relay param_index(x, (raw expr_name(n)) => int32);
+        int32:pi = relay param_index(x, (raw expr_name(n)) =>! int32);
         if (pi >= 0i32) {
             pass (relay clone_arg(x, relay param_arg(x, pi), f));
         }

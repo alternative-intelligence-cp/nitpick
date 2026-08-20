@@ -82,10 +82,15 @@ pub struct:DeriveSet = {
 };
 
 pub func:deriveset_none = DeriveSet() {
-    bool[8]:w;
-    int32:i = 0i32;
-    while (i < 8i32) { w[i => int64] = false; i = i + 1i32; }
-    DeriveSet:s = DeriveSet{ wanted: w, count: 0i32 };
+    // EIGHT `false`S, WRITTEN OUT. The fill loop this replaces was refused by
+    // definite assignment (a loop that happens to cover every index is coverage
+    // the analysis cannot see), and `[]` — D-139's zero array — is not usable
+    // HERE yet: this module is seed-compiled until 1.2, and the seed lowers an
+    // empty literal for a sized array wrongly. The explicit literal means the
+    // same thing under both compilers.
+    DeriveSet:s = DeriveSet{ wanted: [false, false, false, false,
+                                      false, false, false, false],
+                             count: 0i32 };
     pass s;
 };
 
@@ -144,7 +149,7 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
             continue;
         }
 
-        string:tname = relay intern_get(interns, (raw expr_name(ae)) => int32);
+        string:tname = relay intern_get(interns, (raw expr_name(ae)) =>! int32);
         if (raw is_removed(tname)) {
             drop diaglist_push(diags, raw diag_error(raw DERIVE_REMOVED(),
                 raw removed_reason(tname), ae.span));

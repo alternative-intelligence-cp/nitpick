@@ -27,7 +27,7 @@ pub func:srcmgr_init = SourceManager() {
     int64:n = 8i64;
     wild int8->:raw_mem = alloc(n * #size_of<SourceFile>());
     SourceManager:m = SourceManager{
-        files: raw_mem => wild SourceFile->,
+        files: raw_mem =>! wild SourceFile->,
         count: 0i32,
         cap: 8i32
     };
@@ -36,9 +36,9 @@ pub func:srcmgr_init = SourceManager() {
 
 func:srcmgr_grow = NIL(SourceManager->:m) {
     int32:newcap = m.cap * 2i32;
-    wild int8->:bigger = ralloc(m.files => wild int8->,
+    wild int8->:bigger = ralloc(m.files =>! wild int8->,
                                 (newcap => int64) * #size_of<SourceFile>());
-    m.files = bigger => wild SourceFile->;
+    m.files = bigger =>! wild SourceFile->;
     m.cap = newcap;
     pass NIL;
 };
@@ -101,20 +101,20 @@ pub func:srcmgr_load = int32(SourceManager->:m, string:path) {
 
 pub func:srcmgr_path = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
-        fail 1i32;
+        fail 1tbb32;
     }
     if (file >= m.count) {
-        fail 1i32;
+        fail 1tbb32;
     }
     pass m.files[file => int64].path;
 };
 
 pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
     if (file < 0i32) {
-        fail 1i32;
+        fail 1tbb32;
     }
     if (file >= m.count) {
-        fail 1i32;
+        fail 1tbb32;
     }
     pass m.files[file => int64].text;
 };
@@ -124,10 +124,10 @@ pub func:srcmgr_text = string(SourceManager->:m, int32:file) {
 pub func:srcmgr_byte_at = uint8(SourceManager->:m, int32:file, int64:offset) {
     string:t = relay srcmgr_text(m, file);
     if (offset < 0i64) {
-        fail 2i32;
+        fail 2tbb32;
     }
     if (offset >= t.len) {
-        fail 2i32;
+        fail 2tbb32;
     }
     pass t.ptr[offset] => uint8;
 };

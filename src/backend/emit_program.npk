@@ -184,7 +184,12 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
 
 // Everything. True when the program emitted whole; false when any refusal was
 // recorded, in which case the writer's text is not a module and must not be used.
-pub func:emit_program = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
+//
+// `emit_all`, NOT `emit_program`: the module is named `emit_program` (the
+// basename rule fixes that), and a module's own name occupies its scope — a
+// function spelled the same is a redeclaration to the real resolver. The seed's
+// single namespace hid the collision from 0.7.7 until the first self-check.
+pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              InternTable->:interns, ExprTypes->:ets,
                              TypeResolver->:tr, DiagList->:diags) {
     int64:before = raw diaglist_count(diags);
