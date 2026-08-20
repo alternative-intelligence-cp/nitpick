@@ -15,12 +15,12 @@
 // widths, so getting the lossless set exactly right is what decides whether
 // ordinary arithmetic is writable.
 
-use "source_location.npk".*;
-use "intern.npk".*;
-use "diagnostics.npk".*;
-use "type_codes.npk".*;
-use "types.npk".*;
-use "type_names.npk".*;
+use "./source_location.npk".*;
+use "./intern.npk".*;
+use "./diagnostics.npk".*;
+use "./type_codes.npk".*;
+use "./types.npk".*;
+use "./type_names.npk".*;
 
 // --- what a type can hold ----------------------------------------------------------------
 //
@@ -189,6 +189,25 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) {
         pass (raw CAST_IMPOSSIBLE());
     }
     if (fk == (raw TY_POINTER())) { pass (raw CAST_IMPOSSIBLE()); }
+
+    // --- enums: the tag is readable, a variant is not forgeable -------------------
+    //
+    // `enum =>! intN` READS THE TAG — `=>!` is the spelling for "I know what this
+    // does", and reading identity as a number loses nothing; what it costs is the
+    // bang, because treating identity as quantity IS an assertion. `enum => intN`
+    // is therefore LOSSY, never OK.
+    //
+    // `intN => enum` is IMPOSSIBLE in both spellings, and the reason is not loss:
+    // that direction FABRICATES a value that may be no variant at all, and every
+    // `pick` the exhaustiveness analysis proved complete would silently miss it.
+    // The asymmetry has precedent one block up: `fd => int32` reads the number,
+    // `int32 =>! fd` manufactures a handle and is confined to `nlibc` — but an
+    // `fd` carries no exhaustiveness promise, and an enum does.
+    if (fk == (raw TY_ENUM())) {
+        if (tk == (raw TY_INT())) { pass (raw CAST_LOSSY()); }
+        pass (raw CAST_IMPOSSIBLE());
+    }
+    if (tk == (raw TY_ENUM())) { pass (raw CAST_IMPOSSIBLE()); }
 
     // --- everything numeric, by range --------------------------------------------
     ValueRange:fr = raw type_range(tyt, from);

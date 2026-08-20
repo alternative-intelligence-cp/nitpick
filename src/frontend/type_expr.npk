@@ -18,23 +18,23 @@
 // To LLVM all four are `iN`. Nothing downstream will object. This file is the
 // only place that can.
 
-use "source_location.npk".*;
-use "intern.npk".*;
-use "token_kind.npk".*;
-use "ast_kind.npk".*;
-use "ast.npk".*;
-use "diagnostics.npk".*;
-use "type_codes.npk".*;
-use "types.npk".*;
-use "num_width.npk".*;
-use "parse_expr.npk".*;
-use "parse_decl.npk".*;
-use "symbols.npk".*;
-use "resolve_type.npk".*;
-use "type_names.npk".*;
-use "type_cast.npk".*;
-use "type_decl.npk".*;
-use "type_access.npk".*;
+use "./source_location.npk".*;
+use "./intern.npk".*;
+use "./token_kind.npk".*;
+use "./ast_kind.npk".*;
+use "./ast.npk".*;
+use "./diagnostics.npk".*;
+use "./type_codes.npk".*;
+use "./types.npk".*;
+use "./num_width.npk".*;
+use "./parse_expr.npk".*;
+use "./parse_decl.npk".*;
+use "./symbols.npk".*;
+use "./resolve_type.npk".*;
+use "./type_names.npk".*;
+use "./type_cast.npk".*;
+use "./type_decl.npk".*;
+use "./type_access.npk".*;
 // A `use` CYCLE, DECLARED ON PURPOSE. `type_stmt.npk` uses this module because a
 // statement contains expressions; this module uses it because an EXPRESSION contains
 // statements — an expression-`pick`s arms are statement bodies (D-059). The language
@@ -45,9 +45,9 @@ use "type_access.npk".*;
 // module, and each was moved. THIS ONE IS NOT THAT: neither direction is wrong, and
 // declaring the cycle is more honest than a duplicated statement walk on the
 // expression side would be.
-use "type_stmt.npk".*;
-use "type_trait.npk".*;
-use "expr_types.npk".*;
+use "./type_stmt.npk".*;
+use "./type_trait.npk".*;
+use "./expr_types.npk".*;
 
 pub struct:ExprTyper = {
     Ast->:ast;
@@ -353,7 +353,7 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
 };
 
 // The message names the TYPE that made it wrong, and says why that type is not a
-// number — because "invalid operand" leaves the reader to work out which of two
+// number — because "./invalid operand" leaves the reader to work out which of two
 // familiar-looking things the compiler objected to.
 func:te_operand_error = int32(ExprTyper->:e, Span:at, int32:t) {
     string:d = relay type_display(e.types, e.interns, t);

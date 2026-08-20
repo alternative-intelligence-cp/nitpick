@@ -40,7 +40,7 @@ use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../types.npk".*;
 use "../expr_types.npk".*;
-use "analysis_codes.npk".*;
+use "./analysis_codes.npk".*;
 
 // How deep an expression tree this walk will follow. Every walk in this compiler
 // that follows program structure is bounded, and this one fails CLOSED when the
@@ -226,7 +226,7 @@ func:escape_decl = NIL(Escape->:x, DeclId:id, int32:scope) {
     // A GLOBAL'S INITIALISER RUNS OUTSIDE ANY FRAME, so a borrow in one has no
     // frame to be bounded by at all. There is no local for `@` to name at module
     // level, which is why this cannot currently fire — but the walk reaches it
-    // rather than skipping it, because "nothing to check here" and "nobody
+    // rather than skipping it, because "./nothing to check here" and "nobody
     // looked" are the two answers this cycle exists to keep apart.
     if (d.kind == DeclKind.DeclGlobalDecl) {
         ExprId:init = raw global_init(d);

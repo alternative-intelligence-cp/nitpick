@@ -22,20 +22,20 @@
 // the fixed-header window described in ast.npk. Each header is defined once,
 // beside the accessors that read it, and nothing else indexes it.
 
-use "source_location.npk".*;
-use "token_kind.npk".*;
-use "token_name.npk".*;
-use "token.npk".*;
-use "intern.npk".*;
-use "ast_kind.npk".*;
-use "ast.npk".*;
-use "diagnostics.npk".*;
-use "parse_codes.npk".*;
-use "parser.npk".*;
-use "parse_type.npk".*;
-use "parse_expr.npk".*;
-use "parse_decorate.npk".*;
-use "parse_stmt.npk".*;
+use "./source_location.npk".*;
+use "./token_kind.npk".*;
+use "./token_name.npk".*;
+use "./token.npk".*;
+use "./intern.npk".*;
+use "./ast_kind.npk".*;
+use "./ast.npk".*;
+use "./diagnostics.npk".*;
+use "./parse_codes.npk".*;
+use "./parser.npk".*;
+use "./parse_type.npk".*;
+use "./parse_expr.npk".*;
+use "./parse_decorate.npk".*;
+use "./parse_stmt.npk".*;
 
 // --- flags --------------------------------------------------------------------
 //
@@ -705,7 +705,7 @@ func:p_parse_import = DeclId(Parser->:p, Span:sp, int32:flags) {
 
     int32:segments = 0i32;
     if (relay p_at(p, TokenKind.StringLit)) {
-        // A file path: `use "path/module.npk".*;`
+        // A file path: `use "./path/module.npk".*;`
         path = ((relay p_advance(p)).payload) => int32;
     } else {
         // A logical path: `use std.math.*;` -- kept as segments rather than one

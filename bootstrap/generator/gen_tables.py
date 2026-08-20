@@ -177,8 +177,8 @@ def main():
     by_len = {}
     for k in kw_all:
         by_len.setdefault(len(k), []).append(k)
-    kl = ['''use "token_kind.npk".*;
-use "intern.npk".*;
+    kl = ['''use "./token_kind.npk".*;
+use "./intern.npk".*;
 
 pub func:keyword_kind_of = TokenKind(string:text) {
     int64:n = text.len;''']
@@ -216,8 +216,8 @@ pub func:is_keyword = bool(string:text) {
         wl.append("    %-20s = %di32;   // %s" % (width_variant(s), i, s))
     wl.append("};")
     wl.append("")
-    wl.append('use "intern.npk".*;')
-    wl.append('use "types.npk".*;')
+    wl.append('use "./intern.npk".*;')
+    wl.append('use "./types.npk".*;')
     wl.append("")
     wl.append("pub func:num_width_of = NumWidth(string:text) {")
     wl.append("    int64:n = text.len;")
@@ -321,8 +321,8 @@ pub func:is_keyword = bool(string:text) {
         ob.setdefault(len(text), []).append((text, kind))
 
     ol = []
-    ol.append('use "token_kind.npk".*;')
-    ol.append('use "intern.npk".*;')
+    ol.append('use "./token_kind.npk".*;')
+    ol.append('use "./intern.npk".*;')
     ol.append('')
     ol.append('pub struct:OpMatch = {')
     ol.append('    bool:found;')
@@ -367,7 +367,7 @@ pub func:is_keyword = bool(string:text) {
     # far better message than "expected token 231", and the parser has no other
     # way to say it: the token carries a kind, not the text it came from.
     nl = []
-    nl.append('use "token_kind.npk".*;')
+    nl.append('use "./token_kind.npk".*;')
     nl.append('')
     nl.append('// `pass` from each arm rather than `give`: expression-`pick` (D-059) is')
     nl.append('// outside subset 1, and returning directly is equivalent here.')
@@ -509,8 +509,8 @@ pub func:is_keyword = bool(string:text) {
           '// type added to the BuiltinType production cannot then be silently',
           '// missing from the resolver.',
           '',
-          'use "token_kind.npk".*;',
-          'use "types.npk".*;',
+          'use "./token_kind.npk".*;',
+          'use "./types.npk".*;',
           '',
           '// `known` is false for a name the type table has no kind for yet --',
           '// `frac`, `tfp`, `dim256` and the exotic bases. They are REAL types and',
@@ -656,6 +656,11 @@ pub func:is_keyword = bool(string:text) {
           "//",
           "// The resolver needs this list because a bare-name builtin is declared in no",
           "// module. Without it every `alloc` in every program resolves to nothing.",
+          "",
+          # `string_eq` lives in intern.npk. The seed's one-namespace hid the
+          # missing import for six cycles; the first self-check run (0.8.0)
+          # reported all forty-seven uses at once.
+          'use "./intern.npk".*;',
           "",
           "pub func:is_builtin_name = bool(string:name) {"]
     for n in names:

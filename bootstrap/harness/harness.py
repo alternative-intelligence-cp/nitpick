@@ -743,7 +743,15 @@ def check_module_rejection(binary, path, name, exp):
             parts = parts[1:]
             into = notes
         if len(parts) == 2 and ":" in parts[1]:
-            ln, _, cl = parts[1].partition(":")
+            # `CODE path:line:col` since 0.8.0 (`CODE line:col` before a module
+            # graph made bare line numbers ambiguous across sixty files). The
+            # span is the LAST two fields; everything before them is the path,
+            # which expectations deliberately do not assert.
+            pieces = parts[1].rsplit(":", 2)
+            if len(pieces) == 3:
+                _, ln, cl = pieces
+            else:
+                ln, _, cl = parts[1].partition(":")
             into.append((parts[0], int(ln), int(cl)))
 
     fails = []

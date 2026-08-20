@@ -64,8 +64,8 @@ use "../types.npk".*;
 use "../expr_types.npk".*;
 use "../resolve_type.npk".*;   // `fold_const` — one evaluator, one idea of constant
 use "../type_codes.npk".*;
-use "analysis_codes.npk".*;
-use "exhaust.npk".*;
+use "./analysis_codes.npk".*;
+use "./exhaust.npk".*;
 
 pub func:ASSIGN_DEPTH = int32() { pass 256i32; };
 
@@ -337,7 +337,7 @@ func:state_may = bool(AssignState:s, int32:slot) {
 };
 
 // The eight expression kinds that ARE a value, with nothing to evaluate. Listed
-// rather than derived from `expr_shape`, because "has no child expressions" and
+// rather than derived from `expr_shape`, because "./has no child expressions" and
 // "is a constant" are different questions that agree today — an identifier is a
 // leaf and is not a constant.
 func:expr_is_literal = bool(ExprKind:k) {

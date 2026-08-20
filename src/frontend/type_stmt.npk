@@ -12,24 +12,24 @@
 //   * EVERY CONDITION IS A STRICT `bool`. There is no truthiness, and a condition
 //     is where a tainted or mistyped value would otherwise steer a decision.
 
-use "source_location.npk".*;
-use "intern.npk".*;
-use "token_kind.npk".*;
-use "ast_kind.npk".*;
-use "ast.npk".*;
-use "diagnostics.npk".*;
-use "type_codes.npk".*;
-use "types.npk".*;
-use "type_names.npk".*;
-use "parse_stmt.npk".*;
-use "parse_expr.npk".*;
-use "parse_decl.npk".*;
-use "symbols.npk".*;
-use "resolve_type.npk".*;
-use "type_decl.npk".*;
-use "type_layout.npk".*;
-use "expr_types.npk".*;
-use "type_expr.npk".*;
+use "./source_location.npk".*;
+use "./intern.npk".*;
+use "./token_kind.npk".*;
+use "./ast_kind.npk".*;
+use "./ast.npk".*;
+use "./diagnostics.npk".*;
+use "./type_codes.npk".*;
+use "./types.npk".*;
+use "./type_names.npk".*;
+use "./parse_stmt.npk".*;
+use "./parse_expr.npk".*;
+use "./parse_decl.npk".*;
+use "./symbols.npk".*;
+use "./resolve_type.npk".*;
+use "./type_decl.npk".*;
+use "./type_layout.npk".*;
+use "./expr_types.npk".*;
+use "./type_expr.npk".*;
 
 // THE WALK IS TOTAL, AND IT WAS NOT.
 //
@@ -130,7 +130,7 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) {
 
     // `break`, `continue` and `fall` carry a LABEL and no expression, so there is
     // nothing here to type. Said out loud rather than reached by falling off the
-    // end, because "nothing to check" and "nobody has looked" are the two answers
+    // end, because "./nothing to check" and "nobody has looked" are the two answers
     // this function exists to keep apart.
     if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
     if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }

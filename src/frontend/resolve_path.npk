@@ -6,11 +6,11 @@
 // (`BUILD_REFERENCE.md` §3):
 //
 //   `use "./util.npk"`, `use "../x/y.npk"`   the IMPORTING FILE's directory
-//   `use "nfs/path.npk"`                     the DEPENDENCY ROOTS
+//   `use "./nfs/path.npk"`                     the DEPENDENCY ROOTS
 //   `use std.math.*`                         the STANDARD LIBRARY
 //
 // A dependency named `nfs` declared at `../nfs` roots at `../nfs/src/`, so
-// `use "nfs/path.npk"` is `../nfs/src/path.npk`.
+// `use "./nfs/path.npk"` is `../nfs/src/path.npk`.
 //
 // THERE IS NO FALLBACK BETWEEN CLASSES. A `./` path that does not exist is an
 // error, not a retry against the roots. The first character decides, and one
@@ -21,11 +21,11 @@
 // This module owns the rule; where the roots came from is the driver's business,
 // and a manifest parser inside the resolver would be two jobs in one file.
 
-use "source_location.npk".*;
-use "intern.npk".*;
-use "diagnostics.npk".*;
-use "resolve_codes.npk".*;
-use "paths.npk".*;
+use "./source_location.npk".*;
+use "./intern.npk".*;
+use "./diagnostics.npk".*;
+use "./resolve_codes.npk".*;
+use "./paths.npk".*;
 
 // A dependency root: the name a `use` path starts with, and where it lives.
 pub struct:Root = {

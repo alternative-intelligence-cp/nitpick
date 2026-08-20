@@ -16,11 +16,18 @@ use "../src/driver/pipeline.npk".*;
 use "../src/frontend/source_location.npk".*;
 use "../src/frontend/intern.npk".*;
 use "../src/frontend/diagnostics.npk".*;
+use "../src/frontend/source.npk".*;
 
-func:emit_line = NIL(Diagnostic:d) {
+func:emit_line = NIL(SourceManager->:sm, Diagnostic:d) {
     string:pre = "";
     if (d.severity == 0i32) { pre = "note "; }
     string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
+    // THE FILE IS PART OF THE SPAN. `line:col` alone was the whole address while
+    // every tool took one file; a module graph makes it ambiguous across sixty,
+    // and the first self-check run (119 findings, no way to say where) is what
+    // forced the format to say what it always knew.
+    m1 = relay string_concat(m1, relay srcmgr_path(sm, d.span.file));
+    m1 = relay string_concat(m1, ":");
     string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
     string:m3 = relay string_concat(m2, ":");
     string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
@@ -29,11 +36,11 @@ func:emit_line = NIL(Diagnostic:d) {
     pass NIL;
 };
 
-func:report = NIL(DiagList->:diags) {
+func:report = NIL(SourceManager->:sm, DiagList->:diags) {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
     while (d < n) {
-        drop emit_line(raw diaglist_at(diags, d));
+        drop emit_line(sm, raw diaglist_at(diags, d));
         d = d + 1i64;
     }
     pass NIL;
@@ -52,7 +59,7 @@ func:main = int32(cstring[]:argv) {
     int32:fr = raw front_run(@f, root);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
-        drop report(@f.diags);
+        drop report(@f.g.sm, @f.diags);
         exit 1i32;
     }
     exit 0i32;

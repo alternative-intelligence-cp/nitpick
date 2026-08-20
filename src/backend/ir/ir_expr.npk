@@ -42,15 +42,15 @@ use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/parse_decl.npk".*;
-use "ir_writer.npk".*;
-use "ir_types.npk".*;
-use "ir_func.npk".*;
+use "./ir_writer.npk".*;
+use "./ir_types.npk".*;
+use "./ir_func.npk".*;
 use "../../frontend/resolve_type.npk".*;
-use "ir_runtime.npk".*;
+use "./ir_runtime.npk".*;
 // THE DECLARED CYCLE with the statement walker — `relay` exits the function,
 // which runs the defer stack, which emits statements. Same shape, same reason,
 // as `type_expr` ↔ `type_stmt` (0.4.2).
-use "ir_stmt.npk".*;
+use "./ir_stmt.npk".*;
 
 // An emitted value. `ll` and `ref` are what an instruction writes; `type_id` is
 // the frontend's answer, 0 where the frontend deliberately has none (a builtin
@@ -573,6 +573,22 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if (raw string_eq(v.ll, want.text)) {
         pass (raw iv(want.text, v.ref, wid));
     }
+
+    // `enum =>! intN` — the TAG is the number (0.8.0, settled with the user). A
+    // payload-less enum already IS its `i32` tag; a payload-carrying one holds
+    // the tag in slot 0, so the cast extracts it and then proceeds as a scalar.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_ENUM())) {
+        if (!(raw string_eq(v.ll, "i32"))) {
+            string:tag = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(tag, " = extractvalue ", v.ll, " ",
+                              relay string_concat(v.ref, ", 0")));
+            v = raw iv("i32", tag, v.type_id);
+        }
+        if (raw string_eq(v.ll, want.text)) {
+            pass (raw iv(want.text, v.ref, wid));
+        }
+    }
+
     LlType:src_l = LlType{ state: raw LL_OK(), text: v.ll, rung: "" };
     LlType:dst_l = want;
     if (!(raw ll_is_scalar_int(src_l))) {

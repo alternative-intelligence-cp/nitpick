@@ -16,28 +16,28 @@
 // finished table. There is no point at which a module's declarations are needed
 // and missing.
 
-use "source_location.npk".*;
-use "source.npk".*;
-use "intern.npk".*;
-use "token_kind.npk".*;
-use "token.npk".*;
-use "ast_kind.npk".*;
-use "ast.npk".*;
-use "diagnostics.npk".*;
-use "resolve_codes.npk".*;
-use "paths.npk".*;
-use "resolve_path.npk".*;
-use "lexer.npk".*;
-use "parser.npk".*;
-use "parse_type.npk".*;
-use "parse_expr.npk".*;
-use "parse_decorate.npk".*;
-use "parse_stmt.npk".*;
-use "parse_pick.npk".*;
-use "parse_decl.npk".*;
-use "symbols.npk".*;
-use "prelude.npk".*;
-use "prelude_source.npk".*;
+use "./source_location.npk".*;
+use "./source.npk".*;
+use "./intern.npk".*;
+use "./token_kind.npk".*;
+use "./token.npk".*;
+use "./ast_kind.npk".*;
+use "./ast.npk".*;
+use "./diagnostics.npk".*;
+use "./resolve_codes.npk".*;
+use "./paths.npk".*;
+use "./resolve_path.npk".*;
+use "./lexer.npk".*;
+use "./parser.npk".*;
+use "./parse_type.npk".*;
+use "./parse_expr.npk".*;
+use "./parse_decorate.npk".*;
+use "./parse_stmt.npk".*;
+use "./parse_pick.npk".*;
+use "./parse_decl.npk".*;
+use "./symbols.npk".*;
+use "./prelude.npk".*;
+use "./prelude_source.npk".*;
 
 pub struct:ModuleEntry = {
     int32:file;      // index into the SourceManager
@@ -230,7 +230,7 @@ pub func:graph_collect_all = NIL(ModuleGraph->:g) {
 // namespace**, reachable only through `use`, and that is the whole of what a module
 // means here — so there is nothing above one to put a prelude in.
 //
-// So it is bound the way `use "prelude.npk".*` would bind it, into every module
+// So it is bound the way `use "./prelude.npk".*` would bind it, into every module
 // scope in the program. That is the honest model rather than a workaround: the
 // prelude is not magic, it is an import nobody has to write.
 //
@@ -614,7 +614,7 @@ func:check_dup_members = NIL(ModuleGraph->:g, DeclNode:d, string:what) {
 //
 // A THIRD PASS, after every module is loaded and collected.
 //
-// It cannot run during loading: `use "b.npk".*` needs b's declarations, and in a
+// It cannot run during loading: `use "./b.npk".*` needs b's declarations, and in a
 // cycle b's import of a needs a's. Running imports only once everything is
 // collected removes the ordering question entirely rather than answering it —
 // the same move D-086 makes for bodies, applied one level earlier.
@@ -712,7 +712,7 @@ func:apply_one_import = NIL(ModuleGraph->:g, string:from, int32:scope,
 
     int32:kind = raw import_kind(d);
 
-    // `use "m.npk" as math;` binds the MODULE, so `math.sqrt` resolves through
+    // `use "./m.npk" as math;` binds the MODULE, so `math.sqrt` resolves through
     // it in 0.3.5.
     if (kind == (raw IMPORT_NAMESPACE())) {
         int32:alias = raw import_alias(@g.ast, d);

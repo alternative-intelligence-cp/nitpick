@@ -17,18 +17,21 @@ func:classify = int32(Ev:e) {
 };
 
 func:main = int32(cstring[]:_~argv) {
-    // A payload-less enum is its tag: position, or the DECLARED value — and a
-    // tag is IDENTITY, not quantity, so there is no cast to read it as a number
-    // (`type_range` has no answer for an enum). The `pick` observes it instead:
-    // matching `Flat.Late` means the discriminant equalled the declared 9.
+    // A payload-less enum is its tag: position, or the DECLARED value. Reading
+    // it as a number is an ASSERTION — identity treated as quantity — so it
+    // costs the bang: `=>!` reads the tag (0.8.0), `=>` refuses, and the other
+    // direction is impossible in both spellings because it would FABRICATE a
+    // value no `pick` was proven against.
     Flat:f = Flat.Late;
-    int32:t = 0i32;
-    pick (f) {
-        (Flat.A) { t = 1i32; },
-        (Flat.B) { t = 2i32; },
-        (Flat.Late) { t = 9i32; }
-    }
+    int32:t = f =>! int32;
     if (t != 9i32)                          { exit 10i32; }
+    Flat:f0 = Flat.B;
+    if ((f0 =>! int64) != 1i64)             { exit 18i32; }
+
+    // A payload-carrying enum's number is STILL its tag — slot 0, whatever the
+    // payload word holds.
+    Ev:tagged = Ev.Move(999i32);
+    if ((tagged =>! int32) != 1i32)         { exit 19i32; }
 
     // Constructed with a payload, taken apart by the arm that names it.
     if ((raw classify(Ev.Ping)) != 1i32)    { exit 11i32; }
