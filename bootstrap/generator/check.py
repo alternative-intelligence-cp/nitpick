@@ -79,6 +79,8 @@ BUILTINS = {
     "to_cstring":    (T.CSTRING, True),
     "read_file":     (T.STRING, True),
     "path_exists":   (T.BOOL, False),
+    # read_file's mirror (0.8.3): whole buffer to a path, Result<NIL>.
+    "write_file":    (T.NIL, True),
 }
 
 

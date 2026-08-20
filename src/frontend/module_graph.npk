@@ -436,6 +436,16 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
     }
     TypeNode:n = relay ast_type(ast, t);
     if (n.kind == TypeKind.TypeNamedType) {
+        // A BUILTIN TYPE KEYWORD CARRIES A TOKEN KIND, NOT AN INTERN INDEX
+        // (0.2.2) — the same two-meanings slot `resolve_named` had to learn.
+        // This read it raw for four cycles, so every `int32:` field grew a
+        // containment edge to whatever identifier happened to sit at intern
+        // index ~85-175: garbage edges that both powered the walk's exponential
+        // fanout and, once the walk was memoised deep enough to follow them,
+        // manufactured "cycles" between structs made of plain integers.
+        if (raw type_name_is_builtin(n)) {
+            pass 0i32;
+        }
         pass (n.payload =>! int32);
     }
     // A fixed array of T contains its elements, so its size DOES depend on T.
@@ -451,11 +461,35 @@ func:direct_named_type = int32(Ast->:ast, TypeId:t) {
 };
 
 // Walk from `start` following direct containment, looking for `start` again.
-// Returns the depth at which it closed, or 0.
+//
+// MEMOISED PER QUERY (0.8.3). The first version was a bare DFS, and a bare DFS
+// over a DAG is exponential in the sharing: every struct that contains two
+// already-visited structs doubles the walk. It held for four cycles because no
+// program's containment graph had a real hub — and then `Front` arrived, ten
+// aggregate fields each containing the table structs the others also contain,
+// and self-checking the compiler went from seconds to past the harness's
+// ten-minute timeout. The `seen` set makes revisits O(1); correctness is
+// unchanged because containment is being tested for REACHABILITY of `start`,
+// and a name that failed to reach it once cannot reach it later in the same
+// query.
 func:struct_reaches_self = bool(ModuleGraph->:g, int32:scope, int32:start,
                                 int32:current, int32:fuel) {
+    // The seen-set is intern-indexed. Interns only grow, so the capacity is
+    // read once per query.
+    int32:cap = raw intern_count(g.interns);
+    wild int8->:seen = calloc(cap => int64, 1i64);
+    pass (relay reaches_memo(g, scope, start, current, fuel, seen, cap));
+};
+
+func:reaches_memo = bool(ModuleGraph->:g, int32:scope, int32:start,
+                         int32:current, int32:fuel, wild int8->:seen,
+                         int32:cap) {
     if (fuel <= 0i32) {
         pass false;
+    }
+    if (current < cap) {
+        if (seen[current => int64] != 0i8) { pass false; }
+        seen[current => int64] = 1i8;
     }
     int32:sym = raw scope_lookup(@g.tab, scope, current);
     if (sym == 0i32) {
@@ -481,7 +515,8 @@ func:struct_reaches_self = bool(ModuleGraph->:g, int32:scope, int32:start,
             if (named == start) {
                 pass true;
             }
-            if (relay struct_reaches_self(g, scope, start, named, fuel - 1i32)) {
+            if (relay reaches_memo(g, scope, start, named, fuel - 1i32,
+                                   seen, cap)) {
                 pass true;
             }
         }

@@ -95,6 +95,10 @@ pub func:rt_sig = RtSig(string:name) {
         pass (raw rt("@npk_read_file", "{ { ptr, i64, i64 }, i32 }", true,
                      "{ ptr, i64, i64 }", 1i32, "{ ptr, i64 }", "", ""));
     }
+    if (raw string_eq(name, "write_file")) {
+        pass (raw rt("@npk_write_file", "{ i32 }", true, "", 2i32,
+                     "{ ptr, i64 }", "{ ptr, i64, i64 }", ""));
+    }
     if (raw string_eq(name, "path_exists")) {
         pass (raw rt("@npk_path_exists", "i8", false, "", 1i32,
                      "{ ptr, i64 }", "", ""));
@@ -109,7 +113,7 @@ pub func:rt_sig = RtSig(string:name) {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() { pass 14i32; };
+pub func:rt_count = int32() { pass 15i32; };
 
 pub func:rt_name_at = string(int32:i) {
     if (i == 0i32)  { pass "alloc"; }
@@ -125,6 +129,7 @@ pub func:rt_name_at = string(int32:i) {
     if (i == 10i32) { pass "string_from_bytes"; }
     if (i == 11i32) { pass "string_slice"; }
     if (i == 12i32) { pass "to_cstring"; }
+    if (i == 13i32) { pass "write_file"; }
     pass "write_raw";
 };
 

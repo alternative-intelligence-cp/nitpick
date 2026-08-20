@@ -90,6 +90,7 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `read_file` | `cstring → Result<string>` | Whole file. |
 | `read_stdin` | `() → Result<string>` | Whole stream. |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. |
+| `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short `write(2)` is retried, a failed `close(2)` is a failed write. |
 | `write_raw` | `(int32:fd, ptr, int64:len) → int64` | Bytes written; the one raw write until D-050's line discipline. |
 
 ## 3. Syscalls

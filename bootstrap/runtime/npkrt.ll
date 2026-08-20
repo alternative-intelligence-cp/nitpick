@@ -209,6 +209,79 @@ no:
   ret i8 0
 }
 
+; Write a whole buffer to a path, replacing what was there -- read_file's
+; mirror, and the routine `npkc -o` stands on (0.8.3). openat/write/close live
+; INSIDE it as one auditable body rather than as three exposed symbols; the
+; fd-granular primitives arrive with D-050's line discipline, where a held-open
+; descriptor is the point.
+;
+; A SHORT WRITE IS NOT FAILURE. write(2) may take fewer bytes than offered --
+; signals, pipes, quotas -- so the loop advances by what was ACCEPTED and only a
+; negative return is an error. Treating a short write as success is the classic
+; way to truncate a file and report victory; the error code travels out as the
+; Result's tbb32.
+define { i32 } @npk_write_file({ ptr, i64 } %path, { ptr, i64, i64 } %data) {
+entry:
+  %pp = extractvalue { ptr, i64 } %path, 0
+  %ppi = ptrtoint ptr %pp to i64
+  ; openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC, 0644). 577 = 1|64|512.
+  %fd = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 577, i64 420, i64 0, i64 0)
+  %obad = icmp slt i64 %fd, 0
+  br i1 %obad, label %openfail, label %wstart
+
+wstart:
+  %base = extractvalue { ptr, i64, i64 } %data, 0
+  %total = extractvalue { ptr, i64, i64 } %data, 1
+  br label %wloop
+
+wloop:
+  %off = phi i64 [ 0, %wstart ], [ %off2, %wnext ]
+  %left = sub i64 %total, %off
+  %done = icmp eq i64 %left, 0
+  br i1 %done, label %wclose, label %wone
+
+wone:
+  %at = getelementptr i8, ptr %base, i64 %off
+  %ati = ptrtoint ptr %at to i64
+  %n = call i64 @npk_sys6(i64 1, i64 %fd, i64 %ati, i64 %left, i64 0, i64 0, i64 0)
+  %wbad = icmp slt i64 %n, 0
+  br i1 %wbad, label %writefail, label %wnext
+
+wnext:
+  %off2 = add i64 %off, %n
+  br label %wloop
+
+wclose:
+  %c = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %cbad = icmp slt i64 %c, 0
+  br i1 %cbad, label %closefail, label %ok
+
+ok:
+  ret { i32 } zeroinitializer
+
+openfail:
+  %oe = sub i64 0, %fd
+  %oec = trunc i64 %oe to i32
+  %or0 = insertvalue { i32 } undef, i32 %oec, 0
+  ret { i32 } %or0
+
+writefail:
+  ; close best-effort: the write's errno is the story, not the close's.
+  %ce = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %we = sub i64 0, %n
+  %wec = trunc i64 %we to i32
+  %wr0 = insertvalue { i32 } undef, i32 %wec, 0
+  ret { i32 } %wr0
+
+closefail:
+  ; A FAILED CLOSE IS A FAILED WRITE. Buffered-at-the-kernel errors surface
+  ; here, and reporting success past one is reporting bytes that may not exist.
+  %le = sub i64 0, %c
+  %lec = trunc i64 %le to i32
+  %lr0 = insertvalue { i32 } undef, i32 %lec, 0
+  ret { i32 } %lr0
+}
+
 define { { ptr, i64, i64 }, i32 } @npk_read_file({ ptr, i64 } %path) {
 entry:
   %pp = extractvalue { ptr, i64 } %path, 0

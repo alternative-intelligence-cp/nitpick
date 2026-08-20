@@ -1308,16 +1308,24 @@ def main(argv):
             # standing instrument from the day it first closed. A drift here is
             # either nondeterminism or a semantic divergence between what the
             # seed built and what the compiler builds -- both are stop-the-line.
-            r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk")],
+            # Stage 1 is emitted THROUGH `-o` — the flag's standing coverage is
+            # its most important consumer — and stage 2 through stdout, so both
+            # delivery paths are exercised and then compared byte-for-byte.
+            s1 = os.path.join(tmp, "stage1")
+            r = subprocess.run([ec, os.path.join(ROOT, "src", "main.npk"),
+                                "-o", s1 + ".ll"],
                                capture_output=True, timeout=600)
-            if r.returncode != 0:
+            if r.returncode != 0 or not os.path.exists(s1 + ".ll"):
                 got = r.stdout.decode("utf-8", "replace").strip()[:400]
-                failures.append("npkc cannot compile ITSELF: %s" % got)
+                failures.append("npkc cannot compile ITSELF (via -o): %s" % got)
+                print("  %-11s self-check FAILED" % ("selfhost",))
+            elif r.stdout:
+                failures.append("npkc -o wrote the IR to a file AND to stdout -- "
+                                "one delivery, not two")
                 print("  %-11s self-check FAILED" % ("selfhost",))
             else:
-                s1 = os.path.join(tmp, "stage1")
-                with open(s1 + ".ll", "wb") as fh:
-                    fh.write(r.stdout)
+                with open(s1 + ".ll", "rb") as fh:
+                    stage1_ir = fh.read()
                 ok = True
                 rr = subprocess.run(["llc", "-O0", "-filetype=obj",
                                      "-relocation-model=static",
@@ -1351,7 +1359,7 @@ def main(argv):
                         failures.append("STAGE 1 cannot compile the compiler: %s"
                                         % rr.stdout.decode("utf-8", "replace")[:300])
                         ok = False
-                    elif rr.stdout != r.stdout:
+                    elif rr.stdout != stage1_ir:
                         failures.append("THE FIXPOINT DRIFTED: stage 1's emission "
                                         "of the compiler differs from the "
                                         "seed-built compiler's -- nondeterminism "

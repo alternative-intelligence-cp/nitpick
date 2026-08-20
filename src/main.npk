@@ -5,16 +5,19 @@
 // whole front half (`src/driver/pipeline.npk`), and either reports diagnostics —
 // codes and spans, one per line — or writes the program's LLVM IR to stdout.
 //
-// IT WRITES TEXT TO FD 1 AND NOTHING ELSE. Subset 1 has no process spawning and
-// the runtime floor has no file creation, so `llc` and `ld.lld` are the build
-// system's to invoke (BUILD_REFERENCE §4) — which is also the honest shape: the
-// compiler's output IS the IR, and what a build does with it is the build's.
+// IT WRITES TEXT — to stdout, or with `-o` to a file — and nothing else. Subset 1
+// has no process spawning, so `llc` and `ld.lld` are the build system's to invoke
+// (BUILD_REFERENCE §4), which is also the honest shape: the compiler's output IS
+// the IR, and what a build does with it is the build's.
+//
+//   npkc <root.npk>              IR on stdout
+//   npkc <root.npk> -o <out.ll>  IR written to the file, stdout silent
 //
 // Exit codes, the same contract every tool holds:
 //
-//   0   clean — the IR is on stdout
+//   0   clean — the IR was delivered
 //   1   diagnostics (codes and spans on stdout; no IR)
-//   2   could not read the input
+//   2   could not read the input, or could not write the output
 //   3   the COMPILER trapped — a defect in it, never in the input
 
 use "./driver/pipeline.npk".*;
@@ -57,12 +60,25 @@ func:report = NIL(SourceManager->:sm, DiagList->:diags) {
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        string:usage = "usage: npkc <root.npk>\n";
+        string:usage = "usage: npkc <root.npk> [-o out.ll]\n";
         drop write_raw(2i32, usage.ptr, usage.len);
         exit 2i32;
     }
     cstring:arg = argv[1i64];
     string:root = raw string_from_bytes(arg.ptr, arg.len);
+
+    // `-o out.ll` — the one flag. Parsed positionally rather than by a scanner,
+    // because one flag does not justify one; the day there are two, this becomes
+    // the driver's argument table, not a second special case.
+    string:out_path = "";
+    if (argv.len >= 4i64) {
+        cstring:flag = argv[2i64];
+        string:flag_s = raw string_from_bytes(flag.ptr, flag.len);
+        if (raw string_eq(flag_s, "-o")) {
+            cstring:op = argv[3i64];
+            out_path = raw string_from_bytes(op.ptr, op.len);
+        }
+    }
 
     // Declared UNINITIALISED and filled by the pipeline through the pointer —
     // the graph inside holds a pointer to the intern table beside it, so the
@@ -94,6 +110,19 @@ func:main = int32(cstring[]:argv) {
         exit 1i32;
     }
     string:ir = raw irw_text(@w);
+    if (out_path.len > 0i64) {
+        // THROUGH THE FLOOR'S WHOLE-FILE WRITE, whose loop retries short writes
+        // and whose failed close is a failed write — an .ll that silently lost
+        // its tail would be a program that assembles to something other than
+        // what was compiled.
+        Result<NIL>:wr = write_file(raw to_cstring(out_path), ir);
+        if (wr.is_error) {
+            string:oops = "npkc: cannot write the output file\n";
+            drop write_raw(2i32, oops.ptr, oops.len);
+            exit 2i32;
+        }
+        exit 0i32;
+    }
     drop write_raw(1i32, ir.ptr, ir.len);
     exit 0i32;
 };

@@ -43,6 +43,7 @@ RUNTIME_ARGS = {
     "to_cstring":    ["{ ptr, i64, i64 }"],
     "read_file":     ["{ ptr, i64 }"],
     "path_exists":   ["{ ptr, i64 }"],
+    "write_file":    ["{ ptr, i64 }", "{ ptr, i64, i64 }"],
 }
 
 

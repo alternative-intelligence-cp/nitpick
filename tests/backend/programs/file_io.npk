@@ -1,0 +1,42 @@
+// expect-exit: 0
+//
+// The floor's file output (0.8.3): `write_file` puts a whole buffer at a path —
+// `read_file`'s mirror — and the round trip through the filesystem is the test:
+// what was written must read back byte-identical, twice, because the second
+// write REPLACES (O_TRUNC), and a stale tail surviving a shorter rewrite is the
+// classic way "replaced" quietly means "prefixed".
+
+func:roundtrip = bool(cstring:path, string:data) {
+    Result<NIL>:w = write_file(path, data);
+    if (w.is_error) { pass false; }
+    Result<string>:r = read_file(path);
+    if (r.is_error) { pass false; }
+    string:back = r.value;
+    if (back.len != data.len) { pass false; }
+    int64:i = 0i64;
+    while (i < data.len) {
+        if (back.ptr[i] != data.ptr[i]) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // Inside .internal/, which is gitignored — a test's droppings must never be
+    // able to show up in `git status`.
+    cstring:path = raw to_cstring(".internal/file_io_roundtrip.tmp");
+
+    if (!(raw roundtrip(path, "the first body, which is the longer of the two")))
+                                                        { exit 10i32; }
+    // Shorter second write: O_TRUNC must leave NO tail of the first.
+    if (!(raw roundtrip(path, "short")))                { exit 11i32; }
+
+    // A path that cannot be created answers through the Result, never a crash.
+    cstring:bad = raw to_cstring(".internal/no_such_dir/x.tmp");
+    Result<NIL>:w = write_file(bad, "data");
+    if (!w.is_error)                                    { exit 12i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
