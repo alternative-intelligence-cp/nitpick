@@ -220,6 +220,9 @@ def check_positive(name, group, exp, tmp, tools):
     if r.returncode != 0:
         first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
         return ["%s: llc rejected the emitted IR: %s" % (name, first.strip()[:140])]
+    fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
+    if fails:
+        return fails
     r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
@@ -878,6 +881,44 @@ def check_parses(binary, path, name):
 EMIT_CHECK = os.path.join(ROOT, "src", "main.npk")
 
 
+def undefined_symbols(obj):
+    """Every symbol this object needs someone else to provide."""
+    r = subprocess.run(["llvm-readelf", "-s", obj], capture_output=True, text=True)
+    out = set()
+    for line in r.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 8 and parts[6] == "UND" and parts[7]:
+            out.add(parts[7])
+    return out
+
+
+def check_zero_dependency(obj, allow, name):
+    """D-011, enforced mechanically: no object may need a symbol the project does
+    not itself provide.
+
+    LLVM emits calls behind the program's back -- `__divti3` for i128 division,
+    `memcpy`/`memset` for large struct copies -- and each is a zero-dependency
+    violation that would otherwise surface as a link error on whatever target
+    first lacks the symbol. This check turns the rule into a named build failure
+    at the object, with the symbol in the message. The allowlist is not a config
+    file: it is parsed out of npkrt.ll's own defines, so a symbol is allowed
+    exactly when the project's runtime provides it.
+    """
+    extra = undefined_symbols(obj) - allow
+    if not extra:
+        return []
+    return ["%s: needs symbol(s) the project does not provide: %s -- a "
+            "zero-dependency violation (D-011); either the emitter must stop "
+            "producing the reference or npkrt.ll must define it as hand-written, "
+            "verified IR" % (name, ", ".join(sorted(extra)))]
+
+
+def runtime_allowlist():
+    """Every symbol npkrt.ll defines, plus `main` -- which is the one symbol the
+    RUNTIME is allowed to need, because the program provides it."""
+    return set(_npkrt_defines().keys()) | {"main"}
+
+
 def check_backend_rejection(binary, path, name, exp):
     """A correct program the BACKEND must refuse with NITPICK-RUNG-001 (D-085).
 
@@ -918,6 +959,9 @@ def check_emitted_program(binary, path, name, exp, tmp):
         first = next((l for l in r.stderr.splitlines() if "error" in l), r.stderr)
         return ["%s: llc rejected the REAL BACKEND's IR: %s"
                 % (name, first.strip()[:160])]
+    fails = check_zero_dependency(base + ".o", runtime_allowlist(), name)
+    if fails:
+        return fails
     r = subprocess.run(["ld.lld", "-static", "-o", base, base + ".o",
                         os.path.join(tmp, "npkrt.o")], capture_output=True, text=True)
     if r.returncode != 0:
@@ -1286,6 +1330,13 @@ def main(argv):
                                     % first.strip()[:160])
                     ok = False
                 if ok:
+                    failures += check_zero_dependency(
+                        s1 + ".o", runtime_allowlist(), "stage1.o")
+                    # The runtime itself may need exactly ONE symbol: `main`.
+                    # Anything else in npkrt's undefined set means the runtime
+                    # is not the floor -- it is standing on something.
+                    failures += check_zero_dependency(
+                        os.path.join(tmp, "npkrt.o"), {"main"}, "npkrt.o")
                     rr = subprocess.run(["ld.lld", "-static", "-o", s1,
                                          s1 + ".o", os.path.join(tmp, "npkrt.o")],
                                         capture_output=True, text=True)
