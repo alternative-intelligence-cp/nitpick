@@ -119,7 +119,18 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `read_stdin` | `() → Result<string>` | Whole stream. |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. |
 | `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. |
-| `write_raw` | `(int32:fd, ptr, int64:len) → int64` | Bytes written; the one raw write until D-050's line discipline. |
+| `open` | `(cstring, int64:flags, int64:mode) → Result<fd>` | One openat at AT_FDCWD. Raw kernel flag numbers — the floor is the syscall surface (D-051); named modes live in the library tier. |
+| `close` | `fd → Result<NIL>` | A failed close is reported, never swallowed. |
+| `read` | `(fd, ptr, int64:cap) → Result<int64>` | ONE kernel read; bytes delivered. Zero asked is zero delivered; end-of-input is the error code E_EOF, never a zero in the value channel (D-075). |
+| `write` | `(fd, ptr, int64:len) → Result<int64>` | ONE kernel write; bytes taken, short counts included — the write-all loop is the library's. Replaced 0.8.3's write_raw (D-141). |
+| `write_all` | `(fd, ptr, int64:len) → Result<NIL>` | The retry loop over the single write. In IR only because pointer stepping is a 0.9 rung; graduates to the library tier when it lands. |
+
+Error slots across the floor carry the kernel's own negative codes, exactly as
+the syscall returned them (ENOENT is −2). Conditions the floor detects itself
+reuse that vocabulary — an interior NUL is −22, a slice out of range −34 — and
+end-of-input is E_EOF = −4096, the first code past the kernel's error space
+(errno stops at 4095), so no collision is possible. Positive codes belong to
+programs. The full statement is D-141.
 
 ## 2c. Comptime-foldable string builtins
 

@@ -113,11 +113,129 @@ define void @npk_exit(i32 %code) noreturn {
   unreachable
 }
 
-define i64 @npk_write_raw(i32 %fd, ptr %buf, i64 %len) {
+; ---------------------------------------------------------------------------
+; The fd quartet (D-141): open / close / read / write, each ONE syscall,
+; faithfully -- the floor is the syscall surface (D-051), so a short write is
+; returned, not retried. Discipline lives above it in ordinary Nitpick
+; (lib/nio.npk): write-all loops, line endings (D-050), buffering (D-076).
+;
+; An errored Result carries a zeroed value slot. For `open` that zero is i32 0,
+; which reads as stdin -- inert, because reading a tainted `Result.value` is
+; refused at compile time; the zero is defence in depth, not the contract.
+; ---------------------------------------------------------------------------
+
+define { i32, i32 } @npk_open({ ptr, i64 } %path, i64 %flags, i64 %mode) {
+  %pp = extractvalue { ptr, i64 } %path, 0
+  %ppi = ptrtoint ptr %pp to i64
+  ; openat(AT_FDCWD = -100, path, flags, mode)
+  %r = call i64 @npk_sys6(i64 257, i64 -100, i64 %ppi, i64 %flags, i64 %mode, i64 0, i64 0)
+  %bad = icmp slt i64 %r, 0
+  br i1 %bad, label %err, label %ok
+ok:
+  %f = trunc i64 %r to i32
+  %o0 = insertvalue { i32, i32 } undef, i32 %f, 0
+  %o1 = insertvalue { i32, i32 } %o0, i32 0, 1
+  ret { i32, i32 } %o1
+err:
+  %c = trunc i64 %r to i32
+  %e0 = insertvalue { i32, i32 } undef, i32 0, 0
+  %e1 = insertvalue { i32, i32 } %e0, i32 %c, 1
+  ret { i32, i32 } %e1
+}
+
+define { i32 } @npk_close(i32 %fd) {
+  %f = sext i32 %fd to i64
+  %r = call i64 @npk_sys6(i64 3, i64 %f, i64 0, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %r, 0
+  br i1 %bad, label %err, label %ok
+ok:
+  ret { i32 } zeroinitializer
+err:
+  %c = trunc i64 %r to i32
+  %e0 = insertvalue { i32 } undef, i32 %c, 0
+  ret { i32 } %e0
+}
+
+define { i64, i32 } @npk_read(i32 %fd, ptr %buf, i64 %cap) {
+entry:
+  ; Zero asked is zero delivered, NOT end-of-input: E_EOF must mean the stream
+  ; ended, never that the caller handed over an empty buffer.
+  %none = icmp eq i64 %cap, 0
+  br i1 %none, label %zero, label %go
+zero:
+  ret { i64, i32 } zeroinitializer
+go:
+  %f = sext i32 %fd to i64
+  %p = ptrtoint ptr %buf to i64
+  %r = call i64 @npk_sys6(i64 0, i64 %f, i64 %p, i64 %cap, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %r, 0
+  br i1 %bad, label %err, label %sift
+sift:
+  %eof = icmp eq i64 %r, 0
+  br i1 %eof, label %ateof, label %ok
+ateof:
+  ; E_EOF = -4096 (D-141): end-of-input is an error code, never a sentinel in
+  ; the value channel (D-075) -- at the floor exactly as it will be in the
+  ; Stream trait above it.
+  %z0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %z1 = insertvalue { i64, i32 } %z0, i32 -4096, 1
+  ret { i64, i32 } %z1
+ok:
+  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
+  ret { i64, i32 } %k1
+err:
+  %c = trunc i64 %r to i32
+  %e0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %e1 = insertvalue { i64, i32 } %e0, i32 %c, 1
+  ret { i64, i32 } %e1
+}
+
+; `write_all` is the retry loop over `write` -- discipline, not a syscall, and
+; in IR only because stepping a pointer is not yet expressible in the language
+; (#ptr_add is a 0.9 rung). When it is, this graduates to lib/nio.npk and the
+; floor loses a symbol.
+define { i32 } @npk_write_all(i32 %fd, ptr %buf, i64 %len) {
+entry:
+  %f = sext i32 %fd to i64
+  br label %wloop
+wloop:
+  %off = phi i64 [ 0, %entry ], [ %off2, %wnext ]
+  %left = sub i64 %len, %off
+  %done = icmp eq i64 %left, 0
+  br i1 %done, label %ok, label %wone
+wone:
+  %at = getelementptr i8, ptr %buf, i64 %off
+  %ati = ptrtoint ptr %at to i64
+  %n = call i64 @npk_sys6(i64 1, i64 %f, i64 %ati, i64 %left, i64 0, i64 0, i64 0)
+  %bad = icmp slt i64 %n, 0
+  br i1 %bad, label %err, label %wnext
+wnext:
+  %off2 = add i64 %off, %n
+  br label %wloop
+ok:
+  ret { i32 } zeroinitializer
+err:
+  %c = trunc i64 %n to i32
+  %e0 = insertvalue { i32 } undef, i32 %c, 0
+  ret { i32 } %e0
+}
+
+define { i64, i32 } @npk_write(i32 %fd, ptr %buf, i64 %len) {
   %f = sext i32 %fd to i64
   %p = ptrtoint ptr %buf to i64
   %r = call i64 @npk_sys6(i64 1, i64 %f, i64 %p, i64 %len, i64 0, i64 0, i64 0)
-  ret i64 %r
+  %bad = icmp slt i64 %r, 0
+  br i1 %bad, label %err, label %ok
+ok:
+  %k0 = insertvalue { i64, i32 } undef, i64 %r, 0
+  %k1 = insertvalue { i64, i32 } %k0, i32 0, 1
+  ret { i64, i32 } %k1
+err:
+  %c = trunc i64 %r to i32
+  %e0 = insertvalue { i64, i32 } undef, i64 0, 0
+  %e1 = insertvalue { i64, i32 } %e0, i32 %c, 1
+  ret { i64, i32 } %e1
 }
 
 ; ---------------------------------------------------------------------------
@@ -137,9 +255,14 @@ define i64 @npk_write_raw(i32 %fd, ptr %buf, i64 %len) {
 ; than accepting a string and terminating it itself. The conversion is explicit,
 ; fallible, and the caller handles the failure like any other.
 ;
-; Error codes: 22 is EINVAL, used for the interior NUL. read_file returns the
-; POSITIVE errno from the failing syscall, so a caller can tell ENOENT (2) from
-; EACCES (13) without a second mechanism.
+; Error codes (D-141): the error slot carries NEGATIVE system codes -- the
+; kernel's own return, exactly as the syscall delivered it, so a caller can
+; tell ENOENT (-2) from EACCES (-13) without a second mechanism. Conditions
+; the floor detects itself reuse the kernel's vocabulary (-22 EINVAL for the
+; interior NUL here, -34 ERANGE for a slice out of range); the one condition
+; errno has no word for, end-of-input, is E_EOF = -4096 -- the first code past
+; the kernel's own error space (errno stops at 4095), so it can never collide.
+; Positive codes are the program's (`fail`), and 0 is ok.
 ; ---------------------------------------------------------------------------
 
 define { { ptr, i64 }, i32 } @npk_to_cstring({ ptr, i64, i64 } %s) {
@@ -180,7 +303,7 @@ interior:                                 ; preds = %check
   %e0 = insertvalue { ptr, i64 } undef, ptr null, 0
   %e1 = insertvalue { ptr, i64 } %e0, i64 0, 1
   %q0 = insertvalue { { ptr, i64 }, i32 } undef, { ptr, i64 } %e1, 0
-  %q1 = insertvalue { { ptr, i64 }, i32 } %q0, i32 22, 1
+  %q1 = insertvalue { { ptr, i64 }, i32 } %q0, i32 -22, 1
   ret { { ptr, i64 }, i32 } %q1
 }
 
@@ -301,24 +424,21 @@ ok:
   ret { i32 } zeroinitializer
 
 openfail:
-  %oe = sub i64 0, %fd
-  %oec = trunc i64 %oe to i32
+  %oec = trunc i64 %fd to i32
   %or0 = insertvalue { i32 } undef, i32 %oec, 0
   ret { i32 } %or0
 
 writefail:
   ; close best-effort: the write's errno is the story, not the close's.
   %ce = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
-  %we = sub i64 0, %n
-  %wec = trunc i64 %we to i32
+  %wec = trunc i64 %n to i32
   %wr0 = insertvalue { i32 } undef, i32 %wec, 0
   ret { i32 } %wr0
 
 closefail:
   ; A FAILED CLOSE IS A FAILED WRITE. Buffered-at-the-kernel errors surface
   ; here, and reporting success past one is reporting bytes that may not exist.
-  %le = sub i64 0, %c
-  %lec = trunc i64 %le to i32
+  %lec = trunc i64 %c to i32
   %lr0 = insertvalue { i32 } undef, i32 %lec, 0
   ret { i32 } %lr0
 }
@@ -385,13 +505,11 @@ readfail:                                 ; preds = %read
   ; and a driver that reports many missing files must not leak a descriptor each
   ; time it succeeds partway.
   %cr2 = call i64 @npk_sys6(i64 3, i64 %fd, i64 0, i64 0, i64 0, i64 0, i64 0)
-  %rerr = sub i64 0, %n
-  %rerr32 = trunc i64 %rerr to i32
+  %rerr32 = trunc i64 %n to i32
   br label %fail
 
 openfail:                                 ; preds = %entry
-  %oerr = sub i64 0, %fd
-  %oerr32 = trunc i64 %oerr to i32
+  %oerr32 = trunc i64 %fd to i32
   br label %fail
 
 fail:                                     ; preds = %readfail, %openfail
@@ -478,7 +596,8 @@ err:
   %e1 = insertvalue { ptr, i64, i64 } %e0, i64 0, 1
   %e2 = insertvalue { ptr, i64, i64 } %e1, i64 0, 2
   %q0 = insertvalue { { ptr, i64, i64 }, i32 } undef, { ptr, i64, i64 } %e2, 0
-  %q1 = insertvalue { { ptr, i64, i64 }, i32 } %q0, i32 5, 1
+  %qc = trunc i64 %n to i32
+  %q1 = insertvalue { { ptr, i64, i64 }, i32 } %q0, i32 %qc, 1
   ret { { ptr, i64, i64 }, i32 } %q1
 }
 
@@ -754,7 +873,7 @@ entry:
 err:
   %e0 = insertvalue { { ptr, i64, i64 }, i32 } undef,
                     { ptr, i64, i64 } zeroinitializer, 0
-  %e1 = insertvalue { { ptr, i64, i64 }, i32 } %e0, i32 5, 1
+  %e1 = insertvalue { { ptr, i64, i64 }, i32 } %e0, i32 -34, 1
   ret { { ptr, i64, i64 }, i32 } %e1
 
 ok:

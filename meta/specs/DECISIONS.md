@@ -9676,3 +9676,40 @@ arm of a proven `pick` miss and the statement fall through — the programmer's
 explicit lie, not the checker's gap. A payload-carrying enum still refuses the
 manufacturing direction at the backend: a tag is not a whole `{tag, payload}`
 value, and inventing the other half is not a cast.
+
+## D-141 — The fd floor, the error-code space, and stdout/stderr's contract — **SETTLED**
+
+Cycle 0.8.5, executing D-050/D-075/D-076 at the rung that exists. Four parts.
+
+**The fd quartet.** The floor gains `open`, `close`, `read`, `write` — one
+syscall each, faithfully (the floor is the syscall surface, D-051): a short
+write is returned, not retried; `open` returns `Result<fd>` with the handle
+typed per D-042. `write_all` — the retry loop over `write` — is also a floor
+symbol, but only because stepping a pointer is not yet expressible in the
+language; when `#ptr_add` lands (0.9) it graduates to `lib/nio.npk` and the
+floor loses a symbol. `write_raw` (0.8.3's bare-return write) is gone: two
+spellings for one job, and the unwrapped return was a pre-D-075 shape.
+
+**The error-code space, concretely.** `Result.error` has said "< 0 system,
+> 0 user" since D-005 laid out `Result`; the floor now honors it: the error slot carries the
+kernel's return exactly as delivered (ENOENT is −2 — 0.8.3's floor negated
+errno to positive, which this repairs). Floor-detected conditions reuse the
+kernel's vocabulary negatively: interior NUL −22, slice out of range −34.
+End-of-input is **`E_EOF` = −4096** — the first code past the kernel's error
+space (errno stops at 4095), so it can never collide with an errno — and it is
+an error code, never a zero in the value channel (D-075), at the floor exactly
+as in the Stream trait above it. A zero-length read request returns ok(0):
+E_EOF means the stream ended, never that the caller handed over nothing.
+
+**stdout is the product; stderr is the report.** Every tool's diagnostics move
+to stderr, through the unbuffered writer, for both of D-076's reasons: they
+survive a trap, and they survive a redirect — `npkc bad.npk > out.ll` shows its
+errors instead of burying them in the output file. Exit codes are unchanged;
+the harness parses stderr.
+
+**The text/byte split is real code now.** `lib/nio.npk` is D-050's normalize-
+on-read and `\n`-on-write (CrLf a creation parameter), with D-076's fixed
+buffering; `Sink` (diagnostics.npk) lost its fd arm — a write_raw-era mode tag,
+the exact pattern D-072 rejected — and is now purely the capture buffer D-075
+needs. The compiler's own report path runs through `nio`, so the library tier
+is load-bearing from its first cycle.

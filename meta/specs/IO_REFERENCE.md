@@ -65,8 +65,11 @@ Result<int64>:n = await src.read(dest, deadline);
 ```
 
 `read` returns the number of bytes placed in `dest`. **End of input is the error
-code `E_EOF`.** No operation returns a sentinel, and no operation requires a
-follow-up call to learn what its return value meant.
+code `E_EOF` = −4096** — the first code past the kernel's own error space
+(errno stops at 4095), so it can never collide with an errno (D-141; the floor's
+`read` already returns it, and `tests/backend/programs/fd_io.npk` pins the value
+with a running program). No operation returns a sentinel, and no operation
+requires a follow-up call to learn what its return value meant.
 
 > `libn`'s buffered layer returns `FILE_EOF = -1` for **both** end-of-file and
 > error, so a caller must consult `feof` / `ferror` to find out which happened —

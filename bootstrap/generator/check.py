@@ -72,7 +72,13 @@ BUILTINS = {
     "dalloc":        (T.NIL, False),
     "string_concat": (T.STRING, True),
     "int_to_string": (T.STRING, True),
-    "write_raw":     (T.I64, False),
+    # The fd quartet (D-141): one syscall each, Result-wrapped, E_EOF for
+    # end-of-input. `open` returns the fd TYPE, not a number (D-042).
+    "open":          (T.Prim("fd"), True),
+    "close":         (T.NIL, True),
+    "read":          (T.I64, True),
+    "write":         (T.I64, True),
+    "write_all":     (T.NIL, True),
     "string_slice":  (T.STRING, True),
     "string_from_bytes": (T.STRING, False),
     "read_stdin":    (T.STRING, True),

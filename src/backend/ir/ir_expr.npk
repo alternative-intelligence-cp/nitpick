@@ -620,6 +620,12 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if ((raw type_kind(x.fe.ctx.types, st)) == (raw TY_INT())) {
         src_signed = raw type_is_signed(x.fe.ctx.types, st);
     }
+    // `tbb` widens by SIGN: the carrier is signed by construction (negative
+    // codes, INT32_MIN sentinel), and this arm exists because the TY_INT guard
+    // above deliberately does not speak for other kinds.
+    if ((raw type_kind(x.fe.ctx.types, st)) == (raw TY_TBB())) {
+        src_signed = true;
+    }
     if (src_signed) {
         drop irw_line(x.fe.w, relay cat5(r, " = sext ", v.ll, " ",
                           relay cat3(v.ref, " to ", want.text)));

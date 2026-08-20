@@ -176,7 +176,7 @@ IR**, which is what D-015 already specifies for the first rung:
 | `exit` | raw syscall |
 | `memcpy` / `memset` | the symbols LLVM emits calls to |
 | `string_concat`, `int_to_string` | enough to build a diagnostic message |
-| `write_raw(fd, ptr, len)` | the write syscall; **not** `Result`-wrapped, like `alloc` |
+| `write(fd, ptr, len)` | the write syscall, `Result`-wrapped since 0.8.5 (D-141) — write_raw's bare-return shape is gone |
 
 **Never freeing is correct here, not a shortcut.** The compiler is a process that
 runs once and exits; reclamation buys nothing and an allocator is exactly the kind

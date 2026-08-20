@@ -1,0 +1,190 @@
+// nio — line-discipline IO over the fd floor. Library tier, cycle 0.8.5.
+//
+// D-050 IN CODE. Line endings are a property of a STREAM, never of a string: a
+// string holds the bytes it holds, and the two moments endings matter — reading
+// text and writing it — are stream operations, so this module is where the
+// policy lives. Reading normalizes `\r\n`, `\n`, and a lone `\r` to `\n`, so
+// code downstream of a read never branches on platform. Writing emits `\n`
+// unless the writer was CREATED asking for `\r\n` — the opt-in is a greppable
+// creation parameter (D-075), never a mode that varies by circumstance.
+//
+// D-076 IN CODE. Buffering is fixed, never inferred from where the output goes:
+// stdout is line-buffered ALWAYS, stderr unbuffered ALWAYS — which is why
+// diagnostics written through `nio_stderr` survive a trap — and a file writer
+// is fully buffered with an explicit flush. There is no isatty branch anywhere.
+//
+// THE BYTE SIDE ALREADY EXISTS: `Sink` (src/frontend/diagnostics.npk) is the
+// byte writer — no translation, ever. This module is the TEXT side. Two types
+// rather than a mode flag is the settled design (IO_REFERENCE §3); when the
+// `Stream` trait lands (1.0) both become impls of it, not each other.
+//
+// This is ordinary Nitpick over the floor — nlibc-tier, destined for the
+// sibling repository with the rest of lib/ once the n-prefix bar is met.
+
+mod:nio;
+
+// --- reading: normalization -----------------------------------------------------
+
+// `\r\n` and lone `\r` become `\n`; everything else passes through. The fast
+// path returns the INPUT when it contains no `\r` at all — one scan, no copy —
+// which is every file this project's own tools will ever read back.
+pub func:nio_normalize = string(string:s) {
+    bool:seen_cr = false;
+    int64:i = 0i64;
+    while (i < s.len) {
+        if (s.ptr[i] == 13u8) { seen_cr = true; break; }
+        i = i + 1i64;
+    }
+    if (!seen_cr) { pass s; }
+
+    // The result is never longer than the input: `\r\n` shrinks, `\r` maps 1:1.
+    wild int8->:out = alloc(s.len);
+    int64:o = 0i64;
+    i = 0i64;
+    while (i < s.len) {
+        uint8:b = s.ptr[i];
+        if (b == 13u8) {
+            out[o] = 10i8;
+            o = o + 1i64;
+            if ((i + 1i64) < s.len) {
+                if (s.ptr[i + 1i64] == 10u8) { i = i + 1i64; }
+            }
+        } else {
+            out[o] = b =>! int8;
+            o = o + 1i64;
+        }
+        i = i + 1i64;
+    }
+    pass (raw string_from_bytes(out, o));
+};
+
+// A text read IS read-then-normalize. There is no way to text-read without the
+// discipline, and no way to get it by accident on the byte path (read_file).
+pub func:nio_read_text = string(cstring:path) {
+    string:text = relay read_file(path);
+    pass (raw nio_normalize(text));
+};
+
+pub func:nio_stdin_text = string() {
+    string:text = relay read_stdin();
+    pass (raw nio_normalize(text));
+};
+
+// --- writing: the text writer ---------------------------------------------------
+
+pub enum:NioEnding = { Lf; CrLf; };
+
+// D-076 fixes which stream gets which; a caller never passes one.
+pub enum:NioMode = { Unbuffered; Line; Full; };
+
+pub struct:NioW = {
+    fd:sink;
+    NioEnding:ending;
+    NioMode:mode;
+    bool:owned;          // close on nio_end — false for the process streams
+    wild int8->:buf;
+    int64:len;
+    int64:cap;
+};
+
+// The three well-known descriptors, manufactured HERE and nowhere else —
+// `int32 =>! fd` is confined to the nlibc tier (D-140), and this is that tier.
+pub func:nio_stdout_fd = fd() { pass (1i32 =>! fd); };
+pub func:nio_stderr_fd = fd() { pass (2i32 =>! fd); };
+
+func:nio_writer = NioW(fd:sink, NioEnding:e, NioMode:m, bool:owned) {
+    wild int8->:b = alloc(4096i64);
+    NioW:w = NioW{ sink: sink, ending: e, mode: m, owned: owned,
+                   buf: b, len: 0i64, cap: 4096i64 };
+    pass w;
+};
+
+pub func:nio_stdout = NioW() {
+    pass (raw nio_writer(raw nio_stdout_fd(), NioEnding.Lf, NioMode.Line, false));
+};
+
+pub func:nio_stderr = NioW() {
+    pass (raw nio_writer(raw nio_stderr_fd(), NioEnding.Lf, NioMode.Unbuffered, false));
+};
+
+// A file writer: fully buffered, ending chosen at creation — the D-050 opt-in
+// point. openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC = 577, 0644 = 420),
+// the same shape write_file uses.
+pub func:nio_create = NioW(cstring:path, NioEnding:e) {
+    fd:sink = relay open(path, 577i64, 420i64);
+    pass (raw nio_writer(sink, e, NioMode.Full, true));
+};
+
+// Append one byte. INFALLIBLE BY DESIGN: the buffer grows rather than flushing
+// here, so the only fallible step in a put is the flush decision at its end —
+// one error path instead of one per byte.
+func:nio_byte = NIL(NioW->:w, int8:b) {
+    if (w.len == w.cap) {
+        int64:nc = w.cap * 2i64;
+        w.buf = ralloc(w.buf, nc);
+        w.cap = nc;
+    }
+    w.buf[w.len] = b;
+    w.len = w.len + 1i64;
+    pass NIL;
+};
+
+// Flush what is buffered. On failure the bytes are KEPT — a failed flush must
+// not also be a silent discard; the caller decides whether to retry or abandon.
+pub func:nio_flush = NIL(NioW->:w) {
+    if (w.len == 0i64) { pass NIL; }
+    Result<NIL>:r = write_all(w.sink, w.buf, w.len);
+    if (r.is_error) { fail r.error; }
+    w.len = 0i64;
+    pass NIL;
+};
+
+// Write text. The program always writes LOGICAL `\n`; a CrLf writer translates
+// on the way out, so no string anywhere carries a platform ending (D-050).
+// Full buffering still flushes past a threshold, so a large write cannot hold
+// megabytes hostage to the next explicit flush.
+pub func:nio_put = NIL(NioW->:w, string:s) {
+    bool:saw_nl = false;
+    int64:i = 0i64;
+    while (i < s.len) {
+        uint8:b = s.ptr[i];
+        if (b == 10u8) {
+            if (w.ending == NioEnding.CrLf) { drop nio_byte(w, 13i8); }
+            drop nio_byte(w, 10i8);
+            saw_nl = true;
+        } else {
+            drop nio_byte(w, b =>! int8);
+        }
+        i = i + 1i64;
+    }
+    bool:must = false;
+    if (w.mode == NioMode.Unbuffered) { must = true; }
+    if (w.mode == NioMode.Line) { if (saw_nl) { must = true; } }
+    if (w.mode == NioMode.Full) { if (w.len >= 65536i64) { must = true; } }
+    if (must) {
+        Result<NIL>:r = nio_flush(w);
+        if (r.is_error) { fail r.error; }
+    }
+    pass NIL;
+};
+
+// A line: the text, then the ending. The ending goes through `nio_put` like any
+// other `\n`, so translation and line-buffered flushing both happen in ONE
+// place rather than being re-decided here.
+pub func:nio_line = NIL(NioW->:w, string:s) {
+    Result<NIL>:r = nio_put(w, s);
+    if (r.is_error) { fail r.error; }
+    pass (relay nio_put(w, "\n"));
+};
+
+// Finish: flush, then close IF this writer owns its descriptor. A failed close
+// is a failed write (the write_file rule) — kernel-buffered errors surface at
+// close, and success past one reports bytes that may not exist.
+pub func:nio_end = NIL(NioW->:w) {
+    Result<NIL>:r = nio_flush(w);
+    if (r.is_error) { fail r.error; }
+    if (w.owned) {
+        pass (relay close(w.sink));
+    }
+    pass NIL;
+};

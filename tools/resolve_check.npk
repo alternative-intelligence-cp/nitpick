@@ -44,25 +44,25 @@ use "../src/frontend/parse_decorate.npk".*;
 use "../src/frontend/parse_stmt.npk".*;
 use "../src/frontend/parse_pick.npk".*;
 use "../src/frontend/parse_decl.npk".*;
+use "../lib/nio.npk".*;
 use "../src/frontend/paths.npk".*;
 use "../src/frontend/resolve_path.npk".*;
 use "../src/frontend/symbols.npk".*;
 use "../src/frontend/module_graph.npk".*;
 use "../src/frontend/resolve.npk".*;
 
-func:emit_line = NIL(Diagnostic:d) {
+func:emit_line = NIL(NioW->:out, Diagnostic:d) {
     string:m1 = relay string_concat(d.code, " ");
     string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
     string:m3 = relay string_concat(m2, ":");
     string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
-    string:m5 = relay string_concat(m4, "\n");
-    drop write_raw(1i32, m5.ptr, m5.len);
-    pass NIL;
+    pass (relay nio_line(out, m4));
 };
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        drop write_raw(2i32, "usage: resolve_check <root.npk>\n".ptr, 31i64);
+        NioW:uw = raw nio_stderr();
+        drop nio_line(@uw, "usage: resolve_check <root.npk>");
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -117,8 +117,9 @@ func:main = int32(cstring[]:argv) {
 
     int64:n = raw diaglist_count(@diags);
     int64:d = 0i64;
+    NioW:ew = raw nio_stderr();
     while (d < n) {
-        drop emit_line(raw diaglist_at(@diags, d));
+        drop emit_line(@ew, raw diaglist_at(@diags, d));
         d = d + 1i64;
     }
 

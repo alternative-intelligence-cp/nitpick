@@ -36,7 +36,11 @@ RUNTIME_ARGS = {
     "dalloc":        ["ptr"],
     "string_concat": ["{ ptr, i64, i64 }", "{ ptr, i64, i64 }"],
     "int_to_string": ["i64"],
-    "write_raw":     ["i32", "ptr", "i64"],
+    "open":          ["{ ptr, i64 }", "i64", "i64"],
+    "close":         ["i32"],
+    "read":          ["i32", "ptr", "i64"],
+    "write":         ["i32", "ptr", "i64"],
+    "write_all":     ["i32", "ptr", "i64"],
     "string_slice":  ["{ ptr, i64, i64 }", "i64", "i64"],
     "string_from_bytes": ["ptr", "i64"],
     "read_stdin":    [],
@@ -445,6 +449,17 @@ class Emitter:
         rt = T.ResultT(self.fn_ret_ty)
         ll = T.llvm(rt)
         if self.fn_ret_ty == T.NIL:
+            # `pass NIL` has nothing to evaluate -- but `pass (relay f(...))`
+            # carries a CALL and a PROPAGATION, and skipping the evaluation
+            # dropped both: the effect never ran and the callee's error came
+            # back as ok. Found in 0.8.5 when every diagnostic line lost its
+            # newline and the compiler's own error report went silent.
+            if value_node is not None and not isinstance(value_node, S.NilLit):
+                self.expr(value_node, want=T.NIL)
+                if self.terminated:
+                    # the expression ended the block (a relay that propagated
+                    # unconditionally, say); there is nothing to return from
+                    return
             self.w("ret %s { i32 0 }" % ll)          # Result<NIL> is {i32}
             self.terminated = True
             return

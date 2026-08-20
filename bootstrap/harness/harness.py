@@ -744,7 +744,9 @@ def check_module_rejection(binary, path, name, exp):
     # could not tell the two apart would have to.
     got = []
     notes = []
-    for line in r.stdout.decode("utf-8", "replace").splitlines():
+    # Diagnostics arrive on STDERR since 0.8.5 (D-141): stdout is the product
+    # channel, and the report must survive a redirect of it.
+    for line in r.stderr.decode("utf-8", "replace").splitlines():
         parts = line.split()
         into = got
         if parts and parts[0] == "note":
@@ -832,7 +834,7 @@ def check_type_accept(binary, path, name):
     if r.returncode == 0:
         return []
     got = sorted(set(line.split()[0]
-                     for line in r.stdout.decode("utf-8", "replace").splitlines()
+                     for line in r.stderr.decode("utf-8", "replace").splitlines()
                      if line.split()))
     return ["%s: expected no diagnostics, got %s" % (name, got or r.returncode)]
 
@@ -874,7 +876,7 @@ def check_parses(binary, path, name):
         return ["%s: the real parser TRAPPED -- a defect in the compiler, not in "
                 "this file" % name]
     if r.returncode != 0:
-        got = r.stdout.decode("utf-8", "replace").strip().replace("\n", ", ")
+        got = r.stderr.decode("utf-8", "replace").strip().replace("\n", ", ")
         return ["%s: the REAL parser rejected it (%s) -- every file here must "
                 "parse and be refused later, which is what D-085 says" % (name, got)]
     return []
@@ -952,7 +954,7 @@ def check_emitted_program(binary, path, name, exp, tmp):
         return ["%s: the compiler TRAPPED -- a defect in it, not in this file"
                 % name]
     if r.returncode != 0:
-        got = r.stdout.decode("utf-8", "replace").strip().replace("\n", ", ")
+        got = r.stderr.decode("utf-8", "replace").strip().replace("\n", ", ")
         return ["%s: expected IR, got a refusal (%s)" % (name, got)]
     base = os.path.join(tmp, "prog_" + os.path.basename(path).replace(".", "_"))
     with open(base + ".ll", "wb") as fh:
@@ -1323,7 +1325,7 @@ def main(argv):
                                 "-o", s1 + ".ll"],
                                capture_output=True, timeout=600)
             if r.returncode != 0 or not os.path.exists(s1 + ".ll"):
-                got = r.stdout.decode("utf-8", "replace").strip()[:400]
+                got = r.stderr.decode("utf-8", "replace").strip()[:400]
                 failures.append("npkc cannot compile ITSELF (via -o): %s" % got)
                 print("  %-11s self-check FAILED" % ("selfhost",))
             elif r.stdout:
@@ -1364,7 +1366,7 @@ def main(argv):
                                         capture_output=True, timeout=600)
                     if rr.returncode != 0:
                         failures.append("STAGE 1 cannot compile the compiler: %s"
-                                        % rr.stdout.decode("utf-8", "replace")[:300])
+                                        % rr.stderr.decode("utf-8", "replace")[:300])
                         ok = False
                     elif rr.stdout != stage1_ir:
                         failures.append("THE FIXPOINT DRIFTED: stage 1's emission "

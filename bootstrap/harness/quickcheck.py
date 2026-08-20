@@ -57,7 +57,7 @@ def main():
     for path in sys.argv[1:]:
         r = subprocess.run([binary, path], capture_output=True, timeout=60)
         print("\n%s: exit %d" % (path, r.returncode))
-        out = r.stdout.decode("utf-8", "replace").strip()
+        out = r.stderr.decode("utf-8", "replace").strip()
         if out:
             print(out)
     return 0

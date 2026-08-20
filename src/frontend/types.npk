@@ -319,7 +319,11 @@ pub func:tt_float = int32(TypeTable->:t, int32:bits) {
 
 pub func:tt_tbb = int32(TypeTable->:t, int32:bits) {
     int64:bytes = (bits => int64) / 8i64;
-    pass (raw tt_intern(t, raw TY_TBB(), bits, 0i32, 0i32, bytes, bits / 8i32, 0i32));
+    // b = 1: SIGNED. Balanced ternary is symmetric about zero — negative codes
+    // are half the space, and INT32_MIN is tbb32's ERR sentinel — so the binary
+    // carrier is signed by construction. Widening a negative code by zext
+    // turned -9 into four billion, found by fd_io's write-after-close (0.8.5).
+    pass (raw tt_intern(t, raw TY_TBB(), bits, 1i32, 0i32, bytes, bits / 8i32, 0i32));
 };
 
 // `fd`, `pid`, `tid`, `uid`, `gid` — five DISTINCT types that all lower to `i32`

@@ -29,6 +29,12 @@ INT_TYPES = {
     # assignment, comparison, passing -- never arithmetic. That single
     # restriction keeps ERR, stickiness and saturation out of the seed.
     "tbb32": ("i32", True),
+    # The five kernel identifier types (D-042): 32-bit handles, distinct types.
+    # ADMITTED FOR LOWERING ONLY -- the eq-only discipline (no arithmetic, no
+    # ordering) is the real checker's to enforce, and the selfhost stage runs
+    # it over every source the seed compiles.
+    "fd": ("i32", True), "pid": ("i32", True), "tid": ("i32", True),
+    "uid": ("i32", True), "gid": ("i32", True),
 }
 
 # Outside subset 1. Named so the checker can say which rung enables them.

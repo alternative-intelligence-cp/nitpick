@@ -8,17 +8,18 @@
 // Exit codes are the interface, so the harness never parses prose:
 //
 //   0   clean
-//   1   diagnostics (codes and spans on stdout)
+//   1   diagnostics (codes and spans on stderr)
 //   2   could not read the input
 //   3   the COMPILER trapped -- a defect in it, never in the input
 
 use "../src/driver/pipeline.npk".*;
+use "../lib/nio.npk".*;
 use "../src/frontend/source_location.npk".*;
 use "../src/frontend/intern.npk".*;
 use "../src/frontend/diagnostics.npk".*;
 use "../src/frontend/source.npk".*;
 
-func:emit_line = NIL(SourceManager->:sm, Diagnostic:d) {
+func:emit_line = NIL(NioW->:out, SourceManager->:sm, Diagnostic:d) {
     string:pre = "";
     if (d.severity == 0i32) { pre = "note "; }
     string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
@@ -31,16 +32,15 @@ func:emit_line = NIL(SourceManager->:sm, Diagnostic:d) {
     string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
     string:m3 = relay string_concat(m2, ":");
     string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
-    string:m5 = relay string_concat(m4, "\n");
-    drop write_raw(1i32, m5.ptr, m5.len);
-    pass NIL;
+    pass (relay nio_line(out, m4));
 };
 
-func:report = NIL(SourceManager->:sm, DiagList->:diags) {
+func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
     while (d < n) {
-        drop emit_line(sm, raw diaglist_at(diags, d));
+        Result<NIL>:r = emit_line(out, sm, raw diaglist_at(diags, d));
+        if (r.is_error) { fail r.error; }
         d = d + 1i64;
     }
     pass NIL;
@@ -48,8 +48,8 @@ func:report = NIL(SourceManager->:sm, DiagList->:diags) {
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        string:usage = "usage: check <root.npk>\n";
-        drop write_raw(2i32, usage.ptr, usage.len);
+        NioW:uw = raw nio_stderr();
+        drop nio_line(@uw, "usage: check <root.npk>");
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -59,7 +59,8 @@ func:main = int32(cstring[]:argv) {
     int32:fr = raw front_run($$m f, root);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
-        drop report(@f.g.sm, @f.diags);
+        NioW:ew = raw nio_stderr();
+        drop report(@ew, @f.g.sm, @f.diags);
         exit 1i32;
     }
     exit 0i32;

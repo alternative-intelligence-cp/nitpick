@@ -5,7 +5,12 @@
 // whole front half (`src/driver/pipeline.npk`), and either reports diagnostics —
 // codes and spans, one per line — or writes the program's LLVM IR to stdout.
 //
-// IT WRITES TEXT — to stdout, or with `-o` to a file — and nothing else. Subset 1
+// STDOUT IS THE PRODUCT; STDERR IS THE REPORT. The IR goes to stdout (or with
+// `-o` to a file); diagnostics go to stderr through the line-disciplined,
+// UNBUFFERED writer (D-076) — which is why `npkc bad.npk > out.ll` shows its
+// errors instead of burying them in the redirect, and why they survive a trap.
+//
+// IT WRITES TEXT — and nothing else. Subset 1
 // has no process spawning, so `llc` and `ld.lld` are the build system's to invoke
 // (BUILD_REFERENCE §4), which is also the honest shape: the compiler's output IS
 // the IR, and what a build does with it is the build's.
@@ -16,11 +21,12 @@
 // Exit codes, the same contract every tool holds:
 //
 //   0   clean — the IR was delivered
-//   1   diagnostics (codes and spans on stdout; no IR)
+//   1   diagnostics (codes and spans on stderr; no IR)
 //   2   could not read the input, or could not write the output
 //   3   the COMPILER trapped — a defect in it, never in the input
 
 use "./driver/pipeline.npk".*;
+use "../lib/nio.npk".*;
 use "./frontend/source_location.npk".*;
 use "./frontend/intern.npk".*;
 use "./frontend/diagnostics.npk".*;
@@ -30,7 +36,7 @@ use "./backend/emit_program.npk".*;
 use "./frontend/resolve_type.npk".*;
 use "./frontend/types.npk".*;
 
-func:emit_line = NIL(SourceManager->:sm, Diagnostic:d) {
+func:emit_line = NIL(NioW->:out, SourceManager->:sm, Diagnostic:d) {
     string:pre = "";
     if (d.severity == 0i32) { pre = "note "; }
     string:m1 = relay string_concat(pre, relay string_concat(d.code, " "));
@@ -43,16 +49,15 @@ func:emit_line = NIL(SourceManager->:sm, Diagnostic:d) {
     string:m2 = relay string_concat(m1, raw int_to_string(d.span.line => int64));
     string:m3 = relay string_concat(m2, ":");
     string:m4 = relay string_concat(m3, raw int_to_string(d.span.col => int64));
-    string:m5 = relay string_concat(m4, "\n");
-    drop write_raw(1i32, m5.ptr, m5.len);
-    pass NIL;
+    pass (relay nio_line(out, m4));
 };
 
-func:report = NIL(SourceManager->:sm, DiagList->:diags) {
+func:report = NIL(NioW->:out, SourceManager->:sm, DiagList->:diags) {
     int64:n = raw diaglist_count(diags);
     int64:d = 0i64;
     while (d < n) {
-        drop emit_line(sm, raw diaglist_at(diags, d));
+        Result<NIL>:r = emit_line(out, sm, raw diaglist_at(diags, d));
+        if (r.is_error) { fail r.error; }
         d = d + 1i64;
     }
     pass NIL;
@@ -60,8 +65,8 @@ func:report = NIL(SourceManager->:sm, DiagList->:diags) {
 
 func:main = int32(cstring[]:argv) {
     if (argv.len < 2i64) {
-        string:usage = "usage: npkc <root.npk> [-o out.ll]\n";
-        drop write_raw(2i32, usage.ptr, usage.len);
+        NioW:uw = raw nio_stderr();
+        drop nio_line(@uw, "usage: npkc <root.npk> [-o out.ll]");
         exit 2i32;
     }
     cstring:arg = argv[1i64];
@@ -92,7 +97,8 @@ func:main = int32(cstring[]:argv) {
     int32:fr = raw front_run($$m f, root);
     if (fr == 2i32) { exit 2i32; }
     if (fr != 0i32) {
-        drop report(@f.g.sm, @f.diags);
+        NioW:ew = raw nio_stderr();
+        drop report(@ew, @f.g.sm, @f.diags);
         exit 1i32;
     }
 
@@ -106,7 +112,8 @@ func:main = int32(cstring[]:argv) {
     bool:emitted = raw emit_all(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
                                     @f.diags);
     if (!emitted) {
-        drop report(@f.g.sm, @f.diags);
+        NioW:ew = raw nio_stderr();
+        drop report(@ew, @f.g.sm, @f.diags);
         exit 1i32;
     }
     string:ir = raw irw_text(@w);
@@ -117,13 +124,20 @@ func:main = int32(cstring[]:argv) {
         // what was compiled.
         Result<NIL>:wr = write_file(raw to_cstring(out_path), ir);
         if (wr.is_error) {
-            string:oops = "npkc: cannot write the output file\n";
-            drop write_raw(2i32, oops.ptr, oops.len);
+            NioW:ew = raw nio_stderr();
+            drop nio_line(@ew, "npkc: cannot write the output file");
             exit 2i32;
         }
         exit 0i32;
     }
-    drop write_raw(1i32, ir.ptr, ir.len);
+    // The IR is BYTES already carrying its `\n`s — the byte path, not a text
+    // writer: nothing here may translate the product (D-050, binary side).
+    Result<NIL>:pr = write_all(raw nio_stdout_fd(), ir.ptr, ir.len);
+    if (pr.is_error) {
+        NioW:ew = raw nio_stderr();
+        drop nio_line(@ew, "npkc: cannot write the IR to stdout");
+        exit 2i32;
+    }
     exit 0i32;
 };
 

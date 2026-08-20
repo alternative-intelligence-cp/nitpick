@@ -185,23 +185,19 @@ pub func:diaglist_sort = NIL(DiagList->:list) {
 // for: production writes to stderr and the test harness writes to a memory
 // buffer, through one code path, so diagnostics are capturable and comparable.
 //
-// The runtime `kind` tag is a SUBSET-1 WORKAROUND, not a design choice. D-075
-// specifies `dyn Writer`, and a runtime mode tag is exactly the pattern D-072
-// rejected for channels. Traits arrive in cycle 1.0 and this becomes a trait
-// object; the tag is scheduled for removal, not permanent.
+// 0.8.5 REMOVED THE FD ARM. Sink carried a runtime `kind` tag -- 0 wrote to a
+// descriptor, 1 captured -- which was a write_raw-era workaround AND the exact
+// mode-field pattern D-072 rejected. The descriptor role belongs to the floor's
+// own write_all and to the text writer above it (lib/nio.npk); what remains
+// here is the CAPTURE BUFFER, the thing D-075 needs from diagnostics: one code
+// path that a test can read back. When traits land (1.0) this becomes one
+// `Writer` impl among several, not a special case.
 // ---------------------------------------------------------------------------
 
 pub struct:Sink = {
-    int32:kind;            // 0 = file descriptor, 1 = capture buffer
-    int32:handle;          // `fd` is a TYPE (D-042), not a name
     wild int8->:buf;
     int64:len;
     int64:cap;
-};
-
-pub func:sink_to_fd = Sink(int32:descriptor) {
-    Sink:s = Sink{ kind: 0i32, handle: descriptor, buf: NULL, len: 0i64, cap: 0i64 };
-    pass s;
 };
 
 // A BUFFER SINK GROWS. It did not, and dropped whatever did not fit — which is a
@@ -221,7 +217,7 @@ pub func:sink_to_buffer = Sink(int64:cap) {
     int64:n = cap;
     if (n < 64i64) { n = 64i64; }
     wild int8->:b = alloc(n);
-    Sink:s = Sink{ kind: 1i32, handle: 0i32, buf: b, len: 0i64, cap: n };
+    Sink:s = Sink{ buf: b, len: 0i64, cap: n };
     pass s;
 };
 
@@ -234,10 +230,6 @@ func:sink_grow = NIL(Sink->:out, int64:need) {
 };
 
 pub func:sink_write = NIL(Sink->:out, string:text) {
-    if (out.kind == 0i32) {
-        drop write_raw(out.handle, text.ptr, text.len);
-        pass NIL;
-    }
     if ((out.len + text.len) > out.cap) {
         drop sink_grow(out, out.len + text.len);
     }

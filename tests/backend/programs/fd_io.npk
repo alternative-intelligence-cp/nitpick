@@ -1,0 +1,57 @@
+// expect-exit: 0
+//
+// The fd quartet (D-141): open, write, close, read — each one syscall, each
+// returning Result, POSIX's -1 never representable (D-042: the error goes to
+// Result.error as the kernel's own negative code). End-of-input is the error
+// code E_EOF = -4096, never a zero in the value channel (D-075) — asserted
+// numerically here, so the value is pinned by a running program and not only
+// by prose.
+
+func:main = int32(cstring[]:_~argv) {
+    cstring:path = raw to_cstring(".internal/fd_io_scratch.tmp");
+    string:body = "fourteen bytes";
+
+    // openat(AT_FDCWD, path, O_WRONLY|O_CREAT|O_TRUNC = 577, 0644 = 420)
+    Result<fd>:wf = open(path, 577i64, 420i64);
+    if (wf.is_error)                                  { exit 10i32; }
+    fd:sink = wf.value;
+    Result<NIL>:wr = write_all(sink, body.ptr, body.len);
+    if (wr.is_error)                                  { exit 11i32; }
+    Result<NIL>:c1 = close(sink);
+    if (c1.is_error)                                  { exit 12i32; }
+
+    // A closed descriptor refuses further work: EBADF, negative, as the kernel
+    // said it. The exact number belongs to the kernel; the SIGN and the refusal
+    // are the contract.
+    Result<int64>:dead = write(sink, body.ptr, body.len);
+    if (!dead.is_error)                               { exit 13i32; }
+    if ((dead.error => int64) >= 0i64)                { exit 14i32; }
+
+    // Read it back through the quartet.
+    Result<fd>:rf = open(path, 0i64, 0i64);
+    if (rf.is_error)                                  { exit 15i32; }
+    fd:src = rf.value;
+    wild int8->:buf = alloc(64i64);
+    Result<int64>:got = read(src, buf, 64i64);
+    if (got.is_error)                                 { exit 16i32; }
+    if (got.value != body.len)                        { exit 17i32; }
+    string:back = raw string_from_bytes(buf, got.value);
+    if (!(string_equals(back, body)))                 { exit 18i32; }
+
+    // The stream is exhausted: E_EOF, as a code, with its value pinned.
+    Result<int64>:eof = read(src, buf, 64i64);
+    if (!eof.is_error)                                { exit 19i32; }
+    if ((eof.error => int64) != (0i64 - 4096i64))     { exit 20i32; }
+
+    // Zero asked is zero delivered — NOT end-of-input.
+    Result<int64>:none = read(src, buf, 0i64);
+    if (none.is_error)                                { exit 21i32; }
+    if (none.value != 0i64)                           { exit 22i32; }
+
+    Result<NIL>:c2 = close(src);
+    if (c2.is_error)                                  { exit 23i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
