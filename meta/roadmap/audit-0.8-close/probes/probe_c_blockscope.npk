@@ -1,0 +1,8 @@
+// Probe C: borrow of an inner-block local stored into an outer binding,
+// read after the inner scope ended. Expect (if hole): zero diagnostics.
+func:pc = int32() {
+    int32:zero = 0i32;
+    int32->:p = @zero;
+    { int32:x = 5i32; p = @x; }
+    pass (<-p);
+};

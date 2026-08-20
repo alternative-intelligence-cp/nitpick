@@ -1,0 +1,9 @@
+// Probe E: binding named in a defer, moved after registration.
+// At runtime the deferred dalloc frees what q also frees. Expect accept if hole.
+func:pe = NIL() {
+    wild int8->:p = alloc(16i64);
+    defer { dalloc(p); }
+    wild int8->:q = move(p);
+    dalloc(q);
+    pass NIL;
+};

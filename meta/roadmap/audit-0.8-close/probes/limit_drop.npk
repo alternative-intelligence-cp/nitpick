@@ -1,0 +1,12 @@
+Rules<int32>:r_positive = { $ > 0i32 };
+pub func:checked = int32(int32:a, int32:b)
+    requires b != 0i32
+{
+    pass (a / b);
+};
+pub func:main = int32(cstring[]:_~argv) {
+    limit<r_positive> int32:x = 5i32;
+    int32:q = raw checked(10i32, 2i32);
+    exit q;
+};
+pub func:failsafe = int32(tbb32:_~err) { exit 1i32; };

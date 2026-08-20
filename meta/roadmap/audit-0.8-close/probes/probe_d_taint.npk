@@ -1,0 +1,15 @@
+// Probe D: taint granularity. d2: check t.a, read t.b.value (expect accept if
+// conflated). d1: param-rooted read never tracked. d3: control — bare local
+// unchecked read should be refused.
+struct:Two = { Result<int32>:a; Result<int32>:b; };
+func:mk = int32() { pass 7i32; };
+func:pd1 = int32(Two->:t) { pass (t.b.value); };
+func:pd2 = int32() {
+    Two:t = Two{ a: mk(), b: mk() };
+    if (t.a.is_error) { pass 0i32; }
+    pass (t.b.value);
+};
+func:pd3 = int32() {
+    Result<int32>:r = mk();
+    pass (r.value);
+};

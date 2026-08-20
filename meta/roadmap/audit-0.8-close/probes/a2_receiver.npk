@@ -1,0 +1,8 @@
+// The clean single-borrow-into-param-destination case, returned to prove escape.
+struct:Cell = { int32->:slot; };
+func:stash = NIL(Cell->:h, int32->:q) { h.slot = q; pass NIL; };
+func:caller = Cell->(Cell->:cell) {
+    int32:x = 5i32;
+    drop stash(cell, @x);
+    pass cell;
+};

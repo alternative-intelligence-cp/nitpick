@@ -261,30 +261,68 @@ nothing from good ones, which is exactly what the capability ladder asks for: **
 frontend is built once, in full, so that no backend rung ever forces it to be
 rewritten.** Whether that held is Phase B's answer to give.
 
+## The 0.8-close replanning — what changed, and why
+
+The roadmap as it stood at 0.8-close planned in detail through 0.9 and mapped the rest in one line each
+(`1.0 generics · 1.1 async · 1.2 self-hosting · 1.3 verification · 1.4 Astrée`).
+The audit found that thin region hides **five unscheduled load-bearing subsystems**
+and **~20 gating decisions**, and that the rung-refusal discipline has **four live
+holes, two of them safety**. Four structural changes follow:
+
+1. **A new cycle 0.10 — the memory allocator — is inserted between 0.9 and 1.0**,
+   because 1.1's async executor cannot be built without arenas (D-034), arenas need
+   a real heap, and the heap needs the exit-time leak registry the K-semantics
+   guarantee currently only pretends to have. This is the single largest unplanned
+   dependency; see [total_audit §B-1](audit-0.8-close/total_audit.md).
+
+2. **0.9 opens with a safety-repair subcycle (0.9.0)** that closes the two live
+   rung-refusal holes — dropped `limit`/contracts and unguarded division — before
+   any new lowering. A construct that silently miscompiles is worse than one that
+   is refused, and both of these ship today.
+
+3. **Every cycle now carries an explicit "decisions in" section** naming the
+   `OPEN_DECISIONS.md` items that must be settled before its first subcycle. A
+   decision deferred and forgotten is exactly how the audit's gaps arose (the
+   surface was built, the lowering decision was parked). No cycle starts against an
+   open blocker.
+
+4. **Two standing instruments are added in 0.9** (`check_kinds_lowered_or_refused`,
+   `check_decisions_current`), in the house tradition of diffing the compiler
+   against the thing that describes it — the mechanism that found every 0.6 hole and
+   would have found most of this audit's automatically.
+
+The planning principle is unchanged and is the reason this file still varies its
+depth: **the current cycle is planned to the subcycle; later cycles are a map that
+sharpens as we reach them.** What is new is that the map now names its blockers, so
+the sharpening is bounded work rather than open discovery.
+
+---
+
 ## Phase B — the backend, grown rung by rung
 
 | Cycle | Topic |
 |---|---|
 | ~~**0.7**~~ | ~~**IR emission core**~~ — **DONE** (`done/0.7/`). The IR writer, types-to-LLVM diffed against the seed three ways, functions and expressions and control flow with `pick` and places, `NITPICK-RUNG-001` from the real backend, and `npkc` itself — `src/main.npk` over `src/driver/pipeline.npk`. **Subset 1 compiles, links and runs under this compiler**: 19 executed programs and 9 rung rejections on every harness run. Eight subcycles (0.7.3 inserted: the compiler could not parse itself), one runtime memory-safety fix (`ralloc`'s size header), D-136, and five Phase A holes found by the first programs the backend compiled. |
 | ~~**0.8**~~ | ~~**`nlibc` core and runtime symbols**~~ — **DONE** (`done/0.8/`). The self-check debt paid: `src/` clean under the real checker, the selfhost harness stage, and **the fixpoint closed** — stage 1 rebuilds itself byte-identically on every run. The undefined-symbol scan turned zero-dependency into a checked invariant; `npkc -o`; the builtin floor measured down to what the compiler actually calls (then grown to the fd quartet, D-141) with the marker-scoped generator; the library tier born (`lib/nstr.npk`, `lib/nio.npk`) and made load-bearing — the compiler's own diagnostics go through it, to stderr, line-disciplined per D-050/D-076. Six subcycles, D-137–D-141, two ancient bugs out of the self-compile (resolution garbage edges, exponential cycle walk) and two more out of the new floor (the seed dropping `pass (relay …)` on Result<NIL>, `tbb` widening by zext). |
-| **0.9** | **Full type lowering** — `Result`, structs, enums, slices, arrays, LBIM, `tbb` |
+| **0.9** | **Full type lowering** — `Result`, structs, enums, slices, arrays, LBIM, `tbb`, floats, char widths, ranges, function values, enum-tag casts, and the control-flow/operator/floor tail (`sys`, `#ptr_add`). **Opens with the safety-repair subcycle.** The largest backend cycle; it is where the type system stops being checked-only and starts running. Detailed plan: `0.9/`. |
+| **0.10** | **The memory allocator** *(new)* — the real heap, the `<wild-live>` leak registry, `arena<T>` / `Handle<T>`, `shared_arena<T>`, and the `wildx` W^X state machine. Unblocks 1.1 and makes the leak guarantee non-vacuous. Detailed plan: `0.10/`. |
 
 ## Phase C — self-hosting and verification
 
 | Cycle | Topic |
 |---|---|
-| **1.0** | **Generics, traits, `dyn`** — monomorphization, depth cap, reversible mangling (D-064) |
-| **1.1** | **Async and concurrency** — coroutine lowering, executors, channels, the D-071 suspension model |
-| **1.2** | **Self-hosting** — stage 1, the stage-1/stage-2 fixpoint, byte-reproducible builds (D-078, D-085) |
-| **1.3** | **Verification integration** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, NIKOS |
-| **1.4** | **Astrée preparation** — the single non-renewable 30-day run |
+| **1.0** | **Generics, traits, `dyn`** — monomorphization (depth cap, dedup, reversible mangling), and the whole trait/`dyn` boundary the checker has never had to answer. **Opens with the `%Name` mangling decision and five trait/dyn decisions** (`OPEN_DECISIONS` C-1…C-6) — six blockers, all settled before lowering. Map: `1.0/`. |
+| **1.1** | **Async and concurrency** — coroutine lowering, per-thread executors, channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
+| **1.2** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.1), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.2/`. |
+| **1.3** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.3/`. |
+| **1.4** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.3 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.4/`. |
 
-**1.2 is the milestone that matters.** Everything before it is validated against
-the seed's output; after it, the compiler validates itself.
+**1.2 is the milestone that matters.** Everything before it is validated against the
+seed's output; after it, the compiler validates itself.
 
 **1.4 is the one that cannot be retried.** Confirm the accepted input format with
-AbsInt long before the clock starts — that item has been carried since the spec
-work began and does not belong at the end of a queue.
+AbsInt long before the clock starts — promoted from a carried note to a numbered
+gate (C-19) with a cycle deadline.
 
 ---
 
@@ -300,6 +338,12 @@ Nothing there happens until 1.4 is finished. It is written down because the plan
 was worked out in conversation, and a plan that lives only in a conversation
 evaporates.
 
+The audit folded three corrections into the switch's inputs (see `1.4/README.md`
+and `OPEN_DECISIONS.md`): the ship-list is stale (`MACRO_REFERENCE.md`, added at
+0.6, is in no list), the prototype-coverage pass is owned by no cycle, and
+`meta/specs/` inherits every doc-staleness gap in the audit's Theme F before it
+can replace `nitpick-docs`.
+
 ## Ordering notes
 
 - **Diagnostics come first, in 0.0**, not last. They are how every later cycle is
@@ -308,8 +352,32 @@ evaporates.
 - **0.7 precedes 0.8** deliberately. The first rung's programs only need to
   `exit`, so a runtime is not required to prove the emitter works; `nlibc` then
   makes those programs able to do something.
-- **Verification is 1.3, but is not an afterthought.** Every cycle carries its own
-  obligations forward; 1.3 is where the tooling is wired up, not where correctness
-  starts being considered.
-- **Cycle numbers stay single-digit per major** so the file explorer sorts them.
-  Phase C rolls to `1.x` for that reason, not because it implies a release.
+
+
+- **0.9.0 is a safety repair and comes first**, ahead of any new lowering. The two
+  holes it closes are live in shipped behavior; new features can wait one subcycle,
+  a divide-by-zero cannot.
+- **0.10 precedes 1.1, non-negotiably.** If 1.1 is ever pulled forward, 0.10.0–0.10.3
+  move with it — the executor-arena dependency is structural, only the cycle number
+  is flexible.
+- **Decisions precede their cycle.** Each cycle's "decisions in" section lists its
+  blockers; a cycle whose blockers are open is not ready to start, and the plan says
+  so rather than discovering it at the first subcycle.
+- **Instruments precede the constructs they guard** (0.9's two new checks), the same
+  reasoning that put diagnostics in 0.0 and the reachability check in 0.2.
+- **Verification is 1.3, but its obligations are carried forward from every cycle** —
+  0.9.0's rung refusals for `limit`/contracts are the first installment, so the
+  constructs are honestly refused until 1.3 can honestly check them.
+
+
+## The cycle-numbering convention, relaxed at 0.10
+
+The old note here read "cycle numbers stay single-digit per major so the file
+explorer sorts them." Inserting the allocator cycle broke that: there is no
+single digit between 9 and 10, and renumbering Phase C instead would have
+invalidated every "1.2 = self-hosting"-style cross-reference across
+`DECISIONS.md`, `SUBSET_1.md`, and the cycle docs. By the project's own priority
+order — correctness over comfort — the convention lost: **the cycle is `0.10`,
+it sorts before `0.9` in a plain listing, and the map above is authoritative
+over lexical order.** (Decided at the merge of the 0.8-close replanning; the
+alternative and its cost are recorded in `audit-0.8-close/` provenance.)

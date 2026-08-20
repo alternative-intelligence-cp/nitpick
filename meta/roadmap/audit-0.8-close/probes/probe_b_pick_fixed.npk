@@ -1,0 +1,14 @@
+// Probe B: `fixed` assigned in two exclusive pick arms vs two if arms.
+func:pb_pick = int32(int32:n) {
+    fixed int32:k;
+    pick (n) {
+        (0i32) { k = 1i32; },
+        (*)    { k = 2i32; }
+    }
+    pass k;
+};
+func:pb_if = int32(bool:c) {
+    fixed int32:j;
+    if (c) { j = 1i32; } else { j = 2i32; }
+    pass j;
+};

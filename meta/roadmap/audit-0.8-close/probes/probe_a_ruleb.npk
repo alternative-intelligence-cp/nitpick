@@ -1,0 +1,9 @@
+// Probe A: rule B exemption — one borrow + one non-borrow pointer destination.
+// Expect (if unsound): zero diagnostics, though x's borrow escapes into `cell`.
+struct:Cell = { int32->:slot; };
+func:stash = NIL(Cell->:h, int32->:q) { h.slot = q; pass NIL; };
+func:caller = NIL(Cell->:cell) {
+    int32:x = 5i32;
+    drop stash(cell, @x);
+    pass NIL;
+};

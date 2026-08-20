@@ -1,0 +1,10 @@
+// Two borrow args: rule B SHOULD fire and mark cell → a later return of cell escapes.
+struct:Cell = { int32->:slot; };
+func:stash2 = NIL(int32->:h, int32->:q) { pass NIL; };
+func:caller = int32->() {
+    int32:x = 5i32;
+    int32:y = 6i32;
+    int32->:cell = @y;
+    drop stash2(cell, @x);
+    pass cell;
+};
