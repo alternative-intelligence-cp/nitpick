@@ -265,7 +265,7 @@ rewritten.** Whether that held is Phase B's answer to give.
 
 | Cycle | Topic |
 |---|---|
-| **0.7** | **IR emission core** — the LLVM IR text emitter and the first rung: integer arithmetic, calls, `exit`. Programs that run and return a code. |
+| ~~**0.7**~~ | ~~**IR emission core**~~ — **DONE** (`done/0.7/`). The IR writer, types-to-LLVM diffed against the seed three ways, functions and expressions and control flow with `pick` and places, `NITPICK-RUNG-001` from the real backend, and `npkc` itself — `src/main.npk` over `src/driver/pipeline.npk`. **Subset 1 compiles, links and runs under this compiler**: 19 executed programs and 9 rung rejections on every harness run. Eight subcycles (0.7.3 inserted: the compiler could not parse itself), one runtime memory-safety fix (`ralloc`'s size header), D-136, and five Phase A holes found by the first programs the backend compiled. |
 | **0.8** | **`nlibc` core and runtime symbols** — syscalls, memory, the symbols LLVM emits (D-011, D-015). Programs that can do something. |
 | **0.9** | **Full type lowering** — `Result`, structs, enums, slices, arrays, LBIM, `tbb` |
 

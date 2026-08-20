@@ -2,24 +2,27 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status: PHASE A COMPLETE — the checker is done
+## Status: PHASE B UNDERWAY — cycle 0.7 done; npkc emits and its programs run
 
 The **specification set is complete** — `meta/specs/` holds twenty-one documents and
 `DECISIONS.md` records 123 settled decisions. The **plan is in `meta/roadmap/`**,
 organised as numbered cycle folders holding `x.y.z.md` subcycle files; finished
 cycles move to `meta/roadmap/done/`. Start at `meta/roadmap/ROADMAP.md`.
 
-**Cycles 0.0–0.6 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
-the module/symbol/visibility passes, the type system, the static analyses, and
-macros with `comptime` and `#[derive]`. **Phase A is complete** — the artifact is a
-checker that validates completely and emits nothing. **Cycle 0.7 — the first backend
-rung — is next.** `src/frontend/` is ~58 `.npk` modules of real compiler, written in
-Nitpick, with the analyses under `src/frontend/analysis/` and expansion under
-`src/frontend/macro/`.
+**Cycles 0.0–0.7 are done** (`meta/roadmap/done/`): the lexer, the AST and parser,
+the module/symbol/visibility passes, the type system, the static analyses, macros
+with `comptime` and `#[derive]`, and now the first backend rung. **`npkc` exists**:
+`src/main.npk` over `src/driver/pipeline.npk` (the one front-half sequence;
+`tools/check.npk` is a thin wrapper over it) and `src/backend/` — writer, type
+lowering, functions, expressions, statements, places, `pick`, and `emit_program`.
+**Subset 1 compiles, links and runs under this compiler**: the harness executes 19
+real-backend programs and asserts 9 `NITPICK-RUNG-001` rejections on every full
+run. **Cycle 0.8 — `nlibc` core and runtime symbols — is next**, opening with the
+sweep that brings `src/` itself under the real checker (the sources still carry
+seed-era `=>` where `=>!` is required) and the `%Name` mangling decision.
 
-`tools/check.npk` runs the whole frontend over a real program — load, resolve,
-type-check, **analyse**, report — and exits 0 on a clean one. That is what Phase A's
-artifact is: a checker that validates completely and emits nothing.
+`tools/check.npk` still runs the whole frontend over a program and exits 0 on a
+clean one — Phase A's checker, now one thin `main` over the shared pipeline.
 
 It refuses a program that returns a borrow, launders one through a call, reads an
 unassigned binding, writes a `fixed` binding twice, uses a moved-from binding,
@@ -99,9 +102,10 @@ Three more shapes that are not what a C or Rust habit expects:
 - **A file's `mod:` name must match its basename**, or the loader reports
   `NITPICK-RESOLVE-005` at line 1 rather than anything about the name.
 
-There is **no `npkc` build of this compiler yet** — Phase A's artifact is a
-checker, and the emitter arrives in cycle 0.7. The `npkc` on PATH is the *old*
-C++ prototype (`../nitpick/build/npkc`) and is not this project's output.
+**`npkc` now means `src/main.npk`** — the harness builds and runs it for every
+backend stage (IR on stdout; `llc` and `ld.lld` after, per BUILD_REFERENCE §4).
+The `npkc` on PATH is still the *old* C++ prototype (`../nitpick/build/npkc`), not
+this project's output; nothing installs ours yet.
 
 ```
 src/          # THE COMPILER — Nitpick source only; nothing else belongs here
