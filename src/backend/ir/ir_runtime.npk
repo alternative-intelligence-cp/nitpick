@@ -95,6 +95,21 @@ pub func:rt_sig = RtSig(string:name) {
         pass (raw rt("@npk_read_file", "{ { ptr, i64, i64 }, i32 }", true,
                      "{ ptr, i64, i64 }", 1i32, "{ ptr, i64 }", "", ""));
     }
+    // The §1 memory trio maps to the runtime's OWN definitions of the C-named
+    // symbols (there for LLVM's libcall lowering, D-011) — same bytes, one body.
+    if (raw string_eq(name, "mcpy")) {
+        pass (raw rt("@memcpy", "ptr", false, "", 3i32, "ptr", "ptr", "i64"));
+    }
+    if (raw string_eq(name, "mmov")) {
+        pass (raw rt("@memmove", "ptr", false, "", 3i32, "ptr", "ptr", "i64"));
+    }
+    if (raw string_eq(name, "memset")) {
+        pass (raw rt("@memset", "ptr", false, "", 3i32, "ptr", "i32", "i64"));
+    }
+    if (raw string_eq(name, "string_equals")) {
+        pass (raw rt("@npk_string_equals", "i8", false, "", 2i32,
+                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", ""));
+    }
     if (raw string_eq(name, "write_file")) {
         pass (raw rt("@npk_write_file", "{ i32 }", true, "", 2i32,
                      "{ ptr, i64 }", "{ ptr, i64, i64 }", ""));
@@ -113,7 +128,7 @@ pub func:rt_sig = RtSig(string:name) {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() { pass 15i32; };
+pub func:rt_count = int32() { pass 19i32; };
 
 pub func:rt_name_at = string(int32:i) {
     if (i == 0i32)  { pass "alloc"; }
@@ -121,15 +136,19 @@ pub func:rt_name_at = string(int32:i) {
     if (i == 2i32)  { pass "dalloc"; }
     if (i == 3i32)  { pass "exit"; }
     if (i == 4i32)  { pass "int_to_string"; }
-    if (i == 5i32)  { pass "path_exists"; }
-    if (i == 6i32)  { pass "ralloc"; }
-    if (i == 7i32)  { pass "read_file"; }
-    if (i == 8i32)  { pass "read_stdin"; }
-    if (i == 9i32)  { pass "string_concat"; }
-    if (i == 10i32) { pass "string_from_bytes"; }
-    if (i == 11i32) { pass "string_slice"; }
-    if (i == 12i32) { pass "to_cstring"; }
-    if (i == 13i32) { pass "write_file"; }
+    if (i == 5i32)  { pass "mcpy"; }
+    if (i == 6i32)  { pass "memset"; }
+    if (i == 7i32)  { pass "mmov"; }
+    if (i == 8i32)  { pass "path_exists"; }
+    if (i == 9i32)  { pass "ralloc"; }
+    if (i == 10i32) { pass "read_file"; }
+    if (i == 11i32) { pass "read_stdin"; }
+    if (i == 12i32) { pass "string_concat"; }
+    if (i == 13i32) { pass "string_equals"; }
+    if (i == 14i32) { pass "string_from_bytes"; }
+    if (i == 15i32) { pass "string_slice"; }
+    if (i == 16i32) { pass "to_cstring"; }
+    if (i == 17i32) { pass "write_file"; }
     pass "write_raw";
 };
 

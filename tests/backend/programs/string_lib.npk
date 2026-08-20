@@ -1,0 +1,54 @@
+// expect-exit: 0
+//
+// The library tier exists (0.8.4): `nstr` is ordinary Nitpick over the floor,
+// imported like any module, compiled by npkc, and RUN — the proof that the
+// demoted builtin names lose nothing by becoming code. The floor's
+// `string_equals` and the library's `nstr_eq` are held to each other, because
+// two spellings of byte equality that could drift apart is exactly the class
+// this project keeps instruments for.
+
+use "../../../lib/nstr.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = "the quick brown fox";
+
+    if (!(raw nstr_eq(s, "the quick brown fox")))            { exit 10i32; }
+    if (raw nstr_eq(s, "the quick brown fax"))               { exit 11i32; }
+    if (raw nstr_eq(s, "the quick brown"))                   { exit 12i32; }
+
+    // The floor primitive and the library function must agree — both ways.
+    if (!(string_equals(s, "the quick brown fox")))          { exit 13i32; }
+    if (string_equals(s, "the quick brown fax"))             { exit 14i32; }
+
+    if (!(raw nstr_starts_with(s, "the q")))                 { exit 15i32; }
+    if (raw nstr_starts_with(s, "he q"))                     { exit 16i32; }
+    if (!(raw nstr_ends_with(s, "n fox")))                   { exit 17i32; }
+    if (raw nstr_ends_with(s, "n fix"))                      { exit 18i32; }
+
+    if ((raw nstr_index_of(s, "quick")) != 4i64)             { exit 19i32; }
+    if ((raw nstr_index_of(s, "fox")) != 16i64)              { exit 20i32; }
+    if ((raw nstr_index_of(s, "wolf")) != (0i64 - 1i64))     { exit 21i32; }
+    if ((raw nstr_index_of(s, "")) != 0i64)                  { exit 22i32; }
+    if (!(raw nstr_contains(s, "brown")))                    { exit 23i32; }
+
+    string:mid = raw nstr_substring(s, 4i64, 9i64);
+    if (!(raw nstr_eq(mid, "quick")))                        { exit 24i32; }
+
+    // The comptime-foldable pair, evaluated at RUN time through their
+    // lowerings: one inline extract, one inline compare.
+    if (string_byte_length(s) != 19i64)                      { exit 25i32; }
+    if (string_is_empty(s))                                  { exit 26i32; }
+    if (!(string_is_empty("")))                              { exit 27i32; }
+
+    // The §1 memory trio through the floor's own definitions.
+    wild int8->:a = alloc(8i64);
+    drop memset(a, 7i64, 8i64);
+    if (a[3i64] != 7i8)                                      { exit 28i32; }
+    wild int8->:b = alloc(8i64);
+    drop mcpy(b, a, 8i64);
+    if (b[7i64] != 7i8)                                      { exit 29i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

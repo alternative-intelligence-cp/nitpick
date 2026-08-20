@@ -630,6 +630,12 @@ pub func:is_keyword = bool(string:text) {
     # can call; a name here and not in the reference is one nobody can look up.
     br = open(os.path.join(ROOT, "meta", "specs", "BUILTIN_REFERENCE.md"),
               encoding="utf-8").read()
+    # ONLY the marked regions define builtins (0.8.4). The first draft
+    # scavenged every code-shaped token in the whole file, so `close(2)` in a
+    # sentence about POSIX became a "builtin", and the entire nlibc API rode in
+    # as compiler magic nobody could lower.
+    br = "\n".join(re.findall(
+        r"<!-- builtins:begin -->(.*?)<!-- builtins:end -->", br, re.S))
     names = []
     for m in re.finditer(r'^\|\s*`(\w+)`\s*\|', br, re.M):
         if m.group(1) not in names:

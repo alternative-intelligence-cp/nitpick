@@ -93,3 +93,11 @@ minimal build driving that happens before then lives in `bootstrap/`.
 Directories are created when a decision names them, not in anticipation. An empty
 tree fifteen cycles deep is a guess, and guesses in a layout become `use` paths
 that have to be rewritten.
+
+## `lib/` — the library tier (added 0.8.4)
+
+Ordinary Nitpick over the runtime floor: the code the demoted builtin names
+become. Deliberately OUTSIDE `src/` — that tree is the compiler and nothing
+else — and destined for the `nlibc` sibling repository once the port plan's
+n-prefix bar (verified C-free) is met. Swept by the real parser like everything
+else; exercised end-to-end by `tests/backend/programs/` through npkc.

@@ -661,9 +661,16 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     int32:count = (raw expr_list_count(n)) - gcount;
     if (gcount > 0i32) { pass (raw iv_rung("a generic call", "1.0", n.span)); }
 
-    // Arguments first, in source order, each with its own frontend-recorded
-    // type. No `want` coercion anywhere: D-092 has no implicit widening, so the
-    // checker already made every argument EXACTLY its parameter's type.
+    // A BUILTIN EMITS ITS OWN ARGUMENTS: two lower inline without a call at
+    // all, and the floor's signatures are the coercion authority for the rest —
+    // a user call needs neither, so the paths split before the argument walk.
+    if (cnode.a == 0i32) {
+        pass (relay call_builtin(x, n, cnode, start, count));
+    }
+
+    // Arguments in source order, each with its own frontend-recorded type. No
+    // `want` coercion anywhere: D-092 has no implicit widening, so the checker
+    // already made every argument EXACTLY its parameter's type.
     string:args = "";
     int32:i = 0i32;
     while (i < count) {
@@ -673,10 +680,6 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         if (i > 0i32) { args = relay string_concat(args, ", "); }
         args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
         i = i + 1i32;
-    }
-
-    if (cnode.a == 0i32) {
-        pass (relay call_builtin(x, cnode, args));
     }
 
     // A user function: the symbol names the declaration, the declaration names
@@ -708,15 +711,89 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     pass out;
 };
 
-func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:cnode, string:args) {
+func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:n, ExprNode:cnode,
+                          int32:start, int32:count) {
     string:name = relay intern_get(x.interns, cnode.payload =>! int32);
+
+    // TWO LOWER INLINE, because their whole body is a field read: a string's
+    // byte length IS its second slot, and emptiness is that slot against zero.
+    // A call would be a symbol, a frame, and a return for an extractvalue.
+    if (raw string_eq(name, "string_byte_length")) {
+        IrVal:sv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast,
+                                       start, 0i32) });
+        if (!(raw iv_is_ok(sv))) { pass sv; }
+        string:r = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(r, " = extractvalue ", sv.ll, " ",
+                          relay string_concat(sv.ref, ", 1")));
+        pass (raw iv("i64", r, 0i32));
+    }
+    if (raw string_eq(name, "string_is_empty")) {
+        IrVal:sv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast,
+                                       start, 0i32) });
+        if (!(raw iv_is_ok(sv))) { pass sv; }
+        string:ln = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(ln, " = extractvalue ", sv.ll, " ",
+                          relay string_concat(sv.ref, ", 1")));
+        string:c = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(c, " = icmp eq i64 ",
+                          relay string_concat(ln, ", 0")));
+        string:z = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(z, " = zext i1 ",
+                          relay string_concat(c, " to i8")));
+        pass (raw iv("i8", z, 0i32));
+    }
+
     RtSig:sig = raw rt_sig(name);
     if (!sig.found) {
-        // A builtin the checker admits and the floor does not carry — real
-        // Nitpick, no rung yet. 0.8's library work is where the rest arrive.
+        // `sys(CONST, ..*int64[])` is the one remaining bare builtin with no
+        // floor entry, and its blocker is named: it is VARIADIC, and variadics
+        // are 0.9's machinery (D-047/D-048 settled its shape long ago).
+        if (raw string_eq(name, "sys")) {
+            pass (raw iv_rung("the `sys` builtin", "0.9", cnode.span));
+        }
         string:what = relay cat3("the builtin `", name, "`");
         pass (raw iv_rung(what, "0.8", cnode.span));
     }
+
+    // THE FLOOR'S SIGNATURE IS THE COERCION AUTHORITY. Builtin arguments are
+    // deliberately loose in the checker ("its signature arrives with call
+    // checking"), so a scalar that arrives wider or narrower than the runtime's
+    // parameter is adjusted HERE — `memset`'s value is `int64` in the language
+    // and `i32` at the symbol, and an uncoerced call is IR llc rejects.
+    string:args = "";
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+        IrVal:av = relay emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        string:want = raw rt_arg(sig, i);
+        string:ref = av.ref;
+        string:ll = av.ll;
+        if (i < sig.argc) {
+            if (!(raw string_eq(ll, want))) {
+                LlType:src_l = LlType{ state: raw LL_OK(), text: ll, rung: "" };
+                LlType:dst_l = LlType{ state: raw LL_OK(), text: want, rung: "" };
+                if (raw ll_is_scalar_int(src_l)) {
+                    if (raw ll_is_scalar_int(dst_l)) {
+                        string:cv = relay irw_temp(x.fe.w);
+                        if ((relay ll_int_width(ll)) > (relay ll_int_width(want))) {
+                            drop irw_line(x.fe.w, relay cat5(cv, " = trunc ", ll,
+                                              " ", relay cat3(ref, " to ", want)));
+                        } else {
+                            drop irw_line(x.fe.w, relay cat5(cv, " = zext ", ll,
+                                              " ", relay cat3(ref, " to ", want)));
+                        }
+                        ref = cv;
+                        ll = want;
+                    }
+                }
+            }
+        }
+        if (i > 0i32) { args = relay string_concat(args, ", "); }
+        args = relay cat3(args, ll, relay string_concat(" ", ref));
+        i = i + 1i32;
+    }
+
     if (raw string_eq(sig.ret, "void")) {
         drop irw_line(x.fe.w, relay cat5("call void ", sig.sym, "(", args, ")"));
         pass (raw iv("i32", "0", 0i32));

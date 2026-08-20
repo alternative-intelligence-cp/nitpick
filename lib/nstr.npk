@@ -1,0 +1,82 @@
+// nstr — string functions over the floor. The first module of the library tier.
+//
+// Cycle 0.8.4. THIS IS ORDINARY NITPICK, and that is the point: everything here
+// is written over the runtime floor (§2b) and the `string` type's own fields,
+// with no compiler magic anywhere. The names BUILTIN_REFERENCE §2 documents
+// arrive this way — as importable code the verifier reads like any other module
+// — not as builtins; 0.8.4 measured that the compiler calls none of them and
+// demoted the lot. `nlibc` (the sibling repository, per the port plan) is the
+// eventual home; this module is the in-tree beginning that proves the tier
+// works end-to-end through npkc.
+//
+// BYTES, NOT CODEPOINTS. Every function here is byte-indexed, matching the
+// `string` representation ({ptr, len, cap}, not NUL-terminated, D-049). The
+// codepoint family (char_count, is_valid_utf8) lands beside a real UTF-8
+// walker, together, so the two never disagree about what a "character" is.
+
+mod:nstr;
+
+// Byte equality. The floor has `string_equals` for generated code; this is the
+// same answer as library code, and the test holds the two to each other.
+pub func:nstr_eq = bool(string:a, string:b) {
+    if (a.len != b.len) { pass false; }
+    int64:i = 0i64;
+    while (i < a.len) {
+        if (a.ptr[i] != b.ptr[i]) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+pub func:nstr_starts_with = bool(string:s, string:prefix) {
+    if (prefix.len > s.len) { pass false; }
+    int64:i = 0i64;
+    while (i < prefix.len) {
+        if (s.ptr[i] != prefix.ptr[i]) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+pub func:nstr_ends_with = bool(string:s, string:suffix) {
+    if (suffix.len > s.len) { pass false; }
+    int64:base = s.len - suffix.len;
+    int64:i = 0i64;
+    while (i < suffix.len) {
+        if (s.ptr[base + i] != suffix.ptr[i]) { pass false; }
+        i = i + 1i64;
+    }
+    pass true;
+};
+
+// First byte offset of `needle`, or -1. An empty needle is AT 0, which is the
+// convention every search API that came before this one settled on — differing
+// from it would be a quirk with no purpose.
+pub func:nstr_index_of = int64(string:s, string:needle) {
+    if (needle.len == 0i64) { pass 0i64; }
+    if (needle.len > s.len) { pass (0i64 - 1i64); }
+    int64:last = s.len - needle.len;
+    int64:at = 0i64;
+    while (at <= last) {
+        int64:i = 0i64;
+        bool:hit = true;
+        while (i < needle.len) {
+            if (s.ptr[at + i] != needle.ptr[i]) { hit = false; break; }
+            i = i + 1i64;
+        }
+        if (hit) { pass at; }
+        at = at + 1i64;
+    }
+    pass (0i64 - 1i64);
+};
+
+pub func:nstr_contains = bool(string:s, string:needle) {
+    pass ((raw nstr_index_of(s, needle)) >= 0i64);
+};
+
+// A byte-indexed substring, half-open, over the floor's slice. The bounds are
+// the caller's claim and the floor's to refuse — this adds no second check that
+// could disagree with the first.
+pub func:nstr_substring = string(string:s, int64:lo, int64:hi) {
+    pass (relay string_slice(s, lo, hi));
+};

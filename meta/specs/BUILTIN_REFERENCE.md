@@ -6,6 +6,22 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 
 ---
 
+> **What is a builtin, exactly.** The regions between
+> `<!-- builtins:begin -->` and `<!-- builtins:end -->` markers define the
+> BARE-NAME BUILTIN set — the names the resolver admits with no declaration and
+> no import, generated into `src/frontend/builtins.npk` by `gen_tables.py`.
+> That set is deliberately small (0.8.4): the **runtime floor** (§1, §2b), the
+> **`sys` builtin** (§3, D-047/D-048), and the **comptime-foldable string
+> names** (§2c) — magic because the compiler itself evaluates them. Everything
+> else this reference documents — the string library, formatting, the memory
+> helpers — is `nlibc`'s API: ordinary Nitpick functions, written over the
+> floor, imported like any other module. The first draft of the generator
+> scavenged every code-shaped token in the file, so `close(2)` in a sentence
+> about POSIX became a "builtin" nobody could call; the markers are the fix
+> that cannot un-fix itself.
+
+<!-- builtins:begin -->
+
 ## 1. Memory Management Built-ins (NitpickAlloc)
 
 These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. They all return `wild` pointers — unmanaged memory outside RAII tracking, which the programmer must free. There is no garbage collector (D-003).
@@ -21,6 +37,8 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 | `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. |
 | `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. |
 
+<!-- builtins:end -->
+
 *(Note: **`malloc` and `free` are not builtins and are not aliases.** They are C
 functions, reachable only by declaring them in an `extern` block like any other C
 function. The four above are the native allocator; an earlier draft of this line
@@ -31,7 +49,14 @@ type checker knows exactly `alloc`, `calloc`, `ralloc` and `dalloc`, and every
 
 ---
 
-## 2. String Built-ins
+## 2. String Functions — `nlibc`'s tier, not builtins
+
+> Everything in this section arrives as ordinary Nitpick functions in `nlibc`,
+> written over the floor (§2b). They were listed as builtins while the
+> prototype's design was carried over; 0.8.4 measured the truth — the compiler
+> calls none of them, nothing could lower them, and the port plan
+> (`STDLIB_PROMOTION_AUDIT.md`) already routes them through `nlibc` as code.
+> The three exceptions the compiler DOES evaluate are in §2c.
 
 These are fast compiler intrinsics for interacting with the `string` type.
 
@@ -71,6 +96,8 @@ These are fast compiler intrinsics for interacting with the `string` type.
 
 ---
 
+<!-- builtins:begin -->
+
 ## 2b. The Runtime Floor (bootstrap tier)
 
 The functions `bootstrap/runtime/npkrt.ll` defines and every backend rung can
@@ -83,6 +110,7 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 
 | Built-in | Signature | Notes |
 |---|---|---|
+| `string_concat` | `(string, string) → Result<string>` | The one string operation the compiler is built out of (591 call sites); also comptime-folds. |
 | `int_to_string` | `int64 → Result<string>` | Decimal rendering. |
 | `string_slice` | `(string, int64:lo, int64:hi) → Result<string>` | Byte-indexed, half-open. |
 | `string_from_bytes` | `(wild int8->:ptr, int64:len) → string` | Wraps existing bytes; never fails. |
@@ -90,8 +118,21 @@ stage 1, `src/backend/ir/ir_runtime.npk` declares for stage 2 — and
 | `read_file` | `cstring → Result<string>` | Whole file. |
 | `read_stdin` | `() → Result<string>` | Whole stream. |
 | `path_exists` | `cstring → bool` | Never fails: absence is an answer, not an error. |
-| `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short `write(2)` is retried, a failed `close(2)` is a failed write. |
+| `write_file` | `(cstring, string) → Result<NIL>` | Whole buffer to a path, replacing what was there — `read_file`'s mirror (0.8.3). A short kernel write is retried; a failed kernel close is a failed write. |
 | `write_raw` | `(int32:fd, ptr, int64:len) → int64` | Bytes written; the one raw write until D-050's line discipline. |
+
+## 2c. Comptime-foldable string builtins
+
+The three string names the compiler EVALUATES during `comptime` folding
+(`fold_string_builtin`, 0.6.4) — magic by definition, so they stay builtins:
+
+| Built-in | Signature | Notes |
+|---|---|---|
+| `string_equals` | `(string, string) → bool` | Folds at comptime; `nlibc` provides the runtime body. |
+| `string_byte_length` | `string → int64` | Folds at comptime. |
+| `string_is_empty` | `string → bool` | Folds at comptime. |
+
+(`string_concat` also folds, and is already floor.)
 
 ## 3. Syscalls
 
@@ -139,6 +180,8 @@ Direct access to operating system syscalls.
 
 ---
 
+<!-- builtins:end -->
+
 ## 4. Compiler Macros
 
 `#` is the **compiler-directive sigil** — it marks something addressed to the
@@ -160,11 +203,13 @@ compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
 > `#cast<T>`. A cast is an operation on a value, not a directive to the compiler,
 > so it does not belong under `#`.
 
+<!-- builtins:begin -->
 | Macro | Return | Description |
 |---|---|---|
 | `#size_of<T>` | `int64` | Returns the size in bytes of the type `T` at compile time. |
 | `#wild_ptr<T>(addr)` | `wild T` | Constructs a pointer from an integer address. **Legal only in `wild` context** — the single suspension of the general prohibition on integer→pointer casting (D-019). Exists because the allocator must turn an `mmap` result into a `wild int8->`. |
 | `#wild_slice<T>(ptr, len)` | `T[]` | Constructs a slice from a raw pointer and an element count. **Legal only in `wild` context** (D-070). Deliberately parallel to `#wild_ptr` — an extent the compiler cannot verify is exactly as privileged as an address it cannot verify. This is how a slice is obtained across the FFI boundary, since slices are not C-compatible and do not cross an `extern` signature. |
+<!-- builtins:end -->
 
 ---
 

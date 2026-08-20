@@ -640,9 +640,14 @@ def check_runtime_sigs_agree():
                      "ir_runtime.npk -- stage 2 could not compile a program the "
                      "seed compiles" % name)
     for name in sorted(comp_names - seed_names):
-        fails.append("`%s` is in ir_runtime.npk and not in the seed's floor -- "
-                     "the two compilers disagree about what a program may call"
-                     % name)
+        # The compiler's floor may EXCEED the seed's (0.8.4): the seed only ever
+        # compiles sources that call the shared subset, while npkc serves whole
+        # programs. A compiler-only entry is fine exactly when the runtime
+        # defines its symbol -- anything else is a call into nothing.
+        sym = entries[name][0][0].lstrip("@")
+        if sym not in defs:
+            fails.append("`%s` is in ir_runtime.npk and npkrt.ll does not define "
+                         "%s -- a floor entry pointing at nothing" % (name, sym))
     return fails
 
 
@@ -1167,6 +1172,8 @@ def main(argv):
             compiler = sorted(glob.glob(os.path.join(ROOT, "src", "**", "*.npk"),
                                         recursive=True))
             compiler += sorted(glob.glob(os.path.join(ROOT, "tools", "*.npk")))
+            compiler += sorted(glob.glob(os.path.join(ROOT, "lib", "**", "*.npk"),
+                                         recursive=True))
 
             n = 0
             for p in sorted(set(all_sources)) + grammar + sorted(set(compiler)):

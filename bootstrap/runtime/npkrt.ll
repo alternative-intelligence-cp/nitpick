@@ -220,6 +220,47 @@ no:
 ; negative return is an error. Treating a short write as success is the classic
 ; way to truncate a file and report victory; the error code travels out as the
 ; Result's tbb32.
+; Byte equality over two strings -- the primitive the comptime folder mirrors
+; (fold_string_builtin) and the one string predicate worth a runtime symbol:
+; everything nlibc builds (contains, starts_with, index_of) is ordinary Nitpick
+; over byte access, but equality is called from generated code paths where a
+; call beats an inlined loop for auditability.
+define i8 @npk_string_equals({ ptr, i64, i64 } %a, { ptr, i64, i64 } %b) {
+entry:
+  %al = extractvalue { ptr, i64, i64 } %a, 1
+  %bl = extractvalue { ptr, i64, i64 } %b, 1
+  %same = icmp eq i64 %al, %bl
+  br i1 %same, label %scan, label %no
+
+scan:
+  %ap = extractvalue { ptr, i64, i64 } %a, 0
+  %bp = extractvalue { ptr, i64, i64 } %b, 0
+  br label %loop
+
+loop:
+  %i = phi i64 [ 0, %scan ], [ %i2, %next ]
+  %done = icmp eq i64 %i, %al
+  br i1 %done, label %yes, label %cmp
+
+cmp:
+  %pa = getelementptr i8, ptr %ap, i64 %i
+  %pb = getelementptr i8, ptr %bp, i64 %i
+  %ca = load i8, ptr %pa
+  %cb = load i8, ptr %pb
+  %eq = icmp eq i8 %ca, %cb
+  br i1 %eq, label %next, label %no
+
+next:
+  %i2 = add i64 %i, 1
+  br label %loop
+
+yes:
+  ret i8 1
+
+no:
+  ret i8 0
+}
+
 define { i32 } @npk_write_file({ ptr, i64 } %path, { ptr, i64, i64 } %data) {
 entry:
   %pp = extractvalue { ptr, i64 } %path, 0
