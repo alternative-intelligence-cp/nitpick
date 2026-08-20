@@ -1,0 +1,414 @@
+// Statement lowering — blocks, declarations, assignment, `if`, `while`,
+// `pass`/`fail`/`exit`, `defer`, `break`/`continue`, and whole functions.
+//
+// Subset 1 (meta/SUBSET_1.md). Cycle 0.7.6.
+//
+// THIS MODULE AND `ir_expr` ARE A DECLARED CYCLE, the same way `type_expr` and
+// `type_stmt` are (0.4.2): a statement contains expressions, and `relay` is an
+// expression that exits the function — which means running the `defer` stack,
+// which means emitting statements. The cycle is the honest shape of that; hiding
+// it behind a callback would be the same dependency with the name filed off.
+//
+// TWO DEPARTURES FROM THE SEED, both closing a defect it recorded or carried:
+//
+//   `break`/`continue` RUN THE DEFERS OF THE SCOPES THEY EXIT. The seed's own
+//   comment concedes the gap: "defers registered INSIDE the loop body do not run
+//   here. That is a gap the real compiler must close" — D-014 makes scope exit a
+//   normal exit path, and a `break` exits every scope between it and the loop.
+//   The loop stack records the defer depth at entry; `break` runs every frame
+//   deeper than it, LIFO, before branching.
+//
+//   `pass v` EVALUATES `v` FIRST, THEN RUNS DEFERS (D-136). The seed does the
+//   reverse, so a defer that mutates `x` changes what `pass x` returns — a read
+//   whose meaning depends on cleanup code pages away. The value you passed is
+//   the value returned; `fail` and `exit` follow the same rule.
+
+mod:ir_stmt;
+
+use "../../frontend/source_location.npk".*;
+use "../../frontend/intern.npk".*;
+use "../../frontend/token_kind.npk".*;
+use "../../frontend/ast_kind.npk".*;
+use "../../frontend/ast.npk".*;
+use "../../frontend/parse_expr.npk".*;
+use "../../frontend/parse_stmt.npk".*;
+use "../../frontend/parse_decl.npk".*;
+use "../../frontend/diagnostics.npk".*;
+use "../../frontend/types.npk".*;
+use "../../frontend/expr_types.npk".*;
+use "../../frontend/symbols.npk".*;
+use "../../frontend/resolve_type.npk".*;
+use "../../frontend/type_decl.npk".*;
+use "ir_writer.npk".*;
+use "ir_types.npk".*;
+use "ir_func.npk".*;
+use "ir_expr.npk".*;
+
+// A `br` or a block start, through the terminated flag — mirrors the seed's
+// `br()`/`start_block()`: a branch after a terminator is IR llc rejects, and a
+// label resets the flag because a new block is live by construction.
+pub func:s_br = NIL(ExprEmitter->:x, string:label) {
+    if (!x.fe.terminated) {
+        drop irw_line(x.fe.w, relay string_concat("br label %", label));
+        x.fe.terminated = true;
+    }
+    pass NIL;
+};
+
+pub func:s_start = NIL(ExprEmitter->:x, string:label) {
+    drop irw_label(x.fe.w, label);
+    x.fe.terminated = false;
+    pass NIL;
+};
+
+// --- defers -------------------------------------------------------------------------
+
+// Run the frames deeper than `depth`, innermost first, latest first — without
+// popping anything: the frames belong to scopes that are still open on other
+// paths. A deferred body is emitted AT EACH EXIT that runs it; cleanup code is
+// duplicated per path, which is the seed's model and what naive lowering means.
+pub func:run_defers_down_to = IrVal(ExprEmitter->:x, int32:depth) {
+    int32:f = raw fnem_defer_frames(x.fe);
+    while (f > depth) {
+        f = f - 1i32;
+        int32:hi = raw fnem_defer_frame_hi(x.fe, f);
+        int32:lo = raw fnem_defer_frame_lo(x.fe, f);
+        int32:i = hi;
+        while (i > lo) {
+            i = i - 1i32;
+            StmtId:body = StmtId{ index: raw fnem_defer_at(x.fe, i) };
+            IrVal:r = relay emit_stmt(x, body);
+            if (!(raw iv_is_ok(r))) { pass r; }
+        }
+    }
+    pass (raw iv_nil());
+};
+
+pub func:run_all_defers = IrVal(ExprEmitter->:x) {
+    pass (relay run_defers_down_to(x, 0i32));
+};
+
+// --- blocks -------------------------------------------------------------------------
+
+pub func:emit_block = IrVal(ExprEmitter->:x, StmtId:sid) {
+    StmtNode:s = relay ast_stmt(x.ast, sid);
+    int32:mark = raw fnem_mark(x.fe);
+    drop fnem_defer_frame_push(x.fe);
+
+    int32:i = 0i32;
+    int32:n = raw stmt_list_count(s);
+    while (i < n) {
+        if (x.fe.terminated) { break; }
+        StmtId:st = StmtId{ index: relay ast_id_at(x.ast, raw stmt_list_start(s), i) };
+        IrVal:r = relay emit_stmt(x, st);
+        if (!(raw iv_is_ok(r))) { pass r; }
+        i = i + 1i32;
+    }
+
+    // The block's own defers, on its NORMAL end. A terminated block already ran
+    // them at whatever exit terminated it.
+    if (!x.fe.terminated) {
+        IrVal:r = relay run_defers_down_to(x, (raw fnem_defer_frames(x.fe)) - 1i32);
+        if (!(raw iv_is_ok(r))) { pass r; }
+    }
+    drop fnem_defer_frame_pop(x.fe);
+    drop fnem_release(x.fe, mark);
+    pass (raw iv_nil());
+};
+
+// --- statements ---------------------------------------------------------------------
+
+pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
+    StmtNode:s = relay ast_stmt(x.ast, sid);
+
+    if (s.kind == StmtKind.StmtBlockStmt)   { pass (relay emit_block(x, sid)); }
+    if (s.kind == StmtKind.StmtVarDeclStmt) { pass (relay emit_vardecl(x, s)); }
+    if (s.kind == StmtKind.StmtAssignStmt)  { pass (relay emit_assign(x, s)); }
+
+    if (s.kind == StmtKind.StmtExprStmt) {
+        IrVal:v = relay emit_expr(x, raw stmt_expr(s));
+        if (!(raw iv_is_ok(v))) { pass v; }
+        pass (raw iv_nil());
+    }
+    if (s.kind == StmtKind.StmtDiscardStmt) {
+        IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+        if (!(raw iv_is_ok(v))) { pass v; }
+        pass (raw iv_nil());
+    }
+
+    if (s.kind == StmtKind.StmtIfStmt)      { pass (relay emit_if(x, s)); }
+    if (s.kind == StmtKind.StmtWhileStmt)   { pass (relay emit_while(x, s)); }
+
+    if (s.kind == StmtKind.StmtBreakStmt)   { pass (relay emit_break(x, s, true)); }
+    if (s.kind == StmtKind.StmtContinueStmt){ pass (relay emit_break(x, s, false)); }
+
+    if (s.kind == StmtKind.StmtPassStmt)    { pass (relay emit_pass(x, s)); }
+    if (s.kind == StmtKind.StmtFailStmt)    { pass (relay emit_fail(x, s)); }
+    if (s.kind == StmtKind.StmtExitStmt)    { pass (relay emit_exit(x, s)); }
+    if (s.kind == StmtKind.StmtTrapStmt)    { pass (relay emit_trap(x, s)); }
+
+    if (s.kind == StmtKind.StmtDeferStmt) {
+        drop fnem_defer_add(x.fe, (raw stmt_target(s)).index);
+        pass (raw iv_nil());
+    }
+
+    // `return Result{…}` needs the Result-literal lowering; it arrives with the
+    // literal family in 0.7.7. No compiler source writes it (grep: comments
+    // only), so nothing upstream is blocked.
+    if (s.kind == StmtKind.StmtReturnStmt)  { pass (raw iv_rung("0.7.7")); }
+    if (s.kind == StmtKind.StmtPickStmt)    { pass (raw iv_rung("0.7.7")); }
+    if (s.kind == StmtKind.StmtGiveStmt)    { pass (raw iv_rung("0.7.7")); }
+    if (s.kind == StmtKind.StmtFallStmt)    { pass (raw iv_rung("0.7.7")); }
+
+    if (s.kind == StmtKind.StmtForStmt)     { pass (raw iv_rung("0.9")); }
+    if (s.kind == StmtKind.StmtLoopStmt)    { pass (raw iv_rung("0.9")); }
+    if (s.kind == StmtKind.StmtTillStmt)    { pass (raw iv_rung("0.9")); }
+    if (s.kind == StmtKind.StmtWhenStmt)    { pass (raw iv_rung("0.9")); }
+
+    if (s.kind == StmtKind.StmtProveStmt)        { pass (raw iv_rung("1.3")); }
+    if (s.kind == StmtKind.StmtAssertStaticStmt) { pass (raw iv_rung("1.3")); }
+
+    // FAIL CLOSED — StmtNone, a bare PickArm, or a kind nobody classified.
+    pass (raw iv_broken());
+};
+
+// --- declarations and assignment ----------------------------------------------------
+
+func:emit_vardecl = IrVal(ExprEmitter->:x, StmtNode:s) {
+    int32:dty = relay resolve_type(x.tr, raw stmt_decl_type(s), x.scope);
+    LlType:ll = relay ll_type(x.fe.ctx, dty);
+    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll(ll)); }
+
+    // SLOT FIRST, THEN THE INITIALISER — the seed's order, and the right one:
+    // the name is not bound until after the initialiser runs (`fnem_local` binds
+    // on the way out), so `int32:x = x;` reads the OUTER `x`, not the slot being
+    // created.
+    string:slot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", ll.text));
+    ExprId:init = raw stmt_decl_init(x.ast, s);
+    if (!(raw expr_is_none(init))) {
+        IrVal:v = relay emit_expr(x, init);
+        if (!(raw iv_is_ok(v))) { pass v; }
+        drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
+                          relay string_concat(", ptr ", slot)));
+    }
+    drop fnem_bind(x.fe, raw stmt_name(s), slot, dty);
+    pass (raw iv_nil());
+};
+
+func:compound_op = TokenKind(TokenKind:k) {
+    if (k == TokenKind.OpPlusAssign)    { pass TokenKind.OpPlus; }
+    if (k == TokenKind.OpMinusAssign)   { pass TokenKind.OpMinus; }
+    if (k == TokenKind.OpStarAssign)    { pass TokenKind.OpStar; }
+    if (k == TokenKind.OpSlashAssign)   { pass TokenKind.OpSlash; }
+    if (k == TokenKind.OpPercentAssign) { pass TokenKind.OpPercent; }
+    if (k == TokenKind.OpAmpAssign)     { pass TokenKind.OpAmp; }
+    if (k == TokenKind.OpPipeAssign)    { pass TokenKind.OpPipe; }
+    if (k == TokenKind.OpCaretAssign)   { pass TokenKind.OpCaret; }
+    if (k == TokenKind.OpShlAssign)     { pass TokenKind.OpShl; }
+    if (k == TokenKind.OpShrAssign)     { pass TokenKind.OpShr; }
+    pass TokenKind.OpAssign;
+};
+
+func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) {
+    ExprNode:target = relay ast_expr(x.ast, raw stmt_target(s));
+    // A NAME ONLY, this cycle. A field or an index is a PLACE — an address
+    // computed through layout — and the place family lands together in 0.7.7,
+    // because half an address is not an address.
+    if (target.kind != ExprKind.ExprIdentifierExpr) { pass (raw iv_rung("0.7.7")); }
+    LocalSlot:slot = raw fnem_lookup(x.fe, target.payload => int32);
+    if (!slot.found) { pass (raw iv_broken()); }
+    LlType:ll = relay ll_type(x.fe.ctx, slot.type_id);
+    if (!(raw ll_is_ok(ll))) { pass (relay iv_from_ll(ll)); }
+
+    TokenKind:op = raw stmt_op(s);
+    if (op == TokenKind.OpAssign) {
+        IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
+        if (!(raw iv_is_ok(v))) { pass v; }
+        drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
+                          relay string_concat(", ptr ", slot.slot)));
+        pass (raw iv_nil());
+    }
+
+    // `x += e` is a load, the operation, a store — the seed's shape. Signedness
+    // for `/`, `%`, `>>` comes from the TARGET's type, which the checker made
+    // the value's type too.
+    bool:signed = false;
+    if ((raw type_kind(x.fe.ctx.types, slot.type_id)) == (raw TY_INT())) {
+        signed = raw type_is_signed(x.fe.ctx.types, slot.type_id);
+    }
+    string:cur = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cur, " = load ", ll.text, ", ptr ",
+                                     slot.slot));
+    IrVal:v = relay emit_expr(x, raw stmt_assigned(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    string:ins = raw arith_name(raw compound_op(op), signed);
+    if (ins.len == 0i64) { pass (raw iv_broken()); }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = ", ins, " ",
+                      relay cat5(ll.text, " ", cur, ", ", v.ref)));
+    drop irw_line(x.fe.w, relay cat5("store ", ll.text, " ", r,
+                      relay string_concat(", ptr ", slot.slot)));
+    pass (raw iv_nil());
+};
+
+// --- control flow -------------------------------------------------------------------
+
+func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) {
+    string:then_l = relay irw_new_label(x.fe.w, "if.then");
+    string:done_l = relay irw_new_label(x.fe.w, "if.done");
+    string:else_l = done_l;
+    bool:has_else = !(raw stmt_is_none(raw stmt_else(s)));
+    if (has_else) { else_l = relay irw_new_label(x.fe.w, "if.else"); }
+
+    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    if (!(raw iv_is_ok(c))) { pass c; }
+    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", then_l,
+                      relay string_concat(", label %", else_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, then_l);
+    IrVal:t = relay emit_stmt(x, raw stmt_then(s));
+    if (!(raw iv_is_ok(t))) { pass t; }
+    drop s_br(x, done_l);
+
+    if (has_else) {
+        drop s_start(x, else_l);
+        IrVal:e = relay emit_stmt(x, raw stmt_else(s));
+        if (!(raw iv_is_ok(e))) { pass e; }
+        drop s_br(x, done_l);
+    }
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
+func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
+    string:head_l = relay irw_new_label(x.fe.w, "wh.head");
+    string:body_l = relay irw_new_label(x.fe.w, "wh.body");
+    string:done_l = relay irw_new_label(x.fe.w, "wh.done");
+
+    drop s_br(x, head_l);
+    drop s_start(x, head_l);
+    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    if (!(raw iv_is_ok(c))) { pass c; }
+    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", body_l,
+                      relay string_concat(", label %", done_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, body_l);
+    drop fnem_loop_push(x.fe, head_l, done_l);
+    IrVal:b = relay emit_block(x, raw stmt_body(x.ast, s));
+    drop fnem_loop_pop(x.fe);
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop s_br(x, head_l);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
+// `break` and `continue` — ONE function, because the only difference is which
+// label. Both run the defers of every scope between here and the loop first,
+// which is the gap the seed recorded and this closes.
+func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) {
+    if ((raw stmt_label(s)) != 0i32) { pass (raw iv_rung("0.9")); }
+    if ((x.fe.loop_count) == 0i32) { pass (raw iv_broken()); }
+    IrVal:d = relay run_defers_down_to(x, raw fnem_loop_depth(x.fe));
+    if (!(raw iv_is_ok(d))) { pass d; }
+    if (is_break) { drop s_br(x, raw fnem_loop_done(x.fe)); }
+    else          { drop s_br(x, raw fnem_loop_head(x.fe)); }
+    pass (raw iv_nil());
+};
+
+// --- exits --------------------------------------------------------------------------
+//
+// VALUE FIRST, THEN DEFERS, THEN THE RETURN (D-136) — for all three. The value a
+// function passes is the value read AT the `pass`, whatever cleanup does after.
+
+func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s) {
+    string:vref = "";
+    ExprId:val = raw stmt_operand(s);
+    if (!(raw expr_is_none(val))) {
+        IrVal:v = relay emit_expr(x, val);
+        if (!(raw iv_is_ok(v))) { pass v; }
+        vref = v.ref;
+    }
+    IrVal:d = relay run_all_defers(x);
+    if (!(raw iv_is_ok(d))) { pass d; }
+    drop fnem_ret_pass(x.fe, vref);
+    x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) {
+    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    IrVal:d = relay run_all_defers(x);
+    if (!(raw iv_is_ok(d))) { pass d; }
+    drop fnem_ret_fail(x.fe, v.ref);
+    x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+func:emit_exit = IrVal(ExprEmitter->:x, StmtNode:s) {
+    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    IrVal:d = relay run_all_defers(x);
+    if (!(raw iv_is_ok(d))) { pass d; }
+    // `exit` is legal only in `main` and `failsafe` (D-013), and returning from
+    // either IS process exit — so it lowers to a plain `ret`.
+    drop irw_line(x.fe.w, relay cat5("ret ", x.fe.ret_ll, " ", v.ref, ""));
+    x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+// A trap runs NO defers (D-014) — the omission is the decision: at trap time the
+// state of the system is unknown, so no cleanup runs before the handler that
+// understands the situation gets control. `failsafe`'s return value IS the
+// process exit code.
+func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) {
+    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(r, " = call i32 @npk_failsafe(i32 ",
+                      relay string_concat(v.ref, ")")));
+    drop irw_line(x.fe.w, relay cat3("call void @npk_exit(i32 ", r, ")"));
+    drop irw_line(x.fe.w, "unreachable");
+    x.fe.terminated = true;
+    pass (raw iv_nil());
+};
+
+// --- a whole function ---------------------------------------------------------------
+
+// Everything between `func:` and its closing brace: signature, prologue, body,
+// epilogue. The driver's per-function loop is a call to this.
+pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
+    DeclNode:d = relay ast_decl(x.ast, did);
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken()); }
+    if ((raw decl_generic_window(x.ast, d)).count > 0i32) {
+        pass (raw iv_rung("1.0"));
+    }
+    if (raw decl_has(d, raw DECL_VARIADIC())) { pass (raw iv_rung("0.9")); }
+    if (raw decl_has(d, raw DECL_ASYNC()))    { pass (raw iv_rung("1.1")); }
+
+    int32:name = raw decl_name(d);
+    string:fname = relay intern_get(x.interns, name);
+    FnSig:sg = relay fn_signature(x.tr, d, name, x.scope);
+
+    LlType:rt = relay fnem_begin(x.fe, fname, sg.success);
+    if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll(rt)); }
+
+    int32:i = 0i32;
+    int32:n = raw fn_param_count(x.ast, d);
+    while (i < n) {
+        DeclNode:pd = relay ast_decl(x.ast, raw fn_param(x.ast, d, i));
+        int32:pt = relay resolve_type(x.tr, raw param_type(pd), x.scope);
+        LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
+        if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll(pl)); }
+        i = i + 1i32;
+    }
+
+    drop fnem_open(x.fe);
+    IrVal:b = relay emit_block(x, raw fn_body(x.ast, d));
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop fnem_close(x.fe, x.fe.terminated);
+    pass (raw iv_nil());
+};

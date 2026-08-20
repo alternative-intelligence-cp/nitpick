@@ -314,7 +314,7 @@ wild int8->:buf = alloc(16i64);
 defer { dalloc(buf); }
 ```
 
-Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `relay`, `exit`.
+Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `relay`, `exit` — **after the exit's value is evaluated** (D-136): `pass v` returns the `v` that was read at the `pass`, whatever the defers then do. LIFO, innermost scope first.
 
 > **`defer` does NOT run on a trap** (D-014). `!!!` and `?!` transfer control
 > directly to `failsafe` without unwinding. At trap time the state of the system

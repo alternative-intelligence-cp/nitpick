@@ -45,7 +45,12 @@ use "../../frontend/parse_decl.npk".*;
 use "ir_writer.npk".*;
 use "ir_types.npk".*;
 use "ir_func.npk".*;
+use "../../frontend/resolve_type.npk".*;
 use "ir_runtime.npk".*;
+// THE DECLARED CYCLE with the statement walker — `relay` exits the function,
+// which runs the defer stack, which emits statements. Same shape, same reason,
+// as `type_expr` ↔ `type_stmt` (0.4.2).
+use "ir_stmt.npk".*;
 
 // An emitted value. `ll` and `ref` are what an instruction writes; `type_id` is
 // the frontend's answer, 0 where the frontend deliberately has none (a builtin
@@ -62,25 +67,31 @@ pub struct:IrVal = {
     string:inner;
 };
 
-func:iv = IrVal(string:ll, string:ref, int32:type_id) {
+pub func:iv = IrVal(string:ll, string:ref, int32:type_id) {
     IrVal:v = IrVal{ state: raw LL_OK(), rung: "", ll: ll, ref: ref,
                      type_id: type_id, wrapped: false, inner: "" };
     pass v;
 };
 
-func:iv_rung = IrVal(string:rung) {
+pub func:iv_rung = IrVal(string:rung) {
     IrVal:v = IrVal{ state: raw LL_RUNG(), rung: rung, ll: "", ref: "",
                      type_id: 0i32, wrapped: false, inner: "" };
     pass v;
 };
 
-func:iv_broken = IrVal() {
+pub func:iv_broken = IrVal() {
     IrVal:v = IrVal{ state: raw LL_BROKEN(), rung: "", ll: "", ref: "",
                      type_id: 0i32, wrapped: false, inner: "" };
     pass v;
 };
 
 pub func:iv_is_ok = bool(IrVal:v) { pass (v.state == (raw LL_OK())); };
+
+// A statement's "it worked" — statements yield nothing, so the value slots are
+// the NIL convention and only the state matters.
+pub func:iv_nil = IrVal() {
+    pass (raw iv("i32", "0", 0i32));
+};
 
 // --- string literals live at module level -------------------------------------------
 //
@@ -169,13 +180,23 @@ pub struct:ExprEmitter = {
     SymbolTable->:tab;
     InternTable->:interns;
     StrTable->:strs;
+
+    // FOR ANNOTATIONS, NOT FOR EXPRESSIONS (0.7.6). A declaration's type is an
+    // AST type node the checker resolved and did not store, so the emitter
+    // resolves it again — a cache hit by construction, since the checker already
+    // interned every type this can produce. Expressions never come here; their
+    // types are in `et`.
+    TypeResolver->:tr;
+    int32:scope;
 };
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
                                    SymbolTable->:tab, InternTable->:interns,
-                                   StrTable->:strs) {
+                                   StrTable->:strs, TypeResolver->:tr,
+                                   int32:scope) {
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
-                                 interns: interns, strs: strs };
+                                 interns: interns, strs: strs, tr: tr,
+                                 scope: scope };
     pass x;
 };
 
@@ -219,10 +240,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv("i32", "0", 0i32));
     }
 
-    // `relay` BRANCHES — it is a normal exit path that runs `defer` — so it
-    // lands with the rest of control flow in 0.7.6, and until then it refuses
-    // with the cycle that lowers it rather than pretending.
-    if (n.kind == ExprKind.ExprRelayExpr)     { pass (raw iv_rung("0.7.6")); }
+    if (n.kind == ExprKind.ExprRelayExpr)    { pass (relay emit_relay(x, id, n)); }
 
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
@@ -239,7 +257,7 @@ func:emit_int = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
                  raw exprtypes_get(x.et, id)));
 };
 
-func:iv_from_ll = IrVal(LlType:t) {
+pub func:iv_from_ll = IrVal(LlType:t) {
     if (t.state == (raw LL_RUNG())) { pass (raw iv_rung(t.rung)); }
     pass (raw iv_broken());
 };
@@ -321,7 +339,7 @@ pub func:emit_cond = IrVal(ExprEmitter->:x, ExprId:id) {
     pass (raw iv("i1", c, 0i32));
 };
 
-func:arith_name = string(TokenKind:op, bool:signed) {
+pub func:arith_name = string(TokenKind:op, bool:signed) {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
     if (op == TokenKind.OpStar)    { pass "mul"; }
@@ -567,6 +585,52 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:cnode, string:args) {
 
 // Unwrap without looking: the value half, whatever the error said. The analyses
 // already decided where that is allowed; here it is just an extract.
+// `relay` — unwrap, or return the caller's error VERBATIM (D-080). A normal
+// exit path: the defer stack runs on the error branch, exactly as a `fail`
+// there would run it, and that is why this module and `ir_stmt` are a cycle.
+func:emit_relay = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    IrVal:v = relay emit_expr(x, raw expr_operand(n));
+    if (v.state != (raw LL_OK())) { pass v; }
+    int32:my_t = raw exprtypes_get(x.et, id);
+    if (!v.wrapped) { pass (raw iv(v.ll, v.ref, my_t)); }
+
+    // The value half first — only the ok path needs it, but extracting before
+    // the branch keeps every extract in the block that computed the Result.
+    string:val = "";
+    if (v.inner.len > 0i64) {
+        val = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(val, " = extractvalue ", v.ll, " ",
+                          relay string_concat(v.ref, ", 0")));
+    }
+    // The error field: slot 1, or slot 0 of a `Result<NIL>` (D-084 collapsed
+    // the value away).
+    string:idx = ", 1";
+    if (v.inner.len == 0i64) { idx = ", 0"; }
+    string:code = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(code, " = extractvalue ", v.ll, " ",
+                      relay string_concat(v.ref, idx)));
+    string:bad = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(bad, " = icmp ne i32 ",
+                      relay string_concat(code, ", 0")));
+    string:err_l = relay irw_new_label(x.fe.w, "relay.err");
+    string:ok_l = relay irw_new_label(x.fe.w, "relay.ok");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", bad, ", label %", err_l,
+                      relay string_concat(", label %", ok_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, err_l);
+    // EVERY frame runs — relay exits the whole function, so its error path owes
+    // the same cleanup a `fail` here would owe.
+    IrVal:d = relay run_all_defers(x);
+    if (!(raw iv_is_ok(d))) { pass d; }
+    drop fnem_ret_fail(x.fe, code);
+    x.fe.terminated = true;
+
+    drop s_start(x, ok_l);
+    if (v.inner.len == 0i64) { pass (raw iv("i32", "0", my_t)); }
+    pass (raw iv(v.inner, val, my_t));
+};
+
 func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     IrVal:v = relay emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }

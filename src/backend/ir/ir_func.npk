@@ -77,6 +77,39 @@ pub struct:FnEmitter = {
     wild int32->:ltypes;
     int32:lcount;
     int32:lcap;
+
+    // --- control-flow state (0.7.6) ------------------------------------------
+    //
+    // HERE rather than in the statement walker, because `relay` needs it too:
+    // an expression that returns early has to run the same defers a `pass`
+    // would, and the function is the thing both have in common.
+
+    // The current block already ended in a terminator. Mirrors the seed's
+    // `self.terminated`: a `br` after a `ret` is IR llc rejects, so every
+    // emission of either goes through this flag.
+    bool:terminated;
+
+    // DEFERRED BODIES, as StmtId indices, flat, with frame starts — the same
+    // mark/truncate shape as the locals. A frame per block; running a frame
+    // walks it BACKWARD, and running "everything" walks the frames backward
+    // too: LIFO twice over, which is what a cleanup stack means.
+    wild int32->:dstmts;
+    int32:dcount;
+    int32:dcap;
+    wild int32->:dframes;
+    int32:dfcount;
+    int32:dfcap;
+
+    // THE LOOP STACK: continue target, break target, and the DEFER DEPTH at
+    // entry. The depth is what closes the seed's recorded gap — its own comment
+    // says "defers registered INSIDE the loop body do not run here. That is a
+    // gap the real compiler must close" (D-014: scope exit is a normal exit
+    // path). `break` runs every frame deeper than the recorded depth first.
+    wild string->:loop_heads;
+    wild string->:loop_dones;
+    wild int32->:loop_depths;
+    int32:loop_count;
+    int32:loop_cap;
 };
 
 pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
@@ -86,6 +119,11 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
     wild int8->:ln = alloc(32i64 * 4i64);
     wild int8->:ls = alloc(32i64 * #size_of<string>());
     wild int8->:lt = alloc(32i64 * 4i64);
+    wild int8->:ds = alloc(16i64 * 4i64);
+    wild int8->:df = alloc(16i64 * 4i64);
+    wild int8->:lh = alloc(8i64 * #size_of<string>());
+    wild int8->:ld = alloc(8i64 * #size_of<string>());
+    wild int8->:lp = alloc(8i64 * 4i64);
     FnEmitter:fe = FnEmitter{
         w: w, ctx: ctx,
         sym: "", bare: false, ret_nil: false, ret_type: 0i32,
@@ -93,7 +131,12 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) {
         pnames: pn => wild int32->, ptypes: pt => wild int32->,
         plls: pl => wild string->, pcount: 0i32, pcap: 8i32,
         lnames: ln => wild int32->, lslots: ls => wild string->,
-        ltypes: lt => wild int32->, lcount: 0i32, lcap: 32i32
+        ltypes: lt => wild int32->, lcount: 0i32, lcap: 32i32,
+        terminated: false,
+        dstmts: ds => wild int32->, dcount: 0i32, dcap: 16i32,
+        dframes: df => wild int32->, dfcount: 0i32, dfcap: 16i32,
+        loop_heads: lh => wild string->, loop_dones: ld => wild string->,
+        loop_depths: lp => wild int32->, loop_count: 0i32, loop_cap: 8i32
     };
     pass fe;
 };
@@ -136,6 +179,10 @@ pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:ret_type) {
     fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));
     fe.pcount = 0i32;
     fe.lcount = 0i32;
+    fe.terminated = false;
+    fe.dcount = 0i32;
+    fe.dfcount = 0i32;
+    fe.loop_count = 0i32;
     // EVERY FUNCTION STARTS FROM ZERO — a one-function change produces a
     // one-function diff, which is what makes the fixpoint check readable.
     drop irw_begin_function(fe.w);
@@ -214,7 +261,7 @@ pub func:fnem_open = NIL(FnEmitter->:fe) {
 
 // --- locals -----------------------------------------------------------------------
 
-func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) {
+pub func:fnem_bind = NIL(FnEmitter->:fe, int32:name, string:slot, int32:type_id) {
     if (fe.lcount >= fe.lcap) { drop fnem_grow_locals(fe); }
     fe.lnames[fe.lcount => int64] = name;
     fe.lslots[fe.lcount => int64] = slot;
@@ -258,6 +305,87 @@ pub func:fnem_mark = int32(FnEmitter->:fe) { pass fe.lcount; };
 pub func:fnem_release = NIL(FnEmitter->:fe, int32:mark) {
     fe.lcount = mark;
     pass NIL;
+};
+
+// --- control-flow state (dumb state; the walking lives in ir_stmt) ------------------
+
+pub func:fnem_defer_frame_push = NIL(FnEmitter->:fe) {
+    if (fe.dfcount >= fe.dfcap) {
+        int32:nc = fe.dfcap * 2i32;
+        wild int8->:m = ralloc(fe.dframes => wild int8->, (nc => int64) * 4i64);
+        fe.dframes = m => wild int32->;
+        fe.dfcap = nc;
+    }
+    fe.dframes[fe.dfcount => int64] = fe.dcount;
+    fe.dfcount = fe.dfcount + 1i32;
+    pass NIL;
+};
+
+// Dropping the frame drops its entries with it — the same truncation the locals
+// use, for the same reason: what a block registered stops existing when it does.
+pub func:fnem_defer_frame_pop = NIL(FnEmitter->:fe) {
+    fe.dfcount = fe.dfcount - 1i32;
+    fe.dcount = fe.dframes[fe.dfcount => int64];
+    pass NIL;
+};
+
+pub func:fnem_defer_add = NIL(FnEmitter->:fe, int32:stmt_index) {
+    if (fe.dcount >= fe.dcap) {
+        int32:nc = fe.dcap * 2i32;
+        wild int8->:m = ralloc(fe.dstmts => wild int8->, (nc => int64) * 4i64);
+        fe.dstmts = m => wild int32->;
+        fe.dcap = nc;
+    }
+    fe.dstmts[fe.dcount => int64] = stmt_index;
+    fe.dcount = fe.dcount + 1i32;
+    pass NIL;
+};
+
+pub func:fnem_defer_frames = int32(FnEmitter->:fe) { pass fe.dfcount; };
+pub func:fnem_defer_frame_lo = int32(FnEmitter->:fe, int32:f) {
+    pass fe.dframes[f => int64];
+};
+pub func:fnem_defer_frame_hi = int32(FnEmitter->:fe, int32:f) {
+    if (f == (fe.dfcount - 1i32)) { pass fe.dcount; }
+    pass fe.dframes[(f + 1i32) => int64];
+};
+pub func:fnem_defer_at = int32(FnEmitter->:fe, int32:i) {
+    pass fe.dstmts[i => int64];
+};
+
+pub func:fnem_loop_push = NIL(FnEmitter->:fe, string:head, string:done) {
+    if (fe.loop_count >= fe.loop_cap) {
+        int32:nc = fe.loop_cap * 2i32;
+        wild int8->:a = ralloc(fe.loop_heads => wild int8->,
+                               (nc => int64) * #size_of<string>());
+        wild int8->:b = ralloc(fe.loop_dones => wild int8->,
+                               (nc => int64) * #size_of<string>());
+        wild int8->:c = ralloc(fe.loop_depths => wild int8->, (nc => int64) * 4i64);
+        fe.loop_heads = a => wild string->;
+        fe.loop_dones = b => wild string->;
+        fe.loop_depths = c => wild int32->;
+        fe.loop_cap = nc;
+    }
+    fe.loop_heads[fe.loop_count => int64] = head;
+    fe.loop_dones[fe.loop_count => int64] = done;
+    fe.loop_depths[fe.loop_count => int64] = fe.dfcount;
+    fe.loop_count = fe.loop_count + 1i32;
+    pass NIL;
+};
+
+pub func:fnem_loop_pop = NIL(FnEmitter->:fe) {
+    fe.loop_count = fe.loop_count - 1i32;
+    pass NIL;
+};
+
+pub func:fnem_loop_head = string(FnEmitter->:fe) {
+    pass fe.loop_heads[(fe.loop_count - 1i32) => int64];
+};
+pub func:fnem_loop_done = string(FnEmitter->:fe) {
+    pass fe.loop_dones[(fe.loop_count - 1i32) => int64];
+};
+pub func:fnem_loop_depth = int32(FnEmitter->:fe) {
+    pass fe.loop_depths[(fe.loop_count - 1i32) => int64];
 };
 
 // --- returns ----------------------------------------------------------------------

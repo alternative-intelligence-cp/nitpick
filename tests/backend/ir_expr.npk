@@ -31,6 +31,7 @@ use "../../src/frontend/parse_decl.npk".*;
 use "../../src/frontend/symbols.npk".*;
 use "../../src/frontend/types.npk".*;
 use "../../src/frontend/expr_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
 use "../../src/backend/ir/ir_writer.npk".*;
 use "../../src/backend/ir/ir_types.npk".*;
 use "../../src/backend/ir/ir_func.npk".*;
@@ -167,7 +168,8 @@ func:main = int32(cstring[]:_~argv) {
     ExprId:null_lit = relay ast_add_expr(@ast, ExprKind.ExprSentinelLiteral,
                                          raw span_none(), 0i32, 0i32, 0i32, 1i64);
     ExprId:relay_n = relay ast_add_expr(@ast, ExprKind.ExprRelayExpr,
-                                        raw span_none(), 0i32, 0i32, 0i32, 0i64);
+                                        raw span_none(), f_call.index, 0i32,
+                                        0i32, 0i64);
     ExprId:tern = relay ast_add_expr(@ast, ExprKind.ExprTernaryExpr,
                                      raw span_none(), 0i32, 0i32, 0i32, 0i64);
 
@@ -189,13 +191,19 @@ func:main = int32(cstring[]:_~argv) {
     drop exprtypes_set(@ets, seven, i32t);
     drop exprtypes_set(@ets, f_call, ri32);
     drop exprtypes_set(@ets, raw_f, i32t);
+    drop exprtypes_set(@ets, relay_n, i32t);
 
     StrTable:st = raw strtab_init();
+
+    // The emitter resolves DECLARED types through this (0.7.6); nothing in this
+    // file has one, so an empty resolver over the same tables is exact.
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, @it, @diags, @inst);
 
     // --- (x + y) * 3, AND NO nsw ANYWHERE NEAR IT ------------------------------
     IrWriter:w1 = raw irw_to_buffer();
     FnEmitter:f1 = raw fnem_init(@w1, @c);
-    ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f1, "calc", i32t);
     drop fnem_param(@f1, nx, i32t);
     drop fnem_param(@f1, ny, i32t);
@@ -210,7 +218,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- COMPARISON SIGNEDNESS IS THE OPERAND'S: char8 ult, int32 slt ---------
     IrWriter:w2 = raw irw_to_buffer();
     FnEmitter:f2 = raw fnem_init(@w2, @c);
-    ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f2, "cmp", types.t_bool);
     drop fnem_param(@f2, nc1, c8t);
     drop fnem_param(@f2, nc2, c8t);
@@ -227,7 +235,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- CASTS: trunc DOWN, extension BY THE SOURCE'S SIGN --------------------
     IrWriter:w3 = raw irw_to_buffer();
     FnEmitter:f3 = raw fnem_init(@w3, @c);
-    ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f3, "casts", i32t);
     drop fnem_param(@f3, nu, u32t);
     drop fnem_param(@f3, nx, i32t);
@@ -243,7 +251,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- `&&` SHORT-CIRCUITS THROUGH A SLOT, and the rhs never runs early -----
     IrWriter:w4 = raw irw_to_buffer();
     FnEmitter:f4 = raw fnem_init(@w4, @c);
-    ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f4, "andand", types.t_bool);
     drop fnem_param(@f4, nb, types.t_bool);
     drop fnem_param(@f4, nb2, types.t_bool);
@@ -256,7 +264,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- UNARY: negate is `sub 0`, `!` derives from the value ALREADY emitted -
     IrWriter:w5 = raw irw_to_buffer();
     FnEmitter:f5 = raw fnem_init(@w5, @c);
-    ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f5, "unary", i32t);
     drop fnem_param(@f5, nx, i32t);
     drop fnem_param(@f5, nb, types.t_bool);
@@ -272,7 +280,7 @@ func:main = int32(cstring[]:_~argv) {
     // `f` returns `{ i32, i32 }` — `raw` extracts the value half.
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
-    ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f6, "calls", i32t);
     drop fnem_open(@f6);
     IrVal:va2 = relay emit_expr(@x6, raw_alloc);
@@ -288,7 +296,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- A STRING LITERAL: a module-level constant plus three insertvalues ----
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
-    ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st);
+    ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st, @tr, 0i32);
     drop fnem_begin(@f7, "hello", i32t);
     drop fnem_open(@f7);
     IrVal:vs = relay emit_expr(@x7, s_lit);
@@ -309,10 +317,11 @@ func:main = int32(cstring[]:_~argv) {
     IrVal:vnull = relay emit_expr(@x7, null_lit);
     if (!(raw string_eq(vnull.ll, "ptr")))                   { exit 81i32; }
     if (!(raw string_eq(vnull.ref, "null")))                 { exit 82i32; }
-    // `relay` branches and runs `defer`; it is 0.7.6's and says so.
+    // `relay` lowers since 0.7.6 (the byte-level pins live in ir_stmt's test);
+    // here: it unwraps to the value half with the frontend's recorded type.
     IrVal:vr = relay emit_expr(@x7, relay_n);
-    if (vr.state != (raw LL_RUNG()))                         { exit 83i32; }
-    if (!(raw string_eq(vr.rung, "0.7.6")))                  { exit 84i32; }
+    if (!(raw iv_is_ok(vr)))                                 { exit 83i32; }
+    if (!(raw string_eq(vr.ll, "i32")))                      { exit 84i32; }
     // A kind nobody classified FAILS CLOSED, never guesses.
     IrVal:vt = relay emit_expr(@x7, tern);
     if (vt.state != (raw LL_BROKEN()))                       { exit 85i32; }

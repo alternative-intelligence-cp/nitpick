@@ -1,0 +1,171 @@
+// Statement lowering (cycle 0.7.6) — whole functions, from REAL source.
+//
+// THE FIXTURE IS THE REAL FRONT HALF: lex, parse, collect, resolve, type-check —
+// the same wiring `tests/frontend/type_stmt.npk` uses — and then `emit_function`
+// over each declaration, byte-compared whole. This is the first test where the
+// thing emitted came from source code rather than from hand-built nodes, which
+// makes it a rehearsal for the driver (0.7.8) as much as a test of this module.
+//
+// THE PIN THAT IS THE POINT: `cleanup`'s `pass x` loads `x` BEFORE the deferred
+// mutation runs (D-136) — `%t4 = insertvalue … %t1 …` where `%t1` is the
+// pre-defer load. The seed returns 9 from that function; this compiler returns
+// 0, and the divergence is a settled decision, not an accident.
+
+use "../../src/frontend/source_location.npk".*;
+use "../../src/frontend/token_kind.npk".*;
+use "../../src/frontend/token.npk".*;
+use "../../src/frontend/num_width.npk".*;
+use "../../src/frontend/intern.npk".*;
+use "../../src/frontend/ast_kind.npk".*;
+use "../../src/frontend/ast.npk".*;
+use "../../src/frontend/diag_codes.npk".*;
+use "../../src/frontend/diagnostics.npk".*;
+use "../../src/frontend/parse_codes.npk".*;
+use "../../src/frontend/resolve_codes.npk".*;
+use "../../src/frontend/type_codes.npk".*;
+use "../../src/frontend/lexer.npk".*;
+use "../../src/frontend/parser.npk".*;
+use "../../src/frontend/parse_type.npk".*;
+use "../../src/frontend/parse_expr.npk".*;
+use "../../src/frontend/parse_decorate.npk".*;
+use "../../src/frontend/parse_stmt.npk".*;
+use "../../src/frontend/parse_pick.npk".*;
+use "../../src/frontend/parse_decl.npk".*;
+use "../../src/frontend/symbols.npk".*;
+use "../../src/frontend/resolve.npk".*;
+use "../../src/frontend/types.npk".*;
+use "../../src/frontend/builtin_types.npk".*;
+use "../../src/frontend/resolve_type.npk".*;
+use "../../src/frontend/type_names.npk".*;
+use "../../src/frontend/type_cast.npk".*;
+use "../../src/frontend/type_decl.npk".*;
+use "../../src/frontend/type_trait.npk".*;
+use "../../src/frontend/type_generic.npk".*;
+use "../../src/frontend/expr_types.npk".*;
+use "../../src/frontend/type_expr.npk".*;
+use "../../src/frontend/type_stmt.npk".*;
+use "../../src/backend/ir/ir_writer.npk".*;
+use "../../src/backend/ir/ir_types.npk".*;
+use "../../src/backend/ir/ir_func.npk".*;
+use "../../src/backend/ir/ir_expr.npk".*;
+use "../../src/backend/ir/ir_stmt.npk".*;
+
+// The body is a block, and `check_stmt` walks one — the same one-liner the
+// type_stmt fixture carries, for the same reason.
+func:check_body = NIL(ExprTyper->:e, StmtId:body) {
+    drop check_stmt(e, body);
+    pass NIL;
+};
+
+struct:Fx = {
+    Ast:ast;
+    TypeTable:types;
+    SymbolTable:tab;
+    DiagList:diags;
+    ExprTypes:ets;
+    InstanceTable:inst;
+    int32:scope;
+    DeclId:mod_id;
+    int64:parse_errs;
+};
+
+// The real front half, verbatim from the type_stmt fixture: parse a module,
+// collect, resolve, check every function body.
+func:fx = Fx(string:src, InternTable->:it) {
+    DiagList:ld = raw diaglist_init();
+    Ast:ast = raw ast_init();
+    DiagList:pd = raw diaglist_init();
+    TokenList:tk = raw lex_all(0i32, src, it, @ld);
+    Parser:p = raw parser_init(@tk, @ast, @pd, it);
+    DeclId:mod_id = relay p_parse_module(@p);
+
+    SymbolTable:tab = raw symtab_init();
+    DiagList:diags = raw diaglist_init();
+    int32:scope = relay collect_module(@tab, @ast, @diags, mod_id, 0i32);
+    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+    drop resolve_module(@rs, mod_id, scope);
+
+    TypeTable:types = raw typetable_init();
+    ExprTypes:ets = raw exprtypes_for(@ast);
+    InstanceTable:inst = raw insttable_init();
+    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
+    ImplTable:im = raw impltable_init();
+    drop collect_impls(@im, @tr, mod_id, scope);
+    BoundTable:bd = raw boundtable_init();
+    drop collect_bounds(@bd, @tr, mod_id, scope);
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
+                                  @inst, @ets);
+
+    DeclNode:mn = relay ast_decl(@ast, mod_id);
+    int32:i = 0i32;
+    while (i < (raw item_member_count(@ast, mn))) {
+        DeclId:item = raw item_member(@ast, mn, i);
+        DeclNode:d = relay ast_decl(@ast, item);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            int32:name = d.payload => int32;
+            FnSig:sg = relay fn_signature(@tr, d, name, scope);
+            e.fn_success = sg.success;
+            e.fn_terminal = sg.terminal;
+            drop check_body(@e, raw fn_body(@ast, d));
+        }
+        i = i + 1i32;
+    }
+
+    Fx:out = Fx{ ast: ast, types: types, tab: tab, diags: diags, ets: ets,
+                 inst: inst, scope: scope, mod_id: mod_id,
+                 parse_errs: raw diaglist_count(@pd) };
+    pass out;
+};
+
+// Emit the i-th function declaration into a fresh writer and hand back its text.
+func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st) {
+    TypeResolver:tr = raw tyres_init(@f.ast, @f.types, @f.tab, it, @f.diags,
+                                     @f.inst);
+    IrWriter:w = raw irw_to_buffer();
+    LlCtx:c = raw llctx_init(@f.ast, @f.types, @it);
+    FnEmitter:fe = raw fnem_init(@w, @c);
+    ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @tr,
+                                    f.scope);
+    DeclNode:mn = relay ast_decl(@f.ast, f.mod_id);
+    DeclId:item = raw item_member(@f.ast, mn, index);
+    IrVal:r = relay emit_function(@x, item);
+    if (!(raw iv_is_ok(r))) { pass ""; }
+    pass (relay irw_text(@w));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    InternTable:it = raw intern_init();
+
+    Fx:f = raw fx("func:step = int32(int32:a) { int32:x = a; x = x + 1i32; x += 2i32; pass x; }; func:count = int32(int32:n) { int32:i = 0i32; while (i < n) { if (i == 3i32) { break; } i = i + 1i32; } pass i; }; func:cleanup = int32() { int32:x = 0i32; defer { x = x + 9i32; } pass x; }; func:pipe = int32(int32:a) { int32:v = relay step(a); pass v; }; func:main = int32(cstring[]:_~argv) { exit 0i32; };", @it);
+    if (f.parse_errs != 0i64)                              { exit 8i32; }
+    if ((raw diaglist_count(@f.diags)) != 0i64)            { exit 9i32; }
+
+    StrTable:st = raw strtab_init();
+
+    // --- locals, assignment, compound assignment, pass ------------------------
+    string:t0 = relay emitted(@f, @it, 0i32, @st);
+    if (!(raw string_eq(t0,
+        "define { i32, i32 } @npk_step(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  %t2 = load i32, ptr %t0\n  store i32 %t2, ptr %t1\n  %t3 = load i32, ptr %t1\n  %t4 = add i32 %t3, 1\n  store i32 %t4, ptr %t1\n  %t5 = load i32, ptr %t1\n  %t6 = add i32 %t5, 2\n  store i32 %t6, ptr %t1\n  %t7 = load i32, ptr %t1\n  %t8 = insertvalue { i32, i32 } undef, i32 %t7, 0\n  %t9 = insertvalue { i32, i32 } %t8, i32 0, 1\n  ret { i32, i32 } %t9\n}\n\n"))) { exit 10i32; }
+
+    // --- while, if, break — and the loop's shape ------------------------------
+    string:t1 = relay emitted(@f, @it, 1i32, @st);
+    if (!(raw string_eq(t1,
+        "define { i32, i32 } @npk_count(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  store i32 0, ptr %t1\n  br label %wh.head0\nwh.head0:\n  %t2 = load i32, ptr %t1\n  %t3 = load i32, ptr %t0\n  %t4 = icmp slt i32 %t2, %t3\n  %t5 = zext i1 %t4 to i8\n  %t6 = icmp ne i8 %t5, 0\n  br i1 %t6, label %wh.body1, label %wh.done2\nwh.body1:\n  %t7 = load i32, ptr %t1\n  %t8 = icmp eq i32 %t7, 3\n  %t9 = zext i1 %t8 to i8\n  %t10 = icmp ne i8 %t9, 0\n  br i1 %t10, label %if.then3, label %if.done4\nif.then3:\n  br label %wh.done2\nif.done4:\n  %t11 = load i32, ptr %t1\n  %t12 = add i32 %t11, 1\n  store i32 %t12, ptr %t1\n  br label %wh.head0\nwh.done2:\n  %t13 = load i32, ptr %t1\n  %t14 = insertvalue { i32, i32 } undef, i32 %t13, 0\n  %t15 = insertvalue { i32, i32 } %t14, i32 0, 1\n  ret { i32, i32 } %t15\n}\n\n"))) { exit 11i32; }
+
+    // --- D-136: the pass value is read BEFORE the defer runs ------------------
+    string:t2 = relay emitted(@f, @it, 2i32, @st);
+    if (!(raw string_eq(t2,
+        "define { i32, i32 } @npk_cleanup() {\nentry:\n  %t0 = alloca i32\n  store i32 0, ptr %t0\n  %t1 = load i32, ptr %t0\n  %t2 = load i32, ptr %t0\n  %t3 = add i32 %t2, 9\n  store i32 %t3, ptr %t0\n  %t4 = insertvalue { i32, i32 } undef, i32 %t1, 0\n  %t5 = insertvalue { i32, i32 } %t4, i32 0, 1\n  ret { i32, i32 } %t5\n}\n\n"))) { exit 12i32; }
+
+    // --- relay: extract, branch, run defers, fail with the SAME code ----------
+    string:t3 = relay emitted(@f, @it, 3i32, @st);
+    if (!(raw string_eq(t3,
+        "define { i32, i32 } @npk_pipe(i32 %a0) {\nentry:\n  %t0 = alloca i32\n  store i32 %a0, ptr %t0\n  %t1 = alloca i32\n  %t2 = load i32, ptr %t0\n  %t3 = call { i32, i32 } @npk_step(i32 %t2)\n  %t4 = extractvalue { i32, i32 } %t3, 0\n  %t5 = extractvalue { i32, i32 } %t3, 1\n  %t6 = icmp ne i32 %t5, 0\n  br i1 %t6, label %relay.err0, label %relay.ok1\nrelay.err0:\n  %t7 = insertvalue { i32, i32 } undef, i32 0, 0\n  %t8 = insertvalue { i32, i32 } %t7, i32 %t5, 1\n  ret { i32, i32 } %t8\nrelay.ok1:\n  store i32 %t4, ptr %t1\n  %t9 = load i32, ptr %t1\n  %t10 = insertvalue { i32, i32 } undef, i32 %t9, 0\n  %t11 = insertvalue { i32, i32 } %t10, i32 0, 1\n  ret { i32, i32 } %t11\n}\n\n"))) { exit 13i32; }
+
+    // --- main is bare, takes the argv slice, and `exit` is a plain ret --------
+    string:t4 = relay emitted(@f, @it, 4i32, @st);
+    if (!(raw string_eq(t4,
+        "define i32 @main({ ptr, i64 } %a0) {\nentry:\n  %t0 = alloca { ptr, i64 }\n  store { ptr, i64 } %a0, ptr %t0\n  ret i32 0\n}\n\n"))) { exit 14i32; }
+
+    exit 0i32;
+};

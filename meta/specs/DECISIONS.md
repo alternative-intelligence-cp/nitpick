@@ -9572,3 +9572,35 @@ work should take when it is done; it does not do it.
 `simd`'s constructor spelling is also unsettled. The parser reads `simd(a, b, c)` as
 an `ExprVectorCtorExpr`, which the type checker refuses as Tier 1 — correct under
 any outcome, and the narrowest thing that keeps the node kind reachable.
+
+## D-136 — `pass v` evaluates `v` before the `defer` stack runs — **SETTLED**
+
+**Decision.** At every normal exit (`pass`, `fail`, `exit`), the exit's value
+expression is evaluated **first**, at the exit statement, and the scope's `defer`
+blocks run **after** it — so the value a function returns is the value that was
+written at the `pass`, whatever the defers do afterwards. Defers run LIFO
+(innermost frame first, latest registration first), which "pushes a block onto a
+stack" (CONTROL_REFERENCE §4.5) already implies.
+
+**The alternative was live, which is why this is a decision.** The seed evaluates
+in the other order — defers first, value second — so
+
+```nitpick
+int32:x = 0i32;
+defer { x = x + 9i32; }
+pass x;
+```
+
+returns `9` under the seed and `0` under this decision. The spec was silent; the
+divergence is unobservable in the bootstrap today (the compiler's own defers only
+release memory), so the fixpoint is unaffected; and the artifact gets the
+semantics that survive an audit: **the value you passed is the value returned.**
+The other order makes every `pass` a hidden read-after-mutation whose meaning
+depends on cleanup code written possibly pages earlier — a construct changing
+meaning by context, which the blueprint philosophy forbids first.
+
+**`fail` and `exit` follow the same rule** — the code is read at the statement,
+then cleanup runs. One rule for all three exits, no per-exit special case.
+
+**A trap still runs nothing** (D-014, unchanged): `?!` and `!!!` transfer to
+`failsafe` without unwinding, value semantics moot.
