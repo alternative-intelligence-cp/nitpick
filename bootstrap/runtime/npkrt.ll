@@ -118,6 +118,8 @@ define internal i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            D-008 refused inventing one, so it traps)
 ;   -4099  OUT_OF_BOUNDS     a slice/array index past the end, or a range view
 ;                            that does not fit its source (D-070; 0.9.2)
+;   -4100  TBB_ERR           an ERR value reached a bare comparison or a
+;                            checked cast out of tbb (D-008 SS5, D-144; 0.9.5)
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
 ; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always

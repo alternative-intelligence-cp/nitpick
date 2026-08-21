@@ -250,11 +250,18 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     }
     if (n.kind == ExprKind.ExprSentinelLiteral) {
         // NIL is the zero-width value; its `i32 0` exists only to have something
-        // to hand `Result<NIL>` machinery. NULL is the pointer. ERR is the `tbb`
-        // taint (D-008), whose arithmetic is 0.9's.
+        // to hand `Result<NIL>` machinery. NULL is the pointer. ERR (0.9.5) is
+        // the `tbb` taint (D-008): the sentinel of whatever width the checker
+        // gave this position, from the one shared table.
         if (n.payload == 0i64) { pass (raw iv("i32", "0", 0i32)); }
         if (n.payload == 1i64) { pass (raw iv("ptr", "null", 0i32)); }
-        pass (raw iv_rung("the `ERR` sentinel", "0.9", n.span));
+        int32:stid = raw exprtypes_get(x.et, id);
+        int32:sbits2 = raw type_int_bits(x.fe.ctx.types, stid);
+        string:smn = raw tbb_min_decimal(sbits2);
+        if (smn.len == 0i64) { pass (raw iv_broken(n.span)); }
+        LlType:sll = relay ll_type(x.fe.ctx, stid);
+        if (!(raw ll_is_ok(sll))) { pass (relay iv_from_ll_at(x, sll, stid, n.span)); }
+        pass (raw iv(sll.text, smn, stid));
     }
     if (n.kind == ExprKind.ExprStringLiteral) { pass (relay emit_string(x, n)); }
     if (n.kind == ExprKind.ExprIdentifierExpr){ pass (relay emit_ident(x, id, n)); }
@@ -364,8 +371,21 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprDefaultsExpr) {
         pass (raw iv_rung("the defaults operator", "0.9", n.span));
     }
+    // `is_err(x)` — THE test that does not trap (D-008 §5): ERR flows through
+    // data and stops at branches, and this is the sanctioned way to look.
     if (n.kind == ExprKind.ExprIsErrExpr) {
-        pass (raw iv_rung("`is_err`", "0.9", n.span));
+        IrVal:ov = relay emit_expr(x, raw expr_operand(n));
+        if (!(raw iv_is_ok(ov))) { pass ov; }
+        int32:obits = raw type_int_bits(x.fe.ctx.types, ov.type_id);
+        string:mn = raw tbb_min_decimal(obits);
+        if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:ec = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(ec, " = icmp eq ", ov.ll, " ",
+                          relay cat3(ov.ref, ", ", mn)));
+        string:ez = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(ez, " = zext i1 ",
+                          relay string_concat(ec, " to i8")));
+        pass (raw iv("i8", ez, 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
         pass (raw iv_rung("a vector constructor", "0.9", n.span));
@@ -557,6 +577,31 @@ func:float_literal_body = string(ExprEmitter->:x, string:txt) {
     pass (relay cat3(mant, ".0", rest));
 };
 
+// `tbb` division and remainder: zero divisor or any ERR yields ERR — never a
+// trap, never UB. The divisor is REPLACED with 1 when the result will be ERR
+// anyway, so the machine instruction itself can never fault; the select picks
+// the sentinel afterward. (An ERR-free dividend can never be the sentinel, so
+// sdiv's own INT_MIN/-1 case is unreachable by construction.)
+func:tbb_divlike = IrVal(ExprEmitter->:x, ExprNode:n, IrVal:lhs, IrVal:rhs,
+                         string:anyerr, string:tmn, string:ins) {
+    string:z = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(z, " = icmp eq ", lhs.ll, " ",
+                      relay string_concat(rhs.ref, ", 0")));
+    string:sticky = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(sticky, " = or i1 ", anyerr, ", ", z));
+    string:safeb = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(safeb, " = select i1 ", sticky, ", ",
+                      relay cat5(lhs.ll, " 1, ", lhs.ll, " ", rhs.ref)));
+    string:q = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(q, " = ", ins, " ",
+                      relay cat5(lhs.ll, " ", lhs.ref, ", ", safeb)));
+    string:res = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(res, " = select i1 ", sticky, ", ",
+                      relay cat5(lhs.ll, " ", tmn, ", ",
+                          relay cat3(lhs.ll, " ", q))));
+    pass (raw iv(lhs.ll, res, lhs.type_id));
+};
+
 pub func:arith_name = string(TokenKind:op, bool:signed) {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
@@ -630,6 +675,33 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
                               relay string_concat(fc, " to i8")));
             pass (raw iv("i8", fz, 0i32));
         }
+        // `tbb` EQUALITY GUARDS FIRST (0.9.5, D-008 §5): an ERR operand at a
+        // comparison is a tainted value about to steer control flow, and it
+        // traps (TBB_ERR, -4100) — `is_err` is the test that looks without
+        // trapping, and `pick` with an `ERR:` arm is the branch that handles
+        // it; a bare `==` is neither. Ordering was already a compile error
+        // (D-093).
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB())) {
+            int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
+            string:tmn = raw tbb_min_decimal(tb);
+            if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:e1 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(e1, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(lhs.ref, ", ", tmn)));
+            string:e2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(e2, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(rhs.ref, ", ", tmn)));
+            string:ea = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(ea, " = or i1 ", e1, ", ", e2));
+            string:tl = relay irw_new_label(x.fe.w, "tbb.err");
+            string:ol = relay irw_new_label(x.fe.w, "tbb.ok");
+            drop irw_line(x.fe.w, relay cat5("br i1 ", ea, ", label %", tl,
+                              relay string_concat(", label %", ol)));
+            drop irw_label(x.fe.w, tl);
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4100)");
+            drop irw_line(x.fe.w, "unreachable");
+            drop irw_label(x.fe.w, ol);
+        }
         string:c = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(c, " = icmp ", cmp, " ",
                           relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
@@ -660,8 +732,109 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         }
     }
 
-    // ARITHMETIC BEYOND FLOATS AND INTEGERS is not this rung's. `tbb`
-    // arithmetic drags in ERR, stickiness and saturation (D-008; 0.9.5). The
+    // `tbb` ARITHMETIC (0.9.5, D-008): sticky, saturating, BRANCH-FREE. Any
+    // ERR operand yields ERR (stickiness beats every identity — ERR * 0 is
+    // ERR); overflow yields ERR (saturation); a result that lands ON the
+    // sentinel arithmetically IS ERR by construction, no extra check. Division
+    // by zero yields ERR, not a trap — this is the fail-operational row of
+    // D-007's table, the whole reason the type exists. Lowered with selects,
+    // never branches, so the operation's cost and shape are data-independent.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_TBB())) {
+            int32:tb = raw type_int_bits(x.fe.ctx.types, lt);
+            string:tmn = raw tbb_min_decimal(tb);
+            if (tmn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:e1 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(e1, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(lhs.ref, ", ", tmn)));
+            string:e2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(e2, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(rhs.ref, ", ", tmn)));
+            string:anyerr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(anyerr, " = or i1 ", e1, ", ", e2));
+
+            string:bad = "";
+            string:val = "";
+            if (op == TokenKind.OpPlus) {
+                string:v = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(v, " = add ", lhs.ll, " ",
+                                  relay cat3(lhs.ref, ", ", rhs.ref)));
+                // Signed overflow, by the sign trick: it happened iff the
+                // operands agree in sign and the result does not.
+                string:xa = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(xa, " = xor ", lhs.ll, " ",
+                                  relay cat3(v, ", ", lhs.ref)));
+                string:xb = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(xb, " = xor ", lhs.ll, " ",
+                                  relay cat3(v, ", ", rhs.ref)));
+                string:ab = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(ab, " = and ", lhs.ll, " ",
+                                  relay cat3(xa, ", ", xb)));
+                string:o = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(o, " = icmp slt ", lhs.ll, " ",
+                                  relay string_concat(ab, ", 0")));
+                bad = o;
+                val = v;
+            }
+            if (op == TokenKind.OpMinus) {
+                string:v = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(v, " = sub ", lhs.ll, " ",
+                                  relay cat3(lhs.ref, ", ", rhs.ref)));
+                // Subtraction overflows iff the operands DISAGREE in sign and
+                // the result disagrees with the minuend.
+                string:xa = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(xa, " = xor ", lhs.ll, " ",
+                                  relay cat3(lhs.ref, ", ", rhs.ref)));
+                string:xb = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(xb, " = xor ", lhs.ll, " ",
+                                  relay cat3(v, ", ", lhs.ref)));
+                string:ab = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(ab, " = and ", lhs.ll, " ",
+                                  relay cat3(xa, ", ", xb)));
+                string:o = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(o, " = icmp slt ", lhs.ll, " ",
+                                  relay string_concat(ab, ", 0")));
+                bad = o;
+                val = v;
+            }
+            if (op == TokenKind.OpStar) {
+                // Multiplication's overflow has no cheap sign trick; the
+                // intrinsic lowers natively at every width here (D-011).
+                string:pair = relay irw_temp(x.fe.w);
+                string:mhead = relay cat5(pair, " = call { ", lhs.ll,
+                                    ", i1 } @llvm.smul.with.overflow.", lhs.ll);
+                string:margs = relay cat5("(", lhs.ll, " ", lhs.ref,
+                                    relay cat4(", ", lhs.ll, " ",
+                                        relay string_concat(rhs.ref, ")")));
+                drop irw_line(x.fe.w, relay string_concat(mhead, margs));
+                string:v = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(v, " = extractvalue { ", lhs.ll,
+                                  ", i1 } ", relay string_concat(pair, ", 0")));
+                string:o = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(o, " = extractvalue { ", lhs.ll,
+                                  ", i1 } ", relay string_concat(pair, ", 1")));
+                bad = o;
+                val = v;
+            }
+            if (op == TokenKind.OpSlash) {
+                pass (relay tbb_divlike(x, n, lhs, rhs, anyerr, tmn, "sdiv"));
+            }
+            if (op == TokenKind.OpPercent) {
+                pass (relay tbb_divlike(x, n, lhs, rhs, anyerr, tmn, "srem"));
+            }
+            if (bad.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+            string:sticky = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(sticky, " = or i1 ", anyerr, ", ", bad));
+            string:res = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(res, " = select i1 ", sticky, ", ",
+                              relay cat5(lhs.ll, " ", tmn, ", ",
+                                  relay cat3(lhs.ll, " ", val))));
+            pass (raw iv(lhs.ll, res, lhs.type_id));
+        }
+    }
+
+    // ARITHMETIC BEYOND FLOATS, INTEGERS AND `tbb` is not this rung's. The
     // checker already refused what is never legal — this refuses what is legal
     // and not yet lowered, which is exactly the difference between the two
     // states.
@@ -781,6 +954,226 @@ func:emit_shortcircuit = IrVal(ExprEmitter->:x, ExprNode:n, bool:is_and) {
 // a signed source sign-extends, an unsigned one zero-extends, because that is
 // what preserves the value — the promise `=>` makes (D-021). `bool` and `char8`
 // widen unsigned: neither has negative values.
+// 2^(N-1) as a DOUBLE hex constant, positive and negative — the float→tbb
+// range bounds. Powers of two are exact in double at every tbb width, and the
+// compare is done in double (an f32 source extends first) so one table serves
+// both float widths.
+func:tbb_pow_hex = string(int32:bits, bool:neg) {
+    if (bits == 8i32)   { if (neg) { pass "0xC060000000000000"; } pass "0x4060000000000000"; }
+    if (bits == 16i32)  { if (neg) { pass "0xC0E0000000000000"; } pass "0x40E0000000000000"; }
+    if (bits == 32i32)  { if (neg) { pass "0xC1E0000000000000"; } pass "0x41E0000000000000"; }
+    if (bits == 64i32)  { if (neg) { pass "0xC3E0000000000000"; } pass "0x43E0000000000000"; }
+    if (bits == 128i32) { if (neg) { pass "0xC7E0000000000000"; } pass "0x47E0000000000000"; }
+    if (bits == 256i32) { if (neg) { pass "0xCFE0000000000000"; } pass "0x4FE0000000000000"; }
+    pass "";
+};
+
+// A -4100 trap block on a condition — the shared shape of every checked-cast
+// guard in the tbb matrix.
+func:tbb_trap_if = NIL(ExprEmitter->:x, string:cond) {
+    string:tl = relay irw_new_label(x.fe.w, "tbbc.err");
+    string:ol = relay irw_new_label(x.fe.w, "tbbc.ok");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", cond, ", label %", tl,
+                      relay string_concat(", label %", ol)));
+    drop irw_label(x.fe.w, tl);
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4100)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ol);
+    pass NIL;
+};
+
+// Resize a tbb/int carrier between widths; signed extension, because every
+// carrier that reaches here is either signed or being treated as its number.
+func:tbb_resize = string(ExprEmitter->:x, string:from_ll, string:ref,
+                         string:to_ll, bool:src_signed) {
+    if (raw string_eq(from_ll, to_ll)) { pass ref; }
+    int64:sw = relay ll_int_width(from_ll);
+    int64:dw = relay ll_int_width(to_ll);
+    string:r = relay irw_temp(x.fe.w);
+    if (dw < sw) {
+        drop irw_line(x.fe.w, relay cat5(r, " = trunc ", from_ll, " ",
+                          relay cat3(ref, " to ", to_ll)));
+        pass r;
+    }
+    if (src_signed) {
+        drop irw_line(x.fe.w, relay cat5(r, " = sext ", from_ll, " ",
+                          relay cat3(ref, " to ", to_ll)));
+        pass r;
+    }
+    drop irw_line(x.fe.w, relay cat5(r, " = zext ", from_ll, " ",
+                      relay cat3(ref, " to ", to_ll)));
+    pass r;
+};
+
+// THE tbb CAST MATRIX (0.9.5, D-144) — closing the audit's third Theme-A hole:
+// same-width int⇄tbb rode the no-op fast path, so a taint could be forged or
+// laundered with no spelling saying so. The contract, per the settled
+// `cast_from_tbb`/`cast_to_tbb` arms: every crossing is legal (`CAST_OK`) and
+// CARRIES ITS RUNTIME CHECK — `=>` traps (TBB_ERR, -4100) where the value has
+// no image (an ERR leaving tbb, a sentinel-or-out-of-range value entering),
+// and `=>!` is the greppable acceptance: the same conversion SATURATES to ERR
+// instead of trapping (entering) or reads the raw carrier (leaving). tbb⇄tbb
+// maps the sentinel across widths in BOTH spellings — ERR is a state, not a
+// number, and a conversion that forgot it would forge validity out of taint.
+func:emit_tbb_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n, IrVal:v,
+                           LlType:want, int32:wid) {
+    bool:unchecked = false;
+    if (n.kind == ExprKind.ExprUncheckedCastExpr) { unchecked = true; }
+    int32:sk = raw type_kind(x.fe.ctx.types, v.type_id);
+    int32:dk = raw type_kind(x.fe.ctx.types, wid);
+
+    if (sk == (raw TY_TBB())) {
+        int32:sb = raw type_int_bits(x.fe.ctx.types, v.type_id);
+        string:mn_s = raw tbb_min_decimal(sb);
+        if (mn_s.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:err = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(err, " = icmp eq ", v.ll, " ",
+                          relay cat3(v.ref, ", ", mn_s)));
+
+        if (dk == (raw TY_TBB())) {
+            int32:db = raw type_int_bits(x.fe.ctx.types, wid);
+            string:mn_d = raw tbb_min_decimal(db);
+            string:mx_d = raw tbb_max_decimal(db);
+            if (mn_d.len == 0i64) { pass (raw iv_broken(n.span)); }
+            if (db < sb) {
+                string:hi2 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(hi2, " = icmp sgt ", v.ll, " ",
+                                  relay cat3(v.ref, ", ", mx_d)));
+                string:lo2 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(lo2, " = icmp slt ", v.ll, " ",
+                                  relay cat4(v.ref, ", -", mx_d, "")));
+                string:oor = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(oor, " = or i1 ", hi2, ", ", lo2));
+                if (!unchecked) {
+                    string:ne = relay irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, relay cat3(ne, " = xor i1 ",
+                                      relay string_concat(err, ", true")));
+                    string:tv = relay irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, relay cat5(tv, " = and i1 ", oor, ", ", ne));
+                    drop tbb_trap_if(x, tv);
+                    string:rz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+                    string:res = relay irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, relay cat5(res, " = select i1 ", err, ", ",
+                                      relay cat5(want.text, " ", mn_d, ", ",
+                                          relay cat3(want.text, " ", rz))));
+                    pass (raw iv(want.text, res, wid));
+                }
+                string:sat = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(sat, " = or i1 ", err, ", ", oor));
+                string:rz2 = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+                string:res2 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(res2, " = select i1 ", sat, ", ",
+                                  relay cat5(want.text, " ", mn_d, ", ",
+                                      relay cat3(want.text, " ", rz2))));
+                pass (raw iv(want.text, res2, wid));
+            }
+            string:rz3 = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+            string:res3 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(res3, " = select i1 ", err, ", ",
+                              relay cat5(want.text, " ", mn_d, ", ",
+                                  relay cat3(want.text, " ", rz3))));
+            pass (raw iv(want.text, res3, wid));
+        }
+
+        // Leaving tbb: `=>` traps on ERR (no image); `=>!` reads the carrier.
+        if (!unchecked) { drop tbb_trap_if(x, err); }
+        if (dk == (raw TY_FLOAT())) {
+            string:fr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(fr, " = sitofp ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+            pass (raw iv(want.text, fr, wid));
+        }
+        string:iz = raw tbb_resize(x, v.ll, v.ref, want.text, true);
+        pass (raw iv(want.text, iz, wid));
+    }
+
+    // Entering tbb.
+    int32:db2 = raw type_int_bits(x.fe.ctx.types, wid);
+    string:mn2 = raw tbb_min_decimal(db2);
+    string:mx2 = raw tbb_max_decimal(db2);
+    if (mn2.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    if (sk == (raw TY_FLOAT())) {
+        // Compare in DOUBLE so one bound table serves both float widths;
+        // strict bounds exclude the sentinel, and NaN fails every ordered
+        // compare, so `!in` covers garbage of every kind.
+        string:cv = v.ref;
+        string:cll = v.ll;
+        if (raw string_eq(v.ll, "float")) {
+            string:xt = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(xt, " = fpext float ",
+                              relay string_concat(v.ref, " to double")));
+            cv = xt;
+            cll = "double";
+        }
+        string:pgt = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(pgt, " = fcmp ogt double ", cv, ", ",
+                          raw tbb_pow_hex(db2, true)));
+        string:plt = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(plt, " = fcmp olt double ", cv, ", ",
+                          raw tbb_pow_hex(db2, false)));
+        string:inr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(inr, " = and i1 ", pgt, ", ", plt));
+        if (!unchecked) {
+            string:bad2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(bad2, " = xor i1 ",
+                              relay string_concat(inr, ", true")));
+            drop tbb_trap_if(x, bad2);
+            string:q = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(q, " = fptosi ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+            pass (raw iv(want.text, q, wid));
+        }
+        string:q2 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(q2, " = fptosi ", v.ll, " ",
+                          relay cat3(v.ref, " to ", want.text)));
+        string:res4 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(res4, " = select i1 ", inr, ", ",
+                          relay cat5(want.text, " ", q2, ", ",
+                              relay cat3(want.text, " ", mn2))));
+        pass (raw iv(want.text, res4, wid));
+    }
+
+    // int → tbb. A strictly narrower source always fits the valid range; a
+    // same-or-wider one is range-checked in ITS OWN width, which is where the
+    // information still exists.
+    bool:ssig = raw type_is_signed(x.fe.ctx.types, v.type_id);
+    int64:sw = relay ll_int_width(v.ll);
+    int64:dw = relay ll_int_width(want.text);
+    if (sw >= dw) {
+        string:oor2 = "";
+        if (ssig) {
+            string:h3 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(h3, " = icmp sgt ", v.ll, " ",
+                              relay cat3(v.ref, ", ", mx2)));
+            string:l3 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(l3, " = icmp slt ", v.ll, " ",
+                              relay cat4(v.ref, ", -", mx2, "")));
+            string:o3 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(o3, " = or i1 ", h3, ", ", l3));
+            oor2 = o3;
+        } else {
+            string:o4 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(o4, " = icmp ugt ", v.ll, " ",
+                              relay cat3(v.ref, ", ", mx2)));
+            oor2 = o4;
+        }
+        if (!unchecked) {
+            drop tbb_trap_if(x, oor2);
+            string:rz4 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+            pass (raw iv(want.text, rz4, wid));
+        }
+        string:rz5 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+        string:res5 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(res5, " = select i1 ", oor2, ", ",
+                          relay cat5(want.text, " ", mn2, ", ",
+                              relay cat3(want.text, " ", rz5))));
+        pass (raw iv(want.text, res5, wid));
+    }
+    string:rz6 = raw tbb_resize(x, v.ll, v.ref, want.text, ssig);
+    pass (raw iv(want.text, rz6, wid));
+};
+
 func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     IrVal:v = relay emit_expr(x, raw expr_operand(n));
     if (v.state != (raw LL_OK())) { pass v; }
@@ -807,6 +1200,16 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         if (raw string_eq(v.ll, want.text)) {
             pass (raw iv(want.text, v.ref, wid));
         }
+    }
+
+    // A tbb ON EITHER SIDE takes the matrix (0.9.5) — the generic scalar path
+    // below would trunc/sext the carrier raw, which is exactly the forge and
+    // launder the matrix exists to end.
+    if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) {
+        pass (relay emit_tbb_cast(x, id, n, v, want, wid));
+    }
+    if ((raw type_kind(x.fe.ctx.types, wid)) == (raw TY_TBB())) {
+        pass (relay emit_tbb_cast(x, id, n, v, want, wid));
     }
 
     // FLOAT CASTS (0.9.4). The frontend already decided legality and loss

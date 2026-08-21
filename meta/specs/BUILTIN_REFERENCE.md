@@ -130,9 +130,10 @@ the syscall returned them (ENOENT is −2). Conditions the floor detects itself
 reuse that vocabulary — an interior NUL is −22, a slice out of range −34 — and
 end-of-input is E_EOF = −4096, the first code past the kernel's error space
 (errno stops at 4095), so no collision is possible. Runtime trap codes continue
-that region: −4097 DIV_BY_ZERO, −4098 INT_MIN_OVERFLOW, and −4099 OUT_OF_BOUNDS
-(a slice or array index past the end, D-070) reach `failsafe` through the
-runtime's trap route rather than through any Result. Positive codes
+that region: −4097 DIV_BY_ZERO, −4098 INT_MIN_OVERFLOW, −4099 OUT_OF_BOUNDS
+(a slice or array index past the end, D-070), and −4100 TBB_ERR (an ERR value
+at a bare comparison or a checked cast out of tbb, D-144) reach `failsafe`
+through the runtime's trap route rather than through any Result. Positive codes
 belong to programs. The full statements are D-141 and D-142.
 
 ## 2c. Comptime-foldable string builtins

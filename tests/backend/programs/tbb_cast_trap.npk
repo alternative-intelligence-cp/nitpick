@@ -1,0 +1,17 @@
+// expect-exit: 24
+//
+// The checked spelling's half of the matrix: `tbb => int` promises a value
+// with an integer image, and ERR has none — so it traps (-4100) instead of
+// laundering the taint into a number.
+
+func:main = int32(cstring[]:argv) {
+    tbb32:z = (argv.len =>! int32 - 1i32) =>! tbb32;   // 0, at run time
+    tbb32:e = 5tbb32 / z;                              // ERR
+    int64:laundered = e => int64;                      // must trap
+    exit (laundered =>! int32);
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err =>! int64) == (0i64 - 4100i64)) { exit 24i32; }
+    exit 9i32;
+};

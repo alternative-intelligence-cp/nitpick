@@ -340,7 +340,18 @@ func:kind_wanted = int32(ExprTyper->:_~e, string:example) {
 // a mismatch against the very type it constructs.
 func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) {
     int64:which = n.payload;
-    if (which == 2i64) { pass (e.types.t_tbb32); }
+    // `ERR` takes the WIDTH OF ITS SLOT (0.9.5): the sentinel is a state every
+    // tbb width has, and `tbb64:e = ERR;` typing as tbb32 was a mismatch about
+    // nothing. Bare `ERR` with no tbb context stays tbb32, the working width.
+    if (which == 2i64) {
+        int32:werr = raw expected_value(e);
+        if (werr != 0i32) {
+            if ((raw type_kind(e.types, werr)) == (raw TY_TBB())) {
+                pass werr;
+            }
+        }
+        pass (e.types.t_tbb32);
+    }
 
     if (which == 0i64) {
         if (e.expected != 0i32) {

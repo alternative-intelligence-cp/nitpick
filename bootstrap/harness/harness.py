@@ -687,10 +687,10 @@ KIND_STATUS = {
     "ExprStructLiteralExpr": "lowered", "ExprArrayLiteralExpr": "lowered",
     "ExprMoveExpr": "lowered",         # yields its place; the transfer is static (D-065)
     "ExprFloatLiteral": "lowered",   # 0.9.4
-    "ExprSentinelLiteral": "rung",
+    "ExprSentinelLiteral": "lowered", # 0.9.5 — NIL/NULL always were; ERR joined
     "ExprTemplateLiteral": "rung", "ExprPostfixExpr": "rung",
     "ExprPipeExpr": "rung", "ExprRangeExpr": "rung", "ExprSpreadExpr": "rung",
-    "ExprTernaryExpr": "rung", "ExprIsErrExpr": "rung",
+    "ExprTernaryExpr": "rung", "ExprIsErrExpr": "lowered",  # 0.9.5
     "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "rung",
     "ExprSafeUnwrapExpr": "rung", "ExprNullCoalesceExpr": "rung",
     "ExprEmphaticUnwrapExpr": "rung", "ExprDefaultsExpr": "rung",

@@ -9741,6 +9741,7 @@ trap codes continue that region below `E_EOF`:
 | −4097 | `DIV_BY_ZERO` | integer `/` or `%` with a zero divisor (D-007) |
 | −4098 | `INT_MIN_OVERFLOW` | `INT_MIN / -1` or `INT_MIN % -1` — no representable result, and D-008 already refused inventing one for a plain integer, so it traps rather than wraps |
 | −4099 | `OUT_OF_BOUNDS` | a slice/array index past the end, or a range view that does not fit its source (D-070; registered 0.9.2) |
+| −4100 | `TBB_ERR` | an ERR value at a bare comparison, or a checked cast out of tbb — the taint about to steer control flow or launder into a number (D-008 §5, D-144; registered 0.9.5) |
 
 The guards are emitted in EVERY build — D-068's rule, restated at the emission
 site: a build without the verifier still emits the check, and 1.3's static
@@ -9784,3 +9785,45 @@ significant digits (53 ≥ 2·24+2, the double-rounding theorem), and beyond
 that the value would be implementation-defined — which a literal must never
 be. `flt64` literals are unbounded: LLVM's parser converts any decimal with
 correct rounding directly.
+
+## D-144 — `tbb` at run time: sticky, saturating, and the cast matrix — **SETTLED**
+
+Cycle 0.9.5, making D-008 executable and closing the audit's third live rung
+hole (the same-width int⇄tbb cast that could forge or launder taint through a
+no-op fast path).
+
+**Arithmetic is branch-free and total.** Any ERR operand yields ERR
+(stickiness beats every identity: `ERR * 0` is ERR); overflow saturates to
+ERR (add/sub by the sign trick, mul by `llvm.smul.with.overflow`, native at
+every width per D-011); a result that lands ON the sentinel arithmetically IS
+ERR by construction, no extra check. **Division and remainder by zero yield
+ERR and continue** — the fail-operational row of D-007's table, the reason
+the type exists — with the divisor replaced before the instruction so the
+hardware can never fault. Lowered with selects, never branches: the cost and
+shape are data-independent.
+
+**ERR at a bare comparison traps** (`TBB_ERR`, −4100): a tainted value about
+to steer control flow. `is_err(x)` is the look that does not trap; a `pick`
+with an `ERR:` arm is the branch that handles it (its own compare is
+deliberately unguarded — it IS the handler). Ordering on tbb was already a
+compile error (D-093); D-008 §5's runtime-ordering text is annotated as
+narrowed in the doc-sync.
+
+**The cast matrix.** Per the settled `cast_from_tbb`/`cast_to_tbb` arms,
+every crossing is legal and carries its runtime semantics: `=>` traps (−4100)
+where the value has no image — ERR leaving tbb, a sentinel-or-out-of-range
+value entering — and `=>!` is the greppable acceptance: entering saturates to
+ERR, leaving reads the raw carrier. **tbb⇄tbb maps the sentinel across widths
+in both spellings** — ERR is a state, not a number; widening must not
+sign-extend it into a valid value and narrowing must not truncate it into
+zero. float→tbb compares in double (one bound table serves both float
+widths); NaN fails the ordered bounds and is out-of-range garbage like any
+other.
+
+**`ERR` takes the width of its slot** (`tbb64:e = ERR;` works; bare ERR with
+no tbb context stays tbb32), from one shared sentinel table in the emitter —
+no two sites can disagree about which bit pattern taint is.
+
+**`?` on tbb stays refused**: OP_REFERENCE/D-008's promise of a tbb fallback
+operator loses to D-099's one-wrapper rule — `?` takes a `Result` and nothing
+else; the doc correction rides the 0.9.8 sync.

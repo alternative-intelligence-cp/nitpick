@@ -1,0 +1,80 @@
+// expect-exit: 0
+//
+// tbb arithmetic (0.9.5, D-144/D-008): sticky, saturating, fail-operational.
+// ERR is the carrier's most-negative value; any operation on it yields it
+// (stickiness beats every identity); overflow saturates to it; division by
+// zero YIELDS it rather than trapping — the row of D-007's table that exists
+// so a control loop degrades instead of stopping. `is_err` looks without
+// trapping, and a `pick` with an `ERR:` arm is the sanctioned branch.
+
+func:classify = int32(tbb32:v) {
+    int32:out = 0i32;
+    pick (v) {
+        ERR: { out = 99i32; },
+        (0tbb32) { out = 1i32; },
+        (*) { out = 2i32; }
+    }
+    pass out;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // Ordinary arithmetic works and stays in range.
+    tbb32:a = 20tbb32;
+    tbb32:b = 3tbb32;
+    if (is_err(a + b))                          { exit 10i32; }
+    if (!(is_err(ERR)))                         { exit 11i32; }
+
+    // Saturation: MAX + 1 lands on ERR, not on a wrapped number.
+    tbb32:big = 2147483647i32 =>! tbb32;
+    tbb32:one = 1tbb32;
+    if (!(is_err(big + one)))                   { exit 12i32; }
+
+    // Stickiness beats the identities: ERR * 0 is ERR, ERR - ERR is ERR.
+    tbb32:e = ERR;
+    tbb32:z = 0tbb32;
+    if (!(is_err(e * z)))                       { exit 13i32; }
+    if (!(is_err(e - e)))                       { exit 14i32; }
+
+    // Division by zero DEGRADES: the result is ERR and execution continues —
+    // reaching the next line is the fail-operational claim, proven.
+    if (!(is_err(a / z)))                       { exit 15i32; }
+    if (!(is_err(a % z)))                       { exit 16i32; }
+    if (is_err(a / b))                          { exit 17i32; }
+
+    // The ERR: pick arm matches the sentinel; other arms still work.
+    if ((raw classify(ERR)) != 99i32)           { exit 18i32; }
+    if ((raw classify(0tbb32)) != 1i32)         { exit 19i32; }
+    if ((raw classify(7tbb32)) != 2i32)         { exit 20i32; }
+
+    // The cast matrix, accepted-loss side (=>!): entering tbb saturates —
+    // INT_MIN maps to ERR, an in-range value converts cleanly.
+    int32:minv = (0i32 - 2147483647i32) - 1i32;
+    tbb32:forged = minv =>! tbb32;
+    if (!(is_err(forged)))                      { exit 21i32; }
+    tbb32:okv = 41i32 =>! tbb32;
+    if (is_err(okv))                            { exit 22i32; }
+
+    // tbb⇄tbb maps the SENTINEL across widths in both spellings — ERR is a
+    // state, not a number: widening must not sext it into a valid value, and
+    // narrowing must not truncate it into zero.
+    tbb64:wide_err = e => tbb64;
+    if (!(is_err(wide_err)))                    { exit 23i32; }
+    tbb64:e64 = ERR;
+    tbb32:narrow_err = e64 =>! tbb32;
+    if (!(is_err(narrow_err)))                  { exit 24i32; }
+    tbb64:half64 = 2000000000tbb64;
+    tbb64:big64 = half64 + half64;     // 4e9 — past tbb32's valid range
+    tbb32:sat32 = big64 =>! tbb32;
+    if (!(is_err(sat32)))                       { exit 25i32; }
+    tbb64:fits = 1000tbb64;
+    tbb32:f32v = fits =>! tbb32;
+    if (is_err(f32v))                           { exit 26i32; }
+
+    // Leaving tbb with the bang reads the carrier; the checked spelling's
+    // trap is its own program (tbb_cast_trap).
+    if ((okv =>! int32) != 41i32)               { exit 27i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

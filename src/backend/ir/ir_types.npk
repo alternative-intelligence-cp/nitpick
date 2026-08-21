@@ -361,6 +361,33 @@ pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
     pass (raw ll_ok(relay string_concat(d2, "] }")));
 };
 
+// The ERR sentinel per tbb width, as decimal text (D-008: the most negative
+// value of the carrier). ONE representation, shared by every site that spells
+// it — the arithmetic saturation, the sentinel maps in casts, `is_err`, the
+// `ERR` literal, and the `ERR:` pick arm — so no two sites can disagree about
+// which bit pattern taint is.
+pub func:tbb_min_decimal = string(int32:bits) {
+    if (bits == 8i32)   { pass "-128"; }
+    if (bits == 16i32)  { pass "-32768"; }
+    if (bits == 32i32)  { pass "-2147483648"; }
+    if (bits == 64i32)  { pass "-9223372036854775808"; }
+    if (bits == 128i32) { pass "-170141183460469231731687303715884105728"; }
+    if (bits == 256i32) { pass "-57896044618658097711785492504343953926634992332820282019728792003956564819968"; }
+    pass "";
+};
+
+// The widest VALID magnitude per tbb width — MIN's mirror, for the range
+// checks the cast matrix emits.
+pub func:tbb_max_decimal = string(int32:bits) {
+    if (bits == 8i32)   { pass "127"; }
+    if (bits == 16i32)  { pass "32767"; }
+    if (bits == 32i32)  { pass "2147483647"; }
+    if (bits == 64i32)  { pass "9223372036854775807"; }
+    if (bits == 128i32) { pass "170141183460469231731687303715884105727"; }
+    if (bits == 256i32) { pass "57896044618658097711785492504343953926634992332820282019728792003956564819967"; }
+    pass "";
+};
+
 // --- questions the emitter asks about a lowered type --------------------------------
 //
 // ASKED OF THE TEXT, NOT OF THE KIND. The seed's own note says why: "asking the

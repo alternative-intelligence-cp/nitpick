@@ -467,8 +467,14 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
     if (pn.kind == PatKind.PatStructDestructure) {
         pass (raw iv_rung("struct destructuring in `pick`", "0.9", at));
     }
+    // `ERR:` matches the sentinel (0.9.5) — the pick's OWN compare, which is
+    // deliberately unguarded: pick-with-ERR-arm is the sanctioned branch on a
+    // taint (D-008 §5.1), the thing a bare `==` traps over.
     if (pn.kind == PatKind.PatErrPattern) {
-        pass (raw iv_rung("the `ERR` pattern", "0.9", at));
+        int32:pb = raw type_int_bits(x.fe.ctx.types, sel_tid);
+        string:pmn = raw tbb_min_decimal(pb);
+        if (pmn.len == 0i64) { pass (raw iv_broken(at)); }
+        pass (raw iv("", pmn, 0i32));
     }
     pass (raw iv_broken(at));
 };

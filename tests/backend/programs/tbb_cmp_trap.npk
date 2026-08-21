@@ -1,0 +1,19 @@
+// expect-exit: 24
+//
+// D-008 §5 at run time: an ERR value reaching a bare comparison is a tainted
+// value about to steer control flow, and it traps (TBB_ERR, -4100). `is_err`
+// and the ERR: pick arm are the sanctioned looks; `==` is not.
+
+func:main = int32(cstring[]:argv) {
+    tbb32:v = 5tbb32;
+    tbb32:z = 0tbb32;
+    if (v == z) { exit 9i32; }        // a clean compare works
+    tbb32:e = (v / z);                // ERR, quietly — arithmetic degrades
+    if (e == v) { exit 8i32; }        // ...but COMPARING it traps
+    exit 7i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err =>! int64) == (0i64 - 4100i64)) { exit 24i32; }
+    exit 9i32;
+};
