@@ -10136,3 +10136,73 @@ with zero compiler work), and the wire-conformance suite are 1.1 work
 (map row 1.1.8); the `npkg` closed-world link rule is a 1.2 obligation. The
 C reference driver and conformance harness are buildable out-of-tree at any
 time — the v3 POC (18/18 kernel checks) is their seed.
+
+## D-150 — The heap: out-of-band slabs, canaries, and the request rules — **SETTLED**
+
+Cycle 0.10.0. The bump-never-free floor is replaced by the real allocator in
+`bootstrap/runtime/npkrt.ll` — hand-written IR under the D-015 TCB
+discipline, exercised by the compiler's own execution on every build.
+
+**Shape.** Fourteen size classes (16…2048 bytes payload) in 64 KiB,
+64 KiB-aligned chunks — block→chunk is one AND — with per-chunk bitmaps, and
+a direct-mmap large path above 2048. Per-class partial/full chunk lists give
+O(1) transitions; a sorted chunk table and a sorted large table answer "is
+this pointer mine" in O(log n) **before anything is dereferenced**.
+
+**The two structural choices, made against the prototype's design:**
+
+- **Out-of-band metadata.** The prototype's free-list-in-payload scheme
+  (`slab_alloc.cpp`'s secret-XOR'd next pointers) was consulted and REJECTED:
+  there, a use-after-free corrupts the allocator's own control data and
+  detection is probabilistic. Here control state — bitmaps, tables, list
+  links in chunk headers — is never inside user payload, so a UAF can touch
+  only payload and canaries, and **double-free detection is deterministic**:
+  the slot's free bit is already set. (Defense in depth — D-119 already
+  refuses double-free of tracked bindings at compile time; this covers
+  laundered aliases and fabricated pointers.)
+- **Validate before dereference.** `dalloc`/`ralloc` prove membership via
+  the tables before reading a header. A garbage pointer is
+  `npk_trap(-4102)`, never a wild load: the allocator must not be the thing
+  that segfaults.
+
+**Canaries.** Every block: `[ size | magic ]` in 16 bytes (payloads stay
+16-aligned; the size bounds `ralloc`'s copy — 0.7.3's discipline kept).
+Magics are secret-keyed (getrandom at first allocation) and address-keyed,
+one role constant each for live/freed/large/chunk/guard. In a slab the next
+block's header is its neighbour's overrun canary and a 16-byte tail guard
+closes the chunk, checked on every free in it; large blocks carry footer
+guards; a freed slot keeps a FREED magic re-verified when the slot is handed
+out again, and a chunk watermark traps frees of never-allocated slots. NOT a
+CRC — the spec's "8-byte CRC32 header" was wrong three ways (total_audit
+C-1) and both reference passages now describe this scheme.
+
+**The request rules** (each a trap, never UB — codes in the D-141 runtime
+region):
+
+- `-4102` HEAP_INTEGRITY: double-free, null/misaligned/foreign pointer,
+  corrupted header, torn guard, scribbled freed slot. `dalloc(NULL)` traps:
+  `alloc` never returns null and Nitpick has no free(NULL) cleanup idiom.
+- `-4103` HEAP_OOM: mmap failure. The trap path allocates nothing — the C-3
+  obligation stated at the allocator boundary.
+- `-4104` HEAP_BAD_REQUEST: negative size; `calloc` count×size overflow
+  (the multiply is CHECKED — a wrap is an undersized allocation wearing a
+  plausible size); `ralloc(p, 0)` (C's implementation-defined footgun,
+  refused: freeing is spelled `dalloc`); zero or non-power-of-two alignment.
+- `alloc(0)` is legal: a real, unique, freeable 16-byte block — trapping it
+  would make every `alloc(count * elem)` with a legal zero count a landmine.
+
+**`aalloc(size, align)` is the fifth native builtin**, for alignments above
+the default 16 (`#[align(N)]` types will lower onto it): power-of-two only,
+served by the large path with the alignment contract asserted at the
+production site. D-149's "the four above are the WHOLE allocator API" line
+becomes five.
+
+**Single-threaded at this rung**, stated rather than implied: programs have
+one thread until 1.1, and the heap's lock discipline lands with 1.1's
+executor work. `memmove` in the runtime was also repaired in passing — it
+forwarded to `memcpy`, which corrupts overlapping upward moves.
+
+`tests/backend/programs/heap.npk` proves recycling, ralloc content/free,
+calloc zeroing, the large in-place/move paths, and both `aalloc` paths;
+`heap_double_free` / `heap_calloc_overflow` / `heap_ralloc_zero` lock the
+three trap classes to their codes.

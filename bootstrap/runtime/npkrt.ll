@@ -39,9 +39,9 @@ module asm "  hlt"
 ; That layout is only reachable through the ORIGINAL %rsp, which is why the
 ; prologue above captures it into %rdi BEFORE the alignment that destroys it.
 ;
-; This runs before `main`, so it allocates the cstring array from the bump
-; allocator and never frees it -- which is what the allocator does anyway, and
-; argv outlives everything regardless.
+; This runs before `main`, so it allocates the cstring array from the heap
+; (0.10.0) and never frees it -- argv outlives everything regardless, and the
+; first allocation is also what draws the heap secret.
 ; ---------------------------------------------------------------------------
 
 declare i32 @main({ ptr, i64 })
@@ -123,6 +123,13 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            checked cast out of tbb (D-008 SS5, D-144; 0.9.5)
 ;   -4101  BAD_STEP          a counted loop's step, not a literal, evaluated
 ;                            to zero or negative at run time (D-022; 0.9.7)
+;   -4102  HEAP_INTEGRITY    double-free, foreign/misaligned/null pointer to
+;                            dalloc/ralloc, corrupted header or torn guard,
+;                            or a UAF caught by a freed slot's magic (0.10.0)
+;   -4103  HEAP_OOM          mmap failed; the trap path allocates nothing,
+;                            which is the allocator's own C-3 obligation
+;   -4104  HEAP_BAD_REQUEST  negative size, calloc count*size overflow,
+;                            ralloc(p, 0), or a non-power-of-two alignment
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
 ; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always
@@ -742,9 +749,8 @@ loop:                                     ; preds = %entry, %iter
   br i1 %full, label %grow, label %read
 
 grow:                                     ; preds = %loop
-  ; The bump allocator never frees, so growing copies into a fresh block and
-  ; abandons the old one. That is the trade the allocator's own comment already
-  ; accepted: this process runs once and exits.
+  ; Growing copies into a fresh block; since 0.10.0 the abandoned one is
+  ; ralloc's to free, not a permanent loss.
   %cap2 = mul i64 %cap, 2
   %buf2 = call ptr @npk_alloc(i64 %cap2)
   call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
@@ -789,129 +795,1145 @@ err:
 }
 
 ; ---------------------------------------------------------------------------
-; Allocation: a bump allocator that never frees.
+; THE HEAP (0.10.0, D-150). Size-classed slab chunks + a large-block mmap path,
+; with a real dalloc. This replaces the seed-era bump floor; the seed still
+; BUILDS the compiler (C-13), but everything it builds now links a runtime that
+; actually frees.
 ;
-; This is CORRECT here, not a shortcut. The compiler is a process that runs once
-; and exits, so reclamation buys nothing -- and an allocator is exactly the kind
-; of subtle code that must not live in the least-audited artifact in the chain.
-; dalloc is therefore a no-op, and our sources still write `defer { dalloc(p); }`
-; so they stay correct when real allocation lands.
+; SAFETY SHAPE, stated once and obeyed everywhere below:
 ;
-; EVERY BLOCK CARRIES ITS SIZE IN SIXTEEN BYTES IN FRONT OF IT (0.7.3), which is
-; the whole reason ralloc can be correct. Without it, ralloc had no way to know how
-; much of the old block was real and copied the NEW size out of it -- an
-; out-of-bounds read that leaves the mapping entirely when the old block sits near
-; the end of a chunk, and takes the process down with SIGBUS.
+;   1. OUT-OF-BAND METADATA. The allocator's control state -- chunk bitmaps,
+;      the chunk table, the large table -- never lives inside user-reachable
+;      payload. The prototype's free-list-in-payload design was consulted and
+;      REJECTED: a use-after-free there corrupts the allocator's own control
+;      data, and detection is probabilistic. Here a UAF can only touch payload
+;      and canaries; the bitmap says what is free, deterministically.
+;   2. VALIDATE BEFORE DEREFERENCE. dalloc/ralloc prove a pointer lies inside
+;      memory THIS allocator mapped (sorted chunk table / large table, binary
+;      search) before reading a single byte through it. A garbage pointer is a
+;      trap, never a wild load -- the allocator itself must not be the thing
+;      that segfaults.
+;   3. EVERY FAILURE IS A TRAP, NEVER UB. Double-free, foreign/misaligned
+;      pointer, corrupted header, torn guard: npk_trap(-4102) -> failsafe.
+;      OOM: npk_trap(-4103). Bad request (negative size, calloc overflow,
+;      ralloc(p,0), bad alignment): npk_trap(-4104). The trap path allocates
+;      nothing (the C-3 obligation): npk_trap -> failsafe runs on preallocated
+;      state, because OOM handling runs when allocation just failed.
 ;
-; IT WAS NOT A LATENT BUG. About 511 declarations in one file is enough to reach a
-; doubling that crosses a chunk boundary, and FIVE OF THE COMPILER'S OWN SOURCES
-; exceed it -- so the compiler could not parse itself, and nothing said so because
-; the harness had never asked it to.
+; BLOCK SHAPE. Every block: [ size i64 | magic i64 | payload... ]. The 16-byte
+; header keeps payloads 16-aligned (the floor's 0.7.3 discipline, still what
+; bounds ralloc's copy). Magic words are secret-keyed and ADDRESS-keyed:
+;   live block:   secret ^ blockaddr ^ K_LIVE
+;   freed slot:   secret ^ blockaddr ^ K_FREED
+;   large block:  secret ^ blockaddr ^ K_LARGE
+;   chunk header: secret ^ chunkaddr ^ K_CHUNK
+;   guards:       secret ^ guardaddr ^ K_GUARD  (two words per guard)
+; The secret comes from getrandom(2) at first allocation, so a forged or
+; replayed magic does not survive across runs. In a slab, the NEXT block's
+; header is the overrun canary for its neighbour; the last slot is closed by a
+; 16-byte tail guard, checked on every free in the chunk. Large blocks carry
+; their own 16-byte footer guard.
 ;
-; The alternative was to pass the old size in at every call site, which every
-; caller does know. It was rejected: that moves a memory-safety obligation onto
-; twenty call sites, and the one that forgets is silent corruption rather than a
-; compile error. A header costs sixteen bytes per allocation in a process that runs
-; once and exits.
+; DOUBLE-FREE is deterministic, not probabilistic: the chunk bitmap holds one
+; bit per slot (set = free), so the second dalloc of a slot finds its bit
+; already set and traps. This is defense in depth -- D-119 already refuses a
+; double-free of a TRACKED binding at compile time; this catches pointers the
+; static analysis cannot follow (#wild_ptr fabrications, stored wild aliases).
+; A chunk WATERMARK (highest slot ever handed out) additionally traps a free
+; of a never-allocated slot, and a recycled slot's header must still carry its
+; FREED magic when popped -- a UAF that scribbled a freed block's header traps
+; on the next allocation from that slot.
+;
+; SIZE CLASSES (chunk = 64 KiB, 64 KiB-aligned so block->chunk is one AND):
+;   class  = payload bytes; stride = class + 16 header
+;   layout = [64B chunk header][bitmap W x i64][pad to 16][slots][16B guard]
+; The tables below are compiled-in constants; the generator formula is
+;   slots = max S with align16(64 + 8*ceil(S/64)) + S*(class+16) + 16 <= 65536
+; and each row was computed exactly (see meta/roadmap/0.10/0.10.0.md).
+;
+; CHUNK HEADER (64 bytes): +0 magic  +8 class-index  +16 slot-count
+;   +24 free-count  +32 scan-hint(word)  +40 next  +48 prev  +56 watermark.
+; Chunks sit on per-class PARTIAL/FULL doubly-linked lists (O(1) transitions);
+; the sorted chunk table answers "is this address one of my chunks" in
+; O(log chunks) with no dereference.
+;
+; SINGLE-THREADED AT THIS RUNG, deliberately: programs have one thread until
+; 1.1, and the lock discipline lands with 1.1's executor work (stated in
+; MEMORY_REFERENCE; the shared_arena subcycle 0.10.4 is the concurrent piece).
 ; ---------------------------------------------------------------------------
 
-@npk_cur = internal global i64 0
-@npk_end = internal global i64 0
+@npk_hsec = internal global i64 0
+@npk_cls_size = internal constant [14 x i64] [i64 16, i64 32, i64 48, i64 64, i64 96, i64 128, i64 192, i64 256, i64 384, i64 512, i64 768, i64 1024, i64 1536, i64 2048]
+@npk_cls_slots = internal constant [14 x i64] [i64 2037, i64 1360, i64 1020, i64 816, i64 583, i64 454, i64 314, i64 240, i64 163, i64 123, i64 83, i64 62, i64 42, i64 31]
+@npk_cls_bmw = internal constant [14 x i64] [i64 32, i64 22, i64 16, i64 13, i64 10, i64 8, i64 5, i64 4, i64 3, i64 2, i64 2, i64 1, i64 1, i64 1]
+@npk_cls_data = internal constant [14 x i64] [i64 320, i64 240, i64 192, i64 176, i64 144, i64 128, i64 112, i64 96, i64 96, i64 80, i64 80, i64 80, i64 80, i64 80]
+@npk_cls_guard = internal constant [14 x i64] [i64 65504, i64 65520, i64 65472, i64 65456, i64 65440, i64 65504, i64 65424, i64 65376, i64 65296, i64 65024, i64 65152, i64 64560, i64 65264, i64 64064]
+@npk_cls_part = internal global [14 x i64] zeroinitializer
+@npk_cls_full = internal global [14 x i64] zeroinitializer
+@npk_chtab = internal global i64 0
+@npk_chtab_cap = internal global i64 0
+@npk_chtab_len = internal global i64 0
+@npk_lgtab = internal global i64 0
+@npk_lgtab_cap = internal global i64 0
+@npk_lgtab_len = internal global i64 0
 
-define ptr @npk_alloc(i64 %n) {
-entry:
-  ; Round the request up to 16 bytes so every allocation is aligned, then take one
-  ; more 16-byte slot in front for the size. Sixteen and not eight: the header has
-  ; to keep the returned pointer 16-aligned, which is what every caller's struct
-  ; array depends on.
-  %a = add i64 %n, 15
-  %szb = and i64 %a, -16
-  %sz = add i64 %szb, 16
-  %cur = load i64, ptr @npk_cur
-  %new = add i64 %cur, %sz
-  %end = load i64, ptr @npk_end
-  %fits = icmp ule i64 %new, %end
-  %live = icmp ne i64 %cur, 0
-  %ok = and i1 %fits, %live
-  br i1 %ok, label %bump, label %grow
+; --- the three traps (D-141 region: -4102 integrity, -4103 oom, -4104 request)
 
-bump:
-  store i64 %new, ptr @npk_cur
-  %hdr1 = inttoptr i64 %cur to ptr
-  store i64 %szb, ptr %hdr1
-  %u1 = add i64 %cur, 16
-  %p1 = inttoptr i64 %u1 to ptr
-  ret ptr %p1
-
-grow:
-  ; take at least 1 MiB, or the whole request rounded to a page if larger
-  %need = add i64 %sz, 4095
-  %needp = and i64 %need, -4096
-  %big = icmp ugt i64 %needp, 1048576
-  %chunk = select i1 %big, i64 %needp, i64 1048576
-  ; mmap(NULL, chunk, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
-  %m = call i64 @npk_sys6(i64 9, i64 0, i64 %chunk, i64 3, i64 34, i64 -1, i64 0)
-  ; a syscall error is a small negative value returned as a large unsigned one
-  %bad = icmp ugt i64 %m, -4096
-  br i1 %bad, label %oom, label %fresh
-
-fresh:
-  %nend = add i64 %m, %chunk
-  store i64 %nend, ptr @npk_end
-  %ncur = add i64 %m, %sz
-  store i64 %ncur, ptr @npk_cur
-  %hdr2 = inttoptr i64 %m to ptr
-  store i64 %szb, ptr %hdr2
-  %u2 = add i64 %m, 16
-  %p2 = inttoptr i64 %u2 to ptr
-  ret ptr %p2
-
-oom:
-  ; Out of memory is unrecoverable here. The real runtime routes this through
-  ; failsafe; the seed has no allocation to preallocate for, so it stops.
-  call void @npk_exit(i32 70)
+define internal void @npk_heap_bad() noreturn {
+  call void @npk_trap(i32 -4102)
   unreachable
 }
 
+define internal void @npk_heap_oom() noreturn {
+  call void @npk_trap(i32 -4103)
+  unreachable
+}
+
+define internal void @npk_heap_badreq() noreturn {
+  call void @npk_trap(i32 -4104)
+  unreachable
+}
+
+; --- magic formulas, one definition per role so no site can drift -----------
+
+define internal i64 @npk_m_chunk(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, -4059465807380287133
+  ret i64 %m
+}
+
+define internal i64 @npk_m_live(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 5885026092677834074
+  ret i64 %m
+}
+
+define internal i64 @npk_m_freed(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, -581298601873003291
+  ret i64 %m
+}
+
+define internal i64 @npk_m_large(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 1884440546999092433
+  ret i64 %m
+}
+
+define internal i64 @npk_m_guard(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 7651035258233467253
+  ret i64 %m
+}
+
+; --- mmap-or-trap. All allocator memory arrives through here. ---------------
+
+define internal i64 @npk_hmap(i64 %len) {
+  %m = call i64 @npk_sys6(i64 9, i64 0, i64 %len, i64 3, i64 34, i64 -1, i64 0)
+  %bad = icmp ugt i64 %m, -4096
+  br i1 %bad, label %oom, label %ok
+oom:
+  call void @npk_heap_oom()
+  unreachable
+ok:
+  ret i64 %m
+}
+
+define internal void @npk_hunmap(i64 %a, i64 %len) {
+  %r = call i64 @npk_sys6(i64 11, i64 %a, i64 %len, i64 0, i64 0, i64 0, i64 0)
+  %bad = icmp ne i64 %r, 0
+  br i1 %bad, label %trap, label %ok
+trap:
+  ; munmap failing means the table and the kernel disagree about what is
+  ; mapped -- an integrity failure, not an OOM.
+  call void @npk_heap_bad()
+  unreachable
+ok:
+  ret void
+}
+
+; --- init: the secret, then the two tables. Idempotent, called lazily. ------
+
+define internal void @npk_heap_init() {
+  %s0 = load i64, ptr @npk_hsec
+  %live = icmp ne i64 %s0, 0
+  br i1 %live, label %done, label %seed
+seed:
+  ; getrandom(&npk_hsec, 8, 0)
+  %addr = ptrtoint ptr @npk_hsec to i64
+  %r = call i64 @npk_sys6(i64 318, i64 %addr, i64 8, i64 0, i64 0, i64 0, i64 0)
+  %short = icmp ne i64 %r, 8
+  br i1 %short, label %trap, label %nz
+trap:
+  call void @npk_heap_bad()
+  unreachable
+nz:
+  ; zero is the uninitialized sentinel, so a zero draw takes a fixed odd
+  ; constant instead -- weaker keying for one run in 2^64, never a stall.
+  %s1 = load i64, ptr @npk_hsec
+  %z = icmp eq i64 %s1, 0
+  br i1 %z, label %fix, label %tabs
+fix:
+  store i64 -7046029254386353131, ptr @npk_hsec
+  br label %tabs
+tabs:
+  %ct = call i64 @npk_hmap(i64 4096)
+  store i64 %ct, ptr @npk_chtab
+  store i64 512, ptr @npk_chtab_cap
+  store i64 0, ptr @npk_chtab_len
+  %lt = call i64 @npk_hmap(i64 4096)
+  store i64 %lt, ptr @npk_lgtab
+  store i64 128, ptr @npk_lgtab_cap
+  store i64 0, ptr @npk_lgtab_len
+  br label %done
+done:
+  ret void
+}
+
+; --- the sorted chunk table: membership before any dereference --------------
+
+define internal i64 @npk_chtab_find(i64 %a) {
+entry:
+  %tab = load i64, ptr @npk_chtab
+  %len = load i64, ptr @npk_chtab_len
+  br label %head
+head:
+  %lo = phi i64 [ 0, %entry ], [ %lo2, %step ]
+  %hi = phi i64 [ %len, %entry ], [ %hi2, %step ]
+  %more = icmp ult i64 %lo, %hi
+  br i1 %more, label %probe, label %miss
+probe:
+  %sum = add i64 %lo, %hi
+  %mid = lshr i64 %sum, 1
+  %ea = add i64 %tab, %mid
+  %eoff = shl i64 %mid, 3
+  %ep = add i64 %tab, %eoff
+  %epp = inttoptr i64 %ep to ptr
+  %v = load i64, ptr %epp
+  %eq = icmp eq i64 %v, %a
+  br i1 %eq, label %hit, label %cmp
+cmp:
+  %lt = icmp ult i64 %v, %a
+  %lo3 = add i64 %mid, 1
+  br label %step
+step:
+  %lo2 = select i1 %lt, i64 %lo3, i64 %lo
+  %hi2 = select i1 %lt, i64 %hi, i64 %mid
+  br label %head
+hit:
+  ret i64 %mid
+miss:
+  ret i64 -1
+}
+
+define internal void @npk_chtab_insert(i64 %a) {
+entry:
+  %len = load i64, ptr @npk_chtab_len
+  %cap = load i64, ptr @npk_chtab_cap
+  %full = icmp eq i64 %len, %cap
+  br i1 %full, label %grow, label %place
+grow:
+  %tab0 = load i64, ptr @npk_chtab
+  %ncap = shl i64 %cap, 1
+  %nbytes = shl i64 %ncap, 3
+  %nt = call i64 @npk_hmap(i64 %nbytes)
+  %obytes = shl i64 %cap, 3
+  %ntp = inttoptr i64 %nt to ptr
+  %otp = inttoptr i64 %tab0 to ptr
+  %cbytes = shl i64 %len, 3
+  call void @llvm.memcpy.p0.p0.i64(ptr %ntp, ptr %otp, i64 %cbytes, i1 false)
+  call void @npk_hunmap(i64 %tab0, i64 %obytes)
+  store i64 %nt, ptr @npk_chtab
+  store i64 %ncap, ptr @npk_chtab_cap
+  br label %place
+place:
+  %tab = load i64, ptr @npk_chtab
+  br label %shift
+shift:
+  ; walk down from the end, moving greater entries up one slot
+  %pos = phi i64 [ %len, %place ], [ %pos2, %move ]
+  %atz = icmp eq i64 %pos, 0
+  br i1 %atz, label %store, label %look
+look:
+  %pm1 = add i64 %pos, -1
+  %poff = shl i64 %pm1, 3
+  %pp = add i64 %tab, %poff
+  %ppp = inttoptr i64 %pp to ptr
+  %pv = load i64, ptr %ppp
+  %gt = icmp ugt i64 %pv, %a
+  br i1 %gt, label %move, label %store
+move:
+  %doff = shl i64 %pos, 3
+  %dp = add i64 %tab, %doff
+  %dpp = inttoptr i64 %dp to ptr
+  store i64 %pv, ptr %dpp
+  %pos2 = add i64 %pos, -1
+  br label %shift
+store:
+  %soff = shl i64 %pos, 3
+  %sp = add i64 %tab, %soff
+  %spp = inttoptr i64 %sp to ptr
+  store i64 %a, ptr %spp
+  %nlen = add i64 %len, 1
+  store i64 %nlen, ptr @npk_chtab_len
+  ret void
+}
+
+; --- the large table: 32-byte entries { ptr, base, mapsize, size }, sorted --
+
+define internal i64 @npk_lg_entry(i64 %idx) {
+  %tab = load i64, ptr @npk_lgtab
+  %off = shl i64 %idx, 5
+  %e = add i64 %tab, %off
+  ret i64 %e
+}
+
+define internal i64 @npk_lg_find(i64 %p) {
+entry:
+  %len = load i64, ptr @npk_lgtab_len
+  br label %head
+head:
+  %lo = phi i64 [ 0, %entry ], [ %lo2, %step ]
+  %hi = phi i64 [ %len, %entry ], [ %hi2, %step ]
+  %more = icmp ult i64 %lo, %hi
+  br i1 %more, label %probe, label %miss
+probe:
+  %sum = add i64 %lo, %hi
+  %mid = lshr i64 %sum, 1
+  %e = call i64 @npk_lg_entry(i64 %mid)
+  %ep = inttoptr i64 %e to ptr
+  %v = load i64, ptr %ep
+  %eq = icmp eq i64 %v, %p
+  br i1 %eq, label %hit, label %cmp
+cmp:
+  %lt = icmp ult i64 %v, %p
+  %lo3 = add i64 %mid, 1
+  br label %step
+step:
+  %lo2 = select i1 %lt, i64 %lo3, i64 %lo
+  %hi2 = select i1 %lt, i64 %hi, i64 %mid
+  br label %head
+hit:
+  ret i64 %mid
+miss:
+  ret i64 -1
+}
+
+define internal void @npk_lg_insert(i64 %p, i64 %base, i64 %msz, i64 %sz) {
+entry:
+  %len = load i64, ptr @npk_lgtab_len
+  %cap = load i64, ptr @npk_lgtab_cap
+  %full = icmp eq i64 %len, %cap
+  br i1 %full, label %grow, label %place
+grow:
+  %tab0 = load i64, ptr @npk_lgtab
+  %ncap = shl i64 %cap, 1
+  %nbytes = shl i64 %ncap, 5
+  %nt = call i64 @npk_hmap(i64 %nbytes)
+  %obytes = shl i64 %cap, 5
+  %cbytes = shl i64 %len, 5
+  %ntp = inttoptr i64 %nt to ptr
+  %otp = inttoptr i64 %tab0 to ptr
+  call void @llvm.memcpy.p0.p0.i64(ptr %ntp, ptr %otp, i64 %cbytes, i1 false)
+  call void @npk_hunmap(i64 %tab0, i64 %obytes)
+  store i64 %nt, ptr @npk_lgtab
+  store i64 %ncap, ptr @npk_lgtab_cap
+  br label %place
+place:
+  br label %shift
+shift:
+  %pos = phi i64 [ %len, %place ], [ %pos2, %move ]
+  %atz = icmp eq i64 %pos, 0
+  br i1 %atz, label %write, label %look
+look:
+  %pm1 = add i64 %pos, -1
+  %se = call i64 @npk_lg_entry(i64 %pm1)
+  %sep = inttoptr i64 %se to ptr
+  %sv = load i64, ptr %sep
+  %gt = icmp ugt i64 %sv, %p
+  br i1 %gt, label %move, label %write
+move:
+  %de = call i64 @npk_lg_entry(i64 %pos)
+  %dep = inttoptr i64 %de to ptr
+  %sp1 = inttoptr i64 %se to ptr
+  call void @llvm.memcpy.p0.p0.i64(ptr %dep, ptr %sp1, i64 32, i1 false)
+  %pos2 = add i64 %pos, -1
+  br label %shift
+write:
+  %e = call i64 @npk_lg_entry(i64 %pos)
+  %f0 = inttoptr i64 %e to ptr
+  store i64 %p, ptr %f0
+  %e1 = add i64 %e, 8
+  %f1 = inttoptr i64 %e1 to ptr
+  store i64 %base, ptr %f1
+  %e2 = add i64 %e, 16
+  %f2 = inttoptr i64 %e2 to ptr
+  store i64 %msz, ptr %f2
+  %e3 = add i64 %e, 24
+  %f3 = inttoptr i64 %e3 to ptr
+  store i64 %sz, ptr %f3
+  %nlen = add i64 %len, 1
+  store i64 %nlen, ptr @npk_lgtab_len
+  ret void
+}
+
+define internal void @npk_lg_remove(i64 %idx) {
+entry:
+  %len = load i64, ptr @npk_lgtab_len
+  br label %head
+head:
+  %i = phi i64 [ %idx, %entry ], [ %i2, %body ]
+  %i1 = add i64 %i, 1
+  %more = icmp ult i64 %i1, %len
+  br i1 %more, label %body, label %done
+body:
+  %de = call i64 @npk_lg_entry(i64 %i)
+  %se = call i64 @npk_lg_entry(i64 %i1)
+  %dep = inttoptr i64 %de to ptr
+  %sep = inttoptr i64 %se to ptr
+  call void @llvm.memcpy.p0.p0.i64(ptr %dep, ptr %sep, i64 32, i1 false)
+  %i2 = add i64 %i1, 0
+  br label %head
+done:
+  %nlen = add i64 %len, -1
+  store i64 %nlen, ptr @npk_lgtab_len
+  ret void
+}
+
+; --- chunk lists ------------------------------------------------------------
+
+define internal void @npk_ch_push(ptr %hp, i64 %ch) {
+  %h = load i64, ptr %hp
+  %nx = add i64 %ch, 40
+  %nxp = inttoptr i64 %nx to ptr
+  store i64 %h, ptr %nxp
+  %pv = add i64 %ch, 48
+  %pvp = inttoptr i64 %pv to ptr
+  store i64 0, ptr %pvp
+  %some = icmp ne i64 %h, 0
+  br i1 %some, label %link, label %sethead
+link:
+  %hpv = add i64 %h, 48
+  %hpvp = inttoptr i64 %hpv to ptr
+  store i64 %ch, ptr %hpvp
+  br label %sethead
+sethead:
+  store i64 %ch, ptr %hp
+  ret void
+}
+
+define internal void @npk_ch_unlink(ptr %hp, i64 %ch) {
+  %nxa = add i64 %ch, 40
+  %nxap = inttoptr i64 %nxa to ptr
+  %nx = load i64, ptr %nxap
+  %pva = add i64 %ch, 48
+  %pvap = inttoptr i64 %pva to ptr
+  %pv = load i64, ptr %pvap
+  %isfirst = icmp eq i64 %pv, 0
+  br i1 %isfirst, label %head, label %mid
+head:
+  store i64 %nx, ptr %hp
+  br label %fixnext
+mid:
+  %pnx = add i64 %pv, 40
+  %pnxp = inttoptr i64 %pnx to ptr
+  store i64 %nx, ptr %pnxp
+  br label %fixnext
+fixnext:
+  %some = icmp ne i64 %nx, 0
+  br i1 %some, label %fix, label %clear
+fix:
+  %npv = add i64 %nx, 48
+  %npvp = inttoptr i64 %npv to ptr
+  store i64 %pv, ptr %npvp
+  br label %clear
+clear:
+  store i64 0, ptr %nxap
+  store i64 0, ptr %pvap
+  ret void
+}
+
+; --- a fresh chunk: 64 KiB, 64 KiB-aligned by over-map-and-trim -------------
+
+define internal i64 @npk_chunk_new(i64 %ci) {
+entry:
+  %raw = call i64 @npk_hmap(i64 131072)
+  %r1 = add i64 %raw, 65535
+  %al = and i64 %r1, -65536
+  %pre = sub i64 %al, %raw
+  %haspre = icmp ne i64 %pre, 0
+  br i1 %haspre, label %trimpre, label %posttrim
+trimpre:
+  call void @npk_hunmap(i64 %raw, i64 %pre)
+  br label %posttrim
+posttrim:
+  %post = sub i64 65536, %pre
+  %haspost = icmp ne i64 %post, 0
+  br i1 %haspost, label %trimpost, label %init
+trimpost:
+  %pend = add i64 %al, 65536
+  call void @npk_hunmap(i64 %pend, i64 %post)
+  br label %init
+init:
+  %m = call i64 @npk_m_chunk(i64 %al)
+  %mp = inttoptr i64 %al to ptr
+  store i64 %m, ptr %mp
+  %cia = add i64 %al, 8
+  %cip = inttoptr i64 %cia to ptr
+  store i64 %ci, ptr %cip
+  %sgep = getelementptr [14 x i64], ptr @npk_cls_slots, i64 0, i64 %ci
+  %S = load i64, ptr %sgep
+  %sca = add i64 %al, 16
+  %scp = inttoptr i64 %sca to ptr
+  store i64 %S, ptr %scp
+  %fca = add i64 %al, 24
+  %fcp = inttoptr i64 %fca to ptr
+  store i64 %S, ptr %fcp
+  %ha = add i64 %al, 32
+  %hp = inttoptr i64 %ha to ptr
+  store i64 0, ptr %hp
+  %nxa = add i64 %al, 40
+  %nxp = inttoptr i64 %nxa to ptr
+  store i64 0, ptr %nxp
+  %pva = add i64 %al, 48
+  %pvp = inttoptr i64 %pva to ptr
+  store i64 0, ptr %pvp
+  %wma = add i64 %al, 56
+  %wmp = inttoptr i64 %wma to ptr
+  store i64 0, ptr %wmp
+  %wgep = getelementptr [14 x i64], ptr @npk_cls_bmw, i64 0, i64 %ci
+  %W = load i64, ptr %wgep
+  br label %bmhead
+bmhead:
+  ; word w holds a set bit per free slot: full words of -1, then the remainder
+  %w = phi i64 [ 0, %init ], [ %w2, %bmstore ]
+  %morew = icmp ult i64 %w, %W
+  br i1 %morew, label %bmbody, label %guard
+bmbody:
+  %before = shl i64 %w, 6
+  %left = sub i64 %S, %before
+  %ge64 = icmp uge i64 %left, 64
+  br i1 %ge64, label %fullw, label %remw
+fullw:
+  br label %bmstore
+remw:
+  %one = shl i64 1, %left
+  %rem = add i64 %one, -1
+  br label %bmstore
+bmstore:
+  %val = phi i64 [ -1, %fullw ], [ %rem, %remw ]
+  %woff = shl i64 %w, 3
+  %wa0 = add i64 %al, 64
+  %wa = add i64 %wa0, %woff
+  %wp = inttoptr i64 %wa to ptr
+  store i64 %val, ptr %wp
+  %w2 = add i64 %w, 1
+  br label %bmhead
+guard:
+  %ggep = getelementptr [14 x i64], ptr @npk_cls_guard, i64 0, i64 %ci
+  %go = load i64, ptr %ggep
+  %ga = add i64 %al, %go
+  %g0 = call i64 @npk_m_guard(i64 %ga)
+  %gp0 = inttoptr i64 %ga to ptr
+  store i64 %g0, ptr %gp0
+  %ga1 = add i64 %ga, 8
+  %g1 = call i64 @npk_m_guard(i64 %ga1)
+  %gp1 = inttoptr i64 %ga1 to ptr
+  store i64 %g1, ptr %gp1
+  call void @npk_chtab_insert(i64 %al)
+  ret i64 %al
+}
+
+; --- guard and header checks, shared ----------------------------------------
+
+define internal void @npk_chunk_guard_check(i64 %ch, i64 %ci) {
+  %ggep = getelementptr [14 x i64], ptr @npk_cls_guard, i64 0, i64 %ci
+  %go = load i64, ptr %ggep
+  %ga = add i64 %ch, %go
+  %w0 = call i64 @npk_m_guard(i64 %ga)
+  %gp0 = inttoptr i64 %ga to ptr
+  %v0 = load i64, ptr %gp0
+  %ok0 = icmp eq i64 %v0, %w0
+  br i1 %ok0, label %second, label %trap
+second:
+  %ga1 = add i64 %ga, 8
+  %w1 = call i64 @npk_m_guard(i64 %ga1)
+  %gp1 = inttoptr i64 %ga1 to ptr
+  %v1 = load i64, ptr %gp1
+  %ok1 = icmp eq i64 %v1, %w1
+  br i1 %ok1, label %done, label %trap
+trap:
+  call void @npk_heap_bad()
+  unreachable
+done:
+  ret void
+}
+
+; Validate a small-block pointer end to end WITHOUT mutating: proves p is a
+; live slot of one of our chunks and returns the chunk address. Traps on any
+; violation. Callers re-derive slot arithmetic; validation lives only here.
+define internal i64 @npk_small_check(i64 %ip) {
+entry:
+  %ch = and i64 %ip, -65536
+  %idx = call i64 @npk_chtab_find(i64 %ch)
+  %miss = icmp slt i64 %idx, 0
+  br i1 %miss, label %trap, label %magic
+magic:
+  %want = call i64 @npk_m_chunk(i64 %ch)
+  %mp = inttoptr i64 %ch to ptr
+  %have = load i64, ptr %mp
+  %mok = icmp eq i64 %have, %want
+  br i1 %mok, label %klass, label %trap
+klass:
+  %cia = add i64 %ch, 8
+  %cip = inttoptr i64 %cia to ptr
+  %ci = load i64, ptr %cip
+  %cibad = icmp uge i64 %ci, 14
+  br i1 %cibad, label %trap, label %geom
+geom:
+  %dgep = getelementptr [14 x i64], ptr @npk_cls_data, i64 0, i64 %ci
+  %data = load i64, ptr %dgep
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %stride = add i64 %cls, 16
+  %sgep = getelementptr [14 x i64], ptr @npk_cls_slots, i64 0, i64 %ci
+  %S = load i64, ptr %sgep
+  %b = add i64 %ip, -16
+  %dstart = add i64 %ch, %data
+  %off = sub i64 %b, %dstart
+  %neg = icmp slt i64 %off, 0
+  br i1 %neg, label %trap, label %shape
+shape:
+  %rem = urem i64 %off, %stride
+  %misfit = icmp ne i64 %rem, 0
+  br i1 %misfit, label %trap, label %range
+range:
+  %slot = udiv i64 %off, %stride
+  %oob = icmp uge i64 %slot, %S
+  br i1 %oob, label %trap, label %wmk
+wmk:
+  %wma = add i64 %ch, 56
+  %wmp = inttoptr i64 %wma to ptr
+  %wm = load i64, ptr %wmp
+  %virgin = icmp uge i64 %slot, %wm
+  br i1 %virgin, label %trap, label %bmap
+bmap:
+  %w = lshr i64 %slot, 6
+  %bit = and i64 %slot, 63
+  %mask = shl i64 1, %bit
+  %woff = shl i64 %w, 3
+  %wa0 = add i64 %ch, 64
+  %wa = add i64 %wa0, %woff
+  %wp = inttoptr i64 %wa to ptr
+  %word = load i64, ptr %wp
+  %freebit = and i64 %word, %mask
+  %isfree = icmp ne i64 %freebit, 0
+  br i1 %isfree, label %trap, label %hdr
+hdr:
+  %hm = call i64 @npk_m_live(i64 %b)
+  %hma = add i64 %b, 8
+  %hmp = inttoptr i64 %hma to ptr
+  %hv = load i64, ptr %hmp
+  %hok = icmp eq i64 %hv, %hm
+  br i1 %hok, label %tail, label %trap
+tail:
+  call void @npk_chunk_guard_check(i64 %ch, i64 %ci)
+  ret i64 %ch
+trap:
+  call void @npk_heap_bad()
+  unreachable
+}
+
+; --- the small path ---------------------------------------------------------
+
+define internal ptr @npk_small_alloc(i64 %n, i64 %ci) {
+entry:
+  %hp = getelementptr [14 x i64], ptr @npk_cls_part, i64 0, i64 %ci
+  %h0 = load i64, ptr %hp
+  %none = icmp eq i64 %h0, 0
+  br i1 %none, label %fresh, label %have
+fresh:
+  %nc = call i64 @npk_chunk_new(i64 %ci)
+  call void @npk_ch_push(ptr %hp, i64 %nc)
+  br label %have
+have:
+  %ch = load i64, ptr %hp
+  %wgep = getelementptr [14 x i64], ptr @npk_cls_bmw, i64 0, i64 %ci
+  %W = load i64, ptr %wgep
+  %ha = add i64 %ch, 32
+  %hip = inttoptr i64 %ha to ptr
+  %hint = load i64, ptr %hip
+  br label %scan
+scan:
+  %w = phi i64 [ %hint, %have ], [ %w2, %next ]
+  %inw = icmp ult i64 %w, %W
+  br i1 %inw, label %look, label %broken
+look:
+  %woff = shl i64 %w, 3
+  %wa0 = add i64 %ch, 64
+  %wa = add i64 %wa0, %woff
+  %wp = inttoptr i64 %wa to ptr
+  %word = load i64, ptr %wp
+  %nz = icmp ne i64 %word, 0
+  br i1 %nz, label %take, label %next
+next:
+  %w2 = add i64 %w, 1
+  br label %scan
+broken:
+  ; a partial chunk with no set bit is a bookkeeping violation
+  call void @npk_heap_bad()
+  unreachable
+take:
+  %bit = call i64 @llvm.cttz.i64(i64 %word, i1 true)
+  %shifted = shl i64 %w, 6
+  %slot = add i64 %shifted, %bit
+  %wm1 = add i64 %word, -1
+  %nword = and i64 %word, %wm1
+  store i64 %nword, ptr %wp
+  ; hint: this word if it still has bits, else the next
+  %emptied = icmp eq i64 %nword, 0
+  %w3 = add i64 %w, 1
+  %nhint = select i1 %emptied, i64 %w3, i64 %w
+  store i64 %nhint, ptr %hip
+  %fca = add i64 %ch, 24
+  %fcp = inttoptr i64 %fca to ptr
+  %free = load i64, ptr %fcp
+  %nf = add i64 %free, -1
+  store i64 %nf, ptr %fcp
+  %isfull = icmp eq i64 %nf, 0
+  br i1 %isfull, label %tofull, label %geom
+tofull:
+  %fhp = getelementptr [14 x i64], ptr @npk_cls_full, i64 0, i64 %ci
+  call void @npk_ch_unlink(ptr %hp, i64 %ch)
+  call void @npk_ch_push(ptr %fhp, i64 %ch)
+  br label %geom
+geom:
+  %dgep = getelementptr [14 x i64], ptr @npk_cls_data, i64 0, i64 %ci
+  %data = load i64, ptr %dgep
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %stride = add i64 %cls, 16
+  %soff = mul i64 %slot, %stride
+  %d0 = add i64 %ch, %data
+  %b = add i64 %d0, %soff
+  ; watermark: below it the slot was used before and must still carry its
+  ; FREED magic -- a UAF that scribbled a freed block traps here, on reuse
+  %wma = add i64 %ch, 56
+  %wmp = inttoptr i64 %wma to ptr
+  %wm = load i64, ptr %wmp
+  %virgin = icmp uge i64 %slot, %wm
+  br i1 %virgin, label %mark, label %verify
+mark:
+  %nwm = add i64 %slot, 1
+  store i64 %nwm, ptr %wmp
+  br label %stamp
+verify:
+  %fm = call i64 @npk_m_freed(i64 %b)
+  %fma = add i64 %b, 8
+  %fmp = inttoptr i64 %fma to ptr
+  %fv = load i64, ptr %fmp
+  %fok = icmp eq i64 %fv, %fm
+  br i1 %fok, label %stamp, label %poisoned
+poisoned:
+  call void @npk_heap_bad()
+  unreachable
+stamp:
+  %szp = inttoptr i64 %b to ptr
+  store i64 %n, ptr %szp
+  %lm = call i64 @npk_m_live(i64 %b)
+  %lma = add i64 %b, 8
+  %lmp = inttoptr i64 %lma to ptr
+  store i64 %lm, ptr %lmp
+  %u = add i64 %b, 16
+  %p = inttoptr i64 %u to ptr
+  ret ptr %p
+}
+
+define internal void @npk_small_free(i64 %ip) {
+entry:
+  %ch = call i64 @npk_small_check(i64 %ip)
+  %cia = add i64 %ch, 8
+  %cip = inttoptr i64 %cia to ptr
+  %ci = load i64, ptr %cip
+  %dgep = getelementptr [14 x i64], ptr @npk_cls_data, i64 0, i64 %ci
+  %data = load i64, ptr %dgep
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %stride = add i64 %cls, 16
+  %b = add i64 %ip, -16
+  %dstart = add i64 %ch, %data
+  %off = sub i64 %b, %dstart
+  %slot = udiv i64 %off, %stride
+  ; stamp FREED, then flip the bit
+  %fm = call i64 @npk_m_freed(i64 %b)
+  %fma = add i64 %b, 8
+  %fmp = inttoptr i64 %fma to ptr
+  store i64 %fm, ptr %fmp
+  %w = lshr i64 %slot, 6
+  %bit = and i64 %slot, 63
+  %mask = shl i64 1, %bit
+  %woff = shl i64 %w, 3
+  %wa0 = add i64 %ch, 64
+  %wa = add i64 %wa0, %woff
+  %wp = inttoptr i64 %wa to ptr
+  %word = load i64, ptr %wp
+  %nword = or i64 %word, %mask
+  store i64 %nword, ptr %wp
+  %fca = add i64 %ch, 24
+  %fcp = inttoptr i64 %fca to ptr
+  %free = load i64, ptr %fcp
+  %nf = add i64 %free, 1
+  store i64 %nf, ptr %fcp
+  %ha = add i64 %ch, 32
+  %hip = inttoptr i64 %ha to ptr
+  %hint = load i64, ptr %hip
+  %lower = icmp ult i64 %w, %hint
+  %nhint = select i1 %lower, i64 %w, i64 %hint
+  store i64 %nhint, ptr %hip
+  %wasfull = icmp eq i64 %free, 0
+  br i1 %wasfull, label %topart, label %done
+topart:
+  %fhp = getelementptr [14 x i64], ptr @npk_cls_full, i64 0, i64 %ci
+  %php = getelementptr [14 x i64], ptr @npk_cls_part, i64 0, i64 %ci
+  call void @npk_ch_unlink(ptr %fhp, i64 %ch)
+  call void @npk_ch_push(ptr %php, i64 %ch)
+  br label %done
+done:
+  ret void
+}
+
+; --- the large path ---------------------------------------------------------
+
+define internal ptr @npk_large_new(i64 %n, i64 %align) {
+entry:
+  %r15 = add i64 %n, 15
+  %rn = and i64 %r15, -16
+  %wide = icmp ugt i64 %align, 16
+  %extra = select i1 %wide, i64 %align, i64 0
+  %n32 = add i64 %rn, 32
+  %need = add i64 %n32, %extra
+  %n4095 = add i64 %need, 4095
+  %msz = and i64 %n4095, -4096
+  %base = call i64 @npk_hmap(i64 %msz)
+  %p0 = add i64 %base, 16
+  %am1 = add i64 %align, -1
+  %pa0 = add i64 %p0, %am1
+  %nega = sub i64 0, %align
+  %pa = and i64 %pa0, %nega
+  ; the contract, asserted where it is produced: the payload meets the
+  ; requested alignment and the block fits its mapping
+  %alcheck = and i64 %pa, %am1
+  %misaligned = icmp ne i64 %alcheck, 0
+  %endp = add i64 %pa, %rn
+  %endg = add i64 %endp, 16
+  %mapend = add i64 %base, %msz
+  %overrun = icmp ugt i64 %endg, %mapend
+  %broken = or i1 %misaligned, %overrun
+  br i1 %broken, label %selftrap, label %fit
+selftrap:
+  call void @npk_heap_bad()
+  unreachable
+fit:
+  %b = add i64 %pa, -16
+  %szp = inttoptr i64 %b to ptr
+  store i64 %n, ptr %szp
+  %lm = call i64 @npk_m_large(i64 %b)
+  %lma = add i64 %b, 8
+  %lmp = inttoptr i64 %lma to ptr
+  store i64 %lm, ptr %lmp
+  %fa = add i64 %pa, %rn
+  %g0 = call i64 @npk_m_guard(i64 %fa)
+  %gp0 = inttoptr i64 %fa to ptr
+  store i64 %g0, ptr %gp0
+  %fa1 = add i64 %fa, 8
+  %g1 = call i64 @npk_m_guard(i64 %fa1)
+  %gp1 = inttoptr i64 %fa1 to ptr
+  store i64 %g1, ptr %gp1
+  call void @npk_lg_insert(i64 %pa, i64 %base, i64 %msz, i64 %n)
+  %p = inttoptr i64 %pa to ptr
+  ret ptr %p
+}
+
+; Validate a large block's header and footer against its table entry. Traps on
+; violation. %e is the entry address.
+define internal void @npk_large_check(i64 %ip, i64 %e) {
+entry:
+  %b = add i64 %ip, -16
+  %want = call i64 @npk_m_large(i64 %b)
+  %hma = add i64 %b, 8
+  %hmp = inttoptr i64 %hma to ptr
+  %have = load i64, ptr %hmp
+  %hok = icmp eq i64 %have, %want
+  br i1 %hok, label %foot, label %trap
+foot:
+  %sza = add i64 %e, 24
+  %szp = inttoptr i64 %sza to ptr
+  %sz = load i64, ptr %szp
+  %r15 = add i64 %sz, 15
+  %rn = and i64 %r15, -16
+  %fa = add i64 %ip, %rn
+  %w0 = call i64 @npk_m_guard(i64 %fa)
+  %fp0 = inttoptr i64 %fa to ptr
+  %v0 = load i64, ptr %fp0
+  %ok0 = icmp eq i64 %v0, %w0
+  br i1 %ok0, label %foot2, label %trap
+foot2:
+  %fa1 = add i64 %fa, 8
+  %w1 = call i64 @npk_m_guard(i64 %fa1)
+  %fp1 = inttoptr i64 %fa1 to ptr
+  %v1 = load i64, ptr %fp1
+  %ok1 = icmp eq i64 %v1, %w1
+  br i1 %ok1, label %done, label %trap
+trap:
+  call void @npk_heap_bad()
+  unreachable
+done:
+  ret void
+}
+
+; --- the four builtins, plus aalloc -----------------------------------------
+
+define ptr @npk_alloc(i64 %n) {
+entry:
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %init, label %sized
+init:
+  call void @npk_heap_init()
+  br label %sized
+sized:
+  %neg = icmp slt i64 %n, 0
+  br i1 %neg, label %badreq, label %norm
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+norm:
+  ; alloc(0) is a real, unique, freeable 16-byte block (D-150) -- a trap here
+  ; would make every `alloc(count * elem)` with a legal zero count a landmine
+  %z = icmp eq i64 %n, 0
+  %n1 = select i1 %z, i64 16, i64 %n
+  %r15 = add i64 %n1, 15
+  %rn = and i64 %r15, -16
+  br label %pick
+pick:
+  %ci = phi i64 [ 0, %norm ], [ %ci2, %bigger ]
+  %inrange = icmp ult i64 %ci, 14
+  br i1 %inrange, label %try, label %large
+try:
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %fits = icmp ule i64 %rn, %cls
+  br i1 %fits, label %small, label %bigger
+bigger:
+  %ci2 = add i64 %ci, 1
+  br label %pick
+small:
+  %sp = call ptr @npk_small_alloc(i64 %n1, i64 %ci)
+  ret ptr %sp
+large:
+  %lp = call ptr @npk_large_new(i64 %n1, i64 16)
+  ret ptr %lp
+}
+
 define ptr @npk_calloc(i64 %count, i64 %size) {
-  %n = mul i64 %count, %size
-  %p = call ptr @npk_alloc(i64 %n)
-  call void @llvm.memset.p0.i64(ptr %p, i8 0, i64 %n, i1 false)
+entry:
+  %negc = icmp slt i64 %count, 0
+  %negs = icmp slt i64 %size, 0
+  %neg = or i1 %negc, %negs
+  br i1 %neg, label %badreq, label %mul
+mul:
+  ; the multiply is CHECKED (0.10.0): a wrap here is an undersized allocation
+  ; wearing a plausible size
+  %wo = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %count, i64 %size)
+  %prod = extractvalue { i64, i1 } %wo, 0
+  %ovf = extractvalue { i64, i1 } %wo, 1
+  br i1 %ovf, label %badreq, label %ok
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+ok:
+  %p = call ptr @npk_alloc(i64 %prod)
+  call void @llvm.memset.p0.i64(ptr %p, i8 0, i64 %prod, i1 false)
   ret ptr %p
 }
 
 define ptr @npk_ralloc(ptr %old, i64 %n) {
 entry:
-  ; Never freeing means realloc is always a fresh block plus a copy. Correct,
-  ; and wasteful in a way that does not matter for a process that exits.
-  ;
-  ; THE COPY IS BOUNDED BY THE OLD BLOCK, not by the new size. Copying `n` bytes
-  ; out of a block that is `old` bytes long reads past its end, and when the block
-  ; sits near the end of a chunk that read leaves the mapping -- SIGBUS, in the
-  ; least-audited artifact in the chain, on every program large enough to grow an
-  ; array twice.
   %isnull = icmp eq ptr %old, null
-  br i1 %isnull, label %plain, label %copy
-
+  br i1 %isnull, label %plain, label %sized
 plain:
-  ; A null old block is a first allocation, and has no header to read.
   %f = call ptr @npk_alloc(i64 %n)
   ret ptr %f
-
-copy:
-  %p = call ptr @npk_alloc(i64 %n)
-  %oi = ptrtoint ptr %old to i64
-  %hi = sub i64 %oi, 16
-  %hp = inttoptr i64 %hi to ptr
-  %osz = load i64, ptr %hp
+sized:
+  ; ralloc(p, 0) is REFUSED (D-150): freeing is spelled dalloc, and C's
+  ; realloc(p, 0) is the exact implementation-defined footgun this is not
+  %neg = icmp slt i64 %n, 1
+  br i1 %neg, label %badreq, label %checks
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+checks:
+  %ip = ptrtoint ptr %old to i64
+  %misal = and i64 %ip, 15
+  %crooked = icmp ne i64 %misal, 0
+  br i1 %crooked, label %bad, label %virginheap
+bad:
+  call void @npk_heap_bad()
+  unreachable
+virginheap:
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %bad, label %route
+route:
+  %lgidx = call i64 @npk_lg_find(i64 %ip)
+  %islarge = icmp sge i64 %lgidx, 0
+  br i1 %islarge, label %lg, label %sm
+lg:
+  %e = call i64 @npk_lg_entry(i64 %lgidx)
+  call void @npk_large_check(i64 %ip, i64 %e)
+  %basea = add i64 %e, 8
+  %basep = inttoptr i64 %basea to ptr
+  %base = load i64, ptr %basep
+  %msza = add i64 %e, 16
+  %mszp = inttoptr i64 %msza to ptr
+  %msz = load i64, ptr %mszp
+  %osza = add i64 %e, 24
+  %oszp = inttoptr i64 %osza to ptr
+  %osz = load i64, ptr %oszp
+  %r15 = add i64 %n, 15
+  %rn = and i64 %r15, -16
+  %inblock = sub i64 %ip, %base
+  %needend = add i64 %inblock, %rn
+  %needall = add i64 %needend, 16
+  %fitsin = icmp ule i64 %needall, %msz
+  br i1 %fitsin, label %inplace, label %move
+inplace:
+  %b = add i64 %ip, -16
+  %szslot = inttoptr i64 %b to ptr
+  store i64 %n, ptr %szslot
+  store i64 %n, ptr %oszp
+  %fa = add i64 %ip, %rn
+  %g0 = call i64 @npk_m_guard(i64 %fa)
+  %gp0 = inttoptr i64 %fa to ptr
+  store i64 %g0, ptr %gp0
+  %fa1 = add i64 %fa, 8
+  %g1 = call i64 @npk_m_guard(i64 %fa1)
+  %gp1 = inttoptr i64 %fa1 to ptr
+  store i64 %g1, ptr %gp1
+  ret ptr %old
+move:
+  %np = call ptr @npk_alloc(i64 %n)
   %smaller = icmp ult i64 %osz, %n
   %cnt = select i1 %smaller, i64 %osz, i64 %n
-  call void @llvm.memcpy.p0.p0.i64(ptr %p, ptr %old, i64 %cnt, i1 false)
-  ret ptr %p
+  call void @llvm.memcpy.p0.p0.i64(ptr %np, ptr %old, i64 %cnt, i1 false)
+  call void @npk_dalloc(ptr %old)
+  ret ptr %np
+sm:
+  %ch = call i64 @npk_small_check(i64 %ip)
+  %cia = add i64 %ch, 8
+  %cip = inttoptr i64 %cia to ptr
+  %ci = load i64, ptr %cip
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %b2 = add i64 %ip, -16
+  %oszp2 = inttoptr i64 %b2 to ptr
+  %osz2 = load i64, ptr %oszp2
+  %r15b = add i64 %n, 15
+  %rnb = and i64 %r15b, -16
+  %fitscls = icmp ule i64 %rnb, %cls
+  br i1 %fitscls, label %inplace2, label %move2
+inplace2:
+  store i64 %n, ptr %oszp2
+  ret ptr %old
+move2:
+  %np2 = call ptr @npk_alloc(i64 %n)
+  %smaller2 = icmp ult i64 %osz2, %n
+  %cnt2 = select i1 %smaller2, i64 %osz2, i64 %n
+  call void @llvm.memcpy.p0.p0.i64(ptr %np2, ptr %old, i64 %cnt2, i1 false)
+  call void @npk_dalloc(ptr %old)
+  ret ptr %np2
 }
 
 define void @npk_dalloc(ptr %p) {
+entry:
+  ; dalloc(NULL) is a TRAP (D-150): alloc never returns null, so a null here
+  ; is a program in a state its author did not intend -- explicit over
+  ; implicit, and unlike C there is no cleanup idiom that needs free(NULL)
+  %ip = ptrtoint ptr %p to i64
+  %isz = icmp eq i64 %ip, 0
+  br i1 %isz, label %bad, label %aligned
+bad:
+  call void @npk_heap_bad()
+  unreachable
+aligned:
+  %misal = and i64 %ip, 15
+  %crooked = icmp ne i64 %misal, 0
+  br i1 %crooked, label %bad, label %virginheap
+virginheap:
+  ; a free before the first allocation cannot name our memory
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %bad, label %route
+route:
+  %lgidx = call i64 @npk_lg_find(i64 %ip)
+  %islarge = icmp sge i64 %lgidx, 0
+  br i1 %islarge, label %lg, label %sm
+lg:
+  %e = call i64 @npk_lg_entry(i64 %lgidx)
+  call void @npk_large_check(i64 %ip, i64 %e)
+  %basea = add i64 %e, 8
+  %basep = inttoptr i64 %basea to ptr
+  %base = load i64, ptr %basep
+  %msza = add i64 %e, 16
+  %mszp = inttoptr i64 %msza to ptr
+  %msz = load i64, ptr %mszp
+  call void @npk_lg_remove(i64 %lgidx)
+  call void @npk_hunmap(i64 %base, i64 %msz)
   ret void
+sm:
+  call void @npk_small_free(i64 %ip)
+  ret void
+}
+
+define ptr @npk_aalloc(i64 %n, i64 %align) {
+entry:
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %init, label %checks
+init:
+  call void @npk_heap_init()
+  br label %checks
+checks:
+  %negn = icmp slt i64 %n, 0
+  br i1 %negn, label %badreq, label %alignck
+alignck:
+  %zeroa = icmp sle i64 %align, 0
+  br i1 %zeroa, label %badreq, label %pow2
+pow2:
+  %am1 = add i64 %align, -1
+  %mix = and i64 %align, %am1
+  %notpow = icmp ne i64 %mix, 0
+  br i1 %notpow, label %badreq, label %norm
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+norm:
+  %z = icmp eq i64 %n, 0
+  %n1 = select i1 %z, i64 16, i64 %n
+  %smalla = icmp ule i64 %align, 16
+  br i1 %smalla, label %plain, label %wide
+plain:
+  ; every ordinary block is 16-aligned already
+  %p = call ptr @npk_alloc(i64 %n1)
+  ret ptr %p
+wide:
+  %q = call ptr @npk_large_new(i64 %n1, i64 %align)
+  ret ptr %q
 }
 
 ; ---------------------------------------------------------------------------
@@ -954,12 +1976,37 @@ done:
 }
 
 define ptr @memmove(ptr %dst, ptr %src, i64 %n) {
+entry:
+  ; A real move, not a memcpy alias (0.10.0): when dst overlaps src from
+  ; above, a forward copy reads bytes it has already overwritten.
+  %di = ptrtoint ptr %dst to i64
+  %si = ptrtoint ptr %src to i64
+  %down = icmp ult i64 %di, %si
+  br i1 %down, label %fwd, label %bwd
+fwd:
   %r = call ptr @memcpy(ptr %dst, ptr %src, i64 %n)
   ret ptr %r
+bwd:
+  br label %bhead
+bhead:
+  %i = phi i64 [ %n, %bwd ], [ %i2, %bbody ]
+  %more = icmp ugt i64 %i, 0
+  br i1 %more, label %bbody, label %bdone
+bbody:
+  %i2 = add i64 %i, -1
+  %sp = getelementptr i8, ptr %src, i64 %i2
+  %dp = getelementptr i8, ptr %dst, i64 %i2
+  %b = load i8, ptr %sp
+  store i8 %b, ptr %dp
+  br label %bhead
+bdone:
+  ret ptr %dst
 }
 
 declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)
+declare i64 @llvm.cttz.i64(i64, i1)
+declare { i64, i1 } @llvm.umul.with.overflow.i64(i64, i64)
 
 ; ---------------------------------------------------------------------------
 ; Strings.

@@ -104,12 +104,33 @@ Nitpick provides raw, slab-backed compiler intrinsics for dynamic sizing. All re
 *   **`ralloc(ptr, new_size)`**: Resize the allocation. Old pointer becomes invalid.
 *   **`dalloc(ptr)`**: Explicitly deallocate.
 
-`realloc` and `free` are retained as legacy aliases for `ralloc` and `dalloc`;
-the latter are the preferred Nitpick vernacular. *(`BUILTIN_REFERENCE.md` §1 is
-the authority on the alias set; this list previously omitted them.)*
+There are **no aliases**: `malloc`/`free`/`realloc` are C names, and since
+D-149 there is no in-process C to reach them through. An earlier revision of
+this list called `realloc` and `free` "retained legacy aliases" — that was
+struck by D-119 in `BUILTIN_REFERENCE.md` and is corrected here too. The fifth
+native, **`aalloc(size, align)`**, serves alignments above the default sixteen
+(0.10.0).
 
-Every allocation carries a hidden 8-byte CRC32 header. Double-frees and
-corruption trigger `failsafe`.
+Every heap allocation carries a hidden 16-byte header — **the block's size and
+a secret-keyed, address-keyed magic word** — and the allocator detects
+double-free and header corruption and routes them to `failsafe`
+(`-4102`), out-of-memory to `failsafe` (`-4103`), and a malformed request
+(negative size, `calloc` count×size overflow — the multiply is CHECKED —
+`ralloc(p, 0)`, a non-power-of-two alignment) to `failsafe` (`-4104`).
+*Not a CRC*: an earlier revision claimed "a hidden 8-byte CRC32 header", which
+was wrong three ways (a CRC32 is 4 bytes; no allocator in the project's
+history uses one; a CRC over payload is an O(size) cost per operation nobody
+signed up for). The real scheme is canaries: in a slab the next block's header
+is its neighbour's overrun canary and a tail guard closes the chunk; large
+blocks carry their own footer guard; freed slots keep a distinct FREED magic
+that is re-verified when the slot is handed out again. Double-free of a
+**tracked** binding is additionally a compile-time error (D-119); the runtime
+check covers pointers the static analysis cannot follow. Allocator control
+state (bitmaps, the chunk and large-block tables) lives out of band where no
+payload overrun can reach it, and `dalloc`/`ralloc` prove a pointer lies
+inside allocator-owned memory before dereferencing anything — a garbage
+pointer is a trap, never a wild load. The heap is single-threaded at this
+rung; the lock discipline lands with 1.1's executor work.
 
 ## 4. `Handle<T>` and Arena Allocators
 

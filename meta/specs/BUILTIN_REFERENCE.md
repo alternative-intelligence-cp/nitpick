@@ -25,14 +25,15 @@ Nitpick provides a set of compiler intrinsics (built-ins) that are available glo
 ## 1. Memory Management Built-ins (NitpickAlloc)
 
 These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. They all return `wild` pointers — unmanaged memory outside RAII tracking, which the programmer must free. There is no garbage collector (D-003).
-*Security constraint: Every allocation has a hidden 8-byte CRC32 header. Double-frees and corruption immediately trigger the failsafe.*
+*Security constraint: every allocation carries a hidden 16-byte header — size plus a secret-keyed magic word, **not a CRC** (the "8-byte CRC32" an earlier revision claimed was wrong three ways — see `MEMORY_REFERENCE.md` §3). Double-free, corruption, and a foreign or misaligned pointer trap to `failsafe` with `-4102`; OOM with `-4103`; a malformed request (negative size, checked `calloc` multiply overflow, `ralloc(p, 0)`, bad alignment) with `-4104`. Double-free of a tracked binding is already a compile-time error (D-119); the runtime check covers what the analysis cannot follow.*
 
 | Built-in | Signature | Description |
 |---|---|---|
-| `alloc` | `int64:size → wild int8->` | Allocates `size` uninitialized bytes. Triggers failsafe on OOM. |
+| `alloc` | `int64:size → wild int8->` | Allocates `size` uninitialized bytes, 16-aligned. `alloc(0)` is a real, unique, freeable block (D-150). Triggers failsafe on OOM. |
+| `aalloc` | `int64:size, int64:align → wild int8->` | Allocates with the requested power-of-two alignment (0.10.0); `align <= 16` is the ordinary path. |
 | `calloc` | `(int64:count, int64:size) → wild int8->` | Allocates `count*size` zero-initialized bytes. Prefer this over `alloc` + `memset`. |
-| `ralloc` | `(wild any->:ptr, int64:new_size) → wild int8->` | Resizes an allocation. The old pointer is invalid after calling. (Preferred over `realloc`). |
-| `dalloc` | `wild any->:ptr → void` | Deallocates a pointer. Safe no-op if `NULL`. Triggers failsafe on double-free. (Preferred over `free`). |
+| `ralloc` | `(wild any->:ptr, int64:new_size) → wild int8->` | Resizes an allocation; grows in place where the class or mapping allows, else allocates, copies (bounded by the OLD size), and frees. The old pointer is invalid after calling. `ralloc(NULL, n)` is a fresh allocation; `ralloc(p, 0)` traps (`-4104`, D-150) — freeing is spelled `dalloc`. |
+| `dalloc` | `wild any->:ptr → void` | Deallocates a pointer, really (0.10.0): the slot is recycled. `dalloc(NULL)` **traps** (`-4102`, D-150) — `alloc` never returns null, so a null here is a state the author did not intend; there is no C-style free(NULL) cleanup idiom to serve. Double-free and foreign pointers trap deterministically. |
 | `mcpy` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **NO overlap allowed**. Maps to `llvm.memcpy`. |
 | `mmov` | `(wild int8->:dst, wild int8->:src, int64:n) → wild int8->` | Copies `n` bytes from `src` to `dst`. **Overlap-SAFE**. Maps to `llvm.memmove`. |
 | `memset` | `(wild int8->:dst, int64:val, int64:n) → wild int8->` | Fills `n` bytes at `dst` with the byte value `val` (low 8 bits). Maps to `llvm.memset`. |
@@ -41,8 +42,9 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 
 *(Note: **`malloc` and `free` are not builtins and are not aliases.** They are C
 functions, and since D-149 they are not reachable at all — in-process FFI does
-not exist, so there is no `extern "libc"` to declare them in. The four above are
-the WHOLE allocator API. An earlier draft of this line called `free` and
+not exist, so there is no `extern "libc"` to declare them in. The natives above are
+the WHOLE allocator API — five natives since `aalloc` joined at 0.10.0
+(D-150). An earlier draft of this line called `free` and
 `realloc` "legacy aliases", carried over from the prototype's C/C++ era and
 never true of the native API — the prototype's own type checker knows exactly
 `alloc`, `calloc`, `ralloc` and `dalloc`. See D-119.)*

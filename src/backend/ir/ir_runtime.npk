@@ -49,6 +49,9 @@ func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
 // is the entry shim and not callable; `npk_exit` is here because `exit` lowers
 // to it (0.7.6), argc 1, void.
 pub func:rt_sig = RtSig(string:name) {
+    if (raw string_eq(name, "aalloc")) {
+        pass (raw rt("@npk_aalloc", "ptr", false, "", 2i32, "i64", "i64", ""));
+    }
     if (raw string_eq(name, "alloc")) {
         pass (raw rt("@npk_alloc", "ptr", false, "", 1i32, "i64", "", ""));
     }
@@ -139,30 +142,31 @@ pub func:rt_sig = RtSig(string:name) {
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() { pass 22i32; };
+pub func:rt_count = int32() { pass 23i32; };
 
 pub func:rt_name_at = string(int32:i) {
-    if (i == 0i32)  { pass "alloc"; }
-    if (i == 1i32)  { pass "calloc"; }
-    if (i == 2i32)  { pass "close"; }
-    if (i == 3i32)  { pass "dalloc"; }
-    if (i == 4i32)  { pass "exit"; }
-    if (i == 5i32)  { pass "int_to_string"; }
-    if (i == 6i32)  { pass "mcpy"; }
-    if (i == 7i32)  { pass "memset"; }
-    if (i == 8i32)  { pass "mmov"; }
-    if (i == 9i32)  { pass "open"; }
-    if (i == 10i32) { pass "path_exists"; }
-    if (i == 11i32) { pass "ralloc"; }
-    if (i == 12i32) { pass "read"; }
-    if (i == 13i32) { pass "read_file"; }
-    if (i == 14i32) { pass "read_stdin"; }
-    if (i == 15i32) { pass "string_concat"; }
-    if (i == 16i32) { pass "string_equals"; }
-    if (i == 17i32) { pass "string_from_bytes"; }
-    if (i == 18i32) { pass "string_slice"; }
-    if (i == 19i32) { pass "to_cstring"; }
-    if (i == 20i32) { pass "write"; }
+    if (i == 0i32)  { pass "aalloc"; }
+    if (i == 1i32)  { pass "alloc"; }
+    if (i == 2i32)  { pass "calloc"; }
+    if (i == 3i32)  { pass "close"; }
+    if (i == 4i32)  { pass "dalloc"; }
+    if (i == 5i32)  { pass "exit"; }
+    if (i == 6i32)  { pass "int_to_string"; }
+    if (i == 7i32)  { pass "mcpy"; }
+    if (i == 8i32)  { pass "memset"; }
+    if (i == 9i32)  { pass "mmov"; }
+    if (i == 10i32) { pass "open"; }
+    if (i == 11i32) { pass "path_exists"; }
+    if (i == 12i32) { pass "ralloc"; }
+    if (i == 13i32) { pass "read"; }
+    if (i == 14i32) { pass "read_file"; }
+    if (i == 15i32) { pass "read_stdin"; }
+    if (i == 16i32) { pass "string_concat"; }
+    if (i == 17i32) { pass "string_equals"; }
+    if (i == 18i32) { pass "string_from_bytes"; }
+    if (i == 19i32) { pass "string_slice"; }
+    if (i == 20i32) { pass "to_cstring"; }
+    if (i == 21i32) { pass "write"; }
     pass "write_file";
 };
 

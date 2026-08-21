@@ -1,0 +1,62 @@
+// expect-exit: 0
+//
+// THE HEAP IS REAL (0.10.0, D-150): dalloc frees, freed slots are reused,
+// ralloc preserves content and releases the old block, calloc zeroes recycled
+// memory, and the large-block and aligned paths round-trip. The proofs here
+// avoid pointer comparison on purpose: a marker byte written through the OLD
+// pointer and read back through the NEW one proves the slot itself came back
+// (the slab hands out the lowest free slot, so the recycling is
+// deterministic).
+
+func:main = int32(cstring[]:_~argv) {
+    // dalloc frees: the dirty byte survives into the recycled slot.
+    wild int8->:a = alloc(24i64);
+    <-a = 65i8;
+    dalloc(a);
+    wild int8->:b = alloc(24i64);
+    if (<-b != 65i8) { exit 10i32; }
+
+    // ralloc preserves content across a class change (24 bytes -> large)...
+    <-b = 66i8;
+    wild int8->:g = ralloc(b, 4000i64);
+    if (<-g != 66i8) { exit 11i32; }
+
+    // ...and freed the old block: the next same-class alloc gets that slot.
+    wild int8->:d = alloc(24i64);
+    if (<-d != 66i8) { exit 12i32; }
+
+    // calloc ZEROES a recycled dirty slot (the checked-multiply twin lives in
+    // heap_calloc_overflow.npk, where the product cannot be represented).
+    dalloc(d);
+    wild int8->:z = calloc(6i64, 4i64);
+    if (<-z != 0i8) { exit 13i32; }
+    dalloc(z);
+
+    // alloc(0) is a real, unique, freeable block (D-150).
+    wild int8->:z0 = alloc(0i64);
+    dalloc(z0);
+
+    // The large path: write, grow IN PLACE inside the mapping's slack, then
+    // grow far enough to move; content survives both.
+    wild int8->:big = alloc(100000i64);
+    <-big = 77i8;
+    wild int8->:big2 = ralloc(big, 100016i64);
+    if (<-big2 != 77i8) { exit 14i32; }
+    wild int8->:big3 = ralloc(big2, 200000i64);
+    if (<-big3 != 77i8) { exit 15i32; }
+    dalloc(big3);
+
+    // aalloc: the wide-alignment path (the runtime asserts the alignment
+    // contract itself at the production site) and the plain path.
+    wild int8->:w = aalloc(100i64, 256i64);
+    <-w = 88i8;
+    if (<-w != 88i8) { exit 16i32; }
+    dalloc(w);
+    wild int8->:v = aalloc(8i64, 8i64);
+    dalloc(v);
+
+    dalloc(g);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
