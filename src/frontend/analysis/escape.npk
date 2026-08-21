@@ -694,6 +694,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) {
         // the arena's own slab pointers, plus whatever its element carries
         pass true;
     }
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE())) { pass false; }   // an index, not an address
     if (k == (raw TY_OPTIONAL())) {
         pass (relay type_holds_pointer(table, raw type_elem(table, t), fuel - 1i32));
@@ -1201,6 +1202,11 @@ func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) {
         pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
                                   fuel - 1i32));
     }
+    if (k == (raw TY_SHARED_ARENA())) {
+        // `alloc(v)` stores an element likewise
+        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+                                  fuel - 1i32));
+    }
     if (k == (raw TY_HANDLE())) { pass false; }
     if (k == (raw TY_RESULT())) {
         pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
@@ -1355,6 +1361,7 @@ func:carries_pointer = bool(Escape->:x, int32:ty, int32:fuel) {
     // stored inline and carries nothing, which is why an array is not a slice here.
     if (k == (raw TY_ARRAY()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
     if (k == (raw TY_ARENA()))    { pass true; }
+    if (k == (raw TY_SHARED_ARENA())) { pass true; }
     if (k == (raw TY_HANDLE()))   { pass false; }
     if (k == (raw TY_OPTIONAL())) { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }
     if (k == (raw TY_RANGE()))    { pass (relay carries_pointer(x, raw type_elem(x.types, ty), fuel - 1i32)); }

@@ -1,0 +1,47 @@
+// expect-exit: 0
+//
+// `shared_arena<T>` IS REAL (0.10.4, D-154): the concurrent arena with the
+// deliberately smaller contract — alloc/get/destroy, no free, no reset, no
+// put. `alloc(v)` CARRIES the value: the slot is written once, before its
+// handle escapes, and is immutable after, which is the whole race-freedom
+// story. Storage never moves — growth adds chunks — so early handles stay
+// valid through hundreds of later allocations. An `arena<T>` handle
+// wandering over carries an even generation of at least 2 and is refused as
+// stale (-4106): shared handles are generation-zero by construction. The
+// raw-pointer half of the non-moving proof lives in
+// bootstrap/runtime/tests/shared.ll, where a slot pointer taken before
+// growth is dereferenced after it.
+
+func:main = int32(cstring[]:_~argv) {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+
+    Handle<int64>:h0 = s.alloc(1000i64);
+    int64:v0 = s.get(h0) ?! 77tbb32;
+    if (v0 != 1000i64) { exit 10i32; }
+
+    // push through several geometric chunks; h0 stays valid throughout
+    int64:i = 0i64;
+    while (i < 300i64) {
+        Handle<int64>:hx = s.alloc(i);
+        int64:vx = s.get(hx) ?! 77tbb32;
+        if (vx != i) { exit 11i32; }
+        i = i + 1i64;
+    }
+    int64:v0b = s.get(h0) ?! 77tbb32;
+    if (v0b != 1000i64) { exit 12i32; }
+
+    // a single-threaded arena's handle is stale here by generation parity
+    arena<int64>:a = arena_make(4i64);
+    Handle<int64>:ah = a.alloc();
+    drop a.put(ah, 5i64);
+    Result<int64>:cross = s.get(ah);
+    if (!cross.is_error) { exit 13i32; }
+    if ((cross.error =>! int64) != (0i64 - 4106i64)) { exit 14i32; }
+    a.destroy();
+
+    // a forged index past the published count is stale, not a read
+    s.destroy();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

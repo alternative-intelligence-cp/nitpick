@@ -22,11 +22,15 @@ func:not_an_operation = NIL() {
     pass NIL;
 };
 
-// expect-error: NITPICK-TYPE-001
-func:shared_not_yet = NIL() {
-    // shared_arena is 0.10.4's; the refusal names the cycle (total_audit B-3)
-    shared_arena<int64>:s = 0i64;
-    discard(s);
+// expect-error: NITPICK-TYPE-007
+func:shared_no_free = NIL() {
+    // the shared set is alloc/get/destroy — no free: slots are never reused
+    // while the arena is live, which is the concurrency contract (D-154)
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    Handle<int64>:h = s.alloc(5i64);
+    Result<NIL>:r = s.free(h);
+    discard(r);
+    s.destroy();
     pass NIL;
 };
 

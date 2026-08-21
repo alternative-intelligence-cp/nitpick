@@ -21,5 +21,14 @@ func:double_destroy = NIL() {
     pass NIL;
 };
 
+// expect-error: NITPICK-MOVE-002
+func:shared_use_after_destroy = NIL() {
+    shared_arena<int64>:s = shared_arena_make(4i64);
+    s.destroy();
+    Handle<int64>:h = s.alloc(1i64);
+    discard(h);
+    pass NIL;
+};
+
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 func:failsafe = int32(tbb32:_~err) { exit 1i32; };

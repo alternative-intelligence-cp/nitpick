@@ -398,6 +398,18 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
         // an unsuffixed literal reads its width (D-092): the annotation names
         // `arena<T>`, and the element's layout is what the lowering needs.
         // With no arena context it is an error here, not a silent nothing.
+        if (relay callee_is_builtin_named(e, n, "shared_arena_make")) {
+            drop type_args_only(e, start, count);
+            int32:swant = raw expected_value(e);
+            if (swant != 0i32) {
+                if ((raw type_kind(e.types, swant)) == (raw TY_SHARED_ARENA())) {
+                    pass swant;
+                }
+            }
+            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+                "`shared_arena_make` needs a `shared_arena<T>` annotation to read its element type from",
+                n.span));
+        }
         if (relay callee_is_builtin_named(e, n, "arena_make")) {
             drop type_args_only(e, start, count);
             int32:want = raw expected_value(e);
@@ -820,6 +832,9 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
     // exactly the confusion this ordering forecloses.
     if ((raw type_kind(e.types, recv)) == (raw TY_ARENA())) {
         pass (relay type_arena_method(e, n, recv, name, start, count));
+    }
+    if ((raw type_kind(e.types, recv)) == (raw TY_SHARED_ARENA())) {
+        pass (relay type_sarena_method(e, n, recv, name, start, count));
     }
 
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
@@ -1256,4 +1271,58 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) {
         drop te_mismatch(e, an.span, want, got);
     }
     pass NIL;
+};
+
+// `s.alloc(v)` / `s.get(h)` / `s.destroy()` — the shared arena's set (D-017,
+// D-154). Deliberately SMALLER than `arena<T>`'s, and different in one
+// signature: `alloc` CARRIES THE VALUE, because there is no `put` — a slot
+// is written once, before its handle escapes, and is immutable after, which
+// is what makes concurrent `get` race-free with no per-slot machinery. The
+// receiver is a VALUE (one pointer, shareable by reference), so no place is
+// required.
+func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                                int32:name, int32:start, int32:count) {
+    string:m = relay intern_get(e.interns, name);
+    int32:elem = (raw tt_get(e.types, recv)).a;
+
+    if (raw string_eq(m, "alloc")) {
+        if (count != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "a shared arena's `alloc` takes exactly one argument, the value — there is no `put`, so the slot is written once, here (D-154)",
+                n.span));
+        }
+        int32:saved = e.expected;
+        e.expected = elem;
+        int32:got = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        e.expected = saved;
+        if (got != 0i32) {
+            if (!(raw type_is_invalid(e.types, got))) {
+                if (!(raw fits(e, elem, got))) {
+                    drop te_mismatch(e, n.span, elem, got);
+                }
+            }
+        }
+        pass (raw tt_handle(e.types, elem));
+    }
+    if (raw string_eq(m, "get")) {
+        if (count != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`get` takes exactly one argument, the handle", n.span));
+        }
+        drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        pass (raw tt_result(e.types, elem, raw type_size(e.types, elem),
+                            raw type_align(e.types, elem)));
+    }
+    if (raw string_eq(m, "destroy")) {
+        if (count != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`destroy` takes no arguments", n.span));
+        }
+        pass (e.types.t_nil);
+    }
+    string:m1 = relay string_concat("`", m);
+    pass (relay te_error(e, raw TYPE_MISMATCH(),
+        relay string_concat(m1,
+            "` is not a shared-arena operation; the set is alloc, get, destroy — no `free`, no `reset`, no `put`: slots are never reused or rewritten while the arena is live, which is the whole concurrency contract (D-017, D-154)"),
+        n.span));
 };

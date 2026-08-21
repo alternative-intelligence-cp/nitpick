@@ -90,6 +90,7 @@ pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
 pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = the value's type
 pub func:TY_ARENA = int32()    { pass 26i32; };  // a = element (D-017, D-152)
 pub func:TY_HANDLE = int32()   { pass 27i32; };  // a = element (MEMORY_REFERENCE 4.1)
+pub func:TY_SHARED_ARENA = int32() { pass 28i32; };  // a = element (D-017, D-154)
 
 pub struct:Type = {
     int32:kind;
@@ -364,6 +365,17 @@ pub func:tt_kernel = int32(TypeTable->:t, int32:which) {
 // WILD-role heap: an un-destroyed arena is a countable leak (D-151).
 pub func:tt_arena = int32(TypeTable->:t, int32:elem) {
     int32:id = raw tt_intern(t, raw TY_ARENA(), elem, 0i32, 0i32, 40i64, 8i32, 0i32);
+    drop tt_set_haspt(t, id, true);
+    pass id;
+};
+
+// `shared_arena<T>` (D-017, D-154): the concurrent arena VALUE is one
+// POINTER to a runtime-owned structure — shareable by reference is the
+// contract, so the value is the reference. Chunked storage never moves;
+// slots are written once at `alloc(v)` and immutable after, which is what
+// makes concurrent `get` race-free with no per-slot synchronization.
+pub func:tt_shared_arena = int32(TypeTable->:t, int32:elem) {
+    int32:id = raw tt_intern(t, raw TY_SHARED_ARENA(), elem, 0i32, 0i32, 8i64, 8i32, 0i32);
     drop tt_set_haspt(t, id, true);
     pass id;
 };

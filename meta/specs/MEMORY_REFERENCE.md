@@ -275,3 +275,24 @@ storage.
 
 `destroy` requires that no thread still holds handles — this is ownership, not
 synchronization: the owner destroys the arena after joining.
+
+**As built (0.10.4, D-154):** creation is `shared_arena_make(cap)`,
+type-directed like `arena_make`; the surface value is ONE POINTER to the
+runtime structure — shareable by reference is the contract, so the value is
+the reference. **`alloc(v)` carries the value**, because there is no `put`:
+the slot is written once, before its handle escapes, and is immutable after —
+which is what makes concurrent `get` race-free with no per-slot machinery
+(handle transfer between threads is the synchronizing edge; 1.1's channels
+are SeqCst, D-016). `get` COPIES, exactly as `arena<T>`'s does and for the
+same reason (a borrow return would violate D-004; D-152's argument applies
+unchanged — the "likely yes" this section once carried is decided NO). Growth
+RESERVES a capacity range with one atomic `fetch_add` — racing installers get
+disjoint ranges and cannot collide — then publishes the chunk with a CAS
+push; chunk sizes are geometric (each new chunk carries the arena's current
+capacity in slots, capped at 65536), so a large arena is a few chunks, never
+thousands. Shared handles carry generation ZERO constantly (nothing frees,
+nothing increments), and `arena<T>` issues generations starting at 2 — so a
+single-threaded arena's handle wandering into a shared `get` is refused as
+stale (`-4106`), not read. `destroy` consumes the binding at compile time
+(`MOVE-002`), and an un-destroyed shared arena is a wild-role leak the exit
+check names (D-151).

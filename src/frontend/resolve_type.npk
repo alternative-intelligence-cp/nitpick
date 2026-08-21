@@ -1392,11 +1392,6 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
         // A REAL constructor whose kind no rung supplies yet. Naming the rung
         // beats "there is no type named", which would send the reader looking
         // for a declaration that was never theirs to write (D-085).
-        if (as_kind == TokenKind.KwShared_arena) {
-            pass (relay ty_error(r, raw TYPE_UNKNOWN(),
-                "`shared_arena<T>` lands at 0.10.4; `arena<T>` is the single-threaded form and lowers now (D-017)",
-                n.span));
-        }
         if (as_kind == TokenKind.KwAtomic) {
             pass (relay ty_error(r, raw TYPE_UNKNOWN(),
                 "`atomic<T>` lands with 1.1's concurrency work",
@@ -1430,6 +1425,14 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
     }
     if (kind == (raw TY_HANDLE())) {
         pass (raw tt_handle(r.types, inner));
+    }
+    if (kind == (raw TY_SHARED_ARENA())) {
+        if ((raw type_align(r.types, inner)) > 16i32) {
+            pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+                "a shared arena element's alignment is capped at 16, the slab's own",
+                n.span));
+        }
+        pass (raw tt_shared_arena(r.types, inner));
     }
     pass (raw tt_result(r.types, inner,
                         raw type_size(r.types, inner),

@@ -2327,7 +2327,10 @@ issue2:
   br label %issue
 issue:
   %idx = phi i64 [ %fh, %pop ], [ %top2, %issue2 ]
-  ; a reused or reset slot holds an ODD generation; bump it live (even)
+  ; a virgin slot (generation zero) is promoted to 2, so no arena<T> handle
+  ; ever carries generation zero -- that value is shared_arena's constant,
+  ; and the split is what lets a shared get refuse a wandering arena handle
+  ; (D-154). A reused or reset slot holds an ODD generation; bump it live.
   %gensa2 = add i64 %ai, 8
   %gensp2 = inttoptr i64 %gensa2 to ptr
   %gens2 = load ptr, ptr %gensp2
@@ -2335,7 +2338,9 @@ issue:
   %goff = shl i64 %idx, 2
   %ga = add i64 %gi2, %goff
   %gp = inttoptr i64 %ga to ptr
-  %g = load i32, ptr %gp
+  %g0 = load i32, ptr %gp
+  %virgin = icmp eq i32 %g0, 0
+  %g = select i1 %virgin, i32 2, i32 %g0
   %odd = and i32 %g, 1
   %isodd = icmp ne i32 %odd, 0
   %g2 = add i32 %g, 1
@@ -2447,6 +2452,195 @@ clear:
   %fha = add i64 %ai, 32
   %fhp = inttoptr i64 %fha to ptr
   store i64 -1, ptr %fhp
+  ret void
+}
+
+; ---------------------------------------------------------------------------
+; THE SHARED ARENA (0.10.4, D-154). The concurrent arena with the SMALLER
+; contract (D-017): alloc, get, destroy -- no free, no reset, no put. Slots
+; are written once, by alloc, before the handle escapes, and never reused or
+; rewritten while the arena is live: that is the entire concurrency story --
+; no generation traffic, no freelist, no epochs, no hazard pointers.
+;
+; STORAGE NEVER MOVES. Chunks tile the index space [0, cap): growth RESERVES
+; a capacity range first (one atomic fetch_add on cap -- racing installers
+; get DISJOINT ranges and can never collide), builds the chunk against that
+; base, and publishes it with a CAS push onto the chunk list. A bumped index
+; inside a reserved-but-unlinked range spins in the slot walk until its
+; installer links -- bounded by the installer's own progress; 1.1's
+; concurrency review owns preemption liveness. All cross-thread state is
+; SeqCst (D-016). Geometric chunk sizes: each new chunk carries the arena's
+; current capacity in slots, capped at 65536 -- a large arena is a few
+; chunks, never thousands.
+;
+; The handle's generation field is CONSTANT ZERO here (nothing frees, so
+; nothing increments) -- checked compiler-side, which also refuses an
+; arena<T> handle wandering over: those carry even generations >= 2.
+;
+; struct SharedArena (48 bytes, a wild heap block; the surface value is a
+; POINTER to it -- shareable by reference is the contract):
+;   +0  chunk_head  atomic: newest chunk (CAS push target)
+;   +8  top         atomic: next slot index (fetch_add)
+;   +16 cap         atomic: reserved capacity (fetch_add on growth)
+;   +24 stride      element stride, fixed at make
+;   +32,+40 reserved
+; chunk: [ next i64 | base i64 | nslots i64 | pad i64 ] then slots.
+; ---------------------------------------------------------------------------
+
+define ptr @npk_sarena_make(i64 %stride, i64 %cap0) {
+entry:
+  %neg = icmp slt i64 %cap0, 0
+  br i1 %neg, label %badreq, label %floor
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+floor:
+  %small = icmp slt i64 %cap0, 64
+  %first = select i1 %small, i64 64, i64 %cap0
+  %bo = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %first, i64 %stride)
+  %bytes0 = extractvalue { i64, i1 } %bo, 0
+  %ovf = extractvalue { i64, i1 } %bo, 1
+  br i1 %ovf, label %badreq, label %mk
+mk:
+  %bytes = add i64 %bytes0, 32
+  %ch = call ptr @npk_alloc_impl(i64 %bytes, i64 1)
+  %ci = ptrtoint ptr %ch to i64
+  %np = inttoptr i64 %ci to ptr
+  store i64 0, ptr %np
+  %ba = add i64 %ci, 8
+  %bp = inttoptr i64 %ba to ptr
+  store i64 0, ptr %bp
+  %na = add i64 %ci, 16
+  %nsp = inttoptr i64 %na to ptr
+  store i64 %first, ptr %nsp
+  %sa = call ptr @npk_alloc_impl(i64 48, i64 1)
+  %si = ptrtoint ptr %sa to i64
+  %hp = inttoptr i64 %si to ptr
+  store atomic i64 %ci, ptr %hp seq_cst, align 8
+  %ta = add i64 %si, 8
+  %tp = inttoptr i64 %ta to ptr
+  store atomic i64 0, ptr %tp seq_cst, align 8
+  %ca = add i64 %si, 16
+  %cp = inttoptr i64 %ca to ptr
+  store atomic i64 %first, ptr %cp seq_cst, align 8
+  %sta = add i64 %si, 24
+  %stp = inttoptr i64 %sta to ptr
+  store i64 %stride, ptr %stp
+  ret ptr %sa
+}
+
+define i64 @npk_sarena_bump(ptr %sa, i64 %stride) {
+entry:
+  %si = ptrtoint ptr %sa to i64
+  %ta = add i64 %si, 8
+  %tp = inttoptr i64 %ta to ptr
+  %idx = atomicrmw add ptr %tp, i64 1 seq_cst
+  %ca = add i64 %si, 16
+  %cp = inttoptr i64 %ca to ptr
+  br label %check
+check:
+  %cap = load atomic i64, ptr %cp seq_cst, align 8
+  %fits = icmp ult i64 %idx, %cap
+  br i1 %fits, label %done, label %grow
+grow:
+  ; geometric: the new chunk carries the current capacity, capped at 65536
+  %big = icmp ugt i64 %cap, 65536
+  %newn = select i1 %big, i64 65536, i64 %cap
+  %bo = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %newn, i64 %stride)
+  %bytes0 = extractvalue { i64, i1 } %bo, 0
+  %ovf = extractvalue { i64, i1 } %bo, 1
+  br i1 %ovf, label %badreq, label %reserve
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+reserve:
+  ; the reservation IS the race arbiter: disjoint ranges by construction
+  %base = atomicrmw add ptr %cp, i64 %newn seq_cst
+  %bytes = add i64 %bytes0, 32
+  %ch = call ptr @npk_alloc_impl(i64 %bytes, i64 1)
+  %ci = ptrtoint ptr %ch to i64
+  %ba = add i64 %ci, 8
+  %bp = inttoptr i64 %ba to ptr
+  store i64 %base, ptr %bp
+  %na = add i64 %ci, 16
+  %nsp = inttoptr i64 %na to ptr
+  store i64 %newn, ptr %nsp
+  %hp = inttoptr i64 %si to ptr
+  br label %push
+push:
+  %old = load atomic i64, ptr %hp seq_cst, align 8
+  %np = inttoptr i64 %ci to ptr
+  store i64 %old, ptr %np
+  %pair = cmpxchg ptr %hp, i64 %old, i64 %ci seq_cst seq_cst
+  %okc = extractvalue { i64, i1 } %pair, 1
+  br i1 %okc, label %check, label %push
+done:
+  ret i64 %idx
+}
+
+define ptr @npk_sarena_slot(ptr %sa, i64 %stride, i64 %idx) {
+entry:
+  %si = ptrtoint ptr %sa to i64
+  %ta = add i64 %si, 8
+  %tp = inttoptr i64 %ta to ptr
+  %top = load atomic i64, ptr %tp seq_cst, align 8
+  %oob = icmp uge i64 %idx, %top
+  br i1 %oob, label %stale, label %walk
+stale:
+  ret ptr null
+walk:
+  %hp = inttoptr i64 %si to ptr
+  %head = load atomic i64, ptr %hp seq_cst, align 8
+  br label %chead
+chead:
+  %c = phi i64 [ %head, %walk ], [ %nxt, %cnext ]
+  %end = icmp eq i64 %c, 0
+  ; a bumped index whose chunk is not yet linked spins on the walk; the
+  ; installer's own progress bounds the wait
+  br i1 %end, label %walk, label %cbody
+cbody:
+  %ba = add i64 %c, 8
+  %bp = inttoptr i64 %ba to ptr
+  %base = load i64, ptr %bp
+  %na = add i64 %c, 16
+  %nsp = inttoptr i64 %na to ptr
+  %n = load i64, ptr %nsp
+  %lo = icmp uge i64 %idx, %base
+  %top2 = add i64 %base, %n
+  %hi = icmp ult i64 %idx, %top2
+  %in = and i1 %lo, %hi
+  br i1 %in, label %found, label %cnext
+cnext:
+  %np2 = inttoptr i64 %c to ptr
+  %nxt = load i64, ptr %np2
+  br label %chead
+found:
+  %rel = sub i64 %idx, %base
+  %off = mul i64 %rel, %stride
+  %data = add i64 %c, 32
+  %addr = add i64 %data, %off
+  %p = inttoptr i64 %addr to ptr
+  ret ptr %p
+}
+
+define void @npk_sarena_destroy(ptr %sa) {
+entry:
+  %si = ptrtoint ptr %sa to i64
+  %hp = inttoptr i64 %si to ptr
+  %head = load atomic i64, ptr %hp seq_cst, align 8
+  br label %walk
+walk:
+  %c = phi i64 [ %head, %entry ], [ %nxt, %freec ]
+  %done = icmp eq i64 %c, 0
+  br i1 %done, label %self, label %freec
+freec:
+  %np = inttoptr i64 %c to ptr
+  %nxt = load i64, ptr %np
+  %cp = inttoptr i64 %c to ptr
+  call void @npk_dalloc(ptr %cp)
+  br label %walk
+self:
+  call void @npk_dalloc(ptr %sa)
   ret void
 }
 

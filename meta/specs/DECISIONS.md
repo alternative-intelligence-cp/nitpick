@@ -10352,3 +10352,56 @@ growth under 200 frames, and destroy returning every byte (wild-live
 count zero, and exit 0 through the D-151 check). This stage is how later
 runtime-only families (0.10.4's shared_arena internals, 0.10.5's wildx)
 get execution coverage before their surface arrives.
+
+## D-154 — `shared_arena<T>`: alloc carries the value; reservation-based growth — **SETTLED**
+
+Cycle 0.10.4, completing the arena family. D-017's smaller contract
+(alloc/get/destroy — no free, no reset) is now mechanical, and the open
+items it left are decided:
+
+**`alloc(v)` carries the value.** With no `put` in the contract, the slot
+must be written at allocation — and that is the concurrency design, not a
+workaround: a slot is written once, before its handle can escape, and is
+IMMUTABLE afterwards, so concurrent `get` is race-free with no per-slot
+synchronization at all. The synchronizing edge is the handle transfer
+itself (1.1's channels are SeqCst, D-016 — stated as the obligation it
+is). The two arenas' `alloc` arities differ deliberately: two types, one
+discipline each, is D-017's own frame.
+
+**`get` copies** — the plan's "borrow yes, matching 0.10.2" inverted on
+contact with 0.10.2's actual decision: D-152 decided NO because a
+borrow-returning `get` is a returned borrow (`BORROW-001`), and that
+argument is type-independent. Both arenas hand out values uniformly.
+
+**Growth is reservation-then-publish, lock-free.** A grower reserves a
+capacity range with one atomic `fetch_add` on `cap` — racing installers
+receive DISJOINT ranges and cannot collide — builds the chunk against that
+base, and publishes with a CAS push onto the chunk list. Chunks tile the
+index space and NEVER move (D-017's decisive hazard, removed by
+construction). Chunk sizes are geometric — each new chunk carries the
+current capacity in slots, capped at 65536 — so a big arena is ~a couple
+dozen chunks (the plan's fixed-vs-geometric question, decided geometric
+capped). A bumped index in a reserved-but-unlinked range spins on the slot
+walk, bounded by its installer's progress; 1.1's concurrency review owns
+preemption liveness. All cross-thread state is SeqCst.
+
+**Generation zero is shared_arena's constant, and arena<T> now starts at
+2.** Nothing frees in a shared arena, so its handles carry generation zero
+forever; `arena<T>`'s virgin slots are promoted to 2 at first issue
+(found by the cross-arena test: virgin arena handles used to carry zero
+too). The split makes a wandering single-threaded handle refusable as
+stale (`-4106`) at a shared `get` — cross-arena confusion between two
+arenas of the SAME kind remains a documented limitation, mitigated by
+element types.
+
+The surface value is one pointer (shareable by reference — the value IS
+the reference); `destroy` consumes the binding (`MOVE-002`); an
+un-destroyed shared arena is a wild-role leak (D-151). The plan's
+"lowers atomic<int64> minimally" dissolved on inspection: the bump lives
+INSIDE the runtime as atomic IR instructions, so no surface atomic type
+was needed — `atomic<T>` remains wholly 1.1's (its refusal names that).
+`shared.ll` proves the non-moving property the only way it can be proven —
+a raw slot pointer taken before growth, dereferenced intact after 10000
+allocations across ~10 chunk installs — plus the forged-index null and a
+clean destroy; `shared_arena.npk` proves the surface, the geometric
+growth, and the cross-arena staleness under the D-151 exit check.
