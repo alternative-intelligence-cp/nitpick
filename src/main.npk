@@ -85,6 +85,19 @@ func:main = int32(cstring[]:argv) {
         }
     }
 
+    // `--extra-picky=no-wildx` — the high-assurance build mode (D-035). Scanned
+    // across every argument, since it is order-free and pairs with `-o`.
+    bool:no_wildx = false;
+    int64:ai = 1i64;
+    while (ai < argv.len) {
+        cstring:a = argv[ai];
+        if (raw string_eq(raw string_from_bytes(a.ptr, a.len),
+                          "--extra-picky=no-wildx")) {
+            no_wildx = true;
+        }
+        ai = ai + 1i64;
+    }
+
     // Declared UNINITIALISED and filled by the pipeline through the pointer —
     // the graph inside holds a pointer to the intern table beside it, so the
     // whole Front must sit in one frame before any wiring happens. `$$m`, not
@@ -100,6 +113,16 @@ func:main = int32(cstring[]:argv) {
         NioW:ew = raw nio_stderr();
         drop report(@ew, @f.g.sm, @f.diags);
         exit 1i32;
+    }
+
+    // The build-mode exclusion runs on a clean front half: it is a refusal
+    // about what may be built, not about whether the program type-checks.
+    if (no_wildx) {
+        if ((raw reject_wildx($$m f)) > 0i32) {
+            NioW:ew = raw nio_stderr();
+            drop report(@ew, @f.g.sm, @f.diags);
+            exit 1i32;
+        }
     }
 
     // The backend, INTO A BUFFER: a rung refusal can arrive after half the

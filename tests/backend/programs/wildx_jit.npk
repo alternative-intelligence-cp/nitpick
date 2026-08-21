@@ -1,0 +1,26 @@
+// expect-exit: 42
+//
+// wildx JITS AND RUNS (0.10.5, D-155). The page is allocated RW, machine code
+// is written into it byte by byte, sealed one-way to RX, called, and freed —
+// the full alloc→write→seal→execute→free lifecycle the state machine proves
+// in order. The generated code is `mov eax, 42; ret` (x86-64 System V: the
+// return value goes in eax), so calling it returns 42; failsafe is never
+// reached. The page is freed before exit, so the <wild-live> check passes.
+
+func:main = int32(cstring[]:_~argv) {
+    wildx uint8->:page = wildx_alloc(16i64);
+    // mov eax, 42  =  B8 2A 00 00 00
+    page[0i64] = 184u8;
+    page[1i64] = 42u8;
+    page[2i64] = 0u8;
+    page[3i64] = 0u8;
+    page[4i64] = 0u8;
+    // ret  =  C3
+    page[5i64] = 195u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    wildx_free(page);
+    exit r =>! int32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

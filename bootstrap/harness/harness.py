@@ -424,6 +424,12 @@ UNTESTED_CODES = {
 
     # OPEN -- a question, not an omission.
     "NITPICK-TYPE-023":    "open -- the C variadic tail, recorded in PROTOTYPE_DELTA",
+
+    # BUILD-MODE -- emitted only under `--extra-picky=no-wildx`, which the
+    # flagless rejection suites do not pass. Exercised directly against npkc
+    # with the flag (0.10.5); the state-machine codes WILDX-001/002 that the
+    # DEFAULT build enforces are both in rejection/wildx.npk.
+    "NITPICK-WILDX-003":   "build-mode -- only under --extra-picky=no-wildx",
 }
 
 

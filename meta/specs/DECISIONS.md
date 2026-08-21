@@ -1955,7 +1955,7 @@ that does not already exist.
 
 ---
 
-## D-035 — `wildx` is retained; the verification boundary is stated, not removed — **SETTLED**
+## D-035 — `wildx` is retained; the verification boundary is stated, not removed — **SETTLED; the state machine is built by D-155** (0.10.5 makes the three open deliverables real — the lifecycle analysis, the W^X runtime, and `--extra-picky=no-wildx`)
 
 ### The question
 
@@ -10405,3 +10405,49 @@ a raw slot pointer taken before growth, dereferenced intact after 10000
 allocations across ~10 chunk installs — plus the forged-index null and a
 clean destroy; `shared_arena.npk` proves the surface, the geometric
 growth, and the cross-arena staleness under the D-151 exit check.
+
+## D-155 — The wildx W^X state machine is built — **SETTLED**
+
+Cycle 0.10.5, closing D-035's three open deliverables and the cycle. The
+guarantee is CONTAINMENT (the contents of generated code are unverifiable,
+outside Z3 and K like the FFI barrier; the container is not), made structural
+rather than hoped-for.
+
+**The lifecycle reduces to state, mostly existing.** Only two transitions
+needed new analysis; the rest fall out of machinery already built:
+
+- **write-after-seal** (`NITPICK-WILDX-001`) and **execute-before-seal**
+  (`NITPICK-WILDX-002`) are the two the seal state watches. Two columns in
+  the binding-state machine, because the prohibitions want opposite merges: a
+  page sealed on ANY path may not be written (`sealed`, unions — a
+  prohibition), and a page may be executed only if sealed on EVERY path
+  (`sealed_firm`, intersects — a permission). The branch that seals on one
+  arm only is refused for BOTH, which is correct — an unknown seal state is
+  safe for neither.
+- **seal-after-free** — the exact use-after-free D-035 found in the
+  prototype's `jit.npk` (free on write failure, then seal the freed page) —
+  is `NITPICK-MOVE-002`, because seal reads a freed binding. **double-free**
+  and **use-after-free** likewise fall out of the move machinery (a free is a
+  move, D-065). **no-live-pages-at-exit** falls out of the `<wild-live>`
+  registry (D-151): wildx pages are wild-role and counted, so a leaked page
+  traps at exit.
+
+**The runtime is real W^X.** `wildx_alloc` maps three pages (PROT_NONE guard
+| RW code | PROT_NONE guard), the kernel placing them (ASLR); `wildx_seal`
+`mprotect`s the middle RW→RX one-way — never W+X together; `wildx_call` is
+the boundary, an indirect call into code the verifier does not model;
+`wildx_free` unmaps. A secret-keyed header validates the pointer at seal and
+free. `tests/backend/programs/wildx_jit.npk` writes `mov eax, 42; ret` into a
+page, seals, calls, gets 42, and frees before exit — the whole lifecycle
+executed.
+
+**`--extra-picky=no-wildx`** is a build mode (`NITPICK-WILDX-003`), separate
+from `no-wild` because manual memory and executable memory are different
+risks. It scans the tree after a clean front half and refuses every `wildx`,
+giving the high-assurance build that excludes runtime code generation
+(D-035's certification note). The verification boundary and that note are
+written into VERIFICATION_REFERENCE §6.4.
+
+`tests/analysis/rejection/wildx.npk` locks the four refusals (the jit.npk bug
+among them); `tests/accept/moves.npk` gains the correct lifecycle as the
+positive case.

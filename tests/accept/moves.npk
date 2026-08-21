@@ -124,3 +124,16 @@ func:every_place_form = NIL() {
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
+
+// The correct wildx lifecycle passes cleanly (D-155): every write before the
+// seal, execute only after it, freed exactly once. The state machine that
+// refuses the out-of-order forms must accept this one.
+func:wildx_correct_lifecycle = NIL() {
+    wildx uint8->:page = wildx_alloc(16i64);
+    page[0i64] = 195u8;
+    wildx_seal(page);
+    int64:r = wildx_call(page, 0i64);
+    discard(r);
+    wildx_free(page);
+    pass NIL;
+};

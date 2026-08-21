@@ -229,6 +229,44 @@ This is also why the zero-dependency constraint reaches as far as it does: a
 C library inside the trusted computing base sits outside **both** backends. Z3
 cannot see its contracts and K cannot model its semantics.
 
+### 6.4 The `wildx` verification boundary (D-035, built in 0.10.5)
+
+Runtime-generated code (`wildx`, the JIT) is the one place inside a Nitpick
+program that sits outside both backends — for the same reason an FFI call
+does: **the code does not exist when the verifier runs**, so there is no AST
+for Z3 to translate and no term for K to reduce. This is inherent to runtime
+code generation, not to Nitpick's design; no language can verify code that
+does not yet exist.
+
+What IS verified is the **container**, and it is verified structurally, not
+by a runtime check:
+
+- **W^X is a one-way transition.** `wildx_seal` moves a page RW→RX and there
+  is no reverse; a page is never writable and executable at once. The
+  analysis (bindings.npk, 0.10.5) refuses any write after seal
+  (`NITPICK-WILDX-001`) and any execute before it (`NITPICK-WILDX-002`), so
+  the transition cannot run backwards in a program that type-checks.
+- **The lifecycle is a state machine** — `alloc → write → seal → execute →
+  free` — with seal-after-free, double-free, and use-after-free falling out
+  of the move machinery (a free is a move, D-065) and no-live-pages-at-exit
+  out of the `<wild-live>` registry (D-151). Guard pages turn an
+  over/underrun into a fault, and the page is placed by the kernel's mmap
+  randomisation (ASLR).
+
+The guarantee `wildx` delivers is therefore **containment**: the JIT cannot
+corrupt the host program's memory safety. The *contents* of the generated
+bytes are validated by Nikola's sandbox and oracle rounds, not by these
+backends — exactly the division of labour D-035 settled.
+
+**Certification note.** A program containing `wildx` will not reach the
+highest assurance levels of DO-178C, IEC 61508, or ISO 26262, which require
+structural coverage over code that exists before execution. That is a
+property of the *program*, not the language: **`--extra-picky=no-wildx`**
+(0.10.5) is a build mode that excludes runtime code generation entirely, so
+the same language serves both the JIT-using and the highest-assurance
+audiences without changing. It is a rule separate from `no-wild` because
+manual memory and executable memory are different risks.
+
 ---
 
 ## 7. Deadlock: proven where possible, contained otherwise (D-056)

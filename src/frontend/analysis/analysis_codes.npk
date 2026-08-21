@@ -188,3 +188,14 @@ pub func:LOCK_NOT_CONSTANT = string()   { pass "NITPICK-LOCK-003"; };
 // A DEFECT IN THE COMPILER, or a program the walk could not follow: a node kind
 // with no entry, or rounds that did not settle.
 pub func:LOCK_INTERNAL = string()       { pass "NITPICK-LOCK-004"; };
+
+// The wildx W^X state machine (D-035/D-155, 0.10.5). Write after seal, and
+// execute before seal, are the two transitions the seal state forbids; the
+// rest (seal-after-free, double-free, leak) fall out of the move machinery
+// and the exit-time registry.
+pub func:WILDX_WRITE_SEALED = string()  { pass "NITPICK-WILDX-001"; };
+pub func:WILDX_EXEC_UNSEALED = string() { pass "NITPICK-WILDX-002"; };
+// `--extra-picky=no-wildx` — a high-assurance build mode that excludes
+// runtime code generation entirely (D-035's certification note). Separate
+// from `no-wild`: manual memory and executable memory are different risks.
+pub func:WILDX_EXCLUDED = string()      { pass "NITPICK-WILDX-003"; };

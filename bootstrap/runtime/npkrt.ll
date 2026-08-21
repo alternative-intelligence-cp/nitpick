@@ -2150,7 +2150,11 @@ lnext:
   %j2 = add i64 %j, 1
   br label %lhead
 out:
-  ret i64 %lacc
+  ; wildx pages are wild-role too (0.10.5): a live executable page at exit is
+  ; a leak the K-semantics rule names, same as any other wild allocation
+  %wxp = load i64, ptr @npk_wildx_live
+  %total = add i64 %lacc, %wxp
+  ret i64 %total
 }
 
 ; Releases the WHOLE heap -- every chunk and every large mapping, both
@@ -2452,6 +2456,151 @@ clear:
   %fha = add i64 %ai, 32
   %fhp = inttoptr i64 %fha to ptr
   store i64 -1, ptr %fhp
+  ret void
+}
+
+; ---------------------------------------------------------------------------
+; THE wildx W^X STATE MACHINE (0.10.5, D-035/D-155). Executable memory for
+; the JIT, contained so it cannot corrupt host memory safety -- the guarantee
+; D-035 says wildx actually delivers (the CONTENTS are unverifiable, outside
+; Z3 and every static analysis like the FFI barrier; the CONTAINER is not).
+;
+; THE INVARIANT IS STRUCTURAL, not checked: a page is RW at alloc and RX after
+; seal, never W+X at once. seal is a ONE-WAY mprotect; the analysis
+; (bindings.npk) refuses any write after it and any execute before it, so the
+; transition cannot run backwards in a valid program.
+;
+; A wildx region is three pages: [ PROT_NONE guard | RW/RX code | PROT_NONE
+; guard ]. The guards turn an over/underrun into a fault instead of silent
+; corruption of a neighbour. ASLR is the kernel's own mmap randomisation
+; (addr NULL) -- we do not place the page, the kernel does. A 16-byte header
+; in the code page holds the mapping size and a secret-keyed magic, so free
+; validates the pointer is one we handed out. Pages are WILD-role: the count
+; below feeds wild_live_count, so an unfreed page traps at exit (D-151).
+;
+; header (in the code page, 16 bytes before the returned pointer):
+;   +0 mapsize (the whole three-page span)  +8 magic
+; ---------------------------------------------------------------------------
+
+@npk_wildx_live = internal global i64 0
+
+define internal i64 @npk_m_wildx(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 4358112156723783278
+  ret i64 %m
+}
+
+define ptr @npk_wildx_alloc(i64 %size) {
+entry:
+  %sec = load i64, ptr @npk_hsec
+  %uninit = icmp eq i64 %sec, 0
+  br i1 %uninit, label %init, label %sized
+init:
+  call void @npk_heap_init()
+  br label %sized
+sized:
+  %neg = icmp slt i64 %size, 0
+  br i1 %neg, label %badreq, label %norm
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+norm:
+  ; header + payload rounded to a page, plus a guard page each side
+  %need = add i64 %size, 16
+  %n4095 = add i64 %need, 4095
+  %codep = and i64 %n4095, -4096
+  %map = add i64 %codep, 8192
+  ; PROT_NONE (0) so the whole span starts unreachable; the middle is opened RW
+  %base = call i64 @npk_sys6(i64 9, i64 0, i64 %map, i64 0, i64 34, i64 -1, i64 0)
+  %bad = icmp ugt i64 %base, -4096
+  br i1 %bad, label %oom, label %open
+oom:
+  call void @npk_heap_oom()
+  unreachable
+open:
+  %code = add i64 %base, 4096
+  ; mprotect(code, codep, PROT_READ|PROT_WRITE = 3)
+  %r = call i64 @npk_sys6(i64 10, i64 %code, i64 %codep, i64 3, i64 0, i64 0, i64 0)
+  %rbad = icmp ne i64 %r, 0
+  br i1 %rbad, label %pfail, label %stamp
+pfail:
+  call void @npk_heap_bad()
+  unreachable
+stamp:
+  %szp = inttoptr i64 %code to ptr
+  store i64 %map, ptr %szp
+  %ma = add i64 %code, 8
+  %mp = inttoptr i64 %ma to ptr
+  %magic = call i64 @npk_m_wildx(i64 %code)
+  store i64 %magic, ptr %mp
+  %live = load i64, ptr @npk_wildx_live
+  %live2 = add i64 %live, 1
+  store i64 %live2, ptr @npk_wildx_live
+  %u = add i64 %code, 16
+  %up = inttoptr i64 %u to ptr
+  ret ptr %up
+}
+
+; validate a wildx pointer against its header; returns the code-page base
+define internal i64 @npk_wildx_check(i64 %up) {
+entry:
+  %isz = icmp eq i64 %up, 0
+  br i1 %isz, label %bad, label %aligned
+bad:
+  call void @npk_heap_bad()
+  unreachable
+aligned:
+  %code = add i64 %up, -16
+  %ma = add i64 %code, 8
+  %mp = inttoptr i64 %ma to ptr
+  %have = load i64, ptr %mp
+  %want = call i64 @npk_m_wildx(i64 %code)
+  %ok = icmp eq i64 %have, %want
+  br i1 %ok, label %good, label %bad
+good:
+  ret i64 %code
+}
+
+define void @npk_wildx_seal(ptr %p) {
+entry:
+  %up = ptrtoint ptr %p to i64
+  %code = call i64 @npk_wildx_check(i64 %up)
+  %szp = inttoptr i64 %code to ptr
+  %map = load i64, ptr %szp
+  %codep = sub i64 %map, 8192
+  ; the ONE-WAY transition: mprotect(code, codep, PROT_READ|PROT_EXEC = 5).
+  ; The page is never PROT_WRITE|PROT_EXEC -- W^X holds structurally.
+  %r = call i64 @npk_sys6(i64 10, i64 %code, i64 %codep, i64 5, i64 0, i64 0, i64 0)
+  %bad = icmp ne i64 %r, 0
+  br i1 %bad, label %fail, label %done
+fail:
+  call void @npk_heap_bad()
+  unreachable
+done:
+  ret void
+}
+
+define i64 @npk_wildx_call(ptr %p, i64 %arg) {
+entry:
+  ; the analysis has proven the page is sealed (RX) before this runs; the
+  ; contents are outside verification by construction (D-035), so this is the
+  ; boundary -- an ordinary indirect call into code we do not model
+  %r = call i64 %p(i64 %arg)
+  ret i64 %r
+}
+
+define void @npk_wildx_free(ptr %p) {
+entry:
+  %up = ptrtoint ptr %p to i64
+  %code = call i64 @npk_wildx_check(i64 %up)
+  %szp = inttoptr i64 %code to ptr
+  %map = load i64, ptr %szp
+  %base = sub i64 %code, 4096
+  call void @npk_hunmap(i64 %base, i64 %map)
+  %live = load i64, ptr @npk_wildx_live
+  %live2 = sub i64 %live, 1
+  store i64 %live2, ptr @npk_wildx_live
   ret void
 }
 

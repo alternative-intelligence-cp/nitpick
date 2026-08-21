@@ -79,6 +79,45 @@ pub struct:Front = {
 // Load, expand, resolve, type-check, analyse. Returns 0 with `f` filled and no
 // diagnostics; 1 with diagnostics in `f.diags`; 2 when the root could not be
 // read at all.
+// `--extra-picky=no-wildx` (D-035): after a clean front half, refuse every
+// `wildx` in the tree — a build mode for the highest assurance levels
+// (DO-178C, IEC 61508, ISO 26262), which require structural coverage over
+// code that exists before execution. wildx generates code that does not, so a
+// program using it cannot reach those levels; excluding it is a property of
+// the BUILD, not the language. The scan is flat over the AST's arrays — every
+// vardecl and every decl is there regardless of nesting — so a `wildx` local
+// or a `wildx`-returning function anywhere is found. Returns the count found.
+pub func:reject_wildx = int32(Front->:f) {
+    int32:found = 0i32;
+    int32:si = 0i32;
+    int32:sn = raw ast_stmt_count(@f.g.ast);
+    while (si < sn) {
+        StmtNode:s = relay ast_stmt(@f.g.ast, StmtId{ index: si });
+        if (s.kind == StmtKind.StmtVarDeclStmt) {
+            if (((raw stmt_quals(@f.g.ast, s)) & (raw QUAL_WILDX())) != 0i32) {
+                drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                    "`wildx` is excluded by `--extra-picky=no-wildx`: this build mode forbids runtime code generation, which no structural-coverage regime can analyse (D-035)",
+                    s.span));
+                found = found + 1i32;
+            }
+        }
+        si = si + 1i32;
+    }
+    int32:di = 0i32;
+    int32:dn = raw ast_decl_count(@f.g.ast);
+    while (di < dn) {
+        DeclNode:d = relay ast_decl(@f.g.ast, DeclId{ index: di });
+        if (((raw decl_flags(d)) & (raw DECL_RET_WILDX())) != 0i32) {
+            drop diaglist_push(@f.diags, raw diag_error(raw WILDX_EXCLUDED(),
+                "`wildx` is excluded by `--extra-picky=no-wildx` (D-035)",
+                d.span));
+            found = found + 1i32;
+        }
+        di = di + 1i32;
+    }
+    pass found;
+};
+
 pub func:front_run = int32(Front->:f, string:root) {
     f.it = raw intern_init();
     f.diags = raw diaglist_init();

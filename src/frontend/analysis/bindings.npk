@@ -114,6 +114,16 @@ pub struct:AssignState = {
     // one arm and not the other is NOT checked, because the read after the merge
     // happens on both paths.
     wild bool->:checked;
+
+    // THE wildx SEAL STATE (0.10.5, D-155). Two columns because the two
+    // prohibitions want opposite merges. A page sealed on ANY path may not be
+    // written (`sealed`, UNIONS — a prohibition, like moved/freed); a page may
+    // be executed only if sealed on EVERY path (`sealed_firm`, INTERSECTS — a
+    // permission, like must/checked). The pathological branch that seals on one
+    // arm only is then refused for BOTH, which is correct: a page in an unknown
+    // seal state is neither safely writable nor safely executable.
+    wild bool->:sealed;
+    wild bool->:sealed_firm;
     int32:count;
 };
 
@@ -159,11 +169,15 @@ pub func:state_new = AssignState(int32:n) {
     wild int8->:m3 = alloc(size * #size_of<bool>());
     wild int8->:m4 = alloc(size * #size_of<bool>());
     wild int8->:m5 = alloc(size * #size_of<bool>());
+    wild int8->:m6 = alloc(size * #size_of<bool>());
+    wild int8->:m7 = alloc(size * #size_of<bool>());
     AssignState:s = AssignState{ must: m1 =>! wild bool->,
                                  may: m2 =>! wild bool->,
                                  moved: m3 =>! wild bool->,
                                  freed: m4 =>! wild bool->,
                                  checked: m5 =>! wild bool->,
+                                 sealed: m6 =>! wild bool->,
+                                 sealed_firm: m7 =>! wild bool->,
                                  count: size =>! int32 };
     int64:i = 0i64;
     while (i < size) {
@@ -172,6 +186,8 @@ pub func:state_new = AssignState(int32:n) {
         s.moved[i] = false;
         s.freed[i] = false;
         s.checked[i] = false;
+        s.sealed[i] = false;
+        s.sealed_firm[i] = false;
         i = i + 1i64;
     }
     pass s;
@@ -186,6 +202,8 @@ func:state_copy = AssignState(AssignState:src) {
         d.moved[i] = src.moved[i];
         d.freed[i] = src.freed[i];
         d.checked[i] = src.checked[i];
+        d.sealed[i] = src.sealed[i];
+        d.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
     pass d;
@@ -199,6 +217,8 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) {
         dst.moved[i] = src.moved[i];
         dst.freed[i] = src.freed[i];
         dst.checked[i] = src.checked[i];
+        dst.sealed[i] = src.sealed[i];
+        dst.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -249,6 +269,8 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         dst.moved[i] = a.moved[i] || b.moved[i];
         dst.freed[i] = a.freed[i] || b.freed[i];
         dst.checked[i] = a.checked[i] && b.checked[i];
+        dst.sealed[i] = a.sealed[i] || b.sealed[i];
+        dst.sealed_firm[i] = a.sealed_firm[i] && b.sealed_firm[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -267,6 +289,9 @@ func:state_absorb_may = NIL(AssignState:dst, AssignState:body) {
         // does not.
         dst.moved[i] = dst.moved[i] || body.moved[i];
         dst.freed[i] = dst.freed[i] || body.freed[i];
+        // sealed UNIONS (a body that seals leaves the page possibly-sealed);
+        // sealed_firm does NOT survive a zero-iteration loop (like must/checked).
+        dst.sealed[i] = dst.sealed[i] || body.sealed[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -282,6 +307,9 @@ func:state_mark = NIL(AssignState:s, int32:slot) {
     s.may[slot => int64] = true;
     s.moved[slot => int64] = false;
     s.freed[slot => int64] = false;
+    // A NEW VALUE IS A NEW PAGE, and a fresh page is unsealed (writable).
+    s.sealed[slot => int64] = false;
+    s.sealed_firm[slot => int64] = false;
     // A NEW VALUE IS A NEW `Result`, and nothing has checked it. Clearing this on
     // assignment is what stops one check licensing every later read of the name.
     s.checked[slot => int64] = false;
@@ -325,6 +353,32 @@ func:state_freed = bool(AssignState:s, int32:slot) {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.freed[slot => int64]);
+};
+
+// `wildx_seal(p)` marks BOTH seal columns: the page is now sealed on this path
+// (forbidding writes) and firmly sealed (permitting execute). D-155.
+func:state_mark_sealed = NIL(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass NIL; }
+    if (slot >= s.count) { pass NIL; }
+    s.sealed[slot => int64] = true;
+    s.sealed_firm[slot => int64] = true;
+    pass NIL;
+};
+
+// May-sealed: true if the page could be sealed on some path — writing is
+// then refused (a prohibition fires on any path).
+func:state_sealed = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.sealed[slot => int64]);
+};
+
+// Firmly-sealed: true only if sealed on every path — executing is permitted
+// only then (a permission holds on all paths).
+func:state_sealed_firm = bool(AssignState:s, int32:slot) {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.sealed_firm[slot => int64]);
 };
 
 func:state_must = bool(AssignState:s, int32:slot) {
@@ -736,6 +790,8 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) {
         dst.moved[i] = dst.moved[i] || other.moved[i];
         dst.freed[i] = dst.freed[i] || other.freed[i];
         dst.checked[i] = dst.checked[i] && other.checked[i];
+        dst.sealed[i] = dst.sealed[i] || other.sealed[i];
+        dst.sealed_firm[i] = dst.sealed_firm[i] && other.sealed_firm[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -861,6 +917,26 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     // initialisation is how partially-initialised aggregates get read as whole
     // ones.
     if (tn.kind != ExprKind.ExprIdentifierExpr) {
+        // WRITE-AFTER-SEAL (D-155): a store through a place rooted at a sealed
+        // wildx page is refused. `<-page = b` and `page[i] = b` both root at
+        // `page`; a sealed page is executable memory, and writing it would put
+        // W and X on one region — the invariant wildx exists to prevent.
+        // `page[i]` roots at `page` through `binding_slot`'s walk; `<-page`
+        // does not (place_root stops at a deref, since `<-` yields the pointee
+        // value, D-004) — so the deref's own operand is the pointer binding.
+        int32:wslot = raw binding_slot(x, tgt);
+        if (wslot < 0i32) {
+            if (tn.kind == ExprKind.ExprDerefExpr) {
+                wslot = raw binding_slot(x, raw expr_operand(tn));
+            }
+        }
+        if (wslot >= 0i32) {
+            if (raw state_sealed(st, wslot)) {
+                drop assign_err(x, raw WILDX_WRITE_SEALED(),
+                    "this `wildx` page is sealed (executable); writing to it would make a region writable and executable at once, which the W^X invariant forbids (D-035). Do every write before `wildx_seal`",
+                    tn.span);
+            }
+        }
         drop assign_expr(x, st, tgt, depth);
         pass NIL;
     }
@@ -999,6 +1075,15 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
                 drop invalidate_place(x, st, owned, true);
             }
         }
+
+        // THE wildx SEAL TRANSITIONS (D-155). `wildx_seal(p)` marks p sealed
+        // (the arg was walked as a read above, so seal-after-free is already a
+        // use-after-free); `wildx_call(p, …)` requires p FIRMLY sealed, or it
+        // is execute-before-seal. Both are bare-name builtins, gated on the
+        // callee name resolving to no symbol — the same test `callee_frees`
+        // makes, and for the same reason.
+        drop wildx_transition(x, st, n, start, count);
+
         pass NIL;
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
@@ -1182,6 +1267,39 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
 // varies by what something happens to be called, which is the context-dependence
 // the blueprint philosophy exists to refuse and a list a reader would have to
 // memorise.
+// `wildx_seal(p)` / `wildx_call(p, …)` — the two seal transitions the state
+// machine watches (D-155). Everything else about wildx (double-free,
+// use-after-free, seal-after-free, leak-at-exit) falls out of the move
+// machinery and the exit registry with no new state.
+func:wildx_transition = NIL(Assign->:x, AssignState:st, ExprNode:n,
+                            int32:start, int32:count) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass NIL; }
+    ExprNode:cnode = relay ast_expr(x.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (cnode.a != 0i32) { pass NIL; }
+    if (count < 1i32) { pass NIL; }
+    string:name = relay intern_get(x.interns, raw expr_name(cnode) =>! int32);
+    ExprId:arg0 = ExprId{ index: raw ast_id_at(x.ast, start, 0i32) };
+    int32:slot = raw binding_slot(x, arg0);
+    if (slot < 0i32) { pass NIL; }
+
+    if (raw string_eq(name, "wildx_seal")) {
+        drop state_mark_sealed(st, slot);
+        pass NIL;
+    }
+    if (raw string_eq(name, "wildx_call")) {
+        if (!(raw state_sealed_firm(st, slot))) {
+            ExprNode:an = relay ast_expr(x.ast, arg0);
+            drop assign_err(x, raw WILDX_EXEC_UNSEALED(),
+                "this `wildx` page is executed before it is sealed (D-035): calling code on a writable page is exactly the state the seal transition exists to close. `wildx_seal` it first",
+                an.span);
+        }
+        pass NIL;
+    }
+    pass NIL;
+};
+
 func:callee_frees = bool(Assign->:x, ExprNode:n) {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
@@ -1195,6 +1313,7 @@ func:callee_frees = bool(Assign->:x, ExprNode:n) {
 
     string:name = relay intern_get(x.interns, raw expr_name(cnode) =>! int32);
     if (raw string_eq(name, "dalloc")) { pass true; }
+    if (raw string_eq(name, "wildx_free")) { pass true; }
     pass (raw string_eq(name, "ralloc"));
 };
 
