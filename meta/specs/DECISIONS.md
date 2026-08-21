@@ -33,7 +33,7 @@ remains the single explicit, greppable, auditable bypass.
 
 ---
 
-## D-002 — FFI must map C failures into `Result.error` — **SETTLED**
+## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead)
 
 `TYPE_REFERENCE.md` §11.2 currently specifies that when a C function "does not
 provide error information, the result defaults to `Ok(val)`". **This is not the
@@ -3477,7 +3477,7 @@ do not change.
 
 ---
 
-## D-055 — GPU and GUI run out of process; `#[gpu_kernel]` is a codegen target, not a call — **SETTLED**
+## D-055 — GPU and GUI run out of process; `#[gpu_kernel]` is a codegen target, not a call — **SETTLED — and generalized by D-149**: the out-of-process rule now covers ALL foreign code, not only GPU and GUI; this section's architecture is the template the general rule reuses
 
 `MACRO_AUTHORING_GUIDE.md` documents `#[gpu_kernel]` and `#[gpu_device]`, which
 `PROTOTYPE_DELTA.md` §5 flagged as conflicting with the zero-dependency rule.
@@ -4513,7 +4513,7 @@ immediately; a type-varying one costs a new trait and a context-dependent readin
 
 ---
 
-## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED**
+## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED; the C-pointer half is superseded by D-149** (there is no in-process C to point at — an `extern` block is a driver interface, and an opaque struct declared in one is a TYPED WIRE HANDLE the Bridge round-trips by value, never an address)
 
 Resolves conflict **49**, which recorded two spellings for one concept:
 `FORMAL_DRAFT` 02 §2.7.1's `StructType ::= "struct" | "opaque" "struct"` against
@@ -10012,3 +10012,127 @@ The repairs:
 `tests/types/rejection/literal_range.npk` locks seven refusals;
 `tests/frontend/lexer_numeric.npk` locks the exact guard on the basis
 constant that used to wrap.
+
+## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED**
+
+Post-0.9, at the user's direction. Generalizes D-055; supersedes the contract
+half of D-002; supersedes the C-pointer half of D-066.
+
+**In-process FFI does not exist in Nitpick.** All foreign code — vendor
+libraries, GUI toolkits, codecs, anything not compiled by `npkc` — runs in a
+separate, supervised **driver process** behind the D-055 architecture
+(`meta/roadmap/audit-0.8-close/driver_architecture_plan_v3.md`). The FFI
+barrier and the process boundary are the same line.
+
+### Why
+
+1. **D-002 could only wrap the failures C admits to.** A `-1` return becomes
+   an errored `Result`; a segfault, a scribbled heap, or a hang inside a
+   linked blob cannot be wrapped, intercepted, or routed through `failsafe`
+   — the exact hole the zero-dependency rule exists to close. Process
+   isolation turns every one of those into A VALUE: a closed socket, a
+   reaped child, an errored `Result<T>`.
+2. **The verified boundary becomes the process image.** D-055 said it for
+   GPU blobs: no amount of verification makes a linked vendor blob
+   analysable. The sentence never mentioned GPUs. Under this decision the
+   TCB that Astrée analyses IS the process; the driver is outside it,
+   unverified because its failure is contained and observable.
+3. **A present-but-discouraged unsafe path is the adversary's first link.**
+   The threat model is an attacker chaining minor quirks; hassle-based
+   deterrence also fails under ordinary deadline pressure. So the unsafe
+   path is not made painful — it is made MECHANISM-LESS.
+
+### The enforcement is structural, not hortatory
+
+Nitpick binaries are statically linked with no libc and no dynamic loader:
+there is no `dlopen`, so foreign code can only enter through the link line —
+and the compiler owns the link line. `check_zero_dependency` (D-011) already
+fails the compiler's own build BY NAME on any undefined symbol outside the
+allowlist; `npkg` (1.2) applies the same closed world to every user program:
+**only `npkc`-produced objects plus the audited runtime are linkable.** There
+is no flag that relaxes this. The residue is named honestly: `sys` remains
+(the kernel is mode-switched, not linked — it cannot load code into the
+address space, and it is the floor the driver IPC itself stands on), and
+`wildx` means a saboteur could hand-copy machine code into JIT pages — no
+language stops assembly-level intent, and that is nobody's path of least
+resistance.
+
+### `extern` keeps its spelling and becomes the driver-interface declaration
+
+The block form is unchanged and the word finally means what it says: outside
+the process. The string names the driver; the functions are its methods.
+
+```nitpick
+extern:"cuda_driver" = {
+    func:load_kernel = KernelHandle(int8[]:image);
+    func:dispatch    = NIL(KernelHandle:k, int8[]:args);
+};
+```
+
+**Stub generation is COMPILER lowering, not a macro library**: the backend
+lowers `DeclExternBlock` to Bridge stubs — marshal into the sealed ring,
+dispatch with the mandatory deadline, unmarshal or return the error — the
+same way D-055 makes `#[gpu_kernel]` a codegen target. It needs the type
+table (for the interface hash) and the executor (for the suspension), which
+a macro cannot reach cleanly.
+
+### The wire has a universal failure convention, so D-002's contracts die
+
+`fails on <expr>` / `with errno` / `never fails` existed because C has no
+universal failure convention and the mapping could not be inferred. The wire
+HAS one: every dispatch returns status plus payload, and timeouts, driver
+death, and protocol violations arrive as uniform negative codes in the D-141
+error space (numbers assigned when the Bridge lands, 1.1). Every driver
+method is `Result`-native by construction — nothing per-function to write,
+nothing for a reviewer to audit. The contract grammar remains PARSED (the
+frontend never restricts, D-085); the checker refuses a contract on an
+`extern` declaration with this decision named, landing with the Bridge work.
+
+### The wire vocabulary is closed
+
+Fixed-width scalars, POD structs of them, and sized byte payloads — copied
+out of shared memory BEFORE validation (v3's untrusted-input rule; the
+shared region is an I/O device, not memory). Nothing address-shaped crosses
+in either direction. Consequences:
+
+- **`void` and `void*` are now valid NOWHERE** — the extern-only carve-out
+  (TYPE_REFERENCE pointer rule; D-005's phrasing "not valid outside `extern`
+  blocks") closes, and a whole class of unanalysable types leaves the
+  language.
+- **`opaque struct:Name;` in an `extern` block is a typed wire handle**: an
+  opaque value with a generation counter, minted and honoured by the driver,
+  type-safe on the Nitpick side, dead after a driver restart by
+  construction. D-066's form survives; its C-pointer reading does not.
+- **D-004 rule 4** (a borrow may not cross an `extern` call) stays, with a
+  stronger reason: the other side is a different address space, and only
+  copies cross.
+
+### Validity is enforced at two layers
+
+- **Wire-level, at connect**: magic, protocol version, and an **interface
+  hash computed from the `extern` block's own signatures** — a driver built
+  against a stale interface is refused at handshake, loudly, before any
+  call; never a silent type confusion.
+- **Nitpick-level**: the generated stub implements the `Driver` trait
+  carrying D-055's four obligations — every dispatch has a deadline, no
+  partial results, the driver is a supervised child, and the registry is
+  `failsafe`-reachable so controlled shutdown tears drivers down in order.
+
+### The honest cost
+
+A dispatch is microseconds where a call is nanoseconds. The ring + bulk
+region + batched dispatch design serves the workloads that matter (GPU and
+GUI are batch-shaped); for chatty tiny-call workloads the answer is *write
+it in Nitpick*. Safety outranks performance, and the pressure lands exactly
+on the code that should be out of process or rewritten.
+
+### Landing
+
+The backend's `extern` rung message names this decision now. The Bridge,
+the stub lowering, the C SDK header (the wire protocol and ring layout as a
+C header plus a reference event loop — the CONTRACT is the protocol, not a
+language binding, so later Rust/other SDKs are alternative implementations
+with zero compiler work), and the wire-conformance suite are 1.1 work
+(map row 1.1.8); the `npkg` closed-world link rule is a 1.2 obligation. The
+C reference driver and conformance harness are buildable out-of-tree at any
+time — the v3 POC (18/18 kernel checks) is their seed.

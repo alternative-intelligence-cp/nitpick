@@ -244,14 +244,16 @@ Struct fields follow module visibility — private by default, exported with `pu
 That is the mechanism for hiding a representation written in Nitpick.
 
 `opaque` is a **different thing and is not a second way to do it**: it declares a
-type whose layout belongs to a foreign library, and it is legal **only inside an
-`extern` block** (D-066).
+type whose representation belongs to a DRIVER, and it is legal **only inside an
+`extern` block** (D-066, as narrowed by D-149) — a typed wire handle the Bridge
+round-trips by value, minted and honoured on the driver's side of the process
+boundary.
 
 ```nitpick
-extern:"libc" = {
-    opaque struct:OpHandle;
-    func:opaque_make = OpHandle();
-    func:opaque_use  = int32(OpHandle:h);
+extern:"storage_driver" = {
+    opaque struct:DbHandle;
+    func:db_open = DbHandle(int8[]:path);
+    func:db_rows = int64(DbHandle:h);
 }
 ```
 

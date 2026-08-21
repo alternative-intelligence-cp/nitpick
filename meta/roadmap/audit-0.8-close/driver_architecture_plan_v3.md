@@ -11,6 +11,17 @@ Verified against the [nitpick-native](file:///home/randy/Workspace/REPOS/nitpick
 
 ---
 
+> [!IMPORTANT]
+> **Scope widened by D-149 (post-0.9):** the architecture below now governs
+> **ALL foreign code**, not only GPU/GUI — in-process FFI does not exist in
+> Nitpick. `extern` blocks are the driver-interface declaration; stub
+> generation is compiler lowering of `DeclExternBlock` (not a macro library);
+> D-002's per-function `fails on` contracts are dead, replaced by the wire's
+> uniform status. Everything this plan says about the trust model, the two
+> channels, deadlines, and supervision applies to every driver.
+
+---
+
 ## 0. This is the implementation of D-055
 
 v2 derived the architecture from first principles. It did not need to: **[D-055](file:///home/randy/Workspace/REPOS/nitpick-native/meta/specs/DECISIONS.md#L3479) already settled it.** "Anything requiring GPU access — CUDA included, which Nikola requires — and any complex GUI runs as a separate server process." This plan is the concrete design for D-055's *supervised child server*, so it inherits D-055's four boundary requirements as obligations:

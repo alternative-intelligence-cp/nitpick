@@ -47,6 +47,7 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
 | 1.1.5 | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
 | 1.1.6 | **Actors & thread pools** — tasks-with-mailboxes and N-workers-one-channel; the `Job` representation (C-9) | C-9 |
 | 1.1.7 | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
+| 1.1.8 | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
 
 ## Watch for
 
@@ -54,7 +55,14 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
   `dyn Writer` — so 1.1 needs 1.0's `dyn` *and* the C-8 borrow narrowing *and* a story
   for a virtually-dispatched coroutine's frame sizing (genuinely hard; part of C-9).
   This is the densest interaction in the plan; sequence the reactor (1.1.7) last so
-  channels and the executor core do not wait on it.
+  channels and the executor core do not wait on it — and the Bridge (1.1.8) after
+  the reactor, since a dispatch await parks on the reactor's pollables and timers.
+- **The Bridge is where D-149 stops being a rung message.** Until 1.1.8 lands,
+  `extern` blocks refuse at the backend naming this cycle; after it, they are the
+  ONLY foreign-code mechanism the language has ever shipped — there is no
+  in-process era to migrate anyone off. The C reference driver and the
+  wire-conformance suite are buildable out-of-tree before the cycle starts; the
+  protocol is language-independent and POC-validated (18/18).
 - **The trap path grows a stop-the-world step** (D-063) ahead of `failsafe`. It uses
   `tkill`/`futex`/`set_robust_list` (the floor's syscall surface) and must be bounded
   (a thread not parked within the deadline is reported still-running, not waited on

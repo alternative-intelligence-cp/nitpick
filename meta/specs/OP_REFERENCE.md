@@ -81,7 +81,7 @@ Highest to lowest. Adopted from `FORMAL_DRAFT` 04 §4.2 with corrections.
 |---|---|---|---|
 | `+` | Add | Safe addition. | `a + b` |
 | `-` | Subtract | Safe subtraction. | `a - b` |
-| `*` | Multiply | Safe multiplication. Note: also used for pointer syntax in `extern` blocks. | `a * b` |
+| `*` | Multiply | Safe multiplication. | `a * b` |
 | `/` | Divide | Safe division. Divide-by-zero behavior is **type-directed** — see below. | `a / b` |
 | `%` | Modulo | Remainder operation. Same divide-by-zero rule as `/`. | `a % b` |
 | `++` | Increment | Post/pre-increment. | `i++` or `++i` |
@@ -232,7 +232,10 @@ value is ERR, so the taint cannot cross silently. See D-008.
 
 ## 6. Pointers & Memory
 
-> **Note:** The `*` character is strictly reserved for `extern` blocks to maintain C ABI compatibility (e.g. `void*`). Inside Nitpick, pointers exclusively use the `->` operator.
+> **Note:** Pointers exclusively use the `->` operator; C-style `*` pointer
+> syntax is valid nowhere. (It was once permitted inside `extern` blocks to
+> maintain C ABI definitions — that allowance died with in-process FFI, D-149:
+> an `extern` block is a driver interface written entirely in Nitpick types.)
 
 | Operator | Name | Description | Example |
 |---|---|---|---|

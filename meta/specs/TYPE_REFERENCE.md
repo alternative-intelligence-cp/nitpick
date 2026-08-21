@@ -691,8 +691,10 @@ unverifiable address, and as greppable.
 
 `T[]` **never owns**. Growable owning sequences are a library concern, per D-041.
 
-A slice does not cross an `extern` boundary — it is not C-compatible. `extern`
-signatures take a pointer and a length as separate parameters, as C does.
+A slice does not cross an `extern` boundary as a view — nothing
+address-shaped crosses a driver interface at all (D-149). A byte-slice
+parameter in an `extern` block means a SIZED PAYLOAD the Bridge copies into
+the ring outbound and copies-then-validates inbound.
 
 ### 9.3 Enums (Tagged)
 
@@ -723,9 +725,9 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 | Nitpick Syntax | LLVM IR | Description |
 |---|---|---|
 | `T->` | `ptr` | Pointer to T |
-| `any->` | `ptr` | Type-erased pointer (void*) |
+| `any->` | `ptr` | Type-erased pointer |
 
-> **Pointer Syntax Rule:** Nitpick exclusively uses the `->` operator for pointer types (`int32->`). The C-style `*` pointer syntax (e.g. `void*`, `char*`) is **strictly forbidden** inside Nitpick code and is only permitted inside `extern { }` blocks to maintain C ABI definitions.
+> **Pointer Syntax Rule:** Nitpick exclusively uses the `->` operator for pointer types (`int32->`). The C-style `*` pointer syntax (e.g. `void*`, `char*`) is **forbidden everywhere** — the former `extern`-block allowance died with in-process FFI (D-149): an `extern` block is a driver interface written entirely in Nitpick types, and there is no C ABI to maintain.
 > - `@var` = address of
 > - `<-ptr` = dereference pointer
 > - `ptr.field` = unified member access (automatically dereferences if pointer)
@@ -894,43 +896,32 @@ The compiler WILL NOT allow accessing `.value` without first checking `.is_error
 > - `drop` = "I don't need the value OR the error" (throws away the Result entirely)
 > - `discard` = "I have this parameter/variable but I'm not going to use it" (silences unused warnings)
 
-**FFI (extern) behavior:**
+**Driver-interface (`extern`) behavior (D-149):**
 ```nitpick
-extern {
-    func:sqlite3_open = int32(int8->:filename, any->:db_out);
+extern:"storage_driver" = {
+    opaque struct:DbHandle;
+    func:open = DbHandle(int8[]:path);
 };
 ```
-> **ALL functions (including `extern`), except `main` and `failsafe`, return `Result<T>`**.
-> Even when calling C FFI functions via `extern`, the Nitpick compiler automatically wraps
-> the C return value in a `Result<T>`. This ensures consistency across the language: you never
-> have to guess whether a function call needs error handling or `raw`. If you do not care
-> about the error from an `extern` function, simply append `raw` to unwrap the value directly.
-> This check can be optimized out at compile-time if `raw` is used, ensuring zero-overhead FFI.
+> **ALL functions (including `extern` driver methods), except `main` and
+> `failsafe`, return `Result<T>`** — and for driver methods no per-function
+> contract is written, because the WIRE has a universal failure convention:
+> every dispatch returns status plus payload, and timeouts, driver death,
+> and protocol violations arrive as uniform negative codes in the D-141
+> error space. In-process C FFI does not exist; the history below explains
+> the shape this section used to have.
 
-> ### ⚠️ A failing C call must never produce a successful `Result`
+> ### The D-002 era, kept for the record
 >
-> A previous revision stated that when a C function "does not provide error
-> information, the result defaults to `Ok(val)`". **That is removed** (D-002). It
-> meant a C function failing by returning `-1` or `NULL` was wrapped as
-> **success** — satisfying the `Result` machinery, taking no `failsafe` path, and
-> *looking* safe at the call site. That is worse than no wrapper at all, because
-> it defeats review.
->
-> C has no universal failure convention, so the mapping cannot be inferred from
-> the type. Every `extern` declaration states its own, and **omitting it is a
-> compile error**:
->
-> ```nitpick
-> extern "libc" {
->     func:open   = int32(int8->:path, int32:flags)  fails on result < 0i32 with errno;
->     func:malloc = wild any->(int64:size)           fails on result == NULL;
->     func:strlen = int64(int8->:s)                  never fails;
-> }
-> ```
->
-> `never fails` is required rather than implied, so "this C function is
-> infallible" is a documented claim a reviewer can audit rather than an unstated
-> default. Silence never becomes a silent `Ok`.
+> When in-process C linkage was still the plan, a C call's failure could not
+> be inferred from its type (C has no universal failure convention), so
+> D-002 required every `extern` declaration to state its own contract —
+> `fails on result < 0i32 with errno`, `never fails` — and made omitting it
+> a compile error, so silence never became a silent `Ok`. D-149 removed
+> in-process FFI entirely; the contracts went with it, their PRINCIPLE (a
+> foreign failure always arrives as an errored `Result`) now delivered by
+> the wire protocol itself. The contract grammar remains parsed and is
+> refused by the checker with D-149 named.
 
 ---
 

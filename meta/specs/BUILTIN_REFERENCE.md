@@ -40,12 +40,12 @@ These intrinsics directly interface with the `NitpickAlloc` slab/VM allocator. T
 <!-- builtins:end -->
 
 *(Note: **`malloc` and `free` are not builtins and are not aliases.** They are C
-functions, reachable only by declaring them in an `extern` block like any other C
-function. The four above are the native allocator; an earlier draft of this line
-called `free` and `realloc` "legacy aliases", which was carried over from the
-prototype's C/C++ era and was never true of the native API — the prototype's own
-type checker knows exactly `alloc`, `calloc`, `ralloc` and `dalloc`, and every
-`malloc` in the specification appears inside `extern "libc" { … }`. See D-119.)*
+functions, and since D-149 they are not reachable at all — in-process FFI does
+not exist, so there is no `extern "libc"` to declare them in. The four above are
+the WHOLE allocator API. An earlier draft of this line called `free` and
+`realloc` "legacy aliases", carried over from the prototype's C/C++ era and
+never true of the native API — the prototype's own type checker knows exactly
+`alloc`, `calloc`, `ralloc` and `dalloc`. See D-119.)*
 
 ---
 
@@ -222,7 +222,7 @@ compiler rather than the runtime (D-020). Two syntactic positions, one meaning:
 |---|---|---|
 | `#size_of<T>` | `int64` | Returns the size in bytes of the type `T` at compile time. |
 | `#wild_ptr<T>(addr)` | `wild T` | Constructs a pointer from an integer address. **Legal only in `wild` context** — the single suspension of the general prohibition on integer→pointer casting (D-019). Exists because the allocator must turn an `mmap` result into a `wild int8->`. |
-| `#wild_slice<T>(ptr, len)` | `T[]` | Constructs a slice from a raw pointer and an element count. **Legal only in `wild` context** (D-070). Deliberately parallel to `#wild_ptr` — an extent the compiler cannot verify is exactly as privileged as an address it cannot verify. This is how a slice is obtained across the FFI boundary, since slices are not C-compatible and do not cross an `extern` signature. |
+| `#wild_slice<T>(ptr, len)` | `T[]` | Constructs a slice from a raw pointer and an element count. **Legal only in `wild` context** (D-070). Deliberately parallel to `#wild_ptr` — an extent the compiler cannot verify is exactly as privileged as an address it cannot verify. This is how a slice is laid over memory the type system did not allocate — a `sys`-returned mapping, a `wild` region — now that nothing address-shaped crosses an `extern` boundary at all (D-149). |
 <!-- builtins:end -->
 
 ---

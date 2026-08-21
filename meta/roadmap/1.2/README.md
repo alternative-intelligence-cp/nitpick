@@ -37,6 +37,13 @@ exist* — so the cycle must first correct what it is measuring.
 - **B-4 — schedule `npkg`** — the permanent runner; without it, "the day self-hosting
   closes is the day the project has no test runner."
 
+  `npkg` also carries a **D-149 obligation**, not an implementation detail:
+  **the closed-world link** — only `npkc`-produced objects plus the audited
+  runtime allowlist may appear in any link line, with no relaxing flag. This
+  is D-011's undefined-symbol scan made a language-level guarantee for every
+  user program; it is what makes "in-process FFI does not exist" structural
+  rather than hortatory.
+
 ## Subcycle shape (to be filled when reached)
 
 | # | Topic | Gated on |

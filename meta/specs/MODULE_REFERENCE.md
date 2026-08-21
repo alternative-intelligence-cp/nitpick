@@ -128,47 +128,66 @@ func:add = int32(int32:a, int32:b) {
 ```
 *   **Return Type**: The type declared (e.g., `int32`) is the *success* type. The compiler automatically wraps this in a `Result<int32>` at the semantic level.
 
-## 5. Foreign Function Interface (`extern`)
+## 5. Driver Interfaces (`extern`)
 
-`extern` blocks are used for C FFI bindings. 
+**In-process FFI does not exist in Nitpick (D-149).** All foreign code runs
+in a separate, supervised **driver process** (D-055's architecture, detailed
+in `meta/roadmap/audit-0.8-close/driver_architecture_plan_v3.md`), and an
+`extern` block declares the INTERFACE to one. The word means what it says:
+outside the process. The FFI barrier and the process boundary are the same
+line — past it, a segfault, a hang, or a scribbled heap in the foreign code
+arrives in the Nitpick process as **a value** (a closed socket, a reaped
+child, an errored `Result<T>`), never as an uninterceptable fault.
 
-### 5.1 Extern Syntax
+### 5.1 Syntax
 
 ```nitpick
-extern:"somelib" = {
-    func:some_query = int32(int8->:name);
-    func:some_alloc = wild any->(int64:size);
+extern:"cuda_driver" = {
+    opaque struct:KernelHandle;
+    func:load_kernel = KernelHandle(int8[]:image);
+    func:dispatch    = NIL(KernelHandle:k, int8[]:args);
 };
 ```
 
-### 5.2 Mandatory `Result<T>` Wrapping and error contracts
-> **⚠️ CRITICAL DEVIATION FROM PROTOTYPE:** In the original prototype, `extern` functions returned bare values. Now **ALL functions, including `extern` bindings, return `Result<T>`**.
+The string names the driver; the functions are its methods. The compiler
+lowers each method to a **Bridge stub** — marshal into the sealed
+shared-memory ring, dispatch with a mandatory deadline, unmarshal or return
+the error (lowering lands at 1.1). An `opaque struct` declared here is a
+**typed wire handle**: an opaque value with a generation counter, minted by
+the driver, type-safe on this side, dead after a driver restart (D-066 as
+narrowed by D-149).
 
-When calling C FFI functions via `extern`, the compiler automatically wraps the C return value in a `Result<T>`. This ensures consistency across the language: you never have to guess whether a function call needs error handling or `raw`.
+### 5.2 `Result<T>` and the wire's failure convention
 
-**A failing C call must produce an errored `Result`, never a silent success.**
-C has no universal failure convention — it is per-function — so the mapping
-cannot be inferred from the type. Every `extern` declaration therefore states its
-own failure condition, and **omitting it is a compile error** (D-002):
+All driver methods return `Result<T>` like every other function. There are
+**no per-method error contracts**: the wire has a universal failure
+convention — every dispatch returns status plus payload — so timeouts,
+driver death, and protocol violations arrive as uniform negative codes in
+the D-141 error space. (D-002's `fails on` / `with errno` / `never fails`
+contracts existed because in-process C had no such convention; they are not
+written anymore. The grammar remains parsed and is refused by the checker
+with D-149 named.)
 
-```nitpick
-extern:"libc" = {
-    func:open   = int32(int8->:path, int32:flags)  fails on result < 0i32 with errno;
-    func:malloc = wild any->(int64:size)           fails on result == NULL;
-    func:strlen = int64(int8->:s)                  never fails;
-};
-```
+### 5.3 The wire vocabulary is closed
 
-*   `fails on <expr>` — predicate over `result` marking the call as failed.
-*   `with errno` — optional source of the error code; without it a generic FFI error code is used.
-*   `never fails` — an explicit, greppable assertion that the function cannot fail. **Required rather than implied**, so that "this C function is infallible" is a documented claim a reviewer can audit rather than an unstated default.
+Fixed-width scalars, POD structs of them, sized byte payloads, and typed
+handles. Payloads are **copied out of shared memory before validation** —
+the shared region is an I/O device whose every byte is untrusted input, not
+memory. Nothing address-shaped crosses in either direction: no pointers, no
+slices-as-views, no `void*` (which is now valid nowhere in the language).
 
-Predicates are unparenthesized, matching `requires` / `ensures` rather than the
-parenthesized conditions of `if` / `while`. The keyword is `fails on`, not
-`fails when` — `when` is the state-tracked loop construct and must not acquire a
-second meaning.
+### 5.4 What makes a driver valid
 
-If you do not care about the error from an `extern` function, append `raw` or use the `_!` prefix to unwrap the value directly. The optimizer strips the wrapper at compile time, guaranteeing **zero runtime overhead**.
+Two layers. At **connect**: a handshake carrying magic, protocol version,
+and an **interface hash derived from the `extern` block's signatures** — a
+driver built against a stale interface is refused before any call. In
+**Nitpick**: the generated stub implements the `Driver` trait with D-055's
+obligations (deadline on every dispatch, no partial results, supervised
+child, `failsafe`-reachable registry). The driver side is built against the
+**C SDK header** — the wire protocol and ring layout as a C header plus a
+reference event loop; the contract is the protocol, not a language binding,
+so SDKs in other languages are alternative implementations of the same
+wire.
 
 ```nitpick
 int32:n = raw some_query(name); 
