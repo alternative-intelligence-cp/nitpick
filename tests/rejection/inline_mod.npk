@@ -1,0 +1,19 @@
+// expect-error: NITPICK-RUNG-001
+// expect-no-parse-error
+//
+// The audit's fourth Theme-A hole, inverted into its own test: emit_all used
+// to neither descend into an inline `mod` nor refuse it, so declared code was
+// SILENTLY SHED — this file compiled clean while its async function vanished.
+// Now the walk descends, reaches the construct, and refuses it by name.
+
+mod:hidden = {
+    async func:fetch = int32() {
+        pass 1i32;
+    };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

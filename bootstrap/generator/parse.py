@@ -134,6 +134,9 @@ class Parser:
         if self.at("use"):
             return self.parse_import(start)
 
+        if self.at("mod"):
+            return self.parse_mod(start)
+
         mods = set()
         while self.peek().text in FUNC_MODIFIERS:
             mods.add(self.next().text)
@@ -152,6 +155,26 @@ class Parser:
             return self.parse_global(start, vis)
 
         raise ParseError("expected a declaration, found %r" % self.peek().text, self.peek())
+
+    def parse_mod(self, start):
+        # `mod:name;` names the file (the real loader checks it; the seed does
+        # not). `mod:name = { items };` is an INLINE module (0.9.6) -- parsed
+        # here so the checker can refuse it, never the parser (D-085): the
+        # rejection suite compiles under both compilers, and the seed builds
+        # nothing that uses one.
+        self.expect("mod")
+        self.expect(":")
+        name = self.expect_ident().text
+        items = []
+        inline = False
+        if self.accept("="):
+            inline = True
+            self.expect("{")
+            while not self.at("}"):
+                items.append(self.parse_item())
+            self.expect("}")
+        self.expect(";")
+        return S.ModDecl(name, items, inline)._at(start)
 
     def parse_import(self, start):
         self.expect("use")

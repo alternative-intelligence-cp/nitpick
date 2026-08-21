@@ -127,9 +127,14 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
 
     // `char8` IS A BYTE AND IS NOT AN INTEGER. The representation is shared and
     // the arithmetic is not (D-005); `char16` and `char32` wait for 0.9.
+    // Every char width lowers (0.9.6); the semantic-type discipline — compare
+    // and index, no arithmetic — is the checker's, as it always was for char8.
     if (k == (raw TY_CHAR())) {
-        if ((raw type_int_bits(c.types, id)) == 8i32) { pass (raw ll_ok("i8")); }
-        pass (raw ll_rung("0.9"));
+        int32:cbits = raw type_int_bits(c.types, id);
+        if (cbits == 8i32)  { pass (raw ll_ok("i8")); }
+        if (cbits == 16i32) { pass (raw ll_ok("i16")); }
+        if (cbits == 32i32) { pass (raw ll_ok("i32")); }
+        pass (raw ll_broken());
     }
 
     // `tbb32` IS ADMITTED AS AN ERROR-CODE TYPE ONLY — assignment, comparison and
@@ -167,16 +172,25 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_SELF()))     { pass (raw ll_rung("1.0")); }
     if (k == (raw TY_PARAM()))    { pass (raw ll_rung("1.0")); }
 
-    // `lo..hi` IS A TYPED VALUE (D-093) consumed by `for` and by `pick`, and the
-    // counted loop is 0.9's.
-    if (k == (raw TY_RANGE()))    { pass (raw ll_rung("0.9")); }
+    // `lo..hi` IS A TYPED VALUE (D-093): `{ T, T }`, ALWAYS HALF-OPEN — the
+    // inclusive spelling was normalized away at construction (D-145), so no
+    // consumer ever asks which kind it holds.
+    if (k == (raw TY_RANGE())) {
+        LlType:rel = relay ll_type(c, raw type_elem(c.types, id));
+        if (rel.state != (raw LL_OK())) { pass rel; }
+        string:ra = relay string_concat("{ ", rel.text);
+        ra = relay string_concat(ra, ", ");
+        ra = relay string_concat(ra, rel.text);
+        ra = relay string_concat(ra, " }");
+        pass (raw ll_ok(ra));
+    }
 
     // A FUNCTION VALUE. Closures are gone (D-018) and a function pointer is an
     // ordinary value with a `FuncType` spelling (D-087) — so it will lower to
     // `ptr` like every other pointer, once there is a rung that can CALL through
     // one. NO RUNG TABLE NAMED IT; 0.7.2 assigns it to 0.9 with the rest of full
     // type lowering, rather than leaving a type whose refusal has no cycle.
-    if (k == (raw TY_FUNC()))          { pass (raw ll_rung("0.9")); }
+    if (k == (raw TY_FUNC()))          { pass (raw ll_ok("ptr")); }
     if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("0.9")); }
 
     if (k == (raw TY_ARRAY()))    { pass (relay ll_array(c, id)); }

@@ -1004,7 +1004,13 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
         }
         i = i + 1i32;
     }
-    pass (raw type_elem(e.types, ft));
+    // THE CALL'S TYPE IS `Result<success>` (D-069), for a named callee and a
+    // function value alike — the func TYPE stores the success slot (0.9.6),
+    // and the wrap happens here, once, the same place the arguments were held
+    // to the same one rule.
+    int32:succ = raw type_elem(e.types, ft);
+    pass (raw tt_result(e.types, succ, raw type_size(e.types, succ),
+                        raw type_align(e.types, succ)));
 };
 
 // The blanket impl's parameter window, bound to the receiver.

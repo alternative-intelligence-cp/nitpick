@@ -689,8 +689,10 @@ KIND_STATUS = {
     "ExprFloatLiteral": "lowered",   # 0.9.4
     "ExprSentinelLiteral": "lowered", # 0.9.5 — NIL/NULL always were; ERR joined
     "ExprTemplateLiteral": "rung", "ExprPostfixExpr": "rung",
-    "ExprPipeExpr": "rung", "ExprRangeExpr": "rung", "ExprSpreadExpr": "rung",
-    "ExprTernaryExpr": "rung", "ExprIsErrExpr": "lowered",  # 0.9.5
+    "ExprPipeExpr": "rung", "ExprRangeExpr": "lowered",   # 0.9.6
+    "ExprSpreadExpr": "rung",
+    "ExprTernaryExpr": "lowered",  # 0.9.6 — lazy, branch-based
+    "ExprIsErrExpr": "lowered",  # 0.9.5
     "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "rung",
     "ExprSafeUnwrapExpr": "rung", "ExprNullCoalesceExpr": "rung",
     "ExprEmphaticUnwrapExpr": "rung", "ExprDefaultsExpr": "rung",
@@ -716,8 +718,7 @@ KIND_STATUS = {
     "DeclEnumDecl": "lowered", "DeclFieldDecl": "lowered",
     "DeclEnumVariant": "lowered",
     "DeclImplDecl": "rung", "DeclExternBlock": "rung", "DeclGlobalDecl": "rung",
-    "DeclModuleDecl": "hole: emit_all neither descends nor refuses -- inline-mod "
-                      "members are shed; ticketed 0.9.6 (audit Theme A)",
+    "DeclModuleDecl": "lowered",   # 0.9.6 — emit_all descends; the hole closed
     "DeclImportDecl": "inert: resolved by the loader; nothing to emit",
     "DeclTraitDecl": "inert: a signature set; code arrives via impls (1.0)",
     "DeclRuleDecl": "inert: consumed by the verifier (1.3), never emitted",

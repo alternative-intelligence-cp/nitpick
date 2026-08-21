@@ -196,6 +196,40 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
     pass NIL;
 };
 
+// An INLINE `mod` carries members like a file module does — and until 0.9.6
+// `emit_all` neither descended into one nor refused it, so inline-mod code was
+// SILENTLY SHED (the audit's fourth Theme-A hole, held on the kinds table
+// since 0.9.1). Functions emit — their signatures resolve in their own home
+// scopes (D-137), so the caller's emitter serves — and the members a rung
+// refuses refuse here exactly as at top level.
+func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
+    int32:i = 0i32;
+    while (i < (raw item_member_count(x.ast, m))) {
+        DeclId:item = raw item_member(x.ast, m, i);
+        DeclNode:d = relay ast_decl(x.ast, item);
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            if (!(raw decl_has(d, raw DECL_COMPTIME()))) {
+                IrVal:r = relay emit_function(x, item);
+                if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
+            }
+        }
+        if (d.kind == DeclKind.DeclImplDecl) {
+            drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
+        }
+        if (d.kind == DeclKind.DeclExternBlock) {
+            drop refuse(diags, raw iv_rung("an `extern` block", "0.8", d.span));
+        }
+        if (d.kind == DeclKind.DeclGlobalDecl) {
+            drop refuse(diags, raw iv_rung("a module-level binding", "0.8", d.span));
+        }
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            drop emit_nested_module(x, diags, d);
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
 // Everything. True when the program emitted whole; false when any refusal was
 // recorded, in which case the writer's text is not a module and must not be used.
 //
@@ -250,6 +284,9 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             }
             if (d.kind == DeclKind.DeclGlobalDecl) {
                 drop refuse(diags, raw iv_rung("a module-level binding", "0.8", d.span));
+            }
+            if (d.kind == DeclKind.DeclModuleDecl) {
+                drop emit_nested_module(@x, diags, d);
             }
             i = i + 1i32;
         }

@@ -1,0 +1,67 @@
+// expect-exit: 0
+//
+// The 0.9.6 tail: char widths, ranges with their normalization, function
+// values with indirect calls, the LAZY ternary, and an inline `mod` whose
+// code once vanished (Theme-A hole 4).
+
+mod:forms_tail;
+
+// An inline mod's members EMIT now (Theme-A hole 4: emit_all used to shed
+// them silently). Nothing outside can reference an inner name yet — that
+// surface belongs to the module system — so the emission proof is that this
+// compiles AND that a rung construct hidden inside one refuses
+// (tests/rejection/inline_mod.npk, the inversion).
+mod:helpers = {
+    pub func:triple = int32(int32:v) {
+        pass (v * 3i32);
+    };
+};
+
+func:add2 = int32(int32:v) { pass (v + 2i32); };
+func:add7 = int32(int32:v) { pass (v + 7i32); };
+
+func:apply = int32(func int32(int32):f, int32:v) {
+    int32:r = raw f(v);
+    pass r;
+};
+
+func:main = int32(cstring[]:argv) {
+    // char16/char32: values, fields of neither arithmetic nor ordering
+    // trouble — compare and travel.
+    char32:star = 'x' => char32;
+    char32:star2 = 'x' => char32;
+    if (star != star2)                          { exit 10i32; }
+    char16:w = 'q' => char16;
+    if ((w => char32) != ('q' => char32))       { exit 11i32; }
+
+    // `..` is INCLUSIVE, `...` exclusive (LEXICAL §5.1), both normalized to
+    // half-open at construction (D-145) — until 0.9.6 both silently viewed
+    // exclusive, so the inclusive spelling was one element short.
+    int32[5]:arr = [1i32, 2i32, 3i32, 4i32, 5i32];
+    int32[]:incl = arr[0i32..2i32];      // {1,2,3}
+    if (incl.len != 3i64)                       { exit 12i32; }
+    if (incl[2i32] != 3i32)                     { exit 13i32; }
+    int32[]:excl = arr[0i32...2i32];     // {1,2}
+    if (excl.len != 2i64)                       { exit 14i32; }
+
+    // A function as a VALUE (D-087): one word, no environment — and the call
+    // through it carries the same Result contract as a named call.
+    func int32(int32):f = add2;
+    if ((raw apply(f, 5i32)) != 7i32)           { exit 15i32; }
+    f = add7;
+    if ((raw apply(f, 5i32)) != 12i32)          { exit 16i32; }
+    if ((raw f(1i32)) != 8i32)                  { exit 17i32; }
+
+    // The ternary is LAZY (D-145): the untaken arm does not run, so the
+    // guarded division is genuinely guarded — this line traps under a
+    // `select`-based lowering and passes under branches.
+    int32:zero = (argv.len =>! int32) - 1i32;
+    int32:safe = is (zero != 0i32) : (10i32 / zero) : 0i32;
+    if (safe != 0i32)                           { exit 18i32; }
+    int32:taken = is (zero == 0i32) : 21i32 : (10i32 / zero);
+    if (taken != 21i32)                         { exit 19i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

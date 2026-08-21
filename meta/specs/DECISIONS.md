@@ -9827,3 +9827,33 @@ no two sites can disagree about which bit pattern taint is.
 **`?` on tbb stays refused**: OP_REFERENCE/D-008's promise of a tbb fallback
 operator loses to D-099's one-wrapper rule — `?` takes a `Result` and nothing
 else; the doc correction rides the 0.9.8 sync.
+
+## D-145 — Ranges normalize half-open at construction; the ternary is lazy — **SETTLED**
+
+Cycle 0.9.6, the two decisions the scalars-and-forms tail needed.
+
+**Every range value is `{ T, T }`, half-open, from the moment it exists.** The
+inclusive spelling `lo..hi` stores `hi+1` at construction; the exclusive
+`lo...hi` stores `hi` (the spellings per LEXICAL §5.1 — `..` is the inclusive
+one). No consumer ever asks which spelling built a range, which is the
+blueprint rule applied to an object's lifetime: one representation, decided at
+the boundary. Slicing normalizes identically — and until 0.9.6 it silently
+treated BOTH spellings as exclusive, so `arr[0..2]` viewed two elements where
+the language says three; the executed test now pins three. An inclusive range
+ending at the carrier's maximum wraps under the +1 and the bounds guard traps
+it — a loud outcome for a corner with no honest answer. **Floats may not form
+ranges**: half-open needs a discrete successor, and a float has none.
+
+**The ternary `is (cond) : a : b` evaluates ONLY the taken arm** — lowered
+with branches through a slot, never `select`, because `select` evaluates both
+arms and `is (b != 0) : a/b : 0` must not divide by the zero it just tested
+for. The executed test's untaken arm divides by a runtime zero and does not
+trap.
+
+**Recorded with them, from the same subcycle's finds:** function types compare
+STRUCTURALLY (`tt_func` interns the parameter window's start index — an
+allocation artifact — so the annotation's spelling and the declaration's never
+shared an id; nothing consumed function types until values of them existed);
+the func type's return slot is the SUCCESS type, spelled exactly as a
+declaration spells it, with every call — named or indirect — typing as
+`Result<success>` by one wrap in one place.

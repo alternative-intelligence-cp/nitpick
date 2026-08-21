@@ -144,6 +144,14 @@ class Checker:
             self.p.structs[item.name] = fields
             return
 
+        if isinstance(item, S.ModDecl):
+            # `mod:x;` names the file -- nothing to collect. An INLINE module
+            # body (0.9.6) refuses: the seed builds nothing that uses one, and
+            # the rejection suite needs the refusal, not a crash.
+            if item.inline:
+                raise RungError("an inline module body", "0.9", item)
+            return
+
         if isinstance(item, S.EnumDecl):
             if item.generics:
                 raise RungError("generic enum", "1.0", item)

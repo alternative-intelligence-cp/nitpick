@@ -214,7 +214,39 @@ func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
 // simply had no width of its own to begin with.
 pub func:unify = int32(ExprTyper->:e, int32:a, int32:b) {
     if (a == b) { pass a; }
+    // FUNCTION TYPES COMPARE STRUCTURALLY (0.9.6). `tt_func` interns the
+    // parameter window's START INDEX — an allocation artifact — so two
+    // spellings of one function type (the annotation's and the declaration's)
+    // never share an id. Nothing consumed function types until values of them
+    // existed, which is how the artifact survived 0.4 unnoticed.
+    if (raw types_agree(e, a, b)) { pass a; }
     pass 0i32;
+};
+
+// Structural agreement for the window-carrying callable kinds; everything else
+// is its interned id, exactly as before.
+func:types_agree = bool(ExprTyper->:e, int32:a, int32:b) {
+    if (a == b) { pass true; }
+    int32:ka = raw type_kind(e.types, a);
+    if (ka != (raw type_kind(e.types, b))) { pass false; }
+    if (ka == (raw TY_FUNC()))          { pass (raw func_types_equal(e, a, b)); }
+    if (ka == (raw TY_FUNC_VARIADIC())) { pass (raw func_types_equal(e, a, b)); }
+    pass false;
+};
+
+func:func_types_equal = bool(ExprTyper->:e, int32:a, int32:b) {
+    Type:ta = raw tt_get(e.types, a);
+    Type:tb = raw tt_get(e.types, b);
+    if (ta.c != tb.c) { pass false; }
+    if (!(raw types_agree(e, ta.a, tb.a))) { pass false; }
+    int32:i = 0i32;
+    while (i < ta.c) {
+        int32:pa = relay ast_id_at(e.ast, ta.b, i);
+        int32:pb = relay ast_id_at(e.ast, tb.b, i);
+        if (!(raw types_agree(e, pa, pb))) { pass false; }
+        i = i + 1i32;
+    }
+    pass true;
 };
 
 // --- literals ---------------------------------------------------------------------------
@@ -636,6 +668,14 @@ func:type_range_expr = int32(ExprTyper->:e, ExprNode:n) {
     int32:common = raw unify(e, lo, hi);
     if (common == 0i32) {
         pass (relay te_mismatch(e, n.span, lo, hi));
+    }
+    // D-145: a range normalizes to half-open at construction, which needs a
+    // DISCRETE successor — floats have none (`hi + 1` means nothing at 1e300),
+    // so floats may not form ranges.
+    if ((raw type_kind(e.types, common)) == (raw TY_FLOAT())) {
+        pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+            "floats may not form ranges (D-145): a range is half-open over a discrete successor, which a float does not have",
+            n.span));
     }
     if (!(raw type_is_ordered(e.types, common))) {
         string:m1 = relay string_concat("a range needs an ordered type, and `",
@@ -1064,6 +1104,7 @@ pub func:expected_value = int32(ExprTyper->:e) {
 // is no second level for this to reach through.
 pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) {
     if (want == got) { pass true; }
+    if (raw types_agree(e, want, got)) { pass true; }
     if ((raw type_kind(e.types, want)) == (raw TY_OPTIONAL())) {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
     }

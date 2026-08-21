@@ -57,6 +57,7 @@ QualType    = _mk("QualType", "qual", "inner")           # wild T, stack T, fixe
 # --- declarations ------------------------------------------------------------
 
 Module      = _mk("Module", "items", "path")
+ModDecl     = _mk("ModDecl", "name", "items", "inline")  # mod:x; / mod:x = { ... };
 ImportDecl  = _mk("ImportDecl", "target", "kind")        # use "p.npk".*;
 FuncDecl    = _mk("FuncDecl", "name", "visibility", "modifiers", "generics",
                   "params", "ret", "body")

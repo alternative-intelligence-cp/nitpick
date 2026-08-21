@@ -327,14 +327,70 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprComptimeExpr) {
         pass (raw iv_rung("`comptime(…)` in a runtime position", "0.8", n.span));
     }
+    // A range VALUE (0.9.6, D-145): `{ T, T }`, normalized HALF-OPEN at
+    // construction — the inclusive `..` stores hi+1, so every consumer sees
+    // one convention and none asks which spelling built it.
     if (n.kind == ExprKind.ExprRangeExpr) {
-        pass (raw iv_rung("a range value", "0.9", n.span));
+        int32:rtid = raw exprtypes_get(x.et, id);
+        LlType:rll = relay ll_type(x.fe.ctx, rtid);
+        if (!(raw ll_is_ok(rll))) { pass (relay iv_from_ll_at(x, rll, rtid, n.span)); }
+        IrVal:rlo = relay emit_expr(x, raw expr_lhs(n));
+        if (!(raw iv_is_ok(rlo))) { pass rlo; }
+        IrVal:rhi = relay emit_expr(x, raw expr_rhs(n));
+        if (!(raw iv_is_ok(rhi))) { pass rhi; }
+        string:hi_ref = rhi.ref;
+        if (n.payload == 1i64) {
+            string:bump = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(bump, " = add ", rhi.ll, " ",
+                              relay string_concat(rhi.ref, ", 1")));
+            hi_ref = bump;
+        }
+        string:ra = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(ra, " = insertvalue ", rll.text,
+                          " undef, ", relay cat5(rlo.ll, " ", rlo.ref, ", 0", "")));
+        string:rb = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(rb, " = insertvalue ", rll.text, " ",
+                          relay cat5(ra, ", ", rhi.ll, " ",
+                              relay string_concat(hi_ref, ", 1"))));
+        pass (raw iv(rll.text, rb, rtid));
     }
     if (n.kind == ExprKind.ExprSpreadExpr) {
         pass (raw iv_rung("the `..^` expansion", "0.9", n.span));
     }
+    // `is (cond) : a : b` — LAZY (0.9.6, D-145): only the taken arm runs.
+    // Lowered with branches through a slot, NEVER `select` — select evaluates
+    // both arms, and `is (b != 0) : a/b : 0` must not divide by the zero it
+    // just tested for.
     if (n.kind == ExprKind.ExprTernaryExpr) {
-        pass (raw iv_rung("the ternary `is`", "0.9", n.span));
+        int32:ttid = raw exprtypes_get(x.et, id);
+        LlType:tll = relay ll_type(x.fe.ctx, ttid);
+        if (!(raw ll_is_ok(tll))) { pass (relay iv_from_ll_at(x, tll, ttid, n.span)); }
+        string:slot = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", tll.text));
+        IrVal:tc = relay emit_cond(x, ExprId{ index: n.a });
+        if (!(raw iv_is_ok(tc))) { pass tc; }
+        string:then_l = relay irw_new_label(x.fe.w, "is.then");
+        string:else_l = relay irw_new_label(x.fe.w, "is.else");
+        string:done_l = relay irw_new_label(x.fe.w, "is.done");
+        drop irw_line(x.fe.w, relay cat5("br i1 ", tc.ref, ", label %", then_l,
+                          relay string_concat(", label %", else_l)));
+        drop irw_label(x.fe.w, then_l);
+        IrVal:tv = relay emit_expr(x, ExprId{ index: n.b });
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+        drop irw_line(x.fe.w, relay cat5("store ", tv.ll, " ", tv.ref,
+                          relay string_concat(", ptr ", slot)));
+        drop irw_line(x.fe.w, relay cat3("br label %", done_l, ""));
+        drop irw_label(x.fe.w, else_l);
+        IrVal:ev = relay emit_expr(x, ExprId{ index: n.c });
+        if (!(raw iv_is_ok(ev))) { pass ev; }
+        drop irw_line(x.fe.w, relay cat5("store ", ev.ll, " ", ev.ref,
+                          relay string_concat(", ptr ", slot)));
+        drop irw_line(x.fe.w, relay cat3("br label %", done_l, ""));
+        drop irw_label(x.fe.w, done_l);
+        string:out = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(out, " = load ", tll.text, ", ptr ",
+                          slot));
+        pass (raw iv(tll.text, out, ttid));
     }
     if (n.kind == ExprKind.ExprPostfixExpr) {
         pass (raw iv_rung("a postfix operator", "0.9", n.span));
@@ -449,9 +505,22 @@ func:emit_string = IrVal(ExprEmitter->:x, ExprNode:n) {
 func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     LocalSlot:s = raw fnem_lookup(x.fe, n.payload =>! int32);
     if (!s.found) {
-        // Not a local: a module-level `const`, a function used as a value, or a
-        // name this rung cannot reach. Each is real Nitpick; none is lowered
-        // yet. Refusing beats loading from a slot that is not there.
+        // A FUNCTION USED AS A VALUE (0.9.6, D-087): one machine word, the
+        // symbol itself — closures are gone (D-018), so there is no
+        // environment to capture and nothing to allocate.
+        if (n.a != 0i32) {
+            Symbol:fsym = raw symtab_get(x.tab, n.a);
+            if (fsym.origin_kind == (raw SYM_DECL())) {
+                DeclNode:fdecl = relay ast_decl(x.ast, DeclId{ index: fsym.origin });
+                if (fdecl.kind == DeclKind.DeclFunctionDecl) {
+                    string:fnm = relay intern_get(x.interns, fsym.name);
+                    pass (raw iv("ptr", relay ir_symbol(fnm),
+                                 raw exprtypes_get(x.et, id)));
+                }
+            }
+        }
+        // Not a local and not a function: a module-level global, which this
+        // rung refuses at its declaration already.
         pass (raw iv_rung("a name that is not a local", "0.8", n.span));
     }
     // The SLOT's type, not the table's: the binding is the local truth, and for
@@ -1307,6 +1376,36 @@ func:ll_int_width = int64(string:ll) {
 
 // --- calls --------------------------------------------------------------------------
 
+// A call through a FUNCTION VALUE (0.9.6, D-087): the callee is one machine
+// word, the return contract is the same `Result<T>` every named call has, and
+// the checker already held the arguments to the function TYPE's parameters.
+func:emit_indirect_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    IrVal:fp = relay emit_expr(x, raw expr_callee(n));
+    if (!(raw iv_is_ok(fp))) { pass fp; }
+    int32:gcount = raw expr_generic_count(n);
+    if (gcount > 0i32) { pass (raw iv_rung("a generic call", "1.0", n.span)); }
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    string:args = "";
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+        IrVal:av = relay emit_expr(x, aid);
+        if (av.state != (raw LL_OK())) { pass av; }
+        if (i > 0i32) { args = relay string_concat(args, ", "); }
+        args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
+        i = i + 1i32;
+    }
+    LlType:ret = relay node_ll(x, id);
+    if (ret.state != (raw LL_OK())) {
+        pass (relay iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
+    }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret.text, " ",
+                      relay cat5(fp.ref, "(", args, ")", "")));
+    pass (raw iv(ret.text, r, raw exprtypes_get(x.et, id)));
+};
+
 func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     ExprId:callee = raw expr_callee(n);
     if (raw expr_is_none(callee)) { pass (raw iv_broken(n.span)); }
@@ -1315,9 +1414,21 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         pass (relay emit_enum_ctor(x, id, n, cnode));
     }
     if (cnode.kind != ExprKind.ExprIdentifierExpr) {
-        // An indirect call — through a function value. D-087 gives it a type;
-        // calling through one is 0.9's.
-        pass (raw iv_rung("an indirect call", "0.9", n.span));
+        pass (relay emit_indirect_call(x, id, n));
+    }
+    if (cnode.a != 0i32) {
+        Symbol:csym = raw symtab_get(x.tab, cnode.a);
+        if (csym.origin_kind == (raw SYM_STMT())) {
+            // The callee is a LOCAL holding a function value — indirect too.
+            pass (relay emit_indirect_call(x, id, n));
+        }
+        if (csym.origin_kind == (raw SYM_DECL())) {
+            DeclNode:cdecl = relay ast_decl(x.ast, DeclId{ index: csym.origin });
+            // A PARAMETER holding a function value: indirect, same as a local.
+            if (cdecl.kind == DeclKind.DeclParamDecl) {
+                pass (relay emit_indirect_call(x, id, n));
+            }
+        }
     }
 
     int32:gcount = raw expr_generic_count(n);
@@ -2090,6 +2201,16 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // type exists to prevent.
     string:lo64 = raw index_as_i64(x, lo);
     string:hi64 = raw index_as_i64(x, hi);
+    // `..` IS INCLUSIVE (LEXICAL §5.1) and normalizes to half-open here, the
+    // same rule range VALUES get (D-145) — until 0.9.6 both spellings were
+    // silently treated as exclusive, so `arr[0..2]` viewed two elements while
+    // the language said three.
+    if (ix.payload == 1i64) {
+        string:hb = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(hb, " = add i64 ",
+                          relay string_concat(hi64, ", 1")));
+        hi64 = hb;
+    }
     string:c1 = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(c1, " = icmp ule i64 ", lo64, ", ",
                       relay string_concat(hi64, "")));

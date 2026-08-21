@@ -148,14 +148,20 @@ func:fn_type_bound = int32(TypeResolver->:r, DeclNode:d, int32:name, int32:scope
     DeclId:vd = raw fn_variadic(r.ast, d);
     if (raw decl_is_none(vd)) {
         IdSpan:w = raw ast_scratch_commit(r.ast, mark);
-        pass (raw tt_func(r.types, s.result, w.start, w.count));
+        // THE SUCCESS TYPE, not the wrapped Result (0.9.6): `func int32(int32)`
+        // spells its return the way a declaration does — the success type,
+        // with Result implicit (D-069's one rule) — so the type built FROM a
+        // declaration must encode the same slot the annotation encodes, or the
+        // two spellings of one type never unify. Storing `s.result` here was
+        // exactly that mismatch, invisible until function values existed.
+        pass (raw tt_func(r.types, s.success, w.start, w.count));
     }
 
     DeclNode:vn = relay ast_decl(r.ast, vd);
     int32:vt = relay resolve_type(r, raw variadic_type(vn), scope);
     drop ast_scratch_push(r.ast, relay require_variadic_slice(r, vt, vn.span));
     IdSpan:wv = raw ast_scratch_commit(r.ast, mark);
-    pass (raw tt_func_variadic(r.types, s.result, wv.start, wv.count));
+    pass (raw tt_func_variadic(r.types, s.success, wv.start, wv.count));
 };
 
 // AN `extern` FUNCTION'S TYPE — and it is a `Result<T>` like every other (D-002).
