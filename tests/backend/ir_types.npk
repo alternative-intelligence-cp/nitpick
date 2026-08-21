@@ -243,9 +243,11 @@ func:main = int32(cstring[]:_~argv) {
     // Three states, not two. A rung refusal names a cycle a programmer can wait
     // for; a broken type names none, because "enabled by cycle 1.0" would not be
     // true of a type that failed to resolve.
+    // flt32 LOWERS since 0.9.4 (D-143) — the refusal case below moved to
+    // Optional, which holds its rung until 1.0.
     LlType:fl = relay ll_type(@c, f32t);
-    if (fl.state != (raw LL_RUNG()))                       { exit 80i32; }
-    if (!(raw string_eq(fl.rung, "0.9")))                  { exit 81i32; }
+    if (!(raw ll_is_ok(fl)))                               { exit 80i32; }
+    if (!(raw string_eq(fl.text, "float")))                { exit 81i32; }
 
     // int128 LOWERS since 0.9.3 (native iN, D-011) — this case asserted the
     // rung while the width waited; now it asserts the answer.

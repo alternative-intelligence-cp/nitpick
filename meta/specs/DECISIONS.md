@@ -385,7 +385,8 @@ and gives the fail-operational path a *type*, rather than a convention.
 | Operand type | Div-by-zero behavior | Intended for |
 |---|---|---|
 | `tbb8/16/32/64` | **sticky ERR**, propagates, checkable | control loops, actuator paths, anything that must degrade rather than stop |
-| `int32`, `uint64`, `flt64`, … | **trap to `failsafe`** | ordinary code, parsing, setup, tooling |
+| `int32`, `uint64`, … | **trap to `failsafe`** | ordinary code, parsing, setup, tooling |
+| `flt32`, `flt64` | **±inf/nan, no trap** (IEEE; corrected by D-143 — this row once said trap, but float division is total by construction and D-037's overflow reasoning extends to it) | numerics |
 
 ### This is not a blueprint violation
 
@@ -9746,3 +9747,40 @@ site: a build without the verifier still emits the check, and 1.3's static
 discharge may remove only what it proves. The signed-width MIN table fails
 closed: a width it does not know is an internal `iv_broken`, so a new integer
 width (0.9.3's `i128`) cannot silently ship an unguarded `INT_MIN/-1`.
+
+## D-143 — The float family's final form — **SETTLED**
+
+Cycle 0.9.4, resolving the audit's two open float decisions plus the shape of
+`flt128`. Probes on the shipping toolchain decided everything measurable.
+
+**`flt32`/`flt64` are the computational floats**, IEEE and TOTAL: arithmetic
+through `frem` (lowered to the floor's hand-written `fmod`/`fmodf` — exact by
+construction, Sterbenz-aligned subtraction, no rounding anywhere), `fcmp`
+ordered comparisons with `!=` as `une` (NaN ≠ NaN is true, so `!=` remains the
+negation of `==`), `fneg` negation, and the conversion set. **Float division
+by zero does not trap** — ±inf/nan is defined behavior, the reason infinities
+exist — and D-007's float row is corrected accordingly. The integer rows keep
+their traps; the behavior is selected by type, written at the declaration,
+exactly D-007's own non-context rule.
+
+**`flt128` is a storage format**: it lowers (`fp128`) so values can be held,
+passed, returned, and crossed over FFI — but it has no literals, no
+arithmetic, and no comparison, because each is a soft-float libcall
+(`__addtf3`, `__lttf2`, …) and a verification-grade binary128 soft-float
+library has no consumer. This is a DECISION, not a deferral: soft-float
+enters only if a consumer appears, as audited nlibc-tier work. The checker
+enforces all three refusals (`NITPICK-TYPE-030`), so no fp128 instruction is
+ever emitted.
+
+**`flt256`/`flt512` do not exist**: LLVM has no fp256/fp512 type. The
+keywords stay reserved (the `bt_spec(false)` shape `tfp256` already uses);
+the resolver refuses them; the `f256`/`f512` suffixes are gone from the
+lexer.
+
+**A `flt32` literal carries at most 15 significant digits.** Its only
+portable lowering rides a correctly-rounded double and truncates; decimal →
+double → float equals direct rounding exactly when the decimal has ≤ 15
+significant digits (53 ≥ 2·24+2, the double-rounding theorem), and beyond
+that the value would be implementation-defined — which a literal must never
+be. `flt64` literals are unbounded: LLVM's parser converts any decimal with
+correct rounding directly.

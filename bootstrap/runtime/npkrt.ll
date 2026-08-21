@@ -144,6 +144,100 @@ define void @npk_exit(i32 %code) noreturn {
 }
 
 ; ---------------------------------------------------------------------------
+; fmod / fmodf (0.9.4, D-143): `frem` on flt64/flt32 lowers to these libcalls,
+; which libm normally provides -- the floor provides them as hand-written IR.
+;
+; THE RESULT IS EXACT, which is what makes a short implementation correct:
+; align |b| up to |a| by exact power-of-two doublings, subtract (Sterbenz: the
+; subtrahend is within [|a|/2, |a|], so the subtraction is exact), repeat. No
+; rounding ever occurs, so this IS IEEE fmod, not an approximation of it.
+; Specials per IEEE: NaN in, |a| infinite, or b zero -> NaN; |b| infinite ->
+; a unchanged; the result carries a's sign (llvm.copysign; the fabs/copysign
+; intrinsics lower inline -- no symbol survives to the object).
+; ---------------------------------------------------------------------------
+
+declare double @llvm.fabs.f64(double)
+declare float @llvm.fabs.f32(float)
+declare double @llvm.copysign.f64(double, double)
+declare float @llvm.copysign.f32(float, float)
+
+define double @fmod(double %a, double %b) {
+entry:
+  %ab0 = call double @llvm.fabs.f64(double %a)
+  %bb = call double @llvm.fabs.f64(double %b)
+  %anan = fcmp uno double %a, %a
+  %bnan = fcmp uno double %b, %b
+  %bzero = fcmp oeq double %bb, 0.0
+  %ainf = fcmp oeq double %ab0, 0x7FF0000000000000
+  %n1 = or i1 %anan, %bnan
+  %n2 = or i1 %n1, %bzero
+  %bad = or i1 %n2, %ainf
+  br i1 %bad, label %retnan, label %chk
+retnan:
+  ret double 0x7FF8000000000000
+chk:
+  %binf = fcmp oeq double %bb, 0x7FF0000000000000
+  br i1 %binf, label %reta, label %outer
+reta:
+  ret double %a
+outer:
+  %ab = phi double [ %ab0, %chk ], [ %abn, %step ]
+  %small = fcmp olt double %ab, %bb
+  br i1 %small, label %fin, label %scale
+scale:
+  %c = phi double [ %bb, %outer ], [ %c2, %grow ]
+  %c2 = fmul double %c, 2.0
+  %fits = fcmp ole double %c2, %ab
+  br i1 %fits, label %grow, label %step
+grow:
+  br label %scale
+step:
+  %abn = fsub double %ab, %c
+  br label %outer
+fin:
+  %r = call double @llvm.copysign.f64(double %ab, double %a)
+  ret double %r
+}
+
+define float @fmodf(float %a, float %b) {
+entry:
+  %ab0 = call float @llvm.fabs.f32(float %a)
+  %bb = call float @llvm.fabs.f32(float %b)
+  %anan = fcmp uno float %a, %a
+  %bnan = fcmp uno float %b, %b
+  %bzero = fcmp oeq float %bb, 0.0
+  %ainf = fcmp oeq float %ab0, 0x7FF0000000000000
+  %n1 = or i1 %anan, %bnan
+  %n2 = or i1 %n1, %bzero
+  %bad = or i1 %n2, %ainf
+  br i1 %bad, label %retnan, label %chk
+retnan:
+  ret float 0x7FF8000000000000
+chk:
+  %binf = fcmp oeq float %bb, 0x7FF0000000000000
+  br i1 %binf, label %reta, label %outer
+reta:
+  ret float %a
+outer:
+  %ab = phi float [ %ab0, %chk ], [ %abn, %step ]
+  %small = fcmp olt float %ab, %bb
+  br i1 %small, label %fin, label %scale
+scale:
+  %c = phi float [ %bb, %outer ], [ %c2, %grow ]
+  %c2 = fmul float %c, 2.0
+  %fits = fcmp ole float %c2, %ab
+  br i1 %fits, label %grow, label %step
+grow:
+  br label %scale
+step:
+  %abn = fsub float %ab, %c
+  br label %outer
+fin:
+  %r = call float @llvm.copysign.f32(float %ab, float %a)
+  ret float %r
+}
+
+; ---------------------------------------------------------------------------
 ; The i128 division family (0.9.3, D-011 SS2): the ONE libcall class llc emits
 ; for wide integers -- sdiv/udiv/srem/urem at exactly 128 bits call these four
 ; symbols (measured on this toolchain; division at 256 bits and beyond expands

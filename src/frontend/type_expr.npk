@@ -238,7 +238,51 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     if (kind == (raw TY_INT())) {
         pass (raw tt_int(e.types, bits, raw num_width_signed(w)));
     }
-    if (kind == (raw TY_FLOAT())) { pass (raw tt_float(e.types, bits)); }
+    if (kind == (raw TY_FLOAT())) {
+        // D-143: `flt128` is a storage format — no literals (its constants
+        // cannot even be spelled in the IR without soft-float semantics this
+        // implementation deliberately does not provide).
+        if (bits == 128i32) {
+            pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+                "`flt128` is a storage format (D-143): it holds and moves values but has no literals, arithmetic, or comparison",
+                n.span));
+        }
+        // D-143: a `flt32` literal carries at most 15 significant digits. The
+        // literal lowers through a correctly-rounded double (the IR's only
+        // portable spelling), and decimal→double→float equals direct rounding
+        // exactly when the decimal has ≤ 15 significant digits — beyond that,
+        // double rounding can differ and the value would be implementation-
+        // defined, which a literal must never be.
+        if (bits == 32i32) {
+            string:txt = relay intern_get(e.interns, n.payload =>! int32);
+            int32:sig = 0i32;
+            bool:lead = true;
+            int64:ti = 0i64;
+            while (ti < txt.len) {
+                uint8:ch = txt.ptr[ti];
+                if (ch == 101u8) { break; }   // 'e' — exponent: digits end
+                if (ch == 69u8)  { break; }   // 'E'
+                if (ch == 102u8) { break; }   // 'f' — the suffix
+                if (ch >= 48u8) {
+                    if (ch <= 57u8) {
+                        if (ch == 48u8) {
+                            if (!lead) { sig = sig + 1i32; }
+                        } else {
+                            lead = false;
+                            sig = sig + 1i32;
+                        }
+                    }
+                }
+                ti = ti + 1i64;
+            }
+            if (sig > 15i32) {
+                pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+                    "a `flt32` literal carries at most 15 significant digits (D-143); write the `f64` value you mean and cast",
+                    n.span));
+            }
+        }
+        pass (raw tt_float(e.types, bits));
+    }
     if (kind == (raw TY_TBB()))   { pass (raw tt_tbb(e.types, bits)); }
     if (kind == (raw TY_CHAR()))  { pass (raw tt_char(e.types, bits)); }
 
@@ -341,6 +385,16 @@ pub func:type_arithmetic = int32(ExprTyper->:e, Span:at, int32:lt, int32:rt) {
         if (lt == rt) { pass lt; }
     }
 
+    // D-143: `flt128` stores and moves; it does not compute. (Soft-float
+    // binary128 is verification-grade work with no consumer; the decision is
+    // recorded, not deferred.)
+    if ((raw type_kind(e.types, lt)) == (raw TY_FLOAT())) {
+        if ((raw type_int_bits(e.types, lt)) == 128i32) {
+            pass (relay te_error(e, raw TYPE_FLOAT_RULES(),
+                "`flt128` is a storage format (D-143): it holds and moves values but has no arithmetic",
+                at));
+        }
+    }
     if (!(raw type_is_numeric(e.types, lt))) {
         pass (relay te_operand_error(e, at, lt));
     }
@@ -421,6 +475,17 @@ func:type_comparison = int32(ExprTyper->:e, ExprNode:n, int32:lt, int32:rt,
     if (common == 0i32) {
         drop te_mismatch(e, n.span, lt, rt);
         pass (e.types.t_bool);
+    }
+
+    // D-143: `flt128` does not compare either — even `fcmp` at that width is a
+    // soft-float libcall this implementation does not provide.
+    if ((raw type_kind(e.types, common)) == (raw TY_FLOAT())) {
+        if ((raw type_int_bits(e.types, common)) == 128i32) {
+            drop te_error(e, raw TYPE_FLOAT_RULES(),
+                "`flt128` is a storage format (D-143): it holds and moves values but has no comparison",
+                n.span);
+            pass (e.types.t_bool);
+        }
     }
 
     // EQUALITY IS WIDER THAN ORDERING (D-093). `==` on a `bool` or an `fd` is

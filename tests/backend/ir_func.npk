@@ -30,7 +30,10 @@ func:main = int32(cstring[]:_~argv) {
 
     int32:i32t = raw tt_int(@types, 32i32, true);
     int32:i64t = raw tt_int(@types, 64i32, true);
-    int32:f32t = raw tt_float(@types, 32i32);
+    // Optional refuses until 1.0 — the stable stand-in since floats lower
+    // (0.9.4); this fixture's case is about REFUSAL PROPAGATION, not floats.
+    int32:i32t_r = raw tt_int(@types, 32i32, true);
+    int32:f32t = raw tt_optional(@types, i32t_r, 4i64, 4i32);
     int32:nx = relay intern_add(@it, "x");
     int32:ny = relay intern_add(@it, "y");
 
@@ -140,7 +143,7 @@ func:main = int32(cstring[]:_~argv) {
     FnEmitter:f8 = raw fnem_init(@w8, @c);
     LlType:bad = relay fnem_begin(@f8, "f", f32t);
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
-    if (!(raw string_eq(bad.rung, "0.9")))                 { exit 51i32; }
+    if (!(raw string_eq(bad.rung, "1.0")))                 { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
     LlType:badp = relay fnem_param(@f8, nx, f32t);
     if (badp.state != (raw LL_RUNG()))                     { exit 53i32; }

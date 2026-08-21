@@ -97,20 +97,34 @@ not to `int` — see §6.)*
 
 > **Note:** `uint8` and `char8` share the same LLVM IR type (`i8`) but are **semantically distinct**. The type checker enforces different operation sets. See §2 for char types.
 
-### 1.4 IEEE Floating Point
+### 1.4 IEEE Floating Point (final form: D-143, 0.9.4)
 
-| Nitpick Type | LLVM IR Type | Size | Alignment |
-|---|---|---|---|
-| `flt32` | `float` | 4 bytes | 4 |
-| `flt64` | `double` | 8 bytes | 8 |
-| `flt128` | `fp128` | 16 bytes | 16 |
+| Nitpick Type | LLVM IR Type | Size | Alignment | Provides |
+|---|---|---|---|---|
+| `flt32` | `float` | 4 bytes | 4 | everything |
+| `flt64` | `double` | 8 bytes | 8 | everything |
+| `flt128` | `fp128` | 16 bytes | 16 | **storage only** — holds, moves, crosses FFI; no literals, arithmetic, or comparison (each is a soft-float libcall with no verified provider) |
 
-**Behaviors:**
+`flt256`/`flt512` are **reserved words, not types** (D-143): LLVM has no
+fp256/fp512, and a soft-float that wide has no consumer. The resolver refuses
+them; the `f256`/`f512` literal suffixes are gone.
+
+**Behaviors (flt32/flt64):**
 - Arithmetic: `+`, `-`, `*`, `/`, `%` → `fadd`, `fsub`, `fmul`, `fdiv`, `frem`
-- No overflow checking (IEEE 754 handles inf/nan)
-- Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `fcmp oeq/one/olt/ogt/ole/oge`
-- Math functions (sin, cos, sqrt, etc.) via Nitpick stdlib wrapping LLVM intrinsics
-- Literal suffixes: `3.14flt32`, `2.718flt64`, bare `3.14` defaults to `flt64`
+  (`frem` lowers to the runtime floor's hand-written, exact `fmod`/`fmodf`)
+- **Total, no traps**: division by zero yields ±inf/nan per IEEE — defined
+  behavior, the reason infinities exist — unlike the integer trap row (D-007's
+  float row was corrected by D-143)
+- Negation is `fneg` (sign-bit exact: `-(0.0)` is `-0.0`)
+- Comparison: `fcmp` ordered predicates, except `!=` which is `une` so that
+  NaN ≠ NaN is true and `!=` stays the negation of `==`
+- Literal suffixes: `3.14f32`, `2.718f64` (this section once said `3.14flt32`,
+  which never lexed). A `flt32` literal carries at most 15 significant digits
+  (D-143): it lowers through a correctly-rounded double, exact to 15 digits by
+  the double-rounding theorem, and unbounded digits would make the value
+  implementation-defined.
+- Math functions (sin, cos, sqrt, …) arrive with the library tier, wrapping
+  LLVM intrinsics
 
 ---
 

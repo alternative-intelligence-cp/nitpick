@@ -332,6 +332,28 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprPostfixExpr) {
         pass (raw iv_rung("a postfix operator", "0.9", n.span));
     }
+    // A float literal (0.9.4). The lexer kept the TEXT; LLVM's parser converts
+    // decimal to double with correct rounding, so `double <text>` is exact for
+    // flt64. A flt32 literal rides the same double and truncates — exactly
+    // correct for ≤ 15 significant digits (double rounding is innocuous at
+    // 53 vs 24 bits), and the checker refused anything longer (D-143).
+    if (n.kind == ExprKind.ExprFloatLiteral) {
+        int32:ftid = raw exprtypes_get(x.et, id);
+        LlType:fll = relay ll_type(x.fe.ctx, ftid);
+        if (!(raw ll_is_ok(fll))) { pass (relay iv_from_ll_at(x, fll, ftid, n.span)); }
+        string:txt = relay intern_get(x.interns, n.payload =>! int32);
+        string:body = relay float_literal_body(x, txt);
+        if (raw string_eq(fll.text, "double")) {
+            pass (raw iv("double", body, ftid));
+        }
+        if (raw string_eq(fll.text, "float")) {
+            string:fr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(fr, " = fptrunc double ", body,
+                              " to float", ""));
+            pass (raw iv("float", fr, ftid));
+        }
+        pass (raw iv_broken(n.span));
+    }
     // The four below were found by `check_kinds_lowered_or_refused`'s first run
     // (0.9.1): each fell through to iv_broken — an INTERNAL-defect report for
     // what is really an unlowered language feature. The honest answer is a
@@ -434,6 +456,12 @@ func:emit_unary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 
     if (op == TokenKind.OpMinus) {
         string:r = relay irw_temp(x.fe.w);
+        // Floats negate with fneg — `fsub 0.0, x` is NOT negation under IEEE
+        // (it loses -0.0: 0.0 - 0.0 is +0.0, while -(0.0) is -0.0).
+        if (raw ll_is_float_text(v.ll)) {
+            drop irw_line(x.fe.w, relay cat5(r, " = fneg ", v.ll, " ", v.ref));
+            pass (raw iv(v.ll, r, v.type_id));
+        }
         drop irw_line(x.fe.w, relay cat5(r, " = sub ", v.ll, " 0, ", v.ref));
         pass (raw iv(v.ll, r, v.type_id));
     }
@@ -501,6 +529,34 @@ func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref) {
     pass NIL;
 };
 
+// The literal text, made a valid LLVM decimal-FP constant: the type suffix is
+// cut, and a body with no '.' gets one ("1e10" is not LLVM grammar; "1.0e10"
+// is). The digits themselves pass through untouched — LLVM's own parser does
+// the correctly-rounded conversion.
+func:float_literal_body = string(ExprEmitter->:x, string:txt) {
+    int64:cut = txt.len;
+    int64:fi = 0i64;
+    while (fi < txt.len) {
+        if (txt.ptr[fi] == 102u8) { cut = fi; break; }   // 'f' opens the suffix
+        fi = fi + 1i64;
+    }
+    string:body = relay string_slice(txt, 0i64, cut);
+    bool:has_dot = false;
+    int64:epos = body.len;
+    int64:bi = 0i64;
+    while (bi < body.len) {
+        uint8:bc = body.ptr[bi];
+        if (bc == 46u8) { has_dot = true; }
+        if (bc == 101u8) { epos = bi; break; }
+        if (bc == 69u8)  { epos = bi; break; }
+        bi = bi + 1i64;
+    }
+    if (has_dot) { pass body; }
+    string:mant = relay string_slice(body, 0i64, epos);
+    string:rest = relay string_slice(body, epos, body.len);
+    pass (relay cat3(mant, ".0", rest));
+};
+
 pub func:arith_name = string(TokenKind:op, bool:signed) {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
@@ -552,6 +608,28 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 
     string:cmp = raw icmp_name(op, signed);
     if (cmp.len > 0i64) {
+        // FLOATS COMPARE WITH fcmp AND IEEE SEMANTICS (0.9.4, D-143): ordered
+        // predicates except `!=`, which is `une` — NaN != NaN is TRUE, the one
+        // place unordered is the correct answer, because `!=` must be the
+        // negation of `==` (oeq is false on NaN) or the two operators lie to
+        // each other.
+        if (raw ll_is_float_text(lhs.ll)) {
+            string:fpred = "";
+            if (op == TokenKind.OpEqEq)  { fpred = "oeq"; }
+            if (op == TokenKind.OpNotEq) { fpred = "une"; }
+            if (op == TokenKind.OpLt)    { fpred = "olt"; }
+            if (op == TokenKind.OpLtEq)  { fpred = "ole"; }
+            if (op == TokenKind.OpGt)    { fpred = "ogt"; }
+            if (op == TokenKind.OpGtEq)  { fpred = "oge"; }
+            if (fpred.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:fc = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(fc, " = fcmp ", fpred, " ",
+                              relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+            string:fz = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(fz, " = zext i1 ",
+                              relay string_concat(fc, " to i8")));
+            pass (raw iv("i8", fz, 0i32));
+        }
         string:c = relay irw_temp(x.fe.w);
         drop irw_line(x.fe.w, relay cat5(c, " = icmp ", cmp, " ",
                           relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
@@ -561,8 +639,29 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         pass (raw iv("i8", z, 0i32));
     }
 
-    // ARITHMETIC IS FOR INTEGERS AT THIS RUNG. `tbb` arithmetic drags in ERR,
-    // stickiness and saturation (D-008); floats are 0.9's whole reason. The
+    // FLOAT ARITHMETIC IS IEEE AND TOTAL (0.9.4, D-143): fadd through frem,
+    // NO guards — division by zero yields ±inf/nan, which is DEFINED behavior,
+    // the reason floats have infinities at all. `%` is frem, which llc lowers
+    // to the fmod/fmodf libcalls the floor hand-writes. (flt128 never reaches
+    // here — the checker refused its arithmetic outright.)
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_FLOAT())) {
+            string:fins = "";
+            if (op == TokenKind.OpPlus)    { fins = "fadd"; }
+            if (op == TokenKind.OpMinus)   { fins = "fsub"; }
+            if (op == TokenKind.OpStar)    { fins = "fmul"; }
+            if (op == TokenKind.OpSlash)   { fins = "fdiv"; }
+            if (op == TokenKind.OpPercent) { fins = "frem"; }
+            if (fins.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:fres = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(fres, " = ", fins, " ",
+                              relay cat5(lhs.ll, " ", lhs.ref, ", ", rhs.ref)));
+            pass (raw iv(lhs.ll, fres, lhs.type_id));
+        }
+    }
+
+    // ARITHMETIC BEYOND FLOATS AND INTEGERS is not this rung's. `tbb`
+    // arithmetic drags in ERR, stickiness and saturation (D-008; 0.9.5). The
     // checker already refused what is never legal — this refuses what is legal
     // and not yet lowered, which is exactly the difference between the two
     // states.
@@ -708,6 +807,50 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         if (raw string_eq(v.ll, want.text)) {
             pass (raw iv(want.text, v.ref, wid));
         }
+    }
+
+    // FLOAT CASTS (0.9.4). The frontend already decided legality and loss
+    // (float→int is always `=>!`; int→float and float-widening follow the
+    // value-range rules); this only picks the instruction.
+    bool:src_f = raw ll_is_float_text(v.ll);
+    bool:dst_f = raw ll_is_float_text(want.text);
+    if (src_f) {
+        string:fr2 = relay irw_temp(x.fe.w);
+        if (dst_f) {
+            // float↔float by width: double→float truncates, float→double extends.
+            if (raw string_eq(v.ll, "double")) {
+                drop irw_line(x.fe.w, relay cat5(fr2, " = fptrunc double ",
+                                  v.ref, " to ", want.text));
+            } else {
+                drop irw_line(x.fe.w, relay cat5(fr2, " = fpext ", v.ll, " ",
+                                  relay cat3(v.ref, " to ", want.text)));
+            }
+            pass (raw iv(want.text, fr2, wid));
+        }
+        // float→int: signedness of the TARGET picks the instruction.
+        bool:dsig = raw type_is_signed(x.fe.ctx.types, wid);
+        if (dsig) {
+            drop irw_line(x.fe.w, relay cat5(fr2, " = fptosi ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+        } else {
+            drop irw_line(x.fe.w, relay cat5(fr2, " = fptoui ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+        }
+        pass (raw iv(want.text, fr2, wid));
+    }
+    if (dst_f) {
+        // int→float: signedness of the SOURCE picks the instruction.
+        string:fr3 = relay irw_temp(x.fe.w);
+        bool:ssig = raw type_is_signed(x.fe.ctx.types, v.type_id);
+        if ((raw type_kind(x.fe.ctx.types, v.type_id)) == (raw TY_TBB())) { ssig = true; }
+        if (ssig) {
+            drop irw_line(x.fe.w, relay cat5(fr3, " = sitofp ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+        } else {
+            drop irw_line(x.fe.w, relay cat5(fr3, " = uitofp ", v.ll, " ",
+                              relay cat3(v.ref, " to ", want.text)));
+        }
+        pass (raw iv(want.text, fr3, wid));
     }
 
     LlType:src_l = LlType{ state: raw LL_OK(), text: v.ll, rung: "" };

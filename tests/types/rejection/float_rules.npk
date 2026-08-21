@@ -1,0 +1,31 @@
+// expect-error: NITPICK-TYPE-030
+// expect-error: NITPICK-TYPE-030
+// expect-error: NITPICK-TYPE-030
+// expect-error: NITPICK-TYPE-030
+//
+// D-143's float rules, refused by the CHECKER (language rules, not rungs):
+// a flt32 literal past 15 significant digits (its lowering rides a double,
+// and double rounding is only provably innocuous to 15), and the storage-only
+// flt128 — no literals, no arithmetic, no comparison.
+
+func:long_literal = flt32() {
+    pass 1.0000000000000001f32;
+};
+
+func:wide_literal = flt128() {
+    pass 1.0f128;
+};
+
+func:wide_arith = flt128(flt128:a, flt128:b) {
+    pass (a + b);
+};
+
+func:wide_compare = bool(flt128:a, flt128:b) {
+    pass (a == b);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

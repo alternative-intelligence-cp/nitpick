@@ -141,7 +141,16 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
         pass (relay ll_int_bits(raw type_int_bits(c.types, id)));
     }
 
-    if (k == (raw TY_FLOAT()))    { pass (raw ll_rung("0.9")); }
+    // `flt32`/`flt64` compute; `flt128` is STORAGE ONLY (D-143) — it lowers
+    // so it can be held, passed, and returned, and the checker refuses every
+    // operation on it, so no fp128 instruction is ever emitted.
+    if (k == (raw TY_FLOAT())) {
+        int32:fbits = raw type_int_bits(c.types, id);
+        if (fbits == 32i32)  { pass (raw ll_ok("float")); }
+        if (fbits == 64i32)  { pass (raw ll_ok("double")); }
+        if (fbits == 128i32) { pass (raw ll_ok("fp128")); }
+        pass (raw ll_broken());
+    }
 
     // BARE `any` HAS NO REPRESENTATION and the frontend already refuses it as a
     // type. `any->` never reaches here: a pointer is `ptr` without asking what it
@@ -372,6 +381,14 @@ pub func:ll_is_scalar_int = bool(LlType:t) {
         i = i + 1i64;
     }
     pass true;
+};
+
+// The three float texts, asked of the TEXT like the neighbours above.
+pub func:ll_is_float_text = bool(string:t) {
+    if (raw string_eq(t, "float"))  { pass true; }
+    if (raw string_eq(t, "double")) { pass true; }
+    if (raw string_eq(t, "fp128"))  { pass true; }
+    pass false;
 };
 
 pub func:ll_is_pointer = bool(LlType:t) {

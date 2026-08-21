@@ -43,16 +43,14 @@ pub enum:NumWidth = {
     WF32                 = 33i32;   // f32
     WF64                 = 34i32;   // f64
     WF128                = 35i32;   // f128
-    WF256                = 36i32;   // f256
-    WF512                = 37i32;   // f512
-    WTfp32               = 38i32;   // tfp32
-    WTfp64               = 39i32;   // tfp64
-    WTfp128              = 40i32;   // tfp128
-    WTfp256              = 41i32;   // tfp256
-    WDim256              = 42i32;   // dim256
-    WChar8               = 43i32;   // char8
-    WChar16              = 44i32;   // char16
-    WChar32              = 45i32;   // char32
+    WTfp32               = 36i32;   // tfp32
+    WTfp64               = 37i32;   // tfp64
+    WTfp128              = 38i32;   // tfp128
+    WTfp256              = 39i32;   // tfp256
+    WDim256              = 40i32;   // dim256
+    WChar8               = 41i32;   // char8
+    WChar16              = 42i32;   // char16
+    WChar32              = 43i32;   // char32
 };
 
 use "./intern.npk".*;
@@ -82,8 +80,6 @@ pub func:num_width_of = NumWidth(string:text) {
     }
     if (n == 4i64) {
         if (raw string_eq(text, "f128")) { pass NumWidth.WF128; }
-        if (raw string_eq(text, "f256")) { pass NumWidth.WF256; }
-        if (raw string_eq(text, "f512")) { pass NumWidth.WF512; }
         if (raw string_eq(text, "i128")) { pass NumWidth.WI128; }
         if (raw string_eq(text, "i256")) { pass NumWidth.WI256; }
         if (raw string_eq(text, "i512")) { pass NumWidth.WI512; }
@@ -122,8 +118,6 @@ pub func:num_width_is_float = bool(NumWidth:w) {
     if (w == NumWidth.WF32) { pass true; }
     if (w == NumWidth.WF64) { pass true; }
     if (w == NumWidth.WF128) { pass true; }
-    if (w == NumWidth.WF256) { pass true; }
-    if (w == NumWidth.WF512) { pass true; }
     if (w == NumWidth.WTfp32) { pass true; }
     if (w == NumWidth.WTfp64) { pass true; }
     if (w == NumWidth.WTfp128) { pass true; }
@@ -169,8 +163,6 @@ pub func:num_width_bits = int32(NumWidth:w) {
     if (w == NumWidth.WF32) { pass 32i32; }
     if (w == NumWidth.WF64) { pass 64i32; }
     if (w == NumWidth.WF128) { pass 128i32; }
-    if (w == NumWidth.WF256) { pass 256i32; }
-    if (w == NumWidth.WF512) { pass 512i32; }
     if (w == NumWidth.WTfp32) { pass 32i32; }
     if (w == NumWidth.WTfp64) { pass 64i32; }
     if (w == NumWidth.WTfp128) { pass 128i32; }
@@ -269,8 +261,6 @@ pub func:num_width_kind = int32(NumWidth:w) {
     if (w == NumWidth.WF32) { pass (raw TY_FLOAT()); }
     if (w == NumWidth.WF64) { pass (raw TY_FLOAT()); }
     if (w == NumWidth.WF128) { pass (raw TY_FLOAT()); }
-    if (w == NumWidth.WF256) { pass (raw TY_FLOAT()); }
-    if (w == NumWidth.WF512) { pass (raw TY_FLOAT()); }
     if (w == NumWidth.WChar8) { pass (raw TY_CHAR()); }
     if (w == NumWidth.WChar16) { pass (raw TY_CHAR()); }
     if (w == NumWidth.WChar32) { pass (raw TY_CHAR()); }

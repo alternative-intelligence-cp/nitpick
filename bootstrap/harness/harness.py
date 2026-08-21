@@ -686,7 +686,8 @@ KIND_STATUS = {
     "ExprCastExpr": "lowered", "ExprUncheckedCastExpr": "lowered",
     "ExprStructLiteralExpr": "lowered", "ExprArrayLiteralExpr": "lowered",
     "ExprMoveExpr": "lowered",         # yields its place; the transfer is static (D-065)
-    "ExprFloatLiteral": "rung", "ExprSentinelLiteral": "rung",
+    "ExprFloatLiteral": "lowered",   # 0.9.4
+    "ExprSentinelLiteral": "rung",
     "ExprTemplateLiteral": "rung", "ExprPostfixExpr": "rung",
     "ExprPipeExpr": "rung", "ExprRangeExpr": "rung", "ExprSpreadExpr": "rung",
     "ExprTernaryExpr": "rung", "ExprIsErrExpr": "rung",

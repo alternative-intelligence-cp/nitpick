@@ -1,0 +1,63 @@
+// expect-exit: 0
+//
+// Floats (0.9.4, D-143): flt32/flt64 are IEEE and TOTAL — arithmetic through
+// frem (the floor's hand-written, exact fmod), fcmp with NaN != NaN true,
+// division by zero yielding infinity with NO trap (infinities are why float
+// division needs no guard), fneg preserving -0.0, and the conversion set.
+
+func:main = int32(cstring[]:argv) {
+    flt64:a = 10.5f64;
+    flt64:b = 2.0f64;
+
+    if ((a + b) != 12.5f64)                    { exit 10i32; }
+    if ((a - b) != 8.5f64)                     { exit 11i32; }
+    if ((a * b) != 21.0f64)                    { exit 12i32; }
+    if ((a / b) != 5.25f64)                    { exit 13i32; }
+    if ((a % 3.0f64) != 1.5f64)                { exit 14i32; }
+
+    // Division by a runtime zero is DEFINED: +inf, no trap. Reaching the next
+    // line at all is the decision's proof.
+    flt64:z = (argv.len - 1i64) =>! flt64;
+    flt64:inf = 1.0f64 / z;
+    if (!(inf > 1.0e300f64))                   { exit 15i32; }
+    if ((0.0f64 - 1.0f64) / z >= 0.0f64)       { exit 16i32; }
+
+    // NaN: != is the negation of ==, so NaN != NaN is TRUE (une), and every
+    // ordered comparison on NaN is false.
+    flt64:nan = z / z;
+    if (nan == nan)                            { exit 17i32; }
+    if (!(nan != nan))                         { exit 18i32; }
+    if (nan < 1.0f64)                          { exit 19i32; }
+    if (nan > 1.0f64)                          { exit 20i32; }
+
+    // flt32 rides a correctly-rounded double and truncates (≤15 significant
+    // digits, checker-enforced), and widens back exactly.
+    flt32:s = 1.5f32;
+    flt64:wide = s => flt64;
+    if (wide != 1.5f64)                        { exit 21i32; }
+    flt32:tenth = 0.1f32;
+    if ((tenth => flt64) == 0.1f64)            { exit 22i32; }   // 0.1f32 != 0.1f64 — different roundings
+
+    // int↔float conversions: exact where the mantissa holds the value.
+    flt64:fi = 41i32 => flt64;
+    if ((fi + 1.0f64) != 42.0f64)              { exit 23i32; }
+    if (((a * b) =>! int32) != 21i32)          { exit 24i32; }
+    flt64:fu = 7u32 => flt64;
+    if (fu != 7.0f64)                          { exit 25i32; }
+
+    // frem semantics at float width too.
+    flt32:r32 = 7.5f32 % 2.0f32;
+    if (r32 != 1.5f32)                         { exit 26i32; }
+
+    // fneg keeps the sign bit honest: -(0.0) is -0.0, and 1/-0.0 is -inf.
+    flt64:nz = 0.0f64 - 0.0f64;
+    flt64:negz = 0.0f64;
+    negz = 0.0f64 - negz;      // still +0.0 under fsub
+    flt64:m = 1.0f64;
+    m = 0.0f64 - m;            // -1.0
+    if (m != (0.0f64 - 1.0f64))                { exit 27i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
