@@ -651,6 +651,197 @@ def check_runtime_sigs_agree():
     return fails
 
 
+
+
+# EVERY AST KIND EITHER LOWERS OR REFUSES BY NAME. D-085's contract has no third
+# outcome -- yet the 0.8-close audit found constructs in one (dropped, or dying
+# as iv_broken "internal defect" when they are really unlowered features). This
+# table is the DESCRIPTION the backend is diffed against, in the exact tradition
+# of `check_kinds_typed` (0.6.3): the table says what each kind is, the diff
+# says whether the emitter agrees.
+#
+# Statuses:
+#   "lowered"        the emitter has a real case (sub-cases may still rung)
+#   "rung"           wholesale-refused with NITPICK-RUNG-001 naming a cycle
+#   "inert: why"     deliberately no code of its own -- the reason is stated
+#   "hole: ticket"   a known third-outcome kind, confessed, with its owner
+#
+# HONEST COVERAGE NOTE: this diff sees KIND-LEVEL absence. An attribute dropped
+# from a lowered kind (LIVE-1's `limit` on a vardecl) is beyond it -- that class
+# is held by BACKEND_CARRIER_READS below; guard behavior (LIVE-2) is held by
+# executed-exit tests, the 0.7.7 instrument.
+KIND_STATUS = {
+    # --- ExprKind ---------------------------------------------------------
+    "ExprIntLiteral": "lowered", "ExprCharLiteral": "lowered",
+    "ExprStringLiteral": "lowered", "ExprRawStringLiteral": "lowered",
+    "ExprBlockStringLiteral": "lowered", "ExprBoolLiteral": "lowered",
+    "ExprBinaryExpr": "lowered", "ExprUnaryExpr": "lowered",
+    "ExprAddressOfExpr": "lowered", "ExprDerefExpr": "lowered",
+    "ExprBorrowExpr": "lowered", "ExprResultLiteralExpr": "lowered",
+    "ExprIdentifierExpr": "lowered", "ExprMemberAccessExpr": "lowered",
+    "ExprIndexExpr": "lowered", "ExprCallExpr": "lowered",
+    "ExprMethodCallExpr": "lowered",   # variant ctors lower; UFCS rungs inside
+    "ExprBuiltinExpr": "lowered", "ExprRawUnwrapExpr": "lowered",
+    "ExprDropExpr": "lowered", "ExprRelayExpr": "lowered",
+    "ExprCastExpr": "lowered", "ExprUncheckedCastExpr": "lowered",
+    "ExprStructLiteralExpr": "lowered", "ExprArrayLiteralExpr": "lowered",
+    "ExprMoveExpr": "lowered",         # yields its place; the transfer is static (D-065)
+    "ExprFloatLiteral": "rung", "ExprSentinelLiteral": "rung",
+    "ExprTemplateLiteral": "rung", "ExprPostfixExpr": "rung",
+    "ExprPipeExpr": "rung", "ExprRangeExpr": "rung", "ExprSpreadExpr": "rung",
+    "ExprTernaryExpr": "rung", "ExprIsErrExpr": "rung",
+    "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "rung",
+    "ExprSafeUnwrapExpr": "rung", "ExprNullCoalesceExpr": "rung",
+    "ExprEmphaticUnwrapExpr": "rung", "ExprDefaultsExpr": "rung",
+    "ExprVectorCtorExpr": "rung", "ExprAwaitExpr": "rung",
+    "ExprIterationVarExpr": "rung", "ExprDynCastExpr": "rung",
+    "ExprPickExpr": "rung",
+    # --- StmtKind ---------------------------------------------------------
+    "StmtBlockStmt": "lowered", "StmtVarDeclStmt": "lowered",
+    "StmtAssignStmt": "lowered", "StmtExprStmt": "lowered",
+    "StmtIfStmt": "lowered", "StmtPickStmt": "lowered",
+    "StmtWhileStmt": "lowered", "StmtBreakStmt": "lowered",
+    "StmtContinueStmt": "lowered", "StmtPassStmt": "lowered",
+    "StmtFailStmt": "lowered", "StmtReturnStmt": "lowered",
+    "StmtExitStmt": "lowered", "StmtTrapStmt": "lowered",
+    "StmtDeferStmt": "lowered", "StmtDiscardStmt": "lowered",
+    "StmtForStmt": "rung", "StmtLoopStmt": "rung", "StmtTillStmt": "rung",
+    "StmtWhenStmt": "rung", "StmtProveStmt": "rung",
+    "StmtAssertStaticStmt": "rung", "StmtFallStmt": "rung",
+    "StmtGiveStmt": "rung",
+    "StmtPickArm": "inert: walked inside its pick, never dispatched alone",
+    # --- DeclKind ---------------------------------------------------------
+    "DeclFunctionDecl": "lowered", "DeclStructDecl": "lowered",
+    "DeclEnumDecl": "lowered", "DeclFieldDecl": "lowered",
+    "DeclEnumVariant": "lowered",
+    "DeclImplDecl": "rung", "DeclExternBlock": "rung", "DeclGlobalDecl": "rung",
+    "DeclModuleDecl": "hole: emit_all neither descends nor refuses -- inline-mod "
+                      "members are shed; ticketed 0.9.6 (audit Theme A)",
+    "DeclImportDecl": "inert: resolved by the loader; nothing to emit",
+    "DeclTraitDecl": "inert: a signature set; code arrives via impls (1.0)",
+    "DeclRuleDecl": "inert: consumed by the verifier (1.3), never emitted",
+    "DeclMacroDecl": "inert: expansion consumed it before the backend",
+    "DeclMacroSplice": "inert: expansion consumed it before the backend",
+    "DeclOpaqueDecl": "inert: a type assertion; layout answers, no code",
+    "DeclAssocTypeDecl": "inert: trait member, no code until 1.0",
+    "DeclGenericParam": "inert: substituted at instantiation (1.0)",
+    "DeclParamDecl": "inert: emitted inside its function's signature walk",
+    "DeclExternFn": "inert: child of DeclExternBlock, which refuses wholesale",
+    "DeclVariadicSpec": "inert: part of a signature, not a construct",
+    "DeclFailsOn": "inert: an FFI contract; consumed with extern (FFI rung)",
+    "DeclNeverFails": "inert: an FFI contract; consumed with extern (FFI rung)",
+    "DeclAttribute": "inert: read by the passes it decorates, never emitted",
+}
+
+# THE ATTRIBUTE CARRIERS THE BACKEND MUST KEEP READING. LIVE-1 happened because
+# nothing in src/backend/ read these accessors -- the constructs lowered with
+# their verification attributes silently dropped. 0.9.0 added the reads (as
+# refusals); this list keeps them read: each name must appear in src/backend/**
+# or the regression is named on the next full run.
+BACKEND_CARRIER_READS = {
+    "stmt_decl_limit":      "a vardecl's limit<Rules> (refused until 1.3)",
+    "param_limit":          "a parameter's limit<Rules> (refused until 1.3)",
+    "fn_contract_count":    "a function's requires/ensures (refused until 1.3)",
+    "stmt_while_invariant": "a while loop's invariant (refused until 1.3)",
+}
+
+
+def check_kinds_lowered_or_refused():
+    """Every Expr/Stmt/Decl kind lowers, refuses by name, or is confessed."""
+    kinds_path = os.path.join(ROOT, "src", "frontend", "ast_kind.npk")
+    src = open(kinds_path, encoding="utf-8").read()
+    declared = set()
+    for enum in ("ExprKind", "StmtKind", "DeclKind"):
+        m = re.search(r'pub enum:%s = \{(.*?)\};\n' % enum, src, re.S)
+        declared.update(re.findall(r'(\w+)\s+=\s+\d+i32;', m.group(1)))
+    declared -= {"ExprNone", "StmtNone", "DeclNone"}
+
+    back = ""
+    for p in glob.glob(os.path.join(ROOT, "src", "backend", "**", "*.npk"),
+                       recursive=True):
+        back += open(p, encoding="utf-8").read()
+
+    fails = []
+    for k in sorted(declared - set(KIND_STATUS)):
+        fails.append("kind %s is not classified in KIND_STATUS -- say whether it "
+                     "lowers, rungs, is inert, or is a confessed hole" % k)
+    for k in sorted(set(KIND_STATUS) - declared):
+        fails.append("KIND_STATUS row %s matches no declared kind -- a dead row "
+                     "stops the table being read" % k)
+    for k, status in sorted(KIND_STATUS.items()):
+        if k not in declared:
+            continue
+        mentioned = ("Kind.%s" % k) in back
+        if status in ("lowered", "rung") and not mentioned:
+            fails.append("%s is claimed %s but src/backend/ never names it -- the "
+                         "kind falls to the fail-closed default and dies as an "
+                         "internal defect instead of its honest answer"
+                         % (k, status))
+        if status.startswith("hole:") and mentioned:
+            fails.append("%s is confessed as a hole but the backend now names it "
+                         "-- the hole closed; reclassify it" % k)
+    for name, what in sorted(BACKEND_CARRIER_READS.items()):
+        if name not in back:
+            fails.append("src/backend/ no longer reads `%s` (%s) -- LIVE-1's "
+                         "class reopens the moment a carrier goes unread"
+                         % (name, what))
+    return fails
+
+
+def check_decisions_current():
+    """Candidates for stale decision-log entries -- REPORTED, never failing.
+
+    The audit's Theme F: a SETTLED heading whose blocks/settle-by clause names a
+    finished cycle, an OPEN heading whose scheduled cycle is long done, a
+    supersession with no back-reference. This lint cannot judge prose, so it
+    reports candidates for a human pass (the 0.9.8 doc-sync drains the first
+    run's list) -- the posture of a spell-checker, not a type checker.
+    """
+    path = os.path.join(ROOT, "meta", "specs", "DECISIONS.md")
+    text = open(path, encoding="utf-8").read()
+    done = set()
+    for d in glob.glob(os.path.join(ROOT, "meta", "roadmap", "done", "*")):
+        base = os.path.basename(d)
+        if re.match(r"^\d+\.\d+$", base):
+            done.add(base)
+
+    sections = re.split(r"^## (?=D-\d+)", text, flags=re.M)
+    heads = re.findall(r"^## (D-\d+)[^\n]*?\*\*([A-Z]+)", text, flags=re.M)
+    report = []
+    bynum = {}
+    for sec in sections[1:]:
+        # A heading may carry no status marker at all (D-114 does not) -- scan
+        # it anyway; the cycle/phase rules do not depend on the marker.
+        m = re.match(r"(D-\d+)", sec)
+        if not m:
+            continue
+        num = m.group(1)
+        sm = re.match(r"D-\d+[^\n]*?\*\*([A-Z]+)", sec)
+        status = sm.group(1) if sm else "UNMARKED"
+        bynum[num] = sec
+        cycles = set(re.findall(r"\b(\d+\.\d+)(?:\.\d+)?\b", sec))
+        stale_cycles = sorted(c for c in cycles if c in done)
+        if status == "OPEN" and stale_cycles:
+            report.append("%s is OPEN but cites finished cycle(s) %s -- it may "
+                          "have landed" % (num, ", ".join(stale_cycles)))
+        if status == "SETTLED":
+            for c in sorted(cycles & done):
+                if re.search(r"(settle before|blocks?)\s+(cycle\s+)?%s\b"
+                             % re.escape(c), sec, re.I):
+                    report.append("%s says 'settle before/blocks %s', a finished "
+                                  "cycle -- the clause is stale" % (num, c))
+        if re.search(r"settled? before Phase B", sec, re.I):
+            report.append("%s says 'settle before Phase B', which is underway -- "
+                          "annotate or resolve" % num)
+    for num, sec in bynum.items():
+        for target in re.findall(r"[Ss]upersedes (?:the [\w-]+ (?:half|part) of )?(D-\d+)", sec):
+            if target in bynum and num not in bynum[target]:
+                report.append("%s supersedes %s, but %s carries no back-reference "
+                              "-- a targeted reader of %s builds the dead design"
+                              % (num, target, target, target))
+    return report
+
+
 def check_codes_tested():
     """Every code a rule can emit is asserted by some test, or is on the list."""
     codes = {}
@@ -1117,10 +1308,21 @@ def main(argv):
         # subset 1.
         failures += check_kinds_reachable()
         failures += check_kinds_typed()
+        failures += check_kinds_lowered_or_refused()
         failures += check_codes_tested()
         failures += check_codes_centralised()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
+
+        # REPORTED, never failing (0.9.1): stale-decision candidates need a
+        # human eye -- but silence would be the lint not existing, so the count
+        # prints on every full run and the list prints when non-empty.
+        stale = check_decisions_current()
+        if stale:
+            print("  decisions-current: %d candidate(s) for the doc-sync pass:"
+                  % len(stale))
+            for c in stale:
+                print("    ~ %s" % c)
 
         pc = build_parse_check(tmp, tools)
         if isinstance(pc, str) and not os.path.exists(pc):

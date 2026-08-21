@@ -34,12 +34,19 @@ finishes, derives a trait that cannot be derived, or writes a struct literal tha
 omits a field — each with its own code, its own span, and a case in one of the six
 rejection suites showing it refuse.
 
-**Three whole-tree checks run on every harness invocation** and each found something
-on its first run: `check_kinds_typed` (every expression kind is typed),
-`check_codes_tested` (every code has a case, or a stated reason), and
-`check_codes_centralised` (no code literal outside a `*_codes.npk`). They diff the
-compiler against the thing that describes it, which is how cycle 0.6 found every one
-of its holes — none was found by a test.
+**Seven whole-tree checks run on every harness invocation** and each found
+something on its first run: `check_kinds_typed` (every expression kind is typed),
+`check_kinds_lowered_or_refused` (every Expr/Stmt/Decl kind lowers, refuses by
+name, or is confessed — plus the LIVE-1 carrier accessors stay read; its first
+run found five expression kinds dying as internal defects), `check_codes_tested`
+(every code has a case, or a stated reason), `check_codes_centralised` (no code
+literal outside a `*_codes.npk`), `check_ll_types_agree` (`// ll:` markers match
+the lowering), `check_runtime_sigs_agree` (npkrt.ll vs seed vs ir_runtime,
+three ways), and `check_zero_dependency` (the undefined-symbol scan). An eighth,
+`check_decisions_current`, REPORTS rather than fails: stale decision-log
+candidates print on every full run for the doc-sync pass. They diff the compiler
+against the thing that describes it, which is how cycle 0.6 found every one of
+its holes — none was found by a test.
 
 ### Building and testing
 

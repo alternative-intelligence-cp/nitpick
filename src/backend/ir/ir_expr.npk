@@ -332,6 +332,29 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprPostfixExpr) {
         pass (raw iv_rung("a postfix operator", "0.9", n.span));
     }
+    // The four below were found by `check_kinds_lowered_or_refused`'s first run
+    // (0.9.1): each fell through to iv_broken — an INTERNAL-defect report for
+    // what is really an unlowered language feature. The honest answer is a
+    // rung, exactly like their neighbours above.
+    if (n.kind == ExprKind.ExprPipeExpr) {
+        pass (raw iv_rung("the pipe operator", "0.9", n.span));
+    }
+    if (n.kind == ExprKind.ExprDefaultsExpr) {
+        pass (raw iv_rung("the defaults operator", "0.9", n.span));
+    }
+    if (n.kind == ExprKind.ExprIsErrExpr) {
+        pass (raw iv_rung("`is_err`", "0.9", n.span));
+    }
+    if (n.kind == ExprKind.ExprVectorCtorExpr) {
+        pass (raw iv_rung("a vector constructor", "0.9", n.span));
+    }
+    // `move(place)` LOWERS: it yields the place's value, and what it does to
+    // the SOURCE is static — the 0.5 move analysis already blessed and tracked
+    // the transfer, so there is nothing for the IR to add (D-065). Found by
+    // the same first run, miscategorized as iv_broken.
+    if (n.kind == ExprKind.ExprMoveExpr) {
+        pass (relay emit_expr(x, raw expr_operand(n)));
+    }
     if (n.kind == ExprKind.ExprIterationVarExpr) {
         pass (raw iv_rung("the `$` iteration variable", "0.9", n.span));
     }
