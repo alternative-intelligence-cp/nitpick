@@ -1518,6 +1518,50 @@ def main(argv):
                 n += 1
             print("  %-11s %2d real-backend program(s)" % ("programs", n))
 
+            # --- RUNTIME-FLOOR UNIT TESTS (0.10.3) --------------------------
+            #
+            # Hand-written .ll drivers for runtime families with NO surface
+            # syntax (the frame allocator is 1.1's coroutine machinery's, not a
+            # program's). Each defines main + npk_failsafe, links against the
+            # same npkrt.o everything else does, runs, and asserts an exit
+            # code -- the same execution standard the program suite holds.
+            rtests = sorted(glob.glob(os.path.join(ROOT, "bootstrap", "runtime",
+                                                   "tests", "*.ll")))
+            rn = 0
+            for rp in rtests:
+                rexp = 0
+                with open(rp, encoding="utf-8") as fh:
+                    rhead = fh.read(400)
+                rm = re.search(r"expect-exit:\s*(\d+)", rhead)
+                if rm:
+                    rexp = int(rm.group(1))
+                rbase = os.path.join(tmp, "rt_" + os.path.basename(rp)[:-3])
+                r = subprocess.run(["llc", "-O0", "-filetype=obj",
+                                    "-relocation-model=static", rp,
+                                    "-o", rbase + ".o"],
+                                   capture_output=True, text=True)
+                if r.returncode != 0:
+                    failures.append("%s: llc failed: %s"
+                                    % (os.path.relpath(rp, ROOT),
+                                       r.stderr.strip()[:120]))
+                    continue
+                r = subprocess.run(["ld.lld", "-static", "-o", rbase,
+                                    rbase + ".o", os.path.join(tmp, "npkrt.o")],
+                                   capture_output=True, text=True)
+                if r.returncode != 0:
+                    failures.append("%s: link failed: %s"
+                                    % (os.path.relpath(rp, ROOT),
+                                       r.stderr.strip()[:120]))
+                    continue
+                r = subprocess.run([rbase], capture_output=True)
+                if r.returncode != rexp:
+                    failures.append("%s: exited %d, expected %d"
+                                    % (os.path.relpath(rp, ROOT),
+                                       r.returncode, rexp))
+                rn += 1
+            if rn:
+                print("  %-11s %2d runtime-floor test(s)" % ("runtime", rn))
+
             # --- THE SELF-CHECK AND THE FIXPOINT (0.8.1) --------------------
             #
             # npkc compiles ITSELF: the whole 60-module compiler through its own

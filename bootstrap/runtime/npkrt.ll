@@ -2450,6 +2450,390 @@ clear:
   ret void
 }
 
+; ---------------------------------------------------------------------------
+; THE EXECUTOR FRAME ALLOCATOR (0.10.3, D-153). NOT arena<T>, deliberately:
+; the surface arena is a fixed-slot allocator handing out generation-checked
+; INDICES, and a coroutine frame is a per-function, variably-sized block that
+; @llvm.coro.begin needs as a RAW POINTER. Conflating them is the mistake the
+; concurrency audit caught (total_audit B-1); this family is the allocator
+; D-034 actually means, built where the heap lives and consumed by 1.1's
+; coroutine lowering, which is its ONLY intended caller -- no surface type,
+; no keyword, no builtin.
+;
+; SHAPE. One allocator per executor; tasks are pinned (D-032), so the whole
+; path is single-threaded and ZERO-ATOMIC -- that is D-034's rationale for
+; pinning. Chunks of 64 KiB bump-allocate frames; a completed task's frame
+; returns to a free list BUCKETED BY EXACT SIZE, which fits coroutines
+; precisely: a program has one frame size per async function, recurring many
+; times. Frames larger than a chunk take a dedicated heap block (flag bit in
+; the header). `drain` retires every frame at once by resetting the bump and
+; the buckets, KEEPING the chunks -- the executor's steady state allocates
+; from memory it already owns. Frame headers carry the size and a
+; secret-keyed state magic: freeing a frame twice, or freeing a pointer that
+; is not a live frame, traps -4102 like every other heap-integrity failure.
+;
+; The executor struct and its chunks are WILD-role heap blocks: an
+; un-destroyed executor is a countable leak the D-151 exit check names.
+;
+; struct FrameExec (64 bytes, a wild heap block):
+;   +0  chunk_head   first chunk (chunk: [ next i64 | pad | frames... ])
+;   +8  cur_chunk    the chunk being bumped
+;   +16 cur_off      bump offset within cur_chunk (starts at 16)
+;   +24 bsizes       ptr to i64[cap]  bucket sizes (exact rounded frame size)
+;   +32 bheads       ptr to i64[cap]  bucket free-list heads (frame addrs)
+;   +40 bcount
+;   +48 bcap
+;   +56 reserved
+; frame block: [ size i64 | state i64 ] then payload, 16-aligned; state is
+; secret^addr^K_LIVE or ^K_FREE, with bit 0 of the SIZE word marking a
+; dedicated (oversize) block.
+; ---------------------------------------------------------------------------
+
+define internal i64 @npk_m_flive(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, -602391508442037685
+  ret i64 %m
+}
+
+define internal i64 @npk_m_ffree(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 999621991244018563
+  ret i64 %m
+}
+
+define ptr @npk_frame_exec_new() {
+entry:
+  %fe = call ptr @npk_alloc_impl(i64 64, i64 1)
+  %fi = ptrtoint ptr %fe to i64
+  ; one 64 KiB chunk up front; the steady state never maps again
+  %ch = call ptr @npk_alloc_impl(i64 65536, i64 1)
+  %ci = ptrtoint ptr %ch to i64
+  %np = inttoptr i64 %ci to ptr
+  store i64 0, ptr %np
+  %hp = inttoptr i64 %fi to ptr
+  store i64 %ci, ptr %hp
+  %cca = add i64 %fi, 8
+  %ccp = inttoptr i64 %cca to ptr
+  store i64 %ci, ptr %ccp
+  %coa = add i64 %fi, 16
+  %cop = inttoptr i64 %coa to ptr
+  store i64 16, ptr %cop
+  ; eight buckets to start; ralloc grows the pair in step
+  %bs = call ptr @npk_alloc_impl(i64 64, i64 1)
+  %bh = call ptr @npk_alloc_impl(i64 64, i64 1)
+  %bsa = add i64 %fi, 24
+  %bsp = inttoptr i64 %bsa to ptr
+  store ptr %bs, ptr %bsp
+  %bha = add i64 %fi, 32
+  %bhp = inttoptr i64 %bha to ptr
+  store ptr %bh, ptr %bhp
+  %bca = add i64 %fi, 40
+  %bcp = inttoptr i64 %bca to ptr
+  store i64 0, ptr %bcp
+  %bpa = add i64 %fi, 48
+  %bpp = inttoptr i64 %bpa to ptr
+  store i64 8, ptr %bpp
+  ret ptr %fe
+}
+
+; find the bucket for an exact rounded size; -1 when absent
+define internal i64 @npk_frame_bucket(i64 %fi, i64 %rn) {
+entry:
+  %bca = add i64 %fi, 40
+  %bcp = inttoptr i64 %bca to ptr
+  %bc = load i64, ptr %bcp
+  %bsa = add i64 %fi, 24
+  %bsp = inttoptr i64 %bsa to ptr
+  %bs = load ptr, ptr %bsp
+  %bi = ptrtoint ptr %bs to i64
+  br label %head
+head:
+  %i = phi i64 [ 0, %entry ], [ %i2, %next ]
+  %more = icmp ult i64 %i, %bc
+  br i1 %more, label %look, label %miss
+look:
+  %ea = shl i64 %i, 3
+  %ep = add i64 %bi, %ea
+  %epp = inttoptr i64 %ep to ptr
+  %v = load i64, ptr %epp
+  %hit = icmp eq i64 %v, %rn
+  br i1 %hit, label %found, label %next
+next:
+  %i2 = add i64 %i, 1
+  br label %head
+found:
+  ret i64 %i
+miss:
+  ret i64 -1
+}
+
+define ptr @npk_frame_alloc(ptr %fe, i64 %size, i64 %align) {
+entry:
+  %fi = ptrtoint ptr %fe to i64
+  %negsz = icmp slt i64 %size, 0
+  br i1 %negsz, label %badreq, label %alck
+alck:
+  ; coroutine frames align at or below the heap's own sixteen
+  %zeroa = icmp sle i64 %align, 0
+  %bigal = icmp sgt i64 %align, 16
+  %bad = or i1 %zeroa, %bigal
+  br i1 %bad, label %badreq, label %norm
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+norm:
+  %z = icmp eq i64 %size, 0
+  %n1 = select i1 %z, i64 16, i64 %size
+  %r15 = add i64 %n1, 15
+  %rn = and i64 %r15, -16
+  ; exact-size bucket first: the common steady state
+  %bkt = call i64 @npk_frame_bucket(i64 %fi, i64 %rn)
+  %none = icmp slt i64 %bkt, 0
+  br i1 %none, label %fresh, label %check
+check:
+  %bha = add i64 %fi, 32
+  %bhp = inttoptr i64 %bha to ptr
+  %bh = load ptr, ptr %bhp
+  %hi = ptrtoint ptr %bh to i64
+  %ha = shl i64 %bkt, 3
+  %hp = add i64 %hi, %ha
+  %hpp = inttoptr i64 %hp to ptr
+  %head = load i64, ptr %hpp
+  %empty = icmp eq i64 %head, 0
+  br i1 %empty, label %fresh, label %pop
+pop:
+  ; the freed frame's payload first word is the next link
+  %pa = add i64 %head, 16
+  %pp = inttoptr i64 %pa to ptr
+  %nxt = load i64, ptr %pp
+  store i64 %nxt, ptr %hpp
+  ; verify the freed magic, then stamp live
+  %sma = add i64 %head, 8
+  %smp = inttoptr i64 %sma to ptr
+  %sv = load i64, ptr %smp
+  %want = call i64 @npk_m_ffree(i64 %head)
+  %ok = icmp eq i64 %sv, %want
+  br i1 %ok, label %stamp, label %corrupt
+corrupt:
+  call void @npk_heap_bad()
+  unreachable
+stamp:
+  %lm = call i64 @npk_m_flive(i64 %head)
+  store i64 %lm, ptr %smp
+  %u = add i64 %head, 16
+  %uptr = inttoptr i64 %u to ptr
+  ret ptr %uptr
+fresh:
+  ; oversize takes a dedicated heap block, flagged in the size word
+  %need = add i64 %rn, 16
+  %big = icmp ugt i64 %need, 65520
+  br i1 %big, label %dedicated, label %bump
+dedicated:
+  %db = call ptr @npk_alloc_impl(i64 %need, i64 1)
+  %di = ptrtoint ptr %db to i64
+  %dsz = or i64 %rn, 1
+  %dsp = inttoptr i64 %di to ptr
+  store i64 %dsz, ptr %dsp
+  %dma = add i64 %di, 8
+  %dmp = inttoptr i64 %dma to ptr
+  %dm = call i64 @npk_m_flive(i64 %di)
+  store i64 %dm, ptr %dmp
+  %du = add i64 %di, 16
+  %dup = inttoptr i64 %du to ptr
+  ret ptr %dup
+bump:
+  %coa = add i64 %fi, 16
+  %cop = inttoptr i64 %coa to ptr
+  %off = load i64, ptr %cop
+  %end = add i64 %off, %need
+  %fits = icmp ule i64 %end, 65536
+  br i1 %fits, label %take, label %newchunk
+newchunk:
+  %nc = call ptr @npk_alloc_impl(i64 65536, i64 1)
+  %nci = ptrtoint ptr %nc to i64
+  ; push onto the chunk list, make it current
+  %hpx = inttoptr i64 %fi to ptr
+  %old = load i64, ptr %hpx
+  %ncp = inttoptr i64 %nci to ptr
+  store i64 %old, ptr %ncp
+  store i64 %nci, ptr %hpx
+  %cca = add i64 %fi, 8
+  %ccp = inttoptr i64 %cca to ptr
+  store i64 %nci, ptr %ccp
+  store i64 16, ptr %cop
+  br label %take
+take:
+  %cca2 = add i64 %fi, 8
+  %ccp2 = inttoptr i64 %cca2 to ptr
+  %cur = load i64, ptr %ccp2
+  %off2 = load i64, ptr %cop
+  %b = add i64 %cur, %off2
+  %end2 = add i64 %off2, %need
+  store i64 %end2, ptr %cop
+  %bsp2 = inttoptr i64 %b to ptr
+  store i64 %rn, ptr %bsp2
+  %bma = add i64 %b, 8
+  %bmp = inttoptr i64 %bma to ptr
+  %bm = call i64 @npk_m_flive(i64 %b)
+  store i64 %bm, ptr %bmp
+  %bu = add i64 %b, 16
+  %bup = inttoptr i64 %bu to ptr
+  ret ptr %bup
+}
+
+define void @npk_frame_free(ptr %fe, ptr %frame) {
+entry:
+  %fi = ptrtoint ptr %fe to i64
+  %pi = ptrtoint ptr %frame to i64
+  %isz = icmp eq i64 %pi, 0
+  br i1 %isz, label %bad, label %aligned
+bad:
+  call void @npk_heap_bad()
+  unreachable
+aligned:
+  %mis = and i64 %pi, 15
+  %crooked = icmp ne i64 %mis, 0
+  br i1 %crooked, label %bad, label %hdr
+hdr:
+  %b = add i64 %pi, -16
+  %sma = add i64 %b, 8
+  %smp = inttoptr i64 %sma to ptr
+  %sv = load i64, ptr %smp
+  %want = call i64 @npk_m_flive(i64 %b)
+  %ok = icmp eq i64 %sv, %want
+  br i1 %ok, label %route, label %bad
+route:
+  %szp = inttoptr i64 %b to ptr
+  %szw = load i64, ptr %szp
+  %ded = and i64 %szw, 1
+  %isded = icmp ne i64 %ded, 0
+  br i1 %isded, label %dedic, label %bucket
+dedic:
+  ; a dedicated block goes back to the heap whole
+  %dbp = inttoptr i64 %b to ptr
+  call void @npk_dalloc(ptr %dbp)
+  ret void
+bucket:
+  %fm = call i64 @npk_m_ffree(i64 %b)
+  store i64 %fm, ptr %smp
+  %bkt = call i64 @npk_frame_bucket(i64 %fi, i64 %szw)
+  %none = icmp slt i64 %bkt, 0
+  br i1 %none, label %newbucket, label %push
+newbucket:
+  ; grow the parallel arrays when full, then append the size
+  %bca = add i64 %fi, 40
+  %bcp = inttoptr i64 %bca to ptr
+  %bc = load i64, ptr %bcp
+  %bpa = add i64 %fi, 48
+  %bpp = inttoptr i64 %bpa to ptr
+  %bcap = load i64, ptr %bpp
+  %full = icmp eq i64 %bc, %bcap
+  br i1 %full, label %grow, label %append
+grow:
+  %ncap = shl i64 %bcap, 1
+  %nbytes = shl i64 %ncap, 3
+  %bsa = add i64 %fi, 24
+  %bsp = inttoptr i64 %bsa to ptr
+  %obs = load ptr, ptr %bsp
+  %nbs = call ptr @npk_ralloc(ptr %obs, i64 %nbytes)
+  store ptr %nbs, ptr %bsp
+  %bha = add i64 %fi, 32
+  %bhp = inttoptr i64 %bha to ptr
+  %obh = load ptr, ptr %bhp
+  %nbh = call ptr @npk_ralloc(ptr %obh, i64 %nbytes)
+  store ptr %nbh, ptr %bhp
+  store i64 %ncap, ptr %bpp
+  br label %append
+append:
+  %bc2 = load i64, ptr %bcp
+  %bsa2 = add i64 %fi, 24
+  %bsp2 = inttoptr i64 %bsa2 to ptr
+  %bs2 = load ptr, ptr %bsp2
+  %si = ptrtoint ptr %bs2 to i64
+  %sa = shl i64 %bc2, 3
+  %sp = add i64 %si, %sa
+  %spp = inttoptr i64 %sp to ptr
+  store i64 %szw, ptr %spp
+  %bha2 = add i64 %fi, 32
+  %bhp2 = inttoptr i64 %bha2 to ptr
+  %bh2 = load ptr, ptr %bhp2
+  %hi2 = ptrtoint ptr %bh2 to i64
+  %ha2 = add i64 %hi2, %sa
+  %hpp2 = inttoptr i64 %ha2 to ptr
+  store i64 0, ptr %hpp2
+  %bc3 = add i64 %bc2, 1
+  store i64 %bc3, ptr %bcp
+  %bkt2 = add i64 %bc2, 0
+  br label %push2
+push:
+  br label %push2
+push2:
+  %slot = phi i64 [ %bkt, %push ], [ %bkt2, %append ]
+  %bha3 = add i64 %fi, 32
+  %bhp3 = inttoptr i64 %bha3 to ptr
+  %bh3 = load ptr, ptr %bhp3
+  %hi3 = ptrtoint ptr %bh3 to i64
+  %ha3 = shl i64 %slot, 3
+  %hp3 = add i64 %hi3, %ha3
+  %hpp3 = inttoptr i64 %hp3 to ptr
+  %old = load i64, ptr %hpp3
+  %la = add i64 %b, 16
+  %lp = inttoptr i64 %la to ptr
+  store i64 %old, ptr %lp
+  store i64 %b, ptr %hpp3
+  ret void
+}
+
+define void @npk_frame_drain(ptr %fe) {
+entry:
+  ; every frame dies at once: reset the bump to the FIRST chunk and empty
+  ; the buckets; the chunks stay -- the steady state owns its memory
+  %fi = ptrtoint ptr %fe to i64
+  %hp = inttoptr i64 %fi to ptr
+  %head = load i64, ptr %hp
+  %cca = add i64 %fi, 8
+  %ccp = inttoptr i64 %cca to ptr
+  store i64 %head, ptr %ccp
+  %coa = add i64 %fi, 16
+  %cop = inttoptr i64 %coa to ptr
+  store i64 16, ptr %cop
+  %bca = add i64 %fi, 40
+  %bcp = inttoptr i64 %bca to ptr
+  store i64 0, ptr %bcp
+  ret void
+}
+
+define void @npk_frame_exec_destroy(ptr %fe) {
+entry:
+  %fi = ptrtoint ptr %fe to i64
+  %hp = inttoptr i64 %fi to ptr
+  %head = load i64, ptr %hp
+  br label %walk
+walk:
+  %c = phi i64 [ %head, %entry ], [ %nxt, %freec ]
+  %done = icmp eq i64 %c, 0
+  br i1 %done, label %arrays, label %freec
+freec:
+  %np = inttoptr i64 %c to ptr
+  %nxt = load i64, ptr %np
+  %cp = inttoptr i64 %c to ptr
+  call void @npk_dalloc(ptr %cp)
+  br label %walk
+arrays:
+  %bsa = add i64 %fi, 24
+  %bsp = inttoptr i64 %bsa to ptr
+  %bs = load ptr, ptr %bsp
+  call void @npk_dalloc(ptr %bs)
+  %bha = add i64 %fi, 32
+  %bhp = inttoptr i64 %bha to ptr
+  %bh = load ptr, ptr %bhp
+  call void @npk_dalloc(ptr %bh)
+  call void @npk_dalloc(ptr %fe)
+  ret void
+}
+
 define void @npk_arena_destroy(ptr %a) {
 entry:
   %ai = ptrtoint ptr %a to i64

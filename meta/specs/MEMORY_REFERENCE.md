@@ -226,6 +226,29 @@ App:app = App{ my_arena: arena_make(16i64) };
 Handle<int64>:h = app.my_arena.alloc();
 ```
 
+### 4.2b The executor frame allocator is NOT `arena<T>` (D-153)
+
+D-034's "each thread's executor owns an arena from which it allocates task
+frames" names the arena *philosophy* — batch lifetime, drop-cheap — not the
+surface type. The surface `arena<T>` is a **fixed-slot** allocator handing
+out generation-checked **indices**; a coroutine frame is a **per-function,
+variably-sized** block that `@llvm.coro.begin` needs as a **raw pointer**.
+Conflating the two is the mistake the concurrency audit caught
+(total_audit B-1), and this section exists so nobody repeats it.
+
+The executor frame allocator (0.10.3) is runtime-internal — no keyword, no
+builtin; its only caller is 1.1's coroutine lowering (C-7) — with a fixed
+five-call interface: `npk_frame_exec_new` / `npk_frame_alloc(size, align)`
+/ `npk_frame_free` / `npk_frame_drain` / `npk_frame_exec_destroy`. Tasks
+are pinned (D-032), so the whole path is single-threaded and zero-atomic —
+that is D-034's rationale for pinning. Chunked bump allocation; completed
+frames return to a free list bucketed by **exact size**, which fits
+coroutines precisely (one frame size per async function, recurring);
+oversize frames take dedicated heap blocks; `drain` retires every frame at
+once while keeping the chunks. The executor and its chunks are wild-role
+heap blocks: an un-destroyed executor is a countable leak (D-151). Frame
+alignment is capped at 16, the heap's own.
+
 ### 4.3 `shared_arena<T>` — arenas across threads
 
 `arena<T>` is **single-threaded**. Sharing one across threads is unsound: growth

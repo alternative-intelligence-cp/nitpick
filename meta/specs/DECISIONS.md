@@ -10315,3 +10315,40 @@ involved. `tests/backend/programs/arena.npk` runs the cyclic graph,
 growth, staleness, reuse, reset, chaining, and the leak-checked wholesale
 drop; `types/rejection/arena.npk` and `analysis/rejection/arena_destroy.npk`
 lock the refusals.
+
+## D-153 — The executor frame allocator, distinct and fixed — **SETTLED**
+
+Cycle 0.10.3. The allocator D-034 actually needs, built where the heap
+lives and consumed by 1.1 — SEPARATE from `arena<T>`, because the
+concurrency audit's sharpest catch (total_audit B-1) is that the surface
+arena cannot serve coroutine frames: fixed slots and generation-checked
+indices on one side, per-function variably-sized blocks that
+`@llvm.coro.begin` needs as raw pointers on the other.
+
+**The fixed interface** — what C-7's coroutine lowering emits against:
+`npk_frame_exec_new() -> ptr`, `npk_frame_alloc(fe, size, align) -> ptr`,
+`npk_frame_free(fe, frame)`, `npk_frame_drain(fe)`,
+`npk_frame_exec_destroy(fe)`. Runtime-internal only: no keyword, no
+builtin, no surface type.
+
+**The shape**: 64 KiB chunk list, single-threaded and ZERO-ATOMIC (tasks
+are pinned, D-032 — pinning is exactly what buys the zero-cost path);
+completed frames return to a free list bucketed by EXACT size — the
+coroutine workload is one frame size per async function, recurring — with
+LIFO reuse; frames larger than a chunk take dedicated heap blocks (flag
+bit in the header); `drain` retires everything at once by resetting the
+bump into the chunks the executor already owns. Frame headers carry size
+plus a secret-keyed state magic: double-free and foreign pointers trap
+`-4102` like every heap-integrity failure. The executor struct and chunks
+are wild-role blocks — an un-destroyed executor is a leak D-151's exit
+check names. Alignment caps at 16.
+
+**Runtime families with no surface syntax get IR unit tests**: the harness
+gained a `runtime` stage running hand-written `.ll` drivers under
+`bootstrap/runtime/tests/` against the same npkrt.o everything links —
+`frames.ll` proves exact-size LIFO reuse, out-of-order frees,
+size-bucket separation, drain-into-owned-memory, the oversize path, chunk
+growth under 200 frames, and destroy returning every byte (wild-live
+count zero, and exit 0 through the D-151 check). This stage is how later
+runtime-only families (0.10.4's shared_arena internals, 0.10.5's wildx)
+get execution coverage before their surface arrives.
