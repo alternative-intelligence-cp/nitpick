@@ -169,10 +169,17 @@ func:main = int32(cstring[]:_~argv) {
     Ty:r3 = raw ty("Result<NIL>", @it);
     if ((raw type_size(@r3.types, r3.result)) != 4i64)         { exit 14i32; }
 
-    // A constructor whose kind arrives at a later rung NAMES THE RUNG rather than
-    // claiming the type does not exist (D-085).
+    // `Handle<T>` LOWERS since 0.10.2 (D-152): sixteen bytes, an index and a
+    // generation — and not a pointer.
     Ty:r4 = raw ty("Handle<int32>", @it);
-    if ((raw diaglist_count(@r4.diags)) != 1i64)               { exit 15i32; }
+    if ((raw diaglist_count(@r4.diags)) != 0i64)               { exit 15i32; }
+    if ((raw type_kind(@r4.types, r4.result)) != (raw TY_HANDLE())) { exit 25i32; }
+    if ((raw type_size(@r4.types, r4.result)) != 16i64)        { exit 26i32; }
+
+    // A constructor whose kind arrives at a later rung still NAMES THE RUNG
+    // rather than claiming the type does not exist (D-085).
+    Ty:r5 = raw ty("Future<int32>", @it);
+    if ((raw diaglist_count(@r5.diags)) != 1i64)               { exit 27i32; }
 
     // --- THE UNARY FAMILY -------------------------------------------------------
     // Each takes a `Result<T>` and yields `T`; they differ in what happens to the

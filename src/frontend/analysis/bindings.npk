@@ -1008,6 +1008,30 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) {
         pass NIL;
     }
 
+    // `a.destroy()` CONSUMES THE ARENA (D-152) — a free by another name, so
+    // the same moved-from machinery that covers `dalloc` covers it: using the
+    // binding after is a use-after-free, destroying it again a double-free,
+    // both at compile time. Gated on the RECEIVER'S TYPE, not the spelling —
+    // a user method named `destroy` on a user type moves nothing (the
+    // KNOWN_DEALLOCATORS name-matching the prototype did is exactly what the
+    // comment above `callee_frees` forbids carrying over).
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        ExprId:recv = raw expr_operand(n);
+        drop assign_expr(x, st, recv, d);
+        drop assign_expr_window(x, st, raw expr_list_start(n),
+                                raw expr_list_count(n), d);
+        if (raw exprtypes_known(x.etypes, recv)) {
+            int32:rt = raw exprtypes_get(x.etypes, recv);
+            if ((raw type_kind(x.types, rt)) == (raw TY_ARENA())) {
+                string:mname = relay intern_get(x.interns, n.payload =>! int32);
+                if (raw string_eq(mname, "destroy")) {
+                    drop invalidate_place(x, st, recv, true);
+                }
+            }
+        }
+        pass NIL;
+    }
+
     // AN EXPRESSION `pick` CARRIES STATEMENTS (D-059) and merges like the statement
     // form, so it hands back to the statement walk rather than being flattened
     // here. Its arms `give` a value on every path an exhaustive one can take, which

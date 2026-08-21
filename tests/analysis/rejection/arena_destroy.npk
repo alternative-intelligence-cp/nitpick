@@ -1,0 +1,25 @@
+// D-152 — `destroy` consumes the arena (0.10.2): a free by another name, so
+// the moved-from machinery that guards `dalloc` guards it — gated on the
+// RECEIVER'S TYPE being `arena<T>`, never on the method's spelling (a user
+// method named `destroy` moves nothing; the prototype's name-matching
+// KNOWN_DEALLOCATORS is the counterexample this refuses to repeat).
+
+// expect-error: NITPICK-MOVE-002
+func:use_after_destroy = NIL() {
+    arena<int64>:a = arena_make(4i64);
+    a.destroy();
+    Handle<int64>:h = a.alloc();
+    discard(h);
+    pass NIL;
+};
+
+// expect-error: NITPICK-MOVE-002
+func:double_destroy = NIL() {
+    arena<int64>:a = arena_make(4i64);
+    a.destroy();
+    a.destroy();
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

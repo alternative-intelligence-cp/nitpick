@@ -36,12 +36,13 @@ pub struct:RtSig = {
     string:a0;
     string:a1;
     string:a2;
+    string:a3;
 };
 
 func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
-                int32:argc, string:a0, string:a1, string:a2) {
+                int32:argc, string:a0, string:a1, string:a2, string:a3) {
     RtSig:s = RtSig{ found: true, sym: sym, ret: ret, wrapped: wrapped,
-                     inner: inner, argc: argc, a0: a0, a1: a1, a2: a2 };
+                     inner: inner, argc: argc, a0: a0, a1: a1, a2: a2, a3: a3 };
     pass s;
 };
 
@@ -50,136 +51,167 @@ func:rt = RtSig(string:sym, string:ret, bool:wrapped, string:inner,
 // to it (0.7.6), argc 1, void.
 pub func:rt_sig = RtSig(string:name) {
     if (raw string_eq(name, "aalloc")) {
-        pass (raw rt("@npk_aalloc", "ptr", false, "", 2i32, "i64", "i64", ""));
+        pass (raw rt("@npk_aalloc", "ptr", false, "", 2i32, "i64", "i64", "", ""));
+    }
+    if (raw string_eq(name, "arena_make")) {
+        pass (raw rt("@npk_arena_make", "{ ptr, ptr, i64, i64, i64 }", false, "",
+                     2i32, "i64", "i64", "", ""));
+    }
+    if (raw string_eq(name, "arena_alloc")) {
+        pass (raw rt("@npk_arena_alloc", "{ i64, i32 }", false, "",
+                     2i32, "ptr", "i64", "", ""));
+    }
+    if (raw string_eq(name, "arena_at")) {
+        pass (raw rt("@npk_arena_at", "ptr", false, "",
+                     4i32, "ptr", "i64", "i64", "i32"));
+    }
+    if (raw string_eq(name, "arena_free")) {
+        pass (raw rt("@npk_arena_free", "i32", false, "",
+                     4i32, "ptr", "i64", "i64", "i32"));
+    }
+    if (raw string_eq(name, "arena_reset")) {
+        pass (raw rt("@npk_arena_reset", "void", false, "",
+                     2i32, "ptr", "i64", "", ""));
+    }
+    if (raw string_eq(name, "arena_destroy")) {
+        pass (raw rt("@npk_arena_destroy", "void", false, "",
+                     1i32, "ptr", "", "", ""));
     }
     if (raw string_eq(name, "wild_live_count")) {
-        pass (raw rt("@npk_wild_live_count", "i64", false, "", 0i32, "", "", ""));
+        pass (raw rt("@npk_wild_live_count", "i64", false, "", 0i32, "", "", "", ""));
     }
     if (raw string_eq(name, "wild_release_all")) {
-        pass (raw rt("@npk_wild_release_all", "void", false, "", 0i32, "", "", ""));
+        pass (raw rt("@npk_wild_release_all", "void", false, "", 0i32, "", "", "", ""));
     }
     if (raw string_eq(name, "alloc")) {
-        pass (raw rt("@npk_alloc", "ptr", false, "", 1i32, "i64", "", ""));
+        pass (raw rt("@npk_alloc", "ptr", false, "", 1i32, "i64", "", "", ""));
     }
     if (raw string_eq(name, "calloc")) {
-        pass (raw rt("@npk_calloc", "ptr", false, "", 2i32, "i64", "i64", ""));
+        pass (raw rt("@npk_calloc", "ptr", false, "", 2i32, "i64", "i64", "", ""));
     }
     if (raw string_eq(name, "ralloc")) {
-        pass (raw rt("@npk_ralloc", "ptr", false, "", 2i32, "ptr", "i64", ""));
+        pass (raw rt("@npk_ralloc", "ptr", false, "", 2i32, "ptr", "i64", "", ""));
     }
     if (raw string_eq(name, "dalloc")) {
-        pass (raw rt("@npk_dalloc", "void", false, "", 1i32, "ptr", "", ""));
+        pass (raw rt("@npk_dalloc", "void", false, "", 1i32, "ptr", "", "", ""));
     }
     if (raw string_eq(name, "string_concat")) {
         pass (raw rt("@npk_string_concat", "{ { ptr, i64, i64 }, i32 }", true,
                      "{ ptr, i64, i64 }", 2i32,
-                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", ""));
+                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", "", ""));
     }
     if (raw string_eq(name, "int_to_string")) {
         pass (raw rt("@npk_int_to_string", "{ { ptr, i64, i64 }, i32 }", true,
-                     "{ ptr, i64, i64 }", 1i32, "i64", "", ""));
+                     "{ ptr, i64, i64 }", 1i32, "i64", "", "", ""));
     }
     if (raw string_eq(name, "open")) {
         pass (raw rt("@npk_open", "{ i32, i32 }", true, "i32", 3i32,
-                     "{ ptr, i64 }", "i64", "i64"));
+                     "{ ptr, i64 }", "i64", "i64", ""));
     }
     if (raw string_eq(name, "close")) {
-        pass (raw rt("@npk_close", "{ i32 }", true, "", 1i32, "i32", "", ""));
+        pass (raw rt("@npk_close", "{ i32 }", true, "", 1i32, "i32", "", "", ""));
     }
     if (raw string_eq(name, "read")) {
         pass (raw rt("@npk_read", "{ i64, i32 }", true, "i64", 3i32,
-                     "i32", "ptr", "i64"));
+                     "i32", "ptr", "i64", ""));
     }
     if (raw string_eq(name, "write")) {
         pass (raw rt("@npk_write", "{ i64, i32 }", true, "i64", 3i32,
-                     "i32", "ptr", "i64"));
+                     "i32", "ptr", "i64", ""));
     }
     if (raw string_eq(name, "string_slice")) {
         pass (raw rt("@npk_string_slice", "{ { ptr, i64, i64 }, i32 }", true,
                      "{ ptr, i64, i64 }", 3i32,
-                     "{ ptr, i64, i64 }", "i64", "i64"));
+                     "{ ptr, i64, i64 }", "i64", "i64", ""));
     }
     if (raw string_eq(name, "string_from_bytes")) {
         pass (raw rt("@npk_string_from_bytes", "{ ptr, i64, i64 }", false, "",
-                     2i32, "ptr", "i64", ""));
+                     2i32, "ptr", "i64", "", ""));
     }
     if (raw string_eq(name, "read_stdin")) {
         pass (raw rt("@npk_read_stdin", "{ { ptr, i64, i64 }, i32 }", true,
-                     "{ ptr, i64, i64 }", 0i32, "", "", ""));
+                     "{ ptr, i64, i64 }", 0i32, "", "", "", ""));
     }
     if (raw string_eq(name, "to_cstring")) {
         pass (raw rt("@npk_to_cstring", "{ { ptr, i64 }, i32 }", true,
-                     "{ ptr, i64 }", 1i32, "{ ptr, i64, i64 }", "", ""));
+                     "{ ptr, i64 }", 1i32, "{ ptr, i64, i64 }", "", "", ""));
     }
     if (raw string_eq(name, "read_file")) {
         pass (raw rt("@npk_read_file", "{ { ptr, i64, i64 }, i32 }", true,
-                     "{ ptr, i64, i64 }", 1i32, "{ ptr, i64 }", "", ""));
+                     "{ ptr, i64, i64 }", 1i32, "{ ptr, i64 }", "", "", ""));
     }
     // The §1 memory trio maps to the runtime's OWN definitions of the C-named
     // symbols (there for LLVM's libcall lowering, D-011) — same bytes, one body.
     if (raw string_eq(name, "mcpy")) {
-        pass (raw rt("@memcpy", "ptr", false, "", 3i32, "ptr", "ptr", "i64"));
+        pass (raw rt("@memcpy", "ptr", false, "", 3i32, "ptr", "ptr", "i64", ""));
     }
     if (raw string_eq(name, "mmov")) {
-        pass (raw rt("@memmove", "ptr", false, "", 3i32, "ptr", "ptr", "i64"));
+        pass (raw rt("@memmove", "ptr", false, "", 3i32, "ptr", "ptr", "i64", ""));
     }
     if (raw string_eq(name, "memset")) {
-        pass (raw rt("@memset", "ptr", false, "", 3i32, "ptr", "i32", "i64"));
+        pass (raw rt("@memset", "ptr", false, "", 3i32, "ptr", "i32", "i64", ""));
     }
     if (raw string_eq(name, "string_equals")) {
         pass (raw rt("@npk_string_equals", "i8", false, "", 2i32,
-                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", ""));
+                     "{ ptr, i64, i64 }", "{ ptr, i64, i64 }", "", ""));
     }
     if (raw string_eq(name, "write_file")) {
         pass (raw rt("@npk_write_file", "{ i32 }", true, "", 2i32,
-                     "{ ptr, i64 }", "{ ptr, i64, i64 }", ""));
+                     "{ ptr, i64 }", "{ ptr, i64, i64 }", "", ""));
     }
     if (raw string_eq(name, "path_exists")) {
         pass (raw rt("@npk_path_exists", "i8", false, "", 1i32,
-                     "{ ptr, i64 }", "", ""));
+                     "{ ptr, i64 }", "", "", ""));
     }
     if (raw string_eq(name, "exit")) {
-        pass (raw rt("@npk_exit", "void", false, "", 1i32, "i32", "", ""));
+        pass (raw rt("@npk_exit", "void", false, "", 1i32, "i32", "", "", ""));
     }
     RtSig:none = RtSig{ found: false, sym: "", ret: "", wrapped: false,
-                        inner: "", argc: 0i32, a0: "", a1: "", a2: "" };
+                        inner: "", argc: 0i32, a0: "", a1: "", a2: "", a3: "" };
     pass none;
 };
 
 // The floor, ITERABLE AND IN ONE FIXED ORDER — the declare block of every
 // emitted module walks this, so the order is part of D-078's byte-determinism.
-pub func:rt_count = int32() { pass 25i32; };
+pub func:rt_count = int32() { pass 31i32; };
 
 pub func:rt_name_at = string(int32:i) {
     if (i == 0i32)  { pass "aalloc"; }
     if (i == 1i32)  { pass "alloc"; }
-    if (i == 2i32)  { pass "calloc"; }
-    if (i == 3i32)  { pass "close"; }
-    if (i == 4i32)  { pass "dalloc"; }
-    if (i == 5i32)  { pass "exit"; }
-    if (i == 6i32)  { pass "int_to_string"; }
-    if (i == 7i32)  { pass "mcpy"; }
-    if (i == 8i32)  { pass "memset"; }
-    if (i == 9i32)  { pass "mmov"; }
-    if (i == 10i32) { pass "open"; }
-    if (i == 11i32) { pass "path_exists"; }
-    if (i == 12i32) { pass "ralloc"; }
-    if (i == 13i32) { pass "read"; }
-    if (i == 14i32) { pass "read_file"; }
-    if (i == 15i32) { pass "read_stdin"; }
-    if (i == 16i32) { pass "string_concat"; }
-    if (i == 17i32) { pass "string_equals"; }
-    if (i == 18i32) { pass "string_from_bytes"; }
-    if (i == 19i32) { pass "string_slice"; }
-    if (i == 20i32) { pass "to_cstring"; }
-    if (i == 21i32) { pass "wild_live_count"; }
-    if (i == 22i32) { pass "wild_release_all"; }
-    if (i == 23i32) { pass "write"; }
+    if (i == 2i32)  { pass "arena_alloc"; }
+    if (i == 3i32)  { pass "arena_at"; }
+    if (i == 4i32)  { pass "arena_destroy"; }
+    if (i == 5i32)  { pass "arena_free"; }
+    if (i == 6i32)  { pass "arena_make"; }
+    if (i == 7i32)  { pass "arena_reset"; }
+    if (i == 8i32)  { pass "calloc"; }
+    if (i == 9i32)  { pass "close"; }
+    if (i == 10i32) { pass "dalloc"; }
+    if (i == 11i32) { pass "exit"; }
+    if (i == 12i32) { pass "int_to_string"; }
+    if (i == 13i32) { pass "mcpy"; }
+    if (i == 14i32) { pass "memset"; }
+    if (i == 15i32) { pass "mmov"; }
+    if (i == 16i32) { pass "open"; }
+    if (i == 17i32) { pass "path_exists"; }
+    if (i == 18i32) { pass "ralloc"; }
+    if (i == 19i32) { pass "read"; }
+    if (i == 20i32) { pass "read_file"; }
+    if (i == 21i32) { pass "read_stdin"; }
+    if (i == 22i32) { pass "string_concat"; }
+    if (i == 23i32) { pass "string_equals"; }
+    if (i == 24i32) { pass "string_from_bytes"; }
+    if (i == 25i32) { pass "string_slice"; }
+    if (i == 26i32) { pass "to_cstring"; }
+    if (i == 27i32) { pass "wild_live_count"; }
+    if (i == 28i32) { pass "wild_release_all"; }
+    if (i == 29i32) { pass "write"; }
     pass "write_file";
 };
 
 pub func:rt_arg = string(RtSig:s, int32:i) {
     if (i == 0i32) { pass s.a0; }
     if (i == 1i32) { pass s.a1; }
-    pass s.a2;
+    if (i == 2i32) { pass s.a2; }
+    pass s.a3;
 };

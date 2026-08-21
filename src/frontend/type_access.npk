@@ -394,6 +394,22 @@ pub func:type_call = int32(ExprTyper->:e, ExprNode:n) {
     }
 
     if (callee == 0i32) {
+        // `arena_make(cap)` READS ITS ARENA TYPE FROM CONTEXT (D-152), the way
+        // an unsuffixed literal reads its width (D-092): the annotation names
+        // `arena<T>`, and the element's layout is what the lowering needs.
+        // With no arena context it is an error here, not a silent nothing.
+        if (relay callee_is_builtin_named(e, n, "arena_make")) {
+            drop type_args_only(e, start, count);
+            int32:want = raw expected_value(e);
+            if (want != 0i32) {
+                if ((raw type_kind(e.types, want)) == (raw TY_ARENA())) {
+                    pass want;
+                }
+            }
+            pass (relay te_error(e, raw TYPE_UNKNOWN(),
+                "`arena_make` needs an `arena<T>` annotation to read its element type from; write `arena<T>:a = arena_make(cap);`",
+                n.span));
+        }
         // A bare-name builtin has no signature yet. Its arguments are still
         // typed, so a mistake inside one is not hidden by the callee being
         // unknown.
@@ -797,6 +813,15 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
 
     int32:name = n.payload =>! int32;
 
+    // THE ARENA'S OWN OPERATIONS (D-017, D-152) — six methods the TYPE
+    // carries, dispatched before any impl lookup the way a slice's `.len` is
+    // a fact about slices: no impl block could lawfully claim these names on
+    // `arena<T>`, and a user method shadowing `free` on the allocator type is
+    // exactly the confusion this ordering forecloses.
+    if ((raw type_kind(e.types, recv)) == (raw TY_ARENA())) {
+        pass (relay type_arena_method(e, n, recv, name, start, count));
+    }
+
     // AN `impl` METHOD IS FOUND THROUGH THE TYPE, NOT THROUGH THE SCOPE. This is
     // asked first, and until 0.4.6 it was not asked at all: an `impl` declares
     // nothing at module scope, so the lookup below could only ever reach a
@@ -1115,5 +1140,120 @@ pub func:te_mismatch_at = NIL(ExprTyper->:e, int32:want, int32:got, Span:at) {
     string:m3 = relay string_concat(m2, relay type_display(e.types, e.interns, got));
     drop te_error(e, raw TYPE_MISMATCH(),
                   relay string_concat(m3, "`"), at);
+    pass NIL;
+};
+
+// Is this call's callee the bare builtin `name`? (A builtin resolves to no
+// symbol, which is what tells it apart from a user function wearing the name.)
+func:callee_is_builtin_named = bool(ExprTyper->:e, ExprNode:n, string:name) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cnode = relay ast_expr(e.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (cnode.a != 0i32) { pass false; }
+    pass (raw string_eq(relay intern_get(e.interns, raw expr_name(cnode) =>! int32),
+                        name));
+};
+
+// `a.alloc()` / `a.get(h)` / `a.put(h, v)` / `a.free(h)` / `a.reset()` /
+// `a.destroy()` — the arena operation set (D-017 as amended by D-152: `put`
+// joins; `get` COPIES the element out, because a borrow-returning `get`
+// would be a returned borrow, which D-004 refuses for everything else and an
+// exemption here would be meaning-by-context).
+//
+// alloc  ()                -> Handle<T>      cannot fail as a value: growth
+//                                            that fails is an OOM trap
+// get    (Handle<T>)       -> Result<T>      stale handle -> error -4106
+// put    (Handle<T>, T)    -> Result<NIL>    stale handle -> error -4106
+// free   (Handle<T>)       -> Result<NIL>    stale handle -> error -4106
+// reset  ()                -> NIL            invalidates every handle
+// destroy()                -> NIL            consumes the arena (a move,
+//                                            enforced by the binding analysis)
+func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
+                               int32:name, int32:start, int32:count) {
+    string:m = relay intern_get(e.interns, name);
+    int32:elem = (raw tt_get(e.types, recv)).a;
+    // Every operation takes the arena's ADDRESS, so the receiver must be a
+    // place — an arena returned by a call has no home to allocate into.
+    drop require_place_operand(e, raw expr_operand(n), "an arena operation");
+
+    if (raw string_eq(m, "alloc")) {
+        if (count != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`alloc` takes no arguments; the arena knows its element type", n.span));
+        }
+        pass (raw tt_handle(e.types, elem));
+    }
+    if (raw string_eq(m, "get")) {
+        if (count != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`get` takes exactly one argument, the handle", n.span));
+        }
+        drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        pass (raw tt_result(e.types, elem, raw type_size(e.types, elem),
+                            raw type_align(e.types, elem)));
+    }
+    if (raw string_eq(m, "put")) {
+        if (count != 2i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`put` takes exactly two arguments, the handle and the value", n.span));
+        }
+        drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        int32:saved = e.expected;
+        e.expected = elem;
+        int32:got = relay type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        e.expected = saved;
+        if (got != 0i32) {
+            if (!(raw type_is_invalid(e.types, got))) {
+                if (!(raw fits(e, elem, got))) {
+                    drop te_mismatch(e, n.span, elem, got);
+                }
+            }
+        }
+        pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+    }
+    if (raw string_eq(m, "free")) {
+        if (count != 1i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`free` takes exactly one argument, the handle", n.span));
+        }
+        drop want_handle_of(e, elem, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+        pass (raw tt_result(e.types, e.types.t_nil, 0i64, 1i32));
+    }
+    if (raw string_eq(m, "reset")) {
+        if (count != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`reset` takes no arguments", n.span));
+        }
+        pass (e.types.t_nil);
+    }
+    if (raw string_eq(m, "destroy")) {
+        if (count != 0i32) {
+            pass (relay te_error(e, raw TYPE_GENERIC_ARITY(),
+                "`destroy` takes no arguments", n.span));
+        }
+        pass (e.types.t_nil);
+    }
+    string:m1 = relay string_concat("`", m);
+    pass (relay te_error(e, raw TYPE_MISMATCH(),
+        relay string_concat(m1,
+            "` is not an arena operation; the set is alloc, get, put, free, reset, destroy (D-017, D-152)"),
+        n.span));
+};
+
+// The argument must be a Handle whose element is THIS arena's element — a
+// handle from an `arena<int32>` names nothing in an `arena<int64>`.
+func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) {
+    int32:want = raw tt_handle(e.types, elem);
+    int32:saved = e.expected;
+    e.expected = want;
+    int32:got = relay type_of_expr(e, arg);
+    e.expected = saved;
+    if (got == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, got)) { pass NIL; }
+    if (!(raw fits(e, want, got))) {
+        ExprNode:an = relay ast_expr(e.ast, arg);
+        drop te_mismatch(e, an.span, want, got);
+    }
     pass NIL;
 };

@@ -626,7 +626,12 @@ def check_runtime_sigs_agree():
         if d[1] != args:
             fails.append("`%s` takes %s in npkrt.ll and %s in ir_runtime.npk"
                          % (name, d[1], args))
-        if ret.startswith("{ {") or (ret.startswith("{") and ret.endswith("i32 }")):
+        # Result-SHAPED returns are no longer exclusively Results -- a Handle
+        # is { i64, i32 } and is not one (0.10.2) -- so the derived-inner
+        # cross-check applies to entries that CLAIM the wrapper, where a wrong
+        # inner silently mis-extracts at every call site.
+        wrapped = "true" in body.split(",")[2]
+        if wrapped and (ret.startswith("{ {") or (ret.startswith("{") and ret.endswith("i32 }"))):
             want_inner = ret[1:].rsplit(",", 1)[0].strip() if ret != "{ i32 }" else ""
             if inner != want_inner:
                 fails.append("`%s`'s wrapped inner is `%s` in ir_runtime.npk and "

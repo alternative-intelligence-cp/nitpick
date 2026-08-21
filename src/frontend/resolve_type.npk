@@ -1389,10 +1389,19 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
                                      TokenKind:as_kind, int32:scope) {
     int32:kind = raw builtin_generic_kind(as_kind);
     if (kind == 0i32) {
-        // A REAL constructor whose kind no rung supplies yet — `Handle`, `arena`,
-        // `simd`, `atomic`. Naming the rung beats "there is no type named", which
-        // would send the reader looking for a declaration that was never theirs
-        // to write (D-085).
+        // A REAL constructor whose kind no rung supplies yet. Naming the rung
+        // beats "there is no type named", which would send the reader looking
+        // for a declaration that was never theirs to write (D-085).
+        if (as_kind == TokenKind.KwShared_arena) {
+            pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+                "`shared_arena<T>` lands at 0.10.4; `arena<T>` is the single-threaded form and lowers now (D-017)",
+                n.span));
+        }
+        if (as_kind == TokenKind.KwAtomic) {
+            pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+                "`atomic<T>` lands with 1.1's concurrency work",
+                n.span));
+        }
         pass (relay ty_error(r, raw TYPE_UNKNOWN(),
             "this builtin type constructor is not available at this rung yet",
             n.span));
@@ -1408,6 +1417,19 @@ func:resolve_generic_builtin = int32(TypeResolver->:r, TypeNode:n,
 
     if (kind == (raw TY_OPTIONAL())) {
         pass (relay make_optional(r, inner, n.span));
+    }
+    if (kind == (raw TY_ARENA())) {
+        // The slab is 16-aligned heap memory, so an element demanding more
+        // has nowhere to stand (D-152).
+        if ((raw type_align(r.types, inner)) > 16i32) {
+            pass (relay ty_error(r, raw TYPE_UNKNOWN(),
+                "an arena element's alignment is capped at 16, the slab's own",
+                n.span));
+        }
+        pass (raw tt_arena(r.types, inner));
+    }
+    if (kind == (raw TY_HANDLE())) {
+        pass (raw tt_handle(r.types, inner));
     }
     pass (raw tt_result(r.types, inner,
                         raw type_size(r.types, inner),

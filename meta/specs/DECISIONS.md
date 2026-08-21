@@ -1129,7 +1129,7 @@ specifying `atomic<T>` (§13) and `Future<T>` (§17).
 
 ---
 
-## D-017 — Arenas and threads: two types, one discipline each — **SETTLED**
+## D-017 — Arenas and threads: two types, one discipline each — **SETTLED; the operation table is amended by D-152** (`put` joins `arena<T>`'s set, and `get` COPIES the element out — a borrow-returning `get` would be a returned borrow, which D-004 refuses everywhere else; the open sub-item this section left is thereby closed)
 
 Closes the gap D-016 identified: `Handle<T>`'s use-after-free guarantee was
 specified for single-threaded access, and D-003 made arenas load-bearing.
@@ -10263,3 +10263,55 @@ specified as the next two, not re-inventions.
 `leak.npk` (the set counts exactly; strings absent), `leak_trap.npk`
 (-4105 fires), `leak_cleanup.npk` (failsafe releases and exits positive),
 and `oom.npk` (-4103, allocation-free) lock the behavior.
+
+## D-152 — `arena<T>` and `Handle<T>` lower; the operation set as built — **SETTLED**
+
+Cycle 0.10.2. The D-003 mechanism is real: graph-shaped and cyclic data
+lives in an arena behind generation-checked handles and is dropped
+wholesale. Three design calls, each argued:
+
+**Creation is `arena_make(cap)`, not `arena<T>.alloc(N)`.** The carried-over
+spec used ONE NAME for two operations — `.alloc` on the type created the
+arena, `.alloc` on the value allocated a slot — a direct blueprint
+violation. `arena_make` is type-directed the way an unsuffixed literal is
+(D-092): the `arena<T>` annotation names the element, and the compiler
+passes the element's stride (size rounded to alignment, floored at 8 so a
+free slot holds its freelist link) to a stride-erased runtime.
+
+**`get` copies; `put` joins the set.** D-017 left `get`'s borrow status
+open. Decided NO: a borrow-returning `get` would be a RETURNED borrow,
+which D-004 refuses for every function in the language (`BORROW-001`) — an
+arena exemption would be meaning-by-context. So `get(h)` returns
+`Result<T>` by value and `put(h, v)` writes back, both failing a stale
+handle with **error `-4106` in `Result.error`** — a condition the program
+handles, never a trap. The set: `alloc() -> Handle<T>` (bare — its only
+failure is an OOM trap), `get`, `put`, `free` (`Result`), `reset`,
+`destroy` (bare `NIL`). Operations dispatch on the receiver's type before
+any impl lookup — no user method can shadow the allocator's own verbs.
+
+**Generations carry a parity discipline.** Live slots hold EVEN
+generations, freed slots ODD; a handle only ever carries the even
+generation `alloc` issued, so a stale or forged handle can never name a
+freed slot — `at` demands exact equality and the freed slot is odd. Reuse
+bumps odd back to even; a slot reaching 0xFFFFFFFE is RETIRED, never
+reused: the counter cannot wrap. `reset` bumps every live slot odd in one
+pass. Handles are INDICES (16 bytes, `{ i64, i32 }`), so slab relocation
+on growth is invisible to them — and `haspt` stays false on `Handle<T>`
+deliberately: crossing scopes and living in struct fields is the design.
+
+**`destroy` consumes the arena**, enforced by the binding analysis exactly
+as `dalloc` is — gated on the receiver TYPE being `arena<T>`, never on the
+method's spelling (the prototype's name-matching `KNOWN_DEALLOCATORS` is
+the counterexample). Use-after-destroy and double-destroy are compile
+errors (`MOVE-002`). The slab and generation array are WILD-role heap
+blocks: an un-destroyed arena is a countable leak the D-151 exit check
+names — "drop the arena wholesale" is now the type's mechanical contract.
+
+Element alignment is capped at 16 (the slab's own); `shared_arena<T>`
+refuses naming 0.10.4 and `atomic<T>` naming 1.1 (closing total_audit
+B-3's nameless refusals). Chained access through an arena embedded in a
+struct works today as ordinary member-place addressing — no UFCS machinery
+involved. `tests/backend/programs/arena.npk` runs the cyclic graph,
+growth, staleness, reuse, reset, chaining, and the leak-checked wholesale
+drop; `types/rejection/arena.npk` and `analysis/rejection/arena_destroy.npk`
+lock the refusals.

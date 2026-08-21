@@ -1,0 +1,97 @@
+// expect-exit: 0
+//
+// `arena<T>` AND `Handle<T>` ARE REAL (0.10.2, D-152). A cyclic graph lives
+// in an arena — two nodes holding each other's handles, a thing no ownership
+// tree can express — is traversed through generation-checked handles, and is
+// dropped WHOLESALE by `destroy`: no per-node free, and the exit-time check
+// (D-151) proves no leak, because the slab and generation array are
+// wild-role heap blocks and this program ends with `exit 0`. A stale handle
+// is a `Result` error (-4106), never a read of the new occupant; `reset`
+// retires every handle at once; a freed slot is reused with a new
+// generation.
+
+struct:Node = {
+    int64:v;
+    Handle<Node>:next;
+};
+
+struct:App = {
+    arena<int64>:store;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    arena<Node>:a = arena_make(2i64);
+
+    // the cycle: allocate both, then tie the knot with `put`
+    Handle<Node>:h1 = a.alloc();
+    Handle<Node>:h2 = a.alloc();
+    drop a.put(h1, Node{ v: 10i64, next: h2 });
+    drop a.put(h2, Node{ v: 20i64, next: h1 });
+
+    // traverse it: h1 -> h2 -> h1
+    Node:n1 = a.get(h1) ?! 77tbb32;
+    if (n1.v != 10i64) { exit 10i32; }
+    Node:n2 = a.get(n1.next) ?! 77tbb32;
+    if (n2.v != 20i64) { exit 11i32; }
+    Node:back = a.get(n2.next) ?! 77tbb32;
+    if (back.v != 10i64) { exit 12i32; }
+
+    // growth: the arena started at capacity 2; a third node forces the slab
+    // to move, and the handles keep working because they are indices
+    Handle<Node>:h3 = a.alloc();
+    drop a.put(h3, Node{ v: 30i64, next: h1 });
+    Node:n1b = a.get(h1) ?! 77tbb32;
+    if (n1b.v != 10i64) { exit 13i32; }
+
+    // free retires the handle: get fails through Result with -4106
+    drop a.free(h3);
+    Result<Node>:st = a.get(h3);
+    if (!st.is_error) { exit 14i32; }
+    if ((st.error =>! int64) != (0i64 - 4106i64)) { exit 15i32; }
+
+    // double-free by handle is the same detected condition
+    Result<NIL>:df = a.free(h3);
+    if (!df.is_error) { exit 16i32; }
+
+    // the freed slot is REUSED under a new generation: the old handle stays
+    // dead even though the slot lives again
+    Handle<Node>:h4 = a.alloc();
+    drop a.put(h4, Node{ v: 40i64, next: h1 });
+    Result<Node>:st2 = a.get(h3);
+    if (!st2.is_error) { exit 17i32; }
+    Node:n4 = a.get(h4) ?! 77tbb32;
+    if (n4.v != 40i64) { exit 18i32; }
+
+    // `? default` reads a stale handle as the fallback, laziness and all
+    Node:fb = a.get(h3) ? Node{ v: 99i64, next: h1 };
+    if (fb.v != 99i64) { exit 19i32; }
+
+    // reset invalidates EVERY handle
+    a.reset();
+    Result<Node>:r1 = a.get(h1);
+    if (!r1.is_error) { exit 20i32; }
+    Result<Node>:r4 = a.get(h4);
+    if (!r4.is_error) { exit 21i32; }
+
+    // and the arena is immediately reusable
+    Handle<Node>:h5 = a.alloc();
+    drop a.put(h5, Node{ v: 50i64, next: h5 });
+    Node:n5 = a.get(h5) ?! 77tbb32;
+    if (n5.v != 50i64) { exit 22i32; }
+
+    // chained access through an arena EMBEDDED IN A STRUCT
+    // (MEMORY_REFERENCE 4.2): the receiver is a member place, and the
+    // operations address it exactly as they address a local
+    App:app = App{ store: arena_make(2i64) };
+    Handle<int64>:k = app.store.alloc();
+    drop app.store.put(k, 700i64);
+    int64:kv = app.store.get(k) ?! 77tbb32;
+    if (kv != 700i64) { exit 23i32; }
+    app.store.destroy();
+
+    // drop the graph wholesale; the exit-time check proves nothing leaked
+    a.destroy();
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

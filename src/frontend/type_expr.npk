@@ -177,7 +177,7 @@ pub func:te_error = int32(ExprTyper->:e, string:code, string:message, Span:at) {
 // ONE HELPER FOR ALL FOUR, because it is one rule. Written at each site it would be
 // four chances for one to drift, and the drift had already happened in the form of
 // nobody writing it anywhere.
-func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
+pub func:require_place_operand = NIL(ExprTyper->:e, ExprId:id, string:what) {
     if (raw expr_is_none(id)) { pass NIL; }
     if (relay expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass NIL; }
     ExprNode:n = relay ast_expr(e.ast, id);

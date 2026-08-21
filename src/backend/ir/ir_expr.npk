@@ -307,6 +307,19 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
                       n.payload =>! int32, raw expr_list_start(n),
                       raw expr_list_count(n)));
         }
+        // THE ARENA'S OWN OPERATIONS (D-152) lower here; every other method
+        // call stays 1.0's.
+        int32:amrecv = raw exprtypes_get(x.et, raw expr_operand(n));
+        int32:amk = raw type_kind(x.fe.ctx.types, amrecv);
+        if (amk == (raw TY_ARENA())) {
+            pass (relay emit_arena_method(x, id, n, amrecv));
+        }
+        if (amk == (raw TY_POINTER())) {
+            if ((raw type_kind(x.fe.ctx.types,
+                     raw type_elem(x.fe.ctx.types, amrecv))) == (raw TY_ARENA())) {
+                pass (relay emit_arena_method(x, id, n, amrecv));
+            }
+        }
         pass (raw iv_rung("a method call", "1.0", n.span));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
@@ -1554,7 +1567,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // all, and the floor's signatures are the coercion authority for the rest —
     // a user call needs neither, so the paths split before the argument walk.
     if (cnode.a == 0i32) {
-        pass (relay call_builtin(x, n, cnode, start, count));
+        pass (relay call_builtin(x, id, n, cnode, start, count));
     }
 
     // Arguments in source order, each with its own frontend-recorded type. No
@@ -1600,8 +1613,8 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     pass out;
 };
 
-func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:n, ExprNode:cnode,
-                          int32:start, int32:count) {
+func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                          ExprNode:cnode, int32:start, int32:count) {
     string:name = relay intern_get(x.interns, cnode.payload =>! int32);
 
     // TWO LOWER INLINE, because their whole body is a field read: a string's
@@ -1630,6 +1643,33 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:n, ExprNode:cnode,
         drop irw_line(x.fe.w, relay cat3(z, " = zext i1 ",
                           relay string_concat(c, " to i8")));
         pass (raw iv("i8", z, 0i32));
+    }
+
+    // `arena_make(cap)` is TYPE-DIRECTED (D-152): the element's stride comes
+    // from the arena type the annotation gave this call, so the generic
+    // signature table cannot serve it.
+    if (raw string_eq(name, "arena_make")) {
+        if (count != 1i32) { pass (raw iv_broken(cnode.span)); }
+        int32:amtid = raw exprtypes_get(x.et, id);
+        if ((raw type_kind(x.fe.ctx.types, amtid)) != (raw TY_ARENA())) {
+            pass (raw iv_broken(cnode.span));
+        }
+        string:amst = relay arena_stride_text(x, amtid);
+        IrVal:amcap = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast,
+                                          start, 0i32) });
+        if (!(raw iv_is_ok(amcap))) { pass amcap; }
+        string:amcr = amcap.ref;
+        if (!(raw string_eq(amcap.ll, "i64"))) {
+            string:amw = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(amw, " = sext ", amcap.ll, " ",
+                              relay string_concat(amcap.ref, " to i64")));
+            amcr = amw;
+        }
+        string:amr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(amr,
+            " = call { ptr, ptr, i64, i64, i64 } @npk_arena_make(i64 ", amst,
+            ", i64 ", relay string_concat(amcr, ")")));
+        pass (raw iv("{ ptr, ptr, i64, i64, i64 }", amr, amtid));
     }
 
     RtSig:sig = raw rt_sig(name);
@@ -1859,6 +1899,170 @@ func:emit_raw = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
 // out, an index into an array needs one. Everything else in the emitter is
 // value-based — which was enough until the compiler's own sources demanded
 // `list.items[n] = d`, which is the seed's history too.
+
+
+// The element stride an arena runtime call carries: the element's size
+// rounded up to its alignment, floored at 8 so a free slot can hold the
+// freelist link (D-152).
+func:arena_stride_text = string(ExprEmitter->:x, int32:arena_tid) {
+    int32:elem = (raw tt_get(x.fe.ctx.types, arena_tid)).a;
+    int64:esz = raw type_size(x.fe.ctx.types, elem);
+    int64:eal = (raw type_align(x.fe.ctx.types, elem)) => int64;
+    if (eal < 1i64) { eal = 1i64; }
+    int64:st = ((esz + eal) - 1i64) / eal;
+    st = st * eal;
+    if (st < 8i64) { st = 8i64; }
+    pass (raw int_to_string(st));
+};
+
+// `a.alloc()` / `a.get(h)` / `a.put(h, v)` / `a.free(h)` / `a.reset()` /
+// `a.destroy()` — the D-152 lowering. One runtime address helper serves get
+// and put (`@npk_arena_at` returns the slot pointer or null); the LOAD or
+// STORE through it is emitted here, where the element's layout is known. A
+// stale handle becomes a `Result` error (-4106), never a trap: staleness is
+// a condition the program handles, not a defect the runtime ends.
+func:emit_arena_method = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
+                               int32:recv_tid) {
+    // The receiver's address: a place directly, or the pointer's VALUE when
+    // the receiver is `arena<T>->` (the same one-level peel `.` does).
+    string:ap = "";
+    int32:atid = recv_tid;
+    if ((raw type_kind(x.fe.ctx.types, recv_tid)) == (raw TY_POINTER())) {
+        atid = raw type_elem(x.fe.ctx.types, recv_tid);
+        IrVal:pv2 = relay emit_expr(x, raw expr_operand(n));
+        if (!(raw iv_is_ok(pv2))) { pass pv2; }
+        ap = pv2.ref;
+    } else {
+        PlaceVal:apv = relay addr_of(x, raw expr_operand(n));
+        if (apv.state != (raw LL_OK())) { pass (raw iv_from_place(apv)); }
+        ap = apv.addr;
+    }
+    string:st = relay arena_stride_text(x, atid);
+    int32:elem = (raw tt_get(x.fe.ctx.types, atid)).a;
+    string:m = relay intern_get(x.fe.ctx.interns, n.payload =>! int32);
+    int32:start = raw expr_list_start(n);
+
+    if (raw string_eq(m, "alloc")) {
+        string:h = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(h,
+            " = call { i64, i32 } @npk_arena_alloc(ptr ", ap, ", i64 ",
+            relay string_concat(st, ")")));
+        pass (raw iv("{ i64, i32 }", h, raw exprtypes_get(x.et, id)));
+    }
+    if (raw string_eq(m, "reset")) {
+        drop irw_line(x.fe.w, relay cat5("call void @npk_arena_reset(ptr ", ap,
+                          ", i64 ", st, ")"));
+        pass (raw iv("i32", "0", 0i32));
+    }
+    if (raw string_eq(m, "destroy")) {
+        drop irw_line(x.fe.w, relay cat3("call void @npk_arena_destroy(ptr ",
+                          ap, ")"));
+        pass (raw iv("i32", "0", 0i32));
+    }
+
+    // the remaining three all carry a handle first
+    IrVal:hv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast, start, 0i32) });
+    if (!(raw iv_is_ok(hv))) { pass hv; }
+    string:hidx = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(hidx, " = extractvalue { i64, i32 } ",
+                      hv.ref, ", ", "0"));
+    string:hgen = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(hgen, " = extractvalue { i64, i32 } ",
+                      hv.ref, ", ", "1"));
+
+    if (raw string_eq(m, "free")) {
+        string:rc = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(rc,
+            " = call i32 @npk_arena_free(ptr ", ap,
+            relay cat5(", i64 ", st, ", i64 ", hidx, ""),
+            relay cat3(", i32 ", hgen, ")")));
+        string:bad = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(bad, " = icmp ne i32 ",
+                          relay string_concat(rc, ", 0")));
+        string:ec = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(ec, " = select i1 ", relay
+                          string_concat(bad, ", i32 -4106, i32 0")));
+        string:rr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(rr, " = insertvalue { i32 } undef, i32 ",
+                          ec, ", ", "0"));
+        pass (raw iv("{ i32 }", rr, raw exprtypes_get(x.et, id)));
+    }
+
+    LlType:ell = relay ll_type(x.fe.ctx, elem);
+    if (!(raw ll_is_ok(ell))) { pass (relay iv_from_ll_at(x, ell, elem, n.span)); }
+    string:p = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(p,
+        " = call ptr @npk_arena_at(ptr ", ap,
+        relay cat5(", i64 ", st, ", i64 ", hidx, ""),
+        relay cat3(", i32 ", hgen, ")")));
+    string:isnull = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(isnull, " = icmp eq ptr ",
+                      relay string_concat(p, ", null")));
+
+    if (raw string_eq(m, "get")) {
+        int32:rtid = raw exprtypes_get(x.et, id);
+        LlType:rll = relay ll_type(x.fe.ctx, rtid);
+        if (!(raw ll_is_ok(rll))) { pass (relay iv_from_ll_at(x, rll, rtid, n.span)); }
+        string:slot = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(slot, " = alloca ", rll.text));
+        string:l_ok = relay irw_new_label(x.fe.w, "ar.ok");
+        string:l_st = relay irw_new_label(x.fe.w, "ar.stale");
+        string:l_dn = relay irw_new_label(x.fe.w, "ar.done");
+        drop irw_line(x.fe.w, relay cat5("br i1 ", isnull, ", label %", l_st,
+                          relay string_concat(", label %", l_ok)));
+        drop irw_label(x.fe.w, l_ok);
+        string:v = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(v, " = load ", ell.text, ", ptr ", p));
+        string:f0 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(f0, " = getelementptr ", rll.text,
+                          ", ptr ", relay string_concat(slot, ", i32 0, i32 0")));
+        drop irw_line(x.fe.w, relay cat5("store ", ell.text, " ", v,
+                          relay string_concat(", ptr ", f0)));
+        string:f1 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(f1, " = getelementptr ", rll.text,
+                          ", ptr ", relay string_concat(slot, ", i32 0, i32 1")));
+        drop irw_line(x.fe.w, relay cat3("store i32 0, ptr ", f1, ""));
+        drop irw_line(x.fe.w, relay cat3("br label %", l_dn, ""));
+        drop irw_label(x.fe.w, l_st);
+        string:g0 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(g0, " = getelementptr ", rll.text,
+                          ", ptr ", relay string_concat(slot, ", i32 0, i32 0")));
+        drop irw_line(x.fe.w, relay cat5("store ", ell.text,
+                          " zeroinitializer, ptr ", g0, ""));
+        string:g1 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(g1, " = getelementptr ", rll.text,
+                          ", ptr ", relay string_concat(slot, ", i32 0, i32 1")));
+        drop irw_line(x.fe.w, relay cat3("store i32 -4106, ptr ", g1, ""));
+        drop irw_line(x.fe.w, relay cat3("br label %", l_dn, ""));
+        drop irw_label(x.fe.w, l_dn);
+        string:r = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(r, " = load ", rll.text, ", ptr ", slot));
+        pass (raw iv(rll.text, r, rtid));
+    }
+
+    // put: store the value through the slot, or report stale
+    IrVal:vv = relay emit_expr(x, ExprId{ index: relay ast_id_at(x.ast, start, 1i32) });
+    if (!(raw iv_is_ok(vv))) { pass vv; }
+    string:pslot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", "{ i32 }"));
+    string:p_ok = relay irw_new_label(x.fe.w, "ap.ok");
+    string:p_st = relay irw_new_label(x.fe.w, "ap.stale");
+    string:p_dn = relay irw_new_label(x.fe.w, "ap.done");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", isnull, ", label %", p_st,
+                      relay string_concat(", label %", p_ok)));
+    drop irw_label(x.fe.w, p_ok);
+    drop irw_line(x.fe.w, relay cat5("store ", vv.ll, " ", vv.ref,
+                      relay string_concat(", ptr ", p)));
+    drop irw_line(x.fe.w, relay cat3("store { i32 } { i32 0 }, ptr ", pslot, ""));
+    drop irw_line(x.fe.w, relay cat3("br label %", p_dn, ""));
+    drop irw_label(x.fe.w, p_st);
+    drop irw_line(x.fe.w, relay cat3("store { i32 } { i32 -4106 }, ptr ", pslot, ""));
+    drop irw_line(x.fe.w, relay cat3("br label %", p_dn, ""));
+    drop irw_label(x.fe.w, p_dn);
+    string:pr = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(pr, " = load { i32 }, ptr ", pslot, "", ""));
+    pass (raw iv("{ i32 }", pr, raw exprtypes_get(x.et, id)));
+};
 
 pub struct:PlaceVal = {
     int32:state;

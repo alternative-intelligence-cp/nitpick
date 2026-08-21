@@ -1,0 +1,43 @@
+// D-152 — the arena surface refuses what it cannot mean (0.10.2).
+
+// expect-error: NITPICK-TYPE-007
+func:wrong_element = NIL() {
+    // a Handle<int32> names nothing in an arena<int64>
+    arena<int64>:a = arena_make(4i64);
+    arena<int32>:b = arena_make(4i64);
+    Handle<int32>:h = b.alloc();
+    int64:v = a.get(h) ?! 77tbb32;
+    discard(v);
+    b.destroy();
+    a.destroy();
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-007
+func:not_an_operation = NIL() {
+    // the set is alloc, get, put, free, reset, destroy — nothing else
+    arena<int64>:a = arena_make(4i64);
+    a.compact();
+    a.destroy();
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-001
+func:shared_not_yet = NIL() {
+    // shared_arena is 0.10.4's; the refusal names the cycle (total_audit B-3)
+    shared_arena<int64>:s = 0i64;
+    discard(s);
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-001
+func:no_context = NIL() {
+    // arena_make reads its element from the annotation; without one there is
+    // nothing to read
+    int64:x = arena_make(4i64);
+    discard(x);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

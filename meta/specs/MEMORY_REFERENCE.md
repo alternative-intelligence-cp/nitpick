@@ -185,16 +185,31 @@ The `Handle<T>` arena pointer lowers into a 16-byte aligned struct (`%Handle = t
 - **Bytes [8-11]**: `uint32:generation` (Generation Counter for stale detection)
 - **Bytes [12-15]**: Padding (for 16-byte alignment)
 
-### 4.2 Arena UFCS Dispatch and Chained Member Access
+### 4.2 The operation set, and chained member access
 
-Nitpick provides direct compiler support for managing arenas via Uniform Function Call Syntax (UFCS). You can invoke methods directly on the `arena<T>` type:
+Creation is the **`arena_make(cap)`** builtin, type-directed by the
+annotation the way an unsuffixed literal is (D-092). An earlier revision
+wrote `arena<int64>.alloc(1000)` — one name for two different operations
+(creating the arena on the type, allocating a slot on the value), which the
+blueprint philosophy refuses; D-152 split them.
 
 ```nitpick
-arena<int64>:my_arena = arena<int64>.alloc(1000);
+arena<int64>:my_arena = arena_make(1000i64);
 Handle<int64>:h = my_arena.alloc();
-int64:val = my_arena.get(h) ? 0i64;      // safe unwrap with a default
-my_arena.free(h);
+drop my_arena.put(h, 41i64);             // write through the handle
+int64:val = my_arena.get(h) ? 0i64;      // read a COPY, with a default
+drop my_arena.free(h);
+my_arena.destroy();
 ```
+
+The set is `alloc() -> Handle<T>`, `get(h) -> Result<T>`,
+`put(h, v) -> Result<NIL>`, `free(h) -> Result<NIL>`, `reset() -> NIL`,
+`destroy() -> NIL` (D-017 as amended by D-152). `get` returns the element
+**by value**: a borrow-returning `get` would be a returned borrow, which
+D-004 refuses everywhere — mutation is spelled `put`. A stale handle fails
+`get`/`put`/`free` with **`-4106` in `Result.error`**, never a trap.
+`destroy` CONSUMES the arena (a compile-time move, like `dalloc`), and an
+un-destroyed arena is a wild-role leak the exit-time check names (D-151).
 
 > Note the operator: `?` takes a **fallback value**; `?!` takes a **failsafe error
 > code** and traps (D-009). An earlier revision of this section wrote
@@ -202,12 +217,12 @@ my_arena.free(h);
 > rather than yielding `0`.
 
 `.` handles all member access and auto-dereferences pointers (D-006). Chained
-access through arenas embedded in structs is supported, with the compiler
-computing field offsets:
+access through arenas embedded in structs works as ordinary member-place
+addressing:
 
 ```nitpick
 struct:App = { arena<int64>:my_arena; };
-App:app = ...;
+App:app = App{ my_arena: arena_make(16i64) };
 Handle<int64>:h = app.my_arena.alloc();
 ```
 

@@ -88,6 +88,8 @@ pub func:TY_FUNC_VARIADIC = int32() { pass 24i32; };
 // also different, which is right: a value parameter has a declared type and the
 // argument's has to be it.
 pub func:TY_COMPTIME = int32() { pass 25i32; };  // a = the value's type
+pub func:TY_ARENA = int32()    { pass 26i32; };  // a = element (D-017, D-152)
+pub func:TY_HANDLE = int32()   { pass 27i32; };  // a = element (MEMORY_REFERENCE 4.1)
 
 pub struct:Type = {
     int32:kind;
@@ -356,6 +358,24 @@ pub func:tt_kernel = int32(TypeTable->:t, int32:which) {
 
 // A pointer is THIN: one word, no bounds metadata (D-038). That is why a slice
 // exists as a separate type rather than a pointer knowing its length.
+// `arena<T>` (D-017, D-152): the single-threaded arena VALUE — five words,
+// { slab ptr, gens ptr, cap i64, top i64, free_head i64 }. It moves, it is
+// never copied implicitly (a copy would fork the freelist), and its slab is
+// WILD-role heap: an un-destroyed arena is a countable leak (D-151).
+pub func:tt_arena = int32(TypeTable->:t, int32:elem) {
+    int32:id = raw tt_intern(t, raw TY_ARENA(), elem, 0i32, 0i32, 40i64, 8i32, 0i32);
+    drop tt_set_haspt(t, id, true);
+    pass id;
+};
+
+// `Handle<T>` (MEMORY_REFERENCE 4.1): { i64 index, i32 generation }, 16 bytes
+// with tail padding. An INDEX, not a pointer — which is exactly why it does
+// not set haspt: handles cross scopes, live in struct fields, and express
+// cycles freely, and that is the design.
+pub func:tt_handle = int32(TypeTable->:t, int32:elem) {
+    pass (raw tt_intern(t, raw TY_HANDLE(), elem, 0i32, 0i32, 16i64, 8i32, 0i32));
+};
+
 pub func:tt_pointer = int32(TypeTable->:t, int32:pointee) {
     pass (raw tt_intern(t, raw TY_POINTER(), pointee, 0i32, 0i32, 8i64, 8i32, 0i32));
 };

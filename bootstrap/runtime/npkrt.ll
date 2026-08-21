@@ -130,6 +130,11 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            which is the allocator's own C-3 obligation
 ;   -4104  HEAP_BAD_REQUEST  negative size, calloc count*size overflow,
 ;                            ralloc(p, 0), or a non-power-of-two alignment
+;   -4106  STALE_HANDLE      NOT A TRAP -- the code an arena get/put/free
+;                            RETURNS in Result.error when the handle's
+;                            generation no longer matches (D-152); staleness
+;                            is a condition the program handles, not a
+;                            defect the runtime ends
 ;   -4105  HEAP_LEAK         exit reached with live `wild` memory -- the
 ;                            K-semantics rule (CONTROL_REFERENCE 4.6) made
 ;                            real at 0.10.1; failsafe may clean up with
@@ -2206,6 +2211,276 @@ lbody:
   br label %lhead
 done:
   store i64 0, ptr @npk_lgtab_len
+  ret void
+}
+
+; ---------------------------------------------------------------------------
+; THE ARENA (0.10.2, D-152). arena<T> = { slab ptr, gens ptr, cap, top,
+; free_head }, stride-erased: the compiler computes the element stride
+; (size rounded to alignment, floored at 8 so a free slot holds the freelist
+; link) and passes it to every call. Generations are i32 with a PARITY
+; DISCIPLINE: live slots hold EVEN generations, freed slots ODD -- a handle
+; only ever carries the even generation `alloc` issued, so a forged or stale
+; handle can never name a freed slot: `at` demands exact equality, and the
+; freed slot's generation is odd. Reuse bumps odd back to even (+1), so every
+; retired handle to the slot mismatches by at least 2. A slot whose
+; generation reaches 0xFFFFFFFE is RETIRED rather than reused -- the counter
+; never wraps. The slab and generation array are WILD-role heap blocks: an
+; un-destroyed arena is a countable leak (D-151), which is the D-003 story
+; told mechanically -- drop the arena wholesale, or the exit check names it.
+; Single-threaded by contract (D-017); shared_arena is 0.10.4's.
+; ---------------------------------------------------------------------------
+
+define { ptr, ptr, i64, i64, i64 } @npk_arena_make(i64 %stride, i64 %cap0) {
+entry:
+  %neg = icmp slt i64 %cap0, 0
+  br i1 %neg, label %badreq, label %floor
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+floor:
+  %small = icmp slt i64 %cap0, 8
+  %cap = select i1 %small, i64 8, i64 %cap0
+  %bo = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %cap, i64 %stride)
+  %bytes = extractvalue { i64, i1 } %bo, 0
+  %ovf = extractvalue { i64, i1 } %bo, 1
+  br i1 %ovf, label %badreq, label %mkslab
+mkslab:
+  %slab = call ptr @npk_alloc_impl(i64 %bytes, i64 1)
+  %gb = shl i64 %cap, 2
+  %gens = call ptr @npk_alloc_impl(i64 %gb, i64 1)
+  call void @llvm.memset.p0.i64(ptr %gens, i8 0, i64 %gb, i1 false)
+  %r0 = insertvalue { ptr, ptr, i64, i64, i64 } undef, ptr %slab, 0
+  %r1 = insertvalue { ptr, ptr, i64, i64, i64 } %r0, ptr %gens, 1
+  %r2 = insertvalue { ptr, ptr, i64, i64, i64 } %r1, i64 %cap, 2
+  %r3 = insertvalue { ptr, ptr, i64, i64, i64 } %r2, i64 0, 3
+  %r4 = insertvalue { ptr, ptr, i64, i64, i64 } %r3, i64 -1, 4
+  ret { ptr, ptr, i64, i64, i64 } %r4
+}
+
+define { i64, i32 } @npk_arena_alloc(ptr %a, i64 %stride) {
+entry:
+  %ai = ptrtoint ptr %a to i64
+  %fha = add i64 %ai, 32
+  %fhp = inttoptr i64 %fha to ptr
+  %fh = load i64, ptr %fhp
+  %none = icmp eq i64 %fh, -1
+  br i1 %none, label %bump, label %pop
+pop:
+  ; the freed slot's first word is the next-free link
+  %slaba = inttoptr i64 %ai to ptr
+  %slab0 = load ptr, ptr %slaba
+  %si = ptrtoint ptr %slab0 to i64
+  %soff = mul i64 %fh, %stride
+  %sa = add i64 %si, %soff
+  %sp = inttoptr i64 %sa to ptr
+  %nxt = load i64, ptr %sp
+  store i64 %nxt, ptr %fhp
+  br label %issue
+bump:
+  %topa = add i64 %ai, 24
+  %topp = inttoptr i64 %topa to ptr
+  %top = load i64, ptr %topp
+  %capa = add i64 %ai, 16
+  %capp = inttoptr i64 %capa to ptr
+  %cap = load i64, ptr %capp
+  %room = icmp ult i64 %top, %cap
+  br i1 %room, label %take, label %grow
+grow:
+  ; double both stores; ralloc validates, preserves the wild role, and frees
+  ; the old blocks -- the single-threaded contract is what makes the
+  ; relocation safe (D-017)
+  %ncap = shl i64 %cap, 1
+  %nbo = call { i64, i1 } @llvm.umul.with.overflow.i64(i64 %ncap, i64 %stride)
+  %nbytes = extractvalue { i64, i1 } %nbo, 0
+  %novf = extractvalue { i64, i1 } %nbo, 1
+  br i1 %novf, label %badreq, label %doslab
+badreq:
+  call void @npk_heap_badreq()
+  unreachable
+doslab:
+  %slabaa = inttoptr i64 %ai to ptr
+  %oslab = load ptr, ptr %slabaa
+  %nslab = call ptr @npk_ralloc(ptr %oslab, i64 %nbytes)
+  store ptr %nslab, ptr %slabaa
+  %gensa = add i64 %ai, 8
+  %gensp = inttoptr i64 %gensa to ptr
+  %ogens = load ptr, ptr %gensp
+  %ngb = shl i64 %ncap, 2
+  %ngens = call ptr @npk_ralloc(ptr %ogens, i64 %ngb)
+  store ptr %ngens, ptr %gensp
+  ; the new half of the generation array must start at zero
+  %gi = ptrtoint ptr %ngens to i64
+  %oldgb = shl i64 %cap, 2
+  %za = add i64 %gi, %oldgb
+  %zp = inttoptr i64 %za to ptr
+  %zn = sub i64 %ngb, %oldgb
+  call void @llvm.memset.p0.i64(ptr %zp, i8 0, i64 %zn, i1 false)
+  store i64 %ncap, ptr %capp
+  br label %take
+take:
+  %top2 = load i64, ptr %topp
+  %ntop = add i64 %top2, 1
+  store i64 %ntop, ptr %topp
+  br label %issue2
+issue2:
+  br label %issue
+issue:
+  %idx = phi i64 [ %fh, %pop ], [ %top2, %issue2 ]
+  ; a reused or reset slot holds an ODD generation; bump it live (even)
+  %gensa2 = add i64 %ai, 8
+  %gensp2 = inttoptr i64 %gensa2 to ptr
+  %gens2 = load ptr, ptr %gensp2
+  %gi2 = ptrtoint ptr %gens2 to i64
+  %goff = shl i64 %idx, 2
+  %ga = add i64 %gi2, %goff
+  %gp = inttoptr i64 %ga to ptr
+  %g = load i32, ptr %gp
+  %odd = and i32 %g, 1
+  %isodd = icmp ne i32 %odd, 0
+  %g2 = add i32 %g, 1
+  %gv = select i1 %isodd, i32 %g2, i32 %g
+  store i32 %gv, ptr %gp
+  %h0 = insertvalue { i64, i32 } undef, i64 %idx, 0
+  %h1 = insertvalue { i64, i32 } %h0, i32 %gv, 1
+  ret { i64, i32 } %h1
+}
+
+define ptr @npk_arena_at(ptr %a, i64 %stride, i64 %idx, i32 %gen) {
+entry:
+  %ai = ptrtoint ptr %a to i64
+  %topa = add i64 %ai, 24
+  %topp = inttoptr i64 %topa to ptr
+  %top = load i64, ptr %topp
+  %oob = icmp uge i64 %idx, %top
+  br i1 %oob, label %stale, label %genck
+genck:
+  %gensa = add i64 %ai, 8
+  %gensp = inttoptr i64 %gensa to ptr
+  %gens = load ptr, ptr %gensp
+  %gi = ptrtoint ptr %gens to i64
+  %goff = shl i64 %idx, 2
+  %ga = add i64 %gi, %goff
+  %gp = inttoptr i64 %ga to ptr
+  %g = load i32, ptr %gp
+  %match = icmp eq i32 %g, %gen
+  br i1 %match, label %live, label %stale
+live:
+  %slaba = inttoptr i64 %ai to ptr
+  %slab = load ptr, ptr %slaba
+  %si = ptrtoint ptr %slab to i64
+  %soff = mul i64 %idx, %stride
+  %sa = add i64 %si, %soff
+  %sp = inttoptr i64 %sa to ptr
+  ret ptr %sp
+stale:
+  ret ptr null
+}
+
+define i32 @npk_arena_free(ptr %a, i64 %stride, i64 %idx, i32 %gen) {
+entry:
+  %p = call ptr @npk_arena_at(ptr %a, i64 %stride, i64 %idx, i32 %gen)
+  %bad = icmp eq ptr %p, null
+  br i1 %bad, label %stale, label %retire
+retire:
+  %ai = ptrtoint ptr %a to i64
+  %gensa = add i64 %ai, 8
+  %gensp = inttoptr i64 %gensa to ptr
+  %gens = load ptr, ptr %gensp
+  %gi = ptrtoint ptr %gens to i64
+  %goff = shl i64 %idx, 2
+  %ga = add i64 %gi, %goff
+  %gp = inttoptr i64 %ga to ptr
+  %g = load i32, ptr %gp
+  %g2 = add i32 %g, 1
+  store i32 %g2, ptr %gp
+  ; retire at the cap: a slot at 0xFFFFFFFE never re-enters the freelist
+  %cap = icmp ult i32 %g2, -2
+  br i1 %cap, label %push, label %done
+push:
+  %fha = add i64 %ai, 32
+  %fhp = inttoptr i64 %fha to ptr
+  %fh = load i64, ptr %fhp
+  %sp2 = ptrtoint ptr %p to i64
+  %spp = inttoptr i64 %sp2 to ptr
+  store i64 %fh, ptr %spp
+  store i64 %idx, ptr %fhp
+  br label %done
+done:
+  ret i32 0
+stale:
+  ret i32 1
+}
+
+define void @npk_arena_reset(ptr %a, i64 %stride) {
+entry:
+  %ai = ptrtoint ptr %a to i64
+  %topa = add i64 %ai, 24
+  %topp = inttoptr i64 %topa to ptr
+  %top = load i64, ptr %topp
+  %gensa = add i64 %ai, 8
+  %gensp = inttoptr i64 %gensa to ptr
+  %gens = load ptr, ptr %gensp
+  %gi = ptrtoint ptr %gens to i64
+  br label %head
+head:
+  %i = phi i64 [ 0, %entry ], [ %i2, %next ]
+  %more = icmp ult i64 %i, %top
+  br i1 %more, label %body, label %clear
+body:
+  %goff = shl i64 %i, 2
+  %ga = add i64 %gi, %goff
+  %gp = inttoptr i64 %ga to ptr
+  %g = load i32, ptr %gp
+  %odd = and i32 %g, 1
+  %isodd = icmp ne i32 %odd, 0
+  br i1 %isodd, label %next, label %bump
+bump:
+  %g2 = add i32 %g, 1
+  store i32 %g2, ptr %gp
+  br label %next
+next:
+  %i2 = add i64 %i, 1
+  br label %head
+clear:
+  store i64 0, ptr %topp
+  %fha = add i64 %ai, 32
+  %fhp = inttoptr i64 %fha to ptr
+  store i64 -1, ptr %fhp
+  ret void
+}
+
+define void @npk_arena_destroy(ptr %a) {
+entry:
+  %ai = ptrtoint ptr %a to i64
+  %slaba = inttoptr i64 %ai to ptr
+  %slab = load ptr, ptr %slaba
+  %has = icmp ne ptr %slab, null
+  br i1 %has, label %freeslab, label %gens
+freeslab:
+  call void @npk_dalloc(ptr %slab)
+  br label %gens
+gens:
+  %gensa = add i64 %ai, 8
+  %gensp = inttoptr i64 %gensa to ptr
+  %garr = load ptr, ptr %gensp
+  %hasg = icmp ne ptr %garr, null
+  br i1 %hasg, label %freegens, label %zero
+freegens:
+  call void @npk_dalloc(ptr %garr)
+  br label %zero
+zero:
+  store ptr null, ptr %slaba
+  store ptr null, ptr %gensp
+  %capa = add i64 %ai, 16
+  %capp = inttoptr i64 %capa to ptr
+  store i64 0, ptr %capp
+  %topa = add i64 %ai, 24
+  %topp = inttoptr i64 %topa to ptr
+  store i64 0, ptr %topp
+  %fha = add i64 %ai, 32
+  %fhp = inttoptr i64 %fha to ptr
+  store i64 -1, ptr %fhp
   ret void
 }
 
