@@ -175,6 +175,15 @@ class Checker:
                 raise RungError("async function", "1.1", item)
             if "comptime" in item.modifiers:
                 raise RungError("comptime function", "0.6", item)
+            # The verification carriers (0.9.0, LIVE-1's repair): refused the
+            # way the real backend refuses them, so the rejection suite holds
+            # for BOTH compilers. The seed refuses `acquires` too -- it has no
+            # lock-level analysis, so accepting one would be accepting a claim
+            # nothing here checks (no seed-compiled source uses it).
+            if getattr(item, "has_contract", False):
+                raise RungError("a `requires`/`ensures` contract", "1.3", item)
+            if any(getattr(p, "limit_marker", False) for p in item.params):
+                raise RungError("a `limit<Rules>` constraint", "1.3", item)
             self._claim(self.p.funcs, item.name, item, "function")
             return
 
@@ -287,6 +296,8 @@ class Checker:
             self._block(st, Scope(self.scope))
 
         elif isinstance(st, S.VarDecl):
+            if getattr(st, "limit_marker", False):
+                raise RungError("a `limit<Rules>` constraint", "1.3", st)
             ty = self.resolve_type(st.type)
             if st.init is not None:
                 self._expr(st.init)
@@ -317,6 +328,8 @@ class Checker:
                 self._stmt(st.else_branch)
 
         elif isinstance(st, S.While):
+            if getattr(st, "invariant_marker", False):
+                raise RungError("a loop `invariant`", "1.3", st)
             self._expr(st.cond)
             self._block(st.body, Scope(self.scope))
 

@@ -129,8 +129,10 @@ Error slots across the floor carry the kernel's own negative codes, exactly as
 the syscall returned them (ENOENT is −2). Conditions the floor detects itself
 reuse that vocabulary — an interior NUL is −22, a slice out of range −34 — and
 end-of-input is E_EOF = −4096, the first code past the kernel's error space
-(errno stops at 4095), so no collision is possible. Positive codes belong to
-programs. The full statement is D-141.
+(errno stops at 4095), so no collision is possible. Runtime trap codes continue
+that region: −4097 DIV_BY_ZERO and −4098 INT_MIN_OVERFLOW reach `failsafe`
+through the runtime's trap route rather than through any Result. Positive codes
+belong to programs. The full statements are D-141 and D-142.
 
 ## 2c. Comptime-foldable string builtins
 

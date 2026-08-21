@@ -1,0 +1,20 @@
+// expect-exit: 22
+//
+// LIVE-2's lock, half two: INT_MIN / -1 has no representable result — LLVM UB,
+// and D-008 refused inventing a value for a plain integer — so it traps with
+// INT_MIN_OVERFLOW (-4098). Both operands are runtime-derived so nothing can
+// fold the division away before the guard runs.
+
+func:main = int32(cstring[]:argv) {
+    // argv.len is 1: min = INT32_MIN, negone = -1, at run time only.
+    int32:almost = 0i32 - 2147483647i32;
+    int32:min = almost - (argv.len =>! int32);
+    int32:negone = (argv.len =>! int32) - 2i32;
+    int32:q = min / negone;
+    exit q;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err => int64) == (0i64 - 4098i64)) { exit 22i32; }
+    exit 9i32;
+};

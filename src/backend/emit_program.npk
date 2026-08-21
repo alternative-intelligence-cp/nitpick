@@ -178,6 +178,11 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
                           relay cat3("(", args, ")")));
         i = i + 1i32;
     }
+    // `@npk_trap` is DELIBERATELY not in the table above: it is not a builtin a
+    // program may call — it is how emitted GUARDS (division, and every guard a
+    // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
+    // unconditionally because the declare block is a fixed constant.
+    drop irw_raw(w, "declare void @npk_trap(i32)");
     drop irw_blank(w);
     pass NIL;
 };

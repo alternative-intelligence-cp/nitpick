@@ -1,0 +1,19 @@
+// expect-exit: 21
+//
+// LIVE-2's lock, half one (0.9.0, D-142): integer division by a
+// RUNTIME-COMPUTED zero must not reach the hardware — the guard branches to
+// `failsafe` with DIV_BY_ZERO (-4097), and the process exits with failsafe's
+// return. Before this subcycle the same program died on SIGFPE: an
+// uncontrolled stop, the exact event the trap route exists to prevent.
+
+func:main = int32(cstring[]:argv) {
+    // argv.len is 1 in the harness, so this is 0 — but only at run time.
+    int32:zero = (argv.len =>! int32) - 1i32;
+    int32:q = 10i32 / zero;
+    exit q;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err => int64) == (0i64 - 4097i64)) { exit 21i32; }
+    exit 9i32;
+};

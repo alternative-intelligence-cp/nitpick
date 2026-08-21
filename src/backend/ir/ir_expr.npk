@@ -448,6 +448,18 @@ pub func:emit_cond = IrVal(ExprEmitter->:x, ExprId:id) {
     pass (raw iv("i1", c, 0i32));
 };
 
+// The most-negative value per width, as IR text — the signed-division guard
+// needs it. A width missing here FAILS CLOSED (iv_broken at the caller), so a
+// new integer width cannot silently ship an unguarded INT_MIN/-1: 0.9.3 must
+// extend this table the moment it lowers i128.
+func:int_min_text = string(string:ll) {
+    if (raw string_eq(ll, "i8"))  { pass "-128"; }
+    if (raw string_eq(ll, "i16")) { pass "-32768"; }
+    if (raw string_eq(ll, "i32")) { pass "-2147483648"; }
+    if (raw string_eq(ll, "i64")) { pass "-9223372036854775808"; }
+    pass "";
+};
+
 pub func:arith_name = string(TokenKind:op, bool:signed) {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
@@ -520,6 +532,54 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     }
     string:ins = raw arith_name(op, signed);
     if (ins.len == 0i64) { pass (raw iv_broken(n.span)); }
+
+    // LIVE-2's repair (0.9.0, D-142): division and remainder TRAP on a zero
+    // divisor — D-007's rule, and the difference between a controlled shutdown
+    // through `failsafe` and SIGFPE with actuators live. Signed division adds
+    // the INT_MIN/-1 case: LLVM UB with no defined value, and D-008 already
+    // refused inventing one, so it traps too. The guard is emitted, never
+    // elided — a build without the verifier still has to emit the check
+    // (D-068), and 1.3's static discharge may remove only what it proves.
+    bool:divlike = false;
+    if (op == TokenKind.OpSlash)   { divlike = true; }
+    if (op == TokenKind.OpPercent) { divlike = true; }
+    if (divlike) {
+        string:z = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(z, " = icmp eq ", lhs.ll, " ",
+                          relay string_concat(rhs.ref, ", 0")));
+        string:trap_l = relay irw_new_label(x.fe.w, "div.zero");
+        string:ok_l = relay irw_new_label(x.fe.w, "div.ok");
+        string:next_l = ok_l;
+        if (signed) {
+            next_l = relay irw_new_label(x.fe.w, "div.chk");
+        }
+        drop irw_line(x.fe.w, relay cat5("br i1 ", z, ", label %", trap_l,
+                          relay string_concat(", label %", next_l)));
+        drop irw_label(x.fe.w, trap_l);
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4097)");
+        drop irw_line(x.fe.w, "unreachable");
+        if (signed) {
+            drop irw_label(x.fe.w, next_l);
+            string:mn = raw int_min_text(lhs.ll);
+            if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            string:m = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(m, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(lhs.ref, ", ", mn)));
+            string:o = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(o, " = icmp eq ", lhs.ll, " ",
+                              relay string_concat(rhs.ref, ", -1")));
+            string:both = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(both, " = and i1 ", m, ", ", o));
+            string:min_l = relay irw_new_label(x.fe.w, "div.min");
+            drop irw_line(x.fe.w, relay cat5("br i1 ", both, ", label %", min_l,
+                              relay string_concat(", label %", ok_l)));
+            drop irw_label(x.fe.w, min_l);
+            drop irw_line(x.fe.w, "call void @npk_trap(i32 -4098)");
+            drop irw_line(x.fe.w, "unreachable");
+        }
+        drop irw_label(x.fe.w, ok_l);
+    }
+
     // NO nsw, NO nuw — D-037 makes overflow defined wrapping, and the flag is
     // the license to delete guards. The header says why at length.
     string:r = relay irw_temp(x.fe.w);

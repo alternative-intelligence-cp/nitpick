@@ -220,6 +220,13 @@ class Parser:
         self.expect("(")
         params = []
         while not self.at(")"):
+            # `limit<Rule>` on a parameter -- parsed and carried; the checker
+            # refuses it naming 1.3 (0.9.0).
+            p_limit = self.accept("limit") is not None
+            if p_limit:
+                self.expect("<")
+                self.expect_ident()
+                self.expect(">")
             ptype = self.parse_type()
             self.expect(":")
             # `Type:_~name` -- the declaration-site discard (D-089). The seed
@@ -228,15 +235,36 @@ class Parser:
             # lowers rather than checks (SUBSET_1 section 2).
             discarded = self.accept("_~") is not None
             pname = self.expect_ident().text
-            params.append(S.ParamDecl(ptype, pname, discarded))
+            prm = S.ParamDecl(ptype, pname, discarded)
+            prm.limit_marker = p_limit
+            params.append(prm)
             if not self.accept(","):
                 break
         self.expect(")")
+        # Contracts -- `requires` / `ensures` / `acquires` -- PARSE here and are
+        # refused by the checker, never by the parser (D-085; 0.9.0 added the
+        # carriers to the rejection suite). The clause expression is consumed
+        # and dropped: the seed carries only the fact, the way it carries
+        # `async` -- the real frontend is what reads contracts.
+        has_contract = False
+        while True:
+            if self.accept("requires") or self.accept("ensures"):
+                self.parse_expr()
+                has_contract = True
+                continue
+            if self.accept("acquires"):
+                self.accept("<=")
+                self.parse_expr()
+                has_contract = True
+                continue
+            break
         body = None
         if self.at("{"):
             body = self.parse_block()
         self.expect(";")
-        return S.FuncDecl(name, vis, mods, generics, params, ret, body)._at(start)
+        node = S.FuncDecl(name, vis, mods, generics, params, ret, body)._at(start)
+        node.has_contract = has_contract
+        return node
 
     def parse_struct(self, start, vis):
         self.expect("struct")
@@ -514,6 +542,13 @@ class Parser:
         quals = []
         while self.peek().text in MEMORY_QUALS:
             quals.append(self.next().text)
+        # `limit<Rule>` binds to the declaration, with the qualifiers (0.9.0:
+        # parsed, carried, refused by the checker naming 1.3).
+        v_limit = self.accept("limit") is not None
+        if v_limit:
+            self.expect("<")
+            self.expect_ident()
+            self.expect(">")
         ty = self.parse_type()
         self.expect(":")
         name = self.expect_ident().text
@@ -521,7 +556,9 @@ class Parser:
         if self.accept("="):
             init = self.parse_expr()
         self.expect(";")
-        return S.VarDecl(quals, ty, name, init)._at(t)
+        node = S.VarDecl(quals, ty, name, init)._at(t)
+        node.limit_marker = v_limit
+        return node
 
     def parse_if(self):
         t = self.expect("if")
@@ -539,7 +576,16 @@ class Parser:
         self.expect("(")
         cond = self.parse_expr()
         self.expect(")")
-        return S.While(label, cond, self.parse_block())._at(t)
+        # `invariant e1, e2` between the head and the body -- parsed, carried,
+        # refused by the checker naming 1.3 (0.9.0).
+        inv = self.accept("invariant") is not None
+        if inv:
+            self.parse_expr()
+            while self.accept(","):
+                self.parse_expr()
+        node = S.While(label, cond, self.parse_block())._at(t)
+        node.invariant_marker = inv
+        return node
 
     def parse_counted(self, label):
         """for / loop / till -- outside subset 1, parsed so the checker rejects."""

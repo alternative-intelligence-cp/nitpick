@@ -1349,11 +1349,15 @@ def main(argv):
                 if ok:
                     failures += check_zero_dependency(
                         s1 + ".o", runtime_allowlist(), "stage1.o")
-                    # The runtime itself may need exactly ONE symbol: `main`.
+                    # The runtime itself may need exactly TWO symbols: `main`
+                    # and `npk_failsafe` -- the program's entry and its
+                    # controlled-shutdown handler (D-013 makes failsafe
+                    # mandatory, D-142 routes runtime traps through it).
                     # Anything else in npkrt's undefined set means the runtime
                     # is not the floor -- it is standing on something.
                     failures += check_zero_dependency(
-                        os.path.join(tmp, "npkrt.o"), {"main"}, "npkrt.o")
+                        os.path.join(tmp, "npkrt.o"),
+                        {"main", "npk_failsafe"}, "npkrt.o")
                     rr = subprocess.run(["ld.lld", "-static", "-o", s1,
                                          s1 + ".o", os.path.join(tmp, "npkrt.o")],
                                         capture_output=True, text=True)

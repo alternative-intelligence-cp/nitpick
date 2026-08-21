@@ -25,6 +25,14 @@ Everything else in this document is a plan-time correction. These two are
 **shipped-behavior violations of the language's own safety doctrine**, both
 confirmed by direct observation, both fixable in a single mid-cycle subcycle:
 
+> **CLOSED at 0.9.0.** Both repaired as the opening subcycle of cycle 0.9:
+> the five verification carriers refuse with `NITPICK-RUNG-001` naming 1.3
+> (`tests/rejection/verification.npk` pins all five spans), and division/
+> remainder emit the D-007 guard trapping to `failsafe` through D-142's
+> `npk_trap` route — DIV_BY_ZERO −4097, INT_MIN_OVERFLOW −4098, executed-exit
+> tests `div_guard`/`rem_guard`/`div_min`/`div_ok`. The probe below now
+> refuses instead of compiling to unguarded IR.
+
 ### LIVE-1 — `limit<Rules>`, `requires`/`ensures`, and loop invariants compile to nothing, with no check and no rung refusal — **SAFETY, CONFIRMED**
 
 The backend never reads the limit node, the contract clauses, or the invariant.

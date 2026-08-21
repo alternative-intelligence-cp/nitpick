@@ -1,0 +1,16 @@
+// expect-exit: 21
+//
+// LIVE-2's lock for `%`: remainder shares the division guard — a zero divisor
+// traps with the same DIV_BY_ZERO code, because `srem` faults on the same
+// hardware path `sdiv` does.
+
+func:main = int32(cstring[]:argv) {
+    int64:zero = argv.len - 1i64;
+    int64:r = 7i64 % zero;
+    exit (r =>! int32);
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err => int64) == (0i64 - 4097i64)) { exit 21i32; }
+    exit 9i32;
+};

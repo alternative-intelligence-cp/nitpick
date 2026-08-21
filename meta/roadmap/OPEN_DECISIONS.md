@@ -16,11 +16,15 @@ developer comfort.**
 
 ---
 
-## 0. Immediate — live safety holes (fix in 0.9.0, no decision needed, just do it)
+## 0. Immediate — live safety holes — **CLOSED at 0.9.0**
 
-These are not open *decisions* — the decision is already made (the safety docs are
-clear). They are open *work*, listed here because they must land before anything
-else in 0.9 and because they are the highest-severity items in the queue.
+Both landed as cycle 0.9's opening subcycle: the five verification carriers
+refuse with `NITPICK-RUNG-001` naming 1.3 under BOTH compilers
+(`tests/rejection/contract_requires` / `contract_ensures` / `limit_param` /
+`limit_local` / `loop_invariant`, spans pinned), and division/remainder emit
+the D-007 guard trapping through D-142's `npk_trap` route — `DIV_BY_ZERO`
+−4097, `INT_MIN_OVERFLOW` −4098 — proven by executed-exit tests
+(`div_guard`/`rem_guard`/`div_min`/`div_ok`). The rows stay as the record:
 
 | # | Item | Confirmed | Fix |
 |---|---|---|---|

@@ -9713,3 +9713,35 @@ buffering; `Sink` (diagnostics.npk) lost its fd arm — a write_raw-era mode tag
 the exact pattern D-072 rejected — and is now purely the capture buffer D-075
 needs. The compiler's own report path runs through `nio`, so the library tier
 is load-bearing from its first cycle.
+
+## D-142 — Runtime traps: the code region below E_EOF, and the `npk_trap` route — **SETTLED**
+
+Cycle 0.9.0, repairing LIVE-2 (and giving LIVE-1's refusals their floor). Two
+parts.
+
+**The route.** An emitted guard that fires calls the runtime's `@npk_trap(code)`,
+which calls the program's own `failsafe` with the code and exits with its
+return — the D-013 contract made mechanical: a runtime fault is a controlled
+shutdown, never a hardware fault. `failsafe` is mandatory (D-013), so the
+symbol always resolves; the runtime's undefined set is exactly `{main,
+npk_failsafe}` and the harness holds it there. D-014 requires `failsafe` to
+return positive; until 1.3 injects and verifies that `ensures`, the runtime
+refuses to report success after a fault — a nonpositive return exits 70, the
+floor's runtime-violation code. `npk_trap` is not a builtin: no program can
+call it by name; only emitted guards reach it.
+
+**The codes.** D-141 gave the error space its rule (negative system, positive
+user, the region past MAX_ERRNO for conditions errno has no word for). Runtime
+trap codes continue that region below `E_EOF`:
+
+| Code | Name | Fires on |
+|---|---|---|
+| −4096 | `E_EOF` | end-of-input (D-141) |
+| −4097 | `DIV_BY_ZERO` | integer `/` or `%` with a zero divisor (D-007) |
+| −4098 | `INT_MIN_OVERFLOW` | `INT_MIN / -1` or `INT_MIN % -1` — no representable result, and D-008 already refused inventing one for a plain integer, so it traps rather than wraps |
+
+The guards are emitted in EVERY build — D-068's rule, restated at the emission
+site: a build without the verifier still emits the check, and 1.3's static
+discharge may remove only what it proves. The signed-width MIN table fails
+closed: a width it does not know is an internal `iv_broken`, so a new integer
+width (0.9.3's `i128`) cannot silently ship an unguarded `INT_MIN/-1`.

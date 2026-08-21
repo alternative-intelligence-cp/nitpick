@@ -107,6 +107,34 @@ define internal i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
   ret i64 %r
 }
 
+; ---------------------------------------------------------------------------
+; The trap route (D-142, cycle 0.9.0): how a RUNTIME FAULT becomes a controlled
+; shutdown. Emitted guards (division by zero, INT_MIN/-1 — and every guard a
+; later rung adds) call @npk_trap with a code from the D-141 space's runtime
+; region below E_EOF:
+;
+;   -4097  DIV_BY_ZERO       integer / or % with a zero divisor (D-007)
+;   -4098  INT_MIN_OVERFLOW  INT_MIN / -1 or INT_MIN % -1 (no defined value;
+;                            D-008 refused inventing one, so it traps)
+;
+; The route is trap -> the program's own `failsafe` -> exit with its return.
+; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always
+; resolves at link. D-014 requires failsafe to return POSITIVE; until 1.3
+; injects and verifies that `ensures`, the runtime refuses to report success
+; after a fault: a nonpositive return exits 70, the floor's own
+; runtime-violation code.
+; ---------------------------------------------------------------------------
+
+declare i32 @npk_failsafe(i32)
+
+define void @npk_trap(i32 %code) noreturn {
+  %r = call i32 @npk_failsafe(i32 %code)
+  %bad = icmp sle i32 %r, 0
+  %code2 = select i1 %bad, i32 70, i32 %r
+  call void @npk_exit(i32 %code2)
+  unreachable
+}
+
 define void @npk_exit(i32 %code) noreturn {
   %c = sext i32 %code to i64
   %r = call i64 @npk_sys6(i64 60, i64 %c, i64 0, i64 0, i64 0, i64 0, i64 0)
