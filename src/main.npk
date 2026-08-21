@@ -132,7 +132,8 @@ func:main = int32(cstring[]:argv) {
     }
     // The IR is BYTES already carrying its `\n`s — the byte path, not a text
     // writer: nothing here may translate the product (D-050, binary side).
-    Result<NIL>:pr = write_all(raw nio_stdout_fd(), ir.ptr, ir.len);
+    Result<NIL>:pr = nio_write_all(raw nio_stdout_fd(),
+                                   ir.ptr =>! wild int8->, ir.len);
     if (pr.is_error) {
         NioW:ew = raw nio_stderr();
         drop nio_line(@ew, "npkc: cannot write the IR to stdout");

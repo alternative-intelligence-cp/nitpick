@@ -694,11 +694,12 @@ KIND_STATUS = {
     "ExprTernaryExpr": "lowered",  # 0.9.6 — lazy, branch-based
     "ExprIsErrExpr": "lowered",  # 0.9.5
     "ExprSafeNavExpr": "rung", "ExprComptimeExpr": "rung",
-    "ExprSafeUnwrapExpr": "rung", "ExprNullCoalesceExpr": "rung",
-    "ExprEmphaticUnwrapExpr": "rung", "ExprDefaultsExpr": "rung",
+    "ExprSafeUnwrapExpr": "lowered", "ExprEmphaticUnwrapExpr": "lowered",  # 0.9.7
+    "ExprNullCoalesceExpr": "rung", "ExprDefaultsExpr": "rung",
     "ExprVectorCtorExpr": "rung", "ExprAwaitExpr": "rung",
-    "ExprIterationVarExpr": "rung", "ExprDynCastExpr": "rung",
-    "ExprPickExpr": "rung",
+    "ExprIterationVarExpr": "lowered",  # 0.9.7
+    "ExprDynCastExpr": "rung",
+    "ExprPickExpr": "lowered",  # 0.9.7
     # --- StmtKind ---------------------------------------------------------
     "StmtBlockStmt": "lowered", "StmtVarDeclStmt": "lowered",
     "StmtAssignStmt": "lowered", "StmtExprStmt": "lowered",
@@ -708,10 +709,11 @@ KIND_STATUS = {
     "StmtFailStmt": "lowered", "StmtReturnStmt": "lowered",
     "StmtExitStmt": "lowered", "StmtTrapStmt": "lowered",
     "StmtDeferStmt": "lowered", "StmtDiscardStmt": "lowered",
-    "StmtForStmt": "rung", "StmtLoopStmt": "rung", "StmtTillStmt": "rung",
-    "StmtWhenStmt": "rung", "StmtProveStmt": "rung",
-    "StmtAssertStaticStmt": "rung", "StmtFallStmt": "rung",
-    "StmtGiveStmt": "rung",
+    "StmtForStmt": "lowered", "StmtLoopStmt": "lowered", "StmtTillStmt": "lowered",  # 0.9.7
+    "StmtWhenStmt": "lowered",  # 0.9.7
+    "StmtProveStmt": "rung",
+    "StmtAssertStaticStmt": "rung",
+    "StmtFallStmt": "lowered", "StmtGiveStmt": "lowered",  # 0.9.7
     "StmtPickArm": "inert: walked inside its pick, never dispatched alone",
     # --- DeclKind ---------------------------------------------------------
     "DeclFunctionDecl": "lowered", "DeclStructDecl": "lowered",

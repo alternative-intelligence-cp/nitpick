@@ -1,0 +1,16 @@
+// expect-exit: 0
+//
+// sys (0.9.7, BUILTIN §3): the one syscall form — getpid succeeds through
+// Result, a bad syscall number comes back as a negative code, and the
+// program continues either way.
+
+mod:sys_calls;
+func:main = int32(cstring[]:_~argv) {
+    Result<int64>:procid = sys(39i64);
+    if (procid.is_error) { exit 9i32; }
+    if (procid.value <= 0i64) { exit 8i32; }
+    Result<int64>:bad = sys(9999i64);
+    if (!bad.is_error) { exit 7i32; }
+    exit 0i32;
+};
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

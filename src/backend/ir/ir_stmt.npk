@@ -160,26 +160,14 @@ pub func:emit_stmt = IrVal(ExprEmitter->:x, StmtId:sid) {
 
     // `give` yields from a pick EXPRESSION (D-059), and `fall` is its explicit
     // fallthrough — both live or die with `PickExpr`, which is 0.9's.
-    if (s.kind == StmtKind.StmtGiveStmt) {
-        pass (raw iv_rung("`give`", "0.9", s.span));
-    }
-    if (s.kind == StmtKind.StmtFallStmt) {
-        pass (raw iv_rung("`fall`", "0.9", s.span));
-    }
 
-    if (s.kind == StmtKind.StmtForStmt) {
-        pass (raw iv_rung("the `for` loop", "0.9", s.span));
-    }
-    if (s.kind == StmtKind.StmtLoopStmt) {
-        pass (raw iv_rung("the `loop` construct", "0.9", s.span));
-    }
-    if (s.kind == StmtKind.StmtTillStmt) {
-        pass (raw iv_rung("the `till` construct", "0.9", s.span));
-    }
-    if (s.kind == StmtKind.StmtWhenStmt) {
-        pass (raw iv_rung("the `when` construct", "0.9", s.span));
-    }
+    if (s.kind == StmtKind.StmtForStmt)  { pass (relay emit_for(x, s)); }
+    if (s.kind == StmtKind.StmtLoopStmt) { pass (relay emit_counted(x, s, false)); }
+    if (s.kind == StmtKind.StmtTillStmt) { pass (relay emit_counted(x, s, true)); }
+    if (s.kind == StmtKind.StmtWhenStmt) { pass (relay emit_when(x, s)); }
 
+    if (s.kind == StmtKind.StmtGiveStmt) { pass (relay emit_give(x, s)); }
+    if (s.kind == StmtKind.StmtFallStmt) { pass (relay emit_fall(x, s)); }
     if (s.kind == StmtKind.StmtProveStmt) {
         pass (raw iv_rung("`prove`", "1.3", s.span));
     }
@@ -308,6 +296,313 @@ func:emit_if = IrVal(ExprEmitter->:x, StmtNode:s) {
     pass (raw iv_nil());
 };
 
+// An operand as an i64 — the loop machinery's working width; narrower counters
+// sign-extend.
+func:loop_i64 = string(ExprEmitter->:x, IrVal:v) {
+    if (raw string_eq(v.ll, "i64")) { pass v.ref; }
+    string:w = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(w, " = sext ", v.ll, " ",
+                      relay string_concat(v.ref, " to i64")));
+    pass w;
+};
+
+// `loop(start, limit, step)` / `till(limit, step)` (0.9.7, D-022): DIRECTION
+// IS INFERRED FROM THE BOUNDS — ascending runs `$ < limit`, descending
+// `$ > limit` — and `step` only sizes the jump. A non-positive step is refused
+// at compile time where it is a literal; otherwise it TRAPS (BAD_STEP, -4101),
+// the runtime fallback D-022 specifies, because a zero step cannot terminate
+// and a negative one contradicts bounds it cannot see.
+func:emit_counted = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_till) {
+    VerifyId:cinv = raw stmt_counted_invariant(x.ast, s);
+    if (!(raw verify_is_none(cinv))) {
+        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+    }
+    string:sv = "0";
+    int32:base = 0i32;
+    if (!is_till) {
+        IrVal:s0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, 0i32));
+        if (!(raw iv_is_ok(s0))) { pass s0; }
+        sv = raw loop_i64(x, s0);
+        base = 1i32;
+    }
+    IrVal:l0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, base));
+    if (!(raw iv_is_ok(l0))) { pass l0; }
+    string:lv = raw loop_i64(x, l0);
+    IrVal:p0 = relay emit_expr(x, raw stmt_counted_arg(x.ast, s, base + 1i32));
+    if (!(raw iv_is_ok(p0))) { pass p0; }
+    string:pv = raw loop_i64(x, p0);
+
+    string:bad = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(bad, " = icmp sle i64 ",
+                      relay string_concat(pv, ", 0")));
+    string:trap_l = relay irw_new_label(x.fe.w, "ct.step");
+    string:go_l = relay irw_new_label(x.fe.w, "ct.go");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", bad, ", label %", trap_l,
+                      relay string_concat(", label %", go_l)));
+    drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4101)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, go_l);
+
+    string:slot = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(slot, " = alloca i64", ""));
+    drop irw_line(x.fe.w, relay cat5("store i64 ", sv, ", ptr ", slot, ""));
+    string:asc = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(asc, " = icmp slt i64 ", sv, ", ", lv));
+
+    string:head_l = relay irw_new_label(x.fe.w, "ct.head");
+    string:body_l = relay irw_new_label(x.fe.w, "ct.body");
+    string:incr_l = relay irw_new_label(x.fe.w, "ct.incr");
+    string:done_l = relay irw_new_label(x.fe.w, "ct.done");
+    drop s_br(x, head_l);
+    drop s_start(x, head_l);
+    string:cur = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cur, " = load i64, ptr ", slot, "", ""));
+    string:up = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(up, " = icmp slt i64 ", cur, ", ", lv));
+    string:down = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(down, " = icmp sgt i64 ", cur, ", ", lv));
+    string:cond = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cond, " = select i1 ", asc, ", ",
+                      relay cat5("i1 ", up, ", i1 ", down, "")));
+    drop irw_line(x.fe.w, relay cat5("br i1 ", cond, ", label %", body_l,
+                      relay string_concat(", label %", done_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, body_l);
+    // `continue` re-enters at the INCREMENT, or the counter would never move.
+    drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), slot);
+    IrVal:b = relay emit_block(x, raw stmt_counted_body(s));
+    drop fnem_loop_pop(x.fe);
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop s_br(x, incr_l);
+    drop s_start(x, incr_l);
+    string:c2 = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c2, " = load i64, ptr ", slot, "", ""));
+    string:nup = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(nup, " = add i64 ", c2, ", ", pv));
+    string:ndown = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(ndown, " = sub i64 ", c2, ", ", pv));
+    string:nxt = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(nxt, " = select i1 ", asc, ", ",
+                      relay cat5("i64 ", nup, ", i64 ", ndown, "")));
+    drop irw_line(x.fe.w, relay cat5("store i64 ", nxt, ", ptr ", slot, ""));
+    drop s_br(x, head_l);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
+// `when (cond) { } then { } end { }` (0.9.7, D-027): a while that TRACKS
+// whether its body ever ran. `then` runs when it did — including a `break`
+// exit, which lands at the same junction — and `end` only when the condition
+// was false from the start. One flag, one junction, never both clauses.
+func:emit_when = IrVal(ExprEmitter->:x, StmtNode:s) {
+    VerifyId:winv = raw stmt_when_invariant(x.ast, s);
+    if (!(raw verify_is_none(winv))) {
+        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+    }
+    string:flag = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(flag, " = alloca i8", ""));
+    drop irw_line(x.fe.w, relay cat3("store i8 0, ptr ", flag, ""));
+
+    string:head_l = relay irw_new_label(x.fe.w, "wn.head");
+    string:body_l = relay irw_new_label(x.fe.w, "wn.body");
+    string:junc_l = relay irw_new_label(x.fe.w, "wn.junc");
+    string:then_l = relay irw_new_label(x.fe.w, "wn.then");
+    string:end_l = relay irw_new_label(x.fe.w, "wn.end");
+    string:done_l = relay irw_new_label(x.fe.w, "wn.done");
+
+    drop s_br(x, head_l);
+    drop s_start(x, head_l);
+    IrVal:c = relay emit_cond(x, raw stmt_cond(s));
+    if (!(raw iv_is_ok(c))) { pass c; }
+    drop irw_line(x.fe.w, relay cat5("br i1 ", c.ref, ", label %", body_l,
+                      relay string_concat(", label %", junc_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, body_l);
+    drop irw_line(x.fe.w, relay cat3("store i8 1, ptr ", flag, ""));
+    drop fnem_loop_push(x.fe, head_l, junc_l, raw stmt_label(s), "");
+    IrVal:b = relay emit_block(x, raw stmt_when_body(x.ast, s));
+    drop fnem_loop_pop(x.fe);
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop s_br(x, head_l);
+
+    drop s_start(x, junc_l);
+    string:ran = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(ran, " = load i8, ptr ", flag, "", ""));
+    string:rb = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(rb, " = icmp ne i8 ",
+                      relay string_concat(ran, ", 0")));
+    drop irw_line(x.fe.w, relay cat5("br i1 ", rb, ", label %", then_l,
+                      relay string_concat(", label %", end_l)));
+    x.fe.terminated = true;
+
+    drop s_start(x, then_l);
+    StmtId:tb = raw stmt_when_then(x.ast, s);
+    if (tb.index != 0i32) {
+        IrVal:tv = relay emit_stmt(x, tb);
+        if (!(raw iv_is_ok(tv))) { pass tv; }
+    }
+    drop s_br(x, done_l);
+    drop s_start(x, end_l);
+    StmtId:eb = raw stmt_when_end(x.ast, s);
+    if (eb.index != 0i32) {
+        IrVal:ev = relay emit_stmt(x, eb);
+        if (!(raw iv_is_ok(ev))) { pass ev; }
+    }
+    drop s_br(x, done_l);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
+// `for (T:x in iterable)` (0.9.7): a range walks its half-open span with the
+// BINDING as the value; a slice or array walks its elements by index, copying
+// each into the binding — a value per iteration, exactly what a binding is.
+func:emit_for = IrVal(ExprEmitter->:x, StmtNode:s) {
+    VerifyId:finv = raw stmt_for_invariant(x.ast, s);
+    if (!(raw verify_is_none(finv))) {
+        pass (raw iv_rung("a loop `invariant`", "1.3", s.span));
+    }
+    ExprId:iter = raw stmt_for_iter(x.ast, s);
+    int32:itid = raw exprtypes_get(x.et, iter);
+    int32:ikind = raw type_kind(x.fe.ctx.types, itid);
+    DeclNode:bind = relay ast_decl(x.ast, raw stmt_for_binding(s));
+    int32:btid = relay resolve_type(x.tr, raw param_type(bind), x.scope);
+    LlType:bll = relay ll_type(x.fe.ctx, btid);
+    if (!(raw ll_is_ok(bll))) { pass (relay iv_from_ll_at(x, bll, btid, s.span)); }
+
+    if (ikind == (raw TY_RANGE())) {
+        IrVal:rv = relay emit_expr(x, iter);
+        if (!(raw iv_is_ok(rv))) { pass rv; }
+        string:lo = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(lo, " = extractvalue ", rv.ll, " ",
+                          relay string_concat(rv.ref, ", 0")));
+        string:hi = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(hi, " = extractvalue ", rv.ll, " ",
+                          relay string_concat(rv.ref, ", 1")));
+        string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+        drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", lo,
+                          relay string_concat(", ptr ", slot)));
+        string:head_l = relay irw_new_label(x.fe.w, "fr.head");
+        string:body_l = relay irw_new_label(x.fe.w, "fr.body");
+        string:incr_l = relay irw_new_label(x.fe.w, "fr.incr");
+        string:done_l = relay irw_new_label(x.fe.w, "fr.done");
+        drop s_br(x, head_l);
+        drop s_start(x, head_l);
+        string:cur = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(cur, " = load ", bll.text, ", ptr ",
+                          relay string_concat(slot, "")));
+        string:cnd = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(cnd, " = icmp slt ", bll.text, " ",
+                          relay cat3(cur, ", ", hi)));
+        drop irw_line(x.fe.w, relay cat5("br i1 ", cnd, ", label %", body_l,
+                          relay string_concat(", label %", done_l)));
+        x.fe.terminated = true;
+        drop s_start(x, body_l);
+        drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
+        IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+        drop fnem_loop_pop(x.fe);
+        if (!(raw iv_is_ok(b))) { pass b; }
+        drop s_br(x, incr_l);
+        drop s_start(x, incr_l);
+        string:c2 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(c2, " = load ", bll.text, ", ptr ",
+                          relay string_concat(slot, "")));
+        string:nx = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(nx, " = add ", bll.text, " ",
+                          relay string_concat(c2, ", 1")));
+        drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", nx,
+                          relay string_concat(", ptr ", slot)));
+        drop s_br(x, head_l);
+        drop s_start(x, done_l);
+        pass (raw iv_nil());
+    }
+
+    if (ikind == (raw TY_SLICE())) {
+        pass (relay emit_for_indexed(x, s, iter, bind, btid, bll, false));
+    }
+    if (ikind == (raw TY_ARRAY())) {
+        pass (relay emit_for_indexed(x, s, iter, bind, btid, bll, true));
+    }
+    pass (raw iv_rung("a `for` over this iterable", "1.0", s.span));
+};
+
+// The slice/array half: index 0..len, element copied into the binding.
+func:emit_for_indexed = IrVal(ExprEmitter->:x, StmtNode:s, ExprId:iter,
+                              DeclNode:bind, int32:btid, LlType:bll,
+                              bool:is_array) {
+    string:base = "";
+    string:len = "";
+    int32:itid = raw exprtypes_get(x.et, iter);
+    if (is_array) {
+        PlaceVal:pv2 = relay addr_of(x, iter);
+        if (pv2.state != (raw LL_OK())) { pass (relay iv_from_place(pv2)); }
+        base = pv2.addr;
+        len = raw int_to_string(
+            (raw type_array_count(x.fe.ctx.types, itid)) => int64);
+    } else {
+        IrVal:sv = relay emit_expr(x, iter);
+        if (!(raw iv_is_ok(sv))) { pass sv; }
+        string:d = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(d, " = extractvalue ", sv.ll, " ",
+                          relay string_concat(sv.ref, ", 0")));
+        base = d;
+        string:l2 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(l2, " = extractvalue ", sv.ll, " ",
+                          relay string_concat(sv.ref, ", 1")));
+        len = l2;
+    }
+    string:idx = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(idx, " = alloca i64", ""));
+    drop irw_line(x.fe.w, relay cat3("store i64 0, ptr ", idx, ""));
+    string:slot = relay fnem_local(x.fe, raw decl_name(bind), btid, bll.text);
+    string:head_l = relay irw_new_label(x.fe.w, "fe.head");
+    string:body_l = relay irw_new_label(x.fe.w, "fe.body");
+    string:incr_l = relay irw_new_label(x.fe.w, "fe.incr");
+    string:done_l = relay irw_new_label(x.fe.w, "fe.done");
+    drop s_br(x, head_l);
+    drop s_start(x, head_l);
+    string:cur = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cur, " = load i64, ptr ", idx, "", ""));
+    string:cnd = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(cnd, " = icmp ult i64 ", cur, ", ", len));
+    drop irw_line(x.fe.w, relay cat5("br i1 ", cnd, ", label %", body_l,
+                      relay string_concat(", label %", done_l)));
+    x.fe.terminated = true;
+    drop s_start(x, body_l);
+    string:ep = relay irw_temp(x.fe.w);
+    if (is_array) {
+        LlType:all = relay ll_type(x.fe.ctx, itid);
+        if (!(raw ll_is_ok(all))) { pass (raw iv_broken(s.span)); }
+        drop irw_line(x.fe.w, relay cat5(ep, " = getelementptr ", all.text,
+                          ", ptr ", relay cat4(base, ", i64 0, i64 ", cur, "")));
+    } else {
+        drop irw_line(x.fe.w, relay cat5(ep, " = getelementptr ", bll.text,
+                          ", ptr ", relay cat4(base, ", i64 ", cur, "")));
+    }
+    string:ev = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(ev, " = load ", bll.text, ", ptr ",
+                      relay string_concat(ep, "")));
+    drop irw_line(x.fe.w, relay cat5("store ", bll.text, " ", ev,
+                      relay string_concat(", ptr ", slot)));
+    drop fnem_loop_push(x.fe, incr_l, done_l, raw stmt_label(s), "");
+    IrVal:b = relay emit_stmt(x, raw stmt_for_body(x.ast, s));
+    drop fnem_loop_pop(x.fe);
+    if (!(raw iv_is_ok(b))) { pass b; }
+    drop s_br(x, incr_l);
+    drop s_start(x, incr_l);
+    string:c3 = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c3, " = load i64, ptr ", idx, "", ""));
+    string:n3 = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(n3, " = add i64 ",
+                      relay string_concat(c3, ", 1")));
+    drop irw_line(x.fe.w, relay cat5("store i64 ", n3, ", ptr ", idx, ""));
+    drop s_br(x, head_l);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
 func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
     // LIVE-1 (0.9.0): an invariant the backend never read was an obligation
     // that silently vanished. Refused until 1.3 checks it.
@@ -328,7 +623,7 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
     x.fe.terminated = true;
 
     drop s_start(x, body_l);
-    drop fnem_loop_push(x.fe, head_l, done_l);
+    drop fnem_loop_push(x.fe, head_l, done_l, raw stmt_label(s), "");
     IrVal:b = relay emit_block(x, raw stmt_body(x.ast, s));
     drop fnem_loop_pop(x.fe);
     if (!(raw iv_is_ok(b))) { pass b; }
@@ -341,14 +636,15 @@ func:emit_while = IrVal(ExprEmitter->:x, StmtNode:s) {
 // label. Both run the defers of every scope between here and the loop first,
 // which is the gap the seed recorded and this closes.
 func:emit_break = IrVal(ExprEmitter->:x, StmtNode:s, bool:is_break) {
-    if ((raw stmt_label(s)) != 0i32) {
-        pass (raw iv_rung("a labelled `break`/`continue`", "0.9", s.span));
-    }
-    if ((x.fe.loop_count) == 0i32) { pass (raw iv_broken(s.span)); }
-    IrVal:d = relay run_defers_down_to(x, raw fnem_loop_depth(x.fe));
+    // LABELLED OR NOT, one mechanism (0.9.7): the label picks the loop frame,
+    // and the defers of every scope between here and THAT frame run first —
+    // exactly the unlabelled rule, aimed further out.
+    int32:frame = raw fnem_loop_find(x.fe, raw stmt_label(s));
+    if (frame < 0i32) { pass (raw iv_broken(s.span)); }
+    IrVal:d = relay run_defers_down_to(x, raw fnem_loop_depth_at(x.fe, frame));
     if (!(raw iv_is_ok(d))) { pass d; }
-    if (is_break) { drop s_br(x, raw fnem_loop_done(x.fe)); }
-    else          { drop s_br(x, raw fnem_loop_head(x.fe)); }
+    if (is_break) { drop s_br(x, raw fnem_loop_done_at(x.fe, frame)); }
+    else          { drop s_br(x, raw fnem_loop_head_at(x.fe, frame)); }
     pass (raw iv_nil());
 };
 
@@ -430,6 +726,19 @@ func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s) {
 // dispatch is one instruction and the exhaustiveness the analyses proved (0.5)
 // needs no runtime default of its own.
 
+// "pk<seq>.arm<i>" — DERIVED arm-body labels, so `fall label;` computes its
+// target from the pick frame's seq and the arm list instead of a stored table.
+pub func:pk_label = string(int32:seq, int32:i) {
+    string:a = relay string_concat("pk", raw int_to_string(seq => int64));
+    string:b = relay string_concat(a, ".arm");
+    pass (relay string_concat(b, raw int_to_string(i => int64)));
+};
+
+func:pk_named = string(int32:seq, string:stem) {
+    string:a = relay string_concat("pk", raw int_to_string(seq => int64));
+    pass (relay string_concat(a, stem));
+};
+
 // The integer constant an arm matches, as text — or a refusal.
 func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) {
     if (pn.kind == PatKind.PatValue) {
@@ -451,7 +760,9 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
                 pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
             }
         }
-        pass (raw iv_rung("this pattern", "0.9", at));
+        // Every literal kind a pattern can legally hold has an arm above;
+        // anything else is a walk hole, not a program mistake.
+        pass (raw iv_broken(at));
     }
     if (pn.kind == PatKind.PatEnumDestructure) {
         int32:segs = raw pat_enum_segment_count(x.ast, pn);
@@ -461,11 +772,13 @@ func:pattern_const = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid, Span:at) 
         if (!vi.found) { pass (raw iv_broken(at)); }
         pass (raw iv("", raw int_to_string(vi.tag => int64), 0i32));
     }
+    // A range pattern routes to the CHAIN dispatch before this runs (0.9.7);
+    // reaching it here is a hole in the routing, not in the program.
     if (pn.kind == PatKind.PatRange) {
-        pass (raw iv_rung("a range pattern", "0.9", at));
+        pass (raw iv_broken(at));
     }
     if (pn.kind == PatKind.PatStructDestructure) {
-        pass (raw iv_rung("struct destructuring in `pick`", "0.9", at));
+        pass (raw iv_rung("struct destructuring in `pick`", "1.0", at));
     }
     // `ERR:` matches the sentinel (0.9.5) — the pick's OWN compare, which is
     // deliberately unguarded: pick-with-ERR-arm is the sanctioned branch on a
@@ -502,7 +815,7 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     // MULTI-PAYLOAD BINDING is the pattern tail's (0.9.7), and it refuses by
     // name until then — the construction side refuses symmetrically.
     if ((raw pat_enum_bind_count(x.ast, pn)) > 1i32) {
-        pass (raw iv_rung("a multi-payload binding", "0.9", at));
+        pass (raw iv_rung("a multi-payload binding", "1.0", at));
     }
 
     // THE GENERAL BINDING (0.9.2): spill the selector, address its payload
@@ -527,6 +840,43 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     pass (raw iv_nil());
 };
 
+// `give expr;` (0.9.7, D-059): the pick-expression's yield — value into the
+// frame's slot, defers between here and the pick unwound, exit to its done.
+func:emit_give = IrVal(ExprEmitter->:x, StmtNode:s) {
+    string:slot = raw fnem_pick_slot(x.fe);
+    if (slot.len == 0i64) { pass (raw iv_broken(s.span)); }
+    IrVal:v = relay emit_expr(x, raw stmt_operand(s));
+    if (!(raw iv_is_ok(v))) { pass v; }
+    IrVal:d = relay run_defers_down_to(x, raw fnem_pick_depth(x.fe));
+    if (!(raw iv_is_ok(d))) { pass d; }
+    drop irw_line(x.fe.w, relay cat5("store ", v.ll, " ", v.ref,
+                      relay string_concat(", ptr ", slot)));
+    drop s_br(x, raw fnem_pick_done(x.fe));
+    pass (raw iv_nil());
+};
+
+// `fall label;` — jump to the labelled arm's BODY, which is derivable from the
+// frame's seq and the arm list; there is no implicit fallthrough (D-047-era
+// rule), so the target is always named.
+func:emit_fall = IrVal(ExprEmitter->:x, StmtNode:s) {
+    int32:want = raw stmt_label(s);
+    int32:start = raw fnem_pick_start(x.fe);
+    int32:count = raw fnem_pick_count_of(x.fe);
+    int32:seq = raw fnem_pick_seq_of(x.fe);
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        if ((raw arm_label(arm)) == want) {
+            IrVal:d = relay run_defers_down_to(x, raw fnem_pick_depth(x.fe));
+            if (!(raw iv_is_ok(d))) { pass d; }
+            drop s_br(x, raw pk_label(seq, i));
+            pass (raw iv_nil());
+        }
+        i = i + 1i32;
+    }
+    pass (raw iv_broken(s.span));
+};
+
 func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     ExprId:sel_id = raw pick_selector(s);
     int32:sel_tid = raw exprtypes_get(x.et, sel_id);
@@ -546,16 +896,30 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
             disc_ll = "i32";
         }
     }
-    if (raw string_eq(disc_ll, "{ ptr, i64, i64 }")) {
-        pass (raw iv_rung("`pick` over a string", "0.9", s.span));
+    // GUARDS, STRINGS AND RANGES CANNOT RIDE A SWITCH (0.9.7): any of them
+    // sends the whole pick to the compare CHAIN, which tests arms in source
+    // order. Bare-constant picks keep the switch.
+    int32:count = raw pick_arm_count(s);
+    bool:chain = raw string_eq(disc_ll, "{ ptr, i64, i64 }");
+    int32:ci2 = 0i32;
+    while (ci2 < count) {
+        StmtNode:carm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
+                                           raw pick_arm_start(s), ci2));
+        if (!(raw expr_is_none(raw arm_guard(carm)))) { chain = true; }
+        PatNode:cpn = relay ast_pat(x.ast, raw arm_pattern(carm));
+        if (cpn.kind == PatKind.PatRange) { chain = true; }
+        ci2 = ci2 + 1i32;
+    }
+    if (chain) {
+        pass (relay emit_pick_chain(x, sel, sel_tid, disc, disc_ll,
+                  raw pick_arm_start(s), count, "", ""));
     }
 
-    string:done_l = relay irw_new_label(x.fe.w, "pick.done");
+    int32:seq = raw fnem_next_pick_seq(x.fe);
+    string:done_l = raw pk_named(seq, ".done");
 
     // FIRST PASS: a label per arm and the switch line — in arm order, so the
-    // emitted cases read as the source does. A guard is a runtime condition
-    // bolted onto a static dispatch; it is 0.9's.
-    int32:count = raw pick_arm_count(s);
+    // emitted cases read as the source does.
     // The arm labels, held locally so pass two starts each arm at the label
     // pass one promised the switch. Local because a pick nests inside a pick.
     wild int8->:lm = alloc((count => int64) * #size_of<string>());
@@ -566,10 +930,7 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     while (i < count) {
         StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
                                           raw pick_arm_start(s), i));
-        if (!(raw expr_is_none(raw arm_guard(arm)))) {
-            pass (raw iv_rung("a guarded `pick` arm", "0.9", arm.span));
-        }
-        string:arm_l = relay irw_new_label(x.fe.w, "pick.arm");
+        string:arm_l = raw pk_label(seq, i);
         labels[i => int64] = arm_l;
         PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
         if (pn.kind == PatKind.PatWildcard) {
@@ -588,6 +949,9 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
     x.fe.terminated = true;
 
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
+    // The frame is what `fall` (and, in the expression form, `give`) resolve
+    // against.
+    drop fnem_pick_push(x.fe, done_l, "", "", raw pick_arm_start(s), count, seq);
     i = 0i32;
     while (i < count) {
         StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast,
@@ -603,6 +967,157 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) {
         drop s_br(x, done_l);
         i = i + 1i32;
     }
+    drop fnem_pick_pop(x.fe);
+    drop s_start(x, done_l);
+    pass (raw iv_nil());
+};
+
+// THE CHAIN (0.9.7): arm-by-arm tests in source order, for the patterns a
+// switch cannot host — string equality, ranges, guards — and for every
+// EXPRESSION pick, whose arms `give` into the slot. Bindings happen before the
+// guard, because a guard's whole point is to read them. Exhaustiveness was
+// proven statically (0.5), so the fall-off end is `unreachable`.
+pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
+                                 string:disc, string:disc_ll, int32:start,
+                                 int32:count, string:give_slot,
+                                 string:give_ll) {
+    int32:seq = raw fnem_next_pick_seq(x.fe);
+    string:done_l = raw pk_named(seq, ".done");
+    drop fnem_pick_push(x.fe, done_l, give_slot, give_ll, start, count, seq);
+
+    bool:sel_signed = true;
+    if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_INT())) {
+        sel_signed = raw type_is_signed(x.fe.ctx.types, sel_tid);
+    }
+    if ((raw type_kind(x.fe.ctx.types, sel_tid)) == (raw TY_CHAR())) {
+        sel_signed = false;
+    }
+
+    string:first_t = raw pk_named(seq, ".t0");
+    drop s_br(x, first_t);
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
+        PatNode:pn = relay ast_pat(x.ast, raw arm_pattern(arm));
+        string:test_l = raw pk_named(seq,
+                            relay string_concat(".t", raw int_to_string(i => int64)));
+        string:body_l = raw pk_label(seq, i);
+        string:next_l = raw pk_named(seq, ".none");
+        if ((i + 1i32) < count) {
+            next_l = raw pk_named(seq,
+                         relay string_concat(".t", raw int_to_string((i + 1i32) => int64)));
+        }
+        drop s_start(x, test_l);
+        int32:mark = raw fnem_mark(x.fe);
+
+        // --- the pattern's truth -------------------------------------------
+        string:hit = "";
+        if (pn.kind == PatKind.PatWildcard) {
+            hit = "true";
+        }
+        if (hit.len == 0i64) {
+            if (raw string_eq(disc_ll, "{ ptr, i64, i64 }")) {
+                // A string arm: the literal, then the floor's byte equality.
+                IrVal:lit = relay emit_expr(x, raw pat_value(pn));
+                if (!(raw iv_is_ok(lit))) { pass lit; }
+                string:eqv = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(eqv,
+                                  " = call i8 @npk_string_equals(",
+                                  relay cat4(disc_ll, " ", disc, ", "),
+                                  relay cat3(disc_ll, " ", lit.ref), ")"));
+                string:eb = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat3(eb, " = icmp ne i8 ",
+                                  relay string_concat(eqv, ", 0")));
+                hit = eb;
+            }
+        }
+        if (hit.len == 0i64) {
+            if (pn.kind == PatKind.PatRange) {
+                // Pattern bounds are LITERALS (the exhaustiveness analysis
+                // reasons over them, so nothing dynamic ever got here) — read
+                // their payloads directly; pattern sub-expressions carry no
+                // checker-recorded type to emit through.
+                ExprNode:lon = relay ast_expr(x.ast, raw pat_range_lo(pn));
+                ExprNode:hin = relay ast_expr(x.ast, raw pat_range_hi(pn));
+                if (lon.kind != ExprKind.ExprIntLiteral) {
+                    if (lon.kind != ExprKind.ExprCharLiteral) {
+                        pass (raw iv_broken(arm.span));
+                    }
+                }
+                IrVal:plo = raw iv(disc_ll, raw int_to_string(lon.payload), 0i32);
+                IrVal:phi = raw iv(disc_ll, raw int_to_string(hin.payload), 0i32);
+                string:gep2 = "uge";
+                string:lep = "ult";
+                string:lip = "ule";
+                if (sel_signed) { gep2 = "sge"; lep = "slt"; lip = "sle"; }
+                string:c1 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(c1, " = icmp ", gep2, " ",
+                                  relay cat5(disc_ll, " ", disc, ", ", plo.ref)));
+                string:hp = lep;
+                if (raw pat_range_inclusive(pn)) { hp = lip; }
+                string:c2 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(c2, " = icmp ", hp, " ",
+                                  relay cat5(disc_ll, " ", disc, ", ", phi.ref)));
+                string:c3 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(c3, " = and i1 ", c1, ", ", c2));
+                hit = c3;
+            }
+        }
+        if (hit.len == 0i64) {
+            IrVal:pc = relay pattern_const(x, pn, sel_tid, arm.span);
+            if (!(raw iv_is_ok(pc))) { pass pc; }
+            string:cc = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(cc, " = icmp eq ", disc_ll, " ",
+                              relay cat3(disc, ", ", pc.ref)));
+            hit = cc;
+        }
+
+        // --- bindings, then the guard --------------------------------------
+        ExprId:g = raw arm_guard(arm);
+        if (raw expr_is_none(g)) {
+            if (raw string_eq(hit, "true")) {
+                drop s_br(x, body_l);
+            } else {
+                drop irw_line(x.fe.w, relay cat5("br i1 ", hit, ", label %",
+                                  body_l, relay string_concat(", label %", next_l)));
+                x.fe.terminated = true;
+            }
+        } else {
+            string:prep_l = raw pk_named(seq,
+                                relay string_concat(".g", raw int_to_string(i => int64)));
+            if (raw string_eq(hit, "true")) {
+                drop s_br(x, prep_l);
+            } else {
+                drop irw_line(x.fe.w, relay cat5("br i1 ", hit, ", label %",
+                                  prep_l, relay string_concat(", label %", next_l)));
+                x.fe.terminated = true;
+            }
+            drop s_start(x, prep_l);
+            IrVal:gb = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+            if (!(raw iv_is_ok(gb))) { pass gb; }
+            IrVal:gc = relay emit_cond(x, g);
+            if (!(raw iv_is_ok(gc))) { pass gc; }
+            drop irw_line(x.fe.w, relay cat5("br i1 ", gc.ref, ", label %",
+                              body_l, relay string_concat(", label %", next_l)));
+            x.fe.terminated = true;
+        }
+
+        // --- the body ------------------------------------------------------
+        drop s_start(x, body_l);
+        if (raw expr_is_none(g)) {
+            IrVal:bp = relay bind_payload(x, pn, sel_tid, sel, arm.span);
+            if (!(raw iv_is_ok(bp))) { pass bp; }
+        }
+        IrVal:b = relay emit_stmt(x, raw arm_body(arm));
+        if (!(raw iv_is_ok(b))) { pass b; }
+        drop fnem_release(x.fe, mark);
+        drop s_br(x, done_l);
+        i = i + 1i32;
+    }
+    drop s_start(x, raw pk_named(seq, ".none"));
+    drop irw_line(x.fe.w, "unreachable");
+    x.fe.terminated = true;
+    drop fnem_pick_pop(x.fe);
     drop s_start(x, done_l);
     pass (raw iv_nil());
 };
@@ -618,7 +1133,7 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
         pass (raw iv_rung("a generic function", "1.0", d.span));
     }
     if (raw decl_has(d, raw DECL_VARIADIC())) {
-        pass (raw iv_rung("a variadic function", "0.9", d.span));
+        pass (raw iv_rung("a variadic function", "1.1", d.span));
     }
     if (raw decl_has(d, raw DECL_ASYNC())) {
         pass (raw iv_rung("an async function", "1.1", d.span));

@@ -129,11 +129,27 @@ func:nio_byte = NIL(NioW->:w, int8:b) {
     pass NIL;
 };
 
+// The write-all retry loop — LIBRARY CODE since 0.9.7, exactly as D-141
+// promised: the floor's `write_all` existed only because stepping a pointer
+// was not yet expressible, and `@p[off]` — the address of the off-th element,
+// which the place machinery has computed since 0.7 — expresses it. The floor
+// lost the symbol; the syscall (`write`, one kernel call, short counts
+// returned) is all that remains below.
+pub func:nio_write_all = NIL(fd:sink, wild int8->:p, int64:n) {
+    int64:off = 0i64;
+    while (off < n) {
+        Result<int64>:w = write(sink, @p[off], n - off);
+        if (w.is_error) { fail w.error; }
+        off = off + w.value;
+    }
+    pass NIL;
+};
+
 // Flush what is buffered. On failure the bytes are KEPT — a failed flush must
 // not also be a silent discard; the caller decides whether to retry or abandon.
 pub func:nio_flush = NIL(NioW->:w) {
     if (w.len == 0i64) { pass NIL; }
-    Result<NIL>:r = write_all(w.sink, w.buf, w.len);
+    Result<NIL>:r = nio_write_all(w.sink, w.buf, w.len);
     if (r.is_error) { fail r.error; }
     w.len = 0i64;
     pass NIL;

@@ -15,8 +15,11 @@ func:main = int32(cstring[]:_~argv) {
     Result<fd>:wf = open(path, 577i64, 420i64);
     if (wf.is_error)                                  { exit 10i32; }
     fd:sink = wf.value;
-    Result<NIL>:wr = write_all(sink, body.ptr, body.len);
+    // ONE kernel write — `write_all` graduated to the library (0.9.7), and a
+    // 14-byte write to a fresh regular file is never short.
+    Result<int64>:wr = write(sink, body.ptr, body.len);
     if (wr.is_error)                                  { exit 11i32; }
+    if (wr.value != body.len)                         { exit 30i32; }
     Result<NIL>:c1 = close(sink);
     if (c1.is_error)                                  { exit 12i32; }
 

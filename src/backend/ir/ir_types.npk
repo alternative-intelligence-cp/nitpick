@@ -191,7 +191,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // one. NO RUNG TABLE NAMED IT; 0.7.2 assigns it to 0.9 with the rest of full
     // type lowering, rather than leaving a type whose refusal has no cycle.
     if (k == (raw TY_FUNC()))          { pass (raw ll_ok("ptr")); }
-    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("0.9")); }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass (raw ll_rung("1.1")); }
 
     if (k == (raw TY_ARRAY()))    { pass (relay ll_array(c, id)); }
     if (k == (raw TY_RESULT()))   { pass (relay ll_result(c, id)); }
@@ -224,7 +224,9 @@ func:ll_int_bits = LlType(int32:bits) {
     if (bits == 1024i32) { pass (raw ll_ok("i1024")); }
     if (bits == 2048i32) { pass (raw ll_ok("i2048")); }
     if (bits == 4096i32) { pass (raw ll_ok("i4096")); }
-    pass (raw ll_rung("0.9"));
+    // Sub-byte widths (`int1/2/4`): no layout exists, and decision G-2 owns
+    // whether they get one or leave the grammar.
+    pass (raw ll_rung("a later cycle (G-2)"));
 };
 
 // `[N x T]` — A VALUE TYPE THAT DOES NOT DECAY. Its element's refusal is its own:
@@ -365,7 +367,9 @@ pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) {
 
 pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
     if ((raw type_kind(c.types, id)) != (raw TY_ENUM())) { pass (raw ll_broken()); }
-    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_rung("0.9")); }
+    // A payload-less enum has no body to ask for; the question itself is the
+    // mistake (internal — every caller filters first).
+    if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_broken()); }
     EnumSlot:sl = raw enum_payload_slot(c, id);
     if (!sl.ok) { pass (raw ll_broken()); }
     string:a = relay string_concat("{ i32, [",

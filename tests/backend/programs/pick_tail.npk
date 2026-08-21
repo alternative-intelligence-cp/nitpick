@@ -1,0 +1,56 @@
+// expect-exit: 0
+//
+// The pick tail (0.9.7): guards reading their bindings, string selectors,
+// range patterns in both spellings, the pick EXPRESSION with give, and
+// fall to a labelled arm (D-059, D-047).
+
+mod:pick_tail;
+enum:Ev = { Ping; Move(int32); Stop; };
+func:main = int32(cstring[]:argv) {
+    // guards read their bindings
+    Ev:e = Ev.Move(7i32);
+    int32:g = 0i32;
+    pick (e) {
+        (Ev.Move(d)) where (d > 10i32) { g = 1i32; },
+        (Ev.Move(d)) where (d > 5i32) { g = d; },
+        (*) { g = 3i32; }
+    }
+    if (g != 7i32)                     { exit 10i32; }
+
+    // string pick
+    string:cmd = "run";
+    int32:sc = 0i32;
+    pick (cmd) {
+        ("stop") { sc = 1i32; },
+        ("run")  { sc = 2i32; },
+        (*)      { sc = 3i32; }
+    }
+    if (sc != 2i32)                    { exit 11i32; }
+
+    // range patterns, both spellings
+    int32:v = 7i32;
+    int32:rr = 0i32;
+    pick (v) {
+        (0i32...5i32) { rr = 1i32; },
+        (5i32..9i32)  { rr = 2i32; },
+        (*)           { rr = 3i32; }
+    }
+    if (rr != 2i32)                    { exit 12i32; }
+
+    // pick expression with give, and fall
+    int32:pe = pick (v) {
+        (7i32) { give 40i32; },
+        (*)    { give 0i32; }
+    };
+    if (pe != 40i32)                   { exit 13i32; }
+
+    int32:fl = 0i32;
+    pick (v) {
+        (7i32) { fall other; },
+        other: (*) { fl = 9i32; }
+    }
+    if (fl != 9i32)                    { exit 14i32; }
+
+    exit 0i32;
+};
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

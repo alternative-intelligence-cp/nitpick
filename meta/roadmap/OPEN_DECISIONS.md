@@ -99,6 +99,7 @@ These would force token-table renumbering *after* the "built once, in full" free
 | # | Proposed | Item | Source |
 |---|---|---|---|
 | **G-1** | D-164 | **D-044's seven bitflag types** (`oflags`, `prot`, `mflags`, `fmode`, `fcmd`, `advice`, `whence`) are listed in AST_REFERENCE as parser-known builtins, are required by every syscall wrapper, and exist nowhere — a user type named `oflags` silently shadows a decided builtin. Run the generator to add them now, or supersede D-044 with a library-enum design. Decide before the frontend freeze. | grammar #9 |
+| **G-3** | D-166 | **The exotic numeric tier has no owner.** `vec2/vec3`, `matrix`, `tensor`, `tfp*`, `frac*`, `dim256`, `simd`, `complex` parse and resolve (they exist for Nikola's numerics, made primitives on an explicit performance hypothesis) but NO cycle in the 0.9–1.4 plan lowers them — 0.9.7's exit sweep found their refusals naming a cycle that was closing. The rung strings now cite this row ("1.1 (G-3)"). Decide their owner: a dedicated subcycle in 1.1 beside the driver/numerics work, a new cycle, or explicit descope-until-consumer per the D-143 precedent. | before 1.1 closes | 0.9.7 sweep |
 | **G-2** | D-165 | **The full integer-width set** (`int1/2/4`, `int512`–`int4096`) is accepted by lexer/impl but has no layout in TYPE_REFERENCE, and `tt_int` computes size/align 0 for sub-byte widths. Enumerate with a stored-as-byte rule, or trim the grammar. | type-sys #18 |
 
 ---

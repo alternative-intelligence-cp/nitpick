@@ -99,7 +99,8 @@ ready:                                            ; preds = %loop
 ; Raw syscall
 ; ---------------------------------------------------------------------------
 
-define internal i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
+; PUBLIC since 0.9.7: the `sys` builtin calls straight through it.
+define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
                               i64 %a4, i64 %a5, i64 %a6) {
   %r = call i64 asm sideeffect "syscall",
        "={ax},{ax},{di},{si},{dx},{r10},{r8},{r9},~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}"
@@ -120,6 +121,8 @@ define internal i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            that does not fit its source (D-070; 0.9.2)
 ;   -4100  TBB_ERR           an ERR value reached a bare comparison or a
 ;                            checked cast out of tbb (D-008 SS5, D-144; 0.9.5)
+;   -4101  BAD_STEP          a counted loop's step, not a literal, evaluated
+;                            to zero or negative at run time (D-022; 0.9.7)
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
 ; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always
@@ -403,36 +406,6 @@ err:
   %e0 = insertvalue { i64, i32 } undef, i64 0, 0
   %e1 = insertvalue { i64, i32 } %e0, i32 %c, 1
   ret { i64, i32 } %e1
-}
-
-; `write_all` is the retry loop over `write` -- discipline, not a syscall, and
-; in IR only because stepping a pointer is not yet expressible in the language
-; (#ptr_add is a 0.9 rung). When it is, this graduates to lib/nio.npk and the
-; floor loses a symbol.
-define { i32 } @npk_write_all(i32 %fd, ptr %buf, i64 %len) {
-entry:
-  %f = sext i32 %fd to i64
-  br label %wloop
-wloop:
-  %off = phi i64 [ 0, %entry ], [ %off2, %wnext ]
-  %left = sub i64 %len, %off
-  %done = icmp eq i64 %left, 0
-  br i1 %done, label %ok, label %wone
-wone:
-  %at = getelementptr i8, ptr %buf, i64 %off
-  %ati = ptrtoint ptr %at to i64
-  %n = call i64 @npk_sys6(i64 1, i64 %f, i64 %ati, i64 %left, i64 0, i64 0, i64 0)
-  %bad = icmp slt i64 %n, 0
-  br i1 %bad, label %err, label %wnext
-wnext:
-  %off2 = add i64 %off, %n
-  br label %wloop
-ok:
-  ret { i32 } zeroinitializer
-err:
-  %c = trunc i64 %n to i32
-  %e0 = insertvalue { i32 } undef, i32 %c, 0
-  ret { i32 } %e0
 }
 
 define { i64, i32 } @npk_write(i32 %fd, ptr %buf, i64 %len) {

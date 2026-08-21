@@ -1,0 +1,31 @@
+// expect-exit: 0
+//
+// The control-flow tail (0.9.7): counted loops with inferred direction and
+// $, till, when/then/end on both outcomes, for over a range (inclusive
+// spelling) and an array, and labelled break through nesting (D-022, D-027).
+
+mod:control_flow;
+func:main = int32(cstring[]:argv) {
+    int32:acc = 0i32;
+    loop (2i64, 6i64, 1i64) { acc = acc + ($ =>! int32); }        // 2+3+4+5 = 14
+    till (3i64, 1i64) { acc = acc + 1i32; }                        // +3 = 17
+    loop (5i64, 1i64, 2i64) { acc = acc + ($ =>! int32); }         // 5+3 = +8 = 25
+    when (acc > 24i32) { acc = acc - 25i32; } then { acc = acc + 100i32; } end { acc = 0i32; }
+    // body ran → then: acc = 0 + 100 = 100
+    when (acc < 0i32) { acc = 9i32; } then { acc = 8i32; } end { acc = acc + 20i32; }
+    // never ran → end: 120
+    for (int64:i in 0i64..3i64) { acc = acc + (i =>! int32); }     // +0+1+2+3 = 126
+    int32[3]:arr = [5i32, 6i32, 7i32];
+    for (int32:v in arr) { acc = acc + v; }                        // +18 = 144
+    outer: while (true) {
+        while (true) { break outer; }
+    }
+    int64:brk = 0i64;
+    scan: loop (0i64, 10i64, 1i64) {
+        if ($ == 4i64) { break scan; }
+        brk = brk + 1i64;
+    }
+    acc = acc + (brk =>! int32);                                   // +4 = 148
+    exit (acc - 148i32);
+};
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

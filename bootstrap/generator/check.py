@@ -78,7 +78,6 @@ BUILTINS = {
     "close":         (T.NIL, True),
     "read":          (T.I64, True),
     "write":         (T.I64, True),
-    "write_all":     (T.NIL, True),
     "string_slice":  (T.STRING, True),
     "string_from_bytes": (T.STRING, False),
     "read_stdin":    (T.STRING, True),

@@ -316,16 +316,81 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv_rung("the `??` operator", "1.0", n.span));
     }
     if (n.kind == ExprKind.ExprSafeUnwrapExpr) {
-        pass (raw iv_rung("the `?` operator", "0.9", n.span));
+        // `r ? default` (0.9.7): the value, or the default — LAZY, so the
+        // default only evaluates on the error path.
+        IrVal:qv = relay emit_expr(x, raw expr_lhs(n));
+        if (!(raw iv_is_ok(qv))) { pass qv; }
+        int32:qtid = raw exprtypes_get(x.et, id);
+        LlType:qll = relay ll_type(x.fe.ctx, qtid);
+        if (!(raw ll_is_ok(qll))) { pass (relay iv_from_ll_at(x, qll, qtid, n.span)); }
+        string:qslot = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(qslot, " = alloca ", qll.text));
+        string:qerr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(qerr, " = extractvalue ", qv.ll, " ",
+                          relay string_concat(qv.ref, ", 1")));
+        string:qbad = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(qbad, " = icmp ne i32 ",
+                          relay string_concat(qerr, ", 0")));
+        string:qd_l = relay irw_new_label(x.fe.w, "q.def");
+        string:qo_l = relay irw_new_label(x.fe.w, "q.ok");
+        string:qj_l = relay irw_new_label(x.fe.w, "q.done");
+        drop irw_line(x.fe.w, relay cat5("br i1 ", qbad, ", label %", qd_l,
+                          relay string_concat(", label %", qo_l)));
+        drop irw_label(x.fe.w, qo_l);
+        string:qin = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(qin, " = extractvalue ", qv.ll, " ",
+                          relay string_concat(qv.ref, ", 0")));
+        drop irw_line(x.fe.w, relay cat5("store ", qll.text, " ", qin,
+                          relay string_concat(", ptr ", qslot)));
+        drop irw_line(x.fe.w, relay cat3("br label %", qj_l, ""));
+        drop irw_label(x.fe.w, qd_l);
+        IrVal:qdv = relay emit_expr(x, raw expr_rhs(n));
+        if (!(raw iv_is_ok(qdv))) { pass qdv; }
+        drop irw_line(x.fe.w, relay cat5("store ", qdv.ll, " ", qdv.ref,
+                          relay string_concat(", ptr ", qslot)));
+        drop irw_line(x.fe.w, relay cat3("br label %", qj_l, ""));
+        drop irw_label(x.fe.w, qj_l);
+        string:qout = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(qout, " = load ", qll.text, ", ptr ",
+                          relay string_concat(qslot, "")));
+        pass (raw iv(qll.text, qout, qtid));
     }
     if (n.kind == ExprKind.ExprEmphaticUnwrapExpr) {
-        pass (raw iv_rung("the `?!` operator", "0.9", n.span));
+        // `r ?! code` (0.9.7, OP §187): the value, or `failsafe(code)` through
+        // the D-142 trap route — the CALLER'S code, not the Result's, because
+        // the operator is the site saying what this failure means here.
+        IrVal:ev2 = relay emit_expr(x, raw expr_lhs(n));
+        if (!(raw iv_is_ok(ev2))) { pass ev2; }
+        IrVal:ec2 = relay emit_expr(x, raw expr_rhs(n));
+        if (!(raw iv_is_ok(ec2))) { pass ec2; }
+        string:eerr = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(eerr, " = extractvalue ", ev2.ll, " ",
+                          relay string_concat(ev2.ref, ", 1")));
+        string:ebad = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(ebad, " = icmp ne i32 ",
+                          relay string_concat(eerr, ", 0")));
+        string:et_l = relay irw_new_label(x.fe.w, "eq.trap");
+        string:eo_l = relay irw_new_label(x.fe.w, "eq.ok");
+        drop irw_line(x.fe.w, relay cat5("br i1 ", ebad, ", label %", et_l,
+                          relay string_concat(", label %", eo_l)));
+        drop irw_label(x.fe.w, et_l);
+        drop irw_line(x.fe.w, relay cat3("call void @npk_trap(i32 ",
+                          ec2.ref, ")"));
+        drop irw_line(x.fe.w, "unreachable");
+        drop irw_label(x.fe.w, eo_l);
+        string:ein = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(ein, " = extractvalue ", ev2.ll, " ",
+                          relay string_concat(ev2.ref, ", 0")));
+        int32:etid2 = raw exprtypes_get(x.et, id);
+        LlType:ell2 = relay ll_type(x.fe.ctx, etid2);
+        if (!(raw ll_is_ok(ell2))) { pass (relay iv_from_ll_at(x, ell2, etid2, n.span)); }
+        pass (raw iv(ell2.text, ein, etid2));
     }
     if (n.kind == ExprKind.ExprTemplateLiteral) {
-        pass (raw iv_rung("a template literal", "0.8", n.span));
+        pass (raw iv_rung("a template literal", "1.0", n.span));
     }
     if (n.kind == ExprKind.ExprComptimeExpr) {
-        pass (raw iv_rung("`comptime(…)` in a runtime position", "0.8", n.span));
+        pass (raw iv_rung("`comptime(…)` in a runtime position", "1.0", n.span));
     }
     // A range VALUE (0.9.6, D-145): `{ T, T }`, normalized HALF-OPEN at
     // construction — the inclusive `..` stores hi+1, so every consumer sees
@@ -355,7 +420,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv(rll.text, rb, rtid));
     }
     if (n.kind == ExprKind.ExprSpreadExpr) {
-        pass (raw iv_rung("the `..^` expansion", "0.9", n.span));
+        pass (raw iv_rung("the `..^` expansion", "1.1", n.span));
     }
     // `is (cond) : a : b` — LAZY (0.9.6, D-145): only the taken arm runs.
     // Lowered with branches through a slot, NEVER `select` — select evaluates
@@ -393,7 +458,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv(tll.text, out, ttid));
     }
     if (n.kind == ExprKind.ExprPostfixExpr) {
-        pass (raw iv_rung("a postfix operator", "0.9", n.span));
+        pass (raw iv_rung("a postfix operator", "1.0", n.span));
     }
     // A float literal (0.9.4). The lexer kept the TEXT; LLVM's parser converts
     // decimal to double with correct rounding, so `double <text>` is exact for
@@ -422,10 +487,10 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     // what is really an unlowered language feature. The honest answer is a
     // rung, exactly like their neighbours above.
     if (n.kind == ExprKind.ExprPipeExpr) {
-        pass (raw iv_rung("the pipe operator", "0.9", n.span));
+        pass (raw iv_rung("the pipe operator", "1.0", n.span));
     }
     if (n.kind == ExprKind.ExprDefaultsExpr) {
-        pass (raw iv_rung("the defaults operator", "0.9", n.span));
+        pass (raw iv_rung("the defaults operator", "1.0", n.span));
     }
     // `is_err(x)` — THE test that does not trap (D-008 §5): ERR flows through
     // data and stops at branches, and this is the sanctioned way to look.
@@ -444,7 +509,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
         pass (raw iv("i8", ez, 0i32));
     }
     if (n.kind == ExprKind.ExprVectorCtorExpr) {
-        pass (raw iv_rung("a vector constructor", "0.9", n.span));
+        pass (raw iv_rung("a vector constructor", "1.1 (G-3)", n.span));
     }
     // `move(place)` LOWERS: it yields the place's value, and what it does to
     // the SOURCE is static — the 0.5 move analysis already blessed and tracked
@@ -453,11 +518,44 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprMoveExpr) {
         pass (relay emit_expr(x, raw expr_operand(n)));
     }
+    // `$` — the innermost counted loop's counter (0.9.7), i64 like its slot.
     if (n.kind == ExprKind.ExprIterationVarExpr) {
-        pass (raw iv_rung("the `$` iteration variable", "0.9", n.span));
+        string:islot = raw fnem_iter_slot(x.fe);
+        if (islot.len == 0i64) { pass (raw iv_broken(n.span)); }
+        string:iv2 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(iv2, " = load i64, ptr ", islot, "", ""));
+        pass (raw iv("i64", iv2, raw exprtypes_get(x.et, id)));
     }
+    // A pick EXPRESSION (0.9.7, D-059): the chain dispatch with a value slot
+    // its arms `give` into.
     if (n.kind == ExprKind.ExprPickExpr) {
-        pass (raw iv_rung("a `pick` expression", "0.9", n.span));
+        int32:ptid = raw exprtypes_get(x.et, id);
+        LlType:pll2 = relay ll_type(x.fe.ctx, ptid);
+        if (!(raw ll_is_ok(pll2))) { pass (relay iv_from_ll_at(x, pll2, ptid, n.span)); }
+        ExprId:psel = ExprId{ index: n.a };
+        int32:pstid = raw exprtypes_get(x.et, psel);
+        IrVal:psv = relay emit_expr(x, psel);
+        if (!(raw iv_is_ok(psv))) { pass psv; }
+        string:pdisc = psv.ref;
+        string:pdll = psv.ll;
+        if ((raw type_kind(x.fe.ctx.types, pstid)) == (raw TY_ENUM())) {
+            if (relay enum_has_payload(x.ast, x.fe.ctx.types, pstid)) {
+                string:ptag = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(ptag, " = extractvalue ",
+                                  psv.ll, " ", relay string_concat(psv.ref, ", 0")));
+                pdisc = ptag;
+                pdll = "i32";
+            }
+        }
+        string:pslot = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat3(pslot, " = alloca ", pll2.text));
+        IrVal:pc2 = relay emit_pick_chain(x, psv, pstid, pdisc, pdll,
+                        n.b, n.c, pslot, pll2.text);
+        if (!(raw iv_is_ok(pc2))) { pass pc2; }
+        string:pout = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(pout, " = load ", pll2.text, ", ptr ",
+                          relay string_concat(pslot, "")));
+        pass (raw iv(pll2.text, pout, ptid));
     }
     if (n.kind == ExprKind.ExprAwaitExpr) {
         pass (raw iv_rung("`await`", "1.1", n.span));
@@ -465,10 +563,6 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
     if (n.kind == ExprKind.ExprDynCastExpr) {
         pass (raw iv_rung("a `dyn` cast", "1.0", n.span));
     }
-    if (n.kind == ExprKind.ExprFloatLiteral) {
-        pass (raw iv_rung("a float literal", "0.9", n.span));
-    }
-
     // FAIL CLOSED ON A KIND NOBODY CLASSIFIED. Phase A's whole output is a
     // promise that accepted programs are valid; an emitter that guesses at a
     // node it does not know turns that into a lie.
@@ -521,7 +615,7 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         }
         // Not a local and not a function: a module-level global, which this
         // rung refuses at its declaration already.
-        pass (raw iv_rung("a name that is not a local", "0.8", n.span));
+        pass (raw iv_rung("a name that is not a local", "1.0", n.span));
     }
     // The SLOT's type, not the table's: the binding is the local truth, and for
     // a name the checker recorded (every ordinary local) the two are the same id
@@ -903,13 +997,33 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         }
     }
 
+    // `+` ON STRINGS IS CONCATENATION (TYPE_REFERENCE §4), typed since 0.7.7
+    // and lowered here (0.9.7): the floor's concat, value slot extracted —
+    // the operator is total because the bump allocator is.
+    if (lt != 0i32) {
+        if ((raw type_kind(x.fe.ctx.types, lt)) == (raw TY_STRING())) {
+            if (op == TokenKind.OpPlus) {
+                string:scr = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat5(scr,
+                                  " = call { { ptr, i64, i64 }, i32 } @npk_string_concat(",
+                                  relay cat4(lhs.ll, " ", lhs.ref, ", "),
+                                  relay cat3(rhs.ll, " ", rhs.ref), ")"));
+                string:sv2 = relay irw_temp(x.fe.w);
+                drop irw_line(x.fe.w, relay cat3(sv2,
+                                  " = extractvalue { { ptr, i64, i64 }, i32 } ",
+                                  relay string_concat(scr, ", 0")));
+                pass (raw iv("{ ptr, i64, i64 }", sv2, lhs.type_id));
+            }
+        }
+    }
+
     // ARITHMETIC BEYOND FLOATS, INTEGERS AND `tbb` is not this rung's. The
     // checker already refused what is never legal — this refuses what is legal
     // and not yet lowered, which is exactly the difference between the two
     // states.
     if (lt != 0i32) {
         if ((raw type_kind(x.fe.ctx.types, lt)) != (raw TY_INT())) {
-            pass (raw iv_rung("arithmetic on a non-integer type", "0.9", n.span));
+            pass (raw iv_rung("arithmetic on this type", "1.1 (G-3)", n.span));
         }
     }
     string:ins = raw arith_name(op, signed);
@@ -1328,10 +1442,10 @@ func:emit_cast = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     LlType:src_l = LlType{ state: raw LL_OK(), text: v.ll, rung: "" };
     LlType:dst_l = want;
     if (!(raw ll_is_scalar_int(src_l))) {
-        pass (raw iv_rung("a cast between non-scalar types", "0.9", n.span));
+        pass (raw iv_rung("a cast between non-scalar types", "1.0", n.span));
     }
     if (!(raw ll_is_scalar_int(dst_l))) {
-        pass (raw iv_rung("a cast between non-scalar types", "0.9", n.span));
+        pass (raw iv_rung("a cast between non-scalar types", "1.0", n.span));
     }
 
     int64:sbits = relay ll_int_width(v.ll);
@@ -1524,10 +1638,61 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprNode:n, ExprNode:cnode,
         // floor entry, and its blocker is named: it is VARIADIC, and variadics
         // are 0.9's machinery (D-047/D-048 settled its shape long ago).
         if (raw string_eq(name, "sys")) {
-            pass (raw iv_rung("the `sys` builtin", "0.9", cnode.span));
+            // `sys(NR, args…)` (0.9.7, BUILTIN §3): the six-register trampoline
+            // the floor already carries, zero-filled — and the kernel's return
+            // mapped into the D-141 convention right here: negative is the
+            // error slot, anything else is the value. The one syscall form.
+            if (count > 7i32) { pass (raw iv_broken(cnode.span)); }
+            if (count < 1i32) { pass (raw iv_broken(cnode.span)); }
+            string:sargs = "";
+            int32:si = 0i32;
+            while (si < count) {
+                ExprId:said = ExprId{ index: relay ast_id_at(x.ast, start, si) };
+                IrVal:sav = relay emit_expr(x, said);
+                if (!(raw iv_is_ok(sav))) { pass sav; }
+                string:sref = sav.ref;
+                if (!(raw string_eq(sav.ll, "i64"))) {
+                    string:sw = relay irw_temp(x.fe.w);
+                    drop irw_line(x.fe.w, relay cat5(sw, " = sext ", sav.ll, " ",
+                                      relay string_concat(sav.ref, " to i64")));
+                    sref = sw;
+                }
+                if (si > 0i32) { sargs = relay string_concat(sargs, ", "); }
+                sargs = relay cat3(sargs, "i64 ", sref);
+                si = si + 1i32;
+            }
+            while (si < 7i32) {
+                if (si > 0i32) { sargs = relay string_concat(sargs, ", "); }
+                sargs = relay string_concat(sargs, "i64 0");
+                si = si + 1i32;
+            }
+            string:sr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(sr, " = call i64 @npk_sys6(",
+                              relay string_concat(sargs, ")")));
+            string:sneg = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(sneg, " = icmp slt i64 ",
+                              relay string_concat(sr, ", 0")));
+            string:se32 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat3(se32, " = trunc i64 ",
+                              relay string_concat(sr, " to i32")));
+            string:serr = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(serr, " = select i1 ", sneg,
+                              ", i32 ", relay string_concat(se32, ", i32 0")));
+            string:sval = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(sval, " = select i1 ", sneg,
+                              ", i64 0, i64 ", sr));
+            string:sa2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(sa2,
+                              " = insertvalue { i64, i32 } undef, i64 ", sval,
+                              ", 0", ""));
+            string:sb2 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(sb2,
+                              " = insertvalue { i64, i32 } ", sa2, ", i32 ",
+                              relay string_concat(serr, ", 1")));
+            pass (raw iv("{ i64, i32 }", sb2, 0i32));
         }
         string:what = relay cat3("the builtin `", name, "`");
-        pass (raw iv_rung(what, "0.8", cnode.span));
+        pass (raw iv_rung(what, "1.0", cnode.span));
     }
 
     // THE FLOOR'S SIGNATURE IS THE COERCION AUTHORITY. Builtin arguments are
@@ -2004,7 +2169,7 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
     // miscompile found while generalising, not by any test. The pattern tail
     // (0.9.7) owns the multi-payload story end to end.
     if (count > 1i32) {
-        pass (raw iv_rung("a multi-payload variant construction", "0.9", at));
+        pass (raw iv_rung("a multi-payload variant construction", "1.0", at));
     }
 
     // THE GENERAL CONSTRUCTION (0.9.2): through a stack slot, because the

@@ -183,6 +183,8 @@ func:emit_runtime_declares = NIL(IrWriter->:w) {
     // later rung adds) route a runtime fault into `failsafe` (D-142). Declared
     // unconditionally because the declare block is a fixed constant.
     drop irw_raw(w, "declare void @npk_trap(i32)");
+    // `sys` calls the six-register trampoline directly (0.9.7).
+    drop irw_raw(w, "declare i64 @npk_sys6(i64, i64, i64, i64, i64, i64, i64)");
     // The overflow intrinsics tbb multiplication rides (0.9.5). Declared for
     // every tbb width unconditionally — the declare block is a fixed constant,
     // and an unused declare costs nothing.
@@ -217,10 +219,10 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
             drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
         }
         if (d.kind == DeclKind.DeclExternBlock) {
-            drop refuse(diags, raw iv_rung("an `extern` block", "0.8", d.span));
+            drop refuse(diags, raw iv_rung("an `extern` block", "1.1", d.span));
         }
         if (d.kind == DeclKind.DeclGlobalDecl) {
-            drop refuse(diags, raw iv_rung("a module-level binding", "0.8", d.span));
+            drop refuse(diags, raw iv_rung("a module-level binding", "1.0", d.span));
         }
         if (d.kind == DeclKind.DeclModuleDecl) {
             drop emit_nested_module(x, diags, d);
@@ -280,10 +282,10 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                 drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
             }
             if (d.kind == DeclKind.DeclExternBlock) {
-                drop refuse(diags, raw iv_rung("an `extern` block", "0.8", d.span));
+                drop refuse(diags, raw iv_rung("an `extern` block", "1.1", d.span));
             }
             if (d.kind == DeclKind.DeclGlobalDecl) {
-                drop refuse(diags, raw iv_rung("a module-level binding", "0.8", d.span));
+                drop refuse(diags, raw iv_rung("a module-level binding", "1.0", d.span));
             }
             if (d.kind == DeclKind.DeclModuleDecl) {
                 drop emit_nested_module(@x, diags, d);
