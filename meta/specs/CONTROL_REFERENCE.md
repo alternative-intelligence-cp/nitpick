@@ -336,3 +336,15 @@ allocated** — the `<wildx-states>` map must be empty. Reaching `exit` with liv
 This is why a memory leak is a *detected, controlled* condition in Nitpick rather
 than silent corruption — and it is what lets arenas replace a collector without
 losing the leak guarantee.
+
+> **Made real at 0.10.1 (D-151).** "Successful" is load-bearing: the check
+> runs on `exit 0` — a failure exit keeps its code, because overwriting an
+> error report with a leak trap would destroy the error it was raising. A
+> non-empty `<wild-live>` routes `-4105` to `failsafe`, which may call
+> `wild_release_all()` and exit positive; `failsafe`'s own exit is exempt
+> (the in-failsafe flag — the check runs once, at the program's exit), and a
+> trap raised *inside* `failsafe` exits 70 directly rather than recursing.
+> `wild_live_count()` is the program-visible view of the set. Managed-regime
+> storage (string bodies — runtime-internal until its RAII lowering lands)
+> is not in the set: the rule is about the `wild` regime, exactly as the
+> paragraph above scopes it.

@@ -132,6 +132,40 @@ inside allocator-owned memory before dereferencing anything — a garbage
 pointer is a trap, never a wild load. The heap is single-threaded at this
 rung; the lock discipline lands with 1.1's executor work.
 
+### The `<wild-live>` registry and the exit-time check (0.10.1, D-151)
+
+The allocator's own tables ARE the live-set — no second bookkeeping
+structure exists to drift from the first. A **wild** allocation is what the
+`alloc`/`calloc`/`ralloc`/`aalloc` builtins hand out, stamped with a
+wild-role magic; **runtime-internal storage** (string bodies, argv, file
+buffers) is managed-regime, stamped with the internal role, and is NOT in
+`<wild-live>` — its RAII arrives with the managed lowering, and until then
+it is reclaimed wholesale by `wild_release_all()` or process exit.
+
+- **`wild_live_count()`** walks the chunk bitmaps (slots below each
+  watermark whose free bit is clear, counting wild-role headers) and the
+  large table. Allocation-free, preallocated state only: safe from
+  `failsafe` in a degraded process.
+- **The exit-time check**: a SUCCESSFUL exit (code 0 — CONTROL_REFERENCE
+  §4.6's "successful" scoping) with a non-empty set routes to `failsafe`
+  with `-4105`. A failure exit keeps its code — hijacking an error report
+  with a leak trap would destroy the error, and error paths carry no
+  cleanup obligation (the defer-does-not-run-on-trap reasoning, D-014).
+  `failsafe` may call **`wild_release_all()`** — drops every chunk and
+  large mapping, both regimes, leaving the allocator usable — and exit
+  positive; its own exit passes because the in-failsafe flag is set. The
+  same flag makes a trap RAISED INSIDE failsafe exit 70 directly instead
+  of recursing.
+
+**One registry mechanism, three clients** (the audit's unification ask):
+the sorted fixed-stride table — mmap-grown, preallocated initial capacity,
+binary-searched, allocation-free to read, `failsafe`-walkable — is the
+mechanism, and the allocation tables (8-byte chunk entries, 32-byte large
+entries) are its first client. The **stream registry** (IO_REFERENCE §10)
+and the **driver registry** (D-149's Bridge) are specified as the next two
+clients of the same shape, not re-inventions: fixed-stride entries, sorted
+by key, walked by `failsafe` in registration order at shutdown.
+
 ## 4. `Handle<T>` and Arena Allocators
 
 Arenas with `Handle<T>` are the primary mechanism for **graph-shaped and cyclic

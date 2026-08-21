@@ -241,5 +241,8 @@ stream to interpret.
   older kernels — is a runtime decision, not a language one, and needs measuring
   rather than deciding on paper.
 - **The stream registry's exact shape**, as handed to `failsafe`. It parallels the
-  allocation registry D-014 already specifies, and should share its structure
-  rather than invent a second one.
+  allocation registry D-014 already specifies, and shares its MECHANISM rather
+  than inventing a second one: the sorted fixed-stride table of 0.10.1/D-151
+  (mmap-grown, preallocated initial capacity, allocation-free to read,
+  `failsafe`-walkable) — the allocation tables are the first client, streams
+  and D-149's driver registry the next two.

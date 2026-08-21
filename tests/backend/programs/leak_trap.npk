@@ -1,0 +1,17 @@
+// expect-exit: 27
+//
+// THE K-SEMANTICS EXIT RULE FIRES (0.10.1, D-151): a SUCCESSFUL exit with
+// live wild memory does not return -- it routes to failsafe with -4105. The
+// leak is a detected, controlled condition, which is what lets arenas
+// replace a collector without losing the guarantee (D-003).
+
+func:main = int32(cstring[]:_~argv) {
+    wild int8->:p = alloc(24i64);
+    discard(p);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err =>! int64) == (0i64 - 4105i64)) { exit 27i32; }
+    exit 9i32;
+};

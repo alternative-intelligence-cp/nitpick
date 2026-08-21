@@ -10206,3 +10206,60 @@ forwarded to `memcpy`, which corrupts overlapping upward moves.
 calloc zeroing, the large in-place/move paths, and both `aalloc` paths;
 `heap_double_free` / `heap_calloc_overflow` / `heap_ralloc_zero` lock the
 three trap classes to their codes.
+
+## D-151 — `<wild-live>` is the allocator's own tables; the exit rule is real — **SETTLED**
+
+Cycle 0.10.1. The K-semantics exit rule (CONTROL_REFERENCE §4.6) stops being
+a promise about code that does not exist.
+
+**No second bookkeeping structure.** The live-set IS the 0.10.0 tables: a
+wild allocation is counted by walking the chunk bitmaps (slots below each
+watermark whose free bit is clear, wild-role headers only) and the large
+table. Nothing can drift from the ground truth because there is only the
+ground truth. Both views — `wild_live_count()` and the exit check — are
+allocation-free over preallocated state, so they hold inside a degraded
+`failsafe` (the C-3 discipline).
+
+**The wild/internal role split is the spec's own scoping.** §4.6 names
+"live `wild` or `wildx` memory" — the WILD regime. So the builtins
+(`alloc`/`calloc`/`ralloc`/`aalloc`) stamp a wild-role magic and are
+counted; runtime-internal storage (string bodies, argv, file buffers)
+stamps an internal role and is NOT in the set — it is managed-regime
+storage whose RAII arrives with the managed lowering, reclaimed wholesale
+meanwhile by `wild_release_all()` or process death. `ralloc` preserves a
+block's regime across a move. Without this split every string-touching
+program would false-trap at exit for storage the program never manually
+managed.
+
+**"Successful" is load-bearing.** The check runs on `exit 0` only. A
+failure exit keeps its code: hijacking an error report with a leak trap
+would destroy the error being raised, and error paths carry no cleanup
+obligation — the defer-does-not-run-on-trap reasoning (D-014) applied at
+exit. A leaking `exit 0` routes `-4105` to `failsafe`, which may call
+`wild_release_all()` (drops every chunk and large mapping, both regimes,
+allocator stays usable) and exit positive.
+
+**Two flags' worth of re-entry discipline, one flag.** `npk_trap` sets
+in-failsafe before running the handler: `failsafe`'s own exit skips the
+leak check (the check runs once, at the program's exit), and a trap raised
+*inside* `failsafe` — the handler double-freeing, say — exits 70 directly
+instead of recursing into the handler forever. The recursion guard predates
+nothing: it was a real hole until this cycle.
+
+**The compiler compiles under its own rule.** `src/main.npk` and the three
+tools call `wild_release_all()` before their successful exits — the honest
+run-once shutdown — and 69 executed tests gained the same line before
+their success exits (the heap/leak demonstrations excluded: their explicit
+frees ARE the assertion). The seed learned the two builtins
+(`wild_live_count`, `wild_release_all`); both are ordinary runtime-table
+entries in all three signature copies.
+
+**One registry mechanism, three clients** (the audit's unification ask):
+the sorted fixed-stride, mmap-grown, preallocated, `failsafe`-walkable
+table is the mechanism; the allocation tables are its first client; the
+stream registry (IO_REFERENCE §10) and D-149's driver registry are
+specified as the next two, not re-inventions.
+
+`leak.npk` (the set counts exactly; strings absent), `leak_trap.npk`
+(-4105 fires), `leak_cleanup.npk` (failsafe releases and exits positive),
+and `oom.npk` (-4103, allocation-free) lock the behavior.

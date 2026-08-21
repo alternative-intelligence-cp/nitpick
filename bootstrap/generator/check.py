@@ -67,6 +67,8 @@ class Scope:
 # alloc/dalloc do NOT return Result -- MEMORY_REFERENCE writes them bare.
 BUILTINS = {
     "alloc":         (T.Ptr(T.Prim("int8")), False),
+    "wild_live_count":  (T.I64, False),
+    "wild_release_all": (T.NIL, False),
     "calloc":        (T.Ptr(T.Prim("int8")), False),
     "ralloc":        (T.Ptr(T.Prim("int8")), False),
     "dalloc":        (T.NIL, False),

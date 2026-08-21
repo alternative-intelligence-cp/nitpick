@@ -1,0 +1,43 @@
+// expect-exit: 0
+//
+// THE <wild-live> SET IS REAL (0.10.1, D-151). wild_live_count() reads it:
+// the wild builtins add and remove, the MANAGED regime (string bodies --
+// runtime-internal storage awaiting its RAII lowering) never appears in it,
+// and a program that frees what it allocated exits 0 through the exit-time
+// check like nothing happened -- which is the point.
+
+func:main = int32(cstring[]:_~argv) {
+    int64:n0 = wild_live_count();
+    if (n0 != 0i64) { exit 10i32; }
+
+    wild int8->:p = alloc(24i64);
+    int64:n1 = wild_live_count();
+    if (n1 != 1i64) { exit 11i32; }
+
+    wild int8->:q = calloc(2i64, 8i64);
+    int64:n2 = wild_live_count();
+    if (n2 != 2i64) { exit 12i32; }
+
+    dalloc(q);
+    int64:n3 = wild_live_count();
+    if (n3 != 1i64) { exit 13i32; }
+
+    // the large path is in the same set
+    wild int8->:big = alloc(100000i64);
+    int64:n4 = wild_live_count();
+    if (n4 != 2i64) { exit 14i32; }
+    dalloc(big);
+    dalloc(p);
+    int64:n5 = wild_live_count();
+    if (n5 != 0i64) { exit 15i32; }
+
+    // strings are managed-regime storage: NOT wild, NOT counted (D-151)
+    string:s = raw string_concat("wild", "-live");
+    discard(s);
+    int64:n6 = wild_live_count();
+    if (n6 != 0i64) { exit 16i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

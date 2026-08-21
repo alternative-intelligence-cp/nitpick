@@ -52,7 +52,7 @@ entry:
   %argc = load i64, ptr %spp
   %argvp = getelementptr i8, ptr %spp, i64 8      ; &argv[0]
   %bytes = mul i64 %argc, 16                      ; sizeof(cstring) = {ptr,i64}
-  %buf = call ptr @npk_alloc(i64 %bytes)
+  %buf = call ptr @npk_alloc_internal(i64 %bytes)
   br label %loop
 
 loop:                                             ; preds = %entry, %next
@@ -130,8 +130,16 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;                            which is the allocator's own C-3 obligation
 ;   -4104  HEAP_BAD_REQUEST  negative size, calloc count*size overflow,
 ;                            ralloc(p, 0), or a non-power-of-two alignment
+;   -4105  HEAP_LEAK         exit reached with live `wild` memory -- the
+;                            K-semantics rule (CONTROL_REFERENCE 4.6) made
+;                            real at 0.10.1; failsafe may clean up with
+;                            wild_release_all() and exit positive
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
+; A trap RAISED WHILE FAILSAFE IS RUNNING -- failsafe itself double-freeing,
+; say -- exits 70 directly rather than recursing into failsafe forever; the
+; same flag is what lets failsafe's own exit skip the leak check (the check
+; runs once, at the program's exit, never at failsafe's).
 ; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always
 ; resolves at link. D-014 requires failsafe to return POSITIVE; until 1.3
 ; injects and verifies that `ensures`, the runtime refuses to report success
@@ -141,7 +149,19 @@ define i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 
 declare i32 @npk_failsafe(i32)
 
+@npk_in_failsafe = internal global i32 0
+
 define void @npk_trap(i32 %code) noreturn {
+  %in = load i32, ptr @npk_in_failsafe
+  %re = icmp ne i32 %in, 0
+  br i1 %re, label %hard, label %run
+hard:
+  ; re-entry: failsafe trapped. There is no second handler to hand the
+  ; situation to, so this is the one uncatchable stop: exit 70 directly.
+  %x = call i64 @npk_sys6(i64 60, i64 70, i64 0, i64 0, i64 0, i64 0, i64 0)
+  unreachable
+run:
+  store i32 1, ptr @npk_in_failsafe
   %r = call i32 @npk_failsafe(i32 %code)
   %bad = icmp sle i32 %r, 0
   %code2 = select i1 %bad, i32 70, i32 %r
@@ -150,6 +170,28 @@ define void @npk_trap(i32 %code) noreturn {
 }
 
 define void @npk_exit(i32 %code) noreturn {
+  ; THE K-SEMANTICS EXIT RULE (0.10.1, D-151): a SUCCESSFUL exit -- code 0,
+  ; exactly as CONTROL_REFERENCE 4.6 scopes it -- requires the <wild-live>
+  ; set empty. Non-empty routes to failsafe (-4105), which may clean up
+  ; (wild_release_all) and exit -- and THAT exit passes, because the
+  ; in-failsafe flag is set. A FAILURE exit is already a report of
+  ; abnormality and keeps its code: hijacking it with a leak trap would
+  ; destroy the error it was raising, and error paths carry no cleanup
+  ; obligation (the same reasoning as defer-does-not-run-on-trap, D-014).
+  ; The count walks preallocated state only.
+  %in = load i32, ptr @npk_in_failsafe
+  %skip = icmp ne i32 %in, 0
+  %fail = icmp ne i32 %code, 0
+  %pass = or i1 %skip, %fail
+  br i1 %pass, label %leave, label %check
+check:
+  %live = call i64 @npk_wild_live_count()
+  %leaks = icmp ne i64 %live, 0
+  br i1 %leaks, label %trap, label %leave
+trap:
+  call void @npk_trap(i32 -4105)
+  unreachable
+leave:
   %c = sext i32 %code to i64
   %r = call i64 @npk_sys6(i64 60, i64 %c, i64 0, i64 0, i64 0, i64 0, i64 0)
   unreachable
@@ -483,7 +525,7 @@ step:                                     ; preds = %check
 copy:                                     ; preds = %scan
   ; One byte more than the length, for the terminator the kernel needs.
   %sz = add i64 %n, 1
-  %buf = call ptr @npk_alloc(i64 %sz)
+  %buf = call ptr @npk_alloc_internal(i64 %sz)
   call ptr @memcpy(ptr %buf, ptr %p, i64 %n)
   %end = getelementptr i8, ptr %buf, i64 %n
   store i8 0, ptr %end
@@ -647,7 +689,7 @@ entry:
   br i1 %bad, label %openfail, label %start
 
 start:                                    ; preds = %entry
-  %buf0 = call ptr @npk_alloc(i64 65536)
+  %buf0 = call ptr @npk_alloc_internal(i64 65536)
   br label %loop
 
 loop:                                     ; preds = %start, %iter
@@ -660,7 +702,7 @@ loop:                                     ; preds = %start, %iter
 
 grow:                                     ; preds = %loop
   %cap2 = mul i64 %cap, 2
-  %buf2 = call ptr @npk_alloc(i64 %cap2)
+  %buf2 = call ptr @npk_alloc_internal(i64 %cap2)
   call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
   br label %read
 
@@ -737,7 +779,7 @@ fail:                                     ; preds = %readfail, %openfail
 
 define { { ptr, i64, i64 }, i32 } @npk_read_stdin() {
 entry:
-  %buf0 = call ptr @npk_alloc(i64 65536)
+  %buf0 = call ptr @npk_alloc_internal(i64 65536)
   br label %loop
 
 loop:                                     ; preds = %entry, %iter
@@ -752,7 +794,7 @@ grow:                                     ; preds = %loop
   ; Growing copies into a fresh block; since 0.10.0 the abandoned one is
   ; ralloc's to free, not a permanent loss.
   %cap2 = mul i64 %cap, 2
-  %buf2 = call ptr @npk_alloc(i64 %cap2)
+  %buf2 = call ptr @npk_alloc_internal(i64 %cap2)
   call ptr @memcpy(ptr %buf2, ptr %buf, i64 %len)
   br label %read
 
@@ -823,7 +865,13 @@ err:
 ; BLOCK SHAPE. Every block: [ size i64 | magic i64 | payload... ]. The 16-byte
 ; header keeps payloads 16-aligned (the floor's 0.7.3 discipline, still what
 ; bounds ralloc's copy). Magic words are secret-keyed and ADDRESS-keyed:
-;   live block:   secret ^ blockaddr ^ K_LIVE
+;   live block (runtime-internal / managed-regime storage: string bodies,
+;                argv, file buffers -- OUTSIDE the <wild-live> set, their RAII
+;                lands with the managed lowering):
+;                 secret ^ blockaddr ^ K_LIVE
+;   live block (WILD regime -- the alloc/calloc/ralloc/aalloc builtins; what
+;                the exit-time leak check counts, D-151):
+;                 secret ^ blockaddr ^ K_LIVEW
 ;   freed slot:   secret ^ blockaddr ^ K_FREED
 ;   large block:  secret ^ blockaddr ^ K_LARGE
 ;   chunk header: secret ^ chunkaddr ^ K_CHUNK
@@ -921,6 +969,20 @@ define internal i64 @npk_m_large(i64 %a) {
   %s = load i64, ptr @npk_hsec
   %x = xor i64 %s, %a
   %m = xor i64 %x, 1884440546999092433
+  ret i64 %m
+}
+
+define internal i64 @npk_m_livew(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 8639445676566075373
+  ret i64 %m
+}
+
+define internal i64 @npk_m_largew(i64 %a) {
+  %s = load i64, ptr @npk_hsec
+  %x = xor i64 %s, %a
+  %m = xor i64 %x, 4436545153374750491
   ret i64 %m
 }
 
@@ -1435,11 +1497,14 @@ bmap:
   %isfree = icmp ne i64 %freebit, 0
   br i1 %isfree, label %trap, label %hdr
 hdr:
-  %hm = call i64 @npk_m_live(i64 %b)
+  %hmi = call i64 @npk_m_live(i64 %b)
+  %hmw = call i64 @npk_m_livew(i64 %b)
   %hma = add i64 %b, 8
   %hmp = inttoptr i64 %hma to ptr
   %hv = load i64, ptr %hmp
-  %hok = icmp eq i64 %hv, %hm
+  %oki = icmp eq i64 %hv, %hmi
+  %okw = icmp eq i64 %hv, %hmw
+  %hok = or i1 %oki, %okw
   br i1 %hok, label %tail, label %trap
 tail:
   call void @npk_chunk_guard_check(i64 %ch, i64 %ci)
@@ -1451,7 +1516,7 @@ trap:
 
 ; --- the small path ---------------------------------------------------------
 
-define internal ptr @npk_small_alloc(i64 %n, i64 %ci) {
+define internal ptr @npk_small_alloc(i64 %n, i64 %ci, i64 %wild) {
 entry:
   %hp = getelementptr [14 x i64], ptr @npk_cls_part, i64 0, i64 %ci
   %h0 = load i64, ptr %hp
@@ -1545,7 +1610,10 @@ poisoned:
 stamp:
   %szp = inttoptr i64 %b to ptr
   store i64 %n, ptr %szp
-  %lm = call i64 @npk_m_live(i64 %b)
+  %lmi = call i64 @npk_m_live(i64 %b)
+  %lmw = call i64 @npk_m_livew(i64 %b)
+  %iswild = icmp ne i64 %wild, 0
+  %lm = select i1 %iswild, i64 %lmw, i64 %lmi
   %lma = add i64 %b, 8
   %lmp = inttoptr i64 %lma to ptr
   store i64 %lm, ptr %lmp
@@ -1609,7 +1677,7 @@ done:
 
 ; --- the large path ---------------------------------------------------------
 
-define internal ptr @npk_large_new(i64 %n, i64 %align) {
+define internal ptr @npk_large_new(i64 %n, i64 %align, i64 %wild) {
 entry:
   %r15 = add i64 %n, 15
   %rn = and i64 %r15, -16
@@ -1642,7 +1710,10 @@ fit:
   %b = add i64 %pa, -16
   %szp = inttoptr i64 %b to ptr
   store i64 %n, ptr %szp
-  %lm = call i64 @npk_m_large(i64 %b)
+  %lmi = call i64 @npk_m_large(i64 %b)
+  %lmw = call i64 @npk_m_largew(i64 %b)
+  %iswild = icmp ne i64 %wild, 0
+  %lm = select i1 %iswild, i64 %lmw, i64 %lmi
   %lma = add i64 %b, 8
   %lmp = inttoptr i64 %lma to ptr
   store i64 %lm, ptr %lmp
@@ -1664,11 +1735,14 @@ fit:
 define internal void @npk_large_check(i64 %ip, i64 %e) {
 entry:
   %b = add i64 %ip, -16
-  %want = call i64 @npk_m_large(i64 %b)
+  %wanti = call i64 @npk_m_large(i64 %b)
+  %wantw = call i64 @npk_m_largew(i64 %b)
   %hma = add i64 %b, 8
   %hmp = inttoptr i64 %hma to ptr
   %have = load i64, ptr %hmp
-  %hok = icmp eq i64 %have, %want
+  %oki = icmp eq i64 %have, %wanti
+  %okw = icmp eq i64 %have, %wantw
+  %hok = or i1 %oki, %okw
   br i1 %hok, label %foot, label %trap
 foot:
   %sza = add i64 %e, 24
@@ -1698,7 +1772,7 @@ done:
 
 ; --- the four builtins, plus aalloc -----------------------------------------
 
-define ptr @npk_alloc(i64 %n) {
+define internal ptr @npk_alloc_impl(i64 %n, i64 %wild) {
 entry:
   %sec = load i64, ptr @npk_hsec
   %uninit = icmp eq i64 %sec, 0
@@ -1733,11 +1807,26 @@ bigger:
   %ci2 = add i64 %ci, 1
   br label %pick
 small:
-  %sp = call ptr @npk_small_alloc(i64 %n1, i64 %ci)
+  %sp = call ptr @npk_small_alloc(i64 %n1, i64 %ci, i64 %wild)
   ret ptr %sp
 large:
-  %lp = call ptr @npk_large_new(i64 %n1, i64 16)
+  %lp = call ptr @npk_large_new(i64 %n1, i64 16, i64 %wild)
   ret ptr %lp
+}
+
+; The WILD entry -- the alloc builtin. What this hands out is in the
+; <wild-live> set until dalloc'd, and the exit check counts it (D-151).
+define ptr @npk_alloc(i64 %n) {
+  %p = call ptr @npk_alloc_impl(i64 %n, i64 1)
+  ret ptr %p
+}
+
+; The INTERNAL entry -- runtime-owned storage (string bodies, argv, file
+; buffers). Managed-regime: not in <wild-live>; its RAII lands with the
+; managed lowering, and wild_release_all still reclaims it wholesale.
+define internal ptr @npk_alloc_internal(i64 %n) {
+  %p = call ptr @npk_alloc_impl(i64 %n, i64 0)
+  ret ptr %p
 }
 
 define ptr @npk_calloc(i64 %count, i64 %size) {
@@ -1827,7 +1916,15 @@ inplace:
   store i64 %g1, ptr %gp1
   ret ptr %old
 move:
-  %np = call ptr @npk_alloc(i64 %n)
+  ; the regime travels with the data: a wild block moves to a wild block
+  %mb = add i64 %ip, -16
+  %mw = call i64 @npk_m_largew(i64 %mb)
+  %mha = add i64 %mb, 8
+  %mhp = inttoptr i64 %mha to ptr
+  %mhv = load i64, ptr %mhp
+  %mwild = icmp eq i64 %mhv, %mw
+  %mrole = select i1 %mwild, i64 1, i64 0
+  %np = call ptr @npk_alloc_impl(i64 %n, i64 %mrole)
   %smaller = icmp ult i64 %osz, %n
   %cnt = select i1 %smaller, i64 %osz, i64 %n
   call void @llvm.memcpy.p0.p0.i64(ptr %np, ptr %old, i64 %cnt, i1 false)
@@ -1851,7 +1948,14 @@ inplace2:
   store i64 %n, ptr %oszp2
   ret ptr %old
 move2:
-  %np2 = call ptr @npk_alloc(i64 %n)
+  %mb2 = add i64 %ip, -16
+  %mw2 = call i64 @npk_m_livew(i64 %mb2)
+  %mha2 = add i64 %mb2, 8
+  %mhp2 = inttoptr i64 %mha2 to ptr
+  %mhv2 = load i64, ptr %mhp2
+  %mwild2 = icmp eq i64 %mhv2, %mw2
+  %mrole2 = select i1 %mwild2, i64 1, i64 0
+  %np2 = call ptr @npk_alloc_impl(i64 %n, i64 %mrole2)
   %smaller2 = icmp ult i64 %osz2, %n
   %cnt2 = select i1 %smaller2, i64 %osz2, i64 %n
   call void @llvm.memcpy.p0.p0.i64(ptr %np2, ptr %old, i64 %cnt2, i1 false)
@@ -1932,8 +2036,177 @@ plain:
   %p = call ptr @npk_alloc(i64 %n1)
   ret ptr %p
 wide:
-  %q = call ptr @npk_large_new(i64 %n1, i64 %align)
+  %q = call ptr @npk_large_new(i64 %n1, i64 %align, i64 1)
   ret ptr %q
+}
+
+; --- the <wild-live> registry view (0.10.1, D-151) --------------------------
+;
+; The chunk bitmaps and the large table ARE the live-set; these two walk it.
+; Both are allocation-free and walk only preallocated state, so they are safe
+; from failsafe in a degraded process -- the C-3 discipline.
+
+define i64 @npk_wild_live_count() {
+entry:
+  %tab = load i64, ptr @npk_chtab
+  %len = load i64, ptr @npk_chtab_len
+  br label %chead
+chead:
+  %i = phi i64 [ 0, %entry ], [ %i2, %cnext ]
+  %acc = phi i64 [ 0, %entry ], [ %acc2, %cnext ]
+  %more = icmp ult i64 %i, %len
+  br i1 %more, label %cbody, label %larges
+cbody:
+  %eoff = shl i64 %i, 3
+  %ep = add i64 %tab, %eoff
+  %epp = inttoptr i64 %ep to ptr
+  %ch = load i64, ptr %epp
+  %cia = add i64 %ch, 8
+  %cip = inttoptr i64 %cia to ptr
+  %ci = load i64, ptr %cip
+  %dgep = getelementptr [14 x i64], ptr @npk_cls_data, i64 0, i64 %ci
+  %data = load i64, ptr %dgep
+  %zgep = getelementptr [14 x i64], ptr @npk_cls_size, i64 0, i64 %ci
+  %cls = load i64, ptr %zgep
+  %stride = add i64 %cls, 16
+  %wma = add i64 %ch, 56
+  %wmp = inttoptr i64 %wma to ptr
+  %wm = load i64, ptr %wmp
+  br label %shead
+shead:
+  ; every slot below the watermark: live iff its free bit is CLEAR, wild iff
+  ; its header carries the wild role
+  %slot = phi i64 [ 0, %cbody ], [ %slot2, %snext ]
+  %sacc = phi i64 [ %acc, %cbody ], [ %sacc2, %snext ]
+  %smore = icmp ult i64 %slot, %wm
+  br i1 %smore, label %sbody, label %cdone
+sbody:
+  %w = lshr i64 %slot, 6
+  %bit = and i64 %slot, 63
+  %mask = shl i64 1, %bit
+  %woff = shl i64 %w, 3
+  %wa0 = add i64 %ch, 64
+  %wa = add i64 %wa0, %woff
+  %wp = inttoptr i64 %wa to ptr
+  %word = load i64, ptr %wp
+  %fb = and i64 %word, %mask
+  %isfree = icmp ne i64 %fb, 0
+  br i1 %isfree, label %snext0, label %livecheck
+livecheck:
+  %soff = mul i64 %slot, %stride
+  %d0 = add i64 %ch, %data
+  %b = add i64 %d0, %soff
+  %wantw = call i64 @npk_m_livew(i64 %b)
+  %hma = add i64 %b, 8
+  %hmp = inttoptr i64 %hma to ptr
+  %hv = load i64, ptr %hmp
+  %isw = icmp eq i64 %hv, %wantw
+  %inc = select i1 %isw, i64 1, i64 0
+  br label %scount
+snext0:
+  br label %scount
+scount:
+  %add = phi i64 [ %inc, %livecheck ], [ 0, %snext0 ]
+  br label %snext
+snext:
+  %sacc2 = add i64 %sacc, %add
+  %slot2 = add i64 %slot, 1
+  br label %shead
+cdone:
+  br label %cnext
+cnext:
+  %acc2 = add i64 %sacc, 0
+  %i2 = add i64 %i, 1
+  br label %chead
+larges:
+  %ltab = load i64, ptr @npk_lgtab
+  %llen = load i64, ptr @npk_lgtab_len
+  br label %lhead
+lhead:
+  %j = phi i64 [ 0, %larges ], [ %j2, %lnext ]
+  %lacc = phi i64 [ %acc, %larges ], [ %lacc2, %lnext ]
+  %lmore = icmp ult i64 %j, %llen
+  br i1 %lmore, label %lbody, label %out
+lbody:
+  %leoff = shl i64 %j, 5
+  %lep = add i64 %ltab, %leoff
+  %lepp = inttoptr i64 %lep to ptr
+  %p = load i64, ptr %lepp
+  %lb = add i64 %p, -16
+  %lwant = call i64 @npk_m_largew(i64 %lb)
+  %lhma = add i64 %lb, 8
+  %lhmp = inttoptr i64 %lhma to ptr
+  %lhv = load i64, ptr %lhmp
+  %lisw = icmp eq i64 %lhv, %lwant
+  %linc = select i1 %lisw, i64 1, i64 0
+  br label %lnext
+lnext:
+  %lacc2 = add i64 %lacc, %linc
+  %j2 = add i64 %j, 1
+  br label %lhead
+out:
+  ret i64 %lacc
+}
+
+; Releases the WHOLE heap -- every chunk and every large mapping, both
+; regimes -- and leaves the allocator usable. This is failsafe's controlled
+; cleanup: after it, only exit; anything still pointing into the heap points
+; at unmapped pages.
+define void @npk_wild_release_all() {
+entry:
+  %tab = load i64, ptr @npk_chtab
+  %len = load i64, ptr @npk_chtab_len
+  br label %chead
+chead:
+  %i = phi i64 [ 0, %entry ], [ %i2, %cbody ]
+  %more = icmp ult i64 %i, %len
+  br i1 %more, label %cbody, label %clists
+cbody:
+  %eoff = shl i64 %i, 3
+  %ep = add i64 %tab, %eoff
+  %epp = inttoptr i64 %ep to ptr
+  %ch = load i64, ptr %epp
+  call void @npk_hunmap(i64 %ch, i64 65536)
+  %i2 = add i64 %i, 1
+  br label %chead
+clists:
+  store i64 0, ptr @npk_chtab_len
+  br label %zhead
+zhead:
+  %k = phi i64 [ 0, %clists ], [ %k2, %zbody ]
+  %zmore = icmp ult i64 %k, 14
+  br i1 %zmore, label %zbody, label %larges
+zbody:
+  %pp = getelementptr [14 x i64], ptr @npk_cls_part, i64 0, i64 %k
+  store i64 0, ptr %pp
+  %fp = getelementptr [14 x i64], ptr @npk_cls_full, i64 0, i64 %k
+  store i64 0, ptr %fp
+  %k2 = add i64 %k, 1
+  br label %zhead
+larges:
+  %ltab = load i64, ptr @npk_lgtab
+  %llen = load i64, ptr @npk_lgtab_len
+  br label %lhead
+lhead:
+  %j = phi i64 [ 0, %larges ], [ %j2, %lbody ]
+  %lmore = icmp ult i64 %j, %llen
+  br i1 %lmore, label %lbody, label %done
+lbody:
+  %leoff = shl i64 %j, 5
+  %lep = add i64 %ltab, %leoff
+  %lepp = inttoptr i64 %lep to ptr
+  %basea = add i64 %lep, 8
+  %basep = inttoptr i64 %basea to ptr
+  %base = load i64, ptr %basep
+  %msza = add i64 %lep, 16
+  %mszp = inttoptr i64 %msza to ptr
+  %msz = load i64, ptr %mszp
+  call void @npk_hunmap(i64 %base, i64 %msz)
+  %j2 = add i64 %j, 1
+  br label %lhead
+done:
+  store i64 0, ptr @npk_lgtab_len
+  ret void
 }
 
 ; ---------------------------------------------------------------------------
@@ -2025,7 +2298,7 @@ entry:
   %bp = extractvalue { ptr, i64, i64 } %b, 0
   %bl = extractvalue { ptr, i64, i64 } %b, 1
   %n = add i64 %al, %bl
-  %p = call ptr @npk_alloc(i64 %n)
+  %p = call ptr @npk_alloc_internal(i64 %n)
   call ptr @memcpy(ptr %p, ptr %ap, i64 %al)
   %tail = getelementptr i8, ptr %p, i64 %al
   call ptr @memcpy(ptr %tail, ptr %bp, i64 %bl)
@@ -2041,7 +2314,7 @@ define { { ptr, i64, i64 }, i32 } @npk_int_to_string(i64 %v) {
 entry:
   ; Fill a 24-byte buffer from the END, then return a view of the filled tail.
   ; No reversal step, and 24 bytes is enough for -9223372036854775808.
-  %buf = call ptr @npk_alloc(i64 24)
+  %buf = call ptr @npk_alloc_internal(i64 24)
   %isneg = icmp slt i64 %v, 0
   %neg = sub i64 0, %v
   %u0 = select i1 %isneg, i64 %neg, i64 %v

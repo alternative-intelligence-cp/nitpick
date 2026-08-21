@@ -31,6 +31,8 @@ class EmitError(diag.NpkError):
 # the kind of silent disagreement that produces IR llc rejects -- and it did.
 RUNTIME_ARGS = {
     "alloc":         ["i64"],
+    "wild_live_count":  [],
+    "wild_release_all": [],
     "calloc":        ["i64", "i64"],
     "ralloc":        ["ptr", "i64"],
     "dalloc":        ["ptr"],

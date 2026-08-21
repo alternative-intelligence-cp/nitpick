@@ -1,0 +1,20 @@
+// expect-exit: 28
+//
+// FAILSAFE MAY CLEAN UP AND EXIT POSITIVE (CONTROL_REFERENCE 4.6's second
+// half): wild_release_all() drops the whole heap -- every chunk, every large
+// mapping -- and failsafe's own exit passes the check because it IS the
+// handler (the in-failsafe flag; the check runs once, at the program's exit).
+
+func:main = int32(cstring[]:_~argv) {
+    wild int8->:p = alloc(24i64);
+    discard(p);
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err =>! int64) != (0i64 - 4105i64)) { exit 9i32; }
+    wild_release_all();
+    int64:n = wild_live_count();
+    if (n != 0i64) { exit 8i32; }
+    exit 28i32;
+};
