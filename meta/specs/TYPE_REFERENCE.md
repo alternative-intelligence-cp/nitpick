@@ -222,7 +222,7 @@ Nitpick includes several domain-specific native primitives designed for aggressi
 | Type | Description | Optimization Target |
 |---|---|---|
 | `trit` | A base-3 unit of information (values: -1, 0, 1 or 0, 1, 2). | Bit-packed arrays, ternary logic gates. |
-| `tryte` | A block of 6 trits (values: 0 to 728). | Registers and nonary byte equivalents. |
+| `tryte` | A block of 10 trits (GRAMMAR_ADOPTION_CONFLICTS Part Q corrected the earlier 6). | Registers and nonary byte equivalents. |
 | `nit` | Base-9 primitive (values: 0-8). | Nonary wave processing emulation. |
 | `nyte` | A block of 2 nits (values: 0-80). | Compact nonary data streams. |
 | `tensor` | N-dimensional array primitive. | Emits LLVM vector/SIMD intrinsics. |
@@ -584,7 +584,7 @@ asymmetry bugs is eliminated structurally.
 | Nitpick Type | Base | States |
 |---|---|---|
 | `trit` | base-3 | −1, 0, 1 |
-| `tryte` | base-3 | 6 trits |
+| `tryte` | base-3 | 10 trits (Part Q) |
 | `nit` | base-9 | −4 … 4 |
 | `nyte` | base-9 | 2 nits |
 
@@ -706,7 +706,12 @@ pub enum:Color = { Red = 0i32; Green = 1i32; Blue = 2i32; };
 
 ; Tagged enums with payloads:
 ; enum Shape = { Circle(flt64); Rect(flt64, flt64); };
-%Shape = type { i32, [4 x i8], [16 x i8] }  ; tag + padding (for alignment) + max(payload sizes)
+%Shape = type { i32, [2 x i64] }  ; tag + payload slot: [N x iK], K = the WIDEST
+; payload's alignment in bits, N covering the widest size (0.9.2) — making the
+; element BE the alignment is what keeps an 8-byte payload off odd addresses;
+; the earlier [4 x i8]+[16 x i8] example had struct align 4 and was misaligned.
+; `enum =>! intN` reads the TAG (slot 0) at every shape; `intN => enum` is
+; impossible in both spellings (D-140).
 ; Note: The compiler explicitly inserts padding arrays to ensure that 
 ; payload extraction does not cause unaligned reads/segfaults on strict architectures.
 ```
@@ -1005,7 +1010,7 @@ extern {
 
 ```llvm
 ; func:add = int32(int32:a, int32:b) { ... };
-define {i32, i32, i8} @add(i32 %a, i32 %b) {
+define { i32, i32 } @add(i32 %a, i32 %b) {   ; D-069: {value, error} — the stored is_error flag was removed; .is_error derives as error != 0
   ; Returns Result<int32> by default
   ; {value, error} — error is tbb32 (i32), NOT a pointer payload.
   ; The stored is_error flag was removed by D-069; r.is_error is derived.
@@ -1060,7 +1065,9 @@ Dimensional analysis types carry unit metadata at compile time only.
 At runtime they are the same as their base numeric type.
 
 ```nitpick
-int32<Meters>:distance = 100i32<Meters>;
+// (An earlier draft showed `int32<Meters>` unit-annotations here; D-036
+// rejected value-generic units on plain integers — this section awaits the
+// dimensional types' own design.)
 // At LLVM IR level: just i32
 ```
 

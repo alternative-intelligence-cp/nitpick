@@ -189,3 +189,17 @@ func:seeds_itself = Ctx() {
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;
 };
+
+// --- F-6's other half (0.9.8): exclusive pick arms are exclusive ---------------
+//
+// Initialise-`fixed`-per-case is the idiom `pick` exists for, and the arms are
+// exclusive — before the repair each arm absorbed its siblings' effects and the
+// second init read as "may be the second time".
+func:per_case_fixed = int32(int32:n) {
+    fixed int32:k;
+    pick (n) {
+        (0i32) { k = 1i32; },
+        (*)    { k = 2i32; }
+    }
+    pass k;
+};

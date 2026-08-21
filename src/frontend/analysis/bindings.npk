@@ -781,12 +781,22 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
     AssignState:acc = raw state_new(st.count);
     bool:seen = false;
 
+    // F-6's REPAIR (0.9.8): every arm starts from the PRISTINE pre-pick state
+    // — arms are exclusive, and absorbing each into the walk state before the
+    // next copied it made siblings see each other's may/moved/freed, wrongly
+    // refusing per-case `fixed` init (the idiom pick exists for). The `must`
+    // accumulator already worked this way; the asymmetry was the bug. The
+    // may-effects gather in a side accumulator and land on the walk state
+    // once, after the loop.
+    AssignState:pristine = raw state_copy(st);
+    AssignState:mayacc = raw state_copy(st);
+
     int32:i = 0i32;
     while (i < count) {
         StmtId:aid = relay pick_arm_at(x.ast, start, i);
         StmtNode:arm = relay ast_stmt(x.ast, aid);
 
-        AssignState:one = raw state_copy(st);
+        AssignState:one = raw state_copy(pristine);
         if (et.found) {
             // `pick (r.is_error) { (true) { … }, (false) { HERE } }` — the same
             // refinement an `if` gets, on the arm that matched the safe value.
@@ -800,7 +810,7 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
         }
         drop assign_expr(x, one, raw arm_guard(arm), depth);
         drop assign_stmt(x, one, raw arm_body(arm), depth);
-        drop state_absorb_may(st, one);
+        drop state_absorb_may(mayacc, one);
 
         if (!(relay stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()))) {
             if (seen) {
@@ -821,6 +831,9 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) {
             drop state_take_must(st, acc);
         }
     }
+    // The gathered may/moved/freed land ONCE (F-6): after every exclusive arm
+    // ran from the same pristine state.
+    drop state_absorb_may(st, mayacc);
     pass NIL;
 };
 
@@ -1318,12 +1331,48 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) {
     int32:ty = raw exprtypes_get(x.etypes, base);
     if ((raw type_kind(x.types, ty)) != (raw TY_RESULT())) { pass NIL; }
 
+    // ONLY A BARE LOCAL IS TRACKABLE, so only a bare local's check counts
+    // (0.9.8, F-4). Before this, a field-rooted read collapsed to its root —
+    // checking `t.a` licensed reading `t.b.value` — and a param-rooted read
+    // was invisible entirely. Both now refuse CONSERVATIVELY, matching the
+    // untracked-binding posture: bind the Result to a local, check that. The
+    // one documented exception stays: a call-rooted temporary (`f().value`)
+    // cannot be checked at all, and binding it is the idiom.
+    ExprNode:basen = relay ast_expr(x.ast, base);
+    if (basen.kind != ExprKind.ExprIdentifierExpr) {
+        if (relay place_rooted_at_ident(x, base)) {
+            drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+                "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local, test `is_error` on that, or use `raw` to say the check is not wanted (D-007)",
+                n.span);
+        }
+        pass NIL;
+    }
+
     int32:slot = relay binding_slot(x, base);
-    if (slot < 0i32) { pass NIL; }
+    if (slot < 0i32) {
+        // A bare identifier that is not a tracked local: a PARAMETER'S Result
+        // — unwitnessable here, same conservative answer.
+        drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local, test `is_error` on that, or use `raw` to say the check is not wanted (D-007)",
+            n.span);
+        pass NIL;
+    }
     if (raw state_checked(st, slot)) { pass NIL; }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
         "this `Result` has not been checked for an error, so its `value` carries the `unknown` taint; test `is_error` first, or use `raw` to say the check is not wanted (D-007)",
         n.span);
     pass NIL;
+};
+
+// Is this place rooted at an IDENTIFIER (a binding or parameter, however deep
+// the member path) rather than at a call's temporary? The distinction decides
+// F-4's conservative refusal: an ident-rooted path COULD have been bound and
+// checked; a temporary could not.
+func:place_rooted_at_ident = bool(Assign->:x, ExprId:place) {
+    PlaceRoot:r = relay place_root(x.ast, place, raw BORROW_FUEL());
+    if (r.exhausted)            { pass false; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    pass (rn.kind == ExprKind.ExprIdentifierExpr);
 };

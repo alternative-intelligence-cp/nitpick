@@ -1,0 +1,19 @@
+// expect-error: NITPICK-BORROW-001
+//
+// F-2's lock (0.9.8): an expression-pick's value IS what its arms give, so
+// giving `@x` and returning the pick is the dangling return it always was —
+// the arm walk now carries the verdict up instead of dropping it.
+
+func:pf = int32->() {
+    int32:x = 5i32;
+    int32->:p = pick (1i32) {
+        (*) { give @x; }
+    };
+    pass p;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

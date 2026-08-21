@@ -1,0 +1,35 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error: NITPICK-BORROW-002
+//
+// F-1's lock (0.9.8): rule B's old single-borrow exemption conflated "second
+// borrow" with "second pointer" — the stored value must be a borrow, but the
+// place it is stored THROUGH need only be a pointer whose pointee can hold
+// one. A LOCAL-rooted borrow passed beside a parameter-rooted destination of
+// a MATCHING type is the escape itself: the callee may store it, and the
+// destination outlives this frame. Both call shapes below were accepted
+// before the repair.
+
+struct:Cell = { int32->:slot; };
+
+func:stash = NIL(Cell->:h, int32->:q) {
+    h.slot = q;
+    pass NIL;
+};
+
+func:caller = NIL(Cell->:cell) {
+    int32:x = 5i32;
+    drop stash(cell, @x);
+    pass NIL;
+};
+
+func:receiver_form = Cell->(Cell->:cell) {
+    int32:x = 7i32;
+    drop stash(cell, @x);
+    pass cell;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

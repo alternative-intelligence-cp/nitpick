@@ -39,6 +39,7 @@ use "../parse_stmt.npk".*;
 use "../parse_pick.npk".*;
 use "../parse_decl.npk".*;
 use "../types.npk".*;
+use "../resolve_type.npk".*;
 use "../expr_types.npk".*;
 use "./analysis_codes.npk".*;
 
@@ -53,6 +54,9 @@ pub struct:Escape = {
     TypeTable->:types;
     ExprTypes->:etypes;
     DiagList->:diags;
+    // For resolving struct FIELD types in the type-aware destination walk
+    // (F-1) — the same resolver the checker used, handed in by the pipeline.
+    TypeResolver->:tr;
 
     // DOES THIS BINDING HOLD A BORROW? Indexed by the index of the statement that
     // DECLARED it, which is what `Symbol.origin` holds for a local (`SYM_STMT`).
@@ -95,13 +99,14 @@ pub struct:Escape = {
 };
 
 pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
-                              ExprTypes->:etypes, DiagList->:diags) {
+                              ExprTypes->:etypes, DiagList->:diags,
+                              TypeResolver->:tr) {
     int64:size = (raw ast_stmt_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:mem = alloc(size * #size_of<bool>());
 
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
-                       diags: diags, holds: mem =>! wild bool->,
+                       diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32,
                        reporting: false, changed: false };
     int64:i = 0i64;
@@ -826,13 +831,15 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) {
     }
 
     // AN EXPRESSION `pick` CARRIES STATEMENTS (D-059), so it hands back to the
-    // statement walk. Its arms `give` a value; whether that value is a borrow is
-    // 0.5.4's question, once arm coverage exists to hang it on.
+    // statement walk — and ITS VALUE IS WHAT ITS ARMS GIVE (0.9.8, F-2): the
+    // pick is borrowy iff any `give` operand is, so `pass (pick … give @x …)`
+    // is the dangling return it always was, not a laundering.
     if (n.kind == ExprKind.ExprPickExpr) {
         drop escape_untracked(x, raw pickx_selector(n),
             "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
         drop escape_stmt_window(x, raw pickx_arm_start(n), raw pickx_arm_count(n));
-        pass false;
+        pass (relay gives_borrowy(x, raw pickx_arm_start(n),
+                                  raw pickx_arm_count(n), depth));
     }
 
     // EVERYTHING ELSE IS DRIVEN BY `expr_shape`, for the reason `resolve_expr`
@@ -930,17 +937,74 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     drop escape_expr(x, callee, depth);
 
     int32:borrowed = 0i32;
-    if (relay escape_arg(x, recv, ext, depth)) { borrowed = borrowed + 1i32; }
-
+    int32:local_borrows = 0i32;
+    // The pointee types of the LOCAL-rooted borrows in this call — a handful
+    // at most; a destination matters only if it can hold one of exactly these.
+    wild int32->:lb_tys = (alloc(8i64 * 4i64)) =>! wild int32->;
+    if (relay escape_arg(x, recv, ext, depth)) {
+        borrowed = borrowed + 1i32;
+        if (relay arg_root_is_local(x, recv)) {
+            if (local_borrows < 8i32) {
+                lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, recv);
+            }
+            local_borrows = local_borrows + 1i32;
+        }
+    }
     int32:i = 0i32;
     while (i < count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
-        if (relay escape_arg(x, a, ext, depth)) { borrowed = borrowed + 1i32; }
+        if (relay escape_arg(x, a, ext, depth)) {
+            borrowed = borrowed + 1i32;
+            if (relay arg_root_is_local(x, a)) {
+                if (local_borrows < 8i32) {
+                    lb_tys[local_borrows => int64] = raw arg_pointee_ty(x, a);
+                }
+                local_borrows = local_borrows + 1i32;
+            }
+        }
         i = i + 1i32;
     }
+    int32:dests = 0i32;
+    if (local_borrows > 0i32) {
+        if (relay arg_can_hold_one(x, recv, lb_tys, local_borrows)) { dests = dests + 1i32; }
+        i = 0i32;
+        while (i < count) {
+            ExprId:a2 = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+            if (relay arg_can_hold_one(x, a2, lb_tys, local_borrows)) { dests = dests + 1i32; }
+            i = i + 1i32;
+        }
+    }
 
-    // RULE B.
-    if (borrowed >= 2i32) {
+    // RULE B — REPAIRED (0.9.8, F-1): the stored value must be a borrow, but
+    // the place it is stored THROUGH need not be — any non-borrow pointer
+    // whose pointee can hold a pointer is a destination the borrow can escape
+    // into (`stash(cell, @x)` with one borrow walked straight through the old
+    // `borrowed >= 2` exemption). One borrow plus one destination is enough.
+    // `tt_intern(@t, k)` — one borrow, scalars otherwise — still passes: the
+    // borrow itself is not counted as its own destination.
+    bool:rule_b = false;
+    if (borrowed >= 2i32) { rule_b = true; }
+    if (local_borrows >= 1i32) {
+        if (dests >= 1i32) { rule_b = true; }
+    }
+    // A PARAMETER-ROOTED DESTINATION IS THE ESCAPE ITSELF (F-1's second half):
+    // the callee may store the borrow through it, and the parameter's pointee
+    // outlives this frame — there is no local binding to mark and watch, so
+    // the call refuses outright. A LOCAL destination is only marked
+    // (escape_connect below): the refusal comes if IT ever leaves.
+    // ...and only a LOCAL-rooted borrow makes that store dangerous: a
+    // param-rooted borrow's target outlives this frame anyway (D-138's
+    // refinement), so `llctx_init(@g.ast, types, interns)` — every walker's
+    // idiom — stays ordinary code.
+    if (rule_b) {
+        if (local_borrows >= 1i32) {
+            if (dests >= 1i32) {
+                drop refuse_param_dests(x, recv, start, count, lb_tys,
+                                        local_borrows);
+            }
+        }
+    }
+    if (rule_b) {
         drop escape_connect(x, recv);
         int32:j = 0i32;
         while (j < count) {
@@ -954,6 +1018,201 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     if (borrowed == 0i32) { pass false; }
     pass (relay carries_pointer(x, raw exprtypes_get(x.etypes, id),
                                 raw CARRY_FUEL()));
+};
+
+// Refuse every parameter-rooted destination in this call (F-1): a borrow
+// passed beside it can be stored somewhere that outlives the frame, and no
+// mark on a local can witness that.
+func:refuse_param_dests = NIL(Escape->:x, ExprId:recv, int32:start,
+                              int32:count, wild int32->:lb_tys, int32:lbn) {
+    drop refuse_one_param_dest(x, recv, lb_tys, lbn);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
+        drop refuse_one_param_dest(x, a, lb_tys, lbn);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+func:refuse_one_param_dest = NIL(Escape->:x, ExprId:a, wild int32->:lb_tys,
+                                 int32:lbn) {
+    if (raw expr_is_none(a)) { pass NIL; }
+    if (!(relay arg_can_hold_one(x, a, lb_tys, lbn))) { pass NIL; }
+    PlaceRoot:r = relay place_root(x.ast, a, raw BORROW_FUEL());
+    if (r.exhausted)            { pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    Symbol:sym = raw symtab_get(x.tab, rn.a);
+    if (sym.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: sym.origin });
+    if (d.kind != DeclKind.DeclParamDecl) { pass NIL; }
+    ExprNode:anode2 = relay ast_expr(x.ast, a);
+    drop escape_err(x, raw BORROW_STORED(),
+        "a borrow is passed beside this parameter-rooted destination, and the callee may store it there — memory that outlives this frame would then hold a pointer into it (D-004 rule B; F-1)",
+        anode2.span);
+    pass NIL;
+};
+
+// Is this argument's PLACE rooted at a frame-owned binding — a local or a
+// pick binding — rather than a parameter? Frame-owned targets die with the
+// frame; parameter-rooted ones outlive it, which is the whole distinction
+// F-1's refusal turns on.
+func:arg_root_is_local = bool(Escape->:x, ExprId:a) {
+    if (raw expr_is_none(a)) { pass false; }
+    ExprId:pl = a;
+    ExprNode:top = relay ast_expr(x.ast, a);
+    if (top.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(top); }
+    if (top.kind == ExprKind.ExprBorrowExpr)    { pl = raw expr_operand(top); }
+    PlaceRoot:r = relay place_root(x.ast, pl, raw BORROW_FUEL());
+    if (r.exhausted)            { pass false; }
+    if (raw expr_is_none(r.id)) { pass false; }
+    ExprNode:rn = relay ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (rn.a == 0i32) { pass false; }
+    Symbol:sym = raw symtab_get(x.tab, rn.a);
+    if (sym.origin_kind == (raw SYM_STMT())) { pass true; }
+    if (sym.origin_kind == (raw SYM_PAT()))  { pass true; }
+    pass false;
+};
+
+// A DESTINATION: a pointer-typed argument whose pointee can carry a pointer —
+// somewhere a borrow passed beside it could be stored (F-1). The borrow
+// arguments themselves are counted separately and never double as their own
+// destination.
+// Does any `give` in these arms yield a borrowy value? A statement scan that
+// descends every nested statement window — a `give` can sit under an `if`
+// inside an arm — asking `escape_expr` about each operand.
+func:gives_borrowy = bool(Escape->:x, int32:start, int32:count, int32:depth) {
+    int32:i = 0i32;
+    while (i < count) {
+        StmtNode:arm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, start, i));
+        if (relay stmt_gives_borrowy(x, raw arm_body(arm), depth)) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+func:stmt_gives_borrowy = bool(Escape->:x, StmtId:sid, int32:depth) {
+    if (depth <= 0i32) { pass false; }
+    if (sid.index == 0i32) { pass false; }
+    StmtNode:s = relay ast_stmt(x.ast, sid);
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        pass (relay escape_expr(x, raw stmt_operand(s), depth - 1i32));
+    }
+    if (s.kind == StmtKind.StmtBlockStmt) {
+        int32:n = raw stmt_list_count(s);
+        int32:i = 0i32;
+        while (i < n) {
+            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast,
+                                     raw stmt_list_start(s), i) };
+            if (relay stmt_gives_borrowy(x, sub, depth - 1i32)) { pass true; }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    if (s.kind == StmtKind.StmtIfStmt) {
+        if (relay stmt_gives_borrowy(x, raw stmt_body(x.ast, s), depth - 1i32)) { pass true; }
+        pass (relay stmt_gives_borrowy(x, raw stmt_else(s), depth - 1i32));
+    }
+    if (s.kind == StmtKind.StmtPickStmt) {
+        int32:pc = raw pick_arm_count(s);
+        int32:ps = raw pick_arm_start(s);
+        int32:i = 0i32;
+        while (i < pc) {
+            StmtNode:parm = relay ast_stmt(x.ast, relay pick_arm_at(x.ast, ps, i));
+            if (relay stmt_gives_borrowy(x, raw arm_body(parm), depth - 1i32)) { pass true; }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    pass false;
+};
+
+// The pointee type behind an argument, for the type-aware destination match.
+func:arg_pointee_ty = int32(Escape->:x, ExprId:a) {
+    int32:t = raw exprtypes_get(x.etypes, a);
+    if (t == 0i32) { pass 0i32; }
+    if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) {
+        pass (raw type_elem(x.types, t));
+    }
+    pass 0i32;
+};
+
+// A DESTINATION, TYPE-AWARE (F-1's precision): a NON-borrow pointer argument
+// whose pointee can TRANSITIVELY hold one of the borrow types actually passed
+// beside it. `Cell { int32->:slot }` beside `@x` (an int32 borrow) matches; a
+// DiagList beside `@ctx` (an LlCtx borrow) does not — no slot in it could
+// ever store an LlCtx — so the walker idiom `f(@local_ctx, diags)` stays
+// ordinary code. An `any->` slot matches every borrow (it erases the type).
+func:arg_can_hold_one = bool(Escape->:x, ExprId:a, wild int32->:lb_tys,
+                             int32:lbn) {
+    if (raw expr_is_none(a)) { pass false; }
+    if (relay escape_yields(x, a)) { pass false; }
+    int32:t = raw exprtypes_get(x.etypes, a);
+    if (t == 0i32) { pass false; }
+    if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass false; }
+    int32:pointee = raw type_elem(x.types, t);
+    int32:i = 0i32;
+    while (i < lbn) {
+        if (i >= 8i32) { pass true; }
+        if (relay dest_can_hold(x, pointee, lb_tys[i => int64],
+                                raw CARRY_FUEL())) { pass true; }
+        i = i + 1i32;
+    }
+    pass false;
+};
+
+// Can a value of type `holder` transitively contain a `target->` slot? Struct
+// fields resolve through the checker's own resolver, in the struct's home
+// scope (D-137).
+func:dest_can_hold = bool(Escape->:x, int32:holder, int32:target, int32:fuel) {
+    if (fuel <= 0i32) { pass true; }
+    if (holder == 0i32) { pass false; }
+    // Target 0 is a VALUE-held borrow (rule A's conservative marking — a
+    // struct carrying heap strings, say): it has no frame pointee to dangle,
+    // so it does not drive the param-destination refusal. Rule A still owns
+    // its return-escape.
+    if (target == 0i32) { pass false; }
+    int32:k = raw type_kind(x.types, holder);
+    if (k == (raw TY_POINTER())) {
+        int32:el = raw type_elem(x.types, holder);
+        if (el == target) { pass true; }
+        if ((raw type_kind(x.types, el)) == (raw TY_ANY())) { pass true; }
+        pass (relay dest_can_hold(x, el, target, fuel - 1i32));
+    }
+    if (k == (raw TY_SLICE())) {
+        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+                                  fuel - 1i32));
+    }
+    if (k == (raw TY_ARRAY())) {
+        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+                                  fuel - 1i32));
+    }
+    if (k == (raw TY_RESULT())) {
+        pass (relay dest_can_hold(x, raw type_elem(x.types, holder), target,
+                                  fuel - 1i32));
+    }
+    if (k == (raw TY_STRUCT())) {
+        // The layout's pointer-presence bit prunes the walk outright.
+        if (!(raw type_holds_pointer(x.types, holder, fuel))) { pass false; }
+        DeclId:did = DeclId{ index: raw type_decl(x.types, holder) };
+        DeclNode:d = relay ast_decl(x.ast, did);
+        int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+        int32:i = 0i32;
+        while (i < (raw item_member_count(x.ast, d))) {
+            DeclNode:m = relay ast_decl(x.ast, raw item_member(x.ast, d, i));
+            if (m.kind == DeclKind.DeclFieldDecl) {
+                int32:ft = relay resolve_type(x.tr, raw field_type(m), home);
+                if (relay dest_can_hold(x, ft, target, fuel - 1i32)) { pass true; }
+            }
+            i = i + 1i32;
+        }
+        pass false;
+    }
+    pass false;
 };
 
 // One argument, walked and reported on. RULE 4's `extern` crossing is here because

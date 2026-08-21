@@ -1,0 +1,34 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error: NITPICK-TAINT-001
+// expect-error: NITPICK-TAINT-001
+//
+// F-4's lock (0.9.8): only a BARE LOCAL is trackable, so only a bare local's
+// check counts. A param-rooted `.value` read and a field-rooted one both
+// refuse conservatively — before the repair, the first was invisible and
+// checking `t.a` licensed reading `t.b.value`. The third case is the bare
+// control that always fired.
+
+struct:Two = { Result<int32>:a; Result<int32>:b; };
+
+func:mk = int32() { pass 1i32; };
+
+func:param_rooted = int32(Two->:t) {
+    pass (t.b.value);
+};
+
+func:field_conflated = int32() {
+    Two:t = Two{ a: mk(), b: mk() };
+    if (t.a.is_error) { pass 0i32; }
+    pass (t.b.value);
+};
+
+func:bare_unchecked = int32() {
+    Result<int32>:r = mk();
+    pass (r.value);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

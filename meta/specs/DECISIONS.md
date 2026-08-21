@@ -538,7 +538,7 @@ Non-trapping ways to inspect an ERR value:
 |---|---|---|
 | `is_err(x)` | `bool` | never traps — the canonical guard |
 | `x ? default` | `T` | safe unwrap; substitutes the default when ERR |
-| `ok(x)` | `T` | explicitly clears the taint; caller assumes responsibility |
+| ~~`ok(x)`~~ | — | REMOVED (see D-096's own retelling below): `ok()` tested a user-writable `unknown` that no longer exists; the taint discipline is `is_error` + `raw`. Row kept struck-through by the 0.9.8 doc-sync so a reader is not sent to build it. |
 
 ### 5.1 `pick` and the `ERR:` arm
 
@@ -1654,7 +1654,7 @@ three-way classification with an ambiguous member — one rule, no exceptions.
 
 ---
 
-## D-028 — `assoc` declares associated types; `Type` is namespace-only — **SETTLED**
+## D-028 — `assoc` declares associated types; `Type` is namespace-only — **SETTLED; the namespace half is superseded by D-088** (banner added by the 0.9.8 doc-sync — a targeted reader landing here must not build the dead half)
 
 `Type` had two unrelated meanings distinguished only by position — a direct
 blueprint violation, and genuinely ambiguous to parse.
@@ -8040,7 +8040,7 @@ reaches, an `impl` method body, a struct's layout — were all closed in 0.4.8.
 
 ---
 
-## D-114 — An `extern` function has a type, and it is a `Result<T>` like every other
+## D-114 — An `extern` function has a type, and it is a `Result<T>` like every other — **SETTLED (its open sub-item is queued)**
 
 **Settled in cycle 0.5.1**, after every call to an `extern` function turned out to
 be a type error.
@@ -8108,8 +8108,10 @@ contradicting itself.
 refused before this decision — as "`printf` is a type, not a value" — so this
 replaces a misleading refusal with an accurate one and makes the open question
 visible. It is recorded as open rather than parked: the tail's element type is a
-language-surface decision, and it has to be settled before Phase B, because
-`nlibc` and every syscall wrapper are `extern` declarations.
+language-surface decision. (This paragraph once named a pre-Phase-B deadline;
+Phase B is well underway with `extern` refusing at the 1.1 rung, so the true
+deadline is the FFI work there — the sub-item rides OPEN_DECISIONS' 1.1 group,
+annotated by the 0.9.8 doc-sync.)
 
 ---
 
@@ -9167,7 +9169,7 @@ refused, and it is a question about **parameters**, not about hygiene.
 
 ---
 
-## D-129 — Eight expression kinds are never typed, and the checker says nothing — **OPEN, scheduled 0.6.7**
+## D-129 — Eight expression kinds are never typed, and the checker says nothing — **SETTLED — landed 0.6.7** (this heading said OPEN long after the work shipped; annotated by the 0.9.8 doc-sync, which is what `check_decisions_current` exists to catch)
 
 `type_of_expr_inner` reaches every expression kind by name and falls through to
 type `0` — the **invalid** type. That encoding exists so one bad annotation
@@ -9857,3 +9859,47 @@ shared an id; nothing consumed function types until values of them existed);
 the func type's return slot is the SUCCESS type, spelled exactly as a
 declaration spells it, with every call — named or indirect — typing as
 `Result<success>` by one wrap in one place.
+
+## D-146 — The borrow discipline's four repairs — **SETTLED**
+
+Cycle 0.9.8, landing the audit's confirmed soundness holes (deep dive F-1,
+F-2, F-4, F-6 — probes in `meta/roadmap/audit-0.8-close/probes/`, each now a
+suite case).
+
+**F-1 — rule B counts destinations, type-aware.** The stored value must be a
+borrow, but the place it is stored through need only be a pointer whose
+pointee can hold one. The repaired rule: a LOCAL-rooted borrow (a
+frame-owned target — param-rooted borrows outlive the frame, D-138's
+refinement) passed beside a non-borrow pointer destination **whose pointee
+can transitively hold that borrow's own type** marks local destinations and
+REFUSES parameter-rooted ones outright (`NITPICK-BORROW-002`) — the store
+would outlive the frame and no mark could witness it. The type-awareness is
+what keeps the compiler's own walker idiom (`f(@local_ctx, diags)`) ordinary
+code: a DiagList has no slot that could ever hold an LlCtx. Struct fields
+resolve through the checker's own resolver (Escape now carries it); an
+`any->` slot matches every borrow; a value-held borrow (rule A's
+conservative marking) has no frame pointee and does not trigger the
+destination rule — rule A still owns its return-escape.
+
+**F-2 — an expression-pick is as borrowy as its `give`s.** The arm walk
+carries the verdict up instead of dropping it, so
+`pass (pick … { give @x; })` is the dangling return it always was.
+
+**F-4 — the taint tracks what it can see, and refuses what it cannot.** Only
+a bare local Result is trackable, so only a bare local's `is_error` check
+counts. A `.value` read through a member path or a parameter refuses
+CONSERVATIVELY — bind the Result to a local and check that — matching the
+untracked posture elsewhere. Before: a param-rooted read was invisible, and
+checking `t.a` licensed reading `t.b.value`. The one documented exception
+stands: a call-rooted temporary cannot be checked at all, and binding it is
+the idiom.
+
+**F-6 — exclusive pick arms are exclusive.** Every arm starts from the
+pristine pre-pick state (as `if` always did); may/moved/freed gather in a
+side accumulator and land once after the loop. Initialise-`fixed`-per-case —
+the idiom `pick` exists for — is accepted again.
+
+Ticketed onward with owners: F-3 (inner-block borrow deref'd after scope)
+gates on lifetime intrinsics/stack coloring; F-5 (defer-named binding
+invalidated after registration) lands with 0.10's real allocator, when
+`dalloc` starts freeing.
