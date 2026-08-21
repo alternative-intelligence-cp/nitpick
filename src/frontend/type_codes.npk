@@ -123,3 +123,8 @@ pub func:TYPE_TIER = string()          { pass "NITPICK-TYPE-029"; };
 // D-143's float rules: a flt32 literal past 15 significant digits, or any
 // literal/arithmetic/comparison on the storage-only flt128.
 pub func:TYPE_FLOAT_RULES = string()   { pass "NITPICK-TYPE-030"; };
+
+// D-148: a literal whose value does not fit its type -- suffixed or contextual.
+// Until 0.9.9 nothing checked this anywhere: `int8:a = 300i8;` survived to the
+// backend and emitted `i8 300`, which is not even valid IR.
+pub func:TYPE_LIT_RANGE = string()     { pass "NITPICK-TYPE-031"; };

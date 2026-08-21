@@ -1,31 +1,39 @@
 // expect-exit: 0
 //
-// `an` IS A NUMBER — and since 0.7.7 the real compiler COMPILES it, so this file
-// asserts the VALUES rather than a refusal. It lived in `tests/rejection/` from
-// the day that suite was written, expecting `NITPICK-RUNG-001`, because the SEED
-// never decodes suffix bases; the real lexer has decoded them since 0.1, so under
-// the compiler this suite now tests, the program simply runs.
+// `0an` IS A NUMBER AND `an` IS A NAME -- the leading-digit rule (D-147, 0.9.9).
 //
 // Balanced nonary uses the suffix `n`, and `a`..`d` denote the digits -1..-4
-// (`LEXICAL_REFERENCE.md` §7):
+// (`LEXICAL_REFERENCE.md` §6.2):
 //
-//     NonaryLiteral ::= [0-4a-dA-D] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
+//     NonaryLiteral ::= [0-4] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
 //
-// So `2An` is 2*9 + (-1) = 17, `an` is -1, `bn` is -2 — and none of them can ever
-// be an identifier, which is why the compiler's own sources renamed every `an`,
-// `bn`, `cn`, `dn` and `tt` they had used as variables (0.7.3).
+// Every numeric literal begins with a decimal digit, so a value whose leading
+// significant digit is a letter rides behind a value-neutral leading zero:
+// `0an` is the digit -1 alone, `2An` is 2*9 + (-1) = 17. This file once
+// documented the OPPOSITE -- "none of them can ever be an identifier, which is
+// why the compiler's own sources renamed every `an`, `bn`, `cn`, `dn` and `tt`
+// they had used as variables (0.7.3)" -- and those renames are exactly why
+// D-147 exists. The variable named `dn` below is the point: before the rule it
+// WAS the number -4, and `0dni32` is how -4 is written now.
 
 func:main = int32(cstring[]:_~argv) {
     int32:a = 2Ani32;                 // 2*9 - 1
     if (a != 17i32)  { exit 10i32; }
-    int32:b = ani32;                  // the digit -1, alone
+    int32:b = 0ani32;                 // the digit -1, alone
     if (b != (0i32 - 1i32)) { exit 11i32; }
-    int32:c = bni32;                  // the digit -2
+    int32:c = 0bni32;                 // the digit -2
     if (c != (0i32 - 2i32)) { exit 12i32; }
     int32:d = 0_4ni32;                // 0*9 + 4
     if (d != 4i32)   { exit 13i32; }
     int32:e = 1T0ti32;                // balanced ternary: 9 - 3 + 0
     if (e != 6i32)   { exit 14i32; }
+
+    // The names the rule freed. `dn` the IDENTIFIER holding `0dn` the NUMBER
+    // is the whole decision in one line.
+    int32:dn = 0dni32;
+    if (dn != (0i32 - 4i32)) { exit 15i32; }
+    int32:tt = 0FFhexi32;             // hex letter digits ride the same zero
+    if (tt != 255i32) { exit 16i32; }
     exit 0i32;
 };
 

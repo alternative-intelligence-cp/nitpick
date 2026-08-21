@@ -61,7 +61,7 @@ br i1 %cond, label %then, label %else
 - Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` → `icmp eq/ne/slt/sgt/sle/sge`
 - Bitwise: `&`, `|`, `^`, `~`, `<<`, `>>` → `and`, `or`, `xor`, `shl`, `ashr`
 - Casting: explicit only (`x => int64`, `y =>! int32`)
-- Literal suffixes: `42i32`, `-1i8`, `0xFF_i64`
+- Literal suffixes: `42i32`, `-1i8`, `0FFhexi64`
 
 **LLVM IR pattern:**
 ```llvm
@@ -93,7 +93,7 @@ not to `int` — see §6.)*
   - Comparisons use `ult`/`ugt`/`ule`/`uge` instead of `slt`/`sgt`/`sle`/`sge`
   - Right shift uses `lshr` (logical) instead of `ashr` (arithmetic)
   - Overflow wraps, as with signed types — no check, no trap (D-037). Use `tbb` where overflow should be an error.
-- Literal suffixes: `42u32`, `0xFFu8`
+- Literal suffixes: `42u32`, `0FFhexu8`
 
 > **Note:** `uint8` and `char8` share the same LLVM IR type (`i8`) but are **semantically distinct**. The type checker enforces different operation sets. See §2 for char types.
 

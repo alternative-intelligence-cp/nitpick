@@ -9903,3 +9903,112 @@ Ticketed onward with owners: F-3 (inner-block borrow deref'd after scope)
 gates on lifetime intrinsics/stack coloring; F-5 (defer-named binding
 invalidated after registration) lands with 0.10's real allocator, when
 `dalloc` starts freeing.
+
+## D-147 — The leading-digit rule — **SETTLED**
+
+Cycle 0.9.9, at the user's request, after the fourth edit-build-fail cycle
+caused by a variable name that was secretly a literal.
+
+**Every numeric literal begins with a decimal digit `0`–`9`, and no
+identifier ever does.** A value whose leading significant digit is a letter —
+hex's `a`–`f`, ternary's `T`, nonary's `a`–`d` — takes a value-neutral
+leading zero: `0FFhex`, `0Tt`, `0an`. The token class is decided by the
+FIRST character alone.
+
+Before this rule the split was decided from the RIGHT — scan the whole
+alphanumeric run, strip the type suffix, strip the base suffix, test what
+remains against the base's digits — and the letter-digit bases made whole
+English words into numbers: `an`, `bn`, `cn`, `dn`, `ban`, `can`, `dan`
+(nonary), `tt` (ternary), `chex` (hex). Each collision surfaced as a parse
+failure lines away from the variable that caused it; the compiler's own
+sources had already renamed every such variable once (0.7.3) and the traps
+kept costing cycles anyway.
+
+Two alternatives were weighed and refused:
+
+- **A universal `value<T>` annotation** (`5<u8>`, `-45<tbb8>`) — proposed
+  first, withdrawn when review found `<` ambiguous in expression position
+  (`5<u8>` vs the comparison `5 < u8`), the same ambiguity that forced the
+  turbofish for generic calls. It also left `b<n1>` still letter-leading at
+  the lexer, and would have churned every literal in the tree.
+- **Per-base prefixes** (`0x…`-style, considered once in `FORMAL_DRAFT` 02
+  §2.4) — refused as a second spelling system beside the suffixes:
+  meaning-by-context, the thing the blueprint philosophy exists to prevent.
+
+The leading zero is not a prefix. It is a digit the grammar always allowed,
+now required when the first significant digit is a letter — one rule,
+already true of every other base, extended to cover the letter-digit ones.
+The suffix machinery is untouched; `num_scan` gained a first-character
+guard, and the seed's numeric path had gated on `isdigit()` from day one,
+so seed and real lexer now agree by construction.
+
+**The legacy C-style prefixes (`0x`, `0b`, `0o`, `0n`) are REMOVED by the
+same decision**, not merely discouraged. They were retained "for C FFI
+compatibility", but Nitpick never parses C headers, and two spellings for
+one literal is the exact thing this decision exists to end. `0xFF` is now a
+bad-digit error at the `x` (`NITPICK-LEX-003`) — a run that begins `0`–`9`
+was meant as a number, so there is no identifier rescue. The only in-tree
+uses were `derive.npk`'s FNV constants, migrated to `100000001B3hexu64` /
+`0CBF29CE484222325hexu64`.
+
+Consequences: `FFhex`, `an`, `ban`, `tt` are ordinary identifiers.
+`tests/frontend/lexer_numeric.npk` locks both sides of the split, and
+`tests/backend/programs/nonary_literals.npk` demonstrates the freed names —
+`int32:dn = 0dni32;` is the decision in one line.
+
+## D-148 — The value must fit: exact envelope, ranged literals — **SETTLED**
+
+Cycle 0.9.9, found while probing D-147's migration of the FNV constants.
+Two related holes, both the "a different number than the one written" class:
+
+**Nothing checked a literal's value against its type, at any stage.**
+`int8:a = 300i8;` survived the lexer, the checker, and every analysis, and
+reached the backend, which emitted `i8 300` — malformed IR when llc catches
+it, a silently wrapped constant when it does not. The same held for every
+width, signedness, `tbb`, and `char`.
+
+**The lexer's overflow guard was decimal-tuned and radix-blind.** It
+compared the accumulator against `int64_max / 10` whatever the radix, so a
+hex literal near 2⁶⁴ could slip under it and wrap: the FNV-1a offset basis
+`0xcbf29ce484222325` compiled to −3750763034362895579 with no diagnostic —
+`derive(Hash)` worked by accident. Meanwhile `uint64`'s actual maximum was
+refused by the same guard. A coin decided which.
+
+The repairs:
+
+- **The scanner detects overflow exactly** (`numeric.npk`): non-balanced
+  bases test `acc > (MAX − d) / radix` before each step — exact, since their
+  digits and accumulator are non-negative. The balanced bases carry negative
+  digits (|d| ≤ 4), so both ends are guarded with a four-count margin: the
+  envelope's outermost four values per side are refused rather than risking
+  a wrapped intermediate.
+- **The literal envelope is signed 64-bit, and values outside it are
+  CONSTRUCTED, not spelled.** This is a language rule, not an implementation
+  apology: `uint64` values above 2⁶³−1 have no literal, the same as `int64`'s
+  most negative value, the balanced envelope edge, and the wide integers
+  (`int128`+) — one rule for every extreme. `derive.npk`'s basis is now
+  `(0u64 - 3750763034362895579u64)`, exact by D-037's defined wrap, with the
+  arithmetic shown at the definition. Revisiting full-range `uint64`
+  literals would be a new decision; it is decided NO here because carrying
+  bit-patterns in a value slot poisons every downstream consumer that
+  compares payloads (const evaluation would need unsigned-aware folding),
+  and a loud refusal with a one-subtraction spelling is strictly safer.
+- **`lit_ranged` in the type checker** (`NITPICK-TYPE-031`): every integer,
+  `tbb`, and `char` literal — suffixed or contextual (D-092) — is checked
+  against its type's exact range at the literal's own span. `tbb` ranges are
+  symmetric with ERR excluded (D-008 §1). `char32` checks Unicode scalar
+  validity: at most U+10FFFF and never a surrogate. A balanced literal's
+  negative value is refused into unsigned types.
+- **A signed width's most negative value has no decimal spelling** (`-` is
+  an operator, not part of the literal; magnitude 2^(N−1) exceeds the
+  positive bound). It is spelled in a balanced base — `0b4bni8` is −128 —
+  or constructed. Uniform with `int64`, which never had a decimal MIN.
+- **`num_width_bits` gained its missing `char` rows.** Numeric char-suffixed
+  literals had been typing as ZERO-BIT chars since the suffixes landed —
+  latent until the range check made it loud, and the probable cause of the
+  0.9.5 note where `4000000000000tbb64` "hit TYPE-007"; that literal accepts
+  cleanly now.
+
+`tests/types/rejection/literal_range.npk` locks seven refusals;
+`tests/frontend/lexer_numeric.npk` locks the exact guard on the basis
+constant that used to wrap.

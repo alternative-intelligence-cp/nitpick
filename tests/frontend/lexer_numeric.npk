@@ -31,9 +31,10 @@ func:main = int32(cstring[]:_~argv) {
     if (u.width != NumWidth.WI64)     { exit 14i32; }
 
     // --- the base is a SUFFIX, uniform across every base --------------------
-    // A hex literal can BEGIN WITH A LETTER, so this is also the case that
-    // proves the run is read from the right rather than the left.
-    Token:h = raw one("FFhex", @it, @dg);
+    // D-147: a literal BEGINS WITH A DECIMAL DIGIT. Hex's letter digits ride
+    // behind a value-neutral leading zero, so 0FFhex is 255 -- and FFhex is a
+    // NAME (asserted below), which it could never be before the rule.
+    Token:h = raw one("0FFhex", @it, @dg);
     if (h.kind != TokenKind.IntLit)   { exit 20i32; }
     if (h.payload != 255i64)          { exit 21i32; }
 
@@ -52,9 +53,15 @@ func:main = int32(cstring[]:_~argv) {
     Token:n9 = raw one("2An", @it, @dg);
     if (n9.payload != 17i64)          { exit 26i32; }
 
-    // Legacy C prefixes are retained for FFI compatibility.
-    Token:lx = raw one("0xFF", @it, @dg);
-    if (lx.payload != 255i64)         { exit 27i32; }
+    // Balanced letter digits behind the leading zero: 0an is the digit -1
+    // alone, 0Tt likewise in ternary, 0dn is -4. The zero changes no value in
+    // any base; it is what makes the first character a decimal digit.
+    Token:n1 = raw one("0an", @it, @dg);
+    if (n1.payload != (0i64 - 1i64))  { exit 27i32; }
+    Token:t1 = raw one("0Tt", @it, @dg);
+    if (t1.payload != (0i64 - 1i64))  { exit 28i32; }
+    Token:n4 = raw one("0dn", @it, @dg);
+    if (n4.payload != (0i64 - 4i64))  { exit 29i32; }
 
     // --- a base suffix with no digits is just an identifier -----------------
     // `hex`, `bin` and `non` are perfectly good names.
@@ -62,6 +69,18 @@ func:main = int32(cstring[]:_~argv) {
     if (kw.kind != TokenKind.Ident)   { exit 30i32; }
     Token:kw2 = raw one("nonsense", @it, @dg);
     if (kw2.kind != TokenKind.Ident)  { exit 31i32; }
+
+    // The names D-147 freed: a letter-leading run is an identifier, full stop.
+    // Every one of these was a NUMBER before the rule -- `ban` was nonary
+    // -2*9-1 = -19 -- and the variables holding them are named after them.
+    Token:fx = raw one("FFhex", @it, @dg);
+    if (fx.kind != TokenKind.Ident)   { exit 32i32; }
+    Token:dn = raw one("dn", @it, @dg);
+    if (dn.kind != TokenKind.Ident)   { exit 33i32; }
+    Token:tt = raw one("tt", @it, @dg);
+    if (tt.kind != TokenKind.Ident)   { exit 34i32; }
+    Token:bw = raw one("ban", @it, @dg);
+    if (bw.kind != TokenKind.Ident)   { exit 35i32; }
 
     // --- floats -------------------------------------------------------------
     Token:f = raw one("1.5f64", @it, @dg);
@@ -95,6 +114,21 @@ func:main = int32(cstring[]:_~argv) {
     DiagList:dg4 = raw diaglist_init();
     drop lex_all(0i32, "99999999999999999999999i64", @it, @dg4);
     if (raw diaglist_count(@dg4) == 0i64) { exit 61i32; }
+
+    // The case the OLD guard let through: the FNV-1a basis 0CBF29CE484222325
+    // (about 1.47 * 2^63) slipped under a decimal-tuned threshold and WRAPPED
+    // silently. D-148's guard is exact per radix, so it is refused loudly --
+    // whatever the suffix, because the ENVELOPE is what it does not fit.
+    DiagList:dg6 = raw diaglist_init();
+    drop lex_all(0i32, "0CBF29CE484222325hexu64", @it, @dg6);
+    if (raw diaglist_count(@dg6) == 0i64) { exit 63i32; }
+
+    // D-147 removed the legacy 0x prefix outright: `x` is not a decimal
+    // digit, and a run that begins 0-9 was meant as a number, so this is an
+    // ERROR (NITPICK-LEX-003), never an identifier rescue.
+    DiagList:dg5 = raw diaglist_init();
+    drop lex_all(0i32, "0xFF", @it, @dg5);
+    if (raw diaglist_count(@dg5) == 0i64) { exit 62i32; }
 
     exit 0i32;
 };

@@ -190,39 +190,34 @@ def lex(src, path="<input>"):
 
         # numeric literal
         if c.isdigit():
+            # D-147: the numeric path fires only on a leading decimal digit
+            # (the isdigit() gate above). The legacy 0x/0b prefixes are gone --
+            # `0xFF` scans as digits "0" plus ident-part "xFF", fails int(),
+            # and reaches the checker as value None like every other
+            # non-decimal form.
             j = i
-            radix = 10
-            if src.startswith("0x", j) or src.startswith("0X", j):
-                radix, j = 16, j + 2
-                while j < n and (src[j].isalnum() or src[j] == "_"):
-                    j += 1
-            elif src.startswith("0b", j) or src.startswith("0B", j):
-                radix, j = 2, j + 2
-                while j < n and (src[j].isalnum() or src[j] == "_"):
-                    j += 1
-            else:
+            while j < n and (src[j].isdigit() or src[j] == "_"):
+                j += 1
+            # A float only if the dot is followed by a digit: "0...4" is a
+            # range, not a malformed float.
+            if j < n and src[j] == "." and j + 1 < n and src[j + 1].isdigit():
+                j += 1
                 while j < n and (src[j].isdigit() or src[j] == "_"):
                     j += 1
-                # A float only if the dot is followed by a digit: "0...4" is a
-                # range, not a malformed float.
-                if j < n and src[j] == "." and j + 1 < n and src[j + 1].isdigit():
-                    j += 1
-                    while j < n and (src[j].isdigit() or src[j] == "_"):
-                        j += 1
-                    while j < n and _is_ident_part(src[j]):
-                        j += 1
-                    text = src[i:j]
-                    suf = next((s for s in FLOAT_SUFFIXES if text.endswith(s)), None)
-                    if suf is None:
-                        raise LexError("float literal needs a width suffix, e.g. 1.5f64",
-                                       line, scol, path)
-                    # SUBSET_1: stored as TEXT. The seed never evaluates a float.
-                    toks.append(Token(FLOAT, text, line, scol, path,
-                                      value=text[:-len(suf)], width=suf))
-                    i = j
-                    continue
                 while j < n and _is_ident_part(src[j]):
                     j += 1
+                text = src[i:j]
+                suf = next((s for s in FLOAT_SUFFIXES if text.endswith(s)), None)
+                if suf is None:
+                    raise LexError("float literal needs a width suffix, e.g. 1.5f64",
+                                   line, scol, path)
+                # SUBSET_1: stored as TEXT. The seed never evaluates a float.
+                toks.append(Token(FLOAT, text, line, scol, path,
+                                  value=text[:-len(suf)], width=suf))
+                i = j
+                continue
+            while j < n and _is_ident_part(src[j]):
+                j += 1
 
             text = src[i:j]
             suf = next((s for s in INT_SUFFIXES if text.endswith(s)), None)
@@ -234,14 +229,9 @@ def lex(src, path="<input>"):
             # error here.
             digits = (text[:-len(suf)] if suf else text).replace("_", "")
             try:
-                if radix == 16:
-                    val = int(digits[2:] or "0", 16)
-                elif radix == 2:
-                    val = int(digits[2:] or "0", 2)
-                else:
-                    val = int(digits or "0", 10)
+                val = int(digits or "0", 10)
             except ValueError:
-                # A SUFFIX-FORM BASE -- `FFhex`, `777oct`, `1T0t`, `2An`. Subset 1
+                # A SUFFIX-FORM BASE -- `0FFhex`, `777oct`, `1T0t`, `2An`. Subset 1
                 # does not lower them, and the lexer is not where that gets said:
                 # value None reaches the checker, which refuses it by rung the way
                 # it refuses every other construct (D-085).

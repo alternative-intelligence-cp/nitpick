@@ -49,6 +49,7 @@ Settle before the subcycle that needs them (see `../OPEN_DECISIONS.md`):
 | 0.9.6 | **The remaining scalars & forms** — char16/32, ranges, function values, enum-tag casts, ternary `is` |
 | 0.9.7 | **The control-flow and floor tail** — `for`/`loop`/`till`/`when`, the `pick` tail, `?`/`?!`, `sys`, `#ptr_add`, `write_all`'s graduation |
 | 0.9.8 | **Borrow-analysis repairs & doc-sync** — the confirmed soundness holes, and the Theme-F pass |
+| 0.9.9 | **The leading-digit rule (D-147) and ranged literals (D-148)** — added mid-cycle at the user's request after letter-leading balanced literals kept colliding with variable names; the probe work then surfaced that no stage checked a literal's value against its type, fixed in the same subcycle |
 
 The table is the plan as of 0.9.0; a subcycle is inserted rather than stretched if
 lowering a family turns up its own class of hole (0.4 and 0.6 both did).

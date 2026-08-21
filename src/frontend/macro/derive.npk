@@ -195,8 +195,13 @@ func:read_one_derive = NIL(Ast->:ast, InternTable->:interns, DiagList->:diags,
 // It is also readable. `--emit-derived` is a thing a driver can offer later, and
 // what it would print is exactly what is built here.
 
-func:PRIME_TEXT = string() { pass "0x100000001b3u64"; };
-func:BASIS_TEXT = string() { pass "0xcbf29ce484222325u64"; };
+func:PRIME_TEXT = string() { pass "100000001B3hexu64"; };
+// The FNV-1a 64 offset basis is 0xCBF29CE484222325 = 14695981039346656037,
+// which is ABOVE the 64-bit literal envelope (D-148): values past 2^63-1 are
+// constructed, not spelled. 2^64 - 14695981039346656037 = 3750763034362895579,
+// and unsigned subtraction wraps by definition (D-037), so this difference IS
+// the basis, bit for bit.
+func:BASIS_TEXT = string() { pass "(0u64 - 3750763034362895579u64)"; };
 
 // `impl:Point:Eq = { pub func:eq = bool(Point:self, Point:other) { … }; };`
 //

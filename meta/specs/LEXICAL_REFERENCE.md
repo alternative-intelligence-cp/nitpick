@@ -237,7 +237,10 @@ SentinelLiteral ::= "NULL" | "NIL" | "ERR"
 ### 6.2 Numeric Literals
 
 Underscores are permitted for readability and ignored. Base is given by a
-**suffix**, uniform across all bases.
+**suffix**, uniform across all bases. Every numeric literal **begins with a
+decimal digit** `0`–`9`, and no identifier ever does (D-147); a value whose
+leading significant digit is a letter takes a value-neutral leading zero --
+`0FFhex`, `0Tt`, `0an`.
 
 ```ebnf
 NumericLiteral ::= IntegerLiteral | FloatLiteral
@@ -246,15 +249,15 @@ IntegerLiteral ::= (DecimalLiteral | HexLiteral | BinaryLiteral
                    | OctalLiteral | TernaryLiteral | NonaryLiteral) TypeSuffix?
 
 DecimalLiteral ::= [0-9] ([0-9_]* [0-9])?
-HexLiteral     ::= [0-9a-fA-F] ([0-9a-fA-F_]* [0-9a-fA-F])? "hex"
+HexLiteral     ::= [0-9] ([0-9a-fA-F_]* [0-9a-fA-F])? "hex"
 BinaryLiteral  ::= [01] ([01_]* [01])? "bin"
 OctalLiteral   ::= [0-7] ([0-7_]* [0-7])? "oct"
 
 /* Balanced ternary: T/t denotes -1 */
-TernaryLiteral ::= [01Tt] ([01Tt_]* [01Tt])? ("t" | "ter" | "tri")
+TernaryLiteral ::= [01] ([01Tt_]* [01Tt])? ("t" | "ter" | "tri")
 
 /* Balanced nonary: A..D / a..d denote -1..-4 */
-NonaryLiteral  ::= [0-4a-dA-D] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
+NonaryLiteral  ::= [0-4] ([0-4a-dA-D_]* [0-4a-dA-D])? ("non" | "n")
 
 FloatLiteral   ::= DecimalLiteral "." DecimalLiteral Exponent? TypeSuffix?
 Exponent       ::= [eE] [+-]? DecimalLiteral
@@ -269,9 +272,26 @@ TypeSuffix     ::= "u1" | "u2" | "u4" | "u8" | "u16" | "u32" | "u64" | "u128"
                  | "char8" | "char16" | "char32"
 ```
 
-> **Legacy C-style prefixes** (`0x`, `0b`, `0o`, `0n`) are retained solely for C
-> FFI compatibility and are discouraged in native Nitpick code. The suffix forms
-> are canonical — one rule, applied to every base.
+> **D-148 — the literal envelope.** A numeric literal's value lies in the
+> signed 64-bit envelope, verified EXACTLY at scan time (`NITPICK-LEX-004`),
+> and must fit its type — suffixed or contextual — verified at the literal
+> (`NITPICK-TYPE-031`). Values outside the envelope are **constructed, not
+> spelled**: `uint64` above 2⁶³−1 (`0u64 - 1u64` is the maximum), a signed
+> width's most negative value in decimal (spell it in a balanced base:
+> `0b4bni8` is −128), and the wide integers. One rule for every extreme.
+>
+> **D-147 — the leading-digit rule.** The token class is decided by the first
+> character alone: a literal begins `0`–`9`, an identifier never does. `FFhex`,
+> `an`, `ban`, `tt` are ordinary identifiers; the values they used to spell are
+> written `0FFhex`, `0an`, `0ban`, `0tt`. Before the rule, the letter-digit
+> bases made whole English words into numbers, decided by suffix-stripping from
+> the right — a collision that repeatedly cost edit-build-fail cycles.
+>
+> The **legacy C-style prefixes** (`0x`, `0b`, `0o`, `0n`), previously retained
+> for C FFI compatibility, were **removed** by the same decision. Nitpick never
+> parses C headers, and two spellings for one literal is what the blueprint
+> philosophy refuses. `0xFF` is a bad-digit error at the `x`
+> (`NITPICK-LEX-003`).
 >
 > **Ternary/nonary use the suffix form**, not the `0t…` / `0n…` prefix form shown
 > in `FORMAL_DRAFT` 02 §2.4. The two chapters disagreed; the suffix form wins for

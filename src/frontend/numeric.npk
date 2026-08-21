@@ -3,19 +3,24 @@
 // Subset 1 (meta/SUBSET_1.md). Cycle 0.1.3.
 //
 // The base is given by a SUFFIX, uniform across every base
-// (LEXICAL_REFERENCE.md §6.2): `FFhex`, `1010bin`, `777oct`, `1T0t`, `2An`.
-// C-style prefixes are retained only for FFI compatibility and are discouraged.
+// (LEXICAL_REFERENCE.md §6.2): `0FFhex`, `1010bin`, `777oct`, `1T0t`, `2An`.
 //
-// That has a consequence worth stating plainly: a hex literal can BEGIN WITH A
-// LETTER, so `FFhex` and an identifier are the same characters until the very
-// end. The only way to tell them apart is to scan the whole run and then read it
-// from the RIGHT -- strip the type suffix, strip the base suffix, and see
-// whether what remains is a valid digit string for that base. If it is not, the
-// run was an identifier all along.
+// D-147: EVERY NUMERIC LITERAL BEGINS WITH A DECIMAL DIGIT (0-9), and no
+// identifier ever does. A value whose leading significant digit is a letter --
+// hex's a-f, ternary's T, nonary's a-d -- takes a value-neutral leading zero:
+// `0FFhex`, `0Tt`, `0an`. The literal/identifier split is therefore decided by
+// the FIRST character, and `FFhex`, `an`, `ban`, `tt` are ordinary names.
 //
-// It also means `FFhex` cannot be a variable name. That is what "the suffix
-// determines the base" costs, and it is the price of one rule for every base
-// rather than a different prefix per base.
+// Before D-147 the split was decided from the RIGHT -- scan the whole run,
+// strip the type suffix, strip the base suffix, test what remains against the
+// base's digits -- which made whole English words into numbers (`ban`, `can`,
+// `dan`, `chex`) and cost an edit-build-fail cycle every time a variable name
+// was secretly one of them. The suffix machinery below is unchanged; the guard
+// at the top of `num_scan` is the rule.
+//
+// The legacy C-style prefixes (0x/0b/0o) were REMOVED by the same decision:
+// two spellings for one literal is what the blueprint philosophy refuses, and
+// with the prefix gone `0xFF` is a bad-digit error at the `x`, not a number.
 
 use "./num_width.npk".*;
 use "./intern.npk".*;
@@ -162,6 +167,13 @@ pub func:num_scan = NumScan(string:run) {
         pass (raw num_fail());
     }
 
+    // D-147: a run that does not begin with a decimal digit is an identifier,
+    // full stop. Everything below may assume run[0] is 0-9.
+    uint8:first = run.ptr[0i64] => uint8;
+    if ((first < 48u8) || (first > 57u8)) {
+        pass (raw num_fail());
+    }
+
     NumScan:out = raw num_fail();
 
     int64:tlen = relay strip_type_suffix(run);
@@ -185,24 +197,6 @@ pub func:num_scan = NumScan(string:run) {
         pass out;
     }
 
-    // Legacy C-style prefixes, kept only for FFI compatibility (§6.2). Handled
-    // after the suffix path so the canonical form always wins.
-    if (blen == 0i64) {
-        if (digits.len > 2i64) {
-            if (digits.ptr[0i64] == 48u8) {
-                uint8:p = digits.ptr[1i64];
-                bool:legacy = false;
-                if (p == 120u8) { base = NumBase.BaseHex;     legacy = true; }
-                if (p == 88u8)  { base = NumBase.BaseHex;     legacy = true; }
-                if (p == 98u8)  { base = NumBase.BaseBinary;  legacy = true; }
-                if (p == 111u8) { base = NumBase.BaseOctal;   legacy = true; }
-                if (legacy) {
-                    digits = relay string_slice(digits, 2i64, digits.len);
-                }
-            }
-        }
-    }
-
     int64:radix = raw base_radix(base);
     int64:acc = 0i64;
     bool:seen_digit = false;
@@ -221,15 +215,32 @@ pub func:num_scan = NumScan(string:run) {
                 bad = true;
                 i = digits.len;
             } else {
-                // Overflow is DETECTED, not wrapped. A literal too large for
-                // int64 is a source error the caller reports; silently wrapping
-                // it would put a different number in the program than the one
-                // written (D-037 makes wrapping defined for arithmetic, which is
-                // not the same as inventing a value at scan time).
-                if (acc > 922337203685477580i64) {
-                    over = true;
+                // Overflow is DETECTED, not wrapped -- and EXACTLY (D-148). The
+                // old guard compared against int64_max/10 whatever the radix,
+                // so a hex literal near 2^64 could slip past it and WRAP: the
+                // number in the program was not the number written, silently.
+                //
+                // Non-balanced digits are non-negative and the accumulator
+                // stays non-negative, so `acc > (MAX - d) / radix` is the
+                // exact pre-multiplication test. The balanced bases carry
+                // negative digits (|d| <= 4), so both ends are guarded with a
+                // 4-count margin: the envelope's outermost four values per
+                // side are refused rather than risking a wrapped
+                // intermediate -- LOUDLY, like i64's most negative value,
+                // which no non-balanced literal can spell either. A type's
+                // outermost values are constructed, not spelled.
+                bool:balanced = false;
+                if (base == NumBase.BaseTernary) { balanced = true; }
+                if (base == NumBase.BaseNonary)  { balanced = true; }
+                if (balanced) {
+                    if (acc > (9223372036854775803i64 / radix)) { over = true; }
+                    if (acc < ((0i64 - 9223372036854775804i64) / radix)) { over = true; }
+                } else {
+                    if (acc > ((9223372036854775807i64 - d) / radix)) { over = true; }
                 }
-                acc = (acc * radix) + d;
+                if (!over) {
+                    acc = (acc * radix) + d;
+                }
                 seen_digit = true;
                 i = i + 1i64;
             }
@@ -237,17 +248,12 @@ pub func:num_scan = NumScan(string:run) {
     }
 
     if (bad) {
-        // Digits that started with an ASCII letter were never a number: the run
-        // is an identifier. Digits that started with 0-9 were meant to be one,
-        // so that is a real error.
-        uint8:first = run.ptr[0i64] => uint8;
-        if ((first >= 48u8) && (first <= 57u8)) {
-            out.is_numeric = true;
-            out.bad_digit = true;
-            out.base = base;
-            out.width = width;
-            pass out;
-        }
+        // The run begins with 0-9 (the D-147 guard above), so it was MEANT as
+        // a number: a bad digit is a real error, never an identifier rescue.
+        out.is_numeric = true;
+        out.bad_digit = true;
+        out.base = base;
+        out.width = width;
         pass out;
     }
 

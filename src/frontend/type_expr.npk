@@ -268,7 +268,8 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     int32:bits = raw num_width_bits(w);
 
     if (kind == (raw TY_INT())) {
-        pass (raw tt_int(e.types, bits, raw num_width_signed(w)));
+        pass (relay lit_ranged(e, n,
+                  raw tt_int(e.types, bits, raw num_width_signed(w))));
     }
     if (kind == (raw TY_FLOAT())) {
         // D-143: `flt128` is a storage format — no literals (its constants
@@ -315,8 +316,8 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
         }
         pass (raw tt_float(e.types, bits));
     }
-    if (kind == (raw TY_TBB()))   { pass (raw tt_tbb(e.types, bits)); }
-    if (kind == (raw TY_CHAR()))  { pass (raw tt_char(e.types, bits)); }
+    if (kind == (raw TY_TBB()))   { pass (relay lit_ranged(e, n, raw tt_tbb(e.types, bits))); }
+    if (kind == (raw TY_CHAR()))  { pass (relay lit_ranged(e, n, raw tt_char(e.types, bits))); }
 
     // A SUFFIX IS PRESENT AND NAMES A TYPE NO RUNG SUPPLIES YET — `frac`, `tfp`,
     // `dim256`. Saying "no suffix" would be false and would send the reader to
@@ -335,7 +336,7 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     int32:want = raw expected_value(e);
     if (want != 0i32) {
         if ((raw type_kind(e.types, want)) == (raw kind_wanted(e, example))) {
-            pass want;
+            pass (relay lit_ranged(e, n, want));
         }
     }
     string:m = relay string_concat(
@@ -344,6 +345,84 @@ func:type_numeric_literal = int32(ExprTyper->:e, ExprNode:n, string:example) {
     pass (relay te_error(e, raw TYPE_UNKNOWN(),
         relay string_concat(m, "` or give the surrounding expression a type"),
         n.span));
+};
+
+// D-148: THE VALUE MUST FIT THE TYPE. Until 0.9.9 nothing checked this --
+// `int8:a = 300i8;` survived every stage and emitted `i8 300`, which llc
+// refuses as malformed IR when it is caught at all, and a wrapped constant
+// when it is not: the number in the program was not the number written, the
+// exact drift this language exists to make impossible.
+//
+// One helper for the suffixed and the contextual case alike (the slot the
+// literal lands in is the type it must fit, however it got one). The bounds:
+//
+//   intN signed    -(2^(N-1)) .. 2^(N-1)-1     N < 64; at 64 the lexer's
+//                                              envelope is already exact
+//   intN unsigned  0 .. 2^N-1                  and 0 .. envelope at 64+,
+//                                              which also refuses a balanced
+//                                              literal's negative value
+//   tbbN           symmetric, ERR excluded     |v| <= 2^(N-1)-1 (D-008 SS1)
+//   charN          0 .. 2^N-1; char32 is a Unicode scalar: <= U+10FFFF and
+//                  never a surrogate -- validity, not just width
+//   floats         text, not a payload -- D-143 owns their rules
+//
+// A SIGNED width's most negative value has no decimal spelling (its magnitude
+// is one past the positive bound, and `-` is an operator, not part of the
+// literal) -- it is spelled in a balanced base or constructed arithmetically,
+// the same rule the 64-bit envelope edge and the wide integers already live
+// under.
+func:lit_ranged = int32(ExprTyper->:e, ExprNode:n, int32:ty) {
+    int64:v = n.payload;
+    int32:k = raw type_kind(e.types, ty);
+    int32:bits = raw type_int_bits(e.types, ty);
+    int64:lo = 0i64;
+    int64:hi = 0i64;
+    bool:check = false;
+
+    if (k == (raw TY_INT())) {
+        if (raw type_is_signed(e.types, ty)) {
+            if (bits < 64i32) {
+                hi = (1i64 << ((bits - 1i32) => int64)) - 1i64;
+                lo = (0i64 - hi) - 1i64;
+                check = true;
+            }
+        } else {
+            hi = 9223372036854775807i64;
+            if (bits < 64i32) { hi = (1i64 << (bits => int64)) - 1i64; }
+            check = true;
+        }
+    }
+    if (k == (raw TY_TBB())) {
+        hi = 9223372036854775807i64;
+        if (bits < 64i32) { hi = (1i64 << ((bits - 1i32) => int64)) - 1i64; }
+        lo = 0i64 - hi;
+        check = true;
+    }
+    if (k == (raw TY_CHAR())) {
+        if (bits == 32i32) {
+            if ((v >= 55296i64) && (v <= 57343i64)) {
+                pass (relay te_error(e, raw TYPE_LIT_RANGE(),
+                    "this `char32` literal is a surrogate code point (U+D800..U+DFFF), which is not a Unicode scalar value",
+                    n.span));
+            }
+            hi = 1114111i64;
+        } else {
+            hi = (1i64 << (bits => int64)) - 1i64;
+        }
+        check = true;
+    }
+
+    if (check) {
+        if ((v < lo) || (v > hi)) {
+            string:m1 = relay string_concat("the value of this literal does not fit `",
+                relay type_display(e.types, e.interns, ty));
+            pass (relay te_error(e, raw TYPE_LIT_RANGE(),
+                relay string_concat(m1,
+                    "` (D-148): the number in the program would not be the number written; a signed type's most negative value is spelled in a balanced base or constructed arithmetically"),
+                n.span));
+        }
+    }
+    pass ty;
 };
 
 // An unsuffixed literal may only take a context type of its OWN family: `42` can

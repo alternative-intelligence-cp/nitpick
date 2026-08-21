@@ -93,12 +93,19 @@ parse failure some lines away from the mistake:
 | Looks like a name | Actually |
 |---|---|
 | `pid`, `tid`, `fd`, `uid`, `gid` | the five kernel identifier **types** (D-042) |
-| `dn` | a **numeric literal** — base by suffix, `n` = balanced nonary, `a`–`d` = digits −1…−4, so `dn` is −4 |
 | `limit` | the verification keyword (`limit<Rules>`) |
 | `any` | the type |
 | `as` | a keyword |
 | `comptime`, `derive` | keywords — so `mod:comptime;` and `mod:derive;` are not modules, and the loader reports `NITPICK-RESOLVE-005` at the `mod:` line as though the file were missing |
 | `move`, `buffer`, `raw` | keywords that read like ordinary local names |
+
+The worst offenders are **gone**: before D-147 (0.9.9) the balanced and hex
+literal forms could begin with a letter, so `an`, `bn`, `cn`, `dn`, `tt`,
+`ban`, `FFhex` were numbers, and each cost an edit-build-fail cycle when used
+as a name. Now **every numeric literal begins with a decimal digit** — those
+are ordinary identifiers, and the values ride a value-neutral leading zero
+(`0dn` is −4, `0FFhex` is 255). The legacy `0x`/`0b`/`0o` prefixes were
+removed by the same decision.
 
 Three more shapes that are not what a C or Rust habit expects:
 

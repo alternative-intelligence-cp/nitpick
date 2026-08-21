@@ -479,7 +479,7 @@ pub func:lexer_next = Token(Lexer->:lx, InternTable->:interns,
                 // number in the program than the one written.
                 drop diaglist_push(diags,
                     raw diag_error(raw LEX_INT_TOO_LARGE(),
-                        "integer literal does not fit in 64 bits", nsp));
+                        "this literal is outside the 64-bit literal envelope (D-148); a type's outermost values are constructed arithmetically, not spelled", nsp));
                 pass (raw token_make(TokenKind.Error, nsp, 0i64));
             }
             pass (raw token_numeric(TokenKind.IntLit, nsp, ns.value, ns.width));

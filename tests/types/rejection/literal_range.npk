@@ -1,0 +1,73 @@
+// D-148 — the value must fit the type (0.9.9).
+//
+// Until this cycle NOTHING checked a literal's value against its type, at any
+// stage: `int8:a = 300i8;` survived the checker and emitted `i8 300` — llc
+// refuses that as malformed IR when the width is honest, and when it is not
+// the constant silently wraps. Either way the number in the program was not
+// the number written, which is the drift this language exists to refuse.
+//
+// The lexer's envelope guard (LEX-004, exact since D-148) owns values that no
+// 64-bit literal can carry at all; THIS code owns the value-vs-type question,
+// suffixed and contextual alike.
+
+// expect-error: NITPICK-TYPE-031
+func:suffixed_signed = NIL() {
+    int8:a = 300i8;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:suffixed_unsigned = NIL() {
+    uint8:b = 999u8;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:contextual = NIL() {
+    // No suffix: the literal reads its type from the annotation (D-092) and
+    // must fit the type it read.
+    int8:c = 300;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:decimal_min_unspellable = NIL() {
+    // 128 is one past int8's positive bound. `-128i8` is `-(128i8)` — the
+    // minus is an operator, not part of the literal — so int8's most negative
+    // value has no decimal spelling: it is written in a balanced base or
+    // constructed arithmetically, the same rule i64's own minimum has always
+    // lived under.
+    int8:d = 128i8;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:tbb_err_slot = NIL() {
+    // tbb8 is symmetric: 127 is the top, -127 the bottom, and -128 is the ERR
+    // sentinel (D-008 §1) — so magnitude 128 fits nowhere in the VALUE range.
+    tbb8:t = 128tbb8;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:balanced_into_unsigned = NIL() {
+    // A balanced literal can be negative; an unsigned type cannot.
+    uint8:u = 0anu8;
+    pass NIL;
+};
+
+// expect-error: NITPICK-TYPE-031
+func:char32_surrogate = NIL() {
+    // char32 is a Unicode scalar value: the surrogate block D800..DFFF is not
+    // one at any width — validity, not just range.
+    char32:s = 55296char32;
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) {
+    exit 1i32;
+};
