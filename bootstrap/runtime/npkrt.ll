@@ -144,6 +144,94 @@ define void @npk_exit(i32 %code) noreturn {
 }
 
 ; ---------------------------------------------------------------------------
+; The i128 division family (0.9.3, D-011 SS2): the ONE libcall class llc emits
+; for wide integers -- sdiv/udiv/srem/urem at exactly 128 bits call these four
+; symbols (measured on this toolchain; division at 256 bits and beyond expands
+; inline, all the way to an executed udiv i4096 probe). compiler-rt provides
+; them in C; the floor provides them as hand-written IR under the same TCB
+; discipline as everything else here. Shift-subtract long division, 128
+; iterations, dependency-free.
+;
+; A zero divisor never reaches these from emitted code -- the D-142 guard traps
+; first -- but the symbols stay TOTAL: b == 0 yields an all-ones quotient and
+; r == a from the loop's own arithmetic, a defined result, never UB. INT128_MIN
+; negates to itself under two's complement, and its unsigned reading 2^127 is
+; exactly what the unsigned core needs, so the sign wrappers are total too.
+; ---------------------------------------------------------------------------
+
+define internal { i128, i128 } @npk_udivmod128(i128 %a, i128 %b) {
+entry:
+  br label %loop
+loop:
+  %i = phi i32 [ 127, %entry ], [ %inext, %next ]
+  %q = phi i128 [ 0, %entry ], [ %q2, %next ]
+  %r = phi i128 [ 0, %entry ], [ %r2, %next ]
+  %r1 = shl i128 %r, 1
+  %iw = zext i32 %i to i128
+  %ab = lshr i128 %a, %iw
+  %ab1 = and i128 %ab, 1
+  %rb = or i128 %r1, %ab1
+  %ge = icmp uge i128 %rb, %b
+  %rs = sub i128 %rb, %b
+  %r2 = select i1 %ge, i128 %rs, i128 %rb
+  %qb = shl i128 1, %iw
+  %qs = or i128 %q, %qb
+  %q2 = select i1 %ge, i128 %qs, i128 %q
+  %done = icmp eq i32 %i, 0
+  %inext = sub i32 %i, 1
+  br i1 %done, label %out, label %next
+next:
+  br label %loop
+out:
+  %p0 = insertvalue { i128, i128 } undef, i128 %q2, 0
+  %p1 = insertvalue { i128, i128 } %p0, i128 %r2, 1
+  ret { i128, i128 } %p1
+}
+
+define i128 @__udivti3(i128 %a, i128 %b) {
+  %qr = call { i128, i128 } @npk_udivmod128(i128 %a, i128 %b)
+  %q = extractvalue { i128, i128 } %qr, 0
+  ret i128 %q
+}
+
+define i128 @__umodti3(i128 %a, i128 %b) {
+  %qr = call { i128, i128 } @npk_udivmod128(i128 %a, i128 %b)
+  %r = extractvalue { i128, i128 } %qr, 1
+  ret i128 %r
+}
+
+define i128 @__divti3(i128 %a, i128 %b) {
+  %an = icmp slt i128 %a, 0
+  %na = sub i128 0, %a
+  %aa = select i1 %an, i128 %na, i128 %a
+  %bn = icmp slt i128 %b, 0
+  %nb = sub i128 0, %b
+  %ba = select i1 %bn, i128 %nb, i128 %b
+  %qr = call { i128, i128 } @npk_udivmod128(i128 %aa, i128 %ba)
+  %q = extractvalue { i128, i128 } %qr, 0
+  %sx = xor i1 %an, %bn
+  %nq = sub i128 0, %q
+  %qq = select i1 %sx, i128 %nq, i128 %q
+  ret i128 %qq
+}
+
+; C truncated-division semantics, which is what srem lowers against: the
+; remainder carries the DIVIDEND's sign.
+define i128 @__modti3(i128 %a, i128 %b) {
+  %an = icmp slt i128 %a, 0
+  %na = sub i128 0, %a
+  %aa = select i1 %an, i128 %na, i128 %a
+  %bn = icmp slt i128 %b, 0
+  %nb = sub i128 0, %b
+  %ba = select i1 %bn, i128 %nb, i128 %b
+  %qr = call { i128, i128 } @npk_udivmod128(i128 %aa, i128 %ba)
+  %r = extractvalue { i128, i128 } %qr, 1
+  %nr = sub i128 0, %r
+  %rr = select i1 %an, i128 %nr, i128 %r
+  ret i128 %rr
+}
+
+; ---------------------------------------------------------------------------
 ; The fd quartet (D-141): open / close / read / write, each ONE syscall,
 ; faithfully -- the floor is the syscall surface (D-051), so a short write is
 ; returned, not retried. Discipline lives above it in ordinary Nitpick

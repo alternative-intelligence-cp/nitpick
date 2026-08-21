@@ -1,0 +1,72 @@
+// expect-exit: 0
+//
+// Wide integers, native (0.9.3, D-011): i128/i256 and the rest lower as LLVM's
+// own iN — add and mul inline, i128 division through the floor's hand-written
+// __divti3 family, wider division as inline expansion. The div guard and the
+// structural INT_MIN check ride along at every width for free.
+
+struct:Holder = { int8:tag; int128:wide; };
+
+enum:Big = { None; Val(int128); };
+
+func:make = int128(int64:seed) {
+    int128:w = seed => int128;
+    pass ((w << 100i128) + 7i128);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // Arithmetic above the register: build 2^100+7, shift it back down.
+    int128:x = raw make(1i64);
+    if (((x >> 100i128) =>! int64) != 1i64)          { exit 10i32; }
+
+    // i128 division exercises @__divti3 (the libcall the zero-dep scan now
+    // proves the floor provides): (2^100+7) / 2^30 == 2^70.
+    int128:d = 1i128 << 30i128;
+    int128:q = x / d;
+    if (q != (1i128 << 70i128))                       { exit 11i32; }
+
+    // Signed semantics at width: truncation toward zero, remainder with the
+    // dividend's sign — through __divti3/__modti3.
+    int128:neg = 0i128 - 100i128;
+    if ((neg / 3i128) != (0i128 - 33i128))            { exit 12i32; }
+    if ((neg % 3i128) != (0i128 - 1i128))             { exit 13i32; }
+
+    // Unsigned i128 division: __udivti3/__umodti3.
+    uint128:u = 1000u128;
+    if ((u / 7u128) != 142u128)                       { exit 14i32; }
+    if ((u % 7u128) != 6u128)                         { exit 15i32; }
+
+    // i256 division is INLINE expansion — no libcall, the scan stays green.
+    int256:big = 1i256 << 200i256;
+    int256:bq = big / (1i256 << 100i256);
+    if (bq != (1i256 << 100i256))                     { exit 16i32; }
+
+    // D-037 wrapping at the widest width: the top bit shifts out to zero.
+    uint4096:h = 1u4096 << 4095u4096;
+    if ((h << 1u4096) != 0u4096)                      { exit 17i32; }
+
+    // The alignment the frontend now stores is the one LLVM lays out: the
+    // executed probe measured {i8, i128} at 32 bytes (i128 aligns 16, capped).
+    if (#size_of<Holder>() != 32i64)                  { exit 18i32; }
+    Holder:hl = Holder{ tag: 3i8, wide: x };
+    if (hl.wide != x)                                 { exit 19i32; }
+    if (hl.tag != 3i8)                                { exit 20i32; }
+
+    // A wide payload rides the 0.9.2 enum slot ([N x i128], element = align).
+    Big:b = Big.Val(x);
+    int128:back = 0i128;
+    pick (b) {
+        (Big.Val(v)) { back = v; },
+        (*) { back = 0i128; }
+    }
+    if (back != x)                                    { exit 21i32; }
+
+    // Result<int128> wraps like every other T.
+    Result<int128>:r = make(2i64);
+    if (r.is_error)                                   { exit 22i32; }
+    if (((r.value >> 100i128) =>! int64) != 2i64)     { exit 23i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

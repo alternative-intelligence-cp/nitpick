@@ -136,8 +136,9 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // passing, never arithmetic. That one restriction is what keeps ERR,
     // stickiness and saturation (D-008) out of this rung entirely.
     if (k == (raw TY_TBB())) {
-        if ((raw type_int_bits(c.types, id)) == 32i32) { pass (raw ll_ok("i32")); }
-        pass (raw ll_rung("0.9"));
+        // Every tbb width lowers as its carrier (0.9.3); the ARITHMETIC — ERR,
+        // stickiness, saturation — is 0.9.5's and refuses at the operator.
+        pass (relay ll_int_bits(raw type_int_bits(c.types, id)));
     }
 
     if (k == (raw TY_FLOAT()))    { pass (raw ll_rung("0.9")); }
@@ -181,14 +182,25 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     pass (raw ll_broken());
 };
 
-// `iN` FOR THE WIDTHS A MACHINE REGISTER HOLDS. Everything wider is 0.9's, and
-// arrives with LBIM rather than as `i128` — a wide integer in Nitpick is not one
-// LLVM knows how to add.
+// NATIVE `iN` AT EVERY WIDTH (0.9.3, D-011 — and this comment once said the
+// opposite: "arrives with LBIM rather than as i128", the dead reading the
+// audit caught contradicting D-011's own measurements). LLVM 20 lowers every
+// operation at every width here natively: add/mul inline, i128 division via
+// `__divti3`-family libcalls the runtime floor hand-writes, and division at
+// 256 bits and beyond as inline expansion — an executed probe took `udiv
+// i4096` through llc whole. Sub-byte widths (`int1/2/4`) have no layout and
+// wait on decision G-2; they refuse rather than guess.
 func:ll_int_bits = LlType(int32:bits) {
-    if (bits == 8i32)  { pass (raw ll_ok("i8")); }
-    if (bits == 16i32) { pass (raw ll_ok("i16")); }
-    if (bits == 32i32) { pass (raw ll_ok("i32")); }
-    if (bits == 64i32) { pass (raw ll_ok("i64")); }
+    if (bits == 8i32)    { pass (raw ll_ok("i8")); }
+    if (bits == 16i32)   { pass (raw ll_ok("i16")); }
+    if (bits == 32i32)   { pass (raw ll_ok("i32")); }
+    if (bits == 64i32)   { pass (raw ll_ok("i64")); }
+    if (bits == 128i32)  { pass (raw ll_ok("i128")); }
+    if (bits == 256i32)  { pass (raw ll_ok("i256")); }
+    if (bits == 512i32)  { pass (raw ll_ok("i512")); }
+    if (bits == 1024i32) { pass (raw ll_ok("i1024")); }
+    if (bits == 2048i32) { pass (raw ll_ok("i2048")); }
+    if (bits == 4096i32) { pass (raw ll_ok("i4096")); }
     pass (raw ll_rung("0.9"));
 };
 
@@ -319,7 +331,7 @@ pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) {
     // extend this derivation deliberately.
     if (sz <= 0i64)  { pass bad; }
     if (al <= 0i32)  { pass bad; }
-    if (al > 8i32)   { pass bad; }
+    if (al > 16i32)  { pass bad; }
     int64:tag = raw align_up(4i64, al);
     int64:bytes = sz - tag;
     if (bytes <= 0i64) { pass bad; }

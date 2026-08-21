@@ -345,35 +345,37 @@ store i64 13, ptr %cap_ptr, align 8                            ; .capacity
 
 ---
 
-## 4. Large Integers — LBIM (Tier 0 layout, Tier 1 operations)
+## 4. Large Integers — native `iN` (D-011; corrected 0.9.3)
 
-The Limb-Based Integral Model represents integers > 64 bits as arrays of `i64` limbs.
-This works around LLVM backend bugs with native `i128`/`i256` types.
+> **The LBIM section this replaces was the dead reading.** An earlier draft
+> represented wide integers as limb-structs "working around LLVM backend bugs";
+> D-011 settled the opposite with measurements, and cycle 0.9.3 confirmed them
+> on the shipping toolchain (LLVM 20.1.2): `add i128` is five instructions with
+> no libcall, i128 division emits the four `__divti3`-family libcalls — which
+> the runtime floor provides as hand-written IR — and division at every wider
+> width, through an executed `udiv i4096` probe, expands inline. Wide integers
+> ARE the LLVM types; nothing is limbed.
 
-| Nitpick Type | LLVM IR Type | Size | Limbs | Alignment |
-|---|---|---|---|---|
-| `int128` | `{i64, i64}` | 16 bytes | 2 | 8 |
-| `uint128` | same as signed | 16 bytes | 2 | 8 |
-| `uint4096` | `{i64 x 64}` | 512 bytes | 64 | 8 | (standard for cryptographic modular arithmetic)
+| Nitpick Type | LLVM IR Type | Size | Alignment |
+|---|---|---|---|
+| `int128` / `uint128` / `tbb128` | `i128` | 16 bytes | **16** |
+| `int256` / `uint256` / `tbb256` | `i256` | 32 bytes | **16** |
+| `int512` / `uint512` | `i512` | 64 bytes | **16** |
+| `int1024` / `uint1024` | `i1024` | 128 bytes | **16** |
+| `int2048` / `uint2048` | `i2048` | 256 bytes | **16** |
+| `int4096` / `uint4096` | `i4096` | 512 bytes | **16** (cryptographic modular arithmetic) |
 
-**Behaviors:**
-- Arithmetic: ripple-carry add, borrow-chain sub, schoolbook mul, runtime div/mod
-- Comparison: limb-by-limb from MSL (most significant limb) to LSL
-- Signed vs unsigned distinguished at operation level (sdiv vs udiv, slt vs ult)
+**The alignment column is measured, not assumed** (0.9.3): the x86-64
+datalayout aligns `i128` at 16 and every wider integer inherits that cap — an
+executed probe put `{i8, i128}` at 32 bytes and `{i8, i256}` at 48. Three
+sources previously disagreed (this document said 8; the frontend computed
+bits/8, i.e. 32 for `i256`); the frontend now stores exactly this column
+(`tt_int`/`tt_tbb` cap at 16), because a frontend struct offset that is not
+LLVM's is memory corruption wearing a type annotation.
 
-**LLVM IR pattern (LBIM struct):**
-```llvm
-; int128 = 2-limb struct
-%LBIM_128 = type { i64, i64 }   ; limb[0] = low, limb[1] = high
-
-; int128:x = 42i128;
-; → promote literal to 2-limb: {42, 0}
-%x = alloca %LBIM_128, align 8
-%low_ptr = getelementptr %LBIM_128, ptr %x, i32 0, i32 0
-store i64 42, ptr %low_ptr
-%high_ptr = getelementptr %LBIM_128, ptr %x, i32 0, i32 1
-store i64 0, ptr %high_ptr
-```
+**Behaviors:** ordinary integer semantics at every width — D-037 wrapping,
+D-092 explicit widening, the D-142 division guards (zero divisor and the
+structural INT_MIN/−1 check, which is width-independent by construction).
 
 ---
 

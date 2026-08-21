@@ -300,11 +300,23 @@ pub func:lay_end = NIL(Lay->:l) {
 // that disagrees with what LLVM lays out survives testing and corrupts memory
 // later.
 
+// ALIGNMENT CAPS AT 16 (0.9.3, measured): the x86-64 datalayout aligns i128 at
+// 16 and every wider integer inherits that cap — an executed probe confirmed
+// {i8,i128} is 32 bytes and {i8,i256} is 48, so bits/8 (which said 32 for
+// i256) was the memory-corruption-class disagreement the audit flagged: the
+// frontend's struct offsets would not have been LLVM's.
+func:int_align = int32(int32:bits) {
+    int32:al = bits / 8i32;
+    if (al > 16i32) { al = 16i32; }
+    pass al;
+};
+
 pub func:tt_int = int32(TypeTable->:t, int32:bits, bool:signed) {
     int32:sg = 0i32;
     if (signed) { sg = 1i32; }
     int64:bytes = (bits => int64) / 8i64;
-    pass (raw tt_intern(t, raw TY_INT(), bits, sg, 0i32, bytes, bits / 8i32, 0i32));
+    pass (raw tt_intern(t, raw TY_INT(), bits, sg, 0i32, bytes,
+                        raw int_align(bits), 0i32));
 };
 
 pub func:tt_char = int32(TypeTable->:t, int32:bits) {
@@ -323,7 +335,8 @@ pub func:tt_tbb = int32(TypeTable->:t, int32:bits) {
     // are half the space, and INT32_MIN is tbb32's ERR sentinel — so the binary
     // carrier is signed by construction. Widening a negative code by zext
     // turned -9 into four billion, found by fd_io's write-after-close (0.8.5).
-    pass (raw tt_intern(t, raw TY_TBB(), bits, 1i32, 0i32, bytes, bits / 8i32, 0i32));
+    pass (raw tt_intern(t, raw TY_TBB(), bits, 1i32, 0i32, bytes,
+                        raw int_align(bits), 0i32));
 };
 
 // `fd`, `pid`, `tid`, `uid`, `gid` — five DISTINCT types that all lower to `i32`

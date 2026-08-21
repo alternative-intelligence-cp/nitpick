@@ -471,18 +471,6 @@ pub func:emit_cond = IrVal(ExprEmitter->:x, ExprId:id) {
     pass (raw iv("i1", c, 0i32));
 };
 
-// The most-negative value per width, as IR text — the signed-division guard
-// needs it. A width missing here FAILS CLOSED (iv_broken at the caller), so a
-// new integer width cannot silently ship an unguarded INT_MIN/-1: 0.9.3 must
-// extend this table the moment it lowers i128.
-func:int_min_text = string(string:ll) {
-    if (raw string_eq(ll, "i8"))  { pass "-128"; }
-    if (raw string_eq(ll, "i16")) { pass "-32768"; }
-    if (raw string_eq(ll, "i32")) { pass "-2147483648"; }
-    if (raw string_eq(ll, "i64")) { pass "-9223372036854775808"; }
-    pass "";
-};
-
 // The index, as i64, for a bounds compare: narrower indices sign-extend, so a
 // negative index of any width becomes a huge unsigned value and ONE unsigned
 // compare rejects both "negative" and "past the end" (D-070).
@@ -613,11 +601,22 @@ func:emit_binary = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         drop irw_line(x.fe.w, "unreachable");
         if (signed) {
             drop irw_label(x.fe.w, next_l);
-            string:mn = raw int_min_text(lhs.ll);
-            if (mn.len == 0i64) { pass (raw iv_broken(n.span)); }
+            // INT_MIN is detected STRUCTURALLY (0.9.3): it is the one nonzero
+            // value equal to its own negation, at every width — so the guard
+            // is total over every integer this backend will ever lower, with
+            // no per-width constant table to keep in step (the table this
+            // replaces would have needed a 1234-digit literal for i4096).
+            string:negl = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(negl, " = sub ", lhs.ll, " 0, ",
+                              lhs.ref));
+            string:m0 = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(m0, " = icmp eq ", lhs.ll, " ",
+                              relay cat3(lhs.ref, ", ", negl)));
+            string:nz = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(nz, " = icmp ne ", lhs.ll, " ",
+                              relay string_concat(lhs.ref, ", 0")));
             string:m = relay irw_temp(x.fe.w);
-            drop irw_line(x.fe.w, relay cat5(m, " = icmp eq ", lhs.ll, " ",
-                              relay cat3(lhs.ref, ", ", mn)));
+            drop irw_line(x.fe.w, relay cat5(m, " = and i1 ", m0, ", ", nz));
             string:o = relay irw_temp(x.fe.w);
             drop irw_line(x.fe.w, relay cat5(o, " = icmp eq ", lhs.ll, " ",
                               relay string_concat(rhs.ref, ", -1")));

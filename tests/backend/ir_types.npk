@@ -247,9 +247,11 @@ func:main = int32(cstring[]:_~argv) {
     if (fl.state != (raw LL_RUNG()))                       { exit 80i32; }
     if (!(raw string_eq(fl.rung, "0.9")))                  { exit 81i32; }
 
+    // int128 LOWERS since 0.9.3 (native iN, D-011) — this case asserted the
+    // rung while the width waited; now it asserts the answer.
     LlType:wide = relay ll_type(@c, i128t);
-    if (wide.state != (raw LL_RUNG()))                     { exit 82i32; }
-    if (!(raw string_eq(wide.rung, "0.9")))                { exit 83i32; }
+    if (!(raw ll_is_ok(wide)))                             { exit 82i32; }
+    if (!(raw string_eq(wide.text, "i128")))               { exit 83i32; }
 
     LlType:op = relay ll_type(@c, opti);
     if (op.state != (raw LL_RUNG()))                       { exit 84i32; }
