@@ -1,0 +1,36 @@
+// expect-exit: 0
+//
+// Result<T> holds for every lowerable T (0.9.2): a struct-valued Result built,
+// failed, relayed, and unwrapped — and a PADDED struct (i8, i64, i8) round-
+// trips with LLVM's own layout, which #size_of asks directly.
+
+struct:Padded = { int8:a; int64:b; int8:c; };
+
+func:build = Padded(bool:ok) {
+    if (!ok) { fail 6tbb32; }
+    Padded:p = Padded{ a: 1i8, b: 777i64, c: 3i8 };
+    pass p;
+};
+
+func:via = Padded(bool:ok) {
+    Padded:p = relay build(ok);
+    pass p;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // 1 + pad(7) + 8 + 1 + pad(7) = 24 under the x86-64 datalayout.
+    if (#size_of<Padded>() != 24i64)      { exit 10i32; }
+
+    Padded:p = raw via(true);
+    if (p.a != 1i8)                       { exit 11i32; }
+    if (p.b != 777i64)                    { exit 12i32; }
+    if (p.c != 3i8)                       { exit 13i32; }
+
+    Result<Padded>:r = via(false);
+    if (!r.is_error)                      { exit 14i32; }
+    if (r.error != 6tbb32)                { exit 15i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

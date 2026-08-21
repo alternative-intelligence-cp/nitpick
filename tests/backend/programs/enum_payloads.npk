@@ -1,0 +1,75 @@
+// expect-exit: 0
+//
+// General enum payloads (0.9.2): the payload slot stopped being one machine
+// word. A variant may carry a string, a struct, or any lowerable type; the
+// enum's body is `{ i32, [N x iK] }` sized and aligned by its widest payload,
+// and construction/binding store and load the VARIANT'S OWN TYPE through the
+// slot — the widen-to-i64 contract (which emitted invalid IR for aggregates
+// and truncated a string to its pointer) is gone.
+
+struct:Pt = { int32:x; int32:y; };
+
+enum:Msg = {
+    Quit;
+    Text(string);
+    Point(Pt);
+    Tiny(int8);
+};
+
+func:read_text = string(Msg:m) {
+    string:out = "";
+    pick (m) {
+        (Msg.Text(s)) { out = s; },
+        (*) { out = "wrong-arm"; }
+    }
+    pass out;
+};
+
+func:read_point = int32(Msg:m) {
+    int32:out = 0i32;
+    pick (m) {
+        (Msg.Point(p)) { out = p.x + p.y; },
+        (*) { out = 0i32 - 1i32; }
+    }
+    pass out;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    // A whole string through a variant, and back out intact.
+    Msg:t = Msg.Text("carried whole");
+    string:back = raw read_text(t);
+    if (!(string_equals(back, "carried whole")))     { exit 10i32; }
+
+    // A struct payload: two fields, read through the bound name.
+    Pt:p = Pt{ x: 30i32, y: 12i32 };
+    Msg:pm = Msg.Point(p);
+    if ((raw read_point(pm)) != 42i32)               { exit 11i32; }
+
+    // A payload narrower than the slot: stored as its own type, no widening.
+    Msg:tiny = Msg.Tiny(7i8);
+    int32:got = 0i32;
+    pick (tiny) {
+        (Msg.Tiny(b)) { got = b => int32; },
+        (*) { got = 0i32 - 1i32; }
+    }
+    if (got != 7i32)                                  { exit 12i32; }
+
+    // D-140 holds for the general shape: the tag is slot 0, whatever the
+    // payload slot's geometry became.
+    if ((t =>! int32) != 1i32)                        { exit 13i32; }
+    if ((pm =>! int32) != 2i32)                       { exit 14i32; }
+    Msg:q = Msg.Quit;
+    if ((q =>! int32) != 0i32)                        { exit 15i32; }
+
+    // A payload-less variant of a payload enum still travels and matches.
+    int32:qgot = 0i32;
+    pick (q) {
+        (Msg.Quit) { qgot = 5i32; },
+        (*) { qgot = 6i32; }
+    }
+    if (qgot != 5i32)                                 { exit 16i32; }
+
+    exit 0i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

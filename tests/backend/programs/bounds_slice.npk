@@ -1,0 +1,24 @@
+// expect-exit: 23
+//
+// D-070 at run time (0.9.2): a slice's bounds live ON it, and an index past
+// the end traps to `failsafe` with OUT_OF_BOUNDS (-4099) — where OOB detection
+// comes from, since pointers are thin and carry nothing to check. In-bounds
+// reads run first, so the guard is shown not to fire on good input.
+
+func:main = int32(cstring[]:argv) {
+    int32[4]:arr = [10i32, 20i32, 30i32, 40i32];
+    int32[]:view = arr[0i32..4i32];
+
+    if (view[0i32] != 10i32) { exit 10i32; }
+    if (view[3i32] != 40i32) { exit 11i32; }
+
+    // One past the end, computed at run time.
+    int64:bad = argv.len + 3i64;    // 4
+    int32:v = view[bad];
+    exit v;
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err => int64) == (0i64 - 4099i64)) { exit 23i32; }
+    exit 9i32;
+};

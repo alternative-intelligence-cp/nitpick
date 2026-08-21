@@ -116,6 +116,8 @@ define internal i64 @npk_sys6(i64 %nr, i64 %a1, i64 %a2, i64 %a3,
 ;   -4097  DIV_BY_ZERO       integer / or % with a zero divisor (D-007)
 ;   -4098  INT_MIN_OVERFLOW  INT_MIN / -1 or INT_MIN % -1 (no defined value;
 ;                            D-008 refused inventing one, so it traps)
+;   -4099  OUT_OF_BOUNDS     a slice/array index past the end, or a range view
+;                            that does not fit its source (D-070; 0.9.2)
 ;
 ; The route is trap -> the program's own `failsafe` -> exit with its return.
 ; Every program defines `failsafe` (D-013, mandatory), so @npk_failsafe always

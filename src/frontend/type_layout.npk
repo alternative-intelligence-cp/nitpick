@@ -282,18 +282,44 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         if ((raw type_size(r.types, t)) != 0i64) { pass NIL; }
         Lay:l = raw lay_start();
         drop lay_field(@l, 4i64, 4i32);
-        // `{i32 tag, i64 payload}` WHEN ANY VARIANT CARRIES ONE, and a plain `i32`
-        // when none does (TYPE_REFERENCE §9.3, SUBSET_1 §1.2).
-        //
-        // THE UNIFORM WORD IS THE RUNG'S SHAPE, NOT THE LANGUAGE'S. Sizing the
-        // payload to the widest variant — which §9.3 shows with explicit padding
-        // arrays — is cycle 0.9's, and doing it here would be WORSE than this:
-        // the seed emits `{i32, i64}` for every tagged enum, so an enum whose only
-        // payload is an `int32` would be eight bytes here and sixteen in the IR
-        // the seed produced for it, and the two compilers' output has to
-        // interoperate until the fixpoint closes.
+        // THE WIDEST VARIANT DECIDES (0.9.2, TYPE_REFERENCE §9.3): the payload
+        // slot is sized by the largest payload and aligned by the strictest,
+        // recursing so a struct payload is laid before it is measured. The
+        // backend derives its `{ i32, [N x iK] }` body from exactly the two
+        // numbers stored here — ONE computation, and a derivation. (The
+        // uniform `{i32, i64}` word this replaces was the SEED's rung shape;
+        // the seed keeps it for what it builds, each compiler self-consistent,
+        // and no program is ever compiled by both.)
         if (relay enum_has_payload(r.ast, r.types, t)) {
-            drop lay_field(@l, 8i64, 8i32);
+            DeclId:did = DeclId{ index: raw type_decl(r.types, t) };
+            DeclNode:d = relay ast_decl(r.ast, did);
+            int32:home = raw symtab_home_scope(r.tab, did.index, scope);
+            int64:wsize = 0i64;
+            int32:walign = 1i32;
+            int32:i = 0i32;
+            while (i < (raw item_member_count(r.ast, d))) {
+                DeclNode:m = relay ast_decl(r.ast, raw item_member(r.ast, d, i));
+                if (m.kind == DeclKind.DeclEnumVariant) {
+                    int32:pc = raw variant_payload_count(m);
+                    int32:j = 0i32;
+                    while (j < pc) {
+                        int32:pt = relay resolve_type(r,
+                                       TypeId{ index: relay ast_id_at(r.ast,
+                                                   raw variant_payload_start(m), j) },
+                                       home);
+                        drop ensure_layout(r, pt, home, fuel - 1i32);
+                        int64:ps = raw type_size(r.types, pt);
+                        int32:pa = raw type_align(r.types, pt);
+                        if (ps > wsize)  { wsize = ps; }
+                        if (pa > walign) { walign = pa; }
+                        j = j + 1i32;
+                    }
+                }
+                i = i + 1i32;
+            }
+            if (wsize > 0i64) {
+                drop lay_field(@l, raw align_up(wsize, walign), walign);
+            }
         }
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);

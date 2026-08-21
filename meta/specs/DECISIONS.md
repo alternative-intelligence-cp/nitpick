@@ -9739,6 +9739,7 @@ trap codes continue that region below `E_EOF`:
 | −4096 | `E_EOF` | end-of-input (D-141) |
 | −4097 | `DIV_BY_ZERO` | integer `/` or `%` with a zero divisor (D-007) |
 | −4098 | `INT_MIN_OVERFLOW` | `INT_MIN / -1` or `INT_MIN % -1` — no representable result, and D-008 already refused inventing one for a plain integer, so it traps rather than wraps |
+| −4099 | `OUT_OF_BOUNDS` | a slice/array index past the end, or a range view that does not fit its source (D-070; registered 0.9.2) |
 
 The guards are emitted in EVERY build — D-068's rule, restated at the emission
 site: a build without the verifier still emits the check, and 1.3's static

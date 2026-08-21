@@ -493,25 +493,27 @@ func:bind_payload = IrVal(ExprEmitter->:x, PatNode:pn, int32:sel_tid,
     LlType:pll = relay ll_type(x.fe.ctx, pty);
     if (!(raw ll_is_ok(pll))) { pass (relay iv_from_ll_at(x, pll, pty, at)); }
 
-    string:wide = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(wide, " = extractvalue ", sel.ll, " ",
-                      relay string_concat(sel.ref, ", 1")));
-    string:val = wide;
-    if (!(raw string_eq(pll.text, "i64"))) {
-        string:nv = relay irw_temp(x.fe.w);
-        if (raw string_eq(pll.text, "ptr")) {
-            drop irw_line(x.fe.w, relay cat3(nv, " = inttoptr i64 ",
-                              relay string_concat(wide, " to ptr")));
-        } else {
-            LlType:chk = LlType{ state: raw LL_OK(), text: pll.text, rung: "" };
-            if (!(raw ll_is_scalar_int(chk))) {
-                pass (raw iv_rung("a payload of this type", "0.9", at));
-            }
-            drop irw_line(x.fe.w, relay cat3(nv, " = trunc i64 ",
-                              relay cat3(wide, " to ", pll.text)));
-        }
-        val = nv;
+    // MULTI-PAYLOAD BINDING is the pattern tail's (0.9.7), and it refuses by
+    // name until then — the construction side refuses symmetrically.
+    if ((raw pat_enum_bind_count(x.ast, pn)) > 1i32) {
+        pass (raw iv_rung("a multi-payload binding", "0.9", at));
     }
+
+    // THE GENERAL BINDING (0.9.2): spill the selector, address its payload
+    // slot, and load the VARIANT'S OWN TYPE through the pointer — the mirror
+    // of construction, and the end of the widen-narrow contract that could
+    // only carry one machine word (a string payload truncated to its pointer
+    // under the old shape).
+    string:tmp = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(tmp, " = alloca ", sel.ll));
+    drop irw_line(x.fe.w, relay cat5("store ", sel.ll, " ", sel.ref,
+                      relay string_concat(", ptr ", tmp)));
+    string:pp = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", sel.ll,
+                      ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
+    string:val = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(val, " = load ", pll.text, ", ptr ",
+                      relay string_concat(pp, "")));
     string:slot = relay fnem_local(x.fe, raw pat_enum_bind(x.ast, pn, 0i32),
                                    pty, pll.text);
     drop irw_line(x.fe.w, relay cat5("store ", pll.text, " ", val,

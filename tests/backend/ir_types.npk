@@ -164,7 +164,11 @@ func:main = int32(cstring[]:_~argv) {
     // AN ENUM HAS A SIZE NOW. It had none: both call sites intern one with zero
     // and nothing ever recomputed it.
     if ((raw type_size(@x.types, flat)) != #size_of<Flat>())       { exit 23i32; }
-    if ((raw type_size(@x.types, tagged)) != #size_of<Tagged>())   { exit 24i32; }
+    // The FRONTEND's answer is the language's: tag(4) + int32 payload(4) = 8
+    // (0.9.2, widest-variant sizing). `#size_of` in THIS fixture is the seed's
+    // — the builder keeps its uniform {i32,i64} word for what it compiles — so
+    // the two are no longer the same question, and each asserts its own truth.
+    if ((raw type_size(@x.types, tagged)) != 8i64)                 { exit 24i32; }
 
     // …WHICH IS THE HALF THAT MATTERED: a struct containing one was laid out as
     // though the field were not there, and every LATER field moved with it.
@@ -227,7 +231,7 @@ func:main = int32(cstring[]:_~argv) {
     if (!(raw string_eq(bhas.text, "{ i32, i64 }")))       { exit 73i32; }
 
     LlType:btag = relay ll_enum_body(@c, tagged);
-    if (!(raw string_eq(btag.text, "{ i32, i64 }")))       { exit 74i32; }
+    if (!(raw string_eq(btag.text, "{ i32, [1 x i32] }"))) { exit 74i32; }
 
     // A PAYLOAD-LESS ENUM HAS NO BODY TO EMIT, and asking for one is a question
     // with no answer rather than an empty answer.

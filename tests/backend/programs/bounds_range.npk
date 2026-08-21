@@ -1,0 +1,23 @@
+// expect-exit: 23
+//
+// The range view must FIT (0.9.2): `arr[lo..hi]` with `hi` past the source
+// traps rather than fabricating a slice into whatever memory follows — and a
+// good sub-slice, taken first, still works and still bounds-checks its own
+// indexing against ITS OWN length.
+
+func:main = int32(cstring[]:argv) {
+    int32[5]:arr = [1i32, 2i32, 3i32, 4i32, 5i32];
+
+    int32[]:mid = arr[1i32..4i32];      // {2,3,4} — fits
+    if (mid[0i32] != 2i32) { exit 10i32; }
+    if (mid[2i32] != 4i32) { exit 11i32; }
+
+    int64:hi = argv.len + 8i64;         // 9, past the source
+    int32[]:bad = arr[0i64..hi];
+    exit (bad[0i32]);
+};
+
+func:failsafe = int32(tbb32:err) {
+    if ((err => int64) == (0i64 - 4099i64)) { exit 23i32; }
+    exit 9i32;
+};

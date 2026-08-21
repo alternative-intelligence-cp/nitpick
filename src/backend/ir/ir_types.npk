@@ -36,6 +36,7 @@ use "../../frontend/ast.npk".*;
 use "../../frontend/parse_decl.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/resolve_type.npk".*;
+use "../../frontend/symbols.npk".*;
 use "../../frontend/type_layout.npk".*;
 
 pub func:LL_OK = int32()     { pass 0i32; };
@@ -292,10 +293,51 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
     pass (raw ll_ok(relay string_concat(a, " }")));
 };
 
+// THE PAYLOAD SLOT (0.9.2): `{ i32, [N x iK] }`, DERIVED from the layout the
+// frontend already computed — K is the enum's stored alignment in bits, N
+// covers the stored size past the tag. One computation (type_layout's enum
+// arm, widest-variant sizing) and this derivation; a second walk here would be
+// a second copy of one fact. `[N x i8]` would give the slot alignment 1 and an
+// 8-byte payload would sit at odd addresses — the misalignment the audit
+// caught in TYPE_REFERENCE §9.3's own example; making the element BE the
+// alignment makes the alignment structural. Construction and binding never do
+// this arithmetic — they address the slot with a typed getelementptr and
+// store/load the variant's own type through the pointer.
+pub struct:EnumSlot = {
+    bool:ok;
+    int32:kbits;
+    int64:count;
+};
+
+pub func:enum_payload_slot = EnumSlot(LlCtx->:c, int32:id) {
+    EnumSlot:bad = EnumSlot{ ok: false, kbits: 0i32, count: 0i64 };
+    int64:sz = raw type_size(c.types, id);
+    int32:al = raw type_align(c.types, id);
+    // FAIL CLOSED on a layout the table does not hold: a zero here becomes a
+    // slot that cannot hold its payload, which is memory corruption wearing a
+    // type annotation. Alignments past 8 arrive with i128 (0.9.3), which must
+    // extend this derivation deliberately.
+    if (sz <= 0i64)  { pass bad; }
+    if (al <= 0i32)  { pass bad; }
+    if (al > 8i32)   { pass bad; }
+    int64:tag = raw align_up(4i64, al);
+    int64:bytes = sz - tag;
+    if (bytes <= 0i64) { pass bad; }
+    EnumSlot:out = EnumSlot{ ok: true, kbits: al * 8i32,
+                             count: bytes / (al => int64) };
+    pass out;
+};
+
 pub func:ll_enum_body = LlType(LlCtx->:c, int32:id) {
     if ((raw type_kind(c.types, id)) != (raw TY_ENUM())) { pass (raw ll_broken()); }
     if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_rung("0.9")); }
-    pass (raw ll_ok("{ i32, i64 }"));
+    EnumSlot:sl = raw enum_payload_slot(c, id);
+    if (!sl.ok) { pass (raw ll_broken()); }
+    string:a = relay string_concat("{ i32, [",
+                   raw int_to_string(sl.count));
+    string:b = relay string_concat(a, " x i");
+    string:d2 = relay string_concat(b, raw int_to_string(sl.kbits => int64));
+    pass (raw ll_ok(relay string_concat(d2, "] }")));
 };
 
 // --- questions the emitter asks about a lowered type --------------------------------

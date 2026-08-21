@@ -483,6 +483,36 @@ func:int_min_text = string(string:ll) {
     pass "";
 };
 
+// The index, as i64, for a bounds compare: narrower indices sign-extend, so a
+// negative index of any width becomes a huge unsigned value and ONE unsigned
+// compare rejects both "negative" and "past the end" (D-070).
+func:index_as_i64 = string(ExprEmitter->:x, IrVal:ix) {
+    if (raw string_eq(ix.ll, "i64")) { pass ix.ref; }
+    string:w = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(w, " = sext ", ix.ll, " ",
+                      relay string_concat(ix.ref, " to i64")));
+    pass w;
+};
+
+// The bounds trap (0.9.2, D-070): `idx <u len` or branch to OUT_OF_BOUNDS
+// (-4099) through the D-142 route. Emitted at EVERY dynamic index — a slice's
+// length is a runtime fact and an array's is a constant, but the refusal is
+// the same controlled shutdown either way.
+func:emit_bounds_guard = NIL(ExprEmitter->:x, string:idx64, string:len_ref) {
+    string:ok_c = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(ok_c, " = icmp ult i64 ", idx64, ", ",
+                      relay string_concat(len_ref, "")));
+    string:trap_l = relay irw_new_label(x.fe.w, "idx.oob");
+    string:ok_l = relay irw_new_label(x.fe.w, "idx.ok");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", ok_c, ", label %", ok_l,
+                      relay string_concat(", label %", trap_l)));
+    drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4099)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ok_l);
+    pass NIL;
+};
+
 pub func:arith_name = string(TokenKind:op, bool:signed) {
     if (op == TokenKind.OpPlus)    { pass "add"; }
     if (op == TokenKind.OpMinus)   { pass "sub"; }
@@ -1125,20 +1155,27 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
             pass (raw pv_rung("an element of an unlowered type", ell.rung, n.span));
         }
 
-        // A SLICE'S BOUNDS LIVE ON IT AND ARE NOT CHECKED HERE. The bounds
-        // check is 0.9's `--verify-memory` story; at this rung an index trusts
-        // the analyses, exactly as the seed does.
+        // A SLICE'S BOUNDS LIVE ON IT AND ARE CHECKED HERE (0.9.2, D-070):
+        // the length rides in the value, the index compares against it
+        // unsigned, and out-of-range traps to `failsafe` — where OOB
+        // detection COMES FROM, since pointers are thin (D-038) and carry
+        // nothing to check.
         if (okind == (raw TY_SLICE())) {
             IrVal:ov = relay emit_expr(x, raw expr_lhs(n));
             if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(ov)); }
             IrVal:ix = relay emit_expr(x, raw expr_rhs(n));
             if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(ix)); }
+            string:slen = relay irw_temp(x.fe.w);
+            drop irw_line(x.fe.w, relay cat5(slen, " = extractvalue ", ov.ll,
+                              " ", relay string_concat(ov.ref, ", 1")));
+            string:idx64 = raw index_as_i64(x, ix);
+            drop emit_bounds_guard(x, idx64, slen);
             string:data = relay irw_temp(x.fe.w);
             drop irw_line(x.fe.w, relay cat5(data, " = extractvalue ", ov.ll,
                               " ", relay string_concat(ov.ref, ", 0")));
             string:r = relay irw_temp(x.fe.w);
             drop irw_line(x.fe.w, relay cat5(r, " = getelementptr ", ell.text,
-                              ", ptr ", relay cat5(data, ", ", ix.ll, " ", ix.ref)));
+                              ", ptr ", relay cat4(data, ", i64 ", idx64, "")));
             pass (raw pv(r, elem_tid));
         }
         if (okind == (raw TY_POINTER())) {
@@ -1154,16 +1191,23 @@ pub func:addr_of = PlaceVal(ExprEmitter->:x, ExprId:id) {
         if (okind == (raw TY_ARRAY())) {
             // A VALUE type: its elements are reached through ITS address, and
             // `i64 0` steps through the array-of-one that address denotes.
+            // The bound is the TYPE'S constant (D-070), and a dynamic index
+            // still checks against it at run time (0.9.2) — a static bound
+            // does not make the index static.
             PlaceVal:base = relay addr_of(x, raw expr_lhs(n));
             if (base.state != (raw LL_OK())) { pass base; }
             LlType:all = relay ll_type(x.fe.ctx, obj_tid);
             if (!(raw ll_is_ok(all))) { pass (raw pv_broken(n.span)); }
             IrVal:ix = relay emit_expr(x, raw expr_rhs(n));
             if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(ix)); }
+            string:idx64 = raw index_as_i64(x, ix);
+            string:bound = raw int_to_string(
+                (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
+            drop emit_bounds_guard(x, idx64, bound);
             string:r = relay irw_temp(x.fe.w);
             drop irw_line(x.fe.w, relay cat5(r, " = getelementptr ", all.text,
                               ", ptr ", relay cat4(base.addr, ", i64 0, ",
-                                  relay cat3(ix.ll, " ", ix.ref), "")));
+                                  relay cat3("i64 ", idx64, ""), "")));
             pass (raw pv(r, elem_tid));
         }
         pass (raw pv_broken(n.span));
@@ -1256,13 +1300,14 @@ func:emit_variant_ref = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     }
     LlType:ell = relay ll_type(x.fe.ctx, etid);
     if (!(raw ll_is_ok(ell))) { pass (relay iv_from_ll_at(x, ell, etid, n.span)); }
+    // OVER zeroinitializer, not undef, and only the tag is inserted: the
+    // payload slot is `[N x iK]` (0.9.2) and writing "i64 0" into it stopped
+    // being well-typed the day payloads outgrew one word. Zeroed payload bytes
+    // also keep a payload-less variant deterministic wherever it travels.
     string:a = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(a, " = insertvalue ", ell.text,
-                      " undef, i32 ", relay string_concat(tag, ", 0")));
-    string:b = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(b, " = insertvalue ", ell.text, " ",
-                      relay string_concat(a, ", i64 0, 1")));
-    pass (raw iv(ell.text, b, etid));
+                      " zeroinitializer, i32 ", relay string_concat(tag, ", 0")));
+    pass (raw iv(ell.text, a, etid));
 };
 
 // `Net.Disconnect(code)` — the payload widens into the uniform `i64` word
@@ -1298,33 +1343,43 @@ func:emit_ctor = IrVal(ExprEmitter->:x, ExprId:id, Span:at, int32:etid,
         pass (raw iv("i32", raw int_to_string(vi.tag => int64), etid));
     }
 
-    string:pref = "0";
-    if (count > 0i32) {
+    // MULTI-PAYLOAD CONSTRUCTION REFUSES rather than truncates. Before 0.9.2
+    // this path consumed argument 0 and SILENTLY DROPPED the rest — a
+    // miscompile found while generalising, not by any test. The pattern tail
+    // (0.9.7) owns the multi-payload story end to end.
+    if (count > 1i32) {
+        pass (raw iv_rung("a multi-payload variant construction", "0.9", at));
+    }
+
+    // THE GENERAL CONSTRUCTION (0.9.2): through a stack slot, because the
+    // payload slot is `[N x iK]` and the payload is stored AS ITS OWN TYPE
+    // through a typed pointer — insertvalue cannot write a `{ptr,i64,i64}`
+    // into an i64 array, and the widen-to-one-word shape it replaces emitted
+    // invalid IR for any aggregate payload. Zero first, so a smaller payload
+    // leaves no undefined bytes in the slot.
+    string:tag = raw int_to_string(vi.tag => int64);
+    string:tmp = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat3(tmp, " = alloca ", ell.text));
+    drop irw_line(x.fe.w, relay cat5("store ", ell.text, " zeroinitializer, ptr ",
+                      tmp, ""));
+    string:tp = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(tp, " = getelementptr ", ell.text,
+                      ", ptr ", relay string_concat(tmp, ", i32 0, i32 0")));
+    drop irw_line(x.fe.w, relay cat5("store i32 ", tag, ", ptr ", tp, ""));
+    if (count == 1i32) {
         ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, 0i32) };
         IrVal:av = relay emit_expr(x, aid);
         if (!(raw iv_is_ok(av))) { pass av; }
-        pref = av.ref;
-        if (!(raw string_eq(av.ll, "i64"))) {
-            string:w = relay irw_temp(x.fe.w);
-            if (raw string_eq(av.ll, "ptr")) {
-                drop irw_line(x.fe.w, relay cat3(w, " = ptrtoint ptr ",
-                                  relay string_concat(av.ref, " to i64")));
-            } else {
-                drop irw_line(x.fe.w, relay cat5(w, " = zext ", av.ll, " ",
-                                  relay string_concat(av.ref, " to i64")));
-            }
-            pref = w;
-        }
+        string:pp = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(pp, " = getelementptr ", ell.text,
+                          ", ptr ", relay string_concat(tmp, ", i32 0, i32 1")));
+        drop irw_line(x.fe.w, relay cat5("store ", av.ll, " ", av.ref,
+                          relay string_concat(", ptr ", pp)));
     }
-
-    string:tag = raw int_to_string(vi.tag => int64);
-    string:a = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(a, " = insertvalue ", ell.text,
-                      " undef, i32 ", relay string_concat(tag, ", 0")));
-    string:b = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(b, " = insertvalue ", ell.text, " ",
-                      relay cat4(a, ", i64 ", pref, ", 1")));
-    pass (raw iv(ell.text, b, etid));
+    string:whole = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(whole, " = load ", ell.text, ", ptr ",
+                      relay string_concat(tmp, "")));
+    pass (raw iv(ell.text, whole, etid));
 };
 
 // --- member and index reads --------------------------------------------------------
@@ -1456,10 +1511,13 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     // The data pointer: an array's is its own address, a slice's is its first
     // field. Anything else cannot be ranged and the checker said so already.
     string:base = "";
+    string:src_len = "";
     if (okind == (raw TY_ARRAY())) {
         PlaceVal:p = relay addr_of(x, raw expr_lhs(n));
         if (p.state != (raw LL_OK())) { pass (relay iv_from_place(p)); }
         base = p.addr;
+        src_len = raw int_to_string(
+            (raw type_array_count(x.fe.ctx.types, obj_tid)) => int64);
     }
     if (okind == (raw TY_SLICE())) {
         IrVal:ov = relay emit_expr(x, raw expr_lhs(n));
@@ -1468,6 +1526,10 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, relay cat5(d, " = extractvalue ", ov.ll, " ",
                           relay string_concat(ov.ref, ", 0")));
         base = d;
+        string:sl2 = relay irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, relay cat5(sl2, " = extractvalue ", ov.ll, " ",
+                          relay string_concat(ov.ref, ", 1")));
+        src_len = sl2;
     }
     if (base.len == 0i64) { pass (raw iv_broken(n.span)); }
 
@@ -1476,11 +1538,35 @@ func:emit_range_slice = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
     IrVal:hi = relay emit_expr(x, raw expr_rhs(ix));
     if (!(raw iv_is_ok(hi))) { pass hi; }
 
+    // THE VIEW MUST FIT (0.9.2, D-070): `lo <= hi` and `hi <= len`, both
+    // unsigned, or the trap — before this guard a range past the end
+    // fabricated a slice into whatever came after, and `hi < lo` wrapped the
+    // count to near-2^64. Unchecked, either one is the exact defect the slice
+    // type exists to prevent.
+    string:lo64 = raw index_as_i64(x, lo);
+    string:hi64 = raw index_as_i64(x, hi);
+    string:c1 = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c1, " = icmp ule i64 ", lo64, ", ",
+                      relay string_concat(hi64, "")));
+    string:c2 = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(c2, " = icmp ule i64 ", hi64, ", ",
+                      relay string_concat(src_len, "")));
+    string:both = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(both, " = and i1 ", c1, ", ", c2));
+    string:trap_l = relay irw_new_label(x.fe.w, "rng.oob");
+    string:ok_l = relay irw_new_label(x.fe.w, "rng.ok");
+    drop irw_line(x.fe.w, relay cat5("br i1 ", both, ", label %", ok_l,
+                      relay string_concat(", label %", trap_l)));
+    drop irw_label(x.fe.w, trap_l);
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4099)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, ok_l);
+
     string:g = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat5(g, " = getelementptr ", ell.text,
-                      ", ptr ", relay cat4(base, ", i64 ", lo.ref, "")));
+                      ", ptr ", relay cat4(base, ", i64 ", lo64, "")));
     string:cnt = relay irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, relay cat5(cnt, " = sub i64 ", hi.ref, ", ", lo.ref));
+    drop irw_line(x.fe.w, relay cat5(cnt, " = sub i64 ", hi64, ", ", lo64));
     string:a = relay irw_temp(x.fe.w);
     drop irw_line(x.fe.w, relay cat3(a, " = insertvalue { ptr, i64 } undef, ptr ",
                       relay string_concat(g, ", 0")));
