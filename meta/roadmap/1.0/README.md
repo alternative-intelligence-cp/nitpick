@@ -47,7 +47,8 @@ frontend rewrites D-085's whole strategy exists to prevent.
 | 1.0.2b | **Generic function lowering** — one body per argument set: `FnInstTable` records what the program asks for (deduped by arguments, D-108's rule for functions), the emitter walks it, the call site re-derives its specialization from its argument types; retires the `a generic function` / `a generic call` rungs | 1.0.2 |
 | 1.0.3 | **UFCS method calls** — `x.method()` lowering; the concrete collections begin to become replaceable | — |
 | 1.0.4 | **Traits and impls** — trait-method dispatch on concrete receivers incl. inherited defaults (grammar #6); impls over generic families (C-6) | C-6 |
-| 1.0.4b | **Family impls (D-161 amended)** — the production that distinguishes `impl:<T>:Box<T>:Trait` from the blanket `impl:<T: B>:Trait`; the two are ambiguous at the target position and the amendment must say which lookahead decides. Derive-on-generic rides with it | D-161 |
+| 1.0.4b | **Family impls (D-161 amended)** — the segment count decides (D-111 already requires a blanket impl to name a trait, so no lookahead heuristic is needed); parse, resolve, check, dispatch, emit | D-161 |
+| 1.0.4c | **Overlap refusal and derive-on-generic** — D-161's remaining clauses: an overlapping family + per-instance impl refused AT THE IMPL (today only at a call, as ambiguous-method), and `#[derive]` on a generic subject synthesizing the family form or refusing by name (today it emits a broken impl and reports arity errors against `<derived-N>`) | 1.0.4b |
 | 1.0.5 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |
 | 1.0.6 | **Associated types** — the C-5 resolution (type kind + projection, or the descope) | C-5 |
 | 1.0.7 | **`Optional<T>` and the generic stdlib** — now that generics lower, the parameterized library types (grammar #13's `Optional` refusal names 1.0) | — |

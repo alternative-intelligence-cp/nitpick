@@ -10644,6 +10644,30 @@ carries both slots already (D-031's layout, untouched); no token changes;
 the D-085 fear — parser rework cascading into the AST — does not arise,
 which is why this is decided rather than raised.
 
+> **Amendment SETTLED at 1.0.4b, and two clauses still owed.** The
+> disambiguation needed no new rule: **D-111 already requires a blanket impl to
+> name a trait**, so after a generics window the SEGMENT COUNT decides — one
+> segment is the blanket form's trait, two are a family impl's target and
+> trait. None of the three heuristics floated below was needed. Family impls
+> parse, resolve, check, dispatch, emit and run as of 1.0.4b.
+>
+> **Still owed, owned by 1.0.4c** (measured, not merely absent — each has a
+> wrong behaviour today):
+>
+> - **Overlap is not refused at the impl.** A family impl and a per-instance
+>   impl for one (type, trait) both collect, and the program is refused only at
+>   a CALL, as `NITPICK-TYPE-020` "ambiguous method". §4.1 requires the refusal
+>   at the second impl; as it stands, a library whose overlap nothing calls
+>   compiles clean and hands the error to its consumer.
+> - **`#[derive]` on a generic subject emits the broken impl this decision
+>   forbids.** `#[derive(Eq)]` on `Box<T>` synthesizes `impl:Box:Eq` and reports
+>   three `NITPICK-TYPE-016` arity errors against `<derived-1>` — synthesized
+>   source the author never wrote. The interim refusal-by-name this decision
+>   mandates is not in place.
+>
+> The original amendment note follows, kept because it records why the first
+> attempt failed.
+>
 > **Amendment owed, found at 1.0.4 (implementation).** The production as
 > written above — "after the generics window, parse a type; if a second
 > `:`-type follows, the first was the TARGET; otherwise the first is the trait"
