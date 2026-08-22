@@ -33,11 +33,20 @@ the D-007 guard trapping through D-142's `npk_trap` route — `DIV_BY_ZERO`
 
 ---
 
-## 1. Decisions blocking 1.0 (generics, traits, dyn)
+## 1. Decisions blocking 1.0 (generics, traits, dyn) — **CLOSED at 1.0-open**
 
-The monomorphization *mechanics* are built and tested. Every blocker below is at
-the **trait/`dyn` boundary the checker never had to answer** — six decisions, all
-owed before lowering starts, or the rung forces the frontend rewrites D-085 forbids.
+All six settled as **D-156–D-161** (the 1.0 opening act; see DECISIONS.md).
+C-1 → D-156 (`npk.<module>.<spelling>` quoted symbols, program-unique module
+names, linkonce_odr); C-2 → D-157 (`Self` nowhere but the receiver, full-tree
+walk; rule 3 unified); C-3 → D-158 (declaration-indexed per-(impl,trait)
+vtables of adapter thunks; own methods only; ambiguity is an error); C-4 →
+D-159 (data + one vtable word per trait, canonically ordered bounds; widening
+is a static value rebuild); C-5 → D-160 (TY_ASSOC + in-trait resolution +
+impl-binding substitution; assoc-mentioning methods are not object-safe);
+C-6 → D-161 (family impls via target-between-generics-and-trait — one
+contained production change; per-instance impls turned out to ALREADY work;
+derive-on-generic refuses until it can synthesize the family form). The rows
+stay as the record:
 
 | # | Proposed | Item | Blocks | Source |
 |---|---|---|---|---|

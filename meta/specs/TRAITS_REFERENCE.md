@@ -458,11 +458,21 @@ Overlapping implementations are a compile error.
 
 ### 4.2 Object Safety
 
-A trait may be used as `dyn Trait` only if:
+A trait may be used as `dyn Trait` only if (D-157, restated from three
+earlier contradictory phrasings):
 
 1. every method takes a `self` parameter — no static methods;
-2. no method returns `Self` — its size is unknown behind `dyn`;
-3. no method has comptime type parameters.
+2. **`Self` appears nowhere but the receiver** — not in a later parameter,
+   not in the return, not NESTED anywhere in a type tree (`Optional<Self>`,
+   `Self[]`, `Handle<Self>`, `Self->` all disqualify): behind a vtable the
+   erased value would be read at the wrong layout, and the rule admits no
+   size-based exceptions;
+3. **no generic methods** — type parameters and comptime parameters alike: a
+   vtable slot holds one address, and a generic method is a family of them.
+
+A method whose signature mentions an **associated type** also disqualifies
+the trait (D-160) — the projection's layout is unknowable behind erasure,
+the same argument as rule 2.
 
 Non-object-safe traits cannot be used with `dyn`.
 
@@ -478,7 +488,13 @@ abstraction zero-cost and lets LLVM inline aggressively.
 ### 5.2 Dynamic (`dyn`)
 
 Explicit opt-in to runtime polymorphism, constructing a fat pointer
-(`{ data_ptr, vtable_ptr }`, 16 bytes on 64-bit):
+(`{ data_ptr, vtable_ptr }`, 16 bytes on 64-bit). Dispatch (D-158): a call
+through a `dyn` reaches the methods DECLARED BY THE NAMED TRAITS — own
+lists only; supertrait methods are not reachable (construct a `dyn Super`
+from the concrete value instead), and two named traits declaring one method
+name is a compile-time ambiguity. The vtable is per (impl, trait), indexed
+by trait declaration order, and its entries are per-impl adapter thunks —
+the caller passes the data pointer, the thunk loads the concrete receiver:
 
 ```nitpick
 Message:msg = Message{ id: 1i32 };
@@ -492,7 +508,11 @@ dyn Drawable & Serializable:obj = msg;
 ```
 
 `dyn A & B` is assignable to `dyn A` — widening by dropping bounds. Each trait
-must be object-safe.
+must be object-safe. The ABI (D-159): `dyn` over N traits is
+`{ data, vt_1 … vt_N }` — (N+1)×8 bytes — with the bounds CANONICALLY
+ORDERED (sorted by trait name) at type interning, so every vtable word has a
+statically known slot and the widening is a value rebuild copying the data
+word plus the retained traits' words. No runtime tables.
 
 > Chapter 13 uses `+` here while using `&` for supertraits and bounds. Unified on
 > `&` (D-029).

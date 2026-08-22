@@ -10451,3 +10451,185 @@ written into VERIFICATION_REFERENCE §6.4.
 `tests/analysis/rejection/wildx.npk` locks the four refusals (the jit.npk bug
 among them); `tests/accept/moves.npk` gains the correct lifecycle as the
 positive case.
+
+## D-156 — The symbol scheme: `npk.<module>.<spelling>`, quoted, hash-free — **SETTLED**
+
+Cycle 1.0's opening decision (OPEN_DECISIONS C-1). D-064 §6 settled THAT
+mangling is reversible and hash-free; D-108 settled the frontend identity
+(the source spelling — `Container<int32>`). This settles the LINK level.
+
+**The scheme.** Every emitted definition takes a quoted symbol built from
+three parts joined by dots:
+
+- functions: `@"npk.<module>.<function>"`; instantiations append the D-108
+  spelling whole — `@"npk.geometry.extract<int32>"`.
+- named aggregate types: `%"npk.<module>.<Type>"`;
+  `%"npk.geometry.Container<int32>"`.
+- vtables (D-158): `@"npk.<module>.vt.<Type>.<Trait>"`, in the impl's module.
+
+LLVM's quoted identifiers admit any byte, so the spelling embeds verbatim —
+`<`, spaces, commas and all. Reversal is inspection: strip `npk.`, split at
+the first dot, the rest is the source spelling. No hash (D-064 §6's
+argument: an auditor reading a disassembly must map a symbol back to source
+without a table that may not have survived), and no path (D-078: emitted
+bytes must not vary with the build tree).
+
+**Module canonical names are program-unique, by rule.** The canonical name
+is the `mod:` name (= the basename, D-088). Two modules with one name in a
+program are REFUSED by the loader — a nameable program-level property,
+which is what lets the symbol omit paths without risking collision.
+
+**The reserved namespaces do not collide by construction.** The runtime
+floor's `@npk_<name>` symbols are single-segment with underscores; scheme
+symbols always contain a dot. `main` keeps `@main` (the linker's entry);
+`failsafe` keeps `@npk_failsafe` (the runtime's declared hook). Both are
+the two functions outside the `Result` regime (D-013), and they are also
+the two outside the naming scheme — one rule's boundary, stated twice.
+
+**Comptime values** encode as their canonical display in the spelling
+(`Buffer<1024>`), exactly as D-108 interns them — one spelling, both uses.
+
+**Linkage.** Instantiated definitions emit `linkonce_odr`: identical
+specializations fold when multi-object linking arrives (1.2's world);
+today's whole-program emission already dedups via D-108, so the linkage is
+declarative until then. Non-generic definitions keep today's linkage.
+
+**Retired**: `check_duplicate_type_names` (emit_program), the interim
+refusal for two types rendering one `%Name` — module qualification
+dissolves the collision it guarded.
+
+## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
+
+OPEN_DECISIONS C-2, a safety hole: `check_object_safe` inspected only the
+RETURN node, so `func:eq = bool(Self:self, Self:other)` passed — and behind
+a vtable the erased second argument is read at the wrong layout. The
+extended rule:
+
+> **`Self` may appear in exactly one place: as the receiver's type (the
+> first parameter). Any other appearance — a later parameter, the return,
+> or NESTED anywhere in a type tree (`Optional<Self>`, `Self[]`,
+> `Handle<Self>`, `Self->`) — makes the trait not object-safe.**
+
+The walk is over the full type tree of every parameter and the return,
+with fuel, refusing on any `Self` found outside the receiver position. No
+exceptions — not even `Handle<Self>`, whose SIZE survives erasure (16
+bytes regardless of element): the uniform rule is one rule, and a
+size-based carve-out would be the context-dependence the blueprint
+refuses.
+
+**Rule 3 is one statement** (the three contradictory phrasings the grammar
+audit found, folded here): *no generic methods — type parameters and
+comptime parameters alike — because a vtable slot holds one address and a
+generic method is a family of them.* TRAITS_REFERENCE §4.2 is restated to
+these three rules exactly.
+
+## D-158 — `dyn` dispatch: declaration-indexed vtables, own methods only — **SETTLED**
+
+OPEN_DECISIONS C-3, with the prototype as the behavioral oracle
+(type_checker_call.cpp's dyn path, confirmed against traits_oop_specs).
+
+- **Reachable methods**: those declared by the traits the `dyn` NAMES —
+  own lists only, in bound order. **Supertrait methods are not reachable**
+  through a `dyn` of the subtrait (the subtrait's vtable holds its own
+  declaration list; no super-vtable was built). This is a decided NO, not
+  a gap: code needing the supertrait's methods constructs `dyn Super` from
+  the concrete value, where the vtable exists. The prototype behaves
+  identically.
+- **Ambiguity**: two named traits declaring one method name is a
+  compile-time ambiguity error naming both traits (`TYPE_AMBIGUOUS_METHOD`
+  — the same rule concrete method dispatch already has). No ordering
+  tiebreak: an order-dependent resolution is meaning-by-position.
+- **The vtable** is per (impl, trait): entries in TRAIT DECLARATION ORDER
+  (slot = declaration index — stable, source-derived, hash-free like
+  D-156). Entries point at **per-impl adapter thunks**: the caller always
+  passes the data pointer plus the arguments; the thunk — compiled against
+  the concrete type, which it knows — loads the by-value receiver and
+  calls the real method. This is what lets impl methods keep their natural
+  `Point:self` signatures while the erased caller passes one pointer.
+- **Return typing**: the trait signature's return, `Result`-wrapped like
+  every call (D-013). Borrow returns need no dyn-specific rule: BORROW-001
+  refuses returned borrows language-wide, so the prototype's NITPICK-053
+  case cannot arise here.
+
+## D-159 — Multi-bound `dyn` ABI: data + one vtable word per trait, canonically ordered — **SETTLED**
+
+OPEN_DECISIONS C-4, contradicted three ways in the tree. Settled as
+type_trait.npk's N+1 words:
+
+- `dyn A` = `{ ptr data, ptr vtable }` — 16 bytes, the spec's fat pointer.
+- `dyn A & B & C` = `{ ptr data, ptr vtA, ptr vtB, ptr vtC }` — (N+1)×8.
+  `types.npk`'s flat 16-byte interning was the bug; the size is computed
+  from the bound count.
+- **Bounds are CANONICALLY ORDERED at interning** (sorted by trait name),
+  so `dyn A & B` and `dyn B & A` are one type with one layout — and every
+  vtable word has a compile-time-known slot.
+- **Widening (`dyn A & B → dyn A`) is a value rebuild**: copy the data
+  word and the retained traits' vtable words into the smaller shape —
+  positions statically known via the canonical order, no runtime tables,
+  no prefix/subview scheme. O(retained words) at the widening site,
+  nothing anywhere else.
+
+## D-160 — Associated types: kind, in-trait resolution, impl binding, projection — **SETTLED**
+
+OPEN_DECISIONS C-5. Descoping was refused: TRAITS_REFERENCE's own
+`Iterator` is the spec's flagship trait, and the generic stdlib (1.0.6
+onward) needs it. What lands at 1.0.5:
+
+- **`TY_ASSOC`** — a type kind carrying (trait decl, name). Inside a trait
+  body, a bare assoc name (`Item` in `func:next = Item(Self:self)`)
+  resolves to it, exactly as `Self` resolves today.
+- **Impl binding substitutes.** `assoc:Item = int32;` in an impl binds the
+  projection for that impl; checking the impl's methods against the trait
+  substitutes bindings the way `Self` substitutes already. Defaults
+  (`assoc:Error = string;` in the trait) are inherited unless overridden
+  (D-028's surviving half).
+- **External projection `T.Item`** (in generic code, `T` a parameter
+  bounded by the trait) rides the EXISTING dotted-path type grammar if the
+  parser already admits it, else is spelled `Iterator.Item`-style through
+  the trait — settled during 1.0.5 against the parser as it stands; either
+  spelling resolves through the bound. No new token, no new node kind
+  beyond the type kind.
+- **Object safety**: a method whose signature mentions an assoc type makes
+  the trait NOT object-safe (same erasure argument as `Self` — the
+  caller cannot know the projection's layout behind a vtable). `dyn
+  Iterator` is therefore refused; iterate through generics instead.
+
+## D-161 — Impls over generic families: the target between generics and trait — **SETTLED**
+
+OPEN_DECISIONS C-6 — and the audit's premise half-dissolved on probing:
+**per-instance impls (`impl:Box<int32>:Sized2`) already parse, resolve, and
+check end-to-end today.** Only the FAMILY form was inexpressible, and the
+fix is one contained production change, not a grammar rework:
+
+```ebnf
+ImplDeclaration ::= "impl" ":" GenericList? ImplTail "=" "{" ImplBody "}" ";"
+ImplTail        ::= Type (":" Type)?     ; target, optional trait
+                  | ":"? Type            ; blanket: generics with no target
+```
+
+Concretely in `p_parse_impl`: after the generics window, parse a type; if a
+second `:`-type follows, the first was the TARGET and the second the trait
+(the family form, `impl:<T>:Box<T>:Sized2`); otherwise the first is the
+trait and the target is empty (the blanket form, `impl:<T: P>:Loggable`,
+unchanged). The inherent family (`impl:<T>:Box<T>`) falls out. The AST
+carries both slots already (D-031's layout, untouched); no token changes;
+the D-085 fear — parser rework cascading into the AST — does not arise,
+which is why this is decided rather than raised.
+
+**Resolution**: the impl's generic parameters scope over its target and
+trait exactly as a function's scope over its signature; an instantiation
+`Box<int32>` matches the family impl by unification against the target
+spelling, with the impl's bounds checked at the D-108 bound-judgment pass.
+**Specificity**: a per-instance impl and a family impl for the same
+(type, trait) are an OVERLAP and refused (TRAITS_REFERENCE §4.1's one-impl
+rule, unchanged — no specialization, per D-064 §7).
+
+**Derive on generics** synthesizes exactly the family form
+(`impl:<T: Eq>:Box<T>:Eq` — the element bound mirrors the derived trait).
+Until that lands (1.0.3), `#[derive]` on a generic subject REFUSES by name
+— today it emits a broken `impl:Box:Eq`, which is worse than any refusal.
+
+**Default methods** (folded in from grammar #6): a trait method with a body
+is inherited by every impl that omits it; `find_method` falls back to the
+trait's default when the impl lacks the name — concrete receivers at
+1.0.3, `dyn` via the vtable filling the slot with the default's thunk.
