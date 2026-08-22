@@ -20,6 +20,8 @@ use "../frontend/parse_decl.npk".*;
 use "../frontend/diagnostics.npk".*;
 use "../frontend/symbols.npk".*;
 use "../frontend/module_graph.npk".*;
+use "../frontend/source.npk".*;
+use "../frontend/paths.npk".*;
 use "../frontend/types.npk".*;
 use "../frontend/expr_types.npk".*;
 use "../frontend/resolve_type.npk".*;
@@ -132,19 +134,76 @@ func:check_duplicate_type_names = NIL(LlCtx->:c, DiagList->:diags) {
                 if (raw header_kind(c, j)) {
                     int32:ni = raw type_name(c.types, i);
                     if (ni != (raw intern_none())) {
+                        // Two types sharing a BARE name are refused (D-156): the
+                        // symbols mangle distinctly (`%"npk.a.Local"` vs
+                        // `%"npk.b.Local"`), but nominal type IDENTITY is by name
+                        // (D-090) — the interned type table merges them, so the
+                        // struct-literal and layout resolution that ran per-scope
+                        // in the front half would disagree with a single interned
+                        // entry at emit. Refusing here is a clean diagnostic for
+                        // that unsupported case; making same-named types coexist
+                        // needs the type table interned by qualified name, which
+                        // is frontend work beyond 1.0.0's symbol scheme.
                         if (ni == (raw type_name(c.types, j))) {
-                            string:m1 = relay string_concat("two types render the IR name `%",
+                            string:m1 = relay string_concat("two types share the name `",
                                 relay intern_get(c.interns, ni));
                             drop diaglist_push(diags, raw diag_error(
                                 raw RUNG_UNSUPPORTED(),
                                 relay string_concat(m1,
-                                    "`; module-qualified type names are the 0.8 mangling decision, and until then one name for two layouts is refused"),
+                                    "`; their symbols mangle distinctly (D-156) but nominal type identity is by name (D-090), so one program cannot hold both — rename one until the type table interns by qualified name"),
                                 raw span_none()));
                         }
                     }
                 }
                 j = j + 1i32;
             }
+        }
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// THE MODULE MAP (D-156): decl index -> canonical module name, for every
+// function and named type. Built once, here, because this is the first point
+// with both the graph (module provenance) and the LlCtx (where the mangling
+// helpers read it). The canonical name is the file BASENAME (path-free,
+// D-078; = the `mod:` name, D-088), extended by `.` for a nested inline
+// module. Deterministic in graph order, so stage 1 and stage 2 emit identical
+// symbols — the fixpoint the scheme must not disturb.
+func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
+    int32:n = raw ast_decl_count(@g.ast);
+    int64:sz = n => int64;
+    if (sz < 1i64) { sz = 1i64; }
+    wild int8->:mem = alloc(sz * #size_of<int32>());
+    wild int32->:map = mem =>! wild int32->;
+    int64:z = 0i64;
+    while (z < sz) { map[z] = 0i32; z = z + 1i64; }
+    int32:m = 0i32;
+    while (m < (raw graph_count(g))) {
+        ModuleEntry:me = raw graph_at(g, m);
+        string:base = relay path_basename(relay srcmgr_path(@g.sm, me.file));
+        DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
+        drop modmap_members(g, map, mn, base);
+        m = m + 1i32;
+    }
+    drop llctx_set_modmap(c, map, n);
+    pass NIL;
+};
+
+func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
+                          string:canon) {
+    int32:k = raw item_member_count(@g.ast, mn);
+    int32:i = 0i32;
+    while (i < k) {
+        DeclId:item = raw item_member(@g.ast, mn, i);
+        DeclNode:d = relay ast_decl(@g.ast, item);
+        if (d.kind == DeclKind.DeclModuleDecl) {
+            // A nested inline module extends the canonical name with its own.
+            string:nm = relay intern_get(g.interns, raw decl_name(d));
+            string:nc = relay string_concat(canon, relay string_concat(".", nm));
+            drop modmap_members(g, map, d, nc);
+        } else {
+            map[item.index => int64] = raw intern_add(g.interns, canon);
         }
         i = i + 1i32;
     }
@@ -244,6 +303,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              TypeResolver->:tr, DiagList->:diags) {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
+    drop build_modmap(g, @c);
     StrTable:st = raw strtab_init();
     drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
     drop irw_blank(w);

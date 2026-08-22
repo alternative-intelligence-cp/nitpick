@@ -206,7 +206,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w1 = raw irw_to_buffer();
     FnEmitter:f1 = raw fnem_init(@w1, @c);
     ExprEmitter:x1 = raw exprem_init(@f1, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f1, "calc", i32t);
+    drop fnem_begin(@f1, "calc", 0i32, i32t);
     drop fnem_param(@f1, nx, i32t);
     drop fnem_param(@f1, ny, i32t);
     drop fnem_open(@f1);
@@ -221,7 +221,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w2 = raw irw_to_buffer();
     FnEmitter:f2 = raw fnem_init(@w2, @c);
     ExprEmitter:x2 = raw exprem_init(@f2, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f2, "cmp", types.t_bool);
+    drop fnem_begin(@f2, "cmp", 0i32, types.t_bool);
     drop fnem_param(@f2, nc1, c8t);
     drop fnem_param(@f2, nc2, c8t);
     drop fnem_param(@f2, nx, i32t);
@@ -238,7 +238,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w3 = raw irw_to_buffer();
     FnEmitter:f3 = raw fnem_init(@w3, @c);
     ExprEmitter:x3 = raw exprem_init(@f3, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f3, "casts", i32t);
+    drop fnem_begin(@f3, "casts", 0i32, i32t);
     drop fnem_param(@f3, nu, u32t);
     drop fnem_param(@f3, nx, i32t);
     drop fnem_param(@f3, ny, i64t);
@@ -254,7 +254,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w4 = raw irw_to_buffer();
     FnEmitter:f4 = raw fnem_init(@w4, @c);
     ExprEmitter:x4 = raw exprem_init(@f4, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f4, "andand", types.t_bool);
+    drop fnem_begin(@f4, "andand", 0i32, types.t_bool);
     drop fnem_param(@f4, nb, types.t_bool);
     drop fnem_param(@f4, nb2, types.t_bool);
     drop fnem_open(@f4);
@@ -267,7 +267,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w5 = raw irw_to_buffer();
     FnEmitter:f5 = raw fnem_init(@w5, @c);
     ExprEmitter:x5 = raw exprem_init(@f5, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f5, "unary", i32t);
+    drop fnem_begin(@f5, "unary", 0i32, i32t);
     drop fnem_param(@f5, nx, i32t);
     drop fnem_param(@f5, nb, types.t_bool);
     drop fnem_open(@f5);
@@ -283,7 +283,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
     ExprEmitter:x6 = raw exprem_init(@f6, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f6, "calls", i32t);
+    drop fnem_begin(@f6, "calls", 0i32, i32t);
     drop fnem_open(@f6);
     IrVal:va2 = relay emit_expr(@x6, raw_alloc);
     if (!(raw iv_is_ok(va2)))                                { exit 60i32; }
@@ -299,7 +299,7 @@ func:main = int32(cstring[]:_~argv) {
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
     ExprEmitter:x7 = raw exprem_init(@f7, @ast, @ets, @tab, @it, @st, @tr, 0i32);
-    drop fnem_begin(@f7, "hello", i32t);
+    drop fnem_begin(@f7, "hello", 0i32, i32t);
     drop fnem_open(@f7);
     IrVal:vs = relay emit_expr(@x7, s_lit);
     if (!(raw iv_is_ok(vs)))                                 { exit 70i32; }

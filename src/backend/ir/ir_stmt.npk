@@ -1157,7 +1157,7 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
     string:fname = relay intern_get(x.interns, name);
     FnSig:sg = relay fn_signature(x.tr, did, name, x.scope);
 
-    LlType:rt = relay fnem_begin(x.fe, fname, sg.success);
+    LlType:rt = relay fnem_begin(x.fe, fname, did.index, sg.success);
     if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll_at(x, rt, sg.success, d.span)); }
 
     int32:i = 0i32;

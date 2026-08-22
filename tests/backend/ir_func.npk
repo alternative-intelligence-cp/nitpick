@@ -40,7 +40,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- `main` IS BARE (D-089): no Result, and a fall-off still returns -------
     IrWriter:w1 = raw irw_to_buffer();
     FnEmitter:f1 = raw fnem_init(@w1, @c);
-    LlType:r1 = relay fnem_begin(@f1, "main", i32t);
+    LlType:r1 = relay fnem_begin(@f1, "main", 0i32, i32t);
     if (!(raw ll_is_ok(r1)))                               { exit 10i32; }
     drop fnem_open(@f1);
     drop fnem_close(@f1, false);
@@ -56,7 +56,7 @@ func:main = int32(cstring[]:_~argv) {
     // gets to decide.
     IrWriter:w2 = raw irw_to_buffer();
     FnEmitter:f2 = raw fnem_init(@w2, @c);
-    LlType:r2 = relay fnem_begin(@f2, "add", i32t);
+    LlType:r2 = relay fnem_begin(@f2, "add", 0i32, i32t);
     if (!(raw ll_is_ok(r2)))                               { exit 20i32; }
     if (!(raw string_eq(r2.text, "{ i32, i32 }")))         { exit 21i32; }
     drop fnem_param(@f2, nx, i32t);
@@ -79,7 +79,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- `Result<NIL>` IS `{i32}`, AND ITS `pass` IS A CONSTANT (D-084) -------
     IrWriter:w3 = raw irw_to_buffer();
     FnEmitter:f3 = raw fnem_init(@w3, @c);
-    drop fnem_begin(@f3, "tick", types.t_nil);
+    drop fnem_begin(@f3, "tick", 0i32, types.t_nil);
     drop fnem_open(@f3);
     drop fnem_ret_pass(@f3, "");
     drop fnem_close(@f3, true);
@@ -89,7 +89,7 @@ func:main = int32(cstring[]:_~argv) {
     // `fail 9` into a Result<NIL>: one insertvalue, code in slot 0.
     IrWriter:w4 = raw irw_to_buffer();
     FnEmitter:f4 = raw fnem_init(@w4, @c);
-    drop fnem_begin(@f4, "halt", types.t_nil);
+    drop fnem_begin(@f4, "halt", 0i32, types.t_nil);
     drop fnem_open(@f4);
     drop fnem_ret_fail(@f4, "9");
     drop fnem_close(@f4, true);
@@ -103,7 +103,7 @@ func:main = int32(cstring[]:_~argv) {
     // checking reads an empty string rather than whatever the stack held.
     IrWriter:w5 = raw irw_to_buffer();
     FnEmitter:f5 = raw fnem_init(@w5, @c);
-    drop fnem_begin(@f5, "read", types.t_string);
+    drop fnem_begin(@f5, "read", 0i32, types.t_string);
     drop fnem_open(@f5);
     drop fnem_ret_fail(@f5, "3");
     drop fnem_close(@f5, true);
@@ -113,7 +113,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- FALLING OFF THE END STILL TERMINATES, wrapped form -------------------
     IrWriter:w6 = raw irw_to_buffer();
     FnEmitter:f6 = raw fnem_init(@w6, @c);
-    drop fnem_begin(@f6, "noop", i32t);
+    drop fnem_begin(@f6, "noop", 0i32, i32t);
     drop fnem_open(@f6);
     drop fnem_close(@f6, false);
     if (!(raw string_eq(relay irw_text(@w6),
@@ -122,7 +122,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- SHADOWING: innermost wins, and the outer binding COMES BACK ----------
     IrWriter:w7 = raw irw_to_buffer();
     FnEmitter:f7 = raw fnem_init(@w7, @c);
-    drop fnem_begin(@f7, "shade", i32t);
+    drop fnem_begin(@f7, "shade", 0i32, i32t);
     drop fnem_open(@f7);
     string:outer = relay fnem_local(@f7, nx, i32t, "i32");
     int32:mark = raw fnem_mark(@f7);
@@ -141,7 +141,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- A TYPE NO RUNG LOWERS PROPAGATES, and the function is not emitted ----
     IrWriter:w8 = raw irw_to_buffer();
     FnEmitter:f8 = raw fnem_init(@w8, @c);
-    LlType:bad = relay fnem_begin(@f8, "f", f32t);
+    LlType:bad = relay fnem_begin(@f8, "f", 0i32, f32t);
     if (bad.state != (raw LL_RUNG()))                      { exit 50i32; }
     if (!(raw string_eq(bad.rung, "1.0")))                 { exit 51i32; }
     if ((raw irw_length(@w8)) != 0i64)                     { exit 52i32; }
@@ -154,10 +154,10 @@ func:main = int32(cstring[]:_~argv) {
     // one-function change a one-function diff in the fixpoint's output.
     IrWriter:w9 = raw irw_to_buffer();
     FnEmitter:f9 = raw fnem_init(@w9, @c);
-    drop fnem_begin(@f9, "main", i32t);
+    drop fnem_begin(@f9, "main", 0i32, i32t);
     drop fnem_open(@f9);
     drop fnem_close(@f9, false);
-    drop fnem_begin(@f9, "add", i32t);
+    drop fnem_begin(@f9, "add", 0i32, i32t);
     drop fnem_param(@f9, nx, i32t);
     drop fnem_param(@f9, ny, i32t);
     drop fnem_open(@f9);
@@ -169,7 +169,7 @@ func:main = int32(cstring[]:_~argv) {
     // --- BYTE-IDENTICAL ON REPEAT (D-078) -------------------------------------
     IrWriter:wa = raw irw_to_buffer();
     FnEmitter:fa = raw fnem_init(@wa, @c);
-    drop fnem_begin(@fa, "add", i32t);
+    drop fnem_begin(@fa, "add", 0i32, i32t);
     drop fnem_param(@fa, nx, i32t);
     drop fnem_param(@fa, ny, i32t);
     drop fnem_open(@fa);

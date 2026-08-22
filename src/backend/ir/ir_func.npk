@@ -203,8 +203,9 @@ func:fnem_grow_locals = NIL(FnEmitter->:fe) {
 // module with no codes of its own cannot misreport one.
 //
 // Mirrors the seed's `fn_sig`: bare for `main`/`failsafe`, `Result<T>` otherwise.
-pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:ret_type) {
-    fe.sym = relay ir_symbol(name);
+pub func:fnem_begin = LlType(FnEmitter->:fe, string:name, int32:decl_index,
+                             int32:ret_type) {
+    fe.sym = relay mangled_fn_sym(fe.ctx, decl_index, name);
     fe.bare = raw fn_is_bare(name);
     fe.ret_type = ret_type;
     fe.ret_nil = ((raw type_kind(fe.ctx.types, ret_type)) == (raw TY_NIL()));

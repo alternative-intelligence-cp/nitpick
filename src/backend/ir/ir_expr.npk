@@ -624,7 +624,8 @@ func:emit_ident = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
                 DeclNode:fdecl = relay ast_decl(x.ast, DeclId{ index: fsym.origin });
                 if (fdecl.kind == DeclKind.DeclFunctionDecl) {
                     string:fnm = relay intern_get(x.interns, fsym.name);
-                    pass (raw iv("ptr", relay ir_symbol(fnm),
+                    pass (raw iv("ptr",
+                                 relay mangled_fn_sym(x.fe.ctx, fsym.origin, fnm),
                                  raw exprtypes_get(x.et, id)));
                 }
             }
@@ -1591,7 +1592,7 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // the function, and the call's own recorded type is the full `Result<T>`.
     Symbol:s = raw symtab_get(x.tab, cnode.a);
     string:fname = relay intern_get(x.interns, s.name);
-    string:sym = relay ir_symbol(fname);
+    string:sym = relay mangled_fn_sym(x.fe.ctx, s.origin, fname);
     LlType:ret = relay node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
         pass (relay iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));

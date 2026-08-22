@@ -73,11 +73,73 @@ pub struct:LlCtx = {
     Ast->:ast;
     TypeTable->:types;
     InternTable->:interns;
+
+    // decl index -> interned CANONICAL MODULE NAME (D-156). Zero means "no
+    // module" -- a runtime symbol or the fallback. Built by emit_program after
+    // the graph exists; a null map (mod_n == 0) leaves every symbol on the
+    // pre-scheme `@npk_<name>` path, which is what keeps `llctx_init` callable
+    // by the type-header tests that have no graph.
+    wild int32->:mod_of;
+    int32:mod_n;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) {
-    LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns };
+    LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
+                     mod_of: NULL, mod_n: 0i32 };
     pass c;
+};
+
+pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) {
+    c.mod_of = m;
+    c.mod_n = n;
+    pass NIL;
+};
+
+// The canonical module name for a declaration, or "" when there is none
+// (D-156). "" routes the caller to the pre-scheme fallback.
+pub func:mod_canonical = string(LlCtx->:c, int32:decl_index) {
+    if (c.mod_n == 0i32)         { pass ""; }
+    if (decl_index < 0i32)       { pass ""; }
+    if (decl_index >= c.mod_n)   { pass ""; }
+    int32:ci = c.mod_of[decl_index => int64];
+    if (ci == 0i32)              { pass ""; }
+    pass (relay intern_get(c.interns, ci));
+};
+
+// `@"npk.<module>.<name>"` for a function, quoted (the spelling embeds `<`,
+// spaces and commas for instantiations). main keeps `@main` and failsafe
+// `@npk_failsafe` -- the two functions outside the Result regime (D-013) are
+// the two outside the scheme. A declaration with no module falls back to the
+// pre-scheme `@npk_<name>`: builtins and runtime symbols reach ir_symbol
+// through the rt table, not here, so the fallback is only ever hit by a
+// symbol the modmap did not cover, which stays linkable.
+pub func:mangled_fn_sym = string(LlCtx->:c, int32:decl_index, string:name) {
+    if (raw string_eq(name, "main"))     { pass "@main"; }
+    if (raw string_eq(name, "failsafe")) { pass "@npk_failsafe"; }
+    string:canon = relay mod_canonical(c, decl_index);
+    if (canon.len == 0i64) {
+        pass (relay string_concat("@npk_", name));
+    }
+    string:body = relay string_concat("npk.",
+                      relay string_concat(canon,
+                          relay string_concat(".", name)));
+    pass (relay string_concat("@\"",
+              relay string_concat(body, "\"")));
+};
+
+// `%"npk.<module>.<Name>"` for a named aggregate. No name exceptions -- no
+// type is named main or failsafe. The `%Name` fallback keeps a mapless
+// context (the header tests) rendering as before.
+pub func:mangled_type_name = string(LlCtx->:c, int32:decl_index, string:name) {
+    string:canon = relay mod_canonical(c, decl_index);
+    if (canon.len == 0i64) {
+        pass (relay string_concat("%", name));
+    }
+    string:body = relay string_concat("npk.",
+                      relay string_concat(canon,
+                          relay string_concat(".", name)));
+    pass (relay string_concat("%\"",
+              relay string_concat(body, "\"")));
 };
 
 // --- the lowering -----------------------------------------------------------------
@@ -280,7 +342,8 @@ func:ll_named = LlType(LlCtx->:c, int32:id) {
     if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
-    pass (raw ll_ok(relay string_concat("%", relay intern_get(c.interns, nm))));
+    pass (raw ll_ok(relay mangled_type_name(c, raw type_decl_of(c.types, id),
+                        relay intern_get(c.interns, nm))));
 };
 
 // A PAYLOAD-LESS ENUM IS A PLAIN `i32` AND HAS NO DEFINITION AT ALL
@@ -292,7 +355,8 @@ func:ll_enum = LlType(LlCtx->:c, int32:id) {
     if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_ok("i32")); }
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
-    pass (raw ll_ok(relay string_concat("%", relay intern_get(c.interns, nm))));
+    pass (raw ll_ok(relay mangled_type_name(c, raw type_decl_of(c.types, id),
+                        relay intern_get(c.interns, nm))));
 };
 
 // --- what the module preamble writes ------------------------------------------------

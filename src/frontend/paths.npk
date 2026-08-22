@@ -45,6 +45,32 @@ pub func:path_dirname = string(string:p) {
     pass ".";
 };
 
+// The module's canonical stem: the basename with directory and `.npk` stripped.
+// Path-free by construction (D-078/D-156) — `/a/b/intern.npk` and
+// `/c/intern.npk` both yield `intern`, which is the point: a symbol name must
+// not vary with the build tree. It is the same stem D-088 requires the `mod:`
+// name to match, so it doubles as the module's canonical name.
+pub func:path_basename = string(string:p) {
+    int64:start = 0i64;
+    int64:i = p.len;
+    while (i > 0i64) {
+        i = i - 1i64;
+        if (p.ptr[i] == ((raw SLASH()) =>! uint8)) {
+            start = i + 1i64;
+            i = 0i64;
+        }
+    }
+    int64:endp = p.len;
+    // strip a trailing `.npk`
+    if ((p.len - start) > 4i64) {
+        int64:dot = p.len - 4i64;
+        if (raw string_eq(relay string_slice(p, dot, p.len), ".npk")) {
+            endp = dot;
+        }
+    }
+    pass (relay string_slice(p, start, endp));
+};
+
 pub func:path_join = string(string:dir, string:rest) {
     if (dir.len == 0i64) { pass rest; }
     if (rest.len == 0i64) { pass dir; }

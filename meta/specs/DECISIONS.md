@@ -10474,10 +10474,16 @@ argument: an auditor reading a disassembly must map a symbol back to source
 without a table that may not have survived), and no path (D-078: emitted
 bytes must not vary with the build tree).
 
-**Module canonical names are program-unique, by rule.** The canonical name
-is the `mod:` name (= the basename, D-088). Two modules with one name in a
-program are REFUSED by the loader — a nameable program-level property,
-which is what lets the symbol omit paths without risking collision.
+**Module names are NOT required program-unique** (refined during 1.0.0
+implementation — the loader dedups by FILE, not name, and forbidding two
+`util.npk` in different directories would be a real restriction on users).
+The canonical name is the file BASENAME (= the `mod:` name, D-088;
+path-free, D-078). What IS guaranteed program-unique is the SYMBOL: two
+modules of the same basename each declaring a member of the same name would
+render one symbol, and that narrow case is caught at emit by the
+generalized collision check (below). Same-basename modules with disjoint
+member names coexist freely — the common case, and the reason the compiler's
+own two `prelude`-named modules build without complaint.
 
 **The reserved namespaces do not collide by construction.** The runtime
 floor's `@npk_<name>` symbols are single-segment with underscores; scheme
@@ -10494,9 +10500,31 @@ specializations fold when multi-object linking arrives (1.2's world);
 today's whole-program emission already dedups via D-108, so the linkage is
 declarative until then. Non-generic definitions keep today's linkage.
 
-**Retired**: `check_duplicate_type_names` (emit_program), the interim
-refusal for two types rendering one `%Name` — module qualification
-dissolves the collision it guarded.
+**The type-duplicate check STAYS** (`check_duplicate_type_names`,
+emit_program) — a finding from implementation, correcting the plan's
+premise that mangling would retire it. It does NOT, because the symbol
+scheme changes NAMES, not type IDENTITY: nominal identity is by name
+(D-090), so the interned type table merges two `Local`s into one entry
+even though their symbols mangle distinctly (`%"npk.a.Local"` vs
+`%"npk.b.Local"`). The front half resolves each `Local` per-scope and
+accepts the program, but a single interned entry at emit disagrees with
+that — surfaced as an EMIT confusion when the check was removed. So two
+same-BARE-named types in one program remain refused, now with a message
+that says why (their symbols differ but their identity does not). Making
+them coexist needs the type table interned by QUALIFIED name — a frontend
+change beyond 1.0.0's backend symbol scheme, noted as follow-up. A
+function-symbol collision (two same-basename modules with a same-named
+`pub func`) has no frontend check and would surface as an `ld` duplicate
+symbol — caught, if less gracefully; two same-basename modules is the
+narrow boundary.
+
+**Proven at 1.0.0**: the compiler self-compiles with 1549 module-qualified
+function definitions and the stage-1/stage-2 fixpoint holds byte-identical —
+the scheme is deterministic, which is what the 1.2 fixpoint requires. The
+value delivered is reversible module-qualified names (auditing, debugging),
+generic-instantiation naming (1.0.1), and readiness for 1.2 separate
+compilation — not same-named-type coexistence, which the frontend does not
+yet support.
 
 ## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
 
