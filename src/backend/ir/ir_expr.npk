@@ -2334,29 +2334,19 @@ func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(n.span)); }
     if ((raw fn_param_count(x.ast, d)) == 0i32) { pass (raw iv_broken(n.span)); }
 
-    DeclNode:p0 = relay ast_decl(x.ast, raw fn_param(x.ast, d, 0i32));
-    int32:p0t = relay resolve_type(x.tr, raw param_type(p0),
-                    raw symtab_home_scope(x.tab, decl, x.scope));
-    bool:wants_ptr = ((raw type_kind(x.fe.ctx.types, p0t)) == (raw TY_POINTER()));
+    // THE RECEIVER'S OWN TYPE DECIDES THE FORM, not the parameter's annotation
+    // (1.0.4). Resolving the parameter would resolve `Self` for a trait
+    // DEFAULT's signature — and `Self` has no binding at emit time, so it
+    // reported "valid only inside a trait or impl body" about a method the
+    // checker had already accepted. The checker has done the matching; what is
+    // left is how to pass the value, and the receiver's recorded type answers
+    // that directly: a pointer is passed, anything else is passed by value.
+
 
     ExprId:rid = raw expr_operand(n);
-    string:args = "";
-    if (wants_ptr) {
-        int32:rt = raw exprtypes_get(x.et, rid);
-        if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_POINTER())) {
-            IrVal:rv = relay emit_expr(x, rid);
-            if (!(raw iv_is_ok(rv))) { pass rv; }
-            args = relay cat3("ptr ", rv.ref, "");
-        } else {
-            PlaceVal:rp = relay addr_of(x, rid);
-            if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(rp)); }
-            args = relay cat3("ptr ", rp.addr, "");
-        }
-    } else {
-        IrVal:rv = relay emit_expr(x, rid);
-        if (!(raw iv_is_ok(rv))) { pass rv; }
-        args = relay cat3(rv.ll, " ", rv.ref);
-    }
+    IrVal:rv = relay emit_expr(x, rid);
+    if (!(raw iv_is_ok(rv))) { pass rv; }
+    string:args = relay cat3(rv.ll, " ", rv.ref);
 
     int32:start = raw expr_list_start(n);
     int32:count = raw expr_list_count(n);

@@ -619,6 +619,15 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
         e.enclosing = g;
         e.self_type = raw tt_self(e.types);
 
+        // THE TRAIT WHOSE BODY THIS IS (1.0.4). `Self` stays the anonymous
+        // placeholder D-103 designed — the implementing type does not exist yet
+        // — but a DEFAULT method calling `self.other()` needs somewhere to look
+        // `other` up, and the answer is the guarantee list: what this trait
+        // declares. Carried beside `Self` rather than folded into it, so the
+        // placeholder keeps meaning exactly what D-103 says it means.
+        int32:saved_st = e.self_trait;
+        e.self_trait = id.index;
+
         int32:tn = raw item_member_count(e.ast, d);
         int32:k = 0i32;
         while (k < tn) {
@@ -632,6 +641,7 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) {
 
         e.enclosing = saved_enc;
         e.self_type = saved_self;
+        e.self_trait = saved_st;
         pass NIL;
     }
 

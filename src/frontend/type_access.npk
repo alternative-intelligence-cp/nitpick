@@ -867,7 +867,7 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // the spec does not put methods in.
     int32:did_index = 0i32;
     MethodFind:found = relay find_method(e.impls, e.bounds, e.types, e.ast,
-                                         e.interns, recv, name);
+                                         e.interns, recv, name, e.self_trait);
     if (found.ambiguous) {
         string:a1 = relay string_concat("`", relay intern_get(e.interns, name));
         string:a2 = relay string_concat(a1, "` comes from both `");

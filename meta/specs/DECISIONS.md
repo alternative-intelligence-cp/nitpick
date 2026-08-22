@@ -10644,6 +10644,24 @@ carries both slots already (D-031's layout, untouched); no token changes;
 the D-085 fear — parser rework cascading into the AST — does not arise,
 which is why this is decided rather than raised.
 
+> **Amendment owed, found at 1.0.4 (implementation).** The production as
+> written above — "after the generics window, parse a type; if a second
+> `:`-type follows, the first was the TARGET; otherwise the first is the trait"
+> — **breaks the blanket form**. `impl:<T: Printable>:Loggable` has no type in
+> the target position at all, so parsing one consumes `Loggable` as the target
+> and the expected second `:` is not there; implemented literally it turned a
+> working blanket impl into a parse error (caught by a probe, reverted
+> immediately). The family and blanket forms are genuinely AMBIGUOUS at that
+> position: `impl:<T>:X` could mean "family impl on `X`" or "blanket impl of
+> trait `X`", and nothing local distinguishes them. The amendment must choose a
+> rule and say why — candidates: decide by whether the type mentions a declared
+> parameter (`Box<T>` does, `Loggable` does not — cheap, but makes the meaning
+> depend on the type's SHAPE); require the trait segment for the family form
+> (`impl:<T>:Box<T>:Trait` only, no inherent families); or give the blanket form
+> a distinguishing spelling. **This is 1.0.4b's opening decision**, not
+> something a lowering subcycle should settle. Per-instance impls
+> (`impl:Box<int32>:Trait`) are unaffected and work today.
+
 **Resolution**: the impl's generic parameters scope over its target and
 trait exactly as a function's scope over its signature; an instantiation
 `Box<int32>` matches the family impl by unification against the target

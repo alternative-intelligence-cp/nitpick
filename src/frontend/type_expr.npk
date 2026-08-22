@@ -125,6 +125,12 @@ pub struct:ExprTyper = {
     // are solved, so the emitter can walk the set rather than re-deriving it.
     FnInstTable->:fninsts;
 
+    // THE TRAIT WHOSE BODY IS BEING WALKED, or 0 (1.0.4). `Self` is the
+    // anonymous placeholder inside a trait (D-103), so it carries no
+    // declaration — and a default method calling `self.other()` needs the
+    // guarantee list to look `other` up in. This is that list's owner.
+    int32:self_trait;
+
     // WHAT `Self` MEANS IN THE BODY BEING WALKED. A method inside `impl:Point`
     // may write `Self:other` and a trait's default body may too, so the checker
     // has to carry it the way the resolver does — as the type it stands for, 0
@@ -150,7 +156,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
                              instances: instances, fninsts: fninsts,
-                             self_type: 0i32,
+                             self_type: 0i32, self_trait: 0i32,
                              expr_types: expr_types };
     pass e;
 };

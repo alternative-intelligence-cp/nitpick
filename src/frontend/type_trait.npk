@@ -682,10 +682,54 @@ func:method_none = MethodFind() {
 pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                                   TypeTable->:types, Ast->:ast,
                                   InternTable->:interns, int32:target,
-                                  int32:name) {
+                                  int32:name, int32:self_trait) {
     if ((raw type_kind(types, target)) == (raw TY_PARAM())) {
         pass (relay find_in_bounds(bt, ast, types,
                                    raw type_decl_of(types, target), name));
+    }
+
+    // `Self` INSIDE A TRAIT'S OWN BODY (1.0.4). A default method calls its
+    // trait's other methods on `self` — that is what a default is FOR — and the
+    // receiver's type there is the TRAIT (`Self` is bound to it while the trait
+    // body is walked). What `Self` is guaranteed to have is exactly what the
+    // trait declares, so the trait's own members are the whole answer; reaching
+    // an impl's method from here would be reaching past the guarantee into one
+    // particular implementor.
+    // `Self` INSIDE A TRAIT'S OWN BODY (1.0.4). A default method calls its
+    // trait's other methods on `self` — that is what a default is FOR — and
+    // `Self` there is the anonymous placeholder D-103 designed, carrying no
+    // declaration of its own. The enclosing trait is what it is guaranteed to
+    // have, so that is where the name is looked up; reaching an impl's method
+    // from here would be reaching past the guarantee into one implementor.
+    if ((raw type_kind(types, target)) == (raw TY_SELF())) {
+        if (self_trait != 0i32) {
+            DeclNode:std = relay ast_decl(ast, DeclId{ index: self_trait });
+            int32:sm = relay trait_member_named(ast, std, name,
+                           DeclKind.DeclFunctionDecl);
+            if (sm != 0i32) {
+                MethodFind:sf = MethodFind{ found: true, ambiguous: false,
+                                            decl: sm, owner: 0i32,
+                                            other: 0i32, blanket_impl: 0i32 };
+                pass sf;
+            }
+        }
+        pass (raw method_none());
+    }
+
+    if ((raw type_kind(types, target)) == (raw TY_TRAIT())) {
+        int32:tdecl = raw type_decl_of(types, target);
+        if (tdecl != 0i32) {
+            DeclNode:td = relay ast_decl(ast, DeclId{ index: tdecl });
+            int32:m = relay trait_member_named(ast, td, name,
+                          DeclKind.DeclFunctionDecl);
+            if (m != 0i32) {
+                MethodFind:sm = MethodFind{ found: true, ambiguous: false,
+                                            decl: m, owner: target,
+                                            other: 0i32, blanket_impl: 0i32 };
+                pass sm;
+            }
+        }
+        pass (raw method_none());
     }
 
     MethodFind:best = raw method_none();
@@ -694,6 +738,20 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
         ImplEntry:e = relay impl_at(t, i);
         if (e.target == target) {
             int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
+
+            // AN OMITTED METHOD FALLS BACK TO THE TRAIT'S DEFAULT (1.0.4). A
+            // trait method with a BODY is inherited by every impl that does not
+            // write its own — that is what a default IS — and until now nothing
+            // looked past the impl's own members, so `p.doubled_size()` on an
+            // impl that inherited it reported "no method". The trait is asked
+            // only when the impl is silent, which is the same
+            // concrete-outranks-general ordering the blanket search below uses.
+            if (mdecl == 0i32) {
+                if (e.trait_id != 0i32) {
+                    mdecl = relay trait_default_named(ast, interns, types,
+                                e.trait_id, name);
+                }
+            }
             if (mdecl != 0i32) {
                 if (e.trait_id == 0i32) {
                     // An inherent method ends the search: nothing outranks it,
@@ -749,6 +807,33 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
         }
     }
     pass best;
+};
+
+// A trait's DEFAULT for `name`: a method the trait declares WITH A BODY. A
+// bodiless declaration is a requirement, not a default — an impl that omits one
+// of those is incomplete, which is a different diagnostic (and a different
+// check) from a method it simply inherited.
+func:trait_default_named = int32(Ast->:ast, InternTable->:interns,
+                                 TypeTable->:types, int32:trait_id,
+                                 int32:name) {
+    int32:tdecl = raw type_decl_of(types, trait_id);
+    if (tdecl == 0i32) { pass 0i32; }
+    DeclNode:td = relay ast_decl(ast, DeclId{ index: tdecl });
+    int32:n = relay item_member_count(ast, td);
+    int32:i = 0i32;
+    while (i < n) {
+        DeclId:mid = relay item_member(ast, td, i);
+        DeclNode:m = relay ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == name) {
+                if (!(raw stmt_is_none(raw fn_body(ast, m)))) {
+                    pass (mid.index);
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
 };
 
 // A function member of one `impl` block, by name.

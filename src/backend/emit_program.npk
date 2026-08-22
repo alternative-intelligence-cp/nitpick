@@ -108,6 +108,94 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     pass NIL;
 };
 
+// AN `impl` BLOCK IS ITS METHODS (1.0.4). The block itself has no code — it
+// groups functions and names what they are methods OF — so lowering it is
+// emitting each member, with `Self` bound to the target for the duration.
+//
+// `Self` IS BOUND ON THE RESOLVER, not substituted afterwards: a method's
+// signature and its body's annotations both mention it, and the resolver is the
+// one place both go through. This mirrors what `type_method_call` does on the
+// checking side (`r.self_type = recv`), which is what keeps the two answers the
+// same one.
+//
+// A BLANKET OR FAMILY IMPL EMITS NOTHING HERE. Its methods are templates over a
+// parameter, and what LLVM needs is one method per instantiation — the same rule
+// a generic function follows (1.0.2b), and the same reason: `T` is not a type
+// until something binds it.
+func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
+                           DeclNode:d) {
+    if ((raw impl_generic_count(x.ast, d)) > 0i32) { pass NIL; }
+
+    TypeId:tgt = raw impl_target(x.ast, d);
+    if (raw type_is_none(tgt)) { pass NIL; }
+    int32:self_ty = relay resolve_type(x.tr, tgt,
+                        raw symtab_home_scope(x.tab, item.index, x.scope));
+
+    int32:saved = x.tr.self_type;
+    x.tr.self_type = self_ty;
+    int32:i = 0i32;
+    while (i < (raw impl_member_count(x.ast, d))) {
+        DeclId:mid = raw impl_member(x.ast, d, i);
+        DeclNode:m = relay ast_decl(x.ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if (!(raw decl_has(m, raw DECL_COMPTIME()))) {
+                IrVal:r = relay emit_function(x, mid);
+                if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
+            }
+        }
+        i = i + 1i32;
+    }
+
+    // AN INHERITED DEFAULT IS EMITTED FOR THIS IMPL (1.0.4). A trait method with
+    // a body belongs to every implementor that does not write its own, and its
+    // `Self` is a different type in each — so it is a template, emitted once per
+    // impl with `Self` bound, exactly as a generic function is emitted once per
+    // argument set (1.0.2b). Without this the call resolved (the checker finds
+    // the default) and the symbol did not exist.
+    TypeId:trt = raw impl_trait(x.ast, d);
+    if (!(raw type_is_none(trt))) {
+        int32:trait_ty = relay resolve_type(x.tr, trt,
+                             raw symtab_home_scope(x.tab, item.index, x.scope));
+        int32:tdecl = raw type_decl_of(x.fe.ctx.types, trait_ty);
+        if (tdecl != 0i32) {
+            DeclNode:td = relay ast_decl(x.ast, DeclId{ index: tdecl });
+            int32:k = 0i32;
+            while (k < (raw item_member_count(x.ast, td))) {
+                DeclId:tmid = raw item_member(x.ast, td, k);
+                DeclNode:tm = relay ast_decl(x.ast, tmid);
+                if (tm.kind == DeclKind.DeclFunctionDecl) {
+                    if (!(raw stmt_is_none(raw fn_body(x.ast, tm)))) {
+                        // only when THIS impl did not write its own
+                        if ((relay impl_own_member(x.ast, d,
+                                 raw decl_name(tm))) == 0i32) {
+                            IrVal:r2 = relay emit_function(x, tmid);
+                            if (!(raw iv_is_ok(r2))) { drop refuse(diags, r2); }
+                        }
+                    }
+                }
+                k = k + 1i32;
+            }
+        }
+    }
+
+    x.tr.self_type = saved;
+    pass NIL;
+};
+
+// Did this impl write its own method called `name`? 0 when it inherits.
+func:impl_own_member = int32(Ast->:ast, DeclNode:d, int32:name) {
+    int32:i = 0i32;
+    while (i < (raw impl_member_count(ast, d))) {
+        DeclId:mid = raw impl_member(ast, d, i);
+        DeclNode:m = relay ast_decl(ast, mid);
+        if (m.kind == DeclKind.DeclFunctionDecl) {
+            if ((raw decl_name(m)) == name) { pass (mid.index); }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
 // One instantiation's `%"npk.mod.Container<int32>" = type { … }`.
 func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                                 DiagList->:diags, ModuleGraph->:g, int32:t) {
@@ -222,6 +310,32 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
             drop modmap_members(g, map, d, nc);
         } else {
             map[item.index => int64] = raw intern_add(g.interns, canon);
+
+            // AN `impl`'s METHODS ARE IN THE MODULE TOO (1.0.4). They are
+            // declarations this walk never reaches on its own — an impl GROUPS
+            // them — so without this they fell through to the unqualified
+            // `@npk_<name>` fallback and lost D-156's qualification silently.
+            // Found by reading the emitted IR for an inherent method, not by a
+            // failing test: the fallback links, it just does not qualify.
+            if (d.kind == DeclKind.DeclImplDecl) {
+                int32:mi = 0i32;
+                while (mi < (raw impl_member_count(@g.ast, d))) {
+                    DeclId:mid = raw impl_member(@g.ast, d, mi);
+                    map[mid.index => int64] = raw intern_add(g.interns, canon);
+                    mi = mi + 1i32;
+                }
+            }
+            // A TRAIT'S DEFAULT METHODS ARE MODULE MEMBERS TOO (1.0.4) — they
+            // are emitted once per implementing impl, and each emission needs
+            // its module qualification like any other definition.
+            if (d.kind == DeclKind.DeclTraitDecl) {
+                int32:ti = 0i32;
+                while (ti < (raw item_member_count(@g.ast, d))) {
+                    DeclId:tmem = raw item_member(@g.ast, d, ti);
+                    map[tmem.index => int64] = raw intern_add(g.interns, canon);
+                    ti = ti + 1i32;
+                }
+            }
         }
         i = i + 1i32;
     }
@@ -284,7 +398,7 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
             }
         }
         if (d.kind == DeclKind.DeclImplDecl) {
-            drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
+            drop emit_impl_block(x, diags, item, d);
         }
         if (d.kind == DeclKind.DeclExternBlock) {
             drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
@@ -348,7 +462,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
             // the source. A `trait` is different: erased by design, generating
             // nothing at ANY rung, so there is genuinely nothing to refuse.
             if (d.kind == DeclKind.DeclImplDecl) {
-                drop refuse(diags, raw iv_rung("an `impl` block", "1.0", d.span));
+                drop emit_impl_block(@x, diags, item, d);
             }
             if (d.kind == DeclKind.DeclExternBlock) {
                 drop refuse(diags, raw iv_rung("a driver interface (`extern`, D-149)", "1.1", d.span));
