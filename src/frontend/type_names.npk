@@ -8,10 +8,74 @@
 // value gone.
 
 use "./intern.npk".*;
+use "./ast.npk".*;
+use "./parse_decl.npk".*;   // decl_name, for D-159's canonical bound order
 use "./types.npk".*;
 
 // A type's name, for a message. The whole value of a type error is which type
 // was wrong, so this is never elided.
+// --- canonical bound ordering for `dyn` (D-159) -------------------------------
+//
+// `dyn A & B` AND `dyn B & A` ARE ONE TYPE. Interning keys on the window, so
+// without this they were two — two interned types, two layouts, and two
+// different answers to "which word holds B's vtable". Sorting the bounds by
+// NAME makes every vtable word's slot a compile-time constant that a reader can
+// predict from the source, which is why the key is the name and not the
+// interned id (assigned in encounter order) or the declaration index (which
+// shifts when an unrelated declaration is added earlier — an ABI that moves for
+// an edit that touched nothing).
+//
+// Insertion sort: a `dyn` names a handful of traits, and an insertion sort over
+// a handful is smaller to audit than anything asymptotically better.
+//
+// SAME-NAMED TRAITS FROM TWO MODULES TIE, and the tie is broken by declaration
+// index — deterministic within a compilation, but not stable under an edit that
+// renumbers declarations. The stable key is the MODULE-QUALIFIED name, which
+// needs the decl-to-module map the backend builds (`build_modmap`) available at
+// interning; that plumbing is owned by 1.0.5b rather than left implied here.
+pub func:dyn_sort_bounds = NIL(Ast->:ast, TypeTable->:tyt,
+                               InternTable->:interns, int32:mark) {
+    // `ast_scratch_mark` READ NOW is the current top, so the difference is the
+    // size of the region this caller pushed. It is the same function the caller
+    // took `mark` from — a second one under a name meaning "top" would be two
+    // spellings of one thing, which is what the blueprint rule argues against.
+    int32:n = (raw ast_scratch_mark(ast)) - mark;
+    int32:i = 1i32;
+    while (i < n) {
+        int32:v = relay ast_scratch_at(ast, mark, i);
+        int32:j = i - 1i32;
+        while (j >= 0i32) {
+            int32:w = relay ast_scratch_at(ast, mark, j);
+            if (!(relay bound_before(ast, tyt, interns, v, w))) { break; }
+            drop ast_scratch_set(ast, mark, j + 1i32, w);
+            j = j - 1i32;
+        }
+        drop ast_scratch_set(ast, mark, j + 1i32, v);
+        i = i + 1i32;
+    }
+    pass NIL;
+};
+
+// Does trait type `a` sort before trait type `b`?
+func:bound_before = bool(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
+                         int32:a, int32:b) {
+    string:an = relay bound_name(ast, tyt, interns, a);
+    string:bn = relay bound_name(ast, tyt, interns, b);
+    if (raw name_lt(an, bn)) { pass true; }
+    if (raw name_lt(bn, an)) { pass false; }
+    // The tie: two traits of one name. Any deterministic answer canonicalises
+    // the type; this one is the declaration index.
+    pass ((raw type_decl_of(tyt, a)) < (raw type_decl_of(tyt, b)));
+};
+
+func:bound_name = string(Ast->:ast, TypeTable->:tyt, InternTable->:interns,
+                         int32:t) {
+    int32:d = raw type_decl_of(tyt, t);
+    if (d == 0i32) { pass ""; }
+    DeclNode:dn = relay ast_decl(ast, DeclId{ index: d });
+    pass (relay intern_get(interns, raw decl_name(dn)));
+};
+
 pub func:type_display = string(TypeTable->:tyt, InternTable->:interns, int32:t) {
     int32:k = raw type_kind(tyt, t);
     if (k == (raw TY_INVALID())) { pass "<unresolved>"; }

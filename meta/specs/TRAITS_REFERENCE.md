@@ -529,7 +529,8 @@ abstraction zero-cost and lets LLVM inline aggressively.
 ### 5.2 Dynamic (`dyn`)
 
 Explicit opt-in to runtime polymorphism, constructing a fat pointer
-(`{ data_ptr, vtable_ptr }`, 16 bytes on 64-bit). Dispatch (D-158): a call
+(`{ data_ptr, vtable_ptr }`, 16 bytes on 64-bit — that is the SINGLE-bound
+shape; §5.3 gives the general one). Dispatch (D-158): a call
 through a `dyn` reaches the methods DECLARED BY THE NAMED TRAITS — own
 lists only; supertrait methods are not reachable (construct a `dyn Super`
 from the concrete value instead), and two named traits declaring one method

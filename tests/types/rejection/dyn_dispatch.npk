@@ -1,0 +1,47 @@
+// `dyn` METHOD DISPATCH (D-158, 1.0.5). `find_method` had no `TY_DYN` path at
+// all before this: every method call on a `dyn` fell through to the impl-table
+// walk, which looks up by the RECEIVER's type and finds nothing, so the whole
+// construct was unusable.
+//
+// The rule is: the methods a `dyn` reaches are the ones its NAMED traits
+// declare — own lists only. The answer is the TRAIT's declaration, never an
+// impl's, because behind the vtable there is no one impl to name.
+
+trait:Speaks   = { func:say  = int32(Self:self); };
+trait:Walks    = { func:step = int32(Self:self); };
+trait:Alsosays = { func:say  = int32(Self:self); };
+
+// A SUPERTRAIT'S METHODS ARE NOT REACHABLE through a `dyn` of the subtrait.
+// D-158 decides this rather than leaving it: the subtrait's vtable holds the
+// subtrait's own declaration list and no super-vtable was built. Code that
+// needs `say` constructs `dyn Speaks` from the concrete value, where the
+// vtable exists.
+trait:Loud = Speaks & { func:shout = int32(Self:self); };
+
+struct:Dog = { int32:v; };
+impl:Dog:Speaks = { func:say   = int32(Dog:self) { pass 1i32; }; };
+impl:Dog:Walks  = { func:step  = int32(Dog:self) { pass 2i32; }; };
+impl:Dog:Loud   = { func:shout = int32(Dog:self) { pass 3i32; }; };
+
+// REACHABLE, and reported here so the rule is not merely "refuse everything":
+// each named trait's own method resolves, with one bound and with two.
+func:ok_one = NIL(dyn Speaks:d)         { int32:v = raw d.say();   pass NIL; };
+func:ok_two = NIL(dyn Speaks & Walks:d) { int32:v = raw d.step();  pass NIL; };
+func:ok_own = NIL(dyn Loud:d)           { int32:v = raw d.shout(); pass NIL; };
+
+// TWO BOUNDS SUPPLYING ONE NAME IS AMBIGUOUS. No ordering tie-break: picking
+// the first would be meaning-by-position, and after D-159's canonical ordering
+// "first" is decided by how the traits are SPELT.
+// expect-error: NITPICK-TYPE-020
+func:ambiguous = NIL(dyn Speaks & Alsosays:d) { int32:v = raw d.say(); pass NIL; };
+
+// A NAME NO NAMED TRAIT DECLARES.
+// expect-error: NITPICK-TYPE-019
+func:absent = NIL(dyn Speaks:d) { int32:v = raw d.step(); pass NIL; };
+
+// THE SUPERTRAIT'S METHOD, THROUGH THE SUBTRAIT'S `dyn` — refused, per above.
+// expect-error: NITPICK-TYPE-019
+func:supertrait_method = NIL(dyn Loud:d) { int32:v = raw d.say(); pass NIL; };
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(tbb32:_~e) { exit 1i32; };

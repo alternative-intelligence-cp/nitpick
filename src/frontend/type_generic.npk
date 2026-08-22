@@ -205,6 +205,9 @@ func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
             relay type_subst(r, relay ast_id_at(r.ast, start, i), g, at, fuel - 1i32));
         i = i + 1i32;
     }
+    // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
+    // `dyn B & A` are one interned type with one layout.
+    drop dyn_sort_bounds(r.ast, r.types, r.interns, mark);
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
     pass (raw tt_dyn(r.types, w.start, w.count));
 };

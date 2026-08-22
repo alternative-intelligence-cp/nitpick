@@ -1640,6 +1640,9 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
         }
         i = i + 1i32;
     }
+    // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
+    // `dyn B & A` are one interned type with one layout.
+    drop dyn_sort_bounds(e.ast, e.types, e.interns, mark);
     IdSpan:w = raw ast_scratch_commit(e.ast, mark);
     pass (raw tt_dyn(e.types, w.start, w.count));
 };

@@ -186,8 +186,31 @@ func:main = int32(cstring[]:_~argv) {
                     "dyn Drawable & Printable", @it);
     if (raw errs(@dy) != 0i64)                                 { exit 90i32; }
     if ((raw type_kind(@dy.types, dy.result)) != (raw TY_DYN())) { exit 91i32; }
-    // A fat pointer: the value and its vtable.
-    if ((raw type_size(@dy.types, dy.result)) != 16i64)        { exit 92i32; }
+    // ONE VTABLE WORD PER TRAIT, PLUS THE DATA WORD (D-159, 1.0.5). This
+    // asserted a flat 16 bytes, which is right for `dyn A` and wrong for every
+    // wider one -- two bounds need three words, and the second vtable pointer
+    // had nowhere to live.
+    if ((raw type_size(@dy.types, dy.result)) != 24i64)        { exit 92i32; }
+
+    // A SINGLE BOUND IS STILL THE SPEC'S FAT POINTER.
+    Fix:dy1 = raw ty("trait:Drawable = { };", "dyn Drawable", @it);
+    if (raw errs(@dy1) != 0i64)                                { exit 95i32; }
+    if ((raw type_size(@dy1.types, dy1.result)) != 16i64)      { exit 96i32; }
+
+    // AND THREE BOUNDS ARE FOUR WORDS.
+    Fix:dy3 = raw ty("trait:Aa = { }; trait:Bb = { }; trait:Cc = { };",
+                     "dyn Aa & Bb & Cc", @it);
+    if (raw errs(@dy3) != 0i64)                                { exit 97i32; }
+    if ((raw type_size(@dy3.types, dy3.result)) != 32i64)      { exit 98i32; }
+
+    // `dyn A & B` AND `dyn B & A` ARE ONE TYPE (D-159). Interning keys on the
+    // window, so without a canonical order these were two interned types with
+    // two layouts and two different answers to which word holds which vtable.
+    // The bounds are sorted by NAME at interning, so the two spellings collapse.
+    Fix:dyx = raw ty("trait:Drawable = { }; trait:Printable = { };",
+                     "dyn Printable & Drawable", @it);
+    if (raw errs(@dyx) != 0i64)                                { exit 99i32; }
+    if (dyx.result != dy.result)                               { exit 100i32; }
 
     // `dyn int32` is not a dynamic anything, and catching it here means 0.4.6 can
     // assume a `dyn` has traits.

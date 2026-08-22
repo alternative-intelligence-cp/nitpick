@@ -596,6 +596,15 @@ func:main = int32(cstring[]:_~argv) {
     // …and `self` must be FIRST, because UFCS binds the receiver to parameter
     // zero. The prototype accepted it anywhere in the list; here that would be
     // dispatched with the receiver in the wrong position.
+    //
+    // ONE ERROR, NOT TWO, and the count is the assertion (1.0.5). D-157's walk
+    // refuses `Self` outside the receiver, and `Self:self` HERE is outside it —
+    // so the extended rule 2 fired alongside rule 1 and said "mentions `Self` in
+    // parameter `self`, and only the receiver may", of a parameter that is named
+    // `self`. One mistake, reported twice, the second time misdescribed. With no
+    // receiver at all the phrase "nowhere but the receiver" has no referent, so
+    // the parameter scan is skipped once rule 1 has fired; the trait is refused
+    // either way, so only a line of noise is lost.
     Ax:o3 = raw axd("trait:Bad2 = { func:draw = int32(int32:k, Self:self); };",
                     "dyn Bad2:d;", @it);
     if (raw errs(@o3) != 1i64)                                 { exit 183i32; }

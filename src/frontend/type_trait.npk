@@ -788,13 +788,6 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     }
 
     // `Self` INSIDE A TRAIT'S OWN BODY (1.0.4). A default method calls its
-    // trait's other methods on `self` — that is what a default is FOR — and the
-    // receiver's type there is the TRAIT (`Self` is bound to it while the trait
-    // body is walked). What `Self` is guaranteed to have is exactly what the
-    // trait declares, so the trait's own members are the whole answer; reaching
-    // an impl's method from here would be reaching past the guarantee into one
-    // particular implementor.
-    // `Self` INSIDE A TRAIT'S OWN BODY (1.0.4). A default method calls its
     // trait's other methods on `self` — that is what a default is FOR — and
     // `Self` there is the anonymous placeholder D-103 designed, carrying no
     // declaration of its own. The enclosing trait is what it is guaranteed to
@@ -829,6 +822,22 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             }
         }
         pass (raw method_none());
+    }
+
+    // `dyn A & B` DISPATCHES THROUGH A VTABLE (D-158, 1.0.5). The methods a
+    // `dyn` can reach are the ones its NAMED traits declare — own lists only.
+    //
+    // A SUPERTRAIT'S METHODS ARE NOT REACHABLE through a `dyn` of the subtrait.
+    // The subtrait's vtable holds the subtrait's own declaration list and no
+    // super-vtable was built, so code that needs them constructs `dyn Super`
+    // from the concrete value, where the vtable exists. This is a decided no,
+    // not a gap the implementation left.
+    //
+    // THE ANSWER IS THE TRAIT'S DECLARATION, NEVER AN IMPL'S. Behind the vtable
+    // there is no one impl to name — which is also what makes 1.1's `never
+    // fails` licence read the TRAIT's contract for a `dyn` call (D-163 rule 5).
+    if ((raw type_kind(types, target)) == (raw TY_DYN())) {
+        pass (relay find_in_dyn(types, ast, target, name));
     }
 
     MethodFind:best = raw method_none();
@@ -927,6 +936,42 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
             }
             j = j + 1i32;
         }
+    }
+    pass best;
+};
+
+// The named traits' own methods, in bound order, with a name supplied by two of
+// them refused rather than resolved.
+func:find_in_dyn = MethodFind(TypeTable->:types, Ast->:ast, int32:target,
+                              int32:name) {
+    int32:n = raw type_dyn_count(types, target);
+    int32:start = raw type_dyn_start(types, target);
+    MethodFind:best = raw method_none();
+    int32:i = 0i32;
+    while (i < n) {
+        int32:tr = relay ast_id_at(ast, start, i);
+        int32:td = raw type_decl_of(types, tr);
+        if (td != 0i32) {
+            DeclNode:tn = relay ast_decl(ast, DeclId{ index: td });
+            int32:m = relay trait_member_named(ast, tn, name,
+                          DeclKind.DeclFunctionDecl);
+            if (m != 0i32) {
+                if (best.found) {
+                    // TWO BOUNDS SUPPLYING ONE NAME IS AMBIGUOUS, and there is
+                    // deliberately no ordering tie-break: picking the first
+                    // would be meaning-by-position, and after D-159's canonical
+                    // ordering "first" is decided by how the traits are SPELT,
+                    // which is worse than either.
+                    best.ambiguous = true;
+                    best.other = tr;
+                } else {
+                    best.found = true;
+                    best.decl = m;
+                    best.owner = tr;
+                }
+            }
+        }
+        i = i + 1i32;
     }
     pass best;
 };

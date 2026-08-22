@@ -30,6 +30,29 @@ pub func:string_eq = bool(string:a, string:b) {
     pass true;
 };
 
+// STRICT LESS-THAN OVER IDENTIFIER NAMES, byte by byte, shorter-is-smaller on a
+// shared prefix. It is named for its domain rather than being a general
+// `string_lt`, because it compares `.ptr` bytes as int8 — SIGNED — and that is
+// lexicographic order only while the bytes are ASCII. The lexer admits letters,
+// digits and underscore in an identifier, so every name reaching here is; a
+// general string comparison over arbitrary bytes would need the unsigned
+// widening this deliberately does not do, and would be a different function.
+//
+// D-159 needs it: `dyn A & B` and `dyn B & A` must be ONE type with one layout,
+// so the bound list is canonically ordered by name at interning.
+pub func:name_lt = bool(string:a, string:b) {
+    int64:n = a.len;
+    if (b.len < n) { n = b.len; }
+    int64:i = 0i64;
+    while (i < n) {
+        if (a.ptr[i] != b.ptr[i]) {
+            pass (a.ptr[i] < b.ptr[i]);
+        }
+        i = i + 1i64;
+    }
+    pass (a.len < b.len);
+};
+
 pub func:intern_init = InternTable() {
     int64:n = 64i64;
     wild int8->:raw_mem = alloc(n * #size_of<string>());

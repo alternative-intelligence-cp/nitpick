@@ -1048,13 +1048,29 @@ define i32 @add_elided(i32 %a, i32 %b) {
 
 ## 18. dyn Trait — Dynamic Dispatch (Tier 1)
 
+**One data word and ONE VTABLE WORD PER TRAIT** — `(N+1) x 8` bytes (D-159).
+The 16-byte shape below is the single-bound case, not the general one; a
+multi-bound `dyn` built at 16 bytes leaves every vtable pointer after the first
+with nowhere to live.
+
 ```llvm
-; Fat pointer: {data_ptr, vtable_ptr}
+; `dyn A` — the fat pointer: {data_ptr, vtable_ptr}
 %DynTrait = type { ptr, ptr }
 
-; Vtable: array of function pointers
+; `dyn A & B & C` — one vtable word per bound, 32 bytes
+%DynABC = type { ptr, ptr, ptr, ptr }
+
+; Vtable: function pointers in TRAIT DECLARATION ORDER (D-158), one per
+; declared method, each an adapter thunk compiled against the concrete type
 %Describable_vtable = type { ptr }  ; one method → one fn ptr
 ```
+
+The bounds are **canonically ordered by trait name at type interning**, so
+`dyn A & B` and `dyn B & A` are one type with one layout and every vtable
+word's slot is a compile-time constant. Widening (`dyn A & B` → `dyn A`) is a
+value rebuild copying the data word plus the retained bounds' words; there are
+no runtime tables and no prefix/subview scheme. `TRAITS_REFERENCE.md` §5.3 is
+the fuller statement.
 
 ---
 

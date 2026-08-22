@@ -1597,6 +1597,9 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
         drop ast_scratch_push(r.ast, t);
         i = i + 1i32;
     }
+    // CANONICAL ORDER BEFORE INTERNING (D-159), so `dyn A & B` and
+    // `dyn B & A` are one interned type with one layout.
+    drop dyn_sort_bounds(r.ast, r.types, r.interns, mark);
     IdSpan:w = raw ast_scratch_commit(r.ast, mark);
     pass (raw tt_dyn(r.types, w.start, w.count));
 };
@@ -1629,6 +1632,99 @@ func:resolve_dyn = int32(TypeResolver->:r, TypeNode:n, int32:scope) {
 //     Both are refused here: `<comptime int32:LEVEL>` monomorphizes exactly as a
 //     type parameter does, so it cannot sit in a vtable either, and the message
 //     names which kind it found.
+// --- the `Self` walk (D-157) -------------------------------------------------
+//
+// `Self` MAY APPEAR IN EXACTLY ONE PLACE: as the receiver's type. Anywhere else
+// — a later parameter, the return, or NESTED anywhere in a type tree
+// (`Optional<Self>`, `Self[]`, `Handle<Self>`, `Self->`) — the trait is not
+// object-safe, because behind a vtable the concrete type is erased and the
+// value would be read at the wrong layout.
+//
+// NO SIZE-BASED CARVE-OUT. `Handle<Self>` is 16 bytes whatever it holds, so its
+// size does survive erasure — and it is refused anyway. One uniform rule is the
+// point: an exception here is exactly the context-dependence the blueprint
+// philosophy exists to prevent, and it would be one more thing a reviewer has
+// to hold.
+struct:SelfScan = {
+    bool:found;
+    bool:exhausted;
+};
+
+func:scan_clear = SelfScan() {
+    SelfScan:s = SelfScan{ found: false, exhausted: false };
+    pass s;
+};
+
+// A type tree deeper than this is a compiler defect, not a program's fault.
+func:SELF_SCAN_FUEL = int32() { pass 64i32; };
+
+// EXHAUSTION REFUSES, and says so separately. Returning "no `Self` here" for a
+// tree the walk could not finish would be a safety check that fails OPEN on the
+// one input it could not read — so `found` is set too, and the caller reports
+// the internal defect alongside the refusal rather than instead of it.
+func:type_mentions_self = SelfScan(Ast->:ast, TypeId:id, int32:fuel) {
+    if (fuel <= 0i32) {
+        SelfScan:x = SelfScan{ found: true, exhausted: true };
+        pass x;
+    }
+    if (raw type_is_none(id)) { pass (raw scan_clear()); }
+
+    TypeNode:n = relay ast_type(ast, id);
+
+    if (n.kind == TypeKind.TypeSelfType) {
+        SelfScan:f = SelfScan{ found: true, exhausted: false };
+        pass f;
+    }
+
+    // A NAMED TYPE'S ARGUMENTS ARE PART OF IT — `Optional<Self>` and
+    // `Handle<Self>` are the two D-157 names, and both arrive here.
+    if (n.kind == TypeKind.TypeNamedType) {
+        pass (relay window_mentions_self(ast, raw type_args_start(n),
+                                         raw type_args_count(n), fuel));
+    }
+
+    // One child in `a`. An array's `b` is an EXPRESSION, not a type, so it is
+    // not walked: `Self[N]` hides its `Self` in the element, never the size.
+    if (n.kind == TypeKind.TypePointerType) {
+        pass (relay type_mentions_self(ast, raw type_pointee(n), fuel - 1i32));
+    }
+    if (n.kind == TypeKind.TypeOptionalType) {
+        pass (relay type_mentions_self(ast, raw type_inner(n), fuel - 1i32));
+    }
+    if (n.kind == TypeKind.TypeArrayType) {
+        pass (relay type_mentions_self(ast, raw type_element(n), fuel - 1i32));
+    }
+
+    // `func Self(Self)` — a function TYPE hides one in either half.
+    if (n.kind == TypeKind.TypeFuncType) {
+        SelfScan:ps = relay window_mentions_self(ast, raw type_param_start(n),
+                                                raw type_param_count(n), fuel);
+        if (ps.found) { pass ps; }
+        pass (relay type_mentions_self(ast, raw type_return(n), fuel - 1i32));
+    }
+
+    // `dyn A & B` — the trait operands share the window slots.
+    if (n.kind == TypeKind.TypeDynType) {
+        pass (relay window_mentions_self(ast, raw type_args_start(n),
+                                         raw type_args_count(n), fuel));
+    }
+
+    // Leaves: `cstring`, `any`, a comptime argument, and the absent type.
+    pass (raw scan_clear());
+};
+
+func:window_mentions_self = SelfScan(Ast->:ast, int32:start, int32:count,
+                                     int32:fuel) {
+    int32:i = 0i32;
+    while (i < count) {
+        TypeId:c = TypeId{ index: relay ast_id_at(ast, start, i) };
+        SelfScan:s = relay type_mentions_self(ast, c, fuel - 1i32);
+        if (s.found) { pass s; }
+        i = i + 1i32;
+    }
+    pass (raw scan_clear());
+};
+
 pub func:check_object_safe = NIL(TypeResolver->:r, int32:trait_id, Span:at) {
     int32:decl = raw type_decl_of(r.types, trait_id);
     if (decl == 0i32) { pass NIL; }
@@ -1664,15 +1760,59 @@ func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
             "takes no `self`, so there is no receiver to dispatch on", at);
     }
 
-    // Rule 2 — a return whose size survives erasure.
-    TypeId:ret = raw fn_return(r.ast, m);
-    if (!(raw type_is_none(ret))) {
-        TypeNode:rn = relay ast_type(r.ast, ret);
-        if (rn.kind == TypeKind.TypeSelfType) {
-            drop not_object_safe(r, trait_id, mname,
-                "returns `Self`, whose size is unknown once the concrete type is erased", at);
+    // Rule 2 — `Self` NOWHERE BUT THE RECEIVER (D-157, extended at 1.0.5).
+    // This read the RETURN's top node and nothing else, so
+    // `bool(Self:self, Self:other)` passed object safety outright, and behind a
+    // vtable the erased second argument would be read at the wrong layout. The
+    // walk is now over the FULL type tree of every parameter and the return.
+    // WITH NO RECEIVER, "nowhere but the receiver" HAS NO REFERENT, so the
+    // parameter scan is skipped when rule 1 already fired. `int32(int32:k,
+    // Self:self)` is ONE mistake — `self` in the wrong position — and reporting
+    // it twice made the second message misdescribe it outright: "mentions
+    // `Self` in parameter `self`, and only the receiver may", of a parameter
+    // that IS named `self`. Nothing is lost by staying quiet: rule 1 has already
+    // refused the trait, so this only removes a second line, never a refusal.
+    // The RETURN is still scanned below, because where `self` sits says nothing
+    // about what the method gives back.
+    int32:pcount = 0i32;
+    if (has_self) { pcount = relay fn_param_count(r.ast, m); }
+    int32:pidx = 0i32;
+    while (pidx < pcount) {
+        DeclNode:pdecl = relay ast_decl(r.ast, raw fn_param(r.ast, m, pidx));
+        TypeId:ptype = raw param_type(pdecl);
+
+        // THE RECEIVER MAY *BE* `Self`; IT MAY NOT *CONTAIN* ONE. That is the
+        // entire exception — `Optional<Self>:self` nests, so it is refused like
+        // any other nesting.
+        bool:recv_is_self = false;
+        if (pidx == 0i32) {
+            TypeNode:rt0 = relay ast_type(r.ast, ptype);
+            recv_is_self = (rt0.kind == TypeKind.TypeSelfType);
         }
+
+        if (!recv_is_self) {
+            SelfScan:sc = relay type_mentions_self(r.ast, ptype,
+                                                   raw SELF_SCAN_FUEL());
+            if (sc.found) {
+                string:sw1 = relay string_concat("mentions `Self` in parameter `",
+                                 relay intern_get(r.interns, raw decl_name(pdecl)));
+                drop not_object_safe(r, trait_id, mname,
+                    relay string_concat(sw1,
+                        "`, and only the receiver may — behind a vtable the concrete type is erased, so the value would be read at the wrong layout"),
+                    at);
+            }
+            if (sc.exhausted) { drop self_scan_defect(r, mname, at); }
+        }
+        pidx = pidx + 1i32;
     }
+
+    SelfScan:rsc = relay type_mentions_self(r.ast, raw fn_return(r.ast, m),
+                                            raw SELF_SCAN_FUEL());
+    if (rsc.found) {
+        drop not_object_safe(r, trait_id, mname,
+            "mentions `Self` in its return type, whose size is unknown once the concrete type is erased", at);
+    }
+    if (rsc.exhausted) { drop self_scan_defect(r, mname, at); }
 
     // Rule 3 — nothing that monomorphizes.
     int32:g = relay fn_generic_count(r.ast, m);
@@ -1687,6 +1827,20 @@ func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
                 ", which monomorphizes into one body per argument, and a vtable slot is one address"),
             at);
     }
+    pass NIL;
+};
+
+// A TYPE TREE THAT RAN THE WALK OUT OF FUEL IS A COMPILER DEFECT, and is
+// reported as one. The trait is refused as well (the walk sets `found` on
+// exhaustion), because a safety check that fails OPEN on the one input it could
+// not read is worse than one that refuses something legal.
+func:self_scan_defect = NIL(TypeResolver->:r, string:mname, Span:at) {
+    string:d1 = relay string_concat(
+        "object safety ran out of fuel walking the types of method `", mname);
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_INTERNAL(),
+        relay string_concat(d1,
+            "`; the trait is refused to stay safe, but this is a defect in the compiler rather than a fault in this program"),
+        at));
     pass NIL;
 };
 

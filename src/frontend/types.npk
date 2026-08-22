@@ -512,9 +512,17 @@ pub func:tt_trait = int32(TypeTable->:t, int32:decl, int32:name) {
     pass (raw tt_intern(t, raw TY_TRAIT(), decl, 0i32, 0i32, 0i64, 0i32, name));
 };
 
-// `dyn A & B` — a fat pointer: the value and its vtable.
+// `dyn A & B` — the data word and ONE VTABLE WORD PER TRAIT (D-159), so
+// (N+1) x 8. This was a flat 16 bytes whatever the bound count, which is right
+// for `dyn A` and wrong for every wider one: `dyn A & B & C` needs four words
+// and was told it had two, so the last two vtable pointers had nowhere to live.
+// The bound window arrives CANONICALLY ORDERED (`dyn_sort_bounds`), which is
+// what makes each word's slot a compile-time constant.
 pub func:tt_dyn = int32(TypeTable->:t, int32:start, int32:count) {
-    pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, 16i64, 8i32, 0i32));
+    int32:words = count + 1i32;
+    if (count < 1i32) { words = 2i32; }
+    int64:size = (words => int64) * 8i64;
+    pass (raw tt_intern(t, raw TY_DYN(), start, count, 0i32, size, 8i32, 0i32));
 };
 
 // `func RetType(ParamTypes)` (D-087). One word: a code address, with no captured

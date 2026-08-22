@@ -27,5 +27,51 @@ struct:Plain = { int32:v; };
 // expect-error: NITPICK-TYPE-006
 func:not_a_trait = NIL(dyn Plain:d) { pass NIL; };
 
+// D-157, 1.0.5 — `Self` NOWHERE BUT THE RECEIVER. Every case below PASSED
+// object safety until 1.0.5, because rule 2 read the return's top node and
+// nothing else. Behind a vtable the concrete type is erased, so each of these
+// would have had a value read at the wrong layout.
+
+// A LATER PARAMETER. This is the case D-157 names: the erased `other` is read
+// as whatever the vtable's caller believed it was.
+trait:Eq2 = { func:same = bool(Self:self, Self:other); };
+// expect-error: NITPICK-TYPE-015
+func:self_in_param = NIL(dyn Eq2:d) { pass NIL; };
+
+// NESTED IN THE RETURN — an optional `Self` erases exactly as badly as a bare
+// one, and the old top-node test could not see it.
+trait:Maybe2 = { func:maybe = Self?(Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:self_in_optional = NIL(dyn Maybe2:d) { pass NIL; };
+
+// UNDER A SLICE.
+trait:Lister = { func:all = Self[](Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:self_in_slice = NIL(dyn Lister:d) { pass NIL; };
+
+// UNDER A POINTER.
+trait:Selfptr = { func:me = Self->(Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:self_in_pointer = NIL(dyn Selfptr:d) { pass NIL; };
+
+// INSIDE A GENERIC ARGUMENT — the `Handle<Self>` shape D-157 refuses BY NAME
+// even though such a type's size does survive erasure. One uniform rule beats a
+// size-based carve-out.
+struct:Boxed<T> = { T:v; };
+trait:Boxer = { func:boxed = Boxed<Self>(Self:self); };
+// expect-error: NITPICK-TYPE-015
+func:self_in_generic_arg = NIL(dyn Boxer:d) { pass NIL; };
+
+// THE RECEIVER MAY *BE* `Self`; IT MAY NOT *CONTAIN* ONE.
+trait:Oddrecv = { func:f = int32(Self?:self); };
+// expect-error: NITPICK-TYPE-015
+func:self_nested_in_receiver = NIL(dyn Oddrecv:d) { pass NIL; };
+
+// AND THE POSITIVE CASE, so the rule is not merely "refuse everything": a
+// receiver-only `Self` with ordinary parameters and return is object-safe, and
+// this file must report no error for it.
+trait:Drawable = { func:draw = int32(Self:self, int32:scale); };
+func:ok_object_safe = NIL(dyn Drawable:d) { pass NIL; };
+
 func:main = int32(cstring[]:_~argv) { pass 0i32; };
 func:failsafe = int32(tbb32:_~e) { exit 1i32; };

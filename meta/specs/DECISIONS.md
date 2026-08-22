@@ -10545,6 +10545,26 @@ bytes regardless of element): the uniform rule is one rule, and a
 size-based carve-out would be the context-dependence the blueprint
 refuses.
 
+> **Implemented at 1.0.5.** `type_mentions_self` walks generic arguments,
+> pointees, elements, function-type parameters and returns, and `dyn` operands.
+> The receiver may *be* `Self` and may not *contain* one.
+>
+> **Rules 1 and 2 do not both fire for one mistake.** With no `self` at all
+> there is no receiver for "nowhere but the receiver" to be measured against, so
+> the parameter scan is skipped once rule 1 has reported — otherwise
+> `int32(int32:k, Self:self)`, which is `self` in the wrong POSITION, drew a
+> second diagnostic saying it "mentions `Self` in parameter `self`, and only the
+> receiver may", of a parameter named `self`. The return is still scanned, since
+> where `self` sits says nothing about what the method gives back, and the trait
+> is refused by rule 1 regardless — only a line of noise is dropped, never a
+> refusal.
+>
+> **Fuel exhaustion fails CLOSED**: the walk reports `found` as well as `exhausted`, so a tree it
+> could not finish refuses the trait, and `TYPE_INTERNAL` is reported alongside
+> because that is a compiler defect rather than a fault in the program — a
+> safety check that answers "nothing found" for the one input it could not read
+> is the failure mode this shape exists to prevent.
+
 **Rule 3 is one statement** (the three contradictory phrasings the grammar
 audit found, folded here): *no generic methods — type parameters and
 comptime parameters alike — because a vtable slot holds one address and a
@@ -10579,6 +10599,15 @@ OPEN_DECISIONS C-3, with the prototype as the behavioral oracle
   refuses returned borrows language-wide, so the prototype's NITPICK-053
   case cannot arise here.
 
+> **Dispatch implemented at 1.0.5; the vtable and its thunks are 1.0.5b.**
+> `find_method` had no `TY_DYN` path at all, so every method call on a `dyn`
+> fell through to the impl-table walk — which looks up by the RECEIVER's type
+> and finds nothing, making the construct unusable end to end rather than merely
+> unlowered. `find_in_dyn` searches the named traits' own member lists in bound
+> order; the supertrait exclusion falls out of "own lists only" and is pinned by
+> a test rather than assumed. The answer is the TRAIT's declaration, which is
+> the D-163 hook. `ll_type` still answers `NITPICK-RUNG-001` for `TY_DYN`.
+
 ## D-159 — Multi-bound `dyn` ABI: data + one vtable word per trait, canonically ordered — **SETTLED**
 
 OPEN_DECISIONS C-4, contradicted three ways in the tree. Settled as
@@ -10596,6 +10625,24 @@ type_trait.npk's N+1 words:
   positions statically known via the canonical order, no runtime tables,
   no prefix/subview scheme. O(retained words) at the widening site,
   nothing anywhere else.
+
+> **Layout and ordering implemented at 1.0.5; widening is 1.0.5b.** `tt_dyn`
+> computes `(N+1) x 8`, and `dyn_sort_bounds` canonicalises the window before
+> interning, so `dyn A & B` and `dyn B & A` collapse to one type. This needed
+> `name_lt`, the tree's first string ordering — named for its domain because it
+> compares bytes as int8, which is lexicographic only while they are ASCII, as
+> every identifier is.
+>
+> **Amendment owed, and owned by 1.0.5b: the sort key ties.** This decision says
+> "sorted by trait name" and stops there, but **two same-named traits from
+> different modules produce equal keys** — reachable, since D-162's
+> `same_name_two_modules` proves same-named types in two modules are
+> representable. The tie is currently broken by declaration index, which is
+> deterministic within a compilation but SHIFTS when an unrelated declaration is
+> added earlier: an ABI that moves for an edit that touched nothing. The stable
+> key is the MODULE-QUALIFIED name; the data exists (`build_modmap` walks the
+> module graph) but is built in the backend, so reaching it from interning needs
+> the map available to `TypeResolver`. Not left implied — 1.0.5b owns it.
 
 ## D-160 — Associated types: kind, in-trait resolution, impl binding, projection — **SETTLED**
 
