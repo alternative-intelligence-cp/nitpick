@@ -10500,31 +10500,31 @@ specializations fold when multi-object linking arrives (1.2's world);
 today's whole-program emission already dedups via D-108, so the linkage is
 declarative until then. Non-generic definitions keep today's linkage.
 
-**The type-duplicate check STAYS** (`check_duplicate_type_names`,
-emit_program) — a finding from implementation, correcting the plan's
-premise that mangling would retire it. It does NOT, because the symbol
-scheme changes NAMES, not type IDENTITY: nominal identity is by name
-(D-090), so the interned type table merges two `Local`s into one entry
-even though their symbols mangle distinctly (`%"npk.a.Local"` vs
-`%"npk.b.Local"`). The front half resolves each `Local` per-scope and
-accepts the program, but a single interned entry at emit disagrees with
-that — surfaced as an EMIT confusion when the check was removed. So two
-same-BARE-named types in one program remain refused, now with a message
-that says why (their symbols differ but their identity does not). Making
-them coexist needs the type table interned by QUALIFIED name — a frontend
-change beyond 1.0.0's backend symbol scheme, noted as follow-up. A
-function-symbol collision (two same-basename modules with a same-named
-`pub func`) has no frontend check and would surface as an `ld` duplicate
-symbol — caught, if less gracefully; two same-basename modules is the
-narrow boundary.
+**The type-duplicate check was kept at 1.0.0 and RETIRED at 1.0.1.**
+Removing it during 1.0.0 produced an emit-side type error on a two-module
+program, read at the time as the interned type table merging two same-named
+types. 1.0.1's investigation (a second session, verified here) found that
+diagnosis WRONG: `tt_struct`/`tt_enum` intern on the DECLARATION (D-090, by
+construction), and two `Local`s reach emission as two entries with two
+bodies — the only collision was the pre-scheme spelling `%Local`, which this
+decision's `%"npk.<module>.<Type>"` dissolves exactly as planned. The
+confusion came from the FRONT HALF: the struct-literal typer chose the
+expected type by BARE NAME, so a `b.Local{…}` literal in an `a.Local`
+position was built as an `a.Local` (fixed as D-162). With that closed, two
+same-named types in two modules are two declarations, two entries, two
+symbols — and they link and run (`same_name_two_modules` emits
+`%"npk.same_name_a.Local"` / `%"npk.same_name_b.Local"`, exit 13).
+**Interning by qualified name is NOT the follow-up**: it would move identity
+from the declaration to a string, weaker than D-090. The one narrow case
+without a frontend check is a function-symbol collision between two
+same-basename modules, which surfaces as an `ld` duplicate symbol.
 
 **Proven at 1.0.0**: the compiler self-compiles with 1549 module-qualified
 function definitions and the stage-1/stage-2 fixpoint holds byte-identical —
-the scheme is deterministic, which is what the 1.2 fixpoint requires. The
-value delivered is reversible module-qualified names (auditing, debugging),
-generic-instantiation naming (1.0.1), and readiness for 1.2 separate
-compilation — not same-named-type coexistence, which the frontend does not
-yet support.
+the deterministic, path-free property the 1.2 fixpoint requires. The value
+delivered is reversible module-qualified names, generic-instantiation naming
+(1.0.2), 1.2-separate-compilation readiness, and — once D-162 landed —
+same-named-type coexistence.
 
 ## D-157 — Object safety: `Self` nowhere but the receiver — **SETTLED**
 
@@ -10600,8 +10600,8 @@ type_trait.npk's N+1 words:
 ## D-160 — Associated types: kind, in-trait resolution, impl binding, projection — **SETTLED**
 
 OPEN_DECISIONS C-5. Descoping was refused: TRAITS_REFERENCE's own
-`Iterator` is the spec's flagship trait, and the generic stdlib (1.0.6
-onward) needs it. What lands at 1.0.5:
+`Iterator` is the spec's flagship trait, and the generic stdlib (1.0.7
+onward) needs it. What lands at 1.0.6:
 
 - **`TY_ASSOC`** — a type kind carrying (trait decl, name). Inside a trait
   body, a bare assoc name (`Item` in `func:next = Item(Self:self)`)
@@ -10614,7 +10614,7 @@ onward) needs it. What lands at 1.0.5:
 - **External projection `T.Item`** (in generic code, `T` a parameter
   bounded by the trait) rides the EXISTING dotted-path type grammar if the
   parser already admits it, else is spelled `Iterator.Item`-style through
-  the trait — settled during 1.0.5 against the parser as it stands; either
+  the trait — settled during 1.0.6 against the parser as it stands; either
   spelling resolves through the bound. No new token, no new node kind
   beyond the type kind.
 - **Object safety**: a method whose signature mentions an assoc type makes
@@ -10654,10 +10654,60 @@ rule, unchanged — no specialization, per D-064 §7).
 
 **Derive on generics** synthesizes exactly the family form
 (`impl:<T: Eq>:Box<T>:Eq` — the element bound mirrors the derived trait).
-Until that lands (1.0.3), `#[derive]` on a generic subject REFUSES by name
+Until that lands (1.0.4), `#[derive]` on a generic subject REFUSES by name
 — today it emits a broken `impl:Box:Eq`, which is worse than any refusal.
 
 **Default methods** (folded in from grammar #6): a trait method with a body
 is inherited by every impl that omits it; `find_method` falls back to the
 trait's default when the impl lacks the name — concrete receivers at
-1.0.3, `dyn` via the vtable filling the slot with the default's thunk.
+1.0.4, `dyn` via the vtable filling the slot with the default's thunk.
+
+## D-162 — A struct literal is typed by the declaration its name resolves to — **SETTLED**
+
+Cycle 1.0.1, from a second session's investigation of 1.0.0's mis-diagnosed
+finding (D-156's amended paragraph), verified against the code before
+adopting.
+
+`Point{ x: 1i32 }` carries a NAME and nothing else (D-129). Since 0.6.7 the
+typer let the EXPECTED type win whenever its name matched the literal's — the
+stated intent was "when it names the same DECLARATION", because a generic
+literal (`Container<int32>{…}`) has no way to carry its arguments except
+through the context asking for it. But the comparison was on the NAME
+(`type_name(want) == name`), not the declaration.
+
+**The rule.** A struct literal's type is the declaration its name resolves
+to IN THE SCOPE WHERE THE LITERAL IS WRITTEN. The expected type contributes
+only generic ARGUMENTS, and only when it is an instance of that same
+declaration (compared by `type_decl_of`, which a generic instance carries in
+slot `a`). An expected type naming a DIFFERENT declaration of the same name —
+a same-named struct from another module — does not retype the literal; it is
+built as what the author wrote, and the mismatch is refused where the value
+is used (`NITPICK-TYPE-007`), with D-129's field checks having run against
+the right declaration.
+
+**Why a decision and not a bug fix.** The behaviour was language-visible: a
+literal meant one type in one position and another type in another — the
+blueprint rule's first facet (meaning must not change with context) broken
+outright. And it SILENCED a safety check: the omitted-field refusal
+(`NITPICK-TYPE-027`, D-010's definite assignment for aggregates) never ran
+against the declaration the author wrote when two modules disagreed about a
+type's shape. `same_name_two_modules` (npkc-only, since the throwaway seed keys structs by
+name and cannot represent two same-named types) proves the positive: a_go
+builds this module's one-field `Local`, not the other module's, and the
+program runs. The rejection corollary — `b.Local` where `a.Local` is
+expected refuses TYPE-007, a partial refuses TYPE-027 against the right
+declaration — was verified against the real compiler; its two codes are
+already covered by other suite cases.
+
+**What it does not change.** `Container<int32>{…}` still takes its arguments
+from context (by declaration now, not name); UFCS, member access, and
+instantiation dedup (D-108) are untouched — they already compare
+declarations or interned indices.
+
+**Landed alongside** the retirement of `check_duplicate_type_names` (with the
+literal hole closed, it had nothing to guard) and the repair of a
+spanless-diagnostic bug: `emit_line` in `main.npk`/`tools/check.npk` relayed
+`srcmgr_path` on a `file = -1` span and the failure was dropped, so the
+retired guard had been exiting 1 while printing NOTHING. `emit_line` now
+renders `<no span>` — a refusal a reader cannot act on is worse than no
+check.

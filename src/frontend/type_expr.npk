@@ -1645,17 +1645,14 @@ func:type_dyn_cast = int32(ExprTyper->:e, ExprNode:n) {
 func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
     int32:name = (n.payload) =>! int32;
 
-    // THE EXPECTED TYPE WINS WHEN IT NAMES THE SAME DECLARATION, because it is the
-    // only thing that carries generic arguments: the literal stores a NAME and
-    // nothing else, so `Container<int32>{ … }` has no way to say which `Container`
-    // it is except through the context that asked for it.
-    int32:want = raw expected_value(e);
-    if (want != 0i32) {
-        if ((raw type_kind(e.types, want)) == (raw TY_STRUCT())) {
-            if ((raw type_name(e.types, want)) == name) { pass want; }
-        }
-    }
-
+    // D-162: THE LITERAL'S TYPE IS THE DECLARATION ITS NAME RESOLVES TO IN
+    // SCOPE. Resolve that first — the literal stores only a name (D-129), and
+    // the declaration the name binds to in the scope where the literal is
+    // WRITTEN is what it means. The comparison was on the bare name until 1.0.1,
+    // which let an `a.Local` in an `a.Local` position capture a `b.Local{…}`
+    // literal from another module: meaning changing with context (the blueprint
+    // rule's first facet), and silencing D-129's omitted-field check against the
+    // declaration the author actually wrote.
     int32:sym = raw scope_lookup(e.tab, e.scope, name);
     if (sym == 0i32) {
         string:t = relay intern_get(e.interns, name);
@@ -1664,6 +1661,20 @@ func:struct_literal_type = int32(ExprTyper->:e, ExprNode:n) {
                              relay string_concat(m1, "`"), n.span));
     }
     Symbol:sy = relay symtab_get(e.tab, sym);
+
+    // THE EXPECTED TYPE CONTRIBUTES ONLY GENERIC ARGUMENTS, and only when it is
+    // an instance of THIS declaration: `Container<int32>{ … }` has no way to
+    // carry its arguments except through the context, so context still wins
+    // there — but by the DECLARATION (slot `a`, which a generic instance holds),
+    // never the name. An expected type naming a different declaration of the same
+    // name falls through and the literal is built as what the author wrote; the
+    // mismatch is refused where the value is used (D-090).
+    int32:want = raw expected_value(e);
+    if (want != 0i32) {
+        if ((raw type_kind(e.types, want)) == (raw TY_STRUCT())) {
+            if ((raw type_decl_of(e.types, want)) == sy.origin) { pass want; }
+        }
+    }
     DeclNode:dnode = relay ast_decl(e.ast, DeclId{ index: sy.origin });
     if (dnode.kind != DeclKind.DeclStructDecl) {
         string:t2 = relay intern_get(e.interns, name);

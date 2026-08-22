@@ -457,6 +457,43 @@ def check_codes_centralised():
     return fails
 
 
+# Sites where `type_name` legitimately appears with a comparison operator that
+# is NOT a type-identity test (the name compared against a sentinel, or two
+# names rendered side by side). Empty today: after D-162 the frontend holds no
+# `type_name`-as-identity comparison at all.
+IDENTITY_BY_DECL_OK = set()
+
+
+def check_identity_by_decl():
+    """A type's identity is its DECLARATION (D-090), never its name.
+
+    The struct-literal typer compared `type_name(want) == name` to decide which
+    declaration a literal meant (0.6.7), and it was wrong the day it was written:
+    a same-named struct from another module captured the literal, changing its
+    meaning with context and silencing the omitted-field check (D-162, 1.0.1).
+    The bug was exactly one `type_name` used where a declaration comparison
+    belonged. This lists every `type_name(...)` on a line that also carries `==`
+    or `!=`, so a new identity-by-name comparison is caught the way the first one
+    was not. `type_name` for RENDERING (type_names.npk, the ir_types symbol
+    builders) carries no comparison and does not appear.
+    """
+    fails = []
+    for p in glob.glob(os.path.join(ROOT, "src", "**", "*.npk"), recursive=True):
+        with open(p, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                if line.lstrip().startswith("//"):
+                    continue
+                if "type_name(" in line and ("==" in line or "!=" in line):
+                    key = "%s:%d" % (os.path.relpath(p, ROOT), i)
+                    if key in IDENTITY_BY_DECL_OK:
+                        continue
+                    fails.append("%s compares `type_name` -- a type's identity is "
+                                 "its declaration (D-090/D-162), so compare "
+                                 "`type_decl_of`; allowlist the site if it is "
+                                 "rendering, not identity" % key)
+    return fails
+
+
 def check_ll_types_agree():
     """The two emitters must lower a type to the SAME LLVM text.
 
@@ -1326,6 +1363,7 @@ def main(argv):
         failures += check_kinds_lowered_or_refused()
         failures += check_codes_tested()
         failures += check_codes_centralised()
+        failures += check_identity_by_decl()
         failures += check_ll_types_agree()
         failures += check_runtime_sigs_agree()
 
@@ -1513,6 +1551,11 @@ def main(argv):
             # one imports is a fixture here exactly as it is for the seed.
             progs = sorted(glob.glob(os.path.join(ROOT, "tests", "backend",
                                                   "programs", "*.npk")))
+            # A program's imported halves are fixtures, not standalone programs
+            # (they have no `main`) -- filter them out, the same rule the
+            # conformance sweep already applies. same_name_a/b (D-162, 1.0.1)
+            # are the first multi-file programs and the first to need it.
+            progs = [p for p in progs if p not in imported_by_others(progs)]
             conf = sorted(glob.glob(os.path.join(ROOT, "tests", "conformance",
                                                  "*.npk")))
             conf = [p for p in conf if p not in imported_by_others(conf)]

@@ -122,46 +122,12 @@ func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
     pass NIL;
 };
 
-// Duplicate `%Name`s, detected over the same walk the headers use. Quadratic
-// over the handful of named types a program has; a table would be a second
-// structure to keep deterministic for no gain.
-func:check_duplicate_type_names = NIL(LlCtx->:c, DiagList->:diags) {
-    int32:i = 0i32;
-    while (i < (raw tt_count(c.types))) {
-        if (raw header_kind(c, i)) {
-            int32:j = i + 1i32;
-            while (j < (raw tt_count(c.types))) {
-                if (raw header_kind(c, j)) {
-                    int32:ni = raw type_name(c.types, i);
-                    if (ni != (raw intern_none())) {
-                        // Two types sharing a BARE name are refused (D-156): the
-                        // symbols mangle distinctly (`%"npk.a.Local"` vs
-                        // `%"npk.b.Local"`), but nominal type IDENTITY is by name
-                        // (D-090) — the interned type table merges them, so the
-                        // struct-literal and layout resolution that ran per-scope
-                        // in the front half would disagree with a single interned
-                        // entry at emit. Refusing here is a clean diagnostic for
-                        // that unsupported case; making same-named types coexist
-                        // needs the type table interned by qualified name, which
-                        // is frontend work beyond 1.0.0's symbol scheme.
-                        if (ni == (raw type_name(c.types, j))) {
-                            string:m1 = relay string_concat("two types share the name `",
-                                relay intern_get(c.interns, ni));
-                            drop diaglist_push(diags, raw diag_error(
-                                raw RUNG_UNSUPPORTED(),
-                                relay string_concat(m1,
-                                    "`; their symbols mangle distinctly (D-156) but nominal type identity is by name (D-090), so one program cannot hold both — rename one until the type table interns by qualified name"),
-                                raw span_none()));
-                        }
-                    }
-                }
-                j = j + 1i32;
-            }
-        }
-        i = i + 1i32;
-    }
-    pass NIL;
-};
+// (D-162, 1.0.1: the interim duplicate-type-name refusal is RETIRED. Two
+// same-named types in two modules are two declarations (D-090), two interned
+// entries, and two D-156 symbols -- they link and run. What made the refusal
+// seem necessary at 1.0.0 was the struct-literal context hole, not a type-table
+// merge; with D-162 closing that, the guard has nothing left to guard.
+// `same_name_two_modules.npk` is its inversion, executed.)
 
 // THE MODULE MAP (D-156): decl index -> canonical module name, for every
 // function and named type. Built once, here, because this is the first point
@@ -169,7 +135,7 @@ func:check_duplicate_type_names = NIL(LlCtx->:c, DiagList->:diags) {
 // helpers read it). The canonical name is the file BASENAME (path-free,
 // D-078; = the `mod:` name, D-088), extended by `.` for a nested inline
 // module. Deterministic in graph order, so stage 1 and stage 2 emit identical
-// symbols — the fixpoint the scheme must not disturb.
+// symbols -- the fixpoint the scheme must not disturb.
 func:build_modmap = NIL(ModuleGraph->:g, LlCtx->:c) {
     int32:n = raw ast_decl_count(@g.ast);
     int64:sz = n => int64;
@@ -198,7 +164,6 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
         DeclId:item = raw item_member(@g.ast, mn, i);
         DeclNode:d = relay ast_decl(@g.ast, item);
         if (d.kind == DeclKind.DeclModuleDecl) {
-            // A nested inline module extends the canonical name with its own.
             string:nm = relay intern_get(g.interns, raw decl_name(d));
             string:nc = relay string_concat(canon, relay string_concat(".", nm));
             drop modmap_members(g, map, d, nc);
@@ -210,15 +175,6 @@ func:modmap_members = NIL(ModuleGraph->:g, wild int32->:map, DeclNode:mn,
     pass NIL;
 };
 
-func:header_kind = bool(LlCtx->:c, int32:t) {
-    if ((raw type_args_count_of(c.types, t)) != 0i32) { pass false; }
-    int32:k = raw type_kind(c.types, t);
-    if (k == (raw TY_STRUCT())) { pass true; }
-    if (k == (raw TY_ENUM())) {
-        pass (relay enum_has_payload(c.ast, c.types, t));
-    }
-    pass false;
-};
 
 // The runtime floor's declarations, in `rt_name_at` order — which makes the
 // declare block a fixed constant of every module this compiler ever emits.
@@ -307,7 +263,6 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     StrTable:st = raw strtab_init();
     drop irw_raw(w, "target triple = \"x86_64-unknown-linux-gnu\"");
     drop irw_blank(w);
-    drop check_duplicate_type_names(@c, diags);
     drop emit_type_headers(w, tr, @c, diags, g);
     drop emit_runtime_declares(w);
 

@@ -42,14 +42,21 @@ frontend rewrites D-085's whole strategy exists to prevent.
 | # | Topic | Gated on |
 |---|---|---|
 | 1.0.0 | **The mangling scheme** — decide C-1, implement reversible `%"mod.T<...>"` names + folding linkage; retire the interim duplicate-name refusal | C-1 |
-| 1.0.1 | **Monomorphization lowering** — instantiate, dedup, emit; the depth-cap diagnostic prints the instantiation stack (D-064 §6, currently one sentence — grammar #12) | C-1 |
-| 1.0.2 | **UFCS method calls** — `x.method()` lowering; the concrete collections begin to become replaceable | — |
-| 1.0.3 | **Traits and impls** — trait-method dispatch on concrete receivers incl. inherited defaults (grammar #6); impls over generic families (C-6) | C-6 |
-| 1.0.4 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |
-| 1.0.5 | **Associated types** — the C-5 resolution (type kind + projection, or the descope) | C-5 |
-| 1.0.6 | **`Optional<T>` and the generic stdlib** — now that generics lower, the parameterized library types (grammar #13's `Optional` refusal names 1.0) | — |
+| 1.0.1 | **Type identity by declaration, end to end** — the struct-literal context hole (D-162), the duplicate-name refusal retired as 1.0.0 planned, spanless refusals made audible; two instruments (`check_diags_spanned`, `check_identity_by_decl`) | 1.0.0 |
+| 1.0.2 | **Monomorphization lowering** — instantiate, dedup, emit; the depth-cap diagnostic prints the instantiation stack (D-064 §6, currently one sentence — grammar #12) | C-1 |
+| 1.0.3 | **UFCS method calls** — `x.method()` lowering; the concrete collections begin to become replaceable | — |
+| 1.0.4 | **Traits and impls** — trait-method dispatch on concrete receivers incl. inherited defaults (grammar #6); impls over generic families (C-6) | C-6 |
+| 1.0.5 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |
+| 1.0.6 | **Associated types** — the C-5 resolution (type kind + projection, or the descope) | C-5 |
+| 1.0.7 | **`Optional<T>` and the generic stdlib** — now that generics lower, the parameterized library types (grammar #13's `Optional` refusal names 1.0) | — |
 
 ## Watch for
+
+- **A `type_name` compare is an identity bug until proven otherwise.** D-090 put
+  identity in the declaration; the struct-literal shortcut put it in the name and
+  was wrong the day it was written (0.6.7), found closing 1.0.0's duplicate-name
+  gap (1.0.1). `check_identity_by_decl` lists every such use; a new one needs a
+  reason.
 
 - **Frontend finality vs the C-6 grammar question.** C-6 may need an
   `impl:<T…>:Type<T>` form — a *grammar change*, which the bootstrap strategy treats

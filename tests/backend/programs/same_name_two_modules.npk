@@ -1,0 +1,22 @@
+// expect-exit: 13
+//
+// Two modules each declare `struct:Local` with different layouts (1.0.1,
+// D-162). They are two declarations, two interned entries (D-090), and two
+// D-156 symbols — `%"npk.same_name_a.Local"` and `%"npk.same_name_b.Local"` —
+// so the program links and runs. Before 1.0.1 the struct-literal typer would
+// mis-type a literal to a same-named declaration from context (retyping it by
+// bare name), and the pre-scheme spelling `%Local` collided; the interim guard
+// refused the program (silently — its diagnostic had no span). The `Local`s are
+// PRIVATE, so a wildcard import brings only `a_go`/`b_go`; two `Local`s in one
+// scope would be the loader's ambiguity (a different rule).
+
+use "./same_name_a.npk".*;
+use "./same_name_b.npk".*;
+
+func:main = int32(cstring[]:_~argv) {
+    int32:v = raw a_go();    // 7
+    int32:w = raw b_go();    // 1 + 2 + 3 = 6
+    exit (v + w);
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

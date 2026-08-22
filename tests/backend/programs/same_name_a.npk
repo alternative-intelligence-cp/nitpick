@@ -1,0 +1,8 @@
+// Half of same_name_two_modules: a PRIVATE `Local` with one int32 field. Its
+// twin in same_name_b has three int64 fields. Private, so a wildcard import
+// brings only `a_go` — the two `Local`s never meet in one scope (that would be
+// the loader's ambiguity, a different rule), yet both reach emission as
+// distinct D-156 symbols.
+mod:same_name_a;
+struct:Local = { int32:x; };
+pub func:a_go = int32() { Local:l = Local{ x: 7i32 }; pass l.x; };
