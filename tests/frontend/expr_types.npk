@@ -70,8 +70,9 @@ func:ex = Ex(string:src, InternTable->:it) {
     // SIZED AFTER PARSING, so it covers every expression the parser built. Sizing
     // it before would make it short by exactly the expressions the test is about.
     ExprTypes:ets = raw exprtypes_for(@ast);
+    FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
-                                  @inst, @ets);
+                                  @inst, @fninsts, @ets);
     drop check_module(@e, mod_id, scope);
 
     Ex:out = Ex{ ast: ast, types: types, ets: ets, diags: diags,

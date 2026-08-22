@@ -534,6 +534,20 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
 // produces one body per instantiation and a code address is one body (D-018,
 // D-087) — so a callee that is any other expression has no type parameters by
 // construction, and this hands back the NONE declaration rather than guessing.
+// The callee's DECLARATION INDEX — what `callee_decl` looks up on the way to the
+// node, returned as itself because an instantiation is keyed by the declaration
+// (D-108/D-156), not by a node copy. 0 when there is none.
+func:callee_decl_index = int32(ExprTyper->:e, ExprNode:n) {
+    ExprId:c = raw expr_callee(n);
+    if (raw expr_is_none(c)) { pass 0i32; }
+    ExprNode:cnode = relay ast_expr(e.ast, c);
+    if (cnode.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
+    if (cnode.a == 0i32) { pass 0i32; }
+    Symbol:s = raw symtab_get(e.tab, cnode.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass 0i32; }
+    pass (s.origin);
+};
+
 func:callee_decl = DeclNode(ExprTyper->:e, ExprNode:n) {
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass (relay ast_decl(e.ast, raw decl_none())); }
@@ -633,6 +647,14 @@ func:type_generic_call = int32(ExprTyper->:e, ExprNode:n, DeclNode:d, IdSpan:gp,
     if (ft == 0i32) { pass 0i32; }
     if (raw type_is_invalid(e.types, ft)) { pass 0i32; }
     if (!(raw type_is_func(e.types, ft))) { pass 0i32; }
+
+    // RECORD THE INSTANTIATION (1.0.2b). Every argument is solved and bound-
+    // checked by here, and the window is committed into the AST's id pool, so it
+    // outlives this call — which is what lets the emitter walk the set. Deduped
+    // by (declaration, arguments), D-108's rule applied to functions.
+    drop fninst_record(e.fninsts, e.ast, relay callee_decl_index(e, n),
+                       args.start, args.count, ft, n.span);
+
     pass (relay check_args(e, ft, start, count, 0i32, n.span));
 };
 

@@ -71,6 +71,7 @@ pub struct:Front = {
     Expander:xp;
     TypeTable:types;
     InstanceTable:inst;
+    FnInstTable:fninsts;
     ImplTable:im;
     BoundTable:bd;
     ExprTypes:ets;
@@ -272,6 +273,7 @@ pub func:front_run = int32(Front->:f, string:root) {
     // exists to prevent.
     f.types = raw typetable_init();
     f.inst = raw insttable_init();
+    f.fninsts = raw fninst_init();
     TypeResolver:tr = raw tyres_init(@f.g.ast, @f.types, @f.g.tab, @f.it, @f.diags, @f.inst);
     f.im = raw impltable_init();
     f.bd = raw boundtable_init();
@@ -305,7 +307,7 @@ pub func:front_run = int32(Front->:f, string:root) {
     // rather than the root module's.
     f.ets = raw exprtypes_for(@f.g.ast);
     ExprTyper:et = raw etyper_init(@f.g.ast, @f.types, @f.g.tab, @f.it, @f.diags, 0i32,
-                                   @f.im, @f.bd, @f.inst, @f.ets);
+                                   @f.im, @f.bd, @f.inst, @f.fninsts, @f.ets);
     int32:b = 0i32;
     while (b < (raw graph_count(@f.g))) {
         ModuleEntry:e4 = raw graph_at(@f.g, b);

@@ -1,4 +1,4 @@
-// expect-exit: 35
+// expect-exit: 45
 //
 // MONOMORPHIZATION (1.0.2). A generic used at two concrete types emits two
 // specialized definitions under their D-156 symbols —
@@ -20,6 +20,12 @@ struct:Container<T> = {
 
 struct:Box<T> = { T:v; };
 
+// A GENERIC FUNCTION emits one body per argument set (1.0.2b), each under its
+// own D-108 spelling — `@"npk.generics.identity<int32>"` beside
+// `@"npk.generics.identity<int64>"` — and each call reaches the specialization
+// for ITS arguments. The declaration itself emits nothing: it is a template.
+func:identity<T> = T(T:x) { pass x; };
+
 func:main = int32(cstring[]:_~argv) {
     Container<int32>:a = Container{ item: 7i32, tag: 1i32 };
     Container<int64>:b = Container{ item: 30i64, tag: 2i32 };
@@ -32,8 +38,13 @@ func:main = int32(cstring[]:_~argv) {
     // a nested instantiation: the argument is itself an instance
     Box<Container<int32>>:n = Box{ v: a };
 
-    // 7 + 30 + 1 + 2 + 2 - 7 = 35
-    exit a.item + (b.item =>! int32) + p.v + q.v + s.v - n.v.item;
+    // the same function at two argument types
+    int32:i1 = raw identity(4i32);
+    int64:i2 = raw identity(6i64);
+
+    // 7 + 30 + 1 + 2 + 2 - 7 + 4 + 6 = 45
+    exit a.item + (b.item =>! int32) + p.v + q.v + s.v - n.v.item
+         + i1 + (i2 =>! int32);
 };
 
 func:failsafe = int32(tbb32:_~err) { exit 1i32; };

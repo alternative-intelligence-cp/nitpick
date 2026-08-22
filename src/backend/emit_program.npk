@@ -26,6 +26,7 @@ use "../frontend/types.npk".*;
 use "../frontend/expr_types.npk".*;
 use "../frontend/resolve_type.npk".*;
 use "../frontend/type_layout.npk".*;
+use "../frontend/type_names.npk".*;
 use "./ir/emit_codes.npk".*;
 use "./ir/ir_writer.npk".*;
 use "./ir/ir_types.npk".*;
@@ -308,7 +309,8 @@ func:emit_nested_module = NIL(ExprEmitter->:x, DiagList->:diags, DeclNode:m) {
 // single namespace hid the collision from 0.7.7 until the first self-check.
 pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              InternTable->:interns, ExprTypes->:ets,
-                             TypeResolver->:tr, DiagList->:diags) {
+                             TypeResolver->:tr, FnInstTable->:fninsts,
+                             DiagList->:diags) {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
     drop build_modmap(g, @c);
@@ -323,7 +325,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     while (m < (raw graph_count(g))) {
         ModuleEntry:me = raw graph_at(g, m);
         ExprEmitter:x = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
-                                        tr, me.scope);
+                                        tr, fninsts, me.scope);
         DeclNode:mn = relay ast_decl(@g.ast, DeclId{ index: me.root });
         int32:i = 0i32;
         while (i < (raw item_member_count(@g.ast, mn))) {
@@ -362,6 +364,43 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         m = m + 1i32;
     }
 
+    // THE GENERIC-FUNCTION SPECIALIZATIONS (1.0.2b). One body per recorded
+    // (declaration, arguments) request — the frontend deduped them the way
+    // D-108 dedups a type instantiation, so this walk emits each exactly once,
+    // in recording order, which is deterministic (the fixpoint requires it).
+    // The emitter is built at the DECLARING module's scope, since that is where
+    // the body's annotations resolve.
+    int32:fi = 0i32;
+    while (fi < (raw fninst_count(fninsts))) {
+        FnInstance:inst = relay fninst_at(fninsts, fi);
+        int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
+        ExprEmitter:xi = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
+                                         tr, fninsts, hs);
+        IrVal:ir = relay emit_fn_instance(@xi, DeclId{ index: inst.decl },
+                                          inst.args_start, inst.args_count,
+                                          relay fninst_symbol(@g.ast, @c, inst));
+        if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
+        fi = fi + 1i32;
+    }
+
     drop strtab_write_all(@st, w);
     pass ((raw diaglist_count(diags)) == before);
+};
+
+// `extract<int32>` — the D-108 spelling for a function instantiation: the
+// declaration's name with its arguments, which `mangled_fn_sym` then qualifies
+// and quotes (D-156). Interned, because a symbol is a name.
+func:fninst_symbol = int32(Ast->:ast, LlCtx->:c, FnInstance:inst) {
+    DeclNode:d = relay ast_decl(ast, DeclId{ index: inst.decl });
+    string:m = relay string_concat(
+                   relay intern_get(c.interns, raw decl_name(d)), "<");
+    int32:i = 0i32;
+    while (i < inst.args_count) {
+        if (i > 0i32) { m = relay string_concat(m, ", "); }
+        m = relay string_concat(m,
+                relay type_display(c.types, c.interns,
+                    relay ast_id_at(ast, inst.args_start, i)));
+        i = i + 1i32;
+    }
+    pass (raw intern_add(c.interns, relay string_concat(m, ">")));
 };

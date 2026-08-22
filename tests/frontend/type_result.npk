@@ -67,8 +67,9 @@ func:rx = Rx(string:src, bool:terminal, InternTable->:it) {
     // landed in the `instances` slot, and `expr_types` read whatever was in the
     // register — a number that moved whenever anything unrelated changed size.
     InstanceTable:inst = raw insttable_init();
+    FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, 0i32, @im, @bd,
-                                  @inst, @ets);
+                                  @inst, @fninsts, @ets);
     e.fn_terminal = terminal;
     // The enclosing function returns `int32`, which is where a `Result{...}`
     // literal gets its `<T>` — nothing writes it.

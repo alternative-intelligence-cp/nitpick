@@ -117,6 +117,14 @@ pub struct:ExprTyper = {
     // did, or a bound violation written inside a body would go unjudged.
     InstanceTable->:instances;
 
+    // THE GENERIC-FUNCTION INSTANTIATIONS THIS PROGRAM REQUESTS (1.0.2b). A
+    // generic TYPE's instantiations are the interned type table; a generic
+    // FUNCTION's are not recorded anywhere the backend can see, because the
+    // substituted signature is an anonymous `TY_FUNC` and — for an inferred call
+    // — the arguments exist only in this checker's scratch. Recorded where they
+    // are solved, so the emitter can walk the set rather than re-deriving it.
+    FnInstTable->:fninsts;
+
     // WHAT `Self` MEANS IN THE BODY BEING WALKED. A method inside `impl:Point`
     // may write `Self:other` and a trait's default body may too, so the checker
     // has to carry it the way the resolver does — as the type it stands for, 0
@@ -133,6 +141,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  int32:scope, ImplTable->:impls,
                                  BoundTable->:bounds,
                                  InstanceTable->:instances,
+                                 FnInstTable->:fninsts,
                                  ExprTypes->:expr_types) {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, scope: scope,
@@ -140,7 +149,8 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              impls: impls, bounds: bounds,
                              generics: raw generic_scope_none(),
                              enclosing: raw generic_scope_none(),
-                             instances: instances, self_type: 0i32,
+                             instances: instances, fninsts: fninsts,
+                             self_type: 0i32,
                              expr_types: expr_types };
     pass e;
 };

@@ -218,15 +218,19 @@ pub struct:ExprEmitter = {
     // types are in `et`.
     TypeResolver->:tr;
     int32:scope;
+
+    // The generic-function instantiations the frontend recorded (1.0.2b). A
+    // generic call reads this to name its specialization; nothing else does.
+    FnInstTable->:fninsts;
 };
 
 pub func:exprem_init = ExprEmitter(FnEmitter->:fe, Ast->:ast, ExprTypes->:et,
                                    SymbolTable->:tab, InternTable->:interns,
                                    StrTable->:strs, TypeResolver->:tr,
-                                   int32:scope) {
+                                   FnInstTable->:fninsts, int32:scope) {
     ExprEmitter:x = ExprEmitter{ fe: fe, ast: ast, et: et, tab: tab,
                                  interns: interns, strs: strs, tr: tr,
-                                 scope: scope };
+                                 fninsts: fninsts, scope: scope };
     pass x;
 };
 
@@ -1562,10 +1566,12 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
         }
     }
 
+    // The turbofish's arguments were consumed by the checker (which recorded the
+    // instantiation, 1.0.2b); the emitter steps over them and calls the
+    // specialization named below.
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;
-    if (gcount > 0i32) { pass (raw iv_rung("a generic call", "1.0", n.span)); }
 
     // A BUILTIN EMITS ITS OWN ARGUMENTS: two lower inline without a call at
     // all, and the floor's signatures are the coercion authority for the rest —
@@ -1592,7 +1598,28 @@ func:emit_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
     // the function, and the call's own recorded type is the full `Result<T>`.
     Symbol:s = raw symtab_get(x.tab, cnode.a);
     string:fname = relay intern_get(x.interns, s.name);
+
+    // A GENERIC CALL NAMES ITS SPECIALIZATION (1.0.2b). The declaration is a
+    // template; what this call reaches is the body emitted for ITS argument set.
+    //
+    // THE INSTANTIATION IS RE-DERIVED, NOT CARRIED ON THE NODE. A call node's
+    // slots are all spoken for (callee, argument window, generic count), and
+    // widening the AST to carry a backend index is the frontend rework the
+    // capability ladder exists to prevent. Instead the match is made from what
+    // the checker already recorded: this call's own ARGUMENT TYPES against the
+    // recorded instantiation's PARAMETER TYPES. Two instantiations of one
+    // declaration differ in their substituted signature, so the arguments that
+    // reached this call say which one it is — and where a program has only one
+    // instantiation of a function (the common case) the first match is it.
     string:sym = relay mangled_fn_sym(x.fe.ctx, s.origin, fname);
+    DeclNode:cdecl = relay ast_decl(x.ast, DeclId{ index: s.origin });
+    if ((raw decl_generic_window(x.ast, cdecl)).count > 0i32) {
+        int32:spec = relay fninst_for_call(x, s.origin, start, count);
+        if (spec != 0i32) {
+            sym = relay mangled_fn_sym(x.fe.ctx, s.origin,
+                      relay intern_get(x.interns, spec));
+        }
+    }
     LlType:ret = relay node_ll(x, id);
     if (ret.state != (raw LL_OK())) {
         pass (relay iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
@@ -2231,6 +2258,58 @@ func:pv_broken = PlaceVal(Span:at) {
     PlaceVal:p = PlaceVal{ state: raw LL_BROKEN(), rung: "", what: "", at: at,
                            addr: "", type_id: 0i32 };
     pass p;
+};
+
+// Which recorded instantiation of `decl` does this call reach? Matched on the
+// call's argument types against the instantiation's substituted parameter types
+// (1.0.2b). Returns the interned specialized NAME (`extract<int32>`), or 0.
+func:fninst_for_call = int32(ExprEmitter->:x, int32:decl, int32:start,
+                             int32:count) {
+    int32:i = 0i32;
+    while (i < (raw fninst_count(x.fninsts))) {
+        FnInstance:e = relay fninst_at(x.fninsts, i);
+        if (e.decl == decl) {
+            int32:pc = raw type_param_count_of(x.fe.ctx.types, e.type_id);
+            if (pc == count) {
+                int32:ps = raw type_param_start_of(x.fe.ctx.types, e.type_id);
+                bool:same = true;
+                int32:k = 0i32;
+                while (k < count) {
+                    ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, k) };
+                    int32:at = raw exprtypes_get(x.et, aid);
+                    int32:pt = relay ast_id_at(x.ast, ps, k);
+                    if (at != pt) {
+                        same = false;
+                        k = count;
+                    } else {
+                        k = k + 1i32;
+                    }
+                }
+                if (same) {
+                    pass (relay fninst_name_of(x, e));
+                }
+            }
+        }
+        i = i + 1i32;
+    }
+    pass 0i32;
+};
+
+// `extract<int32>` — the same D-108 spelling `emit_program` gives the definition,
+// built here so the call and the definition cannot drift apart.
+func:fninst_name_of = int32(ExprEmitter->:x, FnInstance:e) {
+    DeclNode:d = relay ast_decl(x.ast, DeclId{ index: e.decl });
+    string:m = relay string_concat(
+                   relay intern_get(x.interns, raw decl_name(d)), "<");
+    int32:i = 0i32;
+    while (i < e.args_count) {
+        if (i > 0i32) { m = relay string_concat(m, ", "); }
+        m = relay string_concat(m,
+                relay type_display(x.fe.ctx.types, x.interns,
+                    relay ast_id_at(x.ast, e.args_start, i)));
+        i = i + 1i32;
+    }
+    pass (raw intern_add(x.interns, relay string_concat(m, ">")));
 };
 
 pub func:iv_from_place = IrVal(PlaceVal:p) {

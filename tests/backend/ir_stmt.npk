@@ -93,8 +93,9 @@ func:fx = Fx(string:src, InternTable->:it) {
     drop collect_impls(@im, @tr, mod_id, scope);
     BoundTable:bd = raw boundtable_init();
     drop collect_bounds(@bd, @tr, mod_id, scope);
+    FnInstTable:fninsts = raw fninst_init();
     ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
-                                  @inst, @ets);
+                                  @inst, @fninsts, @ets);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;
@@ -124,7 +125,8 @@ func:emitted = string(Fx->:f, InternTable->:it, int32:index, StrTable->:st) {
     IrWriter:w = raw irw_to_buffer();
     LlCtx:c = raw llctx_init(@f.ast, @f.types, @it);
     FnEmitter:fe = raw fnem_init(@w, @c);
-    ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @tr,
+    FnInstTable:fninsts = raw fninst_init();
+    ExprEmitter:x = raw exprem_init(@fe, @f.ast, @f.ets, @f.tab, it, st, @tr, @fninsts,
                                     f.scope);
     DeclNode:mn = relay ast_decl(@f.ast, f.mod_id);
     DeclId:item = raw item_member(@f.ast, mn, index);

@@ -36,6 +36,7 @@ use "../../frontend/parse_decl.npk".*;
 use "../../frontend/parse_decorate.npk".*;
 use "../../frontend/parse_pick.npk".*;
 use "../../frontend/type_layout.npk".*;
+use "../../frontend/type_generic.npk".*;
 use "../../frontend/diagnostics.npk".*;
 use "../../frontend/types.npk".*;
 use "../../frontend/expr_types.npk".*;
@@ -1126,12 +1127,48 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 
 // Everything between `func:` and its closing brace: signature, prologue, body,
 // epilogue. The driver's per-function loop is a call to this.
+// A GENERIC FUNCTION'S SPECIALIZATION (1.0.2b). One body per argument set: the
+// declaration is a template, and what LLVM needs is `extract<int32>` with `T`
+// bound. The frontend recorded which sets a program asks for (`FnInstTable`,
+// deduped by declaration and arguments), and this emits one of them — pushing
+// the resolver's generic scope so every parameter, local and return annotation
+// in the body resolves with the arguments bound, exactly as `ll_struct_body`
+// does for a struct's fields.
+pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
+                                  int32:args_start, int32:args_count,
+                                  int32:mangled_name) {
+    DeclNode:d = relay ast_decl(x.ast, did);
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
+    IdSpan:gp = raw decl_generic_window(x.ast, d);
+
+    // THE SUBSTITUTION IS APPLIED TO WHAT RESOLUTION RETURNS, not pushed onto
+    // the resolver's scope. `fn_signature` calls `bind_own_generics`, which
+    // deliberately rebinds the declaration's parameters UNBOUND — a definition
+    // is checked with `T` opaque (D-107) — so a scope pushed here would be
+    // overwritten before any annotation resolved. Substituting afterwards is
+    // the same shape `type_generic_call` uses on the caller's side, and it is
+    // why a specialization's every type is the caller's, not the template's.
+    GenericScope:g = GenericScope{
+        params_start: gp.start, params_count: gp.count,
+        args_start: args_start, args_count: args_count };
+    pass (relay emit_function_body_subst(x, did, d, mangled_name, g, true));
+};
+
 pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
     DeclNode:d = relay ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
-    if ((raw decl_generic_window(x.ast, d)).count > 0i32) {
-        pass (raw iv_rung("a generic function", "1.0", d.span));
-    }
+
+    // A GENERIC DECLARATION EMITS NOTHING OF ITS OWN — it is a template, and its
+    // specializations are emitted from the recorded instantiations (1.0.2b), the
+    // same rule a generic struct follows.
+    if ((raw decl_generic_window(x.ast, d)).count > 0i32) { pass (raw iv_nil()); }
+    pass (relay emit_function_body_subst(x, did, d, 0i32,
+              raw generic_scope_none(), false));
+};
+
+func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
+                                      int32:mangled_name, GenericScope:g,
+                                      bool:specialize) {
     if (raw decl_has(d, raw DECL_VARIADIC())) {
         pass (raw iv_rung("a variadic function", "1.1", d.span));
     }
@@ -1155,9 +1192,19 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
 
     int32:name = raw decl_name(d);
     string:fname = relay intern_get(x.interns, name);
+    // A SPECIALIZATION CARRIES ITS INSTANTIATED NAME (1.0.2b) —
+    // `extract<int32>`, the D-108 spelling — so two instantiations of one
+    // declaration are two symbols. 0 means "not a specialization".
+    if (mangled_name != 0i32) {
+        fname = relay intern_get(x.interns, mangled_name);
+    }
     FnSig:sg = relay fn_signature(x.tr, did, name, x.scope);
+    int32:succ = sg.success;
+    if (specialize) {
+        succ = relay type_subst(x.tr, succ, g, d.span, 64i32);
+    }
 
-    LlType:rt = relay fnem_begin(x.fe, fname, did.index, sg.success);
+    LlType:rt = relay fnem_begin(x.fe, fname, did.index, succ);
     if (!(raw ll_is_ok(rt))) { pass (relay iv_from_ll_at(x, rt, sg.success, d.span)); }
 
     int32:i = 0i32;
@@ -1169,15 +1216,33 @@ pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {
         if (!(raw verify_is_none(plim))) {
             pass (raw iv_rung("a `limit<Rules>` constraint", "1.3", pd.span));
         }
+        // UNDER THE INSTANTIATION'S BINDING (1.0.2b): `T:x` resolves to the
+        // argument, not to "there is no type named T". The scope is pushed
+        // here rather than around `fn_signature`, which rebinds the
+        // declaration's parameters unbound by design (D-107).
+        GenericScope:psaved = x.tr.generics;
+        if (specialize) { x.tr.generics = g; }
         int32:pt = relay resolve_type(x.tr, raw param_type(pd),
                        raw symtab_home_scope(x.tab, did.index, x.scope));
+        x.tr.generics = psaved;
+        if (specialize) {
+            pt = relay type_subst(x.tr, pt, g, pd.span, 64i32);
+        }
         LlType:pl = relay fnem_param(x.fe, raw decl_name(pd), pt);
         if (!(raw ll_is_ok(pl))) { pass (relay iv_from_ll_at(x, pl, pt, pd.span)); }
         i = i + 1i32;
     }
 
     drop fnem_open(x.fe);
+    // The BODY too: a local `T:tmp = x;` inside a generic resolves against the
+    // instantiation, and every expression's recorded type already is the
+    // substituted one (the checker typed the body once with `T` opaque, and the
+    // emitter reads recorded types for expressions — only ANNOTATIONS resolve
+    // here, which is what this binding serves).
+    GenericScope:bsaved = x.tr.generics;
+    if (specialize) { x.tr.generics = g; }
     IrVal:b = relay emit_block(x, raw fn_body(x.ast, d));
+    x.tr.generics = bsaved;
     if (!(raw iv_is_ok(b))) { pass b; }
     drop fnem_close(x.fe, x.fe.terminated);
     pass (raw iv_nil());

@@ -28,6 +28,7 @@
 
 use "./source_location.npk".*;
 use "./intern.npk".*;
+use "./ast.npk".*;
 
 // --- kinds -------------------------------------------------------------------------
 //
@@ -662,6 +663,96 @@ pub func:inst_at = Instance(InstanceTable->:t, int32:i) {
     if (i < 0i32) { fail 23tbb32; }
     if (i >= t.count) { fail 23tbb32; }
     pass (t.items[i => int64]);
+};
+
+// --- generic FUNCTION instantiations (1.0.2b) -------------------------------
+//
+// A generic TYPE's instantiations are the interned type table itself: an
+// instance IS a type, so interning dedups it (D-108) and the emitter walks the
+// table. A generic FUNCTION's are not — a call's substituted signature is a
+// `TY_FUNC`, which says nothing about WHICH function it came from, and the
+// argument window that produced it lives in the frontend's scratch. Nothing the
+// backend can see records "`extract` was called at `int32`", and for an INFERRED
+// call (`extract(c)`, the common form) the turbofish is not in the AST either.
+//
+// So the frontend records the requests, here, where it has already solved them.
+// One entry per (declaration, argument window), deduped by comparing the
+// arguments — which is D-108's rule applied to functions: the mangled name is a
+// total function of the declaration and the arguments, so equal arguments are
+// the same instantiation.
+pub struct:FnInstance = {
+    int32:decl;         // the generic function's DeclId index
+    int32:args_start;   // window of concrete type ids
+    int32:args_count;
+    int32:type_id;      // the substituted TY_FUNC
+    Span:at;
+};
+
+pub struct:FnInstTable = {
+    wild FnInstance->:items;
+    int32:count;
+    int32:cap;
+};
+
+pub func:fninst_init = FnInstTable() {
+    int64:n = 16i64;
+    wild int8->:mem = alloc(n * #size_of<FnInstance>());
+    FnInstTable:t = FnInstTable{ items: mem =>! wild FnInstance->,
+                                 count: 0i32, cap: 16i32 };
+    pass t;
+};
+
+func:fninst_grow = NIL(FnInstTable->:t) {
+    int32:nc = t.cap * 2i32;
+    wild int8->:bigger = ralloc(t.items =>! wild int8->,
+                                (nc => int64) * #size_of<FnInstance>());
+    t.items = bigger =>! wild FnInstance->;
+    t.cap = nc;
+    pass NIL;
+};
+
+pub func:fninst_count = int32(FnInstTable->:t) { pass t.count; };
+
+pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) {
+    if (i < 0i32) { fail 23tbb32; }
+    if (i >= t.count) { fail 23tbb32; }
+    pass (t.items[i => int64]);
+};
+
+// Record one generic-function instantiation, deduped by (decl, arguments).
+// Comparing the ARGUMENTS rather than the substituted type is deliberate: two
+// calls to different generics can substitute to the same `TY_FUNC` (both
+// `int32(int32)`), and they are two functions to emit, not one.
+pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
+                             int32:args_start, int32:args_count,
+                             int32:type_id, Span:at) {
+    int32:i = 0i32;
+    while (i < t.count) {
+        FnInstance:e = t.items[i => int64];
+        if (e.decl == decl) {
+            if (e.args_count == args_count) {
+                bool:same = true;
+                int32:k = 0i32;
+                while (k < args_count) {
+                    if ((relay ast_id_at(ast, e.args_start, k))
+                            != (relay ast_id_at(ast, args_start, k))) {
+                        same = false;
+                        k = args_count;
+                    } else {
+                        k = k + 1i32;
+                    }
+                }
+                if (same) { pass NIL; }
+            }
+        }
+        i = i + 1i32;
+    }
+    if (t.count >= t.cap) { drop fninst_grow(t); }
+    FnInstance:n = FnInstance{ decl: decl, args_start: args_start,
+                               args_count: args_count, type_id: type_id, at: at };
+    t.items[t.count => int64] = n;
+    t.count = t.count + 1i32;
+    pass NIL;
 };
 
 pub func:inst_record = NIL(InstanceTable->:t, int32:type_id, Span:at) {

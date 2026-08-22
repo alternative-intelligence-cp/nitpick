@@ -44,7 +44,7 @@ frontend rewrites D-085's whole strategy exists to prevent.
 | 1.0.0 | **The mangling scheme** — decide C-1, implement reversible `%"mod.T<...>"` names + folding linkage; retire the interim duplicate-name refusal | C-1 |
 | 1.0.1 | **Type identity by declaration, end to end** — the struct-literal context hole (D-162), the duplicate-name refusal retired as 1.0.0 planned, spanless refusals made audible; two instruments (`check_diags_spanned`, `check_identity_by_decl`) | 1.0.0 |
 | 1.0.2 | **Monomorphization lowering** — instantiate, dedup, emit; the depth-cap diagnostic prints the instantiation stack (D-064 §6, currently one sentence — grammar #12) | C-1 |
-| 1.0.2b | **Generic function lowering** — one body per argument set: the call site records its instantiation, the emitter walks instantiation requests rather than declarations; retires the `a generic function` / `a generic call` rungs | 1.0.2 |
+| 1.0.2b | **Generic function lowering** — one body per argument set: `FnInstTable` records what the program asks for (deduped by arguments, D-108's rule for functions), the emitter walks it, the call site re-derives its specialization from its argument types; retires the `a generic function` / `a generic call` rungs | 1.0.2 |
 | 1.0.3 | **UFCS method calls** — `x.method()` lowering; the concrete collections begin to become replaceable | — |
 | 1.0.4 | **Traits and impls** — trait-method dispatch on concrete receivers incl. inherited defaults (grammar #6); impls over generic families (C-6) | C-6 |
 | 1.0.5 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |

@@ -74,7 +74,8 @@ func:fx = Fx(string:src, InternTable->:it) {
     drop check_impls_complete(@im, @tr);
     drop check_supertraits(@im, @bd, @tr);
     drop check_duplicate_methods(@im, @tr);
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @ets);
+    FnInstTable:fninsts = raw fninst_init();
+    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd, @inst, @fninsts, @ets);
 
     DeclNode:mn = relay ast_decl(@ast, mod_id);
     int32:i = 0i32;
