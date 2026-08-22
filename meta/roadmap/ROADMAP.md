@@ -312,7 +312,7 @@ the sharpening is bounded work rather than open discovery.
 | Cycle | Topic |
 |---|---|
 | **1.0** | **Generics, traits, `dyn`** — monomorphization (depth cap, dedup, reversible mangling), and the whole trait/`dyn` boundary the checker has never had to answer. **Opens with the `%Name` mangling decision and five trait/dyn decisions** (`OPEN_DECISIONS` C-1…C-6) — six blockers, all settled before lowering. Map: `1.0/`. |
-| **1.1** | **Async and concurrency** — coroutine lowering, per-thread executors, channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
+| **1.1** | **Async and concurrency** — **opens with D-163: `never fails` on every function, checked; `raw` and `drop` licensed only by it; a `Result` never discarded without a keyword** (three subcycles: the contract and the instrument, the `src/` sweep of ~7,900 sites, the `tests/` sweep and the refusal — the 0.8.0 shape), then coroutine lowering, per-thread executors, channels, the D-071 suspension model. **Depends on 0.10's arenas** and **opens with the `Duration`/clock decision and the coroutine-ABI + borrow-across-await + construction-API decisions** (C-7…C-9, B-2). Map: `1.1/`. |
 | **1.2** | **Self-hosting** — the stage-1/stage-2 fixpoint (re-closed after 0.9–1.1), byte-reproducible builds, and **`npkg`** (the permanent build/test/verify runner that replaces the throwaway Python harness). **Opens by correcting the fixpoint criterion and committing the seed IR** (C-10…C-13). Map: `1.2/`. |
 | **1.3** | **Verification** — `prove`, `limit<Rules>`, contracts, Z3 over SMT-LIB2, and NIKOS (or its deferral). **The least-built major subsystem; opens with five decisions** (C-14…C-18) and needs a process-spawn primitive the language does not yet have. Map: `1.3/`. |
 | **1.4** | **Astrée preparation** — the single non-renewable 30-day run. **Gated on the input-format decision (C-19) answered before 1.3 exits**, because the docs assume monomorphized output while Astrée accepts C. Map: `1.4/`. |
@@ -365,6 +365,10 @@ can replace `nitpick-docs`.
   so rather than discovering it at the first subcycle.
 - **Instruments precede the constructs they guard** (0.9's two new checks), the same
   reasoning that put diagnostics in 0.0 and the reachability check in 0.2.
+- **D-163 precedes 1.1's code.** The executor and the Bridge are thousands of new
+  lines of `raw` and `drop`; written under the licence they need no second sweep.
+  1.1 retires the word's old home (D-149's Bridge) and owns the spawn form whose
+  error channel D-163 requires, so it is the cycle that gives the word its new one.
 - **Verification is 1.3, but its obligations are carried forward from every cycle** —
   0.9.0's rung refusals for `limit`/contracts are the first installment, so the
   constructs are honestly refused until 1.3 can honestly check them.

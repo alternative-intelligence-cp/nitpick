@@ -892,9 +892,17 @@ The compiler WILL NOT allow accessing `.value` without first checking `.is_error
 | Discard | `discard(param)` | `_~` | For unused variables/params — semantically different from `drop` |
 
 > **`raw` vs `drop` vs `discard`:** These are three DISTINCT concepts:
-> - `raw` = "give me the value, I don't care about the error" (bypasses safety)
-> - `drop` = "I don't need the value OR the error" (throws away the Result entirely)
-> - `discard` = "I have this parameter/variable but I'm not going to use it" (silences unused warnings)
+> - `raw` = unwrap a `Result<T>`'s value. **D-163 (proposed, 1.1)**: licensed only
+>   on a call whose callee is `never fails` — a checked, zero-cost unwrap, not a
+>   bypass. A may-fail call uses `relay` / `?!` / `? d` / `is_err`.
+> - `drop` = the "void call": run a `never fails` function whose success type is
+>   `NIL` (D-163). It no longer discards an error — a may-fail call is `relay`ed,
+>   `?!`-trapped, or `? NIL`-swallowed; a never-failing VALUE is `discard(raw f())`.
+> - `discard` = "I have this value/param and will not use it" — takes a VALUE,
+>   never a `Result` (D-089/D-163).
+>
+> Until 1.1 implements D-163, `raw`/`drop` are the unchecked forms described in
+> the pre-D-163 rows above.
 
 **Driver-interface (`extern`) behavior (D-149):**
 ```nitpick

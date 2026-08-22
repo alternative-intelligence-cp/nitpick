@@ -20,6 +20,11 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
 
 ## Decisions in (see `../OPEN_DECISIONS.md` §2)
 
+- **D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never
+  discarded without a keyword; `never fails` is checked.** Decided at 1.0's boundary
+  (G-4); *implemented as this cycle's first three subcycles*, before any executor
+  code exists to be swept. Its rule 4 fixes a requirement on C-7 / C-9: a spawned
+  task's error reaches the D-062 join.
 - **B-2 — `Duration`, monotonic clock, executor timers.** *Blocks the cycle's start.*
   Safety, not comfort — deadlines are the language's entire residual-deadlock
   containment. Nothing in 1.1 can be built while the deadline type it all takes is
@@ -39,25 +44,33 @@ arenas (0.10.2/0.10.4). If 1.1 is ever pulled ahead of
 
 | # | Topic | Gated on |
 |---|---|---|
-| 1.1.0 | **`Duration` + the clock + timers** — the deadline substrate; `CLOCK_MONOTONIC` through the floor; a pinned `DEADLINE_EXCEEDED` | B-2 |
-| 1.1.1 | **Coroutine lowering** — `@llvm.coro` state machines over 0.10.3's frame allocator; `await` yields `T`; `drop work()` spawns | C-7, 0.10.3 |
-| 1.1.2 | **The executor** — run queue, futex park/wake, the D-063 stop-the-world trap hook, `async func:main` over the entry shim | C-7 |
-| 1.1.3 | **Task lifetime & the join** — D-062 lexical join with the mandatory deadline; the wind-up token; the borrow-across-await narrowing (C-8) | C-8 |
-| 1.1.4 | **Channels** — `Channel<T,LEVEL,CAP>` over §6; the construction API (C-9); no `select`, deadline-mandatory `recv` | C-9 |
-| 1.1.5 | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
-| 1.1.6 | **Actors & thread pools** — tasks-with-mailboxes and N-workers-one-channel; the `Job` representation (C-9) | C-9 |
-| 1.1.7 | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
-| 1.1.8 | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
+| 1.1.0 | **`never fails` on every function, checked; the statement forms closed** — the grammar widened one production, the func-type flag, the body check, trait conformance, the `defer` rule, the builtin `fails` column, the seed taught the word, 188 bare statements keyworded, `check_raw_licensed` REPORTING | D-163 |
+| 1.1.1 | **The `src/` sweep** — ~868 clauses, ~1,000 may-fail sites resolved at the root or rewritten (`relay` / `?!` / handled), ~90 `discard(raw …)`, the driver's stage calls relayed; instrument at zero for `src/`/`lib/`/`tools/` | 1.1.0 |
+| 1.1.2 | **The `tests/` sweep, then the refusal** — the suites licensed, the flip to `TYPE_RAW_UNLICENSED` (with the spawn-form exemption), the instrument retired, fixpoint re-proven; D-163 SETTLED | 1.1.1 |
+| 1.1.3 | **`Duration` + the clock + timers** — the deadline substrate; `CLOCK_MONOTONIC` through the floor; a pinned `DEADLINE_EXCEEDED` | B-2 |
+| 1.1.4 | **Coroutine lowering** — `@llvm.coro` state machines over 0.10.3's frame allocator; `await` yields `T`; `drop work()` spawns | C-7, 0.10.3 |
+| 1.1.5 | **The executor** — run queue, futex park/wake, the D-063 stop-the-world trap hook, `async func:main` over the entry shim | C-7 |
+| 1.1.6 | **Task lifetime & the join** — D-062 lexical join with the mandatory deadline; the wind-up token; the borrow-across-await narrowing (C-8) | C-8 |
+| 1.1.7 | **Channels** — `Channel<T,LEVEL,CAP>` over §6; the construction API (C-9); no `select`, deadline-mandatory `recv` | C-9 |
+| 1.1.8 | **Sync primitives** — `Mutex<T,LEVEL>`/`RwLock`/`CondVar` (timed only)/`Barrier` over the lock-level analysis (already built, 0.5.6) | C-9 |
+| 1.1.9 | **Actors & thread pools** — tasks-with-mailboxes and N-workers-one-channel; the `Job` representation (C-9) | C-9 |
+| 1.1.10 | **The reactor** — epoll+timerfd (or the B-3a choice); the in-flight-buffer ownership rule; file/socket streams over the IO_REFERENCE traits | B-3a |
+| 1.1.11 | **The Bridge (D-149)** — `DeclExternBlock` lowers to driver stubs (marshal into the sealed ring, deadline dispatch, unmarshal-or-error); the interface hash and connect handshake; the `Driver` trait and the `failsafe`-reachable registry; the checker's refusal of D-002-era `fails on` contracts; the C SDK header and wire-conformance suite grown from the v3 POC (`../audit-0.8-close/driver_architecture_plan_v3.md`) | D-149 |
 
 ## Watch for
 
+- **Every function this cycle writes declares its contract at birth.** An executor
+  or channel method that cannot fail says `never fails`; one that can is `raw`ed and
+  `drop`ped by nobody. The Bridge's generated stubs are may-fail by construction
+  (D-149) and must not carry the clause. The D-062 join is designed against D-163
+  rule 4: a spawned task's error is observable or the program does not compile.
 - **The async I/O traits vs C-8.** `Reader`/`Writer` are `async` traits consumed as
   `dyn Writer` — so 1.1 needs 1.0's `dyn` *and* the C-8 borrow narrowing *and* a story
   for a virtually-dispatched coroutine's frame sizing (genuinely hard; part of C-9).
-  This is the densest interaction in the plan; sequence the reactor (1.1.7) last so
-  channels and the executor core do not wait on it — and the Bridge (1.1.8) after
+  This is the densest interaction in the plan; sequence the reactor (1.1.10) last so
+  channels and the executor core do not wait on it — and the Bridge (1.1.11) after
   the reactor, since a dispatch await parks on the reactor's pollables and timers.
-- **The Bridge is where D-149 stops being a rung message.** Until 1.1.8 lands,
+- **The Bridge is where D-149 stops being a rung message.** Until 1.1.11 lands,
   `extern` blocks refuse at the backend naming this cycle; after it, they are the
   ONLY foreign-code mechanism the language has ever shipped — there is no
   in-process era to migrate anyone off. The C reference driver and the

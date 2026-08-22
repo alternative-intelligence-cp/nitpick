@@ -113,7 +113,7 @@ The ultimate safety net. If an unrecoverable state is reached, execution is trap
 
 For low-level systems programming, safety checks can be intentionally bypassed, but they are highly visible and grep-able:
 
-*   **`raw`** / `_!`: Forcibly unwrap a `Result<T>`. The single bypass of the `Result` discipline — `sys!!!` and `asm!!!` were removed precisely so this remains the only one (D-001).
+*   **`raw`** / `_!`: unwrap a `Result<T>`'s value. **D-163 (proposed, implemented 1.1) makes this a CHECKED, zero-cost unwrap, not a bypass**: `raw` is licensed only on a call whose callee is declared `never fails`, so it proves the check redundant rather than skipping it, and leaves the Escape-Hatches list. Until 1.1 flips it, `raw` is still the unchecked bypass described here (D-001).
 *   **`wild` / `wildx`**: Unchecked, unbounded manual memory pointers.
 *   **`#wild_ptr<T>(addr)`**: Constructs a pointer from an integer address; legal only in `wild` context (D-019).
 *   **`=>!`**: Unchecked cast, opting out of the compile-time data-loss check.

@@ -52,6 +52,18 @@ frontend rewrites D-085's whole strategy exists to prevent.
 
 ## Watch for
 
+- **D-163 lands at this cycle's boundary and is implemented at 1.1's opening;
+  three of this cycle's subcycles carry a hook for it.** The licence reads a
+  call's *resolved callee* for every call form, so: the UFCS subcycle (1.0.2)
+  keeps `callee_decl` answering for `x.m()` as for `f(x)`; the traits/impls
+  subcycle (1.0.3) makes `check_signature` compare the contract window, not only
+  the types (an impl may not drop the trait's `never fails`); the `dyn` subcycle
+  (1.0.4) `find_method` `TY_DYN` path returns the *trait's* declaration (the
+  licence reads the trait, never the impl). The generic-stdlib subcycle (1.0.7)
+  declares `Optional<T>`'s accessors `never fails`. D-156's mangling includes a
+  function type's never-fails flag where a function type is a generic argument.
+  None of this is the rule itself — it is the slot the rule plugs into, built once.
+
 - **A `type_name` compare is an identity bug until proven otherwise.** D-090 put
   identity in the declaration; the struct-literal shortcut put it in the name and
   was wrong the day it was written (0.6.7), found closing 1.0.0's duplicate-name

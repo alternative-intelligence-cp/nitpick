@@ -33,7 +33,7 @@ remains the single explicit, greppable, auditable bypass.
 
 ---
 
-## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead)
+## D-002 — FFI must map C failures into `Result.error` — **SETTLED; the contract half is superseded by D-149** (in-process C linkage no longer exists, so the per-function `fails on` contracts below are never written — the PRINCIPLE, that a foreign failure always arrives as an errored `Result` and never a silent success, survives and is delivered by the driver wire protocol's uniform status instead; D-163 (proposed) then gives `never fails` a GENERAL home — a checked contract on any function, not just an `extern` — and licenses `raw`/`drop` by it)
 
 `TYPE_REFERENCE.md` §11.2 currently specifies that when a C function "does not
 provide error information, the result defaults to `Ok(val)`". **This is not the
@@ -953,7 +953,7 @@ This needs settling before `defer` lowering is implemented.
 
 ---
 
-## D-014 — `defer` does not run on a trap; `failsafe` requirements — **SETTLED**
+## D-014 — `defer` does not run on a trap; `failsafe` requirements — **SETTLED; D-163 (proposed) adds what a `defer` BODY may do**: `fail`/`relay` are refused inside one (cleanup runs on an exit already decided), and a cleanup call that can fail is handled in the body with `?!`, an `is_err` branch, or an explicit `? NIL`**
 
 Resolves the open follow-on from D-013.
 
@@ -3923,7 +3923,7 @@ the stdlib were written before the feature existed, in a style that predates it.
 
 ---
 
-## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED**
+## D-060 — Nitpick is statement-oriented; the expression forms are a closed list — **SETTLED; D-163 (proposed) adds the STATEMENT-side closed list**: a value-less statement is one of `drop f();` / `relay f();` / `f() ?! c;` / `f() ? NIL;`, and a bare `f();` on a `Result` is refused — the statement-side counterpart of this decision**
 
 Resolves conflicts **24** and **18**, which are the same question.
 
@@ -6054,7 +6054,7 @@ identifier and gives a reader a keyword they cannot look up.**
 
 ---
 
-## D-089 — `main` takes `cstring[]:argv` and nothing else; the declaration-site `_~` is restored — **SETTLED**
+## D-089 — `main` takes `cstring[]:argv` and nothing else; the declaration-site `_~` is restored — **SETTLED; D-163 (proposed) sharpens `discard`**: it takes a VALUE, never a `Result` — a never-failing value ignored is `discard(raw f())`, and a `Result` in statement position needs a keyword (`drop`/`relay`/`?!`/`? NIL`)**
 
 Two features the prototype implements and the carried-over spec set lost. Both
 are recovered here, and one of them is corrected on the way in.
@@ -10013,7 +10013,7 @@ The repairs:
 `tests/frontend/lexer_numeric.npk` locks the exact guard on the basis
 constant that used to wrap.
 
-## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED**
+## D-149 — The FFI barrier is the process boundary; `extern` declares a driver interface — **SETTLED; D-163 (proposed) reuses the retired `never fails`**: a driver method may always fail, so `raw`/`drop` are never licensed on a driver call (falls out of D-163 rules 3–4), and when the Bridge lands (1.1) `VerifyNeverFails` becomes the one node for the one word**
 
 Post-0.9, at the user's direction. Generalizes D-055; supersedes the contract
 half of D-002; supersedes the C-pointer half of D-066.
@@ -10711,3 +10711,340 @@ spanless-diagnostic bug: `emit_line` in `main.npk`/`tools/check.npk` relayed
 retired guard had been exiting 1 while printing NOTHING. `emit_line` now
 renders `<no span>` — a refusal a reader cannot act on is worse than no
 check.
+
+## D-163 — `raw` and `drop` are licensed by `never fails`; a `Result` is never discarded without a keyword; `never fails` is checked — **PROPOSED**
+
+Raised by the user post-1.0.0, in two parts. *"The purpose of `raw` was to skip
+checks for a function that cannot return an error"* — and the compiler has
+never asked whether the function can. And: *"the whole purpose of `drop` was to
+use with functions that do not return a useful value … just because a function
+doesn't return a useful value doesn't mean an error didn't occur in flight."*
+
+### The gap
+
+Three ways to lose an error, none of them checked:
+
+- **`raw e` / `_! e`** reads `.value` without a check. The checker verifies that
+  `e` is a `Result<T>` (`type_unwrap`) and nothing else; the emitter is an
+  unguarded `extractvalue …, 0` (`emit_raw`). The prototype did the same.
+- **`drop e` / `_? e`** discards value and error together. Same check, and the
+  emitter evaluates the operand and yields nothing.
+- **A bare expression statement** — `f();` or `discard(f());` — is typed "for
+  its own sake" (`check_stmt`) and its type is never examined, so a `Result`
+  vanishes with no keyword at the site. `SAFETY_ARCHITECTURE.md`'s "the caller
+  *must* explicitly handle the `Result<T>`" was never enforced.
+
+The language already has the word for the property all three depend on.
+`never fails` (D-002) is "an explicit, greppable assertion that the function
+cannot fail … required rather than implied." It was attached to `extern`
+functions only, and D-149 retired that use.
+
+**Measured in this compiler** (heuristic; re-measured by the instrument):
+5,885 `raw` sites in `src/`, `lib/`, `tools/`, **262–300 on a callee that
+`fail`s** — `ast_id_at` ×92, `symtab_get` ×32, `graph_at` ×28, `tt_get` ×26,
+each on an out-of-range index, each continuing on node 0. 2,005 `drop` sites,
+**741 on a callee that can fail** — among them the driver's own stages:
+`drop check_module(…)`, `drop resolve_module(…)`, `drop collect_impls(…)` in
+`pipeline.npk`, so an internal defect inside the type checker is discarded and
+the pipeline proceeds to the emitter as if the stage had passed. That is a
+silent success in the compiler's own control flow — what D-002 and D-149
+forbid a foreign call to produce. `tests/` carries 932 + 144 more, and 186 bare
+statements.
+
+Every other claim of this shape is checked. `_~` on a parameter is an error to
+read (D-089). `never fails` on an extern had to be written, never implied. An
+impl exceeding its trait method's `acquires` bound is refused (D-056). These
+were the last claims the compiler took on faith, and the TOS framing was the
+only thing behind them. A discipline is what fails under pressure; D-007 says
+so of `ok()`, and 1,000 sites say so of this.
+
+### The decision, in nine rules
+
+**1. `never fails` is a contract on any function.** Ordinary functions, trait
+method signatures, impl methods, `comptime` functions, builtins, and function
+*types*. It sits in the contract position — after the parameter list, where
+`requires` / `ensures` already go:
+
+```nitpick
+pub func:ast_kind_at = int32(Ast->:ast, int32:i) never fails { … };
+pub func:p_error = NIL(Parser->:p, string:code, string:message) never fails { … };
+trait:Shape = { func:area = flt64(Self->:self) never fails; };
+func int32(int32) never fails:f = @square;       // a function TYPE carrying it
+```
+
+The keyword pair already lexes (D-002). The parser production exists
+(`p_parse_failure`) and becomes reachable from `p_parse_contracts`, as a new
+`VerifyKind` — `VerifyNeverFails` — in the contract window
+`FunctionDecl.contracts` already has. No AST layout change; no lexer change.
+`fails on` is **not** extended: a Nitpick function says how it fails with `fail`.
+
+**2. `never fails` is checked.** In a function so declared the checker refuses,
+naming the statement:
+
+| refused | because |
+|---|---|
+| `fail c;` | returns an error |
+| `relay e` / `_^ e` | returns the callee's error — refused even when the callee is itself `never fails`: the dead branch is refused rather than reasoned about, so the rule has no sub-case (write `raw`, licensed there) |
+| `return Result{…};` | the literal can carry an error; `pass v;` is the success spelling and cannot |
+| `requires` / `ensures` / `limit<Rules>` on the function or its parameters | a contract that can be violated at runtime is a failure channel. C-15/C-16 decide *which*; a function with a precondition can refuse its inputs under either answer and is not never-failing |
+| the `async` modifier | the executor can fail a task independently of its body (deadline, D-056) |
+| the clause on `main` / `failsafe` | they return no `Result`; the claim is vacuous |
+
+Permitted, because none of them *returns* an error: `?` with a default, `?!`
+(a trap is Layer 3, a different channel, and already greppable), `drop` and
+`raw` of `never fails` callees, `is_err` branches, `pick` with an `ERR:` arm.
+
+**The check is syntactic and modular** — a walk over statement kinds in one
+body, the exact shape of the existing `main`/`failsafe` refusals (`fn_terminal`
+in `check_fail`, `check_return`, the `relay` arm of `type_of_expr`): an
+`fn_never_fails` flag on the typer, read in the same three places. No
+interprocedural analysis, no fixpoint — every callee's contract is *declared*,
+which is what makes the guarantee compose across function pointers, trait
+objects, and separate compilation, and keeps the checker itself something
+Astrée can read.
+
+**3. `raw` is licensed only by `never fails`.** The operand of `raw` / `_!`
+must be a **call** — direct, UFCS / method, trait-dispatched, `dyn`,
+function-pointer, or builtin — whose resolved callee carries the contract.
+Refused otherwise: a callee without it (the message names the callee, its
+declaration line, and the honest spellings — declare it `never fails` if it
+cannot fail; `?!` if this call must succeed; `relay` / `?` / `is_err`
+otherwise); a binding (`raw r` — the language already has the checked `.value`
+read, D-007; a second spelling of it would be two mechanisms for one job); any
+non-call expression.
+
+**4. `drop` is licensed the same way, and is the `void` call.** The operand of
+`drop` / `_?` must be a call whose callee is `never fails` **and whose success
+type is `NIL`**. `drop f();` then means exactly what it was for: *call a
+function that has nothing to return and cannot fail*. Refused otherwise:
+
+- a callee that can fail → `relay f();`, `f() ?! c;`, or `f() ? NIL;` (rule 6);
+- a callee with a value → the value is not "dropped", it is *discarded*:
+  `discard(raw f());` — two words, two claims, both checked (the call cannot
+  fail; the value is deliberately unused), the D-089 spelling for a value
+  nobody reads. (**Settled with the user.** Weighed: letting `drop` swallow a never-failing
+  value too. Rejected — it puts "I don't need the value" and "this is a `void` call" on one
+  word, and 90 sites in `src/` is the whole cost of keeping them apart.)
+- a binding or non-call expression.
+
+**Exception — the spawn form.** `drop work()` where `work` is `async` and not
+awaited is the spawn construct (D-058; D-062 gives it lexical lifetime). An
+`async` function can never be `never fails` (rule 2), so the licence does not
+apply to it — **and its error is not discarded either**: the task's `Result`
+error is delivered to the enclosing scope's D-062 join. **Settled with the
+user, implemented by 1.1 (C-7 / C-9):** the join relays the **first child
+error, verbatim (D-080), after every child has finished**, as the enclosing
+`async` function's own error; a task that was wound up by the join's deadline
+reports its wind-up code the same way. A spawned task's error is observable or
+the program does not compile. That is
+structured concurrency's error rule, and it is the natural completion of
+D-062's lexical task lifetime. CONCURRENCY_REFERENCE §2.2's "result discarded"
+becomes "value discarded; error joined".
+
+**5. Trait conformance.** An impl of a trait method declared `never fails` must
+itself be declared `never fails` — the direction of `NITPICK-LOCK-002`: the
+implementation may not claim less than the trait promised. An impl may be
+`never fails` where its trait is not; the guarantee is then visible on the
+concrete receiver only. **A `dyn` call is licensed by the trait's declaration**,
+never an impl's — the vtable hides which impl runs. `#[derive]`-generated impls
+carry whatever the trait declares, and their bodies must satisfy rule 2.
+
+**6. A `Result` is never discarded without a keyword, and the value-less
+statement forms are a closed list.** An expression statement's expression must
+have type `NIL`, and must be one of:
+
+| statement | meaning |
+|---|---|
+| `drop f();` | the `void` call — `f` is `never fails` and returns `NIL` |
+| `relay f();` | run `f`; its error, if any, returns to the caller |
+| `f() ?! c;` | run `f`; its error, if any, traps |
+| `f() ? NIL;` | run `f`; its error, if any, is deliberately ignored — the one explicit swallow, written as what it is: a default of nothing. **Settled with the user** as the sanctioned spelling; an auditor greps `? NIL` |
+
+Refused in statement position: a bare call (`f();` — a `Result` with nothing
+said about it, `TYPE_RESULT_DISCARDED`); any expression of a non-`NIL` type (a
+value with nowhere to go — `discard(…)` if that is intended); `raw f();` (it
+would be a second spelling of `drop f();`); and `discard(e)` where `e` is a
+`Result` (`discard` takes a value, never an outcome — rule 4's spelling is
+`discard(raw f())`). D-060's closed expression list gets its statement-side
+counterpart, for the same reason: a reader answers "what can stand here" by
+looking, not by remembering.
+
+**7. A `defer` body decides nothing about the function's outcome.** `fail` and
+`relay` are refused inside a `defer` body — D-014's model is cleanup on an exit
+already decided, and the backend would re-run the defer frames from inside one.
+A cleanup call that can fail is handled in the body with `?!` (a cleanup
+failure is a `failsafe` event — "a failed close is reported, never swallowed"),
+an `is_err` branch, or the explicit `? NIL`. `drop` in a defer is licensed as
+anywhere else.
+
+**8. Function types.** `func T(P…) never fails` is a distinct interned type. A
+`never fails` function is assignable to either spelling; a may-fail function
+only to the unmarked one — the mark *adds* a guarantee, so it flows one way.
+Identity includes it: `func_types_equal`, interning, and the D-156 mangled name
+where a function type appears as a generic argument.
+
+A **flag in the interned type's flags slot, not a kind** — stated against
+`TY_FUNC_VARIADIC`'s reasoning, because the two differ in what ignoring the
+field does. Ignoring the variadic bit accepted wrong arity. Ignoring this flag
+treats a never-failing function as an ordinary one, which *loses a licence and
+never grants one* — the safe direction. Its only readers are the licence and
+the assignability check, and both read it on purpose.
+
+**9. Builtins declare theirs too.** `BUILTIN_REFERENCE.md`'s table gains a
+`fails` column; `gen_tables.py` emits it into `builtins.npk`; the licence reads
+it. The prose already says `string_from_bytes` and `path_exists` never fail;
+the implementing subcycle audits every bare-name builtin against its IR body,
+not its prose — in particular whether `string_concat`, `int_to_string`,
+`string_slice` have any failure besides OOM (which traps, D-150, and is
+therefore not a `Result` error), and which "→ void" builtins (`dalloc`,
+`wildx_free`, `wild_release_all`) are `never fails` because their failures
+trap. `to_cstring` fails on an interior NUL; everything touching a descriptor
+may fail.
+
+### What `raw` and `drop` mean after this
+
+Neither is an opt-out. `raw` is a checked, **zero-cost** unwrap: the compiler
+proves the check redundant, and the zero-cost path is exactly the never-failing
+set, which is where the performance argument for `raw` ever applied. `drop` is
+the `void` call, and says so. The `Result` discipline then has **no silent
+sink** — every way past a possible error is spelled and means one thing: `? d`
+(a visible default), `?! c` (trap), `relay` (propagate), `is_err` / `ERR:`
+(handle). Nothing expressible is lost: the old `raw f()` on a may-fail `f` was
+`f() ? <zero of T>` with the default unwritten; the old `drop f()` was
+`f() ? NIL;` with the swallow unwritten. An unwritten default is precisely what
+explicit-over-implicit forbids, and both spellings exist for anyone who meant
+them.
+
+The spellings stay. `raw`, `_!`, `drop`, `_?` mean what they always meant, in
+every context; what changes is that the compiler now refuses the contexts where
+the missing check was load-bearing. `SAFETY_ARCHITECTURE.md`'s "Escape Hatches"
+list drops `raw`; the TOS system keeps `wild`, `wildx`, `#wild_ptr`, `=>!`, `?!`.
+
+### D-149 is unaffected and needs no special case
+
+A driver-interface (`extern`) method may always fail — timeout, driver death —
+so D-149's refusal of the contract on an `extern` stands, and neither `raw` nor
+`drop` is ever licensed on a driver call; that falls out of rules 3 and 4. When
+the Bridge lands (1.1) and `DeclNeverFails` / `DeclFailsOn` (the extern failure
+slot) are retired, `VerifyNeverFails` is the one node for the one word.
+
+### Codes
+
+Six, in the type stage, centralised in `type_codes.npk`:
+
+| code | fires on |
+|---|---|
+| `TYPE_RAW_UNLICENSED` | `raw` / `drop` whose operand is not a call to a `never fails` callee (the message says which operator and what the callee lacks) |
+| `TYPE_NEVER_FAILS_CAN_FAIL` | a `never fails` body containing `fail` / `relay` / `return`, a contract, `async`, or the clause on `main` / `failsafe` |
+| `TYPE_NEVER_FAILS_IMPL` | an impl method weaker than its trait's declaration |
+| `TYPE_NEVER_FAILS_ASSIGN` | a may-fail function where a `never fails` function type is expected |
+| `TYPE_RESULT_DISCARDED` | a `Result` in statement position with no operator, `discard(Result)`, or a non-`NIL` expression statement |
+| `TYPE_DEFER_EXIT` | `fail` or `relay` inside a `defer` body |
+
+(`check_codes_tested` demands a case for each; `check_codes_centralised`
+forbids the literals elsewhere.)
+
+### Always on, not `--extra-picky`
+
+`SAFETY_ARCHITECTURE.md`'s own standard: *"absolute by default, suspended only
+through a construct an auditor can search for."* Every `--extra-picky` rule adds
+pedantry beyond what safety requires and none gates a safety property; placing
+this one there would make the default build the one that trusts the author.
+
+### Migration (two sweep subcycles; numbers are the heuristic's)
+
+- **~868 functions gain the clause** (728 under `raw` ∪ 144 under `drop`).
+  Rule 2 checks every one: a clause on a function that contains `fail` is
+  refused, so a wrong claim cannot land. Most of the parser family's may-fail
+  status is transitive from a few accessors (`p_peek` relays `tokenlist_at`
+  after bounds-checking it) — the sweep resolves those at the **root**, with an
+  in-range accessor or one `?!` on the impossible branch, and 226 `drop p_*`
+  sites become licensed without being touched.
+- **~262 `raw` sites and ~741 `drop` sites are rewritten**, each a latent bug:
+  `relay` where the enclosing function returns a `Result` and the failure
+  should reach the caller (the driver's stage calls; an out-of-range index is an
+  internal defect that should surface as a diagnostic, not as node 0); `?!`
+  where the failure is an invariant violation with no caller able to act;
+  `is_err` where it is meaningful. Never `? NIL` / `? <zero>` as a mechanical
+  replacement — that is the old behaviour with the swallow written down, and
+  the point of the sweep is to stop continuing past failures.
+- **~90 `drop` sites** on never-failing value-returning callees become
+  `discard(raw f())`; **188 bare statements** (2 in `src/`, 186 in `tests/`)
+  gain their keyword.
+- **~98 builtin sites** follow the column. `tests/`: ~3,500 `raw` + ~280 `drop`
+  sites, ~1,070 on may-fail helpers (which collapse to a few dozen callees),
+  plus the rejection cases for the six codes.
+- **The seed** (`bootstrap/generator/`): `parse.py` accepts `never fails` in the
+  contract position of a function, a trait method, and a function type, and
+  does **not** set `has_contract` for it — `check.py` rung-refuses every
+  contract as 1.3 work, and this one changes no lowering. `gen_tables.py` emits
+  the builtin column.
+- **Performance**: unchanged where `raw` / `drop` survive; one predictable
+  compare-and-branch where `?!` or `relay` replaces them on a may-fail callee,
+  which the ABI decision (D-084, "never an exemption from returning `Result`")
+  already accepted — its obligation to measure SROA folding across the inlining
+  boundary still stands.
+- **The fixpoint**: the clause changes no emitted byte, so stage-1/stage-2
+  equality is a property to assert. The rewrites change bytes only where a
+  branch now exists.
+
+### Rejected alternatives
+
+- **Infer never-fails by whole-program analysis, no declarations.** Implicit: a
+  `fail` added deep in a callee silently changes which distant sites are
+  legal, with the error far from the cause. Non-modular: function pointers and
+  `dyn` could never be licensed. A fixpoint to verify instead of a walk over
+  statement kinds. Kept only as the throwaway *measurement*.
+- **`drop` relays (or traps) the error instead of being licensed.** Hides an
+  early return (or a trap) behind a word that says "drop" — two spellings of
+  `relay`, one of them misleading. The bypass is written or it does not exist.
+- **`--extra-picky` only.** Inverts the table.
+- **Keep `raw` / `drop` unchecked and add checked siblings.** Two unwraps
+  differing only in whether the compiler checks the claim — the two-mechanisms
+  violation — and it leaves the unchecked one as the adversary's first link
+  (D-149's reasoning for *mechanism-less*).
+- **Remove `raw`; `?!` everywhere.** Loses the zero-cost path and plants ~5,500
+  trap sites that can never fire — noise an auditor must discount.
+- **Bare `T` returns for never-failing functions.** D-114 refused two calling
+  conventions; D-013's universal `Result` is blueprint facet 1.
+
+### Amendment status (recorded at adoption, D-163)
+
+The amendments below are the doc-sync obligation this decision carries. Because
+D-163 is **PROPOSED and implemented at 1.1**, they are made as **forward
+references to D-163**, not rewrites to the post-1.1 state — a spec must not
+describe `raw`/`drop` as "licensed" while the code still leaves them unchecked
+(the stale-spec-ahead-of-code hazard is as real as the reverse). At adoption the
+high-value passages that would actively mislead an implementer or auditor were
+given forward-reference notes: `SAFETY_ARCHITECTURE`'s Escape Hatches / `raw`
+bullet, `TYPE_REFERENCE`'s `raw`/`drop`/`discard` note, `OP_REFERENCE`'s `_!`/`_?`
+rows, `CONCURRENCY_REFERENCE` §2.2 (the spawn error-join, which C-7/C-9 build
+against), and the `DECISIONS` cross-refs D-002/D-014/D-060/D-089/D-149. The
+remainder of the list is the **1.1.0 doc-sync obligation**, made when the
+behavior lands and the notes flip from "proposed" to describing current state.
+
+### Amendments this forces
+
+- `TYPE_REFERENCE.md` — the `Result` operator table (`raw`, `drop` rows) and
+  the `raw`/`drop`/`discard` note; the "D-002 era" note.
+- `OP_REFERENCE.md` — the `_!` and `_?` rows.
+- `SAFETY_ARCHITECTURE.md` — Layer 2's `raw` / `drop` bullets ("Forced
+  Handling" becomes true); the Escape Hatches list.
+- `AST_REFERENCE.md` — §1.1 `contracts`; `FuncType`; `ExprStmt` (NIL-typed,
+  closed forms); the `FailureContract` note.
+- `LEXICAL_REFERENCE.md` — the contract production.
+- `TRAITS_REFERENCE.md` §2 — signatures must match *including the contract*.
+- `CONCURRENCY_REFERENCE.md` §2.2 — "result discarded" → "value discarded,
+  error joined"; D-058 / D-062 gain a note; OPEN_DECISIONS C-7 / C-9 gain the
+  join's error requirement.
+- `VERIFICATION_REFERENCE.md` §3.1 — the `raw divide(10i32, 2i32)` example
+  becomes `?!`; "forcing the caller to unwrap … using `raw`, `drop`" rewritten.
+- `BUILTIN_REFERENCE.md` — the `fails` column.
+- `DECISIONS.md` — D-002 (status line), D-014 (defer: what a body may do),
+  D-060 (the statement-side closed list), D-080's table rows for `raw` / `drop`,
+  D-089 (`discard` takes a value, never a `Result`), D-114's bullets, D-149's
+  "contracts die" paragraph, the function-type example
+  `func:apply = int32(func int32(int32):f, int32:x) { pass raw f(x); };`
+  (the parameter type needs `never fails`), D-156 (mangling includes the flag).
+- `PROTOTYPE_DELTA.md`; `CLAUDE.md`'s "what it refuses" list; `SUBSET_1.md`
+  where it describes `raw` / `drop` / statement calls.

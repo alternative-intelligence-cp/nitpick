@@ -62,8 +62,18 @@ Calling an `async` function **without** `await` and discarding the result spawns
 it on the executor:
 
 ```nitpick
-drop work();        // runs concurrently; result discarded
+drop work();        // runs concurrently; VALUE discarded, ERROR joined (D-163)
 ```
+
+> **The error is not discarded (D-163, proposed, implemented 1.1 via C-7/C-9).**
+> `drop work()` keeps its spelling, but the spawned task's `Result` error reaches
+> the enclosing scope's D-062 join, which relays the **first child error,
+> verbatim (D-080), after every child has finished**, as the enclosing `async`
+> function's own error; a task wound up by the join's deadline reports its wind-up
+> code the same way. A spawned task's error is observable or the program does not
+> compile — structured concurrency's rule, the natural completion of D-062's
+> lexical task lifetime. (An `async` function can never be `never fails`, so the
+> D-163 licence never applies to the spawn form.)
 
 > Restored from the prototype's `concurrency_specs.txt` §1.3. Chapter 11 omitted
 > it entirely, leaving no documented way to *start* a concurrent task — only to
