@@ -10467,6 +10467,44 @@ three parts joined by dots:
   `%"npk.geometry.Container<int32>"`.
 - vtables (D-158): `@"npk.<module>.vt.<Type>.<Trait>"`, in the impl's module.
 
+> **Amendment, found at 1.0.5c's opening and owned by 1.0.5b: A METHOD'S SYMBOL
+> MUST NAME ITS IMPL.** The list above says nothing about methods, so the
+> implementation took the only reading available — a method's symbol is its
+> module and its own name — and **the compiler has been emitting invalid LLVM
+> for an ordinary program ever since.** Two impls of one trait on different
+> types both render `@"npk.<module>.say"`, and `llc` refuses the module:
+> `invalid redefinition of function`. A second shape is worse: two impls
+> INHERITING one trait default collide the same way, and because 1.0.4 emits a
+> default once per implementing impl from ONE declaration index, no map keyed by
+> declaration can separate them.
+>
+> The qualifier is the pair D-158 already says a vtable is per — **(target,
+> trait)**:
+>
+> - `@"npk.<module>.<Target>:<Trait>.<name>"` — a trait impl's method
+> - `@"npk.<module>.<Target>.<name>"` — an inherent impl's method
+> - `@"npk.<module>.<name>"` — a free function, unchanged
+>
+> Hash-free, path-free and source-derived are all preserved; those three are why
+> the scheme exists. An inherent method and a trait method of one name on one
+> type now differ, which they must — `find_method` lets both exist and refuses
+> only the ambiguous CALL.
+>
+> **This decision also contradicts itself, and the contradiction is what let the
+> gap through.** The paragraph on module names says a symbol collision "is caught
+> at emit by the generalized collision check (below)" — and the paragraph below
+> says that check was RETIRED at 1.0.1, leaving the case to surface "as an `ld`
+> duplicate symbol". Nothing catches it. Worse, the case the decision worried
+> about was two SAME-BASENAME MODULES, a narrow one; the collision that actually
+> exists is between two impls in ONE module, which it never considered.
+> `check_no_duplicate_symbols` is 1.0.5b's instrument and is what the forward
+> reference should have pointed at all along.
+>
+> **Why no test caught it**: nothing that reaches the backend has ever
+> implemented one trait twice. Three files do and all three are rejection tests
+> that stop at the checker; a fourth is an acceptance test, which is checked and
+> never emitted.
+
 LLVM's quoted identifiers admit any byte, so the spelling embeds verbatim —
 `<`, spaces, commas and all. Reversal is inspection: strip `npk.`, split at
 the first dot, the rest is the source spelling. No hash (D-064 §6's

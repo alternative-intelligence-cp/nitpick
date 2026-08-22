@@ -249,7 +249,21 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     if (k == (raw TY_ANY()))      { pass (raw ll_rung("1.0")); }
 
     if (k == (raw TY_OPTIONAL())) { pass (raw ll_rung("1.0")); }
+
+    // A TRAIT IS NOT A VALUE TYPE. `dyn Trait` is; the bare trait names a
+    // contract and has no representation of its own, which is why this stays a
+    // rung while `TY_DYN` below became real at 1.0.5b.
     if (k == (raw TY_TRAIT()))    { pass (raw ll_rung("1.0")); }
+
+    // `dyn A & B` IS THE DATA WORD AND ONE VTABLE WORD PER TRAIT (D-159) — and
+    // it stays a RUNG until the vtable exists to put in it (1.0.5b). Lowering
+    // the SHAPE alone was tried and reverted: with a real `{ ptr, ptr }` the
+    // assignment stored a 4-byte `Dog` into a 16-byte slot, loaded 16 bytes back
+    // with 12 of them uninitialised, and called the CONCRETE method directly
+    // with the result. It returned the right answer, because the struct's one
+    // field sits at offset 0 — a silent miscompile that passes its test is worse
+    // than the refusal it replaced, so the refusal stands until construction and
+    // dispatch land with it.
     if (k == (raw TY_DYN()))      { pass (raw ll_rung("1.0")); }
 
     // `Self` AND A GENERIC PARAMETER ARE REAL TYPES THAT HAVE NOT BEEN SUBSTITUTED

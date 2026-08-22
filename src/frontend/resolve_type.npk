@@ -1726,27 +1726,52 @@ func:window_mentions_self = SelfScan(Ast->:ast, int32:start, int32:count,
 };
 
 pub func:check_object_safe = NIL(TypeResolver->:r, int32:trait_id, Span:at) {
+    drop object_safety(r, trait_id, at, true);
+    pass NIL;
+};
+
+// THE SAME RULES, ASKED RATHER THAN REPORTED (1.0.5b). The backend needs to know
+// whether a trait has a vtable before it emits one: a trait that is not
+// object-safe has methods that cannot be thunked, and building the table anyway
+// would turn a legal program — a non-object-safe trait nobody uses as `dyn` —
+// into a rung refusal.
+//
+// ONE COPY OF THE RULES, reached two ways. Two implementations of "is this
+// object-safe" would be two things to keep in step, and the one that drifted
+// would be the one nothing reports on.
+pub func:trait_is_object_safe = bool(TypeResolver->:r, int32:trait_id) {
+    pass (!(relay object_safety(r, trait_id, raw span_none(), false)));
+};
+
+// True if any rule fired. `report` decides whether the diagnostics are pushed;
+// the walk is identical either way.
+func:object_safety = bool(TypeResolver->:r, int32:trait_id, Span:at,
+                          bool:report) {
     int32:decl = raw type_decl_of(r.types, trait_id);
-    if (decl == 0i32) { pass NIL; }
+    if (decl == 0i32) { pass false; }
     DeclId:did = DeclId{ index: decl };
     DeclNode:td = relay ast_decl(r.ast, did);
 
+    bool:bad = false;
     int32:n = raw item_member_count(r.ast, td);
     int32:i = 0i32;
     while (i < n) {
         DeclId:mid = raw item_member(r.ast, td, i);
         DeclNode:m = relay ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFunctionDecl) {
-            drop object_safe_method(r, trait_id, m, at);
+            if (relay object_safe_method(r, trait_id, m, at, report)) {
+                bad = true;
+            }
         }
         i = i + 1i32;
     }
-    pass NIL;
+    pass bad;
 };
 
-func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
-                              Span:at) {
+func:object_safe_method = bool(TypeResolver->:r, int32:trait_id, DeclNode:m,
+                               Span:at, bool:report) {
     string:mname = relay intern_get(r.interns, raw decl_name(m));
+    bool:bad = false;
 
     // Rule 1 — a receiver to dispatch on.
     bool:has_self = false;
@@ -1756,8 +1781,11 @@ func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
         has_self = raw string_eq(relay intern_get(r.interns, raw decl_name(pn)), "self");
     }
     if (!has_self) {
-        drop not_object_safe(r, trait_id, mname,
-            "takes no `self`, so there is no receiver to dispatch on", at);
+        bad = true;
+        if (report) {
+            drop not_object_safe(r, trait_id, mname,
+                "takes no `self`, so there is no receiver to dispatch on", at);
+        }
     }
 
     // Rule 2 — `Self` NOWHERE BUT THE RECEIVER (D-157, extended at 1.0.5).
@@ -1794,14 +1822,20 @@ func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
             SelfScan:sc = relay type_mentions_self(r.ast, ptype,
                                                    raw SELF_SCAN_FUEL());
             if (sc.found) {
-                string:sw1 = relay string_concat("mentions `Self` in parameter `",
-                                 relay intern_get(r.interns, raw decl_name(pdecl)));
-                drop not_object_safe(r, trait_id, mname,
-                    relay string_concat(sw1,
-                        "`, and only the receiver may — behind a vtable the concrete type is erased, so the value would be read at the wrong layout"),
-                    at);
+                bad = true;
+                if (report) {
+                    string:sw1 = relay string_concat("mentions `Self` in parameter `",
+                                     relay intern_get(r.interns, raw decl_name(pdecl)));
+                    drop not_object_safe(r, trait_id, mname,
+                        relay string_concat(sw1,
+                            "`, and only the receiver may — behind a vtable the concrete type is erased, so the value would be read at the wrong layout"),
+                        at);
+                }
             }
-            if (sc.exhausted) { drop self_scan_defect(r, mname, at); }
+            if (sc.exhausted) {
+                bad = true;
+                if (report) { drop self_scan_defect(r, mname, at); }
+            }
         }
         pidx = pidx + 1i32;
     }
@@ -1809,25 +1843,34 @@ func:object_safe_method = NIL(TypeResolver->:r, int32:trait_id, DeclNode:m,
     SelfScan:rsc = relay type_mentions_self(r.ast, raw fn_return(r.ast, m),
                                             raw SELF_SCAN_FUEL());
     if (rsc.found) {
-        drop not_object_safe(r, trait_id, mname,
-            "mentions `Self` in its return type, whose size is unknown once the concrete type is erased", at);
+        bad = true;
+        if (report) {
+            drop not_object_safe(r, trait_id, mname,
+                "mentions `Self` in its return type, whose size is unknown once the concrete type is erased", at);
+        }
     }
-    if (rsc.exhausted) { drop self_scan_defect(r, mname, at); }
+    if (rsc.exhausted) {
+        bad = true;
+        if (report) { drop self_scan_defect(r, mname, at); }
+    }
 
     // Rule 3 — nothing that monomorphizes.
     int32:g = relay fn_generic_count(r.ast, m);
     if (g > 0i32) {
-        DeclId:g0 = raw fn_generic(r.ast, m, 0i32);
-        DeclNode:gn = relay ast_decl(r.ast, g0);
-        string:what = "a comptime type parameter";
-        if (raw generic_is_value(gn)) { what = "a comptime value parameter"; }
-        string:w1 = relay string_concat("has ", what);
-        drop not_object_safe(r, trait_id, mname,
-            relay string_concat(w1,
-                ", which monomorphizes into one body per argument, and a vtable slot is one address"),
-            at);
+        bad = true;
+        if (report) {
+            DeclId:g0 = raw fn_generic(r.ast, m, 0i32);
+            DeclNode:gn = relay ast_decl(r.ast, g0);
+            string:what = "a comptime type parameter";
+            if (raw generic_is_value(gn)) { what = "a comptime value parameter"; }
+            string:w1 = relay string_concat("has ", what);
+            drop not_object_safe(r, trait_id, mname,
+                relay string_concat(w1,
+                    ", which monomorphizes into one body per argument, and a vtable slot is one address"),
+                at);
+        }
     }
-    pass NIL;
+    pass bad;
 };
 
 // A TYPE TREE THAT RAN THE WALK OUT OF FUEL IS A COMPILER DEFECT, and is
