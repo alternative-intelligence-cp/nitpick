@@ -209,8 +209,8 @@ func:BASIS_TEXT = string() { pass "(0u64 - 3750763034362895579u64)"; };
 // field's own `eq` — the language has the operator, and a derived implementation
 // that went through a trait would need `int32` to implement one.
 func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                            string:tn) {
-    string:s = relay string_concat("impl:", tn);
+                            string:tn, string:head) {
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":Eq = { pub func:eq = bool(");
     s = relay string_concat(s, tn);
     s = relay string_concat(s, ":self, ");
@@ -237,13 +237,13 @@ func:gen_eq_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // LEXICOGRAPHIC, IN DECLARATION ORDER (D-123). The cost is stated rather than
 // hidden: reordering a struct's fields becomes a semantic change.
 func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                             string:tn, bool:partial) {
+                             string:tn, bool:partial, string:head) {
     string:tr = "Ord";
     string:mn = "cmp";
     string:rt = "Ordering";
     if (partial) { tr = "PartialOrd"; mn = "partial_cmp"; rt = "Ordering?"; }
 
-    string:s = relay string_concat("impl:", tn);
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":");
     s = relay string_concat(s, tr);
     s = relay string_concat(s, " = { pub func:");
@@ -280,8 +280,8 @@ func:gen_cmp_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 
 // `pass self` IS THE CLONE. A struct is a value; passing one is a copy, and the
 // prototype's derived `clone` is the same single statement.
-func:gen_clone = string(string:tn) {
-    string:s = relay string_concat("impl:", tn);
+func:gen_clone = string(string:tn, string:head) {
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":Clone = { pub func:clone = ");
     s = relay string_concat(s, tn);
     s = relay string_concat(s, "(");
@@ -292,12 +292,12 @@ func:gen_clone = string(string:tn) {
 // `Point { x: &{self.x}, y: &{self.y} }`, built with interpolation (D-053) because
 // that is the only formatting mechanism the language has.
 func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                   string:tn, bool:dbg) {
+                                   string:tn, bool:dbg, string:head) {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
 
-    string:s = relay string_concat("impl:", tn);
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":");
     s = relay string_concat(s, tr);
     s = relay string_concat(s, " = { pub func:");
@@ -330,8 +330,8 @@ func:gen_to_string_struct = string(Ast->:ast, InternTable->:interns, DeclNode:d,
 // AN ENUM COMPARES BY `==` AND NOTHING ELSE. `<` on an enum is refused by the type
 // checker (measured), so ordering a variant would need its tag, which no operator
 // yields — that is why `Ord` on an enum is refused rather than generated.
-func:gen_eq_enum = string(string:tn) {
-    string:s = relay string_concat("impl:", tn);
+func:gen_eq_enum = string(string:tn, string:head) {
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":Eq = { pub func:eq = bool(");
     s = relay string_concat(s, tn);
     s = relay string_concat(s, ":self, ");
@@ -345,12 +345,12 @@ func:gen_eq_enum = string(string:tn) {
 // NOT `&{self}`: interpolation is what CALLS `to_string`, so a body built out of it
 // would call itself.
 func:gen_to_string_enum = string(Ast->:ast, InternTable->:interns, DeclNode:d,
-                                 string:tn, bool:dbg) {
+                                 string:tn, bool:dbg, string:head) {
     string:tr = "ToString";
     string:mn = "to_string";
     if (dbg) { tr = "Debug"; mn = "debug"; }
 
-    string:s = relay string_concat("impl:", tn);
+    string:s = relay string_concat(head, tn);
     s = relay string_concat(s, ":");
     s = relay string_concat(s, tr);
     s = relay string_concat(s, " = { pub func:");
@@ -507,23 +507,57 @@ func:derive_text = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
 
 func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
                          DeclNode:d, DeriveSet:want, bool:is_enum) {
-    string:tn = relay intern_get(interns, raw decl_name(d));
+    string:bare = relay intern_get(interns, raw decl_name(d));
+
+    // A GENERIC SUBJECT DERIVES THE FAMILY FORM (D-161, 1.0.4c). `#[derive(Eq)]`
+    // on `struct:Box<T>` used to synthesize `impl:Box:Eq` — the bare
+    // declaration with no arguments — and the author was shown three
+    // "generic arity" errors pointing at `<derived-1>`, source they never
+    // wrote. Now it writes `impl:<T>:Box<T>:Eq`, which is what a person would
+    // write, and which family impls made real at 1.0.4b.
+    //
+    // NO BOUND IS SYNTHESIZED. `T: Eq` looks right and is not needed: the
+    // generated body compares fields with the OPERATOR (`!=`), never by calling
+    // a trait method, so what it requires of `T` is what the operator requires
+    // — the same rule that let a derived `Eq` work on an `int32` field, which
+    // implements no trait at all. Writing a bound would refuse
+    // `Box<int32>` for failing to implement a trait its own field type does not
+    // implement either.
+    string:tn = bare;
+    string:head = "impl:";
+    IdSpan:gw = raw decl_generic_window(ast, d);
+    if (gw.count > 0i32) {
+        string:params = "<";
+        int32:gi = 0i32;
+        while (gi < gw.count) {
+            if (gi > 0i32) { params = relay string_concat(params, ", "); }
+            DeclNode:gp = relay ast_decl(ast,
+                              DeclId{ index: relay ast_id_at(ast, gw.start, gi) });
+            params = relay string_concat(params,
+                         relay intern_get(interns, raw decl_name(gp)));
+            gi = gi + 1i32;
+        }
+        params = relay string_concat(params, ">");
+        tn = relay string_concat(bare, params);
+        head = relay string_concat("impl:", relay string_concat(params, ":"));
+    }
+
     string:s = "";
 
     if (raw derive_wants(want, raw DERIVE_CLONE())) {
-        s = relay string_concat(s, relay gen_clone(tn));
+        s = relay string_concat(s, relay gen_clone(tn, head));
     }
     if (raw derive_wants(want, raw DERIVE_EQ())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_eq_enum(tn)); }
-        else { s = relay string_concat(s, relay gen_eq_struct(ast, interns, d, tn)); }
+        if (is_enum) { s = relay string_concat(s, relay gen_eq_enum(tn, head)); }
+        else { s = relay string_concat(s, relay gen_eq_struct(ast, interns, d, tn, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_TO_STRING())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, false)); }
-        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, false)); }
+        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, false, head)); }
+        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, false, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_DEBUG())) {
-        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, true)); }
-        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, true)); }
+        if (is_enum) { s = relay string_concat(s, relay gen_to_string_enum(ast, interns, d, tn, true, head)); }
+        else { s = relay string_concat(s, relay gen_to_string_struct(ast, interns, d, tn, true, head)); }
     }
 
     // ORDERING AN ENUM NEEDS ITS TAG, WHICH NO OPERATOR YIELDS. `<` on an enum is
@@ -531,16 +565,16 @@ func:derive_one = string(Ast->:ast, InternTable->:interns, DiagList->:diags,
     // rather than generated into something that does not compile, because a
     // diagnostic inside generated code points at a line nobody wrote.
     if (raw derive_wants(want, raw DERIVE_ORD())) {
-        if (is_enum) { drop enum_order_error(diags, d, tn, "Ord"); }
-        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, false)); }
+        if (is_enum) { drop enum_order_error(diags, d, bare, "Ord"); }
+        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, false, head)); }
     }
     if (raw derive_wants(want, raw DERIVE_PARTIAL_ORD())) {
-        if (is_enum) { drop enum_order_error(diags, d, tn, "PartialOrd"); }
-        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, true)); }
+        if (is_enum) { drop enum_order_error(diags, d, bare, "PartialOrd"); }
+        else { s = relay string_concat(s, relay gen_cmp_struct(ast, interns, d, tn, true, head)); }
     }
 
     if (raw derive_wants(want, raw DERIVE_HASH())) {
-        drop hash_unavailable(diags, d, tn);
+        drop hash_unavailable(diags, d, bare);
     }
     pass s;
 };

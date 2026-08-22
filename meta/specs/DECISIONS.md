@@ -10644,26 +10644,39 @@ carries both slots already (D-031's layout, untouched); no token changes;
 the D-085 fear — parser rework cascading into the AST — does not arise,
 which is why this is decided rather than raised.
 
-> **Amendment SETTLED at 1.0.4b, and two clauses still owed.** The
+> **Amendment SETTLED at 1.0.4b; FULLY IMPLEMENTED at 1.0.4c.** The
 > disambiguation needed no new rule: **D-111 already requires a blanket impl to
 > name a trait**, so after a generics window the SEGMENT COUNT decides — one
 > segment is the blanket form's trait, two are a family impl's target and
 > trait. None of the three heuristics floated below was needed. Family impls
 > parse, resolve, check, dispatch, emit and run as of 1.0.4b.
 >
-> **Still owed, owned by 1.0.4c** (measured, not merely absent — each has a
-> wrong behaviour today):
+> **Both clauses 1.0.4b left owed are met as of 1.0.4c**, and both landed on
+> the better of the two branches this decision allowed:
 >
-> - **Overlap is not refused at the impl.** A family impl and a per-instance
->   impl for one (type, trait) both collect, and the program is refused only at
->   a CALL, as `NITPICK-TYPE-020` "ambiguous method". §4.1 requires the refusal
->   at the second impl; as it stands, a library whose overlap nothing calls
->   compiles clean and hands the error to its consumer.
-> - **`#[derive]` on a generic subject emits the broken impl this decision
->   forbids.** `#[derive(Eq)]` on `Box<T>` synthesizes `impl:Box:Eq` and reports
->   three `NITPICK-TYPE-016` arity errors against `<derived-1>` — synthesized
->   source the author never wrote. The interim refusal-by-name this decision
->   mandates is not in place.
+> - **Overlap is refused at the impl.** `check_coherence` compares
+>   DECLARATIONS, not interned targets — `Box<T>` and `Box<int32>` are
+>   different types but one declaration, which is what makes the instance a
+>   member of the family — and reports `NITPICK-TYPE-013` at the second impl
+>   with both named, **with no call required**. Declaration order does not
+>   change the refusal or the wording; two family impls of one trait
+>   (`Box<T>` beside `Box<U>`, which intern differently) are the same overlap.
+>   **Blanket-versus-concrete is untouched and stays accepted** — §2.6 permits
+>   it because D-111 defines the lookup ORDER, and nothing defines one for
+>   family versus instance; giving it one would be the specialization D-064 §7
+>   rejected.
+> - **`#[derive]` on a generic subject synthesizes the family form**, which is
+>   this decision's preferred outcome rather than the interim refusal-by-name:
+>   `#[derive(Eq)]` on `Box<T>` now writes `impl:<T>:Box<T>:Eq`. **No bound is
+>   synthesized**, amending this decision's "the element bound mirrors the
+>   derived trait" below: the generated body compares with the OPERATOR, never
+>   by calling a trait method, so `T: Eq` would refuse `Box<int32>` for failing
+>   to implement a trait its own `int32` field does not implement either.
+>
+> Closing it required an unrelated hole in 1.0.2b's generic lowering: body
+> ANNOTATIONS were substituted, body EXPRESSIONS were not, so a derived
+> `self.v != other.v` reached lowering carrying a bare `T`. `ll_type` now
+> resolves a parameter to its argument while a specialization is emitted.
 >
 > The original amendment note follows, kept because it records why the first
 > attempt failed.
@@ -10694,10 +10707,15 @@ spelling, with the impl's bounds checked at the D-108 bound-judgment pass.
 (type, trait) are an OVERLAP and refused (TRAITS_REFERENCE §4.1's one-impl
 rule, unchanged — no specialization, per D-064 §7).
 
-**Derive on generics** synthesizes exactly the family form
-(`impl:<T: Eq>:Box<T>:Eq` — the element bound mirrors the derived trait).
-Until that lands (1.0.4), `#[derive]` on a generic subject REFUSES by name
-— today it emits a broken `impl:Box:Eq`, which is worse than any refusal.
+**Derive on generics** synthesizes exactly the family form — `impl:<T>:Box<T>:Eq`.
+This originally read `impl:<T: Eq>:Box<T>:Eq`, "the element bound mirrors the
+derived trait"; **1.0.4c corrected that to no bound at all**, because the
+generated body compares with the OPERATOR and never calls a trait method, so a
+mirrored bound would refuse `Box<int32>` for failing to implement a trait its
+own `int32` field does not implement either. The interim refusal-by-name this
+paragraph mandated was never needed: synthesis was available at 1.0.4c, and a
+probe confirmed the hand-written family impl type-checks before the generator
+was changed to emit one.
 
 **Default methods** (folded in from grammar #6): a trait method with a body
 is inherited by every impl that omits it; `find_method` falls back to the

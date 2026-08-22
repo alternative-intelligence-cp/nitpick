@@ -1155,7 +1155,15 @@ pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
     GenericScope:g = GenericScope{
         params_start: gp.start, params_count: gp.count,
         args_start: args_start, args_count: args_count };
-    pass (relay emit_function_body_subst(x, did, d, mangled_name, g, true));
+
+    // The EXPRESSION half of the substitution (1.0.4c): a generic body's
+    // expressions carry the types the checker recorded with `T` opaque, so
+    // `ll_type` needs the binding to lower them. The annotation half is the
+    // resolver scope pushed inside `emit_function_body_subst`.
+    drop llctx_set_subst(x.fe.ctx, gp.start, gp.count, args_start);
+    IrVal:r = relay emit_function_body_subst(x, did, d, mangled_name, g, true);
+    drop llctx_set_subst(x.fe.ctx, 0i32, 0i32, 0i32);
+    pass r;
 };
 
 pub func:emit_function = IrVal(ExprEmitter->:x, DeclId:did) {

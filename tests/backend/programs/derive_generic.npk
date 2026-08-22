@@ -1,0 +1,32 @@
+// expect-exit: 42
+//
+// `#[derive]` ON A GENERIC SUBJECT synthesizes the FAMILY form (D-161, 1.0.4c).
+// Before this it emitted `impl:Box:Eq` — the bare declaration with no type
+// argument — and the author was shown three "generic arity" errors pointing at
+// `<derived-1>`, synthesized source they never wrote. Now it writes
+// `impl:<T>:Box<T>:Eq`, which is what a person would write, and which family
+// impls made real at 1.0.4b.
+//
+// NO BOUND IS SYNTHESIZED, deliberately: the generated body compares fields
+// with the OPERATOR (`!=`), never by calling a trait method, so what it needs
+// of `T` is what the operator needs — the same rule that let a derived `Eq`
+// work on an `int32` field, which implements no trait at all.
+//
+// This also exercises the half of generic-body lowering that 1.0.2b's
+// `identity<T>` test could not reach: `self.v != other.v` is an EXPRESSION
+// whose recorded type is the bare parameter (the checker walked the body with
+// `T` opaque, D-107), so lowering it needs the specialization's binding.
+
+#[derive(Eq)]
+struct:Box<T> = { T:v; };
+
+func:main = int32(cstring[]:_~argv) {
+    Box<int32>:a = Box{ v: 5i32 };
+    Box<int32>:b = Box{ v: 5i32 };
+    Box<int32>:c = Box{ v: 9i32 };
+    if (!(raw a.eq(b))) { exit 10i32; }
+    if (raw a.eq(c))    { exit 11i32; }
+    exit 42i32;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

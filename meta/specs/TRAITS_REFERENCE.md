@@ -146,6 +146,19 @@ separately audited artifact; this is a hash for a map.
 
 A refusal **names the field that blocks it**, not the type.
 
+**On a generic subject, derive writes the family form** (D-161, as corrected at
+1.0.4c). `#[derive(Eq)]` on `struct:Box<T>` synthesizes `impl:<T>:Box<T>:Eq` —
+what a person would write — rather than the bare `impl:Box:Eq`, which was
+neither valid nor reportable against source the author could see.
+
+**No bound is synthesized**, and the omission is deliberate rather than an
+oversight: a derived body compares and formats fields with the **operators**,
+never by calling a trait method, so what it asks of `T` is what those operators
+ask. Mirroring the derived trait onto the parameter — `<T: Eq>` — would refuse
+`Box<int32>` for failing to implement a trait its own `int32` field does not
+implement either. The requirement a derived impl really carries is on the
+FIELDS, and it is enforced where the generated body is checked.
+
 ### What each one is
 
 The seven are declared in the **prelude** (D-132) — `src/prelude/prelude.npk`,
@@ -454,7 +467,35 @@ Handle<Node<int64>>:h1 = hdr.node_arena.alloc(my_node);
 ### 4.1 Coherence
 
 There is **at most one implementation** of a given trait for a given type.
-Overlapping implementations are a compile error.
+Overlapping implementations are a compile error, reported **at the second
+impl** — not at a call. A library holding an overlap that nothing inside it
+calls must not compile clean and hand the error to its consumer.
+
+"A given type" means a given **declaration**, not a given interned type
+(D-090). That distinction is the whole content of the rule, because
+`Box<T>` and `Box<int32>` are different types and one declaration:
+
+| Pair | Verdict |
+|---|---|
+| `impl:Item:T` twice | overlap — the plain case |
+| `impl:<T>:Box<T>:S` and `impl:Box<int32>:S` | **overlap** — the family covers every instance, and the instance is one of them |
+| `impl:<T>:Box<T>:S` and `impl:<U>:Box<U>:S` | **overlap** — both cover every instance; they intern as different types only because the parameter's declaration is part of a type's identity |
+| two blanket impls of one trait | overlap (§2.6, D-111) |
+| a blanket impl and a concrete one | **not** an overlap (§2.6) — overlapping is the point, and D-111 defines the lookup order |
+| impls of *different* traits on one type | not an overlap — overlapping is per (type, trait) |
+
+The last two rows are the ones that look inconsistent and are not. A blanket
+impl is bound-driven and D-111 gives it a defined lookup ORDER — concrete
+first, blanket second — so there is never a moment at which two candidates
+exist and something has to choose. **Nothing defines such an order for a family
+impl against an instance of its own family**, and defining one would be exactly
+the specialization D-064 §7 rejected: `Box<int32>` would mean one impl or the
+other depending on what else was in scope, which breaks the rule that a
+construct does not change meaning with context.
+
+The diagnostic names both impls and says which covers the family and which
+covers the member — read off the impls themselves, never off which was written
+first.
 
 ### 4.2 Object Safety
 

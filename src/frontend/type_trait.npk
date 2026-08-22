@@ -251,6 +251,22 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
                         if (!b.blanket) {
                             if (b.target == a.target) {
                                 drop coherence_error(r, a, b);
+                            } else {
+                                // A FAMILY IMPL COVERS EVERY INSTANCE OF ITS
+                                // FAMILY (1.0.4c). `impl:<T>:Box<T>:S` and
+                                // `impl:Box<int32>:S` have DIFFERENT targets as
+                                // interned types, so the equality above never
+                                // fired and the overlap was left to be reported
+                                // at a call as an ambiguous method — a library
+                                // whose overlap nothing in it calls compiled
+                                // clean and handed the error to its consumer.
+                                // §4.1 puts the error at the second impl, and
+                                // D-064 §7 has no specialization, so "family
+                                // plus per-instance" is an overlap rather than
+                                // "the specific one wins".
+                                if (relay family_covers(r, a, b)) {
+                                    drop family_overlap(r, a, b);
+                                }
                             }
                         }
                     }
@@ -260,6 +276,70 @@ pub func:check_coherence = NIL(ImplTable->:t, TypeResolver->:r) {
         }
         i = i + 1i32;
     }
+    pass NIL;
+};
+
+// Does one of these impls implement a FAMILY that the other's target belongs
+// to? True when either is a family impl (it declared parameters and named a
+// target of its own) and both targets share a declaration — which is what
+// identity is (D-090), and what makes `Box<int32>` a member of `Box<T>`'s
+// family.
+func:family_covers = bool(TypeResolver->:r, ImplEntry:a, ImplEntry:b) {
+    bool:af = relay impl_is_family(r, a);
+    bool:bf = relay impl_is_family(r, b);
+    if (!af) {
+        if (!bf) { pass false; }
+    }
+    int32:ad = raw type_decl_of(r.types, a.target);
+    if (ad == 0i32) { pass false; }
+    pass (ad == (raw type_decl_of(r.types, b.target)));
+};
+
+func:impl_is_family = bool(TypeResolver->:r, ImplEntry:e) {
+    if (e.blanket) { pass false; }
+    DeclNode:d = relay ast_decl(r.ast, DeclId{ index: e.decl });
+    pass ((raw impl_generic_count(r.ast, d)) > 0i32);
+};
+
+// A family impl beside a per-instance one: both named, the second carrying the
+// span, the same shape the other two overlaps use.
+//
+// THE ROLES ARE READ OFF THE IMPLS, NOT OFF DECLARATION ORDER. `first` is only
+// the earlier of the pair — either one may be the family, and both may be
+// (`impl:<T>:Box<T>:S` beside `impl:<U>:Box<U>:S` intern differently and reach
+// here). Telling a reader that a per-instance impl "covers every instance"
+// because it happened to be written first is a refusal that misdescribes what
+// it refused, which is worse than a terser one that is true.
+func:family_overlap = NIL(TypeResolver->:r, ImplEntry:first, ImplEntry:second) {
+    DeclNode:first_d = relay ast_decl(r.ast, DeclId{ index: first.decl });
+    DeclNode:second_d = relay ast_decl(r.ast, DeclId{ index: second.decl });
+
+    string:fr = "covers one member of that family";
+    string:sr = "covers every instance of it";
+    if (relay impl_is_family(r, first)) {
+        fr = "covers every instance of that family";
+        sr = "covers one member of it";
+        if (relay impl_is_family(r, second)) {
+            sr = "covers every instance of it as well";
+        }
+    }
+
+    string:m1 = relay string_concat("`",
+                    relay type_display(r.types, r.interns, second.trait_id));
+    string:m2 = relay string_concat(m1, "` is already implemented for `");
+    string:m3 = relay string_concat(m2,
+                    relay type_display(r.types, r.interns, first.target));
+    string:m4 = relay string_concat(m3, "` at line ");
+    string:m5 = relay string_concat(m4,
+                    raw int_to_string(first_d.span.line => int64));
+    string:m6 = relay string_concat(m5, ", which ");
+    string:m7 = relay string_concat(m6, fr);
+    string:m8 = relay string_concat(m7, "; this impl ");
+    string:m9 = relay string_concat(m8, sr);
+    drop diaglist_push(r.diags, raw diag_error(raw TYPE_COHERENCE(),
+        relay string_concat(m9,
+            " — with no specialization there is no rule to choose by (D-064 §7), so the two overlap rather than one winning"),
+        second_d.span));
     pass NIL;
 };
 

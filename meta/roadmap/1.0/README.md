@@ -52,6 +52,7 @@ frontend rewrites D-085's whole strategy exists to prevent.
 | 1.0.5 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |
 | 1.0.6 | **Associated types** — the C-5 resolution (type kind + projection, or the descope) | C-5 |
 | 1.0.7 | **`Optional<T>` and the generic stdlib** — now that generics lower, the parameterized library types (grammar #13's `Optional` refusal names 1.0) | — |
+| 1.0.8 | **The diagnostic message is printed** — found at 1.0.4c: `Diagnostic.message` is written at 79 sites in `src/` and read by nothing, because both drivers define their own `emit_line` that prints `CODE path:line:col` and the one renderer that keeps the message drops the path. One shared renderer, the other two deleted, all 79 messages read against what their code does (1.0.4c found one whose two roles were bound to declaration order), and `check_one_renderer` to stop the drift recurring | 1.0.4c |
 
 ## Watch for
 

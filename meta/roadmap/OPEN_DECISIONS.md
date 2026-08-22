@@ -44,9 +44,13 @@ D-159 (data + one vtable word per trait, canonically ordered bounds; widening
 is a static value rebuild); C-5 → D-160 (TY_ASSOC + in-trait resolution +
 impl-binding substitution; assoc-mentioning methods are not object-safe);
 C-6 → D-161 (family impls via target-between-generics-and-trait — one
-contained production change; per-instance impls turned out to ALREADY work;
-derive-on-generic refuses until it can synthesize the family form). The rows
-stay as the record:
+contained production change; per-instance impls turned out to ALREADY work).
+**Fully implemented at 1.0.4b/1.0.4c**: the blanket-versus-family
+disambiguation needed no heuristic (D-111 already requires a blanket impl to
+name a trait, so the segment count decides), overlap is refused AT THE IMPL
+with no call required, and derive-on-generic **synthesizes** the family form
+rather than taking the interim refusal — with no bound, since a derived body
+uses the operators and never a trait method. The rows stay as the record:
 
 | # | Proposed | Item | Blocks | Source |
 |---|---|---|---|---|

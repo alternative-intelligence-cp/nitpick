@@ -1,0 +1,55 @@
+// D-161 / TRAITS_REFERENCE §4.1 — overlapping implementations are a compile
+// error, AT THE IMPL (1.0.4c).
+//
+// A family impl covers every instance of its family, so a per-instance impl of
+// the same trait overlaps it. Before this the two collected quietly and the
+// program was refused only at a CALL, as `NITPICK-TYPE-020` "ambiguous method"
+// — so a library whose overlap nothing inside it called compiled clean and
+// handed the error to its consumer, at a call site in code that did nothing
+// wrong. Note there is no call anywhere in this file: the refusal does not
+// need one.
+//
+// D-064 §7 has no specialization, so this is an overlap rather than "the
+// specific one wins".
+
+struct:Box<T> = { T:v; };
+
+trait:S = { func:w = int64(Self:self); };
+
+impl:<T>:Box<T>:S = { func:w = int64(Box<T>:self) { pass 8i64; }; };
+
+// expect-error: NITPICK-TYPE-013
+impl:Box<int32>:S = { func:w = int64(Box<int32>:self) { pass 4i64; }; };
+
+// REVERSED DECLARATION ORDER IS THE SAME OVERLAP, and the diagnostic must not
+// describe the per-instance impl as the family just because it was written
+// first. The span still lands on the SECOND impl (§4.1); only the prose swaps.
+trait:S2 = { func:w2 = int64(Self:self); };
+
+impl:Box<int32>:S2 = { func:w2 = int64(Box<int32>:self) { pass 4i64; }; };
+
+// expect-error: NITPICK-TYPE-013
+impl:<T>:Box<T>:S2 = { func:w2 = int64(Box<T>:self) { pass 8i64; }; };
+
+// TWO FAMILY IMPLS OF ONE TRAIT overlap too: `Box<T>` and `Box<U>` intern as
+// different types (the parameter's declaration is part of the identity, D-108),
+// so the plain equality above does not see them — they reach the family check,
+// and both cover every instance.
+trait:S3 = { func:w3 = int64(Self:self); };
+
+impl:<T>:Box<T>:S3 = { func:w3 = int64(Box<T>:self) { pass 1i64; }; };
+
+// expect-error: NITPICK-TYPE-013
+impl:<U>:Box<U>:S3 = { func:w3 = int64(Box<U>:self) { pass 2i64; }; };
+
+// A DIFFERENT TRAIT ON THE SAME TYPE IS NOT AN OVERLAP — overlapping is per
+// (type, trait), so a family impl of one trait beside a per-instance impl of
+// another coexist and this file must not report a fourth error.
+trait:S4 = { func:w4 = int64(Self:self); };
+trait:S5 = { func:w5 = int64(Self:self); };
+
+impl:<T>:Box<T>:S4 = { func:w4 = int64(Box<T>:self) { pass 3i64; }; };
+impl:Box<int32>:S5 = { func:w5 = int64(Box<int32>:self) { pass 5i64; }; };
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

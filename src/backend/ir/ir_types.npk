@@ -82,12 +82,35 @@ pub struct:LlCtx = {
     // by the type-header tests that have no graph.
     wild int32->:mod_of;
     int32:mod_n;
+
+    // THE SPECIALIZATION BEING EMITTED, or counts of 0 (1.0.4c). A generic
+    // body's EXPRESSIONS carry the types the checker recorded when it walked
+    // the body with `T` opaque (D-107) — so `self.v != other.v` on a
+    // `Box<T>`'s field reaches lowering as a bare `T`, which has no
+    // representation. Annotations are substituted by the resolver during
+    // emission (1.0.2b); this is the other half, and it belongs HERE because
+    // `ll_type` is the one place a parameter would otherwise become a rung.
+    int32:subst_params_start;
+    int32:subst_params_count;
+    int32:subst_args_start;
 };
 
 pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns) {
     LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
-                     mod_of: NULL, mod_n: 0i32 };
+                     mod_of: NULL, mod_n: 0i32,
+                     subst_params_start: 0i32, subst_params_count: 0i32,
+                     subst_args_start: 0i32 };
     pass c;
+};
+
+// Bind a specialization's parameters while its body is emitted; counts of 0
+// clear it. Saved and restored by the caller, like every other emission scope.
+pub func:llctx_set_subst = NIL(LlCtx->:c, int32:params_start,
+                               int32:params_count, int32:args_start) {
+    c.subst_params_start = params_start;
+    c.subst_params_count = params_count;
+    c.subst_args_start = args_start;
+    pass NIL;
 };
 
 pub func:llctx_set_modmap = NIL(LlCtx->:c, wild int32->:m, int32:n) {
@@ -233,7 +256,20 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) {
     // YET, so they are a rung rather than broken: both live inside `trait` and
     // `impl` bodies and generic declarations, which cycle 1.0 is what enables.
     if (k == (raw TY_SELF()))     { pass (raw ll_rung("1.0")); }
-    if (k == (raw TY_PARAM()))    { pass (raw ll_rung("1.0")); }
+    if (k == (raw TY_PARAM())) {
+        // Inside a specialization the parameter IS its argument (1.0.4c);
+        // outside one it is a template's type and has no representation.
+        int32:pd = raw type_decl_of(c.types, id);
+        int32:pi = 0i32;
+        while (pi < c.subst_params_count) {
+            if ((relay ast_id_at(c.ast, c.subst_params_start, pi)) == pd) {
+                pass (relay ll_type(c,
+                          relay ast_id_at(c.ast, c.subst_args_start, pi)));
+            }
+            pi = pi + 1i32;
+        }
+        pass (raw ll_rung("1.0"));
+    }
 
     // `lo..hi` IS A TYPED VALUE (D-093): `{ T, T }`, ALWAYS HALF-OPEN — the
     // inclusive spelling was normalized away at construction (D-145), so no
