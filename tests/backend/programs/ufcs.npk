@@ -1,0 +1,29 @@
+// expect-exit: 49
+//
+// UFCS METHOD CALLS (1.0.3). `p.doubled()` and `doubled(p)` are the same call
+// (D-006), and after this subcycle they emit the SAME call — the receiver is
+// simply the first argument. The two `call` lines for `a` and `b` below are
+// byte-identical but for their temporaries, which is the equivalence made real
+// rather than asserted.
+//
+// The callee is READ, not re-derived: resolving a method means asking the impl
+// table, then the bound table, then the scope, and the emitter holds none of
+// them — so the checker records which declaration it settled on
+// (`exprtypes_callee`) and the emitter reads one slot. That slot is also
+// D-163's hook: a method call's resolved callee is as reachable as a plain
+// call's, which is what 1.1's `raw`/`drop` licence will read.
+
+struct:Point = { int32:x; int32:y; };
+
+func:doubled = int32(Point:p) { pass (p.x + p.y) * 2i32; };
+func:scaled = int32(Point:p, int32:k) { pass (p.x + p.y) * k; };
+
+func:main = int32(cstring[]:_~argv) {
+    Point:p = Point{ x: 3i32, y: 4i32 };
+    int32:a = raw doubled(p);      // the function form:      14
+    int32:b = raw p.doubled();     // the UFCS form, same:    14
+    int32:c = raw p.scaled(3i32);  // UFCS with an argument:  21
+    exit a + b + c;                // 49
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

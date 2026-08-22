@@ -28,6 +28,7 @@ use "./resolve_type.npk".*;
 use "./type_layout.npk".*;
 use "./type_decl.npk".*;
 use "./type_expr.npk".*;
+use "./expr_types.npk".*;
 use "./type_trait.npk".*;
 use "./type_generic.npk".*;
 
@@ -37,7 +38,7 @@ use "./type_generic.npk".*;
 // which D-086 makes legal — the loader collects all declarations before resolving
 // any body, so a cycle among modules resolves rather than being an ordering
 // puzzle for whoever writes the next one.
-pub func:type_access = int32(ExprTyper->:e, ExprId:_~id, ExprNode:n) {
+pub func:type_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
         pass (relay type_member_access(e, n, false));
     }
@@ -46,7 +47,7 @@ pub func:type_access = int32(ExprTyper->:e, ExprId:_~id, ExprNode:n) {
     }
     if (n.kind == ExprKind.ExprIndexExpr)      { pass (relay type_index(e, n)); }
     if (n.kind == ExprKind.ExprCallExpr)       { pass (relay type_call(e, n)); }
-    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (relay type_method_call(e, n)); }
+    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (relay type_method_call(e, id, n)); }
     pass 0i32;
 };
 
@@ -807,7 +808,7 @@ func:all_solved = bool(ExprTyper->:e, DeclNode:d, IdSpan:gp, IdSpan:args,
 // in the AST (0.2.8), which is what makes this a LOOKUP rather than a rewrite:
 // the method name is resolved as an ordinary function and the receiver becomes
 // its first argument.
-pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
+pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     // `Ev.Move(5i32)` PARSES AS A METHOD CALL — the parser folds `.name(` into
     // one node deliberately — so a VARIANT CONSTRUCTOR arrives here, not at
     // `type_call`. The receiver is an identifier naming an enum DECLARATION,
@@ -914,6 +915,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprNode:n) {
         Symbol:s = raw symtab_get(e.tab, sym);
         did_index = s.origin;
     }
+
+    // THE RESOLVED CALLEE, RECORDED (1.0.3). The emitter cannot repeat this
+    // lookup — it holds neither the impl table nor the bound table, and a second
+    // copy of the resolution is a second answer waiting to drift from this one.
+    // Recorded on the expression, the same key its type is recorded under.
+    drop exprtypes_set_callee(e.expr_types, id, did_index);
 
     DeclId:did = DeclId{ index: did_index };
     DeclNode:d = relay ast_decl(e.ast, did);

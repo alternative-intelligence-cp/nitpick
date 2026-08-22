@@ -327,7 +327,7 @@ pub func:emit_expr = IrVal(ExprEmitter->:x, ExprId:id) {
                 pass (relay emit_arena_method(x, id, n, amrecv));
             }
         }
-        pass (raw iv_rung("a method call", "1.0", n.span));
+        pass (relay emit_method_call(x, id, n));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
         pass (raw iv_rung("the `?.` operator", "1.0", n.span));
@@ -2310,6 +2310,85 @@ func:fninst_name_of = int32(ExprEmitter->:x, FnInstance:e) {
         i = i + 1i32;
     }
     pass (raw intern_add(x.interns, relay string_concat(m, ">")));
+};
+
+// `x.m(a, b)` — UFCS METHOD LOWERING (1.0.3). One call with the receiver as the
+// first argument, which is what UFCS MEANS (D-006): `p.magnitude()` and
+// `magnitude(p)` are the same call, so they must emit the same call.
+//
+// THE CALLEE IS READ, NOT RE-DERIVED. Resolving `m` means asking the impl table,
+// then the bound table, then the scope — and the emitter holds none of them. The
+// checker recorded which declaration it settled on (`exprtypes_callee`), so this
+// reads one slot. That is also D-163's hook: a method call's resolved callee is
+// as reachable as a plain call's, which is what the licence will read.
+//
+// THE RECEIVER IS ADJUSTED to the first parameter's form — a method taking
+// `Point->:self` called on a `Point` place takes its address, the same one-level
+// adjustment `.` already makes for access (D-098); a by-value parameter takes
+// the value.
+func:emit_method_call = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) {
+    int32:decl = raw exprtypes_callee(x.et, id);
+    if (decl == 0i32) { pass (raw iv_broken(n.span)); }
+    DeclId:did = DeclId{ index: decl };
+    DeclNode:d = relay ast_decl(x.ast, did);
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(n.span)); }
+    if ((raw fn_param_count(x.ast, d)) == 0i32) { pass (raw iv_broken(n.span)); }
+
+    DeclNode:p0 = relay ast_decl(x.ast, raw fn_param(x.ast, d, 0i32));
+    int32:p0t = relay resolve_type(x.tr, raw param_type(p0),
+                    raw symtab_home_scope(x.tab, decl, x.scope));
+    bool:wants_ptr = ((raw type_kind(x.fe.ctx.types, p0t)) == (raw TY_POINTER()));
+
+    ExprId:rid = raw expr_operand(n);
+    string:args = "";
+    if (wants_ptr) {
+        int32:rt = raw exprtypes_get(x.et, rid);
+        if ((raw type_kind(x.fe.ctx.types, rt)) == (raw TY_POINTER())) {
+            IrVal:rv = relay emit_expr(x, rid);
+            if (!(raw iv_is_ok(rv))) { pass rv; }
+            args = relay cat3("ptr ", rv.ref, "");
+        } else {
+            PlaceVal:rp = relay addr_of(x, rid);
+            if (rp.state != (raw LL_OK())) { pass (raw iv_from_place(rp)); }
+            args = relay cat3("ptr ", rp.addr, "");
+        }
+    } else {
+        IrVal:rv = relay emit_expr(x, rid);
+        if (!(raw iv_is_ok(rv))) { pass rv; }
+        args = relay cat3(rv.ll, " ", rv.ref);
+    }
+
+    int32:start = raw expr_list_start(n);
+    int32:count = raw expr_list_count(n);
+    int32:i = 0i32;
+    while (i < count) {
+        ExprId:aid = ExprId{ index: relay ast_id_at(x.ast, start, i) };
+        IrVal:av = relay emit_expr(x, aid);
+        if (!(raw iv_is_ok(av))) { pass av; }
+        args = relay string_concat(args, ", ");
+        args = relay cat3(args, av.ll, relay string_concat(" ", av.ref));
+        i = i + 1i32;
+    }
+
+    string:fname = relay intern_get(x.interns, raw decl_name(d));
+    string:sym = relay mangled_fn_sym(x.fe.ctx, decl, fname);
+    LlType:ret = relay node_ll(x, id);
+    if (ret.state != (raw LL_OK())) {
+        pass (relay iv_from_ll_at(x, ret, raw exprtypes_get(x.et, id), n.span));
+    }
+    string:r = relay irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, relay cat5(r, " = call ", ret.text, " ",
+                      relay cat4(sym, "(", args, ")")));
+    int32:rt_id = raw exprtypes_get(x.et, id);
+    IrVal:out = raw iv(ret.text, r, rt_id);
+    out.wrapped = true;
+    out.inner = "";
+    int32:inner_id = raw type_elem(x.fe.ctx.types, rt_id);
+    if ((raw type_kind(x.fe.ctx.types, inner_id)) != (raw TY_NIL())) {
+        LlType:il = relay ll_type(x.fe.ctx, inner_id);
+        if (raw ll_is_ok(il)) { out.inner = il.text; }
+    }
+    pass out;
 };
 
 pub func:iv_from_place = IrVal(PlaceVal:p) {
