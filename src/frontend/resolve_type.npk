@@ -97,6 +97,13 @@ pub struct:TypeResolver = {
     // exceeding it is an error naming the cap rather than a silent truncation.
     int32:depth;
 
+    // THE CHAIN THAT GOT HERE (1.0.2). D-064 §6 requires the depth-cap error to
+    // print "the instantiation stack", and a number alone does not tell an author
+    // WHICH nesting ran away — with 64 frames the culprit is never at the top.
+    // Names only (intern indices), pushed and popped with `depth`, so the cost is
+    // one store per frame and the report reads like the source: `A -> B -> A`.
+    int32[64]:inst_chain;
+
     // THE LOCALS OF THE `comptime func:` BEING EVALUATED, if one is (0.6.4). Empty
     // outside a call, saved and restored around one, for the same reason `generics`
     // is: it is constant across one evaluation and a nested call needs a frame of
@@ -132,6 +139,7 @@ pub func:tyres_init = TypeResolver(Ast->:ast, TypeTable->:types,
                                    generics: raw generic_scope_none(),
                                    enclosing: raw generic_scope_none(),
                                    instances: instances, depth: 0i32,
+                                   inst_chain: [],
                                    env: raw foldenv_none(),
                                    fold_blown: false, fold_depth: 0i32,
                                    fold_counter: 0i64, fold_counting: false };
@@ -428,11 +436,20 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
     // quietly resolved to its 64th level would be a different type from the one
     // written, and nothing downstream would know.
     if (r.depth >= (raw GENERIC_DEPTH())) {
+        // THE STACK, NOT JUST THE NUMBER (D-064 §6, 1.0.2). At 64 frames the
+        // runaway nesting is never the one at the top, so the chain that got
+        // here is printed — `A -> B -> A` is the shape that says "this recurses".
+        string:chain = relay depth_chain(r, name);
         pass (relay ty_error(r, raw TYPE_GENERIC_DEPTH(),
-            "generic instantiation is nested more than 64 deep, which is the cap (D-064); the expansion is refused rather than truncated, because a type resolved to a different depth than the one written is a different type",
+            relay string_concat(
+                "generic instantiation is nested more than 64 deep, which is the cap (D-064); the expansion is refused rather than truncated, because a type resolved to a different depth than the one written is a different type. The instantiation stack: ",
+                chain),
             n.span));
     }
 
+    if (r.depth < (raw GENERIC_DEPTH())) {
+        r.inst_chain[r.depth => int64] = name;
+    }
     r.depth = r.depth + 1i32;
     int32:mark = raw ast_scratch_mark(r.ast);
     int32:i = 0i32;
@@ -451,6 +468,21 @@ func:resolve_aggregate = int32(TypeResolver->:r, TypeNode:n, int32:name,
                               w.start, w.count, 0i64, 1i32);
     drop inst_record(r.instances, t, n.span);
     pass t;
+};
+
+// `Outer -> Middle -> Inner -> …` — the names on the instantiation stack, in the
+// order they were entered, with the one that overflowed last.
+func:depth_chain = string(TypeResolver->:r, int32:name) {
+    string:out = "";
+    int32:i = 0i32;
+    while (i < r.depth) {
+        if (i > 0i32) { out = relay string_concat(out, " -> "); }
+        out = relay string_concat(out,
+                  relay intern_get(r.interns, r.inst_chain[i => int64]));
+        i = i + 1i32;
+    }
+    if (r.depth > 0i32) { out = relay string_concat(out, " -> "); }
+    pass (relay string_concat(out, relay intern_get(r.interns, name)));
 };
 
 func:GENERIC_DEPTH = int32() { pass 64i32; };

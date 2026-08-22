@@ -44,6 +44,7 @@ frontend rewrites D-085's whole strategy exists to prevent.
 | 1.0.0 | **The mangling scheme** — decide C-1, implement reversible `%"mod.T<...>"` names + folding linkage; retire the interim duplicate-name refusal | C-1 |
 | 1.0.1 | **Type identity by declaration, end to end** — the struct-literal context hole (D-162), the duplicate-name refusal retired as 1.0.0 planned, spanless refusals made audible; two instruments (`check_diags_spanned`, `check_identity_by_decl`) | 1.0.0 |
 | 1.0.2 | **Monomorphization lowering** — instantiate, dedup, emit; the depth-cap diagnostic prints the instantiation stack (D-064 §6, currently one sentence — grammar #12) | C-1 |
+| 1.0.2b | **Generic function lowering** — one body per argument set: the call site records its instantiation, the emitter walks instantiation requests rather than declarations; retires the `a generic function` / `a generic call` rungs | 1.0.2 |
 | 1.0.3 | **UFCS method calls** — `x.method()` lowering; the concrete collections begin to become replaceable | — |
 | 1.0.4 | **Traits and impls** — trait-method dispatch on concrete receivers incl. inherited defaults (grammar #6); impls over generic families (C-6) | C-6 |
 | 1.0.5 | **`dyn` — object safety, dispatch, ABI** — C-2/C-3/C-4 together (they are one boundary); vtable layout and the multi-bound/widening mechanism | C-2,C-3,C-4 |
@@ -54,11 +55,11 @@ frontend rewrites D-085's whole strategy exists to prevent.
 
 - **D-163 lands at this cycle's boundary and is implemented at 1.1's opening;
   three of this cycle's subcycles carry a hook for it.** The licence reads a
-  call's *resolved callee* for every call form, so: the UFCS subcycle (1.0.2)
+  call's *resolved callee* for every call form, so: the UFCS subcycle (1.0.3)
   keeps `callee_decl` answering for `x.m()` as for `f(x)`; the traits/impls
-  subcycle (1.0.3) makes `check_signature` compare the contract window, not only
+  subcycle (1.0.4) makes `check_signature` compare the contract window, not only
   the types (an impl may not drop the trait's `never fails`); the `dyn` subcycle
-  (1.0.4) `find_method` `TY_DYN` path returns the *trait's* declaration (the
+  (1.0.5) `find_method` `TY_DYN` path returns the *trait's* declaration (the
   licence reads the trait, never the impl). The generic-stdlib subcycle (1.0.7)
   declares `Optional<T>`'s accessors `never fails`. D-156's mangling includes a
   function type's never-fails flag where a function type is a generic argument.

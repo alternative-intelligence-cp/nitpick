@@ -1,0 +1,39 @@
+// expect-exit: 35
+//
+// MONOMORPHIZATION (1.0.2). A generic used at two concrete types emits two
+// specialized definitions under their D-156 symbols —
+// `%"npk.generics.Container<int32>" = type { i32, i32 }` and
+// `%"npk.generics.Container<int64>" = type { i64, i32 }` — with the field
+// types SUBSTITUTED, which is what makes them different layouts rather than
+// one shape used twice. The generic declaration itself emits nothing: it is a
+// template, and `Container<T>` has no body until `T` is bound.
+//
+// Dedup is D-108's, reused rather than re-derived: an instantiation is keyed
+// by its mangled name, so the interned type table holds each exactly once and
+// the emitter walks that table. `Box<int32>` below is written three times and
+// defined once.
+
+struct:Container<T> = {
+    T:item;
+    int32:tag;
+};
+
+struct:Box<T> = { T:v; };
+
+func:main = int32(cstring[]:_~argv) {
+    Container<int32>:a = Container{ item: 7i32, tag: 1i32 };
+    Container<int64>:b = Container{ item: 30i64, tag: 2i32 };
+
+    // three uses, one definition
+    Box<int32>:p = Box{ v: 1i32 };
+    Box<int32>:q = Box{ v: 2i32 };
+    Box<int32>:s = Box{ v: 2i32 };
+
+    // a nested instantiation: the argument is itself an instance
+    Box<Container<int32>>:n = Box{ v: a };
+
+    // 7 + 30 + 1 + 2 + 2 - 7 = 35
+    exit a.item + (b.item =>! int32) + p.v + q.v + s.v - n.v.item;
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };

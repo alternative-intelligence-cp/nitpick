@@ -38,6 +38,7 @@ use "../../frontend/types.npk".*;
 use "../../frontend/resolve_type.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/type_layout.npk".*;
+use "../../frontend/type_generic.npk".*;
 
 pub func:LL_OK = int32()     { pass 0i32; };
 pub func:LL_RUNG = int32()   { pass 1i32; };
@@ -334,12 +335,13 @@ pub func:ll_wrap_result = LlType(LlCtx->:c, int32:inner) {
 // level — which is what makes a struct one definition rather than a shape repeated
 // at every mention.
 //
-// AN INSTANTIATION IS REFUSED. Its name is MANGLED and contains `<`, which is what
-// makes `Container<int32>` reversible by inspection for an auditor — and is not an
-// LLVM identifier. Generics are 1.0's, so this refuses rather than inventing a
-// mangling that a later cycle would have to keep.
+// AN INSTANTIATION LOWERS (1.0.2). Its name is MANGLED and contains `<`, which is
+// what makes `Container<int32>` reversible by inspection for an auditor — and is
+// not a BARE LLVM identifier, which is why this refused until D-156 put every
+// symbol in quotes. `%"npk.mod.Container<int32>"` is legal and reversible, so the
+// instance renders like any other named aggregate; what distinguishes it is the
+// BODY, which substitutes (`ll_struct_body`).
 func:ll_named = LlType(LlCtx->:c, int32:id) {
-    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
     pass (raw ll_ok(relay mangled_type_name(c, raw type_decl_of(c.types, id),
@@ -351,7 +353,6 @@ func:ll_named = LlType(LlCtx->:c, int32:id) {
 // is an aggregate, and SUBSET_1 §1.2's one-machine-word payload fixes its shape at
 // `{i32, i64}` — uniform, with no max-payload sizing and no alignment puzzles.
 func:ll_enum = LlType(LlCtx->:c, int32:id) {
-    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
     if (!(relay enum_has_payload(c.ast, c.types, id))) { pass (raw ll_ok("i32")); }
     int32:nm = raw type_name(c.types, id);
     if (raw intern_is_none(nm)) { pass (raw ll_broken()); }
@@ -367,13 +368,37 @@ func:ll_enum = LlType(LlCtx->:c, int32:id) {
 // A ZERO-FIELD STRUCT GETS AN `i8` BODY rather than `{}`. Two distinct empty
 // structs must have distinct addresses, and `type {}` would place them on top of
 // each other — the same reason the layout gives an empty struct one byte.
+// Mirrors `type_generic`'s own SUBST_FUEL: a substituted instance has its own
+// arguments substituted in turn, so the walk follows a type's structure and is
+// bounded the same way the frontend bounds it.
+func:SUBST_FUEL_LL = int32() { pass 64i32; };
+
 pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
                                  int32:scope) {
     if ((raw type_kind(c.types, id)) != (raw TY_STRUCT())) { pass (raw ll_broken()); }
-    if ((raw type_args_count_of(c.types, id)) > 0i32) { pass (raw ll_rung("1.0")); }
 
     DeclId:did = DeclId{ index: raw type_decl(c.types, id) };
     DeclNode:d = relay ast_decl(c.ast, did);
+
+    // AN INSTANTIATION SUBSTITUTES ITS ARGUMENTS INTO EVERY FIELD (1.0.2).
+    // `Container<int32>`'s body is the declaration's fields with `T` replaced —
+    // monomorphization, done by the FRONTEND's own machinery rather than a
+    // second idea of substitution living in the emitter.
+    //
+    // TWO THINGS ARE NEEDED, and `type_layout` (0.8.1) needs the same two for
+    // the same reason. `r.generics` must carry the declaration's parameter
+    // window bound to this instance's arguments, because a field's `T` resolves
+    // through `generic_lookup` and NOT through any scope — a struct's parameters
+    // are declared into no scope at all. And the field's annotation must resolve
+    // AT HOME: it means what it meant where the struct was written.
+    IdSpan:gp = raw decl_generic_window(c.ast, d);
+    GenericScope:g = GenericScope{
+        params_start: gp.start, params_count: gp.count,
+        args_start: raw type_args_start_of(c.types, id),
+        args_count: raw type_args_count_of(c.types, id) };
+    GenericScope:saved = r.generics;
+    r.generics = g;
+    scope = raw symtab_home_scope(r.tab, did.index, scope);
 
     string:body = "";
     int32:n = 0i32;
@@ -382,15 +407,20 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
         DeclId:mid = raw item_member(c.ast, d, i);
         DeclNode:m = relay ast_decl(c.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft = relay resolve_type(r, raw field_type(m), scope);
+            int32:ft0 = relay resolve_type(r, raw field_type(m), scope);
+            int32:ft = relay type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL());
             LlType:ll = relay ll_type(c, ft);
-            if (ll.state != (raw LL_OK())) { pass ll; }
+            if (ll.state != (raw LL_OK())) {
+                r.generics = saved;
+                pass ll;
+            }
             if (n > 0i32) { body = relay string_concat(body, ", "); }
             body = relay string_concat(body, ll.text);
             n = n + 1i32;
         }
         i = i + 1i32;
     }
+    r.generics = saved;
     if (n == 0i32) { body = "i8"; }
 
     string:a = relay string_concat("{ ", body);

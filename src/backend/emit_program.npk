@@ -83,7 +83,50 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
         }
         m = m + 1i32;
     }
+
+    // THE INSTANTIATIONS (1.0.2). Monomorphization emits one definition per
+    // distinct instance, and the interned type table IS that set: D-108 keys an
+    // instantiation by its mangled name, so a repeat request returns the existing
+    // entry and the table holds each exactly once. Walking it here — rather than
+    // re-deriving instantiations from call sites — is why the dedup needs no
+    // second mechanism, and why the emission order is the interning order, which
+    // is deterministic (the fixpoint depends on it).
+    //
+    // The scope is the DECLARING module's, since that is where the generic's
+    // field annotations resolve; `ll_struct_body` substitutes this instance's
+    // arguments over them.
+    int32:t = 0i32;
+    while (t < (raw tt_count(c.types))) {
+        if ((raw type_args_count_of(c.types, t)) > 0i32) {
+            drop emit_instance_header(w, tr, c, diags, g, t);
+        }
+        t = t + 1i32;
+    }
+
     drop irw_blank(w);
+    pass NIL;
+};
+
+// One instantiation's `%"npk.mod.Container<int32>" = type { … }`.
+func:emit_instance_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
+                                DiagList->:diags, ModuleGraph->:g, int32:t) {
+    int32:k = raw type_kind(c.types, t);
+    if (k != (raw TY_STRUCT())) {
+        if (k != (raw TY_ENUM())) { pass NIL; }
+    }
+    LlType:name = relay ll_type(c, t);
+    if (!(raw ll_is_ok(name))) { pass NIL; }
+    if (raw string_eq(name.text, "i32")) { pass NIL; }   // payload-less enum
+
+    // Any scope will do as the starting point: `ll_struct_body` re-homes it to
+    // the declaring module's (the same rule field access follows, 0.8.1).
+    int32:scope = (raw graph_at(g, 0i32)).scope;
+    LlType:body = relay ll_enum_body(c, t);
+    if (k == (raw TY_STRUCT())) {
+        body = relay ll_struct_body(tr, c, t, scope);
+    }
+    if (!(raw ll_is_ok(body))) { pass NIL; }
+    drop irw_raw(w, relay cat4(name.text, " = type ", body.text, ""));
     pass NIL;
 };
 
@@ -108,6 +151,15 @@ func:emit_one_header = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
                            bool:is_struct) {
     int32:want_kind = raw TY_ENUM();
     if (is_struct) { want_kind = raw TY_STRUCT(); }
+
+    // A GENERIC DECLARATION HAS NO BODY OF ITS OWN (1.0.2). `Container<T>` is a
+    // template; what LLVM needs is `Container<int32>`, emitted by the instance
+    // walk. Resolving this declaration's fields here would resolve `T` with
+    // nothing bound to it — which is what the removed `args_count > 0` rung used
+    // to prevent by refusing instances outright.
+    DeclNode:gd = relay ast_decl(c.ast, item);
+    if ((raw decl_generic_window(c.ast, gd)).count > 0i32) { pass NIL; }
+
     int32:t = raw type_of_decl(c, item.index, want_kind);
     if (t == 0i32) { pass NIL; }    // declared and never used: nothing interned it
     LlType:name = relay ll_type(c, t);
