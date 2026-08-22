@@ -175,7 +175,18 @@ func:collect_one_impl = NIL(ImplTable->:t, TypeResolver->:r, DeclId:id,
         pass NIL;
     }
 
+    // A FAMILY IMPL'S TARGET MENTIONS ITS OWN PARAMETERS (1.0.4b):
+    // `impl:<T>:Box<T>:Sized2` resolves `Box<T>` with `T` declared right there,
+    // so the parameters are bound before the target is read — the same move
+    // `bind_own_generics` makes for a function's signature, and for the same
+    // reason (a declaration's parameters are in scope for its own annotations).
+    // The window is empty for a non-generic impl, so one path serves both.
+    IdSpan:igw = raw decl_generic_window(r.ast, d);
+    GenericScope:isaved = r.generics;
+    r.generics = GenericScope{ params_start: igw.start, params_count: igw.count,
+                               args_start: 0i32, args_count: 0i32 };
     int32:target = relay resolve_type(r, relay impl_target(r.ast, d), scope);
+    r.generics = isaved;
     if (target == 0i32) { pass NIL; }
     if (raw type_is_invalid(r.types, target)) { pass NIL; }
 
@@ -646,11 +657,19 @@ pub struct:MethodFind = {
     int32:decl;        // the FunctionDecl's index
     int32:owner;       // the trait it came through, or 0 for an inherent method
     int32:other;       // the OTHER trait, when ambiguous
-    // THE BLANKET IMPL IT CAME FROM, or 0. A blanket impl's methods are written
-    // in terms of its PARAMETER -- `func:l = int32(T:self)` -- so the caller has
-    // to bind that parameter to the receiver before the signature means anything.
-    // Without it, `T` resolves to "there is no type named `T`" at a call site that
-    // is nowhere near the declaration.
+    // THE PARAMETERISED IMPL IT CAME FROM, or 0. A blanket impl's methods are
+    // written in terms of its PARAMETER -- `func:l = int32(T:self)` -- so the
+    // caller has to bind that parameter to the receiver before the signature
+    // means anything. Without it, `T` resolves to "there is no type named `T`"
+    // at a call site that is nowhere near the declaration.
+    //
+    // A FAMILY IMPL (1.0.4b) needs the same binding and differs only in WHAT the
+    // parameters bind to: a blanket impl's single parameter is the receiver
+    // itself (`T` = `Point`), while a family impl's are the receiver's own type
+    // ARGUMENTS (`impl:<T>:Box<T>` called on `Box<int32>` binds `T` = `int32`).
+    // One slot, because the question it answers -- "whose parameters must this
+    // call bind?" -- is one question; `bind_impl_params` reads the impl to see
+    // which shape it is.
     int32:blanket_impl;
 };
 
@@ -736,7 +755,29 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
     int32:i = 0i32;
     while (i < t.count) {
         ImplEntry:e = relay impl_at(t, i);
-        if (e.target == target) {
+        // A FAMILY IMPL MATCHES ANY INSTANCE OF ITS TARGET (1.0.4b).
+        // `impl:<T>:Box<T>:Sized2` has target `Box<T>`; a call on `Box<int32>`
+        // must reach it, and the two are different interned types. They share a
+        // DECLARATION, which is what identity is (D-090), so that is the test —
+        // the same shape `blanket_applies` uses for the blanket form, one step
+        // less general.
+        bool:hit = (e.target == target);
+        if (!hit) {
+            if ((raw impl_generic_count(ast, relay ast_decl(ast,
+                     DeclId{ index: e.decl }))) > 0i32) {
+                if (e.target != 0i32) {
+                    int32:ed = raw type_decl_of(types, e.target);
+                    if (ed != 0i32) {
+                        if (ed == (raw type_decl_of(types, target))) {
+                            hit = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (hit) {
+            bool:parameterised = ((raw impl_generic_count(ast,
+                relay ast_decl(ast, DeclId{ index: e.decl }))) > 0i32);
             int32:mdecl = relay impl_method_named(ast, interns, e.decl, name);
 
             // AN OMITTED METHOD FALLS BACK TO THE TRAIT'S DEFAULT (1.0.4). A
@@ -769,6 +810,7 @@ pub func:find_method = MethodFind(ImplTable->:t, BoundTable->:bt,
                     best.found = true;
                     best.decl = mdecl;
                     best.owner = e.trait_id;
+                    if (parameterised) { best.blanket_impl = e.decl; }
                 }
             }
         }

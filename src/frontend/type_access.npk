@@ -654,7 +654,8 @@ func:type_generic_call = int32(ExprTyper->:e, ExprNode:n, DeclNode:d, IdSpan:gp,
     // outlives this call — which is what lets the emitter walk the set. Deduped
     // by (declaration, arguments), D-108's rule applied to functions.
     drop fninst_record(e.fninsts, e.ast, relay callee_decl_index(e, n),
-                       args.start, args.count, ft, n.span);
+                       args.start, args.count, gp.start, gp.count, 0i32, ft,
+                       n.span);
 
     pass (relay check_args(e, ft, start, count, 0i32, n.span));
 };
@@ -960,6 +961,23 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) {
     }
     int32:ft = relay fn_type(@r, did, name, e.scope);
 
+    // A FAMILY IMPL'S METHOD IS A TEMPLATE, SO THE CALL IS AN INSTANTIATION
+    // REQUEST (1.0.4b). `impl:<T>:Box<T>:Sized2`'s `width` is one body per `T`,
+    // exactly as a generic function is one body per argument set — so it is
+    // recorded in the SAME table (`FnInstTable`), deduped the same way, and the
+    // emitter walks the one set. The arguments are the receiver's own, which
+    // `bind_blanket` just committed into the id pool.
+    if (found.blanket_impl != 0i32) {
+        if (!(raw type_is_none(raw impl_target(e.ast,
+                 relay ast_decl(e.ast, DeclId{ index: found.blanket_impl }))))) {
+            drop fninst_record(e.fninsts, e.ast, did_index,
+                               r.enclosing.args_start, r.enclosing.args_count,
+                               r.enclosing.params_start,
+                               r.enclosing.params_count, found.blanket_impl,
+                               ft, n.span);
+        }
+    }
+
     // THE RECEIVER IS THE FIRST PARAMETER, so it is checked as one — and a method
     // whose first parameter is a different type is a method of that type instead,
     // which the arity/type check below says plainly.
@@ -1083,12 +1101,39 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
 };
 
 // The blanket impl's parameter window, bound to the receiver.
+// Bind a parameterised impl's own parameters for a call on `recv`. TWO SHAPES,
+// told apart by whether the impl wrote a target (1.0.4b):
+//
+//   BLANKET  `impl:<T: Printable>:Loggable` — no target, so the single
+//            parameter IS the receiver: `T` = `Point`.
+//   FAMILY   `impl:<T>:Box<T>:Sized2` — a target of its own, so the parameters
+//            are the receiver's own type ARGUMENTS: `Box<int32>` binds
+//            `T` = `int32`, positionally.
+//
+// The family case takes the arguments positionally rather than unifying the
+// target's shape against the receiver's, which is right for the form the
+// grammar admits — `Box<T>` with the declaration's parameters in order. A
+// target like `Box<Pair<T, U>>` would need real unification, and that is a
+// decision to raise rather than to guess at here; the positional read is exact
+// for what can be written today and refuses nothing that used to work.
 func:bind_blanket = GenericScope(ExprTyper->:e, int32:impl_decl, int32:recv) {
     DeclId:bid = DeclId{ index: impl_decl };
     DeclNode:bd = relay ast_decl(e.ast, bid);
     IdSpan:pw = raw decl_generic_window(e.ast, bd);
     int32:mark = raw ast_scratch_mark(e.ast);
-    drop ast_scratch_push(e.ast, recv);
+
+    if (raw type_is_none(raw impl_target(e.ast, bd))) {
+        drop ast_scratch_push(e.ast, recv);
+    } else {
+        int32:rargs = raw type_args_start_of(e.types, recv);
+        int32:rn = raw type_args_count_of(e.types, recv);
+        int32:i = 0i32;
+        while (i < rn) {
+            drop ast_scratch_push(e.ast, relay ast_id_at(e.ast, rargs, i));
+            i = i + 1i32;
+        }
+    }
+
     IdSpan:aw = raw ast_scratch_commit(e.ast, mark);
     GenericScope:g = GenericScope{ params_start: pw.start, params_count: pw.count,
                                    args_start: aw.start, args_count: aw.count };

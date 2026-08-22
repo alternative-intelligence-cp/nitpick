@@ -27,6 +27,7 @@ use "../frontend/expr_types.npk".*;
 use "../frontend/resolve_type.npk".*;
 use "../frontend/type_layout.npk".*;
 use "../frontend/type_names.npk".*;
+use "../frontend/type_generic.npk".*;
 use "./ir/emit_codes.npk".*;
 use "./ir/ir_writer.npk".*;
 use "./ir/ir_types.npk".*;
@@ -124,10 +125,18 @@ func:emit_type_headers = NIL(IrWriter->:w, TypeResolver->:tr, LlCtx->:c,
 // until something binds it.
 func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
                            DeclNode:d) {
-    if ((raw impl_generic_count(x.ast, d)) > 0i32) { pass NIL; }
-
     TypeId:tgt = raw impl_target(x.ast, d);
     if (raw type_is_none(tgt)) { pass NIL; }
+
+    // A FAMILY IMPL EMITS ITS RECORDED INSTANTIATIONS, HERE (1.0.4b). Its
+    // methods are templates over the impl's parameters AND over `Self`, and
+    // this is the one place both are bound — the global instantiation walk sits
+    // outside that binding, which is why emitting from there reported `T` (or
+    // `Self`) unbound however many windows were threaded into it.
+    if ((raw impl_generic_count(x.ast, d)) > 0i32) {
+        drop emit_family_instances(x, diags, item, d, tgt);
+        pass NIL;
+    }
     int32:self_ty = relay resolve_type(x.tr, tgt,
                         raw symtab_home_scope(x.tab, item.index, x.scope));
 
@@ -179,6 +188,46 @@ func:emit_impl_block = NIL(ExprEmitter->:x, DiagList->:diags, DeclId:item,
     }
 
     x.tr.self_type = saved;
+    pass NIL;
+};
+
+// One body per recorded instantiation of this family impl's methods, with the
+// impl's parameters bound to that instantiation's arguments and `Self` bound to
+// the substituted target (`Box<int32>`, not the template's `Box<T>`).
+func:emit_family_instances = NIL(ExprEmitter->:x, DiagList->:diags,
+                                 DeclId:item, DeclNode:d, TypeId:tgt) {
+    IdSpan:pw = raw decl_generic_window(x.ast, d);
+    int32:home = raw symtab_home_scope(x.tab, item.index, x.scope);
+
+    int32:i = 0i32;
+    while (i < (raw fninst_count(x.fninsts))) {
+        FnInstance:inst = relay fninst_at(x.fninsts, i);
+        if (inst.owner_impl == item.index) {
+            GenericScope:g = GenericScope{
+                params_start: pw.start, params_count: pw.count,
+                args_start: inst.args_start, args_count: inst.args_count };
+
+            GenericScope:gs = x.tr.generics;
+            GenericScope:es = x.tr.enclosing;
+            int32:ss = x.tr.self_type;
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+            // `Self` is THIS instantiation's target.
+            x.tr.self_type = relay type_subst(x.tr,
+                                 relay resolve_type(x.tr, tgt, home),
+                                 g, d.span, 64i32);
+
+            IrVal:r = relay emit_fn_instance(x, DeclId{ index: inst.decl },
+                          inst.args_start, inst.args_count,
+                          inst.params_start, inst.params_count, 0i32);
+
+            x.tr.generics = gs;
+            x.tr.enclosing = es;
+            x.tr.self_type = ss;
+            if (!(raw iv_is_ok(r))) { drop refuse(diags, r); }
+        }
+        i = i + 1i32;
+    }
     pass NIL;
 };
 
@@ -487,14 +536,21 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
     int32:fi = 0i32;
     while (fi < (raw fninst_count(fninsts))) {
         FnInstance:inst = relay fninst_at(fninsts, fi);
+        // An impl-owned instantiation is emitted by its own impl block, where
+        // `Self` and the impl's parameters are bound (1.0.4b).
+        if (inst.owner_impl != 0i32) {
+            fi = fi + 1i32;
+        } else {
         int32:hs = raw symtab_home_scope(@g.tab, inst.decl, 0i32);
         ExprEmitter:xi = raw exprem_init(@fe, @g.ast, ets, @g.tab, interns, @st,
                                          tr, fninsts, hs);
         IrVal:ir = relay emit_fn_instance(@xi, DeclId{ index: inst.decl },
                                           inst.args_start, inst.args_count,
+                                          inst.params_start, inst.params_count,
                                           relay fninst_symbol(@g.ast, @c, inst));
         if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
         fi = fi + 1i32;
+        }
     }
 
     drop strtab_write_all(@st, w);

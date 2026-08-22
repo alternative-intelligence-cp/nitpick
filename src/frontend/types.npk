@@ -684,6 +684,23 @@ pub struct:FnInstance = {
     int32:decl;         // the generic function's DeclId index
     int32:args_start;   // window of concrete type ids
     int32:args_count;
+
+    // WHICH PARAMETERS THESE ARGUMENTS BIND (1.0.4b). For a generic function
+    // they are its own declaration's, and the emitter could read them from the
+    // declaration — but a FAMILY IMPL's method is generic in its IMPL's
+    // parameters, which the method's own declaration does not carry and the
+    // emitter cannot reach (there is no decl->owner link). The checker knows
+    // both, so it records the window rather than making the emitter re-derive
+    // something it has no path to.
+    int32:params_start;
+    int32:params_count;
+
+    // THE IMPL THIS METHOD BELONGS TO, or 0 (1.0.4b). A family impl's method
+    // needs `Self` bound to the impl's target while it is emitted — the same
+    // binding `emit_impl_block` makes — and the emitter has no decl->owner
+    // link to find the impl with. The checker knows it, so it says so.
+    int32:owner_impl;
+
     int32:type_id;      // the substituted TY_FUNC
     Span:at;
 };
@@ -725,7 +742,8 @@ pub func:fninst_at = FnInstance(FnInstTable->:t, int32:i) {
 // `int32(int32)`), and they are two functions to emit, not one.
 pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
                              int32:args_start, int32:args_count,
-                             int32:type_id, Span:at) {
+                             int32:params_start, int32:params_count,
+                             int32:owner_impl, int32:type_id, Span:at) {
     int32:i = 0i32;
     while (i < t.count) {
         FnInstance:e = t.items[i => int64];
@@ -749,7 +767,11 @@ pub func:fninst_record = NIL(FnInstTable->:t, Ast->:ast, int32:decl,
     }
     if (t.count >= t.cap) { drop fninst_grow(t); }
     FnInstance:n = FnInstance{ decl: decl, args_start: args_start,
-                               args_count: args_count, type_id: type_id, at: at };
+                               args_count: args_count,
+                               params_start: params_start,
+                               params_count: params_count,
+                               owner_impl: owner_impl,
+                               type_id: type_id, at: at };
     t.items[t.count => int64] = n;
     t.count = t.count + 1i32;
     pass NIL;

@@ -223,9 +223,18 @@ pub func:impl_attr = DeclId(Ast->:ast, DeclNode:d, int32:i) {
     DeclId:a = DeclId{ index: raw d_at(ast, d, base + i) }; pass a;
 };
 
-// A blanket impl is the one whose target is a parameter it declared itself.
+// A blanket impl is the one whose target is a parameter it declared itself —
+// which is to say the one that declared generics and wrote NO target, so the
+// parameter stands in the target position (D-105).
+//
+// GENERICS ALONE ARE NOT THE TEST (1.0.4b). A FAMILY impl
+// (`impl:<T>:Box<T>:Sized2`) declares generics too and names a real target; the
+// two are told apart by whether slot 0 is empty, exactly as the parser fills
+// it. Reading the generic count alone made every family impl a blanket one,
+// discarding its target and reporting its methods as not matching the trait.
 pub func:impl_is_blanket = bool(Ast->:ast, DeclNode:d) {
-    pass ((raw impl_generic_count(ast, d)) > 0i32);
+    if ((raw impl_generic_count(ast, d)) == 0i32) { pass false; }
+    pass (raw type_is_none(raw impl_target(ast, d)));
 };
 
 // --- MacroDecl ----------------------------------------------------------------------
@@ -981,13 +990,44 @@ func:p_parse_impl = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) {
     // window is what says which type it means. Reading `impl_generic_count` is
     // therefore the test for "is this blanket", and it needs no separate flag.
     IdSpan:generics = relay p_parse_generics(p);
+
+    // THE SEGMENT COUNT DECIDES (D-161 as amended at 1.0.4b), and it decides
+    // without a lookahead heuristic because D-111 already settled the shape:
+    // **a blanket impl must name a trait**. So after a generics window:
+    //
+    //   ONE segment  — `impl:<T: Printable>:Loggable`  — is the blanket form,
+    //                  and the segment is its TRAIT (the parameter it declared
+    //                  is the target, D-105: slot 0 stays empty).
+    //   TWO segments — `impl:<T>:Box<T>:Sized2`        — is the FAMILY form:
+    //                  target, then trait.
+    //
+    // The first attempt (1.0.4) parsed a type unconditionally and treated a
+    // following `:` as the discriminator, which consumed the blanket form's
+    // TRAIT as a target and broke it. Reading the count instead is what makes
+    // the two unambiguous: a family impl always has a trait segment, because a
+    // trait-less one would be an inherent impl over a family — which is
+    // `impl:<T>:Box<T>` with no trait, the one-segment case, and is refused
+    // for the same reason D-111 refuses a trait-less blanket (it would add
+    // methods to types the writer does not own).
     int32:target = 0i32;
+    int32:trait_ty = 0i32;
     if (generics.count == 0i32) {
         target = (relay p_parse_type(p)).index;
-    }
-    int32:trait_ty = 0i32;
-    if (relay p_accept(p, TokenKind.PColon)) {
-        trait_ty = (relay p_parse_type(p)).index;
+        if (relay p_accept(p, TokenKind.PColon)) {
+            trait_ty = (relay p_parse_type(p)).index;
+        }
+    } else {
+        // The generics window ends before the `:` that introduces the next
+        // segment, so each segment is `:` then a type.
+        if (relay p_accept(p, TokenKind.PColon)) {
+            int32:first = (relay p_parse_type(p)).index;
+            if (relay p_accept(p, TokenKind.PColon)) {
+                target = first;
+                trait_ty = (relay p_parse_type(p)).index;
+            } else {
+                trait_ty = first;
+            }
+        }
     }
     drop p_expect(p, TokenKind.OpAssign);
     IdSpan:members = relay p_parse_item_block(p);

@@ -1136,10 +1136,14 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 // does for a struct's fields.
 pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
                                   int32:args_start, int32:args_count,
+                                  int32:params_start, int32:params_count,
                                   int32:mangled_name) {
     DeclNode:d = relay ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
-    IdSpan:gp = raw decl_generic_window(x.ast, d);
+    // The parameters these arguments bind, as the checker recorded them: a
+    // generic function's own, or — for a family impl's method — its IMPL's,
+    // which the method's declaration does not carry (1.0.4b).
+    IdSpan:gp = IdSpan{ start: params_start, count: params_count };
 
     // THE SUBSTITUTION IS APPLIED TO WHAT RESOLUTION RETURNS, not pushed onto
     // the resolver's scope. `fn_signature` calls `bind_own_generics`, which
@@ -1221,10 +1225,20 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         // here rather than around `fn_signature`, which rebinds the
         // declaration's parameters unbound by design (D-107).
         GenericScope:psaved = x.tr.generics;
-        if (specialize) { x.tr.generics = g; }
+        GenericScope:pesaved = x.tr.enclosing;
+        // BOTH SLOTS (1.0.4b). A generic FUNCTION's parameters are its own
+        // (`generics`); a family IMPL's method is generic in its impl's, which
+        // `generic_lookup` reaches through `enclosing` — the same slot
+        // `bind_blanket` sets on the checking side. Pushing both is what makes
+        // one emitter serve both shapes.
+        if (specialize) {
+            x.tr.generics = g;
+            x.tr.enclosing = g;
+        }
         int32:pt = relay resolve_type(x.tr, raw param_type(pd),
                        raw symtab_home_scope(x.tab, did.index, x.scope));
         x.tr.generics = psaved;
+        x.tr.enclosing = pesaved;
         if (specialize) {
             pt = relay type_subst(x.tr, pt, g, pd.span, 64i32);
         }
@@ -1240,9 +1254,14 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     // emitter reads recorded types for expressions — only ANNOTATIONS resolve
     // here, which is what this binding serves).
     GenericScope:bsaved = x.tr.generics;
-    if (specialize) { x.tr.generics = g; }
+    GenericScope:besaved = x.tr.enclosing;
+    if (specialize) {
+        x.tr.generics = g;
+        x.tr.enclosing = g;
+    }
     IrVal:b = relay emit_block(x, raw fn_body(x.ast, d));
     x.tr.generics = bsaved;
+    x.tr.enclosing = besaved;
     if (!(raw iv_is_ok(b))) { pass b; }
     drop fnem_close(x.fe, x.fe.terminated);
     pass (raw iv_nil());

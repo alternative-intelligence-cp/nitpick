@@ -1,0 +1,31 @@
+// expect-exit: 13
+//
+// FAMILY IMPLS (D-161 as amended at 1.0.4b): `impl:<T>:Box<T>:Sized2`
+// implements a trait for a whole generic family, and a call on `Box<int32>`
+// dispatches to it.
+//
+// The amendment needed no lookahead heuristic: D-111 already requires a
+// blanket impl to name a trait, so after a generics window the SEGMENT COUNT
+// decides — one segment is the blanket form's trait, two are a family impl's
+// target and trait. The 1.0.4 attempt parsed a type unconditionally and broke
+// the blanket form by consuming its trait as a target.
+//
+// The method is a template over BOTH the impl's parameters and `Self`, so it
+// is emitted once per instantiation from inside the impl block — the one place
+// both are bound.
+
+struct:Box<T> = { T:v; };
+
+trait:Sized2 = { func:width = int64(Self:self); };
+
+impl:<T>:Box<T>:Sized2 = {
+    func:width = int64(Box<T>:self) { pass 8i64; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Box<int32>:b = Box{ v: 5i32 };
+    int64:w = raw b.width();
+    exit (w =>! int32) + b.v;   // 8 + 5 = 13
+};
+
+func:failsafe = int32(tbb32:_~err) { exit 1i32; };
